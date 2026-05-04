@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ReconcileIndicator } from "./reconcile-indicator";
+import { ShortageModal, type ShortageInfo } from "./shortage-modal";
 import { reconcile } from "@/lib/cashhub/reconcile";
 import { formatBaht } from "@/lib/utils/format";
 import type {
@@ -55,6 +56,8 @@ export function ReportForm({
     Object.fromEntries(config.fields.map((f) => [f.key, ""])),
   );
   const [submitting, setSubmitting] = useState(false);
+  const [shortageInfo, setShortageInfo] = useState<ShortageInfo | null>(null);
+  const [shortageModalOpen, setShortageModalOpen] = useState(false);
 
   // Draft storage key per branch+date+shift
   const draftKey = `cashhub:draft:${branchId}:${reportDate}:${shift}`;
@@ -111,8 +114,10 @@ export function ReportForm({
       if (f.required && !values[f.key]) return false;
     }
     if (config.hasReconcile && !reconcileResult.isBalanced) return false;
+    // If shortage > 0, must have shortageInfo or note
+    if (numeric.shortage > 0 && !shortageInfo) return false;
     return true;
-  }, [config, values, numeric, reconcileResult]);
+  }, [config, values, numeric, reconcileResult, shortageInfo]);
 
   function update(key: string, value: string) {
     // strip non-digits/dots for numeric fields
@@ -121,6 +126,18 @@ export function ReportForm({
       value = value.replace(/[^\d.]/g, "");
     }
     setValues((v) => ({ ...v, [key]: value }));
+
+    // When shortage is entered, prompt for details
+    if (key === "shortage") {
+      const num = parseFloat(value || "0") || 0;
+      if (num > 0 && !shortageInfo) {
+        // delay a tick so input registers
+        setTimeout(() => setShortageModalOpen(true), 100);
+      }
+      if (num === 0 && shortageInfo) {
+        setShortageInfo(null);
+      }
+    }
   }
 
   async function handleSubmit() {
@@ -142,6 +159,7 @@ export function ReportForm({
       credit: numeric.credit,
       shortage: numeric.shortage,
       notes: values.notes || null,
+      shortageInfo: numeric.shortage > 0 ? shortageInfo : null,
     };
 
     try {
@@ -333,9 +351,47 @@ export function ReportForm({
                   />
                 </Field>
               ))}
+              {numeric.shortage > 0 && (
+                <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 flex items-center justify-between gap-2">
+                  <div className="text-sm min-w-0">
+                    {shortageInfo ? (
+                      <>
+                        <span className="font-medium">
+                          {shortageInfo.isIdentified
+                            ? shortageInfo.personName
+                            : "รวมร้าน"}
+                        </span>
+                        {shortageInfo.note && (
+                          <span className="text-xs text-zinc-600 block truncate">
+                            {shortageInfo.note}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-amber-800">ยังไม่ได้ระบุ</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShortageModalOpen(true)}
+                    className="text-sm font-medium text-[--color-brand-700] hover:underline shrink-0"
+                  >
+                    {shortageInfo ? "แก้" : "ระบุ"}
+                  </button>
+                </div>
+              )}
             </CardBody>
           </Card>
         )}
+
+        <ShortageModal
+          open={shortageModalOpen}
+          amount={numeric.shortage}
+          branchId={branchId}
+          initial={shortageInfo}
+          onClose={() => setShortageModalOpen(false)}
+          onConfirm={(info) => setShortageInfo(info)}
+        />
 
         {/* Reconcile indicator (live) */}
         {config.hasReconcile && (

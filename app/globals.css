@@ -2,28 +2,33 @@
 
 /* ============================================================
    Pool Group ERP — Design System
-   Inspired by Fastwork.co (premium SaaS) + Auditmekub.com (clean Thai)
+   Reference: auditmekub.com (primary) + fastwork.co
+   Heavy Thai display, deep royal blue, selective keyword highlighting,
+   underline markers, floating cards, motion-aware
    ============================================================ */
 
 @theme inline {
   /* Fonts */
-  --font-sans: var(--font-thai), var(--font-sora), system-ui, sans-serif;
-  --font-display: var(--font-sora), var(--font-thai), system-ui, sans-serif;
+  --font-sans: var(--font-thai), var(--font-jakarta), system-ui, sans-serif;
+  --font-display: var(--font-thai-display), var(--font-jakarta), system-ui, sans-serif;
   --font-thai: var(--font-thai), system-ui, sans-serif;
+  --font-thai-display: var(--font-thai-display), var(--font-jakarta), system-ui, sans-serif;
+  --font-jakarta: var(--font-jakarta), system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* Brand color: deep emerald (Pool = oil = energy + serious) */
-  --color-brand-50: oklch(0.97 0.02 165);
-  --color-brand-100: oklch(0.93 0.05 165);
-  --color-brand-200: oklch(0.86 0.10 165);
-  --color-brand-300: oklch(0.76 0.14 165);
-  --color-brand-400: oklch(0.65 0.16 165);
-  --color-brand-500: oklch(0.55 0.16 165);
-  --color-brand-600: oklch(0.46 0.14 165);
-  --color-brand-700: oklch(0.38 0.12 165);
-  --color-brand-800: oklch(0.30 0.09 165);
-  --color-brand-900: oklch(0.22 0.06 165);
-  --color-brand-950: oklch(0.15 0.04 165);
+  /* Brand: deep royal blue (Auditmekub/Fastwork) — saturated, energetic, credible */
+  --color-brand-50:  oklch(0.97 0.025 263);
+  --color-brand-100: oklch(0.93 0.06 263);
+  --color-brand-200: oklch(0.85 0.12 263);
+  --color-brand-300: oklch(0.74 0.18 263);
+  --color-brand-400: oklch(0.62 0.23 264);
+  --color-brand-500: oklch(0.52 0.25 264);  /* primary CTA */
+  --color-brand-600: oklch(0.45 0.24 264);  /* hover */
+  --color-brand-700: oklch(0.38 0.21 264);  /* pressed */
+  --color-brand-800: oklch(0.30 0.16 264);
+  --color-brand-900: oklch(0.22 0.10 264);
+  --color-brand-950: oklch(0.15 0.06 264);
+  --color-brand-vivid: oklch(0.50 0.28 263); /* hero gradients — almost neon */
 
   /* Semantic */
   --color-success: oklch(0.65 0.18 145);
@@ -31,7 +36,7 @@
   --color-danger: oklch(0.62 0.22 25);
   --color-info: oklch(0.65 0.15 250);
 
-  /* Surface elevation (Fastwork-like) */
+  /* Surface elevation */
   --color-surface: oklch(1 0 0);
   --color-surface-2: oklch(0.985 0.002 247);
   --color-surface-3: oklch(0.97 0.004 247);
@@ -46,11 +51,12 @@
   --radius-xl: 24px;
   --radius-2xl: 32px;
 
-  /* Shadows — soft, professional */
+  /* Shadows */
   --shadow-soft: 0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 3px 0 rgb(0 0 0 / 0.06);
   --shadow-md: 0 2px 4px 0 rgb(0 0 0 / 0.04), 0 4px 12px -2px rgb(0 0 0 / 0.06);
-  --shadow-lg: 0 8px 16px -4px rgb(0 0 0 / 0.08), 0 16px 32px -8px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 8px 16px -4px rgb(0 0 0 / 0.08), 0 16px 32px -8px rgb(0 0 0 / 0.10);
   --shadow-pop: 0 16px 64px -16px rgb(0 0 0 / 0.18);
+  --shadow-blue: 0 8px 24px -8px oklch(0.50 0.25 264 / 0.30);
 }
 
 /* ============================================================
@@ -67,31 +73,54 @@ html {
 
 body {
   font-family: var(--font-sans);
-  font-feature-settings: "cv11", "ss01";
-  letter-spacing: -0.01em;
+  letter-spacing: -0.005em;
 }
 
 /* ============================================================
-   Typography
+   Typography — heavy chunky display (Auditmekub style)
    ============================================================ */
 .font-display {
   font-family: var(--font-display);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
+  font-weight: 700;
 }
 
 h1, h2, h3, h4 {
   font-family: var(--font-display);
-  letter-spacing: -0.02em;
-  font-weight: 600;
+  letter-spacing: -0.025em;
+  font-weight: 700;
 }
+
+h1 { font-weight: 800; }
 
 /* Tabular numbers for money */
 .tabular-num {
   font-variant-numeric: tabular-nums;
 }
 
+/* Selective blue keyword highlighting — wrap a word with .accent in headings */
+.accent {
+  color: var(--color-brand-600);
+  position: relative;
+  display: inline-block;
+}
+
+/* Underline marker — auditmekub-style stroke under a keyword */
+.marker-underline {
+  background-image: linear-gradient(
+    to bottom,
+    transparent 60%,
+    var(--color-brand-200) 60%,
+    var(--color-brand-200) 92%,
+    transparent 92%
+  );
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  padding: 0 0.1em;
+}
+
 /* ============================================================
-   Form inputs — friendly + premium
+   Form inputs
    ============================================================ */
 input[type="text"],
 input[type="email"],
@@ -100,18 +129,15 @@ input[type="number"],
 input[type="tel"],
 input[type="search"],
 textarea {
-  /* iOS won't auto-zoom on focus when font-size >= 16px */
   font-size: 16px;
 }
 
-/* Better focus ring */
 *:focus-visible {
   outline: 2px solid var(--color-brand-500);
   outline-offset: 2px;
   border-radius: 6px;
 }
 
-/* Suppress browser autofill ugly bg */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus {
@@ -121,7 +147,7 @@ input:-webkit-autofill:focus {
 }
 
 /* ============================================================
-   Scrollbar — subtle
+   Scrollbar
    ============================================================ */
 ::-webkit-scrollbar {
   width: 10px;
@@ -140,8 +166,26 @@ input:-webkit-autofill:focus {
 }
 
 /* ============================================================
-   Utility helpers
+   Decorative utilities
    ============================================================ */
+@utility bg-grid-dots {
+  background-image: radial-gradient(
+    circle,
+    rgb(0 0 0 / 0.06) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+}
+
+@utility bg-grid-dots-on-blue {
+  background-image: radial-gradient(
+    circle,
+    rgb(255 255 255 / 0.10) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+}
+
 @utility bg-grid {
   background-image:
     linear-gradient(to right, rgb(0 0 0 / 0.03) 1px, transparent 1px),
@@ -160,9 +204,54 @@ input:-webkit-autofill:focus {
   animation: shimmer 1.5s ease-in-out infinite;
 }
 
+/* ============================================================
+   Animations — subtle motion (Fastwork-style)
+   No animation library; pure CSS keyframes
+   ============================================================ */
+
 @keyframes shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes blur-in {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
 }
 
 @keyframes pulse-soft {
@@ -170,8 +259,45 @@ input:-webkit-autofill:focus {
   50% { opacity: 0.6; }
 }
 
-.animate-pulse-soft {
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@utility animate-fade-up {
+  animation: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@utility animate-fade-in {
+  animation: fade-in 0.4s ease backwards;
+}
+@utility animate-scale-in {
+  animation: scale-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@utility animate-blur-in {
+  animation: blur-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@utility animate-pulse-soft {
   animation: pulse-soft 2s ease-in-out infinite;
+}
+@utility animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+/* Stagger delays — useful for hero text + card grids */
+@utility delay-100 { animation-delay: 100ms; }
+@utility delay-150 { animation-delay: 150ms; }
+@utility delay-200 { animation-delay: 200ms; }
+@utility delay-300 { animation-delay: 300ms; }
+@utility delay-400 { animation-delay: 400ms; }
+@utility delay-500 { animation-delay: 500ms; }
+
+/* Card hover lift */
+@utility hover-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
 }
 
 /* ============================================================
@@ -183,5 +309,15 @@ input:-webkit-autofill:focus {
   }
   .safe-top {
     padding-top: max(env(safe-area-inset-top), 0.5rem);
+  }
+}
+
+/* Prefers-reduced-motion: disable all animations for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

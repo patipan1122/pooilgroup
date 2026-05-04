@@ -13,17 +13,23 @@ import {
   X,
   ChevronDown,
   LogOut,
+  Users as UsersIcon,
+  ShieldCheck,
+  UserCircle,
 } from "lucide-react";
 import { browserClient } from "@/lib/db/client";
 import { cn } from "@/lib/utils/cn";
 import type { DbUser } from "@/lib/auth/session";
 
-const NAV = [
+const NAV: { href: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean; section?: string }[] = [
   { href: "/dashboard", label: "ภาพรวม", icon: LayoutDashboard },
   { href: "/cashhub", label: "ยอดสาขา (CashHub)", icon: Wallet },
   { href: "/branches", label: "สาขา", icon: Building2 },
   { href: "/reports", label: "รายงานทั้งหมด", icon: ScrollText },
-  { href: "/settings", label: "ตั้งค่า", icon: Settings, adminOnly: true },
+  { href: "/users", label: "ผู้ใช้งาน", icon: UsersIcon, adminOnly: true, section: "admin" },
+  { href: "/audit", label: "Audit Log", icon: ShieldCheck, adminOnly: true, section: "admin" },
+  { href: "/settings", label: "ตั้งค่า", icon: Settings, adminOnly: true, section: "admin" },
+  { href: "/profile", label: "โปรไฟล์", icon: UserCircle, section: "account" },
 ];
 
 interface Props {

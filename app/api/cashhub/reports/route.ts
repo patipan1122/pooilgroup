@@ -23,6 +23,15 @@ const ReportSchema = z.object({
   credit: z.number().min(0),
   shortage: z.number().min(0),
   notes: z.string().max(500).nullable().optional(),
+  shortageInfo: z
+    .object({
+      personId: z.string().uuid().nullable(),
+      personName: z.string().nullable(),
+      isIdentified: z.boolean(),
+      note: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -133,6 +142,7 @@ export async function POST(req: NextRequest) {
 
   // Insert cash shortage row if any
   if (data.shortage > 0) {
+    const info = data.shortageInfo;
     await admin.from("cash_shortages").insert({
       id: crypto.randomUUID(),
       org_id: branch.org_id,
@@ -140,10 +150,10 @@ export async function POST(req: NextRequest) {
       branch_id: branch.id,
       report_date: data.reportDate,
       amount: data.shortage,
-      person_id: null,
-      person_name: null,
-      is_identified: false,
-      note: null,
+      person_id: info?.personId ?? null,
+      person_name: info?.personName ?? null,
+      is_identified: info?.isIdentified ?? false,
+      note: info?.note ?? null,
     });
   }
 

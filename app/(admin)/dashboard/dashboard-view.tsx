@@ -69,13 +69,15 @@ export function DashboardView(props: Props) {
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="mb-6 sm:mb-8 flex items-end justify-between flex-wrap gap-3">
+      <div className="mb-6 sm:mb-8 flex items-end justify-between flex-wrap gap-3 animate-fade-up">
         <div>
-          <p className="text-sm text-zinc-500">{today}</p>
-          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight font-display mt-0.5">
-            สวัสดี {props.userName}
+          <p className="text-xs uppercase tracking-widest text-[--color-brand-600] font-semibold">
+            01 · OVERVIEW · {today}
+          </p>
+          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight font-display mt-2">
+            สวัสดี <span className="accent">{props.userName}</span>
           </h1>
-          <p className="text-zinc-600 mt-1 text-sm sm:text-base">
+          <p className="text-zinc-600 mt-2 text-sm sm:text-base">
             ภาพรวมยอดสาขาทั้งหมดของ Pool Group
           </p>
         </div>
@@ -93,7 +95,7 @@ export function DashboardView(props: Props) {
             className="absolute top-0 right-0 w-64 h-64 -mt-20 -mr-20 rounded-full opacity-30 blur-3xl"
             style={{
               background:
-                "radial-gradient(circle, oklch(0.55 0.16 165) 0%, transparent 70%)",
+                "radial-gradient(circle, oklch(0.58 0.21 262) 0%, transparent 70%)",
             }}
           />
           <CardBody className="relative pt-6">
@@ -139,44 +141,52 @@ export function DashboardView(props: Props) {
         </Card>
       )}
 
-      {/* Hero stat — month total */}
-      <Card className="mb-6 overflow-hidden">
+      {/* Hero stat — month total (vivid blue banner) */}
+      <Card className="mb-6 overflow-hidden relative border-0 shadow-blue animate-fade-up delay-100"
+        style={{
+          background:
+            "linear-gradient(135deg, oklch(0.45 0.24 264) 0%, oklch(0.50 0.28 263) 50%, oklch(0.42 0.21 264) 100%)",
+        }}
+      >
+        <div className="absolute inset-0 bg-grid-dots-on-blue pointer-events-none opacity-60" />
         <div
-          className="absolute inset-0 opacity-[0.04] pointer-events-none"
+          className="absolute -top-24 -right-24 w-96 h-96 rounded-full opacity-30 blur-3xl"
           style={{
             background:
-              "radial-gradient(circle at 100% 0%, oklch(0.55 0.16 165) 0%, transparent 50%)",
+              "radial-gradient(circle, oklch(0.70 0.22 250) 0%, transparent 70%)",
           }}
         />
-        <CardBody className="relative pt-6">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <CardBody className="relative pt-7 pb-7 text-white">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-5">
             <div>
-              <p className="text-sm text-zinc-500 mb-1">ยอดสะสมเดือนนี้</p>
-              <div className="text-4xl sm:text-5xl font-semibold tabular-num font-display tracking-tight text-zinc-900">
+              <p className="text-xs uppercase tracking-widest text-white/70 font-semibold mb-1.5">
+                ยอดสะสมเดือนนี้
+              </p>
+              <div className="text-5xl sm:text-6xl font-extrabold tabular-num font-display tracking-tight">
                 {formatBaht(props.monthTotal)}
               </div>
               {props.monthPending > 0 && (
-                <p className="text-sm text-zinc-500 mt-2">
+                <p className="text-sm text-white/80 mt-2.5">
                   + รออนุมัติอีก{" "}
-                  <span className="font-medium text-amber-600 tabular-num">
+                  <span className="font-semibold text-amber-300 tabular-num">
                     {formatBaht(props.monthPending)}
                   </span>
                 </p>
               )}
             </div>
-            <div className="flex gap-2 sm:gap-3">
+            <div className="flex gap-2 sm:gap-2.5">
               <Stat
                 icon={<Building2 className="size-4" />}
                 label="สาขา"
                 value={props.branchCount.toString()}
               />
               <Stat
-                icon={<CheckCircle2 className="size-4 text-green-600" />}
+                icon={<CheckCircle2 className="size-4" />}
                 label="ส่งวันนี้"
                 value={props.submittedTodayCount.toString()}
               />
               <Stat
-                icon={<Clock className="size-4 text-amber-600" />}
+                icon={<Clock className="size-4" />}
                 label="รออนุมัติ"
                 value={props.pendingCount.toString()}
               />
@@ -187,7 +197,7 @@ export function DashboardView(props: Props) {
 
       {/* By business type */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-6">
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2 animate-fade-up delay-200">
           <CardHeader>
             <div>
               <CardTitle>แยกตามประเภทธุรกิจ</CardTitle>
@@ -244,7 +254,7 @@ export function DashboardView(props: Props) {
         </Card>
 
         {/* Pending approvals */}
-        <Card>
+        <Card className="animate-fade-up delay-300">
           <CardHeader>
             <div>
               <CardTitle>รออนุมัติ</CardTitle>
@@ -331,12 +341,12 @@ function Stat({
   value: string;
 }) {
   return (
-    <div className="bg-zinc-50 rounded-xl px-3 py-2 min-w-[68px]">
-      <div className="flex items-center gap-1.5 text-zinc-500 text-[11px] mb-0.5">
+    <div className="bg-white/10 backdrop-blur rounded-xl px-3 py-2 min-w-[72px] border border-white/15">
+      <div className="flex items-center gap-1.5 text-white/80 text-[11px] mb-0.5">
         {icon}
         <span>{label}</span>
       </div>
-      <div className="text-lg font-semibold tabular-num">{value}</div>
+      <div className="text-lg font-extrabold tabular-num text-white">{value}</div>
     </div>
   );
 }
