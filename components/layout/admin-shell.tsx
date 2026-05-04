@@ -53,8 +53,10 @@ export function AdminShell({ user, children }: Props) {
   }, [activeModule]);
 
   async function logout() {
+    // Hit our /api/auth/logout first so we audit + close session row
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
     const sb = browserClient();
-    await sb.auth.signOut();
+    await sb.auth.signOut().catch(() => {});
     router.refresh();
     router.push("/login");
   }

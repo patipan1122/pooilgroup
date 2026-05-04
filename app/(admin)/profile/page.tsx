@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { ShieldCheck, ChevronRight } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { ProfileForm } from "./profile-form";
 
@@ -26,6 +28,26 @@ export default async function ProfilePage() {
         phone={session.user.phone}
         role={session.user.role}
       />
+
+      <Link
+        href="/profile/sessions"
+        className="mt-4 flex items-center justify-between gap-3 rounded-2xl border-2 border-zinc-200 bg-white px-4 py-3.5 hover:border-[--color-brand-300] hover:bg-[--color-brand-50]/40 transition-colors animate-fade-up delay-200"
+      >
+        <span className="flex items-center gap-3">
+          <span className="size-10 rounded-xl bg-[--color-brand-50] border border-[--color-brand-200] flex items-center justify-center text-[--color-brand-700]">
+            <ShieldCheck className="size-5" />
+          </span>
+          <span>
+            <span className="block font-semibold text-sm">
+              อุปกรณ์ที่เข้าใช้
+            </span>
+            <span className="block text-xs text-zinc-500">
+              ดู Login จากที่ไหนบ้าง · ออกจากระบบที่ไม่ใช่ของคุณ
+            </span>
+          </span>
+        </span>
+        <ChevronRight className="size-5 text-zinc-400" />
+      </Link>
     </div>
   );
 }

@@ -63,6 +63,9 @@ export function InviteAcceptForm({ token, email: initialEmail, userId }: Props) 
         return;
       }
 
+      // Record session + audit LOGIN
+      await fetch("/api/auth/post-login", { method: "POST" }).catch(() => {});
+
       toast.success("ยินดีต้อนรับ!");
       router.refresh();
       router.push("/");

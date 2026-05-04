@@ -26,20 +26,56 @@ export function LoginForm() {
     }
 
     startTransition(async () => {
+      // 1. Pre-flight: is account locked?
+      const preCheck = await fetch("/api/auth/check-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      if (preCheck.status === 423) {
+        const json = await preCheck.json();
+        const msg = json.message || "บัญชีถูกล็อกชั่วคราว";
+        setError(msg);
+        toast.error(msg);
+        return;
+      }
+
+      // 2. Try Supabase auth
       const sb = browserClient();
       const { error: err } = await sb.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
+
       if (err) {
-        const msg =
+        // 3a. Record failure (may trigger lock)
+        const fail = await fetch("/api/auth/track-failed-login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email.trim() }),
+        });
+        const failJson = await fail.json().catch(() => ({}));
+
+        let msg =
           err.message === "Invalid login credentials"
             ? "Email หรือรหัสผ่านไม่ถูกต้อง"
             : err.message;
+        if (failJson.locked) {
+          msg = `รหัสผิดเกิน 5 ครั้ง — บัญชีถูกล็อก 15 นาที`;
+        } else if (typeof failJson.attemptsRemaining === "number") {
+          msg += ` (เหลือ ${failJson.attemptsRemaining} ครั้ง ก่อนถูกล็อก)`;
+        }
         setError(msg);
         toast.error("เข้าสู่ระบบไม่สำเร็จ", { description: msg });
         return;
       }
+
+      // 3b. Record success + create session row
+      await fetch("/api/auth/post-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
       toast.success("เข้าสู่ระบบสำเร็จ");
       router.refresh();
       router.push("/");

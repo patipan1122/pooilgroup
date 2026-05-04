@@ -76,6 +76,9 @@ export function SignupForm({ isFirstUser }: Props) {
         return;
       }
 
+      // Step 3: record session + audit LOGIN
+      await fetch("/api/auth/post-login", { method: "POST" }).catch(() => {});
+
       toast.success(
         isFirstUser
           ? "🎉 ตั้งค่า Super Admin สำเร็จ"
