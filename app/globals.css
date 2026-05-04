@@ -1,26 +1,187 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ============================================================
+   Pool Group ERP — Design System
+   Inspired by Fastwork.co (premium SaaS) + Auditmekub.com (clean Thai)
+   ============================================================ */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Fonts */
+  --font-sans: var(--font-thai), var(--font-sora), system-ui, sans-serif;
+  --font-display: var(--font-sora), var(--font-thai), system-ui, sans-serif;
+  --font-thai: var(--font-thai), system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Brand color: deep emerald (Pool = oil = energy + serious) */
+  --color-brand-50: oklch(0.97 0.02 165);
+  --color-brand-100: oklch(0.93 0.05 165);
+  --color-brand-200: oklch(0.86 0.10 165);
+  --color-brand-300: oklch(0.76 0.14 165);
+  --color-brand-400: oklch(0.65 0.16 165);
+  --color-brand-500: oklch(0.55 0.16 165);
+  --color-brand-600: oklch(0.46 0.14 165);
+  --color-brand-700: oklch(0.38 0.12 165);
+  --color-brand-800: oklch(0.30 0.09 165);
+  --color-brand-900: oklch(0.22 0.06 165);
+  --color-brand-950: oklch(0.15 0.04 165);
+
+  /* Semantic */
+  --color-success: oklch(0.65 0.18 145);
+  --color-warning: oklch(0.78 0.16 75);
+  --color-danger: oklch(0.62 0.22 25);
+  --color-info: oklch(0.65 0.15 250);
+
+  /* Surface elevation (Fastwork-like) */
+  --color-surface: oklch(1 0 0);
+  --color-surface-2: oklch(0.985 0.002 247);
+  --color-surface-3: oklch(0.97 0.004 247);
+  --color-border: oklch(0.92 0.004 247);
+  --color-border-strong: oklch(0.86 0.005 247);
+
+  /* Radius */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-2xl: 32px;
+
+  /* Shadows — soft, professional */
+  --shadow-soft: 0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 3px 0 rgb(0 0 0 / 0.06);
+  --shadow-md: 0 2px 4px 0 rgb(0 0 0 / 0.04), 0 4px 12px -2px rgb(0 0 0 / 0.06);
+  --shadow-lg: 0 8px 16px -4px rgb(0 0 0 / 0.08), 0 16px 32px -8px rgb(0 0 0 / 0.1);
+  --shadow-pop: 0 16px 64px -16px rgb(0 0 0 / 0.18);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ============================================================
+   Reset & base
+   ============================================================ */
+:root {
+  color-scheme: light;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  letter-spacing: -0.01em;
+}
+
+/* ============================================================
+   Typography
+   ============================================================ */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+
+/* Tabular numbers for money */
+.tabular-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   Form inputs — friendly + premium
+   ============================================================ */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="tel"],
+input[type="search"],
+textarea {
+  /* iOS won't auto-zoom on focus when font-size >= 16px */
+  font-size: 16px;
+}
+
+/* Better focus ring */
+*:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Suppress browser autofill ugly bg */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--color-zinc-900);
+  -webkit-box-shadow: 0 0 0 1000px white inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* ============================================================
+   Scrollbar — subtle
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(0.86 0.005 247);
+  border-radius: 6px;
+  border: 2px solid var(--color-surface);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.74 0.005 247);
+}
+
+/* ============================================================
+   Utility helpers
+   ============================================================ */
+@utility bg-grid {
+  background-image:
+    linear-gradient(to right, rgb(0 0 0 / 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(0 0 0 / 0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+@utility shimmer {
+  background: linear-gradient(
+    90deg,
+    oklch(0.94 0.004 247) 0%,
+    oklch(0.97 0.004 247) 50%,
+    oklch(0.94 0.004 247) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+/* ============================================================
+   Safe-area for notched mobile (LIFF)
+   ============================================================ */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safe-bottom {
+    padding-bottom: max(env(safe-area-inset-bottom), 1rem);
+  }
+  .safe-top {
+    padding-top: max(env(safe-area-inset-top), 0.5rem);
+  }
 }
