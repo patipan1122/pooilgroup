@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { CheckCircle2, XCircle, UserPlus, Users, Inbox } from "lucide-react";
+import {
+  CheckCircle2,
+  XCircle,
+  UserPlus,
+  Users,
+  Inbox,
+  Upload,
+} from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Section } from "@/components/ui/section";
@@ -92,6 +99,13 @@ export default async function UsersListPage() {
                 {pendingRequests}
               </span>
             )}
+          </Link>
+          <Link
+            href="/users/import"
+            className="inline-flex items-center gap-2 px-4 h-12 rounded-xl border-2 border-zinc-200 bg-white font-semibold hover:border-[--color-brand-300] hover:bg-[--color-brand-50]/40 transition-colors text-sm"
+          >
+            <Upload className="size-4" />
+            Import CSV
           </Link>
           <Link
             href="/users/new"
