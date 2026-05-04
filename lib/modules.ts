@@ -8,7 +8,6 @@ import {
   Fuel,
   FileText,
   LayoutDashboard,
-  Building2,
   ScrollText,
   ClipboardList,
 } from "lucide-react";
@@ -49,7 +48,6 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     nav: [
       { href: "/cashhub/dashboard", label: "ภาพรวม", icon: LayoutDashboard },
       { href: "/cashhub/reports", label: "รายงานทั้งหมด", icon: ScrollText },
-      { href: "/cashhub/branches", label: "สาขา", icon: Building2 },
     ],
   },
   fuelos: {

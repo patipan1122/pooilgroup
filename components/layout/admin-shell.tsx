@@ -14,6 +14,7 @@ import {
   UserCircle,
   Home,
   Check,
+  Building2,
 } from "lucide-react";
 import { browserClient } from "@/lib/db/client";
 import { cn } from "@/lib/utils/cn";
@@ -22,6 +23,7 @@ import { MODULE_LIST, MODULES, getModuleFromPath } from "@/lib/modules";
 
 const ADMIN_NAV = [
   { href: "/users", label: "ผู้ใช้งาน", icon: UsersIcon },
+  { href: "/branches", label: "สาขา", icon: Building2 },
   { href: "/audit", label: "Audit Log", icon: ShieldCheck },
   { href: "/settings", label: "ตั้งค่า", icon: Settings },
 ];
