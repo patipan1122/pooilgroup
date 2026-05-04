@@ -1,5 +1,5 @@
 -- ============================================================
--- Pool Group ERP — Combined Setup SQL
+-- Pooilgroup ERP — Combined Setup SQL
 -- Paste this entire file into Supabase SQL Editor and run.
 -- URL: https://supabase.com/dashboard/project/gockzhprlylabpurvhoz/sql/new
 --
@@ -330,7 +330,7 @@ ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_user_id_fkey" FOREIGN KEY ("
 -- ============================================================
 -- RLS + JWT hook
 -- ============================================================
--- Pool Group ERP — RLS Policies + JWT Custom Claim
+-- Pooilgroup ERP — RLS Policies + JWT Custom Claim
 -- Run after `prisma migrate deploy` to apply RLS to Prisma-created tables
 -- Multi-tenant: every query is scoped to org_id from JWT
 

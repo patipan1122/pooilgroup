@@ -1,4 +1,4 @@
-// Pool Group ERP — Env validation script
+// Pooilgroup ERP — Env validation script
 // Run before build/deploy: `node scripts/check-env.mjs`
 // Exit 0 = OK; Exit 1 = missing required vars
 
@@ -42,7 +42,7 @@ for (const key of REQUIRED) {
 for (const key of RECOMMENDED) if (!process.env[key]) missing.recommended.push(key);
 for (const key of OPTIONAL_PHASE2) if (!process.env[key]) missing.optional.push(key);
 
-console.log("Pool Group ERP — Environment Check\n");
+console.log("Pooilgroup ERP — Environment Check\n");
 
 if (missing.required.length === 0) {
   console.log("✓ Required env vars: all present");

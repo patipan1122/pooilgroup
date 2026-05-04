@@ -1,7 +1,7 @@
 {
-  "name": "Pool Group ERP",
-  "short_name": "Pool Group",
-  "description": "ระบบบริหารจัดการ Pool Group — ยอดสาขา / เอกสาร / ขนส่งน้ำมัน",
+  "name": "Pooilgroup ERP",
+  "short_name": "Pooilgroup",
+  "description": "ระบบบริหารจัดการ Pooilgroup — ยอดสาขา / เอกสาร / ขนส่งน้ำมัน",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

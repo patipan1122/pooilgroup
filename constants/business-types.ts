@@ -1,4 +1,4 @@
-// Pool Group ERP — Business Type form configs
+// Pooilgroup ERP — Business Type form configs
 // Universal Form engine reads this to render the correct fields per branch
 // Spec source: ดีเทลv1/CASHHUB.md §3 + §13
 

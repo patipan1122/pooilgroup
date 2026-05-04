@@ -1,4 +1,4 @@
--- Pool Group ERP — RLS Policies + JWT Custom Claim
+-- Pooilgroup ERP — RLS Policies + JWT Custom Claim
 -- Run after `prisma migrate deploy` to apply RLS to Prisma-created tables
 -- Multi-tenant: every query is scoped to org_id from JWT
 

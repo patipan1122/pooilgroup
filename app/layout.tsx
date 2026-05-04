@@ -28,11 +28,11 @@ const thaiSans = IBM_Plex_Sans_Thai({
 });
 
 export const metadata: Metadata = {
-  title: "Pool Group ERP",
-  description: "ระบบบริหารจัดการ Pool Group — ยอดสาขา / เอกสาร / ขนส่งน้ำมัน",
+  title: "Pooilgroup ERP",
+  description: "ระบบบริหารจัดการ Pooilgroup — ยอดสาขา / เอกสาร / ขนส่งน้ำมัน",
   robots: { index: false, follow: false },
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, title: "Pool Group", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "Pooilgroup", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

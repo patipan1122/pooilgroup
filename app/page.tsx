@@ -10,5 +10,5 @@ export default async function RootPage() {
   if (session.user.role === "staff" || session.user.role === "driver") {
     redirect("/liff/status");
   }
-  redirect("/dashboard");
+  redirect("/home");
 }

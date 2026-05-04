@@ -64,7 +64,7 @@ export default async function InviteAcceptPage({
           ยินดีต้อนรับ <span className="accent">{pending.name}</span>
         </h1>
         <p className="text-sm text-zinc-500 mt-2">
-          ตั้งรหัสผ่านเพื่อเริ่มใช้งาน Pool Group ERP
+          ตั้งรหัสผ่านเพื่อเริ่มใช้งาน Pooilgroup ERP
         </p>
       </div>
 

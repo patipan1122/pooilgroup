@@ -1,4 +1,4 @@
-// Pool Group ERP — Database Seed (via Supabase REST API)
+// Pooilgroup ERP — Database Seed (via Supabase REST API)
 // Bypasses Postgres connection (no IPv4 issue) — uses service_role over HTTPS
 // Idempotent: re-run = no duplicate (uses upsert).
 // Run: npm run db:seed (after setup.sql has been applied via SQL Editor)
@@ -32,7 +32,7 @@ async function seedOrganization() {
     .upsert(
       {
         id: POOL_GROUP_ORG_ID,
-        name: "Pool Group",
+        name: "Pooilgroup",
         slug: "poolgroup",
         settings: {
           timezone: "Asia/Bangkok",
@@ -147,7 +147,7 @@ async function seedSampleBranches(orgId: string) {
 }
 
 async function main() {
-  console.log("🌱 Seeding Pool Group database via Supabase REST...\n");
+  console.log("🌱 Seeding Pooilgroup database via Supabase REST...\n");
   const org = await seedOrganization();
   await seedReportTemplates(org.id);
   await seedSampleBranches(org.id);

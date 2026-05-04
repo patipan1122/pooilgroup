@@ -32,7 +32,7 @@ export default async function LoginPage() {
           <CheckCircle2 className="size-7" strokeWidth={2.5} />
         </div>
         <h1 className="text-3xl font-extrabold tracking-tight text-zinc-900 font-display">
-          เข้าสู่ระบบ <span className="accent">Pool Group</span>
+          เข้าสู่ระบบ <span className="accent">Pooilgroup</span>
         </h1>
         <p className="text-sm text-zinc-500 mt-2 max-w-xs">
           จัดการยอดสาขา · เอกสาร · ขนส่งน้ำมัน

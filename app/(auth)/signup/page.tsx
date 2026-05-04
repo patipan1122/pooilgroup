@@ -44,7 +44,7 @@ export default async function SignupPage() {
         </h1>
         <p className="text-sm text-zinc-500 mt-2 max-w-xs">
           {isFirstUser
-            ? "บัญชีแรก = Super Admin ของ Pool Group"
+            ? "บัญชีแรก = Super Admin ของ Pooilgroup"
             : "Admin จะกำหนดสาขาให้คุณหลังสร้างบัญชี"}
         </p>
       </div>

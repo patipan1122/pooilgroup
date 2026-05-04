@@ -72,7 +72,7 @@ export default async function ReportDetailPage({
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto">
       <Link
-        href="/cashhub"
+        href="/cashhub/reports"
         className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-700 mb-4"
       >
         <ArrowLeft className="size-4" />

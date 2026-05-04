@@ -3,7 +3,7 @@ import { z } from "zod";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 
-// Pool Group org_id matches seed
+// Pooilgroup org_id matches seed
 const POOL_GROUP_ORG_ID = "00000000-0000-0000-0000-000000000001";
 
 const SignupSchema = z.object({
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
   const phone = parsed.data.phone || null;
   const admin = adminClient();
 
-  // Check if any super_admin exists in Pool Group org
+  // Check if any super_admin exists in Pooilgroup org
   const { count: superAdminCount } = await admin
     .from("users")
     .select("id", { count: "exact", head: true })

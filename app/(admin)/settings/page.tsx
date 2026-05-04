@@ -77,7 +77,7 @@ export default async function SettingsPage() {
             desc="เพิ่ม/แก้ไข/เชิญผู้ใช้ เข้าระบบ"
           />
           <SettingLink
-            href="/branches"
+            href="/cashhub/branches"
             label="จัดการสาขา"
             desc="ข้อมูลสาขา · ผู้จัดการ · เวลา deadline"
           />

@@ -21,7 +21,7 @@ export default function AuthLayout({
         {children}
       </main>
       <footer className="text-center text-xs text-zinc-400 pb-6 relative z-10">
-        Pool Group ERP · v0.1
+        Pooilgroup ERP · v0.1
       </footer>
     </div>
   );
