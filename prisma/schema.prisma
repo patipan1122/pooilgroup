@@ -42,6 +42,10 @@ model Organization {
   telegramSubs     TelegramSubscription[]
   telegramGroups   TelegramGroup[]
   telegramTokens   TelegramPairingToken[]
+  branchTargets    BranchTarget[]
+  branchHealthScores BranchHealthScore[]
+  branchStreaks    BranchStreak[]
+  missingReports   MissingReportReason[]
 
   @@map("organizations")
 }
@@ -136,11 +140,15 @@ model Branch {
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org           Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  manager       User?          @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
-  userBranches  UserBranch[]
-  dailyReports  DailyReport[]
-  cashShortages CashShortage[]
+  org             Organization        @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  manager         User?               @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
+  userBranches    UserBranch[]
+  dailyReports    DailyReport[]
+  cashShortages   CashShortage[]
+  targets         BranchTarget[]
+  healthScores    BranchHealthScore[]
+  streak          BranchStreak?
+  missingReports  MissingReportReason[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -518,4 +526,88 @@ model TelegramPairingToken {
   @@index([token])
   @@index([userId, usedAt])
   @@map("telegram_pairing_tokens")
+}
+
+// =============================================================
+// 18. branch_targets — monthly sales target per branch
+// =============================================================
+model BranchTarget {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  year       Int
+  month      Int // 1-12
+  amount     Decimal  @db.Decimal(15, 2)
+  source     String   @default("manual") // manual | derived_prev_year | derived_avg_3m
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, year, month])
+  @@index([orgId, year, month])
+  @@map("branch_targets")
+}
+
+// =============================================================
+// 19. branch_health_scores — A-F grade computed daily by cron
+// =============================================================
+model BranchHealthScore {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  branchId    String   @map("branch_id") @db.Uuid
+  computedFor DateTime @map("computed_for") @db.Date
+  score       Int // 0-100
+  grade       String // A | B | C | D | E | F
+  breakdown   Json // {fillRate, onTime, reconcileOk, salesGrowth, targetReached, ...}
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, computedFor])
+  @@index([orgId, computedFor])
+  @@index([branchId, computedFor])
+  @@map("branch_health_scores")
+}
+
+// =============================================================
+// 20. branch_streaks — current/longest fill streak (gamification)
+// =============================================================
+model BranchStreak {
+  id              String    @id @default(uuid()) @db.Uuid
+  orgId           String    @map("org_id") @db.Uuid
+  branchId        String    @unique @map("branch_id") @db.Uuid
+  currentStreak   Int       @default(0) @map("current_streak")
+  longestStreak   Int       @default(0) @map("longest_streak")
+  lastReportDate  DateTime? @map("last_report_date") @db.Date
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@map("branch_streaks")
+}
+
+// =============================================================
+// 21. missing_report_reasons — why a day was not filled
+// =============================================================
+model MissingReportReason {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  branchId    String   @map("branch_id") @db.Uuid
+  reportDate  DateTime @map("report_date") @db.Date
+  reasonType  String   @map("reason_type") // sick | holiday | system | waiting | other
+  reasonText  String?  @map("reason_text")
+  reportedBy  String?  @map("reported_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, reportDate])
+  @@index([orgId, reportDate])
+  @@map("missing_report_reasons")
 }

@@ -121,6 +121,7 @@ export default async function UsersListPage() {
           <DataTable
             rows={list}
             rowKey={(u) => u.id}
+            rowHref={(u) => `/users/${u.id}`}
             columns={[
               {
                 key: "avatar",
