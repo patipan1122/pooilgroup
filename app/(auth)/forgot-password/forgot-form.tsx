@@ -60,7 +60,7 @@ export function ForgotPasswordForm() {
           autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="เช่น owner@poolgroup.com"
+          placeholder="เช่น owner@pooilgroup.com"
           prefixSlot={<Mail className="size-4" />}
           required
         />

@@ -65,7 +65,7 @@ export function InviteAcceptForm({ token, email: initialEmail, userId }: Props) 
 
       toast.success("ยินดีต้อนรับ!");
       router.refresh();
-      router.push("/dashboard");
+      router.push("/");
     });
   }
 

@@ -84,7 +84,7 @@ export function SignupForm({ isFirstUser }: Props) {
       );
 
       router.refresh();
-      router.push("/dashboard");
+      router.push("/");
     });
   }
 
@@ -110,7 +110,7 @@ export function SignupForm({ isFirstUser }: Props) {
           type="email"
           autoComplete="email"
           inputMode="email"
-          placeholder="เช่น owner@poolgroup.com"
+          placeholder="เช่น owner@pooilgroup.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           prefixSlot={<Mail className="size-4" />}

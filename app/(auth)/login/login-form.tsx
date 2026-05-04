@@ -42,7 +42,7 @@ export function LoginForm() {
       }
       toast.success("เข้าสู่ระบบสำเร็จ");
       router.refresh();
-      router.push("/dashboard");
+      router.push("/");
     });
   }
 
@@ -55,7 +55,7 @@ export function LoginForm() {
           name="email"
           autoComplete="email"
           inputMode="email"
-          placeholder="เช่น owner@poolgroup.com"
+          placeholder="เช่น owner@pooilgroup.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           prefixSlot={<Mail className="size-4" />}

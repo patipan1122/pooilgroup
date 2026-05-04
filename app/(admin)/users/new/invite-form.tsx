@@ -165,7 +165,7 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="เช่น staff@poolgroup.com"
+              placeholder="เช่น staff@pooilgroup.com"
               prefixSlot={<Mail className="size-4" />}
             />
           </Field>
