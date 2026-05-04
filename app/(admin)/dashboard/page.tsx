@@ -93,9 +93,20 @@ export default async function DashboardPage() {
     }
   }
 
+  // Total reports all time (used for onboarding empty state)
+  const { count: totalReports } = await admin
+    .from("daily_reports")
+    .select("id", { count: "exact", head: true })
+    .eq("org_id", orgId);
+
+  const isAdmin =
+    session.user.role === "super_admin" || session.user.role === "org_admin";
+
   return (
     <DashboardView
       userName={session.user.name}
+      isAdmin={isAdmin}
+      totalReportsAllTime={totalReports ?? 0}
       monthTotal={monthTotal}
       monthPending={monthPending}
       branchCount={branches.length}

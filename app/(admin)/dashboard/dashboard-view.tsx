@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   TrendingUp,
   Clock,
@@ -8,6 +11,8 @@ import {
   CheckCircle2,
   AlertCircle,
   ArrowRight,
+  Sparkles,
+  ScrollText,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +22,8 @@ import { BUSINESS_TYPES } from "@/constants/business-types";
 
 interface Props {
   userName: string;
+  isAdmin: boolean;
+  totalReportsAllTime: number;
   monthTotal: number;
   monthPending: number;
   branchCount: number;
@@ -38,6 +45,26 @@ interface Props {
 
 export function DashboardView(props: Props) {
   const today = thaiDateLong(new Date());
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [seeded, setSeeded] = useState(false);
+  const showOnboarding = props.totalReportsAllTime === 0 && props.isAdmin;
+
+  function generateTestData() {
+    startTransition(async () => {
+      const res = await fetch("/api/dev/seed-test-data", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json.error || "สร้างข้อมูลตัวอย่างไม่ได้");
+        return;
+      }
+      toast.success(`สร้างข้อมูลตัวอย่างสำเร็จ`, {
+        description: `${json.created} รายงาน ใน 7 วันล่าสุด`,
+      });
+      setSeeded(true);
+      router.refresh();
+    });
+  }
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
@@ -58,6 +85,59 @@ export function DashboardView(props: Props) {
           </Button>
         </Link>
       </div>
+
+      {/* Onboarding (first-run, no data) */}
+      {showOnboarding && !seeded && (
+        <Card className="mb-6 border-[--color-brand-200] bg-gradient-to-br from-[--color-brand-50] to-white overflow-hidden relative">
+          <div
+            className="absolute top-0 right-0 w-64 h-64 -mt-20 -mr-20 rounded-full opacity-30 blur-3xl"
+            style={{
+              background:
+                "radial-gradient(circle, oklch(0.55 0.16 165) 0%, transparent 70%)",
+            }}
+          />
+          <CardBody className="relative pt-6">
+            <div className="flex items-start gap-3 mb-4">
+              <Sparkles className="size-6 text-[--color-brand-600] shrink-0 mt-1" />
+              <div>
+                <h2 className="text-lg font-semibold font-display">
+                  เริ่มต้นใช้งานระบบ
+                </h2>
+                <p className="text-sm text-zinc-600 mt-1">
+                  ระบบพร้อมใช้แล้ว — มี 5 สาขาตัวอย่าง รอข้อมูลเข้ามา
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Button
+                onClick={generateTestData}
+                loading={pending}
+                size="lg"
+                fullWidth
+              >
+                <Sparkles className="size-4" />
+                สร้างข้อมูลตัวอย่าง
+              </Button>
+              <Link href="/liff/report" className="block">
+                <Button variant="outline" size="lg" fullWidth>
+                  <ScrollText className="size-4" />
+                  กรอกรายงานจริง
+                </Button>
+              </Link>
+              <Link href="/branches" className="block">
+                <Button variant="outline" size="lg" fullWidth>
+                  <Building2 className="size-4" />
+                  ดูสาขา
+                </Button>
+              </Link>
+            </div>
+            <p className="text-xs text-zinc-500 mt-3">
+              💡 "สร้างข้อมูลตัวอย่าง" จะเพิ่มรายงาน ~7 วันให้ทุกสาขา —
+              ลบได้ผ่าน Supabase SQL Editor (DELETE FROM daily_reports)
+            </p>
+          </CardBody>
+        </Card>
+      )}
 
       {/* Hero stat — month total */}
       <Card className="mb-6 overflow-hidden">
