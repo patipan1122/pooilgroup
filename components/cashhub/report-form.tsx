@@ -25,6 +25,9 @@ interface Props {
   branchName: string;
   config: BusinessTypeConfig;
   reportDate: string; // YYYY-MM-DD
+  deadlineHHmm?: string;
+  previousReference?: { totalSales: number; qty1: number };
+  streak?: { current: number; lastDate: string | null } | null;
 }
 
 type FormValues = Record<string, string>;
@@ -49,9 +52,34 @@ export function ReportForm({
   branchName,
   config,
   reportDate,
+  deadlineHHmm = "21:00",
+  previousReference,
+  streak,
 }: Props) {
   const router = useRouter();
   const [shift, setShift] = useState<string>(config.shifts[0] || "all");
+  const [now, setNow] = useState<Date>(() => new Date());
+
+  // Tick the clock every 30s for the deadline countdown
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const deadline = useMemo(() => {
+    const [h, m] = deadlineHHmm.split(":").map((x) => parseInt(x, 10));
+    const d = new Date();
+    d.setHours(h ?? 21, m ?? 0, 0, 0);
+    return d;
+  }, [deadlineHHmm]);
+
+  const remainingMs = deadline.getTime() - now.getTime();
+  const isPastDeadline = remainingMs <= 0;
+  const remainingHours = Math.max(0, Math.floor(remainingMs / (1000 * 60 * 60)));
+  const remainingMinutes = Math.max(
+    0,
+    Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60)),
+  );
   const [values, setValues] = useState<FormValues>(() =>
     Object.fromEntries(config.fields.map((f) => [f.key, ""])),
   );
@@ -211,7 +239,7 @@ export function ReportForm({
       <div className="bg-white border-b border-zinc-200 sticky top-0 z-10 px-4 py-3 sm:px-6 safe-top">
         <div className="flex items-center gap-3">
           <div className="text-3xl">{config.emoji}</div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="font-semibold truncate font-display">
               {config.label}
             </div>
@@ -219,10 +247,45 @@ export function ReportForm({
               {branchCode} · {branchName}
             </div>
           </div>
-          <div className="ml-auto">
+          <div className="text-right shrink-0">
             <Badge tone="brand">{reportDate}</Badge>
+            <div
+              className={cn(
+                "text-[11px] mt-0.5 tabular-num font-semibold",
+                isPastDeadline ? "text-red-700" : "text-zinc-500",
+              )}
+            >
+              {isPastDeadline
+                ? `⏰ เลย Deadline ${deadlineHHmm} แล้ว`
+                : `⏰ เหลือ ${remainingHours}:${String(remainingMinutes).padStart(2, "0")} ก่อน ${deadlineHHmm}`}
+            </div>
           </div>
         </div>
+        {streak && streak.current >= 1 && (
+          <div className="mt-2 flex items-center gap-2 text-xs">
+            <Badge tone="success">
+              🔥 Streak {streak.current} วัน — กรอกวันนี้เพื่อรักษาสถิติ
+            </Badge>
+          </div>
+        )}
+        {previousReference && previousReference.totalSales > 0 && (
+          <div className="mt-2 text-xs text-zinc-500">
+            อ้างอิง: เมื่อวาน{" "}
+            <span className="font-semibold text-zinc-900 tabular-num">
+              ฿{previousReference.totalSales.toLocaleString("th-TH")}
+            </span>
+            {previousReference.qty1 > 0 && (
+              <>
+                {" "}
+                ·{" "}
+                <span className="tabular-num">
+                  {previousReference.qty1.toLocaleString("th-TH")}
+                </span>{" "}
+                {config.fields.find((f) => f.key === "qty1")?.unit ?? ""}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="p-4 sm:p-6 max-w-xl mx-auto space-y-4">
