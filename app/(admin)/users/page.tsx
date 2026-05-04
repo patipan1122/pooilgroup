@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CheckCircle2, XCircle, UserPlus, Users } from "lucide-react";
+import { CheckCircle2, XCircle, UserPlus, Users, Inbox } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Section } from "@/components/ui/section";
@@ -52,6 +52,12 @@ export default async function UsersListPage() {
     .eq("org_id", session.user.org_id)
     .order("created_at", { ascending: false });
 
+  const { count: pendingRequests } = await admin
+    .from("register_requests")
+    .select("id", { count: "exact", head: true })
+    .eq("org_id", session.user.org_id)
+    .eq("status", "pending");
+
   const list = (data ?? []) as UserRow[];
   const active = list.filter((u) => u.is_active);
   const byRole: Record<string, number> = {};
@@ -74,13 +80,27 @@ export default async function UsersListPage() {
               .join(" · ")}
           </p>
         </div>
-        <Link
-          href="/users/new"
-          className="inline-flex items-center gap-2 px-5 h-12 rounded-xl bg-[--color-brand-600] text-white font-bold hover:bg-[--color-brand-700] shadow-blue transition-colors"
-        >
-          <UserPlus className="size-5" />
-          เชิญผู้ใช้ใหม่
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            href="/users/requests"
+            className="inline-flex items-center gap-2 px-4 h-12 rounded-xl border-2 border-zinc-200 bg-white font-semibold hover:border-[--color-brand-300] hover:bg-[--color-brand-50]/40 transition-colors text-sm relative"
+          >
+            <Inbox className="size-4" />
+            คำขอใหม่
+            {(pendingRequests ?? 0) > 0 && (
+              <span className="ml-1 inline-flex items-center justify-center size-5 rounded-full bg-[--color-danger] text-white text-[10px] font-bold">
+                {pendingRequests}
+              </span>
+            )}
+          </Link>
+          <Link
+            href="/users/new"
+            className="inline-flex items-center gap-2 px-5 h-12 rounded-xl bg-[--color-brand-600] text-white font-bold hover:bg-[--color-brand-700] shadow-blue transition-colors"
+          >
+            <UserPlus className="size-5" />
+            เชิญผู้ใช้ใหม่
+          </Link>
+        </div>
       </header>
 
       <Section

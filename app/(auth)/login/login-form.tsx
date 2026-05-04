@@ -131,9 +131,18 @@ export function LoginForm() {
         {pending ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
       </Button>
 
-      <div className="pt-2 text-center">
+      <div className="pt-2 text-center space-y-2">
         <p className="text-xs text-zinc-400">
           การ Login ทาง LIFF (LINE) ใช้ที่ Rich Menu บนแอป LINE
+        </p>
+        <p className="text-xs text-zinc-500">
+          ยังไม่มีบัญชี?{" "}
+          <a
+            href="/join"
+            className="text-[--color-brand-700] font-semibold hover:underline"
+          >
+            ขอเข้าใช้งาน
+          </a>
         </p>
       </div>
     </form>
