@@ -1,0 +1,304 @@
+// Pool Group ERP — Prisma Schema (Sprint 0 / 8 core tables)
+// See plan: /Users/patipantantikul/.claude/plans/sunny-splashing-cocoa.md
+// Spec source: /Users/patipantantikul/Desktop/pooilgroup/ดีเทลv1/CORE_SYSTEM.md + CASHHUB.md
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================
+// 1. organizations — multi-tenant root
+// =============================================================
+model Organization {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String
+  slug           String   @unique
+  logoUrl        String?  @map("logo_url")
+  settings       Json     @default("{}")
+  lineOaId       String?  @map("line_oa_id")
+  telegramChatId String?  @map("telegram_chat_id")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  users           User[]
+  branches        Branch[]
+  reportTemplates ReportTemplate[]
+  dailyReports    DailyReport[]
+  cashShortages   CashShortage[]
+  auditLogs       AuditLog[]
+  userBranches    UserBranch[]
+
+  @@map("organizations")
+}
+
+// =============================================================
+// 2. users — auth + RBAC
+// =============================================================
+enum UserRole {
+  super_admin
+  org_admin
+  branch_manager
+  staff
+  driver
+  viewer
+}
+
+model User {
+  id                  String    @id @default(uuid()) @db.Uuid
+  orgId               String    @map("org_id") @db.Uuid
+  email               String?   @unique
+  name                String
+  phone               String?
+  passwordHash        String?   @map("password_hash")
+  role                UserRole
+  lineUserId          String?   @unique @map("line_user_id")
+  telegramUserId      String?   @map("telegram_user_id")
+  telegramChatId      String?   @map("telegram_chat_id")
+  mustChangePassword  Boolean   @default(true) @map("must_change_password")
+  isActive            Boolean   @default(true) @map("is_active")
+  lastLoginAt         DateTime? @map("last_login_at") @db.Timestamptz(6)
+  failedLoginCount    Int       @default(0) @map("failed_login_count")
+  lockedUntil         DateTime? @map("locked_until") @db.Timestamptz(6)
+  invitedBy           String?   @map("invited_by") @db.Uuid
+  inviteToken         String?   @unique @map("invite_token")
+  inviteExpiresAt     DateTime? @map("invite_expires_at") @db.Timestamptz(6)
+  inviteUsedAt        DateTime? @map("invite_used_at") @db.Timestamptz(6)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org                 Organization  @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  userBranches        UserBranch[]
+  managedBranches     Branch[]      @relation("BranchManager")
+  submittedReports    DailyReport[] @relation("ReportSubmitter")
+  approvedReports     DailyReport[] @relation("ReportApprover")
+  unlockedReports     DailyReport[] @relation("ReportUnlocker")
+  shortagesAttributed CashShortage[] @relation("ShortagePerson")
+  auditLogs           AuditLog[]
+
+  @@index([orgId, isActive])
+  @@index([orgId, role])
+  @@index([lineUserId])
+  @@map("users")
+}
+
+// =============================================================
+// 3. branches — 30+ สาขา / 7 business types
+// =============================================================
+enum BusinessType {
+  fuel_station
+  lpg_station
+  bottling_plant
+  hotel
+  convenience_store
+  ev_station
+  cafe
+  transport      // FuelOS Phase 2
+  gas_fleet      // FuelOS Phase 2
+}
+
+model Branch {
+  id              String        @id @default(uuid()) @db.Uuid
+  orgId           String        @map("org_id") @db.Uuid
+  code            String
+  name            String
+  businessType    BusinessType  @map("business_type")
+  province        String?
+  region          String?
+  address         String?
+  lat             Decimal?      @db.Decimal(10, 7)
+  lng             Decimal?      @db.Decimal(10, 7)
+  managerId       String?       @map("manager_id") @db.Uuid
+  phone           String?
+  lineGroupId     String?       @map("line_group_id")
+  reportDeadline  String        @default("21:00") @map("report_deadline") // HH:mm string for simplicity
+  settings        Json          @default("{}")
+  isActive        Boolean       @default(true) @map("is_active")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org             Organization  @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  manager         User?         @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
+  userBranches    UserBranch[]
+  dailyReports    DailyReport[]
+  cashShortages   CashShortage[]
+
+  @@unique([orgId, code])
+  @@index([orgId, isActive])
+  @@index([orgId, businessType])
+  @@map("branches")
+}
+
+// =============================================================
+// 4. user_branches — N:M (staff อาจดูแลหลายสาขา)
+// =============================================================
+model UserBranch {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, branchId])
+  @@index([orgId])
+  @@index([branchId, isActive])
+  @@map("user_branches")
+}
+
+// =============================================================
+// 5. report_templates — Field config 7 ประเภท (JSONB)
+// =============================================================
+model ReportTemplate {
+  id               String       @id @default(uuid()) @db.Uuid
+  orgId            String       @map("org_id") @db.Uuid
+  businessType     BusinessType @unique @map("business_type")
+  hasShifts        Boolean      @default(false) @map("has_shifts")
+  shifts           String[]     @default([]) // e.g. ["morning","evening"]
+  hasReconcile     Boolean      @default(true) @map("has_reconcile")
+  fields           Json         // Field definitions array
+  reconcileFormula String?      @map("reconcile_formula")
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+
+  @@index([orgId])
+  @@map("report_templates")
+}
+
+// =============================================================
+// 6. daily_reports — Universal table for 7 business types
+// =============================================================
+enum ReportStatus {
+  draft
+  submitted
+  approved
+  rejected
+}
+
+enum Shift {
+  morning
+  midday
+  evening
+  all
+}
+
+model DailyReport {
+  id              String       @id @default(uuid()) @db.Uuid
+  orgId           String       @map("org_id") @db.Uuid
+  branchId        String       @map("branch_id") @db.Uuid
+  reportDate      DateTime     @map("report_date") @db.Date
+  shift           Shift        @default(all)
+
+  // Sales (universal — applicable to all types)
+  totalSales      Decimal      @default(0) @map("total_sales") @db.Decimal(15, 2)
+  qty1            Decimal?     @db.Decimal(12, 3) // ลิตร / ถัง / แก้ว / Session / ห้อง
+  qty1Unit        String?      @map("qty1_unit")
+  qty2            Decimal?     @db.Decimal(12, 3) // ขนม / น้ำหนักก๊าซ / ยอดอาหาร
+  qty2Unit        String?      @map("qty2_unit")
+
+  // Receipts
+  cash            Decimal      @default(0) @db.Decimal(15, 2)
+  transfer        Decimal      @default(0) @db.Decimal(15, 2)
+  card            Decimal      @default(0) @db.Decimal(15, 2)
+  credit          Decimal      @default(0) @db.Decimal(15, 2)
+  shortage        Decimal      @default(0) @db.Decimal(15, 2)
+
+  // Notes
+  notes           String?
+  isSpike         Boolean      @default(false) @map("is_spike")
+  isOffHours      Boolean      @default(false) @map("is_off_hours")
+
+  // Workflow
+  status          ReportStatus @default(submitted)
+  submittedById   String       @map("submitted_by_id") @db.Uuid
+  submittedAt     DateTime     @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  approvedById    String?      @map("approved_by_id") @db.Uuid
+  approvedAt      DateTime?    @map("approved_at") @db.Timestamptz(6)
+  rejectedReason  String?      @map("rejected_reason")
+  unlockById      String?      @map("unlock_by_id") @db.Uuid
+  unlockReason    String?      @map("unlock_reason")
+  unlockAt        DateTime?    @map("unlock_at") @db.Timestamptz(6)
+
+  // Telegram tracking
+  telegramMessageId String?    @map("telegram_message_id")
+  telegramChatId    String?    @map("telegram_chat_id")
+
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org             Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  branch          Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  submittedBy     User         @relation("ReportSubmitter", fields: [submittedById], references: [id], onDelete: Restrict)
+  approvedBy      User?        @relation("ReportApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  unlockBy        User?        @relation("ReportUnlocker", fields: [unlockById], references: [id], onDelete: SetNull)
+  shortages       CashShortage[]
+
+  @@unique([branchId, reportDate, shift])
+  @@index([orgId, reportDate])
+  @@index([orgId, status])
+  @@index([branchId, reportDate])
+  @@map("daily_reports")
+}
+
+// =============================================================
+// 7. cash_shortages — เงินขาด (CASHHUB §13)
+// =============================================================
+model CashShortage {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  reportId      String   @map("report_id") @db.Uuid
+  branchId      String   @map("branch_id") @db.Uuid
+  reportDate    DateTime @map("report_date") @db.Date
+  amount        Decimal  @db.Decimal(15, 2)
+  personId      String?  @map("person_id") @db.Uuid
+  personName    String?  @map("person_name") // snapshot
+  isIdentified  Boolean  @default(false) @map("is_identified")
+  note          String?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  report  DailyReport  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  branch  Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  person  User?        @relation("ShortagePerson", fields: [personId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, reportDate])
+  @@index([personId, reportDate])
+  @@index([branchId, reportDate])
+  @@map("cash_shortages")
+}
+
+// =============================================================
+// 8. audit_logs — sensitive action trail
+// =============================================================
+model AuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  action       String   // CREATE_REPORT, APPROVE_REPORT, LOGIN, etc.
+  resourceType String   @map("resource_type")
+  resourceId   String?  @map("resource_id") @db.Uuid
+  diff         Json?    // {old: {...changed fields}, new: {...changed fields}}
+  ipAddress    String?  @map("ip_address") @db.Inet
+  userAgent    String?  @map("user_agent")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  user User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([resourceType, resourceId, action, userId, createdAt])
+  @@index([orgId, createdAt])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
