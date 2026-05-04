@@ -1,8 +1,53 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-04
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-04 (ระบบ Dashboard ยอดขาย ครบ MVP)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-05-04 — Dashboard ยอดขาย full pass)
+
+ทำในรอบเดียว — typecheck สะอาด, `next build` ผ่าน:
+
+**Schema + migration**
+- เพิ่ม Prisma models: `BranchTarget`, `BranchHealthScore`, `BranchStreak`, `MissingReportReason`
+- SQL migration: `supabase/migrations/20260504000002_dashboard_addons.sql` (รวม RLS) — รัน `prisma db push` หรือ apply ไฟล์นี้
+
+**Libraries**
+- `lib/cashhub/health-score.ts` — A-F algorithm ตามสเปค §9 (pure)
+- `lib/cashhub/streak.ts` — current/longest streak + badge
+- `lib/cashhub/forecast.ts` — EOM forecast + target progress (pace marker)
+- `lib/cashhub/aggregator.ts` — single-shot dashboard data loader (parallel queries, soft-fail on missing tables)
+
+**Charts** (no external deps — pure SVG)
+- `components/cashhub/charts.tsx`: `Sparkline`, `BarStrip`, `ProgressBar`, `CalendarHeatmap`, `PatternHeatmap`, `HealthBadge`, `Donut`
+
+**Pages (CashHub)**
+- `/cashhub/dashboard` — rewrite mobile-first; 7 sections: hero/forecast/target, alerts, by business type, payment mix donut, pending list, leaderboard top 8, calendar heatmap, pattern heatmap
+- `/cashhub/dashboard/business/[type]` — drill-down (§10.2)
+- `/cashhub/branches/[id]` — branch detail (§10.3) with health breakdown + 30-day shortages
+- `/cashhub/compare?a=YYYY-MM&b=YYYY-MM` — month-vs-month comparison (§10.4)
+- `/cashhub/leaderboard` — sortable (total/health/streak), filterable by type
+- `/cashhub/heatmap` — full สาขา × วัน matrix
+- `/cashhub/shortages` — filterable + group-by-person
+- `/cashhub/reports` — filters + bulk Quick Approve
+
+**APIs**
+- `/api/cashhub/approve-bulk` — multi-report approve with permission check
+- `/api/cashhub/targets` — PUT manual target
+- `/api/cron/health-score` — daily compute (GET/POST + `Bearer ${CRON_SECRET}`)
+- `/api/dev/seed-test-data` — rewrite to seed 35 days, 6 personality tiers, weekend bias, occasional shortages, auto-derive targets, compute health + streaks
+
+**LIFF report (Staff)**
+- Deadline countdown ในหัวฟอร์ม (เปลี่ยนสีแดงเมื่อเลย)
+- "เมื่อวาน ฿X" reference (ไม่ auto-fill — แค่อ้างอิง)
+- Streak badge "🔥 N วัน" เมื่อ ≥1
+
+**To apply เมื่อตื่น**
+1. `cd web && npx prisma db push` (หรือรัน SQL ใน `20260504000002_dashboard_addons.sql` ด้วยมือ)
+2. login เข้า `/cashhub/dashboard` → กด "สร้างข้อมูลตัวอย่าง" (ตอนนี้ seed 35 วัน × ทุกสาขา + targets + health + streaks)
+3. ดู dashboard / drill-down / leaderboard / compare / heatmap
+4. (Optional) ตั้ง Vercel cron `/api/cron/health-score` 23:00 BKK + `CRON_SECRET` ใน env
+
 
 ---
 
