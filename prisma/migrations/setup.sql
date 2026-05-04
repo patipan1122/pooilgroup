@@ -11,20 +11,25 @@
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
--- CreateEnum
-CREATE TYPE "UserRole" AS ENUM ('super_admin', 'org_admin', 'branch_manager', 'staff', 'driver', 'viewer');
+-- CreateEnum (idempotent)
+DO $$ BEGIN
+  CREATE TYPE "UserRole" AS ENUM ('super_admin', 'org_admin', 'branch_manager', 'staff', 'driver', 'viewer');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
 
--- CreateEnum
-CREATE TYPE "BusinessType" AS ENUM ('fuel_station', 'lpg_station', 'bottling_plant', 'hotel', 'convenience_store', 'ev_station', 'cafe', 'transport', 'gas_fleet');
+DO $$ BEGIN
+  CREATE TYPE "BusinessType" AS ENUM ('fuel_station', 'lpg_station', 'bottling_plant', 'hotel', 'convenience_store', 'ev_station', 'cafe', 'transport', 'gas_fleet');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
 
--- CreateEnum
-CREATE TYPE "ReportStatus" AS ENUM ('draft', 'submitted', 'approved', 'rejected');
+DO $$ BEGIN
+  CREATE TYPE "ReportStatus" AS ENUM ('draft', 'submitted', 'approved', 'rejected');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
 
--- CreateEnum
-CREATE TYPE "Shift" AS ENUM ('morning', 'midday', 'evening', 'all');
+DO $$ BEGIN
+  CREATE TYPE "Shift" AS ENUM ('morning', 'midday', 'evening', 'all');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- CreateTable
-CREATE TABLE "organizations" (
+CREATE TABLE IF NOT EXISTS "organizations" (
     "id" UUID NOT NULL,
     "name" TEXT NOT NULL,
     "slug" TEXT NOT NULL,
@@ -40,7 +45,7 @@ CREATE TABLE "organizations" (
 );
 
 -- CreateTable
-CREATE TABLE "users" (
+CREATE TABLE IF NOT EXISTS "users" (
     "id" UUID NOT NULL,
     "org_id" UUID NOT NULL,
     "email" TEXT,
@@ -67,7 +72,7 @@ CREATE TABLE "users" (
 );
 
 -- CreateTable
-CREATE TABLE "branches" (
+CREATE TABLE IF NOT EXISTS "branches" (
     "id" UUID NOT NULL,
     "org_id" UUID NOT NULL,
     "code" TEXT NOT NULL,
@@ -91,7 +96,7 @@ CREATE TABLE "branches" (
 );
 
 -- CreateTable
-CREATE TABLE "user_branches" (
+CREATE TABLE IF NOT EXISTS "user_branches" (
     "id" UUID NOT NULL,
     "org_id" UUID NOT NULL,
     "user_id" UUID NOT NULL,
@@ -103,7 +108,7 @@ CREATE TABLE "user_branches" (
 );
 
 -- CreateTable
-CREATE TABLE "report_templates" (
+CREATE TABLE IF NOT EXISTS "report_templates" (
     "id" UUID NOT NULL,
     "org_id" UUID NOT NULL,
     "business_type" "BusinessType" NOT NULL,
@@ -119,7 +124,7 @@ CREATE TABLE "report_templates" (
 );
 
 -- CreateTable
-CREATE TABLE "daily_reports" (
+CREATE TABLE IF NOT EXISTS "daily_reports" (
     "id" UUID NOT NULL,
     "org_id" UUID NOT NULL,
     "branch_id" UUID NOT NULL,
@@ -156,7 +161,7 @@ CREATE TABLE "daily_reports" (
 );
 
 -- CreateTable
-CREATE TABLE "cash_shortages" (
+CREATE TABLE IF NOT EXISTS "cash_shortages" (
     "id" UUID NOT NULL,
     "org_id" UUID NOT NULL,
     "report_id" UUID NOT NULL,
@@ -173,7 +178,7 @@ CREATE TABLE "cash_shortages" (
 );
 
 -- CreateTable
-CREATE TABLE "audit_logs" (
+CREATE TABLE IF NOT EXISTS "audit_logs" (
     "id" UUID NOT NULL,
     "org_id" UUID NOT NULL,
     "user_id" UUID,
@@ -189,135 +194,136 @@ CREATE TABLE "audit_logs" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "organizations_slug_key" ON "organizations"("slug");
+CREATE UNIQUE INDEX IF NOT EXISTS "organizations_slug_key" ON "organizations"("slug");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
+CREATE UNIQUE INDEX IF NOT EXISTS "users_email_key" ON "users"("email");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "users_line_user_id_key" ON "users"("line_user_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "users_line_user_id_key" ON "users"("line_user_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "users_invite_token_key" ON "users"("invite_token");
+CREATE UNIQUE INDEX IF NOT EXISTS "users_invite_token_key" ON "users"("invite_token");
 
 -- CreateIndex
-CREATE INDEX "users_org_id_is_active_idx" ON "users"("org_id", "is_active");
+CREATE INDEX IF NOT EXISTS "users_org_id_is_active_idx" ON "users"("org_id", "is_active");
 
 -- CreateIndex
-CREATE INDEX "users_org_id_role_idx" ON "users"("org_id", "role");
+CREATE INDEX IF NOT EXISTS "users_org_id_role_idx" ON "users"("org_id", "role");
 
 -- CreateIndex
-CREATE INDEX "users_line_user_id_idx" ON "users"("line_user_id");
+CREATE INDEX IF NOT EXISTS "users_line_user_id_idx" ON "users"("line_user_id");
 
 -- CreateIndex
-CREATE INDEX "branches_org_id_is_active_idx" ON "branches"("org_id", "is_active");
+CREATE INDEX IF NOT EXISTS "branches_org_id_is_active_idx" ON "branches"("org_id", "is_active");
 
 -- CreateIndex
-CREATE INDEX "branches_org_id_business_type_idx" ON "branches"("org_id", "business_type");
+CREATE INDEX IF NOT EXISTS "branches_org_id_business_type_idx" ON "branches"("org_id", "business_type");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "branches_org_id_code_key" ON "branches"("org_id", "code");
+CREATE UNIQUE INDEX IF NOT EXISTS "branches_org_id_code_key" ON "branches"("org_id", "code");
 
 -- CreateIndex
-CREATE INDEX "user_branches_org_id_idx" ON "user_branches"("org_id");
+CREATE INDEX IF NOT EXISTS "user_branches_org_id_idx" ON "user_branches"("org_id");
 
 -- CreateIndex
-CREATE INDEX "user_branches_branch_id_is_active_idx" ON "user_branches"("branch_id", "is_active");
+CREATE INDEX IF NOT EXISTS "user_branches_branch_id_is_active_idx" ON "user_branches"("branch_id", "is_active");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "user_branches_user_id_branch_id_key" ON "user_branches"("user_id", "branch_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "user_branches_user_id_branch_id_key" ON "user_branches"("user_id", "branch_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "report_templates_business_type_key" ON "report_templates"("business_type");
+CREATE UNIQUE INDEX IF NOT EXISTS "report_templates_business_type_key" ON "report_templates"("business_type");
 
 -- CreateIndex
-CREATE INDEX "report_templates_org_id_idx" ON "report_templates"("org_id");
+CREATE INDEX IF NOT EXISTS "report_templates_org_id_idx" ON "report_templates"("org_id");
 
 -- CreateIndex
-CREATE INDEX "daily_reports_org_id_report_date_idx" ON "daily_reports"("org_id", "report_date");
+CREATE INDEX IF NOT EXISTS "daily_reports_org_id_report_date_idx" ON "daily_reports"("org_id", "report_date");
 
 -- CreateIndex
-CREATE INDEX "daily_reports_org_id_status_idx" ON "daily_reports"("org_id", "status");
+CREATE INDEX IF NOT EXISTS "daily_reports_org_id_status_idx" ON "daily_reports"("org_id", "status");
 
 -- CreateIndex
-CREATE INDEX "daily_reports_branch_id_report_date_idx" ON "daily_reports"("branch_id", "report_date");
+CREATE INDEX IF NOT EXISTS "daily_reports_branch_id_report_date_idx" ON "daily_reports"("branch_id", "report_date");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "daily_reports_branch_id_report_date_shift_key" ON "daily_reports"("branch_id", "report_date", "shift");
+CREATE UNIQUE INDEX IF NOT EXISTS "daily_reports_branch_id_report_date_shift_key" ON "daily_reports"("branch_id", "report_date", "shift");
 
 -- CreateIndex
-CREATE INDEX "cash_shortages_org_id_report_date_idx" ON "cash_shortages"("org_id", "report_date");
+CREATE INDEX IF NOT EXISTS "cash_shortages_org_id_report_date_idx" ON "cash_shortages"("org_id", "report_date");
 
 -- CreateIndex
-CREATE INDEX "cash_shortages_person_id_report_date_idx" ON "cash_shortages"("person_id", "report_date");
+CREATE INDEX IF NOT EXISTS "cash_shortages_person_id_report_date_idx" ON "cash_shortages"("person_id", "report_date");
 
 -- CreateIndex
-CREATE INDEX "cash_shortages_branch_id_report_date_idx" ON "cash_shortages"("branch_id", "report_date");
+CREATE INDEX IF NOT EXISTS "cash_shortages_branch_id_report_date_idx" ON "cash_shortages"("branch_id", "report_date");
 
 -- CreateIndex
-CREATE INDEX "audit_logs_org_id_created_at_idx" ON "audit_logs"("org_id", "created_at");
+CREATE INDEX IF NOT EXISTS "audit_logs_org_id_created_at_idx" ON "audit_logs"("org_id", "created_at");
 
 -- CreateIndex
-CREATE INDEX "audit_logs_user_id_created_at_idx" ON "audit_logs"("user_id", "created_at");
+CREATE INDEX IF NOT EXISTS "audit_logs_user_id_created_at_idx" ON "audit_logs"("user_id", "created_at");
 
 -- CreateIndex
-CREATE INDEX "audit_logs_action_created_at_idx" ON "audit_logs"("action", "created_at");
+CREATE INDEX IF NOT EXISTS "audit_logs_action_created_at_idx" ON "audit_logs"("action", "created_at");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "audit_logs_resource_type_resource_id_action_user_id_created_key" ON "audit_logs"("resource_type", "resource_id", "action", "user_id", "created_at");
+CREATE UNIQUE INDEX IF NOT EXISTS "audit_logs_resource_type_resource_id_action_user_id_created_key" ON "audit_logs"("resource_type", "resource_id", "action", "user_id", "created_at");
 
--- AddForeignKey
+-- AddForeignKey (idempotent: drop-then-add)
+ALTER TABLE "users" DROP CONSTRAINT IF EXISTS "users_org_id_fkey";
 ALTER TABLE "users" ADD CONSTRAINT "users_org_id_fkey" FOREIGN KEY ("org_id") REFERENCES "organizations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "branches" DROP CONSTRAINT IF EXISTS "branches_org_id_fkey";
 ALTER TABLE "branches" ADD CONSTRAINT "branches_org_id_fkey" FOREIGN KEY ("org_id") REFERENCES "organizations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "branches" DROP CONSTRAINT IF EXISTS "branches_manager_id_fkey";
 ALTER TABLE "branches" ADD CONSTRAINT "branches_manager_id_fkey" FOREIGN KEY ("manager_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "user_branches" DROP CONSTRAINT IF EXISTS "user_branches_org_id_fkey";
 ALTER TABLE "user_branches" ADD CONSTRAINT "user_branches_org_id_fkey" FOREIGN KEY ("org_id") REFERENCES "organizations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "user_branches" DROP CONSTRAINT IF EXISTS "user_branches_user_id_fkey";
 ALTER TABLE "user_branches" ADD CONSTRAINT "user_branches_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "user_branches" DROP CONSTRAINT IF EXISTS "user_branches_branch_id_fkey";
 ALTER TABLE "user_branches" ADD CONSTRAINT "user_branches_branch_id_fkey" FOREIGN KEY ("branch_id") REFERENCES "branches"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "report_templates" DROP CONSTRAINT IF EXISTS "report_templates_org_id_fkey";
 ALTER TABLE "report_templates" ADD CONSTRAINT "report_templates_org_id_fkey" FOREIGN KEY ("org_id") REFERENCES "organizations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "daily_reports" DROP CONSTRAINT IF EXISTS "daily_reports_org_id_fkey";
 ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_org_id_fkey" FOREIGN KEY ("org_id") REFERENCES "organizations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "daily_reports" DROP CONSTRAINT IF EXISTS "daily_reports_branch_id_fkey";
 ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_branch_id_fkey" FOREIGN KEY ("branch_id") REFERENCES "branches"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "daily_reports" DROP CONSTRAINT IF EXISTS "daily_reports_submitted_by_id_fkey";
 ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_submitted_by_id_fkey" FOREIGN KEY ("submitted_by_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "daily_reports" DROP CONSTRAINT IF EXISTS "daily_reports_approved_by_id_fkey";
 ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_approved_by_id_fkey" FOREIGN KEY ("approved_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "daily_reports" DROP CONSTRAINT IF EXISTS "daily_reports_unlock_by_id_fkey";
 ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_unlock_by_id_fkey" FOREIGN KEY ("unlock_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "cash_shortages" DROP CONSTRAINT IF EXISTS "cash_shortages_org_id_fkey";
 ALTER TABLE "cash_shortages" ADD CONSTRAINT "cash_shortages_org_id_fkey" FOREIGN KEY ("org_id") REFERENCES "organizations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "cash_shortages" DROP CONSTRAINT IF EXISTS "cash_shortages_report_id_fkey";
 ALTER TABLE "cash_shortages" ADD CONSTRAINT "cash_shortages_report_id_fkey" FOREIGN KEY ("report_id") REFERENCES "daily_reports"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "cash_shortages" DROP CONSTRAINT IF EXISTS "cash_shortages_branch_id_fkey";
 ALTER TABLE "cash_shortages" ADD CONSTRAINT "cash_shortages_branch_id_fkey" FOREIGN KEY ("branch_id") REFERENCES "branches"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "cash_shortages" DROP CONSTRAINT IF EXISTS "cash_shortages_person_id_fkey";
 ALTER TABLE "cash_shortages" ADD CONSTRAINT "cash_shortages_person_id_fkey" FOREIGN KEY ("person_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "audit_logs" DROP CONSTRAINT IF EXISTS "audit_logs_org_id_fkey";
 ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_org_id_fkey" FOREIGN KEY ("org_id") REFERENCES "organizations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- AddForeignKey
+ALTER TABLE "audit_logs" DROP CONSTRAINT IF EXISTS "audit_logs_user_id_fkey";
 ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 
