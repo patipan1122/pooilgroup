@@ -16,7 +16,6 @@ const TYPE_OPTIONS = Object.entries(BUSINESS_TYPES).map(([value, cfg]) => ({
   value,
   label: cfg.label,
   emoji: cfg.emoji,
-  description: cfg.description,
 }));
 
 interface ManagerOption {

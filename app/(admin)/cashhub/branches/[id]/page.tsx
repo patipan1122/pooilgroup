@@ -614,12 +614,12 @@ function Stat({
 }
 
 // Wrap supabase awaitable so missing tables return empty rather than crashing.
-async function safeQuery<T extends { then: (...args: unknown[]) => unknown }>(
-  promise: T,
+async function safeQuery(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  promise: any,
 ): Promise<{ data: unknown; error: { code?: string } | null }> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const res = (await (promise as any)) as {
+    const res = (await promise) as {
       data: unknown;
       error: { code?: string } | null;
     };

@@ -1,11 +1,21 @@
 import Link from "next/link";
-import { ArrowRight, Building2, ClipboardCheck, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  Building2,
+  ClipboardCheck,
+  Sparkles,
+  Inbox,
+  AlertTriangle,
+  CheckCircle2,
+  Bell,
+} from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Section, SectionDivider } from "@/components/ui/section";
 import { StatBlock } from "@/components/ui/stat-block";
+import { EmptyState } from "@/components/ui/empty-state";
 import { formatBaht, thaiDateLong } from "@/lib/utils/format";
 import { MODULE_LIST } from "@/lib/modules";
 import { startOfMonth } from "date-fns";
@@ -27,8 +37,19 @@ export default async function HomePage() {
     "yyyy-MM-dd",
   );
 
+  const isAdmin =
+    session.user.role === "super_admin" ||
+    session.user.role === "org_admin";
+
   // Cross-module summary — for now only CashHub has data
-  const [cashhubMonthQ, branchesQ, todayQ, pendingQ] = await Promise.all([
+  const [
+    cashhubMonthQ,
+    branchesQ,
+    todayQ,
+    pendingQ,
+    pendingRequestsQ,
+    recentReportsQ,
+  ] = await Promise.all([
     admin
       .from("daily_reports")
       .select("total_sales, status")
@@ -47,9 +68,31 @@ export default async function HomePage() {
       .eq("report_date", today),
     admin
       .from("daily_reports")
-      .select("id", { count: "exact", head: true })
+      .select(
+        "id, report_date, total_sales, branch:branch_id(code, name)",
+      )
       .eq("org_id", orgId)
-      .eq("status", "submitted"),
+      .eq("status", "submitted")
+      .order("submitted_at", { ascending: false })
+      .limit(5),
+    admin
+      .from("register_requests")
+      .select(
+        "id, name, phone, requested_role, created_at",
+        { count: "exact" },
+      )
+      .eq("org_id", orgId)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(3),
+    admin
+      .from("daily_reports")
+      .select(
+        "id, status, report_date, branch:branch_id(code, name)",
+      )
+      .eq("org_id", orgId)
+      .order("submitted_at", { ascending: false })
+      .limit(5),
   ]);
 
   const monthApproved = (cashhubMonthQ.data ?? [])
@@ -58,7 +101,16 @@ export default async function HomePage() {
 
   const branchCount = branchesQ.count ?? 0;
   const todaySubmitted = todayQ.count ?? 0;
-  const pendingCount = pendingQ.count ?? 0;
+  const pendingCount = pendingQ.data?.length ?? 0;
+  const pendingReports = pendingQ.data ?? [];
+  const pendingRequests = pendingRequestsQ.data ?? [];
+  const pendingRequestCount = pendingRequestsQ.count ?? 0;
+  const recentReports = recentReportsQ.data ?? [];
+
+  // Total action items (for the action center heading)
+  const actionCount = isAdmin
+    ? pendingCount + pendingRequestCount
+    : pendingCount;
 
   return (
     <div className="p-4 sm:p-6 lg:p-10 max-w-6xl mx-auto bg-grid-dots/30">
@@ -76,9 +128,108 @@ export default async function HomePage() {
         </p>
       </header>
 
-      {/* Cross-module quick stats */}
+      {/* My Action Center — what you need to do RIGHT NOW */}
       <Section
         number="01"
+        label="MY ACTIONS"
+        title={
+          actionCount > 0
+            ? `มี ${actionCount} เรื่องรอคุณ`
+            : "เคลียร์หมดแล้ว"
+        }
+        description="ทำของในนี้ก่อน · กดเพื่อข้ามไปจัดการทันที"
+        className="animate-fade-up delay-50"
+      >
+        {actionCount === 0 ? (
+          <EmptyState
+            icon={<CheckCircle2 className="size-6" />}
+            title="ไม่มีอะไรค้าง"
+            description="ทุกอย่างเรียบร้อย — ไปดูภาพรวมข้างล่างหรือเข้าโปรแกรมได้เลย"
+          />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Pending CashHub reports */}
+            {pendingCount > 0 && (
+              <Link
+                href="/cashhub/reports?status=submitted"
+                className="rounded-2xl border-2 border-amber-200 bg-amber-50/60 p-4 hover:bg-amber-50 transition-colors group"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="size-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                    <ClipboardCheck className="size-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-amber-900">
+                      รายงาน CashHub รออนุมัติ
+                    </p>
+                    <p className="text-2xl font-extrabold text-amber-900 tabular-num mt-0.5">
+                      {pendingCount}{" "}
+                      <span className="text-sm font-medium">รายการ</span>
+                    </p>
+                    {pendingReports.slice(0, 3).map((r) => {
+                      const branch = Array.isArray(r.branch)
+                        ? r.branch[0]
+                        : r.branch;
+                      return (
+                        <div
+                          key={r.id}
+                          className="text-xs text-amber-800/80 mt-0.5 truncate"
+                        >
+                          • {branch?.code} {branch?.name} · {r.report_date}
+                        </div>
+                      );
+                    })}
+                    {pendingCount > 3 && (
+                      <div className="text-xs text-amber-700/70 mt-0.5">
+                        + อีก {pendingCount - 3} รายการ
+                      </div>
+                    )}
+                  </div>
+                  <ArrowRight className="size-4 text-amber-600 mt-1 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </Link>
+            )}
+
+            {/* Pending register requests (admin only) */}
+            {isAdmin && pendingRequestCount > 0 && (
+              <Link
+                href="/users/requests"
+                className="rounded-2xl border-2 border-blue-200 bg-blue-50/60 p-4 hover:bg-blue-50 transition-colors group"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="size-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                    <Inbox className="size-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-blue-900">
+                      คำขอเข้าใช้งานใหม่
+                    </p>
+                    <p className="text-2xl font-extrabold text-blue-900 tabular-num mt-0.5">
+                      {pendingRequestCount}{" "}
+                      <span className="text-sm font-medium">คน</span>
+                    </p>
+                    {pendingRequests.slice(0, 3).map((r) => (
+                      <div
+                        key={r.id}
+                        className="text-xs text-blue-800/80 mt-0.5 truncate"
+                      >
+                        • {r.name} · {r.phone} ({r.requested_role})
+                      </div>
+                    ))}
+                  </div>
+                  <ArrowRight className="size-4 text-blue-600 mt-1 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </Link>
+            )}
+          </div>
+        )}
+      </Section>
+
+      <SectionDivider />
+
+      {/* Cross-module quick stats */}
+      <Section
+        number="02"
         label="OVERVIEW"
         title="ภาพรวมวันนี้"
         description="สรุปสถานะระบบในมุมเดียว"
@@ -119,7 +270,7 @@ export default async function HomePage() {
 
       {/* Module launcher */}
       <Section
-        number="02"
+        number="03"
         label="PROGRAMS"
         title="3 โปรแกรมหลัก"
         description="คลิกเพื่อเข้าสู่โปรแกรมที่ต้องการ — ระบบและบัญชีใช้ร่วมกัน"

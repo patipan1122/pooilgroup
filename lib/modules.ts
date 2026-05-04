@@ -1,6 +1,5 @@
 // Pooilgroup ERP — Module registry
 // All modules share the SAME blue brand color (per design memory).
-// Add new modules here as they come online.
 
 import type { LucideIcon } from "lucide-react";
 import {
@@ -8,8 +7,13 @@ import {
   Fuel,
   FileText,
   LayoutDashboard,
+  Building2,
   ScrollText,
   ClipboardList,
+  Trophy,
+  CalendarDays,
+  GitCompareArrows,
+  AlertCircle,
 } from "lucide-react";
 
 export type ModuleSlug = "cashhub" | "fuelos" | "docuflow";
@@ -48,6 +52,11 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     nav: [
       { href: "/cashhub/dashboard", label: "ภาพรวม", icon: LayoutDashboard },
       { href: "/cashhub/reports", label: "รายงานทั้งหมด", icon: ScrollText },
+      { href: "/cashhub/leaderboard", label: "Leaderboard", icon: Trophy },
+      { href: "/cashhub/heatmap", label: "Heatmap", icon: CalendarDays },
+      { href: "/cashhub/compare", label: "เปรียบเทียบ", icon: GitCompareArrows },
+      { href: "/cashhub/shortages", label: "เงินขาด", icon: AlertCircle },
+      { href: "/cashhub/branches", label: "สาขา", icon: Building2 },
     ],
   },
   fuelos: {
