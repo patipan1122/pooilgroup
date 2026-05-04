@@ -54,6 +54,25 @@ export function bkkTime(d: Date | string): string {
   return formatInTimeZone(typeof d === "string" ? new Date(d) : d, TZ, "HH:mm");
 }
 
+/**
+ * "5 นาที", "2 ชม.", "เมื่อวาน", "3 ก.พ." — relative or absolute, Thai short.
+ */
+export function bkkRelative(d: Date | string): string {
+  const dt = typeof d === "string" ? new Date(d) : d;
+  const diffMs = Date.now() - dt.getTime();
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 5) return "เมื่อกี้";
+  if (sec < 60) return `${sec} วินาทีที่แล้ว`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} นาทีที่แล้ว`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} ชม.ที่แล้ว`;
+  const day = Math.floor(hr / 24);
+  if (day === 1) return "เมื่อวาน";
+  if (day < 7) return `${day} วันที่แล้ว`;
+  return bkkDate(dt);
+}
+
 export function thaiDateLong(d: Date | string): string {
   // 2 พ.ค. 69
   const months = [

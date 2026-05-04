@@ -8,6 +8,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { sendNotificationToMany, getOrgAdminIds } from "@/lib/notifications/send";
 
 const POOL_GROUP_ORG_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -88,7 +89,20 @@ export async function POST(req: NextRequest) {
     ipAddress: ipAddress ?? undefined,
   });
 
-  // TODO Phase C4b: notify admins via Telegram bot
+  // In-app notification to all org admins
+  const adminIds = await getOrgAdminIds(POOL_GROUP_ORG_ID);
+  if (adminIds.length > 0) {
+    await sendNotificationToMany(adminIds, {
+      orgId: POOL_GROUP_ORG_ID,
+      type: "info",
+      module: "core",
+      title: `คำขอเข้าใช้งานใหม่ — ${data.name}`,
+      body: `${data.phone} · ขอเป็น ${data.requestedRole}${data.notes ? ` · ${data.notes}` : ""}`,
+      link: "/users/requests",
+    });
+  }
+
+  // TODO Phase C4b: also notify via Telegram bot once tokens configured
 
   return NextResponse.json({ success: true, requestId: id });
 }

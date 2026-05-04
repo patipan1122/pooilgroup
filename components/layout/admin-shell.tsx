@@ -20,6 +20,7 @@ import { browserClient } from "@/lib/db/client";
 import { cn } from "@/lib/utils/cn";
 import type { DbUser } from "@/lib/auth/session";
 import { MODULE_LIST, MODULES, getModuleFromPath } from "@/lib/modules";
+import { NotificationBell } from "./notification-bell";
 
 const ADMIN_NAV = [
   { href: "/users", label: "ผู้ใช้งาน", icon: UsersIcon },
@@ -200,6 +201,10 @@ export function AdminShell({ user, children }: Props) {
           )}
         </div>
 
+        {/* Right side: Bell + User */}
+        <div className="flex items-center gap-1 shrink-0">
+          <NotificationBell />
+
         {/* User dropdown */}
         <div className="relative shrink-0">
           <button
@@ -254,6 +259,7 @@ export function AdminShell({ user, children }: Props) {
               </div>
             </>
           )}
+        </div>
         </div>
       </header>
 

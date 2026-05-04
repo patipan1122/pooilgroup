@@ -1,10 +1,12 @@
+// Reports list with filters + Quick Approve bulk action
+
 import { CheckCircle2, Clock, XCircle, ScrollText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Section } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DataTable } from "@/components/ui/data-table";
+import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   formatBaht,
@@ -13,6 +15,7 @@ import {
   thaiDateLong,
 } from "@/lib/utils/format";
 import { BUSINESS_TYPES } from "@/constants/business-types";
+import { ReportsTable } from "./reports-table";
 
 export const dynamic = "force-dynamic";
 
@@ -30,58 +33,187 @@ const SHIFT_LABEL: Record<string, string> = {
   all: "ทั้งวัน",
 };
 
-interface ReportRow {
+export interface ReportRowVm {
   id: string;
   branch_id: string;
+  branch_code: string;
+  branch_name: string;
+  business_emoji: string;
   report_date: string;
   shift: string;
-  total_sales: number | string;
+  shift_label: string;
+  total_sales: number;
   status: keyof typeof STATUS;
-  submitted_at: string;
-  approved_at: string | null;
-  branches: { code?: string; name?: string; business_type?: string } | null;
+  status_tone: "warning" | "success" | "danger" | "neutral";
+  status_label: string;
+  submitted_at: string | null;
+  reconcile_diff: number;
 }
 
-export default async function CashHubReportsPage() {
+export default async function CashHubReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; type?: string; date?: string }>;
+}) {
   const session = await requireSession();
+  const sp = await searchParams;
   const admin = adminClient();
 
-  const { data } = await admin
+  const filterStatus = sp.status || "";
+  const filterType = sp.type || "";
+  const filterDate = sp.date || "";
+
+  let q = admin
     .from("daily_reports")
     .select(
-      "id, branch_id, report_date, shift, total_sales, status, submitted_at, approved_at, branches(code, name, business_type)",
+      "id, branch_id, report_date, shift, total_sales, cash, transfer, card, credit, shortage, status, submitted_at, approved_at, branches(code, name, business_type)",
     )
     .eq("org_id", session.user.org_id)
     .order("submitted_at", { ascending: false })
-    .limit(50);
+    .limit(100);
+  if (filterStatus) q = q.eq("status", filterStatus);
+  if (filterDate) q = q.eq("report_date", filterDate);
+  if (filterType) {
+    // need to join — supabase doesn't allow easy filter on relation, so prefilter branches
+    const { data: bs } = await admin
+      .from("branches")
+      .select("id")
+      .eq("org_id", session.user.org_id)
+      .eq("business_type", filterType);
+    const ids = (bs ?? []).map((b) => b.id);
+    if (ids.length > 0) q = q.in("branch_id", ids);
+    else q = q.eq("branch_id", "00000000-0000-0000-0000-000000000000");
+  }
 
-  const rows = (data ?? []).map((r) => {
+  const { data } = await q;
+
+  const rows: ReportRowVm[] = (data ?? []).map((r) => {
     const b = Array.isArray(r.branches) ? r.branches[0] : r.branches;
-    return { ...r, branches: b } as ReportRow;
+    const branchRel = (b ?? {}) as {
+      code?: string;
+      name?: string;
+      business_type?: string;
+    };
+    const cfg = branchRel.business_type
+      ? BUSINESS_TYPES[branchRel.business_type]
+      : undefined;
+    const status = (r.status as keyof typeof STATUS) || "submitted";
+    const totalReceived =
+      Number(r.cash || 0) +
+      Number(r.transfer || 0) +
+      Number(r.card || 0) +
+      Number(r.credit || 0) +
+      Number(r.shortage || 0);
+    const reconcileDiff = Number(r.total_sales || 0) - totalReceived;
+    return {
+      id: r.id as string,
+      branch_id: r.branch_id as string,
+      branch_code: branchRel.code ?? "—",
+      branch_name: branchRel.name ?? "",
+      business_emoji: cfg?.emoji ?? "📋",
+      report_date: r.report_date as string,
+      shift: r.shift as string,
+      shift_label: SHIFT_LABEL[r.shift as string] ?? r.shift,
+      total_sales: Number(r.total_sales || 0),
+      status,
+      status_tone: STATUS[status].tone,
+      status_label: STATUS[status].label,
+      submitted_at: r.submitted_at as string | null,
+      reconcile_diff: reconcileDiff,
+    };
   });
 
-  const totalCount = rows.length;
   const pendingCount = rows.filter((r) => r.status === "submitted").length;
+  const totalCount = rows.length;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-10 max-w-7xl mx-auto">
-      <header className="mb-8 animate-fade-up">
-        <p className="text-xs uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
+    <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
+      <header className="mb-6 animate-fade-up">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
           💰 CashHub · {thaiDateLong(new Date())}
         </p>
-        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight font-display mt-2">
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1.5">
           รายงาน <span className="accent">ทั้งหมด</span>
         </h1>
-        <p className="text-zinc-600 mt-2">
-          50 รายงานล่าสุด · รออนุมัติ {pendingCount} จาก {totalCount}
+        <p className="text-zinc-600 mt-1.5 text-sm">
+          {totalCount} รายงาน · รออนุมัติ{" "}
+          <span className="font-bold text-amber-700">{pendingCount}</span>
         </p>
       </header>
+
+      {/* Filters */}
+      <Card className="mb-4">
+        <CardBody>
+          <form
+            method="get"
+            className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 items-end"
+          >
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+                สถานะ
+              </span>
+              <select
+                name="status"
+                defaultValue={filterStatus}
+                className="h-10 rounded-xl border border-zinc-200 px-3 text-sm bg-white"
+              >
+                <option value="">ทั้งหมด</option>
+                <option value="submitted">รออนุมัติ</option>
+                <option value="approved">อนุมัติแล้ว</option>
+                <option value="rejected">ปฏิเสธ</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+                ประเภท
+              </span>
+              <select
+                name="type"
+                defaultValue={filterType}
+                className="h-10 rounded-xl border border-zinc-200 px-3 text-sm bg-white"
+              >
+                <option value="">ทุกประเภท</option>
+                {Object.entries(BUSINESS_TYPES).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v.emoji} {v.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+                วันที่
+              </span>
+              <input
+                type="date"
+                name="date"
+                defaultValue={filterDate}
+                className="h-10 rounded-xl border border-zinc-200 px-3 text-sm bg-white"
+              />
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                className="h-10 rounded-xl bg-[--color-brand-600] text-white font-semibold flex-1 text-sm"
+              >
+                ใช้
+              </button>
+              <a
+                href="/cashhub/reports"
+                className="h-10 rounded-xl border border-zinc-200 text-zinc-700 font-semibold text-sm inline-flex items-center justify-center px-3 hover:bg-zinc-50"
+              >
+                Reset
+              </a>
+            </div>
+          </form>
+        </CardBody>
+      </Card>
 
       <Section
         number="01"
         label="REPORTS"
         title="รายงานล่าสุด"
-        description="คลิกรายงานเพื่อดูรายละเอียด · อนุมัติ/ปฏิเสธในหน้ารายละเอียด"
+        description="ติ๊กรายการที่ผ่าน Auto-check แล้วกด Approve ทั้งหมด · กดแถวเพื่อดูรายละเอียด"
         action={
           <a href="/api/cashhub/export">
             <Button variant="outline" size="md">
@@ -92,93 +224,23 @@ export default async function CashHubReportsPage() {
         className="animate-fade-up delay-100"
       >
         {rows.length === 0 ? (
-          <EmptyState
-            icon={<ScrollText className="size-6" />}
-            title="ยังไม่มีรายงานในระบบ"
-            description="Staff สามารถเริ่มกรอกรายงานผ่าน LINE LIFF ได้แล้ว"
-          />
+          <Card>
+            <CardBody>
+              <EmptyState
+                icon={<ScrollText className="size-6" />}
+                title="ยังไม่มีรายงาน"
+                description="ลองเปลี่ยนตัวกรอง หรือให้ Staff เริ่มกรอกผ่าน LIFF"
+              />
+            </CardBody>
+          </Card>
         ) : (
-          <DataTable
-            rows={rows}
-            rowKey={(r) => r.id}
-            rowHref={(r) => `/cashhub/reports/${r.id}`}
-            columns={[
-              {
-                key: "type",
-                header: "",
-                cell: (r) => {
-                  const cfg = r.branches?.business_type
-                    ? BUSINESS_TYPES[r.branches.business_type]
-                    : undefined;
-                  return <span className="text-xl">{cfg?.emoji || "📋"}</span>;
-                },
-                className: "w-10",
-              },
-              {
-                key: "branch",
-                header: "สาขา",
-                cell: (r) => (
-                  <div>
-                    <div className="font-bold tabular-num text-sm">
-                      {r.branches?.code || "—"}
-                    </div>
-                    <div className="text-xs text-zinc-500 truncate">
-                      {r.branches?.name}
-                    </div>
-                  </div>
-                ),
-              },
-              {
-                key: "date",
-                header: "วันที่",
-                cell: (r) => (
-                  <div>
-                    <div className="text-sm font-medium">
-                      {bkkDate(r.report_date)}
-                    </div>
-                    <div className="text-xs text-zinc-500 mt-0.5">
-                      {SHIFT_LABEL[r.shift]}
-                    </div>
-                  </div>
-                ),
-              },
-              {
-                key: "sales",
-                header: "ยอดขาย",
-                align: "right",
-                cell: (r) => (
-                  <div className="font-bold tabular-num">
-                    {formatBaht(Number(r.total_sales || 0))}
-                  </div>
-                ),
-              },
-              {
-                key: "submitted",
-                header: "ส่งเมื่อ",
-                cell: (r) => (
-                  <span className="text-xs text-zinc-500 tabular-num">
-                    {r.submitted_at ? bkkTime(r.submitted_at) : "—"}
-                  </span>
-                ),
-              },
-              {
-                key: "status",
-                header: "สถานะ",
-                align: "right",
-                cell: (r) => {
-                  const s = STATUS[r.status] || STATUS.submitted;
-                  return (
-                    <Badge tone={s.tone}>
-                      <s.Icon className="size-3" />
-                      {s.label}
-                    </Badge>
-                  );
-                },
-              },
-            ]}
-          />
+          <ReportsTable rows={rows} />
         )}
       </Section>
     </div>
   );
 }
+
+void formatBaht;
+void bkkDate;
+void bkkTime;
