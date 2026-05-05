@@ -6,6 +6,7 @@ import {
   Wallet,
   Fuel,
   FileText,
+  FileText as FileTextIcon,
   LayoutDashboard,
   Building2,
   ScrollText,
@@ -14,6 +15,7 @@ import {
   CalendarDays,
   GitCompareArrows,
   AlertCircle,
+  GraduationCap,
 } from "lucide-react";
 
 export type ModuleSlug = "cashhub" | "fuelos" | "docuflow";
@@ -56,6 +58,11 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       { href: "/cashhub/heatmap", label: "Heatmap", icon: CalendarDays },
       { href: "/cashhub/compare", label: "เปรียบเทียบ", icon: GitCompareArrows },
       { href: "/cashhub/shortages", label: "เงินขาด", icon: AlertCircle },
+      { href: "/cashhub/notes", label: "โน้ตจาก Staff", icon: ScrollText },
+      { href: "/cashhub/kiosk", label: "Kiosk (รายสัปดาห์)", icon: Building2 },
+      { href: "/cashhub/training", label: "ศูนย์อบรม", icon: GraduationCap },
+      { href: "/cashhub/monthly-report", label: "รายงานเดือน (PDF)", icon: FileTextIcon },
+      { href: "/cashhub/rentals", label: "สัญญาเช่า", icon: Building2 },
       { href: "/cashhub/branches", label: "สาขา", icon: Building2 },
     ],
   },

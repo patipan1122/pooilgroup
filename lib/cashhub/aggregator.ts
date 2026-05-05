@@ -49,7 +49,7 @@ interface ReportRow {
   approved_at: string | null;
 }
 
-export async function loadDashboard(orgId: string) {
+export async function loadDashboard(orgId: string, companyId?: string) {
   const admin = adminClient();
   const now = new Date();
   const today = formatInTimeZone(now, TZ, "yyyy-MM-dd");
@@ -83,14 +83,17 @@ export async function loadDashboard(orgId: string) {
     shortagesMtdQ,
     missingReasonsQ,
   ] = await Promise.all([
-    admin
-      .from("branches")
-      .select(
-        "id, code, name, business_type, is_active, manager_id, province, region",
-      )
-      .eq("org_id", orgId)
-      .eq("is_active", true)
-      .order("code"),
+    (() => {
+      let q = admin
+        .from("branches")
+        .select(
+          "id, code, name, business_type, is_active, manager_id, province, region",
+        )
+        .eq("org_id", orgId)
+        .eq("is_active", true);
+      if (companyId) q = q.eq("company_id", companyId);
+      return q.order("code");
+    })(),
     admin
       .from("daily_reports")
       .select(
@@ -146,14 +149,36 @@ export async function loadDashboard(orgId: string) {
   ]);
 
   const branches = (branchesQ.data ?? []) as BranchRow[];
-  const monthReports = (monthReportsQ.data ?? []) as ReportRow[];
-  const prevMonthReports = (prevMonthReportsQ.data ?? []) as Array<{
+  const branchIdSet = new Set(branches.map((b) => b.id));
+  // When filtering by company, drop reports from branches outside the company
+  const filterByCompany = (rows: Array<{ branch_id?: string }>) =>
+    companyId
+      ? rows.filter((r) => r.branch_id && branchIdSet.has(r.branch_id))
+      : rows;
+  const monthReports = filterByCompany(
+    (monthReportsQ.data ?? []) as ReportRow[],
+  ) as ReportRow[];
+  const prevMonthReports = filterByCompany(
+    (prevMonthReportsQ.data ?? []) as Array<{
+      branch_id: string;
+      total_sales: number | string;
+      status: string;
+      report_date: string;
+    }>,
+  ) as Array<{
     branch_id: string;
     total_sales: number | string;
     status: string;
     report_date: string;
   }>;
-  const last30Reports = (last30ReportsQ.data ?? []) as Array<{
+  const last30Reports = filterByCompany(
+    (last30ReportsQ.data ?? []) as Array<{
+      branch_id: string;
+      report_date: string;
+      total_sales: number | string;
+      status: string;
+    }>,
+  ) as Array<{
     branch_id: string;
     report_date: string;
     total_sales: number | string;

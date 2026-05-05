@@ -4,6 +4,15 @@ import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { canApproveBranch } from "@/lib/auth/permissions";
+import { editTelegramMessage } from "@/lib/telegram/send";
+import {
+  buildApprovedAcknowledgement,
+  buildRejectedAcknowledgement,
+} from "@/lib/telegram/messages";
+import { sendNotification } from "@/lib/notifications/send";
+import { formatInTimeZone } from "date-fns-tz";
+
+const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
 const ApproveSchema = z.object({
   reportId: z.string().uuid(),
@@ -34,7 +43,9 @@ export async function POST(req: NextRequest) {
 
   const { data: report } = await admin
     .from("daily_reports")
-    .select("id, org_id, branch_id, status")
+    .select(
+      "id, org_id, branch_id, status, total_sales, report_date, submitted_by_id, telegram_message_id, telegram_chat_id, branches(code)",
+    )
     .eq("id", reportId)
     .eq("org_id", session.user.org_id)
     .maybeSingle();
@@ -108,6 +119,74 @@ export async function POST(req: NextRequest) {
       new: { status: action === "approve" ? "approved" : "rejected", reason },
     },
   });
+
+  // ---- Notify Staff (in-app) so they see approval/rejection ----
+  const branchRelForNotif = Array.isArray(report.branches)
+    ? report.branches[0]
+    : report.branches;
+  const branchCodeForNotif =
+    (branchRelForNotif as { code?: string } | null)?.code ?? "—";
+  if (report.submitted_by_id) {
+    try {
+      await sendNotification({
+        orgId: report.org_id,
+        userId: report.submitted_by_id,
+        type: action === "approve" ? "success" : "warning",
+        module: "cashhub",
+        title:
+          action === "approve"
+            ? `✅ รายงาน ${branchCodeForNotif} อนุมัติแล้ว`
+            : `❌ รายงาน ${branchCodeForNotif} ส่งกลับให้แก้`,
+        body:
+          action === "approve"
+            ? `${report.report_date} · ${session.user.name} อนุมัติเรียบร้อย`
+            : `เหตุผล: ${reason ?? "ไม่ระบุ"}`,
+        link: `/cashhub/reports/${reportId}`,
+      });
+    } catch (err) {
+      console.error("[approve] failed to send notification", err);
+    }
+  }
+
+  // Sync the Telegram message (if originally sent)
+  if (report.telegram_message_id && report.telegram_chat_id) {
+    const branchRel = Array.isArray(report.branches)
+      ? report.branches[0]
+      : report.branches;
+    const branchCode = (branchRel as { code?: string } | null)?.code ?? "—";
+    const nowIso = new Date().toISOString();
+    try {
+      if (action === "approve") {
+        await editTelegramMessage({
+          chatId: report.telegram_chat_id,
+          messageId: parseInt(report.telegram_message_id as string, 10),
+          text: buildApprovedAcknowledgement({
+            branchCode,
+            approvedByName: session.user.name,
+            reportDate: report.report_date as string,
+            totalSales: Number(report.total_sales || 0),
+            approvedAtTH: formatInTimeZone(nowIso, TZ, "HH:mm"),
+          }),
+          parseMode: "HTML",
+        });
+      } else {
+        await editTelegramMessage({
+          chatId: report.telegram_chat_id,
+          messageId: parseInt(report.telegram_message_id as string, 10),
+          text: buildRejectedAcknowledgement({
+            branchCode,
+            rejectedByName: session.user.name,
+            reportDate: report.report_date as string,
+            reason: reason ?? "ไม่ระบุเหตุผล",
+            rejectedAtTH: formatInTimeZone(nowIso, TZ, "HH:mm"),
+          }),
+          parseMode: "HTML",
+        });
+      }
+    } catch (err) {
+      console.error("[approve] failed to edit telegram", err);
+    }
+  }
 
   return NextResponse.json({ success: true });
 }

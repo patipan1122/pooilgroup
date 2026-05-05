@@ -25,6 +25,7 @@ import { NotificationBell } from "./notification-bell";
 const ADMIN_NAV = [
   { href: "/users", label: "ผู้ใช้งาน", icon: UsersIcon },
   { href: "/branches", label: "สาขา", icon: Building2 },
+  { href: "/companies", label: "บริษัท", icon: Building2 },
   { href: "/audit", label: "Audit Log", icon: ShieldCheck },
   { href: "/settings", label: "ตั้งค่า", icon: Settings },
 ];

@@ -1,0 +1,71 @@
+"use client";
+
+// LIFF bootstrap — when running inside LINE webview, auto-login user.
+// Falls back to normal Supabase session login if LIFF is not configured or login fails.
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { getLiffProfile } from "@/lib/line/liff-client";
+
+export function LiffBootstrap({
+  haveSession,
+}: {
+  haveSession: boolean;
+}) {
+  const router = useRouter();
+  const [phase, setPhase] = useState<"idle" | "linking" | "linked" | "skip">(
+    "idle",
+  );
+
+  useEffect(() => {
+    if (haveSession) return; // user already logged in via web
+    let cancelled = false;
+    void (async () => {
+      const profile = await getLiffProfile();
+      if (cancelled) return;
+      if (!profile) {
+        setPhase("skip");
+        return;
+      }
+      setPhase("linking");
+      try {
+        const res = await fetch("/api/auth/line-login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            lineUserId: profile.userId,
+            displayName: profile.displayName,
+          }),
+        });
+        const json = await res.json();
+        if (!cancelled && json.ready && json.magicLink) {
+          window.location.href = json.magicLink as string;
+          return;
+        }
+        if (!cancelled && json.needsLink) {
+          // First-time LINE — fall back to web login. Keep the LIFF page visible.
+          setPhase("skip");
+          return;
+        }
+        setPhase("linked");
+      } catch {
+        setPhase("skip");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [haveSession, router]);
+
+  if (phase === "linking") {
+    return (
+      <div className="fixed inset-0 z-50 bg-white/95 flex items-center justify-center">
+        <div className="text-center">
+          <div className="size-12 border-4 border-[--color-brand-200] border-t-[--color-brand-600] rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-sm text-zinc-500">กำลังตรวจสอบบัญชี LINE...</p>
+        </div>
+      </div>
+    );
+  }
+  return null;
+}

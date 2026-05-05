@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans, IBM_Plex_Sans_Thai, Anuphan } from "next/font/google";
 import { Toaster } from "sonner";
+import { ServiceWorkerRegister } from "@/components/layout/sw-register";
 import "./globals.css";
 
 // Plus Jakarta Sans — Latin display (Auditmekub/Fastwork-style geometric SaaS)
@@ -53,6 +54,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full antialiased font-thai bg-white text-zinc-900">
+        <ServiceWorkerRegister />
         {children}
         <Toaster
           position="top-center"

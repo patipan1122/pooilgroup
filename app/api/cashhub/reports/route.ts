@@ -7,6 +7,16 @@ import { getBusinessType } from "@/constants/business-types";
 import { audit } from "@/lib/audit/log";
 import { withDbDefaults } from "@/lib/db/insert";
 import { can } from "@/lib/auth/permissions";
+import { sendTelegramMessage, sendToAdminChat } from "@/lib/telegram/send";
+import {
+  approvalKeyboard,
+  buildApprovalMessage,
+} from "@/lib/telegram/messages";
+import { autoCheck } from "@/lib/cashhub/auto-check";
+import { subDays } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
+
+const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
 const ReportSchema = z.object({
   branchId: z.string().uuid(),
@@ -171,8 +181,116 @@ export async function POST(req: NextRequest) {
     diff: { new: { totalSales: data.totalSales, shift: data.shift } },
   });
 
-  // TODO Day 6: send Telegram message to branch manager
-  // TODO Day 7: send LINE Reply confirmation
+  // ---- Send Telegram approval card ----
+  // Run auto-check to enrich the message
+  try {
+    const last30 = formatInTimeZone(
+      subDays(new Date(), 29),
+      TZ,
+      "yyyy-MM-dd",
+    );
+    const today = formatInTimeZone(new Date(), TZ, "yyyy-MM-dd");
+    const { data: history } = await admin
+      .from("daily_reports")
+      .select("total_sales, status")
+      .eq("branch_id", branch.id)
+      .neq("id", created.id)
+      .gte("report_date", last30)
+      .lte("report_date", today);
+    const history30dTotals = (history ?? [])
+      .filter((h) => h.status === "approved")
+      .map((h) => Number(h.total_sales || 0));
+    const ac = autoCheck({
+      totalSales: data.totalSales,
+      cash: data.cash,
+      transfer: data.transfer,
+      card: data.card,
+      credit: data.credit,
+      shortage: data.shortage,
+      submittedAt: created.submitted_at,
+      reportDate: data.reportDate,
+      hasReconcile: config?.hasReconcile ?? true,
+      history30dTotals,
+    });
+
+    // Branch metadata for message
+    const { data: branchFull } = await admin
+      .from("branches")
+      .select("code, name, business_type, manager_id, line_group_id")
+      .eq("id", branch.id)
+      .maybeSingle();
+    const messageText = buildApprovalMessage({
+      reportId: created.id,
+      branchCode: branchFull?.code ?? "—",
+      branchName: branchFull?.name ?? "",
+      businessType: branchFull?.business_type ?? branch.business_type,
+      reportDate: data.reportDate,
+      shift: data.shift,
+      totalSales: data.totalSales,
+      qty1: data.qty1 ?? null,
+      qty1Unit: data.qty1Unit ?? null,
+      cash: data.cash,
+      transfer: data.transfer,
+      card: data.card,
+      credit: data.credit,
+      shortage: data.shortage,
+      submittedByName: session.user.name,
+      reconcileOk:
+        Math.abs(
+          data.totalSales -
+            (data.cash + data.transfer + data.card + data.credit + data.shortage),
+        ) < 0.01,
+      autoCheckSummary: ac.summary,
+    });
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3100";
+    const keyboard = approvalKeyboard(created.id, baseUrl).map((row) =>
+      row.map((btn) => ({
+        ...btn,
+        callback_data: btn.callback_data
+          ? `cashhub:${btn.callback_data}`
+          : undefined,
+      })),
+    );
+
+    // Try branch manager DM first
+    let sent: { messageId: number; chatId: string | number } | null = null;
+    if (branchFull?.manager_id) {
+      const { data: manager } = await admin
+        .from("users")
+        .select("telegram_chat_id")
+        .eq("id", branchFull.manager_id)
+        .maybeSingle();
+      if (manager?.telegram_chat_id) {
+        sent = await sendTelegramMessage({
+          chatId: manager.telegram_chat_id,
+          text: messageText,
+          parseMode: "HTML",
+          inlineKeyboard: keyboard,
+        });
+      }
+    }
+    // Fallback to admin chat
+    if (!sent) {
+      sent = await sendToAdminChat({
+        text: messageText,
+        parseMode: "HTML",
+        inlineKeyboard: keyboard,
+      });
+    }
+    if (sent) {
+      await admin
+        .from("daily_reports")
+        .update({
+          telegram_message_id: sent.messageId.toString(),
+          telegram_chat_id: sent.chatId.toString(),
+        })
+        .eq("id", created.id);
+    }
+  } catch (err) {
+    console.error("[reports] telegram send failed", err);
+    // Non-fatal — report still saved
+  }
 
   return NextResponse.json({ success: true, data: created }, { status: 201 });
 }
