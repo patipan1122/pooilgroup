@@ -54,7 +54,7 @@ export default async function LiffReportEntryPage() {
           <Link
             key={b.id}
             href={`/liff/report/${b.id}`}
-            className="block bg-white rounded-2xl border border-zinc-200 px-4 py-4 hover:border-[--color-brand-300] hover:bg-[--color-brand-50]/30 transition-colors shadow-soft"
+            className="block bg-white rounded-2xl border border-zinc-200 px-4 py-4 hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/30 transition-colors shadow-soft"
           >
             <div className="font-medium">{b.code}</div>
             <div className="text-sm text-zinc-500">{b.name}</div>

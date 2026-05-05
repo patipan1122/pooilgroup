@@ -168,7 +168,7 @@ export function SignupForm({ isFirstUser }: Props) {
       </Field>
 
       {error && (
-        <div className="text-sm text-[--color-danger] bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+        <div className="text-sm text-[var(--color-danger)] bg-red-50 border border-red-100 rounded-lg px-3 py-2">
           {error}
         </div>
       )}

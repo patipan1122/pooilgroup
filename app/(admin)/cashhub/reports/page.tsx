@@ -129,7 +129,7 @@ export default async function CashHubReportsPage({
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
       <header className="mb-6 animate-fade-up">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           💰 CashHub · {thaiDateLong(new Date())}
         </p>
         <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
@@ -194,7 +194,7 @@ export default async function CashHubReportsPage({
             <div className="flex gap-2">
               <button
                 type="submit"
-                className="h-10 rounded-xl bg-[--color-brand-600] text-white font-semibold flex-1 text-sm"
+                className="h-10 rounded-xl bg-[var(--color-brand-600)] text-white font-semibold flex-1 text-sm"
               >
                 ใช้
               </button>

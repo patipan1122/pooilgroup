@@ -58,7 +58,7 @@ export default async function RegisterRequestsPage() {
     <div className="p-4 sm:p-6 lg:p-10 max-w-5xl mx-auto">
       <header className="mb-6 flex items-end justify-between flex-wrap gap-3 animate-fade-up">
         <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
+          <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
             จัดการระบบ · คำขอใหม่
           </p>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight font-display mt-2">
@@ -70,7 +70,7 @@ export default async function RegisterRequestsPage() {
         </div>
         <Link
           href="/users"
-          className="text-sm text-zinc-500 hover:text-[--color-brand-700]"
+          className="text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
         >
           ← กลับไปรายชื่อผู้ใช้
         </Link>
@@ -119,10 +119,10 @@ export default async function RegisterRequestsPage() {
 function RequestCard({ req }: { req: RequestRow }) {
   const branch = Array.isArray(req.branches) ? req.branches[0] : req.branches;
   return (
-    <div className="rounded-2xl border-2 border-zinc-200 bg-white p-4 sm:p-5 hover:border-[--color-brand-300] transition-colors">
+    <div className="rounded-2xl border-2 border-zinc-200 bg-white p-4 sm:p-5 hover:border-[var(--color-brand-300)] transition-colors">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-start gap-3 min-w-0">
-          <div className="size-12 rounded-xl bg-[--color-brand-100] text-[--color-brand-700] flex items-center justify-center font-bold border-2 border-[--color-brand-200] shrink-0">
+          <div className="size-12 rounded-xl bg-[var(--color-brand-100)] text-[var(--color-brand-700)] flex items-center justify-center font-bold border-2 border-[var(--color-brand-200)] shrink-0">
             {req.name.charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">

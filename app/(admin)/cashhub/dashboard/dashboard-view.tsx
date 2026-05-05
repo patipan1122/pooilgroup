@@ -109,7 +109,7 @@ export function DashboardView({
     <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
       {/* Header */}
       <header className="mb-6 sm:mb-8 animate-fade-up">
-        <p className="text-[11px] sm:text-xs uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
+        <p className="text-[11px] sm:text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           💰 CashHub · {today}
         </p>
         <h1 className="text-3xl sm:text-5xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95] text-zinc-900">
@@ -128,8 +128,8 @@ export function DashboardView({
               className={cn(
                 "px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors",
                 !currentCompanyId
-                  ? "bg-[--color-brand-600] text-white"
-                  : "bg-white border border-zinc-200 text-zinc-700 hover:border-[--color-brand-300]",
+                  ? "bg-[var(--color-brand-600)] text-white"
+                  : "bg-white border border-zinc-200 text-zinc-700 hover:border-[var(--color-brand-300)]",
               )}
             >
               ทั้งหมด
@@ -141,8 +141,8 @@ export function DashboardView({
                 className={cn(
                   "px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors",
                   currentCompanyId === c.id
-                    ? "bg-[--color-brand-600] text-white"
-                    : "bg-white border border-zinc-200 text-zinc-700 hover:border-[--color-brand-300]",
+                    ? "bg-[var(--color-brand-600)] text-white"
+                    : "bg-white border border-zinc-200 text-zinc-700 hover:border-[var(--color-brand-300)]",
                 )}
               >
                 {c.name}
@@ -167,10 +167,10 @@ export function DashboardView({
       </Section>
 
       {showOnboarding && !seeded && (
-        <Card className="mb-6 border-[--color-brand-300] bg-gradient-to-br from-[--color-brand-50] via-white to-white">
+        <Card className="mb-6 border-[var(--color-brand-300)] bg-gradient-to-br from-[var(--color-brand-50)] via-white to-white">
           <CardBody>
             <div className="flex items-start gap-3 mb-4">
-              <div className="size-12 shrink-0 rounded-2xl bg-[--color-brand-600] text-white flex items-center justify-center shadow-blue">
+              <div className="size-12 shrink-0 rounded-2xl bg-[var(--color-brand-600)] text-white flex items-center justify-center shadow-blue">
                 <Sparkles className="size-6" strokeWidth={2.5} />
               </div>
               <div>
@@ -369,7 +369,7 @@ export function DashboardView({
                       {a.branch && (
                         <Link
                           href={`/cashhub/branches/${a.branch.id}`}
-                          className="text-xs font-bold text-[--color-brand-700] hover:underline shrink-0"
+                          className="text-xs font-bold text-[var(--color-brand-700)] hover:underline shrink-0"
                         >
                           ดู →
                         </Link>
@@ -409,10 +409,10 @@ export function DashboardView({
                 href={`/cashhub/dashboard/business/${t.type}`}
                 className="block group"
               >
-                <Card className="group-hover:border-[--color-brand-300] transition-colors h-full">
+                <Card className="group-hover:border-[var(--color-brand-300)] transition-colors h-full">
                   <CardBody className="p-4">
                     <div className="flex items-start gap-3 mb-3">
-                      <div className="size-12 shrink-0 rounded-2xl bg-[--color-brand-50] border-2 border-[--color-brand-100] flex items-center justify-center text-2xl">
+                      <div className="size-12 shrink-0 rounded-2xl bg-[var(--color-brand-50)] border-2 border-[var(--color-brand-100)] flex items-center justify-center text-2xl">
                         {cfg.emoji}
                       </div>
                       <div className="min-w-0 flex-1">
@@ -423,7 +423,7 @@ export function DashboardView({
                           {t.branchCount} สาขา · ยอดเดือนนี้
                         </div>
                       </div>
-                      <ChevronRight className="size-5 text-zinc-300 group-hover:text-[--color-brand-500] transition-colors" />
+                      <ChevronRight className="size-5 text-zinc-300 group-hover:text-[var(--color-brand-500)] transition-colors" />
                     </div>
                     <div className="text-2xl sm:text-3xl font-extrabold tabular-num font-display">
                       {formatBahtCompact(t.total)}
@@ -533,14 +533,14 @@ export function DashboardView({
                     total={data.paymentMixTotal}
                   />
                   <MixRow
-                    icon={<CreditCard className="size-4 text-[--color-brand-700]" />}
+                    icon={<CreditCard className="size-4 text-[var(--color-brand-700)]" />}
                     color="#1d4ed8"
                     label="บัตร"
                     value={data.paymentMix.card}
                     total={data.paymentMixTotal}
                   />
                   <MixRow
-                    icon={<Receipt className="size-4 text-[--color-brand-600]" />}
+                    icon={<Receipt className="size-4 text-[var(--color-brand-600)]" />}
                     color="#3b82f6"
                     label="เครดิต"
                     value={data.paymentMix.credit}
@@ -602,7 +602,7 @@ export function DashboardView({
                         <li key={p.id as string}>
                           <Link
                             href={`/cashhub/reports/${p.id}`}
-                            className="flex items-center justify-between gap-2 px-4 py-3 hover:bg-[--color-brand-50]/40 transition-colors"
+                            className="flex items-center justify-between gap-2 px-4 py-3 hover:bg-[var(--color-brand-50)]/40 transition-colors"
                           >
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="text-lg shrink-0">
@@ -632,7 +632,7 @@ export function DashboardView({
                   <div className="px-4 py-2 border-t border-zinc-100">
                     <Link
                       href="/cashhub/reports?status=submitted"
-                      className="text-xs font-bold text-[--color-brand-700] hover:underline"
+                      className="text-xs font-bold text-[var(--color-brand-700)] hover:underline"
                     >
                       Quick Approve ทั้งหมด →
                     </Link>
@@ -687,9 +687,9 @@ export function DashboardView({
                       const cfg = BUSINESS_TYPES[s.branch.business_type];
                       const rankColor =
                         i === 0
-                          ? "text-[--color-brand-700]"
+                          ? "text-[var(--color-brand-700)]"
                           : i === 1
-                            ? "text-[--color-brand-500]"
+                            ? "text-[var(--color-brand-500)]"
                             : i === 2
                               ? "text-zinc-600"
                               : "text-zinc-400";
@@ -752,7 +752,7 @@ export function DashboardView({
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
-                <CalendarDays className="size-4 text-[--color-brand-600]" />
+                <CalendarDays className="size-4 text-[var(--color-brand-600)]" />
                 <CardTitle>ปฏิทินกรอกครบ</CardTitle>
               </div>
               <Badge tone="neutral">{monthLabel}</Badge>
@@ -766,7 +766,7 @@ export function DashboardView({
                 สีเข้ม = % สาขากรอกครบสูง · กดดูรายละเอียดที่{" "}
                 <Link
                   href="/cashhub/heatmap"
-                  className="text-[--color-brand-700] font-bold hover:underline"
+                  className="text-[var(--color-brand-700)] font-bold hover:underline"
                 >
                   Heatmap แบบเต็ม
                 </Link>
@@ -928,9 +928,9 @@ function ActionTile({
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 bg-white rounded-2xl border-2 border-zinc-200 px-4 py-3.5 hover:border-[--color-brand-300] hover:bg-[--color-brand-50]/30 transition-all hover-lift"
+      className="flex items-center gap-3 bg-white rounded-2xl border-2 border-zinc-200 px-4 py-3.5 hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/30 transition-all hover-lift"
     >
-      <div className="size-9 rounded-xl bg-[--color-brand-50] border border-[--color-brand-100] flex items-center justify-center text-[--color-brand-700] shrink-0">
+      <div className="size-9 rounded-xl bg-[var(--color-brand-50)] border border-[var(--color-brand-100)] flex items-center justify-center text-[var(--color-brand-700)] shrink-0">
         {icon}
       </div>
       <div className="text-sm font-semibold text-zinc-800 truncate">{label}</div>

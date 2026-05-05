@@ -88,7 +88,7 @@ export function AiChat() {
         onClick={() => setOpen(true)}
         className={cn(
           "fixed bottom-5 right-5 z-40 size-14 rounded-2xl shadow-blue flex items-center justify-center transition-transform hover:scale-105",
-          "bg-[--color-brand-600] text-white",
+          "bg-[var(--color-brand-600)] text-white",
           open && "scale-0 pointer-events-none",
         )}
         aria-label="ถาม AI"
@@ -105,13 +105,13 @@ export function AiChat() {
           />
           <div className="fixed bottom-0 right-0 sm:bottom-5 sm:right-5 z-50 w-full sm:w-[420px] sm:max-w-[calc(100vw-2.5rem)] h-[85vh] sm:h-[600px] sm:max-h-[calc(100vh-3rem)] bg-white rounded-t-3xl sm:rounded-3xl border-2 border-zinc-200 shadow-pop flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="px-4 sm:px-5 py-3 border-b-2 border-zinc-100 flex items-center justify-between bg-gradient-to-br from-[--color-brand-50] to-white">
+            <div className="px-4 sm:px-5 py-3 border-b-2 border-zinc-100 flex items-center justify-between bg-gradient-to-br from-[var(--color-brand-50)] to-white">
               <div className="flex items-center gap-2.5">
-                <div className="size-9 rounded-xl bg-[--color-brand-600] text-white flex items-center justify-center shadow-blue">
+                <div className="size-9 rounded-xl bg-[var(--color-brand-600)] text-white flex items-center justify-center shadow-blue">
                   <Sparkles className="size-4" />
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase tracking-widest text-[--color-brand-600] font-bold">
+                  <p className="text-[10px] uppercase tracking-widest text-[var(--color-brand-600)] font-bold">
                     AI ASSISTANT
                   </p>
                   <p className="text-base font-extrabold font-display leading-tight">
@@ -145,7 +145,7 @@ export function AiChat() {
                         key={s}
                         type="button"
                         onClick={() => send(s)}
-                        className="block w-full text-left px-3 py-2 rounded-xl bg-zinc-50 hover:bg-[--color-brand-50] hover:text-[--color-brand-700] text-xs sm:text-sm transition-colors border border-zinc-100"
+                        className="block w-full text-left px-3 py-2 rounded-xl bg-zinc-50 hover:bg-[var(--color-brand-50)] hover:text-[var(--color-brand-700)] text-xs sm:text-sm transition-colors border border-zinc-100"
                       >
                         💬 {s}
                       </button>
@@ -165,7 +165,7 @@ export function AiChat() {
                       className={cn(
                         "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed",
                         m.role === "user"
-                          ? "bg-[--color-brand-600] text-white"
+                          ? "bg-[var(--color-brand-600)] text-white"
                           : "bg-zinc-100 text-zinc-900",
                       )}
                     >
@@ -200,12 +200,12 @@ export function AiChat() {
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="พิมพ์คำถาม..."
                   disabled={pending}
-                  className="flex-1 h-11 rounded-xl border border-zinc-200 px-4 text-sm bg-white outline-none focus:border-[--color-brand-500] focus:ring-2 focus:ring-[--color-brand-100]"
+                  className="flex-1 h-11 rounded-xl border border-zinc-200 px-4 text-sm bg-white outline-none focus:border-[var(--color-brand-500)] focus:ring-2 focus:ring-[var(--color-brand-100)]"
                 />
                 <button
                   type="submit"
                   disabled={pending || !input.trim()}
-                  className="size-11 rounded-xl bg-[--color-brand-600] text-white shadow-blue flex items-center justify-center disabled:bg-zinc-300 disabled:shadow-none transition-colors hover:bg-[--color-brand-700]"
+                  className="size-11 rounded-xl bg-[var(--color-brand-600)] text-white shadow-blue flex items-center justify-center disabled:bg-zinc-300 disabled:shadow-none transition-colors hover:bg-[var(--color-brand-700)]"
                 >
                   <Send className="size-4" />
                 </button>

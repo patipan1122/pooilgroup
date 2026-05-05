@@ -75,7 +75,7 @@ export default async function UserDetailPage({ params }: Props) {
     <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
       <Link
         href="/users"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[--color-brand-700] mb-3"
+        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)] mb-3"
       >
         <ChevronLeft className="size-4" />
         กลับไปรายชื่อ
@@ -83,7 +83,7 @@ export default async function UserDetailPage({ params }: Props) {
 
       <header className="flex items-start justify-between flex-wrap gap-4 mb-6 animate-fade-up">
         <div className="flex items-start gap-4">
-          <div className="size-16 rounded-2xl bg-[--color-brand-100] text-[--color-brand-700] flex items-center justify-center text-2xl font-bold border-2 border-[--color-brand-200]">
+          <div className="size-16 rounded-2xl bg-[var(--color-brand-100)] text-[var(--color-brand-700)] flex items-center justify-center text-2xl font-bold border-2 border-[var(--color-brand-200)]">
             {user.name.charAt(0).toUpperCase()}
           </div>
           <div>

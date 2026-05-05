@@ -125,7 +125,7 @@ export default async function AuditLogPage({
 
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-6xl mx-auto pb-24">
       <div className="mb-12 animate-slide-up-soft">
-        <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[--color-brand-700] font-bold">
+        <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">
           AUDIT · COMPLIANCE
         </p>
         <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-5 leading-[0.95]">
@@ -185,7 +185,7 @@ export default async function AuditLogPage({
 
             <button
               type="submit"
-              className="h-9 px-4 rounded-lg bg-[--color-brand-600] text-white font-semibold text-sm hover:bg-[--color-brand-700]"
+              className="h-9 px-4 rounded-lg bg-[var(--color-brand-600)] text-white font-semibold text-sm hover:bg-[var(--color-brand-700)]"
             >
               ค้นหา
             </button>
@@ -312,7 +312,7 @@ function FilterSelect({
     <select
       name={name}
       defaultValue={value}
-      className="h-9 px-3 rounded-lg border-2 border-zinc-200 bg-white text-sm focus:border-[--color-brand-500] focus:outline-none"
+      className="h-9 px-3 rounded-lg border-2 border-zinc-200 bg-white text-sm focus:border-[var(--color-brand-500)] focus:outline-none"
     >
       {options.map((o) => (
         <option key={o.v} value={o.v}>
@@ -325,7 +325,7 @@ function FilterSelect({
 
 const TONE_BG: Record<string, string> = {
   neutral: "bg-zinc-100",
-  brand: "bg-[--color-brand-100]",
+  brand: "bg-[var(--color-brand-100)]",
   success: "bg-green-100",
   warning: "bg-amber-100",
   danger: "bg-red-100",
@@ -333,7 +333,7 @@ const TONE_BG: Record<string, string> = {
 };
 const TONE_FG: Record<string, string> = {
   neutral: "text-zinc-600",
-  brand: "text-[--color-brand-700]",
+  brand: "text-[var(--color-brand-700)]",
   success: "text-green-700",
   warning: "text-amber-700",
   danger: "text-red-700",

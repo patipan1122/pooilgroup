@@ -200,7 +200,7 @@ export function CalendarHeatmap({
               title={`${c.date} · ${c.submitted}/${c.expected} สาขา (${c.fillRate.toFixed(0)}%)`}
               className={cn(
                 "aspect-square rounded-md flex items-center justify-center text-[10px] font-semibold tabular-num text-zinc-700",
-                isToday && "ring-2 ring-[--color-brand-500]",
+                isToday && "ring-2 ring-[var(--color-brand-500)]",
               )}
               style={{ background: color }}
             >

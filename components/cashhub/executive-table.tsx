@@ -93,7 +93,7 @@ export function ExecutiveTable({ data }: Props) {
           <button
             type="button"
             onClick={allExpanded ? collapseAll : expandAll}
-            className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-bold rounded-lg border-2 border-zinc-200 bg-white text-zinc-700 hover:border-[--color-brand-400] hover:text-[--color-brand-700] transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-bold rounded-lg border-2 border-zinc-200 bg-white text-zinc-700 hover:border-[var(--color-brand-400)] hover:text-[var(--color-brand-700)] transition-colors"
           >
             {allExpanded ? (
               <>
@@ -144,13 +144,13 @@ export function ExecutiveTable({ data }: Props) {
                     className={cn(
                       "px-2 sm:px-3 py-3 font-bold text-right tabular-num min-w-[80px] sm:min-w-[96px]",
                       isLatest
-                        ? "text-[--color-brand-700] bg-[--color-brand-50]/40"
+                        ? "text-[var(--color-brand-700)] bg-[var(--color-brand-50)]/40"
                         : "text-zinc-500",
                     )}
                   >
                     {label}
                     {isLatest && (
-                      <span className="block text-[9px] text-[--color-brand-600] font-normal mt-0.5">
+                      <span className="block text-[9px] text-[var(--color-brand-600)] font-normal mt-0.5">
                         {isDaily ? "วันนี้" : "เดือนนี้"}
                       </span>
                     )}
@@ -179,12 +179,12 @@ export function ExecutiveTable({ data }: Props) {
             })}
 
             {/* Footer row — totals */}
-            <tr className="border-t-2 border-zinc-300 bg-[--color-brand-50]/30 font-bold">
+            <tr className="border-t-2 border-zinc-300 bg-[var(--color-brand-50)]/30 font-bold">
               <td
-                className="px-3 sm:px-4 py-3 sticky left-0 bg-[--color-brand-50] z-10"
+                className="px-3 sm:px-4 py-3 sticky left-0 bg-[var(--color-brand-50)] z-10"
                 style={{ borderRight: "1px solid var(--color-border)" }}
               >
-                <div className="text-[10px] uppercase tracking-widest text-[--color-brand-700] font-bold">
+                <div className="text-[10px] uppercase tracking-widest text-[var(--color-brand-700)] font-bold">
                   รวมทั้งหมด
                 </div>
                 <div className="text-xs text-zinc-600 mt-0.5">
@@ -199,14 +199,14 @@ export function ExecutiveTable({ data }: Props) {
                     key={i}
                     className={cn(
                       "px-2 sm:px-3 py-3 text-right tabular-num",
-                      isLatest && "bg-[--color-brand-100]/50",
+                      isLatest && "bg-[var(--color-brand-100)]/50",
                     )}
                   >
                     <div
                       className={cn(
                         "font-extrabold",
                         isLatest
-                          ? "text-[--color-brand-800]"
+                          ? "text-[var(--color-brand-800)]"
                           : "text-zinc-800",
                       )}
                     >
@@ -217,9 +217,9 @@ export function ExecutiveTable({ data }: Props) {
                         className={cn(
                           "text-[10px] font-bold tabular-num inline-flex items-center gap-0.5",
                           pct > 0
-                            ? "text-[--color-leaf-700]"
+                            ? "text-[var(--color-leaf-700)]"
                             : pct < 0
-                              ? "text-[--color-danger]"
+                              ? "text-[var(--color-danger)]"
                               : "text-zinc-400",
                         )}
                       >
@@ -281,8 +281,8 @@ function BusinessTypeRow({
           "border-b border-zinc-100 transition-colors cursor-pointer",
           rowIdx % 2 === 1 && !isExpanded && "bg-zinc-50/40",
           isExpanded
-            ? "bg-[--color-brand-50]/40"
-            : "hover:bg-[--color-brand-50]/30",
+            ? "bg-[var(--color-brand-50)]/40"
+            : "hover:bg-[var(--color-brand-50)]/30",
         )}
         onClick={onToggle}
       >
@@ -318,14 +318,14 @@ function BusinessTypeRow({
               key={i}
               className={cn(
                 "px-2 sm:px-3 py-2.5 text-right tabular-num",
-                isLatest && "bg-[--color-brand-50]/30",
+                isLatest && "bg-[var(--color-brand-50)]/30",
                 val === 0 && "text-zinc-300",
               )}
             >
               <div
                 className={cn(
                   "font-semibold",
-                  isLatest ? "text-[--color-brand-800]" : "text-zinc-700",
+                  isLatest ? "text-[var(--color-brand-800)]" : "text-zinc-700",
                 )}
               >
                 {val > 0 ? formatBahtCompact(val) : "—"}
@@ -335,9 +335,9 @@ function BusinessTypeRow({
                   className={cn(
                     "text-[10px] font-bold tabular-num",
                     pct > 0
-                      ? "text-[--color-leaf-700]"
+                      ? "text-[var(--color-leaf-700)]"
                       : pct < 0
-                        ? "text-[--color-danger]"
+                        ? "text-[var(--color-danger)]"
                         : "text-zinc-400",
                   )}
                 >
@@ -356,8 +356,8 @@ function BusinessTypeRow({
           <tr
             key={b.id}
             className={cn(
-              "border-b border-zinc-100 bg-[--color-brand-50]/20 hover:bg-[--color-brand-50]/40 transition-colors",
-              bIdx === row.branches.length - 1 && "border-b-2 border-[--color-brand-200]",
+              "border-b border-zinc-100 bg-[var(--color-brand-50)]/20 hover:bg-[var(--color-brand-50)]/40 transition-colors",
+              bIdx === row.branches.length - 1 && "border-b-2 border-[var(--color-brand-200)]",
             )}
             onClick={(e) => {
               e.stopPropagation();
@@ -388,14 +388,14 @@ function BusinessTypeRow({
                   key={i}
                   className={cn(
                     "px-2 sm:px-3 py-2 text-right tabular-num text-xs",
-                    isLatest && "bg-[--color-brand-50]/40",
+                    isLatest && "bg-[var(--color-brand-50)]/40",
                     val === 0 && "text-zinc-300",
                   )}
                 >
                   <span
                     className={cn(
                       isLatest
-                        ? "text-[--color-brand-700] font-semibold"
+                        ? "text-[var(--color-brand-700)] font-semibold"
                         : "text-zinc-600",
                     )}
                   >
@@ -428,7 +428,7 @@ function PeriodToggle({
         className={cn(
           "inline-flex items-center gap-1.5 px-3 h-8 text-xs font-bold rounded transition-colors",
           current === "monthly"
-            ? "bg-[--color-brand-600] text-white"
+            ? "bg-[var(--color-brand-600)] text-white"
             : "text-zinc-600 hover:bg-zinc-50",
         )}
       >
@@ -441,7 +441,7 @@ function PeriodToggle({
         className={cn(
           "inline-flex items-center gap-1.5 px-3 h-8 text-xs font-bold rounded transition-colors",
           current === "daily"
-            ? "bg-[--color-brand-600] text-white"
+            ? "bg-[var(--color-brand-600)] text-white"
             : "text-zinc-600 hover:bg-zinc-50",
         )}
       >

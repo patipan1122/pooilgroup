@@ -46,7 +46,7 @@ export function ApproveActions({
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="เช่น ยอดน่าจะกรอกผิด ตรวจสอบใหม่"
-            className="w-full rounded-xl border border-zinc-200 px-4 py-3 text-sm outline-none focus:border-[--color-brand-500]"
+            className="w-full rounded-xl border border-zinc-200 px-4 py-3 text-sm outline-none focus:border-[var(--color-brand-500)]"
           />
           <div className="flex gap-2 justify-end">
             <Button variant="ghost" onClick={() => setShowReject(false)}>

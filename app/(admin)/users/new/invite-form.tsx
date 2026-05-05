@@ -95,12 +95,12 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
           </CardTitle>
         </CardHeader>
         <CardBody className="space-y-4">
-          <div className="rounded-xl bg-[--color-brand-50] border-2 border-[--color-brand-200] p-4">
-            <p className="text-xs text-[--color-brand-700] font-semibold uppercase tracking-widest mb-2">
+          <div className="rounded-xl bg-[var(--color-brand-50)] border-2 border-[var(--color-brand-200)] p-4">
+            <p className="text-xs text-[var(--color-brand-700)] font-semibold uppercase tracking-widest mb-2">
               Invite Link · หมดอายุ 48 ชม.
             </p>
             <div className="flex items-center gap-2">
-              <code className="flex-1 text-xs font-mono bg-white rounded-lg px-3 py-2 border border-[--color-brand-200] truncate">
+              <code className="flex-1 text-xs font-mono bg-white rounded-lg px-3 py-2 border border-[var(--color-brand-200)] truncate">
                 {inviteUrl}
               </code>
               <Button onClick={copyLink} size="md">
@@ -192,7 +192,7 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
               className={cn(
                 "flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors",
                 role === r.value
-                  ? "border-[--color-brand-500] bg-[--color-brand-50]"
+                  ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)]"
                   : "border-zinc-200 hover:bg-zinc-50",
               )}
             >
@@ -232,7 +232,7 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
                     className={cn(
                       "flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-colors",
                       selected.has(b.id)
-                        ? "border-[--color-brand-500] bg-[--color-brand-50]"
+                        ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)]"
                         : "border-zinc-200 hover:bg-zinc-50",
                     )}
                   >

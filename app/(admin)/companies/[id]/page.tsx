@@ -105,7 +105,7 @@ export default async function CompanyDetailPage({ params }: Props) {
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-5xl mx-auto pb-24">
         <Link
           href="/companies"
-          className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[--color-brand-700]"
+          className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
         >
           <ChevronLeft className="size-4" />
           กลับไปรายชื่อบริษัท
@@ -114,11 +114,11 @@ export default async function CompanyDetailPage({ params }: Props) {
         {/* Hero */}
         <header className="mt-4 mb-12 sm:mb-14 animate-slide-up-soft flex items-start justify-between gap-6 flex-wrap">
           <div className="flex items-start gap-5 min-w-0">
-            <div className="size-20 sm:size-24 rounded-3xl border-2 bg-[--color-brand-50] border-[--color-brand-200] text-[--color-brand-700] flex items-center justify-center text-3xl sm:text-4xl font-extrabold font-display shrink-0">
+            <div className="size-20 sm:size-24 rounded-3xl border-2 bg-[var(--color-brand-50)] border-[var(--color-brand-200)] text-[var(--color-brand-700)] flex items-center justify-center text-3xl sm:text-4xl font-extrabold font-display shrink-0">
               {c.code.slice(0, 2)}
             </div>
             <div>
-              <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] font-bold text-[--color-brand-700]">
+              <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] font-bold text-[var(--color-brand-700)]">
                 COMPANY · {c.code}
               </p>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-[-0.04em] font-display mt-3 text-zinc-900 leading-[0.95]">
@@ -127,7 +127,7 @@ export default async function CompanyDetailPage({ params }: Props) {
               <div className="flex items-center gap-2 mt-3">
                 {c.is_active ? (
                   <Badge tone="success">
-                    <span className="size-1.5 rounded-full bg-[--color-leaf-600] animate-pulse-soft inline-block" />
+                    <span className="size-1.5 rounded-full bg-[var(--color-leaf-600)] animate-pulse-soft inline-block" />
                     ใช้งาน
                   </Badge>
                 ) : (
@@ -141,7 +141,7 @@ export default async function CompanyDetailPage({ params }: Props) {
           </div>
           <Link
             href={`/companies/${c.id}/edit`}
-            className="inline-flex items-center gap-2 px-5 h-12 rounded-xl bg-[--color-brand-600] text-white font-bold hover:bg-[--color-brand-700] hover-lift-premium shadow-blue transition-colors"
+            className="inline-flex items-center gap-2 px-5 h-12 rounded-xl bg-[var(--color-brand-600)] text-white font-bold hover:bg-[var(--color-brand-700)] hover-lift-premium shadow-blue transition-colors"
           >
             <Edit3 className="size-4" />
             แก้ไขข้อมูล
@@ -191,7 +191,7 @@ export default async function CompanyDetailPage({ params }: Props) {
               action={
                 <Link
                   href="/branches/new"
-                  className="inline-flex items-center gap-2 px-4 h-10 rounded-xl bg-[--color-brand-600] text-white font-bold hover:bg-[--color-brand-700]"
+                  className="inline-flex items-center gap-2 px-4 h-10 rounded-xl bg-[var(--color-brand-600)] text-white font-bold hover:bg-[var(--color-brand-700)]"
                 >
                   เพิ่มสาขา
                 </Link>
@@ -223,7 +223,7 @@ export default async function CompanyDetailPage({ params }: Props) {
                           <Link
                             key={b.id}
                             href={`/branches/${b.id}`}
-                            className="group flex items-center justify-between gap-3 rounded-xl border-2 border-zinc-200 bg-white px-4 py-3 hover:border-[--color-brand-400] hover:bg-[--color-brand-50]/40 transition-all"
+                            className="group flex items-center justify-between gap-3 rounded-xl border-2 border-zinc-200 bg-white px-4 py-3 hover:border-[var(--color-brand-400)] hover:bg-[var(--color-brand-50)]/40 transition-all"
                           >
                             <div className="min-w-0">
                               <div className="text-sm font-bold tabular-num">
@@ -238,7 +238,7 @@ export default async function CompanyDetailPage({ params }: Props) {
                                 </div>
                               )}
                             </div>
-                            <ChevronRight className="size-4 text-zinc-400 group-hover:text-[--color-brand-600] group-hover:translate-x-0.5 transition-all shrink-0" />
+                            <ChevronRight className="size-4 text-zinc-400 group-hover:text-[var(--color-brand-600)] group-hover:translate-x-0.5 transition-all shrink-0" />
                           </Link>
                         );
                       })}

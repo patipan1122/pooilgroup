@@ -42,7 +42,7 @@ export function StatBlock({
     <div
       className={cn(
         "rounded-2xl border-2 border-zinc-200 bg-white p-4 sm:p-5",
-        "hover:border-[--color-brand-300] transition-colors",
+        "hover:border-[var(--color-brand-300)] transition-colors",
         className,
       )}
     >
@@ -50,7 +50,7 @@ export function StatBlock({
         <p className="text-xs uppercase tracking-widest text-zinc-500 font-semibold truncate">
           {label}
         </p>
-        {icon && <div className="text-[--color-brand-600] shrink-0">{icon}</div>}
+        {icon && <div className="text-[var(--color-brand-600)] shrink-0">{icon}</div>}
       </div>
       <div
         className={cn(

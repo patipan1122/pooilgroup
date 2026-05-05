@@ -37,9 +37,15 @@ export default async function LiffReportFormPage({ params }: Props) {
   if (!config) notFound();
 
   // Check user has access to this branch
-  const isAdmin =
-    session.user.role === "super_admin" || session.user.role === "org_admin";
-  if (!isAdmin) {
+  // Cross-branch roles (super_admin / org_admin / admin / area_manager)
+  // can fill any branch in same org. Others need user_branches link.
+  const hasCrossBranch =
+    session.user.role === "super_admin" ||
+    session.user.role === "org_admin" ||
+    session.user.role === "admin" ||
+    session.user.role === "area_manager";
+
+  if (!hasCrossBranch) {
     const { data: link } = await admin
       .from("user_branches")
       .select("id")

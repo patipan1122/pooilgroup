@@ -37,6 +37,7 @@ import { BUSINESS_TYPES } from "@/constants/business-types";
 import { ExecutiveTable } from "@/components/cashhub/executive-table";
 import { loadExecutiveMatrix } from "@/lib/cashhub/executive-matrix";
 import { StaffHome } from "./staff-home";
+import { ManagerHome } from "./manager-home";
 import { startOfDay } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 
@@ -69,14 +70,23 @@ export default async function HomePage() {
     );
   }
 
+  // Branch Manager / Area Manager → render Manager /home
+  // (admin/owner ใช้หน้าด้านล่างที่มี executive + system + admin tools)
+  if (
+    session.user.role === "branch_manager" ||
+    session.user.role === "area_manager"
+  ) {
+    const firstName = session.user.name.split(" ")[0];
+    return <ManagerHome user={session.user} firstName={firstName} />;
+  }
+
+  // After driver/staff/branch_manager/area_manager redirected,
+  // remaining roles = super_admin | org_admin | admin | viewer
   const isAdmin =
     session.user.role === "super_admin" ||
     session.user.role === "org_admin" ||
     session.user.role === "admin";
-  const isManager =
-    session.user.role === "branch_manager" ||
-    session.user.role === "area_manager" ||
-    isAdmin;
+  const isManager = isAdmin; // viewer doesn't see executive table
 
   const todayStart = formatInTimeZone(startOfDay(new Date()), TZ, "yyyy-MM-dd'T'HH:mm:ss'+07:00'");
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -274,7 +284,7 @@ export default async function HomePage() {
             HERO — heavy Thai display + blue gradient + slide-up reveal
             ============================================================ */}
         <header className="mb-14 sm:mb-20 animate-slide-up-soft">
-          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] font-bold text-[--color-brand-700]">
+          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] font-bold text-[var(--color-brand-700)]">
             <span className="brand-gradient-text">Pooilgroup</span>
             <span className="text-zinc-400 mx-2">·</span>
             <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
@@ -321,7 +331,7 @@ export default async function HomePage() {
             action={
               <a
                 href="/cashhub/dashboard"
-                className="text-sm font-bold text-[--color-brand-700] hover:text-[--color-brand-800] inline-flex items-center gap-1"
+                className="text-sm font-bold text-[var(--color-brand-700)] hover:text-[var(--color-brand-800)] inline-flex items-center gap-1"
               >
                 เปิด CashHub →
               </a>
@@ -400,7 +410,7 @@ export default async function HomePage() {
           >
             {adminActionTotal === 0 ? (
               <div className="rounded-2xl border-2 border-dashed border-zinc-200 bg-zinc-50/40 p-10 text-center">
-                <div className="size-14 mx-auto mb-3 rounded-2xl bg-[--color-leaf-50] border-2 border-[--color-leaf-200] flex items-center justify-center text-[--color-leaf-700]">
+                <div className="size-14 mx-auto mb-3 rounded-2xl bg-[var(--color-leaf-50)] border-2 border-[var(--color-leaf-200)] flex items-center justify-center text-[var(--color-leaf-700)]">
                   <ShieldCheck className="size-6" />
                 </div>
                 <p className="font-bold text-zinc-900">ไม่มีอะไรค้างที่ Core</p>
@@ -558,7 +568,7 @@ function ModuleCard({
     "relative group rounded-3xl border-2 bg-white p-6 sm:p-7 transition-all overflow-hidden";
 
   const cardActive =
-    "border-zinc-200 hover:border-[--color-brand-400] hover-lift-premium cursor-pointer shadow-soft";
+    "border-zinc-200 hover:border-[var(--color-brand-400)] hover-lift-premium cursor-pointer shadow-soft";
 
   const cardDisabled = "border-zinc-200 opacity-60";
 
@@ -577,12 +587,12 @@ function ModuleCard({
       <div className="relative">
         {/* Top row: icon badge + status — ใช้ฟ้าเหมือนกันทุก module */}
         <div className="flex items-start justify-between mb-5">
-          <div className="size-14 rounded-2xl border-2 bg-[--color-brand-50] border-[--color-brand-200] text-[--color-brand-700] flex items-center justify-center text-2xl">
+          <div className="size-14 rounded-2xl border-2 bg-[var(--color-brand-50)] border-[var(--color-brand-200)] text-[var(--color-brand-700)] flex items-center justify-center text-2xl">
             {m.emoji}
           </div>
           {isActive ? (
             <Badge tone="success">
-              <span className="size-1.5 rounded-full bg-[--color-leaf-600] animate-pulse-soft inline-block" />
+              <span className="size-1.5 rounded-full bg-[var(--color-leaf-600)] animate-pulse-soft inline-block" />
               ใช้งานอยู่
             </Badge>
           ) : (
@@ -597,7 +607,7 @@ function ModuleCard({
         <h3 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display text-zinc-900">
           {m.name}
         </h3>
-        <p className="text-sm font-semibold text-[--color-brand-700] mt-1">
+        <p className="text-sm font-semibold text-[var(--color-brand-700)] mt-1">
           {m.tagline}
         </p>
 
@@ -609,7 +619,7 @@ function ModuleCard({
         {/* CTA */}
         <div className="mt-6 pt-5 border-t border-zinc-100 flex items-center justify-between">
           {isActive ? (
-            <span className="inline-flex items-center gap-1.5 font-bold text-[--color-brand-700] group-hover:text-[--color-brand-800]">
+            <span className="inline-flex items-center gap-1.5 font-bold text-[var(--color-brand-700)] group-hover:text-[var(--color-brand-800)]">
               เข้าโปรแกรม
               <ArrowUpRight className="size-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
             </span>
@@ -657,11 +667,11 @@ function ActionCard({
 }) {
   const palette = {
     brand: {
-      bg: "bg-[--color-brand-50]/60 hover:bg-[--color-brand-50]",
-      border: "border-[--color-brand-200]",
-      iconBg: "bg-[--color-brand-100] text-[--color-brand-700]",
-      text: "text-[--color-brand-900]",
-      arrow: "text-[--color-brand-600]",
+      bg: "bg-[var(--color-brand-50)]/60 hover:bg-[var(--color-brand-50)]",
+      border: "border-[var(--color-brand-200)]",
+      iconBg: "bg-[var(--color-brand-100)] text-[var(--color-brand-700)]",
+      text: "text-[var(--color-brand-900)]",
+      arrow: "text-[var(--color-brand-600)]",
     },
     warning: {
       bg: "bg-amber-50/60 hover:bg-amber-50",
@@ -732,12 +742,12 @@ function SystemStat({
   unit?: string;
 }) {
   return (
-    <div className="rounded-2xl border-2 border-zinc-200 bg-white p-4 sm:p-5 hover:border-[--color-brand-400] hover-lift-premium">
+    <div className="rounded-2xl border-2 border-zinc-200 bg-white p-4 sm:p-5 hover:border-[var(--color-brand-400)] hover-lift-premium">
       <div className="flex items-center justify-between mb-2">
         <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 font-bold">
           {label}
         </p>
-        <span className="text-[--color-brand-600]">{icon}</span>
+        <span className="text-[var(--color-brand-600)]">{icon}</span>
       </div>
       <p className="font-num-mega text-4xl sm:text-5xl">
         <span className="text-gradient-blue-vivid">
@@ -779,7 +789,7 @@ function EveningCheckCard({
 
   if (allFilled) {
     return (
-      <div className="rounded-3xl border-2 border-[--color-leaf-300] bg-gradient-to-br from-[--color-leaf-50] to-white p-6 sm:p-8 shadow-leaf overflow-hidden relative">
+      <div className="rounded-3xl border-2 border-[var(--color-leaf-300)] bg-gradient-to-br from-[var(--color-leaf-50)] to-white p-6 sm:p-8 shadow-leaf overflow-hidden relative">
         <div
           aria-hidden
           className="absolute -top-12 -right-12 size-44 rounded-full blur-3xl opacity-30 pointer-events-none"
@@ -789,14 +799,14 @@ function EveningCheckCard({
           }}
         />
         <div className="relative flex items-center gap-5">
-          <div className="size-16 rounded-2xl bg-[--color-leaf-100] border-2 border-[--color-leaf-200] flex items-center justify-center text-[--color-leaf-700] shrink-0">
+          <div className="size-16 rounded-2xl bg-[var(--color-leaf-100)] border-2 border-[var(--color-leaf-200)] flex items-center justify-center text-[var(--color-leaf-700)] shrink-0">
             <CheckCircle2 className="size-8" />
           </div>
           <div className="min-w-0">
-            <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-[--color-leaf-700]">
+            <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-[var(--color-leaf-700)]">
               งานวันนี้
             </p>
-            <p className="font-num-mega text-4xl sm:text-5xl text-[--color-leaf-700] leading-none mt-1">
+            <p className="font-num-mega text-4xl sm:text-5xl text-[var(--color-leaf-700)] leading-none mt-1">
               {filledCount}/{totalActive}
             </p>
             <p className="text-sm text-zinc-700 mt-2">
@@ -833,7 +843,7 @@ function EveningCheckCard({
               <span className="text-3xl text-zinc-400">/{totalActive}</span>
             </p>
             <p className="text-sm text-zinc-700 mt-2">
-              ครบ <strong className="tabular-num text-[--color-leaf-700]">{fillPct}%</strong>
+              ครบ <strong className="tabular-num text-[var(--color-leaf-700)]">{fillPct}%</strong>
               <span className="text-zinc-400 mx-1.5">·</span>
               เหลือ <strong className="tabular-num text-amber-700">{missingBranches.length}</strong> สาขาต้องตามอีก
             </p>
@@ -917,7 +927,7 @@ function EveningCheckCard({
                   {b.manager_phone && (
                     <a
                       href={`tel:${b.manager_phone}`}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[--color-leaf-50] border border-[--color-leaf-200] text-[--color-leaf-700] text-xs font-bold hover:bg-[--color-leaf-100]"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[var(--color-leaf-50)] border border-[var(--color-leaf-200)] text-[var(--color-leaf-700)] text-xs font-bold hover:bg-[var(--color-leaf-100)]"
                     >
                       <Phone className="size-3.5" />
                       โทร
@@ -936,7 +946,7 @@ function EveningCheckCard({
           {missingBranches.length > 8 && (
             <Link
               href="/cashhub/dashboard"
-              className="block px-5 py-3 text-center text-sm font-bold text-[--color-brand-700] hover:bg-[--color-brand-50]"
+              className="block px-5 py-3 text-center text-sm font-bold text-[var(--color-brand-700)] hover:bg-[var(--color-brand-50)]"
             >
               ดูทั้งหมด {missingBranches.length} สาขา →
             </Link>
@@ -962,13 +972,13 @@ function QuickLink({
   return (
     <Link
       href={href}
-      className="group flex items-center justify-between gap-2 px-4 py-3.5 rounded-xl border-2 border-zinc-200 bg-white hover:border-[--color-brand-400] hover:bg-[--color-brand-50]/30 transition-all hover-lift"
+      className="group flex items-center justify-between gap-2 px-4 py-3.5 rounded-xl border-2 border-zinc-200 bg-white hover:border-[var(--color-brand-400)] hover:bg-[var(--color-brand-50)]/30 transition-all hover-lift"
     >
       <span className="flex items-center gap-2.5">
-        <span className="text-[--color-brand-600]">{icon}</span>
+        <span className="text-[var(--color-brand-600)]">{icon}</span>
         <span className="text-sm font-bold text-zinc-800">{label}</span>
       </span>
-      <ArrowRight className="size-4 text-zinc-400 group-hover:text-[--color-brand-600] group-hover:translate-x-0.5 transition-all" />
+      <ArrowRight className="size-4 text-zinc-400 group-hover:text-[var(--color-brand-600)] group-hover:translate-x-0.5 transition-all" />
     </Link>
   );
 }

@@ -164,7 +164,7 @@ export function EditUserForm({
               className={cn(
                 "flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors",
                 role === r.value
-                  ? "border-[--color-brand-500] bg-[--color-brand-50]"
+                  ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)]"
                   : "border-zinc-200 hover:bg-zinc-50",
               )}
             >
@@ -204,7 +204,7 @@ export function EditUserForm({
                     className={cn(
                       "flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-colors",
                       selected.has(b.id)
-                        ? "border-[--color-brand-500] bg-[--color-brand-50]"
+                        ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)]"
                         : "border-zinc-200 hover:bg-zinc-50",
                     )}
                   >

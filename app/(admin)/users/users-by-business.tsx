@@ -95,7 +95,7 @@ const ROLE_COLOR: Record<string, string> = {
   admin: "bg-amber-50 text-amber-800 border-amber-200",
   org_admin: "bg-amber-50 text-amber-800 border-amber-200",
   area_manager: "bg-purple-50 text-purple-800 border-purple-200",
-  branch_manager: "bg-[--color-brand-50] text-[--color-brand-800] border-[--color-brand-200]",
+  branch_manager: "bg-[var(--color-brand-50)] text-[var(--color-brand-800)] border-[var(--color-brand-200)]",
   staff: "bg-zinc-50 text-zinc-700 border-zinc-200",
   driver: "bg-blue-50 text-blue-800 border-blue-200",
   viewer: "bg-zinc-50 text-zinc-500 border-zinc-200",
@@ -343,13 +343,13 @@ export function UsersByBusiness({
 
       {/* Bulk action bar — appears when something selected */}
       {selectedIds.size > 0 && (
-        <div className="sticky top-2 z-40 rounded-xl border-2 border-[--color-brand-500] bg-[--color-brand-50] shadow-blue px-4 py-2.5 flex items-center gap-2 flex-wrap animate-fade-up">
-          <span className="text-sm font-bold text-[--color-brand-900]">
+        <div className="sticky top-2 z-40 rounded-xl border-2 border-[var(--color-brand-500)] bg-[var(--color-brand-50)] shadow-blue px-4 py-2.5 flex items-center gap-2 flex-wrap animate-fade-up">
+          <span className="text-sm font-bold text-[var(--color-brand-900)]">
             เลือกแล้ว {selectedIds.size} คน
           </span>
           <button
             onClick={clearSelection}
-            className="text-xs text-[--color-brand-700] hover:text-[--color-brand-900] font-medium"
+            className="text-xs text-[var(--color-brand-700)] hover:text-[var(--color-brand-900)] font-medium"
           >
             ยกเลิก
           </button>
@@ -428,7 +428,7 @@ export function UsersByBusiness({
             return (
               <div key={companyId}>
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="size-8 rounded-lg bg-[--color-brand-600] text-white flex items-center justify-center font-extrabold text-xs font-display">
+                  <div className="size-8 rounded-lg bg-[var(--color-brand-600)] text-white flex items-center justify-center font-extrabold text-xs font-display">
                     {company?.code.slice(0, 2) ?? "?"}
                   </div>
                   <div>
@@ -569,8 +569,8 @@ function StatsSummary({ stats }: { stats: UserStats }) {
     { label: "offline > 7 วัน", value: stats.offline7d, tone: stats.offline7d > 0 ? "warning" : "neutral" },
   ];
   const toneClass: Record<string, string> = {
-    brand: "border-[--color-brand-200] bg-[--color-brand-50]/40 text-[--color-brand-700]",
-    leaf: "border-[--color-leaf-200] bg-[--color-leaf-50]/40 text-[--color-leaf-700]",
+    brand: "border-[var(--color-brand-200)] bg-[var(--color-brand-50)]/40 text-[var(--color-brand-700)]",
+    leaf: "border-[var(--color-leaf-200)] bg-[var(--color-leaf-50)]/40 text-[var(--color-leaf-700)]",
     warning: "border-amber-300 bg-amber-50/60 text-amber-900",
     neutral: "border-zinc-200 bg-white text-zinc-700",
   };
@@ -636,7 +636,7 @@ function FilterBar({
             value={filter.search}
             onChange={(e) => setFilter({ ...filter, search: e.target.value })}
             placeholder="ค้นหาชื่อ / เบอร์ / อีเมล..."
-            className="w-full h-10 pl-10 pr-9 rounded-lg border-2 border-zinc-200 bg-white text-sm focus:border-[--color-brand-500] focus:outline-none transition-colors"
+            className="w-full h-10 pl-10 pr-9 rounded-lg border-2 border-zinc-200 bg-white text-sm focus:border-[var(--color-brand-500)] focus:outline-none transition-colors"
           />
           {filter.search && (
             <button
@@ -710,7 +710,7 @@ function FilterChip({
         on
           ? tone === "warning"
             ? "bg-amber-100 border-amber-400 text-amber-900"
-            : "bg-[--color-brand-100] border-[--color-brand-400] text-[--color-brand-900]"
+            : "bg-[var(--color-brand-100)] border-[var(--color-brand-400)] text-[var(--color-brand-900)]"
           : "bg-white border-zinc-200 text-zinc-600 hover:border-zinc-400",
       )}
     >
@@ -741,7 +741,7 @@ function BulkBtn({
         "inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-bold border-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
         danger
           ? "bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
-          : "bg-white border-[--color-brand-200] text-[--color-brand-700] hover:bg-[--color-brand-100]",
+          : "bg-white border-[var(--color-brand-200)] text-[var(--color-brand-700)] hover:bg-[var(--color-brand-100)]",
       )}
     >
       {icon}
@@ -806,7 +806,7 @@ function NotificationBox({
                   : n.type === "warning"
                     ? "bg-amber-500"
                     : n.type === "success"
-                      ? "bg-[--color-leaf-500]"
+                      ? "bg-[var(--color-leaf-500)]"
                       : "bg-blue-500",
               )}
             />
@@ -852,42 +852,60 @@ function BranchRow({
 }) {
   const managerCount = branch.users.filter((u) => MANAGER_ROLES.has(u.role)).length;
   const staffCount = branch.users.filter((u) => u.role === "staff").length;
+  const hasUsers = branch.users.length > 0;
+  // Default: collapsed (showing only summary). Users can expand each branch as needed.
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div className="px-3 py-2">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="min-w-0 flex items-center gap-2 flex-wrap">
-          <span className="font-extrabold tabular-num font-display text-xs">
+        <button
+          type="button"
+          onClick={() => hasUsers && setExpanded((v) => !v)}
+          disabled={!hasUsers}
+          className="min-w-0 flex items-center gap-2 flex-wrap text-left disabled:cursor-default group/row"
+        >
+          {hasUsers ? (
+            <ChevronDown
+              className={cn(
+                "size-3.5 text-zinc-400 transition-transform group-hover/row:text-zinc-700 shrink-0",
+                expanded && "rotate-180",
+              )}
+            />
+          ) : (
+            <span className="size-3.5 shrink-0" />
+          )}
+          <span className="font-extrabold tabular-num font-display text-xs text-zinc-900">
             {branch.code}
           </span>
-          <span className="text-xs text-zinc-700 truncate">{branch.name}</span>
+          <span className="text-xs text-zinc-800 truncate">{branch.name}</span>
           <span
             className={cn(
               "text-[10px] font-bold tabular-num px-1.5 py-0.5 rounded-md border",
               managerCount === 0
                 ? "bg-amber-50 text-amber-800 border-amber-200"
-                : "bg-[--color-leaf-50] text-[--color-leaf-700] border-[--color-leaf-200]",
+                : "bg-[var(--color-leaf-50)] text-[var(--color-leaf-700)] border-[var(--color-leaf-200)]",
             )}
           >
             ผจก. {managerCount}/2
           </span>
           {staffCount > 0 && (
-            <span className="text-[10px] font-bold tabular-num text-zinc-600 px-1.5 py-0.5 rounded-md bg-zinc-50 border border-zinc-200">
+            <span className="text-[10px] font-bold tabular-num text-zinc-700 px-1.5 py-0.5 rounded-md bg-zinc-50 border border-zinc-200">
               พน. {staffCount}
             </span>
           )}
-        </div>
+        </button>
         <button
           type="button"
           onClick={onInvite}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[--color-brand-50] border border-[--color-brand-200] text-[--color-brand-700] text-[11px] font-bold hover:bg-[--color-brand-100] transition-colors shrink-0"
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] text-[var(--color-brand-700)] text-[11px] font-bold hover:bg-[var(--color-brand-100)] transition-colors shrink-0"
         >
           <UserPlus className="size-3" />
           เชิญ
         </button>
       </div>
-      {branch.users.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-1.5">
+      {expanded && hasUsers && (
+        <div className="flex flex-wrap gap-1 mt-2 ml-5">
           {branch.users.map((u) => (
             <UserChipCompact
               key={u.id}
@@ -906,7 +924,7 @@ function BranchRow({
 function statusInfo(u: BranchUser): { dot: string; label: string } {
   if (!u.is_active) return { dot: "bg-zinc-300", label: "ปิดบัญชี" };
   if (!u.invite_used) return { dot: "bg-amber-400", label: "ยังไม่ activate" };
-  return { dot: "bg-[--color-leaf-500]", label: "พร้อมใช้งาน" };
+  return { dot: "bg-[var(--color-leaf-500)]", label: "พร้อมใช้งาน" };
 }
 
 function UserChipCompact({
@@ -929,8 +947,8 @@ function UserChipCompact({
       className={cn(
         "inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-[11px] transition-colors group",
         selected
-          ? "bg-[--color-brand-100] border-[--color-brand-400]"
-          : "bg-white border-zinc-200 hover:border-[--color-brand-300]",
+          ? "bg-[var(--color-brand-100)] border-[var(--color-brand-400)]"
+          : "bg-white border-zinc-200 hover:border-[var(--color-brand-300)]",
       )}
     >
       <input
@@ -953,14 +971,14 @@ function UserChipCompact({
         <span
           className={cn(
             "size-1.5 rounded-full",
-            user.has_line ? "bg-[--color-leaf-500]" : "bg-zinc-200",
+            user.has_line ? "bg-[var(--color-leaf-500)]" : "bg-zinc-200",
           )}
           title={user.has_line ? "LINE ผูกแล้ว" : "ยังไม่ผูก LINE"}
         />
         <span
           className={cn(
             "size-1.5 rounded-full",
-            user.has_telegram ? "bg-[--color-leaf-500]" : "bg-zinc-200",
+            user.has_telegram ? "bg-[var(--color-leaf-500)]" : "bg-zinc-200",
           )}
           title={user.has_telegram ? "Telegram ผูกแล้ว" : "ยังไม่ผูก Telegram"}
         />
@@ -988,7 +1006,7 @@ function UserChipRow({
     <div
       className={cn(
         "flex items-center gap-3 px-3 py-2 transition-colors text-sm",
-        selected ? "bg-[--color-brand-50]" : "hover:bg-zinc-50",
+        selected ? "bg-[var(--color-brand-50)]" : "hover:bg-zinc-50",
       )}
     >
       <input
@@ -1009,14 +1027,14 @@ function UserChipRow({
         <span
           className={cn(
             "size-2 rounded-full",
-            user.has_line ? "bg-[--color-leaf-500]" : "bg-zinc-200",
+            user.has_line ? "bg-[var(--color-leaf-500)]" : "bg-zinc-200",
           )}
           title="LINE"
         />
         <span
           className={cn(
             "size-2 rounded-full",
-            user.has_telegram ? "bg-[--color-leaf-500]" : "bg-zinc-200",
+            user.has_telegram ? "bg-[var(--color-leaf-500)]" : "bg-zinc-200",
           )}
           title="Telegram"
         />
@@ -1059,18 +1077,18 @@ function RoleBadgeWithPreview({ role, className }: { role: string; className: st
       {open && desc && (
         <div className="absolute right-0 top-full mt-1 z-50 w-72 rounded-xl border-2 border-zinc-200 bg-white shadow-lg p-3 text-left">
           <div className="flex items-center gap-1.5 mb-2">
-            <ShieldCheck className="size-3.5 text-[--color-brand-600]" />
+            <ShieldCheck className="size-3.5 text-[var(--color-brand-600)]" />
             <p className="text-xs font-extrabold text-zinc-900">
               {ROLE_LABEL[role] ?? role}
             </p>
           </div>
-          <p className="text-[10px] uppercase tracking-wider font-bold text-[--color-leaf-700] mb-1">
+          <p className="text-[10px] uppercase tracking-wider font-bold text-[var(--color-leaf-700)] mb-1">
             ทำได้
           </p>
           <ul className="space-y-0.5 text-[11px] text-zinc-700 mb-2">
             {desc.can.map((c, i) => (
               <li key={i} className="flex gap-1">
-                <span className="text-[--color-leaf-600]">✓</span>
+                <span className="text-[var(--color-leaf-600)]">✓</span>
                 <span>{c}</span>
               </li>
             ))}
@@ -1168,7 +1186,7 @@ function UserActionMenu({
               disabled={pending}
               className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-zinc-50 text-left"
             >
-              <Mail className="size-3.5 text-[--color-brand-600]" />
+              <Mail className="size-3.5 text-[var(--color-brand-600)]" />
               ส่งลิงก์เชิญใหม่
             </button>
           )}
@@ -1200,7 +1218,7 @@ function UserActionMenu({
               type="button"
               onClick={() => callApi(`/api/admin/users/${user.id}/reactivate`)}
               disabled={pending}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-[--color-leaf-50] text-[--color-leaf-700] text-left border-t border-zinc-100"
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-[var(--color-leaf-50)] text-[var(--color-leaf-700)] text-left border-t border-zinc-100"
             >
               <Unlock className="size-3.5" />
               เปิดบัญชี
@@ -1282,7 +1300,7 @@ function InviteDialog({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="เช่น สมชาย ใจดี"
-                className="w-full mt-1 px-4 py-3 rounded-xl border-2 border-zinc-200 bg-white text-base focus:border-[--color-brand-500] focus:outline-none transition-colors"
+                className="w-full mt-1 px-4 py-3 rounded-xl border-2 border-zinc-200 bg-white text-base focus:border-[var(--color-brand-500)] focus:outline-none transition-colors"
                 autoFocus
               />
             </div>
@@ -1296,7 +1314,7 @@ function InviteDialog({
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="081-234-5678"
-                className="w-full mt-1 px-4 py-3 rounded-xl border-2 border-zinc-200 bg-white text-base focus:border-[--color-brand-500] focus:outline-none transition-colors"
+                className="w-full mt-1 px-4 py-3 rounded-xl border-2 border-zinc-200 bg-white text-base focus:border-[var(--color-brand-500)] focus:outline-none transition-colors"
               />
             </div>
             <div>
@@ -1314,7 +1332,7 @@ function InviteDialog({
                     className={cn(
                       "flex items-center gap-2.5 px-4 py-3 rounded-xl border-2 cursor-pointer transition-colors",
                       role === r.v
-                        ? "border-[--color-brand-500] bg-[--color-brand-50]"
+                        ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)]"
                         : "border-zinc-200 hover:bg-zinc-50",
                     )}
                   >
@@ -1343,7 +1361,7 @@ function InviteDialog({
                 type="button"
                 onClick={submit}
                 disabled={pending || !name.trim()}
-                className="flex-1 h-12 rounded-xl bg-[--color-brand-600] text-white font-bold hover:bg-[--color-brand-700] shadow-blue disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                className="flex-1 h-12 rounded-xl bg-[var(--color-brand-600)] text-white font-bold hover:bg-[var(--color-brand-700)] shadow-blue disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
               >
                 {pending && <Loader2 className="size-4 animate-spin" />}
                 สร้างลิงก์เชิญ
@@ -1352,8 +1370,8 @@ function InviteDialog({
           </>
         ) : (
           <>
-            <div className="rounded-xl bg-[--color-leaf-50] border-2 border-[--color-leaf-200] p-4">
-              <div className="flex items-center gap-2 mb-2 text-[--color-leaf-700]">
+            <div className="rounded-xl bg-[var(--color-leaf-50)] border-2 border-[var(--color-leaf-200)] p-4">
+              <div className="flex items-center gap-2 mb-2 text-[var(--color-leaf-700)]">
                 <CheckCircle2 className="size-5" />
                 <p className="font-bold">ลิงก์พร้อมส่งแล้ว</p>
               </div>
@@ -1370,7 +1388,7 @@ function InviteDialog({
                 <button
                   type="button"
                   onClick={copyLink}
-                  className="inline-flex items-center gap-1.5 px-4 rounded-lg bg-[--color-brand-600] text-white text-sm font-bold hover:bg-[--color-brand-700]"
+                  className="inline-flex items-center gap-1.5 px-4 rounded-lg bg-[var(--color-brand-600)] text-white text-sm font-bold hover:bg-[var(--color-brand-700)]"
                 >
                   {copied ? (
                     <>

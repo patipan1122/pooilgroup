@@ -28,10 +28,10 @@ export default async function SignupPage() {
   return (
     <div className="w-full max-w-md">
       <div className="mb-10 flex flex-col items-center text-center animate-slide-up-soft">
-        <div className="inline-flex items-center justify-center size-16 rounded-2xl bg-[--color-brand-600] text-white mb-6 font-display font-extrabold text-2xl shadow-blue glow-blue">
+        <div className="inline-flex items-center justify-center size-16 rounded-2xl bg-[var(--color-brand-600)] text-white mb-6 font-display font-extrabold text-2xl shadow-blue glow-blue">
           P
         </div>
-        <p className="text-[11px] uppercase tracking-[0.22em] font-bold text-[--color-brand-700] mb-3">
+        <p className="text-[11px] uppercase tracking-[0.22em] font-bold text-[var(--color-brand-700)] mb-3">
           <span className="brand-gradient-text">Pooilgroup</span>{" "}
           ERP
         </p>
@@ -55,14 +55,14 @@ export default async function SignupPage() {
 
       <div className="bg-white rounded-3xl border-2 border-zinc-200 shadow-lg p-6 sm:p-8 animate-fade-up delay-100">
         {isFirstUser && (
-          <div className="mb-5 rounded-xl bg-gradient-to-br from-[--color-brand-50] to-white border-2 border-[--color-brand-200] px-4 py-3.5 text-sm">
+          <div className="mb-5 rounded-xl bg-gradient-to-br from-[var(--color-brand-50)] to-white border-2 border-[var(--color-brand-200)] px-4 py-3.5 text-sm">
             <div className="flex items-start gap-2.5">
-              <Crown className="size-5 text-[--color-brand-600] shrink-0 mt-0.5" />
+              <Crown className="size-5 text-[var(--color-brand-600)] shrink-0 mt-0.5" />
               <div>
-                <div className="font-bold text-[--color-brand-800]">
+                <div className="font-bold text-[var(--color-brand-800)]">
                   บัญชีแรกในระบบ
                 </div>
-                <div className="text-xs text-[--color-brand-700] mt-0.5">
+                <div className="text-xs text-[var(--color-brand-700)] mt-0.5">
                   คุณจะได้สิทธิ์ Super Admin โดยอัตโนมัติ — จัดการทุกสาขา/ทุกผู้ใช้
                 </div>
               </div>
@@ -76,7 +76,7 @@ export default async function SignupPage() {
         มีบัญชีอยู่แล้ว?{" "}
         <Link
           href="/login"
-          className="font-bold text-[--color-brand-700] hover:text-[--color-brand-800] underline underline-offset-2"
+          className="font-bold text-[var(--color-brand-700)] hover:text-[var(--color-brand-800)] underline underline-offset-2"
         >
           เข้าสู่ระบบ →
         </Link>

@@ -315,7 +315,7 @@ export function ReportForm({
                     className={cn(
                       "py-3 rounded-xl text-sm font-medium transition-colors flex flex-col items-center gap-1",
                       shift === s
-                        ? "bg-[--color-brand-600] text-white shadow-soft"
+                        ? "bg-[var(--color-brand-600)] text-white shadow-soft"
                         : "bg-zinc-50 text-zinc-700 hover:bg-zinc-100",
                     )}
                   >
@@ -449,7 +449,7 @@ export function ReportForm({
                   <button
                     type="button"
                     onClick={() => setShortageModalOpen(true)}
-                    className="text-sm font-medium text-[--color-brand-700] hover:underline shrink-0"
+                    className="text-sm font-medium text-[var(--color-brand-700)] hover:underline shrink-0"
                   >
                     {shortageInfo ? "แก้" : "ระบุ"}
                   </button>
@@ -495,7 +495,7 @@ export function ReportForm({
                     value={values[f.key] || ""}
                     onChange={(e) => update(f.key, e.target.value)}
                     maxLength={500}
-                    className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-base outline-none focus:border-[--color-brand-500] focus:ring-2 focus:ring-[--color-brand-100]"
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-base outline-none focus:border-[var(--color-brand-500)] focus:ring-2 focus:ring-[var(--color-brand-100)]"
                   />
                 </Field>
               ))}

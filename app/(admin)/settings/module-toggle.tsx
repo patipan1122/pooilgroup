@@ -64,7 +64,7 @@ export function ModuleToggleList({ status: initial }: Props) {
               className={cn(
                 "flex items-center justify-between gap-3 rounded-xl border-2 p-3 transition-colors",
                 isActive
-                  ? "border-[--color-brand-200] bg-[--color-brand-50]/40"
+                  ? "border-[var(--color-brand-200)] bg-[var(--color-brand-50)]/40"
                   : "border-zinc-200 bg-zinc-50",
               )}
             >
@@ -89,7 +89,7 @@ export function ModuleToggleList({ status: initial }: Props) {
                 className={cn(
                   "relative inline-flex shrink-0 h-7 w-12 rounded-full transition-colors",
                   isActive
-                    ? "bg-[--color-brand-600]"
+                    ? "bg-[var(--color-brand-600)]"
                     : "bg-zinc-300",
                   updating && "opacity-50 cursor-wait",
                 )}

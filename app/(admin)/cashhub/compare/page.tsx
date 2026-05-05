@@ -114,13 +114,13 @@ export default async function ComparePage({
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <Link
         href="/cashhub/dashboard"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[--color-brand-700]"
+        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
       >
         <ArrowLeft className="size-4" />
         ภาพรวม
       </Link>
       <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           🔁 COMPARE
         </p>
         <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
@@ -140,7 +140,7 @@ export default async function ComparePage({
             <TypePicker value={filterType} />
             <button
               type="submit"
-              className="sm:col-span-3 h-11 rounded-xl bg-[--color-brand-600] text-white font-semibold hover:bg-[--color-brand-700] transition-colors"
+              className="sm:col-span-3 h-11 rounded-xl bg-[var(--color-brand-600)] text-white font-semibold hover:bg-[var(--color-brand-700)] transition-colors"
             >
               เปรียบเทียบ
             </button>
@@ -366,7 +366,7 @@ function CompareCard({
   highlight?: boolean;
 }) {
   return (
-    <Card className={highlight ? "border-[--color-brand-300]" : ""}>
+    <Card className={highlight ? "border-[var(--color-brand-300)]" : ""}>
       <CardHeader>
         <CardTitle>{label}</CardTitle>
       </CardHeader>

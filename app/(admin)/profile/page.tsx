@@ -15,7 +15,7 @@ export default async function ProfilePage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-2xl mx-auto">
       <div className="mb-6 animate-fade-up">
-        <p className="text-xs uppercase tracking-widest text-[--color-brand-600] font-semibold">
+        <p className="text-xs uppercase tracking-widest text-[var(--color-brand-600)] font-semibold">
           บัญชี
         </p>
         <h1 className="text-3xl font-extrabold tracking-tight font-display mt-2">
@@ -35,10 +35,10 @@ export default async function ProfilePage() {
 
       <Link
         href="/profile/sessions"
-        className="mt-4 flex items-center justify-between gap-3 rounded-2xl border-2 border-zinc-200 bg-white px-4 py-3.5 hover:border-[--color-brand-300] hover:bg-[--color-brand-50]/40 transition-colors animate-fade-up delay-200"
+        className="mt-4 flex items-center justify-between gap-3 rounded-2xl border-2 border-zinc-200 bg-white px-4 py-3.5 hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors animate-fade-up delay-200"
       >
         <span className="flex items-center gap-3">
-          <span className="size-10 rounded-xl bg-[--color-brand-50] border border-[--color-brand-200] flex items-center justify-center text-[--color-brand-700]">
+          <span className="size-10 rounded-xl bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] flex items-center justify-center text-[var(--color-brand-700)]">
             <ShieldCheck className="size-5" />
           </span>
           <span>

@@ -173,7 +173,7 @@ export function BranchForm(props: Props) {
                   className={cn(
                     "flex items-center gap-2.5 p-2.5 rounded-xl border-2 transition-colors",
                     businessType === t.value
-                      ? "border-[--color-brand-500] bg-[--color-brand-50]"
+                      ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)]"
                       : "border-zinc-200 hover:bg-zinc-50",
                     isEdit && "cursor-not-allowed opacity-60",
                     !isEdit && "cursor-pointer",
@@ -281,7 +281,7 @@ export function BranchForm(props: Props) {
             <select
               value={managerId}
               onChange={(e) => setManagerId(e.target.value)}
-              className="w-full h-12 rounded-xl border-2 border-zinc-200 bg-white px-3.5 text-base focus:border-[--color-brand-500] focus:outline-none transition-colors"
+              className="w-full h-12 rounded-xl border-2 border-zinc-200 bg-white px-3.5 text-base focus:border-[var(--color-brand-500)] focus:outline-none transition-colors"
             >
               <option value="">— ยังไม่กำหนด —</option>
               {props.managers.map((m) => (

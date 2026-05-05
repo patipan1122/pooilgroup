@@ -28,10 +28,10 @@ export default async function LoginPage() {
     <div className="w-full max-w-md">
       {/* Hero — Anuphan heavy display + gradient blue */}
       <div className="mb-10 flex flex-col items-center text-center animate-slide-up-soft">
-        <div className="inline-flex items-center justify-center size-16 rounded-2xl bg-[--color-brand-600] text-white mb-6 font-display font-extrabold text-2xl shadow-blue glow-blue">
+        <div className="inline-flex items-center justify-center size-16 rounded-2xl bg-[var(--color-brand-600)] text-white mb-6 font-display font-extrabold text-2xl shadow-blue glow-blue">
           P
         </div>
-        <p className="text-[11px] uppercase tracking-[0.22em] font-bold text-[--color-brand-700] mb-3">
+        <p className="text-[11px] uppercase tracking-[0.22em] font-bold text-[var(--color-brand-700)] mb-3">
           <span className="brand-gradient-text">Pooilgroup</span>{" "}
           ERP
         </p>
@@ -44,14 +44,14 @@ export default async function LoginPage() {
       </div>
 
       {isFirstRun && (
-        <div className="mb-5 rounded-2xl bg-[--color-brand-50] border-2 border-[--color-brand-200] px-4 py-3.5 animate-fade-up delay-100">
+        <div className="mb-5 rounded-2xl bg-[var(--color-brand-50)] border-2 border-[var(--color-brand-200)] px-4 py-3.5 animate-fade-up delay-100">
           <div className="flex items-start gap-3">
             <span className="text-2xl shrink-0">👋</span>
             <div className="min-w-0">
-              <div className="text-sm font-bold text-[--color-brand-800]">
+              <div className="text-sm font-bold text-[var(--color-brand-800)]">
                 ยังไม่มี Owner ในระบบ
               </div>
-              <div className="text-xs text-[--color-brand-700] mt-0.5">
+              <div className="text-xs text-[var(--color-brand-700)] mt-0.5">
                 สร้างบัญชี Super Admin บัญชีแรก{" "}
                 <Link
                   href="/signup"
@@ -73,7 +73,7 @@ export default async function LoginPage() {
         ยังไม่มีบัญชี?{" "}
         <Link
           href="/join"
-          className="font-bold text-[--color-brand-700] hover:text-[--color-brand-800] underline underline-offset-2"
+          className="font-bold text-[var(--color-brand-700)] hover:text-[var(--color-brand-800)] underline underline-offset-2"
         >
           ขอเข้าใช้งาน →
         </Link>

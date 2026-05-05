@@ -92,7 +92,7 @@ export function DataTable({
               const rowClass = cn(
                 "transition-colors",
                 idx % 2 === 0 ? "bg-white" : "bg-zinc-50/40",
-                row.href && "hover:bg-[--color-brand-50] cursor-pointer",
+                row.href && "hover:bg-[var(--color-brand-50)] cursor-pointer",
               );
               return (
                 <tr

@@ -99,7 +99,7 @@ export function NotificationBell() {
       >
         <Bell className="size-5" />
         {unread > 0 && (
-          <span className="absolute top-1 right-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[--color-danger] text-white text-[10px] font-bold border-2 border-white">
+          <span className="absolute top-1 right-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[var(--color-danger)] text-white text-[10px] font-bold border-2 border-white">
             {unread > 99 ? "99+" : unread}
           </span>
         )}
@@ -125,7 +125,7 @@ export function NotificationBell() {
                 <button
                   type="button"
                   onClick={markAllRead}
-                  className="text-xs text-[--color-brand-700] font-semibold hover:underline"
+                  className="text-xs text-[var(--color-brand-700)] font-semibold hover:underline"
                 >
                   อ่านทั้งหมด
                 </button>
@@ -163,7 +163,7 @@ export function NotificationBell() {
                               {n.title}
                             </p>
                             {!n.is_read && (
-                              <span className="size-2 rounded-full bg-[--color-brand-600] mt-1.5 shrink-0" />
+                              <span className="size-2 rounded-full bg-[var(--color-brand-600)] mt-1.5 shrink-0" />
                             )}
                           </div>
                           <p className="text-xs text-zinc-600 mt-0.5 line-clamp-2">
@@ -189,7 +189,7 @@ export function NotificationBell() {
                             onClick={handleClick}
                             className={cn(
                               "flex items-start gap-3 px-4 py-3 hover:bg-zinc-50 transition-colors",
-                              !n.is_read && "bg-[--color-brand-50]/40",
+                              !n.is_read && "bg-[var(--color-brand-50)]/40",
                             )}
                           >
                             {inner}
@@ -200,7 +200,7 @@ export function NotificationBell() {
                             onClick={handleClick}
                             className={cn(
                               "w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-zinc-50 transition-colors",
-                              !n.is_read && "bg-[--color-brand-50]/40",
+                              !n.is_read && "bg-[var(--color-brand-50)]/40",
                             )}
                           >
                             {inner}
@@ -218,7 +218,7 @@ export function NotificationBell() {
                 <Link
                   href="/profile"
                   onClick={() => setOpen(false)}
-                  className="text-xs text-zinc-500 hover:text-[--color-brand-700]"
+                  className="text-xs text-zinc-500 hover:text-[var(--color-brand-700)]"
                 >
                   ตั้งค่าการแจ้งเตือนที่โปรไฟล์
                 </Link>

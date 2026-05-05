@@ -23,8 +23,7 @@ import { MODULE_LIST, MODULES, getModuleFromPath } from "@/lib/modules";
 import { NotificationBell } from "./notification-bell";
 
 const ADMIN_NAV = [
-  { href: "/users", label: "ผู้ใช้งาน", icon: UsersIcon },
-  { href: "/branches", label: "สาขา", icon: Building2 },
+  { href: "/users", label: "ทีม & สาขา", icon: UsersIcon },
   { href: "/companies", label: "บริษัท", icon: Building2 },
   { href: "/audit", label: "Audit Log", icon: ShieldCheck },
   { href: "/settings", label: "ตั้งค่า", icon: Settings },
@@ -79,7 +78,7 @@ export function AdminShell({ user, children }: Props) {
             <Menu className="size-5" />
           </button>
           <Link href="/home" className="flex items-center gap-2.5 shrink-0">
-            <div className="size-8 rounded-lg bg-[--color-brand-600] text-white flex items-center justify-center font-bold font-display text-sm shadow-blue">
+            <div className="size-8 rounded-lg bg-[var(--color-brand-600)] text-white flex items-center justify-center font-bold font-display text-sm shadow-blue">
               P
             </div>
             <div className="hidden sm:block">
@@ -146,7 +145,7 @@ export function AdminShell({ user, children }: Props) {
                         const isComingSoon = m.status === "coming_soon";
                         const className = cn(
                           "flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-colors",
-                          isCurrent && "bg-[--color-brand-50]",
+                          isCurrent && "bg-[var(--color-brand-50)]",
                           !isCurrent &&
                             !isComingSoon &&
                             "hover:bg-zinc-50 cursor-pointer",
@@ -155,7 +154,7 @@ export function AdminShell({ user, children }: Props) {
                         );
                         const inner = (
                           <>
-                            <div className="size-9 rounded-lg bg-[--color-brand-50] border border-[--color-brand-200] flex items-center justify-center text-lg">
+                            <div className="size-9 rounded-lg bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] flex items-center justify-center text-lg">
                               {m.emoji}
                             </div>
                             <div className="min-w-0 flex-1">
@@ -167,7 +166,7 @@ export function AdminShell({ user, children }: Props) {
                               </div>
                             </div>
                             {isCurrent && (
-                              <Check className="size-4 text-[--color-brand-600]" />
+                              <Check className="size-4 text-[var(--color-brand-600)]" />
                             )}
                             {isComingSoon && (
                               <span className="text-[10px] uppercase tracking-wider font-bold text-zinc-400">
@@ -213,7 +212,7 @@ export function AdminShell({ user, children }: Props) {
             onClick={() => setUserMenuOpen((v) => !v)}
             className="flex items-center gap-2 rounded-xl hover:bg-zinc-100 px-2 py-1.5 transition-colors"
           >
-            <div className="size-8 rounded-full bg-[--color-brand-100] text-[--color-brand-700] flex items-center justify-center text-sm font-bold border-2 border-[--color-brand-200]">
+            <div className="size-8 rounded-full bg-[var(--color-brand-100)] text-[var(--color-brand-700)] flex items-center justify-center text-sm font-bold border-2 border-[var(--color-brand-200)]">
               {user.name.charAt(0).toUpperCase()}
             </div>
             <div className="hidden sm:block text-left">
@@ -296,7 +295,7 @@ export function AdminShell({ user, children }: Props) {
             <div className="px-3 py-3 border-t border-zinc-100">
               <Link
                 href="/home"
-                className="flex items-center gap-2 text-xs text-zinc-500 hover:text-[--color-brand-700] px-2"
+                className="flex items-center gap-2 text-xs text-zinc-500 hover:text-[var(--color-brand-700)] px-2"
               >
                 <Home className="size-3.5" />
                 <span>กลับหน้าหลัก</span>
@@ -394,7 +393,7 @@ function NavGroup({
               className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors",
                 active
-                  ? "bg-[--color-brand-50] text-[--color-brand-700] border border-[--color-brand-200]"
+                  ? "bg-[var(--color-brand-50)] text-[var(--color-brand-700)] border border-[var(--color-brand-200)]"
                   : "text-zinc-700 hover:bg-zinc-100 border border-transparent",
               )}
             >

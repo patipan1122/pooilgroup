@@ -82,7 +82,7 @@ export default async function CompaniesPage() {
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-6xl mx-auto pb-24">
         {/* Hero */}
         <header className="mb-12 sm:mb-14 animate-slide-up-soft">
-          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] font-bold text-[--color-brand-700]">
+          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] font-bold text-[var(--color-brand-700)]">
             จัดการระบบ
             <span className="text-zinc-400 mx-2">·</span>
             <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
@@ -142,7 +142,7 @@ export default async function CompaniesPage() {
                   <Link
                     key={c.id}
                     href={`/companies/${c.id}`}
-                    className="group relative rounded-3xl border-2 border-zinc-200 bg-white p-6 sm:p-7 hover:border-[--color-brand-400] hover-lift-premium overflow-hidden animate-slide-up-soft shadow-soft"
+                    className="group relative rounded-3xl border-2 border-zinc-200 bg-white p-6 sm:p-7 hover:border-[var(--color-brand-400)] hover-lift-premium overflow-hidden animate-slide-up-soft shadow-soft"
                     style={{ animationDelay: `${(idx + 1) * 80}ms` }}
                   >
                     {/* Decorative blue blur */}
@@ -158,12 +158,12 @@ export default async function CompaniesPage() {
                     <div className="relative">
                       {/* Top: logo placeholder + status */}
                       <div className="flex items-start justify-between mb-5">
-                        <div className="size-14 rounded-2xl border-2 bg-[--color-brand-50] border-[--color-brand-200] text-[--color-brand-700] flex items-center justify-center text-xl font-extrabold font-display">
+                        <div className="size-14 rounded-2xl border-2 bg-[var(--color-brand-50)] border-[var(--color-brand-200)] text-[var(--color-brand-700)] flex items-center justify-center text-xl font-extrabold font-display">
                           {c.code.slice(0, 2)}
                         </div>
                         {c.is_active ? (
                           <Badge tone="success">
-                            <span className="size-1.5 rounded-full bg-[--color-leaf-600] animate-pulse-soft inline-block" />
+                            <span className="size-1.5 rounded-full bg-[var(--color-leaf-600)] animate-pulse-soft inline-block" />
                             ใช้งาน
                           </Badge>
                         ) : (
@@ -175,7 +175,7 @@ export default async function CompaniesPage() {
                       <h3 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.025em] font-display text-zinc-900">
                         {c.name}
                       </h3>
-                      <p className="text-sm font-semibold text-[--color-brand-700] mt-1 tabular-num">
+                      <p className="text-sm font-semibold text-[var(--color-brand-700)] mt-1 tabular-num">
                         {c.code}
                         {c.tax_id && (
                           <span className="text-zinc-400 font-normal">
@@ -224,10 +224,10 @@ export default async function CompaniesPage() {
 
                       {/* CTA */}
                       <div className="mt-6 flex items-center justify-between">
-                        <span className="text-sm font-bold text-[--color-brand-700] group-hover:text-[--color-brand-800]">
+                        <span className="text-sm font-bold text-[var(--color-brand-700)] group-hover:text-[var(--color-brand-800)]">
                           ดูรายละเอียด
                         </span>
-                        <ChevronRight className="size-5 text-zinc-400 group-hover:text-[--color-brand-600] group-hover:translate-x-0.5 transition-all" />
+                        <ChevronRight className="size-5 text-zinc-400 group-hover:text-[var(--color-brand-600)] group-hover:translate-x-0.5 transition-all" />
                       </div>
                     </div>
                   </Link>

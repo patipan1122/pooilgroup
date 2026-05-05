@@ -67,7 +67,7 @@ export function BranchDetailActions({
             <Link
               href={`/branches/${branchId}/edit`}
               aria-disabled={pending}
-              className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-[--color-brand-600] text-white font-bold text-sm hover:bg-[--color-brand-700] shadow-blue transition-colors aria-disabled:opacity-50 aria-disabled:pointer-events-none"
+              className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-[var(--color-brand-600)] text-white font-bold text-sm hover:bg-[var(--color-brand-700)] shadow-blue transition-colors aria-disabled:opacity-50 aria-disabled:pointer-events-none"
             >
               <Edit3 className="size-4" />
               แก้ไขสาขา

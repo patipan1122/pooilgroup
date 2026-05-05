@@ -71,8 +71,8 @@ export function ReportsTable({ rows }: Props) {
     <>
       {/* Selection bar */}
       {submittedRows.length > 0 && (
-        <Card className="mb-3 border-[--color-brand-200]">
-          <CardBody className="!py-3 !px-4 flex flex-wrap items-center gap-3 bg-[--color-brand-50]/40">
+        <Card className="mb-3 border-[var(--color-brand-200)]">
+          <CardBody className="!py-3 !px-4 flex flex-wrap items-center gap-3 bg-[var(--color-brand-50)]/40">
             <label className="flex items-center gap-2 cursor-pointer text-sm font-semibold">
               <input
                 type="checkbox"
@@ -128,8 +128,8 @@ export function ReportsTable({ rows }: Props) {
                   <tr
                     key={r.id}
                     className={cn(
-                      "border-b border-zinc-50 hover:bg-[--color-brand-50]/30 transition-colors",
-                      isSelected && "bg-[--color-brand-50]/40",
+                      "border-b border-zinc-50 hover:bg-[var(--color-brand-50)]/30 transition-colors",
+                      isSelected && "bg-[var(--color-brand-50)]/40",
                     )}
                   >
                     <td className="p-3 align-top">
@@ -147,7 +147,7 @@ export function ReportsTable({ rows }: Props) {
                     <td className="p-3">
                       <Link
                         href={`/cashhub/reports/${r.id}`}
-                        className="block hover:text-[--color-brand-700]"
+                        className="block hover:text-[var(--color-brand-700)]"
                       >
                         <div className="font-bold tabular-num text-sm">
                           {r.branch_code}

@@ -126,7 +126,7 @@ export function SetupWizardForm({ companies }: Props) {
           rows={6}
           value={branchCsv}
           onChange={(e) => setBranchCsv(e.target.value)}
-          className="w-full rounded-xl border border-zinc-200 px-4 py-3 font-mono text-xs leading-relaxed bg-white outline-none focus:border-[--color-brand-500]"
+          className="w-full rounded-xl border border-zinc-200 px-4 py-3 font-mono text-xs leading-relaxed bg-white outline-none focus:border-[var(--color-brand-500)]"
         />
       </Field>
 
@@ -138,7 +138,7 @@ export function SetupWizardForm({ companies }: Props) {
           rows={4}
           value={inviteCsv}
           onChange={(e) => setInviteCsv(e.target.value)}
-          className="w-full rounded-xl border border-zinc-200 px-4 py-3 font-mono text-xs leading-relaxed bg-white outline-none focus:border-[--color-brand-500]"
+          className="w-full rounded-xl border border-zinc-200 px-4 py-3 font-mono text-xs leading-relaxed bg-white outline-none focus:border-[var(--color-brand-500)]"
         />
       </Field>
 

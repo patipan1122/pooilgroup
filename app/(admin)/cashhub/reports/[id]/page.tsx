@@ -230,7 +230,7 @@ export default async function ReportDetailPage({
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <Link
         href="/cashhub/reports"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[--color-brand-700]"
+        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
       >
         <ArrowLeft className="size-4" />
         กลับไปยังรายการ
@@ -238,7 +238,7 @@ export default async function ReportDetailPage({
 
       {/* Header */}
       <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           📋 REPORT DETAIL
         </p>
         <div className="flex items-start gap-3 mt-1">
@@ -512,7 +512,7 @@ export default async function ReportDetailPage({
                 <div className="pt-2 border-t border-zinc-100">
                   <Link
                     href={`/cashhub/branches/${branchId}`}
-                    className="inline-flex items-center gap-1 text-xs font-bold text-[--color-brand-700] hover:underline"
+                    className="inline-flex items-center gap-1 text-xs font-bold text-[var(--color-brand-700)] hover:underline"
                   >
                     <TrendingUp className="size-3.5" />
                     ดูประวัติสาขานี้แบบเต็ม →

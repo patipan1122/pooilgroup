@@ -76,13 +76,13 @@ export default async function RentalsPage() {
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <Link
         href="/cashhub/dashboard"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[--color-brand-700]"
+        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
       >
         <ArrowLeft className="size-4" />
         ภาพรวม
       </Link>
       <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[--color-brand-600] font-bold flex items-center gap-2">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
           <Home className="size-4" /> RENTALS
         </p>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1">
@@ -188,7 +188,7 @@ function RentalCard({
         <div className="min-w-0">
           <CardTitle>
             {host?.code} <span className="text-zinc-400 mx-1">↔</span>{" "}
-            <span className="text-[--color-brand-700]">
+            <span className="text-[var(--color-brand-700)]">
               {tenant?.code ?? r.tenant_name}
             </span>
           </CardTitle>
@@ -233,7 +233,7 @@ function RentalCard({
         {tenant && (
           <Link
             href={`/cashhub/branches/${r.tenant_branch_id}`}
-            className="inline-flex items-center gap-1 text-xs font-bold text-[--color-brand-700] hover:underline pt-1"
+            className="inline-flex items-center gap-1 text-xs font-bold text-[var(--color-brand-700)] hover:underline pt-1"
           >
             <ExternalLink className="size-3" />
             ดูสาขา {tenant.code}

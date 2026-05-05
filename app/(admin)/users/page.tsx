@@ -32,7 +32,7 @@ export default async function UsersPage() {
       .order("code"),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin.from as any)("branches")
-      .select("id, code, name, business_type, company_id, province, is_active")
+      .select("id, code, name, business_type, company_id, province, is_active, phone, line_group_id, settings")
       .eq("org_id", orgId)
       .eq("is_active", true)
       .order("code"),
@@ -180,7 +180,7 @@ export default async function UsersPage() {
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-6xl mx-auto pb-24">
         <header className="mb-12 flex items-end justify-between flex-wrap gap-4 animate-fade-up">
           <div>
-            <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[--color-brand-700] font-bold">
+            <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">
               จัดการระบบ
               <span className="text-zinc-400 mx-2">·</span>
               <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
@@ -206,26 +206,26 @@ export default async function UsersPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <Link
               href="/users/requests"
-              className="inline-flex items-center gap-2 px-4 h-11 rounded-xl border-2 border-zinc-200 bg-white font-bold hover:border-[--color-brand-300] hover:bg-[--color-brand-50]/40 transition-colors text-sm relative"
+              className="inline-flex items-center gap-2 px-4 h-11 rounded-xl border-2 border-zinc-200 bg-white font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm relative"
             >
               <Inbox className="size-4" />
               คำขอใหม่
               {pendingCount > 0 && (
-                <span className="ml-1 inline-flex items-center justify-center size-5 rounded-full bg-[--color-danger] text-white text-[10px] font-bold">
+                <span className="ml-1 inline-flex items-center justify-center size-5 rounded-full bg-[var(--color-danger)] text-white text-[10px] font-bold">
                   {pendingCount}
                 </span>
               )}
             </Link>
             <Link
               href="/users/import"
-              className="inline-flex items-center gap-2 px-4 h-11 rounded-xl border-2 border-zinc-200 bg-white font-bold hover:border-[--color-brand-300] hover:bg-[--color-brand-50]/40 transition-colors text-sm"
+              className="inline-flex items-center gap-2 px-4 h-11 rounded-xl border-2 border-zinc-200 bg-white font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm"
             >
               <Upload className="size-4" />
               นำเข้า CSV
             </Link>
             <Link
               href="/users/new"
-              className="inline-flex items-center gap-2 px-5 h-11 rounded-xl bg-[--color-brand-600] text-white font-bold hover:bg-[--color-brand-700] shadow-blue transition-colors text-sm"
+              className="inline-flex items-center gap-2 px-5 h-11 rounded-xl bg-[var(--color-brand-600)] text-white font-bold hover:bg-[var(--color-brand-700)] shadow-blue transition-colors text-sm"
             >
               <UserPlus className="size-4" />
               เชิญผู้ใช้

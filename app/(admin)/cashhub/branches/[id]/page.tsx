@@ -279,7 +279,7 @@ export default async function BranchDetailPage({
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <Link
         href={`/cashhub/dashboard/business/${branch.business_type}`}
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[--color-brand-700]"
+        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
       >
         <ArrowLeft className="size-4" />
         กลับไป {cfg?.label}
@@ -290,7 +290,7 @@ export default async function BranchDetailPage({
         <div className="flex items-start gap-3 sm:gap-4">
           <div className="text-4xl sm:text-5xl shrink-0">{cfg?.emoji}</div>
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
               BRANCH DETAIL · {today}
             </p>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1">

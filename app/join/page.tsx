@@ -37,10 +37,10 @@ export default async function JoinPage() {
         <div className="w-full max-w-lg">
           {/* Hero */}
           <div className="text-center mb-10 animate-slide-up-soft">
-            <div className="size-16 rounded-2xl bg-[--color-brand-600] text-white flex items-center justify-center font-bold font-display text-2xl shadow-blue glow-blue mx-auto mb-6">
+            <div className="size-16 rounded-2xl bg-[var(--color-brand-600)] text-white flex items-center justify-center font-bold font-display text-2xl shadow-blue glow-blue mx-auto mb-6">
               P
             </div>
-            <p className="text-[11px] uppercase tracking-[0.22em] text-[--color-brand-700] font-bold mb-3">
+            <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold mb-3">
               <span className="brand-gradient-text">Pooilgroup</span>{" "}
               · JOIN US
             </p>
@@ -60,7 +60,7 @@ export default async function JoinPage() {
             มีบัญชีอยู่แล้ว?{" "}
             <Link
               href="/login"
-              className="font-bold text-[--color-brand-700] hover:text-[--color-brand-800] underline underline-offset-2"
+              className="font-bold text-[var(--color-brand-700)] hover:text-[var(--color-brand-800)] underline underline-offset-2"
             >
               เข้าสู่ระบบ →
             </Link>

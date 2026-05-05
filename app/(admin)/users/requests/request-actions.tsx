@@ -131,7 +131,7 @@ export function RequestActions({ requestId }: { requestId: string }) {
               placeholder="เช่น ข้อมูลไม่ครบ · ไม่ใช่พนักงาน · ส่งซ้ำ"
               rows={3}
               maxLength={500}
-              className="w-full rounded-xl border-2 border-zinc-200 bg-white p-3 text-sm focus:border-[--color-brand-500] focus:outline-none transition-colors resize-none"
+              className="w-full rounded-xl border-2 border-zinc-200 bg-white p-3 text-sm focus:border-[var(--color-brand-500)] focus:outline-none transition-colors resize-none"
             />
             <div className="flex gap-2">
               <Button

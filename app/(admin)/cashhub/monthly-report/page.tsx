@@ -179,7 +179,7 @@ export default async function MonthlyReportPage({
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link
             href="/cashhub/dashboard"
-            className="inline-flex items-center gap-1.5 text-sm text-zinc-600 hover:text-[--color-brand-700]"
+            className="inline-flex items-center gap-1.5 text-sm text-zinc-600 hover:text-[var(--color-brand-700)]"
           >
             <ArrowLeft className="size-4" />
             ภาพรวม
@@ -208,7 +208,7 @@ export default async function MonthlyReportPage({
           <section className="pg">
             <div className="flex items-baseline justify-between">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.2em] text-[--color-brand-600] font-bold">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-brand-600)] font-bold">
                   EXECUTIVE SUMMARY
                 </p>
                 <h1 className="text-4xl font-extrabold font-display mt-1 text-zinc-900">
@@ -263,7 +263,7 @@ export default async function MonthlyReportPage({
 
           {/* PAGE 2 — RANKING */}
           <section className="pg">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[--color-brand-600] font-bold">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-brand-600)] font-bold">
               BRANCH RANKING
             </p>
             <h2 className="text-3xl font-extrabold font-display mt-1">
@@ -306,7 +306,7 @@ export default async function MonthlyReportPage({
 
           {/* PAGE 3 — BY TYPE */}
           <section className="pg">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[--color-brand-600] font-bold">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-brand-600)] font-bold">
               BY BUSINESS TYPE
             </p>
             <h2 className="text-3xl font-extrabold font-display mt-1">
@@ -349,7 +349,7 @@ export default async function MonthlyReportPage({
 
           {/* PAGE 4 — COMPLIANCE */}
           <section>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[--color-brand-600] font-bold">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-brand-600)] font-bold">
               REPORT COMPLIANCE
             </p>
             <h2 className="text-3xl font-extrabold font-display mt-1">

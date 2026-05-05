@@ -72,13 +72,13 @@ export default async function TrainingPage() {
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <Link
         href="/cashhub/dashboard"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[--color-brand-700]"
+        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
       >
         <ArrowLeft className="size-4" />
         ภาพรวม
       </Link>
       <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[--color-brand-600] font-bold flex items-center gap-2">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
           <GraduationCap className="size-4" /> TRAINING
         </p>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1">
@@ -144,7 +144,7 @@ export default async function TrainingPage() {
                   </div>
                   <Link
                     href={`/liff/report/${b.id}`}
-                    className="inline-flex items-center justify-center h-9 rounded-xl bg-[--color-brand-600] text-white px-4 text-sm font-bold shadow-blue hover:bg-[--color-brand-700]"
+                    className="inline-flex items-center justify-center h-9 rounded-xl bg-[var(--color-brand-600)] text-white px-4 text-sm font-bold shadow-blue hover:bg-[var(--color-brand-700)]"
                   >
                     บันทึกอบรมเดือนนี้
                   </Link>
@@ -180,7 +180,7 @@ export default async function TrainingPage() {
                               title={`${month}: ฿${total.toLocaleString("th-TH")}`}
                             >
                               <div
-                                className="w-full bg-[--color-brand-200] rounded-t"
+                                className="w-full bg-[var(--color-brand-200)] rounded-t"
                                 style={{
                                   height: `${(total / max) * 100}%`,
                                   minHeight: total > 0 ? "4px" : "0",
@@ -230,7 +230,7 @@ export default async function TrainingPage() {
                       <div>
                         <Link
                           href={`/cashhub/reports/${r.id}`}
-                          className="text-sm font-bold hover:text-[--color-brand-700]"
+                          className="text-sm font-bold hover:text-[var(--color-brand-700)]"
                         >
                           {branch?.code} · {bkkDate(r.report_date)}
                         </Link>

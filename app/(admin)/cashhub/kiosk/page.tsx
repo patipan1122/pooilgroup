@@ -67,13 +67,13 @@ export default async function KioskPage() {
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <Link
         href="/cashhub/dashboard"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[--color-brand-700]"
+        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
       >
         <ArrowLeft className="size-4" />
         ภาพรวม
       </Link>
       <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[--color-brand-600] font-bold flex items-center gap-2">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
           <Sofa className="size-4" /> KIOSK
         </p>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1">
@@ -121,11 +121,11 @@ export default async function KioskPage() {
               >
                 <CardHeader>
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="size-10 rounded-xl bg-[--color-brand-50] border-2 border-[--color-brand-100] flex items-center justify-center">
+                    <div className="size-10 rounded-xl bg-[var(--color-brand-50)] border-2 border-[var(--color-brand-100)] flex items-center justify-center">
                       {b.business_type === "claw_machine" ? (
-                        <Gamepad2 className="size-5 text-[--color-brand-700]" />
+                        <Gamepad2 className="size-5 text-[var(--color-brand-700)]" />
                       ) : (
-                        <Sofa className="size-5 text-[--color-brand-700]" />
+                        <Sofa className="size-5 text-[var(--color-brand-700)]" />
                       )}
                     </div>
                     <div className="min-w-0">
@@ -177,13 +177,13 @@ export default async function KioskPage() {
                   <div className="px-5 py-3 border-t border-zinc-100 flex items-center justify-between bg-zinc-50/50">
                     <Link
                       href={`/cashhub/branches/${b.id}`}
-                      className="text-xs text-zinc-500 hover:text-[--color-brand-700]"
+                      className="text-xs text-zinc-500 hover:text-[var(--color-brand-700)]"
                     >
                       ดูประวัติทั้งหมด
                     </Link>
                     <Link
                       href={`/liff/report/${b.id}`}
-                      className="inline-flex items-center justify-center h-9 rounded-xl bg-[--color-brand-600] text-white px-4 text-sm font-bold shadow-blue hover:bg-[--color-brand-700]"
+                      className="inline-flex items-center justify-center h-9 rounded-xl bg-[var(--color-brand-600)] text-white px-4 text-sm font-bold shadow-blue hover:bg-[var(--color-brand-700)]"
                     >
                       💰 บันทึกรอบเก็บเงินใหม่
                     </Link>
@@ -219,7 +219,7 @@ export default async function KioskPage() {
                       <div className="min-w-0">
                         <Link
                           href={`/cashhub/reports/${r.id}`}
-                          className="text-sm font-bold tabular-num hover:text-[--color-brand-700]"
+                          className="text-sm font-bold tabular-num hover:text-[var(--color-brand-700)]"
                         >
                           {branch?.code} · {bkkDate(r.report_date)}
                         </Link>

@@ -23,14 +23,14 @@ export default async function NewBranchPage() {
     <div className="p-4 sm:p-6 lg:p-8 max-w-2xl mx-auto">
       <Link
         href="/branches"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[--color-brand-700] mb-3"
+        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)] mb-3"
       >
         <ChevronLeft className="size-4" />
         กลับไปรายชื่อสาขา
       </Link>
 
       <header className="mb-6 animate-fade-up">
-        <p className="text-xs uppercase tracking-widest text-[--color-brand-600] font-semibold">
+        <p className="text-xs uppercase tracking-widest text-[var(--color-brand-600)] font-semibold">
           จัดการระบบ
         </p>
         <h1 className="text-3xl font-extrabold tracking-tight font-display mt-2">

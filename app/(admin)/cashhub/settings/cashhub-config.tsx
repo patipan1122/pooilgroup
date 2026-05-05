@@ -102,7 +102,7 @@ export function CashHubConfigForm({ initial }: Props) {
                 className={cn(
                   "flex flex-col gap-1 p-3 rounded-xl border-2 cursor-pointer transition-colors",
                   reconcileMode === opt.value
-                    ? "border-[--color-brand-500] bg-[--color-brand-50]"
+                    ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)]"
                     : "border-zinc-200 hover:bg-zinc-50",
                 )}
               >

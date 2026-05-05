@@ -40,7 +40,7 @@ export default async function InviteAcceptPage({
         </p>
         <a
           href="/login"
-          className="inline-block mt-6 font-semibold text-[--color-brand-700] hover:underline"
+          className="inline-block mt-6 font-semibold text-[var(--color-brand-700)] hover:underline"
         >
           ไปหน้า Login →
         </a>
@@ -53,7 +53,7 @@ export default async function InviteAcceptPage({
   return (
     <div className="w-full max-w-md">
       <div className="mb-8 flex flex-col items-center text-center animate-fade-up">
-        <div className="inline-flex items-center justify-center size-14 rounded-2xl bg-[--color-brand-600] text-white mb-5 shadow-blue">
+        <div className="inline-flex items-center justify-center size-14 rounded-2xl bg-[var(--color-brand-600)] text-white mb-5 shadow-blue">
           {isAdmin ? (
             <Crown className="size-7" strokeWidth={2.5} />
           ) : (
@@ -69,14 +69,14 @@ export default async function InviteAcceptPage({
       </div>
 
       <div className="bg-white rounded-2xl border border-zinc-200 shadow-md p-6 sm:p-8 animate-fade-up delay-100">
-        <div className="mb-5 rounded-xl bg-[--color-brand-50] border border-[--color-brand-200] px-4 py-3 text-sm">
+        <div className="mb-5 rounded-xl bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] px-4 py-3 text-sm">
           <div className="flex items-start gap-2.5">
-            <CheckCircle2 className="size-5 text-[--color-brand-600] shrink-0 mt-0.5" />
+            <CheckCircle2 className="size-5 text-[var(--color-brand-600)] shrink-0 mt-0.5" />
             <div>
-              <div className="font-semibold text-[--color-brand-800]">
+              <div className="font-semibold text-[var(--color-brand-800)]">
                 {pending.email ?? pending.phone ?? pending.name}
               </div>
-              <div className="text-xs text-[--color-brand-700] mt-0.5">
+              <div className="text-xs text-[var(--color-brand-700)] mt-0.5">
                 บทบาท: {ROLE_LABEL[pending.role] ?? pending.role}
               </div>
             </div>

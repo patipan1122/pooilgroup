@@ -116,7 +116,7 @@ export function LoginForm() {
       </Field>
 
       {error && (
-        <div className="text-sm text-[--color-danger] bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+        <div className="text-sm text-[var(--color-danger)] bg-red-50 border border-red-100 rounded-lg px-3 py-2">
           {error}
         </div>
       )}
@@ -139,7 +139,7 @@ export function LoginForm() {
           ยังไม่มีบัญชี?{" "}
           <a
             href="/join"
-            className="text-[--color-brand-700] font-semibold hover:underline"
+            className="text-[var(--color-brand-700)] font-semibold hover:underline"
           >
             ขอเข้าใช้งาน
           </a>

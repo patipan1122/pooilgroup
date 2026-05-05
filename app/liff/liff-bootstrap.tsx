@@ -61,7 +61,7 @@ export function LiffBootstrap({
     return (
       <div className="fixed inset-0 z-50 bg-white/95 flex items-center justify-center">
         <div className="text-center">
-          <div className="size-12 border-4 border-[--color-brand-200] border-t-[--color-brand-600] rounded-full animate-spin mx-auto mb-3" />
+          <div className="size-12 border-4 border-[var(--color-brand-200)] border-t-[var(--color-brand-600)] rounded-full animate-spin mx-auto mb-3" />
           <p className="text-sm text-zinc-500">กำลังตรวจสอบบัญชี LINE...</p>
         </div>
       </div>

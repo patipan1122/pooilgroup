@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import {
   Filter,
   RotateCcw,
@@ -10,6 +10,7 @@ import {
   Pencil,
   Phone as PhoneIcon,
   MessageSquare,
+  Check,
 } from "lucide-react";
 import Link from "next/link";
 import { BUSINESS_TYPES } from "@/constants/business-types";
@@ -130,7 +131,7 @@ export function BranchFilterAndList({ companies, branches }: Props) {
       {/* Sticky filter bar */}
       <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 py-3 bg-white/85 backdrop-blur-md border-b border-zinc-200 mb-5">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
+          <div className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
             <Filter className="size-3" />
             ตัวกรอง
           </div>
@@ -146,7 +147,7 @@ export function BranchFilterAndList({ companies, branches }: Props) {
                   className={cn(
                     "px-2.5 py-1 rounded-full text-[11px] font-bold border-2 transition-colors",
                     on
-                      ? "bg-[--color-brand-600] border-[--color-brand-600] text-white"
+                      ? "bg-[var(--color-brand-600)] border-[var(--color-brand-600)] text-white"
                       : "bg-white border-zinc-200 text-zinc-600 hover:border-zinc-400",
                   )}
                 >
@@ -173,7 +174,7 @@ export function BranchFilterAndList({ companies, branches }: Props) {
                   className={cn(
                     "size-7 rounded-md border-2 text-sm flex items-center justify-center transition-colors",
                     on
-                      ? "bg-[--color-leaf-50] border-[--color-leaf-500]"
+                      ? "bg-[var(--color-leaf-50)] border-[var(--color-leaf-500)]"
                       : noFilter
                         ? "bg-white border-zinc-200 hover:border-zinc-400"
                         : "bg-zinc-50 border-zinc-200 opacity-50 hover:opacity-80",
@@ -233,7 +234,7 @@ export function BranchFilterAndList({ companies, branches }: Props) {
               <div key={companyId}>
                 {/* Company header — small */}
                 <div className="flex items-center gap-2 mb-3">
-                  <div className="size-8 rounded-lg bg-[--color-brand-600] text-white flex items-center justify-center font-extrabold text-xs font-display">
+                  <div className="size-8 rounded-lg bg-[var(--color-brand-600)] text-white flex items-center justify-center font-extrabold text-xs font-display">
                     {company?.code.slice(0, 2) ?? "?"}
                   </div>
                   <div>
@@ -315,7 +316,7 @@ function BranchCompactRow({ branch: b }: { branch: BranchRow }) {
   return (
     <Link
       href={`/branches/${b.id}`}
-      className="flex items-center gap-3 px-3 py-2.5 hover:bg-[--color-brand-50]/40 transition-colors group"
+      className="flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--color-brand-50)]/40 transition-colors group"
     >
       {/* Code + name */}
       <div className="flex-1 min-w-0">
@@ -338,7 +339,7 @@ function BranchCompactRow({ branch: b }: { branch: BranchRow }) {
             "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold tabular-num",
             missing > 0
               ? "bg-amber-50 text-amber-800 border border-amber-200"
-              : "bg-[--color-leaf-50] text-[--color-leaf-700] border border-[--color-leaf-200]",
+              : "bg-[var(--color-leaf-50)] text-[var(--color-leaf-700)] border border-[var(--color-leaf-200)]",
           )}
           title="ผู้จัดการสาขา"
         >
@@ -349,7 +350,7 @@ function BranchCompactRow({ branch: b }: { branch: BranchRow }) {
           className={cn(
             "inline-flex items-center justify-center size-6 rounded-md border",
             b.line_group_id
-              ? "bg-[--color-leaf-50] border-[--color-leaf-200] text-[--color-leaf-700]"
+              ? "bg-[var(--color-leaf-50)] border-[var(--color-leaf-200)] text-[var(--color-leaf-700)]"
               : "bg-zinc-50 border-zinc-200 text-zinc-400",
           )}
           title={b.line_group_id ? `LINE Group: ${b.line_group_id}` : "ยังไม่ตั้ง LINE Group"}
@@ -361,7 +362,7 @@ function BranchCompactRow({ branch: b }: { branch: BranchRow }) {
           className={cn(
             "inline-flex items-center justify-center size-6 rounded-md border",
             b.telegram_chat_id
-              ? "bg-[--color-leaf-50] border-[--color-leaf-200] text-[--color-leaf-700]"
+              ? "bg-[var(--color-leaf-50)] border-[var(--color-leaf-200)] text-[var(--color-leaf-700)]"
               : "bg-zinc-50 border-zinc-200 text-zinc-400",
           )}
           title={b.telegram_chat_id ? `Telegram: ${b.telegram_chat_id}` : "ยังไม่ตั้ง Telegram"}
@@ -373,7 +374,7 @@ function BranchCompactRow({ branch: b }: { branch: BranchRow }) {
           className={cn(
             "inline-flex items-center justify-center size-6 rounded-md border",
             b.phone
-              ? "bg-[--color-leaf-50] border-[--color-leaf-200] text-[--color-leaf-700]"
+              ? "bg-[var(--color-leaf-50)] border-[var(--color-leaf-200)] text-[var(--color-leaf-700)]"
               : "bg-zinc-50 border-zinc-200 text-zinc-400",
           )}
           title={b.phone ?? "ไม่มีเบอร์"}
@@ -381,7 +382,7 @@ function BranchCompactRow({ branch: b }: { branch: BranchRow }) {
           <PhoneIcon className="size-3" />
         </span>
         {/* Edit hint */}
-        <Pencil className="size-3 text-zinc-400 group-hover:text-[--color-brand-600] transition-colors" />
+        <Pencil className="size-3 text-zinc-400 group-hover:text-[var(--color-brand-600)] transition-colors" />
       </div>
     </Link>
   );

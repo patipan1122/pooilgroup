@@ -31,9 +31,9 @@ export function Section({
       {/* Section header */}
       <div className="flex items-end justify-between gap-3 flex-wrap mb-4">
         <div>
-          <p className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
+          <p className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
             {number && (
-              <span className="inline-flex items-center justify-center min-w-[28px] h-6 px-1.5 rounded-md bg-[--color-brand-50] border border-[--color-brand-200] text-[10px] tabular-num">
+              <span className="inline-flex items-center justify-center min-w-[28px] h-6 px-1.5 rounded-md bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] text-[10px] tabular-num">
                 {number}
               </span>
             )}
@@ -70,7 +70,7 @@ export function SectionDivider({ className }: { className?: string }) {
       )}
     >
       <div className="flex-1 h-px bg-zinc-200" />
-      <span className="size-1.5 rounded-full bg-[--color-brand-400] mx-3" />
+      <span className="size-1.5 rounded-full bg-[var(--color-brand-400)] mx-3" />
       <div className="flex-1 h-px bg-zinc-200" />
     </div>
   );

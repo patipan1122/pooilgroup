@@ -117,7 +117,7 @@ export async function StaffHome({
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-3xl mx-auto pb-24">
         {/* Hero */}
         <header className="mb-12 sm:mb-14 animate-slide-up-soft">
-          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] font-bold text-[--color-brand-700]">
+          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] font-bold text-[var(--color-brand-700)]">
             <span className="brand-gradient-text">Pooilgroup</span>
             <span className="text-zinc-400 mx-2">·</span>
             <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
@@ -158,16 +158,16 @@ export async function StaffHome({
                     href={`/liff/report/${b.id}`}
                     className={
                       isDone
-                        ? "group flex items-center justify-between gap-4 rounded-2xl border-2 border-[--color-leaf-200] bg-[--color-leaf-50]/40 p-4 sm:p-5 hover:bg-[--color-leaf-50] transition-all"
-                        : "group flex items-center justify-between gap-4 rounded-2xl border-2 border-zinc-200 bg-white p-4 sm:p-5 hover:border-[--color-brand-400] hover-lift-premium shadow-soft"
+                        ? "group flex items-center justify-between gap-4 rounded-2xl border-2 border-[var(--color-leaf-200)] bg-[var(--color-leaf-50)]/40 p-4 sm:p-5 hover:bg-[var(--color-leaf-50)] transition-all"
+                        : "group flex items-center justify-between gap-4 rounded-2xl border-2 border-zinc-200 bg-white p-4 sm:p-5 hover:border-[var(--color-brand-400)] hover-lift-premium shadow-soft"
                     }
                   >
                     <div className="flex items-center gap-4 min-w-0">
                       <div
                         className={
                           isDone
-                            ? "size-12 rounded-2xl bg-[--color-leaf-100] border-2 border-[--color-leaf-300] text-[--color-leaf-700] flex items-center justify-center text-2xl shrink-0"
-                            : "size-12 rounded-2xl bg-[--color-brand-50] border-2 border-[--color-brand-200] text-[--color-brand-700] flex items-center justify-center text-2xl shrink-0"
+                            ? "size-12 rounded-2xl bg-[var(--color-leaf-100)] border-2 border-[var(--color-leaf-300)] text-[var(--color-leaf-700)] flex items-center justify-center text-2xl shrink-0"
+                            : "size-12 rounded-2xl bg-[var(--color-brand-50)] border-2 border-[var(--color-brand-200)] text-[var(--color-brand-700)] flex items-center justify-center text-2xl shrink-0"
                         }
                       >
                         {cfg?.emoji ?? "📋"}
@@ -202,12 +202,12 @@ export async function StaffHome({
                       </div>
                     </div>
                     {isDone ? (
-                      <span className="inline-flex items-center gap-1 text-sm font-bold text-[--color-leaf-700] shrink-0">
+                      <span className="inline-flex items-center gap-1 text-sm font-bold text-[var(--color-leaf-700)] shrink-0">
                         ดู / แก้
                         <ArrowUpRight className="size-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5 px-4 sm:px-5 h-11 rounded-xl bg-[--color-brand-600] text-white font-bold text-sm shadow-blue group-hover:bg-[--color-brand-700] transition-colors shrink-0">
+                      <span className="inline-flex items-center gap-1.5 px-4 sm:px-5 h-11 rounded-xl bg-[var(--color-brand-600)] text-white font-bold text-sm shadow-blue group-hover:bg-[var(--color-brand-700)] transition-colors shrink-0">
                         <ClipboardCheck className="size-4" />
                         กรอกเลย
                       </span>
@@ -252,7 +252,7 @@ export async function StaffHome({
                     <li key={r.id}>
                       <Link
                         href={`/cashhub/reports/${r.id}`}
-                        className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-[--color-brand-50]/30 transition-colors"
+                        className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-[var(--color-brand-50)]/30 transition-colors"
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <span className="text-lg shrink-0">
@@ -310,37 +310,37 @@ export async function StaffHome({
           <div className="grid grid-cols-2 gap-3">
             <Link
               href="/liff/status"
-              className="group flex items-center justify-between gap-2 px-4 py-3.5 rounded-xl border-2 border-zinc-200 bg-white hover:border-[--color-brand-400] hover:bg-[--color-brand-50]/30 transition-all hover-lift"
+              className="group flex items-center justify-between gap-2 px-4 py-3.5 rounded-xl border-2 border-zinc-200 bg-white hover:border-[var(--color-brand-400)] hover:bg-[var(--color-brand-50)]/30 transition-all hover-lift"
             >
               <span className="flex items-center gap-2.5">
-                <ScrollText className="size-4 text-[--color-brand-600]" />
+                <ScrollText className="size-4 text-[var(--color-brand-600)]" />
                 <span className="text-sm font-bold text-zinc-800">
                   สถานะรายงาน
                 </span>
               </span>
-              <ArrowUpRight className="size-4 text-zinc-400 group-hover:text-[--color-brand-600]" />
+              <ArrowUpRight className="size-4 text-zinc-400 group-hover:text-[var(--color-brand-600)]" />
             </Link>
             <Link
               href="/liff/history"
-              className="group flex items-center justify-between gap-2 px-4 py-3.5 rounded-xl border-2 border-zinc-200 bg-white hover:border-[--color-brand-400] hover:bg-[--color-brand-50]/30 transition-all hover-lift"
+              className="group flex items-center justify-between gap-2 px-4 py-3.5 rounded-xl border-2 border-zinc-200 bg-white hover:border-[var(--color-brand-400)] hover:bg-[var(--color-brand-50)]/30 transition-all hover-lift"
             >
               <span className="flex items-center gap-2.5">
-                <History className="size-4 text-[--color-brand-600]" />
+                <History className="size-4 text-[var(--color-brand-600)]" />
                 <span className="text-sm font-bold text-zinc-800">
                   ประวัติย้อนหลัง
                 </span>
               </span>
-              <ArrowUpRight className="size-4 text-zinc-400 group-hover:text-[--color-brand-600]" />
+              <ArrowUpRight className="size-4 text-zinc-400 group-hover:text-[var(--color-brand-600)]" />
             </Link>
             <Link
               href="/profile"
-              className="group flex items-center justify-between gap-2 px-4 py-3.5 rounded-xl border-2 border-zinc-200 bg-white hover:border-[--color-brand-400] hover:bg-[--color-brand-50]/30 transition-all hover-lift"
+              className="group flex items-center justify-between gap-2 px-4 py-3.5 rounded-xl border-2 border-zinc-200 bg-white hover:border-[var(--color-brand-400)] hover:bg-[var(--color-brand-50)]/30 transition-all hover-lift"
             >
               <span className="flex items-center gap-2.5">
-                <UserCircle className="size-4 text-[--color-brand-600]" />
+                <UserCircle className="size-4 text-[var(--color-brand-600)]" />
                 <span className="text-sm font-bold text-zinc-800">โปรไฟล์</span>
               </span>
-              <ArrowUpRight className="size-4 text-zinc-400 group-hover:text-[--color-brand-600]" />
+              <ArrowUpRight className="size-4 text-zinc-400 group-hover:text-[var(--color-brand-600)]" />
             </Link>
           </div>
         </Section>

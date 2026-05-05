@@ -46,7 +46,7 @@ export default async function LiffStatusPage() {
 
       <Link
         href="/liff/report"
-        className="block bg-[--color-brand-600] text-white rounded-2xl px-5 py-4 shadow-soft hover:bg-[--color-brand-700] transition-colors"
+        className="block bg-[var(--color-brand-600)] text-white rounded-2xl px-5 py-4 shadow-soft hover:bg-[var(--color-brand-700)] transition-colors"
       >
         <div className="flex items-center justify-between">
           <div>

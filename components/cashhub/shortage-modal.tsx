@@ -158,7 +158,7 @@ export function ShortageModal({
               <select
                 value={personId}
                 onChange={(e) => setPersonId(e.target.value)}
-                className="h-12 w-full rounded-xl border border-zinc-200 bg-white px-4 text-base outline-none focus:border-[--color-brand-500] focus:ring-2 focus:ring-[--color-brand-100]"
+                className="h-12 w-full rounded-xl border border-zinc-200 bg-white px-4 text-base outline-none focus:border-[var(--color-brand-500)] focus:ring-2 focus:ring-[var(--color-brand-100)]"
               >
                 <option value="">— เลือกชื่อ —</option>
                 {people.map((p) => (

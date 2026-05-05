@@ -325,7 +325,7 @@ export function ImportClient() {
             onChange={(e) => setText(e.target.value)}
             placeholder="วาง CSV ที่นี่..."
             rows={10}
-            className="w-full font-mono text-xs rounded-xl border-2 border-zinc-200 bg-white p-3 focus:border-[--color-brand-500] focus:outline-none resize-none"
+            className="w-full font-mono text-xs rounded-xl border-2 border-zinc-200 bg-white p-3 focus:border-[var(--color-brand-500)] focus:outline-none resize-none"
           />
           {parsed.length > 0 && (
             <div className="mt-3 flex items-center gap-3 text-sm">
@@ -418,7 +418,7 @@ export function ImportClient() {
 function Step({ n, children }: { n: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-2.5">
-      <span className="size-6 rounded-full bg-[--color-brand-100] text-[--color-brand-700] text-xs font-bold flex items-center justify-center shrink-0">
+      <span className="size-6 rounded-full bg-[var(--color-brand-100)] text-[var(--color-brand-700)] text-xs font-bold flex items-center justify-center shrink-0">
         {n}
       </span>
       <span className="text-sm">{children}</span>

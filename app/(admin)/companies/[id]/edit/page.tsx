@@ -31,14 +31,14 @@ export default async function EditCompanyPage({ params }: Props) {
     <div className="p-4 sm:p-8 lg:p-12 max-w-2xl mx-auto pb-24">
       <Link
         href={`/companies/${id}`}
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[--color-brand-700]"
+        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
       >
         <ChevronLeft className="size-4" />
         กลับไปหน้ารายละเอียด
       </Link>
 
       <header className="mt-4 mb-10 animate-slide-up-soft">
-        <p className="text-[11px] uppercase tracking-[0.22em] font-bold text-[--color-brand-700]">
+        <p className="text-[11px] uppercase tracking-[0.22em] font-bold text-[var(--color-brand-700)]">
           แก้ไข · {company.code}
         </p>
         <h1 className="text-3xl sm:text-5xl font-extrabold tracking-[-0.04em] font-display mt-3 leading-[0.95]">

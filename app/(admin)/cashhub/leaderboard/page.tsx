@@ -54,13 +54,13 @@ export default async function LeaderboardPage({
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <Link
         href="/cashhub/dashboard"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[--color-brand-700]"
+        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
       >
         <ArrowLeft className="size-4" />
         ภาพรวม
       </Link>
       <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[--color-brand-600] font-bold flex items-center gap-2">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
           <Trophy className="size-4" /> LEADERBOARD
         </p>
         <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
@@ -110,7 +110,7 @@ export default async function LeaderboardPage({
             </label>
             <button
               type="submit"
-              className="h-10 rounded-xl bg-[--color-brand-600] text-white font-semibold px-5"
+              className="h-10 rounded-xl bg-[var(--color-brand-600)] text-white font-semibold px-5"
             >
               ใช้ตัวกรอง
             </button>

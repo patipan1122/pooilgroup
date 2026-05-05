@@ -55,7 +55,7 @@ export default async function DocuFlowPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-10 max-w-6xl mx-auto">
       <header className="mb-8 animate-fade-up">
-        <p className="text-xs uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           📄 DocuFlow · {thaiDateLong(new Date())}
         </p>
         <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight font-display mt-2">
@@ -112,7 +112,7 @@ export default async function DocuFlowPage() {
           {FEATURES.map((f) => (
             <Card key={f.title} className="hover-lift">
               <CardBody className="flex items-start gap-3">
-                <div className="size-10 shrink-0 rounded-xl bg-[--color-brand-50] border-2 border-[--color-brand-100] flex items-center justify-center text-[--color-brand-700]">
+                <div className="size-10 shrink-0 rounded-xl bg-[var(--color-brand-50)] border-2 border-[var(--color-brand-100)] flex items-center justify-center text-[var(--color-brand-700)]">
                   <f.Icon className="size-5" />
                 </div>
                 <div className="min-w-0">
@@ -136,7 +136,7 @@ export default async function DocuFlowPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Link
             href="/cashhub/dashboard"
-            className="flex items-center justify-between gap-3 px-5 py-4 rounded-2xl border-2 border-zinc-200 bg-white hover:border-[--color-brand-300] hover:bg-[--color-brand-50]/30 transition-all hover-lift"
+            className="flex items-center justify-between gap-3 px-5 py-4 rounded-2xl border-2 border-zinc-200 bg-white hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/30 transition-all hover-lift"
           >
             <div className="flex items-center gap-3 min-w-0">
               <span className="text-2xl">💰</span>
@@ -149,7 +149,7 @@ export default async function DocuFlowPage() {
           </Link>
           <Link
             href="/home"
-            className="flex items-center justify-between gap-3 px-5 py-4 rounded-2xl border-2 border-zinc-200 bg-white hover:border-[--color-brand-300] hover:bg-[--color-brand-50]/30 transition-all hover-lift"
+            className="flex items-center justify-between gap-3 px-5 py-4 rounded-2xl border-2 border-zinc-200 bg-white hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/30 transition-all hover-lift"
           >
             <div className="flex items-center gap-3 min-w-0">
               <span className="text-2xl">🏠</span>

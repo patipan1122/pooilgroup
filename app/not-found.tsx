@@ -13,10 +13,10 @@ export default function NotFound() {
         }}
       />
       <div className="text-center max-w-sm relative animate-fade-up">
-        <div className="size-16 mx-auto rounded-2xl bg-[--color-brand-600] text-white flex items-center justify-center mb-5 shadow-blue">
+        <div className="size-16 mx-auto rounded-2xl bg-[var(--color-brand-600)] text-white flex items-center justify-center mb-5 shadow-blue">
           <Compass className="size-8" strokeWidth={2.5} />
         </div>
-        <p className="text-[10rem] font-extrabold leading-none font-display text-[--color-brand-600] tracking-tighter mb-2">
+        <p className="text-[10rem] font-extrabold leading-none font-display text-[var(--color-brand-600)] tracking-tighter mb-2">
           404
         </p>
         <h1 className="text-2xl font-extrabold tracking-tight font-display mb-2">

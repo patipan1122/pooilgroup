@@ -74,13 +74,13 @@ export default async function NotesInboxPage({
     <div className="p-3 sm:p-6 lg:p-10 max-w-4xl mx-auto pb-24">
       <Link
         href="/cashhub/dashboard"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[--color-brand-700]"
+        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
       >
         <ArrowLeft className="size-4" />
         ภาพรวม
       </Link>
       <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[--color-brand-600] font-bold flex items-center gap-2">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
           <MessageSquare className="size-4" /> NOTES INBOX
         </p>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1">
@@ -98,7 +98,7 @@ export default async function NotesInboxPage({
             href={`?days=${d}`}
             className={`px-3 py-1.5 rounded-xl font-semibold ${
               days === d
-                ? "bg-[--color-brand-600] text-white"
+                ? "bg-[var(--color-brand-600)] text-white"
                 : "bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50"
             }`}
           >
@@ -153,7 +153,7 @@ export default async function NotesInboxPage({
                           </p>
                           <Link
                             href={`/cashhub/reports/${r.id}`}
-                            className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-[--color-brand-700] hover:underline"
+                            className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-[var(--color-brand-700)] hover:underline"
                           >
                             <ExternalLink className="size-3" />
                             ดูรายงานเต็ม

@@ -60,7 +60,7 @@ export default async function BranchDetailPage({ params }: Props) {
     <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
       <Link
         href="/branches"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[--color-brand-700] mb-3"
+        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)] mb-3"
       >
         <ChevronLeft className="size-4" />
         กลับไปรายชื่อสาขา
@@ -68,7 +68,7 @@ export default async function BranchDetailPage({ params }: Props) {
 
       <header className="flex items-start justify-between flex-wrap gap-4 mb-6 animate-fade-up">
         <div className="flex items-start gap-4">
-          <div className="size-16 rounded-2xl bg-[--color-brand-50] border-2 border-[--color-brand-200] flex items-center justify-center text-3xl">
+          <div className="size-16 rounded-2xl bg-[var(--color-brand-50)] border-2 border-[var(--color-brand-200)] flex items-center justify-center text-3xl">
             {cfg?.emoji ?? "📋"}
           </div>
           <div>
@@ -139,7 +139,7 @@ export default async function BranchDetailPage({ params }: Props) {
                 href={`https://www.google.com/maps?q=${branch.lat},${branch.lng}`}
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs text-[--color-brand-700] underline pt-1 inline-block"
+                className="text-xs text-[var(--color-brand-700)] underline pt-1 inline-block"
               >
                 เปิดใน Google Maps · {branch.lat}, {branch.lng}
               </a>
@@ -169,7 +169,7 @@ export default async function BranchDetailPage({ params }: Props) {
                     >
                       <Link
                         href={`/users/${u.id}`}
-                        className="text-zinc-900 hover:text-[--color-brand-700] hover:underline font-medium"
+                        className="text-zinc-900 hover:text-[var(--color-brand-700)] hover:underline font-medium"
                       >
                         {u.name}
                       </Link>

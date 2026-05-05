@@ -57,7 +57,7 @@ export default async function SettingsPage() {
 
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-3xl mx-auto pb-24">
       <div className="mb-12 animate-slide-up-soft">
-        <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[--color-brand-700] font-bold">
+        <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">
           องค์กร
         </p>
         <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-5 leading-[0.95]">

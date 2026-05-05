@@ -177,7 +177,7 @@ export function JoinForm({ branches }: { branches: BranchOption[] }) {
               className={cn(
                 "flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors",
                 role === r.value
-                  ? "border-[--color-brand-500] bg-[--color-brand-50]"
+                  ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)]"
                   : "border-zinc-200 hover:bg-zinc-50",
               )}
             >
@@ -212,7 +212,7 @@ export function JoinForm({ branches }: { branches: BranchOption[] }) {
                 className={cn(
                   "flex items-center gap-2.5 p-2.5 rounded-xl border-2 cursor-pointer transition-colors",
                   !branchId
-                    ? "border-[--color-brand-500] bg-[--color-brand-50]"
+                    ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)]"
                     : "border-zinc-200 hover:bg-zinc-50",
                 )}
               >
@@ -234,7 +234,7 @@ export function JoinForm({ branches }: { branches: BranchOption[] }) {
                     className={cn(
                       "flex items-center gap-2.5 p-2.5 rounded-xl border-2 cursor-pointer transition-colors",
                       branchId === b.id
-                        ? "border-[--color-brand-500] bg-[--color-brand-50]"
+                        ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)]"
                         : "border-zinc-200 hover:bg-zinc-50",
                     )}
                   >
@@ -278,7 +278,7 @@ export function JoinForm({ branches }: { branches: BranchOption[] }) {
               placeholder="เช่น สมัครจาก ผจก. ใจดี · เริ่มงาน 5 พ.ค."
               rows={3}
               maxLength={500}
-              className="w-full rounded-xl border-2 border-zinc-200 bg-white p-3.5 text-base focus:border-[--color-brand-500] focus:outline-none transition-colors resize-none"
+              className="w-full rounded-xl border-2 border-zinc-200 bg-white p-3.5 text-base focus:border-[var(--color-brand-500)] focus:outline-none transition-colors resize-none"
             />
           </Field>
           <p className="text-[11px] text-zinc-400 flex items-center gap-1 mt-2">

@@ -32,7 +32,7 @@ export function Field({
           className="flex items-center gap-1 text-sm font-medium text-zinc-800"
         >
           {label}
-          {required && <span className="text-[--color-danger]">*</span>}
+          {required && <span className="text-[var(--color-danger)]">*</span>}
           {optional && (
             <span className="text-zinc-400 font-normal">(ไม่บังคับ)</span>
           )}
@@ -43,7 +43,7 @@ export function Field({
         <p className="text-xs text-zinc-500">{hint}</p>
       )}
       {error && (
-        <p className="text-xs text-[--color-danger]">{error}</p>
+        <p className="text-xs text-[var(--color-danger)]">{error}</p>
       )}
     </div>
   );

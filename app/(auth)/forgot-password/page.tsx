@@ -6,7 +6,7 @@ export default function ForgotPasswordPage() {
   return (
     <div className="w-full max-w-md">
       <div className="mb-8 flex flex-col items-center text-center animate-fade-up">
-        <div className="inline-flex items-center justify-center size-14 rounded-2xl bg-[--color-brand-600] text-white mb-5 shadow-blue">
+        <div className="inline-flex items-center justify-center size-14 rounded-2xl bg-[var(--color-brand-600)] text-white mb-5 shadow-blue">
           <KeyRound className="size-7" strokeWidth={2.5} />
         </div>
         <h1 className="text-3xl font-extrabold tracking-tight text-zinc-900 font-display">
@@ -23,7 +23,7 @@ export default function ForgotPasswordPage() {
         จำได้แล้ว?{" "}
         <Link
           href="/login"
-          className="font-semibold text-[--color-brand-700] hover:text-[--color-brand-800]"
+          className="font-semibold text-[var(--color-brand-700)] hover:text-[var(--color-brand-800)]"
         >
           กลับไป Login →
         </Link>
