@@ -215,24 +215,48 @@ export default async function HomePage() {
         className="absolute inset-0 bg-grid-dots opacity-[0.35] pointer-events-none"
       />
 
+      {/* Drifting blue blobs ใน hero — premium auditme vibe */}
+      <div
+        aria-hidden
+        className="absolute -top-20 -left-20 size-96 rounded-full blur-3xl opacity-15 pointer-events-none animate-drift"
+        style={{
+          background:
+            "radial-gradient(circle, oklch(0.50 0.28 263) 0%, transparent 70%)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="absolute top-40 -right-20 size-80 rounded-full blur-3xl opacity-10 pointer-events-none animate-drift"
+        style={{
+          background:
+            "radial-gradient(circle, oklch(0.55 0.20 148) 0%, transparent 70%)",
+          animationDelay: "4s",
+        }}
+      />
+
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-6xl mx-auto pb-24">
         {/* ============================================================
-            HERO — heavy Thai display + selective accents
+            HERO — heavy Thai display + blue gradient + slide-up reveal
             ============================================================ */}
-        <header className="mb-12 sm:mb-16 animate-fade-up">
+        <header className="mb-14 sm:mb-20 animate-slide-up-soft">
           <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] font-bold text-[--color-brand-700]">
             <span className="brand-gradient-text">Pooilgroup</span>
             <span className="text-zinc-400 mx-2">·</span>
             <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
           </p>
 
-          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-[-0.035em] font-display mt-5 text-zinc-900 max-w-4xl leading-[1.05]">
-            สวัสดี <span className="accent">{firstName}</span>
+          <h1 className="text-5xl sm:text-7xl lg:text-8xl font-extrabold tracking-[-0.04em] font-display mt-6 text-zinc-900 max-w-5xl leading-[0.95]">
+            สวัสดี{" "}
+            <span className="text-gradient-blue-vivid">{firstName}</span>
             <br />
-            วันนี้จะเริ่มที่<span className="marker-underline whitespace-nowrap">โปรแกรมไหน</span>?
+            วันนี้จะเริ่มที่
+            <span className="text-gradient-blue whitespace-nowrap">
+              โปรแกรมไหน
+            </span>
+            ?
           </h1>
 
-          <p className="text-base sm:text-lg text-zinc-600 mt-6 max-w-2xl leading-relaxed">
+          <p className="text-base sm:text-lg lg:text-xl text-zinc-600 mt-7 max-w-2xl leading-relaxed">
             ศูนย์รวมทุกระบบของ Pooilgroup —{" "}
             <strong className="font-bold text-zinc-900">2 บริษัท</strong>
             <span className="text-zinc-400 mx-1.5">·</span>
@@ -476,7 +500,7 @@ function ModuleCard({
     "relative group rounded-3xl border-2 bg-white p-6 sm:p-7 transition-all overflow-hidden";
 
   const cardActive =
-    "border-zinc-200 hover:border-[--color-brand-400] hover-lift cursor-pointer shadow-soft";
+    "border-zinc-200 hover:border-[--color-brand-400] hover-lift-premium cursor-pointer shadow-soft";
 
   const cardDisabled = "border-zinc-200 opacity-60";
 
@@ -650,15 +674,17 @@ function SystemStat({
   unit?: string;
 }) {
   return (
-    <div className="rounded-2xl border-2 border-zinc-200 bg-white p-4 sm:p-5 hover:border-[--color-brand-300] transition-colors">
+    <div className="rounded-2xl border-2 border-zinc-200 bg-white p-4 sm:p-5 hover:border-[--color-brand-400] hover-lift-premium">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-[11px] uppercase tracking-widest text-zinc-500 font-bold">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 font-bold">
           {label}
         </p>
         <span className="text-[--color-brand-600]">{icon}</span>
       </div>
-      <p className="font-num-mega text-3xl sm:text-4xl text-zinc-900">
-        {value.toLocaleString("th-TH")}
+      <p className="font-num-mega text-4xl sm:text-5xl">
+        <span className="text-gradient-blue-vivid">
+          {value.toLocaleString("th-TH")}
+        </span>
         {unit && (
           <span className="text-sm text-zinc-400 font-medium ml-1.5">
             {unit}

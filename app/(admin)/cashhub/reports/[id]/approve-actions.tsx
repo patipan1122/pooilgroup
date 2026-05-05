@@ -7,11 +7,17 @@ import { CheckCircle2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardTitle } from "@/components/ui/card";
 
-export function ApproveActions({ reportId }: { reportId: string }) {
+export function ApproveActions({
+  reportId,
+  preset,
+}: {
+  reportId: string;
+  preset?: string;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [showReject, setShowReject] = useState(false);
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState(preset ?? "");
 
   function act(action: "approve" | "reject", reason?: string) {
     startTransition(async () => {

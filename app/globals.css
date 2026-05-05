@@ -153,6 +153,47 @@ h3 { font-weight: 700; }
   color: transparent;
 }
 
+/* All-blue gradient text — for headers per design system §3
+   ใช้กับ keyword หลักใน h1 hero */
+.text-gradient-blue {
+  background: linear-gradient(
+    135deg,
+    var(--color-brand-500) 0%,
+    var(--color-brand-700) 50%,
+    var(--color-brand-600) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Vivid blue gradient — for hero numbers / mega stats / CTA emphasis */
+.text-gradient-blue-vivid {
+  background: linear-gradient(
+    135deg,
+    var(--color-brand-vivid) 0%,
+    var(--color-brand-600) 50%,
+    var(--color-brand-800) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Glow ring around CTA / focus elements */
+.glow-blue {
+  box-shadow:
+    0 0 0 1px oklch(0.50 0.25 264 / 0.10),
+    0 8px 32px -8px oklch(0.50 0.25 264 / 0.40);
+}
+.glow-blue-strong {
+  box-shadow:
+    0 0 0 1px oklch(0.50 0.25 264 / 0.15),
+    0 16px 48px -12px oklch(0.50 0.25 264 / 0.50);
+}
+
 /* Underline marker — auditmekub-style stroke under a keyword */
 .marker-underline {
   background-image: linear-gradient(
@@ -312,6 +353,32 @@ input:-webkit-autofill:focus {
   50% { transform: translateY(-6px); }
 }
 
+/* Slow drift — for decorative blobs in hero */
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0); }
+  33%      { transform: translate(8px, -8px); }
+  66%      { transform: translate(-6px, 6px); }
+}
+
+/* Soft sheen sweep — for premium CTA buttons */
+@keyframes sheen {
+  0%   { transform: translateX(-100%) skewX(-20deg); opacity: 0; }
+  20%  { opacity: 1; }
+  100% { transform: translateX(200%) skewX(-20deg); opacity: 0; }
+}
+
+/* Slide-in from side — for stagger reveal */
+@keyframes slide-up-soft {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @utility animate-fade-up {
   animation: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
@@ -330,6 +397,37 @@ input:-webkit-autofill:focus {
 @utility animate-float {
   animation: float 4s ease-in-out infinite;
 }
+@utility animate-drift {
+  animation: drift 12s ease-in-out infinite;
+}
+@utility animate-slide-up-soft {
+  animation: slide-up-soft 0.7s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* Sheen overlay for premium CTAs — apply to ::before pseudo of button */
+@utility sheen-overlay {
+  position: relative;
+  overflow: hidden;
+}
+.sheen-overlay::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.18) 50%,
+    transparent 70%
+  );
+  transform: translateX(-100%);
+  pointer-events: none;
+}
+.sheen-overlay:hover::before {
+  animation: sheen 1s ease-out;
+}
 
 /* Stagger delays — useful for hero text + card grids */
 @utility delay-100 { animation-delay: 100ms; }
@@ -341,11 +439,22 @@ input:-webkit-autofill:focus {
 
 /* Card hover lift */
 @utility hover-lift {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 .hover-lift:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-lg);
+}
+
+/* Premium card lift — bigger jump + blue tinted shadow on hover */
+@utility hover-lift-premium {
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.25s ease,
+              border-color 0.2s ease;
+}
+.hover-lift-premium:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-blue);
 }
 
 /* ============================================================
