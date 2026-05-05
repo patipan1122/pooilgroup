@@ -22,6 +22,8 @@ const ReportSchema = z.object({
   card: z.number().min(0),
   credit: z.number().min(0),
   shortage: z.number().min(0),
+  rentalIncome: z.number().min(0).optional(),
+  trainingSessions: z.number().int().min(0).nullable().optional(),
   notes: z.string().max(500).nullable().optional(),
   shortageInfo: z
     .object({
@@ -117,6 +119,8 @@ export async function POST(req: NextRequest) {
     card: data.card,
     credit: data.credit,
     shortage: data.shortage,
+    rental_income: data.rentalIncome ?? 0,
+    training_sessions: data.trainingSessions ?? null,
     notes: data.notes ?? null,
     status: "submitted",
     submitted_by_id: session.user.id,

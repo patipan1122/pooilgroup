@@ -17,7 +17,9 @@ export type AuditAction =
   | "CREATE_BRANCH"
   | "UPDATE_BRANCH"
   | "PERMISSION_DENIED"
-  | "EXPORT_DATA";
+  | "EXPORT_DATA"
+  | "APPROVE_USER_REQUEST"
+  | "REJECT_USER_REQUEST";
 
 export interface AuditEntry {
   orgId: string;

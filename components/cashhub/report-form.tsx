@@ -172,6 +172,12 @@ export function ReportForm({
     if (!canSubmit || submitting) return;
     setSubmitting(true);
 
+    // Extract optional rental / training fields when the config defines them
+    const rentalField = config.fields.find((f) => f.column === "rentalIncome");
+    const trainingField = config.fields.find(
+      (f) => f.column === "trainingSessions",
+    );
+
     const payload = {
       branchId,
       reportDate,
@@ -186,6 +192,12 @@ export function ReportForm({
       card: numeric.card,
       credit: numeric.credit,
       shortage: numeric.shortage,
+      rentalIncome: rentalField
+        ? parseFloat(values[rentalField.key] || "0") || 0
+        : 0,
+      trainingSessions: trainingField
+        ? parseInt(values[trainingField.key] || "0", 10) || null
+        : null,
       notes: values.notes || null,
       shortageInfo: numeric.shortage > 0 ? shortageInfo : null,
     };

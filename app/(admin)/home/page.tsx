@@ -21,13 +21,18 @@ import {
   HardDrive,
   Activity,
   KeyRound,
+  Phone,
+  Clock,
+  AlertTriangle,
+  CheckCircle2,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Section } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
-import { thaiDateLong } from "@/lib/utils/format";
+import { thaiDateLong, bkkToday } from "@/lib/utils/format";
 import { MODULES } from "@/lib/modules";
+import { BUSINESS_TYPES } from "@/constants/business-types";
 import { startOfDay } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 
@@ -45,6 +50,11 @@ export default async function HomePage() {
 
   const todayStart = formatInTimeZone(startOfDay(new Date()), TZ, "yyyy-MM-dd'T'HH:mm:ss'+07:00'");
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  // Evening check window: 18:00-22:00 Bangkok time
+  const bkkHour = parseInt(formatInTimeZone(new Date(), TZ, "H"), 10);
+  const isEveningCheckTime = bkkHour >= 17 && bkkHour <= 22;
+  const today = bkkToday();
 
   // Core data only — no CashHub, no FuelOS, no DocuFlow
   const [
@@ -125,6 +135,78 @@ export default async function HomePage() {
 
   const adminActionTotal = pendingRequests + failedLogins + pendingInvites;
 
+  // ============================================================
+  // Evening Check — find branches that haven't filled today's daily report
+  // Only run when it's the evening window (saves DB calls during morning)
+  // ============================================================
+  let eveningCheck: {
+    totalActive: number;
+    filledCount: number;
+    missingBranches: Array<{
+      id: string;
+      code: string;
+      name: string;
+      business_type: string;
+      phone: string | null;
+      manager_name: string | null;
+      manager_phone: string | null;
+    }>;
+  } | null = null;
+
+  if (isAdmin && isEveningCheckTime) {
+    // Only consider business types with daily cadence + cash report enabled
+    const dailyTypes = Object.values(BUSINESS_TYPES)
+      .filter((b) => b.reportingCadence === "daily" && b.hasCashReport)
+      .map((b) => b.type);
+
+    const [activeBranchesQ, todayReportsQ] = await Promise.all([
+      admin
+        .from("branches")
+        .select("id, code, name, business_type, phone, manager:manager_id(name, phone)")
+        .eq("org_id", orgId)
+        .eq("is_active", true)
+        .in("business_type", dailyTypes),
+      admin
+        .from("daily_reports")
+        .select("branch_id")
+        .eq("org_id", orgId)
+        .eq("report_date", today),
+    ]);
+
+    const activeList = (activeBranchesQ.data ?? []) as Array<{
+      id: string;
+      code: string;
+      name: string;
+      business_type: string;
+      phone: string | null;
+      manager: { name: string; phone: string | null } | { name: string; phone: string | null }[] | null;
+    }>;
+    const filledIds = new Set(
+      (todayReportsQ.data ?? []).map((r) => r.branch_id),
+    );
+    const missing = activeList
+      .filter((b) => !filledIds.has(b.id))
+      .map((b) => {
+        const m = Array.isArray(b.manager) ? b.manager[0] : b.manager;
+        return {
+          id: b.id,
+          code: b.code,
+          name: b.name,
+          business_type: b.business_type,
+          phone: b.phone,
+          manager_name: m?.name ?? null,
+          manager_phone: m?.phone ?? null,
+        };
+      })
+      .sort((a, b) => a.code.localeCompare(b.code));
+
+    eveningCheck = {
+      totalActive: activeList.length,
+      filledCount: activeList.length - missing.length,
+      missingBranches: missing,
+    };
+  }
+
   return (
     <div className="relative">
       {/* Soft dot-grid wash on the entire page */}
@@ -165,6 +247,29 @@ export default async function HomePage() {
             ผู้ใช้งาน
           </p>
         </header>
+
+        {/* ============================================================
+            00 EVENING CHECK — only shown 17:00-22:00 BKK for admins
+            ============================================================ */}
+        {eveningCheck && (
+          <Section
+            number="00"
+            label="EVENING CHECK · เช็คตอนเย็น"
+            title={
+              eveningCheck.missingBranches.length === 0
+                ? "วันนี้ทุกสาขากรอกครบแล้ว 🎉"
+                : `เหลือ ${eveningCheck.missingBranches.length} สาขายังไม่กรอก`
+            }
+            description={`ขณะนี้ ${formatInTimeZone(new Date(), TZ, "HH:mm")} น. — เช็คก่อน deadline 21:00 น.`}
+            className="mb-14 animate-fade-up delay-50"
+          >
+            <EveningCheckCard
+              totalActive={eveningCheck.totalActive}
+              filledCount={eveningCheck.filledCount}
+              missingBranches={eveningCheck.missingBranches}
+            />
+          </Section>
+        )}
 
         {/* ============================================================
             01 PROGRAMS — module launcher (the centerpiece)
@@ -575,6 +680,200 @@ function SystemStat({
           </span>
         )}
       </p>
+    </div>
+  );
+}
+
+/* ============================================================
+   EveningCheckCard — Owner's evening checkpoint
+   Shows fill rate + branches that haven't filled with one-tap call
+   ============================================================ */
+function EveningCheckCard({
+  totalActive,
+  filledCount,
+  missingBranches,
+}: {
+  totalActive: number;
+  filledCount: number;
+  missingBranches: Array<{
+    id: string;
+    code: string;
+    name: string;
+    business_type: string;
+    phone: string | null;
+    manager_name: string | null;
+    manager_phone: string | null;
+  }>;
+}) {
+  const allFilled = missingBranches.length === 0;
+  const fillPct = totalActive > 0 ? Math.round((filledCount / totalActive) * 100) : 100;
+
+  if (allFilled) {
+    return (
+      <div className="rounded-3xl border-2 border-[--color-leaf-300] bg-gradient-to-br from-[--color-leaf-50] to-white p-6 sm:p-8 shadow-leaf overflow-hidden relative">
+        <div
+          aria-hidden
+          className="absolute -top-12 -right-12 size-44 rounded-full blur-3xl opacity-30 pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(circle, oklch(0.55 0.20 148) 0%, transparent 70%)",
+          }}
+        />
+        <div className="relative flex items-center gap-5">
+          <div className="size-16 rounded-2xl bg-[--color-leaf-100] border-2 border-[--color-leaf-200] flex items-center justify-center text-[--color-leaf-700] shrink-0">
+            <CheckCircle2 className="size-8" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-[--color-leaf-700]">
+              งานวันนี้
+            </p>
+            <p className="font-num-mega text-4xl sm:text-5xl text-[--color-leaf-700] leading-none mt-1">
+              {filledCount}/{totalActive}
+            </p>
+            <p className="text-sm text-zinc-700 mt-2">
+              ทุกสาขาส่งรายงานแล้ว · พักได้ 🌙
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Hero status */}
+      <div className="rounded-3xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-white p-6 sm:p-8 overflow-hidden relative">
+        <div
+          aria-hidden
+          className="absolute -top-12 -right-12 size-44 rounded-full blur-3xl opacity-30 pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(circle, oklch(0.78 0.16 75) 0%, transparent 70%)",
+          }}
+        />
+        <div className="relative flex items-start gap-5 flex-wrap">
+          <div className="size-16 rounded-2xl bg-amber-100 border-2 border-amber-200 flex items-center justify-center text-amber-700 shrink-0">
+            <AlertTriangle className="size-8" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-amber-700">
+              วันนี้ยังกรอกไม่ครบ
+            </p>
+            <p className="font-num-mega text-5xl sm:text-6xl text-zinc-900 leading-none mt-1">
+              {filledCount}
+              <span className="text-3xl text-zinc-400">/{totalActive}</span>
+            </p>
+            <p className="text-sm text-zinc-700 mt-2">
+              ครบ <strong className="tabular-num text-[--color-leaf-700]">{fillPct}%</strong>
+              <span className="text-zinc-400 mx-1.5">·</span>
+              เหลือ <strong className="tabular-num text-amber-700">{missingBranches.length}</strong> สาขาต้องตามอีก
+            </p>
+          </div>
+          {/* Progress ring */}
+          <div className="relative size-20 shrink-0">
+            <svg viewBox="0 0 36 36" className="size-20 -rotate-90">
+              <circle
+                cx="18"
+                cy="18"
+                r="15.915"
+                fill="none"
+                stroke="oklch(0.92 0.04 75)"
+                strokeWidth="3.5"
+              />
+              <circle
+                cx="18"
+                cy="18"
+                r="15.915"
+                fill="none"
+                stroke="oklch(0.60 0.18 148)"
+                strokeWidth="3.5"
+                strokeDasharray={`${fillPct}, 100`}
+                strokeLinecap="round"
+              />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="font-num-mega text-lg text-zinc-900 tabular-num">
+                {fillPct}%
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Missing branches list */}
+      <div className="rounded-2xl border-2 border-zinc-200 bg-white overflow-hidden">
+        <div className="px-5 py-3 border-b-2 border-zinc-100 bg-zinc-50/50 flex items-center justify-between">
+          <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-zinc-700">
+            สาขาที่ยังไม่กรอก
+          </p>
+          <span className="text-xs text-zinc-500 inline-flex items-center gap-1">
+            <Clock className="size-3.5" />
+            deadline 21:00 น.
+          </span>
+        </div>
+        <div className="divide-y divide-zinc-100">
+          {missingBranches.slice(0, 8).map((b) => {
+            const cfg = BUSINESS_TYPES[b.business_type];
+            return (
+              <div
+                key={b.id}
+                className="px-5 py-3 flex items-center gap-3 flex-wrap hover:bg-zinc-50/50"
+              >
+                <span className="text-2xl shrink-0">{cfg?.emoji ?? "📋"}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-extrabold tabular-num font-display text-sm">
+                      {b.code}
+                    </span>
+                    <span className="text-sm text-zinc-700 truncate">
+                      {b.name}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-zinc-500 mt-0.5">
+                    {b.manager_name ? (
+                      <>
+                        ผจก. {b.manager_name}
+                        {b.manager_phone && (
+                          <span className="text-zinc-400 ml-1.5">
+                            · {b.manager_phone}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-amber-700">ยังไม่มีผู้จัดการ</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {b.manager_phone && (
+                    <a
+                      href={`tel:${b.manager_phone}`}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[--color-leaf-50] border border-[--color-leaf-200] text-[--color-leaf-700] text-xs font-bold hover:bg-[--color-leaf-100]"
+                    >
+                      <Phone className="size-3.5" />
+                      โทร
+                    </a>
+                  )}
+                  <Link
+                    href={`/branches/${b.id}`}
+                    className="inline-flex items-center px-3 py-1.5 rounded-lg border-2 border-zinc-200 text-xs font-bold text-zinc-700 hover:bg-zinc-50"
+                  >
+                    ดู
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
+          {missingBranches.length > 8 && (
+            <Link
+              href="/cashhub/dashboard"
+              className="block px-5 py-3 text-center text-sm font-bold text-[--color-brand-700] hover:bg-[--color-brand-50]"
+            >
+              ดูทั้งหมด {missingBranches.length} สาขา →
+            </Link>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
   MessageSquare,
   CheckCircle2,
   Building2,
+  IdCard,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
@@ -25,38 +26,44 @@ interface BranchOption {
 }
 
 const ROLES = [
-  { value: "staff", label: "พนักงาน (Staff)", desc: "กรอกรายงานสาขา" },
   {
     value: "branch_manager",
     label: "ผู้จัดการสาขา",
-    desc: "ดูแลสาขา · อนุมัติรายงาน",
+    desc: "ดูแลสาขาเดียว · กรอก/อนุมัติรายงาน",
   },
   {
+    value: "area_manager",
+    label: "ผู้จัดการเขต",
+    desc: "ดูแลหลายสาขา · อนุมัติรายงานข้ามสาขาในเขต",
+  },
+  { value: "staff", label: "พนักงาน", desc: "กรอกรายงานสาขา" },
+  {
     value: "driver",
-    label: "คนขับ (Driver)",
+    label: "คนขับ",
     desc: "ขับรถส่งน้ำมัน · FuelOS Driver App",
   },
   {
     value: "viewer",
-    label: "ผู้ดู (Viewer)",
-    desc: "ดูข้อมูลได้อย่างเดียว",
+    label: "ผู้ดู (Read-only)",
+    desc: "ดูข้อมูลได้อย่างเดียว · บัญชี/HR",
   },
 ];
 
 export function JoinForm({ branches }: { branches: BranchOption[] }) {
   const [pending, startTransition] = useTransition();
   const [name, setName] = useState("");
+  const [employeeCode, setEmployeeCode] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState("staff");
+  const [role, setRole] = useState("branch_manager");
   const [branchId, setBranchId] = useState("");
   const [notes, setNotes] = useState("");
   const [submitted, setSubmitted] = useState(false);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !phone.trim()) {
-      toast.error("กรุณากรอกชื่อและเบอร์โทร");
+    if (!name.trim() || !phone.trim() || !employeeCode.trim()) {
+      toast.error("กรุณากรอกชื่อ เบอร์ และรหัสพนักงาน");
       return;
     }
 
@@ -66,6 +73,7 @@ export function JoinForm({ branches }: { branches: BranchOption[] }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
+          employeeCode: employeeCode.trim().toUpperCase(),
           phone: phone.trim(),
           email: email.trim() || undefined,
           requestedRole: role,
@@ -116,6 +124,22 @@ export function JoinForm({ branches }: { branches: BranchOption[] }) {
               placeholder="เช่น สมชาย ใจดี"
               prefixSlot={<UserIcon className="size-4" />}
               required
+            />
+          </Field>
+          <Field
+            label="รหัสพนักงาน"
+            required
+            hint="รหัสจาก Humansoft (ตัวอักษรพิมพ์ใหญ่ + ตัวเลข)"
+          >
+            <Input
+              value={employeeCode}
+              onChange={(e) => setEmployeeCode(e.target.value.toUpperCase())}
+              placeholder="เช่น EMP-1024"
+              prefixSlot={<IdCard className="size-4" />}
+              required
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
             />
           </Field>
           <Field label="เบอร์โทร" required hint="ใช้สำหรับติดต่อกลับ + Telegram">
@@ -270,7 +294,7 @@ export function JoinForm({ branches }: { branches: BranchOption[] }) {
         fullWidth
         className="mt-6 animate-fade-up delay-300"
         loading={pending}
-        disabled={!name.trim() || !phone.trim()}
+        disabled={!name.trim() || !phone.trim() || !employeeCode.trim()}
       >
         {pending ? "กำลังส่ง..." : "ส่งคำขอเข้าใช้งาน"}
       </Button>

@@ -85,6 +85,52 @@ const SAMPLE_BY_TYPE: Record<string, Sample> = {
     cardPct: 0,
     creditPct: 0,
   },
+  // ---- New 5 types (2026-05-05) ----
+  lpg_retail: {
+    totalSales: 7_800,
+    qty1: 18,
+    qty1Unit: "tank",
+    cashPct: 0.7,
+    transferPct: 0.22,
+    cardPct: 0,
+    creditPct: 0.08,
+  },
+  cafe_punthai: {
+    totalSales: 8_400,
+    qty1: 130,
+    qty1Unit: "cup",
+    cashPct: 0.55,
+    transferPct: 0.45,
+    cardPct: 0,
+    creditPct: 0,
+  },
+  massage_chair: {
+    totalSales: 4_260,
+    qty1: 142,
+    qty1Unit: "session",
+    cashPct: 1,
+    transferPct: 0,
+    cardPct: 0,
+    creditPct: 0,
+  },
+  claw_machine: {
+    totalSales: 3_200,
+    qty1: 320,
+    qty1Unit: "play",
+    cashPct: 1,
+    transferPct: 0,
+    cardPct: 0,
+    creditPct: 0,
+  },
+  training_center: {
+    totalSales: 145_000,
+    qty1: 4,
+    qty1Unit: "session",
+    cashPct: 0.05,
+    transferPct: 0.95,
+    cardPct: 0,
+    creditPct: 0,
+  },
 };
 
 // Per-branch personality so the dashboard isn't all identical

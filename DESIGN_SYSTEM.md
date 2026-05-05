@@ -1,0 +1,298 @@
+# 🎨 Pooilgroup ERP — Design System
+
+> **Source of truth สำหรับงานออกแบบทั้งระบบ**
+> ผ่าน Brand DNA workshop กับเจ้าของระบบ 2026-05-05
+> ทุกหน้าใหม่ + รีเฟรชหน้าเก่าใช้คู่มือนี้
+
+---
+
+## 0. Brand DNA (สั่งจากเจ้าของ)
+
+```
+3 คำ:        พรีเมี่ยม + มืออาชีพ + ใช้ง่าย
+แบรนด์ที่อิง: Auditmekub + Apple
+ห้ามมี:       ดูเป็นราชการ · สีเยอะ
+```
+
+ทุก decision หลังจากนี้ derive จาก 3 บรรทัดนี้
+
+---
+
+## 1. หลักการใหญ่ (3 ข้อ)
+
+### 1.1 พรีเมี่ยม = ใจกว้าง · ลายมือเด่น · ละเอียด
+- whitespace เยอะ (Apple-grade): hero มี vertical space ≥ 80px
+- typography ตัวใหญ่หนัก (Anuphan 800 ขนาด 5xl-7xl)
+- shadow นุ่ม (`shadow-soft`, `shadow-blue` only) ห้าม drop shadow แข็ง ๆ
+- radius เล็กน้อย → ใหญ่ขึ้น (`rounded-xl` ขั้นต่ำ, hero ใช้ `rounded-3xl`)
+
+### 1.2 มืออาชีพ = ระเบียบ · เห็นภาพ · เปลี่ยน-ใจคน
+- numbered sections "01 · OVERVIEW" ทุก section
+- tabular-num สำหรับเลขทุกที่
+- alignment เคร่ง (grid-cols, ไม่ปล่อยลอย)
+- 1 primary action ต่อ section (ห้าม 5 ปุ่มเรียงกัน)
+
+### 1.3 ใช้ง่าย = ผู้ใช้รู้เลย · ไม่ต้องคิด
+- ปุ่มแตะมือถือได้ ≥ 44px (`h-12` หรือ `h-14`)
+- ภาษาไทยที่คนทั่วไปอ่านเข้าใจ — ห้าม jargon technical
+- empty state ต้องบอก "ทำอะไรต่อ"
+- error message บอกวิธีแก้ ไม่ใช่ stack trace
+
+---
+
+## 2. สี (รวม 4 สีเท่านั้น บน white + zinc neutral)
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Primary Blue    เป็น CTA หลัก · highlight keyword
+                --color-brand-50 ... 900
+                hero CTA = brand-600, hover = brand-700
+
+Leaf Green      สำหรับ success / approved / "ผ่าน"
+                --color-leaf-500 ... 700
+                ห้ามใช้แทน CTA หลัก
+
+Amber           warning · pending · "ระวัง"
+                bg-amber-50/60, border-amber-200/300
+
+Red             danger · ปฏิเสธ · เงินขาด · failed login
+                bg-red-50/60, border-red-200/300
+                ใช้น้อย น้อย น้อย — มาแล้วต้องสำคัญจริง
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ห้ามใช้: purple, pink, teal, orange, magenta, cyan
+        gradient หลายสี (ยกเว้น brand-gradient-text เขียว→น้ำเงิน)
+```
+
+### Background
+- หลัก: `bg-white` หรือ `bg-zinc-50`
+- decorative: `bg-grid-dots opacity-[0.35]` ทับบน white
+- **AI / smart sections ในอนาคต:** dark navy gradient (background only)
+
+---
+
+## 3. Typography (3 ฟอนต์ ทำงาน 3 หน้าที่)
+
+| ฟอนต์ | ใช้กับ | weight | utility |
+|------|--------|--------|---------|
+| **Anuphan** (Thai display) | h1/h2/hero/CardTitle | 700-800 | `font-display` |
+| **Plus Jakarta Sans** | ตัวเลขใหญ่ + Latin headlines | 800 | `font-num-mega` |
+| **IBM Plex Sans Thai** | body, label, button text | 400-600 | default `font-thai` |
+
+### Hierarchy
+```
+Hero h1:    text-5xl sm:text-7xl  font-display  tracking-[-0.035em]
+Page h1:    text-3xl sm:text-5xl  font-display
+Section h2: text-xl sm:text-2xl   font-display  (auto via <Section>)
+Card title: text-base             font-display
+Body:       text-sm-base          font-thai
+Stat mega:  text-3xl sm:text-5xl  font-num-mega
+Label:      text-xs uppercase     tracking-[0.18em]  font-bold
+```
+
+### Keyword highlighting (auditmekub signature)
+- `<span class="accent">keyword</span>` — สีน้ำเงินเข้ม
+- `<span class="accent-leaf">keyword</span>` — สีเขียว (สำเร็จ/เติบโต)
+- `<span class="marker-underline">keyword</span>` — เส้นใต้ม่วงอ่อน auditme-style
+- `<span class="brand-gradient-text">Pooilgroup</span>` — เขียว→น้ำเงิน (ใช้กับชื่อแบรนด์เท่านั้น)
+
+**Rule:** 1-2 คำต่อ headline เท่านั้น ห้ามทุกคำสี
+
+---
+
+## 4. Spacing & Shape
+
+```
+Padding:
+  Page:    p-4 sm:p-8 lg:p-12
+  Card:    p-5 (CardBody default)
+  Hero:    py-12 sm:py-16
+
+Radius (จากเล็ก → ใหญ่):
+  Tag/pill:  rounded-full / rounded-lg
+  Button:    rounded-xl
+  Card:      rounded-2xl
+  Hero card: rounded-3xl
+
+Border:
+  Card:      border-2 border-zinc-200 hover:border-zinc-300
+  Hover:     border-2 border-[--color-brand-400]
+  Active:    border-2 border-[--color-brand-500]
+
+Section gap:
+  Major:     mb-12 sm:mb-16
+  Inside:    gap-3 sm:gap-4 (grids)
+```
+
+---
+
+## 5. Components catalog
+
+### 5.1 Buttons
+```
+Primary CTA:     bg-brand-600 text-white rounded-xl shadow-blue h-12
+                 hover:bg-brand-700  + ลูกศร → ที่ขวา (ArrowUpRight)
+Secondary:       bg-white text-zinc-900 border-2 border-zinc-200 rounded-xl
+Outline:         border-2 + bg-white
+Danger:          bg-[--color-danger] (เฉพาะ destructive)
+
+ห้าม: ปุ่มเหลี่ยมไม่มี radius · ปุ่มสีเทอร์ควอยซ์/ม่วง · ปุ่มเล็กกว่า 32px
+```
+
+### 5.2 Cards (3 ประเภท)
+```
+Standard:        rounded-2xl border-2 bg-white shadow-soft
+                 hover:border-brand-300 transition-colors
+
+Premium/Module:  rounded-3xl + radial blur ที่มุม + hover-lift
+                 ใช้กับ module launcher, hero feature card
+
+Action card:     สีพื้นเบา ๆ (brand-50/60, amber-50/60, red-50/60)
+                 border-2 ใช้สีของ accent
+                 ใช้กับ admin pending tasks
+```
+
+### 5.3 Section header
+ใช้ `<Section number="01" label="OVERVIEW" title="..." description="...">` ทุก section
+- Number ใน pill เล็ก สีน้ำเงิน
+- Label uppercase tracking widest
+- Title ใหญ่ font-display
+
+### 5.4 Stats
+ใช้ `font-num-mega text-3xl sm:text-5xl` สำหรับเลขใหญ่
+Pattern: label เล็ก uppercase บน → เลขใหญ่ → trend ↑+5 ในกรอบเขียว/แดง
+
+### 5.5 Badges (toned pills)
+- `success` (เขียว) — ผ่าน, ใช้งาน, อนุมัติ
+- `brand` (น้ำเงิน) — info ทั่วไป
+- `warning` (อำพัน) — รอ, ใกล้หมดอายุ
+- `danger` (แดง) — ปิด, ผิดพลาด
+- `neutral` (เทา) — placeholder, non-status
+
+---
+
+## 6. Page patterns (ทุกหน้าใหม่ใช้ template เหล่านี้)
+
+### 6.1 Hero (หน้า /home, landing)
+```
+- Eyebrow: brand-gradient-text "Pooilgroup" + วันที่ + name (uppercase tracking-widest)
+- H1: 5xl-7xl ภาษาไทยหนัก + 1 keyword .accent + 1 keyword .marker-underline
+- Subtitle: text-lg เทา + tabular numbers ใน strong
+- (Optional) right-side floating cards ตามภาพ auditme — ใช้กับ landing/marketing
+```
+
+### 6.2 Dashboard (CashHub, FuelOS, etc.)
+```
+01 OVERVIEW   — 4 stat cards (ใหญ่ ๆ) + arrow change
+02 ACTIONS    — pending list / approval queue
+03 INSIGHTS   — chart/sparkline/leaderboard
+04 ACTIVITY   — recent events / log
+```
+
+### 6.3 Form (สร้าง/แก้ user, branch, etc.)
+```
+- Sticky header: ชื่อหน้า + back link
+- 2-3 grouped Cards เรียงลง (ข้อมูลพื้นฐาน → รายละเอียด → ความสัมพันธ์)
+- ขอบ form ใหญ่ ๆ (Field component)
+- Bottom: ยกเลิก (ghost) + บันทึก (primary CTA pill)
+```
+
+### 6.4 List + Filter (users, branches, reports)
+```
+Header: ชื่อ + count + ปุ่มทางขวา (Import / สร้างใหม่)
+Section 01: stat overview (4 chips)
+Section 02: filter bar + DataTable หรือ grouped cards
+Empty state: icon + "ไม่มี..." + CTA
+```
+
+### 6.5 Detail (user/branch/report detail)
+```
+Top: back link + title + status badge + action buttons (right)
+Grid 2-cols cards: contact info / channels / relations / activity
+Bottom: timeline / history (collapsible)
+```
+
+### 6.6 Comparison (Before/After) — auditme signature
+```
+Center title with red+blue keyword highlights
+Twin cards: Left red (ก่อน/ปัญหา) / Right blue (หลัง/วิธีแก้)
+Each card: badge เหนือ + bullet list with X / ✓ icons
+ใช้ใน: month vs month, branch vs branch, before/after metric improvement
+```
+
+---
+
+## 7. Motion (น้อย ๆ พอสวย)
+
+```
+✓ animate-fade-up        — มาจากด้านล่างพร้อม fade (delay 50/100/150/200/250)
+✓ hover-lift              — translate -2px on hover (cards/buttons)
+✓ animate-pulse-soft      — สำหรับ live indicator dots
+✓ transition-colors       — สีเปลี่ยนนุ่ม
+✓ group-hover translate   — ลูกศรขยับเมื่อ hover
+
+ห้าม:
+✗ scroll-jacking
+✗ parallax
+✗ bounce/elastic easing
+✗ multi-second animations
+✗ rotating loaders ใหญ่ ๆ
+```
+
+---
+
+## 8. Anti-patterns (สิ่งที่ห้าม)
+
+### Layout
+✗ ตารางขอบเทาบาง ๆ แบบ government website
+✗ ฟอร์มยาวเป็นเมตร (>15 fields ในหน้าเดียว)
+✗ คอลัมน์ 5+ ในตาราง mobile
+✗ ปุ่ม 6 ปุ่มเรียงในแถวเดียว
+
+### Visual
+✗ สี>4 สีในหน้าเดียว (รวม semantic)
+✗ font-thin / font-light (ไทย)
+✗ emoji เป็นปุ่ม (ใช้ icon)
+✗ gradient หลายสี
+✗ shadow ดำสนิท
+
+### Copy
+✗ ภาษาแปล Google ไทยแข็ง
+✗ "Submit/Cancel/Delete" (ใช้ "บันทึก/ยกเลิก/ลบ")
+✗ Technical error messages
+✗ Capitalization ไม่สม่ำเสมอ
+
+---
+
+## 9. Reference checklist สำหรับทุก PR ใหม่
+
+```
+☐ ใช้ font-display สำหรับ h1/h2 ทุกตัว
+☐ ใช้ tabular-num สำหรับเลขทุกที่
+☐ Section ใหม่ใช้ <Section number="..." label="..." title="..."> wrapper
+☐ ปุ่มหลัก: bg-brand-600, h-12 ขั้นต่ำ, มี ArrowUpRight ที่ขวา
+☐ Card ขั้นต่ำ rounded-2xl, border-2, hover transition
+☐ Empty state: icon + ชื่อ + คำอธิบาย + CTA
+☐ Loading state: spinner หรือ skeleton (ห้ามขาว)
+☐ Mobile-tested: padding ≥ p-4, touch targets ≥ 44px
+☐ ภาษา: ไทยปกติ ไม่ใช่ภาษาราชการ
+☐ สี: รวมทั้งหน้าใช้ ≤ 4 สีเท่านั้น
+```
+
+---
+
+## 10. ตัวอย่างที่ดี (อ้างอิงในโปรเจกต์)
+
+```
+✓ /home          — hero auditme + module launcher + numbered sections
+✓ /admin/users/[id] — detail pattern
+✓ /admin/branches → grouped filter
+✓ /cashhub/dashboard → stats + leaderboard + heatmap
+```
+
+ถ้าหน้าไหนไม่ตรงคู่มือ → mark TODO ในไฟล์ + แก้ทีหลัง
+
+---
+
+*Updated 2026-05-05 — เปลี่ยนเมื่อ Brand DNA เปลี่ยน*
+*Memory link: feedback_design_brand_dna.md*

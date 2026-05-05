@@ -227,11 +227,16 @@ function heatColor(pct: number): string {
 const TYPE_LABEL: Record<string, string> = {
   fuel_station: "⛽ ปั๊ม",
   lpg_station: "🔵 ก๊าซ",
+  lpg_retail: "🛢️ ร้านแก๊ส",
   bottling_plant: "🏭 บรรจุ",
   hotel: "🏨 Hotel",
   convenience_store: "🏪 7-11",
   ev_station: "⚡ EV",
   cafe: "☕ Café",
+  cafe_punthai: "🍵 พันธุ์ไทย",
+  massage_chair: "💺 นวด",
+  claw_machine: "🎰 ตู้คีบ",
+  training_center: "🎓 อบรม",
 };
 
 export function PatternHeatmap({
