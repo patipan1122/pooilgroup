@@ -9,13 +9,11 @@ import {
   UserPlus,
   Copy,
   Check,
-  Phone,
-  Mail,
-  X as XIcon,
   Loader2,
   CheckCircle2,
-  Circle,
   Crown,
+  Bell,
+  Inbox,
 } from "lucide-react";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { Dialog } from "@/components/ui/dialog";
@@ -50,15 +48,36 @@ export interface Company {
   name: string;
 }
 
+export interface AdminNotification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  link: string | null;
+  created_at: string;
+  is_read: boolean;
+}
+
 const ROLE_LABEL: Record<string, string> = {
-  super_admin: "ซุปเปอร์แอดมิน",
-  admin: "แอดมิน",
+  super_admin: "Owner",
+  admin: "Admin",
   area_manager: "ผจก.เขต",
   branch_manager: "ผจก.สาขา",
   staff: "พนักงาน",
   driver: "คนขับ",
   viewer: "ผู้ดู",
-  org_admin: "แอดมิน",
+  org_admin: "Admin",
+};
+
+const ROLE_COLOR: Record<string, string> = {
+  super_admin: "bg-amber-100 text-amber-900 border-amber-300",
+  admin: "bg-amber-50 text-amber-800 border-amber-200",
+  org_admin: "bg-amber-50 text-amber-800 border-amber-200",
+  area_manager: "bg-purple-50 text-purple-800 border-purple-200",
+  branch_manager: "bg-[--color-brand-50] text-[--color-brand-800] border-[--color-brand-200]",
+  staff: "bg-zinc-50 text-zinc-700 border-zinc-200",
+  driver: "bg-blue-50 text-blue-800 border-blue-200",
+  viewer: "bg-zinc-50 text-zinc-500 border-zinc-200",
 };
 
 const MANAGER_ROLES = new Set([
@@ -74,9 +93,18 @@ interface Props {
   branches: BranchWithUsers[];
   /** Users not assigned to any branch (admins, viewers) */
   unassigned: BranchUser[];
+  /** Recent admin/user notifications */
+  notifications: AdminNotification[];
+  pendingRequestCount: number;
 }
 
-export function UsersByBusiness({ companies, branches, unassigned }: Props) {
+export function UsersByBusiness({
+  companies,
+  branches,
+  unassigned,
+  notifications,
+  pendingRequestCount,
+}: Props) {
   // Group: company → business_type → branches[]
   const grouped = useMemo(() => {
     const byCompany = new Map<string, Map<string, BranchWithUsers[]>>();
@@ -90,18 +118,11 @@ export function UsersByBusiness({ companies, branches, unassigned }: Props) {
     return byCompany;
   }, [branches]);
 
-  // Default: all expanded (open) — first business type per company
+  // Default: all expanded
   const [openTypes, setOpenTypes] = useState<Set<string>>(() => {
     const s = new Set<string>();
     for (const cId of grouped.keys()) {
-      const types = grouped.get(cId)!;
-      let first = true;
-      for (const t of types.keys()) {
-        if (first) {
-          s.add(`${cId}:${t}`);
-          first = false;
-        }
-      }
+      for (const t of grouped.get(cId)!.keys()) s.add(`${cId}:${t}`);
     }
     return s;
   });
@@ -120,7 +141,13 @@ export function UsersByBusiness({ companies, branches, unassigned }: Props) {
   } | null>(null);
 
   return (
-    <>
+    <div className="space-y-6">
+      {/* Notification box at top */}
+      <NotificationBox
+        notifications={notifications}
+        pendingRequestCount={pendingRequestCount}
+      />
+
       {Array.from(grouped.entries()).map(([companyId, typesMap]) => {
         const company = companies.find((c) => c.id === companyId);
         const totalBranches = Array.from(typesMap.values()).reduce(
@@ -128,37 +155,32 @@ export function UsersByBusiness({ companies, branches, unassigned }: Props) {
           0,
         );
         const totalUsers = Array.from(typesMap.values()).reduce(
-          (s, list) =>
-            s + list.reduce((ss, b) => ss + b.users.length, 0),
+          (s, list) => s + list.reduce((ss, b) => ss + b.users.length, 0),
           0,
         );
 
         return (
-          <div key={companyId} className="mb-10">
-            {/* Company header */}
-            <div className="flex items-center gap-3 mb-5">
-              <div className="size-12 rounded-xl bg-[--color-brand-600] text-white flex items-center justify-center font-extrabold tracking-tight font-display text-lg shadow-blue">
+          <div key={companyId}>
+            {/* Company header — compact */}
+            <div className="flex items-center gap-2 mb-2">
+              <div className="size-8 rounded-lg bg-[--color-brand-600] text-white flex items-center justify-center font-extrabold text-xs font-display">
                 {company?.code.slice(0, 2) ?? "?"}
               </div>
               <div>
-                <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display">
+                <div className="font-extrabold font-display text-base text-zinc-900">
                   {company?.name ?? "ไม่ระบุบริษัท"}
-                </h2>
-                <p className="text-sm text-zinc-500">
-                  <span className="tabular-num font-bold text-zinc-700">
-                    {totalBranches}
-                  </span>{" "}
+                </div>
+                <div className="text-[10px] text-zinc-500 -mt-0.5">
+                  <span className="tabular-num font-bold">{totalBranches}</span>{" "}
                   สาขา ·{" "}
-                  <span className="tabular-num font-bold text-zinc-700">
-                    {totalUsers}
-                  </span>{" "}
-                  คนในระบบ
-                </p>
+                  <span className="tabular-num font-bold">{totalUsers}</span>{" "}
+                  คน
+                </div>
               </div>
             </div>
 
-            {/* Business type accordions */}
-            <div className="space-y-3">
+            {/* Business type accordions — compact */}
+            <div className="space-y-2">
               {Array.from(typesMap.entries()).map(([type, branchList]) => {
                 const cfg = BUSINESS_TYPES[type];
                 const key = `${companyId}:${type}`;
@@ -170,32 +192,30 @@ export function UsersByBusiness({ companies, branches, unassigned }: Props) {
                 return (
                   <div
                     key={type}
-                    className="rounded-2xl border-2 border-zinc-200 bg-white overflow-hidden"
+                    className="rounded-xl border-2 border-zinc-200 bg-white overflow-hidden"
                   >
                     <button
                       type="button"
                       onClick={() => toggle(key)}
-                      className="w-full flex items-center gap-3 px-5 py-4 hover:bg-zinc-50 transition-colors text-left"
+                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-50 transition-colors text-left"
                     >
-                      <span className="text-2xl">{cfg?.emoji ?? "📋"}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-extrabold font-display text-base text-zinc-900">
-                          {cfg?.label ?? type}
-                        </div>
-                        <div className="text-xs text-zinc-500 mt-0.5">
-                          <span className="tabular-num font-bold">
-                            {branchList.length}
-                          </span>{" "}
-                          สาขา ·{" "}
-                          <span className="tabular-num font-bold">
-                            {userCountInType}
-                          </span>{" "}
-                          คน
-                        </div>
-                      </div>
+                      <span className="text-base">{cfg?.emoji ?? "📋"}</span>
+                      <span className="font-extrabold font-display text-sm text-zinc-900">
+                        {cfg?.label ?? type}
+                      </span>
+                      <span className="text-[11px] text-zinc-500 ml-1">
+                        <span className="tabular-num font-bold text-zinc-700">
+                          {branchList.length}
+                        </span>{" "}
+                        สาขา ·{" "}
+                        <span className="tabular-num font-bold text-zinc-700">
+                          {userCountInType}
+                        </span>{" "}
+                        คน
+                      </span>
                       <ChevronDown
                         className={cn(
-                          "size-5 text-zinc-400 transition-transform shrink-0",
+                          "size-4 text-zinc-400 transition-transform shrink-0 ml-auto",
                           isOpen && "rotate-180",
                         )}
                       />
@@ -226,31 +246,29 @@ export function UsersByBusiness({ companies, branches, unassigned }: Props) {
         );
       })}
 
-      {/* Unassigned users (admins, super_admin, viewers — not tied to a branch) */}
+      {/* Unassigned users */}
       {unassigned.length > 0 && (
-        <div className="mb-10">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="size-12 rounded-xl bg-zinc-900 text-white flex items-center justify-center">
-              <Crown className="size-5" />
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <div className="size-8 rounded-lg bg-zinc-900 text-white flex items-center justify-center">
+              <Crown className="size-4" />
             </div>
             <div>
-              <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display">
+              <div className="font-extrabold font-display text-base">
                 ทีมส่วนกลาง
-              </h2>
-              <p className="text-sm text-zinc-500">
-                <span className="tabular-num font-bold text-zinc-700">
+              </div>
+              <div className="text-[10px] text-zinc-500 -mt-0.5">
+                <span className="tabular-num font-bold">
                   {unassigned.length}
                 </span>{" "}
-                คน · ไม่ผูกสาขา (Admin / Owner / ผู้ดู)
-              </p>
+                คน · ไม่ผูกสาขา
+              </div>
             </div>
           </div>
-          <div className="rounded-2xl border-2 border-zinc-200 bg-white overflow-hidden">
-            <div className="divide-y divide-zinc-100">
-              {unassigned.map((u) => (
-                <UserChip key={u.id} user={u} />
-              ))}
-            </div>
+          <div className="rounded-xl border-2 border-zinc-200 bg-white overflow-hidden divide-y divide-zinc-100">
+            {unassigned.map((u) => (
+              <UserChipRow key={u.id} user={u} />
+            ))}
           </div>
         </div>
       )}
@@ -264,8 +282,104 @@ export function UsersByBusiness({ companies, branches, unassigned }: Props) {
           onClose={() => setInviteCtx(null)}
         />
       )}
-    </>
+    </div>
   );
+}
+
+function NotificationBox({
+  notifications,
+  pendingRequestCount,
+}: {
+  notifications: AdminNotification[];
+  pendingRequestCount: number;
+}) {
+  const totalAlerts = notifications.length + pendingRequestCount;
+
+  if (totalAlerts === 0) {
+    return (
+      <div className="rounded-xl border-2 border-dashed border-zinc-200 bg-zinc-50/40 px-4 py-3 flex items-center gap-3">
+        <div className="size-8 rounded-lg bg-[--color-leaf-50] border border-[--color-leaf-200] flex items-center justify-center text-[--color-leaf-600]">
+          <CheckCircle2 className="size-4" />
+        </div>
+        <div className="text-xs text-zinc-500">
+          ไม่มีเรื่องค้างเกี่ยวกับผู้ใช้งาน · ระบบเรียบร้อย
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border-2 border-amber-300 bg-amber-50/40 overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-amber-200 bg-amber-100/40 flex items-center gap-2">
+        <Bell className="size-4 text-amber-700" />
+        <span className="text-xs uppercase tracking-wider font-bold text-amber-900">
+          แจ้งเตือนเกี่ยวกับผู้ใช้งาน
+        </span>
+        <span className="ml-auto text-[10px] tabular-num font-bold text-amber-700 bg-amber-200/50 px-2 py-0.5 rounded-full">
+          {totalAlerts}
+        </span>
+      </div>
+      <div className="divide-y divide-amber-200/50">
+        {pendingRequestCount > 0 && (
+          <Link
+            href="/users/requests"
+            className="flex items-center gap-3 px-4 py-2.5 hover:bg-amber-100/30 transition-colors"
+          >
+            <Inbox className="size-4 text-amber-700 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold text-zinc-900">
+                คำขอเข้าใช้งานใหม่ {pendingRequestCount} คน
+              </div>
+              <div className="text-[11px] text-zinc-500">
+                คลิกเพื่อดู/อนุมัติ
+              </div>
+            </div>
+            <span className="text-[10px] font-bold text-amber-700">รออนุมัติ →</span>
+          </Link>
+        )}
+        {notifications.slice(0, 5).map((n) => (
+          <Link
+            key={n.id}
+            href={n.link ?? "#"}
+            className="flex items-center gap-3 px-4 py-2.5 hover:bg-amber-100/30 transition-colors"
+          >
+            <span
+              className={cn(
+                "size-2 rounded-full shrink-0",
+                n.type === "danger"
+                  ? "bg-red-500"
+                  : n.type === "warning"
+                    ? "bg-amber-500"
+                    : n.type === "success"
+                      ? "bg-[--color-leaf-500]"
+                      : "bg-blue-500",
+              )}
+            />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold text-zinc-900 truncate">
+                {n.title}
+              </div>
+              <div className="text-[11px] text-zinc-500 truncate">{n.body}</div>
+            </div>
+            <span className="text-[10px] text-zinc-400 shrink-0">
+              {timeAgo(n.created_at)}
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function timeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return "เมื่อกี้";
+  if (min < 60) return `${min} น.`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} ชม.`;
+  const d = Math.floor(hr / 24);
+  return `${d} วัน`;
 }
 
 function BranchRow({
@@ -279,56 +393,42 @@ function BranchRow({
   const staffCount = branch.users.filter((u) => u.role === "staff").length;
 
   return (
-    <div className="px-5 py-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-extrabold tabular-num font-display text-sm">
-              {branch.code}
+    <div className="px-3 py-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="min-w-0 flex items-center gap-2 flex-wrap">
+          <span className="font-extrabold tabular-num font-display text-xs">
+            {branch.code}
+          </span>
+          <span className="text-xs text-zinc-700 truncate">{branch.name}</span>
+          <span
+            className={cn(
+              "text-[10px] font-bold tabular-num px-1.5 py-0.5 rounded-md border",
+              managerCount === 0
+                ? "bg-amber-50 text-amber-800 border-amber-200"
+                : "bg-[--color-leaf-50] text-[--color-leaf-700] border-[--color-leaf-200]",
+            )}
+          >
+            ผจก. {managerCount}/2
+          </span>
+          {staffCount > 0 && (
+            <span className="text-[10px] font-bold tabular-num text-zinc-600 px-1.5 py-0.5 rounded-md bg-zinc-50 border border-zinc-200">
+              พน. {staffCount}
             </span>
-            <span className="text-sm text-zinc-700 truncate">
-              {branch.name}
-            </span>
-          </div>
-          <div className="text-[11px] text-zinc-500 mt-1 flex items-center gap-3">
-            <span>
-              <span
-                className={cn(
-                  "tabular-num font-bold",
-                  managerCount === 0
-                    ? "text-amber-700"
-                    : managerCount >= 2
-                      ? "text-[--color-leaf-700]"
-                      : "text-zinc-700",
-                )}
-              >
-                ผจก. {managerCount}/2
-              </span>
-            </span>
-            <span className="text-zinc-300">·</span>
-            <span>
-              <span className="tabular-num font-bold text-zinc-700">
-                พนักงาน {staffCount}
-              </span>
-            </span>
-          </div>
+          )}
         </div>
         <button
           type="button"
           onClick={onInvite}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[--color-brand-50] border-2 border-[--color-brand-200] text-[--color-brand-700] text-xs font-bold hover:bg-[--color-brand-100] transition-colors"
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[--color-brand-50] border border-[--color-brand-200] text-[--color-brand-700] text-[11px] font-bold hover:bg-[--color-brand-100] transition-colors shrink-0"
         >
-          <UserPlus className="size-3.5" />
-          เชิญคนเข้าสาขานี้
+          <UserPlus className="size-3" />
+          เชิญ
         </button>
       </div>
-
-      {branch.users.length === 0 ? (
-        <p className="text-xs text-zinc-400 italic">— ยังไม่มีคนในสาขา —</p>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
+      {branch.users.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1.5">
           {branch.users.map((u) => (
-            <UserChip key={u.id} user={u} compact />
+            <UserChipCompact key={u.id} user={u} />
           ))}
         </div>
       )}
@@ -336,60 +436,85 @@ function BranchRow({
   );
 }
 
-function UserChip({
-  user,
-  compact = false,
-}: {
-  user: BranchUser;
-  compact?: boolean;
-}) {
+function statusInfo(u: BranchUser): { dot: string; label: string } {
+  if (!u.is_active) return { dot: "bg-zinc-300", label: "ปิดบัญชี" };
+  if (!u.invite_used) return { dot: "bg-amber-400", label: "ยังไม่ activate" };
+  return { dot: "bg-[--color-leaf-500]", label: "พร้อมใช้งาน" };
+}
+
+function UserChipCompact({ user }: { user: BranchUser }) {
   const isManager = MANAGER_ROLES.has(user.role);
-
-  // Status: green = active and channels bound, white = invited not yet active
-  const isReady = user.is_active && user.invite_used;
-  const dotClass = isReady
-    ? "bg-[--color-leaf-500]"
-    : user.is_active
-      ? "bg-zinc-300"
-      : "bg-amber-400";
-
-  if (compact) {
-    return (
-      <Link
-        href={`/users/${user.id}`}
-        className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white border-2 border-zinc-200 text-xs font-medium hover:border-[--color-brand-300] transition-colors group"
-      >
-        <span
-          className={cn("size-2 rounded-full shrink-0", dotClass)}
-          title={isReady ? "พร้อมใช้งาน" : user.is_active ? "ยังไม่ Login" : "รอ activate"}
-        />
-        <span className={cn("truncate", isManager && "font-bold")}>
-          {user.name}
-        </span>
-        <span className="text-[10px] text-zinc-500 shrink-0">
-          {ROLE_LABEL[user.role] ?? user.role}
-        </span>
-      </Link>
-    );
-  }
+  const status = statusInfo(user);
+  const roleClass = ROLE_COLOR[user.role] ?? "bg-zinc-50 text-zinc-700 border-zinc-200";
 
   return (
     <Link
       href={`/users/${user.id}`}
-      className="flex items-center gap-3 px-5 py-3 hover:bg-zinc-50 transition-colors"
+      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-white border border-zinc-200 text-[11px] hover:border-[--color-brand-300] transition-colors group"
+      title={status.label}
     >
-      <span
-        className={cn("size-2.5 rounded-full shrink-0", dotClass)}
-        title={isReady ? "พร้อมใช้งาน" : "รอ activate"}
-      />
-      <div className="flex-1 min-w-0">
-        <div className="font-bold truncate">{user.name}</div>
-        <div className="text-[11px] text-zinc-500 truncate">
-          {user.email ?? user.phone ?? "—"}
-        </div>
-      </div>
-      <span className="text-xs font-bold text-zinc-600 shrink-0">
+      <span className={cn("size-1.5 rounded-full shrink-0", status.dot)} />
+      <span className={cn("truncate max-w-[120px]", isManager && "font-bold")}>
+        {user.name}
+      </span>
+      <span className={cn("text-[9px] px-1 py-0.5 rounded border font-bold", roleClass)}>
         {ROLE_LABEL[user.role] ?? user.role}
+      </span>
+      {/* Channel dots */}
+      <span className="flex items-center gap-0.5">
+        <span
+          className={cn(
+            "size-1.5 rounded-full",
+            user.has_line ? "bg-[--color-leaf-500]" : "bg-zinc-200",
+          )}
+          title={user.has_line ? "LINE ผูกแล้ว" : "ยังไม่ผูก LINE"}
+        />
+        <span
+          className={cn(
+            "size-1.5 rounded-full",
+            user.has_telegram ? "bg-[--color-leaf-500]" : "bg-zinc-200",
+          )}
+          title={user.has_telegram ? "Telegram ผูกแล้ว" : "ยังไม่ผูก Telegram"}
+        />
+      </span>
+    </Link>
+  );
+}
+
+function UserChipRow({ user }: { user: BranchUser }) {
+  const status = statusInfo(user);
+  const roleClass = ROLE_COLOR[user.role] ?? "bg-zinc-50 text-zinc-700 border-zinc-200";
+
+  return (
+    <Link
+      href={`/users/${user.id}`}
+      className="flex items-center gap-3 px-3 py-2 hover:bg-zinc-50 transition-colors text-sm"
+    >
+      <span className={cn("size-2 rounded-full shrink-0", status.dot)} />
+      <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+        <span className="font-bold truncate">{user.name}</span>
+        <span className="text-[11px] text-zinc-500 truncate">
+          {user.email ?? user.phone ?? ""}
+        </span>
+      </div>
+      <span className={cn("text-[10px] px-1.5 py-0.5 rounded-md border font-bold", roleClass)}>
+        {ROLE_LABEL[user.role] ?? user.role}
+      </span>
+      <span className="flex items-center gap-1">
+        <span
+          className={cn(
+            "size-2 rounded-full",
+            user.has_line ? "bg-[--color-leaf-500]" : "bg-zinc-200",
+          )}
+          title="LINE"
+        />
+        <span
+          className={cn(
+            "size-2 rounded-full",
+            user.has_telegram ? "bg-[--color-leaf-500]" : "bg-zinc-200",
+          )}
+          title="Telegram"
+        />
       </span>
     </Link>
   );
@@ -436,7 +561,7 @@ function InviteDialog({
         return;
       }
       setInviteUrl(json.inviteUrl);
-      toast.success("สร้างลิงก์สำเร็จ — copy แล้วส่งให้คนนั้นใน LINE");
+      toast.success("สร้างลิงก์สำเร็จ — Copy แล้วส่งใน LINE");
       router.refresh();
     });
   }

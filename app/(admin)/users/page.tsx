@@ -12,6 +12,7 @@ import {
   type BranchWithUsers,
   type BranchUser,
   type Company,
+  type AdminNotification,
 } from "./users-by-business";
 
 export const dynamic = "force-dynamic";
@@ -21,8 +22,8 @@ export default async function UsersPage() {
   const admin = adminClient();
   const orgId = session.user.org_id;
 
-  // Step 1: companies + branches + users + user_branches in parallel (no joins)
-  const [companiesQ, branchesQ, usersQ, userBranchesQ, requestsQ] = await Promise.all([
+  // Step 1: companies + branches + users + user_branches + notifications in parallel
+  const [companiesQ, branchesQ, usersQ, userBranchesQ, requestsQ, notifQ] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin.from as any)("companies")
       .select("id, code, name")
@@ -52,7 +53,18 @@ export default async function UsersPage() {
       .select("id", { count: "exact", head: true })
       .eq("org_id", orgId)
       .eq("status", "pending"),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin.from as any)("notifications")
+      .select("id, type, title, body, link, created_at, is_read")
+      .eq("org_id", orgId)
+      .eq("user_id", session.user.id)
+      .or("module.eq.core,module.is.null")
+      .eq("is_read", false)
+      .order("created_at", { ascending: false })
+      .limit(10),
   ]);
+
+  const notifications: AdminNotification[] = (notifQ.data ?? []) as AdminNotification[];
 
   const companies: Company[] = (companiesQ.data ?? []) as Company[];
   const branches = (branchesQ.data ?? []) as Array<{
@@ -210,6 +222,8 @@ export default async function UsersPage() {
             companies={companies}
             branches={branchesWithUsers}
             unassigned={unassigned}
+            notifications={notifications}
+            pendingRequestCount={pendingCount}
           />
         </Section>
       </div>

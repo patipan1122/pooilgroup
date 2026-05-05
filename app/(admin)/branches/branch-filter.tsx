@@ -350,7 +350,7 @@ function BranchCompactRow({ branch: b }: { branch: BranchRow }) {
             "inline-flex items-center justify-center size-6 rounded-md border",
             b.line_group_id
               ? "bg-[--color-leaf-50] border-[--color-leaf-200] text-[--color-leaf-700]"
-              : "bg-zinc-50 border-zinc-200 text-zinc-300",
+              : "bg-zinc-50 border-zinc-200 text-zinc-400",
           )}
           title={b.line_group_id ? `LINE Group: ${b.line_group_id}` : "ยังไม่ตั้ง LINE Group"}
         >
@@ -362,7 +362,7 @@ function BranchCompactRow({ branch: b }: { branch: BranchRow }) {
             "inline-flex items-center justify-center size-6 rounded-md border",
             b.telegram_chat_id
               ? "bg-[--color-leaf-50] border-[--color-leaf-200] text-[--color-leaf-700]"
-              : "bg-zinc-50 border-zinc-200 text-zinc-300",
+              : "bg-zinc-50 border-zinc-200 text-zinc-400",
           )}
           title={b.telegram_chat_id ? `Telegram: ${b.telegram_chat_id}` : "ยังไม่ตั้ง Telegram"}
         >
@@ -374,14 +374,14 @@ function BranchCompactRow({ branch: b }: { branch: BranchRow }) {
             "inline-flex items-center justify-center size-6 rounded-md border",
             b.phone
               ? "bg-[--color-leaf-50] border-[--color-leaf-200] text-[--color-leaf-700]"
-              : "bg-zinc-50 border-zinc-200 text-zinc-300",
+              : "bg-zinc-50 border-zinc-200 text-zinc-400",
           )}
           title={b.phone ?? "ไม่มีเบอร์"}
         >
           <PhoneIcon className="size-3" />
         </span>
         {/* Edit hint */}
-        <Pencil className="size-3 text-zinc-300 group-hover:text-[--color-brand-600] transition-colors" />
+        <Pencil className="size-3 text-zinc-400 group-hover:text-[--color-brand-600] transition-colors" />
       </div>
     </Link>
   );
