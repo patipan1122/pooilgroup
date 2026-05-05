@@ -7,13 +7,13 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ChevronLeft,
-  ChevronRight,
   ChevronDown,
   TrendingUp,
   TrendingDown,
   Calendar,
   CalendarDays,
+  ChevronsDownUp,
+  ChevronsUpDown,
 } from "lucide-react";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { formatBahtCompact } from "@/lib/utils/format";
@@ -28,6 +28,16 @@ export function ExecutiveTable({ data }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const allExpanded = expanded.size === data.rows.length;
+  const noneExpanded = expanded.size === 0;
+
+  function expandAll() {
+    setExpanded(new Set(data.rows.map((r) => r.businessType)));
+  }
+  function collapseAll() {
+    setExpanded(new Set());
+  }
 
   // Reverse arrays so OLDEST → NEWEST (left → right, like calendar)
   const periodLabels = [...data.periodLabels].reverse();
@@ -71,19 +81,46 @@ export function ExecutiveTable({ data }: Props) {
 
   return (
     <div className="rounded-2xl border-2 border-zinc-200 bg-white overflow-hidden">
-      {/* Filter bar */}
+      {/* Filter bar — left: period toggle · right: expand/collapse all */}
       <div className="flex items-center justify-between flex-wrap gap-3 px-4 sm:px-5 py-3 border-b-2 border-zinc-100 bg-zinc-50/40">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 font-bold">
+          <span className="text-[11px] uppercase tracking-[0.18em] text-zinc-600 font-bold">
             ดูแบบ
           </span>
           <PeriodToggle current={data.period} onChange={setPeriod} />
         </div>
-        <div className="text-[11px] text-zinc-500">
-          {isDaily ? "30 วันล่าสุด" : "6 เดือนล่าสุด"}
-          <span className="text-zinc-300 mx-2">·</span>
-          เลื่อนซ้ายขวาดูช่วงเก่า
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={allExpanded ? collapseAll : expandAll}
+            className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-bold rounded-lg border-2 border-zinc-200 bg-white text-zinc-700 hover:border-[--color-brand-400] hover:text-[--color-brand-700] transition-colors"
+          >
+            {allExpanded ? (
+              <>
+                <ChevronsDownUp className="size-3.5" />
+                หุบทั้งหมด
+              </>
+            ) : (
+              <>
+                <ChevronsUpDown className="size-3.5" />
+                ขยายทั้งหมด
+              </>
+            )}
+          </button>
+          {!noneExpanded && !allExpanded && (
+            <button
+              type="button"
+              onClick={collapseAll}
+              className="text-xs text-zinc-600 hover:text-zinc-900 font-semibold underline underline-offset-2"
+            >
+              หุบ {expanded.size}
+            </button>
+          )}
         </div>
+      </div>
+      <div className="px-4 sm:px-5 py-2 border-b border-zinc-100 text-[11px] text-zinc-600 flex items-center justify-between bg-white">
+        <span>{isDaily ? "30 วันล่าสุด" : "12 เดือนล่าสุด (1 ปีเต็ม)"}</span>
+        <span className="text-zinc-500">↔ เลื่อนซ้ายขวาดูช่วงเก่า</span>
       </div>
 
       {/* Table — horizontal scroll */}
