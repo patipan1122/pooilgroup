@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { CheckCircle2 } from "lucide-react";
 import { adminClient } from "@/lib/db/server";
 import { LoginForm } from "./login-form";
 
@@ -27,25 +26,29 @@ export default async function LoginPage() {
 
   return (
     <div className="w-full max-w-md">
-      <div className="mb-8 flex flex-col items-center text-center animate-fade-up">
-        <div className="inline-flex items-center justify-center size-14 rounded-2xl bg-[--color-brand-600] text-white mb-5 shadow-blue">
-          <CheckCircle2 className="size-7" strokeWidth={2.5} />
+      {/* Hero — Anuphan heavy display + gradient blue */}
+      <div className="mb-10 flex flex-col items-center text-center animate-slide-up-soft">
+        <div className="inline-flex items-center justify-center size-16 rounded-2xl bg-[--color-brand-600] text-white mb-6 font-display font-extrabold text-2xl shadow-blue glow-blue">
+          P
         </div>
-        <h1 className="text-3xl font-extrabold tracking-tight text-zinc-900 font-display">
-          เข้าสู่ระบบ <span className="accent">Pooilgroup</span>
+        <p className="text-[11px] uppercase tracking-[0.22em] font-bold text-[--color-brand-700] mb-3">
+          <span className="brand-gradient-text">Pooilgroup</span>{" "}
+          ERP
+        </p>
+        <h1 className="text-4xl sm:text-5xl font-extrabold tracking-[-0.04em] text-zinc-900 font-display leading-[0.95]">
+          เข้าสู่ <span className="text-gradient-blue">ระบบ</span>
         </h1>
-        <p className="text-sm text-zinc-500 mt-2 max-w-xs">
-          จัดการยอดสาขา · เอกสาร · ขนส่งน้ำมัน
-          <br />ครบในแพลตฟอร์มเดียว
+        <p className="text-base text-zinc-600 mt-4 max-w-xs leading-relaxed">
+          จัดการยอดสาขา · เอกสาร · ขนส่งน้ำมัน — รวมในที่เดียว
         </p>
       </div>
 
       {isFirstRun && (
-        <div className="mb-4 rounded-2xl bg-[--color-brand-50] border-2 border-[--color-brand-200] px-4 py-3.5 animate-fade-up delay-100">
-          <div className="flex items-start gap-2.5">
-            <span className="text-xl shrink-0">👋</span>
+        <div className="mb-5 rounded-2xl bg-[--color-brand-50] border-2 border-[--color-brand-200] px-4 py-3.5 animate-fade-up delay-100">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl shrink-0">👋</span>
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-[--color-brand-800]">
+              <div className="text-sm font-bold text-[--color-brand-800]">
                 ยังไม่มี Owner ในระบบ
               </div>
               <div className="text-xs text-[--color-brand-700] mt-0.5">
@@ -62,17 +65,17 @@ export default async function LoginPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl border border-zinc-200 shadow-md p-6 sm:p-8 animate-fade-up delay-150">
+      <div className="bg-white rounded-3xl border-2 border-zinc-200 shadow-lg p-6 sm:p-8 animate-fade-up delay-150">
         <LoginForm />
       </div>
 
-      <p className="text-center text-sm text-zinc-500 mt-6 animate-fade-up delay-200">
+      <p className="text-center text-sm text-zinc-500 mt-7 animate-fade-up delay-200">
         ยังไม่มีบัญชี?{" "}
         <Link
-          href="/signup"
-          className="font-semibold text-[--color-brand-700] hover:text-[--color-brand-800]"
+          href="/join"
+          className="font-bold text-[--color-brand-700] hover:text-[--color-brand-800] underline underline-offset-2"
         >
-          สมัครสมาชิก →
+          ขอเข้าใช้งาน →
         </Link>
       </p>
     </div>

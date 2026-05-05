@@ -20,30 +20,49 @@ export default async function JoinPage() {
     .order("code");
 
   return (
-    <div className="min-h-screen flex flex-col bg-zinc-50 bg-grid-dots/30">
-      <main className="flex-1 flex items-center justify-center p-4 sm:p-8">
-        <div className="w-full max-w-lg animate-fade-up">
-          <div className="text-center mb-8">
-            <div className="size-14 rounded-2xl bg-[--color-brand-600] text-white flex items-center justify-center font-bold font-display text-2xl shadow-blue mx-auto mb-4">
+    <div className="min-h-screen flex flex-col bg-white relative overflow-hidden">
+      {/* Background — radial blue glow + dot grid */}
+      <div className="absolute inset-0 -z-10 pointer-events-none">
+        <div
+          className="absolute -top-40 left-1/2 -translate-x-1/2 w-225 h-150 rounded-full opacity-25 blur-3xl animate-drift"
+          style={{
+            background:
+              "radial-gradient(circle, oklch(0.50 0.28 263) 0%, transparent 65%)",
+          }}
+        />
+        <div className="absolute inset-0 bg-grid-dots opacity-40" />
+      </div>
+
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-8 py-12">
+        <div className="w-full max-w-lg">
+          {/* Hero */}
+          <div className="text-center mb-10 animate-slide-up-soft">
+            <div className="size-16 rounded-2xl bg-[--color-brand-600] text-white flex items-center justify-center font-bold font-display text-2xl shadow-blue glow-blue mx-auto mb-6">
               P
             </div>
-            <p className="text-xs uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
-              Pooilgroup · Join us
+            <p className="text-[11px] uppercase tracking-[0.22em] text-[--color-brand-700] font-bold mb-3">
+              <span className="brand-gradient-text">Pooilgroup</span>{" "}
+              · JOIN US
             </p>
-            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight font-display mt-2">
-              ขอเข้า <span className="accent">ใช้งานระบบ</span>
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-[-0.04em] font-display leading-[0.95] text-zinc-900">
+              ขอเข้า <span className="text-gradient-blue">ใช้งาน</span>
             </h1>
-            <p className="text-zinc-600 mt-3 max-w-md mx-auto">
+            <p className="text-base text-zinc-600 mt-5 max-w-md mx-auto leading-relaxed">
               กรอกข้อมูลด้านล่าง · Admin จะอนุมัติและส่งลิงก์ตั้ง password ให้ใน LINE
             </p>
           </div>
 
-          <JoinForm branches={branches ?? []} />
+          <div className="animate-fade-up delay-100">
+            <JoinForm branches={branches ?? []} />
+          </div>
 
-          <p className="text-center text-xs text-zinc-400 mt-6">
+          <p className="text-center text-sm text-zinc-500 mt-7 animate-fade-up delay-200">
             มีบัญชีอยู่แล้ว?{" "}
-            <Link href="/login" className="text-[--color-brand-700] hover:underline">
-              เข้าสู่ระบบที่นี่
+            <Link
+              href="/login"
+              className="font-bold text-[--color-brand-700] hover:text-[--color-brand-800] underline underline-offset-2"
+            >
+              เข้าสู่ระบบ →
             </Link>
           </p>
         </div>
