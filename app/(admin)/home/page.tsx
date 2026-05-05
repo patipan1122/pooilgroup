@@ -36,6 +36,7 @@ import { MODULES } from "@/lib/modules";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { ExecutiveTable } from "@/components/cashhub/executive-table";
 import { loadExecutiveMatrix } from "@/lib/cashhub/executive-matrix";
+import { StaffHome } from "./staff-home";
 import { startOfDay } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 
@@ -49,15 +50,29 @@ export default async function HomePage() {
   const admin = adminClient();
 
   // ============================================================
-  // ROLE-BASED ROUTING — driver redirected to /driver
-  // (other roles see /home but with role-tailored content below)
+  // ROLE-BASED ROUTING — แต่ละ role เห็นคนละหน้า
   // ============================================================
+  // Driver → redirect ไป /driver app (FuelOS)
   if (session.user.role === "driver") {
     redirect("/driver");
   }
 
+  // Staff → render Staff /home (กรอกรายงาน focus, no executive table)
+  if (session.user.role === "staff") {
+    const firstName = session.user.name.split(" ")[0];
+    return (
+      <StaffHome
+        userId={session.user.id}
+        orgId={orgId}
+        firstName={firstName}
+      />
+    );
+  }
+
   const isAdmin =
-    session.user.role === "super_admin" || session.user.role === "org_admin";
+    session.user.role === "super_admin" ||
+    session.user.role === "org_admin" ||
+    session.user.role === "admin";
   const isManager =
     session.user.role === "branch_manager" ||
     session.user.role === "area_manager" ||
