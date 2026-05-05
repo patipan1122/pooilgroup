@@ -2,7 +2,7 @@
 // User-friendly: กดย่อ-ขยายตามประเภท เห็นจำนวนคนแต่ละตำแหน่ง เชิญในที่เดียว
 
 import Link from "next/link";
-import { UserPlus, Inbox, Upload } from "lucide-react";
+import { UserPlus, Inbox, Upload, Download, Building2 } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Section } from "@/components/ui/section";
@@ -216,12 +216,27 @@ export default async function UsersPage() {
                 </span>
               )}
             </Link>
+            <a
+              href="/api/admin/users/export"
+              className="inline-flex items-center gap-2 px-3 h-11 rounded-xl border-2 border-zinc-200 bg-white text-zinc-800 font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm"
+              title="ดาวน์โหลด CSV รายชื่อทั้งหมด"
+            >
+              <Download className="size-4" />
+              Export CSV
+            </a>
             <Link
               href="/users/import"
-              className="inline-flex items-center gap-2 px-4 h-11 rounded-xl border-2 border-zinc-200 bg-white font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm"
+              className="inline-flex items-center gap-2 px-3 h-11 rounded-xl border-2 border-zinc-200 bg-white text-zinc-800 font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm"
             >
               <Upload className="size-4" />
-              นำเข้า CSV
+              นำเข้าผู้ใช้
+            </Link>
+            <Link
+              href="/branches/import"
+              className="inline-flex items-center gap-2 px-3 h-11 rounded-xl border-2 border-zinc-200 bg-white text-zinc-800 font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm"
+            >
+              <Building2 className="size-4" />
+              นำเข้าสาขา
             </Link>
             <Link
               href="/users/new"

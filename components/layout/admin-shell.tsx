@@ -264,47 +264,49 @@ export function AdminShell({ user, children }: Props) {
       </header>
 
       <div className="flex-1 flex">
-        {/* Sidebar (desktop) */}
+        {/* Sidebar (desktop) — module-isolated:
+            - inside a module: ONLY that module's nav + back-to-home button
+            - on core pages (/users etc): admin nav + account nav
+            HARD RULE feedback_module_isolation.md — โปรแกรมใครโปรแกรมมัน */}
         {!isHome && (
           <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r-2 border-zinc-200 bg-white">
             <div className="flex-1 py-3 space-y-3">
-              {/* Module nav */}
-              {activeModule && moduleNav.length > 0 && (
+              {activeModule && moduleNav.length > 0 ? (
                 <NavGroup
                   title={activeModule.name.toUpperCase()}
                   items={moduleNav}
                   pathname={pathname}
                 />
+              ) : (
+                <>
+                  {isAdmin && (
+                    <NavGroup
+                      title="จัดการระบบ"
+                      items={ADMIN_NAV}
+                      pathname={pathname}
+                    />
+                  )}
+                  <NavGroup
+                    title="บัญชี"
+                    items={ACCOUNT_NAV}
+                    pathname={pathname}
+                  />
+                </>
               )}
-
-              {/* Admin nav */}
-              {isAdmin && (
-                <NavGroup
-                  title="จัดการระบบ"
-                  items={ADMIN_NAV}
-                  pathname={pathname}
-                />
-              )}
-
-              <NavGroup
-                title="บัญชี"
-                items={ACCOUNT_NAV}
-                pathname={pathname}
-              />
             </div>
-            <div className="px-3 py-3 border-t border-zinc-100">
+            <div className="px-3 py-3 border-t-2 border-zinc-100 bg-zinc-50/40">
               <Link
                 href="/home"
-                className="flex items-center gap-2 text-xs text-zinc-500 hover:text-[var(--color-brand-700)] px-2"
+                className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-bold text-zinc-700 hover:text-[var(--color-brand-700)] hover:bg-white border-2 border-transparent hover:border-[var(--color-brand-200)] transition-all"
               >
-                <Home className="size-3.5" />
+                <Home className="size-4 shrink-0" />
                 <span>กลับหน้าหลัก</span>
               </Link>
             </div>
           </aside>
         )}
 
-        {/* Mobile drawer */}
+        {/* Mobile drawer — same isolation rule as desktop */}
         {mobileOpen && (
           <div className="lg:hidden fixed inset-0 z-50">
             <div
@@ -324,34 +326,41 @@ export function AdminShell({ user, children }: Props) {
                 </button>
               </div>
               <div className="flex-1 py-3 space-y-3 overflow-auto">
-                <NavGroup
-                  title="หน้าหลัก"
-                  items={[{ href: "/home", label: "ภาพรวมทุกโปรแกรม", icon: Home }]}
-                  pathname={pathname}
-                  onNavigate={() => setMobileOpen(false)}
-                />
-                {activeModule && moduleNav.length > 0 && (
+                {activeModule && moduleNav.length > 0 ? (
                   <NavGroup
                     title={activeModule.name.toUpperCase()}
                     items={moduleNav}
                     pathname={pathname}
                     onNavigate={() => setMobileOpen(false)}
                   />
+                ) : (
+                  <>
+                    {isAdmin && (
+                      <NavGroup
+                        title="จัดการระบบ"
+                        items={ADMIN_NAV}
+                        pathname={pathname}
+                        onNavigate={() => setMobileOpen(false)}
+                      />
+                    )}
+                    <NavGroup
+                      title="บัญชี"
+                      items={ACCOUNT_NAV}
+                      pathname={pathname}
+                      onNavigate={() => setMobileOpen(false)}
+                    />
+                  </>
                 )}
-                {isAdmin && (
-                  <NavGroup
-                    title="จัดการระบบ"
-                    items={ADMIN_NAV}
-                    pathname={pathname}
-                    onNavigate={() => setMobileOpen(false)}
-                  />
-                )}
-                <NavGroup
-                  title="บัญชี"
-                  items={ACCOUNT_NAV}
-                  pathname={pathname}
-                  onNavigate={() => setMobileOpen(false)}
-                />
+              </div>
+              <div className="px-3 py-3 border-t-2 border-zinc-100 bg-zinc-50/40">
+                <Link
+                  href="/home"
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-bold text-zinc-700 hover:text-[var(--color-brand-700)] hover:bg-white border-2 border-transparent hover:border-[var(--color-brand-200)] transition-all"
+                >
+                  <Home className="size-4 shrink-0" />
+                  <span>กลับหน้าหลัก</span>
+                </Link>
               </div>
             </aside>
           </div>

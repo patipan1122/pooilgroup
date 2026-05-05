@@ -14,55 +14,53 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils/cn";
+import { BUSINESS_TYPES } from "@/constants/business-types";
 
-const TEMPLATE = `name,email,phone,role,branchCodes
-สมชาย ใจดี,somchai@pooilgroup.com,081-234-5678,branch_manager,KKN-001
-สุดา ทอง,sudata@pooilgroup.com,089-555-1111,staff,"KKN-001,KKN-002"
-มาดี ขับรถ,,082-222-3333,driver,
-ผู้ดู ทดสอบ,viewer@pooilgroup.com,,viewer,`;
+interface CompanyOption {
+  id: string;
+  code: string;
+  name: string;
+}
+
+const VALID_BUSINESS_TYPES = new Set(Object.keys(BUSINESS_TYPES));
+
+const buildTemplate = (companies: CompanyOption[]) => {
+  const exampleCompany = companies[0]?.code || "POOIL";
+  return `code,name,businessType,companyCode,province,region,phone
+PO-FUEL-002,ปั๊มน้ำมัน ขอนแก่น 02,fuel_station,${exampleCompany},ขอนแก่น,อีสาน,
+PO-LPG-002,ปั๊มแก๊ส ขอนแก่น 02,lpg_station,${exampleCompany},ขอนแก่น,อีสาน,
+PO-CAFE-002,Café Amazon ขอนแก่น 02,cafe,${exampleCompany},ขอนแก่น,อีสาน,043-555-1234`;
+};
 
 interface ParsedRow {
+  code: string;
   name: string;
-  email?: string;
+  businessType: string;
+  companyCode: string;
+  province?: string;
+  region?: string;
   phone?: string;
-  role: string;
-  branchCodes: string[];
   _line: number;
   _error?: string;
 }
 
 interface ResultRow {
+  code: string;
   name: string;
-  email?: string;
-  phone?: string;
-  role: string;
-  inviteUrl?: string;
+  success: boolean;
+  branchId?: string;
   error?: string;
 }
 
-const ROLES = new Set([
-  "super_admin",
-  "org_admin",
-  "branch_manager",
-  "staff",
-  "driver",
-  "viewer",
-]);
-
-function parseCSV(text: string): ParsedRow[] {
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
+function parseCSV(text: string, validCompanyCodes: Set<string>): ParsedRow[] {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length === 0) return [];
 
-  // Skip header if it looks like one
   const header = lines[0].toLowerCase();
-  const hasHeader = header.includes("name") && header.includes("role");
+  const hasHeader = header.includes("code") && header.includes("businesstype");
   const dataLines = hasHeader ? lines.slice(1) : lines;
 
   return dataLines.map((line, idx) => {
-    // Simple CSV parser supporting quoted values
     const cols: string[] = [];
     let cur = "";
     let inQuote = false;
@@ -80,35 +78,31 @@ function parseCSV(text: string): ParsedRow[] {
     }
     cols.push(cur.trim());
 
-    const [name = "", email = "", phone = "", role = "staff", branchCodesStr = ""] =
-      cols;
+    const [code = "", name = "", businessType = "", companyCode = "", province = "", region = "", phone = ""] = cols;
 
     const row: ParsedRow = {
-      name: name,
-      email: email || undefined,
+      code: code.toUpperCase(),
+      name,
+      businessType,
+      companyCode: companyCode.toUpperCase(),
+      province: province || undefined,
+      region: region || undefined,
       phone: phone || undefined,
-      role: role || "staff",
-      branchCodes: branchCodesStr
-        ? branchCodesStr
-            .split(/[,;]/)
-            .map((s) => s.trim().toUpperCase())
-            .filter(Boolean)
-        : [],
       _line: hasHeader ? idx + 2 : idx + 1,
     };
 
-    // Inline validation
-    if (!row.name) row._error = "ขาดชื่อ";
-    else if (!ROLES.has(row.role))
-      row._error = `บทบาทไม่ถูกต้อง: ${row.role}`;
-    else if (row.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(row.email))
-      row._error = "อีเมลไม่ถูกต้อง";
+    if (!row.code) row._error = "ขาดรหัสสาขา";
+    else if (!row.name) row._error = "ขาดชื่อสาขา";
+    else if (!VALID_BUSINESS_TYPES.has(row.businessType))
+      row._error = `ประเภทธุรกิจไม่ถูกต้อง: ${row.businessType}`;
+    else if (!validCompanyCodes.has(row.companyCode))
+      row._error = `ไม่พบบริษัทรหัส ${row.companyCode}`;
 
     return row;
   });
 }
 
-export function ImportClient() {
+export function BranchImportClient({ companies }: { companies: CompanyOption[] }) {
   const [text, setText] = useState("");
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<{
@@ -116,8 +110,11 @@ export function ImportClient() {
     rows: ResultRow[];
   } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
-  const parsed = parseCSV(text);
+  const TEMPLATE = buildTemplate(companies);
+  const validCompanyCodes = new Set(companies.map((c) => c.code.toUpperCase()));
+  const parsed = parseCSV(text, validCompanyCodes);
   const errors = parsed.filter((p) => p._error);
   const valid = parsed.filter((p) => !p._error);
 
@@ -133,7 +130,7 @@ export function ImportClient() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "pooilgroup-users-template.csv";
+    a.download = "pooilgroup-branches-template.csv";
     a.click();
     URL.revokeObjectURL(url);
     toast.success("ดาวน์โหลดไฟล์ template แล้ว เปิดด้วย Excel ได้เลย");
@@ -144,7 +141,6 @@ export function ImportClient() {
     reader.onload = (e) => {
       const content = e.target?.result;
       if (typeof content === "string") {
-        // Strip BOM if present
         const cleaned = content.replace(/^﻿/, "");
         setText(cleaned);
         toast.success(`อ่านไฟล์ ${file.name} เรียบร้อย`);
@@ -152,8 +148,6 @@ export function ImportClient() {
     };
     reader.readAsText(file, "utf-8");
   }
-
-  const [dragOver, setDragOver] = useState(false);
 
   function submit() {
     if (errors.length > 0) {
@@ -165,16 +159,18 @@ export function ImportClient() {
       return;
     }
     startTransition(async () => {
-      const res = await fetch("/api/admin/users/bulk-import", {
+      const res = await fetch("/api/admin/branches/bulk-import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           rows: valid.map((r) => ({
+            code: r.code,
             name: r.name,
-            email: r.email || undefined,
-            phone: r.phone || undefined,
-            role: r.role,
-            branchCodes: r.branchCodes,
+            businessType: r.businessType,
+            companyCode: r.companyCode,
+            province: r.province,
+            region: r.region,
+            phone: r.phone,
           })),
         }),
       });
@@ -184,36 +180,8 @@ export function ImportClient() {
         return;
       }
       setResult({ summary: json.summary, rows: json.results });
-      toast.success(
-        `Import สำเร็จ ${json.summary.success}/${json.summary.total}`,
-      );
+      toast.success(`Import สำเร็จ ${json.summary.success}/${json.summary.total}`);
     });
-  }
-
-  function downloadResultsCsv() {
-    if (!result) return;
-    const headers = ["name", "email", "phone", "role", "inviteUrl", "error"];
-    const lines = [
-      headers.join(","),
-      ...result.rows.map((r) =>
-        [
-          quote(r.name),
-          quote(r.email),
-          quote(r.phone),
-          quote(r.role),
-          quote(r.inviteUrl),
-          quote(r.error),
-        ].join(","),
-      ),
-    ];
-    const csv = lines.join("\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `pooilgroup-import-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
   if (result) {
@@ -224,9 +192,7 @@ export function ImportClient() {
             <div className="size-14 rounded-2xl bg-green-100 text-green-600 flex items-center justify-center mx-auto">
               <CheckCircle2 className="size-7" />
             </div>
-            <h3 className="text-xl font-bold font-display">
-              Import เสร็จสิ้น
-            </h3>
+            <h3 className="text-xl font-bold font-display">Import เสร็จสิ้น</h3>
             <div className="flex items-center justify-center gap-3 text-sm">
               <Badge tone="success">สำเร็จ {result.summary.success}</Badge>
               {result.summary.failed > 0 && (
@@ -234,22 +200,22 @@ export function ImportClient() {
               )}
               <Badge tone="neutral">ทั้งหมด {result.summary.total}</Badge>
             </div>
-            <p className="text-sm text-zinc-600 max-w-md mx-auto pt-1">
-              Download CSV ที่มี invite link ของทุกคน — ส่งให้แต่ละคนใน LINE
-            </p>
             <div className="flex gap-2 justify-center pt-2">
-              <Button onClick={downloadResultsCsv} size="lg">
-                <Download className="size-4" />
-                Download CSV
-              </Button>
               <Button
-                variant="outline"
                 onClick={() => {
                   setResult(null);
                   setText("");
                 }}
+                size="lg"
               >
                 Import ชุดต่อไป
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={() => (window.location.href = "/users")}
+              >
+                ดูสาขาทั้งหมด
               </Button>
             </div>
           </CardBody>
@@ -263,23 +229,21 @@ export function ImportClient() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-zinc-50 text-xs uppercase tracking-wider text-zinc-500">
+                  <th className="text-left px-3 py-2">รหัส</th>
                   <th className="text-left px-3 py-2">ชื่อ</th>
-                  <th className="text-left px-3 py-2">อีเมล</th>
-                  <th className="text-left px-3 py-2">บทบาท</th>
                   <th className="text-left px-3 py-2">ผล</th>
                 </tr>
               </thead>
               <tbody>
                 {result.rows.map((r, i) => (
                   <tr key={i} className="border-b border-zinc-100">
-                    <td className="px-3 py-2 font-medium">{r.name}</td>
-                    <td className="px-3 py-2 text-xs text-zinc-500">
-                      {r.email ?? "—"}
+                    <td className="px-3 py-2 font-bold tabular-num font-display">
+                      {r.code}
                     </td>
-                    <td className="px-3 py-2 text-xs">{r.role}</td>
+                    <td className="px-3 py-2 text-xs">{r.name}</td>
                     <td className="px-3 py-2 text-xs">
-                      {r.inviteUrl ? (
-                        <Badge tone="success">สร้าง invite แล้ว</Badge>
+                      {r.success ? (
+                        <Badge tone="success">เพิ่มแล้ว</Badge>
                       ) : (
                         <Badge tone="danger">{r.error}</Badge>
                       )}
@@ -301,17 +265,10 @@ export function ImportClient() {
           <CardTitle>ขั้นตอน</CardTitle>
         </CardHeader>
         <CardBody className="text-sm space-y-2.5 text-zinc-700">
-          <Step n="1">
-            กดปุ่ม <strong>Copy Template</strong> ด้านล่าง → เปิด Excel/Numbers
-            → วาง
-          </Step>
-          <Step n="2">
-            กรอกข้อมูลผู้ใช้ในแต่ละแถว · ลบบรรทัดตัวอย่าง 4 บรรทัดทิ้งได้
-          </Step>
-          <Step n="3">
-            Save as CSV → เปิดไฟล์ด้วย Notepad → Copy เนื้อหาทั้งหมด
-          </Step>
-          <Step n="4">วางลงในกล่องด้านล่าง → ตรวจสอบ → กด Import</Step>
+          <Step n="1">กดปุ่ม <strong>Download .csv</strong> → เปิดด้วย Excel / Google Sheets</Step>
+          <Step n="2">กรอกข้อมูลสาขาในแต่ละแถว · ลบบรรทัดตัวอย่างทิ้งได้</Step>
+          <Step n="3">Save as CSV (UTF-8) → กลับมาที่นี่</Step>
+          <Step n="4">ลากไฟล์มาวาง หรือ paste เนื้อหา → ตรวจ → กด Import</Step>
         </CardBody>
       </Card>
 
@@ -333,18 +290,41 @@ export function ImportClient() {
           <pre className="text-xs font-mono bg-zinc-50 rounded-lg p-3 border border-zinc-200 overflow-x-auto">
             {TEMPLATE}
           </pre>
-          <ul className="text-xs text-zinc-500 mt-2 space-y-0.5 list-disc pl-5">
-            <li>เปิดไฟล์ที่ดาวน์โหลดด้วย Excel / Google Sheets / Numbers</li>
-            <li>กรอกข้อมูล → Save as CSV (UTF-8) → อัปโหลดด้านล่าง</li>
-            <li>
-              <code className="text-zinc-700">role</code>: super_admin / org_admin /
-              branch_manager / staff / driver / viewer
-            </li>
-            <li>
-              <code className="text-zinc-700">branchCodes</code>: รหัสสาขา หลายอันคั่นด้วย comma
-              (ถ้ามีหลายสาขา ใน 1 cell ให้ครอบด้วย "")
-            </li>
-          </ul>
+          <div className="mt-3 space-y-2">
+            <div>
+              <p className="text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1">
+                ประเภทธุรกิจ (businessType) ที่ใช้ได้:
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {Object.entries(BUSINESS_TYPES).map(([key, cfg]) => (
+                  <span
+                    key={key}
+                    className="text-[11px] px-2 py-0.5 rounded-md bg-zinc-50 border border-zinc-200 font-mono"
+                  >
+                    {cfg.emoji} <code className="text-zinc-700">{key}</code>
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1">
+                บริษัท (companyCode) ที่ใช้ได้:
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {companies.map((c) => (
+                  <span
+                    key={c.id}
+                    className="text-[11px] px-2 py-0.5 rounded-md bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] font-mono"
+                  >
+                    <code className="text-[var(--color-brand-800)]">{c.code}</code> {c.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-zinc-500">
+              · province / region / phone ปล่อยว่างได้ · รหัสสาขา (code) ห้ามซ้ำของเดิม
+            </p>
+          </div>
         </CardBody>
       </Card>
 
@@ -386,7 +366,9 @@ export function ImportClient() {
             <p className="text-sm font-bold text-zinc-700">
               ลากไฟล์ .csv มาวางตรงนี้ หรือคลิกเลือกไฟล์
             </p>
-            <p className="text-xs text-zinc-500 mt-1">รองรับไฟล์ UTF-8 จาก Excel / Google Sheets / Numbers</p>
+            <p className="text-xs text-zinc-500 mt-1">
+              รองรับไฟล์ UTF-8 จาก Excel / Google Sheets / Numbers
+            </p>
           </label>
 
           <div className="mt-3">
@@ -417,7 +399,7 @@ export function ImportClient() {
       {parsed.length > 0 && (
         <Card className="animate-fade-up delay-250">
           <CardHeader>
-            <CardTitle>ตรวจสอบก่อน import</CardTitle>
+            <CardTitle>ตรวจก่อน Import</CardTitle>
             {errors.length > 0 && (
               <Badge tone="danger">
                 <AlertTriangle className="size-3" />
@@ -430,9 +412,10 @@ export function ImportClient() {
               <thead>
                 <tr className="bg-zinc-50 text-xs uppercase tracking-wider text-zinc-500">
                   <th className="text-left px-3 py-2 w-10">#</th>
+                  <th className="text-left px-3 py-2">รหัส</th>
                   <th className="text-left px-3 py-2">ชื่อ</th>
-                  <th className="text-left px-3 py-2">บทบาท</th>
-                  <th className="text-left px-3 py-2">สาขา</th>
+                  <th className="text-left px-3 py-2">ประเภท</th>
+                  <th className="text-left px-3 py-2">บริษัท</th>
                   <th className="text-left px-3 py-2">สถานะ</th>
                 </tr>
               </thead>
@@ -448,15 +431,15 @@ export function ImportClient() {
                     <td className="px-3 py-2 text-xs text-zinc-400 tabular-num">
                       {r._line}
                     </td>
-                    <td className="px-3 py-2">
-                      <div className="font-medium">{r.name || "—"}</div>
-                      <div className="text-xs text-zinc-500">
-                        {r.email ?? r.phone ?? "—"}
-                      </div>
+                    <td className="px-3 py-2 font-bold tabular-num font-display text-xs">
+                      {r.code || "—"}
                     </td>
-                    <td className="px-3 py-2 text-xs">{r.role}</td>
-                    <td className="px-3 py-2 text-xs text-zinc-600">
-                      {r.branchCodes.join(", ") || "—"}
+                    <td className="px-3 py-2 text-xs">{r.name || "—"}</td>
+                    <td className="px-3 py-2 text-xs">
+                      {BUSINESS_TYPES[r.businessType]?.emoji} {r.businessType}
+                    </td>
+                    <td className="px-3 py-2 text-xs font-mono">
+                      {r.companyCode}
                     </td>
                     <td className="px-3 py-2 text-xs">
                       {r._error ? (
@@ -481,7 +464,7 @@ export function ImportClient() {
           disabled={errors.length > 0 || valid.length === 0}
         >
           <FileText className="size-4" />
-          Import {valid.length} ผู้ใช้
+          Import {valid.length} สาขา
         </Button>
       </div>
     </div>
@@ -497,10 +480,4 @@ function Step({ n, children }: { n: string; children: React.ReactNode }) {
       <span className="text-sm">{children}</span>
     </div>
   );
-}
-
-function quote(v: string | undefined): string {
-  if (!v) return "";
-  if (/[",\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
-  return v;
 }

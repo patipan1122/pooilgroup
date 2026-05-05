@@ -463,11 +463,12 @@ export function DashboardView({
 
       <SectionDivider />
 
-      {/* ===== Section 04 — Payment Mix + Pending ===== */}
+      {/* ===== Section 04 — Payment Mix + Pending Action Card =====
+           ผู้บริหารดูสัดส่วน · operational queue → /cashhub/reports */}
       <Section
         number={data.alerts.length > 0 ? "04" : "03"}
         label="MONEY FLOW"
-        title="ช่องทางรับเงิน · รออนุมัติ"
+        title="ช่องทางรับเงิน"
         className="mb-6 animate-fade-up delay-250"
       >
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
@@ -560,87 +561,45 @@ export function DashboardView({
             </CardBody>
           </Card>
 
-          {/* Pending */}
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>รออนุมัติ</CardTitle>
-                <p className="text-xs text-zinc-500 mt-0.5">
-                  {data.pending.length} ล่าสุด
-                </p>
-              </div>
-              <Badge
-                tone={data.pending.length > 0 ? "warning" : "success"}
-              >
-                {data.pendingCount}
-              </Badge>
-            </CardHeader>
-            <CardBody className="!p-0">
-              {data.pending.length === 0 ? (
-                <div className="p-5 text-center">
-                  <div className="size-12 mx-auto rounded-2xl bg-green-50 border-2 border-green-200 flex items-center justify-center mb-2">
-                    <CheckCircle2 className="size-6 text-green-600" />
-                  </div>
-                  <p className="text-sm text-zinc-600 font-medium">
-                    ไม่มีรายงานค้าง
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <ul className="divide-y divide-zinc-100 max-h-[260px] overflow-y-auto">
-                    {data.pending.slice(0, 8).map((p) => {
-                      const b = Array.isArray(p.branches)
-                        ? p.branches[0]
-                        : p.branches;
-                      const branchRel = b as
-                        | { name?: string; code?: string; business_type?: string }
-                        | null;
-                      const cfg = branchRel?.business_type
-                        ? BUSINESS_TYPES[branchRel.business_type]
-                        : undefined;
-                      return (
-                        <li key={p.id as string}>
-                          <Link
-                            href={`/cashhub/reports/${p.id}`}
-                            className="flex items-center justify-between gap-2 px-4 py-3 hover:bg-[var(--color-brand-50)]/40 transition-colors"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="text-lg shrink-0">
-                                {cfg?.emoji || "📋"}
-                              </span>
-                              <div className="min-w-0">
-                                <div className="text-sm font-semibold truncate">
-                                  {branchRel?.code}
-                                </div>
-                                <div className="text-[11px] text-zinc-500 truncate">
-                                  {p.shift as string}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <div className="text-sm font-bold tabular-num">
-                                {formatBahtCompact(
-                                  Number(p.total_sales || 0),
-                                )}
-                              </div>
-                            </div>
-                          </Link>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  <div className="px-4 py-2 border-t border-zinc-100">
-                    <Link
-                      href="/cashhub/reports?status=submitted"
-                      className="text-xs font-bold text-[var(--color-brand-700)] hover:underline"
-                    >
-                      Quick Approve ทั้งหมด →
-                    </Link>
-                  </div>
-                </>
+          {/* Compact action card — operational queue lives in /cashhub/reports */}
+          <Link href="/cashhub/reports?status=submitted" className="block group">
+            <Card
+              className={cn(
+                "h-full transition-colors",
+                data.pendingCount > 0
+                  ? "border-amber-200 bg-amber-50/30 group-hover:border-amber-300"
+                  : "border-emerald-200 bg-emerald-50/30",
               )}
-            </CardBody>
-          </Card>
+            >
+              <CardBody className="flex flex-col items-center justify-center text-center h-full py-7">
+                <div
+                  className={cn(
+                    "size-14 rounded-2xl flex items-center justify-center mb-3",
+                    data.pendingCount > 0
+                      ? "bg-amber-100 text-amber-700"
+                      : "bg-emerald-100 text-emerald-700",
+                  )}
+                >
+                  {data.pendingCount > 0 ? (
+                    <Clock className="size-7" />
+                  ) : (
+                    <CheckCircle2 className="size-7" />
+                  )}
+                </div>
+                <div className="text-5xl font-extrabold tabular-num font-display text-zinc-900">
+                  {data.pendingCount}
+                </div>
+                <p className="text-sm font-bold text-zinc-700 mt-1">
+                  รออนุมัติ
+                </p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  {data.pendingCount > 0
+                    ? "กดเพื่อจัดการในหน้ารายงาน →"
+                    : "ทุกรายงานเรียบร้อย"}
+                </p>
+              </CardBody>
+            </Card>
+          </Link>
         </div>
       </Section>
 
@@ -783,12 +742,15 @@ export function DashboardView({
         number={data.alerts.length > 0 ? "06" : "05"}
         label="PATTERN"
         title="ยอดเฉลี่ยรายวัน × ประเภทธุรกิจ"
-        description="ดู 30 วันล่าสุด · ใช้วางแผน Promotion ตามวันที่ยอดต่ำ"
+        description="ดู 30 วันล่าสุด · กดที่แถวเพื่อดูแยกตามสาขา · ใช้วางแผน Promotion ตามวันที่ยอดต่ำ"
         className="mb-6 animate-fade-up delay-350"
       >
         <Card>
           <CardBody>
-            <PatternHeatmap data={data.patternHeat} />
+            <PatternHeatmap
+              data={data.patternHeat}
+              byBranch={data.patternByBranch}
+            />
           </CardBody>
         </Card>
       </Section>

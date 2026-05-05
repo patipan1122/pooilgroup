@@ -1,23 +1,21 @@
-// Reports list with filters + Quick Approve bulk action
+// Reports list — grouped by business type with drill-down
+// Shows: รออนุมัติ + อนุมัติแล้ว + ⚠️ ยังไม่ส่ง (missing branches today)
+// Filter chips for business type + status; Quick Approve bulk action
 
 import { CheckCircle2, Clock, XCircle, ScrollText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Section } from "@/components/ui/section";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import {
-  formatBaht,
-  bkkDate,
-  bkkTime,
-  thaiDateLong,
-} from "@/lib/utils/format";
+import { thaiDateLong } from "@/lib/utils/format";
 import { BUSINESS_TYPES } from "@/constants/business-types";
-import { ReportsTable } from "./reports-table";
+import { formatInTimeZone } from "date-fns-tz";
+import { ReportsBoard } from "./reports-table";
 
 export const dynamic = "force-dynamic";
+const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
 const STATUS = {
   submitted: { tone: "warning" as const, label: "รออนุมัติ", Icon: Clock },
@@ -38,7 +36,9 @@ export interface ReportRowVm {
   branch_id: string;
   branch_code: string;
   branch_name: string;
+  business_type: string;
   business_emoji: string;
+  business_label: string;
   report_date: string;
   shift: string;
   shift_label: string;
@@ -48,6 +48,29 @@ export interface ReportRowVm {
   status_label: string;
   submitted_at: string | null;
   reconcile_diff: number;
+}
+
+export interface MissingBranchVm {
+  branch_id: string;
+  branch_code: string;
+  branch_name: string;
+  business_type: string;
+  business_emoji: string;
+  business_label: string;
+  days_missing: number;
+}
+
+export interface BusinessGroupVm {
+  type: string;
+  label: string;
+  emoji: string;
+  branchCount: number;
+  reports: ReportRowVm[];
+  missing: MissingBranchVm[];
+  pendingCount: number;
+  approvedCount: number;
+  missingCount: number;
+  totalSales: number;
 }
 
 export default async function CashHubReportsPage({
@@ -62,32 +85,32 @@ export default async function CashHubReportsPage({
   const filterStatus = sp.status || "";
   const filterType = sp.type || "";
   const filterDate = sp.date || "";
+  const today = formatInTimeZone(new Date(), TZ, "yyyy-MM-dd");
 
-  let q = admin
-    .from("daily_reports")
-    .select(
-      "id, branch_id, report_date, shift, total_sales, cash, transfer, card, credit, shortage, status, submitted_at, approved_at, branches(code, name, business_type)",
-    )
-    .eq("org_id", session.user.org_id)
-    .order("submitted_at", { ascending: false })
-    .limit(100);
-  if (filterStatus) q = q.eq("status", filterStatus);
-  if (filterDate) q = q.eq("report_date", filterDate);
-  if (filterType) {
-    // need to join — supabase doesn't allow easy filter on relation, so prefilter branches
-    const { data: bs } = await admin
+  // Fetch active branches and recent reports in parallel
+  const [branchesQ, reportsQ] = await Promise.all([
+    admin
       .from("branches")
-      .select("id")
+      .select("id, code, name, business_type")
       .eq("org_id", session.user.org_id)
-      .eq("business_type", filterType);
-    const ids = (bs ?? []).map((b) => b.id);
-    if (ids.length > 0) q = q.in("branch_id", ids);
-    else q = q.eq("branch_id", "00000000-0000-0000-0000-000000000000");
-  }
+      .eq("is_active", true)
+      .order("code"),
+    admin
+      .from("daily_reports")
+      .select(
+        "id, branch_id, report_date, shift, total_sales, cash, transfer, card, credit, shortage, status, submitted_at, approved_at, branches(code, name, business_type)",
+      )
+      .eq("org_id", session.user.org_id)
+      .order("report_date", { ascending: false })
+      .order("submitted_at", { ascending: false })
+      .limit(200),
+  ]);
 
-  const { data } = await q;
+  const branches = branchesQ.data ?? [];
+  const allReports = reportsQ.data ?? [];
 
-  const rows: ReportRowVm[] = (data ?? []).map((r) => {
+  // Build the full row VMs first (no filters yet)
+  const allRows: ReportRowVm[] = allReports.map((r) => {
     const b = Array.isArray(r.branches) ? r.branches[0] : r.branches;
     const branchRel = (b ?? {}) as {
       code?: string;
@@ -110,7 +133,9 @@ export default async function CashHubReportsPage({
       branch_id: r.branch_id as string,
       branch_code: branchRel.code ?? "—",
       branch_name: branchRel.name ?? "",
+      business_type: branchRel.business_type ?? "unknown",
       business_emoji: cfg?.emoji ?? "📋",
+      business_label: cfg?.label ?? branchRel.business_type ?? "ไม่ทราบ",
       report_date: r.report_date as string,
       shift: r.shift as string,
       shift_label: SHIFT_LABEL[r.shift as string] ?? r.shift,
@@ -123,8 +148,111 @@ export default async function CashHubReportsPage({
     };
   });
 
-  const pendingCount = rows.filter((r) => r.status === "submitted").length;
-  const totalCount = rows.length;
+  // Detect missing branches: branches with hasCashReport && reportingCadence==='daily'
+  // that have no report for today (regardless of status)
+  const branchesWithReportToday = new Set(
+    allRows
+      .filter((r) => r.report_date === today)
+      .map((r) => r.branch_id),
+  );
+
+  const allMissing: MissingBranchVm[] = branches
+    .filter((b) => {
+      const cfg = BUSINESS_TYPES[b.business_type];
+      if (!cfg) return false;
+      if (!cfg.hasCashReport) return false;
+      if (cfg.reportingCadence !== "daily") return false;
+      return !branchesWithReportToday.has(b.id);
+    })
+    .map((b) => {
+      const cfg = BUSINESS_TYPES[b.business_type];
+      // count consecutive days missing (look back up to 7 days)
+      let daysMissing = 0;
+      const branchReports = new Set(
+        allRows
+          .filter((r) => r.branch_id === b.id)
+          .map((r) => r.report_date),
+      );
+      const checkDate = new Date(today + "T00:00:00+07:00");
+      for (let i = 0; i < 7; i++) {
+        const d = formatInTimeZone(checkDate, TZ, "yyyy-MM-dd");
+        if (branchReports.has(d)) break;
+        daysMissing++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      }
+      return {
+        branch_id: b.id,
+        branch_code: b.code,
+        branch_name: b.name,
+        business_type: b.business_type,
+        business_emoji: cfg?.emoji ?? "📋",
+        business_label: cfg?.label ?? b.business_type,
+        days_missing: daysMissing,
+      };
+    });
+
+  // Apply filters
+  const filteredRows = allRows.filter((r) => {
+    if (filterStatus && filterStatus !== "missing" && r.status !== filterStatus) {
+      return false;
+    }
+    if (filterType && r.business_type !== filterType) return false;
+    if (filterDate && r.report_date !== filterDate) return false;
+    return true;
+  });
+  const filteredMissing = allMissing.filter(
+    (m) => !filterType || m.business_type === filterType,
+  );
+
+  // Group by business type
+  const groupMap = new Map<string, BusinessGroupVm>();
+  for (const b of branches) {
+    const cfg = BUSINESS_TYPES[b.business_type];
+    if (!cfg) continue;
+    if (filterType && b.business_type !== filterType) continue;
+    if (!groupMap.has(b.business_type)) {
+      groupMap.set(b.business_type, {
+        type: b.business_type,
+        label: cfg.label,
+        emoji: cfg.emoji,
+        branchCount: 0,
+        reports: [],
+        missing: [],
+        pendingCount: 0,
+        approvedCount: 0,
+        missingCount: 0,
+        totalSales: 0,
+      });
+    }
+    const g = groupMap.get(b.business_type)!;
+    g.branchCount++;
+  }
+  for (const r of filteredRows) {
+    const g = groupMap.get(r.business_type);
+    if (!g) continue;
+    g.reports.push(r);
+    if (r.status === "submitted") g.pendingCount++;
+    if (r.status === "approved") {
+      g.approvedCount++;
+      g.totalSales += r.total_sales;
+    }
+  }
+  for (const m of filteredMissing) {
+    const g = groupMap.get(m.business_type);
+    if (!g) continue;
+    g.missing.push(m);
+    g.missingCount++;
+  }
+
+  const groups = Array.from(groupMap.values()).sort(
+    (a, b) => b.totalSales - a.totalSales,
+  );
+
+  const totalPending = filteredRows.filter(
+    (r) => r.status === "submitted",
+  ).length;
+  const totalMissing = filteredMissing.length;
+  const totalReports = filteredRows.length;
 
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
@@ -136,94 +264,42 @@ export default async function CashHubReportsPage({
           รายงาน <span className="text-gradient-blue">ทั้งหมด</span>
         </h1>
         <p className="text-zinc-600 mt-1.5 text-sm">
-          {totalCount} รายงาน · รออนุมัติ{" "}
-          <span className="font-bold text-amber-700">{pendingCount}</span>
+          {totalReports} รายงาน · รออนุมัติ{" "}
+          <span className="font-bold text-amber-700">{totalPending}</span>
+          {totalMissing > 0 && (
+            <>
+              {" · "}
+              <span className="font-bold text-rose-700">
+                ยังไม่ส่งวันนี้ {totalMissing}
+              </span>
+            </>
+          )}
         </p>
       </header>
 
-      {/* Filters */}
-      <Card className="mb-4">
-        <CardBody>
-          <form
-            method="get"
-            className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 items-end"
-          >
-            <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
-                สถานะ
-              </span>
-              <select
-                name="status"
-                defaultValue={filterStatus}
-                className="h-10 rounded-xl border border-zinc-200 px-3 text-sm bg-white"
-              >
-                <option value="">ทั้งหมด</option>
-                <option value="submitted">รออนุมัติ</option>
-                <option value="approved">อนุมัติแล้ว</option>
-                <option value="rejected">ปฏิเสธ</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
-                ประเภท
-              </span>
-              <select
-                name="type"
-                defaultValue={filterType}
-                className="h-10 rounded-xl border border-zinc-200 px-3 text-sm bg-white"
-              >
-                <option value="">ทุกประเภท</option>
-                {Object.entries(BUSINESS_TYPES).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v.emoji} {v.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
-                วันที่
-              </span>
-              <input
-                type="date"
-                name="date"
-                defaultValue={filterDate}
-                className="h-10 rounded-xl border border-zinc-200 px-3 text-sm bg-white"
-              />
-            </label>
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                className="h-10 rounded-xl bg-[var(--color-brand-600)] text-white font-semibold flex-1 text-sm"
-              >
-                ใช้
-              </button>
-              <a
-                href="/cashhub/reports"
-                className="h-10 rounded-xl border border-zinc-200 text-zinc-700 font-semibold text-sm inline-flex items-center justify-center px-3 hover:bg-zinc-50"
-              >
-                Reset
-              </a>
-            </div>
-          </form>
-        </CardBody>
-      </Card>
+      <ReportsBoard
+        groups={groups}
+        filterStatus={filterStatus}
+        filterType={filterType}
+        filterDate={filterDate}
+        totalPending={totalPending}
+        totalMissing={totalMissing}
+        showOnlyMissing={filterStatus === "missing"}
+      />
 
-      <Section
-        number="01"
-        label="REPORTS"
-        title="รายงานล่าสุด"
-        description="ติ๊กรายการที่ผ่าน Auto-check แล้วกด Approve ทั้งหมด · กดแถวเพื่อดูรายละเอียด"
-        action={
-          <a href="/api/cashhub/export">
-            <Button variant="outline" size="md">
-              Export CSV
-            </Button>
-          </a>
-        }
-        className="animate-fade-up delay-100"
-      >
-        {rows.length === 0 ? (
+      {groups.length === 0 && (
+        <Section
+          number="01"
+          label="REPORTS"
+          title="รายงานล่าสุด"
+          action={
+            <a href="/api/cashhub/export">
+              <Button variant="outline" size="md">
+                Export CSV
+              </Button>
+            </a>
+          }
+        >
           <Card>
             <CardBody>
               <EmptyState
@@ -233,14 +309,8 @@ export default async function CashHubReportsPage({
               />
             </CardBody>
           </Card>
-        ) : (
-          <ReportsTable rows={rows} />
-        )}
-      </Section>
+        </Section>
+      )}
     </div>
   );
 }
-
-void formatBaht;
-void bkkDate;
-void bkkTime;

@@ -3,6 +3,9 @@
 
 "use client";
 
+import { useState } from "react";
+import Link from "next/link";
+import { ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
 // =============================================================
@@ -239,21 +242,38 @@ const TYPE_LABEL: Record<string, string> = {
   training_center: "🎓 อบรม",
 };
 
+interface BranchRowVm {
+  branch_id: string;
+  branch_code: string;
+  branch_name: string;
+  dows: number[];
+}
+
 export function PatternHeatmap({
   data,
+  byBranch,
 }: {
   data: Record<string, number[]>; // type → [Mon..Sun]
+  byBranch?: Record<string, BranchRowVm[]>;
 }) {
   const types = Object.keys(data).filter((t) => data[t]!.some((v) => v > 0));
+  const [openTypes, setOpenTypes] = useState<Set<string>>(new Set());
   if (types.length === 0) {
     return (
       <div className="text-sm text-zinc-500 italic">ยังไม่มีข้อมูลพอ</div>
     );
   }
-  // Per-row max for relative intensity
+  function toggle(t: string) {
+    setOpenTypes((cur) => {
+      const next = new Set(cur);
+      if (next.has(t)) next.delete(t);
+      else next.add(t);
+      return next;
+    });
+  }
   return (
     <div className="space-y-1.5">
-      <div className="grid grid-cols-[80px_repeat(7,minmax(0,1fr))] gap-1.5 text-[10px] text-zinc-400">
+      <div className="grid grid-cols-[140px_repeat(7,minmax(0,1fr))] gap-1.5 text-[10px] text-zinc-400">
         <div />
         {["จ", "อ", "พ", "พฤ", "ศ", "ส", "อา"].map((d) => (
           <div key={d} className="text-center">
@@ -264,31 +284,93 @@ export function PatternHeatmap({
       {types.map((t) => {
         const row = data[t]!;
         const max = Math.max(...row, 1);
+        const branches = byBranch?.[t] ?? [];
+        const canExpand = branches.length > 0;
+        const isOpen = openTypes.has(t);
         return (
-          <div
-            key={t}
-            className="grid grid-cols-[80px_repeat(7,minmax(0,1fr))] gap-1.5 items-center"
-          >
-            <div className="text-xs font-medium text-zinc-700 truncate">
-              {TYPE_LABEL[t] ?? t}
-            </div>
-            {row.map((v, i) => {
-              const intensity = max > 0 ? v / max : 0;
-              const bg =
-                intensity === 0
-                  ? "#f4f4f5"
-                  : `oklch(0.92 ${(0.05 + intensity * 0.18).toFixed(2)} 264)`;
-              return (
-                <div
-                  key={i}
-                  title={`${TYPE_LABEL[t] ?? t} · เฉลี่ย ฿${Math.round(v).toLocaleString("th-TH")}`}
-                  className="h-7 rounded-md flex items-center justify-center text-[10px] tabular-num font-semibold text-zinc-700"
-                  style={{ background: bg }}
-                >
-                  {v > 0 ? compact(v) : "—"}
-                </div>
-              );
-            })}
+          <div key={t}>
+            <button
+              type="button"
+              onClick={() => canExpand && toggle(t)}
+              disabled={!canExpand}
+              className={cn(
+                "w-full grid grid-cols-[140px_repeat(7,minmax(0,1fr))] gap-1.5 items-center text-left",
+                canExpand && "hover:bg-zinc-50 rounded-md transition-colors",
+                !canExpand && "cursor-default",
+              )}
+            >
+              <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-700 truncate pl-1">
+                {canExpand &&
+                  (isOpen ? (
+                    <ChevronDown className="size-3 shrink-0 text-zinc-400" />
+                  ) : (
+                    <ChevronRight className="size-3 shrink-0 text-zinc-400" />
+                  ))}
+                {!canExpand && <span className="size-3 shrink-0" />}
+                <span className="truncate">{TYPE_LABEL[t] ?? t}</span>
+                {canExpand && (
+                  <span className="text-[10px] text-zinc-400 tabular-num">
+                    ({branches.length})
+                  </span>
+                )}
+              </div>
+              {row.map((v, i) => {
+                const intensity = max > 0 ? v / max : 0;
+                const bg =
+                  intensity === 0
+                    ? "#f4f4f5"
+                    : `oklch(0.92 ${(0.05 + intensity * 0.18).toFixed(2)} 264)`;
+                return (
+                  <div
+                    key={i}
+                    title={`${TYPE_LABEL[t] ?? t} · เฉลี่ย ฿${Math.round(v).toLocaleString("th-TH")}`}
+                    className="h-7 rounded-md flex items-center justify-center text-[10px] tabular-num font-semibold text-zinc-700"
+                    style={{ background: bg }}
+                  >
+                    {v > 0 ? compact(v) : "—"}
+                  </div>
+                );
+              })}
+            </button>
+
+            {isOpen && branches.length > 0 && (
+              <div className="mt-1 mb-2 ml-4 pl-3 border-l-2 border-[var(--color-brand-100)] space-y-1">
+                {branches.map((b) => {
+                  const bMax = Math.max(...b.dows, 1);
+                  return (
+                    <div
+                      key={b.branch_id}
+                      className="grid grid-cols-[140px_repeat(7,minmax(0,1fr))] gap-1.5 items-center"
+                    >
+                      <Link
+                        href={`/cashhub/branches/${b.branch_id}`}
+                        className="text-[11px] font-medium text-zinc-600 truncate hover:text-[var(--color-brand-700)] pl-2 tabular-num"
+                        title={b.branch_name}
+                      >
+                        {b.branch_code}
+                      </Link>
+                      {b.dows.map((v, i) => {
+                        const intensity = bMax > 0 ? v / bMax : 0;
+                        const bg =
+                          intensity === 0
+                            ? "#fafafa"
+                            : `oklch(0.94 ${(0.04 + intensity * 0.14).toFixed(2)} 264)`;
+                        return (
+                          <div
+                            key={i}
+                            title={`${b.branch_code} · เฉลี่ย ฿${Math.round(v).toLocaleString("th-TH")}`}
+                            className="h-6 rounded-md flex items-center justify-center text-[9px] tabular-num font-semibold text-zinc-600"
+                            style={{ background: bg }}
+                          >
+                            {v > 0 ? compact(v) : "—"}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         );
       })}

@@ -2,15 +2,14 @@
 // Used for compact multi-period comparison table on /cashhub/dashboard.
 // Each business type row also carries branch-level breakdown for expand.
 
-import { adminClient } from "@/lib/db/server";
 import {
   startOfMonth,
   subMonths,
   startOfDay,
   subDays,
-  format,
 } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
+import { loadBranches, loadReports, indexBranches } from "./data";
 
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
@@ -33,10 +32,16 @@ export interface ExecutiveMatrix {
     businessType: string;
     totals: number[];
     branchCount: number;
+    /** Distinct branches that submitted at least one report per period */
+    reportedCounts: number[];
     branches: BranchTotals[];
   }>;
   /** Footer totals across all business types per period */
   periodTotals: number[];
+  /** Distinct branches that submitted across all types per period */
+  periodReportedCounts: number[];
+  /** Total active branches across all types (denominator for periodReportedCounts) */
+  totalBranchCount: number;
 }
 
 const TH_MONTHS = [
@@ -72,7 +77,6 @@ export async function loadExecutiveMatrix(
   const count = options.count ?? (period === "daily" ? 30 : 6);
   const { companyId } = options;
 
-  const admin = adminClient();
   const now = new Date();
 
   // Build period keys (newest first)
@@ -160,17 +164,19 @@ export async function loadExecutiveMatrix(
     );
   }
 
-  // Aggregate: type → { typeTotal[i], branches: { branch_id → totals[i] } }
+  // Aggregate: type → { typeTotal[i], branches: { branch_id → totals[i] }, reportedBranches per period }
   type TypeBucket = {
     totals: Map<string, number>;
     branches: Map<string, Map<string, number>>;
+    /** periodKey → set of branch_ids that submitted at least once that period */
+    reportedByPeriod: Map<string, Set<string>>;
   };
   const typeBuckets = new Map<string, TypeBucket>();
 
   function getBucket(type: string): TypeBucket {
     let b = typeBuckets.get(type);
     if (!b) {
-      b = { totals: new Map(), branches: new Map() };
+      b = { totals: new Map(), branches: new Map(), reportedByPeriod: new Map() };
       typeBuckets.set(type, b);
     }
     return b;
@@ -208,6 +214,14 @@ export async function loadExecutiveMatrix(
       bucket.branches.set(branch.id, branchMap);
     }
     branchMap.set(key, (branchMap.get(key) ?? 0) + Number(row.total_sales || 0));
+
+    // Track distinct reporting branches per period for "X/Y สาขา" indicator
+    let periodSet = bucket.reportedByPeriod.get(key);
+    if (!periodSet) {
+      periodSet = new Set();
+      bucket.reportedByPeriod.set(key, periodSet);
+    }
+    periodSet.add(branch.id);
   }
 
   // Build rows
@@ -222,6 +236,9 @@ export async function loadExecutiveMatrix(
     .map((bt) => {
       const bucket = typeBuckets.get(bt);
       const totals = periodKeys.map((pk) => bucket?.totals.get(pk) ?? 0);
+      const reportedCounts = periodKeys.map(
+        (pk) => bucket?.reportedByPeriod.get(pk)?.size ?? 0,
+      );
 
       // All branches under this type — include those with NO data (zero row)
       const branchEntries = Array.from(branchById.values()).filter(
@@ -245,6 +262,7 @@ export async function loadExecutiveMatrix(
       return {
         businessType: bt,
         totals,
+        reportedCounts,
         branchCount: branchCountByType.get(bt) ?? 0,
         branches: branchTotals,
       };
@@ -254,6 +272,10 @@ export async function loadExecutiveMatrix(
   const periodTotals = periodKeys.map((_, i) =>
     rows.reduce((sum, r) => sum + r.totals[i], 0),
   );
+  const periodReportedCounts = periodKeys.map((_, i) =>
+    rows.reduce((sum, r) => sum + r.reportedCounts[i], 0),
+  );
+  const totalBranchCount = rows.reduce((sum, r) => sum + r.branchCount, 0);
 
   return {
     period,
@@ -261,5 +283,7 @@ export async function loadExecutiveMatrix(
     periodLabels,
     rows,
     periodTotals,
+    periodReportedCounts,
+    totalBranchCount,
   };
 }

@@ -3,7 +3,7 @@
 // Mode 2: branch vs branch (current month)
 
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { AlertTriangle, ArrowLeft, TrendingDown, TrendingUp } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -69,7 +69,146 @@ export default async function ComparePage({
   const aData = aDataQ;
   const bData = bDataQ;
   const branches = branchesQ.data ?? [];
-  void branches;
+
+  // ---- BRANCH ANOMALY DETECTION ----
+  // For each branch: compute totals for both months, compute mix
+  // Flag branches that deviate from peer median in same business_type
+  type BranchStat = {
+    id: string;
+    code: string;
+    name: string;
+    business_type: string;
+    aTotal: number;
+    bTotal: number;
+    mom: number | null; // % change month-over-month
+    mix: { cash: number; transfer: number; card: number; credit: number };
+    cashPct: number; // current month cash percentage of received
+    creditPct: number;
+  };
+  const branchStats: BranchStat[] = branches.map((b) => {
+    const a = aData.reports.filter(
+      (r) => r.branch_id === b.id && r.status === "approved",
+    );
+    const bb = bData.reports.filter(
+      (r) => r.branch_id === b.id && r.status === "approved",
+    );
+    const aTotal = a.reduce((s, r) => s + Number(r.total_sales || 0), 0);
+    const bTotal = bb.reduce((s, r) => s + Number(r.total_sales || 0), 0);
+    const aMixB = {
+      cash: a.reduce((s, r) => s + Number(r.cash || 0), 0),
+      transfer: a.reduce((s, r) => s + Number(r.transfer || 0), 0),
+      card: a.reduce((s, r) => s + Number(r.card || 0), 0),
+      credit: a.reduce((s, r) => s + Number(r.credit || 0), 0),
+    };
+    const aReceived =
+      aMixB.cash + aMixB.transfer + aMixB.card + aMixB.credit;
+    return {
+      id: b.id,
+      code: b.code,
+      name: b.name,
+      business_type: b.business_type,
+      aTotal,
+      bTotal,
+      mom: bTotal > 0 ? ((aTotal - bTotal) / bTotal) * 100 : null,
+      mix: aMixB,
+      cashPct: aReceived > 0 ? (aMixB.cash / aReceived) * 100 : 0,
+      creditPct: aReceived > 0 ? (aMixB.credit / aReceived) * 100 : 0,
+    };
+  });
+
+  // Compute peer medians per business_type
+  function median(arr: number[]): number {
+    if (arr.length === 0) return 0;
+    const sorted = [...arr].sort((x, y) => x - y);
+    const m = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[m]! : (sorted[m - 1]! + sorted[m]!) / 2;
+  }
+  const typeStats = new Map<
+    string,
+    { medianTotal: number; medianCashPct: number; medianCreditPct: number }
+  >();
+  const byType = new Map<string, BranchStat[]>();
+  for (const s of branchStats) {
+    if (!byType.has(s.business_type)) byType.set(s.business_type, []);
+    byType.get(s.business_type)!.push(s);
+  }
+  for (const [t, arr] of byType.entries()) {
+    typeStats.set(t, {
+      medianTotal: median(arr.map((x) => x.aTotal).filter((v) => v > 0)),
+      medianCashPct: median(arr.map((x) => x.cashPct).filter((v) => v > 0)),
+      medianCreditPct: median(arr.map((x) => x.creditPct)),
+    });
+  }
+
+  // Anomalies: 3 angles
+  type Anomaly = {
+    branch: BranchStat;
+    angle: "self" | "peer" | "mix";
+    severity: "warning" | "danger";
+    message: string;
+    delta: number;
+  };
+  const anomalies: Anomaly[] = [];
+  for (const s of branchStats) {
+    if (s.aTotal === 0 && s.bTotal === 0) continue;
+    const peers = typeStats.get(s.business_type);
+
+    // Angle 1 — self vs prev month
+    if (s.mom !== null && Math.abs(s.mom) >= 20 && s.bTotal > 0) {
+      anomalies.push({
+        branch: s,
+        angle: "self",
+        severity: Math.abs(s.mom) >= 40 ? "danger" : "warning",
+        message:
+          s.mom < 0
+            ? `ยอดลด ${s.mom.toFixed(0)}% เทียบ ${fmtMonth(bMonth)}`
+            : `ยอดพุ่ง +${s.mom.toFixed(0)}% เทียบ ${fmtMonth(bMonth)}`,
+        delta: s.mom,
+      });
+    }
+
+    // Angle 2 — vs peers (same business type)
+    if (peers && peers.medianTotal > 0 && s.aTotal > 0) {
+      const peerDelta =
+        ((s.aTotal - peers.medianTotal) / peers.medianTotal) * 100;
+      if (peerDelta <= -30) {
+        anomalies.push({
+          branch: s,
+          angle: "peer",
+          severity: peerDelta <= -50 ? "danger" : "warning",
+          message: `ต่ำกว่าเพื่อนในกลุ่ม ${Math.abs(peerDelta).toFixed(0)}%`,
+          delta: peerDelta,
+        });
+      }
+    }
+
+    // Angle 3 — mix shift (cash drop / credit spike)
+    if (peers && peers.medianCashPct > 0 && s.cashPct > 0) {
+      const cashGap = s.cashPct - peers.medianCashPct;
+      if (cashGap <= -15) {
+        anomalies.push({
+          branch: s,
+          angle: "mix",
+          severity: cashGap <= -25 ? "danger" : "warning",
+          message: `เงินสด ${s.cashPct.toFixed(0)}% (ปกติ ~${peers.medianCashPct.toFixed(0)}%)`,
+          delta: cashGap,
+        });
+      }
+    }
+    if (s.creditPct >= 15) {
+      anomalies.push({
+        branch: s,
+        angle: "mix",
+        severity: s.creditPct >= 25 ? "danger" : "warning",
+        message: `เครดิต ${s.creditPct.toFixed(0)}% สูงผิดปกติ`,
+        delta: s.creditPct,
+      });
+    }
+  }
+  anomalies.sort((x, y) => {
+    if (x.severity !== y.severity) return x.severity === "danger" ? -1 : 1;
+    return Math.abs(y.delta) - Math.abs(x.delta);
+  });
 
   const total = (rs: ReportRow[]) =>
     rs
@@ -127,9 +266,114 @@ export default async function ComparePage({
           เปรียบเทียบ <span className="text-gradient-blue">เดือน vs เดือน</span>
         </h1>
         <p className="text-zinc-600 mt-1 text-sm">
-          เลือกเดือนสองเดือนเพื่อดูเทรนด์ยอดและช่องทางรับเงิน
+          ดูภาพรวม + จับสาขาที่ผิดปกติ — เทียบกับตัวเอง · เทียบกับเพื่อนกลุ่มเดียวกัน · เช็คสัดส่วนช่องทางรับเงิน
         </p>
       </header>
+
+      {/* Anomaly section — most actionable, show first */}
+      {anomalies.length > 0 && (
+        <Section
+          number="00"
+          label="ANOMALIES"
+          title={`พบ ${anomalies.length} จุดผิดปกติ`}
+          description="สาขาที่ต้องตรวจสอบ — เรียงตามความสำคัญ"
+          className="mb-6"
+        >
+          <Card className="border-amber-200">
+            <CardBody className="!p-0">
+              <ul className="divide-y divide-amber-100">
+                {anomalies.slice(0, 12).map((a, i) => {
+                  const cfg = BUSINESS_TYPES[a.branch.business_type];
+                  const angleLabel = {
+                    self: "เทียบเดือนก่อน",
+                    peer: "เทียบเพื่อน",
+                    mix: "ช่องทางรับเงิน",
+                  }[a.angle];
+                  return (
+                    <li
+                      key={i}
+                      className="flex items-center gap-3 px-4 sm:px-5 py-3"
+                    >
+                      <div
+                        className={`size-9 rounded-xl flex items-center justify-center shrink-0 ${
+                          a.severity === "danger"
+                            ? "bg-red-50 text-red-700"
+                            : "bg-amber-50 text-amber-700"
+                        }`}
+                      >
+                        {a.angle === "self" ? (
+                          a.delta < 0 ? (
+                            <TrendingDown className="size-4" />
+                          ) : (
+                            <TrendingUp className="size-4" />
+                          )
+                        ) : (
+                          <AlertTriangle className="size-4" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-lg shrink-0">
+                            {cfg?.emoji ?? "📋"}
+                          </span>
+                          <Link
+                            href={`/cashhub/branches/${a.branch.id}`}
+                            className="font-bold tabular-num text-sm hover:text-[var(--color-brand-700)]"
+                          >
+                            {a.branch.code}
+                          </Link>
+                          <span className="text-[11px] text-zinc-500 truncate">
+                            {a.branch.name}
+                          </span>
+                          <Badge tone="neutral" className="text-[10px]">
+                            {angleLabel}
+                          </Badge>
+                        </div>
+                        <div
+                          className={`text-sm mt-0.5 ${
+                            a.severity === "danger"
+                              ? "text-red-700"
+                              : "text-amber-700"
+                          }`}
+                        >
+                          {a.message}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-sm font-bold tabular-num">
+                          {formatBahtCompact(a.branch.aTotal)}
+                        </div>
+                        <div className="text-[11px] text-zinc-500">
+                          เดือนนี้
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              {anomalies.length > 12 && (
+                <div className="px-4 py-2 text-xs text-zinc-500 border-t border-amber-100 bg-amber-50/40">
+                  + อีก {anomalies.length - 12} รายการ
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        </Section>
+      )}
+
+      {anomalies.length === 0 && (
+        <Card className="mb-6 border-emerald-200 bg-emerald-50/30">
+          <CardBody className="text-center py-6">
+            <div className="size-12 mx-auto rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-700 mb-2">
+              ✓
+            </div>
+            <p className="font-bold text-zinc-900">ไม่พบสาขาผิดปกติ</p>
+            <p className="text-xs text-zinc-500 mt-1">
+              ทุกสาขายอดอยู่ในช่วงปกติเทียบกับ {fmtMonth(bMonth)} และเพื่อนในกลุ่ม
+            </p>
+          </CardBody>
+        </Card>
+      )}
 
       {/* Selectors (form-based GET) */}
       <Card className="mb-6">

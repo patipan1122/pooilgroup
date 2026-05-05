@@ -17,9 +17,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           className={cn(
             "relative flex h-12 items-center rounded-xl border bg-white",
             invalid
-              ? "border-[var(--color-danger)] ring-2 ring-red-100"
-              : "border-zinc-200 focus-within:border-[var(--color-brand-500)] focus-within:ring-2 focus-within:ring-[var(--color-brand-100)]",
-            "transition-all",
+              ? "border-[var(--color-danger)] ring-1 ring-red-100"
+              : "border-zinc-200 focus-within:border-[var(--color-brand-500)]",
+            "transition-colors",
           )}
         >
           {prefixSlot && (
@@ -50,10 +50,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         className={cn(
           "h-12 w-full rounded-xl border bg-white px-4 text-base text-zinc-900",
           "placeholder:text-zinc-400 tabular-nums",
-          "outline-none transition-all",
+          "outline-none transition-colors",
           invalid
-            ? "border-[var(--color-danger)] ring-2 ring-red-100"
-            : "border-zinc-200 focus:border-[var(--color-brand-500)] focus:ring-2 focus:ring-[var(--color-brand-100)]",
+            ? "border-[var(--color-danger)] ring-1 ring-red-100"
+            : "border-zinc-200 focus:border-[var(--color-brand-500)]",
           "disabled:bg-zinc-50 disabled:text-zinc-500",
           className,
         )}

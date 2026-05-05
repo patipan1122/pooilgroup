@@ -515,6 +515,45 @@ export async function loadDashboard(orgId: string, companyId?: string) {
     });
   }
 
+  // ---- Per-branch pattern (for drill-down): branch_id -> dow averages ----
+  const branchPatternAcc: Record<string, Record<number, CellAcc>> = {};
+  for (const r of last30Reports) {
+    if (r.status !== "approved") continue;
+    const dow = new Date(r.report_date + "T00:00:00").getDay();
+    if (!branchPatternAcc[r.branch_id]) branchPatternAcc[r.branch_id] = {};
+    const cell = branchPatternAcc[r.branch_id]![dow] ?? { sum: 0, count: 0 };
+    cell.sum += Number(r.total_sales || 0);
+    cell.count += 1;
+    branchPatternAcc[r.branch_id]![dow] = cell;
+  }
+  const patternByBranch: Record<
+    string,
+    Array<{ branch_id: string; branch_code: string; branch_name: string; dows: number[] }>
+  > = {};
+  for (const b of branches) {
+    const acc = branchPatternAcc[b.id];
+    if (!acc) continue;
+    const dows = dowOrder.map((d) => {
+      const cell = acc[d];
+      return cell && cell.count ? cell.sum / cell.count : 0;
+    });
+    if (dows.every((v) => v === 0)) continue;
+    if (!patternByBranch[b.business_type]) patternByBranch[b.business_type] = [];
+    patternByBranch[b.business_type]!.push({
+      branch_id: b.id,
+      branch_code: b.code,
+      branch_name: b.name,
+      dows,
+    });
+  }
+  // sort branches by total avg desc
+  for (const t of Object.keys(patternByBranch)) {
+    patternByBranch[t]!.sort(
+      (a, b) =>
+        b.dows.reduce((s, v) => s + v, 0) - a.dows.reduce((s, v) => s + v, 0),
+    );
+  }
+
   return {
     today,
     monthStart,
@@ -541,6 +580,7 @@ export async function loadDashboard(orgId: string, companyId?: string) {
     shortagesMtd,
     missingReasons,
     patternHeat,
+    patternByBranch,
     last7Days: days7,
   };
 }

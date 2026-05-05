@@ -42,9 +42,11 @@ export function ExecutiveTable({ data }: Props) {
   // Reverse arrays so OLDEST → NEWEST (left → right, like calendar)
   const periodLabels = [...data.periodLabels].reverse();
   const periodTotals = [...data.periodTotals].reverse();
+  const periodReportedCounts = [...data.periodReportedCounts].reverse();
   const rowsByType = data.rows.map((r) => ({
     ...r,
     totals: [...r.totals].reverse(),
+    reportedCounts: [...r.reportedCounts].reverse(),
     branches: r.branches.map((b) => ({
       ...b,
       totals: [...b.totals].reverse(),
@@ -194,6 +196,11 @@ export function ExecutiveTable({ data }: Props) {
               {periodTotals.map((total, i) => {
                 const isLatest = i === periodTotals.length - 1;
                 const pct = totalsChangePct[i];
+                const reported = periodReportedCounts[i];
+                const incomplete = reported < data.totalBranchCount;
+                const tooltip = incomplete
+                  ? `กรอกแล้ว ${reported}/${data.totalBranchCount} สาขา · ขาด ${data.totalBranchCount - reported} สาขา`
+                  : undefined;
                 return (
                   <td
                     key={i}
@@ -203,11 +210,14 @@ export function ExecutiveTable({ data }: Props) {
                     )}
                   >
                     <div
+                      title={tooltip}
                       className={cn(
                         "font-extrabold",
-                        isLatest
-                          ? "text-[var(--color-brand-800)]"
-                          : "text-zinc-800",
+                        incomplete
+                          ? "text-[var(--color-danger)] cursor-help"
+                          : isLatest
+                            ? "text-[var(--color-brand-800)]"
+                            : "text-zinc-800",
                       )}
                     >
                       {total > 0 ? formatBahtCompact(total) : "—"}
@@ -265,6 +275,7 @@ function BusinessTypeRow({
   row: {
     businessType: string;
     totals: number[];
+    reportedCounts: number[];
     branchCount: number;
     branches: Array<{ id: string; code: string; name: string; totals: number[] }>;
   };
@@ -313,19 +324,29 @@ function BusinessTypeRow({
           const prev = i > 0 ? row.totals[i - 1] : 0;
           const showDiff = i > 0 && prev > 0;
           const pct = showDiff ? ((val - prev) / prev) * 100 : null;
+          const reported = row.reportedCounts[i];
+          const incomplete = reported < row.branchCount;
+          const tooltip = incomplete
+            ? `กรอกแล้ว ${reported}/${row.branchCount} สาขา · ขาด ${row.branchCount - reported} สาขา`
+            : undefined;
           return (
             <td
               key={i}
               className={cn(
                 "px-2 sm:px-3 py-2.5 text-right tabular-num",
                 isLatest && "bg-[var(--color-brand-50)]/30",
-                val === 0 && "text-zinc-300",
+                val === 0 && !incomplete && "text-zinc-300",
               )}
             >
               <div
+                title={tooltip}
                 className={cn(
                   "font-semibold",
-                  isLatest ? "text-[var(--color-brand-800)]" : "text-zinc-700",
+                  incomplete
+                    ? "text-[var(--color-danger)] cursor-help"
+                    : isLatest
+                      ? "text-[var(--color-brand-800)]"
+                      : "text-zinc-700",
                 )}
               >
                 {val > 0 ? formatBahtCompact(val) : "—"}
@@ -357,7 +378,8 @@ function BusinessTypeRow({
             key={b.id}
             className={cn(
               "border-b border-zinc-100 bg-[var(--color-brand-50)]/20 hover:bg-[var(--color-brand-50)]/40 transition-colors",
-              bIdx === row.branches.length - 1 && "border-b-2 border-[var(--color-brand-200)]",
+              bIdx === row.branches.length - 1 &&
+                "border-b-2 border-[var(--color-brand-200)]",
             )}
             onClick={(e) => {
               e.stopPropagation();
@@ -383,23 +405,26 @@ function BusinessTypeRow({
             </td>
             {b.totals.map((val, i) => {
               const isLatest = i === b.totals.length - 1;
+              const missing = val === 0;
               return (
                 <td
                   key={i}
                   className={cn(
                     "px-2 sm:px-3 py-2 text-right tabular-num text-xs",
                     isLatest && "bg-[var(--color-brand-50)]/40",
-                    val === 0 && "text-zinc-300",
                   )}
                 >
                   <span
+                    title={missing ? "ยังไม่กรอกยอด" : undefined}
                     className={cn(
-                      isLatest
-                        ? "text-[var(--color-brand-700)] font-semibold"
-                        : "text-zinc-600",
+                      missing
+                        ? "text-[var(--color-danger)] font-bold cursor-help"
+                        : isLatest
+                          ? "text-[var(--color-brand-700)] font-semibold"
+                          : "text-zinc-600",
                     )}
                   >
-                    {val > 0 ? formatBahtCompact(val) : "—"}
+                    {missing ? "—" : formatBahtCompact(val)}
                   </span>
                 </td>
               );
