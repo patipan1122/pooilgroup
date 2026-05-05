@@ -5,7 +5,7 @@ import { LoginForm } from "./login-form";
 
 export const dynamic = "force-dynamic";
 
-const POOL_GROUP_ORG_ID = "00000000-0000-0000-0000-000000000001";
+const POOILGROUP_ORG_ID = "00000000-0000-0000-0000-000000000001";
 
 async function checkFirstUser(): Promise<boolean> {
   try {
@@ -13,7 +13,7 @@ async function checkFirstUser(): Promise<boolean> {
     const { count } = await admin
       .from("users")
       .select("id", { count: "exact", head: true })
-      .eq("org_id", POOL_GROUP_ORG_ID)
+      .eq("org_id", POOILGROUP_ORG_ID)
       .eq("role", "super_admin")
       .eq("is_active", true);
     return !count || count === 0;

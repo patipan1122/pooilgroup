@@ -10,7 +10,7 @@ import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { sendNotificationToMany, getOrgAdminIds } from "@/lib/notifications/send";
 
-const POOL_GROUP_ORG_ID = "00000000-0000-0000-0000-000000000001";
+const POOILGROUP_ORG_ID = "00000000-0000-0000-0000-000000000001";
 
 const Schema = z.object({
   name: z.string().min(2).max(120),
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
   const id = crypto.randomUUID();
   const { error } = await admin.from("register_requests").insert({
     id,
-    org_id: POOL_GROUP_ORG_ID,
+    org_id: POOILGROUP_ORG_ID,
     name: data.name,
     phone: data.phone.trim(),
     email: data.email || null,
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
   }
 
   await audit({
-    orgId: POOL_GROUP_ORG_ID,
+    orgId: POOILGROUP_ORG_ID,
     userId: null,
     action: "CREATE_USER",
     resourceType: "register_request",
@@ -90,10 +90,10 @@ export async function POST(req: NextRequest) {
   });
 
   // In-app notification to all org admins
-  const adminIds = await getOrgAdminIds(POOL_GROUP_ORG_ID);
+  const adminIds = await getOrgAdminIds(POOILGROUP_ORG_ID);
   if (adminIds.length > 0) {
     await sendNotificationToMany(adminIds, {
-      orgId: POOL_GROUP_ORG_ID,
+      orgId: POOILGROUP_ORG_ID,
       type: "info",
       module: "core",
       title: `คำขอเข้าใช้งานใหม่ — ${data.name}`,

@@ -4,7 +4,7 @@ import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 
 // Pooilgroup org_id matches seed
-const POOL_GROUP_ORG_ID = "00000000-0000-0000-0000-000000000001";
+const POOILGROUP_ORG_ID = "00000000-0000-0000-0000-000000000001";
 
 const SignupSchema = z.object({
   email: z.string().email("อีเมลไม่ถูกต้อง"),
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   const { count: superAdminCount } = await admin
     .from("users")
     .select("id", { count: "exact", head: true })
-    .eq("org_id", POOL_GROUP_ORG_ID)
+    .eq("org_id", POOILGROUP_ORG_ID)
     .eq("role", "super_admin")
     .eq("is_active", true);
 
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
   const now = new Date().toISOString();
   const { error: dbError } = await admin.from("users").insert({
     id: authUserId,
-    org_id: POOL_GROUP_ORG_ID,
+    org_id: POOILGROUP_ORG_ID,
     email: email.trim(),
     name,
     phone,
@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
 
   // 4. Audit
   await audit({
-    orgId: POOL_GROUP_ORG_ID,
+    orgId: POOILGROUP_ORG_ID,
     userId: authUserId,
     action: "CREATE_USER",
     resourceType: "user",

@@ -7,7 +7,7 @@ import { JoinForm } from "./join-form";
 
 export const dynamic = "force-dynamic";
 
-const POOL_GROUP_ORG_ID = "00000000-0000-0000-0000-000000000001";
+const POOILGROUP_ORG_ID = "00000000-0000-0000-0000-000000000001";
 
 export default async function JoinPage() {
   const admin = adminClient();
@@ -15,7 +15,7 @@ export default async function JoinPage() {
   const { data: branches } = await admin
     .from("branches")
     .select("id, code, name, business_type")
-    .eq("org_id", POOL_GROUP_ORG_ID)
+    .eq("org_id", POOILGROUP_ORG_ID)
     .eq("is_active", true)
     .order("code");
 

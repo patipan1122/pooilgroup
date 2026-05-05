@@ -23,7 +23,7 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-const POOL_GROUP_ORG_ID = "00000000-0000-0000-0000-000000000001";
+const POOILGROUP_ORG_ID = "00000000-0000-0000-0000-000000000001";
 
 async function seedOrganization() {
   const now = new Date().toISOString();
@@ -31,9 +31,9 @@ async function seedOrganization() {
     .from("organizations")
     .upsert(
       {
-        id: POOL_GROUP_ORG_ID,
+        id: POOILGROUP_ORG_ID,
         name: "Pooilgroup",
-        slug: "poolgroup",
+        slug: "pooilgroup",
         settings: {
           timezone: "Asia/Bangkok",
           fiscalYearStart: 1,
