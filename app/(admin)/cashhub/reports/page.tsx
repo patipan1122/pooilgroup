@@ -132,8 +132,8 @@ export default async function CashHubReportsPage({
         <p className="text-[11px] uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
           💰 CashHub · {thaiDateLong(new Date())}
         </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1.5">
-          รายงาน <span className="accent">ทั้งหมด</span>
+        <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
+          รายงาน <span className="text-gradient-blue">ทั้งหมด</span>
         </h1>
         <p className="text-zinc-600 mt-1.5 text-sm">
           {totalCount} รายงาน · รออนุมัติ{" "}

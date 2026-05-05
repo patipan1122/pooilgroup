@@ -104,8 +104,8 @@ export default async function ShortagesPage({
         <p className="text-[11px] uppercase tracking-[0.18em] text-[--color-brand-600] font-bold flex items-center gap-2">
           <AlertCircle className="size-4" /> SHORTAGE
         </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1">
-          เงินขาด <span className="accent">{formatBaht(total)}</span>
+        <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
+          เงินขาด <span className="text-gradient-blue">{formatBaht(total)}</span>
         </h1>
         <p className="text-zinc-600 mt-1 text-sm">
           {filtered.length} ครั้ง · {byPerson.size} คน/ทีม

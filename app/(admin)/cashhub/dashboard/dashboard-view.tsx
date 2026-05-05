@@ -108,8 +108,8 @@ export function DashboardView({
         <p className="text-[11px] sm:text-xs uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
           💰 CashHub · {today}
         </p>
-        <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight font-display mt-1.5 text-zinc-900">
-          ภาพรวม <span className="accent">ยอดสาขา</span>
+        <h1 className="text-3xl sm:text-5xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95] text-zinc-900">
+          ภาพรวม <span className="text-gradient-blue">ยอดสาขา</span>
         </h1>
         <p className="text-zinc-600 mt-1.5 text-sm sm:text-base">
           {userName} · เดือน {monthLabel} · {data.branches.length} สาขาที่ใช้งาน
@@ -157,7 +157,7 @@ export function DashboardView({
               </div>
               <div>
                 <h2 className="text-lg sm:text-xl font-extrabold font-display">
-                  เริ่มต้นใช้งาน <span className="accent">CashHub</span>
+                  เริ่มต้นใช้งาน <span className="text-gradient-blue">CashHub</span>
                 </h2>
                 <p className="text-sm text-zinc-600 mt-1">
                   ระบบพร้อม — มี {data.branches.length} สาขา รอข้อมูลเข้ามา

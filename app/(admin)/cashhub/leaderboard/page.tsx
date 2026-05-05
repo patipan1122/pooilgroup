@@ -63,8 +63,8 @@ export default async function LeaderboardPage({
         <p className="text-[11px] uppercase tracking-[0.18em] text-[--color-brand-600] font-bold flex items-center gap-2">
           <Trophy className="size-4" /> LEADERBOARD
         </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1">
-          อันดับ <span className="accent">สาขา</span>
+        <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
+          อันดับ <span className="text-gradient-blue">สาขา</span>
         </h1>
       </header>
 
