@@ -1,7 +1,10 @@
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { loadDashboard, bkkMonthLabel } from "@/lib/cashhub/aggregator";
-import { loadExecutiveMatrix } from "@/lib/cashhub/executive-matrix";
+import {
+  loadExecutiveMatrix,
+  type Period,
+} from "@/lib/cashhub/executive-matrix";
 import { DashboardView } from "./dashboard-view";
 
 export const dynamic = "force-dynamic";
@@ -9,16 +12,17 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ company?: string }>;
+  searchParams: Promise<{ company?: string; view?: string }>;
 }) {
   const session = await requireSession();
   const sp = await searchParams;
   const companyId = sp.company || undefined;
+  const period: Period = sp.view === "daily" ? "daily" : "monthly";
 
   // Load all dashboard data + executive matrix in parallel
   const [data, executiveMatrix] = await Promise.all([
     loadDashboard(session.user.org_id, companyId),
-    loadExecutiveMatrix(session.user.org_id, 6),
+    loadExecutiveMatrix(session.user.org_id, { period }),
   ]);
 
   const isAdmin =

@@ -1,80 +1,142 @@
+// /admin/users — ผู้ใช้งานทั้งหมด แสดงตามประเภทธุรกิจ → สาขา → คน
+// User-friendly: กดย่อ-ขยายตามประเภท เห็นจำนวนคนแต่ละตำแหน่ง เชิญในที่เดียว
+
 import Link from "next/link";
-import {
-  CheckCircle2,
-  XCircle,
-  UserPlus,
-  Users,
-  Inbox,
-  Upload,
-} from "lucide-react";
+import { UserPlus, Inbox, Upload } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Section } from "@/components/ui/section";
-import { Badge } from "@/components/ui/badge";
-import { DataTable } from "@/components/ui/data-table";
-import { EmptyState } from "@/components/ui/empty-state";
-import { bkkDate, thaiDateLong } from "@/lib/utils/format";
+import { thaiDateLong } from "@/lib/utils/format";
+import {
+  UsersByBusiness,
+  type BranchWithUsers,
+  type BranchUser,
+  type Company,
+} from "./users-by-business";
 
 export const dynamic = "force-dynamic";
 
-const ROLE_TONE: Record<string, "brand" | "neutral" | "warning" | "info"> = {
-  super_admin: "warning",
-  org_admin: "warning",
-  branch_manager: "brand",
-  staff: "info",
-  driver: "info",
-  viewer: "neutral",
-};
-
-const ROLE_LABEL: Record<string, string> = {
-  super_admin: "Super Admin",
-  org_admin: "Admin",
-  branch_manager: "Manager",
-  staff: "Staff",
-  driver: "Driver",
-  viewer: "Viewer",
-};
-
-interface UserRow {
-  id: string;
-  email: string | null;
-  name: string;
-  phone: string | null;
-  role: string;
-  is_active: boolean;
-  last_login_at: string | null;
-  line_user_id: string | null;
-  telegram_user_id: string | null;
-}
-
-export default async function UsersListPage() {
+export default async function UsersPage() {
   const session = await requireRole("super_admin", "org_admin");
   const admin = adminClient();
+  const orgId = session.user.org_id;
 
-  const { data } = await admin
-    .from("users")
-    .select(
-      "id, email, name, phone, role, is_active, last_login_at, created_at, line_user_id, telegram_user_id",
-    )
-    .eq("org_id", session.user.org_id)
-    .order("created_at", { ascending: false });
+  // Step 1: companies + branches + users + user_branches in parallel (no joins)
+  const [companiesQ, branchesQ, usersQ, userBranchesQ, requestsQ] = await Promise.all([
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin.from as any)("companies")
+      .select("id, code, name")
+      .eq("org_id", orgId)
+      .eq("is_active", true)
+      .order("code"),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin.from as any)("branches")
+      .select("id, code, name, business_type, company_id, province, is_active")
+      .eq("org_id", orgId)
+      .eq("is_active", true)
+      .order("code"),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin.from as any)("users")
+      .select(
+        "id, name, email, phone, role, is_active, line_user_id, telegram_user_id, invite_used_at",
+      )
+      .eq("org_id", orgId)
+      .order("created_at", { ascending: false }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin.from as any)("user_branches")
+      .select("user_id, branch_id, is_active")
+      .eq("org_id", orgId)
+      .eq("is_active", true),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin.from as any)("register_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("org_id", orgId)
+      .eq("status", "pending"),
+  ]);
 
-  const { count: pendingRequests } = await admin
-    .from("register_requests")
-    .select("id", { count: "exact", head: true })
-    .eq("org_id", session.user.org_id)
-    .eq("status", "pending");
+  const companies: Company[] = (companiesQ.data ?? []) as Company[];
+  const branches = (branchesQ.data ?? []) as Array<{
+    id: string;
+    code: string;
+    name: string;
+    business_type: string;
+    company_id: string | null;
+    province: string | null;
+    is_active: boolean;
+  }>;
 
-  const list = (data ?? []) as UserRow[];
-  const active = list.filter((u) => u.is_active);
-  const byRole: Record<string, number> = {};
-  for (const u of active) byRole[u.role] = (byRole[u.role] ?? 0) + 1;
+  const allUsers = (usersQ.data ?? []) as Array<{
+    id: string;
+    name: string;
+    email: string | null;
+    phone: string | null;
+    role: string;
+    is_active: boolean;
+    line_user_id: string | null;
+    telegram_user_id: string | null;
+    invite_used_at: string | null;
+  }>;
+  const userById = new Map<string, BranchUser>();
+  for (const u of allUsers) {
+    userById.set(u.id, {
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      phone: u.phone,
+      role: u.role,
+      is_active: u.is_active,
+      has_line: !!u.line_user_id,
+      has_telegram: !!u.telegram_user_id,
+      invite_used: !!u.invite_used_at || u.is_active,
+    });
+  }
+
+  const ubRows = (userBranchesQ.data ?? []) as Array<{
+    user_id: string;
+    branch_id: string;
+  }>;
+
+  // Build branchId → users[]
+  const usersByBranchId = new Map<string, BranchUser[]>();
+  const assignedUserIds = new Set<string>();
+  for (const ub of ubRows) {
+    const u = userById.get(ub.user_id);
+    if (!u) continue;
+    assignedUserIds.add(ub.user_id);
+    if (!usersByBranchId.has(ub.branch_id)) usersByBranchId.set(ub.branch_id, []);
+    usersByBranchId.get(ub.branch_id)!.push(u);
+  }
+
+  const branchesWithUsers: BranchWithUsers[] = branches.map((b) => ({
+    ...b,
+    users: usersByBranchId.get(b.id) ?? [],
+  }));
+
+  // Unassigned: super_admin, admin, org_admin, viewer that have no user_branches link
+  const unassigned: BranchUser[] = [];
+  for (const u of allUsers) {
+    if (assignedUserIds.has(u.id)) continue;
+    // Only show roles that intentionally don't have branch assignment
+    if (
+      u.role === "super_admin" ||
+      u.role === "admin" ||
+      u.role === "org_admin" ||
+      u.role === "viewer"
+    ) {
+      const cu = userById.get(u.id);
+      if (cu) unassigned.push(cu);
+    }
+  }
+
+  const pendingCount = requestsQ.count ?? 0;
+  const totalUsers = allUsers.filter((u) => u.is_active).length;
+  const totalBranches = branches.length;
 
   return (
     <div className="relative">
       <div
         aria-hidden
-        className="absolute -top-20 -left-20 size-96 rounded-full blur-3xl opacity-15 pointer-events-none animate-drift"
+        className="absolute -top-20 -left-20 size-96 rounded-full blur-3xl opacity-15 pointer-events-none"
         style={{
           background:
             "radial-gradient(circle, oklch(0.50 0.28 263) 0%, transparent 70%)",
@@ -82,172 +144,74 @@ export default async function UsersListPage() {
       />
 
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-6xl mx-auto pb-24">
-        <header className="mb-12 animate-slide-up-soft flex items-end justify-between flex-wrap gap-4">
-        <div>
-          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[--color-brand-700] font-bold">
-            จัดการระบบ
-            <span className="text-zinc-400 mx-2">·</span>
-            <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
-          </p>
-          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-5 leading-[0.95]">
-            <span className="text-gradient-blue">ผู้ใช้</span> ทั้งหมด
-          </h1>
-          <p className="text-base sm:text-lg text-zinc-600 mt-5 max-w-2xl leading-relaxed">
-            <strong className="font-bold text-zinc-900 tabular-num">{active.length}</strong>{" "}
-            บัญชีใช้งาน
-            {Object.keys(byRole).length > 0 && (
-              <>
-                <span className="text-zinc-400 mx-1.5">·</span>
-                {Object.entries(byRole)
-                  .map(([r, c]) => `${ROLE_LABEL[r]} ${c}`)
-                  .join(" · ")}
-              </>
-            )}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Link
-            href="/users/requests"
-            className="inline-flex items-center gap-2 px-4 h-12 rounded-xl border-2 border-zinc-200 bg-white font-semibold hover:border-[--color-brand-300] hover:bg-[--color-brand-50]/40 transition-colors text-sm relative"
-          >
-            <Inbox className="size-4" />
-            คำขอใหม่
-            {(pendingRequests ?? 0) > 0 && (
-              <span className="ml-1 inline-flex items-center justify-center size-5 rounded-full bg-[--color-danger] text-white text-[10px] font-bold">
-                {pendingRequests}
-              </span>
-            )}
-          </Link>
-          <Link
-            href="/users/import"
-            className="inline-flex items-center gap-2 px-4 h-12 rounded-xl border-2 border-zinc-200 bg-white font-semibold hover:border-[--color-brand-300] hover:bg-[--color-brand-50]/40 transition-colors text-sm"
-          >
-            <Upload className="size-4" />
-            Import CSV
-          </Link>
-          <Link
-            href="/users/new"
-            className="inline-flex items-center gap-2 px-5 h-12 rounded-xl bg-[--color-brand-600] text-white font-bold hover:bg-[--color-brand-700] shadow-blue transition-colors"
-          >
-            <UserPlus className="size-5" />
-            เชิญผู้ใช้ใหม่
-          </Link>
-        </div>
-      </header>
-
-      <Section
-        number="01"
-        label="OVERVIEW"
-        title="แยกตามบทบาท"
-        className="mb-8 animate-fade-up delay-100"
-      >
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(byRole).map(([role, count]) => (
-            <div
-              key={role}
-              className="flex items-center gap-2 rounded-xl border-2 border-zinc-200 bg-white px-4 py-2.5"
+        <header className="mb-12 flex items-end justify-between flex-wrap gap-4 animate-fade-up">
+          <div>
+            <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[--color-brand-700] font-bold">
+              จัดการระบบ
+              <span className="text-zinc-400 mx-2">·</span>
+              <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
+            </p>
+            <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-5 leading-[0.95]">
+              <span className="brand-gradient-text">ผู้ใช้</span> ทั้งหมด
+            </h1>
+            <p className="text-base sm:text-lg text-zinc-600 mt-5 max-w-2xl leading-relaxed">
+              <strong className="font-bold text-zinc-900 tabular-num">{totalUsers}</strong>{" "}
+              คนในระบบ
+              <span className="text-zinc-400 mx-1.5">·</span>
+              <strong className="font-bold text-zinc-900 tabular-num">
+                {totalBranches}
+              </strong>{" "}
+              สาขา
+              <span className="text-zinc-400 mx-1.5">·</span>
+              <strong className="font-bold text-zinc-900 tabular-num">
+                {companies.length}
+              </strong>{" "}
+              บริษัท
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link
+              href="/users/requests"
+              className="inline-flex items-center gap-2 px-4 h-11 rounded-xl border-2 border-zinc-200 bg-white font-bold hover:border-[--color-brand-300] hover:bg-[--color-brand-50]/40 transition-colors text-sm relative"
             >
-              <Badge tone={ROLE_TONE[role] ?? "neutral"}>
-                {ROLE_LABEL[role] ?? role}
-              </Badge>
-              <span className="text-lg font-extrabold tabular-num">{count}</span>
-            </div>
-          ))}
-        </div>
-      </Section>
+              <Inbox className="size-4" />
+              คำขอใหม่
+              {pendingCount > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center size-5 rounded-full bg-[--color-danger] text-white text-[10px] font-bold">
+                  {pendingCount}
+                </span>
+              )}
+            </Link>
+            <Link
+              href="/users/import"
+              className="inline-flex items-center gap-2 px-4 h-11 rounded-xl border-2 border-zinc-200 bg-white font-bold hover:border-[--color-brand-300] hover:bg-[--color-brand-50]/40 transition-colors text-sm"
+            >
+              <Upload className="size-4" />
+              นำเข้า CSV
+            </Link>
+            <Link
+              href="/users/new"
+              className="inline-flex items-center gap-2 px-5 h-11 rounded-xl bg-[--color-brand-600] text-white font-bold hover:bg-[--color-brand-700] shadow-blue transition-colors text-sm"
+            >
+              <UserPlus className="size-4" />
+              เชิญผู้ใช้
+            </Link>
+          </div>
+        </header>
 
-      <Section
-        number="02"
-        label="LIST"
-        title="รายชื่อผู้ใช้"
-        description="คลิกเชิญผู้ใช้ใหม่ที่มุมขวาบน · invite link หมดอายุ 48 ชั่วโมง"
-        className="animate-fade-up delay-200"
-      >
-        {list.length === 0 ? (
-          <EmptyState
-            icon={<Users className="size-6" />}
-            title="ยังไม่มีผู้ใช้"
-            description="เชิญผู้ใช้คนแรกเข้าระบบเพื่อเริ่มต้น"
+        <Section
+          number="01"
+          label="BY BUSINESS · BY BRANCH"
+          title="ทุกธุรกิจ · ทุกสาขา · ทุกคน"
+          description="กดที่หัวข้อธุรกิจเพื่อย่อ/ขยาย — เห็นทุกสาขาและคนในสาขา · กดเชิญในที่เดียว"
+          className="animate-fade-up delay-100"
+        >
+          <UsersByBusiness
+            companies={companies}
+            branches={branchesWithUsers}
+            unassigned={unassigned}
           />
-        ) : (
-          <DataTable
-            columns={[
-              { key: "avatar", header: "", className: "w-12" },
-              { key: "name", header: "ชื่อ" },
-              { key: "role", header: "บทบาท" },
-              { key: "channels", header: "Channels" },
-              { key: "status", header: "สถานะ" },
-              { key: "lastLogin", header: "เข้าล่าสุด", align: "right" },
-            ]}
-            rows={list.map((u) => ({
-              key: u.id,
-              href: `/users/${u.id}`,
-              cells: {
-                avatar: (
-                  <div className="size-10 rounded-full bg-[--color-brand-100] text-[--color-brand-700] flex items-center justify-center font-bold border-2 border-[--color-brand-200]">
-                    {u.name.charAt(0).toUpperCase()}
-                  </div>
-                ),
-                name: (
-                  <div>
-                    <div className="font-bold truncate">{u.name}</div>
-                    <div className="text-xs text-zinc-500 truncate mt-0.5">
-                      {u.email ?? u.phone ?? "—"}
-                    </div>
-                  </div>
-                ),
-                role: (
-                  <Badge tone={ROLE_TONE[u.role] ?? "neutral"}>
-                    {ROLE_LABEL[u.role] ?? u.role}
-                  </Badge>
-                ),
-                channels: (
-                  <div className="flex items-center gap-2 text-xs">
-                    <span
-                      className={
-                        u.line_user_id
-                          ? "inline-flex items-center gap-0.5 text-green-700 font-semibold"
-                          : "inline-flex items-center gap-0.5 text-zinc-400"
-                      }
-                    >
-                      {u.line_user_id ? (
-                        <CheckCircle2 className="size-3" />
-                      ) : (
-                        <XCircle className="size-3" />
-                      )}
-                      LINE
-                    </span>
-                    <span
-                      className={
-                        u.telegram_user_id
-                          ? "inline-flex items-center gap-0.5 text-green-700 font-semibold"
-                          : "inline-flex items-center gap-0.5 text-zinc-400"
-                      }
-                    >
-                      {u.telegram_user_id ? (
-                        <CheckCircle2 className="size-3" />
-                      ) : (
-                        <XCircle className="size-3" />
-                      )}
-                      Telegram
-                    </span>
-                  </div>
-                ),
-                status: !u.is_active ? (
-                  <Badge tone="neutral">ปิด</Badge>
-                ) : (
-                  <Badge tone="success">ใช้งาน</Badge>
-                ),
-                lastLogin: (
-                  <span className="text-xs text-zinc-500 tabular-num">
-                    {u.last_login_at ? bkkDate(u.last_login_at) : "ยังไม่ Login"}
-                  </span>
-                ),
-              },
-            }))}
-          />
-        )}
-      </Section>
+        </Section>
       </div>
     </div>
   );
