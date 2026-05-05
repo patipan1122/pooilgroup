@@ -16,7 +16,7 @@
   --font-jakarta: var(--font-jakarta), system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* Brand: deep royal blue (Auditmekub/Fastwork) — saturated, energetic, credible */
+  /* Primary: Pooil Blue — from POOIL logo's "O" letterform */
   --color-brand-50:  oklch(0.97 0.025 263);
   --color-brand-100: oklch(0.93 0.06 263);
   --color-brand-200: oklch(0.85 0.12 263);
@@ -30,8 +30,22 @@
   --color-brand-950: oklch(0.15 0.06 264);
   --color-brand-vivid: oklch(0.50 0.28 263); /* hero gradients — almost neon */
 
-  /* Semantic */
-  --color-success: oklch(0.65 0.18 145);
+  /* Secondary: Pooil Green — from POOIL logo's "P" letterform.
+     Use for success, growth (↑), approved states, leaderboard #1.
+     NEVER use as primary CTA — keep blue dominance. */
+  --color-leaf-50:  oklch(0.96 0.04 148);
+  --color-leaf-100: oklch(0.92 0.08 148);
+  --color-leaf-200: oklch(0.85 0.13 148);
+  --color-leaf-300: oklch(0.76 0.16 148);
+  --color-leaf-400: oklch(0.68 0.18 148);
+  --color-leaf-500: oklch(0.60 0.18 148);  /* primary green */
+  --color-leaf-600: oklch(0.52 0.18 148);  /* hover green */
+  --color-leaf-700: oklch(0.44 0.16 148);
+  --color-leaf-800: oklch(0.34 0.12 148);
+  --color-leaf-900: oklch(0.26 0.08 148);
+
+  /* Semantic — leaf green doubles as success */
+  --color-success: oklch(0.60 0.18 148);
   --color-warning: oklch(0.78 0.16 75);
   --color-danger: oklch(0.62 0.22 25);
   --color-info: oklch(0.65 0.15 250);
@@ -57,6 +71,7 @@
   --shadow-lg: 0 8px 16px -4px rgb(0 0 0 / 0.08), 0 16px 32px -8px rgb(0 0 0 / 0.10);
   --shadow-pop: 0 16px 64px -16px rgb(0 0 0 / 0.18);
   --shadow-blue: 0 8px 24px -8px oklch(0.50 0.25 264 / 0.30);
+  --shadow-leaf: 0 8px 24px -8px oklch(0.55 0.20 148 / 0.30);
 }
 
 /* ============================================================
@@ -81,17 +96,28 @@ body {
    ============================================================ */
 .font-display {
   font-family: var(--font-display);
-  letter-spacing: -0.025em;
-  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-weight: 800;
 }
 
 h1, h2, h3, h4 {
   font-family: var(--font-display);
-  letter-spacing: -0.025em;
-  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-weight: 800;
 }
 
-h1 { font-weight: 800; }
+h1 { font-weight: 800; letter-spacing: -0.035em; }
+h2 { font-weight: 800; }
+h3 { font-weight: 700; }
+
+/* Mega numbers — for stat values, dashboards, hero KPIs */
+.font-num-mega {
+  font-family: var(--font-jakarta), system-ui, sans-serif;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+}
 
 /* Tabular numbers for money */
 .tabular-num {
@@ -103,6 +129,28 @@ h1 { font-weight: 800; }
   color: var(--color-brand-600);
   position: relative;
   display: inline-block;
+}
+
+/* Green keyword variant — for "growth", "success", "win" semantics */
+.accent-leaf {
+  color: var(--color-leaf-600);
+  position: relative;
+  display: inline-block;
+}
+
+/* Brand dual-tone gradient — mirrors POOIL logo (green P → blue O) */
+.brand-gradient-text {
+  background: linear-gradient(
+    90deg,
+    var(--color-leaf-600) 0%,
+    var(--color-leaf-500) 30%,
+    var(--color-brand-500) 60%,
+    var(--color-brand-600) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
 }
 
 /* Underline marker — auditmekub-style stroke under a keyword */

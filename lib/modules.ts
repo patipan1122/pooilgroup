@@ -44,7 +44,7 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     name: "CashHub",
     tagline: "ยอดสาขารายวัน",
     description:
-      "เก็บยอดขายรายวันจากทุกสาขา 7 ประเภทธุรกิจ + อนุมัติผ่าน Telegram + Dashboard เจ้าของ",
+      "เก็บยอดขายรายวันจากทุกสาขา 11 ประเภทธุรกิจ + อนุมัติผ่าน Telegram + Dashboard เจ้าของ",
     emoji: "💰",
     Icon: Wallet,
     status: "active",

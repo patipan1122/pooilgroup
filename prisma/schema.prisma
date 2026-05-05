@@ -1,4 +1,5 @@
-// Pool Group ERP — Prisma Schema (Sprint 0 / 8 core tables)
+// Pooilgroup ERP — Prisma Schema
+// 1 organization "Pooilgroup" → 2 companies (Pooil Oil + JP Sync Group) → 118 branches across 11 business types
 // See plan: /Users/patipantantikul/.claude/plans/sunny-splashing-cocoa.md
 // Spec source: /Users/patipantantikul/Desktop/pooilgroup/ดีเทลv1/CORE_SYSTEM.md + CASHHUB.md
 
@@ -27,7 +28,9 @@ model Organization {
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   users            User[]
+  companies        Company[]
   branches         Branch[]
+  branchRentals    BranchRental[]
   reportTemplates  ReportTemplate[]
   dailyReports     DailyReport[]
   cashShortages    CashShortage[]
@@ -51,20 +54,51 @@ model Organization {
 }
 
 // =============================================================
+// 1b. companies — legal entity layer under one Pooilgroup org
+// e.g. "Pooil Oil" + "JP Sync Group" (separate VAT, separate accounting)
+// Branches attach to a company; users belong to org and may span companies
+// =============================================================
+model Company {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  code      String // POOIL | JPSYNC
+  name      String // "Pooil Oil" | "JP Sync Group"
+  taxId     String?  @map("tax_id") // เลขผู้เสียภาษี
+  address   String?
+  phone     String?
+  logoUrl   String?  @map("logo_url")
+  brandColor String? @map("brand_color") // optional override per company
+  settings  Json     @default("{}")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  branches Branch[]
+
+  @@unique([orgId, code])
+  @@index([orgId, isActive])
+  @@map("companies")
+}
+
+// =============================================================
 // 2. users — auth + RBAC
 // =============================================================
 enum UserRole {
-  super_admin
-  org_admin
-  branch_manager
-  staff
-  driver
-  viewer
+  super_admin    // Owner — strategic + financial + identity
+  admin          // Operational admin — runs day-to-day
+  area_manager   // Manages multiple branches in a region/business
+  branch_manager // 1-2 per branch
+  staff          // Submits reports / works on branch
+  driver         // FuelOS Phase 2
+  viewer         // Read-only (accountant / HR)
+  org_admin      // [deprecated alias — kept for back-compat, will migrate to admin]
 }
 
 model User {
   id                 String    @id @default(uuid()) @db.Uuid
   orgId              String    @map("org_id") @db.Uuid
+  employeeCode       String?   @map("employee_code") // referenced from Humansoft HR app
   email              String?   @unique
   name               String
   phone              String?
@@ -99,6 +133,7 @@ model User {
   telegramSubs        TelegramSubscription[]
   telegramTokens      TelegramPairingToken[]
 
+  @@unique([orgId, employeeCode])
   @@index([orgId, isActive])
   @@index([orgId, role])
   @@index([lineUserId])
@@ -109,20 +144,27 @@ model User {
 // 3. branches — 30+ สาขา / 7 business types
 // =============================================================
 enum BusinessType {
-  fuel_station
-  lpg_station
-  bottling_plant
-  hotel
-  convenience_store
-  ev_station
-  cafe
-  transport // FuelOS Phase 2
-  gas_fleet // FuelOS Phase 2
+  fuel_station       // ปั๊มน้ำมัน
+  lpg_station        // ปั๊มแก๊ส (เติมรถ)
+  lpg_retail         // ร้านค้าแก๊ส (ขายถัง)
+  bottling_plant     // โรงบรรจุก๊าซ
+  hotel              // โรงแรม
+  convenience_store  // 7-Eleven
+  ev_station         // EV Station
+  cafe               // Café Amazon
+  cafe_punthai       // ร้านกาแฟพันธุ์ไทย
+  massage_chair      // เก้าอี้นวด (kiosk)
+  claw_machine       // ตู้คีบ (kiosk)
+  training_center    // ศูนย์ฝึกอบรม
+  transport          // FuelOS Phase 2
+  gas_fleet          // FuelOS Phase 2
 }
 
 model Branch {
   id             String       @id @default(uuid()) @db.Uuid
   orgId          String       @map("org_id") @db.Uuid
+  companyId      String       @map("company_id") @db.Uuid // Pooil Oil or JP Sync
+  parentBranchId String?      @map("parent_branch_id") @db.Uuid // host branch for sub-tenants (e.g. 7-11 inside a fuel station)
   code           String
   name           String
   businessType   BusinessType @map("business_type")
@@ -140,8 +182,11 @@ model Branch {
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org             Organization        @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  manager         User?               @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
+  org             Organization          @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  company         Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  parentBranch    Branch?               @relation("SubTenants", fields: [parentBranchId], references: [id], onDelete: SetNull)
+  subTenants      Branch[]              @relation("SubTenants")
+  manager         User?                 @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
   userBranches    UserBranch[]
   dailyReports    DailyReport[]
   cashShortages   CashShortage[]
@@ -149,11 +194,51 @@ model Branch {
   healthScores    BranchHealthScore[]
   streak          BranchStreak?
   missingReports  MissingReportReason[]
+  rentalsAsHost   BranchRental[]        @relation("RentalHost")
+  rentalsAsTenant BranchRental[]        @relation("RentalTenant")
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
   @@index([orgId, businessType])
+  @@index([companyId, isActive])
+  @@index([parentBranchId])
   @@map("branches")
+}
+
+// =============================================================
+// 3b. branch_rentals — sub-tenant rental contracts
+// Pump (host) ↔ Tenant (7-11 / Café / external shop) — fixed / % / mixed
+// =============================================================
+enum RentalType {
+  fixed_monthly  // ค่าเช่ารายเดือนตายตัว
+  percentage     // % ของยอดขายผู้เช่า
+  mixed          // ทั้ง fixed + %
+}
+
+model BranchRental {
+  id              String     @id @default(uuid()) @db.Uuid
+  orgId           String     @map("org_id") @db.Uuid
+  hostBranchId    String     @map("host_branch_id") @db.Uuid // ปั๊ม
+  tenantBranchId  String?    @map("tenant_branch_id") @db.Uuid // ถ้าเป็นร้านในเครือ
+  tenantName      String     @map("tenant_name") // ชื่อร้าน (อาจเป็นภายนอก)
+  rentalType      RentalType @map("rental_type")
+  fixedAmount     Decimal?   @map("fixed_amount") @db.Decimal(15, 2) // ฿/เดือน
+  percentageRate  Decimal?   @map("percentage_rate") @db.Decimal(6, 4) // 0.05 = 5%
+  startDate       DateTime   @map("start_date") @db.Date
+  endDate         DateTime?  @map("end_date") @db.Date
+  notes           String?
+  isActive        Boolean    @default(true) @map("is_active")
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  hostBranch   Branch       @relation("RentalHost", fields: [hostBranchId], references: [id], onDelete: Cascade)
+  tenantBranch Branch?      @relation("RentalTenant", fields: [tenantBranchId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, isActive])
+  @@index([hostBranchId, isActive])
+  @@index([tenantBranchId])
+  @@map("branch_rentals")
 }
 
 // =============================================================
@@ -235,6 +320,12 @@ model DailyReport {
   card     Decimal @default(0) @db.Decimal(15, 2)
   credit   Decimal @default(0) @db.Decimal(15, 2)
   shortage Decimal @default(0) @db.Decimal(15, 2)
+
+  // Sub-tenant rental income (host branches like fuel stations with 7-11/Café tenants)
+  rentalIncome Decimal @default(0) @map("rental_income") @db.Decimal(15, 2)
+
+  // Training center summary (only used by training_center business type)
+  trainingSessions Int? @map("training_sessions")
 
   // Notes
   notes      String?
