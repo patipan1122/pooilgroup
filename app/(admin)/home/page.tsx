@@ -286,19 +286,16 @@ export default async function HomePage() {
               slug="cashhub"
               enabled={moduleEnabled.cashhub}
               landingPath="/cashhub/dashboard"
-              accentColor="blue"
             />
             <ModuleCard
               slug="fuelos"
               enabled={moduleEnabled.fuelos}
               landingPath="/fuelos"
-              accentColor="leaf"
             />
             <ModuleCard
               slug="docuflow"
               enabled={moduleEnabled.docuflow}
               landingPath="/docuflow"
-              accentColor="amber"
             />
           </div>
         </Section>
@@ -349,7 +346,7 @@ export default async function HomePage() {
                   <ActionCard
                     href="/users"
                     icon={<KeyRound className="size-5" />}
-                    accent="warning"
+                    accent="brand"
                     label="ผู้ใช้ที่ยังไม่ activate"
                     bigNumber={pendingInvites}
                     unit="คน"
@@ -459,27 +456,21 @@ export default async function HomePage() {
 
 /* ============================================================
    ModuleCard — premium floating card per program
+   ทุก module ใช้สีฟ้าเหมือนกัน (DESIGN_SYSTEM §2)
+   แยกความต่างด้วย emoji/icon ไม่ใช่สี
    ============================================================ */
 function ModuleCard({
   slug,
   enabled,
   landingPath,
-  accentColor,
 }: {
   slug: keyof typeof MODULES;
   enabled: boolean;
   landingPath: string;
-  accentColor: "blue" | "leaf" | "amber";
 }) {
   const m = MODULES[slug];
   const isActive = enabled && m.status === "active";
   const isComingSoon = m.status === "coming_soon" || !enabled;
-
-  const accentBg = {
-    blue: "bg-[--color-brand-50] border-[--color-brand-200] text-[--color-brand-700]",
-    leaf: "bg-[--color-leaf-50] border-[--color-leaf-200] text-[--color-leaf-700]",
-    amber: "bg-amber-50 border-amber-200 text-amber-700",
-  }[accentColor];
 
   const cardBase =
     "relative group rounded-3xl border-2 bg-white p-6 sm:p-7 transition-all overflow-hidden";
@@ -487,30 +478,24 @@ function ModuleCard({
   const cardActive =
     "border-zinc-200 hover:border-[--color-brand-400] hover-lift cursor-pointer shadow-soft";
 
-  const cardDisabled = "border-zinc-200 opacity-75";
+  const cardDisabled = "border-zinc-200 opacity-60";
 
   const inner = (
     <>
-      {/* Decorative blur in corner — auditmekub vibe */}
+      {/* Decorative blue blur in corner — auditmekub vibe */}
       <div
         aria-hidden
         className="absolute -top-12 -right-12 size-44 rounded-full blur-3xl opacity-25 pointer-events-none"
         style={{
           background:
-            accentColor === "blue"
-              ? "radial-gradient(circle, oklch(0.50 0.28 263) 0%, transparent 70%)"
-              : accentColor === "leaf"
-                ? "radial-gradient(circle, oklch(0.55 0.20 148) 0%, transparent 70%)"
-                : "radial-gradient(circle, oklch(0.78 0.16 75) 0%, transparent 70%)",
+            "radial-gradient(circle, oklch(0.50 0.28 263) 0%, transparent 70%)",
         }}
       />
 
       <div className="relative">
-        {/* Top row: icon badge + status */}
+        {/* Top row: icon badge + status — ใช้ฟ้าเหมือนกันทุก module */}
         <div className="flex items-start justify-between mb-5">
-          <div
-            className={`size-14 rounded-2xl border-2 flex items-center justify-center text-2xl ${accentBg}`}
-          >
+          <div className="size-14 rounded-2xl border-2 bg-[--color-brand-50] border-[--color-brand-200] text-[--color-brand-700] flex items-center justify-center text-2xl">
             {m.emoji}
           </div>
           {isActive ? (

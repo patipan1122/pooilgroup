@@ -40,33 +40,66 @@
 
 ---
 
-## 2. สี (รวม 4 สีเท่านั้น บน white + zinc neutral)
+## 2. สี — กฎเข้ม (LOCKED)
+
+### หลักการ: 90% ของหน้าใช้ ฟ้า + ขาว + เทา เท่านั้น
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Primary Blue    เป็น CTA หลัก · highlight keyword
-                --color-brand-50 ... 900
-                hero CTA = brand-600, hover = brand-700
-
-Leaf Green      สำหรับ success / approved / "ผ่าน"
-                --color-leaf-500 ... 700
-                ห้ามใช้แทน CTA หลัก
-
-Amber           warning · pending · "ระวัง"
-                bg-amber-50/60, border-amber-200/300
-
-Red             danger · ปฏิเสธ · เงินขาด · failed login
-                bg-red-50/60, border-red-200/300
-                ใช้น้อย น้อย น้อย — มาแล้วต้องสำคัญจริง
+Default palette (ใช้ได้ทุกที่ทุกเวลา):
+  ฟ้า  =  --color-brand-50 ... 900   (Pooil Blue)
+  ขาว  =  bg-white, surface
+  เทา  =  zinc-50 ... 900             (text, border, neutral)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-ห้ามใช้: purple, pink, teal, orange, magenta, cyan
-        gradient หลายสี (ยกเว้น brand-gradient-text เขียว→น้ำเงิน)
+Semantic colors (ใช้เฉพาะ binary outcome ที่ชัดเจน):
+  เขียว (leaf)   →  "ผ่าน · ใช่ · approved · สำเร็จ"
+                    เช่น: ✓ อนุมัติแล้ว, รายงานครบ, ผ่าน checklist
+                    ห้ามใช้แค่เพราะอยากให้สวย
+  
+  แดง           →  "ไม่ผ่าน · ปฏิเสธ · error · ขาด"
+                    เช่น: ปฏิเสธรายงาน, login ล้มเหลว, เงินขาด
+                    ใช้แล้วต้องสำคัญจริง
+  
+  อำพัน (amber) →  "รอ · pending" เท่านั้น
+                    ถ้าเป็น info ทั่วไป → ใช้ฟ้า ห้ามใช้อำพัน
+```
+
+### กฎห้าม (สำคัญ — กันคนเผลอ)
+
+```
+✗ ใช้สีจัดประเภท (เช่น 3 module = 3 สี)
+  → ทำไมผิด? เพราะไม่มีอะไรดี/ไม่ดี — แค่ต่างกัน
+  → ใช้ฟ้าเหมือนกันหมด แยกด้วย emoji/icon
+
+✗ "info card" สีอำพัน  
+  → info ทั่วไป = ฟ้า ไม่ใช่อำพัน
+  → อำพันเก็บไว้สำหรับ "รอ" จริง ๆ
+
+✗ ใช้เขียวเพราะ "ดูสบายตา"
+  → เขียวสงวนไว้ "ใช่/ผ่าน" เท่านั้น
+
+✗ Module/section พื้นเขียว/แดง/อำพัน เป็น default
+  → default tint = bg-white หรือ bg-brand-50 เท่านั้น
+
+✗ Purple, pink, teal, orange, magenta, cyan
+  → ห้ามทุกที่ทุกเวลา
+```
+
+### ตรวจตัวเอง (ก่อน commit)
+
+```
+☐ หน้านี้สีหลักคือฟ้า + ขาว + เทา ใช่ไหม?
+☐ ถ้าใช้เขียว → มี binary "ผ่าน" ชัดไหม?
+☐ ถ้าใช้แดง → มี binary "ไม่ผ่าน/error" ชัดไหม?
+☐ ถ้าใช้อำพัน → คือ "รอ" จริง ๆ ไม่ใช่ info?
+☐ Module 3 ตัว ใช้สีเดียวกันหรือยัง?
 ```
 
 ### Background
 - หลัก: `bg-white` หรือ `bg-zinc-50`
 - decorative: `bg-grid-dots opacity-[0.35]` ทับบน white
+- การ์ด tint: `bg-brand-50/40` หรือ `bg-zinc-50` เท่านั้น (ไม่ใช่ bg-amber-50)
 - **AI / smart sections ในอนาคต:** dark navy gradient (background only)
 
 ---
