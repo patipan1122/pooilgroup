@@ -32,6 +32,20 @@ interface Props {
 
 type FormValues = Record<string, string>;
 
+/** Strip everything except digits and a single decimal point */
+function sanitizeNumeric(s: string): string {
+  // Remove non [0-9.] characters
+  let cleaned = s.replace(/[^0-9.]/g, "");
+  // Keep only the first dot
+  const firstDot = cleaned.indexOf(".");
+  if (firstDot !== -1) {
+    cleaned =
+      cleaned.slice(0, firstDot + 1) +
+      cleaned.slice(firstDot + 1).replace(/\./g, "");
+  }
+  return cleaned;
+}
+
 const SHIFT_ICONS: Record<string, React.ReactNode> = {
   morning: <Sunrise className="size-4" />,
   midday: <Sun className="size-4" />,
@@ -178,6 +192,23 @@ export function ReportForm({
       (f) => f.column === "trainingSessions",
     );
 
+    // Custom fields (column = "_custom") → collect into extra_fields jsonb
+    const extraFields: Record<string, string | number | null> = {};
+    for (const f of config.fields) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((f.column as any) === "_custom") {
+        const raw = values[f.key];
+        if (raw === undefined || raw === "") {
+          extraFields[f.key] = null;
+        } else if (f.type === "currency" || f.type === "number") {
+          const n = parseFloat(raw);
+          extraFields[f.key] = Number.isFinite(n) ? n : null;
+        } else {
+          extraFields[f.key] = raw;
+        }
+      }
+    }
+
     const payload = {
       branchId,
       reportDate,
@@ -200,6 +231,7 @@ export function ReportForm({
         : null,
       notes: values.notes || null,
       shortageInfo: numeric.shortage > 0 ? shortageInfo : null,
+      extraFields,
     };
 
     try {
@@ -240,8 +272,14 @@ export function ReportForm({
       received: [],
       shortage: [],
       notes: [],
+      rental: [],
+      training: [],
+      custom: [],
     };
-    for (const f of config.fields) groups[f.group]!.push(f);
+    for (const f of config.fields) {
+      if (!groups[f.group]) groups[f.group] = [];
+      groups[f.group]!.push(f);
+    }
     return groups;
   }, [config]);
 
@@ -344,11 +382,18 @@ export function ReportForm({
               >
                 <Input
                   id={f.key}
-                  inputMode={f.type === "currency" || f.type === "number" ? "decimal" : "text"}
-                  pattern={f.type === "currency" || f.type === "number" ? "[0-9]*\\.?[0-9]*" : undefined}
+                  inputMode={f.numericOnly ? "decimal" : "text"}
+                  pattern={f.numericOnly ? "[0-9]*\\.?[0-9]*" : undefined}
                   placeholder={f.placeholder}
                   value={values[f.key] || ""}
-                  onChange={(e) => update(f.key, e.target.value)}
+                  onChange={(e) =>
+                    update(
+                      f.key,
+                      f.numericOnly
+                        ? sanitizeNumeric(e.target.value)
+                        : e.target.value,
+                    )
+                  }
                   prefixSlot={
                     f.type === "currency" ? (
                       <span className="font-semibold">฿</span>
@@ -382,11 +427,18 @@ export function ReportForm({
                 >
                   <Input
                     id={f.key}
-                    inputMode="decimal"
-                    pattern="[0-9]*\.?[0-9]*"
+                    inputMode={f.numericOnly ? "decimal" : "text"}
+                    pattern={f.numericOnly ? "[0-9]*\\.?[0-9]*" : undefined}
                     placeholder={f.placeholder}
                     value={values[f.key] || ""}
-                    onChange={(e) => update(f.key, e.target.value)}
+                    onChange={(e) =>
+                      update(
+                        f.key,
+                        f.numericOnly
+                          ? sanitizeNumeric(e.target.value)
+                          : e.target.value,
+                      )
+                    }
                     prefixSlot={<span className="font-semibold">฿</span>}
                     autoCapitalize="off"
                     autoCorrect="off"
@@ -417,11 +469,18 @@ export function ReportForm({
                 >
                   <Input
                     id={f.key}
-                    inputMode="decimal"
-                    pattern="[0-9]*\.?[0-9]*"
+                    inputMode={f.numericOnly ? "decimal" : "text"}
+                    pattern={f.numericOnly ? "[0-9]*\\.?[0-9]*" : undefined}
                     placeholder={f.placeholder}
                     value={values[f.key] || ""}
-                    onChange={(e) => update(f.key, e.target.value)}
+                    onChange={(e) =>
+                      update(
+                        f.key,
+                        f.numericOnly
+                          ? sanitizeNumeric(e.target.value)
+                          : e.target.value,
+                      )
+                    }
                     prefixSlot={<span className="font-semibold">฿</span>}
                   />
                 </Field>
@@ -493,7 +552,15 @@ export function ReportForm({
                     rows={3}
                     placeholder={f.placeholder}
                     value={values[f.key] || ""}
-                    onChange={(e) => update(f.key, e.target.value)}
+                    onChange={(e) =>
+                      update(
+                        f.key,
+                        f.numericOnly
+                          ? sanitizeNumeric(e.target.value)
+                          : e.target.value,
+                      )
+                    }
+                    inputMode={f.numericOnly ? "decimal" : undefined}
                     maxLength={500}
                     className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-base outline-none focus:border-[var(--color-brand-500)] focus:ring-2 focus:ring-[var(--color-brand-100)]"
                   />

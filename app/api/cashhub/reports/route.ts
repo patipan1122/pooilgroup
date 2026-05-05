@@ -44,6 +44,11 @@ const ReportSchema = z.object({
     })
     .nullable()
     .optional(),
+  // Custom field values (admin-defined fields beyond built-in spec)
+  // Map from custom field key → value (number or string or null)
+  extraFields: z
+    .record(z.string(), z.union([z.number(), z.string(), z.null()]))
+    .optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -132,6 +137,7 @@ export async function POST(req: NextRequest) {
     rental_income: data.rentalIncome ?? 0,
     training_sessions: data.trainingSessions ?? null,
     notes: data.notes ?? null,
+    extra_fields: data.extraFields ?? {},
     status: "submitted",
     submitted_by_id: session.user.id,
     submitted_at: new Date().toISOString(),

@@ -4,6 +4,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
+import { BackButton } from "@/components/ui/back-button";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
@@ -16,7 +17,6 @@ import {
 } from "@/lib/utils/format";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import {
-  ArrowLeft,
   CheckCircle2,
   Clock,
   XCircle,
@@ -228,23 +228,17 @@ export default async function ReportDetailPage({
 
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
-      <Link
-        href="/cashhub/reports"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
-      >
-        <ArrowLeft className="size-4" />
-        กลับไปยังรายการ
-      </Link>
+      <BackButton label="กลับ" fallbackHref="/cashhub/reports" />
 
       {/* Header */}
-      <header className="mt-3 mb-6">
+      <header className="mt-3 mb-5">
         <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           📋 REPORT DETAIL
         </p>
         <div className="flex items-start gap-3 mt-1">
-          <div className="text-3xl sm:text-4xl shrink-0">{cfg?.emoji ?? "📋"}</div>
+          <div className="text-2xl sm:text-3xl shrink-0">{cfg?.emoji ?? "📋"}</div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display">
+            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight font-display">
               <span className="tabular-num">{branchRel?.code}</span>
             </h1>
             <p className="text-zinc-600 text-sm mt-0.5">

@@ -1,9 +1,8 @@
 // /admin/companies/[id]/edit — edit form
 
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
+import { BackButton } from "@/components/ui/back-button";
 import { adminClient } from "@/lib/db/server";
 import { CompanyEditForm } from "./edit-form";
 
@@ -29,13 +28,7 @@ export default async function EditCompanyPage({ params }: Props) {
 
   return (
     <div className="p-4 sm:p-8 lg:p-12 max-w-2xl mx-auto pb-24">
-      <Link
-        href={`/companies/${id}`}
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
-      >
-        <ChevronLeft className="size-4" />
-        กลับไปหน้ารายละเอียด
-      </Link>
+      <BackButton label="กลับ" fallbackHref={`/companies/${id}`} />
 
       <header className="mt-4 mb-10 animate-slide-up-soft">
         <p className="text-[11px] uppercase tracking-[0.22em] font-bold text-[var(--color-brand-700)]">

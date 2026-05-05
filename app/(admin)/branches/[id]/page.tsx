@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  ChevronLeft,
-  Building2,
+import {Building2,
   MapPin,
   Phone,
   Clock,
@@ -16,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { bkkDateTime } from "@/lib/utils/format";
 import { BranchDetailActions } from "./detail-actions";
+import { BackButton } from "@/components/ui/back-button";
 
 export const dynamic = "force-dynamic";
 
@@ -58,13 +57,7 @@ export default async function BranchDetailPage({ params }: Props) {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
-      <Link
-        href="/branches"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)] mb-3"
-      >
-        <ChevronLeft className="size-4" />
-        กลับไปรายชื่อสาขา
-      </Link>
+      <BackButton label="กลับไปรายชื่อสาขา" fallbackHref="/users" />
 
       <header className="flex items-start justify-between flex-wrap gap-4 mb-6 animate-fade-up">
         <div className="flex items-start gap-4">

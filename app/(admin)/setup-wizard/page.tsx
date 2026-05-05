@@ -2,12 +2,13 @@
 // Paste branch list (CSV) or use simple form → create everything in one shot.
 
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import {} from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { SetupWizardForm } from "./wizard-form";
+import { BackButton } from "@/components/ui/back-button";
 
 export const dynamic = "force-dynamic";
 
@@ -29,13 +30,7 @@ export default async function SetupWizardPage() {
 
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-4xl mx-auto pb-24">
-      <Link
-        href="/home"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
-      >
-        <ArrowLeft className="size-4" />
-        หน้าหลัก
-      </Link>
+      <BackButton label="กลับ" fallbackHref="/home" />
       <header className="mt-3 mb-6">
         <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           ✨ SETUP WIZARD

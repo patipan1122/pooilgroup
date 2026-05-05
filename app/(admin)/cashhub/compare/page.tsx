@@ -3,7 +3,7 @@
 // Mode 2: branch vs branch (current month)
 
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, TrendingDown, TrendingUp } from "lucide-react";
+import { AlertTriangle,TrendingDown, TrendingUp } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +20,7 @@ import {
 import { formatInTimeZone } from "date-fns-tz";
 import { formatBaht, formatBahtCompact } from "@/lib/utils/format";
 import { BUSINESS_TYPES } from "@/constants/business-types";
+import { BackButton } from "@/components/ui/back-button";
 
 export const dynamic = "force-dynamic";
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
@@ -251,13 +252,7 @@ export default async function ComparePage({
 
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
-      <Link
-        href="/cashhub/dashboard"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
-      >
-        <ArrowLeft className="size-4" />
-        ภาพรวม
-      </Link>
+      <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
       <header className="mt-3 mb-6">
         <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           🔁 COMPARE

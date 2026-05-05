@@ -49,6 +49,9 @@ const TH_MONTHS = [
   "ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค.",
 ];
 
+// 0=sun ... 6=sat, matching JS Date.getDay()
+const TH_DOW_SHORT = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+
 function thaiMonthLabel(yyyymm: string): string {
   const [yyyy, mm] = yyyymm.split("-").map((s) => parseInt(s, 10));
   const yearBE = (yyyy + 543) % 100;
@@ -57,10 +60,13 @@ function thaiMonthLabel(yyyymm: string): string {
 
 function thaiDayLabel(yyyymmdd: string): string {
   const parts = yyyymmdd.split("-").map((s) => parseInt(s, 10));
+  const y = parts[0];
   const m = parts[1];
   const d = parts[2];
-  // "5 พ.ค." (no year — too noisy)
-  return `${d} ${TH_MONTHS[m - 1]}`;
+  // Build a noon-UTC date so getDay() in BKK is stable (avoid TZ slippage)
+  const dow = new Date(Date.UTC(y, m - 1, d, 12)).getDay();
+  // "อ. 5 พ.ค." — weekday + day + month (no year)
+  return `${TH_DOW_SHORT[dow]} ${d} ${TH_MONTHS[m - 1]}`;
 }
 
 /**
@@ -113,54 +119,23 @@ export async function loadExecutiveMatrix(
 
   const todayKey = formatInTimeZone(now, TZ, "yyyy-MM-dd");
 
-  // Branch metadata — filter by company if specified
-  let branchQuery = admin
-    .from("branches")
-    .select("id, code, name, business_type")
-    .eq("org_id", orgId)
-    .eq("is_active", true);
-  if (companyId) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    branchQuery = (branchQuery as any).eq("company_id", companyId);
-  }
-  const { data: branches } = await branchQuery;
-  const allowedBranchIds = new Set(
-    (branches ?? []).map((b) => (b as { id: string }).id),
-  );
+  // Canonical branch + report loaders — single source of truth
+  const branches = await loadBranches(orgId, { companyId });
+  const branchById = indexBranches(branches);
+  const allowedBranchIds = Array.from(branchById.keys());
 
-  // Pull all reports in window with branch info — pre-filter by branch IDs if company specified
-  let reportQuery = admin
-    .from("daily_reports")
-    .select(
-      "report_date, total_sales, status, branch_id, branches(id, code, name, business_type)",
-    )
-    .eq("org_id", orgId)
-    .gte("report_date", oldestStart)
-    .lte("report_date", todayKey)
-    .in("status", ["approved", "submitted"]);
+  const reports = await loadReports(orgId, {
+    dateFrom: oldestStart,
+    dateTo: todayKey,
+    branchIds: companyId ? allowedBranchIds : undefined,
+  });
 
-  if (companyId && allowedBranchIds.size > 0) {
-    reportQuery = reportQuery.in("branch_id", Array.from(allowedBranchIds));
-  }
-  const { data: reports } = await reportQuery;
-
-  // Build branch lookup + count by type
-  const branchById = new Map<
-    string,
-    { id: string; code: string; name: string; business_type: string }
-  >();
+  // Branch count per business type (denominator for "X/Y กรอกแล้ว")
   const branchCountByType = new Map<string, number>();
-  for (const b of branches ?? []) {
-    const row = b as {
-      id: string;
-      code: string;
-      name: string;
-      business_type: string;
-    };
-    branchById.set(row.id, row);
+  for (const b of branches) {
     branchCountByType.set(
-      row.business_type,
-      (branchCountByType.get(row.business_type) ?? 0) + 1,
+      b.business_type,
+      (branchCountByType.get(b.business_type) ?? 0) + 1,
     );
   }
 
@@ -187,25 +162,16 @@ export async function loadExecutiveMatrix(
     return reportDate;
   }
 
-  for (const r of reports ?? []) {
-    const row = r as {
-      report_date: string;
-      total_sales: number | string;
-      branch_id: string;
-      branches:
-        | { id: string; code: string; name: string; business_type: string }
-        | { id: string; code: string; name: string; business_type: string }[]
-        | null;
-    };
-    const branch = Array.isArray(row.branches) ? row.branches[0] : row.branches;
+  for (const r of reports) {
+    const branch = branchById.get(r.branch_id);
     if (!branch) continue;
-    const key = bucketKey(row.report_date);
+    const key = bucketKey(r.report_date);
     if (!key) continue;
 
     const bucket = getBucket(branch.business_type);
     bucket.totals.set(
       key,
-      (bucket.totals.get(key) ?? 0) + Number(row.total_sales || 0),
+      (bucket.totals.get(key) ?? 0) + Number(r.total_sales || 0),
     );
 
     let branchMap = bucket.branches.get(branch.id);
@@ -213,7 +179,7 @@ export async function loadExecutiveMatrix(
       branchMap = new Map();
       bucket.branches.set(branch.id, branchMap);
     }
-    branchMap.set(key, (branchMap.get(key) ?? 0) + Number(row.total_sales || 0));
+    branchMap.set(key, (branchMap.get(key) ?? 0) + Number(r.total_sales || 0));
 
     // Track distinct reporting branches per period for "X/Y สาขา" indicator
     let periodSet = bucket.reportedByPeriod.get(key);

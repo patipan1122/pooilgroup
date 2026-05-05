@@ -21,6 +21,8 @@ import { cn } from "@/lib/utils/cn";
 import type { DbUser } from "@/lib/auth/session";
 import { MODULE_LIST, MODULES, getModuleFromPath } from "@/lib/modules";
 import { NotificationBell } from "./notification-bell";
+import { CompanySwitcher } from "./company-switcher";
+import { AiChat } from "@/components/cashhub/ai-chat";
 
 const ADMIN_NAV = [
   { href: "/users", label: "ทีม & สาขา", icon: UsersIcon },
@@ -36,9 +38,16 @@ const ACCOUNT_NAV = [
 interface Props {
   user: DbUser;
   children: React.ReactNode;
+  companies?: Array<{ id: string; code: string; name: string }>;
+  currentCompanyId?: string;
 }
 
-export function AdminShell({ user, children }: Props) {
+export function AdminShell({
+  user,
+  children,
+  companies = [],
+  currentCompanyId,
+}: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -52,8 +61,10 @@ export function AdminShell({ user, children }: Props) {
 
   const moduleNav = useMemo(() => {
     if (!activeModule) return [];
-    return activeModule.nav;
-  }, [activeModule]);
+    return activeModule.nav.filter(
+      (item) => !item.adminOnly || isAdmin,
+    );
+  }, [activeModule, isAdmin]);
 
   async function logout() {
     // Hit our /api/auth/logout first so we audit + close session row
@@ -197,6 +208,17 @@ export function AdminShell({ user, children }: Props) {
                   </>
                 )}
               </div>
+            </>
+          )}
+
+          {/* Company switcher — global filter, visible in any module + on home */}
+          {companies.length >= 2 && (
+            <>
+              <div className="hidden sm:block h-8 w-px bg-zinc-200 ml-1" />
+              <CompanySwitcher
+                companies={companies}
+                currentCompanyId={currentCompanyId}
+              />
             </>
           )}
         </div>
@@ -366,9 +388,14 @@ export function AdminShell({ user, children }: Props) {
           </div>
         )}
 
-        {/* Content */}
-        <main className="flex-1 min-w-0">{children}</main>
+        {/* Content — pb-20 leaves room below content so the floating AI
+            button doesn't cover the last row / row-action menus */}
+        <main className="flex-1 min-w-0 pb-20">{children}</main>
       </div>
+
+      {/* Global floating AI Assistant — available on every admin page.
+          The chat sends current pathname so it can answer page-specific questions. */}
+      {isAdmin && <AiChat />}
     </div>
   );
 }

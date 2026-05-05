@@ -3,9 +3,7 @@
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  ChevronLeft,
-  Edit3,
+import {Edit3,
   Phone,
   MapPin,
   IdCard,
@@ -18,6 +16,7 @@ import { Section } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { BUSINESS_TYPES } from "@/constants/business-types";
+import { BackButton } from "@/components/ui/back-button";
 
 export const dynamic = "force-dynamic";
 
@@ -103,13 +102,7 @@ export default async function CompanyDetailPage({ params }: Props) {
       />
 
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-5xl mx-auto pb-24">
-        <Link
-          href="/companies"
-          className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
-        >
-          <ChevronLeft className="size-4" />
-          กลับไปรายชื่อบริษัท
-        </Link>
+        <BackButton label="กลับไปรายชื่อบริษัท" fallbackHref="/companies" />
 
         {/* Hero */}
         <header className="mt-4 mb-12 sm:mb-14 animate-slide-up-soft flex items-start justify-between gap-6 flex-wrap">

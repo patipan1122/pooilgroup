@@ -15,6 +15,7 @@ import {
 } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { forecast, targetProgress } from "./forecast";
+import { loadBranches, loadReports } from "./data";
 
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
@@ -71,11 +72,16 @@ export async function loadDashboard(orgId: string, companyId?: string) {
   const monthNum = parseInt(formatInTimeZone(now, TZ, "M"), 10);
 
   // ---- Parallel fetch ----
+  // Step 1: load canonical branches first so we can pre-filter reports by branchIds
+  const branches = await loadBranches(orgId, { companyId });
+  const branchIds = branches.map((b) => b.id);
+  // When companyId is set, restrict report queries to those branches
+  const reportBranchFilter = companyId ? branchIds : undefined;
+
   const [
-    branchesQ,
-    monthReportsQ,
-    prevMonthReportsQ,
-    last30ReportsQ,
+    monthReports,
+    prevMonthReports,
+    last30Reports,
     pendingQ,
     targetsQ,
     healthQ,
@@ -83,37 +89,24 @@ export async function loadDashboard(orgId: string, companyId?: string) {
     shortagesMtdQ,
     missingReasonsQ,
   ] = await Promise.all([
-    (() => {
-      let q = admin
-        .from("branches")
-        .select(
-          "id, code, name, business_type, is_active, manager_id, province, region",
-        )
-        .eq("org_id", orgId)
-        .eq("is_active", true);
-      if (companyId) q = q.eq("company_id", companyId);
-      return q.order("code");
-    })(),
-    admin
-      .from("daily_reports")
-      .select(
-        "id, branch_id, report_date, shift, status, total_sales, cash, transfer, card, credit, shortage, qty1, notes, submitted_at, approved_at",
-      )
-      .eq("org_id", orgId)
-      .gte("report_date", monthStart)
-      .lte("report_date", today),
-    admin
-      .from("daily_reports")
-      .select("branch_id, total_sales, status, report_date")
-      .eq("org_id", orgId)
-      .gte("report_date", prevMonthStart)
-      .lte("report_date", prevMonthEnd),
-    admin
-      .from("daily_reports")
-      .select("branch_id, report_date, total_sales, status")
-      .eq("org_id", orgId)
-      .gte("report_date", last30)
-      .lte("report_date", today),
+    loadReports(orgId, {
+      dateFrom: monthStart,
+      dateTo: today,
+      statuses: [],
+      branchIds: reportBranchFilter,
+    }),
+    loadReports(orgId, {
+      dateFrom: prevMonthStart,
+      dateTo: prevMonthEnd,
+      statuses: [],
+      branchIds: reportBranchFilter,
+    }),
+    loadReports(orgId, {
+      dateFrom: last30,
+      dateTo: today,
+      statuses: [],
+      branchIds: reportBranchFilter,
+    }),
     admin
       .from("daily_reports")
       .select(
@@ -148,42 +141,6 @@ export async function loadDashboard(orgId: string, companyId?: string) {
       .lte("report_date", today),
   ]);
 
-  const branches = (branchesQ.data ?? []) as BranchRow[];
-  const branchIdSet = new Set(branches.map((b) => b.id));
-  // When filtering by company, drop reports from branches outside the company
-  const filterByCompany = (rows: Array<{ branch_id?: string }>) =>
-    companyId
-      ? rows.filter((r) => r.branch_id && branchIdSet.has(r.branch_id))
-      : rows;
-  const monthReports = filterByCompany(
-    (monthReportsQ.data ?? []) as ReportRow[],
-  ) as ReportRow[];
-  const prevMonthReports = filterByCompany(
-    (prevMonthReportsQ.data ?? []) as Array<{
-      branch_id: string;
-      total_sales: number | string;
-      status: string;
-      report_date: string;
-    }>,
-  ) as Array<{
-    branch_id: string;
-    total_sales: number | string;
-    status: string;
-    report_date: string;
-  }>;
-  const last30Reports = filterByCompany(
-    (last30ReportsQ.data ?? []) as Array<{
-      branch_id: string;
-      report_date: string;
-      total_sales: number | string;
-      status: string;
-    }>,
-  ) as Array<{
-    branch_id: string;
-    report_date: string;
-    total_sales: number | string;
-    status: string;
-  }>;
   const pending = pendingQ.data ?? [];
   const targets = (targetsQ.data ?? []) as Array<{
     branch_id: string;

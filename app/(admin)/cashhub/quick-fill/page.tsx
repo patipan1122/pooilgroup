@@ -4,7 +4,7 @@
 
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ChevronLeft, ChevronRight, ClipboardCheck, Search, Building2 } from "lucide-react";
+import {ChevronRight, ClipboardCheck, Search, Building2 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import {
@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { thaiDateLong, bkkToday } from "@/lib/utils/format";
+import { BackButton } from "@/components/ui/back-button";
 
 export const dynamic = "force-dynamic";
 
@@ -111,13 +112,7 @@ export default async function QuickFillPage({
       />
 
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-5xl mx-auto pb-24">
-        <Link
-          href="/home"
-          className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
-        >
-          <ChevronLeft className="size-4" />
-          กลับไปหน้าหลัก
-        </Link>
+        <BackButton label="กลับไปหน้าหลัก" fallbackHref="/home" />
 
         <header className="mt-4 mb-12 animate-slide-up-soft">
           <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">

@@ -8,15 +8,13 @@ import {
   FileText,
   FileText as FileTextIcon,
   LayoutDashboard,
-  Building2,
   ScrollText,
   ClipboardList,
   Trophy,
   CalendarDays,
-  GitCompareArrows,
   AlertCircle,
-  GraduationCap,
   Settings,
+  ClipboardEdit,
 } from "lucide-react";
 
 export type ModuleSlug = "cashhub" | "fuelos" | "docuflow";
@@ -26,6 +24,8 @@ export interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
+  /** If true, item is visible only to super_admin / org_admin / admin */
+  adminOnly?: boolean;
 }
 
 export interface ModuleConfig {
@@ -57,13 +57,11 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       { href: "/cashhub/reports", label: "รายงานทั้งหมด", icon: ScrollText },
       { href: "/cashhub/leaderboard", label: "Leaderboard", icon: Trophy },
       { href: "/cashhub/heatmap", label: "Heatmap", icon: CalendarDays },
-      { href: "/cashhub/compare", label: "เปรียบเทียบ", icon: GitCompareArrows },
       { href: "/cashhub/shortages", label: "เงินขาด", icon: AlertCircle },
       { href: "/cashhub/notes", label: "โน้ตจาก Staff", icon: ScrollText },
-      { href: "/cashhub/kiosk", label: "Kiosk (รายสัปดาห์)", icon: Building2 },
-      { href: "/cashhub/training", label: "ศูนย์อบรม", icon: GraduationCap },
       { href: "/cashhub/monthly-report", label: "รายงานเดือน (PDF)", icon: FileTextIcon },
-      { href: "/cashhub/settings", label: "ตั้งค่า CashHub", icon: Settings },
+      { href: "/cashhub/settings/forms", label: "ฟอร์มกรอกยอด", icon: ClipboardEdit, adminOnly: true },
+      { href: "/cashhub/settings", label: "ตั้งค่า CashHub", icon: Settings, adminOnly: true },
     ],
   },
   fuelos: {

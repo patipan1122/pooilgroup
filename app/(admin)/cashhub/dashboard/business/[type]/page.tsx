@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ChevronRight, Building2 } from "lucide-react";
+import { ChevronRight, Building2 } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { requireSession } from "@/lib/auth/session";
 import { loadDashboard } from "@/lib/cashhub/aggregator";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -181,15 +182,7 @@ export default async function BusinessDrillPage({
 }
 
 function BackLink() {
-  return (
-    <Link
-      href="/cashhub/dashboard"
-      className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
-    >
-      <ArrowLeft className="size-4" />
-      ภาพรวม
-    </Link>
-  );
+  return <BackButton label="กลับ" fallbackHref="/cashhub/dashboard" />;
 }
 
 function StatBox({

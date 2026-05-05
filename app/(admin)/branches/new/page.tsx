@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
+import {} from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { BranchForm } from "../branch-form";
+import { BackButton } from "@/components/ui/back-button";
 
 export const dynamic = "force-dynamic";
 
@@ -21,13 +22,7 @@ export default async function NewBranchPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-2xl mx-auto">
-      <Link
-        href="/branches"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)] mb-3"
-      >
-        <ChevronLeft className="size-4" />
-        กลับไปรายชื่อสาขา
-      </Link>
+      <BackButton label="กลับไปรายชื่อสาขา" fallbackHref="/users" />
 
       <header className="mb-6 animate-fade-up">
         <p className="text-xs uppercase tracking-widest text-[var(--color-brand-600)] font-semibold">

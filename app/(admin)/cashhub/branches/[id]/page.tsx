@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
-  ArrowLeft,
   CheckCircle2,
   Clock,
   XCircle,
@@ -12,6 +11,7 @@ import {
   TrendingUp,
   TrendingDown,
 } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -277,23 +277,20 @@ export default async function BranchDetailPage({
 
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
-      <Link
-        href={`/cashhub/dashboard/business/${branch.business_type}`}
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
-      >
-        <ArrowLeft className="size-4" />
-        กลับไป {cfg?.label}
-      </Link>
+      <BackButton
+        label={`กลับ${cfg?.label ? ` ${cfg.label}` : ""}`}
+        fallbackHref={`/cashhub/dashboard/business/${branch.business_type}`}
+      />
 
       {/* Header */}
-      <header className="mt-3 mb-6">
-        <div className="flex items-start gap-3 sm:gap-4">
-          <div className="text-4xl sm:text-5xl shrink-0">{cfg?.emoji}</div>
+      <header className="mt-3 mb-5">
+        <div className="flex items-start gap-3">
+          <div className="text-2xl sm:text-3xl shrink-0">{cfg?.emoji}</div>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
               BRANCH DETAIL · {today}
             </p>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1">
+            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight font-display mt-0.5">
               <span className="tabular-num">{branch.code}</span>
             </h1>
             <p className="text-zinc-600 text-sm mt-0.5 truncate">
@@ -337,7 +334,7 @@ export default async function BranchDetailPage({
           <CardBody>
             <div className="flex flex-col gap-4">
               <div>
-                <div className="text-3xl sm:text-5xl font-extrabold tabular-num font-display">
+                <div className="text-2xl sm:text-3xl font-extrabold tabular-num font-display">
                   {formatBaht(monthApproved + monthPending)}
                 </div>
                 <div className="flex items-baseline gap-3 mt-2 flex-wrap">

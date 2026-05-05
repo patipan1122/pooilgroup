@@ -1,7 +1,7 @@
 // Branch Rentals — สัญญาเช่า สาขาในสาขา (CASHHUB §13b — sub-tenant)
 
 import Link from "next/link";
-import { ArrowLeft, Home, ExternalLink } from "lucide-react";
+import {Home, ExternalLink } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { isAdmin } from "@/lib/auth/permissions";
 import { redirect } from "next/navigation";
 import { formatBaht, bkkDate } from "@/lib/utils/format";
+import { BackButton } from "@/components/ui/back-button";
 
 export const dynamic = "force-dynamic";
 
@@ -74,13 +75,7 @@ export default async function RentalsPage() {
 
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
-      <Link
-        href="/cashhub/dashboard"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
-      >
-        <ArrowLeft className="size-4" />
-        ภาพรวม
-      </Link>
+      <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
       <header className="mt-3 mb-6">
         <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
           <Home className="size-4" /> RENTALS

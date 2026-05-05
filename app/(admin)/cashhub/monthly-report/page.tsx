@@ -2,7 +2,7 @@
 // 4 หน้าตามสเปค: Executive · Branch Ranking · By Type · Compliance
 
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import {} from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { PrintButton } from "./print-button";
 import { adminClient } from "@/lib/db/server";
@@ -16,6 +16,7 @@ import {
 import { formatInTimeZone } from "date-fns-tz";
 import { formatBaht, formatBahtCompact } from "@/lib/utils/format";
 import { BUSINESS_TYPES } from "@/constants/business-types";
+import { BackButton } from "@/components/ui/back-button";
 
 export const dynamic = "force-dynamic";
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
@@ -177,13 +178,7 @@ export default async function MonthlyReportPage({
 
       <div className="no-print bg-zinc-100 border-b-2 border-zinc-200 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link
-            href="/cashhub/dashboard"
-            className="inline-flex items-center gap-1.5 text-sm text-zinc-600 hover:text-[var(--color-brand-700)]"
-          >
-            <ArrowLeft className="size-4" />
-            ภาพรวม
-          </Link>
+          <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
           <form method="get" className="flex items-center gap-2">
             <input
               type="month"

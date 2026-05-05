@@ -2,7 +2,17 @@ import { notFound, redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { ReportForm } from "@/components/cashhub/report-form";
-import { getBusinessType } from "@/constants/business-types";
+import {
+  getBusinessType,
+  type BusinessTypeKey,
+} from "@/constants/business-types";
+import { getEffectiveBusinessTypeConfig } from "@/lib/cashhub/form-config";
+import {
+  composeFieldsFromTemplate,
+  ensureDefaultTemplate,
+  getTemplate,
+  getDefaultTemplate,
+} from "@/lib/cashhub/form-templates";
 import { bkkToday } from "@/lib/utils/format";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
@@ -21,10 +31,10 @@ export default async function LiffReportFormPage({ params }: Props) {
   const admin = adminClient();
 
   // Verify branch + user access
-  const { data: branch } = await admin
-    .from("branches")
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: branch } = await (admin.from as any)("branches")
     .select(
-      "id, org_id, code, name, business_type, is_active, report_deadline",
+      "id, org_id, code, name, business_type, is_active, report_deadline, form_template_id",
     )
     .eq("id", branchId)
     .eq("org_id", session.user.org_id)
@@ -33,8 +43,40 @@ export default async function LiffReportFormPage({ params }: Props) {
 
   if (!branch) notFound();
 
-  const config = getBusinessType(branch.business_type);
-  if (!config) notFound();
+  const baseConfig = getBusinessType(branch.business_type);
+  if (!baseConfig) notFound();
+
+  // Resolve form config from template (Free mode):
+  //   1. branch.form_template_id → use that template
+  //   2. else → org's default template for this business type
+  //   3. else → fallback to legacy org settings.formOverrides
+  const businessType = branch.business_type as BusinessTypeKey;
+  let template = null;
+  if (branch.form_template_id) {
+    template = await getTemplate(session.user.org_id, branch.form_template_id);
+  }
+  if (!template) {
+    template =
+      (await getDefaultTemplate(session.user.org_id, businessType)) ??
+      (await ensureDefaultTemplate(
+        session.user.org_id,
+        businessType,
+        session.user.id,
+      ));
+  }
+
+  let config = composeFieldsFromTemplate(template);
+  if (!config) {
+    // legacy fallback (should not normally happen post-migration)
+    const { data: org } = await admin
+      .from("organizations")
+      .select("settings")
+      .eq("id", session.user.org_id)
+      .single();
+    const orgSettings = (org?.settings as Record<string, unknown>) ?? null;
+    config =
+      getEffectiveBusinessTypeConfig(businessType, orgSettings) ?? baseConfig;
+  }
 
   // Check user has access to this branch
   // Cross-branch roles (super_admin / org_admin / admin / area_manager)

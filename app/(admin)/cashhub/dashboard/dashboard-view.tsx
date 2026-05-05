@@ -46,7 +46,6 @@ import {
   HealthBadge,
   Donut,
 } from "@/components/cashhub/charts";
-import { AiChat } from "@/components/cashhub/ai-chat";
 import { ExecutiveTable } from "@/components/cashhub/executive-table";
 import { cn } from "@/lib/utils/cn";
 import type { DashboardData } from "@/lib/cashhub/aggregator";
@@ -58,8 +57,6 @@ interface Props {
   monthLabel: string;
   data: DashboardData;
   executiveMatrix: ExecutiveMatrix;
-  companies?: Array<{ id: string; code: string; name: string }>;
-  currentCompanyId?: string;
 }
 
 export function DashboardView({
@@ -68,8 +65,6 @@ export function DashboardView({
   monthLabel,
   data,
   executiveMatrix,
-  companies = [],
-  currentCompanyId,
 }: Props) {
   const today = thaiDateLong(new Date());
   const router = useRouter();
@@ -118,38 +113,6 @@ export function DashboardView({
         <p className="text-zinc-600 mt-1.5 text-sm sm:text-base">
           {userName} · เดือน {monthLabel} · {data.branches.length} สาขาที่ใช้งาน
         </p>
-        {companies.length > 0 && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
-              บริษัท:
-            </span>
-            <Link
-              href="/cashhub/dashboard"
-              className={cn(
-                "px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors",
-                !currentCompanyId
-                  ? "bg-[var(--color-brand-600)] text-white"
-                  : "bg-white border border-zinc-200 text-zinc-700 hover:border-[var(--color-brand-300)]",
-              )}
-            >
-              ทั้งหมด
-            </Link>
-            {companies.map((c) => (
-              <Link
-                key={c.id}
-                href={`/cashhub/dashboard?company=${c.id}`}
-                className={cn(
-                  "px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors",
-                  currentCompanyId === c.id
-                    ? "bg-[var(--color-brand-600)] text-white"
-                    : "bg-white border border-zinc-200 text-zinc-700 hover:border-[var(--color-brand-300)]",
-                )}
-              >
-                {c.name}
-              </Link>
-            ))}
-          </div>
-        )}
       </header>
 
       {/* ============================================================
@@ -807,9 +770,6 @@ export function DashboardView({
           />
         </div>
       </Section>
-
-      {/* Floating AI Chat — admin/branch_manager only on the dashboard */}
-      <AiChat />
     </div>
   );
 }

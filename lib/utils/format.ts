@@ -34,8 +34,20 @@ export function formatBahtCompact(value: number): string {
 
 const thaiDateOpts = "d MMM yy";
 
+// Thai weekday short — sun→sat indices match getDay()
+const TH_DOW_SHORT = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+
+function bkkDow(d: Date): string {
+  // formatInTimeZone returns 0-6 (sun-sat) in target TZ
+  const idx = parseInt(formatInTimeZone(d, TZ, "i"), 10) % 7;
+  // date-fns "i" = ISO weekday 1=Mon..7=Sun. Map to sun-first index.
+  const sunFirstIdx = idx === 7 ? 0 : idx;
+  return TH_DOW_SHORT[sunFirstIdx];
+}
+
 export function bkkDate(d: Date | string): string {
-  return formatInTimeZone(typeof d === "string" ? new Date(d) : d, TZ, thaiDateOpts);
+  const dt = typeof d === "string" ? new Date(d) : d;
+  return `${bkkDow(dt)} ${formatInTimeZone(dt, TZ, thaiDateOpts)}`;
 }
 
 export function bkkDateTime(d: Date | string): string {

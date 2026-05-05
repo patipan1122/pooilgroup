@@ -1,7 +1,6 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
+import { BackButton } from "@/components/ui/back-button";
 import { adminClient } from "@/lib/db/server";
 import { BranchForm } from "../../branch-form";
 
@@ -37,13 +36,9 @@ export default async function EditBranchPage({ params }: Props) {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-2xl mx-auto">
-      <Link
-        href={`/branches/${id}`}
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)] mb-3"
-      >
-        <ChevronLeft className="size-4" />
-        กลับไปข้อมูลสาขา
-      </Link>
+      <div className="mb-3">
+        <BackButton label="กลับ" fallbackHref={`/branches/${id}`} />
+      </div>
 
       <header className="mb-6 animate-fade-up">
         <p className="text-xs uppercase tracking-widest text-[var(--color-brand-600)] font-semibold">

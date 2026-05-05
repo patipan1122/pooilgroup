@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, Mail, Phone, Calendar, ShieldAlert } from "lucide-react";
+import {Mail, Phone, Calendar, ShieldAlert } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { bkkDateTime } from "@/lib/utils/format";
 import { UserDetailActions } from "./detail-actions";
+import { BackButton } from "@/components/ui/back-button";
 
 export const dynamic = "force-dynamic";
 
@@ -73,13 +74,7 @@ export default async function UserDetailPage({ params }: Props) {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
-      <Link
-        href="/users"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-[var(--color-brand-700)] mb-3"
-      >
-        <ChevronLeft className="size-4" />
-        กลับไปรายชื่อ
-      </Link>
+      <BackButton label="กลับไปรายชื่อ" fallbackHref="/users" />
 
       <header className="flex items-start justify-between flex-wrap gap-4 mb-6 animate-fade-up">
         <div className="flex items-start gap-4">

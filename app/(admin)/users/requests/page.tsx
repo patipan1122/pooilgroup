@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { bkkDateTime } from "@/lib/utils/format";
 import { RequestActions } from "./request-actions";
+import { BackButton } from "@/components/ui/back-button";
 
 export const dynamic = "force-dynamic";
 
@@ -68,12 +69,7 @@ export default async function RegisterRequestsPage() {
             มีคำขอ {pending.length} รอพิจารณา · ดูประวัติ {reviewed.length} รายการ
           </p>
         </div>
-        <Link
-          href="/users"
-          className="text-sm text-zinc-500 hover:text-[var(--color-brand-700)]"
-        >
-          ← กลับไปรายชื่อผู้ใช้
-        </Link>
+        <BackButton label="กลับไปรายชื่อผู้ใช้" fallbackHref="/users" />
       </header>
 
       <Section

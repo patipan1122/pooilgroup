@@ -9,7 +9,8 @@ export type FieldGroup =
   | "shortage"
   | "rental"
   | "training"
-  | "notes";
+  | "notes"
+  | "custom";
 
 export interface FieldConfig {
   key: string;
@@ -20,6 +21,8 @@ export interface FieldConfig {
   group: FieldGroup;
   required: boolean;
   hint?: string;
+  /** When true, only digits + dot allowed. Defaults: currency/number=true, text=false. Admin override possible. */
+  numericOnly?: boolean;
   /** Maps to which column on daily_reports */
   column:
     | "totalSales"
@@ -136,25 +139,6 @@ const NOTES_FIELD: FieldConfig = {
   column: "notes",
 };
 
-/**
- * Optional rental income field for "host" branches that have sub-tenants
- * (e.g. ปั๊มน้ำมัน with 7-11 / Café / ร้านค้าเช่าภายนอก).
- * Most rentals are monthly fixed — this field captures any rental amount
- * received TODAY (rare for cash; common for daily-collected stalls).
- * Monthly contracts are tracked separately in BranchRental table.
- */
-const RENTAL_INCOME_FIELD: FieldConfig = {
-  key: "rentalIncome",
-  label: "ค่าเช่าจากร้านค้าในพื้นที่",
-  placeholder: "เช่น 0 (ถ้าไม่ได้เก็บวันนี้)",
-  type: "currency",
-  unit: "฿",
-  group: "rental",
-  required: false,
-  hint: "รวมค่าเช่ารายวัน/รายเดือนที่เก็บได้วันนี้ — ไม่รวมยอดขายของร้านค้าผู้เช่า",
-  column: "rentalIncome",
-};
-
 // =============================================================
 // ⛽ ปั๊มน้ำมัน (2 กะ: เช้า/เย็น)
 // =============================================================
@@ -194,7 +178,6 @@ const fuelStation: BusinessTypeConfig = {
     },
     ...RECEIVED_FIELDS,
     SHORTAGE_FIELD,
-    RENTAL_INCOME_FIELD,
     NOTES_FIELD,
   ],
 };

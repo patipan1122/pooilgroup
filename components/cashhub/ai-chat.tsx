@@ -4,6 +4,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useTransition } from "react";
+import { usePathname } from "next/navigation";
 import { Bot, Send, X, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
@@ -13,12 +14,17 @@ interface Msg {
   ts: number;
 }
 
-const SUGGESTIONS = [
+const DATA_SUGGESTIONS = [
   "สาขาไหนยอดดีสุดเดือนนี้?",
-  "EV ทำไมยอดตกช่วงนี้?",
   "เดือนนี้จะถึงเป้าไหม?",
-  "เครดิตค้างรวมเท่าไหร่?",
   "สาขาไหนไม่กรอกบ่อยสุด?",
+];
+
+const HOWTO_SUGGESTIONS = [
+  "ใช้หน้านี้ทำอะไรได้บ้าง?",
+  "อยากแก้ฟอร์มกรอกยอดทำยังไง?",
+  "อยากกรอกแทนสาขาทำยังไง?",
+  "ดูเฉพาะบริษัทเดียวทำยังไง?",
 ];
 
 export function AiChat() {
@@ -27,6 +33,7 @@ export function AiChat() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [pending, startTransition] = useTransition();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
 
   useEffect(() => {
     if (open && scrollRef.current) {
@@ -48,6 +55,7 @@ export function AiChat() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             question: text,
+            currentPath: pathname,
             history: msgs.slice(-6).map((m) => ({
               role: m.role,
               content: m.content,
@@ -87,13 +95,14 @@ export function AiChat() {
         type="button"
         onClick={() => setOpen(true)}
         className={cn(
-          "fixed bottom-5 right-5 z-40 size-14 rounded-2xl shadow-blue flex items-center justify-center transition-transform hover:scale-105",
+          "fixed bottom-4 right-4 z-30 size-11 rounded-xl shadow-blue flex items-center justify-center transition-transform hover:scale-105",
           "bg-[var(--color-brand-600)] text-white",
           open && "scale-0 pointer-events-none",
         )}
         aria-label="ถาม AI"
+        title="ถาม AI Assistant"
       >
-        <Bot className="size-6" />
+        <Bot className="size-5" />
       </button>
 
       {/* Backdrop + sheet */}
@@ -137,10 +146,28 @@ export function AiChat() {
               {msgs.length === 0 ? (
                 <div className="text-sm text-zinc-500">
                   <p className="mb-3">
-                    👋 สวัสดี ถามอะไรเกี่ยวกับยอดสาขาได้เลย
+                    👋 สวัสดี ถามได้ทั้ง <strong className="text-zinc-900">วิเคราะห์ตัวเลข</strong> และ <strong className="text-zinc-900">วิธีใช้งาน</strong>
+                  </p>
+                  <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1.5">
+                    📊 วิเคราะห์ข้อมูล
+                  </p>
+                  <div className="space-y-1.5 mb-3">
+                    {DATA_SUGGESTIONS.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => send(s)}
+                        className="block w-full text-left px-3 py-2 rounded-xl bg-zinc-50 hover:bg-[var(--color-brand-50)] hover:text-[var(--color-brand-700)] text-xs sm:text-sm transition-colors border border-zinc-100"
+                      >
+                        💬 {s}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1.5">
+                    🧭 วิธีใช้งาน
                   </p>
                   <div className="space-y-1.5">
-                    {SUGGESTIONS.map((s) => (
+                    {HOWTO_SUGGESTIONS.map((s) => (
                       <button
                         key={s}
                         type="button"
