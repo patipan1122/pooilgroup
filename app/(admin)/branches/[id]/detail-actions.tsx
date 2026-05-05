@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Edit3, X, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -54,21 +55,23 @@ export function BranchDetailActions({
       <div className="flex flex-wrap gap-2">
         {isActive ? (
           <>
-            <Button
-              variant="outline"
-              size="md"
+            <button
+              type="button"
               onClick={() => setConfirmClose(true)}
               disabled={pending}
+              className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl border-2 border-zinc-200 bg-white text-zinc-800 font-bold text-sm hover:border-zinc-400 hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <X className="size-4" />
               ปิดสาขา
-            </Button>
-            <a href={`/branches/${branchId}/edit`} className="contents">
-              <Button size="md" disabled={pending}>
-                <Edit3 className="size-4" />
-                แก้ไข
-              </Button>
-            </a>
+            </button>
+            <Link
+              href={`/branches/${branchId}/edit`}
+              aria-disabled={pending}
+              className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-[--color-brand-600] text-white font-bold text-sm hover:bg-[--color-brand-700] shadow-blue transition-colors aria-disabled:opacity-50 aria-disabled:pointer-events-none"
+            >
+              <Edit3 className="size-4" />
+              แก้ไขสาขา
+            </Link>
           </>
         ) : (
           <Button

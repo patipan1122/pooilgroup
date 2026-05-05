@@ -1,19 +1,28 @@
+"use client";
+
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
 import type { ReactNode } from "react";
 
-interface Column<T> {
+interface Column {
   key: string;
   header: ReactNode;
-  cell: (row: T) => ReactNode;
   className?: string;
   align?: "left" | "right" | "center";
 }
 
-interface DataTableProps<T> {
-  columns: Column<T>[];
-  rows: T[];
-  rowKey: (row: T) => string;
-  rowHref?: (row: T) => string;
+export interface TableRow {
+  /** Unique identifier for React key */
+  key: string;
+  /** Optional href — clicking the row navigates here */
+  href?: string;
+  /** Pre-rendered cell content keyed by column.key */
+  cells: Record<string, ReactNode>;
+}
+
+interface DataTableProps {
+  columns: Column[];
+  rows: TableRow[];
   emptyState?: ReactNode;
   className?: string;
 }
@@ -25,21 +34,30 @@ const alignClass = {
 };
 
 /**
- * Auditmekub-style data table:
- * - Visible borders on all cells (not just dividers)
- * - Strong header row with bg
- * - Zebra rows
- * - Hover lift on row
- * - Responsive: scrolls horizontally on mobile
+ * Auditmekub-style data table.
+ * Client component (because it handles row click navigation).
+ *
+ * Server Components must pre-render cells before passing to this component
+ * (functions cannot cross the Server → Client boundary in Next 16).
+ *
+ * Usage:
+ *   <DataTable
+ *     columns={[{ key: "name", header: "ชื่อ" }]}
+ *     rows={list.map(u => ({
+ *       key: u.id,
+ *       href: `/users/${u.id}`,
+ *       cells: { name: <span>{u.name}</span> }
+ *     }))}
+ *   />
  */
-export function DataTable<T>({
+export function DataTable({
   columns,
   rows,
-  rowKey,
-  rowHref,
   emptyState,
   className,
-}: DataTableProps<T>) {
+}: DataTableProps) {
+  const router = useRouter();
+
   if (rows.length === 0 && emptyState) {
     return <>{emptyState}</>;
   }
@@ -71,43 +89,33 @@ export function DataTable<T>({
           </thead>
           <tbody>
             {rows.map((row, idx) => {
-              const key = rowKey(row);
-              const cells = columns.map((c) => (
-                <td
-                  key={c.key}
-                  className={cn(
-                    "px-4 py-3 border-b border-zinc-100",
-                    alignClass[c.align ?? "left"],
-                    c.className,
-                  )}
-                >
-                  {c.cell(row)}
-                </td>
-              ));
-
               const rowClass = cn(
                 "transition-colors",
                 idx % 2 === 0 ? "bg-white" : "bg-zinc-50/40",
-                rowHref && "hover:bg-[--color-brand-50] cursor-pointer",
+                row.href && "hover:bg-[--color-brand-50] cursor-pointer",
               );
-
-              if (rowHref) {
-                return (
-                  <tr
-                    key={key}
-                    className={rowClass}
-                    onClick={() => {
-                      window.location.href = rowHref(row);
-                    }}
-                  >
-                    {cells}
-                  </tr>
-                );
-              }
-
               return (
-                <tr key={key} className={rowClass}>
-                  {cells}
+                <tr
+                  key={row.key}
+                  className={rowClass}
+                  onClick={
+                    row.href
+                      ? () => router.push(row.href!)
+                      : undefined
+                  }
+                >
+                  {columns.map((c) => (
+                    <td
+                      key={c.key}
+                      className={cn(
+                        "px-4 py-3 border-b border-zinc-100",
+                        alignClass[c.align ?? "left"],
+                        c.className,
+                      )}
+                    >
+                      {row.cells[c.key]}
+                    </td>
+                  ))}
                 </tr>
               );
             })}

@@ -171,24 +171,24 @@ export default async function UsersListPage() {
           />
         ) : (
           <DataTable
-            rows={list}
-            rowKey={(u) => u.id}
-            rowHref={(u) => `/users/${u.id}`}
             columns={[
-              {
-                key: "avatar",
-                header: "",
-                cell: (u) => (
+              { key: "avatar", header: "", className: "w-12" },
+              { key: "name", header: "ชื่อ" },
+              { key: "role", header: "บทบาท" },
+              { key: "channels", header: "Channels" },
+              { key: "status", header: "สถานะ" },
+              { key: "lastLogin", header: "เข้าล่าสุด", align: "right" },
+            ]}
+            rows={list.map((u) => ({
+              key: u.id,
+              href: `/users/${u.id}`,
+              cells: {
+                avatar: (
                   <div className="size-10 rounded-full bg-[--color-brand-100] text-[--color-brand-700] flex items-center justify-center font-bold border-2 border-[--color-brand-200]">
                     {u.name.charAt(0).toUpperCase()}
                   </div>
                 ),
-                className: "w-12",
-              },
-              {
-                key: "name",
-                header: "ชื่อ",
-                cell: (u) => (
+                name: (
                   <div>
                     <div className="font-bold truncate">{u.name}</div>
                     <div className="text-xs text-zinc-500 truncate mt-0.5">
@@ -196,20 +196,12 @@ export default async function UsersListPage() {
                     </div>
                   </div>
                 ),
-              },
-              {
-                key: "role",
-                header: "บทบาท",
-                cell: (u) => (
+                role: (
                   <Badge tone={ROLE_TONE[u.role] ?? "neutral"}>
                     {ROLE_LABEL[u.role] ?? u.role}
                   </Badge>
                 ),
-              },
-              {
-                key: "channels",
-                header: "Channels",
-                cell: (u) => (
+                channels: (
                   <div className="flex items-center gap-2 text-xs">
                     <span
                       className={
@@ -241,28 +233,18 @@ export default async function UsersListPage() {
                     </span>
                   </div>
                 ),
-              },
-              {
-                key: "status",
-                header: "สถานะ",
-                cell: (u) =>
-                  !u.is_active ? (
-                    <Badge tone="neutral">ปิด</Badge>
-                  ) : (
-                    <Badge tone="success">ใช้งาน</Badge>
-                  ),
-              },
-              {
-                key: "lastLogin",
-                header: "เข้าล่าสุด",
-                align: "right",
-                cell: (u) => (
+                status: !u.is_active ? (
+                  <Badge tone="neutral">ปิด</Badge>
+                ) : (
+                  <Badge tone="success">ใช้งาน</Badge>
+                ),
+                lastLogin: (
                   <span className="text-xs text-zinc-500 tabular-num">
                     {u.last_login_at ? bkkDate(u.last_login_at) : "ยังไม่ Login"}
                   </span>
                 ),
               },
-            ]}
+            }))}
           />
         )}
       </Section>

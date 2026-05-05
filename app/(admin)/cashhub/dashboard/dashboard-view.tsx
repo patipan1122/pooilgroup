@@ -47,14 +47,17 @@ import {
   Donut,
 } from "@/components/cashhub/charts";
 import { AiChat } from "@/components/cashhub/ai-chat";
+import { ExecutiveTable } from "@/components/cashhub/executive-table";
 import { cn } from "@/lib/utils/cn";
 import type { DashboardData } from "@/lib/cashhub/aggregator";
+import type { ExecutiveMatrix } from "@/lib/cashhub/executive-matrix";
 
 interface Props {
   userName: string;
   isAdmin: boolean;
   monthLabel: string;
   data: DashboardData;
+  executiveMatrix: ExecutiveMatrix;
   companies?: Array<{ id: string; code: string; name: string }>;
   currentCompanyId?: string;
 }
@@ -64,6 +67,7 @@ export function DashboardView({
   isAdmin,
   monthLabel,
   data,
+  executiveMatrix,
   companies = [],
   currentCompanyId,
 }: Props) {
@@ -147,6 +151,20 @@ export function DashboardView({
           </div>
         )}
       </header>
+
+      {/* ============================================================
+          EXECUTIVE OVERVIEW TABLE — Boss view, scan in 5 sec
+          ตารางสรุป business type × month — slidable + compact
+          ============================================================ */}
+      <Section
+        number="00"
+        label="EXECUTIVE OVERVIEW"
+        title="สรุปยอดขาย ทุกประเภทธุรกิจ"
+        description="6 เดือนล่าสุด · เลื่อนซ้ายขวาดูเดือนเก่า · กดสลับมุมมองเทียบเดือน/ยอดรวม"
+        className="mb-8 animate-fade-up"
+      >
+        <ExecutiveTable data={executiveMatrix} />
+      </Section>
 
       {showOnboarding && !seeded && (
         <Card className="mb-6 border-[--color-brand-300] bg-gradient-to-br from-[--color-brand-50] via-white to-white">
