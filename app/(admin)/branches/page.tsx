@@ -105,16 +105,28 @@ export default async function BranchesPage() {
   ).length;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-10 max-w-7xl mx-auto">
-      <header className="mb-8 flex items-end justify-between flex-wrap gap-3 animate-fade-up">
+    <div className="relative">
+      <div
+        aria-hidden
+        className="absolute -top-20 -left-20 size-96 rounded-full blur-3xl opacity-15 pointer-events-none animate-drift"
+        style={{
+          background:
+            "radial-gradient(circle, oklch(0.50 0.28 263) 0%, transparent 70%)",
+        }}
+      />
+
+      <div className="relative p-4 sm:p-8 lg:p-12 max-w-7xl mx-auto pb-24">
+      <header className="mb-12 flex items-end justify-between flex-wrap gap-4 animate-slide-up-soft">
         <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
-            จัดการระบบ · {thaiDateLong(new Date())}
+          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[--color-brand-700] font-bold">
+            จัดการระบบ
+            <span className="text-zinc-400 mx-2">·</span>
+            <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
           </p>
-          <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight font-display mt-2">
-            สาขา <span className="brand-gradient-text">ทั้งหมด</span>
+          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-5 leading-[0.95]">
+            สาขา <span className="text-gradient-blue">ทั้งหมด</span>
           </h1>
-          <p className="text-zinc-600 mt-2">
+          <p className="text-base sm:text-lg text-zinc-600 mt-5 max-w-2xl leading-relaxed">
             <span className="font-bold text-zinc-900 tabular-num">{active.length}</span> สาขาใช้งาน
             {inactive.length > 0 && (
               <>
@@ -187,6 +199,7 @@ export default async function BranchesPage() {
       >
         <BranchFilterAndList companies={companies} branches={branches} />
       </Section>
+      </div>
     </div>
   );
 }

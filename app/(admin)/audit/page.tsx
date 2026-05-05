@@ -113,16 +113,29 @@ export default async function AuditLogPage({
   for (const r of rows) counts[r.action] = (counts[r.action] ?? 0) + 1;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto">
-      <div className="mb-6 animate-fade-up">
-        <p className="text-xs uppercase tracking-widest text-[--color-brand-600] font-semibold">
-          Audit · Compliance
+    <div className="relative">
+      <div
+        aria-hidden
+        className="absolute -top-20 -left-20 size-96 rounded-full blur-3xl opacity-15 pointer-events-none animate-drift"
+        style={{
+          background:
+            "radial-gradient(circle, oklch(0.50 0.28 263) 0%, transparent 70%)",
+        }}
+      />
+
+      <div className="relative p-4 sm:p-8 lg:p-12 max-w-6xl mx-auto pb-24">
+      <div className="mb-12 animate-slide-up-soft">
+        <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[--color-brand-700] font-bold">
+          AUDIT · COMPLIANCE
         </p>
-        <h1 className="text-3xl font-extrabold tracking-tight font-display mt-2">
-          ประวัติ <span className="accent">การกระทำ</span>
+        <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-5 leading-[0.95]">
+          ประวัติ <span className="text-gradient-blue">การกระทำ</span>
         </h1>
-        <p className="text-zinc-600 mt-2 text-sm">
-          {rows.length} รายการในช่วงที่เลือก · ทุก sensitive action ถูกบันทึก
+        <p className="text-base sm:text-lg text-zinc-600 mt-5 max-w-2xl leading-relaxed">
+          <strong className="font-bold text-zinc-900 tabular-num">
+            {rows.length}
+          </strong>{" "}
+          รายการในช่วงที่เลือก · ทุก sensitive action ถูกบันทึกไว้
         </p>
       </div>
 
@@ -281,6 +294,7 @@ export default async function AuditLogPage({
           )}
         </CardBody>
       </Card>
+      </div>
     </div>
   );
 }

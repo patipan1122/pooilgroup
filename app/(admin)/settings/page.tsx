@@ -46,16 +46,30 @@ export default async function SettingsPage() {
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto">
-      <div className="mb-6 animate-fade-up">
-        <p className="text-xs uppercase tracking-widest text-[--color-brand-600] font-semibold">
+    <div className="relative">
+      <div
+        aria-hidden
+        className="absolute -top-20 -left-20 size-96 rounded-full blur-3xl opacity-15 pointer-events-none animate-drift"
+        style={{
+          background:
+            "radial-gradient(circle, oklch(0.50 0.28 263) 0%, transparent 70%)",
+        }}
+      />
+
+      <div className="relative p-4 sm:p-8 lg:p-12 max-w-3xl mx-auto pb-24">
+      <div className="mb-12 animate-slide-up-soft">
+        <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[--color-brand-700] font-bold">
           องค์กร
         </p>
-        <h1 className="text-3xl font-extrabold tracking-tight font-display mt-2">
-          ตั้งค่า <span className="accent">ระบบ</span>
+        <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-5 leading-[0.95]">
+          ตั้งค่า <span className="text-gradient-blue">ระบบ</span>
         </h1>
-        <p className="text-zinc-600 mt-2 text-sm">
-          การกำหนดค่าทั่วไปขององค์กร · {userCount ?? 0} ผู้ใช้ · {branchCount ?? 0} สาขา
+        <p className="text-base sm:text-lg text-zinc-600 mt-5 max-w-xl leading-relaxed">
+          การกำหนดค่าทั่วไปขององค์กร ·{" "}
+          <strong className="font-bold text-zinc-900 tabular-num">{userCount ?? 0}</strong>{" "}
+          ผู้ใช้ ·{" "}
+          <strong className="font-bold text-zinc-900 tabular-num">{branchCount ?? 0}</strong>{" "}
+          สาขา
         </p>
       </div>
 
@@ -87,6 +101,7 @@ export default async function SettingsPage() {
             offHoursEnd: String(settings.offHoursEnd ?? "05:00"),
           }}
         />
+      </div>
       </div>
     </div>
   );

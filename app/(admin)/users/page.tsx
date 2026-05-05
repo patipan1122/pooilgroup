@@ -71,20 +71,38 @@ export default async function UsersListPage() {
   for (const u of active) byRole[u.role] = (byRole[u.role] ?? 0) + 1;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-10 max-w-6xl mx-auto">
-      <header className="mb-8 animate-fade-up flex items-end justify-between flex-wrap gap-3">
+    <div className="relative">
+      <div
+        aria-hidden
+        className="absolute -top-20 -left-20 size-96 rounded-full blur-3xl opacity-15 pointer-events-none animate-drift"
+        style={{
+          background:
+            "radial-gradient(circle, oklch(0.50 0.28 263) 0%, transparent 70%)",
+        }}
+      />
+
+      <div className="relative p-4 sm:p-8 lg:p-12 max-w-6xl mx-auto pb-24">
+        <header className="mb-12 animate-slide-up-soft flex items-end justify-between flex-wrap gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
-            จัดการระบบ · {thaiDateLong(new Date())}
+          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[--color-brand-700] font-bold">
+            จัดการระบบ
+            <span className="text-zinc-400 mx-2">·</span>
+            <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
           </p>
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight font-display mt-2">
-            ผู้ใช้ <span className="accent">ทั้งหมด</span>
+          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-5 leading-[0.95]">
+            <span className="text-gradient-blue">ผู้ใช้</span> ทั้งหมด
           </h1>
-          <p className="text-zinc-600 mt-2">
-            {active.length} บัญชีใช้งาน ·{" "}
-            {Object.entries(byRole)
-              .map(([r, c]) => `${ROLE_LABEL[r]} ${c}`)
-              .join(" · ")}
+          <p className="text-base sm:text-lg text-zinc-600 mt-5 max-w-2xl leading-relaxed">
+            <strong className="font-bold text-zinc-900 tabular-num">{active.length}</strong>{" "}
+            บัญชีใช้งาน
+            {Object.keys(byRole).length > 0 && (
+              <>
+                <span className="text-zinc-400 mx-1.5">·</span>
+                {Object.entries(byRole)
+                  .map(([r, c]) => `${ROLE_LABEL[r]} ${c}`)
+                  .join(" · ")}
+              </>
+            )}
           </p>
         </div>
         <div className="flex gap-2">
@@ -248,6 +266,7 @@ export default async function UsersListPage() {
           />
         )}
       </Section>
+      </div>
     </div>
   );
 }
