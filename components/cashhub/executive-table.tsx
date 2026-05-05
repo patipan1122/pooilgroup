@@ -171,6 +171,9 @@ export function ExecutiveTable({ data }: Props) {
                   isExpanded={isExpanded}
                   onToggle={() => toggleExpand(row.businessType)}
                   rowIdx={rowIdx}
+                  onNavigateBranch={(branchId) =>
+                    startTransition(() => router.push(`/branches/${branchId}`))
+                  }
                 />
               );
             })}
@@ -257,6 +260,7 @@ function BusinessTypeRow({
   isExpanded,
   onToggle,
   rowIdx,
+  onNavigateBranch,
 }: {
   row: {
     businessType: string;
@@ -268,6 +272,7 @@ function BusinessTypeRow({
   isExpanded: boolean;
   onToggle: () => void;
   rowIdx: number;
+  onNavigateBranch: (branchId: string) => void;
 }) {
   return (
     <>
@@ -345,7 +350,7 @@ function BusinessTypeRow({
         })}
       </tr>
 
-      {/* Expanded branch sub-rows */}
+      {/* Expanded branch sub-rows — use Next router for SPA navigation */}
       {isExpanded &&
         row.branches.map((b, bIdx) => (
           <tr
@@ -355,9 +360,8 @@ function BusinessTypeRow({
               bIdx === row.branches.length - 1 && "border-b-2 border-[--color-brand-200]",
             )}
             onClick={(e) => {
-              // Allow clicking branch row to navigate to detail
               e.stopPropagation();
-              window.location.href = `/branches/${b.id}`;
+              onNavigateBranch(b.id);
             }}
             style={{ cursor: "pointer" }}
           >

@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   CheckCircle2,
 } from "lucide-react";
+import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Section } from "@/components/ui/section";
@@ -33,6 +34,8 @@ import { Badge } from "@/components/ui/badge";
 import { thaiDateLong, bkkToday } from "@/lib/utils/format";
 import { MODULES } from "@/lib/modules";
 import { BUSINESS_TYPES } from "@/constants/business-types";
+import { ExecutiveTable } from "@/components/cashhub/executive-table";
+import { loadExecutiveMatrix } from "@/lib/cashhub/executive-matrix";
 import { startOfDay } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 
@@ -45,8 +48,20 @@ export default async function HomePage() {
   const orgId = session.user.org_id;
   const admin = adminClient();
 
+  // ============================================================
+  // ROLE-BASED ROUTING — driver redirected to /driver
+  // (other roles see /home but with role-tailored content below)
+  // ============================================================
+  if (session.user.role === "driver") {
+    redirect("/driver");
+  }
+
   const isAdmin =
     session.user.role === "super_admin" || session.user.role === "org_admin";
+  const isManager =
+    session.user.role === "branch_manager" ||
+    session.user.role === "area_manager" ||
+    isAdmin;
 
   const todayStart = formatInTimeZone(startOfDay(new Date()), TZ, "yyyy-MM-dd'T'HH:mm:ss'+07:00'");
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -113,6 +128,11 @@ export default async function HomePage() {
       .select("module_name, is_active")
       .eq("org_id", orgId),
   ]);
+
+  // Executive matrix — only for managers/admins (not staff/viewer)
+  const executiveMatrix = isManager
+    ? await loadExecutiveMatrix(orgId, { period: "monthly", count: 12 })
+    : null;
 
   const userCount = userCountQ.count ?? 0;
   const branchCount = branchCountQ.count ?? 0;
@@ -273,11 +293,34 @@ export default async function HomePage() {
         </header>
 
         {/* ============================================================
-            00 EVENING CHECK — only shown 17:00-22:00 BKK for admins
+            00 EXECUTIVE OVERVIEW — สรุปยอดทั้งหมด · เห็นทันทีที่เข้า
+            (เฉพาะ Manager ขึ้นไป — Staff/Viewer ไม่เห็นตารางใหญ่)
+            ============================================================ */}
+        {executiveMatrix && (
+          <Section
+            number="00"
+            label="EXECUTIVE OVERVIEW"
+            title="ยอดขาย ทุกประเภทธุรกิจ"
+            description="เห็นภาพรวม Pooilgroup ที่นี่ทันที · กดแถวขยายดูสาขา · กดที่ตารางใหญ่ใน CashHub สำหรับฟีเจอร์เต็ม"
+            className="mb-14 animate-fade-up"
+            action={
+              <a
+                href="/cashhub/dashboard"
+                className="text-sm font-bold text-[--color-brand-700] hover:text-[--color-brand-800] inline-flex items-center gap-1"
+              >
+                เปิด CashHub →
+              </a>
+            }
+          >
+            <ExecutiveTable data={executiveMatrix} />
+          </Section>
+        )}
+
+        {/* ============================================================
+            EVENING CHECK — only shown 17:00-22:00 BKK for admins
             ============================================================ */}
         {eveningCheck && (
           <Section
-            number="00"
             label="EVENING CHECK · เช็คตอนเย็น"
             title={
               eveningCheck.missingBranches.length === 0

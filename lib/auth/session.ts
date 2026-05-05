@@ -13,7 +13,9 @@ export type DbUser = {
   role:
     | "super_admin"
     | "org_admin"
+    | "admin"
     | "branch_manager"
+    | "area_manager"
     | "staff"
     | "driver"
     | "viewer";

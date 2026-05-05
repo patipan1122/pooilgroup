@@ -62,13 +62,15 @@ function thaiDayLabel(yyyymmdd: string): string {
  * Load N periods of sales data, grouped by business_type × period.
  * - monthly: last N months (default 6)
  * - daily:   last N days (default 30) — covers full current month
+ * - companyId: filter by legal entity (Pooil Oil / JP Sync Group)
  */
 export async function loadExecutiveMatrix(
   orgId: string,
-  options: { period?: Period; count?: number } = {},
+  options: { period?: Period; count?: number; companyId?: string } = {},
 ): Promise<ExecutiveMatrix> {
   const period: Period = options.period ?? "monthly";
   const count = options.count ?? (period === "daily" ? 30 : 6);
+  const { companyId } = options;
 
   const admin = adminClient();
   const now = new Date();
@@ -107,8 +109,23 @@ export async function loadExecutiveMatrix(
 
   const todayKey = formatInTimeZone(now, TZ, "yyyy-MM-dd");
 
-  // Pull all reports in window with branch info
-  const { data: reports } = await admin
+  // Branch metadata — filter by company if specified
+  let branchQuery = admin
+    .from("branches")
+    .select("id, code, name, business_type")
+    .eq("org_id", orgId)
+    .eq("is_active", true);
+  if (companyId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    branchQuery = (branchQuery as any).eq("company_id", companyId);
+  }
+  const { data: branches } = await branchQuery;
+  const allowedBranchIds = new Set(
+    (branches ?? []).map((b) => (b as { id: string }).id),
+  );
+
+  // Pull all reports in window with branch info — pre-filter by branch IDs if company specified
+  let reportQuery = admin
     .from("daily_reports")
     .select(
       "report_date, total_sales, status, branch_id, branches(id, code, name, business_type)",
@@ -118,12 +135,10 @@ export async function loadExecutiveMatrix(
     .lte("report_date", todayKey)
     .in("status", ["approved", "submitted"]);
 
-  // Branch metadata
-  const { data: branches } = await admin
-    .from("branches")
-    .select("id, code, name, business_type")
-    .eq("org_id", orgId)
-    .eq("is_active", true);
+  if (companyId && allowedBranchIds.size > 0) {
+    reportQuery = reportQuery.in("branch_id", Array.from(allowedBranchIds));
+  }
+  const { data: reports } = await reportQuery;
 
   // Build branch lookup + count by type
   const branchById = new Map<

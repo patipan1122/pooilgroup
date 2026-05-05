@@ -16,6 +16,7 @@ import {
   GitCompareArrows,
   AlertCircle,
   GraduationCap,
+  Settings,
 } from "lucide-react";
 
 export type ModuleSlug = "cashhub" | "fuelos" | "docuflow";
@@ -64,6 +65,7 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       { href: "/cashhub/monthly-report", label: "รายงานเดือน (PDF)", icon: FileTextIcon },
       { href: "/cashhub/rentals", label: "สัญญาเช่า", icon: Building2 },
       { href: "/cashhub/branches", label: "สาขา", icon: Building2 },
+      { href: "/cashhub/settings", label: "ตั้งค่า CashHub", icon: Settings },
     ],
   },
   fuelos: {

@@ -410,7 +410,9 @@ function NavGroup({
 
 const ROLE_LABELS: Record<DbUser["role"], string> = {
   super_admin: "Super Admin",
+  admin: "Admin",
   org_admin: "Admin",
+  area_manager: "ผู้จัดการเขต",
   branch_manager: "ผู้จัดการสาขา",
   staff: "Staff",
   driver: "Driver",

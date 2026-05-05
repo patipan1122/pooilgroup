@@ -30,7 +30,31 @@ const MATRIX: Record<DbUser["role"], Record<string, boolean>> = {
     "admin.view_audit": true,
     "admin.settings": true,
   },
+  // "admin" = mid-level admin (between org_admin and branch_manager) — same as org_admin minus settings
+  admin: {
+    "cashhub.view": true,
+    "cashhub.create": true,
+    "cashhub.approve": true,
+    "cashhub.unlock": false,
+    "cashhub.export": true,
+    "admin.manage_users": true,
+    "admin.manage_branches": true,
+    "admin.view_audit": true,
+    "admin.settings": false,
+  },
   branch_manager: {
+    "cashhub.view": true,
+    "cashhub.create": true,
+    "cashhub.approve": true,
+    "cashhub.unlock": false,
+    "cashhub.export": true,
+    "admin.manage_users": false,
+    "admin.manage_branches": false,
+    "admin.view_audit": false,
+    "admin.settings": false,
+  },
+  // "area_manager" = ดูแลหลายสาขาในเขต — branch_manager + cross-branch view
+  area_manager: {
     "cashhub.view": true,
     "cashhub.create": true,
     "cashhub.approve": true,
@@ -64,7 +88,11 @@ export function can(user: DbUser, action: string): boolean {
 }
 
 export function isAdmin(user: DbUser): boolean {
-  return user.role === "super_admin" || user.role === "org_admin";
+  return (
+    user.role === "super_admin" ||
+    user.role === "org_admin" ||
+    user.role === "admin"
+  );
 }
 
 export function canApproveBranch(
@@ -74,6 +102,6 @@ export function canApproveBranch(
 ): boolean {
   if (!can(user, "cashhub.approve")) return false;
   if (isAdmin(user)) return true;
-  // branch_manager — only assigned branches
+  // branch_manager / area_manager — only assigned branches
   return userBranches.includes(branchId);
 }

@@ -39,7 +39,7 @@ export default async function UsersPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin.from as any)("users")
       .select(
-        "id, name, email, phone, role, is_active, line_user_id, telegram_user_id, invite_used_at",
+        "id, name, email, phone, role, is_active, line_user_id, telegram_user_id, invite_used_at, last_login_at, created_at",
       )
       .eq("org_id", orgId)
       .order("created_at", { ascending: false }),
@@ -87,6 +87,8 @@ export default async function UsersPage() {
     line_user_id: string | null;
     telegram_user_id: string | null;
     invite_used_at: string | null;
+    last_login_at: string | null;
+    created_at: string;
   }>;
   const userById = new Map<string, BranchUser>();
   for (const u of allUsers) {
@@ -100,8 +102,28 @@ export default async function UsersPage() {
       has_line: !!u.line_user_id,
       has_telegram: !!u.telegram_user_id,
       invite_used: !!u.invite_used_at || u.is_active,
+      last_login_at: u.last_login_at,
     });
   }
+
+  // Compute stats
+  const now = Date.now();
+  const week = 7 * 24 * 60 * 60 * 1000;
+  const stats = {
+    total: allUsers.filter((u) => u.is_active).length,
+    activeWeek: allUsers.filter(
+      (u) => u.is_active && u.last_login_at && now - new Date(u.last_login_at).getTime() < week,
+    ).length,
+    newThisWeek: allUsers.filter((u) => now - new Date(u.created_at).getTime() < week).length,
+    pendingActivation: allUsers.filter((u) => !u.is_active && !u.invite_used_at).length,
+    noLine: allUsers.filter((u) => u.is_active && !u.line_user_id).length,
+    noTelegram: allUsers.filter((u) => u.is_active && !u.telegram_user_id).length,
+    offline7d: allUsers.filter(
+      (u) =>
+        u.is_active &&
+        (!u.last_login_at || now - new Date(u.last_login_at).getTime() >= week),
+    ).length,
+  };
 
   const ubRows = (userBranchesQ.data ?? []) as Array<{
     user_id: string;
@@ -224,6 +246,7 @@ export default async function UsersPage() {
             unassigned={unassigned}
             notifications={notifications}
             pendingRequestCount={pendingCount}
+            stats={stats}
           />
         </Section>
       </div>

@@ -21,11 +21,13 @@ export default async function DashboardPage({
 
   // Load all dashboard data + executive matrix in parallel
   // monthly = 12 เดือน (full year) · daily = 30 วัน
+  // companyId sync ลงตารางด้วย (เลือก Pooil Oil → ตารางโชว์เฉพาะ Pooil Oil)
   const [data, executiveMatrix] = await Promise.all([
     loadDashboard(session.user.org_id, companyId),
     loadExecutiveMatrix(session.user.org_id, {
       period,
       count: period === "monthly" ? 12 : 30,
+      companyId,
     }),
   ]);
 

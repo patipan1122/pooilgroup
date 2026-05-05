@@ -2,7 +2,6 @@ import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { OrgInfoForm } from "./org-form";
 import { ModuleToggleList } from "./module-toggle";
-import { CashHubConfigForm } from "./cashhub-config";
 
 export const dynamic = "force-dynamic";
 
@@ -86,21 +85,6 @@ export default async function SettingsPage() {
         />
 
         <ModuleToggleList status={moduleStatus} />
-
-        <CashHubConfigForm
-          initial={{
-            defaultDeadline: String(settings.defaultDeadline ?? "21:00"),
-            reconcileMode: String(settings.reconcileMode ?? "binary") as
-              | "binary"
-              | "tolerance",
-            reconcileTolerancePercent: Number(
-              settings.reconcileTolerancePercent ?? 1,
-            ),
-            spikeMultiplier: Number(settings.spikeMultiplier ?? 1.5),
-            offHoursStart: String(settings.offHoursStart ?? "00:00"),
-            offHoursEnd: String(settings.offHoursEnd ?? "05:00"),
-          }}
-        />
       </div>
       </div>
     </div>

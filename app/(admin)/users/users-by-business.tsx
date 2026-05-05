@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useTransition, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -14,6 +14,16 @@ import {
   Crown,
   Bell,
   Inbox,
+  Search,
+  X as XIcon,
+  MoreHorizontal,
+  Mail,
+  LogOut,
+  Lock,
+  Unlock,
+  Activity as ActivityIcon,
+  ShieldCheck,
+  RotateCcw,
 } from "lucide-react";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { Dialog } from "@/components/ui/dialog";
@@ -40,6 +50,7 @@ export interface BranchUser {
   has_line: boolean;
   has_telegram: boolean;
   invite_used: boolean;
+  last_login_at: string | null;
 }
 
 export interface Company {
@@ -56,6 +67,16 @@ export interface AdminNotification {
   link: string | null;
   created_at: string;
   is_read: boolean;
+}
+
+export interface UserStats {
+  total: number;
+  activeWeek: number;
+  newThisWeek: number;
+  pendingActivation: number;
+  noLine: number;
+  noTelegram: number;
+  offline7d: number;
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -80,6 +101,60 @@ const ROLE_COLOR: Record<string, string> = {
   viewer: "bg-zinc-50 text-zinc-500 border-zinc-200",
 };
 
+const PERMISSION_DESC: Record<string, { can: string[]; cant: string[] }> = {
+  super_admin: {
+    can: [
+      "ทำได้ทุกอย่างในระบบ",
+      "เพิ่ม/ลบ Admin ได้",
+      "ดู P&L / รายได้ / กำไร",
+      "เปลี่ยน billing / org settings",
+    ],
+    cant: ["—"],
+  },
+  admin: {
+    can: [
+      "เพิ่ม/ลบผู้จัดการ พนักงาน",
+      "อนุมัติคำขอเข้าใช้งาน",
+      "Approve รายงานทุกสาขา",
+      "ดู Audit Log",
+      "Export ข้อมูล Operations",
+    ],
+    cant: [
+      "ห้ามเพิ่ม Admin คนใหม่",
+      "ดู P&L / Margin / Payroll ไม่ได้",
+      "เปลี่ยน billing ไม่ได้",
+    ],
+  },
+  area_manager: {
+    can: [
+      "ดูยอดทุกสาขาในเขต",
+      "Approve รายงานในเขต",
+      "เพิ่มผู้จัดการสาขาในเขตได้",
+    ],
+    cant: ["ดูข้ามเขตไม่ได้", "เพิ่ม Admin ไม่ได้"],
+  },
+  branch_manager: {
+    can: [
+      "ดูยอดสาขาตัวเอง",
+      "Approve รายงานสาขา",
+      "เพิ่มพนักงานในสาขา",
+    ],
+    cant: ["ข้ามสาขาตัวเองไม่ได้"],
+  },
+  staff: {
+    can: ["กรอกรายงานสาขาตัวเอง", "ดูยอดของตัวเองที่ส่งไป"],
+    cant: ["Approve ไม่ได้", "ดูยอดสาขาอื่นไม่ได้"],
+  },
+  driver: {
+    can: ["ใช้ Driver App (FuelOS)", "อัพเดต GPS / สถานะ"],
+    cant: ["ดูยอดขาย / รายงาน CashHub ไม่ได้"],
+  },
+  viewer: {
+    can: ["ดูข้อมูลทั้งหมดเป็น Read-only"],
+    cant: ["แก้ไขอะไรไม่ได้", "Approve ไม่ได้"],
+  },
+};
+
 const MANAGER_ROLES = new Set([
   "branch_manager",
   "area_manager",
@@ -88,14 +163,22 @@ const MANAGER_ROLES = new Set([
   "org_admin",
 ]);
 
+interface FilterState {
+  search: string;
+  noLine: boolean;
+  noTelegram: boolean;
+  pending: boolean;
+  offline7d: boolean;
+  roles: Set<string>;
+}
+
 interface Props {
   companies: Company[];
   branches: BranchWithUsers[];
-  /** Users not assigned to any branch (admins, viewers) */
   unassigned: BranchUser[];
-  /** Recent admin/user notifications */
   notifications: AdminNotification[];
   pendingRequestCount: number;
+  stats: UserStats;
 }
 
 export function UsersByBusiness({
@@ -104,11 +187,64 @@ export function UsersByBusiness({
   unassigned,
   notifications,
   pendingRequestCount,
+  stats,
 }: Props) {
-  // Group: company → business_type → branches[]
+  const router = useRouter();
+  const [filter, setFilter] = useState<FilterState>({
+    search: "",
+    noLine: false,
+    noTelegram: false,
+    pending: false,
+    offline7d: false,
+    roles: new Set(),
+  });
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkPending, startBulkTransition] = useTransition();
+
+  const matchesFilter = (u: BranchUser): boolean => {
+    if (filter.search) {
+      const q = filter.search.toLowerCase();
+      const hay = `${u.name} ${u.email ?? ""} ${u.phone ?? ""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (filter.noLine && u.has_line) return false;
+    if (filter.noTelegram && u.has_telegram) return false;
+    if (filter.pending && (u.is_active && u.invite_used)) return false;
+    if (filter.offline7d) {
+      if (!u.last_login_at) return true;
+      const ageMs = Date.now() - new Date(u.last_login_at).getTime();
+      if (ageMs < 7 * 24 * 60 * 60 * 1000) return false;
+    }
+    if (filter.roles.size > 0 && !filter.roles.has(u.role)) return false;
+    return true;
+  };
+
+  // Filter branches → keep branches where any user matches OR no filter active
+  const hasActiveFilter =
+    filter.search ||
+    filter.noLine ||
+    filter.noTelegram ||
+    filter.pending ||
+    filter.offline7d ||
+    filter.roles.size > 0;
+
+  const filteredBranches = useMemo(() => {
+    if (!hasActiveFilter) return branches;
+    return branches
+      .map((b) => ({ ...b, users: b.users.filter(matchesFilter) }))
+      .filter((b) => b.users.length > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branches, filter, hasActiveFilter]);
+
+  const filteredUnassigned = useMemo(() => {
+    if (!hasActiveFilter) return unassigned;
+    return unassigned.filter(matchesFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unassigned, filter, hasActiveFilter]);
+
   const grouped = useMemo(() => {
     const byCompany = new Map<string, Map<string, BranchWithUsers[]>>();
-    for (const b of branches) {
+    for (const b of filteredBranches) {
       const cId = b.company_id ?? "none";
       if (!byCompany.has(cId)) byCompany.set(cId, new Map());
       const cMap = byCompany.get(cId)!;
@@ -116,9 +252,8 @@ export function UsersByBusiness({
       cMap.get(b.business_type)!.push(b);
     }
     return byCompany;
-  }, [branches]);
+  }, [filteredBranches]);
 
-  // Default: all expanded
   const [openTypes, setOpenTypes] = useState<Set<string>>(() => {
     const s = new Set<string>();
     for (const cId of grouped.keys()) {
@@ -134,146 +269,284 @@ export function UsersByBusiness({
     setOpenTypes(next);
   }
 
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const toggleAllVisible = () => {
+    const visibleIds = new Set<string>();
+    for (const b of filteredBranches) for (const u of b.users) visibleIds.add(u.id);
+    for (const u of filteredUnassigned) visibleIds.add(u.id);
+    if (visibleIds.size === selectedIds.size) {
+      clearSelection();
+    } else {
+      setSelectedIds(visibleIds);
+    }
+  };
+
+  const runBulkAction = (action: "lock" | "unlock" | "force_logout" | "resend_invite") => {
+    if (selectedIds.size === 0) return;
+    const labels = {
+      lock: "ปิดบัญชี",
+      unlock: "เปิดบัญชี",
+      force_logout: "Force Logout",
+      resend_invite: "ส่งลิงก์เชิญใหม่",
+    };
+    if (!confirm(`${labels[action]} ผู้ใช้ ${selectedIds.size} คน?`)) return;
+    startBulkTransition(async () => {
+      const res = await fetch("/api/admin/users/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIds: Array.from(selectedIds), action }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(json.error || "ดำเนินการไม่สำเร็จ");
+        return;
+      }
+      toast.success(
+        `${labels[action]} สำเร็จ ${json.processed} คน${json.skipped > 0 ? ` (ข้าม ${json.skipped})` : ""}`,
+      );
+      clearSelection();
+      router.refresh();
+    });
+  };
+
   const [inviteCtx, setInviteCtx] = useState<{
     branchId: string;
     branchCode: string;
     branchName: string;
   } | null>(null);
 
+  const totalVisibleUsers =
+    filteredBranches.reduce((s, b) => s + b.users.length, 0) +
+    filteredUnassigned.length;
+
   return (
-    <div className="space-y-6">
-      {/* Notification box at top */}
+    <div className="space-y-5">
+      {/* Notification box */}
       <NotificationBox
         notifications={notifications}
         pendingRequestCount={pendingRequestCount}
       />
 
-      {Array.from(grouped.entries()).map(([companyId, typesMap]) => {
-        const company = companies.find((c) => c.id === companyId);
-        const totalBranches = Array.from(typesMap.values()).reduce(
-          (s, list) => s + list.length,
-          0,
-        );
-        const totalUsers = Array.from(typesMap.values()).reduce(
-          (s, list) => s + list.reduce((ss, b) => ss + b.users.length, 0),
-          0,
-        );
+      {/* Stats summary */}
+      <StatsSummary stats={stats} />
 
-        return (
-          <div key={companyId}>
-            {/* Company header — compact */}
-            <div className="flex items-center gap-2 mb-2">
-              <div className="size-8 rounded-lg bg-[--color-brand-600] text-white flex items-center justify-center font-extrabold text-xs font-display">
-                {company?.code.slice(0, 2) ?? "?"}
-              </div>
-              <div>
-                <div className="font-extrabold font-display text-base text-zinc-900">
-                  {company?.name ?? "ไม่ระบุบริษัท"}
-                </div>
-                <div className="text-[10px] text-zinc-500 -mt-0.5">
-                  <span className="tabular-num font-bold">{totalBranches}</span>{" "}
-                  สาขา ·{" "}
-                  <span className="tabular-num font-bold">{totalUsers}</span>{" "}
-                  คน
-                </div>
-              </div>
-            </div>
+      {/* Search + filter bar */}
+      <FilterBar filter={filter} setFilter={setFilter} totalVisible={totalVisibleUsers} />
 
-            {/* Business type accordions — compact */}
-            <div className="space-y-2">
-              {Array.from(typesMap.entries()).map(([type, branchList]) => {
-                const cfg = BUSINESS_TYPES[type];
-                const key = `${companyId}:${type}`;
-                const isOpen = openTypes.has(key);
-                const userCountInType = branchList.reduce(
-                  (s, b) => s + b.users.length,
-                  0,
-                );
-                return (
-                  <div
-                    key={type}
-                    className="rounded-xl border-2 border-zinc-200 bg-white overflow-hidden"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => toggle(key)}
-                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-50 transition-colors text-left"
-                    >
-                      <span className="text-base">{cfg?.emoji ?? "📋"}</span>
-                      <span className="font-extrabold font-display text-sm text-zinc-900">
-                        {cfg?.label ?? type}
-                      </span>
-                      <span className="text-[11px] text-zinc-500 ml-1">
-                        <span className="tabular-num font-bold text-zinc-700">
-                          {branchList.length}
-                        </span>{" "}
-                        สาขา ·{" "}
-                        <span className="tabular-num font-bold text-zinc-700">
-                          {userCountInType}
-                        </span>{" "}
-                        คน
-                      </span>
-                      <ChevronDown
-                        className={cn(
-                          "size-4 text-zinc-400 transition-transform shrink-0 ml-auto",
-                          isOpen && "rotate-180",
-                        )}
-                      />
-                    </button>
-
-                    {isOpen && (
-                      <div className="border-t-2 border-zinc-100 divide-y divide-zinc-100">
-                        {branchList.map((b) => (
-                          <BranchRow
-                            key={b.id}
-                            branch={b}
-                            onInvite={() =>
-                              setInviteCtx({
-                                branchId: b.id,
-                                branchCode: b.code,
-                                branchName: b.name,
-                              })
-                            }
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-
-      {/* Unassigned users */}
-      {unassigned.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <div className="size-8 rounded-lg bg-zinc-900 text-white flex items-center justify-center">
-              <Crown className="size-4" />
-            </div>
-            <div>
-              <div className="font-extrabold font-display text-base">
-                ทีมส่วนกลาง
-              </div>
-              <div className="text-[10px] text-zinc-500 -mt-0.5">
-                <span className="tabular-num font-bold">
-                  {unassigned.length}
-                </span>{" "}
-                คน · ไม่ผูกสาขา
-              </div>
-            </div>
-          </div>
-          <div className="rounded-xl border-2 border-zinc-200 bg-white overflow-hidden divide-y divide-zinc-100">
-            {unassigned.map((u) => (
-              <UserChipRow key={u.id} user={u} />
-            ))}
+      {/* Bulk action bar — appears when something selected */}
+      {selectedIds.size > 0 && (
+        <div className="sticky top-2 z-40 rounded-xl border-2 border-[--color-brand-500] bg-[--color-brand-50] shadow-blue px-4 py-2.5 flex items-center gap-2 flex-wrap animate-fade-up">
+          <span className="text-sm font-bold text-[--color-brand-900]">
+            เลือกแล้ว {selectedIds.size} คน
+          </span>
+          <button
+            onClick={clearSelection}
+            className="text-xs text-[--color-brand-700] hover:text-[--color-brand-900] font-medium"
+          >
+            ยกเลิก
+          </button>
+          <div className="ml-auto flex items-center gap-1.5 flex-wrap">
+            <BulkBtn
+              onClick={() => runBulkAction("resend_invite")}
+              disabled={bulkPending}
+              icon={<Mail className="size-3.5" />}
+              label="ส่งลิงก์ใหม่"
+            />
+            <BulkBtn
+              onClick={() => runBulkAction("force_logout")}
+              disabled={bulkPending}
+              icon={<LogOut className="size-3.5" />}
+              label="Force Logout"
+            />
+            <BulkBtn
+              onClick={() => runBulkAction("unlock")}
+              disabled={bulkPending}
+              icon={<Unlock className="size-3.5" />}
+              label="เปิด"
+            />
+            <BulkBtn
+              onClick={() => runBulkAction("lock")}
+              disabled={bulkPending}
+              icon={<Lock className="size-3.5" />}
+              label="ปิดบัญชี"
+              danger
+            />
           </div>
         </div>
       )}
 
-      {/* Invite dialog */}
+      {/* Selection toggle — show when any user visible */}
+      {totalVisibleUsers > 0 && (
+        <div className="text-xs text-zinc-500 flex items-center gap-2">
+          <button
+            onClick={toggleAllVisible}
+            className="inline-flex items-center gap-1.5 hover:text-zinc-900 font-medium"
+          >
+            <input
+              type="checkbox"
+              checked={selectedIds.size > 0 && selectedIds.size === totalVisibleUsers}
+              ref={(el) => {
+                if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < totalVisibleUsers;
+              }}
+              readOnly
+              className="size-3.5 rounded"
+            />
+            เลือกทั้งหมดที่แสดง
+          </button>
+          <span className="text-zinc-300">·</span>
+          <span>แสดง {totalVisibleUsers} คน</span>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {grouped.size === 0 && filteredUnassigned.length === 0 ? (
+        <div className="rounded-2xl border-2 border-dashed border-zinc-200 bg-zinc-50/40 p-10 text-center">
+          <p className="text-base font-bold text-zinc-700">ไม่พบผู้ใช้ที่ตรงกับเงื่อนไข</p>
+          <p className="text-sm text-zinc-500 mt-1">ลองล้างตัวกรองหรือเปลี่ยนคำค้น</p>
+        </div>
+      ) : (
+        <>
+          {Array.from(grouped.entries()).map(([companyId, typesMap]) => {
+            const company = companies.find((c) => c.id === companyId);
+            const totalBranches = Array.from(typesMap.values()).reduce(
+              (s, list) => s + list.length,
+              0,
+            );
+            const totalUsers = Array.from(typesMap.values()).reduce(
+              (s, list) => s + list.reduce((ss, b) => ss + b.users.length, 0),
+              0,
+            );
+
+            return (
+              <div key={companyId}>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="size-8 rounded-lg bg-[--color-brand-600] text-white flex items-center justify-center font-extrabold text-xs font-display">
+                    {company?.code.slice(0, 2) ?? "?"}
+                  </div>
+                  <div>
+                    <div className="font-extrabold font-display text-base text-zinc-900">
+                      {company?.name ?? "ไม่ระบุบริษัท"}
+                    </div>
+                    <div className="text-[10px] text-zinc-500 -mt-0.5">
+                      <span className="tabular-num font-bold">{totalBranches}</span>{" "}
+                      สาขา ·{" "}
+                      <span className="tabular-num font-bold">{totalUsers}</span>{" "}
+                      คน
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {Array.from(typesMap.entries()).map(([type, branchList]) => {
+                    const cfg = BUSINESS_TYPES[type];
+                    const key = `${companyId}:${type}`;
+                    const isOpen = openTypes.has(key);
+                    const userCountInType = branchList.reduce(
+                      (s, b) => s + b.users.length,
+                      0,
+                    );
+                    return (
+                      <div
+                        key={type}
+                        className="rounded-xl border-2 border-zinc-200 bg-white overflow-hidden"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggle(key)}
+                          className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-50 transition-colors text-left"
+                        >
+                          <span className="text-base">{cfg?.emoji ?? "📋"}</span>
+                          <span className="font-extrabold font-display text-sm text-zinc-900">
+                            {cfg?.label ?? type}
+                          </span>
+                          <span className="text-[11px] text-zinc-500 ml-1">
+                            <span className="tabular-num font-bold text-zinc-700">
+                              {branchList.length}
+                            </span>{" "}
+                            สาขา ·{" "}
+                            <span className="tabular-num font-bold text-zinc-700">
+                              {userCountInType}
+                            </span>{" "}
+                            คน
+                          </span>
+                          <ChevronDown
+                            className={cn(
+                              "size-4 text-zinc-400 transition-transform shrink-0 ml-auto",
+                              isOpen && "rotate-180",
+                            )}
+                          />
+                        </button>
+
+                        {isOpen && (
+                          <div className="border-t-2 border-zinc-100 divide-y divide-zinc-100">
+                            {branchList.map((b) => (
+                              <BranchRow
+                                key={b.id}
+                                branch={b}
+                                selectedIds={selectedIds}
+                                onToggleSelect={toggleSelect}
+                                onInvite={() =>
+                                  setInviteCtx({
+                                    branchId: b.id,
+                                    branchCode: b.code,
+                                    branchName: b.name,
+                                  })
+                                }
+                                onAfterAction={() => router.refresh()}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+
+          {filteredUnassigned.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="size-8 rounded-lg bg-zinc-900 text-white flex items-center justify-center">
+                  <Crown className="size-4" />
+                </div>
+                <div>
+                  <div className="font-extrabold font-display text-base">
+                    ทีมส่วนกลาง
+                  </div>
+                  <div className="text-[10px] text-zinc-500 -mt-0.5">
+                    <span className="tabular-num font-bold">
+                      {filteredUnassigned.length}
+                    </span>{" "}
+                    คน · ไม่ผูกสาขา
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border-2 border-zinc-200 bg-white overflow-hidden divide-y divide-zinc-100">
+                {filteredUnassigned.map((u) => (
+                  <UserChipRow
+                    key={u.id}
+                    user={u}
+                    selected={selectedIds.has(u.id)}
+                    onToggleSelect={() => toggleSelect(u.id)}
+                    onAfterAction={() => router.refresh()}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
       {inviteCtx && (
         <InviteDialog
           branchId={inviteCtx.branchId}
@@ -283,6 +556,197 @@ export function UsersByBusiness({
         />
       )}
     </div>
+  );
+}
+
+function StatsSummary({ stats }: { stats: UserStats }) {
+  const items: Array<{ label: string; value: number; tone: "leaf" | "brand" | "warning" | "neutral"; suffix?: string }> = [
+    { label: "ผู้ใช้ทั้งหมด", value: stats.total, tone: "brand" },
+    { label: "active สัปดาห์นี้", value: stats.activeWeek, tone: "leaf", suffix: "คน" },
+    { label: "เข้าใหม่ 7 วัน", value: stats.newThisWeek, tone: "leaf", suffix: "คน" },
+    { label: "รอ activate", value: stats.pendingActivation, tone: stats.pendingActivation > 0 ? "warning" : "neutral" },
+    { label: "ยังไม่ผูก LINE", value: stats.noLine, tone: stats.noLine > 0 ? "warning" : "neutral" },
+    { label: "offline > 7 วัน", value: stats.offline7d, tone: stats.offline7d > 0 ? "warning" : "neutral" },
+  ];
+  const toneClass: Record<string, string> = {
+    brand: "border-[--color-brand-200] bg-[--color-brand-50]/40 text-[--color-brand-700]",
+    leaf: "border-[--color-leaf-200] bg-[--color-leaf-50]/40 text-[--color-leaf-700]",
+    warning: "border-amber-300 bg-amber-50/60 text-amber-900",
+    neutral: "border-zinc-200 bg-white text-zinc-700",
+  };
+  return (
+    <div className="grid grid-cols-3 lg:grid-cols-6 gap-2">
+      {items.map((it) => (
+        <div
+          key={it.label}
+          className={cn(
+            "rounded-xl border-2 px-3 py-2.5",
+            toneClass[it.tone],
+          )}
+        >
+          <p className="text-[10px] uppercase tracking-wider text-zinc-600 font-bold leading-tight">
+            {it.label}
+          </p>
+          <p className="text-2xl font-extrabold tabular-num font-display tracking-tight mt-0.5">
+            {it.value}
+            {it.suffix && <span className="text-xs text-zinc-400 font-medium ml-1">{it.suffix}</span>}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FilterBar({
+  filter,
+  setFilter,
+  totalVisible,
+}: {
+  filter: FilterState;
+  setFilter: (f: FilterState) => void;
+  totalVisible: number;
+}) {
+  const toggleFlag = (key: keyof FilterState) => {
+    setFilter({ ...filter, [key]: !filter[key] });
+  };
+  const reset = () =>
+    setFilter({
+      search: "",
+      noLine: false,
+      noTelegram: false,
+      pending: false,
+      offline7d: false,
+      roles: new Set(),
+    });
+  const hasFilter =
+    filter.search ||
+    filter.noLine ||
+    filter.noTelegram ||
+    filter.pending ||
+    filter.offline7d ||
+    filter.roles.size > 0;
+
+  return (
+    <div className="rounded-xl border-2 border-zinc-200 bg-white p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
+          <input
+            type="text"
+            value={filter.search}
+            onChange={(e) => setFilter({ ...filter, search: e.target.value })}
+            placeholder="ค้นหาชื่อ / เบอร์ / อีเมล..."
+            className="w-full h-10 pl-10 pr-9 rounded-lg border-2 border-zinc-200 bg-white text-sm focus:border-[--color-brand-500] focus:outline-none transition-colors"
+          />
+          {filter.search && (
+            <button
+              onClick={() => setFilter({ ...filter, search: "" })}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700"
+            >
+              <XIcon className="size-4" />
+            </button>
+          )}
+        </div>
+        {hasFilter && (
+          <button
+            onClick={reset}
+            className="inline-flex items-center gap-1 px-3 h-10 rounded-lg text-xs text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 font-bold"
+          >
+            <RotateCcw className="size-3.5" />
+            ล้าง
+          </button>
+        )}
+      </div>
+      <div className="flex items-center gap-1 flex-wrap">
+        <FilterChip
+          on={filter.pending}
+          onClick={() => toggleFlag("pending")}
+          label="รอ activate"
+          tone="warning"
+        />
+        <FilterChip
+          on={filter.noLine}
+          onClick={() => toggleFlag("noLine")}
+          label="ยังไม่ผูก LINE"
+          tone="warning"
+        />
+        <FilterChip
+          on={filter.noTelegram}
+          onClick={() => toggleFlag("noTelegram")}
+          label="ยังไม่ผูก Telegram"
+          tone="warning"
+        />
+        <FilterChip
+          on={filter.offline7d}
+          onClick={() => toggleFlag("offline7d")}
+          label="offline > 7 วัน"
+          tone="warning"
+        />
+        <span className="ml-auto text-[11px] text-zinc-500">
+          ผลลัพธ์ <span className="font-bold tabular-num text-zinc-900">{totalVisible}</span> คน
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function FilterChip({
+  on,
+  onClick,
+  label,
+  tone,
+}: {
+  on: boolean;
+  onClick: () => void;
+  label: string;
+  tone: "warning" | "brand";
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "px-2.5 py-1 rounded-full text-[11px] font-bold border-2 transition-colors",
+        on
+          ? tone === "warning"
+            ? "bg-amber-100 border-amber-400 text-amber-900"
+            : "bg-[--color-brand-100] border-[--color-brand-400] text-[--color-brand-900]"
+          : "bg-white border-zinc-200 text-zinc-600 hover:border-zinc-400",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+function BulkBtn({
+  onClick,
+  disabled,
+  icon,
+  label,
+  danger,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  icon: React.ReactNode;
+  label: string;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-bold border-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+        danger
+          ? "bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
+          : "bg-white border-[--color-brand-200] text-[--color-brand-700] hover:bg-[--color-brand-100]",
+      )}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 
@@ -296,26 +760,17 @@ function NotificationBox({
   const totalAlerts = notifications.length + pendingRequestCount;
 
   if (totalAlerts === 0) {
-    return (
-      <div className="rounded-xl border-2 border-dashed border-zinc-200 bg-zinc-50/40 px-4 py-3 flex items-center gap-3">
-        <div className="size-8 rounded-lg bg-[--color-leaf-50] border border-[--color-leaf-200] flex items-center justify-center text-[--color-leaf-600]">
-          <CheckCircle2 className="size-4" />
-        </div>
-        <div className="text-xs text-zinc-500">
-          ไม่มีเรื่องค้างเกี่ยวกับผู้ใช้งาน · ระบบเรียบร้อย
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
     <div className="rounded-xl border-2 border-amber-300 bg-amber-50/40 overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-amber-200 bg-amber-100/40 flex items-center gap-2">
-        <Bell className="size-4 text-amber-700" />
-        <span className="text-xs uppercase tracking-wider font-bold text-amber-900">
-          แจ้งเตือนเกี่ยวกับผู้ใช้งาน
+      <div className="px-4 py-2 border-b border-amber-200 bg-amber-100/40 flex items-center gap-2">
+        <Bell className="size-3.5 text-amber-700" />
+        <span className="text-[11px] uppercase tracking-wider font-bold text-amber-900">
+          เกี่ยวกับผู้ใช้งาน
         </span>
-        <span className="ml-auto text-[10px] tabular-num font-bold text-amber-700 bg-amber-200/50 px-2 py-0.5 rounded-full">
+        <span className="ml-auto text-[10px] tabular-num font-bold text-amber-700 bg-amber-200/50 px-1.5 py-0.5 rounded-full">
           {totalAlerts}
         </span>
       </div>
@@ -323,7 +778,7 @@ function NotificationBox({
         {pendingRequestCount > 0 && (
           <Link
             href="/users/requests"
-            className="flex items-center gap-3 px-4 py-2.5 hover:bg-amber-100/30 transition-colors"
+            className="flex items-center gap-3 px-4 py-2 hover:bg-amber-100/30 transition-colors"
           >
             <Inbox className="size-4 text-amber-700 shrink-0" />
             <div className="flex-1 min-w-0">
@@ -341,7 +796,7 @@ function NotificationBox({
           <Link
             key={n.id}
             href={n.link ?? "#"}
-            className="flex items-center gap-3 px-4 py-2.5 hover:bg-amber-100/30 transition-colors"
+            className="flex items-center gap-3 px-4 py-2 hover:bg-amber-100/30 transition-colors"
           >
             <span
               className={cn(
@@ -384,10 +839,16 @@ function timeAgo(iso: string): string {
 
 function BranchRow({
   branch,
+  selectedIds,
+  onToggleSelect,
   onInvite,
+  onAfterAction,
 }: {
   branch: BranchWithUsers;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
   onInvite: () => void;
+  onAfterAction: () => void;
 }) {
   const managerCount = branch.users.filter((u) => MANAGER_ROLES.has(u.role)).length;
   const staffCount = branch.users.filter((u) => u.role === "staff").length;
@@ -428,7 +889,13 @@ function BranchRow({
       {branch.users.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-1.5">
           {branch.users.map((u) => (
-            <UserChipCompact key={u.id} user={u} />
+            <UserChipCompact
+              key={u.id}
+              user={u}
+              selected={selectedIds.has(u.id)}
+              onToggleSelect={() => onToggleSelect(u.id)}
+              onAfterAction={onAfterAction}
+            />
           ))}
         </div>
       )}
@@ -442,25 +909,46 @@ function statusInfo(u: BranchUser): { dot: string; label: string } {
   return { dot: "bg-[--color-leaf-500]", label: "พร้อมใช้งาน" };
 }
 
-function UserChipCompact({ user }: { user: BranchUser }) {
+function UserChipCompact({
+  user,
+  selected,
+  onToggleSelect,
+  onAfterAction,
+}: {
+  user: BranchUser;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onAfterAction: () => void;
+}) {
   const isManager = MANAGER_ROLES.has(user.role);
   const status = statusInfo(user);
   const roleClass = ROLE_COLOR[user.role] ?? "bg-zinc-50 text-zinc-700 border-zinc-200";
 
   return (
-    <Link
-      href={`/users/${user.id}`}
-      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-white border border-zinc-200 text-[11px] hover:border-[--color-brand-300] transition-colors group"
-      title={status.label}
+    <div
+      className={cn(
+        "inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-[11px] transition-colors group",
+        selected
+          ? "bg-[--color-brand-100] border-[--color-brand-400]"
+          : "bg-white border-zinc-200 hover:border-[--color-brand-300]",
+      )}
     >
-      <span className={cn("size-1.5 rounded-full shrink-0", status.dot)} />
-      <span className={cn("truncate max-w-[120px]", isManager && "font-bold")}>
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={onToggleSelect}
+        onClick={(e) => e.stopPropagation()}
+        className="size-3 rounded shrink-0"
+        title="เลือก"
+      />
+      <span className={cn("size-1.5 rounded-full shrink-0", status.dot)} title={status.label} />
+      <Link
+        href={`/users/${user.id}`}
+        className={cn("truncate max-w-[120px]", isManager && "font-bold")}
+      >
         {user.name}
-      </span>
-      <span className={cn("text-[9px] px-1 py-0.5 rounded border font-bold", roleClass)}>
-        {ROLE_LABEL[user.role] ?? user.role}
-      </span>
-      {/* Channel dots */}
+      </Link>
+      <RoleBadgeWithPreview role={user.role} className={roleClass} />
       <span className="flex items-center gap-0.5">
         <span
           className={cn(
@@ -477,29 +965,46 @@ function UserChipCompact({ user }: { user: BranchUser }) {
           title={user.has_telegram ? "Telegram ผูกแล้ว" : "ยังไม่ผูก Telegram"}
         />
       </span>
-    </Link>
+      <UserActionMenu user={user} onAfterAction={onAfterAction} />
+    </div>
   );
 }
 
-function UserChipRow({ user }: { user: BranchUser }) {
+function UserChipRow({
+  user,
+  selected,
+  onToggleSelect,
+  onAfterAction,
+}: {
+  user: BranchUser;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onAfterAction: () => void;
+}) {
   const status = statusInfo(user);
   const roleClass = ROLE_COLOR[user.role] ?? "bg-zinc-50 text-zinc-700 border-zinc-200";
 
   return (
-    <Link
-      href={`/users/${user.id}`}
-      className="flex items-center gap-3 px-3 py-2 hover:bg-zinc-50 transition-colors text-sm"
+    <div
+      className={cn(
+        "flex items-center gap-3 px-3 py-2 transition-colors text-sm",
+        selected ? "bg-[--color-brand-50]" : "hover:bg-zinc-50",
+      )}
     >
-      <span className={cn("size-2 rounded-full shrink-0", status.dot)} />
-      <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={onToggleSelect}
+        className="size-3.5 rounded shrink-0"
+      />
+      <span className={cn("size-2 rounded-full shrink-0", status.dot)} title={status.label} />
+      <Link href={`/users/${user.id}`} className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
         <span className="font-bold truncate">{user.name}</span>
         <span className="text-[11px] text-zinc-500 truncate">
           {user.email ?? user.phone ?? ""}
         </span>
-      </div>
-      <span className={cn("text-[10px] px-1.5 py-0.5 rounded-md border font-bold", roleClass)}>
-        {ROLE_LABEL[user.role] ?? user.role}
-      </span>
+      </Link>
+      <RoleBadgeWithPreview role={user.role} className={roleClass} />
       <span className="flex items-center gap-1">
         <span
           className={cn(
@@ -516,7 +1021,194 @@ function UserChipRow({ user }: { user: BranchUser }) {
           title="Telegram"
         />
       </span>
-    </Link>
+      <UserActionMenu user={user} onAfterAction={onAfterAction} />
+    </div>
+  );
+}
+
+function RoleBadgeWithPreview({ role, className }: { role: string; className: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClickOut = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOut);
+    return () => document.removeEventListener("mousedown", onClickOut);
+  }, [open]);
+
+  const desc = PERMISSION_DESC[role];
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        className={cn(
+          "text-[9px] px-1 py-0.5 rounded border font-bold",
+          className,
+        )}
+      >
+        {ROLE_LABEL[role] ?? role}
+      </button>
+      {open && desc && (
+        <div className="absolute right-0 top-full mt-1 z-50 w-72 rounded-xl border-2 border-zinc-200 bg-white shadow-lg p-3 text-left">
+          <div className="flex items-center gap-1.5 mb-2">
+            <ShieldCheck className="size-3.5 text-[--color-brand-600]" />
+            <p className="text-xs font-extrabold text-zinc-900">
+              {ROLE_LABEL[role] ?? role}
+            </p>
+          </div>
+          <p className="text-[10px] uppercase tracking-wider font-bold text-[--color-leaf-700] mb-1">
+            ทำได้
+          </p>
+          <ul className="space-y-0.5 text-[11px] text-zinc-700 mb-2">
+            {desc.can.map((c, i) => (
+              <li key={i} className="flex gap-1">
+                <span className="text-[--color-leaf-600]">✓</span>
+                <span>{c}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[10px] uppercase tracking-wider font-bold text-red-700 mb-1">
+            ทำไม่ได้
+          </p>
+          <ul className="space-y-0.5 text-[11px] text-zinc-700">
+            {desc.cant.map((c, i) => (
+              <li key={i} className="flex gap-1">
+                <span className="text-red-500">✕</span>
+                <span>{c}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UserActionMenu({
+  user,
+  onAfterAction,
+}: {
+  user: BranchUser;
+  onAfterAction: () => void;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClickOut = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOut);
+    return () => document.removeEventListener("mousedown", onClickOut);
+  }, [open]);
+
+  const callApi = (path: string, method = "POST", body?: unknown) => {
+    startTransition(async () => {
+      const res = await fetch(path, {
+        method,
+        headers: body ? { "Content-Type": "application/json" } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(json.error || "ดำเนินการไม่สำเร็จ");
+        return;
+      }
+      if (json.inviteUrl) {
+        navigator.clipboard.writeText(json.inviteUrl);
+        toast.success("Copy ลิงก์ใหม่ไปที่ clipboard แล้ว ส่งใน LINE ได้เลย");
+      } else {
+        toast.success("เรียบร้อย");
+      }
+      setOpen(false);
+      onAfterAction();
+      router.refresh();
+    });
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        className="size-5 rounded hover:bg-zinc-100 flex items-center justify-center text-zinc-400 hover:text-zinc-700"
+        title="เพิ่มเติม"
+      >
+        <MoreHorizontal className="size-3.5" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 w-52 rounded-xl border-2 border-zinc-200 bg-white shadow-lg overflow-hidden">
+          <Link
+            href={`/users/${user.id}`}
+            className="flex items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-zinc-50"
+            onClick={() => setOpen(false)}
+          >
+            <ActivityIcon className="size-3.5 text-zinc-400" />
+            ดูโปรไฟล์ + audit
+          </Link>
+          {!user.invite_used && (
+            <button
+              type="button"
+              onClick={() => callApi(`/api/admin/users/${user.id}/resend-invite`)}
+              disabled={pending}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-zinc-50 text-left"
+            >
+              <Mail className="size-3.5 text-[--color-brand-600]" />
+              ส่งลิงก์เชิญใหม่
+            </button>
+          )}
+          {user.is_active && (
+            <button
+              type="button"
+              onClick={() => callApi(`/api/admin/users/${user.id}/force-logout`)}
+              disabled={pending}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-zinc-50 text-left"
+            >
+              <LogOut className="size-3.5 text-amber-600" />
+              Force Logout
+            </button>
+          )}
+          {user.is_active ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm(`ปิดบัญชี ${user.name}?`)) callApi(`/api/admin/users/${user.id}`, "DELETE");
+              }}
+              disabled={pending}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-red-50 text-red-700 text-left border-t border-zinc-100"
+            >
+              <Lock className="size-3.5" />
+              ปิดบัญชี
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => callApi(`/api/admin/users/${user.id}/reactivate`)}
+              disabled={pending}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-[--color-leaf-50] text-[--color-leaf-700] text-left border-t border-zinc-100"
+            >
+              <Unlock className="size-3.5" />
+              เปิดบัญชี
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -666,7 +1358,7 @@ function InviteDialog({
                 <p className="font-bold">ลิงก์พร้อมส่งแล้ว</p>
               </div>
               <p className="text-xs text-zinc-700 mb-3">
-                Copy ลิงก์ด้านล่างแล้วส่งให้ <strong>{name}</strong> ทาง LINE — ลิงก์หมดอายุใน 48 ชั่วโมง
+                Copy ลิงก์ด้านล่างแล้วส่งให้ <strong>{name}</strong> ทาง LINE — หมดอายุใน 48 ชั่วโมง
               </p>
               <div className="flex gap-2">
                 <input
