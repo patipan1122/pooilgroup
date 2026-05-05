@@ -167,7 +167,7 @@ export default async function TrainingPage() {
 
                   {trend.length > 1 && (
                     <div>
-                      <p className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold mb-2">
+                      <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-2">
                         แนวโน้ม 6 เดือน
                       </p>
                       <div className="flex items-end gap-1.5 h-16">
@@ -263,7 +263,7 @@ export default async function TrainingPage() {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl bg-zinc-50 border border-zinc-100 p-3">
-      <p className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+      <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
         {label}
       </p>
       <div className="text-lg font-extrabold tabular-num font-display mt-0.5">

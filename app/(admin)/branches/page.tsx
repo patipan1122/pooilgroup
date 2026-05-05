@@ -23,7 +23,7 @@ interface RawBranch {
   manager_id: string | null;
   phone: string | null;
   line_group_id: string | null;
-  telegram_chat_id: string | null;
+  settings: Record<string, unknown> | null;
   company_id: string | null;
   parent_branch_id: string | null;
 }
@@ -49,7 +49,7 @@ export default async function BranchesPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: rawBranchesData } = await (admin.from as any)("branches")
     .select(
-      "id, code, name, business_type, province, region, is_active, manager_id, phone, line_group_id, telegram_chat_id, company_id, parent_branch_id",
+      "id, code, name, business_type, province, region, is_active, manager_id, phone, line_group_id, settings, company_id, parent_branch_id",
     )
     .eq("org_id", orgId)
     .order("code");
@@ -126,6 +126,11 @@ export default async function BranchesPage() {
     const company = b.company_id ? companyById.get(b.company_id) ?? null : null;
     const directCount = manager ? 1 : 0;
     const userBranchCount = managerCountByBranch[b.id] ?? 0;
+    // Telegram chat ID is stored in settings JSONB until we add a dedicated column
+    const telegramChatId =
+      b.settings && typeof b.settings === "object"
+        ? ((b.settings as Record<string, unknown>).telegram_chat_id as string | undefined) ?? null
+        : null;
     return {
       id: b.id,
       code: b.code,
@@ -138,7 +143,7 @@ export default async function BranchesPage() {
       manager,
       phone: b.phone,
       line_group_id: b.line_group_id,
-      telegram_chat_id: b.telegram_chat_id,
+      telegram_chat_id: telegramChatId,
       company_id: b.company_id,
       company,
       parent_branch_id: b.parent_branch_id,

@@ -227,7 +227,7 @@ export default async function MonthlyReportPage({
             </div>
 
             <div className="mt-8">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-400 font-bold mb-3">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold mb-3">
                 ยอดเดือนที่ผ่านมา
               </p>
               <table className="w-full text-sm">
@@ -409,7 +409,7 @@ export default async function MonthlyReportPage({
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="border-2 border-zinc-200 rounded-2xl p-4">
-      <p className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+      <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
         {label}
       </p>
       <div className="text-3xl font-extrabold tabular-num font-display mt-1">

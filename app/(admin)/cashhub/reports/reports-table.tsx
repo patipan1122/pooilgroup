@@ -108,7 +108,7 @@ export function ReportsTable({ rows }: Props) {
         <CardBody className="!p-0 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-100 bg-zinc-50/50 text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+              <tr className="border-b border-zinc-100 bg-zinc-50/50 text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
                 <th className="w-9 p-3"></th>
                 <th className="text-left p-3 w-9"></th>
                 <th className="text-left p-3">สาขา</th>

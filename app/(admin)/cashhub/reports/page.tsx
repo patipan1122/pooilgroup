@@ -149,7 +149,7 @@ export default async function CashHubReportsPage({
             className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 items-end"
           >
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
                 สถานะ
               </span>
               <select
@@ -164,7 +164,7 @@ export default async function CashHubReportsPage({
               </select>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
                 ประเภท
               </span>
               <select
@@ -181,7 +181,7 @@ export default async function CashHubReportsPage({
               </select>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
                 วันที่
               </span>
               <input

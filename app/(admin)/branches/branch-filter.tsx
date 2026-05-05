@@ -1,10 +1,18 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Filter, RotateCcw, MapPin, Phone, MessageSquare, AlertCircle, UserPlus, Pencil, Building2 } from "lucide-react";
+import {
+  Filter,
+  RotateCcw,
+  ChevronDown,
+  AlertCircle,
+  Building2,
+  Pencil,
+  Phone as PhoneIcon,
+  MessageSquare,
+} from "lucide-react";
 import Link from "next/link";
 import { BUSINESS_TYPES } from "@/constants/business-types";
-import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils/cn";
 
@@ -75,13 +83,15 @@ export function BranchFilterAndList({ companies, branches }: Props) {
   const filtered = useMemo(() => {
     return branches.filter((b) => {
       if (b.company_id && !selectedCompanies.has(b.company_id)) return false;
-      if (selectedTypes.size > 0 && !selectedTypes.has(b.business_type)) return false;
-      if (showOnlyMissingManagers && b.manager_count >= b.manager_max) return false;
+      if (selectedTypes.size > 0 && !selectedTypes.has(b.business_type))
+        return false;
+      if (showOnlyMissingManagers && b.manager_count >= b.manager_max)
+        return false;
       return true;
     });
   }, [branches, selectedCompanies, selectedTypes, showOnlyMissingManagers]);
 
-  // Group by company → business type
+  // Group: company → business_type → branches
   const grouped = useMemo(() => {
     const byCompany = new Map<string, Map<string, BranchRow[]>>();
     for (const b of filtered) {
@@ -94,20 +104,39 @@ export function BranchFilterAndList({ companies, branches }: Props) {
     return byCompany;
   }, [filtered]);
 
-  const totalMissingManagers = filtered.filter((b) => b.manager_count < b.manager_max).length;
+  const totalMissingManagers = filtered.filter(
+    (b) => b.manager_count < b.manager_max,
+  ).length;
+
+  // Default: all groups open
+  const initialOpen = useMemo(() => {
+    const s = new Set<string>();
+    for (const [cId, types] of grouped.entries()) {
+      for (const t of types.keys()) s.add(`${cId}:${t}`);
+    }
+    return s;
+  }, [grouped]);
+  const [openTypes, setOpenTypes] = useState<Set<string>>(initialOpen);
+
+  function toggleGroup(key: string) {
+    const next = new Set(openTypes);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setOpenTypes(next);
+  }
 
   return (
     <>
       {/* Sticky filter bar */}
-      <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 py-4 bg-white/85 backdrop-blur-md border-b border-zinc-200 mb-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
-            <Filter className="size-3.5" />
+      <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 py-3 bg-white/85 backdrop-blur-md border-b border-zinc-200 mb-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] text-[--color-brand-600] font-bold">
+            <Filter className="size-3" />
             ตัวกรอง
           </div>
 
           {/* Company chips */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             {companies.map((c) => {
               const on = selectedCompanies.has(c.id);
               return (
@@ -115,7 +144,7 @@ export function BranchFilterAndList({ companies, branches }: Props) {
                   key={c.id}
                   onClick={() => toggleCompany(c.id)}
                   className={cn(
-                    "px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-colors",
+                    "px-2.5 py-1 rounded-full text-[11px] font-bold border-2 transition-colors",
                     on
                       ? "bg-[--color-brand-600] border-[--color-brand-600] text-white"
                       : "bg-white border-zinc-200 text-zinc-600 hover:border-zinc-400",
@@ -127,10 +156,10 @@ export function BranchFilterAndList({ companies, branches }: Props) {
             })}
           </div>
 
-          <div className="h-6 w-px bg-zinc-200" />
+          <div className="h-5 w-px bg-zinc-200" />
 
-          {/* Business type chips */}
-          <div className="flex items-center gap-1 flex-wrap">
+          {/* Business type icon chips */}
+          <div className="flex items-center gap-0.5 flex-wrap">
             {allTypesPresent.map((t) => {
               const cfg = BUSINESS_TYPES[t];
               if (!cfg) return null;
@@ -142,7 +171,7 @@ export function BranchFilterAndList({ companies, branches }: Props) {
                   onClick={() => toggleType(t)}
                   title={cfg.label}
                   className={cn(
-                    "size-9 rounded-lg border-2 text-lg flex items-center justify-center transition-colors",
+                    "size-7 rounded-md border-2 text-sm flex items-center justify-center transition-colors",
                     on
                       ? "bg-[--color-leaf-50] border-[--color-leaf-500]"
                       : noFilter
@@ -156,36 +185,36 @@ export function BranchFilterAndList({ companies, branches }: Props) {
             })}
           </div>
 
-          <div className="h-6 w-px bg-zinc-200" />
+          <div className="h-5 w-px bg-zinc-200" />
 
           <button
             onClick={() => setShowOnlyMissingManagers((v) => !v)}
             className={cn(
-              "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-colors",
+              "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border-2 transition-colors",
               showOnlyMissingManagers
                 ? "bg-amber-100 border-amber-400 text-amber-900"
                 : "bg-white border-zinc-200 text-zinc-600 hover:border-amber-300",
             )}
           >
-            <AlertCircle className="size-3.5" />
+            <AlertCircle className="size-3" />
             ตำแหน่งว่าง ({totalMissingManagers})
           </button>
 
           <button
             onClick={reset}
-            className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-900 font-medium"
+            className="ml-auto inline-flex items-center gap-1 px-2 py-1 text-[11px] text-zinc-500 hover:text-zinc-900 font-medium"
           >
-            <RotateCcw className="size-3.5" />
-            ล้างตัวกรอง
+            <RotateCcw className="size-3" />
+            ล้าง
           </button>
         </div>
 
-        <div className="mt-2 text-xs text-zinc-500">
-          แสดง <span className="font-bold text-zinc-900">{filtered.length}</span> สาขา จากทั้งหมด {branches.length}
+        <div className="mt-1 text-[11px] text-zinc-500">
+          แสดง <span className="font-bold text-zinc-900 tabular-num">{filtered.length}</span>{" "}
+          สาขา จากทั้งหมด {branches.length}
         </div>
       </div>
 
-      {/* Grouped list */}
       {filtered.length === 0 ? (
         <EmptyState
           icon={<Building2 className="size-6" />}
@@ -193,49 +222,81 @@ export function BranchFilterAndList({ companies, branches }: Props) {
           description="ลองล้างตัวกรองหรือเปลี่ยนเงื่อนไข"
         />
       ) : (
-        <div className="space-y-10 animate-fade-up delay-200">
+        <div className="space-y-6">
           {Array.from(grouped.entries()).map(([companyId, byType]) => {
             const company = companies.find((c) => c.id === companyId);
             const totalInCompany = Array.from(byType.values()).reduce(
-              (sum, list) => sum + list.length,
+              (s, list) => s + list.length,
               0,
             );
             return (
               <div key={companyId}>
-                {/* Company header */}
-                <div className="flex items-center gap-3 mb-5">
-                  <div className="size-11 rounded-xl bg-[--color-brand-600] text-white flex items-center justify-center font-extrabold tracking-tight font-display text-lg shadow-blue">
+                {/* Company header — small */}
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="size-8 rounded-lg bg-[--color-brand-600] text-white flex items-center justify-center font-extrabold text-xs font-display">
                     {company?.code.slice(0, 2) ?? "?"}
                   </div>
                   <div>
-                    <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight font-display text-zinc-900">
+                    <div className="font-extrabold text-base text-zinc-900 font-display">
                       {company?.name ?? "ไม่ระบุบริษัท"}
-                    </h2>
-                    <p className="text-xs text-zinc-500 font-medium">
-                      {totalInCompany} สาขา · {byType.size} ประเภทธุรกิจ
-                    </p>
+                    </div>
+                    <div className="text-[10px] text-zinc-500 -mt-0.5">
+                      <span className="tabular-num font-bold">{totalInCompany}</span>{" "}
+                      สาขา · {byType.size} ประเภท
+                    </div>
                   </div>
                 </div>
 
-                {/* By business type */}
-                <div className="space-y-6 ml-2 sm:ml-4 border-l-2 border-zinc-100 pl-4 sm:pl-6">
+                {/* Business type accordions — compact */}
+                <div className="space-y-2">
                   {Array.from(byType.entries()).map(([type, list]) => {
                     const cfg = BUSINESS_TYPES[type];
+                    const key = `${companyId}:${type}`;
+                    const isOpen = openTypes.has(key);
+                    const missing = list.filter(
+                      (b) => b.manager_count < b.manager_max,
+                    ).length;
                     return (
-                      <div key={type}>
-                        <p className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-zinc-600 font-bold mb-3">
-                          <span className="text-lg leading-none">
-                            {cfg?.emoji ?? "📋"}
+                      <div
+                        key={type}
+                        className="rounded-xl border-2 border-zinc-200 bg-white overflow-hidden"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleGroup(key)}
+                          className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-50 transition-colors text-left"
+                        >
+                          <span className="text-base">{cfg?.emoji ?? "📋"}</span>
+                          <span className="font-extrabold font-display text-sm text-zinc-900">
+                            {cfg?.label ?? type}
                           </span>
-                          {cfg?.label ?? type}
-                          <span className="text-zinc-400">·</span>
-                          <span className="text-zinc-500">{list.length} สาขา</span>
-                        </p>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                          {list.map((b) => (
-                            <BranchCard key={b.id} branch={b} />
-                          ))}
-                        </div>
+                          <span className="text-[11px] text-zinc-500 ml-1">
+                            <span className="tabular-num font-bold text-zinc-700">
+                              {list.length}
+                            </span>{" "}
+                            สาขา
+                          </span>
+                          {missing > 0 && (
+                            <span className="text-[10px] font-bold text-amber-700 px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-200 ml-auto mr-1">
+                              ตำแหน่งว่าง {missing}
+                            </span>
+                          )}
+                          <ChevronDown
+                            className={cn(
+                              "size-4 text-zinc-400 transition-transform shrink-0",
+                              !missing && "ml-auto",
+                              isOpen && "rotate-180",
+                            )}
+                          />
+                        </button>
+
+                        {isOpen && (
+                          <div className="border-t-2 border-zinc-100 divide-y divide-zinc-100">
+                            {list.map((b) => (
+                              <BranchCompactRow key={b.id} branch={b} />
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -249,138 +310,79 @@ export function BranchFilterAndList({ companies, branches }: Props) {
   );
 }
 
-function BranchCard({ branch: b }: { branch: BranchRow }) {
-  const cfg = BUSINESS_TYPES[b.business_type];
-  const missingManagers = b.manager_max - b.manager_count;
-  const slotsFilled = Math.min(b.manager_count, b.manager_max);
-
+function BranchCompactRow({ branch: b }: { branch: BranchRow }) {
+  const missing = b.manager_max - b.manager_count;
   return (
-    <div className="rounded-2xl border-2 border-zinc-200 bg-white p-4 hover:border-[--color-brand-300] transition-colors">
-      {/* Top row: code + status */}
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <div className="min-w-0">
-          <div className="font-extrabold tabular-num tracking-tight font-display text-base text-zinc-900">
+    <Link
+      href={`/branches/${b.id}`}
+      className="flex items-center gap-3 px-3 py-2.5 hover:bg-[--color-brand-50]/40 transition-colors group"
+    >
+      {/* Code + name */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-extrabold tabular-num font-display text-xs">
             {b.code}
-          </div>
-          <div className="text-sm font-medium text-zinc-700 truncate">
-            {b.name}
-          </div>
-          {b.province && (
-            <div className="text-[11px] text-zinc-500 inline-flex items-center gap-1 mt-0.5">
-              <MapPin className="size-3" />
-              {b.province}
-              {b.region && <span className="text-zinc-400">· {b.region}</span>}
-            </div>
-          )}
-        </div>
-        {b.is_active ? (
-          <Badge tone="success">ใช้งาน</Badge>
-        ) : (
-          <Badge tone="neutral">ปิด</Badge>
-        )}
-      </div>
-
-      {/* Manager slots */}
-      <div className="rounded-xl bg-zinc-50 border border-zinc-200 p-3 mb-3">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-600 font-bold">
-            ผู้จัดการสาขา
-          </p>
-          <span
-            className={cn(
-              "text-[11px] font-bold tabular-num",
-              missingManagers > 0 ? "text-amber-700" : "text-[--color-leaf-600]",
-            )}
-          >
-            {b.manager_count}/{b.manager_max}
           </span>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {b.manager?.name && (
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-zinc-200 text-xs">
-              <span className="size-5 rounded-full bg-[--color-brand-100] text-[--color-brand-700] flex items-center justify-center font-bold text-[10px]">
-                {b.manager.name.slice(0, 1)}
-              </span>
-              <span className="font-medium">{b.manager.name}</span>
-            </div>
+          <span className="text-xs text-zinc-700 truncate">{b.name}</span>
+          {b.province && (
+            <span className="text-[10px] text-zinc-400">· {b.province}</span>
           )}
-          {Array.from({ length: slotsFilled - (b.manager?.name ? 1 : 0) }).map(
-            (_, i) => (
-              <div
-                key={`filled-${i}`}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-zinc-200 text-xs text-zinc-400"
-              >
-                <span className="size-5 rounded-full bg-zinc-100" />
-                <span>—</span>
-              </div>
-            ),
-          )}
-          {Array.from({ length: missingManagers }).map((_, i) => (
-            <Link
-              key={`empty-${i}`}
-              href={`/branches/${b.id}`}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border-2 border-dashed border-amber-300 text-xs text-amber-700 hover:bg-amber-50 transition-colors"
-            >
-              <UserPlus className="size-3.5" />
-              เพิ่มคน
-            </Link>
-          ))}
         </div>
       </div>
 
-      {/* Contact / Telegram / LINE */}
-      <div className="grid grid-cols-3 gap-2 text-[11px] mb-3">
-        <div
+      {/* Status pills */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        {/* Manager count */}
+        <span
           className={cn(
-            "rounded-lg p-2 border",
-            b.phone ? "bg-white border-zinc-200" : "bg-zinc-50 border-dashed border-zinc-300",
+            "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold tabular-num",
+            missing > 0
+              ? "bg-amber-50 text-amber-800 border border-amber-200"
+              : "bg-[--color-leaf-50] text-[--color-leaf-700] border border-[--color-leaf-200]",
           )}
+          title="ผู้จัดการสาขา"
         >
-          <div className="flex items-center gap-1 text-zinc-500 mb-0.5">
-            <Phone className="size-3" />
-            <span className="font-bold uppercase tracking-wider text-[9px]">เบอร์</span>
-          </div>
-          <div className={cn("truncate", b.phone ? "font-medium text-zinc-800" : "text-zinc-400")}>
-            {b.phone ?? "ยังไม่ตั้ง"}
-          </div>
-        </div>
-        <div
+          ผจก. {b.manager_count}/{b.manager_max}
+        </span>
+        {/* LINE Group */}
+        <span
           className={cn(
-            "rounded-lg p-2 border",
-            b.telegram_chat_id ? "bg-white border-zinc-200" : "bg-zinc-50 border-dashed border-zinc-300",
+            "inline-flex items-center justify-center size-6 rounded-md border",
+            b.line_group_id
+              ? "bg-[--color-leaf-50] border-[--color-leaf-200] text-[--color-leaf-700]"
+              : "bg-zinc-50 border-zinc-200 text-zinc-300",
           )}
+          title={b.line_group_id ? `LINE Group: ${b.line_group_id}` : "ยังไม่ตั้ง LINE Group"}
         >
-          <div className="flex items-center gap-1 text-zinc-500 mb-0.5">
-            <MessageSquare className="size-3" />
-            <span className="font-bold uppercase tracking-wider text-[9px]">Telegram</span>
-          </div>
-          <div className={cn("truncate", b.telegram_chat_id ? "font-medium text-zinc-800" : "text-zinc-400")}>
-            {b.telegram_chat_id ?? "ยังไม่ตั้ง"}
-          </div>
-        </div>
-        <div
+          <MessageSquare className="size-3" />
+        </span>
+        {/* Telegram */}
+        <span
           className={cn(
-            "rounded-lg p-2 border",
-            b.line_group_id ? "bg-white border-zinc-200" : "bg-zinc-50 border-dashed border-zinc-300",
+            "inline-flex items-center justify-center size-6 rounded-md border",
+            b.telegram_chat_id
+              ? "bg-[--color-leaf-50] border-[--color-leaf-200] text-[--color-leaf-700]"
+              : "bg-zinc-50 border-zinc-200 text-zinc-300",
           )}
+          title={b.telegram_chat_id ? `Telegram: ${b.telegram_chat_id}` : "ยังไม่ตั้ง Telegram"}
         >
-          <div className="flex items-center gap-1 text-zinc-500 mb-0.5">
-            <MessageSquare className="size-3" />
-            <span className="font-bold uppercase tracking-wider text-[9px]">LINE</span>
-          </div>
-          <div className={cn("truncate", b.line_group_id ? "font-medium text-zinc-800" : "text-zinc-400")}>
-            {b.line_group_id ?? "ยังไม่ตั้ง"}
-          </div>
-        </div>
+          <span className="text-[10px] font-bold">TG</span>
+        </span>
+        {/* Phone */}
+        <span
+          className={cn(
+            "inline-flex items-center justify-center size-6 rounded-md border",
+            b.phone
+              ? "bg-[--color-leaf-50] border-[--color-leaf-200] text-[--color-leaf-700]"
+              : "bg-zinc-50 border-zinc-200 text-zinc-300",
+          )}
+          title={b.phone ?? "ไม่มีเบอร์"}
+        >
+          <PhoneIcon className="size-3" />
+        </span>
+        {/* Edit hint */}
+        <Pencil className="size-3 text-zinc-300 group-hover:text-[--color-brand-600] transition-colors" />
       </div>
-
-      <Link
-        href={`/branches/${b.id}`}
-        className="inline-flex items-center gap-1.5 text-xs font-bold text-[--color-brand-700] hover:text-[--color-brand-900]"
-      >
-        <Pencil className="size-3.5" />
-        แก้ไขข้อมูลสาขา
-      </Link>
-    </div>
+    </Link>
   );
 }

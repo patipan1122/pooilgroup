@@ -117,7 +117,7 @@ export default async function ShortagesPage({
         <CardBody>
           <form method="get" className="flex flex-wrap gap-3 items-end">
             <label className="flex flex-col gap-1.5 min-w-[160px]">
-              <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
                 ช่วงเวลา
               </span>
               <select
@@ -132,7 +132,7 @@ export default async function ShortagesPage({
               </select>
             </label>
             <label className="flex flex-col gap-1.5 flex-1 min-w-[180px]">
-              <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
                 ค้นชื่อ
               </span>
               <input

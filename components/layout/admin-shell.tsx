@@ -138,7 +138,7 @@ export function AdminShell({ user, children }: Props) {
                         </div>
                       </Link>
                       <div className="h-px bg-zinc-100 my-1.5" />
-                      <p className="px-3 text-[10px] uppercase tracking-widest text-zinc-400 font-bold mb-1">
+                      <p className="px-3 text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
                         เปลี่ยนโปรแกรม
                       </p>
                       {MODULE_LIST.map((m) => {
@@ -378,7 +378,7 @@ function NavGroup({
 }) {
   return (
     <div className="px-3">
-      <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-400 font-bold px-3 mb-1.5">
+      <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold px-3 mb-1.5">
         {title}
       </p>
       <div className="space-y-0.5">

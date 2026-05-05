@@ -76,7 +76,7 @@ export default async function LeaderboardPage({
             className="flex flex-wrap items-end gap-3 text-sm"
           >
             <label className="flex flex-col gap-1.5 min-w-[160px]">
-              <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
                 เรียงตาม
               </span>
               <select
@@ -92,7 +92,7 @@ export default async function LeaderboardPage({
               </select>
             </label>
             <label className="flex flex-col gap-1.5 min-w-[160px]">
-              <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
                 ประเภทธุรกิจ
               </span>
               <select

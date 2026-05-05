@@ -174,7 +174,7 @@ export default async function ComparePage({
         <Card>
           <CardBody className="!p-0">
             <table className="w-full text-sm">
-              <thead className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+              <thead className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
                 <tr className="border-b border-zinc-100">
                   <th className="text-left p-3">ประเภท</th>
                   <th className="text-right p-3">{fmtMonth(aMonth)}</th>
@@ -316,7 +316,7 @@ function Picker({
 }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+      <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
         {label}
       </span>
       <select
@@ -337,7 +337,7 @@ function Picker({
 function TypePicker({ value }: { value: string }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+      <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
         Filter ประเภท (optional)
       </span>
       <select

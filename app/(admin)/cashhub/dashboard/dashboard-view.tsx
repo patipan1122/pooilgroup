@@ -120,7 +120,7 @@ export function DashboardView({
         </p>
         {companies.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+            <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
               บริษัท:
             </span>
             <Link
@@ -160,7 +160,7 @@ export function DashboardView({
         number="00"
         label="EXECUTIVE OVERVIEW"
         title="สรุปยอดขาย ทุกประเภทธุรกิจ"
-        description="6 เดือนล่าสุด · เลื่อนซ้ายขวาดูเดือนเก่า · กดสลับมุมมองเทียบเดือน/ยอดรวม"
+        description="กดที่แถวเพื่อขยายดูสาขา · ปุ่มมุมขวาบนสำหรับขยายทั้งหมด · สลับรายเดือน/รายวัน · เลื่อนซ้ายขวาดูช่วงเก่า"
         className="mb-8 animate-fade-up"
       >
         <ExecutiveTable data={executiveMatrix} />
@@ -533,15 +533,15 @@ export function DashboardView({
                     total={data.paymentMixTotal}
                   />
                   <MixRow
-                    icon={<CreditCard className="size-4 text-purple-700" />}
-                    color="#9333ea"
+                    icon={<CreditCard className="size-4 text-[--color-brand-700]" />}
+                    color="#1d4ed8"
                     label="บัตร"
                     value={data.paymentMix.card}
                     total={data.paymentMixTotal}
                   />
                   <MixRow
-                    icon={<Receipt className="size-4 text-orange-700" />}
-                    color="#f97316"
+                    icon={<Receipt className="size-4 text-[--color-brand-600]" />}
+                    color="#3b82f6"
                     label="เครดิต"
                     value={data.paymentMix.credit}
                     total={data.paymentMixTotal}
@@ -687,11 +687,11 @@ export function DashboardView({
                       const cfg = BUSINESS_TYPES[s.branch.business_type];
                       const rankColor =
                         i === 0
-                          ? "text-amber-600"
+                          ? "text-[--color-brand-700]"
                           : i === 1
-                            ? "text-zinc-500"
+                            ? "text-[--color-brand-500]"
                             : i === 2
-                              ? "text-orange-700"
+                              ? "text-zinc-600"
                               : "text-zinc-400";
                       return (
                         <li key={s.branch.id}>

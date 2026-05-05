@@ -216,7 +216,7 @@ export default async function UserDetailPage({ params }: Props) {
             </div>
             {recentSessions && recentSessions.length > 0 && (
               <div className="pt-3 border-t border-zinc-100 space-y-1.5">
-                <p className="text-xs uppercase tracking-wider text-zinc-400 font-bold">
+                <p className="text-xs uppercase tracking-wider text-zinc-500 font-bold">
                   5 อุปกรณ์ล่าสุด
                 </p>
                 {recentSessions.map((s) => (

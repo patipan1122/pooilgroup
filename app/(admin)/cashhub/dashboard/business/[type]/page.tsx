@@ -204,7 +204,7 @@ function StatBox({
   return (
     <Card>
       <CardBody className="!p-3 sm:!p-4">
-        <p className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+        <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
           {label}
         </p>
         <div
