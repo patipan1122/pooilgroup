@@ -11,6 +11,7 @@ import {
   Copy,
   CheckCircle2,
   X,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -20,6 +21,8 @@ interface Props {
   isActive: boolean;
   isPendingInvite: boolean;
   isSelf: boolean;
+  /** Real (not impersonated) admin role — shown the "เข้าใช้แทน" button only when super_admin. */
+  canImpersonate: boolean;
 }
 
 export function UserDetailActions({
@@ -27,6 +30,7 @@ export function UserDetailActions({
   isActive,
   isPendingInvite,
   isSelf,
+  canImpersonate,
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -80,6 +84,22 @@ export function UserDetailActions({
     });
   }
 
+  function impersonate() {
+    startTransition(async () => {
+      const res = await fetch(`/api/admin/users/${userId}/impersonate`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        toast.error(json.error || "เข้าใช้แทนไม่สำเร็จ");
+        return;
+      }
+      toast.success("กำลังเปลี่ยนเป็นบัญชีนี้...");
+      router.refresh();
+      router.push("/");
+    });
+  }
+
   function copyLink() {
     if (!inviteUrl) return;
     navigator.clipboard.writeText(inviteUrl);
@@ -91,6 +111,17 @@ export function UserDetailActions({
   return (
     <>
       <div className="flex flex-wrap gap-2 items-center">
+        {!isSelf && isActive && canImpersonate && (
+          <Button
+            variant="outline"
+            size="md"
+            onClick={impersonate}
+            loading={pending}
+          >
+            <Eye className="size-4" />
+            เข้าใช้แทน
+          </Button>
+        )}
         {!isSelf && isActive && (
           <Button
             variant="outline"
