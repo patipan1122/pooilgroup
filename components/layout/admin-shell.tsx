@@ -65,10 +65,12 @@ export function AdminShell({
 
   const moduleNav = useMemo(() => {
     if (!activeModule) return [];
-    return activeModule.nav.filter(
-      (item) => !item.adminOnly || isAdmin,
-    );
-  }, [activeModule, isAdmin]);
+    return activeModule.nav.filter((item) => {
+      if (item.adminOnly && !isAdmin) return false;
+      if (item.roles && !item.roles.includes(user.role)) return false;
+      return true;
+    });
+  }, [activeModule, isAdmin, user.role]);
 
   async function logout() {
     // Hit our /api/auth/logout first so we audit + close session row

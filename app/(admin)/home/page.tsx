@@ -54,10 +54,12 @@ export default async function HomePage() {
     redirect("/cashhub/quick-fill");
   }
 
-  if (
-    session.user.role === "branch_manager" ||
-    session.user.role === "area_manager"
-  ) {
+  // ผู้จัดการสาขาเข้าหน้าของตัวเอง (ไม่เห็น executive overview)
+  // feedback_role_scoped_views.md
+  if (session.user.role === "branch_manager") {
+    redirect("/cashhub/my-branches");
+  }
+  if (session.user.role === "area_manager") {
     redirect("/cashhub/dashboard");
   }
 

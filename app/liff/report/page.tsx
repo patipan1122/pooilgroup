@@ -1,33 +1,33 @@
-import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
-import { redirect } from "next/navigation";
+import { loadManageableBranches } from "@/lib/auth/branch-access";
+import { bkkToday } from "@/lib/utils/format";
+import { BranchPicker, type PickerBranch } from "./branch-picker";
+
+const ROLE_LABEL: Record<string, string> = {
+  super_admin: "Super Admin",
+  org_admin: "Admin",
+  admin: "Admin",
+  branch_manager: "ผู้จัดการสาขา",
+  area_manager: "ผู้จัดการเขต",
+  staff: "Staff",
+  driver: "Driver",
+  viewer: "Viewer",
+};
 
 export default async function LiffReportEntryPage() {
   const session = await requireSession();
   const admin = adminClient();
 
-  // Find branches assigned to this user
-  const { data: ub } = await admin
-    .from("user_branches")
-    .select("branch_id, branches(id, code, name, business_type, is_active)")
-    .eq("user_id", session.user.id)
-    .eq("is_active", true);
-
-  const branches: { id: string; code: string; name: string; is_active: boolean }[] = [];
-  for (const u of ub ?? []) {
-    const b = Array.isArray(u.branches) ? u.branches[0] : u.branches;
-    if (b) branches.push(b as { id: string; code: string; name: string; is_active: boolean });
-  }
-
+  const branches = await loadManageableBranches(session.user);
   const activeBranches = branches.filter((b) => b.is_active);
 
-  // 1 branch → redirect direct
+  // 1 branch → redirect direct (no picker needed)
   if (activeBranches.length === 1) {
     redirect(`/liff/report/${activeBranches[0]!.id}`);
   }
 
-  // None → message
   if (activeBranches.length === 0) {
     return (
       <div className="p-6 max-w-md mx-auto text-center">
@@ -40,27 +40,34 @@ export default async function LiffReportEntryPage() {
     );
   }
 
-  // Multiple → choose
+  // Today's reports for these branches → show "filled" badge
+  const today = bkkToday();
+  const branchIds = activeBranches.map((b) => b.id);
+  const { data: reports } = await admin
+    .from("daily_reports")
+    .select("branch_id, status")
+    .eq("org_id", session.user.org_id)
+    .eq("report_date", today)
+    .in("branch_id", branchIds);
+
+  const todayMap = Object.fromEntries(
+    (reports ?? []).map((r) => [r.branch_id as string, r.status as string]),
+  );
+
+  const pickerBranches: PickerBranch[] = activeBranches.map((b) => ({
+    id: b.id,
+    code: b.code,
+    name: b.name,
+    business_type: b.business_type,
+    province: b.province,
+    todayStatus: todayMap[b.id] ?? null,
+  }));
+
   return (
-    <div className="p-4 max-w-md mx-auto safe-top safe-bottom">
-      <h1 className="text-xl font-semibold font-display mb-1">
-        เลือกสาขาที่จะกรอก
-      </h1>
-      <p className="text-sm text-zinc-500 mb-4">
-        คุณดูแล {activeBranches.length} สาขา
-      </p>
-      <div className="space-y-2">
-        {activeBranches.map((b) => (
-          <Link
-            key={b.id}
-            href={`/liff/report/${b.id}`}
-            className="block bg-white rounded-2xl border border-zinc-200 px-4 py-4 hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/30 transition-colors shadow-soft"
-          >
-            <div className="font-medium">{b.code}</div>
-            <div className="text-sm text-zinc-500">{b.name}</div>
-          </Link>
-        ))}
-      </div>
-    </div>
+    <BranchPicker
+      branches={pickerBranches}
+      userName={session.user.name}
+      roleLabel={ROLE_LABEL[session.user.role] ?? session.user.role}
+    />
   );
 }
