@@ -82,10 +82,24 @@ export async function POST(req: NextRequest) {
     .select("branch_id, is_active")
     .eq("user_id", userId);
 
-  // Step 1: temporarily detach old branches
+  // Pre-audit BEFORE the structural id-swap below.
+  // The pending users row uses a temp UUID; Supabase auth issues its own id on
+  // createUser, so this flow swaps temp→real. The DELETEs below are NOT a
+  // soft-delete violation — they are atomic to the swap. We log here so the
+  // INVITE_ACCEPTED action is recorded with the temp id before it is freed.
+  await audit({
+    orgId: pending.org_id,
+    userId,
+    action: "INVITE_ACCEPTED",
+    resourceType: "user",
+    resourceId: userId,
+    diff: { old: { is_active: false, invite_used_at: null }, new: { temp_id: userId } },
+  });
+
+  // Step 1: temporarily detach old branches (will be re-attached to new auth id)
   await admin.from("user_branches").delete().eq("user_id", userId);
 
-  // Step 2: delete pending row to free email/id
+  // Step 2: delete pending row to free email + temp id (id-swap, not soft-delete)
   const oldUser = pending;
   await admin.from("users").delete().eq("id", userId);
 

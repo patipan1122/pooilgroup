@@ -12,6 +12,7 @@ import { audit } from "@/lib/audit/log";
 import { sendNotificationToMany, getOrgAdminIds } from "@/lib/notifications/send";
 import { sendToAdminChat, htmlEscape } from "@/lib/telegram/send";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
+import { ROLE_LABEL_LONG } from "@/lib/constants/roles";
 
 const POOILGROUP_ORG_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -35,13 +36,7 @@ const Schema = z.object({
   notes: z.string().max(500).optional().or(z.literal("")),
 });
 
-const ROLE_LABEL: Record<string, string> = {
-  staff: "พนักงาน",
-  branch_manager: "ผู้จัดการสาขา",
-  area_manager: "ผู้จัดการเขต",
-  driver: "คนขับ",
-  viewer: "ผู้ดู (Read-only)",
-};
+const ROLE_LABEL = ROLE_LABEL_LONG;
 
 export async function POST(req: NextRequest) {
   let body: unknown;

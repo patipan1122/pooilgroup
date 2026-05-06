@@ -113,6 +113,11 @@ export interface LoadReportsOpts {
   statuses?: string[];
   /** กรองตาม branch_ids ที่ระบุ */
   branchIds?: string[];
+  /** กรองเฉพาะรายงานที่ user(s) นี้เป็นคนกรอก/ส่ง */
+  submittedByIds?: string[];
+  /** Newest-first sort by submitted_at, with optional limit. */
+  newestFirst?: boolean;
+  limit?: number;
 }
 
 export async function loadReports(
@@ -124,6 +129,9 @@ export async function loadReports(
     dateTo,
     statuses = ["approved", "submitted"],
     branchIds,
+    submittedByIds,
+    newestFirst,
+    limit,
   } = opts;
   const admin = adminClient();
 
@@ -138,6 +146,11 @@ export async function loadReports(
   if (dateTo) q = q.lte("report_date", dateTo);
   if (statuses.length > 0) q = q.in("status", statuses);
   if (branchIds && branchIds.length > 0) q = q.in("branch_id", branchIds);
+  if (submittedByIds && submittedByIds.length > 0) {
+    q = q.in("submitted_by_id", submittedByIds);
+  }
+  if (newestFirst) q = q.order("submitted_at", { ascending: false });
+  if (limit) q = q.limit(limit);
 
   const { data } = await q;
   return (data ?? []) as CanonicalReport[];

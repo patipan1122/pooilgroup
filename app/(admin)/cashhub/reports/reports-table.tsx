@@ -12,7 +12,10 @@ import {
   AlertCircle,
   Filter,
   X,
+  LayoutGrid,
+  Table as TableIcon,
 } from "lucide-react";
+import { ReportsFlatView } from "./reports-flat-view";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,6 +53,7 @@ export function ReportsBoard({
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
+  const [viewMode, setViewMode] = useState<"board" | "table">("board");
   const [openTypes, setOpenTypes] = useState<Set<string>>(() => {
     // Auto-expand groups that have pending or missing
     const expanded = new Set<string>();
@@ -324,6 +328,42 @@ export function ReportsBoard({
         </Card>
       )}
 
+      {/* View-mode tabs */}
+      <div className="mb-3 inline-flex items-center gap-1 p-1 rounded-xl border-2 border-zinc-200 bg-white">
+        <button
+          type="button"
+          onClick={() => setViewMode("board")}
+          className={cn(
+            "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors",
+            viewMode === "board"
+              ? "bg-[var(--color-brand-600)] text-white shadow-blue"
+              : "text-zinc-700 hover:bg-zinc-100",
+          )}
+        >
+          <LayoutGrid className="size-3.5" />
+          กลุ่มตามธุรกิจ
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewMode("table")}
+          className={cn(
+            "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors",
+            viewMode === "table"
+              ? "bg-[var(--color-brand-600)] text-white shadow-blue"
+              : "text-zinc-700 hover:bg-zinc-100",
+          )}
+        >
+          <TableIcon className="size-3.5" />
+          ตาราง · Excel
+        </button>
+      </div>
+
+      {viewMode === "table" && (
+        <ReportsFlatView rows={groups.flatMap((g) => g.reports)} />
+      )}
+
+      {viewMode === "board" && (
+      <>
       {/* Grouped board */}
       <div className="space-y-3">
         {groups.map((g) => {
@@ -410,6 +450,9 @@ export function ReportsBoard({
           );
         })}
       </div>
+
+      </>
+      )}
 
       <div className="mt-4 flex justify-end">
         <a href="/api/cashhub/export">

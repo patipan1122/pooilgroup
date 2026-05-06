@@ -168,6 +168,33 @@ export default async function UsersPage() {
   const totalUsers = allUsers.filter((u) => u.is_active).length;
   const totalBranches = branches.length;
 
+  // Build flat list for the Excel-style table view (DataGrid).
+  const branchCodeById = new Map(branches.map((b) => [b.id, b.code]));
+  const codesByUserId = new Map<string, string[]>();
+  for (const ub of ubRows) {
+    const code = branchCodeById.get(ub.branch_id);
+    if (!code) continue;
+    if (!codesByUserId.has(ub.user_id)) codesByUserId.set(ub.user_id, []);
+    codesByUserId.get(ub.user_id)!.push(code);
+  }
+  const flatUsers = allUsers.map((u) => ({
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    phone: u.phone,
+    role: u.role,
+    branchCodes: (codesByUserId.get(u.id) ?? []).join(", "),
+    status: (u.is_active
+      ? "active"
+      : u.invite_used_at
+        ? "inactive"
+        : "pending") as "active" | "pending" | "inactive",
+    has_line: !!u.line_user_id,
+    has_telegram: !!u.telegram_user_id,
+    last_login_at: u.last_login_at,
+    created_at: u.created_at,
+  }));
+
   return (
     <div className="relative">
       <div
@@ -265,6 +292,7 @@ export default async function UsersPage() {
             pendingRequestCount={pendingCount}
             stats={stats}
             nowMs={now}
+            flatUsers={flatUsers}
           />
         </Section>
       </div>

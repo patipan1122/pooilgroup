@@ -399,9 +399,10 @@ export function AdminShell({
         <main className="flex-1 min-w-0 pb-20">{children}</main>
       </div>
 
-      {/* Global floating AI Assistant — available on every admin page.
+      {/* Global floating AI Assistant — available to every signed-in user
+          (admins for analysis, branch managers for how-to + their own data).
           The chat sends current pathname so it can answer page-specific questions. */}
-      {isAdmin && <AiChat />}
+      <AiChat />
     </div>
   );
 }

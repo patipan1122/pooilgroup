@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { thaiDateLong, bkkToday, bkkRelative, formatBaht } from "@/lib/utils/format";
+import { loadReports } from "@/lib/cashhub/data";
 
 interface BranchAssignment {
   id: string;
@@ -62,19 +63,19 @@ export async function StaffHome({
     }
   }
 
-  // 2. Today's reports for these branches (to show status)
+  // 2. Today's reports for these branches — go through canonical loader
   let todayByBranch: Record<string, "submitted" | "approved" | "rejected" | "draft" | "missing"> = {};
   if (branches.length > 0) {
-    const { data: todayReports } = await admin
-      .from("daily_reports")
-      .select("branch_id, status")
-      .eq("org_id", orgId)
-      .eq("report_date", today)
-      .in("branch_id", branches.map((b) => b.id));
+    const todayReports = await loadReports(orgId, {
+      dateFrom: today,
+      dateTo: today,
+      statuses: ["draft", "submitted", "approved", "rejected"],
+      branchIds: branches.map((b) => b.id),
+    });
     todayByBranch = Object.fromEntries(
-      (todayReports ?? []).map((r) => [
-        (r as { branch_id: string }).branch_id,
-        (r as { status: string }).status as "submitted" | "approved" | "rejected" | "draft",
+      todayReports.map((r) => [
+        r.branch_id,
+        r.status as "submitted" | "approved" | "rejected" | "draft",
       ]),
     );
   }
@@ -83,18 +84,13 @@ export async function StaffHome({
   const sinceDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10);
-  const { data: recentData } = await admin
-    .from("daily_reports")
-    .select(
-      "id, report_date, total_sales, status, branch_id, submitted_at",
-    )
-    .eq("org_id", orgId)
-    .eq("submitted_by_id", userId)
-    .gte("report_date", sinceDate)
-    .order("submitted_at", { ascending: false })
-    .limit(7);
-
-  const recents = (recentData ?? []) as RecentReport[];
+  const recents = (await loadReports(orgId, {
+    dateFrom: sinceDate,
+    statuses: ["draft", "submitted", "approved", "rejected"],
+    submittedByIds: [userId],
+    newestFirst: true,
+    limit: 7,
+  })) as unknown as RecentReport[];
   const branchById = Object.fromEntries(branches.map((b) => [b.id, b]));
 
   const filledCount = branches.filter(

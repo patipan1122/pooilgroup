@@ -18,6 +18,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { thaiDateLong, bkkToday } from "@/lib/utils/format";
 import { BackButton } from "@/components/ui/back-button";
+import { loadReports } from "@/lib/cashhub/data";
 
 export const dynamic = "force-dynamic";
 
@@ -40,21 +41,18 @@ export default async function QuickFillPage({
 
   const allBranches = await loadManageableBranches(session.user);
 
-  // Today's reports for these branches
+  // Today's reports for these branches — go through canonical loader
   const branchIds = allBranches.map((b) => b.id);
   let todayByBranch: Record<string, string> = {};
   if (branchIds.length > 0) {
-    const { data: r } = await admin
-      .from("daily_reports")
-      .select("branch_id, status")
-      .eq("org_id", session.user.org_id)
-      .eq("report_date", today)
-      .in("branch_id", branchIds);
+    const reports = await loadReports(session.user.org_id, {
+      dateFrom: today,
+      dateTo: today,
+      statuses: ["draft", "submitted", "approved", "rejected"],
+      branchIds,
+    });
     todayByBranch = Object.fromEntries(
-      (r ?? []).map((row) => [
-        (row as { branch_id: string }).branch_id,
-        (row as { status: string }).status,
-      ]),
+      reports.map((r) => [r.branch_id, r.status]),
     );
   }
 

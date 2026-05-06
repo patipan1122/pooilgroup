@@ -7,17 +7,12 @@ import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 
-const BUSINESS_TYPES = [
-  "fuel_station",
-  "lpg_station",
-  "bottling_plant",
-  "hotel",
-  "convenience_store",
-  "ev_station",
-  "cafe",
-  "transport",
-  "gas_fleet",
-] as const;
+import { BUSINESS_TYPES as BUSINESS_TYPE_CONFIG } from "@/constants/business-types";
+
+const BUSINESS_TYPES = Object.keys(BUSINESS_TYPE_CONFIG) as [
+  string,
+  ...string[],
+];
 
 const CreateSchema = z.object({
   code: z

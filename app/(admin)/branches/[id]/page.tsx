@@ -89,6 +89,31 @@ export default async function BranchDetailPage({ params }: Props) {
         <BranchDetailActions branchId={branch.id} isActive={branch.is_active} />
       </header>
 
+      {/* Cross-module quick links */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4 animate-fade-up delay-50">
+        <Link
+          href={`/cashhub/branches/${branch.id}`}
+          className="rounded-xl border-2 border-zinc-200 bg-white px-4 py-3 hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm font-bold text-zinc-800 inline-flex items-center justify-between"
+        >
+          <span>ดูในมุม CashHub</span>
+          <span className="text-zinc-400">→</span>
+        </Link>
+        <Link
+          href={`/cashhub/reports?branch=${branch.id}`}
+          className="rounded-xl border-2 border-zinc-200 bg-white px-4 py-3 hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm font-bold text-zinc-800 inline-flex items-center justify-between"
+        >
+          <span>รายงานของสาขา</span>
+          <span className="text-zinc-400">→</span>
+        </Link>
+        <Link
+          href={`/audit?branch=${branch.id}`}
+          className="rounded-xl border-2 border-zinc-200 bg-white px-4 py-3 hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm font-bold text-zinc-800 inline-flex items-center justify-between"
+        >
+          <span>Audit log ของสาขา</span>
+          <span className="text-zinc-400">→</span>
+        </Link>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="animate-fade-up delay-100">
           <CardHeader>

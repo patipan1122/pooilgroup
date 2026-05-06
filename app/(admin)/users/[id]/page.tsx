@@ -182,12 +182,13 @@ export default async function UserDetailPage({ params }: Props) {
                     | null;
                   const arr = Array.isArray(branch) ? branch : branch ? [branch] : [];
                   return arr.map((br) => (
-                    <span
+                    <Link
                       key={b.branch_id}
-                      className="text-xs rounded-lg bg-zinc-100 px-2 py-1 font-medium"
+                      href={`/branches/${b.branch_id}`}
+                      className="text-xs rounded-lg bg-zinc-100 px-2 py-1 font-medium hover:bg-[var(--color-brand-100)] transition-colors"
                     >
                       {br.code} · {br.name}
-                    </span>
+                    </Link>
                   ));
                 })}
               </div>
@@ -228,6 +229,31 @@ export default async function UserDetailPage({ params }: Props) {
             )}
           </CardBody>
         </Card>
+      </div>
+
+      {/* Quick links: drill into related data */}
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2 animate-fade-up delay-300">
+        <Link
+          href={`/audit?user=${user.id}`}
+          className="rounded-xl border-2 border-zinc-200 bg-white px-4 py-3 hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm font-bold text-zinc-800 inline-flex items-center justify-between"
+        >
+          <span>Audit log ของคนนี้</span>
+          <span className="text-zinc-400">→</span>
+        </Link>
+        <Link
+          href={`/cashhub/reports?submitted_by=${user.id}`}
+          className="rounded-xl border-2 border-zinc-200 bg-white px-4 py-3 hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm font-bold text-zinc-800 inline-flex items-center justify-between"
+        >
+          <span>รายงานที่ส่ง</span>
+          <span className="text-zinc-400">→</span>
+        </Link>
+        <Link
+          href={`/cashhub/reports?approved_by=${user.id}`}
+          className="rounded-xl border-2 border-zinc-200 bg-white px-4 py-3 hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm font-bold text-zinc-800 inline-flex items-center justify-between"
+        >
+          <span>รายงานที่อนุมัติ</span>
+          <span className="text-zinc-400">→</span>
+        </Link>
       </div>
 
       {isPendingInvite && (

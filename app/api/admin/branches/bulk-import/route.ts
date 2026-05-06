@@ -8,21 +8,12 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { BUSINESS_TYPES as BUSINESS_TYPE_CONFIG } from "@/constants/business-types";
 
-const VALID_BUSINESS_TYPES = [
-  "fuel_station",
-  "lpg_station",
-  "lpg_retail",
-  "bottling_plant",
-  "hotel",
-  "convenience_store",
-  "ev_station",
-  "cafe",
-  "cafe_punthai",
-  "massage_chair",
-  "claw_machine",
-  "training_center",
-] as const;
+const VALID_BUSINESS_TYPES = Object.keys(BUSINESS_TYPE_CONFIG) as [
+  string,
+  ...string[],
+];
 
 const RowSchema = z.object({
   code: z.string().min(1).max(50),
