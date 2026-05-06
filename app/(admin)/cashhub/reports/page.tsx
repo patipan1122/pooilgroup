@@ -98,7 +98,7 @@ export default async function CashHubReportsPage({
     admin
       .from("daily_reports")
       .select(
-        "id, branch_id, report_date, shift, total_sales, cash, transfer, card, credit, shortage, status, submitted_at, approved_at, branches(code, name, business_type)",
+        "id, branch_id, report_date, shift, total_sales, cash, transfer, card, credit, shortage, status, submitted_at, branches(code, name, business_type)",
       )
       .eq("org_id", session.user.org_id)
       .order("report_date", { ascending: false })

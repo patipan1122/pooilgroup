@@ -1,18 +1,22 @@
 // Resolve the canonical app URL for building absolute links (invites, emails,
 // LIFF redirects, Telegram callbacks).
 //
-// Order of preference:
-//   1. NEXT_PUBLIC_APP_URL — explicit override (build-time inline). Use this
-//      for stable custom domain (e.g. https://app.pooilgroup.com).
-//   2. VERCEL_PROJECT_PRODUCTION_URL — Vercel-provided stable production
-//      domain (runtime, e.g. pooilgroup.vercel.app). Survives missing env.
-//   3. VERCEL_URL — current deployment URL (runtime, e.g.
-//      pooilgroup-xxx.vercel.app). Used for preview deployments.
-//   4. http://localhost:3100 — local dev fallback.
-//
-// Why both NEXT_PUBLIC + VERCEL_*: NEXT_PUBLIC_* is build-time inlined, so if
-// the env var was added AFTER deploy, the build still falls back to localhost.
-// VERCEL_* is runtime — always reflects the current deployment context.
+// Two flavors:
+//   - getRequestBaseUrl(req): prefer the actual request origin via forwarded
+//     headers. Use this in API routes that build links shown to the same admin
+//     who triggered the action — guarantees the link matches whatever domain
+//     they're on (vercel.app, custom domain, preview URL, localhost).
+//   - getBaseUrl(): env-based fallback for non-request contexts (cron jobs,
+//     background workers). Order: NEXT_PUBLIC_APP_URL → VERCEL_PROJECT_PRODUCTION_URL
+//     → VERCEL_URL → http://localhost:3100.
+
+export function getRequestBaseUrl(req: Request): string {
+  const proto = req.headers.get("x-forwarded-proto") ?? "https";
+  const host =
+    req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  if (host) return `${proto}://${host}`;
+  return getBaseUrl();
+}
 
 export function getBaseUrl(): string {
   const explicit = process.env.NEXT_PUBLIC_APP_URL?.trim();

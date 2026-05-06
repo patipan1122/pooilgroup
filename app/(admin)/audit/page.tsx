@@ -62,7 +62,10 @@ interface SearchParams {
   action?: string;
   user?: string;
   range?: "today" | "7d" | "30d" | "all";
+  page?: string;
 }
+
+const PAGE_SIZE = 50;
 
 export default async function AuditLogPage({
   searchParams,
@@ -76,15 +79,19 @@ export default async function AuditLogPage({
   const range = params.range ?? "7d";
   const actionFilter = params.action ?? "all";
   const userFilter = params.user ?? "all";
+  const page = Math.max(1, Number(params.page) || 1);
+  const from = (page - 1) * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
 
   let q = admin
     .from("audit_logs")
     .select(
       "id, action, resource_type, resource_id, diff, ip_address, user_agent, created_at, user_id, users(name, role)",
+      { count: "exact" },
     )
     .eq("org_id", session.user.org_id)
     .order("created_at", { ascending: false })
-    .limit(500);
+    .range(from, to);
 
   if (range !== "all") {
     const days = range === "today" ? 1 : range === "7d" ? 7 : 30;
@@ -94,19 +101,24 @@ export default async function AuditLogPage({
   if (actionFilter !== "all") q = q.eq("action", actionFilter);
   if (userFilter !== "all") q = q.eq("user_id", userFilter);
 
-  const { data } = await q;
+  // Run audit query + users dropdown in parallel
+  const [{ data, count }, usersRes] = await Promise.all([
+    q,
+    admin
+      .from("users")
+      .select("id, name")
+      .eq("org_id", session.user.org_id)
+      .order("name"),
+  ]);
+
+  const totalCount = count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const users = usersRes.data;
 
   const rows = (data ?? []).map((r) => {
     const u = Array.isArray(r.users) ? r.users[0] : r.users;
     return { ...r, user: u as { name?: string; role?: string } | null };
   }) as AuditRow[];
-
-  // Active users for filter dropdown
-  const { data: users } = await admin
-    .from("users")
-    .select("id, name")
-    .eq("org_id", session.user.org_id)
-    .order("name");
 
   // Counts per action (for current filter window) — for the chip display
   const counts: Record<string, number> = {};
@@ -133,7 +145,7 @@ export default async function AuditLogPage({
         </h1>
         <p className="text-base sm:text-lg text-zinc-600 mt-5 max-w-2xl leading-relaxed">
           <strong className="font-bold text-zinc-900 tabular-num">
-            {rows.length}
+            {totalCount.toLocaleString()}
           </strong>{" "}
           รายการในช่วงที่เลือก · ทุก sensitive action ถูกบันทึกไว้
         </p>
@@ -210,7 +222,11 @@ export default async function AuditLogPage({
       <Card className="animate-fade-up delay-150">
         <CardHeader>
           <CardTitle>เหตุการณ์</CardTitle>
-          <Badge tone="brand">{rows.length}</Badge>
+          <Badge tone="brand">
+            {totalCount > PAGE_SIZE
+              ? `${from + 1}–${Math.min(to + 1, totalCount)} / ${totalCount.toLocaleString()}`
+              : totalCount}
+          </Badge>
         </CardHeader>
         <CardBody className="!pt-0">
           {Object.keys(counts).length > 0 && (
@@ -243,6 +259,7 @@ export default async function AuditLogPage({
               ไม่มี audit log ที่ตรงกับ filter
             </p>
           ) : (
+            <>
             <div className="divide-y divide-zinc-100">
               {rows.map((r) => {
                 const meta = ACTION_META[r.action] ?? {
@@ -291,9 +308,79 @@ export default async function AuditLogPage({
                 );
               })}
             </div>
+            {totalPages > 1 && (
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                range={range}
+                action={actionFilter}
+                user={userFilter}
+              />
+            )}
+            </>
           )}
         </CardBody>
       </Card>
+      </div>
+    </div>
+  );
+}
+
+function Pagination({
+  page,
+  totalPages,
+  range,
+  action,
+  user,
+}: {
+  page: number;
+  totalPages: number;
+  range: string;
+  action: string;
+  user: string;
+}) {
+  const buildHref = (p: number) => {
+    const sp = new URLSearchParams();
+    if (range !== "7d") sp.set("range", range);
+    if (action !== "all") sp.set("action", action);
+    if (user !== "all") sp.set("user", user);
+    if (p > 1) sp.set("page", String(p));
+    const qs = sp.toString();
+    return qs ? `/audit?${qs}` : "/audit";
+  };
+  const prev = page > 1 ? buildHref(page - 1) : null;
+  const next = page < totalPages ? buildHref(page + 1) : null;
+  return (
+    <div className="flex items-center justify-between mt-4 pt-3 border-t border-zinc-100">
+      <span className="text-xs text-zinc-500">
+        หน้า <span className="font-bold text-zinc-700 tabular-num">{page}</span>
+        <span className="text-zinc-400"> / {totalPages}</span>
+      </span>
+      <div className="flex gap-1.5">
+        {prev ? (
+          <Link
+            href={prev}
+            className="h-9 px-3 inline-flex items-center rounded-lg border-2 border-zinc-200 bg-white text-sm font-semibold text-zinc-700 hover:border-[var(--color-brand-300)]"
+          >
+            ← ก่อนหน้า
+          </Link>
+        ) : (
+          <span className="h-9 px-3 inline-flex items-center rounded-lg border-2 border-zinc-100 bg-zinc-50 text-sm font-semibold text-zinc-300 cursor-not-allowed">
+            ← ก่อนหน้า
+          </span>
+        )}
+        {next ? (
+          <Link
+            href={next}
+            className="h-9 px-3 inline-flex items-center rounded-lg border-2 border-zinc-200 bg-white text-sm font-semibold text-zinc-700 hover:border-[var(--color-brand-300)]"
+          >
+            ถัดไป →
+          </Link>
+        ) : (
+          <span className="h-9 px-3 inline-flex items-center rounded-lg border-2 border-zinc-100 bg-zinc-50 text-sm font-semibold text-zinc-300 cursor-not-allowed">
+            ถัดไป →
+          </span>
+        )}
       </div>
     </div>
   );

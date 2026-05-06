@@ -51,6 +51,7 @@ export interface BranchUser {
   has_telegram: boolean;
   invite_used: boolean;
   last_login_at: string | null;
+  created_at: string;
 }
 
 export interface Company {
@@ -163,14 +164,31 @@ const MANAGER_ROLES = new Set([
   "org_admin",
 ]);
 
+// Owner/Admin/Org-admin manage from the dashboard — they don't need
+// LINE / Telegram bots to do their job, so hide those status dots
+// to avoid implying it's something they need to set up.
+const HIDE_MESSAGING_ROLES = new Set(["super_admin", "org_admin", "admin"]);
+
 interface FilterState {
   search: string;
   noLine: boolean;
   noTelegram: boolean;
   pending: boolean;
   offline7d: boolean;
+  activeWeek: boolean;
+  newThisWeek: boolean;
   roles: Set<string>;
 }
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+type StatFilterKey =
+  | "clear"
+  | "activeWeek"
+  | "newThisWeek"
+  | "pending"
+  | "noLine"
+  | "offline7d";
 
 interface Props {
   companies: Company[];
@@ -196,6 +214,8 @@ export function UsersByBusiness({
     noTelegram: false,
     pending: false,
     offline7d: false,
+    activeWeek: false,
+    newThisWeek: false,
     roles: new Set(),
   });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -211,9 +231,21 @@ export function UsersByBusiness({
     if (filter.noTelegram && u.has_telegram) return false;
     if (filter.pending && (u.is_active && u.invite_used)) return false;
     if (filter.offline7d) {
-      if (!u.last_login_at) return true;
+      if (!u.is_active) return false;
+      if (u.last_login_at) {
+        const ageMs = Date.now() - new Date(u.last_login_at).getTime();
+        if (ageMs < WEEK_MS) return false;
+      }
+    }
+    if (filter.activeWeek) {
+      if (!u.is_active) return false;
+      if (!u.last_login_at) return false;
       const ageMs = Date.now() - new Date(u.last_login_at).getTime();
-      if (ageMs < 7 * 24 * 60 * 60 * 1000) return false;
+      if (ageMs >= WEEK_MS) return false;
+    }
+    if (filter.newThisWeek) {
+      const ageMs = Date.now() - new Date(u.created_at).getTime();
+      if (ageMs >= WEEK_MS) return false;
     }
     if (filter.roles.size > 0 && !filter.roles.has(u.role)) return false;
     return true;
@@ -221,11 +253,13 @@ export function UsersByBusiness({
 
   // Filter branches → keep branches where any user matches OR no filter active
   const hasActiveFilter =
-    filter.search ||
+    !!filter.search ||
     filter.noLine ||
     filter.noTelegram ||
     filter.pending ||
     filter.offline7d ||
+    filter.activeWeek ||
+    filter.newThisWeek ||
     filter.roles.size > 0;
 
   const filteredBranches = useMemo(() => {
@@ -261,12 +295,55 @@ export function UsersByBusiness({
     }
     return s;
   });
+  // Lifted: which branches' user-lists are expanded (controlled from parent
+  // so the global ขยายทั้งหมด/ย่อทั้งหมด toggle works on every row).
+  const [expandedBranches, setExpandedBranches] = useState<Set<string>>(
+    new Set(),
+  );
 
   function toggle(key: string) {
     const next = new Set(openTypes);
     if (next.has(key)) next.delete(key);
     else next.add(key);
     setOpenTypes(next);
+  }
+
+  function toggleBranch(branchId: string) {
+    const next = new Set(expandedBranches);
+    if (next.has(branchId)) next.delete(branchId);
+    else next.add(branchId);
+    setExpandedBranches(next);
+  }
+
+  // All keys for expand-all / collapse-all
+  const allTypeKeys = useMemo(() => {
+    const s = new Set<string>();
+    for (const cId of grouped.keys()) {
+      for (const t of grouped.get(cId)!.keys()) s.add(`${cId}:${t}`);
+    }
+    return s;
+  }, [grouped]);
+  const allBranchIdsWithUsers = useMemo(() => {
+    const s = new Set<string>();
+    for (const typesMap of grouped.values()) {
+      for (const list of typesMap.values()) {
+        for (const b of list) {
+          if (b.users.length > 0) s.add(b.id);
+        }
+      }
+    }
+    return s;
+  }, [grouped]);
+  const isAllExpanded =
+    openTypes.size === allTypeKeys.size &&
+    expandedBranches.size === allBranchIdsWithUsers.size;
+  function expandAll() {
+    setOpenTypes(new Set(allTypeKeys));
+    setExpandedBranches(new Set(allBranchIdsWithUsers));
+  }
+  function collapseAll() {
+    setOpenTypes(new Set());
+    setExpandedBranches(new Set());
   }
 
   const toggleSelect = (id: string) => {
@@ -336,7 +413,7 @@ export function UsersByBusiness({
       />
 
       {/* Stats summary */}
-      <StatsSummary stats={stats} />
+      <StatsSummary stats={stats} filter={filter} setFilter={setFilter} hasFilter={hasActiveFilter} />
 
       {/* Search + filter bar */}
       <FilterBar filter={filter} setFilter={setFilter} totalVisible={totalVisibleUsers} />
@@ -383,9 +460,9 @@ export function UsersByBusiness({
         </div>
       )}
 
-      {/* Selection toggle — show when any user visible */}
+      {/* Selection toggle + expand/collapse all — show when any user visible */}
       {totalVisibleUsers > 0 && (
-        <div className="text-xs text-zinc-500 flex items-center gap-2">
+        <div className="text-xs text-zinc-500 flex items-center gap-2 flex-wrap">
           <button
             onClick={toggleAllVisible}
             className="inline-flex items-center gap-1.5 hover:text-zinc-900 font-medium"
@@ -403,6 +480,19 @@ export function UsersByBusiness({
           </button>
           <span className="text-zinc-300">·</span>
           <span>แสดง {totalVisibleUsers} คน</span>
+          <span className="text-zinc-300">·</span>
+          <button
+            onClick={isAllExpanded ? collapseAll : expandAll}
+            className="inline-flex items-center gap-1 hover:text-[var(--color-brand-700)] font-semibold text-[var(--color-brand-700)]"
+          >
+            <ChevronDown
+              className={cn(
+                "size-3.5 transition-transform",
+                isAllExpanded && "rotate-180",
+              )}
+            />
+            {isAllExpanded ? "ย่อทั้งหมด" : "ขยายทั้งหมด"}
+          </button>
         </div>
       )}
 
@@ -493,6 +583,8 @@ export function UsersByBusiness({
                                 branch={b}
                                 selectedIds={selectedIds}
                                 onToggleSelect={toggleSelect}
+                                expanded={expandedBranches.has(b.id)}
+                                onToggleExpand={() => toggleBranch(b.id)}
                                 onInvite={() =>
                                   setInviteCtx({
                                     branchId: b.id,
@@ -559,29 +651,138 @@ export function UsersByBusiness({
   );
 }
 
-function StatsSummary({ stats }: { stats: UserStats }) {
-  const items: Array<{ label: string; value: number; tone: "leaf" | "brand" | "warning" | "neutral"; suffix?: string }> = [
-    { label: "ผู้ใช้ทั้งหมด", value: stats.total, tone: "brand" },
-    { label: "active สัปดาห์นี้", value: stats.activeWeek, tone: "leaf", suffix: "คน" },
-    { label: "เข้าใหม่ 7 วัน", value: stats.newThisWeek, tone: "leaf", suffix: "คน" },
-    { label: "รอ activate", value: stats.pendingActivation, tone: stats.pendingActivation > 0 ? "warning" : "neutral" },
-    { label: "ยังไม่ผูก LINE", value: stats.noLine, tone: stats.noLine > 0 ? "warning" : "neutral" },
-    { label: "offline > 7 วัน", value: stats.offline7d, tone: stats.offline7d > 0 ? "warning" : "neutral" },
+function StatsSummary({
+  stats,
+  filter,
+  setFilter,
+  hasFilter,
+}: {
+  stats: UserStats;
+  filter: FilterState;
+  setFilter: (f: FilterState) => void;
+  hasFilter: boolean;
+}) {
+  type Tone = "leaf" | "brand" | "warning" | "neutral";
+  type Item = {
+    label: string;
+    value: number;
+    tone: Tone;
+    suffix?: string;
+    filterKey: StatFilterKey;
+    active: boolean;
+    hint: string;
+  };
+
+  const items: Item[] = [
+    {
+      label: "ผู้ใช้ทั้งหมด",
+      value: stats.total,
+      tone: "brand",
+      filterKey: "clear",
+      active: !hasFilter,
+      hint: "ล้างตัวกรอง · ดูทุกคน",
+    },
+    {
+      label: "ACTIVE สัปดาห์นี้",
+      value: stats.activeWeek,
+      tone: "leaf",
+      suffix: "คน",
+      filterKey: "activeWeek",
+      active: filter.activeWeek,
+      hint: "ดูเฉพาะคนที่ login ใน 7 วัน",
+    },
+    {
+      label: "เข้าใหม่ 7 วัน",
+      value: stats.newThisWeek,
+      tone: "leaf",
+      suffix: "คน",
+      filterKey: "newThisWeek",
+      active: filter.newThisWeek,
+      hint: "ดูเฉพาะคนที่เข้ามาใหม่ใน 7 วัน",
+    },
+    {
+      label: "รอ ACTIVATE",
+      value: stats.pendingActivation,
+      tone: stats.pendingActivation > 0 ? "warning" : "neutral",
+      filterKey: "pending",
+      active: filter.pending,
+      hint: "ดูเฉพาะคนที่ยังไม่กดลิงก์เชิญ",
+    },
+    {
+      label: "ยังไม่ผูก LINE",
+      value: stats.noLine,
+      tone: stats.noLine > 0 ? "warning" : "neutral",
+      filterKey: "noLine",
+      active: filter.noLine,
+      hint: "ดูเฉพาะคนที่ยังไม่ผูก LINE",
+    },
+    {
+      label: "OFFLINE > 7 วัน",
+      value: stats.offline7d,
+      tone: stats.offline7d > 0 ? "warning" : "neutral",
+      filterKey: "offline7d",
+      active: filter.offline7d,
+      hint: "ดูเฉพาะคนที่ไม่ได้ login เกิน 7 วัน",
+    },
   ];
-  const toneClass: Record<string, string> = {
-    brand: "border-[var(--color-brand-200)] bg-[var(--color-brand-50)]/40 text-[var(--color-brand-700)]",
+
+  const toneClass: Record<Tone, string> = {
+    brand:
+      "border-[var(--color-brand-200)] bg-[var(--color-brand-50)]/40 text-[var(--color-brand-700)]",
     leaf: "border-[var(--color-leaf-200)] bg-[var(--color-leaf-50)]/40 text-[var(--color-leaf-700)]",
     warning: "border-amber-300 bg-amber-50/60 text-amber-900",
     neutral: "border-zinc-200 bg-white text-zinc-700",
   };
+
+  const activeToneClass: Record<Tone, string> = {
+    brand:
+      "border-[var(--color-brand-500)] bg-[var(--color-brand-100)] text-[var(--color-brand-900)] shadow-blue",
+    leaf: "border-[var(--color-leaf-500)] bg-[var(--color-leaf-100)] text-[var(--color-leaf-900)]",
+    warning: "border-amber-500 bg-amber-100 text-amber-900",
+    neutral: "border-zinc-500 bg-zinc-100 text-zinc-900",
+  };
+
+  const hoverClass =
+    "hover:border-zinc-400 hover:shadow-sm cursor-pointer";
+
+  function handleClick(key: StatFilterKey) {
+    if (key === "clear") {
+      setFilter({
+        search: "",
+        noLine: false,
+        noTelegram: false,
+        pending: false,
+        offline7d: false,
+        activeWeek: false,
+        newThisWeek: false,
+        roles: new Set(),
+      });
+      return;
+    }
+    // Toggle the corresponding boolean key
+    const next: FilterState = {
+      ...filter,
+      [key]: !filter[key],
+    };
+    // Mutually-exclusive pairs to avoid empty results from contradictory filters
+    if (key === "activeWeek" && next.activeWeek) next.offline7d = false;
+    if (key === "offline7d" && next.offline7d) next.activeWeek = false;
+    setFilter(next);
+  }
+
   return (
     <div className="grid grid-cols-3 lg:grid-cols-6 gap-2">
       {items.map((it) => (
-        <div
+        <button
           key={it.label}
+          type="button"
+          onClick={() => handleClick(it.filterKey)}
+          aria-pressed={it.active}
+          title={it.hint}
           className={cn(
-            "rounded-xl border-2 px-3 py-2.5",
-            toneClass[it.tone],
+            "text-left rounded-xl border-2 px-3 py-2.5 transition-all",
+            it.active ? activeToneClass[it.tone] : toneClass[it.tone],
+            hoverClass,
           )}
         >
           <p className="text-[10px] uppercase tracking-wider text-zinc-600 font-bold leading-tight">
@@ -589,9 +790,13 @@ function StatsSummary({ stats }: { stats: UserStats }) {
           </p>
           <p className="text-2xl font-extrabold tabular-num font-display tracking-tight mt-0.5">
             {it.value}
-            {it.suffix && <span className="text-xs text-zinc-400 font-medium ml-1">{it.suffix}</span>}
+            {it.suffix && (
+              <span className="text-xs text-zinc-400 font-medium ml-1">
+                {it.suffix}
+              </span>
+            )}
           </p>
-        </div>
+        </button>
       ))}
     </div>
   );
@@ -616,14 +821,18 @@ function FilterBar({
       noTelegram: false,
       pending: false,
       offline7d: false,
+      activeWeek: false,
+      newThisWeek: false,
       roles: new Set(),
     });
   const hasFilter =
-    filter.search ||
+    !!filter.search ||
     filter.noLine ||
     filter.noTelegram ||
     filter.pending ||
     filter.offline7d ||
+    filter.activeWeek ||
+    filter.newThisWeek ||
     filter.roles.size > 0;
 
   return (
@@ -841,27 +1050,48 @@ function BranchRow({
   branch,
   selectedIds,
   onToggleSelect,
+  expanded,
+  onToggleExpand,
   onInvite,
   onAfterAction,
 }: {
   branch: BranchWithUsers;
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
+  /** Controlled expansion — managed by parent for global expand-all/collapse-all */
+  expanded: boolean;
+  onToggleExpand: () => void;
   onInvite: () => void;
   onAfterAction: () => void;
 }) {
-  const managerCount = branch.users.filter((u) => MANAGER_ROLES.has(u.role)).length;
-  const staffCount = branch.users.filter((u) => u.role === "staff").length;
+  // Split counts by actual role group — avoid the previous "ผจก. 3/2" confusion
+  // where admin + manager were lumped together (could exceed denominator).
+  const admins = branch.users.filter(
+    (u) =>
+      u.role === "super_admin" || u.role === "org_admin" || u.role === "admin",
+  );
+  const managers = branch.users.filter(
+    (u) => u.role === "branch_manager" || u.role === "area_manager",
+  );
+  const staffs = branch.users.filter((u) => u.role === "staff");
+  const adminCount = admins.length;
+  const managerCount = managers.length;
+  const staffCount = staffs.length;
   const hasUsers = branch.users.length > 0;
-  // Default: collapsed (showing only summary). Users can expand each branch as needed.
-  const [expanded, setExpanded] = useState(false);
+
+  // Compact name list — first names only, max 3, "..." if more
+  function nameList(users: BranchUser[]): string {
+    const firsts = users.map((u) => u.name.split(" ")[0] || u.name);
+    if (firsts.length <= 3) return firsts.join(", ");
+    return `${firsts.slice(0, 3).join(", ")} +${firsts.length - 3}`;
+  }
 
   return (
     <div className="px-3 py-2">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <button
           type="button"
-          onClick={() => hasUsers && setExpanded((v) => !v)}
+          onClick={() => hasUsers && onToggleExpand()}
           disabled={!hasUsers}
           className="min-w-0 flex items-center gap-2 flex-wrap text-left disabled:cursor-default group/row"
         >
@@ -879,16 +1109,23 @@ function BranchRow({
             {branch.code}
           </span>
           <span className="text-xs text-zinc-800 truncate">{branch.name}</span>
-          <span
-            className={cn(
-              "text-[10px] font-bold tabular-num px-1.5 py-0.5 rounded-md border",
-              managerCount === 0
-                ? "bg-amber-50 text-amber-800 border-amber-200"
-                : "bg-[var(--color-leaf-50)] text-[var(--color-leaf-700)] border-[var(--color-leaf-200)]",
-            )}
-          >
-            ผจก. {managerCount}/2
-          </span>
+          {/* Role counts — separate chips so admin / manager / staff
+              don't get visually merged. Only show chips with count > 0. */}
+          {!hasUsers && (
+            <span className="text-[10px] font-bold tabular-num px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
+              ยังไม่มีคน
+            </span>
+          )}
+          {adminCount > 0 && (
+            <span className="text-[10px] font-bold tabular-num px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
+              Admin {adminCount}
+            </span>
+          )}
+          {managerCount > 0 && (
+            <span className="text-[10px] font-bold tabular-num px-1.5 py-0.5 rounded-md bg-[var(--color-brand-50)] text-[var(--color-brand-800)] border border-[var(--color-brand-200)]">
+              ผจก. {managerCount}
+            </span>
+          )}
           {staffCount > 0 && (
             <span className="text-[10px] font-bold tabular-num text-zinc-700 px-1.5 py-0.5 rounded-md bg-zinc-50 border border-zinc-200">
               พน. {staffCount}
@@ -904,6 +1141,35 @@ function BranchRow({
           เชิญ
         </button>
       </div>
+      {/* Inline name preview when collapsed — see WHO holds each role
+          without having to expand. Staff omitted (could be many). */}
+      {!expanded && hasUsers && (adminCount > 0 || managerCount > 0) && (
+        <div className="ml-5 mt-1 text-[11px] text-zinc-500 leading-relaxed">
+          {adminCount > 0 && (
+            <span>
+              <span className="font-semibold text-amber-800">Admin:</span>{" "}
+              {nameList(admins)}
+            </span>
+          )}
+          {adminCount > 0 && managerCount > 0 && (
+            <span className="text-zinc-300 mx-1.5">·</span>
+          )}
+          {managerCount > 0 && (
+            <span>
+              <span className="font-semibold text-[var(--color-brand-700)]">
+                ผจก.:
+              </span>{" "}
+              {nameList(managers)}
+            </span>
+          )}
+          {staffCount > 0 && (
+            <>
+              <span className="text-zinc-300 mx-1.5">·</span>
+              <span className="text-zinc-500">พนักงาน {staffCount} คน</span>
+            </>
+          )}
+        </div>
+      )}
       {expanded && hasUsers && (
         <div className="flex flex-wrap gap-1 mt-2 ml-5">
           {branch.users.map((u) => (
@@ -967,22 +1233,24 @@ function UserChipCompact({
         {user.name}
       </Link>
       <RoleBadgeWithPreview role={user.role} className={roleClass} />
-      <span className="flex items-center gap-0.5">
-        <span
-          className={cn(
-            "size-1.5 rounded-full",
-            user.has_line ? "bg-[var(--color-leaf-500)]" : "bg-zinc-200",
-          )}
-          title={user.has_line ? "LINE ผูกแล้ว" : "ยังไม่ผูก LINE"}
-        />
-        <span
-          className={cn(
-            "size-1.5 rounded-full",
-            user.has_telegram ? "bg-[var(--color-leaf-500)]" : "bg-zinc-200",
-          )}
-          title={user.has_telegram ? "Telegram ผูกแล้ว" : "ยังไม่ผูก Telegram"}
-        />
-      </span>
+      {!HIDE_MESSAGING_ROLES.has(user.role) && (
+        <span className="flex items-center gap-0.5">
+          <span
+            className={cn(
+              "size-1.5 rounded-full",
+              user.has_line ? "bg-[var(--color-leaf-500)]" : "bg-zinc-200",
+            )}
+            title={user.has_line ? "LINE ผูกแล้ว" : "ยังไม่ผูก LINE"}
+          />
+          <span
+            className={cn(
+              "size-1.5 rounded-full",
+              user.has_telegram ? "bg-[var(--color-leaf-500)]" : "bg-zinc-200",
+            )}
+            title={user.has_telegram ? "Telegram ผูกแล้ว" : "ยังไม่ผูก Telegram"}
+          />
+        </span>
+      )}
       <UserActionMenu user={user} onAfterAction={onAfterAction} />
     </div>
   );
@@ -1023,22 +1291,24 @@ function UserChipRow({
         </span>
       </Link>
       <RoleBadgeWithPreview role={user.role} className={roleClass} />
-      <span className="flex items-center gap-1">
-        <span
-          className={cn(
-            "size-2 rounded-full",
-            user.has_line ? "bg-[var(--color-leaf-500)]" : "bg-zinc-200",
-          )}
-          title="LINE"
-        />
-        <span
-          className={cn(
-            "size-2 rounded-full",
-            user.has_telegram ? "bg-[var(--color-leaf-500)]" : "bg-zinc-200",
-          )}
-          title="Telegram"
-        />
-      </span>
+      {!HIDE_MESSAGING_ROLES.has(user.role) && (
+        <span className="flex items-center gap-1">
+          <span
+            className={cn(
+              "size-2 rounded-full",
+              user.has_line ? "bg-[var(--color-leaf-500)]" : "bg-zinc-200",
+            )}
+            title="LINE"
+          />
+          <span
+            className={cn(
+              "size-2 rounded-full",
+              user.has_telegram ? "bg-[var(--color-leaf-500)]" : "bg-zinc-200",
+            )}
+            title="Telegram"
+          />
+        </span>
+      )}
       <UserActionMenu user={user} onAfterAction={onAfterAction} />
     </div>
   );

@@ -103,6 +103,7 @@ export default async function UsersPage() {
       has_telegram: !!u.telegram_user_id,
       invite_used: !!u.invite_used_at || u.is_active,
       last_login_at: u.last_login_at,
+      created_at: u.created_at,
     });
   }
 
