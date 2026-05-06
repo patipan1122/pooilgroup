@@ -197,6 +197,8 @@ interface Props {
   notifications: AdminNotification[];
   pendingRequestCount: number;
   stats: UserStats;
+  /** Server-rendered timestamp. Use this for date-based filters so render stays pure. */
+  nowMs: number;
 }
 
 export function UsersByBusiness({
@@ -206,6 +208,7 @@ export function UsersByBusiness({
   notifications,
   pendingRequestCount,
   stats,
+  nowMs,
 }: Props) {
   const router = useRouter();
   const [filter, setFilter] = useState<FilterState>({
@@ -221,30 +224,34 @@ export function UsersByBusiness({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkPending, startBulkTransition] = useTransition();
 
+  const now = nowMs;
+
   const matchesFilter = (u: BranchUser): boolean => {
     if (filter.search) {
       const q = filter.search.toLowerCase();
       const hay = `${u.name} ${u.email ?? ""} ${u.phone ?? ""}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
-    if (filter.noLine && u.has_line) return false;
-    if (filter.noTelegram && u.has_telegram) return false;
-    if (filter.pending && (u.is_active && u.invite_used)) return false;
+    // These three buckets must mirror their stat counters in page.tsx exactly,
+    // otherwise the stat card and the filtered list disagree.
+    if (filter.noLine && (!u.is_active || u.has_line)) return false;
+    if (filter.noTelegram && (!u.is_active || u.has_telegram)) return false;
+    if (filter.pending && (u.is_active || u.invite_used)) return false;
     if (filter.offline7d) {
       if (!u.is_active) return false;
       if (u.last_login_at) {
-        const ageMs = Date.now() - new Date(u.last_login_at).getTime();
+        const ageMs = now - new Date(u.last_login_at).getTime();
         if (ageMs < WEEK_MS) return false;
       }
     }
     if (filter.activeWeek) {
       if (!u.is_active) return false;
       if (!u.last_login_at) return false;
-      const ageMs = Date.now() - new Date(u.last_login_at).getTime();
+      const ageMs = now - new Date(u.last_login_at).getTime();
       if (ageMs >= WEEK_MS) return false;
     }
     if (filter.newThisWeek) {
-      const ageMs = Date.now() - new Date(u.created_at).getTime();
+      const ageMs = now - new Date(u.created_at).getTime();
       if (ageMs >= WEEK_MS) return false;
     }
     if (filter.roles.size > 0 && !filter.roles.has(u.role)) return false;

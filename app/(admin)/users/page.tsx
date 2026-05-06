@@ -107,11 +107,12 @@ export default async function UsersPage() {
     });
   }
 
-  // Compute stats
+  // Compute stats — must match the matchesFilter logic in users-by-business.tsx
+  // exactly, otherwise clicking a stat card produces a different count than the card shows.
   const now = Date.now();
   const week = 7 * 24 * 60 * 60 * 1000;
   const stats = {
-    total: allUsers.filter((u) => u.is_active).length,
+    total: allUsers.length,
     activeWeek: allUsers.filter(
       (u) => u.is_active && u.last_login_at && now - new Date(u.last_login_at).getTime() < week,
     ).length,
@@ -263,6 +264,7 @@ export default async function UsersPage() {
             notifications={notifications}
             pendingRequestCount={pendingCount}
             stats={stats}
+            nowMs={now}
           />
         </Section>
       </div>
