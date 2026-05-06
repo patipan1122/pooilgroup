@@ -1,15 +1,11 @@
 // /admin/companies/[id] — company detail
-// Shows: contact info, branches grouped by business type, key metrics
+// Shows: contact info, branches grouped by business type as collapsible
+// dropdowns (per CEO request: "ทำเป็นดรอปดาวน์ดีกว่า"), each branch row
+// exposes edit + view actions for admin.
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {Edit3,
-  Phone,
-  MapPin,
-  IdCard,
-  Building2,
-  ChevronRight,
-} from "lucide-react";
+import { Edit3, Phone, MapPin, IdCard, Building2, Plus } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Section } from "@/components/ui/section";
@@ -17,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { BackButton } from "@/components/ui/back-button";
+import { CompanyBranchesDropdown } from "./branches-dropdown";
 
 export const dynamic = "force-dynamic";
 
@@ -168,22 +165,32 @@ export default async function CompanyDetailPage({ params }: Props) {
           </div>
         </Section>
 
-        {/* Branches grouped */}
+        {/* Branches as collapsible dropdowns by business type — admin can
+            add/edit/view from here directly. */}
         <Section
           number="02"
           label="BRANCHES"
           title={`${active.length} สาขาใต้ ${c.name}`}
-          description="แยกตามประเภทธุรกิจ — คลิกการ์ดเพื่อดูรายละเอียด"
+          description="กดประเภทธุรกิจเพื่อย่อ/ขยาย · แอดมินกดเพิ่ม/แก้ได้จากตรงนี้เลย"
           className="animate-fade-up delay-200"
+          action={
+            <Link
+              href={`/branches/new?company=${c.id}`}
+              className="inline-flex items-center gap-1.5 px-4 h-10 rounded-xl bg-[var(--color-brand-600)] text-white font-bold hover:bg-[var(--color-brand-700)] shadow-blue transition-colors text-sm"
+            >
+              <Plus className="size-4" />
+              เพิ่มสาขา
+            </Link>
+          }
         >
           {active.length === 0 ? (
             <EmptyState
               icon={<Building2 className="size-6" />}
               title="ยังไม่มีสาขาใต้บริษัทนี้"
-              description="ไปที่หน้าสาขาเพื่อเพิ่มและกำหนดสังกัดบริษัท"
+              description="กดปุ่ม 'เพิ่มสาขา' ที่ด้านบน"
               action={
                 <Link
-                  href="/branches/new"
+                  href={`/branches/new?company=${c.id}`}
                   className="inline-flex items-center gap-2 px-4 h-10 rounded-xl bg-[var(--color-brand-600)] text-white font-bold hover:bg-[var(--color-brand-700)]"
                 >
                   เพิ่มสาขา
@@ -191,55 +198,23 @@ export default async function CompanyDetailPage({ params }: Props) {
               }
             />
           ) : (
-            <div className="space-y-6">
-              {groupedSorted.map(([type, list], idx) => {
-                const cfg = BUSINESS_TYPES[type];
-                return (
-                  <div
-                    key={type}
-                    className="animate-fade-up"
-                    style={{ animationDelay: `${(idx + 1) * 50}ms` }}
-                  >
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-xl">{cfg?.emoji ?? "📋"}</span>
-                      <h3 className="text-base font-bold font-display text-zinc-900">
-                        {cfg?.label ?? type}
-                      </h3>
-                      <span className="text-xs text-zinc-500 tabular-num">
-                        {list.length} สาขา
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                      {list.map((b) => {
-                        const m = Array.isArray(b.manager) ? b.manager[0] : b.manager;
-                        return (
-                          <Link
-                            key={b.id}
-                            href={`/branches/${b.id}`}
-                            className="group flex items-center justify-between gap-3 rounded-xl border-2 border-zinc-200 bg-white px-4 py-3 hover:border-[var(--color-brand-400)] hover:bg-[var(--color-brand-50)]/40 transition-all"
-                          >
-                            <div className="min-w-0">
-                              <div className="text-sm font-bold tabular-num">
-                                {b.code}
-                              </div>
-                              <div className="text-xs text-zinc-500 truncate">
-                                {b.name}
-                              </div>
-                              {(b.province || m?.name) && (
-                                <div className="text-[11px] text-zinc-400 truncate mt-0.5">
-                                  {[b.province, m?.name].filter(Boolean).join(" · ")}
-                                </div>
-                              )}
-                            </div>
-                            <ChevronRight className="size-4 text-zinc-400 group-hover:text-[var(--color-brand-600)] group-hover:translate-x-0.5 transition-all shrink-0" />
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <CompanyBranchesDropdown
+              companyId={c.id}
+              groups={groupedSorted.map(([type, list]) => ({
+                type,
+                emoji: BUSINESS_TYPES[type]?.emoji ?? "📋",
+                label: BUSINESS_TYPES[type]?.label ?? type,
+                branches: list.map((b) => ({
+                  id: b.id,
+                  code: b.code,
+                  name: b.name,
+                  province: b.province,
+                  managerName: (Array.isArray(b.manager)
+                    ? b.manager[0]?.name
+                    : b.manager?.name) ?? null,
+                })),
+              }))}
+            />
           )}
         </Section>
       </div>

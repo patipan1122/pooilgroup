@@ -21,10 +21,18 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Allow every active role into the admin shell — actual page-level gating
+  // (e.g. /users, /audit) still uses requireRole inside the page. Broader
+  // access here lets a super_admin impersonate any role and not get bounced
+  // by the layout itself.
   const session = await requireRole(
     "super_admin",
     "org_admin",
+    "admin",
+    "area_manager",
     "branch_manager",
+    "staff",
+    "driver",
     "viewer",
   );
 
