@@ -103,6 +103,10 @@ export default async function UserDetailPage({ params }: Props) {
           isActive={user.is_active}
           isPendingInvite={isPendingInvite}
           isSelf={user.id === session.user.id}
+          canImpersonate={
+            (session.actingAs?.realUser.role ?? session.user.role) ===
+            "super_admin"
+          }
         />
       </header>
 

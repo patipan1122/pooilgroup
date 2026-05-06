@@ -21,11 +21,11 @@ export default async function NewUserPage() {
         <p className="text-xs uppercase tracking-widest text-[var(--color-brand-600)] font-semibold">
           ผู้ใช้ใหม่
         </p>
-        <h1 className="text-3xl font-extrabold tracking-tight font-display mt-2">
-          เชิญ <span className="accent">ผู้ใช้</span> เข้าระบบ
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-2">
+          เพิ่ม <span className="accent">ผู้ใช้</span> เข้าระบบ
         </h1>
         <p className="text-zinc-600 mt-2 text-sm">
-          ระบบจะสร้าง invite link หมดอายุ 48 ชั่วโมง — copy ส่งใน LINE/Email ให้คนที่ต้องเชิญ
+          เลือกได้ 2 แบบ — ส่ง invite link ให้ตั้งรหัสเอง หรือตั้งรหัสให้เลย
         </p>
       </div>
 

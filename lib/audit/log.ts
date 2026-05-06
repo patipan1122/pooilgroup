@@ -19,7 +19,9 @@ export type AuditAction =
   | "PERMISSION_DENIED"
   | "EXPORT_DATA"
   | "APPROVE_USER_REQUEST"
-  | "REJECT_USER_REQUEST";
+  | "REJECT_USER_REQUEST"
+  | "IMPERSONATE_START"
+  | "IMPERSONATE_END";
 
 export interface AuditEntry {
   orgId: string;
