@@ -107,6 +107,20 @@ export default async function UsersPage() {
     });
   }
 
+  const ubRows = (userBranchesQ.data ?? []) as Array<{
+    user_id: string;
+    branch_id: string;
+  }>;
+
+  // Count branches missing a branch_manager — every branch should have one
+  // per CEO rule. Computed before stats so stat card can show the count.
+  const branchHasMgr = new Set<string>();
+  for (const ub of ubRows) {
+    const u = userById.get(ub.user_id);
+    if (u?.role === "branch_manager") branchHasMgr.add(ub.branch_id);
+  }
+  const branchesWithoutMgr = branches.filter((b) => !branchHasMgr.has(b.id));
+
   // Compute stats — must match the matchesFilter logic in users-by-business.tsx
   // exactly, otherwise clicking a stat card produces a different count than the card shows.
   const now = Date.now();
@@ -125,12 +139,8 @@ export default async function UsersPage() {
         u.is_active &&
         (!u.last_login_at || now - new Date(u.last_login_at).getTime() >= week),
     ).length,
+    branchesMissingMgr: branchesWithoutMgr.length,
   };
-
-  const ubRows = (userBranchesQ.data ?? []) as Array<{
-    user_id: string;
-    branch_id: string;
-  }>;
 
   // Build branchId → users[]
   const usersByBranchId = new Map<string, BranchUser[]>();
@@ -293,6 +303,8 @@ export default async function UsersPage() {
             stats={stats}
             nowMs={now}
             flatUsers={flatUsers}
+            currentUserId={session.user.id}
+            currentUserRole={session.actingAs?.realUser.role ?? session.user.role}
           />
         </Section>
       </div>
