@@ -195,7 +195,7 @@ export function DashboardView({
                 <p className="text-[10px] sm:text-xs uppercase tracking-widest text-white/70 font-bold mb-1.5">
                   ยอดสะสม (อนุมัติ + รออนุมัติ)
                 </p>
-                <div className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tabular-num font-display tracking-tight">
+                <div className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tabular-num font-display tracking-tight">
                   {formatBaht(data.monthTotal)}
                 </div>
                 <div className="flex flex-wrap items-baseline gap-3 mt-2">

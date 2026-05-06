@@ -67,7 +67,7 @@ export default async function ReportDetailPage({
   const { data: report } = await admin
     .from("daily_reports")
     .select(
-      "*, branches(id, code, name, business_type), submitted_by:users!daily_reports_submitted_by_id_fkey(name, phone), approved_by:users!daily_reports_approved_by_id_fkey(name)",
+      "*, branches(id, code, name, business_type), submitted_by:users!daily_reports_submitted_by_id_fkey(id, name, phone), approved_by:users!daily_reports_approved_by_id_fkey(id, name)",
     )
     .eq("id", id)
     .eq("org_id", session.user.org_id)
@@ -84,9 +84,11 @@ export default async function ReportDetailPage({
     : undefined;
   const status = STATUS[report.status as keyof typeof STATUS] || STATUS.submitted;
   const submittedBy = report.submitted_by as
-    | { name?: string; phone?: string }
+    | { id?: string; name?: string; phone?: string }
     | null;
-  const approvedBy = report.approved_by as { name?: string } | null;
+  const approvedBy = report.approved_by as
+    | { id?: string; name?: string }
+    | null;
 
   // Permission
   const { data: ub } = await admin
@@ -339,17 +341,43 @@ export default async function ReportDetailPage({
               <CardTitle>Workflow</CardTitle>
             </CardHeader>
             <CardBody className="space-y-2 text-sm">
-              <Row
-                label="ส่งโดย"
-                value={`${submittedBy?.name ?? "—"}${submittedBy?.phone ? ` (${submittedBy.phone})` : ""}`}
-              />
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-zinc-600">ส่งโดย</span>
+                <span className="tabular-num font-medium">
+                  {submittedBy ? (
+                    <Link
+                      href={`/users/${submittedBy.id}`}
+                      className="text-[var(--color-brand-700)] hover:underline"
+                    >
+                      {submittedBy.name}
+                      {submittedBy.phone ? ` (${submittedBy.phone})` : ""}
+                    </Link>
+                  ) : (
+                    "—"
+                  )}
+                </span>
+              </div>
               <Row
                 label="เวลาส่ง"
                 value={bkkDateTime(report.submitted_at as string)}
               />
               {report.status === "approved" && report.approved_at && (
                 <>
-                  <Row label="อนุมัติโดย" value={approvedBy?.name ?? "—"} />
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-zinc-600">อนุมัติโดย</span>
+                    <span className="tabular-num font-medium">
+                      {approvedBy ? (
+                        <Link
+                          href={`/users/${approvedBy.id}`}
+                          className="text-[var(--color-brand-700)] hover:underline"
+                        >
+                          {approvedBy.name}
+                        </Link>
+                      ) : (
+                        "—"
+                      )}
+                    </span>
+                  </div>
                   <Row
                     label="เวลาอนุมัติ"
                     value={bkkDateTime(report.approved_at as string)}

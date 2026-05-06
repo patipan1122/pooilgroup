@@ -108,12 +108,14 @@ export async function POST(req: NextRequest) {
   }
 
   // Re-validate reconcile server-side (RULES §4 — never trust client)
+  // เงินเกิน OK · only block when received < sales (under)
+  // feedback_overcollect_allowed.md
   const config = getBusinessType(branch.business_type);
   if (config?.hasReconcile) {
     const result = reconcile(data);
-    if (!result.isBalanced) {
+    if (!result.isAcceptable) {
       return NextResponse.json(
-        { error: "ยอดไม่ตรง", details: result.message },
+        { error: "ยอดรับยังขาด", details: result.message },
         { status: 422 },
       );
     }

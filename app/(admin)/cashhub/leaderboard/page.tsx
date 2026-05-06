@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {Trophy, Building2 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
+import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { loadDashboard } from "@/lib/cashhub/aggregator";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
@@ -33,6 +34,7 @@ export default async function LeaderboardPage({
   searchParams: Promise<{ sort?: keyof typeof SORTS; type?: string }>;
 }) {
   const session = await requireSession();
+  requireExecutiveRole(session.user.role);
   const sp = await searchParams;
   const sort = sp.sort && SORTS[sp.sort] ? sp.sort : "total";
   const type = sp.type || "";

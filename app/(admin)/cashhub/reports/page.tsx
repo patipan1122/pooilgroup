@@ -4,6 +4,7 @@
 
 import { CheckCircle2, Clock, XCircle, ScrollText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
+import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { Section } from "@/components/ui/section";
 import { Button } from "@/components/ui/button";
@@ -79,6 +80,7 @@ export default async function CashHubReportsPage({
   searchParams: Promise<{ status?: string; type?: string; date?: string }>;
 }) {
   const session = await requireSession();
+  requireExecutiveRole(session.user.role);
   const sp = await searchParams;
   const admin = adminClient();
 

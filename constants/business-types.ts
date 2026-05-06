@@ -23,6 +23,14 @@ export interface FieldConfig {
   hint?: string;
   /** When true, only digits + dot allowed. Defaults: currency/number=true, text=false. Admin override possible. */
   numericOnly?: boolean;
+  /**
+   * Optional URL to an example image admin uploaded for this field.
+   * Form renders a small camera icon beside the label → click opens popup.
+   * feedback_form_image_hint.md
+   */
+  hintImageUrl?: string;
+  /** Caption shown under the example image in the popup */
+  hintImageCaption?: string;
   /** Maps to which column on daily_reports */
   column:
     | "totalSales"

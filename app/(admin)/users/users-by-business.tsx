@@ -24,10 +24,19 @@ import {
   Activity as ActivityIcon,
   ShieldCheck,
   RotateCcw,
+  LayoutGrid,
+  Table as TableIcon,
 } from "lucide-react";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils/cn";
+import { UsersTableView, type FlatUser } from "./users-table-view";
+import {
+  MANAGER_ROLES,
+  HIDE_MESSAGING_ROLES,
+  roleLabel,
+  roleColor,
+} from "@/lib/constants/roles";
 
 export interface BranchWithUsers {
   id: string;
@@ -80,27 +89,7 @@ export interface UserStats {
   offline7d: number;
 }
 
-const ROLE_LABEL: Record<string, string> = {
-  super_admin: "Owner",
-  admin: "Admin",
-  area_manager: "ผจก.เขต",
-  branch_manager: "ผจก.สาขา",
-  staff: "พนักงาน",
-  driver: "คนขับ",
-  viewer: "ผู้ดู",
-  org_admin: "Admin",
-};
-
-const ROLE_COLOR: Record<string, string> = {
-  super_admin: "bg-amber-100 text-amber-900 border-amber-300",
-  admin: "bg-amber-50 text-amber-800 border-amber-200",
-  org_admin: "bg-amber-50 text-amber-800 border-amber-200",
-  area_manager: "bg-purple-50 text-purple-800 border-purple-200",
-  branch_manager: "bg-[var(--color-brand-50)] text-[var(--color-brand-800)] border-[var(--color-brand-200)]",
-  staff: "bg-zinc-50 text-zinc-700 border-zinc-200",
-  driver: "bg-blue-50 text-blue-800 border-blue-200",
-  viewer: "bg-zinc-50 text-zinc-500 border-zinc-200",
-};
+// Role labels + colors come from the shared constant — see lib/constants/roles.ts
 
 const PERMISSION_DESC: Record<string, { can: string[]; cant: string[] }> = {
   super_admin: {
@@ -156,18 +145,8 @@ const PERMISSION_DESC: Record<string, { can: string[]; cant: string[] }> = {
   },
 };
 
-const MANAGER_ROLES = new Set([
-  "branch_manager",
-  "area_manager",
-  "super_admin",
-  "admin",
-  "org_admin",
-]);
-
-// Owner/Admin/Org-admin manage from the dashboard — they don't need
-// LINE / Telegram bots to do their job, so hide those status dots
-// to avoid implying it's something they need to set up.
-const HIDE_MESSAGING_ROLES = new Set(["super_admin", "org_admin", "admin"]);
+// MANAGER_ROLES + HIDE_MESSAGING_ROLES come from the shared constant
+// — see lib/constants/roles.ts
 
 interface FilterState {
   search: string;
@@ -199,6 +178,8 @@ interface Props {
   stats: UserStats;
   /** Server-rendered timestamp. Use this for date-based filters so render stays pure. */
   nowMs: number;
+  /** Flat list (id, name, branchCodes, ...) for the Excel-style table view. */
+  flatUsers: FlatUser[];
 }
 
 export function UsersByBusiness({
@@ -209,8 +190,20 @@ export function UsersByBusiness({
   pendingRequestCount,
   stats,
   nowMs,
+  flatUsers,
 }: Props) {
   const router = useRouter();
+  const [viewMode, setViewMode] = useState<"card" | "table">("card");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem("admin-users-view-mode");
+    if (saved === "card" || saved === "table") setViewMode(saved);
+  }, []);
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("admin-users-view-mode", viewMode);
+    }
+  }, [viewMode]);
   const [filter, setFilter] = useState<FilterState>({
     search: "",
     noLine: false,
@@ -422,6 +415,13 @@ export function UsersByBusiness({
       {/* Stats summary */}
       <StatsSummary stats={stats} filter={filter} setFilter={setFilter} hasFilter={hasActiveFilter} />
 
+      {/* View-mode tabs: การ์ดสำหรับดูภาพรวม / ตารางสำหรับ bulk-edit + Excel */}
+      <ViewModeTabs viewMode={viewMode} setViewMode={setViewMode} />
+
+      {viewMode === "table" && <UsersTableView users={flatUsers} />}
+
+      {viewMode === "card" && (
+      <>
       {/* Search + filter bar */}
       <FilterBar filter={filter} setFilter={setFilter} totalVisible={totalVisibleUsers} />
 
@@ -654,6 +654,47 @@ export function UsersByBusiness({
           onClose={() => setInviteCtx(null)}
         />
       )}
+      </>
+      )}
+    </div>
+  );
+}
+
+function ViewModeTabs({
+  viewMode,
+  setViewMode,
+}: {
+  viewMode: "card" | "table";
+  setViewMode: (m: "card" | "table") => void;
+}) {
+  return (
+    <div className="inline-flex items-center gap-1 p-1 rounded-xl border-2 border-zinc-200 bg-white">
+      <button
+        type="button"
+        onClick={() => setViewMode("card")}
+        className={cn(
+          "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors",
+          viewMode === "card"
+            ? "bg-[var(--color-brand-600)] text-white shadow-blue"
+            : "text-zinc-700 hover:bg-zinc-100",
+        )}
+      >
+        <LayoutGrid className="size-3.5" />
+        การ์ด
+      </button>
+      <button
+        type="button"
+        onClick={() => setViewMode("table")}
+        className={cn(
+          "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors",
+          viewMode === "table"
+            ? "bg-[var(--color-brand-600)] text-white shadow-blue"
+            : "text-zinc-700 hover:bg-zinc-100",
+        )}
+      >
+        <TableIcon className="size-3.5" />
+        ตาราง · Excel
+      </button>
     </div>
   );
 }
@@ -1213,7 +1254,7 @@ function UserChipCompact({
 }) {
   const isManager = MANAGER_ROLES.has(user.role);
   const status = statusInfo(user);
-  const roleClass = ROLE_COLOR[user.role] ?? "bg-zinc-50 text-zinc-700 border-zinc-200";
+  const roleClass = roleColor(user.role);
 
   return (
     <div
@@ -1275,7 +1316,7 @@ function UserChipRow({
   onAfterAction: () => void;
 }) {
   const status = statusInfo(user);
-  const roleClass = ROLE_COLOR[user.role] ?? "bg-zinc-50 text-zinc-700 border-zinc-200";
+  const roleClass = roleColor(user.role);
 
   return (
     <div
@@ -1349,14 +1390,14 @@ function RoleBadgeWithPreview({ role, className }: { role: string; className: st
           className,
         )}
       >
-        {ROLE_LABEL[role] ?? role}
+        {roleLabel(role)}
       </button>
       {open && desc && (
         <div className="absolute right-0 top-full mt-1 z-50 w-72 rounded-xl border-2 border-zinc-200 bg-white shadow-lg p-3 text-left">
           <div className="flex items-center gap-1.5 mb-2">
             <ShieldCheck className="size-3.5 text-[var(--color-brand-600)]" />
             <p className="text-xs font-extrabold text-zinc-900">
-              {ROLE_LABEL[role] ?? role}
+              {roleLabel(role)}
             </p>
           </div>
           <p className="text-[10px] uppercase tracking-wider font-bold text-[var(--color-leaf-700)] mb-1">

@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/auth/session";
+import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { loadDashboard, bkkMonthLabel } from "@/lib/cashhub/aggregator";
 import {
   loadExecutiveMatrix,
@@ -15,6 +16,7 @@ export default async function DashboardPage({
   searchParams: Promise<{ company?: string; view?: string }>;
 }) {
   const session = await requireSession();
+  requireExecutiveRole(session.user.role);
   const sp = await searchParams;
   const companyId = await resolveCompanyFilter(sp.company);
   const period: Period = sp.view === "daily" ? "daily" : "monthly";

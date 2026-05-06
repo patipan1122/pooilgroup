@@ -54,10 +54,12 @@ export default async function HomePage() {
     redirect("/cashhub/quick-fill");
   }
 
-  if (
-    session.user.role === "branch_manager" ||
-    session.user.role === "area_manager"
-  ) {
+  // ผู้จัดการสาขาเข้าหน้าของตัวเอง (ไม่เห็น executive overview)
+  // feedback_role_scoped_views.md
+  if (session.user.role === "branch_manager") {
+    redirect("/cashhub/my-branches");
+  }
+  if (session.user.role === "area_manager") {
     redirect("/cashhub/dashboard");
   }
 
@@ -193,7 +195,7 @@ export default async function HomePage() {
             <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
           </p>
 
-          <h1 className="text-5xl sm:text-7xl lg:text-8xl font-extrabold tracking-[-0.04em] font-display mt-6 text-zinc-900 max-w-5xl leading-[0.95]">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-[-0.04em] font-display mt-6 text-zinc-900 max-w-5xl leading-[1]">
             สวัสดี{" "}
             <span className="text-gradient-blue-vivid">{firstName}</span>
             <br />

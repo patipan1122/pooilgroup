@@ -155,7 +155,8 @@ export function ReportForm({
     for (const f of config.fields) {
       if (f.required && !values[f.key]) return false;
     }
-    if (config.hasReconcile && !reconcileResult.isBalanced) return false;
+    // เงินเกิน OK · only block when received < sales (under)
+    if (config.hasReconcile && !reconcileResult.isAcceptable) return false;
     // If shortage > 0, must have shortageInfo or note
     if (numeric.shortage > 0 && !shortageInfo) return false;
     return true;
@@ -379,6 +380,8 @@ export function ReportForm({
                 hint={f.hint}
                 required={f.required}
                 htmlFor={f.key}
+                hintImageUrl={f.hintImageUrl}
+                hintImageCaption={f.hintImageCaption}
               >
                 <Input
                   id={f.key}
@@ -424,6 +427,8 @@ export function ReportForm({
                   label={f.label}
                   hint={f.hint}
                   htmlFor={f.key}
+                  hintImageUrl={f.hintImageUrl}
+                  hintImageCaption={f.hintImageCaption}
                 >
                   <Input
                     id={f.key}
@@ -466,6 +471,8 @@ export function ReportForm({
                   label={f.label}
                   hint={f.hint}
                   htmlFor={f.key}
+                  hintImageUrl={f.hintImageUrl}
+                  hintImageCaption={f.hintImageCaption}
                 >
                   <Input
                     id={f.key}
@@ -546,6 +553,8 @@ export function ReportForm({
                   optional
                   hint={f.hint}
                   htmlFor={f.key}
+                  hintImageUrl={f.hintImageUrl}
+                  hintImageCaption={f.hintImageCaption}
                 >
                   <textarea
                     id={f.key}
@@ -588,8 +597,10 @@ export function ReportForm({
               ? "กำลังส่ง..."
               : canSubmit
                 ? `ส่งรายงาน · ${formatBaht(numeric.totalSales)}`
-                : config.hasReconcile && !reconcileResult.isBalanced && numeric.totalSales > 0
-                  ? "ยอดยังไม่ตรง"
+                : config.hasReconcile &&
+                    reconcileResult.status === "under" &&
+                    numeric.totalSales > 0
+                  ? "ยอดรับยังขาด — เติมให้ครบก่อน"
                   : "กรอกให้ครบก่อน"}
           </Button>
         </div>

@@ -4,6 +4,7 @@
 import Link from "next/link";
 import {} from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
+import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { PrintButton } from "./print-button";
 import { adminClient } from "@/lib/db/server";
 import {
@@ -42,6 +43,7 @@ export default async function MonthlyReportPage({
   searchParams: Promise<{ month?: string }>;
 }) {
   const session = await requireSession();
+  requireExecutiveRole(session.user.role);
   const sp = await searchParams;
 
   const monthStr =

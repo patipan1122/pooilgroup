@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {CalendarDays } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
+import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
@@ -23,6 +24,7 @@ const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
 export default async function HeatmapPage() {
   const session = await requireSession();
+  requireExecutiveRole(session.user.role);
   const admin = adminClient();
   const now = new Date();
   const today = formatInTimeZone(now, TZ, "yyyy-MM-dd");
@@ -135,15 +137,29 @@ export default async function HeatmapPage() {
                       {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((d) => {
                         const isFuture = d > todayDay;
                         const status = m.get(d);
+                        const dateStr = `${monthStart.slice(0, 8)}${String(d).padStart(2, "0")}`;
+                        const cellEl = (
+                          <div
+                            className={cn(
+                              "size-5 mx-auto rounded-md text-[9px] flex items-center justify-center font-bold transition-transform",
+                              cellColor(status, isFuture),
+                              !isFuture && "hover:scale-110 cursor-pointer",
+                            )}
+                            title={`${b.code} วันที่ ${d}: ${status ?? "ไม่กรอก"}`}
+                          />
+                        );
                         return (
                           <td key={d} className="p-0.5 text-center">
-                            <div
-                              className={cn(
-                                "size-5 mx-auto rounded-md text-[9px] flex items-center justify-center font-bold",
-                                cellColor(status, isFuture),
-                              )}
-                              title={`${b.code} วันที่ ${d}: ${status ?? "ไม่กรอก"}`}
-                            />
+                            {isFuture ? (
+                              cellEl
+                            ) : (
+                              <Link
+                                href={`/cashhub/branches/${b.id}?date=${dateStr}`}
+                                aria-label={`${b.code} วันที่ ${d}`}
+                              >
+                                {cellEl}
+                              </Link>
+                            )}
                           </td>
                         );
                       })}

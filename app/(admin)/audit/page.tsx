@@ -21,6 +21,27 @@ import {
 
 export const dynamic = "force-dynamic";
 
+/** Map an audit row to the resource page it logged about, or null if not linkable. */
+function resourceHref(
+  resourceType: string,
+  resourceId: string | null,
+): string | null {
+  if (!resourceId) return null;
+  switch (resourceType) {
+    case "user":
+      return `/users/${resourceId}`;
+    case "branch":
+      return `/branches/${resourceId}`;
+    case "report":
+    case "daily_report":
+      return `/cashhub/reports/${resourceId}`;
+    case "company":
+      return `/companies/${resourceId}`;
+    default:
+      return null;
+  }
+}
+
 const ACTION_META: Record<
   string,
   {
@@ -267,10 +288,11 @@ export default async function AuditLogPage({
                   tone: "neutral" as const,
                   Icon: FileText,
                 };
+                const href = resourceHref(r.resource_type, r.resource_id);
                 return (
                   <div
                     key={r.id}
-                    className="flex items-start gap-3 py-3 px-1"
+                    className={`flex items-start gap-3 py-3 px-1 ${href ? "hover:bg-zinc-50/60 rounded-lg transition-colors" : ""}`}
                   >
                     <div
                       className={`size-9 shrink-0 rounded-full flex items-center justify-center ${TONE_BG[meta.tone]}`}
@@ -285,9 +307,18 @@ export default async function AuditLogPage({
                         <span className="text-sm text-zinc-700">
                           {r.user?.name ?? "ระบบ"}
                         </span>
-                        <span className="text-xs text-zinc-400">
-                          · {r.resource_type}
-                        </span>
+                        {href ? (
+                          <Link
+                            href={href}
+                            className="text-xs text-[var(--color-brand-700)] hover:underline font-medium"
+                          >
+                            · {r.resource_type} →
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-zinc-400">
+                            · {r.resource_type}
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-zinc-500 mt-0.5">
                         {bkkDateTime(r.created_at)}

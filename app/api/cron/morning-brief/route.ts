@@ -9,6 +9,7 @@ import { getBaseUrl } from "@/lib/utils/base-url";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { BUSINESS_TYPES } from "@/constants/business-types";
+import { loadBranches, loadReports, indexBranches } from "@/lib/cashhub/data";
 
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
@@ -38,34 +39,29 @@ async function run() {
 
   let sent = 0;
   for (const org of orgs) {
-    const { data: yReports } = await admin
-      .from("daily_reports")
-      .select("branch_id, total_sales, status, branches(code, business_type)")
-      .eq("org_id", org.id)
-      .eq("report_date", yesterday)
-      .eq("status", "approved");
-    const { data: dReports } = await admin
-      .from("daily_reports")
-      .select("total_sales, status")
-      .eq("org_id", org.id)
-      .eq("report_date", dayBefore)
-      .eq("status", "approved");
-    const { data: pendingRows } = await admin
-      .from("daily_reports")
-      .select("id")
-      .eq("org_id", org.id)
-      .eq("status", "submitted");
-    const { data: branches } = await admin
-      .from("branches")
-      .select("id, code")
-      .eq("org_id", org.id)
-      .eq("is_active", true);
+    // All reads through the canonical loader.
+    const branches = await loadBranches(org.id, { activeOnly: true });
+    const branchById = indexBranches(branches);
 
-    const yTotal = (yReports ?? []).reduce(
+    const yReports = await loadReports(org.id, {
+      dateFrom: yesterday,
+      dateTo: yesterday,
+      statuses: ["approved"],
+    });
+    const dReports = await loadReports(org.id, {
+      dateFrom: dayBefore,
+      dateTo: dayBefore,
+      statuses: ["approved"],
+    });
+    const pendingRows = await loadReports(org.id, {
+      statuses: ["submitted"],
+    });
+
+    const yTotal = yReports.reduce(
       (s, r) => s + Number(r.total_sales || 0),
       0,
     );
-    const dTotal = (dReports ?? []).reduce(
+    const dTotal = dReports.reduce(
       (s, r) => s + Number(r.total_sales || 0),
       0,
     );
@@ -73,12 +69,11 @@ async function run() {
 
     // Top 3 branches yesterday
     const byBranch = new Map<string, { code: string; emoji: string; total: number }>();
-    for (const r of yReports ?? []) {
-      const id = r.branch_id as string;
-      const branchRel = Array.isArray(r.branches) ? r.branches[0] : r.branches;
-      const code = (branchRel as { code?: string } | null)?.code ?? "—";
-      const bt = (branchRel as { business_type?: string } | null)?.business_type ?? "";
-      const emoji = BUSINESS_TYPES[bt]?.emoji ?? "🏢";
+    for (const r of yReports) {
+      const id = r.branch_id;
+      const b = branchById.get(id);
+      const code = b?.code ?? "—";
+      const emoji = BUSINESS_TYPES[b?.business_type ?? ""]?.emoji ?? "🏢";
       const cur = byBranch.get(id) ?? { code, emoji, total: 0 };
       cur.total += Number(r.total_sales || 0);
       byBranch.set(id, cur);
@@ -88,8 +83,8 @@ async function run() {
       .slice(0, 3);
 
     // Alerts: branches that didn't submit yesterday
-    const submittedIds = new Set((yReports ?? []).map((r) => r.branch_id));
-    const missing = (branches ?? []).filter((b) => !submittedIds.has(b.id));
+    const submittedIds = new Set(yReports.map((r) => r.branch_id));
+    const missing = branches.filter((b) => !submittedIds.has(b.id));
     const alertLines = missing.slice(0, 5).map((b) => `${b.code} — ไม่กรอกเมื่อวาน`);
 
     const message = buildMorningBrief({
