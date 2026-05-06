@@ -8,6 +8,7 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { getBaseUrl } from "@/lib/utils/base-url";
 
 const Schema = z.object({
   action: z.enum(["approve", "reject"]),
@@ -135,12 +136,10 @@ export async function PATCH(
     diff: { new: { from_register_request: id, role: request.requested_role } },
   });
 
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3100";
   return NextResponse.json({
     success: true,
     userId,
-    inviteUrl: `${baseUrl}/invite/${token}`,
+    inviteUrl: `${getBaseUrl()}/invite/${token}`,
     expiresAt,
   });
 }

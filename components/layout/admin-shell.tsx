@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Menu,
@@ -22,7 +23,10 @@ import type { DbUser } from "@/lib/auth/session";
 import { MODULE_LIST, MODULES, getModuleFromPath } from "@/lib/modules";
 import { NotificationBell } from "./notification-bell";
 import { CompanySwitcher } from "./company-switcher";
-import { AiChat } from "@/components/cashhub/ai-chat";
+const AiChat = dynamic(
+  () => import("@/components/cashhub/ai-chat").then((m) => ({ default: m.AiChat })),
+  { ssr: false },
+);
 
 const ADMIN_NAV = [
   { href: "/users", label: "ทีม & สาขา", icon: UsersIcon },

@@ -360,7 +360,9 @@ model DailyReport {
   @@unique([branchId, reportDate, shift])
   @@index([orgId, reportDate])
   @@index([orgId, status])
+  @@index([orgId, status, reportDate])
   @@index([branchId, reportDate])
+  @@index([branchId, shift, reportDate])
   @@map("daily_reports")
 }
 
@@ -411,6 +413,7 @@ model AuditLog {
 
   @@unique([resourceType, resourceId, action, userId, createdAt])
   @@index([orgId, createdAt])
+  @@index([orgId, action, createdAt])
   @@index([userId, createdAt])
   @@index([action, createdAt])
   @@map("audit_logs")

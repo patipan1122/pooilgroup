@@ -5,6 +5,7 @@
 // {companyId} = show only that company.
 
 import { cookies } from "next/headers";
+import { unstable_cache } from "next/cache";
 import { adminClient } from "../db/server";
 import {
   COMPANY_COOKIE_NAME as COOKIE_NAME,
@@ -30,7 +31,7 @@ export async function resolveCompanyFilter(
   return readCompanyCookie();
 }
 
-export async function loadCompaniesForOrg(
+async function _loadCompaniesForOrg(
   orgId: string,
 ): Promise<Array<{ id: string; code: string; name: string }>> {
   try {
@@ -45,6 +46,18 @@ export async function loadCompaniesForOrg(
   } catch {
     return [];
   }
+}
+
+// Cached: companies change rarely (5 entities at Pooilgroup). Mutations
+// in /companies routes must call revalidateTag(`companies-${orgId}`).
+export const loadCompaniesForOrg = unstable_cache(
+  _loadCompaniesForOrg,
+  ["companies-for-org"],
+  { revalidate: 3600, tags: ["companies"] },
+);
+
+export function companiesCacheTag(orgId: string) {
+  return `companies-${orgId}`;
 }
 
 // Re-export shared constants for backwards compatibility (callers can also import from -shared)

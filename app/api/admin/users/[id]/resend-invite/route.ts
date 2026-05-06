@@ -5,6 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { getBaseUrl } from "@/lib/utils/base-url";
 
 function makeToken(): string {
   const bytes = new Uint8Array(24);
@@ -56,11 +57,9 @@ export async function POST(
     diff: { new: { resent_invite: true, expires_at: expiresAt } },
   });
 
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3100";
   return NextResponse.json({
     success: true,
-    inviteUrl: `${baseUrl}/invite/${token}`,
+    inviteUrl: `${getBaseUrl()}/invite/${token}`,
     expiresAt,
   });
 }

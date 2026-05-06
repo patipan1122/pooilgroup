@@ -49,21 +49,27 @@ export async function POST(req: NextRequest) {
     .eq("is_active", true);
   const userBranchIds = ub?.map((u) => u.branch_id as string) ?? [];
 
-  let approved = 0;
   let skipped = 0;
-  const errors: string[] = [];
   const now = new Date().toISOString();
 
-  for (const r of reports) {
+  const eligible = reports.filter((r) => {
     if (r.status === "approved") {
       skipped += 1;
-      continue;
+      return false;
     }
     if (!canApproveBranch(session.user, r.branch_id, userBranchIds)) {
       skipped += 1;
-      continue;
+      return false;
     }
-    const { error } = await admin
+    return true;
+  });
+
+  const eligibleIds = eligible.map((r) => r.id as string);
+  const errors: string[] = [];
+  let approved = 0;
+
+  if (eligibleIds.length > 0) {
+    const { data: updated, error } = await admin
       .from("daily_reports")
       .update({
         status: "approved",
@@ -71,20 +77,26 @@ export async function POST(req: NextRequest) {
         approved_at: now,
         updated_at: now,
       })
-      .eq("id", r.id);
+      .in("id", eligibleIds)
+      .select("id");
+
     if (error) {
-      errors.push(`${r.id}: ${error.message}`);
-      continue;
+      errors.push(error.message);
+    } else {
+      approved = updated?.length ?? 0;
+      await Promise.all(
+        eligible.map((r) =>
+          audit({
+            orgId: r.org_id,
+            userId: session.user.id,
+            action: "APPROVE_REPORT",
+            resourceType: "daily_report",
+            resourceId: r.id,
+            diff: { old: { status: r.status }, new: { status: "approved", bulk: true } },
+          }),
+        ),
+      );
     }
-    approved += 1;
-    await audit({
-      orgId: r.org_id,
-      userId: session.user.id,
-      action: "APPROVE_REPORT",
-      resourceType: "daily_report",
-      resourceId: r.id,
-      diff: { old: { status: r.status }, new: { status: "approved", bulk: true } },
-    });
   }
 
   return NextResponse.json({

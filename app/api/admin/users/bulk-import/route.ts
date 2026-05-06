@@ -9,6 +9,7 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { getBaseUrl } from "@/lib/utils/base-url";
 
 const RowSchema = z.object({
   name: z.string().min(1).max(100),
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
 
   const admin = adminClient();
   const orgId = session.user.org_id;
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3100";
+  const baseUrl = getBaseUrl();
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
