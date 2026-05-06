@@ -103,14 +103,16 @@ export default async function UsersPage() {
       has_telegram: !!u.telegram_user_id,
       invite_used: !!u.invite_used_at || u.is_active,
       last_login_at: u.last_login_at,
+      created_at: u.created_at,
     });
   }
 
-  // Compute stats
+  // Compute stats — must match the matchesFilter logic in users-by-business.tsx
+  // exactly, otherwise clicking a stat card produces a different count than the card shows.
   const now = Date.now();
   const week = 7 * 24 * 60 * 60 * 1000;
   const stats = {
-    total: allUsers.filter((u) => u.is_active).length,
+    total: allUsers.length,
     activeWeek: allUsers.filter(
       (u) => u.is_active && u.last_login_at && now - new Date(u.last_login_at).getTime() < week,
     ).length,
@@ -262,6 +264,7 @@ export default async function UsersPage() {
             notifications={notifications}
             pendingRequestCount={pendingCount}
             stats={stats}
+            nowMs={now}
           />
         </Section>
       </div>

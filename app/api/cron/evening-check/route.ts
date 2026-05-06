@@ -5,6 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { adminClient } from "@/lib/db/server";
 import { sendTelegramMessage } from "@/lib/telegram/send";
 import { buildEveningCheck } from "@/lib/telegram/messages";
+import { getBaseUrl } from "@/lib/utils/base-url";
 import { formatInTimeZone } from "date-fns-tz";
 
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
@@ -76,7 +77,7 @@ async function run() {
             [
               {
                 text: "👁 ดูในเว็บ",
-                url: `${process.env.NEXT_PUBLIC_APP_URL || ""}/cashhub/reports?status=submitted`,
+                url: `${getBaseUrl()}/cashhub/reports?status=submitted`,
               },
             ],
           ]

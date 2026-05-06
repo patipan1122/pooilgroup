@@ -6,6 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { getRequestBaseUrl } from "@/lib/utils/base-url";
 
 const Schema = z.object({
   lineUserId: z.string().min(5).max(60),
@@ -69,6 +70,9 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         type: "magiclink",
         email: user.email,
+        // Pin redirect to the same origin the LIFF page is running on
+        // (Supabase otherwise uses the dashboard "Site URL" which can drift).
+        redirect_to: `${getRequestBaseUrl(req)}/liff/status`,
       }),
     });
     if (!res.ok) {

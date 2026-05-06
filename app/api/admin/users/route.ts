@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
-import { getBaseUrl } from "@/lib/utils/base-url";
+import { getRequestBaseUrl } from "@/lib/utils/base-url";
 
 const InviteSchema = z.object({
   name: z.string().min(1).max(100),
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
   });
 
   // Build invite URL — user copies and sends to invitee
-  const inviteUrl = `${getBaseUrl()}/invite/${token}`;
+  const inviteUrl = `${getRequestBaseUrl(req)}/invite/${token}`;
 
   return NextResponse.json({
     success: true,

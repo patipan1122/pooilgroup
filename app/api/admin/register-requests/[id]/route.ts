@@ -8,7 +8,7 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
-import { getBaseUrl } from "@/lib/utils/base-url";
+import { getRequestBaseUrl } from "@/lib/utils/base-url";
 
 const Schema = z.object({
   action: z.enum(["approve", "reject"]),
@@ -139,7 +139,7 @@ export async function PATCH(
   return NextResponse.json({
     success: true,
     userId,
-    inviteUrl: `${getBaseUrl()}/invite/${token}`,
+    inviteUrl: `${getRequestBaseUrl(req)}/invite/${token}`,
     expiresAt,
   });
 }

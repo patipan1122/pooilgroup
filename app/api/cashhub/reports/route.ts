@@ -13,6 +13,7 @@ import {
   buildApprovalMessage,
 } from "@/lib/telegram/messages";
 import { autoCheck } from "@/lib/cashhub/auto-check";
+import { getRequestBaseUrl } from "@/lib/utils/base-url";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 
@@ -248,8 +249,7 @@ export async function POST(req: NextRequest) {
         ) < 0.01,
       autoCheckSummary: ac.summary,
     });
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3100";
+    const baseUrl = getRequestBaseUrl(req);
     const keyboard = approvalKeyboard(created.id, baseUrl).map((row) =>
       row.map((btn) => ({
         ...btn,

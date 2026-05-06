@@ -5,6 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { adminClient } from "@/lib/db/server";
 import { sendTelegramMessage } from "@/lib/telegram/send";
 import { buildMorningBrief } from "@/lib/telegram/messages";
+import { getBaseUrl } from "@/lib/utils/base-url";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { BUSINESS_TYPES } from "@/constants/business-types";
@@ -98,7 +99,7 @@ async function run() {
       topBranches,
       pendingCount: (pendingRows ?? []).length,
       alertLines,
-      webBaseUrl: process.env.NEXT_PUBLIC_APP_URL || "",
+      webBaseUrl: getBaseUrl(),
     });
 
     // Send to org admins with linked Telegram

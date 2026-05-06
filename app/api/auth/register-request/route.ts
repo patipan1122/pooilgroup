@@ -11,6 +11,7 @@ import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { sendNotificationToMany, getOrgAdminIds } from "@/lib/notifications/send";
 import { sendToAdminChat, htmlEscape } from "@/lib/telegram/send";
+import { getRequestBaseUrl } from "@/lib/utils/base-url";
 
 const POOILGROUP_ORG_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -184,7 +185,7 @@ export async function POST(req: NextRequest) {
         { text: "✅ อนุมัติ", callback_data: `register:approve:${id}` },
         { text: "❌ ปฏิเสธ", callback_data: `register:reject:${id}` },
       ],
-      [{ text: "📋 ดูในเว็บ", url: getRequestUrl(id) }],
+      [{ text: "📋 ดูในเว็บ", url: `${getRequestBaseUrl(req)}/users/requests?focus=${id}` }],
     ],
   });
 
@@ -202,7 +203,3 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ success: true, requestId: id });
 }
 
-function getRequestUrl(requestId: string): string {
-  const base = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  return `${base}/users/requests?focus=${requestId}`;
-}

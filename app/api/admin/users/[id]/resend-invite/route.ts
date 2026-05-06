@@ -5,7 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
-import { getBaseUrl } from "@/lib/utils/base-url";
+import { getRequestBaseUrl } from "@/lib/utils/base-url";
 
 function makeToken(): string {
   const bytes = new Uint8Array(24);
@@ -14,7 +14,7 @@ function makeToken(): string {
 }
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
   const session = await requireRole("super_admin", "org_admin");
@@ -59,7 +59,7 @@ export async function POST(
 
   return NextResponse.json({
     success: true,
-    inviteUrl: `${getBaseUrl()}/invite/${token}`,
+    inviteUrl: `${getRequestBaseUrl(req)}/invite/${token}`,
     expiresAt,
   });
 }
