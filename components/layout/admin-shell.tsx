@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
@@ -8,6 +8,7 @@ import {
   Menu,
   X,
   ChevronDown,
+  ChevronRight,
   LogOut,
   Users as UsersIcon,
   ShieldCheck,
@@ -16,11 +17,20 @@ import {
   Home,
   Check,
   Building2,
+  Inbox,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { browserClient } from "@/lib/db/client";
 import { cn } from "@/lib/utils/cn";
 import type { DbUser } from "@/lib/auth/session";
-import { MODULE_LIST, MODULES, getModuleFromPath } from "@/lib/modules";
+import {
+  MODULE_LIST,
+  MODULES,
+  getModuleFromPath,
+  type ModuleSlug,
+  type NavItem,
+  type ModuleConfig,
+} from "@/lib/modules";
 import { NotificationBell } from "./notification-bell";
 import { CompanySwitcher } from "./company-switcher";
 const AiChat = dynamic(
@@ -28,14 +38,24 @@ const AiChat = dynamic(
   { ssr: false },
 );
 
-const ADMIN_NAV = [
+interface SimpleNavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+}
+
+const MANAGE_NAV: SimpleNavItem[] = [
   { href: "/users", label: "ทีม & สาขา", icon: UsersIcon },
   { href: "/companies", label: "บริษัท", icon: Building2 },
-  { href: "/audit", label: "Audit Log", icon: ShieldCheck },
-  { href: "/settings", label: "ตั้งค่า", icon: Settings },
+  { href: "/users/requests", label: "คำขอเข้าใช้งาน", icon: Inbox },
 ];
 
-const ACCOUNT_NAV = [
+const SYSTEM_NAV: SimpleNavItem[] = [
+  { href: "/audit", label: "Audit Log", icon: ShieldCheck },
+  { href: "/settings", label: "ตั้งค่าระบบ", icon: Settings },
+];
+
+const ACCOUNT_NAV: SimpleNavItem[] = [
   { href: "/profile", label: "โปรไฟล์", icon: UserCircle },
 ];
 
@@ -308,11 +328,18 @@ export function AdminShell({
               ) : (
                 <>
                   {isAdmin && (
-                    <NavGroup
-                      title="จัดการระบบ"
-                      items={ADMIN_NAV}
-                      pathname={pathname}
-                    />
+                    <>
+                      <NavGroup
+                        title="จัดการ"
+                        items={MANAGE_NAV}
+                        pathname={pathname}
+                      />
+                      <NavGroup
+                        title="ระบบ"
+                        items={SYSTEM_NAV}
+                        pathname={pathname}
+                      />
+                    </>
                   )}
                   <NavGroup
                     title="บัญชี"
@@ -364,12 +391,20 @@ export function AdminShell({
                 ) : (
                   <>
                     {isAdmin && (
-                      <NavGroup
-                        title="จัดการระบบ"
-                        items={ADMIN_NAV}
-                        pathname={pathname}
-                        onNavigate={() => setMobileOpen(false)}
-                      />
+                      <>
+                        <NavGroup
+                          title="จัดการ"
+                          items={MANAGE_NAV}
+                          pathname={pathname}
+                          onNavigate={() => setMobileOpen(false)}
+                        />
+                        <NavGroup
+                          title="ระบบ"
+                          items={SYSTEM_NAV}
+                          pathname={pathname}
+                          onNavigate={() => setMobileOpen(false)}
+                        />
+                      </>
                     )}
                     <NavGroup
                       title="บัญชี"
