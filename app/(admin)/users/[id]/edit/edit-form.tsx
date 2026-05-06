@@ -8,16 +8,8 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { BUSINESS_TYPES } from "@/constants/business-types";
+import { BranchPicker, type BranchOption } from "@/components/users/branch-picker";
 import { cn } from "@/lib/utils/cn";
-
-interface BranchOption {
-  id: string;
-  code: string;
-  name: string;
-  business_type: string;
-}
 
 const ROLES: { value: string; label: string; desc: string }[] = [
   {
@@ -189,44 +181,16 @@ export function EditUserForm({
         <Card className="mt-4 animate-fade-up delay-200">
           <CardHeader>
             <CardTitle>สาขาที่ดูแล</CardTitle>
-            <Badge tone="brand">{selected.size} เลือก</Badge>
           </CardHeader>
           <CardBody className="!pt-0">
             <p className="text-xs text-zinc-500 mb-3">
               เลือกสาขาที่ผู้ใช้นี้จะเข้าถึง
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {branches.map((b) => {
-                const cfg = BUSINESS_TYPES[b.business_type];
-                return (
-                  <label
-                    key={b.id}
-                    className={cn(
-                      "flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-colors",
-                      selected.has(b.id)
-                        ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)]"
-                        : "border-zinc-200 hover:bg-zinc-50",
-                    )}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selected.has(b.id)}
-                      onChange={() => toggleBranch(b.id)}
-                      className="size-4"
-                    />
-                    <span className="text-lg">{cfg?.emoji ?? "📋"}</span>
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium truncate">
-                        {b.code}
-                      </div>
-                      <div className="text-xs text-zinc-500 truncate">
-                        {b.name}
-                      </div>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
+            <BranchPicker
+              branches={branches}
+              selected={selected}
+              onChange={setSelected}
+            />
           </CardBody>
         </Card>
       )}
