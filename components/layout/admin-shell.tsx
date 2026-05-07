@@ -72,6 +72,9 @@ interface Props {
   companies?: Array<{ id: string; code: string; name: string }>;
   currentCompanyId?: string;
   navCounts?: NavCountsClient;
+  /** Module slugs the current user can access. Admin tier always gets all
+      three; everyone else gets the explicit set from user_modules. */
+  userModules?: string[];
 }
 
 const ZERO_COUNTS: NavCountsClient = {
@@ -79,13 +82,21 @@ const ZERO_COUNTS: NavCountsClient = {
   branchesMissingMgr: 0,
 };
 
+const ALL_MODULES = ["cashhub", "fuelos", "docuflow"];
+
 export function AdminShell({
   user,
   children,
   companies = [],
   currentCompanyId,
   navCounts = ZERO_COUNTS,
+  userModules = ALL_MODULES,
 }: Props) {
+  const allowedModules = useMemo(() => new Set(userModules), [userModules]);
+  const visibleModules = useMemo(
+    () => MODULE_LIST.filter((m) => allowedModules.has(m.slug)),
+    [allowedModules],
+  );
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -194,7 +205,7 @@ export function AdminShell({
                       <p className="px-3 text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
                         เปลี่ยนโปรแกรม
                       </p>
-                      {MODULE_LIST.map((m) => {
+                      {visibleModules.map((m) => {
                         const isCurrent = m.slug === activeModule.slug;
                         const isComingSoon = m.status === "coming_soon";
                         const className = cn(

@@ -13,6 +13,7 @@ export type AuditAction =
   | "UNLOCK_REPORT"
   | "CREATE_USER"
   | "UPDATE_USER"
+  | "UPDATE_USER_MODULES"
   | "DEACTIVATE_USER"
   | "INVITE_ACCEPTED"
   | "CREATE_BRANCH"

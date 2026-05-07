@@ -6,6 +6,7 @@ import {
   readCompanyCookie,
 } from "@/lib/auth/company-context";
 import { loadNavCounts } from "@/lib/nav/counts";
+import { loadUserModules } from "@/lib/auth/module-access";
 
 const ROLE_LABEL: Record<string, string> = {
   super_admin: "Super Admin",
@@ -42,13 +43,14 @@ export default async function AdminLayout({
     session.user.role === "org_admin" ||
     session.user.role === "admin";
 
-  const [companies, currentCompanyId, navCounts] = await Promise.all([
+  const [companies, currentCompanyId, navCounts, userModules] = await Promise.all([
     loadCompaniesForOrg(session.user.org_id),
     readCompanyCookie(),
     // Only admins see Manage/System zones — skip the count query for others.
     isAdmin
       ? loadNavCounts(session.user.org_id)
       : Promise.resolve({ pendingRegisterRequests: 0, branchesMissingMgr: 0 }),
+    loadUserModules(session.user),
   ]);
 
   return (
@@ -65,6 +67,7 @@ export default async function AdminLayout({
         companies={companies}
         currentCompanyId={currentCompanyId}
         navCounts={navCounts}
+        userModules={Array.from(userModules)}
       >
         {children}
       </AdminShell>

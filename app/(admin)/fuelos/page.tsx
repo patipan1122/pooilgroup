@@ -6,7 +6,9 @@ import {
   Truck,
   Zap,
 } from "lucide-react";
+import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
+import { userHasModuleAccess, isAdminTier } from "@/lib/auth/module-access";
 import { Section } from "@/components/ui/section";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -43,7 +45,12 @@ const FEATURES = [
 ];
 
 export default async function FuelOSPage() {
-  await requireSession();
+  const session = await requireSession();
+  // Block users without FuelOS membership — admin tier bypasses.
+  if (!isAdminTier(session.user.role)) {
+    const ok = await userHasModuleAccess(session.user, "fuelos");
+    if (!ok) redirect("/403");
+  }
 
   return (
     <div className="p-4 sm:p-6 lg:p-10 max-w-6xl mx-auto">

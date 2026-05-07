@@ -4,9 +4,12 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Wallet,
+  Fuel,
+  FileText,
   FileText as FileTextIcon,
   LayoutDashboard,
   ScrollText,
+  ClipboardList,
   Trophy,
   CalendarDays,
   AlertCircle,
@@ -17,7 +20,7 @@ import {
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
-export type ModuleSlug = "cashhub";
+export type ModuleSlug = "cashhub" | "fuelos" | "docuflow";
 export type ModuleStatus = "active" | "coming_soon" | "beta";
 
 export interface NavItem {
@@ -126,8 +129,34 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       },
     ],
   },
-  // FuelOS + DocuFlow soft-removed from UI registry · folders kept unreachable
-  // (reinstate by re-adding the entries when those modules are ready to ship)
+  // FuelOS + DocuFlow are placeholders ("เร็วๆนี้") — they exist in the
+  // registry so user_modules grants for them resolve and the module switcher
+  // can show them. The actual feature pages are stubs until those modules
+  // are ready to ship.
+  fuelos: {
+    slug: "fuelos",
+    name: "FuelOS",
+    tagline: "ขายส่งน้ำมัน B2B",
+    description:
+      "Price Engine + CRM 1,400 ลูกค้า + Win/Loss + Driver App + Flash Sale",
+    emoji: "⛽",
+    Icon: Fuel,
+    status: "coming_soon",
+    basePath: "/fuelos",
+    nav: [{ href: "/fuelos", label: "เร็ว ๆ นี้", icon: ClipboardList }],
+  },
+  docuflow: {
+    slug: "docuflow",
+    name: "DocuFlow",
+    tagline: "จัดการเอกสาร",
+    description:
+      "1,100+ เอกสาร · ติดตามวันหมดอายุ · ลายเซ็นออนไลน์ · AI วิเคราะห์ก่อนเซ็น",
+    emoji: "📄",
+    Icon: FileText,
+    status: "coming_soon",
+    basePath: "/docuflow",
+    nav: [{ href: "/docuflow", label: "เร็ว ๆ นี้", icon: ClipboardList }],
+  },
 };
 
 export const MODULE_LIST = Object.values(MODULES);
