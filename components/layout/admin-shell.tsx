@@ -8,7 +8,6 @@ import {
   Menu,
   X,
   ChevronDown,
-  ChevronRight,
   LogOut,
   Users as UsersIcon,
   ShieldCheck,
@@ -29,7 +28,6 @@ import {
   getModuleFromPath,
   type ModuleSlug,
   type NavItem,
-  type ModuleConfig,
 } from "@/lib/modules";
 import { NotificationBell } from "./notification-bell";
 import { CompanySwitcher } from "./company-switcher";
@@ -415,6 +413,7 @@ function SidebarBody({
   navCounts: NavCountsClient;
   onNavigate?: () => void;
 }) {
+  const activeModule = activeModuleSlug ? MODULES[activeModuleSlug] : null;
   return (
     <div className="py-3 flex flex-col">
       {/* Zone 1: Home */}
@@ -428,19 +427,32 @@ function SidebarBody({
         />
       </div>
 
-      {/* Zone 2: Programs (everyone) */}
-      <SidebarSection title="โปรแกรม" storageKey="zone-programs">
-        {MODULE_LIST.map((m) => (
-          <ModuleBlock
-            key={m.slug}
-            module={m}
-            isActive={m.slug === activeModuleSlug}
-            moduleNavItems={m.slug === activeModuleSlug ? moduleNav : []}
-            pathname={pathname}
-            onNavigate={onNavigate}
-          />
-        ))}
-      </SidebarSection>
+      {/* Zone 2: Active module's inner nav (no module switcher here —
+          switching modules is top-bar only per project rule
+          feedback_module_switch_topbar_only.md). The header is just an
+          informational label, not a clickable switcher. */}
+      {activeModule && moduleNav.length > 0 && (
+        <div className="px-3 mb-3">
+          <p className="px-3 py-1 mb-1 text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">
+            {activeModule.emoji}{" "}
+            <span className="text-[var(--color-brand-700)]">
+              {activeModule.name}
+            </span>
+          </p>
+          <div className="space-y-0.5">
+            {moduleNav.map((it) => (
+              <SidebarLink
+                key={it.href}
+                href={it.href}
+                icon={it.icon}
+                label={it.label}
+                pathname={pathname}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Zone 3: Manage (admin tier only) */}
       {isAdmin && (
@@ -603,80 +615,6 @@ function SidebarLink({
         </span>
       )}
     </Link>
-  );
-}
-
-function ModuleBlock({
-  module,
-  isActive,
-  moduleNavItems,
-  pathname,
-  onNavigate,
-}: {
-  module: ModuleConfig;
-  isActive: boolean;
-  /** Inner nav items, already filtered by role. Empty when module is not active. */
-  moduleNavItems: NavItem[];
-  pathname: string;
-  onNavigate?: () => void;
-}) {
-  // Inactive module — single header row linking to module landing.
-  // (Per HARD RULE: don't leak inactive module's inner nav into the active context.)
-  if (!isActive) {
-    const isComingSoon = module.status === "coming_soon";
-    return (
-      <Link
-        href={module.basePath}
-        onClick={onNavigate}
-        className={cn(
-          "flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors",
-          isComingSoon
-            ? "text-zinc-500 hover:bg-zinc-50"
-            : "text-zinc-700 hover:bg-zinc-100",
-        )}
-      >
-        <span className="text-base">{module.emoji}</span>
-        <span className="flex-1 truncate">{module.name}</span>
-        {isComingSoon && (
-          <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">
-            เร็วๆนี้
-          </span>
-        )}
-        <ChevronRight className="size-3 text-zinc-300" />
-      </Link>
-    );
-  }
-
-  // Active — header is highlighted, then inner nav items indented below.
-  return (
-    <div>
-      <Link
-        href={module.basePath}
-        onClick={onNavigate}
-        className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-bold bg-[var(--color-brand-50)] text-[var(--color-brand-800)] border border-[var(--color-brand-200)]"
-      >
-        <span className="text-base">{module.emoji}</span>
-        <span className="flex-1 truncate">{module.name}</span>
-        <span className="text-[9px] text-[var(--color-brand-700)] font-bold uppercase tracking-wider">
-          ใช้งาน
-        </span>
-      </Link>
-      {moduleNavItems.length > 0 && (
-        <div className="mt-1 space-y-0.5">
-          {moduleNavItems.map((item) => (
-            <SidebarLink
-              key={item.href}
-              href={item.href}
-              icon={item.icon}
-              label={item.label}
-              pathname={pathname}
-              onNavigate={onNavigate}
-              indent
-            />
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
