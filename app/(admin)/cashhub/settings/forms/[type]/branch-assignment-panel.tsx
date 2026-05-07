@@ -18,17 +18,27 @@ interface BranchOption {
   form_template_id: string | null;
 }
 
+interface TemplateOption {
+  id: string;
+  version: number;
+  name: string | null;
+  is_default: boolean;
+}
+
 interface Props {
   /** Template version ที่เปิดอยู่ตอนนี้ */
   activeTemplateId: string;
   isDefault: boolean;
   branches: BranchOption[];
+  /** ใช้แสดงว่า branch ปัจจุบันใช้เวอร์ชั่นไหนอยู่ (ตอนติ๊กจะย้าย) */
+  allTemplates: TemplateOption[];
 }
 
 export function BranchAssignmentPanel({
   activeTemplateId,
   isDefault,
   branches,
+  allTemplates,
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -134,19 +144,33 @@ export function BranchAssignmentPanel({
     );
   }
 
+  // Map template id → label "v2" / "v3 (มีคาร์แคร์)" สำหรับโชว์ใน badge
+  const templateLabelById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of allTemplates) {
+      const label = t.name ? `v${t.version} · ${t.name}` : `v${t.version}`;
+      m.set(t.id, label);
+    }
+    return m;
+  }, [allTemplates]);
+
   return (
     <div className="rounded-2xl border-2 border-zinc-200 bg-white overflow-hidden">
       <div className="px-4 py-3 border-b-2 border-zinc-100 flex items-center justify-between gap-3">
         <div>
           <h3 className="font-bold text-sm">สาขาที่ใช้เวอร์ชั่นนี้</h3>
           <p className="text-[11px] text-zinc-500 mt-0.5">
-            ติ๊กสาขาที่ต้องการให้ใช้ฟอร์มเวอร์ชั่นนี้ · กดบันทึกเมื่อพร้อม
+            <span className="text-[var(--color-brand-700)] font-semibold">
+              💡 1 สาขาใช้ได้ 1 เวอร์ชั่นเท่านั้น
+            </span>
+            <span className="mx-1">·</span>
+            ถ้าติ๊กสาขาที่กำลังใช้เวอร์ชั่นอื่นอยู่ ระบบจะ
+            <strong>ย้าย</strong>มาเวอร์ชั่นนี้ให้
             {isDefault && (
               <>
-                <span className="mx-1">·</span>
-                <span className="text-[var(--color-brand-700)] font-semibold">
-                  v1 = ค่าเริ่มต้น (สาขาที่ไม่ได้ผูกเวอร์ชั่น = ใช้ตัวนี้
-                  อัตโนมัติ)
+                <br />
+                <span className="text-zinc-600">
+                  v1 ค่าเริ่มต้น = สาขาที่ไม่ติ๊กที่ไหนเลย จะใช้ตัวนี้อัตโนมัติ
                 </span>
               </>
             )}
@@ -193,10 +217,16 @@ export function BranchAssignmentPanel({
       <ul className="divide-y divide-zinc-100 max-h-80 overflow-y-auto">
         {branches.map((b) => {
           const isOn = selected.has(b.id);
-          // โชว์เป็น badge ว่าตอนนี้สาขานี้ผูกกับ template ตัวอื่นอยู่ (ถ้ามี)
+          // ตอนนี้สาขานี้ผูกกับ template ตัวอื่นอยู่ → แสดง badge ระบุ version ชัดเจน
           const isOnOtherTpl =
             b.form_template_id !== null &&
             b.form_template_id !== activeTemplateId;
+          const otherTplLabel = isOnOtherTpl
+            ? templateLabelById.get(b.form_template_id!) ?? "เวอร์ชั่นอื่น"
+            : null;
+          // สาขาที่ form_template_id = null → ตกเป็น default (v1) อัตโนมัติ
+          const isOnDefault =
+            b.form_template_id === null && !isDefault;
           return (
             <li key={b.id}>
               <button
@@ -222,9 +252,20 @@ export function BranchAssignmentPanel({
                     {b.province && ` · ${b.province}`}
                   </div>
                 </div>
-                {isOnOtherTpl && !isOn && (
-                  <span className="text-[10px] uppercase tracking-wider font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md shrink-0">
-                    ใช้เวอร์ชั่นอื่น
+                {isOnOtherTpl && !isOn && otherTplLabel && (
+                  <span
+                    className="text-[10px] uppercase tracking-wider font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md shrink-0"
+                    title={`สาขานี้ตอนนี้ใช้ ${otherTplLabel} · ติ๊กที่นี่จะย้ายมา`}
+                  >
+                    ตอนนี้ใช้ {otherTplLabel}
+                  </span>
+                )}
+                {isOnDefault && !isOn && (
+                  <span
+                    className="text-[10px] uppercase tracking-wider font-bold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded-md shrink-0"
+                    title="ใช้ v1 default · ติ๊กที่นี่จะย้ายมา"
+                  >
+                    ใช้ v1 default
                   </span>
                 )}
               </button>

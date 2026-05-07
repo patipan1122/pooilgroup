@@ -462,6 +462,12 @@ export function FormEditor({
             activeTemplateId={activeTemplate.id}
             isDefault={activeTemplate.is_default}
             branches={branches}
+            allTemplates={templates.map((t) => ({
+              id: t.id,
+              version: t.version,
+              name: t.name,
+              is_default: t.is_default,
+            }))}
           />
         </div>
 
