@@ -25,9 +25,12 @@ import { formatBaht } from "@/lib/utils/format";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 
 interface ReportData {
-  id: string;
+  /** null when there are multiple shifts in this date (approve must go via /reports/[id]) */
+  id: string | null;
   status: string;
-  shift: string;
+  /** present shift codes for this date (may be 1 or many) */
+  shifts: string[];
+  shiftCount: number;
   total_sales: number;
   cash: number;
   transfer: number;
@@ -39,6 +42,13 @@ interface ReportData {
   approved_at: string | null;
   rejected_reason: string | null;
 }
+
+const SHIFT_LABEL: Record<string, string> = {
+  morning: "🌅 เช้า",
+  midday: "☀️ กลางวัน",
+  evening: "🌙 เย็น",
+  all: "ทั้งวัน",
+};
 
 interface BranchData {
   id: string;
@@ -104,7 +114,7 @@ export function HeatmapCellModal({
   }, [open, branchId, date]);
 
   async function handleAction(action: "approve" | "reject") {
-    if (!report || actionPending) return;
+    if (!report || !report.id || actionPending) return;
     if (action === "reject" && !rejectReason.trim()) {
       toast.error("กรุณาระบุเหตุผลที่ปฏิเสธ");
       return;
@@ -194,14 +204,21 @@ export function HeatmapCellModal({
                 <div className="flex items-baseline justify-between mb-3">
                   <span className="text-xs uppercase tracking-widest text-zinc-500 font-bold">
                     ยอดขาย
+                    {report.shiftCount > 1 && (
+                      <span className="ml-1.5 text-[var(--color-brand-700)] font-semibold">
+                        · {report.shiftCount} กะรวมกัน
+                      </span>
+                    )}
                   </span>
-                  {report.shift !== "all" && (
-                    <Badge tone="neutral">
-                      {report.shift === "morning" && "🌅 เช้า"}
-                      {report.shift === "midday" && "☀️ กลางวัน"}
-                      {report.shift === "evening" && "🌙 เย็น"}
-                    </Badge>
-                  )}
+                  <div className="flex flex-wrap gap-1 justify-end">
+                    {report.shifts
+                      .filter((s) => s !== "all")
+                      .map((s) => (
+                        <Badge key={s} tone="neutral">
+                          {SHIFT_LABEL[s] ?? s}
+                        </Badge>
+                      ))}
+                  </div>
                 </div>
                 <div className="text-3xl font-extrabold tabular-num font-display tracking-tight text-zinc-900">
                   {formatBaht(report.total_sales)}
@@ -259,8 +276,22 @@ export function HeatmapCellModal({
                 )}
               </div>
 
-              {/* Approve / Reject — เฉพาะรายงานที่ submitted + ผู้ใช้มีสิทธิ์ */}
-              {canApprove && report.status === "submitted" && (
+              {/* Approve / Reject — เฉพาะรายงานที่ submitted + ผู้ใช้มีสิทธิ์
+                  มีกะเดียว = approve/reject ใน popup ได้
+                  หลายกะ = ต้องไป /cashhub/reports เลือกอนุมัติทีละกะ */}
+              {canApprove &&
+                report.status === "submitted" &&
+                !report.id && (
+                  <div className="border-t border-zinc-100 pt-3">
+                    <Link
+                      href={`/cashhub/reports?date=${date}`}
+                      className="block text-center rounded-xl border-2 border-amber-200 bg-amber-50 hover:bg-amber-100 px-4 py-2.5 text-sm font-bold text-amber-800"
+                    >
+                      ⏳ {report.shiftCount} กะรอ — อนุมัติทีละกะที่หน้ารายงาน
+                    </Link>
+                  </div>
+                )}
+              {canApprove && report.status === "submitted" && report.id && (
                 <div className="border-t border-zinc-100 pt-3 space-y-2">
                   {showRejectInput ? (
                     <>

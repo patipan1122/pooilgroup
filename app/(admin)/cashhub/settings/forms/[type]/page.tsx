@@ -53,16 +53,25 @@ export default async function FormEditorPage({ params, searchParams }: Props) {
     .eq("business_type", businessType)
     .eq("is_active", true);
 
-  // Branch count for the ACTIVE template specifically (how many branches use this version)
+  // Load all branches of this business type (สำหรับ assignment panel)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { count: activeTemplateBranchCount } = await (admin.from as any)(
-    "branches",
-  )
-    .select("id", { count: "exact", head: true })
+  const { data: branchesData } = await (admin.from as any)("branches")
+    .select("id, code, name, province, form_template_id")
     .eq("org_id", session.user.org_id)
     .eq("business_type", businessType)
     .eq("is_active", true)
-    .eq("form_template_id", activeTemplate.id);
+    .order("code");
+  const branches = (branchesData ?? []) as Array<{
+    id: string;
+    code: string;
+    name: string;
+    province: string | null;
+    form_template_id: string | null;
+  }>;
+
+  const activeTemplateBranchCount = branches.filter(
+    (b) => b.form_template_id === activeTemplate.id,
+  ).length;
 
   return (
     <FormEditor
@@ -74,7 +83,8 @@ export default async function FormEditorPage({ params, searchParams }: Props) {
       branchCount={branchCount ?? 0}
       templates={templates}
       activeTemplate={activeTemplate}
-      activeTemplateBranchCount={activeTemplateBranchCount ?? 0}
+      activeTemplateBranchCount={activeTemplateBranchCount}
+      branches={branches}
     />
   );
 }

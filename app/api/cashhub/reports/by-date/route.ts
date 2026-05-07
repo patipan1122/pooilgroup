@@ -42,7 +42,9 @@ export async function GET(req: NextRequest) {
 
   const admin = adminClient();
 
-  const [branchQ, reportQ] = await Promise.all([
+  // ดึงทุกกะของวัน (อาจมี morning/midday/evening) แล้วรวมเป็น 1 record
+  // เดิม .maybeSingle() error เมื่อมีหลาย row → popup โชว์ "ยังไม่กรอก"
+  const [branchQ, reportsQ] = await Promise.all([
     admin
       .from("branches")
       .select("id, code, name, business_type, province")
@@ -57,17 +59,58 @@ export async function GET(req: NextRequest) {
       .eq("org_id", session.user.org_id)
       .eq("branch_id", branchId)
       .eq("report_date", date)
-      .order("submitted_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .order("shift", { ascending: true }),
   ]);
 
   if (!branchQ.data) {
     return NextResponse.json({ error: "Branch not found" }, { status: 404 });
   }
 
+  const reports = reportsQ.data ?? [];
+
+  if (reports.length === 0) {
+    return NextResponse.json({ branch: branchQ.data, report: null });
+  }
+
+  // Status priority: approved > submitted > rejected > draft
+  const STATUS_RANK: Record<string, number> = {
+    approved: 4,
+    submitted: 3,
+    rejected: 2,
+    draft: 1,
+  };
+  const bestStatusRow = reports.reduce((best, r) =>
+    (STATUS_RANK[r.status] ?? 0) > (STATUS_RANK[best.status] ?? 0) ? r : best,
+  );
+
+  // รวมยอดทุกกะ
+  const sum = (k: keyof typeof reports[number]) =>
+    reports.reduce((s, r) => s + (Number(r[k] ?? 0) || 0), 0);
+
+  const aggregated = {
+    // เก็บ id สำหรับ approve/reject เฉพาะกรณีมีกะเดียว
+    id: reports.length === 1 ? reports[0]!.id : null,
+    shifts: reports.map((r) => r.shift),
+    shiftCount: reports.length,
+    status: bestStatusRow.status,
+    total_sales: sum("total_sales"),
+    cash: sum("cash"),
+    transfer: sum("transfer"),
+    card: sum("card"),
+    credit: sum("credit"),
+    shortage: sum("shortage"),
+    // notes รวมจากทุกกะ (กรองว่าง)
+    notes: reports
+      .map((r) => r.notes)
+      .filter((n) => n && String(n).trim().length > 0)
+      .join("\n\n"),
+    submitted_at: reports.find((r) => r.submitted_at)?.submitted_at ?? null,
+    approved_at: bestStatusRow.approved_at ?? null,
+    rejected_reason: bestStatusRow.rejected_reason ?? null,
+  };
+
   return NextResponse.json({
     branch: branchQ.data,
-    report: reportQ.data ?? null,
+    report: aggregated,
   });
 }

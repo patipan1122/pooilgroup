@@ -143,8 +143,6 @@ export default async function HomePage() {
 
   const moduleEnabled: Record<string, boolean> = {
     cashhub: true,
-    fuelos: true,
-    docuflow: true,
     ...Object.fromEntries(
       (moduleStatusQ.data ?? []).map((m) => [m.module_name, m.is_active]),
     ),
@@ -235,16 +233,7 @@ export default async function HomePage() {
               enabled={moduleEnabled.cashhub}
               landingPath="/cashhub/dashboard"
             />
-            <ModuleCard
-              slug="fuelos"
-              enabled={moduleEnabled.fuelos}
-              landingPath="/fuelos"
-            />
-            <ModuleCard
-              slug="docuflow"
-              enabled={moduleEnabled.docuflow}
-              landingPath="/docuflow"
-            />
+            {/* FuelOS + DocuFlow soft-removed · feedback_module_isolation.md */}
           </div>
         </Section>
 

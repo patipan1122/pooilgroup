@@ -22,7 +22,8 @@ export type AuditAction =
   | "APPROVE_USER_REQUEST"
   | "REJECT_USER_REQUEST"
   | "IMPERSONATE_START"
-  | "IMPERSONATE_END";
+  | "IMPERSONATE_END"
+  | "ASSIGN_FORM_TEMPLATE";
 
 export interface AuditEntry {
   orgId: string;
