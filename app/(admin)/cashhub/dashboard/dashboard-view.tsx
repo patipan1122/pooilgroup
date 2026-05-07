@@ -23,8 +23,6 @@ import {
   Banknote,
   Smartphone,
   Receipt,
-  Activity,
-  GitCompareArrows,
   ChevronRight,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -718,58 +716,9 @@ export function DashboardView({
         </Card>
       </Section>
 
-      <SectionDivider />
-
-      {/* ===== Section 07 — Tools ===== */}
-      <Section
-        number={data.alerts.length > 0 ? "07" : "06"}
-        label="TOOLS"
-        title="ทางลัด"
-        className="animate-fade-up delay-400"
-      >
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <ActionTile
-            href="/cashhub/reports"
-            icon={<TrendingUp className="size-5" />}
-            label="ดูรายงาน"
-          />
-          <ActionTile
-            href="/cashhub/compare"
-            icon={<GitCompareArrows className="size-5" />}
-            label="เปรียบเทียบ"
-          />
-          <ActionTile
-            href="/cashhub/leaderboard"
-            icon={<Trophy className="size-5" />}
-            label="Leaderboard"
-          />
-          <ActionTile
-            href="/cashhub/shortages"
-            icon={<Activity className="size-5" />}
-            label="เงินขาด"
-          />
-          <ActionTile
-            href="/cashhub/heatmap"
-            icon={<CalendarDays className="size-5" />}
-            label="Heatmap"
-          />
-          <ActionTile
-            href="/cashhub/branches"
-            icon={<Building2 className="size-5" />}
-            label="จัดการสาขา"
-          />
-          <ActionTile
-            href="/liff/report"
-            icon={<ScrollText className="size-5" />}
-            label="กรอกรายงาน"
-          />
-          <ActionTile
-            href="/api/cashhub/export"
-            icon={<ArrowRight className="size-5" />}
-            label="Export CSV"
-          />
-        </div>
-      </Section>
+      {/* TOOLS section removed — Sidebar (Zone "โปรแกรม → CashHub") covers
+          ดูรายงาน · เปรียบเทียบ · Leaderboard · Heatmap · เงินขาด · จัดการสาขา · กรอกรายงาน.
+          Export CSV is page-action — moved to /cashhub/reports header instead. */}
     </div>
   );
 }
@@ -835,28 +784,6 @@ function MixRow({
         {formatBahtCompact(value)}
       </span>
     </div>
-  );
-}
-
-function ActionTile({
-  href,
-  icon,
-  label,
-}: {
-  href: string;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="flex items-center gap-3 bg-white rounded-2xl border-2 border-zinc-200 px-4 py-3.5 hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/30 transition-all hover-lift"
-    >
-      <div className="size-9 rounded-xl bg-[var(--color-brand-50)] border border-[var(--color-brand-100)] flex items-center justify-center text-[var(--color-brand-700)] shrink-0">
-        {icon}
-      </div>
-      <div className="text-sm font-semibold text-zinc-800 truncate">{label}</div>
-    </Link>
   );
 }
 

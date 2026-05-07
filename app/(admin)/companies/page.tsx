@@ -30,7 +30,7 @@ interface BranchAgg {
 }
 
 export default async function CompaniesPage() {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "admin");
   const admin = adminClient();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

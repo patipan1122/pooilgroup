@@ -1,6 +1,14 @@
 "use client";
 
-import { useState, useMemo, useTransition, useRef, useEffect } from "react";
+import {
+  useState,
+  useMemo,
+  useTransition,
+  useRef,
+  useEffect,
+  createContext,
+  useContext,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -26,6 +34,7 @@ import {
   RotateCcw,
   LayoutGrid,
   Table as TableIcon,
+  UserCog,
 } from "lucide-react";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { Dialog } from "@/components/ui/dialog";
@@ -37,6 +46,16 @@ import {
   roleLabel,
   roleColor,
 } from "@/lib/constants/roles";
+
+/** Real (not impersonated) viewer info — used to gate the impersonate action. */
+const ViewerCtx = createContext<{ id: string; role: string }>({
+  id: "",
+  role: "",
+});
+
+/** Per-user unread-notification counts — drives the red dot beside user names.
+    Empty map = no dots anywhere. */
+const UnreadCtx = createContext<Record<string, number>>({});
 
 export interface BranchWithUsers {
   id: string;
@@ -87,6 +106,7 @@ export interface UserStats {
   noLine: number;
   noTelegram: number;
   offline7d: number;
+  branchesMissingMgr: number;
 }
 
 // Role labels + colors come from the shared constant — see lib/constants/roles.ts
@@ -157,6 +177,8 @@ interface FilterState {
   activeWeek: boolean;
   newThisWeek: boolean;
   roles: Set<string>;
+  /** Show only branches that don't have a branch_manager assigned. */
+  branchesMissingMgr: boolean;
 }
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -167,7 +189,8 @@ type StatFilterKey =
   | "newThisWeek"
   | "pending"
   | "noLine"
-  | "offline7d";
+  | "offline7d"
+  | "branchesMissingMgr";
 
 interface Props {
   companies: Company[];
@@ -180,6 +203,12 @@ interface Props {
   nowMs: number;
   /** Flat list (id, name, branchCodes, ...) for the Excel-style table view. */
   flatUsers: FlatUser[];
+  /** Real (not impersonated) viewer id — for hiding self from impersonate target. */
+  currentUserId: string;
+  /** Real (not impersonated) viewer role — controls impersonate target gating. */
+  currentUserRole: string;
+  /** userId → unread notification count. Drives the red dot in chips. */
+  unreadByUserId: Record<string, number>;
 }
 
 export function UsersByBusiness({
@@ -191,6 +220,9 @@ export function UsersByBusiness({
   stats,
   nowMs,
   flatUsers,
+  currentUserId,
+  currentUserRole,
+  unreadByUserId,
 }: Props) {
   const router = useRouter();
   const [viewMode, setViewMode] = useState<"card" | "table">("card");
@@ -213,6 +245,7 @@ export function UsersByBusiness({
     activeWeek: false,
     newThisWeek: false,
     roles: new Set(),
+    branchesMissingMgr: false,
   });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkPending, startBulkTransition] = useTransition();
@@ -260,18 +293,33 @@ export function UsersByBusiness({
     filter.offline7d ||
     filter.activeWeek ||
     filter.newThisWeek ||
-    filter.roles.size > 0;
+    filter.roles.size > 0 ||
+    filter.branchesMissingMgr;
 
   const filteredBranches = useMemo(() => {
     if (!hasActiveFilter) return branches;
-    return branches
-      .map((b) => ({ ...b, users: b.users.filter(matchesFilter) }))
-      .filter((b) => b.users.length > 0);
+    let list = branches.map((b) => ({
+      ...b,
+      users: b.users.filter(matchesFilter),
+    }));
+    // Branch-level filter: only branches missing a branch_manager.
+    // Show even with 0 matching users so admin sees the branch needs attention.
+    if (filter.branchesMissingMgr) {
+      list = list.filter(
+        (b) => !b.users.some((u) => u.role === "branch_manager"),
+      );
+    } else {
+      list = list.filter((b) => b.users.length > 0);
+    }
+    return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branches, filter, hasActiveFilter]);
 
   const filteredUnassigned = useMemo(() => {
     if (!hasActiveFilter) return unassigned;
+    // When filtering by branchesMissingMgr the unassigned list is irrelevant —
+    // those users aren't tied to any branch.
+    if (filter.branchesMissingMgr) return [];
     return unassigned.filter(matchesFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unassigned, filter, hasActiveFilter]);
@@ -405,6 +453,8 @@ export function UsersByBusiness({
     filteredUnassigned.length;
 
   return (
+    <ViewerCtx.Provider value={{ id: currentUserId, role: currentUserRole }}>
+    <UnreadCtx.Provider value={unreadByUserId}>
     <div className="space-y-5">
       {/* Notification box */}
       <NotificationBox
@@ -467,9 +517,12 @@ export function UsersByBusiness({
         </div>
       )}
 
-      {/* Selection toggle + expand/collapse all — show when any user visible */}
+      {/* Selection toggle + prominent expand/collapse-all button.
+          Per project rule "Collapse-all/Expand-all button on lists" the
+          control must be visually obvious — promoted from text-link to a
+          bordered button so users with 30+ branches can scan fast. */}
       {totalVisibleUsers > 0 && (
-        <div className="text-xs text-zinc-500 flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap text-xs text-zinc-500">
           <button
             onClick={toggleAllVisible}
             className="inline-flex items-center gap-1.5 hover:text-zinc-900 font-medium"
@@ -487,10 +540,10 @@ export function UsersByBusiness({
           </button>
           <span className="text-zinc-300">·</span>
           <span>แสดง {totalVisibleUsers} คน</span>
-          <span className="text-zinc-300">·</span>
           <button
             onClick={isAllExpanded ? collapseAll : expandAll}
-            className="inline-flex items-center gap-1 hover:text-[var(--color-brand-700)] font-semibold text-[var(--color-brand-700)]"
+            title={isAllExpanded ? "พับทุกธุรกิจและทุกสาขา" : "ขยายทุกธุรกิจ + เห็นรายชื่อทุกสาขา"}
+            className="ml-auto inline-flex items-center gap-1.5 px-3 h-8 rounded-lg border-2 border-[var(--color-brand-200)] bg-[var(--color-brand-50)] text-[var(--color-brand-800)] text-xs font-bold hover:bg-[var(--color-brand-100)] hover:border-[var(--color-brand-400)] transition-colors"
           >
             <ChevronDown
               className={cn(
@@ -657,6 +710,8 @@ export function UsersByBusiness({
       </>
       )}
     </div>
+    </UnreadCtx.Provider>
+    </ViewerCtx.Provider>
   );
 }
 
@@ -710,7 +765,7 @@ function StatsSummary({
   setFilter: (f: FilterState) => void;
   hasFilter: boolean;
 }) {
-  type Tone = "leaf" | "brand" | "warning" | "neutral";
+  type Tone = "leaf" | "brand" | "warning" | "neutral" | "danger";
   type Item = {
     label: string;
     value: number;
@@ -772,6 +827,15 @@ function StatsSummary({
       active: filter.offline7d,
       hint: "ดูเฉพาะคนที่ไม่ได้ login เกิน 7 วัน",
     },
+    {
+      label: "สาขาขาด ผจก.",
+      value: stats.branchesMissingMgr,
+      suffix: "สาขา",
+      tone: stats.branchesMissingMgr > 0 ? "danger" : "neutral",
+      filterKey: "branchesMissingMgr",
+      active: filter.branchesMissingMgr,
+      hint: "ทุกสาขาควรมี ผจก.สาขา — กดดูสาขาที่ยังขาด",
+    },
   ];
 
   const toneClass: Record<Tone, string> = {
@@ -780,6 +844,7 @@ function StatsSummary({
     leaf: "border-[var(--color-leaf-200)] bg-[var(--color-leaf-50)]/40 text-[var(--color-leaf-700)]",
     warning: "border-amber-300 bg-amber-50/60 text-amber-900",
     neutral: "border-zinc-200 bg-white text-zinc-700",
+    danger: "border-red-300 bg-red-50/60 text-red-900",
   };
 
   const activeToneClass: Record<Tone, string> = {
@@ -788,6 +853,7 @@ function StatsSummary({
     leaf: "border-[var(--color-leaf-500)] bg-[var(--color-leaf-100)] text-[var(--color-leaf-900)]",
     warning: "border-amber-500 bg-amber-100 text-amber-900",
     neutral: "border-zinc-500 bg-zinc-100 text-zinc-900",
+    danger: "border-red-500 bg-red-100 text-red-900",
   };
 
   const hoverClass =
@@ -804,6 +870,7 @@ function StatsSummary({
         activeWeek: false,
         newThisWeek: false,
         roles: new Set(),
+        branchesMissingMgr: false,
       });
       return;
     }
@@ -819,7 +886,7 @@ function StatsSummary({
   }
 
   return (
-    <div className="grid grid-cols-3 lg:grid-cols-6 gap-2">
+    <div className="grid grid-cols-3 lg:grid-cols-7 gap-2">
       {items.map((it) => (
         <button
           key={it.label}
@@ -872,6 +939,7 @@ function FilterBar({
       activeWeek: false,
       newThisWeek: false,
       roles: new Set(),
+      branchesMissingMgr: false,
     });
   const hasFilter =
     !!filter.search ||
@@ -1114,18 +1182,21 @@ function BranchRow({
 }) {
   // Split counts by actual role group — avoid the previous "ผจก. 3/2" confusion
   // where admin + manager were lumped together (could exceed denominator).
+  // Branch manager (ผจก.สาขา) and area manager (ผจก.เขต) tracked separately —
+  // every branch should have a branch_manager; missing one shows red.
   const admins = branch.users.filter(
     (u) =>
       u.role === "super_admin" || u.role === "org_admin" || u.role === "admin",
   );
-  const managers = branch.users.filter(
-    (u) => u.role === "branch_manager" || u.role === "area_manager",
-  );
+  const branchMgrs = branch.users.filter((u) => u.role === "branch_manager");
+  const areaMgrs = branch.users.filter((u) => u.role === "area_manager");
   const staffs = branch.users.filter((u) => u.role === "staff");
   const adminCount = admins.length;
-  const managerCount = managers.length;
+  const branchMgrCount = branchMgrs.length;
+  const areaMgrCount = areaMgrs.length;
   const staffCount = staffs.length;
   const hasUsers = branch.users.length > 0;
+  const missingBranchMgr = !branchMgrs.length;
 
   // Compact name list — first names only, max 3, "..." if more
   function nameList(users: BranchUser[]): string {
@@ -1157,10 +1228,20 @@ function BranchRow({
             {branch.code}
           </span>
           <span className="text-xs text-zinc-800 truncate">{branch.name}</span>
-          {/* Role counts — separate chips so admin / manager / staff
-              don't get visually merged. Only show chips with count > 0. */}
+          {/* Role counts — separate chips so admin / branch_mgr / area_mgr / staff
+              don't get visually merged. Only show chips with count > 0.
+              Missing branch manager is the most prominent state — every branch
+              should have one (CEO rule). */}
+          {missingBranchMgr && (
+            <span
+              className="text-[10px] font-bold tabular-num px-1.5 py-0.5 rounded-md bg-red-50 text-red-700 border border-red-300"
+              title="สาขานี้ยังไม่มีผู้จัดการสาขา — ทุกสาขาควรมี"
+            >
+              ⚠ ยังไม่มี ผจก.สาขา
+            </span>
+          )}
           {!hasUsers && (
-            <span className="text-[10px] font-bold tabular-num px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
+            <span className="text-[10px] font-bold tabular-num px-1.5 py-0.5 rounded-md bg-zinc-100 text-zinc-700 border border-zinc-300">
               ยังไม่มีคน
             </span>
           )}
@@ -1169,9 +1250,14 @@ function BranchRow({
               Admin {adminCount}
             </span>
           )}
-          {managerCount > 0 && (
+          {areaMgrCount > 0 && (
+            <span className="text-[10px] font-bold tabular-num px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-800 border border-purple-200">
+              ผจก.เขต {areaMgrCount}
+            </span>
+          )}
+          {branchMgrCount > 0 && (
             <span className="text-[10px] font-bold tabular-num px-1.5 py-0.5 rounded-md bg-[var(--color-brand-50)] text-[var(--color-brand-800)] border border-[var(--color-brand-200)]">
-              ผจก. {managerCount}
+              ผจก.สาขา {branchMgrCount}
             </span>
           )}
           {staffCount > 0 && (
@@ -1191,33 +1277,43 @@ function BranchRow({
       </div>
       {/* Inline name preview when collapsed — see WHO holds each role
           without having to expand. Staff omitted (could be many). */}
-      {!expanded && hasUsers && (adminCount > 0 || managerCount > 0) && (
-        <div className="ml-5 mt-1 text-[11px] text-zinc-500 leading-relaxed">
-          {adminCount > 0 && (
-            <span>
-              <span className="font-semibold text-amber-800">Admin:</span>{" "}
-              {nameList(admins)}
-            </span>
-          )}
-          {adminCount > 0 && managerCount > 0 && (
-            <span className="text-zinc-300 mx-1.5">·</span>
-          )}
-          {managerCount > 0 && (
-            <span>
-              <span className="font-semibold text-[var(--color-brand-700)]">
-                ผจก.:
-              </span>{" "}
-              {nameList(managers)}
-            </span>
-          )}
-          {staffCount > 0 && (
-            <>
+      {!expanded && hasUsers &&
+        (adminCount > 0 || branchMgrCount > 0 || areaMgrCount > 0) && (
+          <div className="ml-5 mt-1 text-[11px] text-zinc-500 leading-relaxed">
+            {adminCount > 0 && (
+              <span>
+                <span className="font-semibold text-amber-800">Admin:</span>{" "}
+                {nameList(admins)}
+              </span>
+            )}
+            {adminCount > 0 && (areaMgrCount > 0 || branchMgrCount > 0) && (
               <span className="text-zinc-300 mx-1.5">·</span>
-              <span className="text-zinc-500">พนักงาน {staffCount} คน</span>
-            </>
-          )}
-        </div>
-      )}
+            )}
+            {areaMgrCount > 0 && (
+              <span>
+                <span className="font-semibold text-purple-700">ผจก.เขต:</span>{" "}
+                {nameList(areaMgrs)}
+              </span>
+            )}
+            {areaMgrCount > 0 && branchMgrCount > 0 && (
+              <span className="text-zinc-300 mx-1.5">·</span>
+            )}
+            {branchMgrCount > 0 && (
+              <span>
+                <span className="font-semibold text-[var(--color-brand-700)]">
+                  ผจก.สาขา:
+                </span>{" "}
+                {nameList(branchMgrs)}
+              </span>
+            )}
+            {staffCount > 0 && (
+              <>
+                <span className="text-zinc-300 mx-1.5">·</span>
+                <span className="text-zinc-500">พนักงาน {staffCount} คน</span>
+              </>
+            )}
+          </div>
+        )}
       {expanded && hasUsers && (
         <div className="flex flex-wrap gap-1 mt-2 ml-5">
           {branch.users.map((u) => (
@@ -1255,6 +1351,8 @@ function UserChipCompact({
   const isManager = MANAGER_ROLES.has(user.role);
   const status = statusInfo(user);
   const roleClass = roleColor(user.role);
+  const unreadMap = useContext(UnreadCtx);
+  const unread = unreadMap[user.id] ?? 0;
 
   return (
     <div
@@ -1280,6 +1378,15 @@ function UserChipCompact({
       >
         {user.name}
       </Link>
+      {unread > 0 && (
+        <span
+          className="inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-extrabold tabular-num"
+          title={`มี ${unread} แจ้งเตือนยังไม่อ่าน`}
+          aria-label={`${unread} unread`}
+        >
+          {unread > 9 ? "9+" : unread}
+        </span>
+      )}
       <RoleBadgeWithPreview role={user.role} className={roleClass} />
       {!HIDE_MESSAGING_ROLES.has(user.role) && (
         <span className="flex items-center gap-0.5">
@@ -1317,6 +1424,8 @@ function UserChipRow({
 }) {
   const status = statusInfo(user);
   const roleClass = roleColor(user.role);
+  const unreadMap = useContext(UnreadCtx);
+  const unread = unreadMap[user.id] ?? 0;
 
   return (
     <div
@@ -1334,6 +1443,14 @@ function UserChipRow({
       <span className={cn("size-2 rounded-full shrink-0", status.dot)} title={status.label} />
       <Link href={`/users/${user.id}`} className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
         <span className="font-bold truncate">{user.name}</span>
+        {unread > 0 && (
+          <span
+            className="inline-flex items-center justify-center min-w-4.5 h-4.5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-extrabold tabular-num"
+            title={`มี ${unread} แจ้งเตือนยังไม่อ่าน`}
+          >
+            {unread > 99 ? "99+" : unread}
+          </span>
+        )}
         <span className="text-[11px] text-zinc-500 truncate">
           {user.email ?? user.phone ?? ""}
         </span>
@@ -1436,6 +1553,7 @@ function UserActionMenu({
   onAfterAction: () => void;
 }) {
   const router = useRouter();
+  const viewer = useContext(ViewerCtx);
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const ref = useRef<HTMLDivElement>(null);
@@ -1473,6 +1591,41 @@ function UserActionMenu({
     });
   };
 
+  // Impersonate gating:
+  // - Viewer must be admin-tier (super_admin, org_admin, admin)
+  // - Cannot target self
+  // - Target must be active
+  // - Only super_admin can target super_admin (privilege ceiling)
+  const viewerIsAdminTier =
+    viewer.role === "super_admin" ||
+    viewer.role === "org_admin" ||
+    viewer.role === "admin";
+  const canImpersonate =
+    viewerIsAdminTier &&
+    user.id !== viewer.id &&
+    user.is_active &&
+    (viewer.role === "super_admin" || user.role !== "super_admin");
+
+  function startImpersonate() {
+    if (!confirm(`เข้าใช้แทน ${user.name}?\n\nคุณจะเห็นระบบเหมือนที่ผู้ใช้คนนี้เห็น — กลับมาเป็นตัวเองได้ตลอด`)) {
+      return;
+    }
+    startTransition(async () => {
+      const res = await fetch(`/api/admin/users/${user.id}/impersonate`, {
+        method: "POST",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(json.error || "เข้าใช้แทนไม่สำเร็จ");
+        return;
+      }
+      toast.success(`เข้าใช้แทน ${user.name} แล้ว`);
+      setOpen(false);
+      router.push("/home");
+      router.refresh();
+    });
+  }
+
   return (
     <div className="relative" ref={ref}>
       <button
@@ -1488,7 +1641,7 @@ function UserActionMenu({
         <MoreHorizontal className="size-3.5" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 w-52 rounded-xl border-2 border-zinc-200 bg-white shadow-lg overflow-hidden">
+        <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-xl border-2 border-zinc-200 bg-white shadow-lg overflow-hidden">
           <Link
             href={`/users/${user.id}`}
             className="flex items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-zinc-50"
@@ -1497,6 +1650,18 @@ function UserActionMenu({
             <ActivityIcon className="size-3.5 text-zinc-400" />
             ดูโปรไฟล์ + audit
           </Link>
+          {canImpersonate && (
+            <button
+              type="button"
+              onClick={startImpersonate}
+              disabled={pending}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-[var(--color-brand-50)] text-[var(--color-brand-700)] text-left"
+              title="เข้าใช้ระบบเหมือนเป็นผู้ใช้คนนี้ (กลับเป็นตัวเองได้ตลอด)"
+            >
+              <UserCog className="size-3.5" />
+              เข้าใช้แทน
+            </button>
+          )}
           {!user.invite_used && (
             <button
               type="button"
@@ -1641,8 +1806,9 @@ function InviteDialog({
               </label>
               <div className="mt-1 grid grid-cols-1 gap-1.5">
                 {[
-                  { v: "branch_manager", l: "ผู้จัดการสาขา" },
                   { v: "staff", l: "พนักงาน" },
+                  { v: "branch_manager", l: "ผจก.สาขา" },
+                  { v: "area_manager", l: "ผจก.เขต" },
                   { v: "viewer", l: "ผู้ดู (Read-only)" },
                 ].map((r) => (
                   <label

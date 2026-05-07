@@ -1,6 +1,7 @@
 // PATCH /api/admin/settings/modules — toggle module on/off for org
-//   body: { moduleName: "cashhub" | "fuelos" | "docuflow", isActive: boolean }
+//   body: { moduleName: "cashhub", isActive: boolean }
 // Inserts row if missing, updates if exists.
+// (FuelOS / DocuFlow re-add to enum when those modules ship)
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
@@ -9,7 +10,7 @@ import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 
 const Schema = z.object({
-  moduleName: z.enum(["cashhub", "fuelos", "docuflow"]),
+  moduleName: z.enum(["cashhub"]),
   isActive: z.boolean(),
 });
 

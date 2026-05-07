@@ -59,9 +59,13 @@ export async function getSession(): Promise<Session | null> {
 
   if (!dbUser) return null;
 
-  // Impersonation override: if real user is super_admin AND has a valid
+  // Impersonation override: if real user is admin-level AND has a valid
   // impersonation cookie bound to their id, swap the surface user to target.
-  if ((dbUser as DbUser).role === "super_admin") {
+  // Admin tiers that can impersonate: super_admin, org_admin, admin.
+  // org_admin/admin CANNOT impersonate super_admin (privilege ceiling) —
+  // the cookie issuer (impersonate route) enforces this; we double-check here.
+  const realRole = (dbUser as DbUser).role;
+  if (realRole === "super_admin" || realRole === "org_admin" || realRole === "admin") {
     const cookieStore = await cookies();
     const raw = cookieStore.get(IMPERSONATION_COOKIE)?.value;
     const payload = decodeImpersonationCookie(raw);
@@ -74,12 +78,17 @@ export async function getSession(): Promise<Session | null> {
         .eq("is_active", true)
         .maybeSingle();
       if (targetUser) {
-        return {
-          authUserId: authUser.id,
-          email: authUser.email ?? null,
-          user: targetUser as DbUser,
-          actingAs: { realUser: dbUser as DbUser },
-        };
+        const targetRole = (targetUser as DbUser).role;
+        const blockedByCeiling =
+          realRole !== "super_admin" && targetRole === "super_admin";
+        if (!blockedByCeiling) {
+          return {
+            authUserId: authUser.id,
+            email: authUser.email ?? null,
+            user: targetUser as DbUser,
+            actingAs: { realUser: dbUser as DbUser },
+          };
+        }
       }
     }
   }

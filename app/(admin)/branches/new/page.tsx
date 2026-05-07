@@ -8,7 +8,7 @@ import { BackButton } from "@/components/ui/back-button";
 export const dynamic = "force-dynamic";
 
 export default async function NewBranchPage() {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "admin");
   const admin = adminClient();
 
   // Possible managers (active users who could manage branches)

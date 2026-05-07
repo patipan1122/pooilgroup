@@ -512,6 +512,27 @@ model OrgModule {
 }
 
 // =============================================================
+// 12b. user_modules — per-user module access (added 2026-05-07)
+// Admin tier (super/org_admin/admin) bypasses this — they see all modules.
+// Other roles need an active row here to see CashHub/FuelOS/DocuFlow.
+// =============================================================
+model UserModule {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  moduleName String   @map("module_name") // cashhub | fuelos | docuflow
+  isActive   Boolean  @default(true) @map("is_active")
+  grantedBy  String?  @map("granted_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([orgId, userId, moduleName])
+  @@index([userId, isActive])
+  @@index([orgId, moduleName, isActive])
+  @@map("user_modules")
+}
+
+// =============================================================
 // 13. branch_groups — cluster branches (region/business/custom)
 // =============================================================
 model BranchGroup {

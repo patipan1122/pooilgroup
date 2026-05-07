@@ -76,6 +76,9 @@ export async function getDefaultTemplate(
 /**
  * Ensure a default template exists for (org, businessType).
  * Auto-seeds v1 from built-in spec on first load.
+ * Race-safe: if 2 concurrent calls both pass the existence check, one INSERT
+ * wins and the other hits the UNIQUE(org_id, business_type, version) constraint.
+ * We catch unique-violation, re-read, return the winner's row.
  */
 export async function ensureDefaultTemplate(
   orgId: string,
@@ -100,7 +103,16 @@ export async function ensureDefaultTemplate(
     })
     .select("*")
     .single();
-  if (error) throw new Error(error.message);
+
+  // Postgres unique violation = "23505" — race lost · re-read winner's row
+  if (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "23505") {
+      const winner = await getDefaultTemplate(orgId, businessType);
+      if (winner) return winner;
+    }
+    throw new Error(error.message);
+  }
   return normalizeTemplate(data as FormTemplate);
 }
 

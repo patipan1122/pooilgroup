@@ -8,7 +8,7 @@ import { BackButton } from "@/components/ui/back-button";
 export const dynamic = "force-dynamic";
 
 export default async function ImportBranchesPage() {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "admin");
   const admin = adminClient();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

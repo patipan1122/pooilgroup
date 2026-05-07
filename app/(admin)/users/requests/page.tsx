@@ -39,7 +39,7 @@ interface RequestRow {
 }
 
 export default async function RegisterRequestsPage() {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "admin");
   const admin = adminClient();
 
   const { data } = await admin

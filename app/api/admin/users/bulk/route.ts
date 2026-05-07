@@ -20,7 +20,7 @@ function makeToken(): string {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "admin");
   let body: unknown;
   try {
     body = await req.json();

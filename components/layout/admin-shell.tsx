@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
@@ -16,11 +16,19 @@ import {
   Home,
   Check,
   Building2,
+  Inbox,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { browserClient } from "@/lib/db/client";
 import { cn } from "@/lib/utils/cn";
 import type { DbUser } from "@/lib/auth/session";
-import { MODULE_LIST, MODULES, getModuleFromPath } from "@/lib/modules";
+import {
+  MODULE_LIST,
+  MODULES,
+  getModuleFromPath,
+  type ModuleSlug,
+  type NavItem,
+} from "@/lib/modules";
 import { NotificationBell } from "./notification-bell";
 import { CompanySwitcher } from "./company-switcher";
 const AiChat = dynamic(
@@ -28,14 +36,33 @@ const AiChat = dynamic(
   { ssr: false },
 );
 
-const ADMIN_NAV = [
-  { href: "/users", label: "ทีม & สาขา", icon: UsersIcon },
+/** Sidebar nav-counts surfaced as red badges next to specific menu items.
+    Loaded server-side in app/(admin)/layout.tsx via loadNavCounts(orgId). */
+export interface NavCountsClient {
+  pendingRegisterRequests: number;
+  branchesMissingMgr: number;
+}
+
+interface SimpleNavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  /** Optional key to read a count from NavCountsClient and render a badge. */
+  badgeKey?: keyof NavCountsClient;
+}
+
+const MANAGE_NAV: SimpleNavItem[] = [
+  { href: "/users", label: "ทีม & สาขา", icon: UsersIcon, badgeKey: "branchesMissingMgr" },
   { href: "/companies", label: "บริษัท", icon: Building2 },
-  { href: "/audit", label: "Audit Log", icon: ShieldCheck },
-  { href: "/settings", label: "ตั้งค่า", icon: Settings },
+  { href: "/users/requests", label: "คำขอเข้าใช้งาน", icon: Inbox, badgeKey: "pendingRegisterRequests" },
 ];
 
-const ACCOUNT_NAV = [
+const SYSTEM_NAV: SimpleNavItem[] = [
+  { href: "/audit", label: "Audit Log", icon: ShieldCheck },
+  { href: "/settings", label: "ตั้งค่าระบบ", icon: Settings },
+];
+
+const ACCOUNT_NAV: SimpleNavItem[] = [
   { href: "/profile", label: "โปรไฟล์", icon: UserCircle },
 ];
 
@@ -44,21 +71,42 @@ interface Props {
   children: React.ReactNode;
   companies?: Array<{ id: string; code: string; name: string }>;
   currentCompanyId?: string;
+  navCounts?: NavCountsClient;
+  /** Module slugs the current user can access. Admin tier always gets all
+      three; everyone else gets the explicit set from user_modules. */
+  userModules?: string[];
 }
+
+const ZERO_COUNTS: NavCountsClient = {
+  pendingRegisterRequests: 0,
+  branchesMissingMgr: 0,
+};
+
+const ALL_MODULES = ["cashhub", "fuelos", "docuflow"];
 
 export function AdminShell({
   user,
   children,
   companies = [],
   currentCompanyId,
+  navCounts = ZERO_COUNTS,
+  userModules = ALL_MODULES,
 }: Props) {
+  const allowedModules = useMemo(() => new Set(userModules), [userModules]);
+  const visibleModules = useMemo(
+    () => MODULE_LIST.filter((m) => allowedModules.has(m.slug)),
+    [allowedModules],
+  );
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [moduleMenuOpen, setModuleMenuOpen] = useState(false);
 
-  const isAdmin = user.role === "super_admin" || user.role === "org_admin";
+  const isAdmin =
+    user.role === "super_admin" ||
+    user.role === "org_admin" ||
+    user.role === "admin";
   const activeModuleSlug = getModuleFromPath(pathname);
   const activeModule = activeModuleSlug ? MODULES[activeModuleSlug] : null;
   const isHome = pathname === "/home" || pathname === "/";
@@ -157,7 +205,7 @@ export function AdminShell({
                       <p className="px-3 text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
                         เปลี่ยนโปรแกรม
                       </p>
-                      {MODULE_LIST.map((m) => {
+                      {visibleModules.map((m) => {
                         const isCurrent = m.slug === activeModule.slug;
                         const isComingSoon = m.status === "coming_soon";
                         const className = cn(
@@ -292,49 +340,24 @@ export function AdminShell({
       </header>
 
       <div className="flex-1 flex">
-        {/* Sidebar (desktop) — module-isolated:
-            - inside a module: ONLY that module's nav + back-to-home button
-            - on core pages (/users etc): admin nav + account nav
-            HARD RULE feedback_module_isolation.md — โปรแกรมใครโปรแกรมมัน */}
-        {!isHome && (
-          <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r-2 border-zinc-200 bg-white">
-            <div className="flex-1 py-3 space-y-3">
-              {activeModule && moduleNav.length > 0 ? (
-                <NavGroup
-                  title={activeModule.name.toUpperCase()}
-                  items={moduleNav}
-                  pathname={pathname}
-                />
-              ) : (
-                <>
-                  {isAdmin && (
-                    <NavGroup
-                      title="จัดการระบบ"
-                      items={ADMIN_NAV}
-                      pathname={pathname}
-                    />
-                  )}
-                  <NavGroup
-                    title="บัญชี"
-                    items={ACCOUNT_NAV}
-                    pathname={pathname}
-                  />
-                </>
-              )}
-            </div>
-            <div className="px-3 py-3 border-t-2 border-zinc-100 bg-zinc-50/40">
-              <Link
-                href="/home"
-                className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-bold text-zinc-700 hover:text-[var(--color-brand-700)] hover:bg-white border-2 border-transparent hover:border-[var(--color-brand-200)] transition-all"
-              >
-                <Home className="size-4 shrink-0" />
-                <span>กลับหน้าหลัก</span>
-              </Link>
-            </div>
-          </aside>
-        )}
+        {/* Sidebar (desktop) — visible on EVERY admin page (including /home).
+            4 zones: Home · Programs · Manage (admin) · System (admin) · Account.
+            Module isolation: only the ACTIVE module shows its inner nav inline;
+            other modules are collapsed to a single header row that links to
+            the module landing. HARD RULE feedback_module_isolation.md.
+            Collapsible state of each zone persists in localStorage. */}
+        <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r-2 border-zinc-200 bg-white sticky top-14 sm:top-16 self-start max-h-[calc(100vh-3.5rem)] sm:max-h-[calc(100vh-4rem)] overflow-y-auto">
+          <SidebarBody
+            user={user}
+            pathname={pathname}
+            isAdmin={isAdmin}
+            activeModuleSlug={activeModuleSlug}
+            moduleNav={moduleNav}
+            navCounts={navCounts}
+          />
+        </aside>
 
-        {/* Mobile drawer — same isolation rule as desktop */}
+        {/* Mobile drawer — same content as desktop sidebar */}
         {mobileOpen && (
           <div className="lg:hidden fixed inset-0 z-50">
             <div
@@ -353,42 +376,16 @@ export function AdminShell({
                   <X className="size-5" />
                 </button>
               </div>
-              <div className="flex-1 py-3 space-y-3 overflow-auto">
-                {activeModule && moduleNav.length > 0 ? (
-                  <NavGroup
-                    title={activeModule.name.toUpperCase()}
-                    items={moduleNav}
-                    pathname={pathname}
-                    onNavigate={() => setMobileOpen(false)}
-                  />
-                ) : (
-                  <>
-                    {isAdmin && (
-                      <NavGroup
-                        title="จัดการระบบ"
-                        items={ADMIN_NAV}
-                        pathname={pathname}
-                        onNavigate={() => setMobileOpen(false)}
-                      />
-                    )}
-                    <NavGroup
-                      title="บัญชี"
-                      items={ACCOUNT_NAV}
-                      pathname={pathname}
-                      onNavigate={() => setMobileOpen(false)}
-                    />
-                  </>
-                )}
-              </div>
-              <div className="px-3 py-3 border-t-2 border-zinc-100 bg-zinc-50/40">
-                <Link
-                  href="/home"
-                  onClick={() => setMobileOpen(false)}
-                  className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-bold text-zinc-700 hover:text-[var(--color-brand-700)] hover:bg-white border-2 border-transparent hover:border-[var(--color-brand-200)] transition-all"
-                >
-                  <Home className="size-4 shrink-0" />
-                  <span>กลับหน้าหลัก</span>
-                </Link>
+              <div className="flex-1 overflow-auto">
+                <SidebarBody
+                  user={user}
+                  pathname={pathname}
+                  isAdmin={isAdmin}
+                  activeModuleSlug={activeModuleSlug}
+                  moduleNav={moduleNav}
+                  navCounts={navCounts}
+                  onNavigate={() => setMobileOpen(false)}
+                />
               </div>
             </aside>
           </div>
@@ -407,46 +404,231 @@ export function AdminShell({
   );
 }
 
-function NavGroup({
-  title,
-  items,
+// ─────────────────────────────────────────────────────────────────────────────
+// Sidebar — 4 zones, collapsible groups, persists state per zone in localStorage.
+// Module isolation HARD RULE: only the ACTIVE module shows its inner nav inline;
+// other modules render as a single header row that links to the module landing.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SidebarBody({
+  user,
   pathname,
+  isAdmin,
+  activeModuleSlug,
+  moduleNav,
+  navCounts,
   onNavigate,
 }: {
-  title: string;
-  items: { href: string; label: string; icon: typeof Home }[];
+  user: DbUser;
   pathname: string;
+  isAdmin: boolean;
+  activeModuleSlug: ModuleSlug | null;
+  moduleNav: NavItem[];
+  navCounts: NavCountsClient;
   onNavigate?: () => void;
 }) {
+  const activeModule = activeModuleSlug ? MODULES[activeModuleSlug] : null;
   return (
-    <div className="px-3">
-      <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold px-3 mb-1.5">
-        {title}
-      </p>
-      <div className="space-y-0.5">
-        {items.map((item) => {
-          const active =
-            pathname === item.href ||
-            (item.href !== "/home" && pathname.startsWith(item.href + "/"));
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onNavigate}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors",
-                active
-                  ? "bg-[var(--color-brand-50)] text-[var(--color-brand-700)] border border-[var(--color-brand-200)]"
-                  : "text-zinc-700 hover:bg-zinc-100 border border-transparent",
-              )}
-            >
-              <item.icon className="size-4 shrink-0" />
-              <span>{item.label}</span>
-            </Link>
-          );
-        })}
+    <div className="py-3 flex flex-col">
+      {/* Zone 1: Home */}
+      <div className="px-3 mb-3">
+        <SidebarLink
+          href="/home"
+          icon={Home}
+          label="หน้าหลัก"
+          pathname={pathname}
+          onNavigate={onNavigate}
+        />
+      </div>
+
+      {/* Zone 2: Active module's inner nav (no module switcher here —
+          switching modules is top-bar only per project rule
+          feedback_module_switch_topbar_only.md). The header is just an
+          informational label, not a clickable switcher. */}
+      {activeModule && moduleNav.length > 0 && (
+        <div className="px-3 mb-3">
+          <p className="px-3 py-1 mb-1 text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">
+            {activeModule.emoji}{" "}
+            <span className="text-[var(--color-brand-700)]">
+              {activeModule.name}
+            </span>
+          </p>
+          <div className="space-y-0.5">
+            {moduleNav.map((it) => (
+              <SidebarLink
+                key={it.href}
+                href={it.href}
+                icon={it.icon}
+                label={it.label}
+                pathname={pathname}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Zone 3: Manage (admin tier only) */}
+      {isAdmin && (
+        <SidebarSection title="จัดการ" storageKey="zone-manage">
+          {MANAGE_NAV.map((it) => (
+            <SidebarLink
+              key={it.href}
+              href={it.href}
+              icon={it.icon}
+              label={it.label}
+              badgeCount={it.badgeKey ? navCounts[it.badgeKey] : undefined}
+              pathname={pathname}
+              onNavigate={onNavigate}
+            />
+          ))}
+        </SidebarSection>
+      )}
+
+      {/* Zone 4: System (admin tier only) */}
+      {isAdmin && (
+        <SidebarSection title="ระบบ" storageKey="zone-system">
+          {SYSTEM_NAV.map((it) => (
+            <SidebarLink
+              key={it.href}
+              href={it.href}
+              icon={it.icon}
+              label={it.label}
+              badgeCount={it.badgeKey ? navCounts[it.badgeKey] : undefined}
+              pathname={pathname}
+              onNavigate={onNavigate}
+            />
+          ))}
+        </SidebarSection>
+      )}
+
+      {/* Bottom: account — separated by border */}
+      <div className="mt-3 border-t-2 border-zinc-100 pt-3 px-3 space-y-0.5">
+        {ACCOUNT_NAV.map((it) => (
+          <SidebarLink
+            key={it.href}
+            href={it.href}
+            icon={it.icon}
+            label={it.label}
+            pathname={pathname}
+            onNavigate={onNavigate}
+          />
+        ))}
+        <p className="text-[10px] text-zinc-400 px-3 pt-2 truncate">
+          เข้าใช้: <span className="font-bold text-zinc-600">{user.name}</span>
+        </p>
       </div>
     </div>
+  );
+}
+
+function SidebarSection({
+  title,
+  storageKey,
+  children,
+}: {
+  title: string;
+  storageKey: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  // Hydrate from localStorage AFTER mount (cannot run during SSR). The
+  // setState inside the effect is intentional — bridges localStorage
+  // (external state) into React; cascading render is one-shot per mount.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(`pooil_sidebar_${storageKey}`);
+      if (saved === "0") setOpen(false);
+      else if (saved === "1") setOpen(true);
+    } catch {
+      // localStorage unavailable — keep default
+    }
+  }, [storageKey]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  function toggle() {
+    setOpen((o) => {
+      const next = !o;
+      try {
+        window.localStorage.setItem(
+          `pooil_sidebar_${storageKey}`,
+          next ? "1" : "0",
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }
+
+  return (
+    <div className="px-3 mb-3">
+      <button
+        type="button"
+        onClick={toggle}
+        className="w-full flex items-center gap-1.5 px-3 py-1 mb-1 hover:text-zinc-900 group"
+      >
+        <ChevronDown
+          className={cn(
+            "size-3 text-zinc-400 transition-transform group-hover:text-zinc-600",
+            !open && "-rotate-90",
+          )}
+        />
+        <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">
+          {title}
+        </span>
+      </button>
+      {open && <div className="space-y-0.5">{children}</div>}
+    </div>
+  );
+}
+
+function SidebarLink({
+  href,
+  icon: Icon,
+  label,
+  pathname,
+  onNavigate,
+  indent,
+  badgeCount,
+}: {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  pathname: string;
+  onNavigate?: () => void;
+  /** When true, render with extra left padding to nest under a parent (e.g. module). */
+  indent?: boolean;
+  /** When > 0 a red pill is shown on the right (open items needing attention). */
+  badgeCount?: number;
+}) {
+  const active =
+    pathname === href ||
+    (href !== "/home" && pathname.startsWith(href + "/"));
+  return (
+    <Link
+      href={href}
+      onClick={onNavigate}
+      className={cn(
+        "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors",
+        indent && "pl-9",
+        active
+          ? "bg-[var(--color-brand-50)] text-[var(--color-brand-700)] border border-[var(--color-brand-200)]"
+          : "text-zinc-700 hover:bg-zinc-100 border border-transparent",
+      )}
+    >
+      <Icon className="size-4 shrink-0" />
+      <span className="flex-1 truncate">{label}</span>
+      {badgeCount !== undefined && badgeCount > 0 && (
+        <span
+          className="inline-flex items-center justify-center min-w-4.5 h-4.5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-extrabold tabular-num shrink-0"
+          aria-label={`${badgeCount} รายการต้องดู`}
+        >
+          {badgeCount > 99 ? "99+" : badgeCount}
+        </span>
+      )}
+    </Link>
   );
 }
 

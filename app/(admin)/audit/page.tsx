@@ -93,7 +93,7 @@ export default async function AuditLogPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "admin");
   const params = await searchParams;
   const admin = adminClient();
 

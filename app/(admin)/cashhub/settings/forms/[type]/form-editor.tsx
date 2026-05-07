@@ -40,6 +40,15 @@ import type {
   CustomField,
 } from "@/lib/cashhub/form-templates-types";
 import { generateCustomFieldKey } from "@/lib/cashhub/form-templates-types";
+import { BranchAssignmentPanel } from "./branch-assignment-panel";
+
+interface BranchOption {
+  id: string;
+  code: string;
+  name: string;
+  province: string | null;
+  form_template_id: string | null;
+}
 
 interface Props {
   businessType: BusinessTypeKey;
@@ -51,6 +60,7 @@ interface Props {
   templates: FormTemplate[];
   activeTemplate: FormTemplate;
   activeTemplateBranchCount: number;
+  branches: BranchOption[];
 }
 
 const GROUP_LABEL: Record<string, string> = {
@@ -97,6 +107,7 @@ export function FormEditor({
   templates,
   activeTemplate,
   activeTemplateBranchCount,
+  branches,
 }: Props) {
   const router = useRouter();
   const [overrides, setOverrides] = useState<BusinessTypeOverrides>(
@@ -443,6 +454,21 @@ export function FormEditor({
               </button>
             )}
           </div>
+        </div>
+
+        {/* Branch assignment — admin assigns which branches use this version */}
+        <div className="mb-5">
+          <BranchAssignmentPanel
+            activeTemplateId={activeTemplate.id}
+            isDefault={activeTemplate.is_default}
+            branches={branches}
+            allTemplates={templates.map((t) => ({
+              id: t.id,
+              version: t.version,
+              name: t.name,
+              is_default: t.is_default,
+            }))}
+          />
         </div>
 
         <div className="grid lg:grid-cols-[1fr_360px] gap-5">

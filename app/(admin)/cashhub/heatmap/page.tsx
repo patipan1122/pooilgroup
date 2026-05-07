@@ -1,23 +1,20 @@
 // Full calendar heatmap (per branch × per day) — quick visual fill audit
+// feedback_popup_first_drilldown.md — กดเซลล์ = popup
+// feedback_filter_pattern_biztype_first.md — แถวสาขา grouped
 
-import Link from "next/link";
-import {CalendarDays } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
-import { BUSINESS_TYPES } from "@/constants/business-types";
-import {
-  startOfMonth,
-  getDate,
-  getDaysInMonth,
-  subDays,
-} from "date-fns";
+import { startOfMonth, getDate, getDaysInMonth } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
-import { cn } from "@/lib/utils/cn";
 import { BackButton } from "@/components/ui/back-button";
+import { hasCrossBranchAccess } from "@/lib/auth/branch-access";
+import { can } from "@/lib/auth/permissions";
+import { HeatmapGrid } from "./heatmap-grid";
 
 export const dynamic = "force-dynamic";
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
@@ -29,6 +26,7 @@ export default async function HeatmapPage() {
   const now = new Date();
   const today = formatInTimeZone(now, TZ, "yyyy-MM-dd");
   const monthStart = formatInTimeZone(startOfMonth(now), TZ, "yyyy-MM-dd");
+  const monthYm = monthStart.slice(0, 7);
   const daysInMonth = getDaysInMonth(now);
   const daysElapsed = getDate(now);
 
@@ -50,26 +48,26 @@ export default async function HeatmapPage() {
   const branches = branchesQ.data ?? [];
   const reports = reportsQ.data ?? [];
 
-  // Build matrix: branch -> Map<dayNumber, status>
-  const matrix = new Map<string, Map<number, string>>();
+  // Build matrix (plain object — passes server→client cleanly)
+  const matrix: Record<string, Record<number, string>> = {};
   for (const r of reports) {
     const day = parseInt(r.report_date.slice(8, 10), 10);
-    const m = matrix.get(r.branch_id) ?? new Map<number, string>();
-    // approved beats submitted beats rejected
-    const cur = m.get(day);
+    const m = matrix[r.branch_id] ?? {};
+    const cur = m[day];
     const next = r.status as string;
     if (
       !cur ||
       (cur !== "approved" && next === "approved") ||
       (cur === "rejected" && next === "submitted")
     ) {
-      m.set(day, next);
+      m[day] = next;
     }
-    matrix.set(r.branch_id, m);
+    matrix[r.branch_id] = m;
   }
 
-  // Today day number
   const todayDay = getDate(now);
+  const canFill = hasCrossBranchAccess(session.user.role);
+  const canApprove = can(session.user, "cashhub.approve");
 
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
@@ -78,11 +76,11 @@ export default async function HeatmapPage() {
         <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
           <CalendarDays className="size-4" /> HEATMAP
         </p>
-        <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
+        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[1]">
           ปฏิทิน <span className="text-gradient-blue">สาขา × วัน</span>
         </h1>
         <p className="text-zinc-600 mt-1 text-sm">
-          ทุกสาขา × ทุกวันในเดือนนี้ — ดูได้ทันทีว่าวันไหนใครขาด
+          กดเซลล์เพื่อดูรายงาน · กดที่ชื่อสาขาเพื่อดูประวัติเต็ม
         </p>
       </header>
 
@@ -90,97 +88,34 @@ export default async function HeatmapPage() {
         <Badge tone="success">✅ อนุมัติ</Badge>
         <Badge tone="warning">⏳ รออนุมัติ</Badge>
         <Badge tone="danger">🔴 ปฏิเสธ / ❌ ไม่กรอก</Badge>
-        <span className="text-[11px]">เดือนนี้ {daysElapsed}/{daysInMonth} วัน</span>
+        <span className="text-[11px]">
+          เดือนนี้ {daysElapsed}/{daysInMonth} วัน · {reports.length} รายงาน
+        </span>
       </div>
 
-      <Section number="01" label="MATRIX" title={`${branches.length} สาขา × ${daysInMonth} วัน`}>
+      <Section
+        number="01"
+        label="MATRIX"
+        title={`${branches.length} สาขา × ${daysInMonth} วัน`}
+      >
         <Card>
           <CardHeader>
             <CardTitle>ตารางกรอกครบ</CardTitle>
             <Badge tone="brand">{reports.length} รายงาน</Badge>
           </CardHeader>
-          <CardBody className="!p-0 overflow-x-auto">
-            <table className="text-xs min-w-full">
-              <thead className="sticky top-0 bg-white z-10">
-                <tr className="border-b border-zinc-100">
-                  <th className="text-left p-2 sticky left-0 bg-white z-20">
-                    สาขา
-                  </th>
-                  {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((d) => (
-                    <th
-                      key={d}
-                      className={cn(
-                        "p-1 text-center font-semibold tabular-num text-[10px] w-7",
-                        d === todayDay && "text-[var(--color-brand-700)] font-extrabold",
-                      )}
-                    >
-                      {d}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {branches.map((b) => {
-                  const cfg = BUSINESS_TYPES[b.business_type];
-                  const m = matrix.get(b.id) ?? new Map();
-                  return (
-                    <tr key={b.id} className="border-b border-zinc-50">
-                      <td className="p-2 sticky left-0 bg-white whitespace-nowrap font-medium">
-                        <Link
-                          href={`/cashhub/branches/${b.id}`}
-                          className="inline-flex items-center gap-1.5 hover:text-[var(--color-brand-700)]"
-                        >
-                          <span>{cfg?.emoji}</span>
-                          <span className="tabular-num">{b.code}</span>
-                        </Link>
-                      </td>
-                      {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((d) => {
-                        const isFuture = d > todayDay;
-                        const status = m.get(d);
-                        const dateStr = `${monthStart.slice(0, 8)}${String(d).padStart(2, "0")}`;
-                        const cellEl = (
-                          <div
-                            className={cn(
-                              "size-5 mx-auto rounded-md text-[9px] flex items-center justify-center font-bold transition-transform",
-                              cellColor(status, isFuture),
-                              !isFuture && "hover:scale-110 cursor-pointer",
-                            )}
-                            title={`${b.code} วันที่ ${d}: ${status ?? "ไม่กรอก"}`}
-                          />
-                        );
-                        return (
-                          <td key={d} className="p-0.5 text-center">
-                            {isFuture ? (
-                              cellEl
-                            ) : (
-                              <Link
-                                href={`/cashhub/branches/${b.id}?date=${dateStr}`}
-                                aria-label={`${b.code} วันที่ ${d}`}
-                              >
-                                {cellEl}
-                              </Link>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <CardBody>
+            <HeatmapGrid
+              branches={branches}
+              matrix={matrix}
+              daysInMonth={daysInMonth}
+              todayDay={todayDay}
+              monthYm={monthYm}
+              canFill={canFill}
+              canApprove={canApprove}
+            />
           </CardBody>
         </Card>
       </Section>
     </div>
   );
 }
-
-function cellColor(status: string | undefined, isFuture: boolean): string {
-  if (isFuture) return "bg-zinc-50";
-  if (status === "approved") return "bg-emerald-300";
-  if (status === "submitted") return "bg-amber-200";
-  if (status === "rejected") return "bg-red-200";
-  return "bg-zinc-100";
-}
-
-void subDays;

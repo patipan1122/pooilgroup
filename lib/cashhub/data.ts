@@ -149,7 +149,11 @@ export async function loadReports(
   if (submittedByIds && submittedByIds.length > 0) {
     q = q.in("submitted_by_id", submittedByIds);
   }
-  if (newestFirst) q = q.order("submitted_at", { ascending: false });
+  if (newestFirst) {
+    q = q
+      .order("report_date", { ascending: false })
+      .order("submitted_at", { ascending: false });
+  }
   if (limit) q = q.limit(limit);
 
   const { data } = await q;

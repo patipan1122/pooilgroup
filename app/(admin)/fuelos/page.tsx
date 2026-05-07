@@ -1,4 +1,3 @@
-import Link from "next/link";
 import {
   Fuel,
   Sparkles,
@@ -6,13 +5,13 @@ import {
   Users as UsersIcon,
   Truck,
   Zap,
-  ArrowRight,
 } from "lucide-react";
+import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
+import { userHasModuleAccess, isAdminTier } from "@/lib/auth/module-access";
 import { Section } from "@/components/ui/section";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { thaiDateLong } from "@/lib/utils/format";
 
 export const dynamic = "force-dynamic";
@@ -46,7 +45,12 @@ const FEATURES = [
 ];
 
 export default async function FuelOSPage() {
-  await requireSession();
+  const session = await requireSession();
+  // Block users without FuelOS membership — admin tier bypasses.
+  if (!isAdminTier(session.user.role)) {
+    const ok = await userHasModuleAccess(session.user, "fuelos");
+    if (!ok) redirect("/403");
+  }
 
   return (
     <div className="p-4 sm:p-6 lg:p-10 max-w-6xl mx-auto">
@@ -124,42 +128,8 @@ export default async function FuelOSPage() {
         </div>
       </Section>
 
-      <Section
-        number="02"
-        label="WHILE YOU WAIT"
-        title="ระหว่างรอ"
-        description="ใช้ระบบอื่นที่พร้อมใช้แล้วได้เลย"
-        className="animate-fade-up delay-300"
-      >
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Link
-            href="/cashhub/dashboard"
-            className="flex items-center justify-between gap-3 px-5 py-4 rounded-2xl border-2 border-zinc-200 bg-white hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/30 transition-all hover-lift"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="text-2xl">💰</span>
-              <div className="min-w-0">
-                <div className="font-semibold">CashHub</div>
-                <div className="text-xs text-zinc-500">ยอดสาขารายวัน</div>
-              </div>
-            </div>
-            <ArrowRight className="size-4 text-zinc-400 shrink-0" />
-          </Link>
-          <Link
-            href="/home"
-            className="flex items-center justify-between gap-3 px-5 py-4 rounded-2xl border-2 border-zinc-200 bg-white hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/30 transition-all hover-lift"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="text-2xl">🏠</span>
-              <div className="min-w-0">
-                <div className="font-semibold">หน้าหลัก</div>
-                <div className="text-xs text-zinc-500">ภาพรวมทุกโปรแกรม</div>
-              </div>
-            </div>
-            <ArrowRight className="size-4 text-zinc-400 shrink-0" />
-          </Link>
-        </div>
-      </Section>
+      {/* "WHILE YOU WAIT" section removed — Sidebar now has CashHub +
+          หน้าหลัก always visible, so this duplicate row is no longer needed. */}
     </div>
   );
 }

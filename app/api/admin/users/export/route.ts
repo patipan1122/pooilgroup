@@ -29,7 +29,7 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export async function GET() {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "admin");
   const admin = adminClient();
   const orgId = session.user.org_id;
 

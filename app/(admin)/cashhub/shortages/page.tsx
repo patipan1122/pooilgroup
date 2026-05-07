@@ -1,27 +1,24 @@
 // CASHHUB §13 — Shortage report (เงินขาด)
+// feedback_role_scoped_views.md — branch_manager เห็นเฉพาะสาขาตน
+// feedback_filter_pattern_biztype_first.md — group by ประเภทธุรกิจ
+// feedback_popup_first_drilldown.md — กดรายการ = popup
 
-import Link from "next/link";
-import {AlertCircle, CheckCircle2 } from "lucide-react";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
-import { Section } from "@/components/ui/section";
-import { Badge } from "@/components/ui/badge";
-import { EmptyState } from "@/components/ui/empty-state";
-import {
-  startOfMonth,
-  subMonths,
-  subDays,
-} from "date-fns";
+import { startOfMonth, subMonths, subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
-import { formatBaht, bkkDate } from "@/lib/utils/format";
-import { BUSINESS_TYPES } from "@/constants/business-types";
+import { formatBaht } from "@/lib/utils/format";
 import { BackButton } from "@/components/ui/back-button";
+import { loadManageableBranches } from "@/lib/auth/branch-access";
+import { can } from "@/lib/auth/permissions";
+import { ShortagesGrouped, type ShortageRow } from "./shortages-grouped";
 
 export const dynamic = "force-dynamic";
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
-interface Row {
+interface RawRow {
   id: string;
   branch_id: string;
   report_date: string;
@@ -56,7 +53,14 @@ export default async function ShortagesPage({
   }
   const todayStr = formatInTimeZone(now, TZ, "yyyy-MM-dd");
 
-  const { data: rows } = await admin
+  // Scope by role — branch_manager/staff see only their branches
+  const isBranchScoped =
+    session.user.role === "branch_manager" || session.user.role === "staff";
+  const scopedBranchIds = isBranchScoped
+    ? (await loadManageableBranches(session.user)).map((b) => b.id)
+    : null;
+
+  let q = admin
     .from("cash_shortages")
     .select(
       "id, branch_id, report_date, amount, person_name, is_identified, note, branches(code, name, business_type)",
@@ -65,11 +69,20 @@ export default async function ShortagesPage({
     .gte("report_date", startStr)
     .lte("report_date", todayStr)
     .order("report_date", { ascending: false });
+  if (scopedBranchIds) {
+    if (scopedBranchIds.length === 0) {
+      // No branches → no rows
+      q = q.eq("branch_id", "00000000-0000-0000-0000-000000000000");
+    } else {
+      q = q.in("branch_id", scopedBranchIds);
+    }
+  }
+  const { data: rows } = await q;
 
   const all = (rows ?? []).map((r) => ({
     ...r,
     branches: Array.isArray(r.branches) ? r.branches[0] : r.branches,
-  })) as Row[];
+  })) as RawRow[];
 
   const filtered = person
     ? all.filter((r) =>
@@ -79,7 +92,7 @@ export default async function ShortagesPage({
 
   const total = filtered.reduce((s, r) => s + Number(r.amount || 0), 0);
 
-  // Group by person
+  // Group by person (left summary)
   const byPerson = new Map<string, { count: number; total: number }>();
   for (const r of filtered) {
     const key = r.person_name || "(รวมร้าน)";
@@ -91,6 +104,21 @@ export default async function ShortagesPage({
   const personRows = Array.from(byPerson.entries()).sort(
     (a, b) => b[1].total - a[1].total,
   );
+
+  // Map to ShortageRow[] for the grouped view
+  const shortageRows: ShortageRow[] = filtered.map((r) => ({
+    id: r.id,
+    branch_id: r.branch_id,
+    branch_code: r.branches?.code ?? "—",
+    branch_name: r.branches?.name ?? "",
+    business_type: r.branches?.business_type ?? "_unknown",
+    report_date: r.report_date,
+    amount: Number(r.amount || 0),
+    person_name: r.person_name,
+    note: r.note,
+  }));
+
+  const canApprove = can(session.user, "cashhub.approve");
 
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
@@ -159,7 +187,7 @@ export default async function ShortagesPage({
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          {/* Group by person */}
+          {/* Group by person — left summary */}
           <Card className="lg:col-span-1">
             <CardHeader>
               <CardTitle>สรุปรายคน/รายทีม</CardTitle>
@@ -188,59 +216,10 @@ export default async function ShortagesPage({
             </CardBody>
           </Card>
 
-          {/* Detail rows */}
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>รายการเงินขาด</CardTitle>
-              <Badge tone="warning">{filtered.length} ครั้ง</Badge>
-            </CardHeader>
-            <CardBody className="!p-0">
-              {filtered.length === 0 ? (
-                <EmptyState
-                  icon={<AlertCircle className="size-6" />}
-                  title="ไม่มีรายการ"
-                  description="เปลี่ยนตัวกรองเพื่อดูช่วงอื่น"
-                />
-              ) : (
-                <ul className="divide-y divide-zinc-100">
-                  {filtered.slice(0, 80).map((r) => {
-                    const cfg = r.branches?.business_type
-                      ? BUSINESS_TYPES[r.branches.business_type]
-                      : undefined;
-                    return (
-                      <li key={r.id} className="px-4 py-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-sm font-bold tabular-num">
-                            {bkkDate(r.report_date)}
-                          </div>
-                          <div className="text-sm font-extrabold tabular-num text-red-700">
-                            {formatBaht(Number(r.amount || 0))}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 mt-1">
-                          <span>{cfg?.emoji}</span>
-                          <Link
-                            href={`/cashhub/branches/${r.branch_id}`}
-                            className="hover:text-[var(--color-brand-700)] font-semibold"
-                          >
-                            {r.branches?.code}
-                          </Link>
-                          <span>·</span>
-                          <span>{r.person_name || "รวมร้าน"}</span>
-                          {r.note && (
-                            <>
-                              <span>·</span>
-                              <span className="italic">"{r.note}"</span>
-                            </>
-                          )}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </CardBody>
-          </Card>
+          {/* Right: grouped by ประเภทธุรกิจ + popup-on-click */}
+          <div className="lg:col-span-2">
+            <ShortagesGrouped rows={shortageRows} canApprove={canApprove} />
+          </div>
         </div>
       )}
     </div>

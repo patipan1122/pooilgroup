@@ -111,7 +111,9 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         href: "/cashhub/monthly-report",
         label: "รายงานเดือน (PDF)",
         icon: FileTextIcon,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+        // Admin tier only — area_manager + viewer ไม่ควรเห็นรายงาน P&L/compliance
+        // ระดับองค์กร (กฎ CEO 2026-05-07)
+        roles: ["super_admin", "org_admin", "admin"],
       },
       {
         href: "/cashhub/settings/forms",
@@ -127,6 +129,10 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       },
     ],
   },
+  // FuelOS + DocuFlow are placeholders ("เร็วๆนี้") — they exist in the
+  // registry so user_modules grants for them resolve and the module switcher
+  // can show them. The actual feature pages are stubs until those modules
+  // are ready to ship.
   fuelos: {
     slug: "fuelos",
     name: "FuelOS",

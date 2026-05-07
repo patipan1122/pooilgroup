@@ -8,15 +8,12 @@
 
 import Link from "next/link";
 import {
-  ArrowRight,
   ArrowUpRight,
   Users as UsersIcon,
   Building2,
   Inbox,
   ShieldAlert,
   ShieldCheck,
-  Settings,
-  ScrollText,
   Lock,
   ChevronRight,
   HardDrive,
@@ -146,8 +143,6 @@ export default async function HomePage() {
 
   const moduleEnabled: Record<string, boolean> = {
     cashhub: true,
-    fuelos: true,
-    docuflow: true,
     ...Object.fromEntries(
       (moduleStatusQ.data ?? []).map((m) => [m.module_name, m.is_active]),
     ),
@@ -238,16 +233,7 @@ export default async function HomePage() {
               enabled={moduleEnabled.cashhub}
               landingPath="/cashhub/dashboard"
             />
-            <ModuleCard
-              slug="fuelos"
-              enabled={moduleEnabled.fuelos}
-              landingPath="/fuelos"
-            />
-            <ModuleCard
-              slug="docuflow"
-              enabled={moduleEnabled.docuflow}
-              landingPath="/docuflow"
-            />
+            {/* FuelOS + DocuFlow soft-removed · feedback_module_isolation.md */}
           </div>
         </Section>
 
@@ -359,41 +345,9 @@ export default async function HomePage() {
           </div>
         </Section>
 
-        {/* ============================================================
-            04 QUICK ACCESS — admin shortcuts
-            ============================================================ */}
-        {isAdmin && (
-          <Section
-            number="04"
-            label="QUICK ACCESS"
-            title="ทางลัด"
-            description="เครื่องมือที่ใช้บ่อย"
-            className="animate-fade-up delay-250"
-          >
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <QuickLink
-                href="/users"
-                icon={<UsersIcon className="size-4" />}
-                label="ผู้ใช้งาน"
-              />
-              <QuickLink
-                href="/branches"
-                icon={<Building2 className="size-4" />}
-                label="สาขา"
-              />
-              <QuickLink
-                href="/audit"
-                icon={<ScrollText className="size-4" />}
-                label="Audit Log"
-              />
-              <QuickLink
-                href="/settings"
-                icon={<Settings className="size-4" />}
-                label="ตั้งค่า"
-              />
-            </div>
-          </Section>
-        )}
+        {/* Quick Access removed — Sidebar (Zone "จัดการ" + "ระบบ") covers
+            ผู้ใช้งาน · สาขา · Audit Log · ตั้งค่า. Removing the duplicate
+            avoids two-paths-to-the-same-page on /home. */}
 
         {/* Footer credit — subtle */}
         <p className="mt-16 text-center text-[11px] text-zinc-400">
@@ -615,28 +569,3 @@ function SystemStat({
   );
 }
 
-/* ============================================================
-   QuickLink — tool shortcut button
-   ============================================================ */
-function QuickLink({
-  href,
-  icon,
-  label,
-}: {
-  href: string;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="group flex items-center justify-between gap-2 px-4 py-3.5 rounded-xl border-2 border-zinc-200 bg-white hover:border-[var(--color-brand-400)] hover:bg-[var(--color-brand-50)]/30 transition-all hover-lift"
-    >
-      <span className="flex items-center gap-2.5">
-        <span className="text-[var(--color-brand-600)]">{icon}</span>
-        <span className="text-sm font-bold text-zinc-800">{label}</span>
-      </span>
-      <ArrowRight className="size-4 text-zinc-400 group-hover:text-[var(--color-brand-600)] group-hover:translate-x-0.5 transition-all" />
-    </Link>
-  );
-}

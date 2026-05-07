@@ -5,9 +5,8 @@
 import { CheckCircle2, Clock, XCircle, ScrollText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
-import { adminClient } from "@/lib/db/server";
+import { loadBranches, loadReports, indexBranches } from "@/lib/cashhub/data";
 import { Section } from "@/components/ui/section";
-import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { thaiDateLong } from "@/lib/utils/format";
@@ -82,45 +81,33 @@ export default async function CashHubReportsPage({
   const session = await requireSession();
   requireExecutiveRole(session.user.role);
   const sp = await searchParams;
-  const admin = adminClient();
 
   const filterStatus = sp.status || "";
   const filterType = sp.type || "";
   const filterDate = sp.date || "";
   const today = formatInTimeZone(new Date(), TZ, "yyyy-MM-dd");
 
-  // Fetch active branches and recent reports in parallel
-  const [branchesQ, reportsQ] = await Promise.all([
-    admin
-      .from("branches")
-      .select("id, code, name, business_type")
-      .eq("org_id", session.user.org_id)
-      .eq("is_active", true)
-      .order("code"),
-    admin
-      .from("daily_reports")
-      .select(
-        "id, branch_id, report_date, shift, total_sales, cash, transfer, card, credit, shortage, status, submitted_at, branches(code, name, business_type)",
-      )
-      .eq("org_id", session.user.org_id)
-      .order("report_date", { ascending: false })
-      .order("submitted_at", { ascending: false })
-      .limit(200),
+  // Single source of truth: read via canonical loaders (lib/cashhub/data.ts)
+  // statuses: [] = ดึงทุก status (submitted/approved/rejected/draft) — filter ที่ ReportsBoard
+  // โหลด 2 ชุด:
+  //   activeBranches → ใช้ตรวจ "ขาดส่ง" + group totals (สาขาเปิดอยู่ตอนนี้)
+  //   allBranches    → ใช้ index lookup (รายงานเก่าจากสาขาปิดยังต้องเห็นชื่อ)
+  const [activeBranches, allBranches, allReports] = await Promise.all([
+    loadBranches(session.user.org_id, { activeOnly: true }),
+    loadBranches(session.user.org_id, { activeOnly: false }),
+    loadReports(session.user.org_id, {
+      statuses: [],
+      newestFirst: true,
+      limit: 200,
+    }),
   ]);
-
-  const branches = branchesQ.data ?? [];
-  const allReports = reportsQ.data ?? [];
+  const branchIndex = indexBranches(allBranches);
 
   // Build the full row VMs first (no filters yet)
   const allRows: ReportRowVm[] = allReports.map((r) => {
-    const b = Array.isArray(r.branches) ? r.branches[0] : r.branches;
-    const branchRel = (b ?? {}) as {
-      code?: string;
-      name?: string;
-      business_type?: string;
-    };
-    const cfg = branchRel.business_type
-      ? BUSINESS_TYPES[branchRel.business_type]
+    const branch = branchIndex.get(r.branch_id);
+    const cfg = branch?.business_type
+      ? BUSINESS_TYPES[branch.business_type]
       : undefined;
     const status = (r.status as keyof typeof STATUS) || "submitted";
     const totalReceived =
@@ -131,21 +118,21 @@ export default async function CashHubReportsPage({
       Number(r.shortage || 0);
     const reconcileDiff = Number(r.total_sales || 0) - totalReceived;
     return {
-      id: r.id as string,
-      branch_id: r.branch_id as string,
-      branch_code: branchRel.code ?? "—",
-      branch_name: branchRel.name ?? "",
-      business_type: branchRel.business_type ?? "unknown",
+      id: r.id,
+      branch_id: r.branch_id,
+      branch_code: branch?.code ?? "—",
+      branch_name: branch?.name ?? "",
+      business_type: branch?.business_type ?? "unknown",
       business_emoji: cfg?.emoji ?? "📋",
-      business_label: cfg?.label ?? branchRel.business_type ?? "ไม่ทราบ",
-      report_date: r.report_date as string,
-      shift: r.shift as string,
-      shift_label: SHIFT_LABEL[r.shift as string] ?? r.shift,
+      business_label: cfg?.label ?? branch?.business_type ?? "ไม่ทราบ",
+      report_date: r.report_date,
+      shift: r.shift,
+      shift_label: SHIFT_LABEL[r.shift] ?? r.shift,
       total_sales: Number(r.total_sales || 0),
       status,
       status_tone: STATUS[status].tone,
       status_label: STATUS[status].label,
-      submitted_at: r.submitted_at as string | null,
+      submitted_at: r.submitted_at,
       reconcile_diff: reconcileDiff,
     };
   });
@@ -158,7 +145,7 @@ export default async function CashHubReportsPage({
       .map((r) => r.branch_id),
   );
 
-  const allMissing: MissingBranchVm[] = branches
+  const allMissing: MissingBranchVm[] = activeBranches
     .filter((b) => {
       const cfg = BUSINESS_TYPES[b.business_type];
       if (!cfg) return false;
@@ -208,7 +195,7 @@ export default async function CashHubReportsPage({
 
   // Group by business type
   const groupMap = new Map<string, BusinessGroupVm>();
-  for (const b of branches) {
+  for (const b of activeBranches) {
     const cfg = BUSINESS_TYPES[b.business_type];
     if (!cfg) continue;
     if (filterType && b.business_type !== filterType) continue;
@@ -262,7 +249,7 @@ export default async function CashHubReportsPage({
         <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           💰 CashHub · {thaiDateLong(new Date())}
         </p>
-        <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
           รายงาน <span className="text-gradient-blue">ทั้งหมด</span>
         </h1>
         <p className="text-zinc-600 mt-1.5 text-sm">
@@ -295,10 +282,11 @@ export default async function CashHubReportsPage({
           label="REPORTS"
           title="รายงานล่าสุด"
           action={
-            <a href="/api/cashhub/export">
-              <Button variant="outline" size="md">
-                Export CSV
-              </Button>
+            <a
+              href="/api/cashhub/export"
+              className="inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50 active:bg-zinc-100 h-10 px-4 text-sm rounded-xl"
+            >
+              Export CSV
             </a>
           }
         >

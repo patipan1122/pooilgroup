@@ -13,6 +13,7 @@ export type AuditAction =
   | "UNLOCK_REPORT"
   | "CREATE_USER"
   | "UPDATE_USER"
+  | "UPDATE_USER_MODULES"
   | "DEACTIVATE_USER"
   | "INVITE_ACCEPTED"
   | "CREATE_BRANCH"
@@ -22,7 +23,8 @@ export type AuditAction =
   | "APPROVE_USER_REQUEST"
   | "REJECT_USER_REQUEST"
   | "IMPERSONATE_START"
-  | "IMPERSONATE_END";
+  | "IMPERSONATE_END"
+  | "ASSIGN_FORM_TEMPLATE";
 
 export interface AuditEntry {
   orgId: string;
