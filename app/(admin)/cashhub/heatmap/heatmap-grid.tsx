@@ -29,6 +29,8 @@ interface Props {
   monthYm: string;
   /** True if viewer can fill any branch (used for empty-cell quick-fill button) */
   canFill: boolean;
+  /** True if viewer can approve/reject submitted reports */
+  canApprove: boolean;
 }
 
 interface CellTarget {
@@ -44,6 +46,7 @@ export function HeatmapGrid({
   todayDay,
   monthYm,
   canFill,
+  canApprove,
 }: Props) {
   const [query, setQuery] = useState("");
   const [openTypes, setOpenTypes] = useState<Record<string, boolean>>({});
@@ -252,6 +255,7 @@ export function HeatmapGrid({
           branchCode={target.branchCode}
           date={target.date}
           canFill={canFill}
+          canApprove={canApprove}
         />
       )}
     </>

@@ -6,6 +6,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
   Clock,
@@ -14,6 +16,8 @@ import {
   ExternalLink,
   Loader2,
   AlertCircle,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +56,8 @@ interface Props {
   date: string; // YYYY-MM-DD
   /** When true, viewer can fill ที่สาขานี้ (LIFF link visible) */
   canFill?: boolean;
+  /** When true, show approve/reject buttons for submitted reports */
+  canApprove?: boolean;
 }
 
 export function HeatmapCellModal({
@@ -61,11 +67,16 @@ export function HeatmapCellModal({
   branchCode,
   date,
   canFill = false,
+  canApprove = false,
 }: Props) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<ReportData | null>(null);
   const [branch, setBranch] = useState<BranchData | null>(null);
+  const [actionPending, setActionPending] = useState<"approve" | "reject" | null>(null);
+  const [showRejectInput, setShowRejectInput] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -73,6 +84,8 @@ export function HeatmapCellModal({
     setError(null);
     setReport(null);
     setBranch(null);
+    setShowRejectInput(false);
+    setRejectReason("");
 
     fetch(`/api/cashhub/reports/by-date?branchId=${branchId}&date=${date}`)
       .then(async (r) => {
@@ -89,6 +102,46 @@ export function HeatmapCellModal({
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [open, branchId, date]);
+
+  async function handleAction(action: "approve" | "reject") {
+    if (!report || actionPending) return;
+    if (action === "reject" && !rejectReason.trim()) {
+      toast.error("กรุณาระบุเหตุผลที่ปฏิเสธ");
+      return;
+    }
+    setActionPending(action);
+    try {
+      const res = await fetch("/api/cashhub/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reportId: report.id,
+          action,
+          reason: action === "reject" ? rejectReason : undefined,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        toast.error(j.error || "ทำรายการไม่สำเร็จ");
+        return;
+      }
+      toast.success(action === "approve" ? "อนุมัติแล้ว" : "ปฏิเสธแล้ว");
+      // Update local state so UI reflects immediately
+      setReport({
+        ...report,
+        status: action === "approve" ? "approved" : "rejected",
+        rejected_reason: action === "reject" ? rejectReason : null,
+        approved_at: action === "approve" ? new Date().toISOString() : null,
+      });
+      setShowRejectInput(false);
+      // Refresh server data so heatmap cell color updates after close
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "เน็ตมีปัญหา");
+    } finally {
+      setActionPending(null);
+    }
+  }
 
   const cfg = branch ? BUSINESS_TYPES[branch.business_type] : null;
   const titleEmoji = cfg?.emoji ?? "📋";
@@ -205,6 +258,78 @@ export function HeatmapCellModal({
                   </span>
                 )}
               </div>
+
+              {/* Approve / Reject — เฉพาะรายงานที่ submitted + ผู้ใช้มีสิทธิ์ */}
+              {canApprove && report.status === "submitted" && (
+                <div className="border-t border-zinc-100 pt-3 space-y-2">
+                  {showRejectInput ? (
+                    <>
+                      <label className="text-xs font-bold text-zinc-700">
+                        เหตุผลที่ปฏิเสธ
+                      </label>
+                      <textarea
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        placeholder="เช่น ตัวเลขโอนยังไม่ตรงสลิป — ให้สาขาแก้แล้วส่งใหม่"
+                        rows={2}
+                        maxLength={500}
+                        className="w-full rounded-xl border-2 border-zinc-200 bg-white px-3 py-2 text-sm focus:border-[var(--color-brand-500)] focus:outline-none"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowRejectInput(false);
+                            setRejectReason("");
+                          }}
+                          disabled={!!actionPending}
+                          className="flex-1 h-10 rounded-xl border-2 border-zinc-200 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+                        >
+                          ยกเลิก
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAction("reject")}
+                          disabled={!!actionPending || !rejectReason.trim()}
+                          className="flex-1 h-10 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 disabled:bg-zinc-200 disabled:text-zinc-500 inline-flex items-center justify-center gap-1.5"
+                        >
+                          {actionPending === "reject" ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <ThumbsDown className="size-4" />
+                          )}
+                          ยืนยันปฏิเสธ
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowRejectInput(true)}
+                        disabled={!!actionPending}
+                        className="flex-1 h-11 rounded-xl border-2 border-red-200 bg-white text-sm font-bold text-red-700 hover:bg-red-50 inline-flex items-center justify-center gap-1.5"
+                      >
+                        <ThumbsDown className="size-4" />
+                        ปฏิเสธ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAction("approve")}
+                        disabled={!!actionPending}
+                        className="flex-1 h-11 rounded-xl bg-[var(--color-leaf-600)] text-white text-sm font-bold hover:bg-[var(--color-leaf-700)] disabled:bg-zinc-200 disabled:text-zinc-500 inline-flex items-center justify-center gap-1.5 shadow-soft"
+                      >
+                        {actionPending === "approve" ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <ThumbsUp className="size-4" />
+                        )}
+                        อนุมัติ
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
 

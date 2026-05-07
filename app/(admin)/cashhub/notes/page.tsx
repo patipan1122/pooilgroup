@@ -1,18 +1,20 @@
 // Quick Note inbox — โน้ตจาก Staff ถึงเจ้าของ (CASHHUB §11.6)
+// feedback_role_scoped_views.md · feedback_filter_pattern_biztype_first.md
+// feedback_popup_first_drilldown.md
 
 import Link from "next/link";
-import {MessageSquare, ExternalLink } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
-import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardBody } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
-import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
-import { formatBahtCompact, bkkDate } from "@/lib/utils/format";
-import { BUSINESS_TYPES } from "@/constants/business-types";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { BackButton } from "@/components/ui/back-button";
+import { loadManageableBranches } from "@/lib/auth/branch-access";
+import { can } from "@/lib/auth/permissions";
+import { NotesGrouped, type NoteListRow } from "./notes-grouped";
 
 export const dynamic = "force-dynamic";
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
@@ -42,8 +44,15 @@ export default async function NotesInboxPage({
     "yyyy-MM-dd",
   );
 
+  // Scope by role — branch_manager/staff see only own branches
+  const isBranchScoped =
+    session.user.role === "branch_manager" || session.user.role === "staff";
+  const scopedBranchIds = isBranchScoped
+    ? (await loadManageableBranches(session.user)).map((b) => b.id)
+    : null;
+
   const admin = adminClient();
-  const { data } = await admin
+  let q = admin
     .from("daily_reports")
     .select(
       "id, branch_id, report_date, shift, notes, status, total_sales, branches(code, name, business_type)",
@@ -53,8 +62,16 @@ export default async function NotesInboxPage({
     .gte("report_date", since)
     .order("report_date", { ascending: false })
     .limit(80);
+  if (scopedBranchIds) {
+    if (scopedBranchIds.length === 0) {
+      q = q.eq("branch_id", "00000000-0000-0000-0000-000000000000");
+    } else {
+      q = q.in("branch_id", scopedBranchIds);
+    }
+  }
+  const { data } = await q;
 
-  const rows = ((data ?? []) as Array<{
+  const rawRows = ((data ?? []) as Array<{
     id: string;
     branch_id: string;
     report_date: string;
@@ -67,9 +84,23 @@ export default async function NotesInboxPage({
     .map((r) => ({
       ...r,
       notes: r.notes ?? "",
-      branches: Array.isArray(r.branches) ? r.branches[0] : r.branches,
+      branches: (Array.isArray(r.branches) ? r.branches[0] : r.branches) as
+        | { code?: string; name?: string; business_type?: string }
+        | null,
     }))
-    .filter((r) => r.notes.trim().length > 0) as NoteRow[];
+    .filter((r) => r.notes.trim().length > 0);
+
+  const rows: NoteListRow[] = rawRows.map((r) => ({
+    id: r.id,
+    branch_id: r.branch_id,
+    branch_code: r.branches?.code ?? "—",
+    business_type: r.branches?.business_type ?? "_unknown",
+    report_date: r.report_date,
+    notes: r.notes,
+    total_sales: Number(r.total_sales || 0),
+  }));
+
+  const canApprove = can(session.user, "cashhub.approve");
 
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-4xl mx-auto pb-24">
@@ -102,7 +133,7 @@ export default async function NotesInboxPage({
         ))}
       </div>
 
-      <Section number="01" label="MESSAGES" title={`โน้ตล่าสุด`}>
+      <Section number="01" label="MESSAGES" title="โน้ตล่าสุด">
         {rows.length === 0 ? (
           <Card>
             <CardBody>
@@ -114,53 +145,7 @@ export default async function NotesInboxPage({
             </CardBody>
           </Card>
         ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>{rows.length} ข้อความ</CardTitle>
-              <Badge tone="brand">{days} วันล่าสุด</Badge>
-            </CardHeader>
-            <CardBody className="!p-0">
-              <ul className="divide-y divide-zinc-100">
-                {rows.map((r) => {
-                  const cfg = r.branches?.business_type
-                    ? BUSINESS_TYPES[r.branches.business_type]
-                    : undefined;
-                  return (
-                    <li key={r.id} className="px-4 sm:px-5 py-4">
-                      <div className="flex items-start gap-3">
-                        <span className="text-2xl shrink-0">
-                          {cfg?.emoji || "📋"}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold tabular-num text-sm">
-                              {r.branches?.code}
-                            </span>
-                            <Badge tone="neutral">
-                              {bkkDate(r.report_date)}
-                            </Badge>
-                            <Badge tone="brand">
-                              {formatBahtCompact(Number(r.total_sales || 0))}
-                            </Badge>
-                          </div>
-                          <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap text-zinc-800">
-                            {r.notes}
-                          </p>
-                          <Link
-                            href={`/cashhub/reports/${r.id}`}
-                            className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-[var(--color-brand-700)] hover:underline"
-                          >
-                            <ExternalLink className="size-3" />
-                            ดูรายงานเต็ม
-                          </Link>
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </CardBody>
-          </Card>
+          <NotesGrouped rows={rows} days={days} canApprove={canApprove} />
         )}
       </Section>
     </div>

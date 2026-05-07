@@ -13,6 +13,7 @@ import { startOfMonth, getDate, getDaysInMonth } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { BackButton } from "@/components/ui/back-button";
 import { hasCrossBranchAccess } from "@/lib/auth/branch-access";
+import { can } from "@/lib/auth/permissions";
 import { HeatmapGrid } from "./heatmap-grid";
 
 export const dynamic = "force-dynamic";
@@ -66,6 +67,7 @@ export default async function HeatmapPage() {
 
   const todayDay = getDate(now);
   const canFill = hasCrossBranchAccess(session.user.role);
+  const canApprove = can(session.user, "cashhub.approve");
 
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
@@ -109,6 +111,7 @@ export default async function HeatmapPage() {
               todayDay={todayDay}
               monthYm={monthYm}
               canFill={canFill}
+              canApprove={canApprove}
             />
           </CardBody>
         </Card>

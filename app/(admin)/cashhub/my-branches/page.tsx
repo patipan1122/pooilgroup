@@ -8,6 +8,7 @@ import { Building2 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { loadManageableBranches } from "@/lib/auth/branch-access";
+import { can } from "@/lib/auth/permissions";
 import { EmptyState } from "@/components/ui/empty-state";
 import { thaiDateLong, bkkToday } from "@/lib/utils/format";
 import { MyBranchesView } from "./my-branches-view";
@@ -116,6 +117,7 @@ export default async function MyBranchesPage() {
           matrix={matrix}
           days={days}
           today={today}
+          canApprove={can(session.user, "cashhub.approve")}
         />
       )}
     </div>

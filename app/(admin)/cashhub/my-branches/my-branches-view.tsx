@@ -36,9 +36,16 @@ interface Props {
   matrix: Record<string, Record<string, string>>;
   days: string[]; // newest → oldest
   today: string;
+  canApprove: boolean;
 }
 
-export function MyBranchesView({ branches, matrix, days, today }: Props) {
+export function MyBranchesView({
+  branches,
+  matrix,
+  days,
+  today,
+  canApprove,
+}: Props) {
   const [query, setQuery] = useState("");
   const [openTypes, setOpenTypes] = useState<Record<string, boolean>>({});
   const [target, setTarget] = useState<{
@@ -414,6 +421,7 @@ export function MyBranchesView({ branches, matrix, days, today }: Props) {
           branchCode={target.branchCode}
           date={target.date}
           canFill
+          canApprove={canApprove}
         />
       )}
     </>

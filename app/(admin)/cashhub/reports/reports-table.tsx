@@ -23,6 +23,7 @@ import { formatBahtCompact, bkkDate, bkkTime } from "@/lib/utils/format";
 import type { BusinessGroupVm, ReportRowVm, MissingBranchVm } from "./page";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { cn } from "@/lib/utils/cn";
+import { HeatmapCellModal } from "@/components/cashhub/heatmap-cell-modal";
 
 interface BoardProps {
   groups: BusinessGroupVm[];
@@ -54,6 +55,11 @@ export function ReportsBoard({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
   const [viewMode, setViewMode] = useState<"board" | "table">("board");
+  const [popup, setPopup] = useState<{
+    branchId: string;
+    branchCode: string;
+    date: string;
+  } | null>(null);
   const [openTypes, setOpenTypes] = useState<Set<string>>(() => {
     // Auto-expand groups that have pending or missing
     const expanded = new Set<string>();
@@ -434,6 +440,7 @@ export function ReportsBoard({
                       rows={g.reports}
                       selected={selected}
                       onToggle={toggleRow}
+                      onPopup={setPopup}
                     />
                   )}
 
@@ -461,6 +468,18 @@ export function ReportsBoard({
           </Button>
         </a>
       </div>
+
+      {/* Row popup — feedback_popup_first_drilldown.md */}
+      {popup && (
+        <HeatmapCellModal
+          open={!!popup}
+          onClose={() => setPopup(null)}
+          branchId={popup.branchId}
+          branchCode={popup.branchCode}
+          date={popup.date}
+          canApprove
+        />
+      )}
     </>
   );
 }
@@ -506,10 +525,12 @@ function ReportTable({
   rows,
   selected,
   onToggle,
+  onPopup,
 }: {
   rows: ReportRowVm[];
   selected: Set<string>;
   onToggle: (id: string) => void;
+  onPopup: (p: { branchId: string; branchCode: string; date: string }) => void;
 }) {
   return (
     <div className="overflow-x-auto">
@@ -550,9 +571,16 @@ function ReportTable({
                   )}
                 </td>
                 <td className="p-3">
-                  <Link
-                    href={`/cashhub/reports/${r.id}`}
-                    className="block hover:text-[var(--color-brand-700)]"
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onPopup({
+                        branchId: r.branch_id,
+                        branchCode: r.branch_code,
+                        date: r.report_date,
+                      })
+                    }
+                    className="block text-left hover:text-[var(--color-brand-700)] w-full"
                   >
                     <div className="font-bold tabular-num text-sm">
                       {r.branch_code}
@@ -563,7 +591,7 @@ function ReportTable({
                     <div className="text-[11px] text-zinc-500 truncate hidden sm:block">
                       {r.branch_name}
                     </div>
-                  </Link>
+                  </button>
                 </td>
                 <td className="p-3 hidden sm:table-cell">
                   <div className="text-sm font-medium tabular-num">
@@ -574,12 +602,19 @@ function ReportTable({
                   </div>
                 </td>
                 <td className="p-3 text-right">
-                  <Link
-                    href={`/cashhub/reports/${r.id}`}
-                    className="font-bold tabular-num"
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onPopup({
+                        branchId: r.branch_id,
+                        branchCode: r.branch_code,
+                        date: r.report_date,
+                      })
+                    }
+                    className="font-bold tabular-num hover:text-[var(--color-brand-700)]"
                   >
                     {formatBahtCompact(r.total_sales)}
-                  </Link>
+                  </button>
                 </td>
                 <td className="p-3 hidden md:table-cell">
                   {reconcileOk ? (
