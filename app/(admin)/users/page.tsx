@@ -23,7 +23,15 @@ export default async function UsersPage() {
   const orgId = session.user.org_id;
 
   // Step 1: companies + branches + users + user_branches + notifications in parallel
-  const [companiesQ, branchesQ, usersQ, userBranchesQ, requestsQ, notifQ] = await Promise.all([
+  const [
+    companiesQ,
+    branchesQ,
+    usersQ,
+    userBranchesQ,
+    requestsQ,
+    notifQ,
+    perUserNotifQ,
+  ] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin.from as any)("companies")
       .select("id, code, name")
@@ -62,9 +70,24 @@ export default async function UsersPage() {
       .eq("is_read", false)
       .order("created_at", { ascending: false })
       .limit(10),
+    // Per-user unread count — used to render a red dot next to that user's
+    // name in the list. v1 proxy: any unread notification addressed to user X.
+    // When schema for explicit "user-to-admin requests" exists, swap source.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin.from as any)("notifications")
+      .select("user_id")
+      .eq("org_id", orgId)
+      .eq("is_read", false),
   ]);
 
   const notifications: AdminNotification[] = (notifQ.data ?? []) as AdminNotification[];
+
+  // Compact { userId → unread count } map for per-user red dots.
+  const perUserNotif = (perUserNotifQ.data ?? []) as Array<{ user_id: string }>;
+  const unreadByUserId: Record<string, number> = {};
+  for (const r of perUserNotif) {
+    unreadByUserId[r.user_id] = (unreadByUserId[r.user_id] ?? 0) + 1;
+  }
 
   const companies: Company[] = (companiesQ.data ?? []) as Company[];
   const branches = (branchesQ.data ?? []) as Array<{
@@ -305,6 +328,7 @@ export default async function UsersPage() {
             flatUsers={flatUsers}
             currentUserId={session.user.id}
             currentUserRole={session.actingAs?.realUser.role ?? session.user.role}
+            unreadByUserId={unreadByUserId}
           />
         </Section>
       </div>

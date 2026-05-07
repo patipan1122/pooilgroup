@@ -1,0 +1,51 @@
+// Server-side helper that returns badge counts for the sidebar.
+// One round-trip to compute everything the shell needs to render in headers.
+//
+// Add new counts here, then surface them in admin-shell SidebarBody.
+
+import { adminClient } from "@/lib/db/server";
+
+export interface NavCounts {
+  /** register_requests with status='pending' — admin should approve. */
+  pendingRegisterRequests: number;
+  /** branches that don't have a branch_manager — every branch should have one. */
+  branchesMissingMgr: number;
+}
+
+export async function loadNavCounts(orgId: string): Promise<NavCounts> {
+  const admin = adminClient();
+
+  const [requestsQ, branchesQ, ubQ] = await Promise.all([
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin.from as any)("register_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("org_id", orgId)
+      .eq("status", "pending"),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin.from as any)("branches")
+      .select("id")
+      .eq("org_id", orgId)
+      .eq("is_active", true),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin.from as any)("user_branches")
+      .select("user_id, branch_id, is_active, users!inner(role)")
+      .eq("org_id", orgId)
+      .eq("is_active", true)
+      .eq("users.role", "branch_manager"),
+  ]);
+
+  const branches = (branchesQ.data ?? []) as Array<{ id: string }>;
+  const userBranchRows = (ubQ.data ?? []) as Array<{ branch_id: string }>;
+
+  const branchHasMgr = new Set<string>();
+  for (const r of userBranchRows) branchHasMgr.add(r.branch_id);
+
+  const branchesMissingMgr = branches.filter(
+    (b) => !branchHasMgr.has(b.id),
+  ).length;
+
+  return {
+    pendingRegisterRequests: requestsQ.count ?? 0,
+    branchesMissingMgr,
+  };
+}

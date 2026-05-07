@@ -38,16 +38,25 @@ const AiChat = dynamic(
   { ssr: false },
 );
 
+/** Sidebar nav-counts surfaced as red badges next to specific menu items.
+    Loaded server-side in app/(admin)/layout.tsx via loadNavCounts(orgId). */
+export interface NavCountsClient {
+  pendingRegisterRequests: number;
+  branchesMissingMgr: number;
+}
+
 interface SimpleNavItem {
   href: string;
   label: string;
   icon: LucideIcon;
+  /** Optional key to read a count from NavCountsClient and render a badge. */
+  badgeKey?: keyof NavCountsClient;
 }
 
 const MANAGE_NAV: SimpleNavItem[] = [
-  { href: "/users", label: "ทีม & สาขา", icon: UsersIcon },
+  { href: "/users", label: "ทีม & สาขา", icon: UsersIcon, badgeKey: "branchesMissingMgr" },
   { href: "/companies", label: "บริษัท", icon: Building2 },
-  { href: "/users/requests", label: "คำขอเข้าใช้งาน", icon: Inbox },
+  { href: "/users/requests", label: "คำขอเข้าใช้งาน", icon: Inbox, badgeKey: "pendingRegisterRequests" },
 ];
 
 const SYSTEM_NAV: SimpleNavItem[] = [
@@ -64,13 +73,20 @@ interface Props {
   children: React.ReactNode;
   companies?: Array<{ id: string; code: string; name: string }>;
   currentCompanyId?: string;
+  navCounts?: NavCountsClient;
 }
+
+const ZERO_COUNTS: NavCountsClient = {
+  pendingRegisterRequests: 0,
+  branchesMissingMgr: 0,
+};
 
 export function AdminShell({
   user,
   children,
   companies = [],
   currentCompanyId,
+  navCounts = ZERO_COUNTS,
 }: Props) {
   const pathname = usePathname();
   const router = useRouter();
@@ -325,6 +341,7 @@ export function AdminShell({
             isAdmin={isAdmin}
             activeModuleSlug={activeModuleSlug}
             moduleNav={moduleNav}
+            navCounts={navCounts}
           />
         </aside>
 
@@ -354,6 +371,7 @@ export function AdminShell({
                   isAdmin={isAdmin}
                   activeModuleSlug={activeModuleSlug}
                   moduleNav={moduleNav}
+                  navCounts={navCounts}
                   onNavigate={() => setMobileOpen(false)}
                 />
               </div>
@@ -386,6 +404,7 @@ function SidebarBody({
   isAdmin,
   activeModuleSlug,
   moduleNav,
+  navCounts,
   onNavigate,
 }: {
   user: DbUser;
@@ -393,6 +412,7 @@ function SidebarBody({
   isAdmin: boolean;
   activeModuleSlug: ModuleSlug | null;
   moduleNav: NavItem[];
+  navCounts: NavCountsClient;
   onNavigate?: () => void;
 }) {
   return (
@@ -431,6 +451,7 @@ function SidebarBody({
               href={it.href}
               icon={it.icon}
               label={it.label}
+              badgeCount={it.badgeKey ? navCounts[it.badgeKey] : undefined}
               pathname={pathname}
               onNavigate={onNavigate}
             />
@@ -447,6 +468,7 @@ function SidebarBody({
               href={it.href}
               icon={it.icon}
               label={it.label}
+              badgeCount={it.badgeKey ? navCounts[it.badgeKey] : undefined}
               pathname={pathname}
               onNavigate={onNavigate}
             />
@@ -543,6 +565,7 @@ function SidebarLink({
   pathname,
   onNavigate,
   indent,
+  badgeCount,
 }: {
   href: string;
   icon: LucideIcon;
@@ -551,6 +574,8 @@ function SidebarLink({
   onNavigate?: () => void;
   /** When true, render with extra left padding to nest under a parent (e.g. module). */
   indent?: boolean;
+  /** When > 0 a red pill is shown on the right (open items needing attention). */
+  badgeCount?: number;
 }) {
   const active =
     pathname === href ||
@@ -568,7 +593,15 @@ function SidebarLink({
       )}
     >
       <Icon className="size-4 shrink-0" />
-      <span className="truncate">{label}</span>
+      <span className="flex-1 truncate">{label}</span>
+      {badgeCount !== undefined && badgeCount > 0 && (
+        <span
+          className="inline-flex items-center justify-center min-w-4.5 h-4.5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-extrabold tabular-num shrink-0"
+          aria-label={`${badgeCount} รายการต้องดู`}
+        >
+          {badgeCount > 99 ? "99+" : badgeCount}
+        </span>
+      )}
     </Link>
   );
 }

@@ -5,6 +5,7 @@ import {
   loadCompaniesForOrg,
   readCompanyCookie,
 } from "@/lib/auth/company-context";
+import { loadNavCounts } from "@/lib/nav/counts";
 
 const ROLE_LABEL: Record<string, string> = {
   super_admin: "Super Admin",
@@ -36,9 +37,18 @@ export default async function AdminLayout({
     "viewer",
   );
 
-  const [companies, currentCompanyId] = await Promise.all([
+  const isAdmin =
+    session.user.role === "super_admin" ||
+    session.user.role === "org_admin" ||
+    session.user.role === "admin";
+
+  const [companies, currentCompanyId, navCounts] = await Promise.all([
     loadCompaniesForOrg(session.user.org_id),
     readCompanyCookie(),
+    // Only admins see Manage/System zones — skip the count query for others.
+    isAdmin
+      ? loadNavCounts(session.user.org_id)
+      : Promise.resolve({ pendingRegisterRequests: 0, branchesMissingMgr: 0 }),
   ]);
 
   return (
@@ -54,6 +64,7 @@ export default async function AdminLayout({
         user={session.user}
         companies={companies}
         currentCompanyId={currentCompanyId}
+        navCounts={navCounts}
       >
         {children}
       </AdminShell>

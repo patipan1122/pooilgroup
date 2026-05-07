@@ -53,6 +53,10 @@ const ViewerCtx = createContext<{ id: string; role: string }>({
   role: "",
 });
 
+/** Per-user unread-notification counts — drives the red dot beside user names.
+    Empty map = no dots anywhere. */
+const UnreadCtx = createContext<Record<string, number>>({});
+
 export interface BranchWithUsers {
   id: string;
   code: string;
@@ -203,6 +207,8 @@ interface Props {
   currentUserId: string;
   /** Real (not impersonated) viewer role — controls impersonate target gating. */
   currentUserRole: string;
+  /** userId → unread notification count. Drives the red dot in chips. */
+  unreadByUserId: Record<string, number>;
 }
 
 export function UsersByBusiness({
@@ -216,6 +222,7 @@ export function UsersByBusiness({
   flatUsers,
   currentUserId,
   currentUserRole,
+  unreadByUserId,
 }: Props) {
   const router = useRouter();
   const [viewMode, setViewMode] = useState<"card" | "table">("card");
@@ -447,6 +454,7 @@ export function UsersByBusiness({
 
   return (
     <ViewerCtx.Provider value={{ id: currentUserId, role: currentUserRole }}>
+    <UnreadCtx.Provider value={unreadByUserId}>
     <div className="space-y-5">
       {/* Notification box */}
       <NotificationBox
@@ -702,6 +710,7 @@ export function UsersByBusiness({
       </>
       )}
     </div>
+    </UnreadCtx.Provider>
     </ViewerCtx.Provider>
   );
 }
@@ -1342,6 +1351,8 @@ function UserChipCompact({
   const isManager = MANAGER_ROLES.has(user.role);
   const status = statusInfo(user);
   const roleClass = roleColor(user.role);
+  const unreadMap = useContext(UnreadCtx);
+  const unread = unreadMap[user.id] ?? 0;
 
   return (
     <div
@@ -1367,6 +1378,15 @@ function UserChipCompact({
       >
         {user.name}
       </Link>
+      {unread > 0 && (
+        <span
+          className="inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-extrabold tabular-num"
+          title={`มี ${unread} แจ้งเตือนยังไม่อ่าน`}
+          aria-label={`${unread} unread`}
+        >
+          {unread > 9 ? "9+" : unread}
+        </span>
+      )}
       <RoleBadgeWithPreview role={user.role} className={roleClass} />
       {!HIDE_MESSAGING_ROLES.has(user.role) && (
         <span className="flex items-center gap-0.5">
@@ -1404,6 +1424,8 @@ function UserChipRow({
 }) {
   const status = statusInfo(user);
   const roleClass = roleColor(user.role);
+  const unreadMap = useContext(UnreadCtx);
+  const unread = unreadMap[user.id] ?? 0;
 
   return (
     <div
@@ -1421,6 +1443,14 @@ function UserChipRow({
       <span className={cn("size-2 rounded-full shrink-0", status.dot)} title={status.label} />
       <Link href={`/users/${user.id}`} className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
         <span className="font-bold truncate">{user.name}</span>
+        {unread > 0 && (
+          <span
+            className="inline-flex items-center justify-center min-w-4.5 h-4.5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-extrabold tabular-num"
+            title={`มี ${unread} แจ้งเตือนยังไม่อ่าน`}
+          >
+            {unread > 99 ? "99+" : unread}
+          </span>
+        )}
         <span className="text-[11px] text-zinc-500 truncate">
           {user.email ?? user.phone ?? ""}
         </span>

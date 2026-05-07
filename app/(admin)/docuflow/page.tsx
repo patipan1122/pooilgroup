@@ -1,4 +1,3 @@
-import Link from "next/link";
 import {
   FileText,
   CalendarClock,
@@ -6,7 +5,6 @@ import {
   PenTool,
   Sparkles,
   GitCompare,
-  ArrowRight,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { Section } from "@/components/ui/section";
@@ -127,41 +125,8 @@ export default async function DocuFlowPage() {
         </div>
       </Section>
 
-      <Section
-        number="02"
-        label="WHILE YOU WAIT"
-        title="ระหว่างรอ"
-        className="animate-fade-up delay-300"
-      >
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Link
-            href="/cashhub/dashboard"
-            className="flex items-center justify-between gap-3 px-5 py-4 rounded-2xl border-2 border-zinc-200 bg-white hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/30 transition-all hover-lift"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="text-2xl">💰</span>
-              <div className="min-w-0">
-                <div className="font-semibold">CashHub</div>
-                <div className="text-xs text-zinc-500">ยอดสาขารายวัน</div>
-              </div>
-            </div>
-            <ArrowRight className="size-4 text-zinc-400 shrink-0" />
-          </Link>
-          <Link
-            href="/home"
-            className="flex items-center justify-between gap-3 px-5 py-4 rounded-2xl border-2 border-zinc-200 bg-white hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/30 transition-all hover-lift"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="text-2xl">🏠</span>
-              <div className="min-w-0">
-                <div className="font-semibold">หน้าหลัก</div>
-                <div className="text-xs text-zinc-500">ภาพรวมทุกโปรแกรม</div>
-              </div>
-            </div>
-            <ArrowRight className="size-4 text-zinc-400 shrink-0" />
-          </Link>
-        </div>
-      </Section>
+      {/* "WHILE YOU WAIT" section removed — Sidebar now has CashHub +
+          หน้าหลัก always visible, so this duplicate row is no longer needed. */}
     </div>
   );
 }
