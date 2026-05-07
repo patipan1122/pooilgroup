@@ -4,7 +4,7 @@
 // feedback_popup_first_drilldown.md · feedback_filter_pattern_biztype_first.md
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   ClipboardCheck,
   ChevronRight,
@@ -264,109 +264,108 @@ export function MyBranchesView({
           </span>
         </div>
 
-        <div className="space-y-2">
-          {groups.map(([type, list]) => {
-            const cfg = BUSINESS_TYPES[type];
-            const isOpen = !!effectiveOpen[type];
-            return (
-              <div
-                key={type}
-                className="rounded-2xl border-2 border-zinc-200 bg-white overflow-hidden"
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    setOpenTypes((o) => ({ ...o, [type]: !o[type] }))
-                  }
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 transition-colors"
-                >
-                  <span className="text-xl shrink-0">{cfg?.emoji ?? "📋"}</span>
-                  <div className="text-left flex-1 min-w-0">
-                    <div className="font-bold text-sm">
-                      {cfg?.label ?? type}
-                    </div>
-                    <div className="text-[11px] text-zinc-500 mt-0.5">
-                      {list.length} สาขา
-                    </div>
-                  </div>
-                  <ChevronRight
-                    className={cn(
-                      "size-5 text-zinc-400 shrink-0 transition-transform",
-                      isOpen && "rotate-90",
-                    )}
-                  />
-                </button>
-                {isOpen && (
-                  <div className="border-t-2 border-zinc-100 overflow-x-auto">
-                    <table className="text-xs min-w-full">
-                      <thead className="bg-zinc-50/50">
-                        <tr className="border-b border-zinc-100">
-                          <th className="text-left p-2 sticky left-0 bg-zinc-50 z-10 whitespace-nowrap">
-                            สาขา
-                          </th>
+        {/* Single unified table — biz-type dividers inline */}
+        <div className="rounded-2xl border-2 border-zinc-200 bg-white overflow-x-auto">
+          <table className="text-xs min-w-full">
+            <thead className="bg-zinc-50/50 sticky top-0 z-10">
+              <tr className="border-b border-zinc-100">
+                <th className="text-left p-2 sticky left-0 bg-zinc-50 z-20 whitespace-nowrap">
+                  สาขา
+                </th>
+                {days.map((d) => {
+                  const day = parseInt(d.slice(8, 10), 10);
+                  return (
+                    <th
+                      key={d}
+                      className={cn(
+                        "p-1 text-center font-semibold tabular-num text-[10px] w-7",
+                        d === today &&
+                          "text-[var(--color-brand-700)] font-extrabold",
+                      )}
+                    >
+                      {day}
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map(([type, list]) => {
+                const cfg = BUSINESS_TYPES[type];
+                const isOpen = !!effectiveOpen[type];
+                return (
+                  <Fragment key={type}>
+                    <tr className="bg-zinc-50/40 border-y-2 border-zinc-100">
+                      <td
+                        colSpan={days.length + 1}
+                        className="sticky left-0 bg-zinc-50/40 p-0"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOpenTypes((o) => ({ ...o, [type]: !o[type] }))
+                          }
+                          className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-100/60 transition-colors text-left"
+                        >
+                          <ChevronRight
+                            className={cn(
+                              "size-4 text-zinc-500 shrink-0 transition-transform",
+                              isOpen && "rotate-90",
+                            )}
+                          />
+                          <span className="text-base shrink-0">
+                            {cfg?.emoji ?? "📋"}
+                          </span>
+                          <span className="font-bold text-sm">
+                            {cfg?.label ?? type}
+                          </span>
+                          <span className="text-[11px] text-zinc-500">
+                            · {list.length} สาขา
+                          </span>
+                        </button>
+                      </td>
+                    </tr>
+                    {isOpen &&
+                      list.map((b) => (
+                        <tr key={b.id} className="border-b border-zinc-50">
+                          <td className="p-2 sticky left-0 bg-white whitespace-nowrap font-medium">
+                            <Link
+                              href={`/cashhub/branches/${b.id}`}
+                              className="inline-flex items-center gap-1.5 hover:text-[var(--color-brand-700)]"
+                            >
+                              <span className="tabular-num">{b.code}</span>
+                            </Link>
+                          </td>
                           {days.map((d) => {
-                            const day = parseInt(d.slice(8, 10), 10);
+                            const status = matrix[b.id]?.[d];
                             return (
-                              <th
-                                key={d}
-                                className={cn(
-                                  "p-1 text-center font-semibold tabular-num text-[10px] w-7",
-                                  d === today &&
-                                    "text-[var(--color-brand-700)] font-extrabold",
-                                )}
-                              >
-                                {day}
-                              </th>
+                              <td key={d} className="p-0.5 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setTarget({
+                                      branchId: b.id,
+                                      branchCode: b.code,
+                                      date: d,
+                                    })
+                                  }
+                                  className={cn(
+                                    "size-5 mx-auto rounded-md flex items-center justify-center transition-transform hover:scale-110 cursor-pointer",
+                                    cellColor(status),
+                                  )}
+                                  title={`${b.code} · ${d} · ${statusLabel(status)}`}
+                                  aria-label={`${b.code} วันที่ ${d}`}
+                                />
+                              </td>
                             );
                           })}
                         </tr>
-                      </thead>
-                      <tbody>
-                        {list.map((b) => (
-                          <tr key={b.id} className="border-b border-zinc-50">
-                            <td className="p-2 sticky left-0 bg-white whitespace-nowrap font-medium">
-                              <Link
-                                href={`/cashhub/branches/${b.id}`}
-                                className="inline-flex items-center gap-1.5 hover:text-[var(--color-brand-700)]"
-                              >
-                                <span className="tabular-num">{b.code}</span>
-                              </Link>
-                            </td>
-                            {days.map((d) => {
-                              const status = matrix[b.id]?.[d];
-                              return (
-                                <td
-                                  key={d}
-                                  className="p-0.5 text-center"
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setTarget({
-                                        branchId: b.id,
-                                        branchCode: b.code,
-                                        date: d,
-                                      })
-                                    }
-                                    className={cn(
-                                      "size-5 mx-auto rounded-md flex items-center justify-center transition-transform hover:scale-110 cursor-pointer",
-                                      cellColor(status),
-                                    )}
-                                    title={`${b.code} · ${d} · ${statusLabel(status)}`}
-                                    aria-label={`${b.code} วันที่ ${d}`}
-                                  />
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                      ))}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </Section>
 

@@ -6,7 +6,7 @@
 // feedback_collapse_all_button.md — ขยาย/ย่อทั้งหมด
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { ChevronRight, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { BUSINESS_TYPES } from "@/constants/business-types";
@@ -126,124 +126,122 @@ export function HeatmapGrid({
         )}
       </div>
 
-      {/* Grouped heatmap */}
-      <div className="space-y-2">
-        {groups.map(([type, list]) => {
-          const cfg = BUSINESS_TYPES[type];
-          const isOpen = !!effectiveOpen[type];
-          return (
-            <div
-              key={type}
-              className="rounded-2xl border-2 border-zinc-200 bg-white overflow-hidden"
-            >
-              <button
-                type="button"
-                onClick={() => toggleType(type)}
-                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 transition-colors"
-              >
-                <span className="text-xl shrink-0">{cfg?.emoji ?? "📋"}</span>
-                <div className="text-left flex-1 min-w-0">
-                  <div className="font-bold text-sm">
-                    {cfg?.label ?? type}
-                  </div>
-                  <div className="text-[11px] text-zinc-500 mt-0.5">
-                    {list.length} สาขา
-                  </div>
-                </div>
-                <ChevronRight
+      {/* Single unified table — biz-type rows act as inline collapsible dividers
+          (no separate cards/tables per group · header วันแถวเดียวด้านบน) */}
+      <div className="rounded-2xl border-2 border-zinc-200 bg-white overflow-x-auto">
+        <table className="text-xs min-w-full">
+          <thead className="bg-zinc-50/50 sticky top-0 z-10">
+            <tr className="border-b border-zinc-100">
+              <th className="text-left p-2 sticky left-0 bg-zinc-50 z-20 whitespace-nowrap">
+                สาขา
+              </th>
+              {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((d) => (
+                <th
+                  key={d}
                   className={cn(
-                    "size-5 text-zinc-400 shrink-0 transition-transform",
-                    isOpen && "rotate-90",
+                    "p-1 text-center font-semibold tabular-num text-[10px] w-7",
+                    d === todayDay &&
+                      "text-[var(--color-brand-700)] font-extrabold",
                   )}
-                />
-              </button>
-              {isOpen && (
-                <div className="border-t-2 border-zinc-100 overflow-x-auto">
-                  <table className="text-xs min-w-full">
-                    <thead className="bg-zinc-50/50">
-                      <tr className="border-b border-zinc-100">
-                        <th className="text-left p-2 sticky left-0 bg-zinc-50 z-10 whitespace-nowrap">
-                          สาขา
-                        </th>
-                        {Array.from(
-                          { length: daysInMonth },
-                          (_, i) => i + 1,
-                        ).map((d) => (
-                          <th
-                            key={d}
-                            className={cn(
-                              "p-1 text-center font-semibold tabular-num text-[10px] w-7",
-                              d === todayDay &&
-                                "text-[var(--color-brand-700)] font-extrabold",
-                            )}
-                          >
-                            {d}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {list.map((b) => {
-                        const m = matrix[b.id] ?? {};
-                        return (
-                          <tr key={b.id} className="border-b border-zinc-50">
-                            <td className="p-2 sticky left-0 bg-white whitespace-nowrap font-medium">
-                              {/* Click branch name = navigate to detail */}
-                              <Link
-                                href={`/cashhub/branches/${b.id}`}
-                                className="inline-flex items-center gap-1.5 hover:text-[var(--color-brand-700)]"
-                              >
-                                <span className="tabular-num">{b.code}</span>
-                              </Link>
-                            </td>
-                            {Array.from(
-                              { length: daysInMonth },
-                              (_, i) => i + 1,
-                            ).map((d) => {
-                              const isFuture = d > todayDay;
-                              const status = m[d];
-                              const dateStr = `${monthYm}-${String(d).padStart(2, "0")}`;
-                              return (
-                                <td
-                                  key={d}
-                                  className="p-0.5 text-center"
-                                >
-                                  {isFuture ? (
-                                    <div
-                                      className="size-5 mx-auto rounded-md bg-zinc-50"
-                                      title={`${b.code} วันที่ ${d}`}
-                                    />
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setTarget({
-                                          branchId: b.id,
-                                          branchCode: b.code,
-                                          date: dateStr,
-                                        })
-                                      }
-                                      className={cn(
-                                        "size-5 mx-auto rounded-md flex items-center justify-center transition-transform hover:scale-110 cursor-pointer",
-                                        cellColor(status),
-                                      )}
-                                      title={`${b.code} วันที่ ${d}: ${statusLabel(status)}`}
-                                      aria-label={`${b.code} วันที่ ${d}`}
-                                    />
-                                  )}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          );
-        })}
+                >
+                  {d}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map(([type, list]) => {
+              const cfg = BUSINESS_TYPES[type];
+              const isOpen = !!effectiveOpen[type];
+              return (
+                <Fragment key={type}>
+                  {/* Biz-type group header row — full-width clickable */}
+                  <tr className="bg-zinc-50/40 border-y-2 border-zinc-100">
+                    <td
+                      colSpan={daysInMonth + 1}
+                      className="sticky left-0 bg-zinc-50/40 p-0"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleType(type)}
+                        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-100/60 transition-colors text-left"
+                      >
+                        <ChevronRight
+                          className={cn(
+                            "size-4 text-zinc-500 shrink-0 transition-transform",
+                            isOpen && "rotate-90",
+                          )}
+                        />
+                        <span className="text-base shrink-0">
+                          {cfg?.emoji ?? "📋"}
+                        </span>
+                        <span className="font-bold text-sm">
+                          {cfg?.label ?? type}
+                        </span>
+                        <span className="text-[11px] text-zinc-500">
+                          · {list.length} สาขา
+                        </span>
+                      </button>
+                    </td>
+                  </tr>
+
+                  {/* Branch rows — only when group is open */}
+                  {isOpen &&
+                    list.map((b) => {
+                      const m = matrix[b.id] ?? {};
+                      return (
+                        <tr key={b.id} className="border-b border-zinc-50">
+                          <td className="p-2 sticky left-0 bg-white whitespace-nowrap font-medium">
+                            <Link
+                              href={`/cashhub/branches/${b.id}`}
+                              className="inline-flex items-center gap-1.5 hover:text-[var(--color-brand-700)]"
+                            >
+                              <span className="tabular-num">{b.code}</span>
+                            </Link>
+                          </td>
+                          {Array.from(
+                            { length: daysInMonth },
+                            (_, i) => i + 1,
+                          ).map((d) => {
+                            const isFuture = d > todayDay;
+                            const status = m[d];
+                            const dateStr = `${monthYm}-${String(d).padStart(2, "0")}`;
+                            return (
+                              <td key={d} className="p-0.5 text-center">
+                                {isFuture ? (
+                                  <div
+                                    className="size-5 mx-auto rounded-md bg-zinc-50"
+                                    title={`${b.code} วันที่ ${d}`}
+                                  />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setTarget({
+                                        branchId: b.id,
+                                        branchCode: b.code,
+                                        date: dateStr,
+                                      })
+                                    }
+                                    className={cn(
+                                      "size-5 mx-auto rounded-md flex items-center justify-center transition-transform hover:scale-110 cursor-pointer",
+                                      cellColor(status),
+                                    )}
+                                    title={`${b.code} วันที่ ${d}: ${statusLabel(status)}`}
+                                    aria-label={`${b.code} วันที่ ${d}`}
+                                  />
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       {/* Cell popup — feedback_popup_first_drilldown.md */}
