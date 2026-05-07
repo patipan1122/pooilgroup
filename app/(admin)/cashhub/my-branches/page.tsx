@@ -5,6 +5,8 @@
 
 import { redirect } from "next/navigation";
 import { Building2 } from "lucide-react";
+import { subDays } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { loadManageableBranches } from "@/lib/auth/branch-access";
@@ -12,6 +14,8 @@ import { can } from "@/lib/auth/permissions";
 import { EmptyState } from "@/components/ui/empty-state";
 import { thaiDateLong, bkkToday } from "@/lib/utils/format";
 import { MyBranchesView } from "./my-branches-view";
+
+const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
 export const dynamic = "force-dynamic";
 
@@ -31,12 +35,15 @@ export default async function MyBranchesPage() {
   }
 
   const admin = adminClient();
+  const now = new Date();
   const today = bkkToday();
-  const dateFrom = (() => {
-    const d = new Date(today);
-    d.setDate(d.getDate() - (DAYS_BACK - 1));
-    return d.toISOString().slice(0, 10);
-  })();
+  // TZ-safe date math — anchor to Bangkok time (was: new Date(today).setDate(...)
+  // which parses today as UTC midnight then loses 7h)
+  const dateFrom = formatInTimeZone(
+    subDays(now, DAYS_BACK - 1),
+    TZ,
+    "yyyy-MM-dd",
+  );
 
   const branches = await loadManageableBranches(session.user);
   const branchIds = branches.map((b) => b.id);
@@ -73,12 +80,10 @@ export default async function MyBranchesPage() {
     matrix[r.branch_id] = m;
   }
 
-  // Day list newest → oldest
-  const days: string[] = Array.from({ length: DAYS_BACK }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    return d.toISOString().slice(0, 10);
-  });
+  // Day list newest → oldest, TZ-safe
+  const days: string[] = Array.from({ length: DAYS_BACK }, (_, i) =>
+    formatInTimeZone(subDays(now, i), TZ, "yyyy-MM-dd"),
+  );
 
   return (
     <div className="p-4 sm:p-8 lg:p-10 max-w-6xl mx-auto pb-24">

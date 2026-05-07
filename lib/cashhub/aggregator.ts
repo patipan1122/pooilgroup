@@ -302,9 +302,11 @@ export async function loadDashboard(orgId: string, companyId?: string) {
     }
     byTypeMap.set(b.business_type, bucket);
   }
+  // Index branches by id for O(1) lookup (was O(N) find inside loop → O(N*M))
+  const branchByIdMap = new Map(branches.map((b) => [b.id, b]));
   for (const r of monthReports) {
     if (r.status === "approved") {
-      const branch = branches.find((b) => b.id === r.branch_id);
+      const branch = branchByIdMap.get(r.branch_id);
       if (branch) {
         const bucket = byTypeMap.get(branch.business_type);
         if (bucket) bucket.total += Number(r.total_sales || 0);
