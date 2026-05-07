@@ -92,7 +92,10 @@ export function AdminShell({
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [moduleMenuOpen, setModuleMenuOpen] = useState(false);
 
-  const isAdmin = user.role === "super_admin" || user.role === "org_admin";
+  const isAdmin =
+    user.role === "super_admin" ||
+    user.role === "org_admin" ||
+    user.role === "admin";
   const activeModuleSlug = getModuleFromPath(pathname);
   const activeModule = activeModuleSlug ? MODULES[activeModuleSlug] : null;
   const isHome = pathname === "/home" || pathname === "/";

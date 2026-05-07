@@ -13,7 +13,7 @@ interface Props {
 }
 
 export default async function EditCompanyPage({ params }: Props) {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "admin");
   const { id } = await params;
   const admin = adminClient();
 

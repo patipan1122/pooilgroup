@@ -17,6 +17,11 @@ const SignupSchema = z.object({
     .or(z.literal("")),
 });
 
+// Public signup is BOOTSTRAP-ONLY: it works ONLY when no super_admin exists
+// in the Pooilgroup org yet. Once the first super_admin is provisioned,
+// this endpoint refuses every subsequent request and points the caller at
+// /join (admin-approved request) instead. This closes the previous hole
+// where any visitor could create a `staff` account that was active immediately.
 export async function POST(req: NextRequest) {
   let body: unknown;
   try {
@@ -46,7 +51,22 @@ export async function POST(req: NextRequest) {
     .eq("is_active", true);
 
   const isFirstUser = !superAdminCount || superAdminCount === 0;
-  const role = isFirstUser ? "super_admin" : "staff";
+
+  // CLOSED: signup blocked once bootstrap super_admin exists. Public users
+  // must go through /join → admin approval → invite link instead. Per
+  // feedback_user_creation_rules.md (hierarchical approval rule).
+  if (!isFirstUser) {
+    return NextResponse.json(
+      {
+        error:
+          "ระบบปิดการสมัครสาธารณะ — กรุณาขอเข้าใช้งานที่ /join (ต้องผ่านอนุมัติ admin)",
+        redirect: "/join",
+      },
+      { status: 403 },
+    );
+  }
+
+  const role = "super_admin";
 
   // 1. Check email already exists in our users table
   const { data: existingUser } = await admin

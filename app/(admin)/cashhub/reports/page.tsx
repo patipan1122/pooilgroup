@@ -89,15 +89,19 @@ export default async function CashHubReportsPage({
 
   // Single source of truth: read via canonical loaders (lib/cashhub/data.ts)
   // statuses: [] = ดึงทุก status (submitted/approved/rejected/draft) — filter ที่ ReportsBoard
-  const [branches, allReports] = await Promise.all([
+  // โหลด 2 ชุด:
+  //   activeBranches → ใช้ตรวจ "ขาดส่ง" + group totals (สาขาเปิดอยู่ตอนนี้)
+  //   allBranches    → ใช้ index lookup (รายงานเก่าจากสาขาปิดยังต้องเห็นชื่อ)
+  const [activeBranches, allBranches, allReports] = await Promise.all([
     loadBranches(session.user.org_id, { activeOnly: true }),
+    loadBranches(session.user.org_id, { activeOnly: false }),
     loadReports(session.user.org_id, {
       statuses: [],
       newestFirst: true,
       limit: 200,
     }),
   ]);
-  const branchIndex = indexBranches(branches);
+  const branchIndex = indexBranches(allBranches);
 
   // Build the full row VMs first (no filters yet)
   const allRows: ReportRowVm[] = allReports.map((r) => {
@@ -141,7 +145,7 @@ export default async function CashHubReportsPage({
       .map((r) => r.branch_id),
   );
 
-  const allMissing: MissingBranchVm[] = branches
+  const allMissing: MissingBranchVm[] = activeBranches
     .filter((b) => {
       const cfg = BUSINESS_TYPES[b.business_type];
       if (!cfg) return false;
@@ -191,7 +195,7 @@ export default async function CashHubReportsPage({
 
   // Group by business type
   const groupMap = new Map<string, BusinessGroupVm>();
-  for (const b of branches) {
+  for (const b of activeBranches) {
     const cfg = BUSINESS_TYPES[b.business_type];
     if (!cfg) continue;
     if (filterType && b.business_type !== filterType) continue;

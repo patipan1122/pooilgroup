@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Crown } from "lucide-react";
 import { adminClient } from "@/lib/db/server";
 import { SignupForm } from "./signup-form";
@@ -22,8 +23,15 @@ async function checkFirstUser(): Promise<boolean> {
   }
 }
 
+// Public signup is BOOTSTRAP-ONLY — once a super_admin exists this page
+// redirects to /join (the admin-approved request flow).
+// See feedback_user_creation_rules.md (hierarchical approval rule).
 export default async function SignupPage() {
   const isFirstUser = await checkFirstUser();
+
+  if (!isFirstUser) {
+    redirect("/join");
+  }
 
   return (
     <div className="w-full max-w-md">

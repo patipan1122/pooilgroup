@@ -1806,8 +1806,9 @@ function InviteDialog({
               </label>
               <div className="mt-1 grid grid-cols-1 gap-1.5">
                 {[
-                  { v: "branch_manager", l: "ผู้จัดการสาขา" },
                   { v: "staff", l: "พนักงาน" },
+                  { v: "branch_manager", l: "ผจก.สาขา" },
+                  { v: "area_manager", l: "ผจก.เขต" },
                   { v: "viewer", l: "ผู้ดู (Read-only)" },
                 ].map((r) => (
                   <label

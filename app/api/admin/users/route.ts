@@ -12,6 +12,8 @@ const InviteSchema = z.object({
   role: z.enum([
     "super_admin",
     "org_admin",
+    "admin",
+    "area_manager",
     "branch_manager",
     "staff",
     "driver",
@@ -31,7 +33,7 @@ function makeToken(): string {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "admin");
 
   let body: unknown;
   try {

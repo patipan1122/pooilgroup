@@ -18,7 +18,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function UsersPage() {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "admin");
   const admin = adminClient();
   const orgId = session.user.org_id;
 

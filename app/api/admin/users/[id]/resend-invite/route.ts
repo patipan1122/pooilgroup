@@ -17,7 +17,7 @@ export async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "admin");
   const { id } = await ctx.params;
   const admin = adminClient();
 

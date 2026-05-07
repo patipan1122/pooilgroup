@@ -20,11 +20,17 @@ import { Button } from "@/components/ui/button";
 import { BranchPicker, type BranchOption } from "@/components/users/branch-picker";
 import { cn } from "@/lib/utils/cn";
 
+// Role options for the invite dropdown — shown in increasing privilege order.
+// "Owner" / super_admin is omitted intentionally (only the existing super_admin
+// can promote another super_admin via the edit form, not via invite).
 const ROLES: { value: string; label: string; desc: string }[] = [
-  { value: "branch_manager", label: "Branch Manager", desc: "ผู้จัดการสาขา · อนุมัติรายงานสาขาตัวเอง" },
-  { value: "staff", label: "Staff", desc: "พนักงาน · กรอกรายงาน" },
-  { value: "org_admin", label: "Admin", desc: "ผู้ดูแลระบบ · จัดการผู้ใช้/สาขาทั้งหมด" },
-  { value: "viewer", label: "Viewer", desc: "ดูได้อย่างเดียว · ไม่แก้ไข" },
+  { value: "staff", label: "พนักงาน", desc: "กรอกรายงาน · เห็นเฉพาะสาขาตัวเอง" },
+  { value: "branch_manager", label: "ผจก.สาขา", desc: "ผู้จัดการสาขา · อนุมัติรายงานสาขาตัวเอง" },
+  { value: "area_manager", label: "ผจก.เขต", desc: "ผู้จัดการเขต · ดูทุกสาขาในเขต · approve ข้ามสาขาได้" },
+  { value: "driver", label: "คนขับ", desc: "ใช้ Driver App ผ่าน Telegram · ไม่ใช้เว็บ" },
+  { value: "viewer", label: "ผู้ดู (Read-only)", desc: "ดูได้อย่างเดียว · ไม่แก้ไข · เหมาะสำหรับนักบัญชีภายนอก" },
+  { value: "admin", label: "Admin (มือกลาง)", desc: "จัดการ user/สาขา · เห็น Audit Log · ตั้งค่าระบบไม่ได้" },
+  { value: "org_admin", label: "Admin (เต็ม)", desc: "ผู้ดูแลระบบ · จัดการทุกอย่างยกเว้น unlock รายงาน" },
 ];
 
 type Mode = "invite" | "direct";

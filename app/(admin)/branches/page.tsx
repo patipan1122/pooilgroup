@@ -12,7 +12,7 @@ import { BranchesTableView, type FlatBranch } from "./branches-table-view";
 export const dynamic = "force-dynamic";
 
 export default async function BranchesPage() {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "admin");
   const orgId = session.user.org_id;
   const admin = adminClient();
 

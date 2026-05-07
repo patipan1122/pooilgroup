@@ -7,7 +7,7 @@ import { BackButton } from "@/components/ui/back-button";
 export const dynamic = "force-dynamic";
 
 export default async function ImportUsersPage() {
-  await requireRole("super_admin", "org_admin");
+  await requireRole("super_admin", "org_admin", "admin");
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto">

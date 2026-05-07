@@ -4,7 +4,7 @@
 import Link from "next/link";
 import {} from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole } from "@/lib/auth/role-guards";
+import { requireAdminTier } from "@/lib/auth/role-guards";
 import { PrintButton } from "./print-button";
 import { adminClient } from "@/lib/db/server";
 import {
@@ -43,7 +43,10 @@ export default async function MonthlyReportPage({
   searchParams: Promise<{ month?: string }>;
 }) {
   const session = await requireSession();
-  requireExecutiveRole(session.user.role);
+  // Stricter than other CashHub exec pages — monthly PDF contains org-wide
+  // P&L + compliance data; area_manager + viewer should not see this.
+  // Per CEO rule (2026-05-07): "ดูได้แค่ super_admin และ admin"
+  requireAdminTier(session.user.role);
   const sp = await searchParams;
 
   const monthStr =
