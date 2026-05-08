@@ -49,6 +49,14 @@ model Organization {
   branchHealthScores BranchHealthScore[]
   branchStreaks    BranchStreak[]
   missingReports   MissingReportReason[]
+  documents        Document[]
+  documentOwnerships DocumentOwnership[]
+  documentTags     DocumentTag[]
+  documentRenewals DocumentRenewal[]
+  documentSharedBranches DocumentSharedBranch[]
+  vehicles         Vehicle[]
+  vehicleDocuments VehicleDocument[]
+  personDocuments  PersonDocument[]
 
   @@map("organizations")
 }
@@ -75,6 +83,7 @@ model Company {
 
   org      Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   branches Branch[]
+  vehicles Vehicle[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -132,6 +141,9 @@ model User {
   reviewedRequests    RegisterRequest[]      @relation("RegisterReviewer")
   telegramSubs        TelegramSubscription[]
   telegramTokens      TelegramPairingToken[]
+  uploadedDocuments   Document[]            @relation("DocumentUploader")
+  responsibleRenewals DocumentRenewal[]     @relation("RenewalResponsible")
+  personDocuments     PersonDocument[]
 
   @@unique([orgId, employeeCode])
   @@index([orgId, isActive])
@@ -196,6 +208,8 @@ model Branch {
   missingReports  MissingReportReason[]
   rentalsAsHost   BranchRental[]        @relation("RentalHost")
   rentalsAsTenant BranchRental[]        @relation("RentalTenant")
+  vehicles        Vehicle[]
+  sharedDocuments DocumentSharedBranch[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -725,4 +739,194 @@ model MissingReportReason {
   @@unique([branchId, reportDate])
   @@index([orgId, reportDate])
   @@map("missing_report_reasons")
+}
+
+// =============================================================
+// 22. documents — DocuFlow main table
+// Spec: ดีเทลv1/DOCUFLOW.md · ~1,100 docs across group/company/biz/branch/person
+// =============================================================
+model Document {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  name            String
+  description     String?
+  fileKey         String   @map("file_key") // R2 object key
+  filePublicUrl   String?  @map("file_public_url")
+  mimeType        String?  @map("mime_type")
+  fileSize        Int?     @map("file_size") // bytes
+  uploadedById    String?  @map("uploaded_by_id") @db.Uuid
+  uploadedAt      DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org            Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  uploadedBy     User?                  @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  ownership      DocumentOwnership[]
+  tags           DocumentTag[]
+  renewals       DocumentRenewal[]
+  sharedBranches DocumentSharedBranch[]
+  vehicleDocs    VehicleDocument[]
+  personDocs     PersonDocument[]
+
+  @@index([orgId, isActive])
+  @@index([orgId, uploadedAt])
+  @@map("documents")
+}
+
+// =============================================================
+// 23. document_ownership — 4-level (group/company/business_type/branch/person)
+// =============================================================
+model DocumentOwnership {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  documentId   String   @map("document_id") @db.Uuid
+  level        String // group | company | business_type | branch | person
+  companyId    String?  @map("company_id") @db.Uuid
+  branchId     String?  @map("branch_id") @db.Uuid
+  personId     String?  @map("person_id") @db.Uuid
+  businessType String?  @map("business_type")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  document Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, level])
+  @@index([documentId])
+  @@index([branchId])
+  @@map("document_ownership")
+}
+
+// =============================================================
+// 24. document_tags — Tag system (cross-cutting categorization)
+// =============================================================
+model DocumentTag {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  documentId String   @map("document_id") @db.Uuid
+  tag        String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  document Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, tag])
+  @@index([orgId, tag])
+  @@map("document_tags")
+}
+
+// =============================================================
+// 25. document_renewals — expiry tracking + renewal workflow
+// =============================================================
+model DocumentRenewal {
+  id                  String    @id @default(uuid()) @db.Uuid
+  orgId               String    @map("org_id") @db.Uuid
+  documentId          String    @map("document_id") @db.Uuid
+  expiryDate          DateTime  @map("expiry_date") @db.Date
+  renewalPeriodYears  Int?      @map("renewal_period_years")
+  alertDays           Int[]     @default([90, 30, 7]) @map("alert_days")
+  responsibleUserId   String?   @map("responsible_user_id") @db.Uuid
+  status              String    @default("pending") // pending | in_progress | renewed | overdue
+  lastRenewedDate     DateTime? @map("last_renewed_date") @db.Date
+  nextRenewalDate     DateTime? @map("next_renewal_date") @db.Date
+  notes               String?
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org             Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  document        Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  responsibleUser User?        @relation("RenewalResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, expiryDate])
+  @@index([orgId, status])
+  @@map("document_renewals")
+}
+
+// =============================================================
+// 26. document_shared_branches — เอกสารใช้ร่วมกันหลายสาขา
+// =============================================================
+model DocumentSharedBranch {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  documentId String   @map("document_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  addedAt    DateTime @default(now()) @map("added_at") @db.Timestamptz(6)
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  document Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  branch   Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, branchId])
+  @@index([orgId])
+  @@index([branchId])
+  @@map("document_shared_branches")
+}
+
+// =============================================================
+// 27. vehicles — fleet (~100 คัน · shared with FuelOS in Phase 2)
+// Stored under lib/vehicles/ generic loader — DocuFlow + FuelOS reuse
+// =============================================================
+model Vehicle {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  licensePlate String   @map("license_plate")
+  vehicleType  String   @map("vehicle_type") // fuel_truck | gas_truck | service | personal | other
+  companyId    String?  @map("company_id") @db.Uuid
+  branchId     String?  @map("branch_id") @db.Uuid // home base
+  isActive     Boolean  @default(true) @map("is_active")
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company   Company?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  branch    Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  documents VehicleDocument[]
+
+  @@unique([orgId, licensePlate])
+  @@index([orgId, isActive])
+  @@index([branchId])
+  @@map("vehicles")
+}
+
+// =============================================================
+// 28. vehicle_documents — link Document ↔ Vehicle
+// =============================================================
+model VehicleDocument {
+  id         String    @id @default(uuid()) @db.Uuid
+  orgId      String    @map("org_id") @db.Uuid
+  vehicleId  String    @map("vehicle_id") @db.Uuid
+  documentId String    @map("document_id") @db.Uuid
+  docType    String    @map("doc_type") // registration | insurance_compulsory | insurance_voluntary | inspection | tank_cert
+  expiryDate DateTime? @map("expiry_date") @db.Date
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  vehicle  Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  document Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([vehicleId, docType, documentId])
+  @@index([orgId, expiryDate])
+  @@map("vehicle_documents")
+}
+
+// =============================================================
+// 29. person_documents — driver/staff personal docs (license/training/health)
+// =============================================================
+model PersonDocument {
+  id         String    @id @default(uuid()) @db.Uuid
+  orgId      String    @map("org_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  documentId String    @map("document_id") @db.Uuid
+  docType    String    @map("doc_type") // license | training | health | id_card | other
+  expiryDate DateTime? @map("expiry_date") @db.Date
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, docType, documentId])
+  @@index([orgId, expiryDate])
+  @@map("person_documents")
 }
