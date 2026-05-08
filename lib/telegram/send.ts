@@ -17,6 +17,12 @@ interface SendMessageOptions {
   parseMode?: "HTML" | "MarkdownV2";
   inlineKeyboard?: InlineButton[][];
   disableNotification?: boolean;
+  /**
+   * If true, attaches Telegram's `force_reply` markup so the user's keyboard
+   * pre-fills "reply to this message". Used for the reject-reason capture flow.
+   * Mutually exclusive with `inlineKeyboard` (force_reply wins if both passed).
+   */
+  forceReply?: boolean;
 }
 
 /**
@@ -32,6 +38,11 @@ export async function sendTelegramMessage(
   }
 
   try {
+    const replyMarkup = opts.forceReply
+      ? { force_reply: true, selective: true }
+      : opts.inlineKeyboard
+        ? { inline_keyboard: opts.inlineKeyboard }
+        : undefined;
     const res = await fetch(`${TELEGRAM_API}/bot${BOT_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -40,9 +51,7 @@ export async function sendTelegramMessage(
         text: opts.text,
         parse_mode: opts.parseMode ?? "HTML",
         disable_notification: opts.disableNotification ?? false,
-        reply_markup: opts.inlineKeyboard
-          ? { inline_keyboard: opts.inlineKeyboard }
-          : undefined,
+        reply_markup: replyMarkup,
       }),
     });
 

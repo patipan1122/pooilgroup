@@ -128,6 +128,11 @@ model User {
   inviteToken        String?   @unique @map("invite_token")
   inviteExpiresAt    DateTime? @map("invite_expires_at") @db.Timestamptz(6)
   inviteUsedAt       DateTime? @map("invite_used_at") @db.Timestamptz(6)
+  // Optional auto-expiry for non-permanent users (auditors, contractors,
+  // temp staff). When set + `now() > tempAccessExpiresAt`, the access-review
+  // cron deactivates the account. NULL = permanent until manual deactivation.
+  // Spec: ดีเทลv1/CORE_SYSTEM.md §2.6 Temporary Access.
+  tempAccessExpiresAt DateTime? @map("temp_access_expires_at") @db.Timestamptz(6)
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -952,6 +957,9 @@ model DocumentSignaturePlacement {
   yRatio          Float     @map("y_ratio") // 0-1 (top edge / page height; PDF origin top-left in our normalization)
   widthRatio      Float     @map("width_ratio") // 0-1
   heightRatio     Float     @map("height_ratio") // 0-1
+  // Placement type: signature box (draw) | date (auto today) | name (auto signer) | text (literal)
+  placementType   String    @default("signature") @map("placement_type")
+  autoFillValue   String?   @map("auto_fill_value") // for text type: literal value
   signerRole      String    @map("signer_role") // owner | employee | counterparty | other
   signerUserId    String?   @map("signer_user_id") @db.Uuid
   signerName      String?   @map("signer_name") // free-form fallback when no userId
