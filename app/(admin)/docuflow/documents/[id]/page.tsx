@@ -6,6 +6,7 @@
 // Next 16 — params is Promise<{id}>.
 // ────────────────────────────────────────────────────────────────────
 
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   FileText,
@@ -13,6 +14,8 @@ import {
   CalendarClock,
   User as UserIcon,
   Building2,
+  PenLine,
+  CheckCircle2,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
@@ -27,6 +30,13 @@ import { Badge } from "@/components/ui/badge";
 import { BackButton } from "@/components/ui/back-button";
 import { ExpiryBadge } from "@/components/docuflow/expiry-badge";
 import { DeleteDocumentButton } from "@/components/docuflow/delete-document-button";
+import { RiskAnalysisPanel } from "@/components/docuflow/risk-analysis-panel";
+import { RenewalHistorySection } from "@/components/docuflow/renewal-history-section";
+import {
+  SharingSection,
+  type SharedBranchItem,
+} from "@/components/docuflow/sharing-section";
+import { loadBranches } from "@/lib/cashhub/data";
 import { bkkDateTime, thaiDateLong } from "@/lib/utils/format";
 
 export const dynamic = "force-dynamic";
@@ -89,6 +99,49 @@ export default async function DocumentDetailPage({
   const isPdf = doc.mimeType === "application/pdf";
   const isImage = doc.mimeType?.startsWith("image/") ?? false;
 
+  // Signature placements — count for status indicator (capability I)
+  const [placementTotal, placementSigned] = await Promise.all([
+    prisma.documentSignaturePlacement.count({
+      where: { orgId, documentId: id },
+    }),
+    prisma.documentSignaturePlacement.count({
+      where: { orgId, documentId: id, signedAt: { not: null } },
+    }),
+  ]);
+  const allSigned = placementTotal > 0 && placementSigned === placementTotal;
+
+  // Cross-branch sharing — load current shares + full org branch list (for picker).
+  // Single Source: use loadBranches() canonical loader for the picker options.
+  const [sharedRows, allBranchRows] = await Promise.all([
+    prisma.documentSharedBranch.findMany({
+      where: { orgId, documentId: id },
+      include: {
+        branch: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            businessType: true,
+          },
+        },
+      },
+      orderBy: { addedAt: "asc" },
+    }),
+    loadBranches(orgId, { activeOnly: true }),
+  ]);
+  const sharedBranches: SharedBranchItem[] = sharedRows.map((r) => ({
+    id: r.branch.id,
+    code: r.branch.code,
+    name: r.branch.name,
+    businessType: r.branch.businessType,
+  }));
+  const allBranchesForPicker = allBranchRows.map((b) => ({
+    id: b.id,
+    code: b.code,
+    name: b.name,
+    business_type: b.business_type,
+  }));
+
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <header className="mb-6 animate-fade-up">
@@ -107,7 +160,18 @@ export default async function DocumentDetailPage({
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            {adminTier && isPdf && (
+              <Link
+                href={`/docuflow/documents/${doc.id}/signatures`}
+                className="inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 bg-[var(--color-brand-600)] text-white hover:bg-[var(--color-brand-700)] h-10 px-4 text-sm rounded-xl shadow-soft"
+              >
+                <PenLine className="size-4" />
+                {placementTotal === 0
+                  ? "ตั้งจุดเซ็น"
+                  : "เซ็นเอกสาร"}
+              </Link>
+            )}
             {downloadUrl && (
               <a
                 href={downloadUrl}
@@ -122,6 +186,19 @@ export default async function DocumentDetailPage({
             {adminTier && <DeleteDocumentButton id={doc.id} name={doc.name} />}
           </div>
         </div>
+        {/* Signature progress indicator (capability I) */}
+        {placementTotal > 0 && (
+          <div className="mt-3 inline-flex items-center gap-2">
+            <Badge tone={allSigned ? "success" : "warning"}>
+              {allSigned ? (
+                <CheckCircle2 className="size-3" />
+              ) : (
+                <PenLine className="size-3" />
+              )}
+              ลายเซ็น: {placementSigned}/{placementTotal} ลงนามแล้ว
+            </Badge>
+          </div>
+        )}
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
@@ -164,6 +241,18 @@ export default async function DocumentDetailPage({
               </CardBody>
             </Card>
           </Section>
+
+          <RiskAnalysisPanel
+            documentId={doc.id}
+            canAnalyze={adminTier}
+            documentName={doc.name}
+          />
+
+          <RenewalHistorySection
+            documentId={doc.id}
+            orgId={orgId}
+            canExtract={adminTier}
+          />
         </div>
 
         <div className="space-y-6">
@@ -277,6 +366,14 @@ export default async function DocumentDetailPage({
               </Card>
             </Section>
           )}
+
+          <SharingSection
+            documentId={doc.id}
+            sharedBranches={sharedBranches}
+            allBranches={allBranchesForPicker}
+            number="05"
+            canEdit={adminTier}
+          />
         </div>
       </div>
     </div>

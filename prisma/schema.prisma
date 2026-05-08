@@ -57,6 +57,9 @@ model Organization {
   vehicles         Vehicle[]
   vehicleDocuments VehicleDocument[]
   personDocuments  PersonDocument[]
+  signaturePlacements DocumentSignaturePlacement[]
+  documentAnalyses DocumentAnalysis[]
+  aiSearchCache    AiSearchCache[]
 
   @@map("organizations")
 }
@@ -144,6 +147,7 @@ model User {
   uploadedDocuments   Document[]            @relation("DocumentUploader")
   responsibleRenewals DocumentRenewal[]     @relation("RenewalResponsible")
   personDocuments     PersonDocument[]
+  signaturePlacements DocumentSignaturePlacement[] @relation("SignaturePlacementSigner")
 
   @@unique([orgId, employeeCode])
   @@index([orgId, isActive])
@@ -768,6 +772,8 @@ model Document {
   sharedBranches DocumentSharedBranch[]
   vehicleDocs    VehicleDocument[]
   personDocs     PersonDocument[]
+  signaturePlacements DocumentSignaturePlacement[]
+  analyses       DocumentAnalysis[]
 
   @@index([orgId, isActive])
   @@index([orgId, uploadedAt])
@@ -929,4 +935,87 @@ model PersonDocument {
   @@unique([userId, docType, documentId])
   @@index([orgId, expiryDate])
   @@map("person_documents")
+}
+
+// =============================================================
+// 30. document_signature_placements — Signature box positions (capability I)
+// Admin lays out boxes on PDF (per page, normalized 0-1 coordinates).
+// Each box becomes a sign target; once signedAt is set + signedImageKey,
+// pdf-lib embeds the image at the position into a signed PDF stored at signedFileKey.
+// =============================================================
+model DocumentSignaturePlacement {
+  id              String    @id @default(uuid()) @db.Uuid
+  orgId           String    @map("org_id") @db.Uuid
+  documentId      String    @map("document_id") @db.Uuid
+  pageNumber      Int       @map("page_number") // 1-indexed
+  xRatio          Float     @map("x_ratio") // 0-1 (left edge / page width)
+  yRatio          Float     @map("y_ratio") // 0-1 (top edge / page height; PDF origin top-left in our normalization)
+  widthRatio      Float     @map("width_ratio") // 0-1
+  heightRatio     Float     @map("height_ratio") // 0-1
+  signerRole      String    @map("signer_role") // owner | employee | counterparty | other
+  signerUserId    String?   @map("signer_user_id") @db.Uuid
+  signerName      String?   @map("signer_name") // free-form fallback when no userId
+  label           String?   // optional caption (e.g. "เจ้าของเซ็น")
+  ordering        Int       @default(0) // visual order on the page
+  signedAt        DateTime? @map("signed_at") @db.Timestamptz(6)
+  signedImageKey  String?   @map("signed_image_key") // R2 key for the signature PNG
+  signedFileKey   String?   @map("signed_file_key") // R2 key for the embedded signed PDF (if generated)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  document   Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  signerUser User?        @relation("SignaturePlacementSigner", fields: [signerUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, documentId])
+  @@index([signerUserId])
+  @@map("document_signature_placements")
+}
+
+// =============================================================
+// 31. document_analyses — AI risk/summary analysis cache (capability H)
+// One row per (documentId × fileKey × analysisType). fileKey acts as
+// a cache key — if the file is replaced (renew), a fresh analysis runs.
+// =============================================================
+model DocumentAnalysis {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  documentId      String   @map("document_id") @db.Uuid
+  fileKey         String   @map("file_key") // doc fileKey at time of analysis
+  analysisType    String   @map("analysis_type") // risk | summary | metadata
+  riskLevel       String?  @map("risk_level") // green | yellow | red
+  summaryText     String?  @map("summary_text") @db.Text
+  watchOutPoints  Json?    @map("watch_out_points") // string[]
+  normalPoints    Json?    @map("normal_points") // string[]
+  metadataJson    Json?    @map("metadata_json") // structured fields (e.g. premium amount, terms)
+  modelUsed       String?  @map("model_used") // claude-haiku-4-5
+  tokensUsed      Int?     @map("tokens_used")
+  analyzedAt      DateTime @default(now()) @map("analyzed_at") @db.Timestamptz(6)
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  document Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, fileKey, analysisType])
+  @@index([orgId])
+  @@map("document_analyses")
+}
+
+// =============================================================
+// 32. ai_search_cache — capability G query result cache (1h TTL)
+// =============================================================
+model AiSearchCache {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  queryHash   String   @map("query_hash") // SHA-256 of normalized query
+  query       String   @db.Text
+  resultJson  Json     @map("result_json")
+  hitCount    Int      @default(0) @map("hit_count")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt   DateTime @map("expires_at") @db.Timestamptz(6)
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, queryHash])
+  @@index([orgId, expiresAt])
+  @@map("ai_search_cache")
 }

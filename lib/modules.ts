@@ -21,6 +21,7 @@ import {
   Truck,
   Users as UsersIcon,
   Clock,
+  Sparkles,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
@@ -171,6 +172,12 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         href: "/docuflow/documents",
         label: "รายการเอกสาร",
         icon: FileTextIcon,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        href: "/docuflow/search",
+        label: "ค้นหา AI",
+        icon: Sparkles,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       // Upload — admin tier only (gating creation)
