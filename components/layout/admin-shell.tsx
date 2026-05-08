@@ -17,6 +17,9 @@ import {
   Check,
   Building2,
   Inbox,
+  Bell,
+  Lock,
+  HardDrive,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { browserClient } from "@/lib/db/client";
@@ -30,6 +33,7 @@ import {
   type NavItem,
 } from "@/lib/modules";
 import { NotificationBell } from "./notification-bell";
+import { QuickApproveBar } from "./quick-approve-bar";
 import { CompanySwitcher } from "./company-switcher";
 const AiChat = dynamic(
   () => import("@/components/cashhub/ai-chat").then((m) => ({ default: m.AiChat })),
@@ -41,6 +45,7 @@ const AiChat = dynamic(
 export interface NavCountsClient {
   pendingRegisterRequests: number;
   branchesMissingMgr: number;
+  pendingCashReports: number;
 }
 
 interface SimpleNavItem {
@@ -49,6 +54,8 @@ interface SimpleNavItem {
   icon: LucideIcon;
   /** Optional key to read a count from NavCountsClient and render a badge. */
   badgeKey?: keyof NavCountsClient;
+  /** When true, render with extra left padding to nest under the parent above. */
+  indent?: boolean;
 }
 
 const MANAGE_NAV: SimpleNavItem[] = [
@@ -60,6 +67,9 @@ const MANAGE_NAV: SimpleNavItem[] = [
 const SYSTEM_NAV: SimpleNavItem[] = [
   { href: "/audit", label: "Audit Log", icon: ShieldCheck },
   { href: "/settings", label: "ตั้งค่าระบบ", icon: Settings },
+  { href: "/settings/notifications", label: "แจ้งเตือน", icon: Bell, indent: true },
+  { href: "/settings/security", label: "ความปลอดภัย", icon: Lock, indent: true },
+  { href: "/settings/backup", label: "สำรองข้อมูล", icon: HardDrive, indent: true },
 ];
 
 const ACCOUNT_NAV: SimpleNavItem[] = [
@@ -80,6 +90,7 @@ interface Props {
 const ZERO_COUNTS: NavCountsClient = {
   pendingRegisterRequests: 0,
   branchesMissingMgr: 0,
+  pendingCashReports: 0,
 };
 
 const ALL_MODULES = ["cashhub", "fuelos", "docuflow"];
@@ -339,6 +350,16 @@ export function AdminShell({
         </div>
       </header>
 
+      {/* Quick Approve Bar — sticky right under topnav. Only renders when there
+          are pending items the current admin can act on. Hidden in 1 session
+          via dismiss button. */}
+      {isAdmin && (
+        <QuickApproveBar
+          pendingCashReports={navCounts.pendingCashReports ?? 0}
+          pendingRegisterRequests={navCounts.pendingRegisterRequests ?? 0}
+        />
+      )}
+
       <div className="flex-1 flex">
         {/* Sidebar (desktop) — visible on EVERY admin page (including /home).
             4 zones: Home · Programs · Manage (admin) · System (admin) · Account.
@@ -495,6 +516,7 @@ function SidebarBody({
               icon={it.icon}
               label={it.label}
               badgeCount={it.badgeKey ? navCounts[it.badgeKey] : undefined}
+              indent={it.indent}
               pathname={pathname}
               onNavigate={onNavigate}
             />
@@ -603,9 +625,18 @@ function SidebarLink({
   /** When > 0 a red pill is shown on the right (open items needing attention). */
   badgeCount?: number;
 }) {
-  const active =
-    pathname === href ||
-    (href !== "/home" && pathname.startsWith(href + "/"));
+  // Indented (child) links: match exact only — they shouldn't claim deeper paths.
+  // Non-indented (parent/standalone) links: match exact OR descendants — but we
+  // also exclude /settings parent from claiming /settings/* (children handle those).
+  const SETTINGS_CHILDREN = ["/settings/notifications", "/settings/security", "/settings/backup"];
+  const active = indent
+    ? pathname === href
+    : href === "/settings"
+    ? pathname === "/settings" ||
+      (pathname.startsWith("/settings/") &&
+        !SETTINGS_CHILDREN.some((c) => pathname === c || pathname.startsWith(c + "/")))
+    : pathname === href ||
+      (href !== "/home" && pathname.startsWith(href + "/"));
   return (
     <Link
       href={href}

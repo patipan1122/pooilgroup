@@ -10,12 +10,14 @@ export interface NavCounts {
   pendingRegisterRequests: number;
   /** branches that don't have a branch_manager — every branch should have one. */
   branchesMissingMgr: number;
+  /** daily_reports awaiting manager approval (CashHub) — feeds Quick Approve Bar. */
+  pendingCashReports: number;
 }
 
 export async function loadNavCounts(orgId: string): Promise<NavCounts> {
   const admin = adminClient();
 
-  const [requestsQ, branchesQ, ubQ] = await Promise.all([
+  const [requestsQ, branchesQ, ubQ, pendingReportsQ] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin.from as any)("register_requests")
       .select("id", { count: "exact", head: true })
@@ -32,6 +34,11 @@ export async function loadNavCounts(orgId: string): Promise<NavCounts> {
       .eq("org_id", orgId)
       .eq("is_active", true)
       .eq("users.role", "branch_manager"),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin.from as any)("daily_reports")
+      .select("id", { count: "exact", head: true })
+      .eq("org_id", orgId)
+      .eq("status", "submitted"),
   ]);
 
   const branches = (branchesQ.data ?? []) as Array<{ id: string }>;
@@ -47,5 +54,6 @@ export async function loadNavCounts(orgId: string): Promise<NavCounts> {
   return {
     pendingRegisterRequests: requestsQ.count ?? 0,
     branchesMissingMgr,
+    pendingCashReports: pendingReportsQ.count ?? 0,
   };
 }
