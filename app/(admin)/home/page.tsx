@@ -190,7 +190,7 @@ export default async function HomePage() {
             <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
           </p>
 
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-[-0.04em] font-display mt-6 text-zinc-900 max-w-5xl leading-[1]">
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.03em] font-display mt-6 text-zinc-900 max-w-5xl leading-[1.05]">
             สวัสดี{" "}
             <span className="text-gradient-blue-vivid">{firstName}</span>
             <br />
@@ -201,7 +201,7 @@ export default async function HomePage() {
             ?
           </h1>
 
-          <p className="text-base sm:text-lg lg:text-xl text-zinc-600 mt-7 max-w-2xl leading-relaxed">
+          <p className="text-base sm:text-lg text-zinc-600 mt-7 max-w-2xl leading-relaxed">
             ศูนย์รวมทุกระบบของ Pooilgroup —{" "}
             <strong className="font-bold text-zinc-900">2 บริษัท</strong>
             <span className="text-zinc-400 mx-1.5">·</span>

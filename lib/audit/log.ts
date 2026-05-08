@@ -22,9 +22,43 @@ export type AuditAction =
   | "EXPORT_DATA"
   | "APPROVE_USER_REQUEST"
   | "REJECT_USER_REQUEST"
+  | "APPROVE_REGISTER_REQUEST"
+  | "REJECT_REGISTER_REQUEST"
   | "IMPERSONATE_START"
   | "IMPERSONATE_END"
-  | "ASSIGN_FORM_TEMPLATE";
+  | "ASSIGN_FORM_TEMPLATE"
+  | "DOCUFLOW_UPLOAD"
+  | "DOCUFLOW_RENEW"
+  | "DOCUFLOW_TAG"
+  | "DOCUFLOW_DELETE"
+  | "DOCUFLOW_SHARE"
+  | "VEHICLE_CREATE"
+  | "VEHICLE_UPDATE"
+  | "DOCUFLOW_SIGN_PLACEMENT_ADD"
+  | "DOCUFLOW_SIGN_PLACEMENT_UPDATE"
+  | "DOCUFLOW_SIGN_PLACEMENT_DELETE"
+  | "DOCUFLOW_SIGN_PLACEMENT_RESET"
+  | "DOCUFLOW_SIGNATURE_SIGNED"
+  | "DOCUFLOW_ANALYZE"
+  | "DOCUFLOW_EXTRACT_METADATA"
+  | "DOCUFLOW_SEARCH"
+  | "SETTINGS_UPDATED"
+  | "BACKUP_TRIGGERED"
+  // RULES §12 — sensitive admin actions that change permission scope or
+  // module visibility. PERMISSION_CHANGE = grant/revoke a single permission;
+  // TOGGLE_MODULE = enable/disable a whole module (cashhub/fuelos/docuflow)
+  // for the org or a specific user.
+  | "PERMISSION_CHANGE"
+  | "TOGGLE_MODULE"
+  // Cron jobs — recorded so we can prove a scheduled job ran (and dedupe).
+  | "DEADLINE_REMINDER_T60"
+  | "DEADLINE_REMINDER_T30"
+  | "MONTHLY_REPORT_GENERATED"
+  | "ACCESS_REVIEW_RAN"
+  // Telegram inline-keyboard reject flow: stores pending state so the next
+  // text reply from the same Telegram user resolves into the rejection reason.
+  | "TELEGRAM_PENDING_REJECT"
+  | "TELEGRAM_PENDING_REJECT_RESOLVED";
 
 export interface AuditEntry {
   orgId: string;

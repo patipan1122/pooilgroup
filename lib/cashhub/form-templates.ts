@@ -8,6 +8,13 @@
 // admin override ของฟิลด์ built-in อยู่ใน `overrides`
 // ฟิลด์ที่ admin เพิ่มเองอยู่ใน `custom_fields` (เช่น PromptPay, e-wallet ใหม่)
 // ค่าของฟิลด์ custom เก็บใน `daily_reports.extra_fields` (jsonb)
+//
+// TYPE DEBT: every Supabase call below uses `(admin.from as any)("form_templates")`.
+// Reason: form_templates was added after the Supabase types were last generated;
+// the generated `Database` type doesn't know about this table → strict TS errors
+// without the cast. Permanent fix = `npx supabase gen types typescript` against
+// the production schema and replace the local `Database` interface in lib/db/.
+// For now `as any` is intentional and contained to this file.
 
 import { adminClient } from "@/lib/db/server";
 import {

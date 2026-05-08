@@ -23,11 +23,13 @@ const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
 interface Props {
   params: Promise<{ branchId: string }>;
+  searchParams: Promise<{ date?: string }>;
 }
 
-export default async function LiffReportFormPage({ params }: Props) {
+export default async function LiffReportFormPage({ params, searchParams }: Props) {
   const session = await requireSession();
   const { branchId } = await params;
+  const { date: requestedDate } = await searchParams;
   const admin = adminClient();
 
   // Verify branch + user access
@@ -101,12 +103,75 @@ export default async function LiffReportFormPage({ params }: Props) {
   const today = bkkToday();
   const yesterday = formatInTimeZone(subDays(new Date(), 1), TZ, "yyyy-MM-dd");
 
-  // Pull yesterday's report (any shift) for "เมื่อวาน ฿X" hint
+  // Anti-Stupidity Rule 2 (CASHHUB §2): list last 14 days with status so the
+  // form can offer a dropdown that hides approved (locked) dates and
+  // disambiguates open/submitted ones.
+  const fourteenDaysAgo = formatInTimeZone(
+    subDays(new Date(), 13),
+    TZ,
+    "yyyy-MM-dd",
+  );
+  const { data: recentStatusRows } = await admin
+    .from("daily_reports")
+    .select("report_date, status, shift")
+    .eq("branch_id", branchId)
+    .gte("report_date", fourteenDaysAgo)
+    .lte("report_date", today);
+
+  // Build a date → worst-status map. If ANY shift on that date is approved,
+  // the date is locked (super_admin must unlock to refill any shift).
+  // Precedence: approved > submitted > open (default).
+  const statusByDate: Record<string, "approved" | "submitted" | "open"> = {};
+  for (const r of recentStatusRows ?? []) {
+    const d = r.report_date as string;
+    const s = r.status as string;
+    const current = statusByDate[d];
+    if (current === "approved") continue;
+    if (s === "approved") {
+      statusByDate[d] = "approved";
+    } else if (s === "submitted") {
+      statusByDate[d] = "submitted";
+    } else if (!current) {
+      statusByDate[d] = "open";
+    }
+  }
+
+  // Generate the list (today → 14 days back).
+  const availableDates: Array<{
+    date: string;
+    status: "open" | "submitted" | "approved";
+  }> = [];
+  for (let i = 0; i < 14; i++) {
+    const d = formatInTimeZone(subDays(new Date(), i), TZ, "yyyy-MM-dd");
+    availableDates.push({ date: d, status: statusByDate[d] ?? "open" });
+  }
+
+  // Resolve which date to render. Default = today. If ?date= is passed, only
+  // honour it when within the recent window AND not approved.
+  let reportDate = today;
+  if (requestedDate) {
+    const inWindow = availableDates.find((x) => x.date === requestedDate);
+    if (inWindow && inWindow.status !== "approved") {
+      reportDate = requestedDate;
+    }
+    // else silently fall back to today (locked date redirect would surprise)
+  }
+
+  // Pull yesterday's report (any shift) for "เมื่อวาน ฿X" hint — relative to
+  // the chosen reportDate, not always today.
+  const referenceDate =
+    reportDate === today
+      ? yesterday
+      : formatInTimeZone(
+          subDays(new Date(reportDate + "T12:00:00"), 1),
+          TZ,
+          "yyyy-MM-dd",
+        );
   const { data: yesterdayReports } = await admin
     .from("daily_reports")
     .select("total_sales, qty1, shift, status")
     .eq("branch_id", branchId)
-    .eq("report_date", yesterday)
+    .eq("report_date", referenceDate)
     .eq("status", "approved");
   const previousReference = yesterdayReports
     ? yesterdayReports.reduce(
@@ -138,10 +203,11 @@ export default async function LiffReportFormPage({ params }: Props) {
       branchCode={branch.code}
       branchName={branch.name}
       config={config}
-      reportDate={today}
+      reportDate={reportDate}
       deadlineHHmm={branch.report_deadline ?? "21:00"}
       previousReference={previousReference}
       streak={streakInfo}
+      availableDates={availableDates}
     />
   );
 }

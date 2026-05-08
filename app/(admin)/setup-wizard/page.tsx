@@ -1,13 +1,13 @@
 // Setup Wizard — Super Admin paste-and-go
 // Paste branch list (CSV) or use simple form → create everything in one shot.
 
-import Link from "next/link";
 import {} from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { SetupWizardForm } from "./wizard-form";
+import { SeedUsersButton } from "./seed-users-button";
 import { BackButton } from "@/components/ui/back-button";
 
 export const dynamic = "force-dynamic";
@@ -59,7 +59,24 @@ export default async function SetupWizardPage() {
         </Card>
       </Section>
 
-      <Section number="02" label="HELP" title="ช่วยเหลือ">
+      <Section
+        number="02"
+        label="QA · TEST USERS"
+        title="สร้างบัญชีทดสอบทุก role"
+        description="ใช้ทดสอบ flow แต่ละบทบาท (เจ้าของ/ผจก./พนักงาน/บัญชี) — สร้างได้ทีเดียว ทุกสาขา"
+        className="mb-6"
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle>Seed Test Users</CardTitle>
+          </CardHeader>
+          <CardBody>
+            <SeedUsersButton />
+          </CardBody>
+        </Card>
+      </Section>
+
+      <Section number="03" label="HELP" title="ช่วยเหลือ">
         <Card>
           <CardBody className="space-y-2 text-sm text-zinc-700">
             <p>
@@ -70,6 +87,7 @@ export default async function SetupWizardPage() {
               <li>วาง CSV ของสาขา 1 บรรทัด/สาขา</li>
               <li>(ออปชัน) เพิ่มชื่อ/เบอร์ ผจก. — ระบบจะสร้าง invite link ให้</li>
               <li>กด "สร้างทั้งหมด"</li>
+              <li>หลังจากนั้น มา section 02 — กดปุ่มสร้างบัญชีทดสอบทุก role เพื่อ login เทสได้ทันที</li>
             </ol>
             <p className="text-zinc-500 text-xs mt-3">
               ประเภทธุรกิจที่ใช้ได้: fuel_station, lpg_station, lpg_retail, bottling_plant, hotel, convenience_store, ev_station, cafe, cafe_punthai, massage_chair, claw_machine, training_center

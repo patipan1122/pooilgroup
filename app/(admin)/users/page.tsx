@@ -247,10 +247,10 @@ export default async function UsersPage() {
               <span className="text-zinc-400 mx-2">·</span>
               <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
             </p>
-            <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-5 leading-[0.95]">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.03em] font-display mt-5 leading-[1.05]">
               <span className="brand-gradient-text">ผู้ใช้</span> ทั้งหมด
             </h1>
-            <p className="text-base sm:text-lg text-zinc-600 mt-5 max-w-2xl leading-relaxed">
+            <p className="text-sm sm:text-base text-zinc-600 mt-5 max-w-2xl leading-relaxed">
               <strong className="font-bold text-zinc-900 tabular-num">{totalUsers}</strong>{" "}
               คนในระบบ
               <span className="text-zinc-400 mx-1.5">·</span>
@@ -310,6 +310,44 @@ export default async function UsersPage() {
           </div>
         </header>
 
+        {/* Empty state — no users + no branches yet (fresh org).
+            Without this, fresh orgs see a blank list with no idea what to do. */}
+        {allUsers.length <= 1 && branches.length === 0 ? (
+          <Section
+            number="01"
+            label="GETTING STARTED"
+            title="ยังไม่มีสาขา · ยังไม่มีผู้ใช้"
+            description="ก่อนเชิญผู้ใช้ ต้องสร้างสาขาก่อน — สร้างสาขาแรกและเชิญผู้จัดการสาขาในขั้นเดียว"
+            className="animate-fade-up delay-100"
+          >
+            <div className="rounded-2xl border-2 border-dashed border-zinc-300 bg-white p-10 text-center">
+              <Building2 className="size-10 mx-auto text-zinc-400 mb-4" />
+              <p className="text-base text-zinc-700 font-bold mb-2">
+                เริ่มต้นใช้งาน Pooilgroup
+              </p>
+              <p className="text-sm text-zinc-500 mb-6 max-w-md mx-auto">
+                สร้างสาขาแรก แล้วค่อยเชิญผู้ใช้เข้ามาบริหาร · หรือถ้ามีรายชื่อสาขาเป็นไฟล์อยู่แล้ว
+                ก็นำเข้าทีเดียวได้
+              </p>
+              <div className="flex justify-center gap-2 flex-wrap">
+                <Link
+                  href="/branches/new"
+                  className="inline-flex items-center gap-2 px-5 h-11 rounded-xl bg-[var(--color-brand-600)] text-white font-bold hover:bg-[var(--color-brand-700)] transition-colors text-sm"
+                >
+                  <Building2 className="size-4" />
+                  สร้างสาขาแรก
+                </Link>
+                <Link
+                  href="/branches/import"
+                  className="inline-flex items-center gap-2 px-4 h-11 rounded-xl border-2 border-zinc-200 bg-white text-zinc-800 font-bold hover:border-[var(--color-brand-300)] transition-colors text-sm"
+                >
+                  <Upload className="size-4" />
+                  นำเข้าจากไฟล์
+                </Link>
+              </div>
+            </div>
+          </Section>
+        ) : (
         <Section
           number="01"
           label="BY BUSINESS · BY BRANCH"
@@ -331,6 +369,7 @@ export default async function UsersPage() {
             unreadByUserId={unreadByUserId}
           />
         </Section>
+        )}
       </div>
     </div>
   );

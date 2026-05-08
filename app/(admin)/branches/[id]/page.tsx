@@ -1,20 +1,24 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {Building2,
+import {
+  Building2,
   MapPin,
   Phone,
   Clock,
   User as UserIcon,
   Hash,
+  FileText,
 } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Section } from "@/components/ui/section";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { bkkDateTime } from "@/lib/utils/format";
 import { BranchDetailActions } from "./detail-actions";
 import { BackButton } from "@/components/ui/back-button";
+import { BranchDocumentsSection } from "@/components/docuflow/branch-documents-section";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +34,7 @@ export default async function BranchDetailPage({ params }: Props) {
   const { data: branch } = await admin
     .from("branches")
     .select(
-      "id, code, name, business_type, province, region, address, lat, lng, manager_id, phone, line_group_id, report_deadline, is_active, created_at, manager:manager_id(name)",
+      "id, code, name, business_type, province, region, address, lat, lng, manager_id, phone, line_group_id, report_deadline, is_active, created_at, company_id, manager:manager_id(name)",
     )
     .eq("id", id)
     .eq("org_id", session.user.org_id)
@@ -90,7 +94,7 @@ export default async function BranchDetailPage({ params }: Props) {
       </header>
 
       {/* Cross-module quick links */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4 animate-fade-up delay-50">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4 animate-fade-up delay-50">
         <Link
           href={`/cashhub/branches/${branch.id}`}
           className="rounded-xl border-2 border-zinc-200 bg-white px-4 py-3 hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm font-bold text-zinc-800 inline-flex items-center justify-between"
@@ -103,6 +107,13 @@ export default async function BranchDetailPage({ params }: Props) {
           className="rounded-xl border-2 border-zinc-200 bg-white px-4 py-3 hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm font-bold text-zinc-800 inline-flex items-center justify-between"
         >
           <span>รายงานของสาขา</span>
+          <span className="text-zinc-400">→</span>
+        </Link>
+        <Link
+          href={`/docuflow/documents?branchId=${branch.id}`}
+          className="rounded-xl border-2 border-zinc-200 bg-white px-4 py-3 hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm font-bold text-zinc-800 inline-flex items-center justify-between"
+        >
+          <span>เอกสารของสาขา</span>
           <span className="text-zinc-400">→</span>
         </Link>
         <Link
@@ -222,6 +233,31 @@ export default async function BranchDetailPage({ params }: Props) {
           </CardBody>
         </Card>
       </div>
+
+      {/* DocuFlow — Mode 2: เอกสารทั้งหมดที่ apply กับสาขา */}
+      <Section
+        number="01"
+        label="DOCUFLOW"
+        title="เอกสารของสาขา"
+        description="แยกตามระดับ — เฉพาะสาขา / ประเภทธุรกิจ / บริษัท / กลุ่ม / ใช้ร่วมจากสาขาอื่น"
+        className="mt-8 animate-fade-up delay-300"
+        action={
+          <Link
+            href={`/docuflow/documents?branchId=${branch.id}`}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-brand-700)] hover:underline"
+          >
+            <FileText className="size-4" />
+            เปิดในมุม DocuFlow
+          </Link>
+        }
+      >
+        <BranchDocumentsSection
+          orgId={session.user.org_id}
+          branchId={branch.id}
+          companyId={branch.company_id ?? null}
+          businessType={branch.business_type}
+        />
+      </Section>
     </div>
   );
 }

@@ -9,16 +9,12 @@
 import { adminClient } from "@/lib/db/server";
 import type { DbUser } from "./session";
 import type { ModuleSlug } from "@/lib/modules";
+// Single source of truth for admin-tier role membership lives in role-guards.
+// Re-exported here so existing import sites (`@/lib/auth/module-access`) keep
+// working — see feedback rule on module isolation / single source of truth.
+import { isAdminTier } from "./role-guards";
 
-const ADMIN_TIER: ReadonlySet<DbUser["role"]> = new Set([
-  "super_admin",
-  "org_admin",
-  "admin",
-]);
-
-export function isAdminTier(role: DbUser["role"]): boolean {
-  return ADMIN_TIER.has(role);
-}
+export { isAdminTier };
 
 /**
  * Returns the set of modules the user can access. Admin tier sees all

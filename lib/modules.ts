@@ -13,10 +13,17 @@ import {
   Trophy,
   CalendarDays,
   AlertCircle,
+  AlertTriangle,
   Settings,
   ClipboardEdit,
   ClipboardCheck,
   Building2,
+  Upload,
+  Truck,
+  Users as UsersIcon,
+  Clock,
+  Sparkles,
+  CheckSquare,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
@@ -148,14 +155,78 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
   docuflow: {
     slug: "docuflow",
     name: "DocuFlow",
-    tagline: "จัดการเอกสาร",
+    tagline: "เอกสาร + ลายเซ็น",
     description:
       "1,100+ เอกสาร · ติดตามวันหมดอายุ · ลายเซ็นออนไลน์ · AI วิเคราะห์ก่อนเซ็น",
     emoji: "📄",
     Icon: FileText,
-    status: "coming_soon",
+    status: "active",
     basePath: "/docuflow",
-    nav: [{ href: "/docuflow", label: "เร็ว ๆ นี้", icon: ClipboardList }],
+    nav: [
+      // Executive views — ภาพรวม + รายการ + ใกล้หมดอายุ + รถ
+      {
+        href: "/docuflow",
+        label: "ภาพรวม",
+        icon: LayoutDashboard,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        href: "/docuflow/documents",
+        label: "รายการเอกสาร",
+        icon: FileTextIcon,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        href: "/docuflow/search",
+        label: "ค้นหา AI",
+        icon: Sparkles,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      // Upload — admin tier only (gating creation)
+      {
+        href: "/docuflow/documents/upload",
+        label: "อัปโหลด",
+        icon: Upload,
+        adminOnly: true,
+      },
+      {
+        href: "/docuflow/expiry",
+        label: "ใกล้หมดอายุ",
+        icon: Clock,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        href: "/docuflow/checklist",
+        label: "Checklist เอกสารที่ต้องมี",
+        icon: CheckSquare,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        href: "/docuflow/risk",
+        label: "ความเสี่ยงรวม",
+        icon: AlertTriangle,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        href: "/docuflow/vehicles",
+        label: "รถ + เอกสาร",
+        icon: Truck,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      // Person docs are HR-sensitive — admin tier only
+      {
+        href: "/docuflow/persons",
+        label: "พนักงาน + เอกสาร",
+        icon: UsersIcon,
+        adminOnly: true,
+      },
+      {
+        href: "/docuflow/settings",
+        label: "ตั้งค่า DocuFlow",
+        icon: Settings,
+        adminOnly: true,
+      },
+    ],
   },
 };
 

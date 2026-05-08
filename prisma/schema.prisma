@@ -49,6 +49,17 @@ model Organization {
   branchHealthScores BranchHealthScore[]
   branchStreaks    BranchStreak[]
   missingReports   MissingReportReason[]
+  documents        Document[]
+  documentOwnerships DocumentOwnership[]
+  documentTags     DocumentTag[]
+  documentRenewals DocumentRenewal[]
+  documentSharedBranches DocumentSharedBranch[]
+  vehicles         Vehicle[]
+  vehicleDocuments VehicleDocument[]
+  personDocuments  PersonDocument[]
+  signaturePlacements DocumentSignaturePlacement[]
+  documentAnalyses DocumentAnalysis[]
+  aiSearchCache    AiSearchCache[]
 
   @@map("organizations")
 }
@@ -75,6 +86,7 @@ model Company {
 
   org      Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   branches Branch[]
+  vehicles Vehicle[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -116,6 +128,11 @@ model User {
   inviteToken        String?   @unique @map("invite_token")
   inviteExpiresAt    DateTime? @map("invite_expires_at") @db.Timestamptz(6)
   inviteUsedAt       DateTime? @map("invite_used_at") @db.Timestamptz(6)
+  // Optional auto-expiry for non-permanent users (auditors, contractors,
+  // temp staff). When set + `now() > tempAccessExpiresAt`, the access-review
+  // cron deactivates the account. NULL = permanent until manual deactivation.
+  // Spec: ดีเทลv1/CORE_SYSTEM.md §2.6 Temporary Access.
+  tempAccessExpiresAt DateTime? @map("temp_access_expires_at") @db.Timestamptz(6)
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -132,6 +149,10 @@ model User {
   reviewedRequests    RegisterRequest[]      @relation("RegisterReviewer")
   telegramSubs        TelegramSubscription[]
   telegramTokens      TelegramPairingToken[]
+  uploadedDocuments   Document[]            @relation("DocumentUploader")
+  responsibleRenewals DocumentRenewal[]     @relation("RenewalResponsible")
+  personDocuments     PersonDocument[]
+  signaturePlacements DocumentSignaturePlacement[] @relation("SignaturePlacementSigner")
 
   @@unique([orgId, employeeCode])
   @@index([orgId, isActive])
@@ -196,6 +217,8 @@ model Branch {
   missingReports  MissingReportReason[]
   rentalsAsHost   BranchRental[]        @relation("RentalHost")
   rentalsAsTenant BranchRental[]        @relation("RentalTenant")
+  vehicles        Vehicle[]
+  sharedDocuments DocumentSharedBranch[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -725,4 +748,282 @@ model MissingReportReason {
   @@unique([branchId, reportDate])
   @@index([orgId, reportDate])
   @@map("missing_report_reasons")
+}
+
+// =============================================================
+// 22. documents — DocuFlow main table
+// Spec: ดีเทลv1/DOCUFLOW.md · ~1,100 docs across group/company/biz/branch/person
+// =============================================================
+model Document {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  name            String
+  description     String?
+  fileKey         String   @map("file_key") // R2 object key
+  filePublicUrl   String?  @map("file_public_url")
+  mimeType        String?  @map("mime_type")
+  fileSize        Int?     @map("file_size") // bytes
+  uploadedById    String?  @map("uploaded_by_id") @db.Uuid
+  uploadedAt      DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org            Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  uploadedBy     User?                  @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  ownership      DocumentOwnership[]
+  tags           DocumentTag[]
+  renewals       DocumentRenewal[]
+  sharedBranches DocumentSharedBranch[]
+  vehicleDocs    VehicleDocument[]
+  personDocs     PersonDocument[]
+  signaturePlacements DocumentSignaturePlacement[]
+  analyses       DocumentAnalysis[]
+
+  @@index([orgId, isActive])
+  @@index([orgId, uploadedAt])
+  @@map("documents")
+}
+
+// =============================================================
+// 23. document_ownership — 4-level (group/company/business_type/branch/person)
+// =============================================================
+model DocumentOwnership {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  documentId   String   @map("document_id") @db.Uuid
+  level        String // group | company | business_type | branch | person
+  companyId    String?  @map("company_id") @db.Uuid
+  branchId     String?  @map("branch_id") @db.Uuid
+  personId     String?  @map("person_id") @db.Uuid
+  businessType String?  @map("business_type")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  document Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, level])
+  @@index([documentId])
+  @@index([branchId])
+  @@map("document_ownership")
+}
+
+// =============================================================
+// 24. document_tags — Tag system (cross-cutting categorization)
+// =============================================================
+model DocumentTag {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  documentId String   @map("document_id") @db.Uuid
+  tag        String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  document Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, tag])
+  @@index([orgId, tag])
+  @@map("document_tags")
+}
+
+// =============================================================
+// 25. document_renewals — expiry tracking + renewal workflow
+// =============================================================
+model DocumentRenewal {
+  id                  String    @id @default(uuid()) @db.Uuid
+  orgId               String    @map("org_id") @db.Uuid
+  documentId          String    @map("document_id") @db.Uuid
+  expiryDate          DateTime  @map("expiry_date") @db.Date
+  renewalPeriodYears  Int?      @map("renewal_period_years")
+  alertDays           Int[]     @default([90, 30, 7]) @map("alert_days")
+  responsibleUserId   String?   @map("responsible_user_id") @db.Uuid
+  status              String    @default("pending") // pending | in_progress | renewed | overdue
+  lastRenewedDate     DateTime? @map("last_renewed_date") @db.Date
+  nextRenewalDate     DateTime? @map("next_renewal_date") @db.Date
+  notes               String?
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org             Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  document        Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  responsibleUser User?        @relation("RenewalResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, expiryDate])
+  @@index([orgId, status])
+  @@map("document_renewals")
+}
+
+// =============================================================
+// 26. document_shared_branches — เอกสารใช้ร่วมกันหลายสาขา
+// =============================================================
+model DocumentSharedBranch {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  documentId String   @map("document_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  addedAt    DateTime @default(now()) @map("added_at") @db.Timestamptz(6)
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  document Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  branch   Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, branchId])
+  @@index([orgId])
+  @@index([branchId])
+  @@map("document_shared_branches")
+}
+
+// =============================================================
+// 27. vehicles — fleet (~100 คัน · shared with FuelOS in Phase 2)
+// Stored under lib/vehicles/ generic loader — DocuFlow + FuelOS reuse
+// =============================================================
+model Vehicle {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  licensePlate String   @map("license_plate")
+  vehicleType  String   @map("vehicle_type") // fuel_truck | gas_truck | service | personal | other
+  companyId    String?  @map("company_id") @db.Uuid
+  branchId     String?  @map("branch_id") @db.Uuid // home base
+  isActive     Boolean  @default(true) @map("is_active")
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company   Company?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  branch    Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  documents VehicleDocument[]
+
+  @@unique([orgId, licensePlate])
+  @@index([orgId, isActive])
+  @@index([branchId])
+  @@map("vehicles")
+}
+
+// =============================================================
+// 28. vehicle_documents — link Document ↔ Vehicle
+// =============================================================
+model VehicleDocument {
+  id         String    @id @default(uuid()) @db.Uuid
+  orgId      String    @map("org_id") @db.Uuid
+  vehicleId  String    @map("vehicle_id") @db.Uuid
+  documentId String    @map("document_id") @db.Uuid
+  docType    String    @map("doc_type") // registration | insurance_compulsory | insurance_voluntary | inspection | tank_cert
+  expiryDate DateTime? @map("expiry_date") @db.Date
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  vehicle  Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  document Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([vehicleId, docType, documentId])
+  @@index([orgId, expiryDate])
+  @@map("vehicle_documents")
+}
+
+// =============================================================
+// 29. person_documents — driver/staff personal docs (license/training/health)
+// =============================================================
+model PersonDocument {
+  id         String    @id @default(uuid()) @db.Uuid
+  orgId      String    @map("org_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  documentId String    @map("document_id") @db.Uuid
+  docType    String    @map("doc_type") // license | training | health | id_card | other
+  expiryDate DateTime? @map("expiry_date") @db.Date
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, docType, documentId])
+  @@index([orgId, expiryDate])
+  @@map("person_documents")
+}
+
+// =============================================================
+// 30. document_signature_placements — Signature box positions (capability I)
+// Admin lays out boxes on PDF (per page, normalized 0-1 coordinates).
+// Each box becomes a sign target; once signedAt is set + signedImageKey,
+// pdf-lib embeds the image at the position into a signed PDF stored at signedFileKey.
+// =============================================================
+model DocumentSignaturePlacement {
+  id              String    @id @default(uuid()) @db.Uuid
+  orgId           String    @map("org_id") @db.Uuid
+  documentId      String    @map("document_id") @db.Uuid
+  pageNumber      Int       @map("page_number") // 1-indexed
+  xRatio          Float     @map("x_ratio") // 0-1 (left edge / page width)
+  yRatio          Float     @map("y_ratio") // 0-1 (top edge / page height; PDF origin top-left in our normalization)
+  widthRatio      Float     @map("width_ratio") // 0-1
+  heightRatio     Float     @map("height_ratio") // 0-1
+  // Placement type: signature box (draw) | date (auto today) | name (auto signer) | text (literal)
+  placementType   String    @default("signature") @map("placement_type")
+  autoFillValue   String?   @map("auto_fill_value") // for text type: literal value
+  signerRole      String    @map("signer_role") // owner | employee | counterparty | other
+  signerUserId    String?   @map("signer_user_id") @db.Uuid
+  signerName      String?   @map("signer_name") // free-form fallback when no userId
+  label           String?   // optional caption (e.g. "เจ้าของเซ็น")
+  ordering        Int       @default(0) // visual order on the page
+  signedAt        DateTime? @map("signed_at") @db.Timestamptz(6)
+  signedImageKey  String?   @map("signed_image_key") // R2 key for the signature PNG
+  signedFileKey   String?   @map("signed_file_key") // R2 key for the embedded signed PDF (if generated)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  document   Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  signerUser User?        @relation("SignaturePlacementSigner", fields: [signerUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, documentId])
+  @@index([signerUserId])
+  @@map("document_signature_placements")
+}
+
+// =============================================================
+// 31. document_analyses — AI risk/summary analysis cache (capability H)
+// One row per (documentId × fileKey × analysisType). fileKey acts as
+// a cache key — if the file is replaced (renew), a fresh analysis runs.
+// =============================================================
+model DocumentAnalysis {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  documentId      String   @map("document_id") @db.Uuid
+  fileKey         String   @map("file_key") // doc fileKey at time of analysis
+  analysisType    String   @map("analysis_type") // risk | summary | metadata
+  riskLevel       String?  @map("risk_level") // green | yellow | red
+  summaryText     String?  @map("summary_text") @db.Text
+  watchOutPoints  Json?    @map("watch_out_points") // string[]
+  normalPoints    Json?    @map("normal_points") // string[]
+  metadataJson    Json?    @map("metadata_json") // structured fields (e.g. premium amount, terms)
+  modelUsed       String?  @map("model_used") // claude-haiku-4-5
+  tokensUsed      Int?     @map("tokens_used")
+  analyzedAt      DateTime @default(now()) @map("analyzed_at") @db.Timestamptz(6)
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  document Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, fileKey, analysisType])
+  @@index([orgId])
+  @@map("document_analyses")
+}
+
+// =============================================================
+// 32. ai_search_cache — capability G query result cache (1h TTL)
+// =============================================================
+model AiSearchCache {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  queryHash   String   @map("query_hash") // SHA-256 of normalized query
+  query       String   @db.Text
+  resultJson  Json     @map("result_json")
+  hitCount    Int      @default(0) @map("hit_count")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt   DateTime @map("expires_at") @db.Timestamptz(6)
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, queryHash])
+  @@index([orgId, expiresAt])
+  @@map("ai_search_cache")
 }

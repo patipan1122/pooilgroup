@@ -1,4 +1,3 @@
-import Link from "next/link";
 import {} from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
@@ -11,14 +10,28 @@ export default async function NewBranchPage() {
   const session = await requireRole("super_admin", "org_admin", "admin");
   const admin = adminClient();
 
-  // Possible managers (active users who could manage branches)
-  const { data: managers } = await admin
-    .from("users")
-    .select("id, name, role")
-    .eq("org_id", session.user.org_id)
-    .eq("is_active", true)
-    .in("role", ["super_admin", "org_admin", "branch_manager"])
-    .order("name");
+  // Active companies + managers in parallel
+  const [managersRes, companiesRes] = await Promise.all([
+    admin
+      .from("users")
+      .select("id, name, role")
+      .eq("org_id", session.user.org_id)
+      .eq("is_active", true)
+      .in("role", ["super_admin", "org_admin", "branch_manager"])
+      .order("name"),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin.from as any)("companies")
+      .select("id, code, name")
+      .eq("org_id", session.user.org_id)
+      .eq("is_active", true)
+      .order("code"),
+  ]);
+
+  const companies = (companiesRes.data ?? []) as Array<{
+    id: string;
+    code: string;
+    name: string;
+  }>;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-2xl mx-auto">
@@ -28,15 +41,24 @@ export default async function NewBranchPage() {
         <p className="text-xs uppercase tracking-widest text-[var(--color-brand-600)] font-semibold">
           จัดการระบบ
         </p>
-        <h1 className="text-3xl font-extrabold tracking-tight font-display mt-2">
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-2">
           เพิ่ม <span className="accent">สาขาใหม่</span>
         </h1>
         <p className="text-zinc-600 mt-2 text-sm">
           กรอกข้อมูลสาขา · รหัสสาขาควรสั้นและจำง่าย เช่น KKN-001, UDR-002
         </p>
+        {companies.length === 0 && (
+          <div className="mt-3 rounded-xl border-2 border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            ⚠️ ยังไม่มีนิติบุคคล (Company) ในระบบ — สร้างที่ <a href="/companies" className="underline font-bold">/companies</a> ก่อน แล้วค่อยมาสร้างสาขา
+          </div>
+        )}
       </header>
 
-      <BranchForm mode="create" managers={managers ?? []} />
+      <BranchForm
+        mode="create"
+        managers={managersRes.data ?? []}
+        companies={companies}
+      />
     </div>
   );
 }

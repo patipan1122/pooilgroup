@@ -49,7 +49,11 @@ export default async function AdminLayout({
     // Only admins see Manage/System zones — skip the count query for others.
     isAdmin
       ? loadNavCounts(session.user.org_id)
-      : Promise.resolve({ pendingRegisterRequests: 0, branchesMissingMgr: 0 }),
+      : Promise.resolve({
+          pendingRegisterRequests: 0,
+          branchesMissingMgr: 0,
+          pendingCashReports: 0,
+        }),
     loadUserModules(session.user),
   ]);
 

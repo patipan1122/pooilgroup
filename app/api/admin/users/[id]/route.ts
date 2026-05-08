@@ -134,11 +134,37 @@ export async function PATCH(
     return NextResponse.json({ error: updateErr.message }, { status: 500 });
   }
 
-  // Replace branch assignments if provided
+  // Replace branch assignments if provided.
+  // RULES §7: soft delete only — flip existing rows to is_active=false instead
+  // of deleting, then upsert the requested set to is_active=true. Preserves
+  // history (which branches the user used to be assigned to).
   if (parsed.data.branchIds) {
-    await admin.from("user_branches").delete().eq("user_id", id);
+    // 1. Validate every branchId belongs to this org (cross-org leak guard)
     if (parsed.data.branchIds.length > 0) {
-      await admin.from("user_branches").insert(
+      const { data: validBranches } = await admin
+        .from("branches")
+        .select("id")
+        .eq("org_id", session.user.org_id)
+        .in("id", parsed.data.branchIds);
+      if (
+        !validBranches ||
+        validBranches.length !== parsed.data.branchIds.length
+      ) {
+        return NextResponse.json(
+          { error: "บางสาขาไม่อยู่ในบริษัท" },
+          { status: 400 },
+        );
+      }
+    }
+    // 2. Soft-deactivate every current assignment for this user
+    await admin
+      .from("user_branches")
+      .update({ is_active: false })
+      .eq("user_id", id);
+    // 3. Upsert each desired branch to active=true (re-uses existing row by
+    //    @@unique([userId, branchId]) to preserve created_at history)
+    if (parsed.data.branchIds.length > 0) {
+      await admin.from("user_branches").upsert(
         parsed.data.branchIds.map((branchId) => ({
           id: crypto.randomUUID(),
           org_id: session.user.org_id,
@@ -146,6 +172,7 @@ export async function PATCH(
           branch_id: branchId,
           is_active: true,
         })),
+        { onConflict: "user_id,branch_id", ignoreDuplicates: false },
       );
     }
   }

@@ -154,8 +154,25 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     if (error.code === "23505") {
+      // Idempotency: race between two near-simultaneous submits, OR a client
+      // retry after the network dropped after the write committed. Look up the
+      // existing row — if same submitter, treat as success (idempotent retry).
+      // Different submitter = real conflict.
+      const { data: existing } = await admin
+        .from("daily_reports")
+        .select("id, status, submitted_by_id, submitted_at, total_sales")
+        .eq("branch_id", data.branchId)
+        .eq("report_date", data.reportDate)
+        .eq("shift", data.shift)
+        .maybeSingle();
+      if (existing && existing.submitted_by_id === session.user.id) {
+        return NextResponse.json(
+          { ok: true, idempotent: true, report: existing },
+          { status: 200 },
+        );
+      }
       return NextResponse.json(
-        { error: "เคยกรอกรายงานวัน/กะนี้ไปแล้ว" },
+        { error: "เคยกรอกรายงานวัน/กะนี้ไปแล้ว (อาจมีคนอื่นกรอกพร้อมกัน)" },
         { status: 409 },
       );
     }
@@ -252,14 +269,9 @@ export async function POST(req: NextRequest) {
       autoCheckSummary: ac.summary,
     });
     const baseUrl = getRequestBaseUrl(req);
-    const keyboard = approvalKeyboard(created.id, baseUrl).map((row) =>
-      row.map((btn) => ({
-        ...btn,
-        callback_data: btn.callback_data
-          ? `cashhub:${btn.callback_data}`
-          : undefined,
-      })),
-    );
+    // approvalKeyboard already prefixes callback_data with `cashhub:` —
+    // do NOT re-prefix here (would produce `cashhub:cashhub:...`).
+    const keyboard = approvalKeyboard(created.id, baseUrl);
 
     // Try branch manager DM first
     let sent: { messageId: number; chatId: string | number } | null = null;

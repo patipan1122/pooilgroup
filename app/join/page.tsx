@@ -44,11 +44,11 @@ export default async function JoinPage() {
               <span className="brand-gradient-text">Pooilgroup</span>{" "}
               · JOIN US
             </p>
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-[-0.04em] font-display leading-[0.95] text-zinc-900">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display leading-[1.05] text-zinc-900">
               ขอเข้า <span className="text-gradient-blue">ใช้งาน</span>
             </h1>
-            <p className="text-base text-zinc-600 mt-5 max-w-md mx-auto leading-relaxed">
-              กรอกข้อมูลด้านล่าง · Admin จะอนุมัติและส่งลิงก์ตั้ง password ให้ใน LINE
+            <p className="text-sm sm:text-base text-zinc-600 mt-4 max-w-md mx-auto leading-relaxed">
+              กรอกข้อมูลด้านล่าง · Admin จะอนุมัติภายใน 1-2 วันทำการ และส่งลิงก์ตั้ง password ให้ใน LINE/SMS
             </p>
           </div>
 

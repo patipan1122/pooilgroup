@@ -122,10 +122,13 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
       }
 
       if (json.mode === "direct_password") {
+        // Server no longer echoes the password (RULE 18 — never include
+        // credentials in API responses). Admin already typed it; reuse the
+        // form's local state so the success card can show it once.
         setResult({
           mode: "direct",
           email: json.email,
-          password: json.password,
+          password,
         });
         toast.success("สร้างบัญชีสำเร็จ — พร้อมใช้งาน");
       } else {

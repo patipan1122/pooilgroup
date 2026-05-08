@@ -21,6 +21,9 @@ const CreateSchema = z.object({
     .max(40)
     .regex(/^[A-Z0-9-]+$/i, "ใช้ได้เฉพาะ A-Z, 0-9, -"),
   name: z.string().min(1).max(120),
+  // companyId required: branches.company_id is NOT NULL in schema
+  // (Pooil Oil / JP Sync / etc. — picked from org's Companies)
+  companyId: z.string().uuid("เลือกนิติบุคคลก่อน"),
   businessType: z.enum(BUSINESS_TYPES),
   province: z.string().max(50).optional().or(z.literal("")),
   region: z.string().max(50).optional().or(z.literal("")),
@@ -59,9 +62,42 @@ export async function POST(req: NextRequest) {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
+  // Verify companyId belongs to this org (cross-org guard).
+  const { data: company } = await admin
+    .from("companies")
+    .select("id")
+    .eq("id", data.companyId)
+    .eq("org_id", session.user.org_id)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (!company) {
+    return NextResponse.json(
+      { error: "ไม่พบนิติบุคคลที่เลือก หรือไม่ได้อยู่ในบริษัทเดียวกัน" },
+      { status: 400 },
+    );
+  }
+
+  // Verify managerId (if provided) belongs to same org.
+  if (data.managerId) {
+    const { data: mgr } = await admin
+      .from("users")
+      .select("id")
+      .eq("id", data.managerId)
+      .eq("org_id", session.user.org_id)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (!mgr) {
+      return NextResponse.json(
+        { error: "ผู้จัดการที่เลือกไม่อยู่ในบริษัท" },
+        { status: 400 },
+      );
+    }
+  }
+
   const { error } = await admin.from("branches").insert({
     id,
     org_id: session.user.org_id,
+    company_id: data.companyId,
     code: data.code.toUpperCase(),
     name: data.name,
     business_type: data.businessType,

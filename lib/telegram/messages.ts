@@ -83,11 +83,16 @@ export function buildApprovalMessage(m: ReportApprovalMessage): string {
   return lines.join("\n");
 }
 
+/**
+ * Build inline keyboard for a CashHub approval card.
+ * Callback data is namespace-prefixed (`cashhub:*`) so the webhook router can dispatch.
+ * Telegram limits callback_data to 64 bytes — UUID + prefix fits comfortably.
+ */
 export function approvalKeyboard(reportId: string, webBaseUrl: string): InlineButton[][] {
   return [
     [
-      { text: "✅ อนุมัติ", callback_data: `approve:${reportId}` },
-      { text: "❌ ปฏิเสธ", callback_data: `reject:${reportId}` },
+      { text: "✅ อนุมัติ", callback_data: `cashhub:approve:${reportId}` },
+      { text: "❌ ปฏิเสธ", callback_data: `cashhub:reject:${reportId}` },
     ],
     [
       {

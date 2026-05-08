@@ -76,7 +76,7 @@ export async function PATCH(
     await audit({
       orgId: session.user.org_id,
       userId: session.user.id,
-      action: "UPDATE_USER",
+      action: "REJECT_REGISTER_REQUEST",
       resourceType: "register_request",
       resourceId: id,
       diff: {
@@ -126,6 +126,15 @@ export async function PATCH(
       result_user_id: userId,
     })
     .eq("id", id);
+
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "APPROVE_REGISTER_REQUEST",
+    resourceType: "register_request",
+    resourceId: id,
+    diff: { new: { result_user_id: userId, role: request.requested_role } },
+  });
 
   await audit({
     orgId: session.user.org_id,
