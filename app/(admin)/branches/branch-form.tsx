@@ -29,6 +29,7 @@ interface InitialBranch {
   code: string;
   name: string;
   business_type: string;
+  company_id?: string | null;
   province: string | null;
   region: string | null;
   address: string | null;
@@ -40,15 +41,23 @@ interface InitialBranch {
   report_deadline: string;
 }
 
+interface CompanyOption {
+  id: string;
+  code: string;
+  name: string;
+}
+
 interface CreateProps {
   mode: "create";
   managers: ManagerOption[];
+  companies: CompanyOption[];
 }
 
 interface EditProps {
   mode: "edit";
   branch: InitialBranch;
   managers: ManagerOption[];
+  companies?: CompanyOption[];
 }
 
 type Props = CreateProps | EditProps;
@@ -59,9 +68,13 @@ export function BranchForm(props: Props) {
 
   const initial = props.mode === "edit" ? props.branch : null;
   const isEdit = props.mode === "edit";
+  const companies = props.companies ?? [];
 
   const [code, setCode] = useState(initial?.code ?? "");
   const [name, setName] = useState(initial?.name ?? "");
+  const [companyId, setCompanyId] = useState<string>(
+    initial?.company_id ?? (companies[0]?.id ?? ""),
+  );
   const [businessType, setBusinessType] = useState(
     initial?.business_type ?? "fuel_station",
   );
@@ -89,6 +102,10 @@ export function BranchForm(props: Props) {
       toast.error("รหัสสาขาใช้ได้เฉพาะ A-Z, 0-9, -");
       return;
     }
+    if (!isEdit && !companyId) {
+      toast.error("เลือกนิติบุคคล (Company) ก่อน — ถ้ายังไม่มี ให้สร้างที่ /companies");
+      return;
+    }
 
     const payload: Record<string, unknown> = {
       name: name.trim(),
@@ -105,6 +122,7 @@ export function BranchForm(props: Props) {
     if (!isEdit) {
       payload.code = code.trim().toUpperCase();
       payload.businessType = businessType;
+      payload.companyId = companyId;
     }
 
     startTransition(async () => {
@@ -135,6 +153,27 @@ export function BranchForm(props: Props) {
           <CardTitle>ข้อมูลหลัก</CardTitle>
         </CardHeader>
         <CardBody className="space-y-4">
+          {!isEdit && companies.length > 0 && (
+            <Field
+              label="นิติบุคคล (Company)"
+              required
+              hint="สาขานี้อยู่ในนิติบุคคลไหน — เปลี่ยนภายหลังไม่ได้"
+            >
+              <select
+                value={companyId}
+                onChange={(e) => setCompanyId(e.target.value)}
+                required
+                className="w-full h-11 rounded-xl border-2 border-zinc-200 bg-white px-3 text-sm font-medium focus:outline-none focus:border-[var(--color-brand-500)]"
+              >
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.code} — {c.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field
               label="รหัสสาขา"
