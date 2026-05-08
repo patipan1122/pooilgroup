@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ReconcileIndicator } from "./reconcile-indicator";
 import { ShortageModal, type ShortageInfo } from "./shortage-modal";
+import { DatePickerPill } from "./date-picker-pill";
 import { reconcile } from "@/lib/cashhub/reconcile";
 import { formatBaht } from "@/lib/utils/format";
 import type {
@@ -28,6 +29,12 @@ interface Props {
   deadlineHHmm?: string;
   previousReference?: { totalSales: number; qty1: number };
   streak?: { current: number; lastDate: string | null } | null;
+  // Anti-Stupidity Rule 2 — pre-computed list of last N days with status.
+  // Approved dates appear locked in the dropdown so staff can't pick them.
+  availableDates?: Array<{
+    date: string;
+    status: "open" | "submitted" | "approved";
+  }>;
 }
 
 type FormValues = Record<string, string>;
@@ -69,6 +76,7 @@ export function ReportForm({
   deadlineHHmm = "21:00",
   previousReference,
   streak,
+  availableDates,
 }: Props) {
   const router = useRouter();
   const [shift, setShift] = useState<string>(config.shifts[0] || "all");
@@ -100,6 +108,11 @@ export function ReportForm({
   const [submitting, setSubmitting] = useState(false);
   const [shortageInfo, setShortageInfo] = useState<ShortageInfo | null>(null);
   const [shortageModalOpen, setShortageModalOpen] = useState(false);
+  // Anti-Stupidity Rule 3 — spike alert state.
+  // When totalSales > previousReference × 1.5, ask once for confirmation
+  // (does not block — user can confirm, but pause makes them check the figure).
+  const [spikeConfirmed, setSpikeConfirmed] = useState(false);
+  const [spikeModalOpen, setSpikeModalOpen] = useState(false);
 
   // Draft storage key per branch+date+shift
   const draftKey = `cashhub:draft:${branchId}:${reportDate}:${shift}`;
@@ -183,8 +196,23 @@ export function ReportForm({
     }
   }
 
+  // Spike detection (CASHHUB Rule 3) — uses yesterday's reference if present.
+  // Threshold ×1.5 matches the spec; we only fire once unless user re-edits.
+  const spikeRatio =
+    previousReference && previousReference.totalSales > 0
+      ? numeric.totalSales / previousReference.totalSales
+      : 0;
+  const isSpiking = spikeRatio >= 1.5;
+
   async function handleSubmit() {
     if (!canSubmit || submitting) return;
+    // Rule 3: if today's amount is wildly higher than yesterday's, pause once
+    // for the user to double-check. Confirmed via modal → setSpikeConfirmed →
+    // resubmit will skip the check.
+    if (isSpiking && !spikeConfirmed) {
+      setSpikeModalOpen(true);
+      return;
+    }
     setSubmitting(true);
 
     // Extract optional rental / training fields when the config defines them
@@ -255,8 +283,24 @@ export function ReportForm({
         description: "รอผู้จัดการอนุมัติ",
       });
 
-      // navigate to status
-      setTimeout(() => router.push("/liff/status"), 800);
+      // CASHHUB §11.2 Lean — when running inside LINE LIFF, close the window
+      // so staff returns to LINE chat (no extra tap). Web fallback navigates
+      // to /liff/status as before.
+      setTimeout(async () => {
+        try {
+          if (typeof window !== "undefined") {
+            const { getLiff } = await import("@/lib/line/liff-client");
+            const liff = await getLiff();
+            if (liff && liff.isInClient()) {
+              liff.closeWindow();
+              return;
+            }
+          }
+        } catch {
+          // fall through to web nav
+        }
+        router.push("/liff/status");
+      }, 800);
     } catch (err) {
       // network error — keep draft, show offline message
       const msg = err instanceof Error ? err.message : "เน็ตมีปัญหา";
@@ -299,7 +343,15 @@ export function ReportForm({
             </div>
           </div>
           <div className="text-right shrink-0">
-            <Badge tone="brand">{reportDate}</Badge>
+            {availableDates && availableDates.length > 0 ? (
+              <DatePickerPill
+                branchId={branchId}
+                currentDate={reportDate}
+                available={availableDates}
+              />
+            ) : (
+              <Badge tone="brand">{reportDate}</Badge>
+            )}
             <div
               className={cn(
                 "text-[11px] mt-0.5 tabular-num font-semibold",
@@ -533,6 +585,61 @@ export function ReportForm({
           onClose={() => setShortageModalOpen(false)}
           onConfirm={(info) => setShortageInfo(info)}
         />
+
+        {/* Anti-Stupidity Rule 3 — spike alert (sales × ≥1.5 of yesterday) */}
+        {spikeModalOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4"
+            onClick={() => setSpikeModalOpen(false)}
+          >
+            <div
+              className="w-full sm:max-w-md bg-white rounded-2xl shadow-2xl p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="text-3xl mb-3">🚨</div>
+              <h3 className="text-lg font-bold text-zinc-900 font-display">
+                ยอดวันนี้สูงกว่าปกติมาก
+              </h3>
+              <p className="text-sm text-zinc-700 mt-2 leading-relaxed">
+                วันนี้กรอกไว้{" "}
+                <strong className="tabular-num">
+                  ฿{Math.round(numeric.totalSales).toLocaleString("th-TH")}
+                </strong>{" "}
+                — สูงกว่าเมื่อวาน{" "}
+                <strong className="text-zinc-500 tabular-num">
+                  {previousReference
+                    ? `฿${Math.round(previousReference.totalSales).toLocaleString("th-TH")}`
+                    : "—"}
+                </strong>{" "}
+                ถึง <strong>{spikeRatio.toFixed(1)} เท่า</strong>
+              </p>
+              <p className="text-xs text-zinc-500 mt-3">
+                ตรวจตัวเลขอีกครั้งก่อนกด "ยืนยันถูกต้อง" — ระบบจะ flag ให้ผู้จัดการรู้ตอน
+                approve เพื่อลด error
+              </p>
+              <div className="mt-5 flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setSpikeModalOpen(false)}
+                  className="flex-1"
+                >
+                  ✏️ แก้ไขตัวเลข
+                </Button>
+                <Button
+                  onClick={() => {
+                    setSpikeConfirmed(true);
+                    setSpikeModalOpen(false);
+                    // re-trigger submit
+                    setTimeout(() => handleSubmit(), 50);
+                  }}
+                  className="flex-1"
+                >
+                  ✅ ยืนยันถูกต้อง
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Reconcile indicator (live) */}
         {config.hasReconcile && (

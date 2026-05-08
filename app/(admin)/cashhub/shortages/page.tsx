@@ -123,16 +123,25 @@ export default async function ShortagesPage({
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
-      <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
-          <AlertCircle className="size-4" /> SHORTAGE
-        </p>
-        <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
-          เงินขาด <span className="text-gradient-blue">{formatBaht(total)}</span>
-        </h1>
-        <p className="text-zinc-600 mt-1 text-sm">
-          {filtered.length} ครั้ง · {byPerson.size} คน/ทีม
-        </p>
+      <header className="mt-3 mb-6 flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
+            <AlertCircle className="size-4" /> SHORTAGE
+          </p>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.03em] font-display mt-4 leading-tight">
+            เงินขาด <span className="text-gradient-blue">{formatBaht(total)}</span>
+          </h1>
+          <p className="text-zinc-600 mt-1 text-sm">
+            {filtered.length} ครั้ง · {byPerson.size} คน/ทีม
+          </p>
+        </div>
+        <a
+          href="/api/cashhub/shortages/export"
+          className="inline-flex items-center gap-2 px-4 h-10 rounded-xl border-2 border-zinc-200 bg-white text-zinc-800 font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm"
+          title="ดาวน์โหลด CSV เปิดด้วย Excel/Sheets"
+        >
+          📥 Export CSV
+        </a>
       </header>
 
       {/* Filters */}
