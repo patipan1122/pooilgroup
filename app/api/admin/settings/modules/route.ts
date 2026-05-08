@@ -58,10 +58,13 @@ export async function PATCH(req: NextRequest) {
   await audit({
     orgId: session.user.org_id,
     userId: session.user.id,
-    action: "UPDATE_USER",
+    action: "TOGGLE_MODULE",
     resourceType: "org_module",
     resourceId: parsed.data.moduleName,
-    diff: { new: { isActive: parsed.data.isActive } },
+    diff: {
+      old: { isActive: existing?.is_active ?? null },
+      new: { isActive: parsed.data.isActive },
+    },
   });
 
   return NextResponse.json({ success: true });

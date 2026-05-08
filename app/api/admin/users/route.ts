@@ -95,6 +95,23 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Cross-org guard: every branchId in the request must belong to this org.
+  // Without this, a malicious or buggy admin from another org could attach
+  // their user to our branches. (RULE 4 — org_id discipline.)
+  if (data.branchIds && data.branchIds.length > 0) {
+    const { data: validBranches } = await admin
+      .from("branches")
+      .select("id")
+      .eq("org_id", orgId)
+      .in("id", data.branchIds);
+    if (!validBranches || validBranches.length !== data.branchIds.length) {
+      return NextResponse.json(
+        { error: "บางสาขาไม่อยู่ในบริษัท" },
+        { status: 400 },
+      );
+    }
+  }
+
   // Branch 1: Direct password — create auth user immediately, account ready to use.
   if (directPassword && data.email) {
     const { data: authData, error: authErr } =
@@ -171,13 +188,15 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // RULE 18 — never include sensitive credentials in API responses. The
+    // admin already typed the password, so the client form has it; we just
+    // confirm success here. Toast on the client should remind the admin to
+    // copy the password from the form they typed.
     return NextResponse.json({
       success: true,
       mode: "direct_password",
       userId,
       email: data.email,
-      // Echo password back ONCE so admin can copy/share — server doesn't store it.
-      password: directPassword,
     });
   }
 
