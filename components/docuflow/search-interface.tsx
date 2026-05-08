@@ -36,6 +36,41 @@ interface ApiResult {
 const HISTORY_KEY = "docuflow:ai-search:history";
 const MAX_HISTORY = 5;
 
+/**
+ * Export AI search result to a CSV that Excel opens cleanly.
+ * - First rows: query + answer (multi-line preserved via quoting)
+ * - Then a blank row + citation table (type · id · label · url)
+ * - UTF-8 BOM prepended so Excel interprets Thai correctly.
+ */
+function exportSearchToCsv(query: string, result: ApiResult) {
+  const escape = (s: string) => `"${String(s).replace(/"/g, '""')}"`;
+  const lines: string[] = [];
+  lines.push(escape("คำถาม") + "," + escape(query));
+  lines.push(escape("คำตอบ") + "," + escape(result.answer));
+  lines.push(""); // blank row separator
+  lines.push(["ประเภท", "ID", "ชื่อ", "ลิงก์"].map(escape).join(","));
+  for (const c of result.citations) {
+    const href = citationHref(c);
+    const url = `${typeof window !== "undefined" ? window.location.origin : ""}${href}`;
+    lines.push([c.type, c.id, c.label, url].map(escape).join(","));
+  }
+  const csv = "﻿" + lines.join("\r\n"); // BOM for Excel UTF-8
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const ts = new Date()
+    .toISOString()
+    .replace(/[:.]/g, "-")
+    .slice(0, 19);
+  const filename = `docuflow-search-${ts}.csv`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 interface Props {
   examples: string[];
 }
@@ -275,7 +310,16 @@ export function SearchInterface({ examples }: Props) {
             </div>
           )}
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-3 items-center">
+            <button
+              type="button"
+              onClick={() => exportSearchToCsv(query, result)}
+              disabled={result.citations.length === 0}
+              className="text-xs text-[var(--color-brand-700)] hover:text-[var(--color-brand-900)] transition disabled:opacity-40 disabled:cursor-not-allowed font-medium"
+            >
+              📊 Export Excel (CSV)
+            </button>
+            <span className="text-zinc-300">·</span>
             <button
               type="button"
               onClick={() => {

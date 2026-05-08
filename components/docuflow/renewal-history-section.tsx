@@ -165,7 +165,13 @@ export async function RenewalHistorySection({
             </div>
 
             {hasMeta ? (
-              <ComparisonContent oldMeta={priorMeta} newMeta={newestMeta} />
+              <>
+                <RenewalAdviceBanner
+                  oldMeta={priorMeta}
+                  newMeta={newestMeta}
+                />
+                <ComparisonContent oldMeta={priorMeta} newMeta={newestMeta} />
+              </>
             ) : (
               <div className="py-6 flex flex-col items-center justify-center gap-2 text-center">
                 <Sparkles className="size-5 text-zinc-300" />
@@ -572,6 +578,113 @@ function pickPrimary(meta: ExtractedMetadata | null | undefined): number | null 
     return meta.tax;
   }
   return null;
+}
+
+/* ============================================================
+   Renewal Advice Banner — rule-based Thai recommendation
+   Inspired by spec §14 line 627 "AI: ⚠️ ค่าเช่าขึ้น 15.6% และ Deposit เพิ่ม
+   แนะนำ: ต่อรองค่าเช่าก่อนเซ็น"
+   ============================================================ */
+
+function RenewalAdviceBanner({
+  oldMeta,
+  newMeta,
+}: {
+  oldMeta: ExtractedMetadata | null;
+  newMeta: ExtractedMetadata | null;
+}) {
+  if (!oldMeta || !newMeta || oldMeta.kind !== newMeta.kind) return null;
+
+  // Compute primary % change + flag deposit/notice changes by kind
+  const oldPrimary = pickPrimary(oldMeta);
+  const newPrimary = pickPrimary(newMeta);
+
+  if (oldPrimary == null || newPrimary == null || oldPrimary === 0) return null;
+
+  const pct = ((newPrimary - oldPrimary) / oldPrimary) * 100;
+  const tone = pct > 10 ? "danger" : pct > 5 ? "warning" : pct < 0 ? "success" : "neutral";
+
+  let primaryLabel = "ราคา";
+  if (newMeta.kind === "insurance") primaryLabel = "เบี้ยประกัน";
+  else if (newMeta.kind === "rental") primaryLabel = "ค่าเช่า";
+  else if (newMeta.kind === "registration") primaryLabel = "ภาษีรถ";
+
+  // Extra signals (kind-specific)
+  const signals: string[] = [];
+  let recommendation = "";
+
+  if (newMeta.kind === "rental") {
+    const o = oldMeta as RentalMetadata;
+    const n = newMeta;
+    if (
+      typeof o.deposit === "number" &&
+      typeof n.deposit === "number" &&
+      n.deposit > o.deposit
+    ) {
+      signals.push("Deposit เพิ่ม");
+    }
+    if (
+      typeof o.terminationNoticeMonths === "number" &&
+      typeof n.terminationNoticeMonths === "number" &&
+      n.terminationNoticeMonths > o.terminationNoticeMonths
+    ) {
+      signals.push("ระยะเวลาบอกเลิกยาวขึ้น");
+    }
+  }
+  if (newMeta.kind === "insurance") {
+    const o = oldMeta as InsuranceMetadata;
+    const n = newMeta;
+    if (
+      typeof o.deductible === "number" &&
+      typeof n.deductible === "number" &&
+      n.deductible > o.deductible
+    ) {
+      signals.push("ค่าเสียหายส่วนแรกสูงขึ้น");
+    }
+  }
+
+  // Build recommendation text
+  if (pct > 10) {
+    recommendation = `แนะนำ: ต่อรองก่อนเซ็น · เทียบกับเจ้าอื่น`;
+  } else if (pct > 5) {
+    recommendation = `แนะนำ: ทบทวนเงื่อนไขก่อนเซ็น`;
+  } else if (pct < 0) {
+    recommendation = `ราคาลดลง · พิจารณาเซ็นต่อได้`;
+  } else {
+    recommendation = `เงื่อนไขใกล้เคียงเดิม · พิจารณาเซ็นต่อได้`;
+  }
+
+  const toneClasses: Record<string, string> = {
+    danger: "bg-rose-50 border-rose-200 text-rose-900",
+    warning: "bg-amber-50 border-amber-200 text-amber-900",
+    success: "bg-green-50 border-green-200 text-green-900",
+    neutral: "bg-zinc-50 border-zinc-200 text-zinc-900",
+  };
+
+  const directionLabel =
+    pct > 0 ? "ขึ้น" : pct < 0 ? "ลดลง" : "เท่าเดิม";
+
+  return (
+    <div
+      className={`mb-3 mt-1 rounded-lg border px-3 py-2.5 ${toneClasses[tone]}`}
+    >
+      <p className="text-xs uppercase tracking-[0.14em] font-bold opacity-70 mb-1">
+        💡 AI สรุปการเปลี่ยนแปลง
+      </p>
+      <p className="text-sm leading-relaxed">
+        {primaryLabel}
+        {directionLabel}
+        <span className="font-bold mx-1">
+          {pct > 0 ? "+" : ""}
+          {pct.toFixed(1)}%
+        </span>
+        {signals.length > 0 && (
+          <span> · {signals.join(" · ")}</span>
+        )}
+      </p>
+      <p className="text-sm font-semibold mt-1">{recommendation}</p>
+    </div>
+  );
 }
 
 // Suppress unused import warnings if Section internals change

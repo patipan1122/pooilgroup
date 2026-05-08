@@ -59,6 +59,9 @@ export interface SignerPlacementVm {
   yRatio: number;
   widthRatio: number;
   heightRatio: number;
+  /** signature | date | name | text — auto-fill types are stamped at embed time. */
+  placementType?: "signature" | "date" | "name" | "text";
+  autoFillValue?: string | null;
   signerRole: string;
   label: string | null;
   signedAt: string | null;
@@ -235,6 +238,8 @@ export function SignerInterface({
                     rect={rect}
                     label={placement.label}
                     roleLabel={placement.signerRole}
+                    placementType={placement.placementType ?? "signature"}
+                    autoFillValue={placement.autoFillValue}
                     signed={done}
                     selected
                     containerWidth={overlaySize.width || 720}

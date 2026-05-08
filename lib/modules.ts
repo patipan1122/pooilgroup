@@ -13,6 +13,7 @@ import {
   Trophy,
   CalendarDays,
   AlertCircle,
+  AlertTriangle,
   Settings,
   ClipboardEdit,
   ClipboardCheck,
@@ -22,6 +23,7 @@ import {
   Users as UsersIcon,
   Clock,
   Sparkles,
+  CheckSquare,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
@@ -191,6 +193,18 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         href: "/docuflow/expiry",
         label: "ใกล้หมดอายุ",
         icon: Clock,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        href: "/docuflow/checklist",
+        label: "Checklist เอกสารที่ต้องมี",
+        icon: CheckSquare,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        href: "/docuflow/risk",
+        label: "ความเสี่ยงรวม",
+        icon: AlertTriangle,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {

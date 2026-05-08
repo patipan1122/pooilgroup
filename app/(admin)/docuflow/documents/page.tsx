@@ -11,6 +11,7 @@ import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { isAdminTier } from "@/lib/auth/module-access";
 import {
   loadDocuments,
+  loadDocumentsSharedToBranch,
   loadDocumentTags,
   type CanonicalDocument,
 } from "@/lib/docuflow/data";
@@ -44,6 +45,12 @@ interface SP {
   tag?: string;
   status?: string;
   search?: string;
+  /** Scope filters used by Mode 2 drilldown (BranchDocumentsSection) */
+  branchId?: string;
+  companyId?: string;
+  businessType?: string;
+  /** "1" → show only docs shared to branchId via document_shared_branches */
+  shared?: string;
 }
 
 export default async function DocumentsListPage({
@@ -61,16 +68,27 @@ export default async function DocumentsListPage({
   const filterTag = sp.tag || "";
   const filterStatus = (sp.status || "") as ExpiryStatus | "";
   const search = sp.search || "";
+  const filterBranchId = sp.branchId || "";
+  const filterCompanyId = sp.companyId || "";
+  const filterBusinessType = sp.businessType || "";
+  const sharedOnly = sp.shared === "1";
 
-  // Load filtered docs + all tags (for filter UI)
+  // Load filtered docs + all tags (for filter UI).
+  // When `shared=1` is set, the source is the cross-branch share table —
+  // the loader skips the ownership filter and queries document_shared_branches.
   const [docs, allTags] = await Promise.all([
-    loadDocuments(orgId, {
-      level: filterLevel || undefined,
-      tag: filterTag || undefined,
-      expiryStatus: filterStatus || undefined,
-      search: search || undefined,
-      limit: 200,
-    }),
+    sharedOnly && filterBranchId
+      ? loadDocumentsSharedToBranch(orgId, filterBranchId, { limit: 200 })
+      : loadDocuments(orgId, {
+          level: filterLevel || undefined,
+          branchId: filterBranchId || undefined,
+          companyId: filterCompanyId || undefined,
+          businessType: filterBusinessType || undefined,
+          tag: filterTag || undefined,
+          expiryStatus: filterStatus || undefined,
+          search: search || undefined,
+          limit: 200,
+        }),
     loadDocumentTags(orgId),
   ]);
 
@@ -79,9 +97,32 @@ export default async function DocumentsListPage({
   if (filterTag) preserve.tag = filterTag;
   if (filterStatus) preserve.status = filterStatus;
   if (search) preserve.search = search;
+  if (filterBranchId) preserve.branchId = filterBranchId;
+  if (filterCompanyId) preserve.companyId = filterCompanyId;
+  if (filterBusinessType) preserve.businessType = filterBusinessType;
+  if (sharedOnly) preserve.shared = "1";
 
   // Top tags (limit list — show 12 most common via simple alphabetical)
   const tagChips = allTags.slice(0, 12).map((t) => ({ value: t, label: `#${t}` }));
+
+  // Scope label — shown when drilling in from a Branch/Company/Type page.
+  // Lets the user understand they're looking at a subset, and clear it.
+  const scopeLabel = (() => {
+    if (sharedOnly && filterBranchId) return "เอกสารใช้ร่วมจากสาขาอื่น";
+    if (filterBranchId) return "ขอบเขต: เอกสารของสาขา";
+    if (filterCompanyId) return "ขอบเขต: เอกสารของบริษัท";
+    if (filterBusinessType) return "ขอบเขต: เอกสารตามประเภทธุรกิจ";
+    return null;
+  })();
+  // Build "clear scope" link — keeps tag/status/search/level
+  const scopeClearParams = new URLSearchParams();
+  if (filterLevel) scopeClearParams.set("level", filterLevel);
+  if (filterTag) scopeClearParams.set("tag", filterTag);
+  if (filterStatus) scopeClearParams.set("status", filterStatus);
+  if (search) scopeClearParams.set("search", search);
+  const scopeClearHref = scopeClearParams.toString()
+    ? `/docuflow/documents?${scopeClearParams.toString()}`
+    : "/docuflow/documents";
 
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
@@ -96,6 +137,19 @@ export default async function DocumentsListPage({
           พบ <span className="font-bold text-zinc-900">{docs.length}</span>{" "}
           เอกสาร
         </p>
+        {scopeLabel && (
+          <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] px-3 py-1 text-xs">
+            <span className="font-semibold text-[var(--color-brand-700)]">
+              {scopeLabel}
+            </span>
+            <Link
+              href={scopeClearHref}
+              className="text-[var(--color-brand-700)] hover:underline font-medium"
+            >
+              ล้างขอบเขต
+            </Link>
+          </div>
+        )}
       </header>
 
       <Section

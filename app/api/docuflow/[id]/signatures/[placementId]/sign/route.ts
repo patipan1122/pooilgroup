@@ -89,6 +89,18 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     );
   }
 
+  // Auto-fill placement types (date / name / text) are stamped at embed time
+  // — they don't accept a manual signature.
+  if (placement.placementType && placement.placementType !== "signature") {
+    return NextResponse.json(
+      {
+        error:
+          "จุดนี้เป็นช่องเติมอัตโนมัติ (วันที่/ชื่อ/ข้อความ) ไม่ต้องเซ็นด้วยตนเอง",
+      },
+      { status: 400 },
+    );
+  }
+
   // Auth:
   //   - signerUserId set → caller must match exactly
   //   - signerUserId null → admin-tier fallback only (mirror of /sign page);

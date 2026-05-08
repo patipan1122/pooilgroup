@@ -5,6 +5,16 @@
 // ────────────────────────────────────────────────────────────────────
 // Coordinate system: normalized 0..1 with TOP-LEFT origin (UI-friendly).
 // Each placement is one signature box on one page of one document.
+//
+// Placement types (Item 4):
+//   - 'signature' : default — captured at sign time
+//   - 'date'      : auto-filled with today's date at embed time
+//   - 'name'      : auto-filled with signer name at embed time
+//   - 'text'      : auto-filled with admin-provided literal `autoFillValue`
+//
+// Date/name/text rows are auto-stamped with `signedAt = now()` at create/
+// patch time so the "every placement signed?" check in /sign treats them
+// as complete without requiring manual signing.
 // ────────────────────────────────────────────────────────────────────
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -30,6 +40,8 @@ const SignerRoleSchema = z.enum([
   "other",
 ]);
 
+const PlacementTypeSchema = z.enum(["signature", "date", "name", "text"]);
+
 const RatioSchema = z.number().min(0).max(1);
 
 const CreateSchema = z.object({
@@ -38,6 +50,8 @@ const CreateSchema = z.object({
   yRatio: RatioSchema,
   widthRatio: z.number().min(0.01).max(1),
   heightRatio: z.number().min(0.01).max(1),
+  placementType: PlacementTypeSchema.optional(),
+  autoFillValue: z.string().max(500).nullable().optional(),
   signerRole: SignerRoleSchema,
   signerUserId: z.string().uuid().nullable().optional(),
   signerName: z.string().max(120).nullable().optional(),
@@ -52,6 +66,8 @@ const UpdateOneSchema = z.object({
   yRatio: RatioSchema.optional(),
   widthRatio: z.number().min(0.01).max(1).optional(),
   heightRatio: z.number().min(0.01).max(1).optional(),
+  placementType: PlacementTypeSchema.optional(),
+  autoFillValue: z.string().max(500).nullable().optional(),
   signerRole: SignerRoleSchema.optional(),
   signerUserId: z.string().uuid().nullable().optional(),
   signerName: z.string().max(120).nullable().optional(),
@@ -104,6 +120,8 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       yRatio: r.yRatio,
       widthRatio: r.widthRatio,
       heightRatio: r.heightRatio,
+      placementType: r.placementType ?? "signature",
+      autoFillValue: r.autoFillValue,
       signerRole: r.signerRole,
       signerUserId: r.signerUserId,
       signerName: r.signerName,
@@ -176,6 +194,12 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     }
   }
 
+  const placementType = parsed.data.placementType ?? "signature";
+  // Auto-fill rows count as "signed" the moment the admin places them —
+  // the actual stamp is drawn at embed time. signedImageKey stays null.
+  const autoSignedAt =
+    placementType === "signature" ? null : new Date();
+
   const created = await prisma.documentSignaturePlacement.create({
     data: {
       orgId,
@@ -185,11 +209,14 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       yRatio: parsed.data.yRatio,
       widthRatio: parsed.data.widthRatio,
       heightRatio: parsed.data.heightRatio,
+      placementType,
+      autoFillValue: parsed.data.autoFillValue ?? null,
       signerRole: parsed.data.signerRole,
       signerUserId: parsed.data.signerUserId ?? null,
       signerName: parsed.data.signerName ?? null,
       label: parsed.data.label ?? null,
       ordering: parsed.data.ordering ?? 0,
+      signedAt: autoSignedAt,
     },
   });
 
@@ -203,9 +230,11 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       new: {
         documentId,
         pageNumber: created.pageNumber,
+        placementType: created.placementType,
         signerRole: created.signerRole,
         signerUserId: created.signerUserId,
         signerName: created.signerName,
+        autoFillValue: created.autoFillValue,
       },
     },
   });
@@ -242,19 +271,34 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
   const orgId = session.user.org_id;
 
-  // Fetch existing rows in scope to ensure org/document match
+  // Fetch existing rows in scope to ensure org/document match. We also
+  // need the existing `placementType` + `signedAt` so we can decide whether
+  // an auto-fill type-change should stamp signedAt.
   const ids = parsed.data.updates.map((u) => u.id);
   const existing = await prisma.documentSignaturePlacement.findMany({
     where: { id: { in: ids }, orgId, documentId },
-    select: { id: true },
+    select: { id: true, placementType: true, signedAt: true },
   });
-  const validIds = new Set(existing.map((r) => r.id));
+  const existingMap = new Map(existing.map((r) => [r.id, r]));
 
-  const applied = parsed.data.updates.filter((u) => validIds.has(u.id));
+  const applied = parsed.data.updates.filter((u) => existingMap.has(u.id));
 
   await prisma.$transaction(
-    applied.map((u) =>
-      prisma.documentSignaturePlacement.update({
+    applied.map((u) => {
+      const prev = existingMap.get(u.id)!;
+      const nextType = u.placementType ?? prev.placementType ?? "signature";
+      const isAuto = nextType !== "signature";
+      // If admin flipped a signature row → auto-fill type, stamp signedAt.
+      // If admin flipped an auto-fill row → signature type, clear signedAt
+      // so the signer flow can collect a real signature.
+      const stampedSignedAt =
+        u.placementType !== undefined && nextType !== prev.placementType
+          ? isAuto
+            ? { signedAt: new Date() }
+            : { signedAt: null, signedImageKey: null }
+          : {};
+
+      return prisma.documentSignaturePlacement.update({
         where: { id: u.id },
         data: {
           ...(u.pageNumber !== undefined ? { pageNumber: u.pageNumber } : {}),
@@ -264,6 +308,12 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
           ...(u.heightRatio !== undefined
             ? { heightRatio: u.heightRatio }
             : {}),
+          ...(u.placementType !== undefined
+            ? { placementType: u.placementType }
+            : {}),
+          ...(u.autoFillValue !== undefined
+            ? { autoFillValue: u.autoFillValue }
+            : {}),
           ...(u.signerRole !== undefined ? { signerRole: u.signerRole } : {}),
           ...(u.signerUserId !== undefined
             ? { signerUserId: u.signerUserId }
@@ -271,9 +321,10 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
           ...(u.signerName !== undefined ? { signerName: u.signerName } : {}),
           ...(u.label !== undefined ? { label: u.label } : {}),
           ...(u.ordering !== undefined ? { ordering: u.ordering } : {}),
+          ...stampedSignedAt,
         },
-      }),
-    ),
+      });
+    }),
   );
 
   if (applied.length > 0) {
@@ -292,7 +343,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     });
   }
 
-  return NextResponse.json({ updated: validIds.size });
+  return NextResponse.json({ updated: existingMap.size });
 }
 
 /* ============================================================
@@ -342,6 +393,7 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
     diff: {
       old: {
         pageNumber: existing.pageNumber,
+        placementType: existing.placementType,
         signerRole: existing.signerRole,
         signerUserId: existing.signerUserId,
       },

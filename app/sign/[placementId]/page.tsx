@@ -19,10 +19,12 @@ import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { getSignedDownloadUrl } from "@/lib/docuflow/r2";
+import { getCachedAnalysis } from "@/lib/docuflow/ai-analyze";
 import {
   SignerInterface,
   type SignerPlacementVm,
 } from "@/components/docuflow/signer-interface";
+import { SignerRiskSummary } from "@/components/docuflow/signer-risk-summary";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +61,13 @@ export default async function SignerPage({
     notFound();
   }
 
+  // Auto-fill placements (date / name / text) are stamped by the system
+  // at embed time — there is nothing for a human to do on this page.
+  // Send the user back to the document detail.
+  if (placement.placementType && placement.placementType !== "signature") {
+    redirect(`/docuflow/documents/${placement.documentId}`);
+  }
+
   // Auth:
   //   - signerUserId set → locks the link to that exact user
   //   - signerUserId null → fallback (typically counterparty handled by admin):
@@ -72,9 +81,10 @@ export default async function SignerPage({
     redirect("/403");
   }
 
-  const pdfUrl = await getSignedDownloadUrl(placement.document.fileKey).catch(
-    () => null,
-  );
+  const [pdfUrl, riskAnalysis] = await Promise.all([
+    getSignedDownloadUrl(placement.document.fileKey).catch(() => null),
+    getCachedAnalysis(placement.document.id, orgId).catch(() => null),
+  ]);
   if (!pdfUrl) notFound();
 
   const vm: SignerPlacementVm = {
@@ -85,6 +95,13 @@ export default async function SignerPage({
     yRatio: placement.yRatio,
     widthRatio: placement.widthRatio,
     heightRatio: placement.heightRatio,
+    placementType:
+      (placement.placementType as
+        | "signature"
+        | "date"
+        | "name"
+        | "text") ?? "signature",
+    autoFillValue: placement.autoFillValue,
     signerRole: placement.signerRole,
     label: placement.label,
     signedAt: placement.signedAt ? placement.signedAt.toISOString() : null,
@@ -100,6 +117,7 @@ export default async function SignerPage({
   return (
     <div className="min-h-dvh bg-zinc-50">
       <div className="max-w-2xl mx-auto p-3 sm:p-6 pb-24">
+        <SignerRiskSummary analysis={riskAnalysis} />
         <SignerInterface
           documentId={placement.document.id}
           documentName={placement.document.name}

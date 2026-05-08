@@ -9,10 +9,17 @@
 // Coordinate system: every box is stored as 0..1 normalized ratios with
 // TOP-LEFT origin (matches the rendered page). We translate to bottom-
 // left at embed time (lib/docuflow/signature.ts).
+//
+// Placement types (Item 4):
+//   ✍️ signature  — captured at sign time
+//   📅 date       — auto-filled with today's date at embed time
+//   📝 name       — auto-filled with signer name at embed time
+//   ✏️ text       — admin-provided literal value, stamped at embed time
 // ────────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import {
   Save,
   ChevronLeft,
@@ -22,6 +29,11 @@ import {
   CheckCircle2,
   Link as LinkIcon,
   Copy,
+  PenLine,
+  Calendar,
+  User as UserIcon,
+  Pencil,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -33,6 +45,7 @@ import { cn } from "@/lib/utils/cn";
 import {
   SignaturePlacementBox,
   type PlacementRect,
+  type PlacementType,
 } from "./signature-placement-box";
 import { configurePdfJs } from "@/lib/docuflow/pdfjs-config";
 
@@ -65,6 +78,8 @@ export interface PlacementVm {
   yRatio: number;
   widthRatio: number;
   heightRatio: number;
+  placementType: PlacementType;
+  autoFillValue: string | null;
   signerRole: SignerRole;
   signerUserId: string | null;
   signerName: string | null;
@@ -102,15 +117,48 @@ const ROLE_OPTIONS: { value: SignerRole; label: string; emoji: string }[] = [
   { value: "other", label: "อื่น ๆ", emoji: "✍️" },
 ];
 
-const DEFAULT_RECT: PlacementRect = {
-  xRatio: 0.1,
-  yRatio: 0.1,
-  widthRatio: 0.28,
-  heightRatio: 0.08,
-};
+interface TypeOption {
+  value: PlacementType;
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  /** Default rect when creating a new box of this type. */
+  defaultRect: PlacementRect;
+}
+
+const TYPE_OPTIONS: TypeOption[] = [
+  {
+    value: "signature",
+    label: "เซ็น",
+    Icon: PenLine,
+    defaultRect: { xRatio: 0.1, yRatio: 0.1, widthRatio: 0.28, heightRatio: 0.08 },
+  },
+  {
+    value: "date",
+    label: "วันที่",
+    Icon: Calendar,
+    // Date strings are short — narrow box matches numeric date width.
+    defaultRect: { xRatio: 0.1, yRatio: 0.1, widthRatio: 0.16, heightRatio: 0.04 },
+  },
+  {
+    value: "name",
+    label: "ชื่อ",
+    Icon: UserIcon,
+    defaultRect: { xRatio: 0.1, yRatio: 0.1, widthRatio: 0.22, heightRatio: 0.04 },
+  },
+  {
+    value: "text",
+    label: "ข้อความ",
+    Icon: Pencil,
+    defaultRect: { xRatio: 0.1, yRatio: 0.1, widthRatio: 0.22, heightRatio: 0.04 },
+  },
+];
 
 function roleLabel(role: SignerRole): string {
   return ROLE_OPTIONS.find((r) => r.value === role)?.label ?? role;
+}
+
+function typeLabel(type: PlacementType): string {
+  return TYPE_OPTIONS.find((t) => t.value === type)?.label ?? type;
 }
 
 function isUuid(v: string): boolean {
@@ -138,13 +186,16 @@ export function SignaturePlacementEditor({
   users,
   origin,
 }: SignaturePlacementEditorProps) {
+  const router = useRouter();
   const [placements, setPlacements] =
     useState<PlacementVm[]>(initialPlacements);
   const [pageNumber, setPageNumber] = useState(1);
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activeType, setActiveType] = useState<PlacementType>("signature");
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [resettingId, setResettingId] = useState<string | null>(null);
   const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set());
   // ID of the placement awaiting delete-confirmation. null = no dialog open.
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -218,9 +269,12 @@ export function SignaturePlacementEditor({
     const xRatio = (e.clientX - rect.left) / rect.width;
     const yRatio = (e.clientY - rect.top) / rect.height;
 
+    const def =
+      TYPE_OPTIONS.find((t) => t.value === activeType)?.defaultRect ??
+      TYPE_OPTIONS[0].defaultRect;
+    const w = def.widthRatio;
+    const h = def.heightRatio;
     // Center the box on the click point
-    const w = DEFAULT_RECT.widthRatio;
-    const h = DEFAULT_RECT.heightRatio;
     const x = Math.max(0, Math.min(1 - w, xRatio - w / 2));
     const y = Math.max(0, Math.min(1 - h, yRatio - h / 2));
 
@@ -235,6 +289,8 @@ export function SignaturePlacementEditor({
           yRatio: y,
           widthRatio: w,
           heightRatio: h,
+          placementType: activeType,
+          autoFillValue: activeType === "text" ? "" : null,
           signerRole: "owner",
           ordering: pagePlacements.length,
         }),
@@ -244,7 +300,7 @@ export function SignaturePlacementEditor({
         error?: string;
       };
       if (!res.ok || !data.placement) {
-        toast.error(data.error || "เพิ่มจุดเซ็นไม่สำเร็จ");
+        toast.error(data.error || "เพิ่มจุดไม่สำเร็จ");
         return;
       }
       // Server returns the row directly (not in our extended VM shape) —
@@ -257,13 +313,16 @@ export function SignaturePlacementEditor({
         yRatio: data.placement.yRatio,
         widthRatio: data.placement.widthRatio,
         heightRatio: data.placement.heightRatio,
+        placementType:
+          (data.placement.placementType as PlacementType) ?? "signature",
+        autoFillValue: data.placement.autoFillValue ?? null,
         signerRole: data.placement.signerRole as SignerRole,
         signerUserId: data.placement.signerUserId ?? null,
         signerName: data.placement.signerName ?? null,
         signerUser: null,
         label: data.placement.label ?? null,
         ordering: data.placement.ordering,
-        signedAt: null,
+        signedAt: data.placement.signedAt ?? null,
         signedImageKey: null,
         signedFileKey: null,
       };
@@ -271,7 +330,7 @@ export function SignaturePlacementEditor({
       setSelectedId(created.id);
     } catch (err) {
       console.error(err);
-      toast.error("เพิ่มจุดเซ็นไม่สำเร็จ");
+      toast.error("เพิ่มจุดไม่สำเร็จ");
     } finally {
       setCreating(false);
     }
@@ -294,6 +353,8 @@ export function SignaturePlacementEditor({
           yRatio: p.yRatio,
           widthRatio: p.widthRatio,
           heightRatio: p.heightRatio,
+          placementType: p.placementType,
+          autoFillValue: p.autoFillValue,
           signerRole: p.signerRole,
           signerUserId: p.signerUserId,
           signerName: p.signerName,
@@ -310,7 +371,7 @@ export function SignaturePlacementEditor({
         throw new Error(d.error || `HTTP ${res.status}`);
       }
       setDirtyIds(new Set());
-      toast.success("บันทึกจุดเซ็นแล้ว");
+      toast.success("บันทึกแล้ว");
     } catch (err) {
       console.error(err);
       toast.error(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
@@ -343,11 +404,41 @@ export function SignaturePlacementEditor({
       });
       if (selectedId === id) setSelectedId(null);
       setPendingDeleteId(null);
-      toast.success("ลบจุดเซ็นแล้ว");
+      toast.success("ลบแล้ว");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "ลบไม่สำเร็จ");
     } finally {
       setDeletingBusy(false);
+    }
+  }
+
+  async function handleResetSignature(id: string) {
+    setResettingId(id);
+    try {
+      const res = await fetch(
+        `/api/docuflow/${documentId}/signatures/${id}/reset`,
+        { method: "POST" },
+      );
+      const data = (await res.json()) as { error?: string; success?: boolean };
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      // Local optimistic clear so the UI flips back to "ส่งให้เซ็น"
+      setPlacements((prev) =>
+        prev.map((p) =>
+          p.id === id
+            ? { ...p, signedAt: null, signedImageKey: null }
+            : p,
+        ),
+      );
+      toast.success("ขอเซ็นใหม่แล้ว — แชร์ลิงก์ให้ผู้เซ็นได้อีกครั้ง");
+      router.refresh();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "ขอเซ็นใหม่ไม่สำเร็จ",
+      );
+    } finally {
+      setResettingId(null);
     }
   }
 
@@ -364,14 +455,16 @@ export function SignaturePlacementEditor({
   }
 
   const signedCount = placements.filter((p) => p.signedAt).length;
+  const activeTypeMeta =
+    TYPE_OPTIONS.find((t) => t.value === activeType) ?? TYPE_OPTIONS[0];
 
   return (
     <div className="space-y-6">
-      {/* Toolbar */}
+      {/* Header — type toolbar + save */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
           <Badge tone="brand">
-            {signedCount}/{placements.length} ลงนามแล้ว
+            {signedCount}/{placements.length} เสร็จ
           </Badge>
           {dirtyIds.size > 0 && (
             <Badge tone="warning">มีการเปลี่ยนแปลงรอบันทึก</Badge>
@@ -389,6 +482,39 @@ export function SignaturePlacementEditor({
             บันทึก
           </Button>
         </div>
+      </div>
+
+      {/* Placement-type toolbar */}
+      <div className="rounded-xl border border-zinc-200 bg-white p-2 flex items-center gap-1 flex-wrap">
+        <span className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold pl-2 pr-3">
+          เพิ่มจุด
+        </span>
+        {TYPE_OPTIONS.map((t) => {
+          const Icon = t.Icon;
+          const active = activeType === t.value;
+          return (
+            <button
+              key={t.value}
+              type="button"
+              onClick={() => setActiveType(t.value)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3 h-9 text-sm font-medium border transition-colors",
+                active
+                  ? "border-[var(--color-brand-600)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)]"
+                  : "border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700",
+              )}
+              aria-pressed={active}
+            >
+              <Icon className="size-4" />
+              {t.label}
+            </button>
+          );
+        })}
+        <span className="ml-auto pr-2 text-[11px] text-zinc-500">
+          กำลังเพิ่ม:{" "}
+          <strong className="text-zinc-800">{activeTypeMeta.label}</strong> —
+          แตะหน้าเอกสารเพื่อวาง
+        </span>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
@@ -468,6 +594,8 @@ export function SignaturePlacementEditor({
                             heightRatio: p.heightRatio,
                           }}
                           label={p.label}
+                          placementType={p.placementType}
+                          autoFillValue={p.autoFillValue}
                           roleLabel={`${
                             ROLE_OPTIONS.find(
                               (r) => r.value === p.signerRole,
@@ -495,7 +623,7 @@ export function SignaturePlacementEditor({
               </div>
 
               <p className="text-xs text-zinc-500 text-center">
-                แตะพื้นที่ว่างบนเอกสารเพื่อเพิ่มจุดเซ็น · ลากเพื่อย้าย ·
+                แตะพื้นที่ว่างเพื่อวาง “{activeTypeMeta.label}” · ลากเพื่อย้าย ·
                 ลากปุ่มมุมขวาล่างเพื่อปรับขนาด
               </p>
             </CardBody>
@@ -504,81 +632,162 @@ export function SignaturePlacementEditor({
 
         {/* Side panel */}
         <div className="space-y-4">
-          <Section number="01" label="SELECTED" title="จุดเซ็นที่เลือก">
+          <Section number="01" label="SELECTED" title="จุดที่เลือก">
             {selected ? (
               <Card>
                 <CardBody className="space-y-4">
+                  {/* Type chooser */}
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-1.5">
-                      บทบาทผู้เซ็น
+                      ประเภทจุด
                     </p>
                     <div className="grid grid-cols-2 gap-1.5">
-                      {ROLE_OPTIONS.map((r) => (
-                        <button
-                          key={r.value}
-                          type="button"
-                          onClick={() =>
-                            updatePlacement(selected.id, {
-                              signerRole: r.value,
-                            })
-                          }
-                          className={cn(
-                            "text-sm rounded-lg px-3 py-2 border transition-colors",
-                            selected.signerRole === r.value
-                              ? "border-[var(--color-brand-600)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)] font-medium"
-                              : "border-zinc-200 bg-white hover:bg-zinc-50",
-                          )}
-                        >
-                          <span className="mr-1">{r.emoji}</span>
-                          {r.label}
-                        </button>
-                      ))}
+                      {TYPE_OPTIONS.map((t) => {
+                        const Icon = t.Icon;
+                        const isSel = selected.placementType === t.value;
+                        return (
+                          <button
+                            key={t.value}
+                            type="button"
+                            onClick={() =>
+                              updatePlacement(selected.id, {
+                                placementType: t.value,
+                              })
+                            }
+                            className={cn(
+                              "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm border transition-colors",
+                              isSel
+                                ? "border-[var(--color-brand-600)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)] font-medium"
+                                : "border-zinc-200 bg-white hover:bg-zinc-50",
+                            )}
+                          >
+                            <Icon className="size-4" />
+                            {t.label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-1.5">
-                      ผู้เซ็น (ในระบบ)
-                    </p>
-                    <select
-                      value={selected.signerUserId ?? ""}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        const u = users.find((u) => u.id === v);
-                        updatePlacement(selected.id, {
-                          signerUserId: v && isUuid(v) ? v : null,
-                          signerUser: u
-                            ? { id: u.id, name: u.name, role: u.role }
-                            : null,
-                        });
-                      }}
-                      className="w-full h-10 px-3 text-sm rounded-xl border border-zinc-200 bg-white"
-                    >
-                      <option value="">— ไม่ระบุ (ใช้ลิงก์เซ็น) —</option>
-                      {users.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.name} ({u.role})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {/* Auto-fill preview / value */}
+                  {selected.placementType === "date" && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                      ระบบจะ stamp <strong>วันที่วันเซ็น</strong> ลงตรงนี้
+                      อัตโนมัติ (รูปแบบ: 08/05/2569)
+                    </div>
+                  )}
+                  {selected.placementType === "name" && (
+                    <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+                      ระบบจะ stamp{" "}
+                      <strong>
+                        ชื่อ{" "}
+                        {selected.signerUser?.name ||
+                          selected.signerName ||
+                          "ผู้เซ็น"}
+                      </strong>{" "}
+                      อัตโนมัติ
+                    </div>
+                  )}
+                  {selected.placementType === "text" && (
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-1.5">
+                        ข้อความที่จะ stamp
+                      </p>
+                      <input
+                        type="text"
+                        value={selected.autoFillValue ?? ""}
+                        onChange={(e) =>
+                          updatePlacement(selected.id, {
+                            autoFillValue: e.target.value,
+                          })
+                        }
+                        placeholder="เช่น Pooilgroup Co., Ltd."
+                        className="w-full h-10 px-3 text-sm rounded-xl border border-zinc-200 bg-white"
+                      />
+                      <p className="mt-1.5 text-[11px] text-zinc-500">
+                        แนะนำใช้อักษรอังกฤษ/ตัวเลข — ฟอนต์ Thai
+                        ในเอกสาร PDF ยังไม่รองรับเต็ม
+                      </p>
+                    </div>
+                  )}
 
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-1.5">
-                      ชื่อผู้เซ็น (ถ้าไม่อยู่ในระบบ)
-                    </p>
-                    <input
-                      type="text"
-                      value={selected.signerName ?? ""}
-                      onChange={(e) =>
-                        updatePlacement(selected.id, {
-                          signerName: e.target.value || null,
-                        })
-                      }
-                      placeholder="เช่น คู่ค้า นาย ก."
-                      className="w-full h-10 px-3 text-sm rounded-xl border border-zinc-200 bg-white"
-                    />
-                  </div>
+                  {/* Signer role + user — only meaningful for signature/name types */}
+                  {(selected.placementType === "signature" ||
+                    selected.placementType === "name") && (
+                    <>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-1.5">
+                          บทบาทผู้เซ็น
+                        </p>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {ROLE_OPTIONS.map((r) => (
+                            <button
+                              key={r.value}
+                              type="button"
+                              onClick={() =>
+                                updatePlacement(selected.id, {
+                                  signerRole: r.value,
+                                })
+                              }
+                              className={cn(
+                                "text-sm rounded-lg px-3 py-2 border transition-colors",
+                                selected.signerRole === r.value
+                                  ? "border-[var(--color-brand-600)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)] font-medium"
+                                  : "border-zinc-200 bg-white hover:bg-zinc-50",
+                              )}
+                            >
+                              <span className="mr-1">{r.emoji}</span>
+                              {r.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-1.5">
+                          ผู้เซ็น (ในระบบ)
+                        </p>
+                        <select
+                          value={selected.signerUserId ?? ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            const u = users.find((u) => u.id === v);
+                            updatePlacement(selected.id, {
+                              signerUserId: v && isUuid(v) ? v : null,
+                              signerUser: u
+                                ? { id: u.id, name: u.name, role: u.role }
+                                : null,
+                            });
+                          }}
+                          className="w-full h-10 px-3 text-sm rounded-xl border border-zinc-200 bg-white"
+                        >
+                          <option value="">— ไม่ระบุ (ใช้ลิงก์เซ็น) —</option>
+                          {users.map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.name} ({u.role})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-1.5">
+                          ชื่อผู้เซ็น (ถ้าไม่อยู่ในระบบ)
+                        </p>
+                        <input
+                          type="text"
+                          value={selected.signerName ?? ""}
+                          onChange={(e) =>
+                            updatePlacement(selected.id, {
+                              signerName: e.target.value || null,
+                            })
+                          }
+                          placeholder="เช่น คู่ค้า นาย ก."
+                          className="w-full h-10 px-3 text-sm rounded-xl border border-zinc-200 bg-white"
+                        />
+                      </div>
+                    </>
+                  )}
 
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-1.5">
@@ -597,27 +806,50 @@ export function SignaturePlacementEditor({
                     />
                   </div>
 
-                  {selected.signedAt ? (
-                    <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
-                      <CheckCircle2 className="size-4" />
-                      ลงนามแล้ว
-                    </div>
+                  {/* Status / actions */}
+                  {selected.placementType === "signature" ? (
+                    selected.signedAt ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                          <CheckCircle2 className="size-4" />
+                          ลงนามแล้ว
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleResetSignature(selected.id)}
+                          disabled={resettingId === selected.id}
+                          className="w-full inline-flex items-center justify-center gap-2 h-10 px-4 text-sm rounded-xl bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50 font-medium disabled:opacity-60"
+                        >
+                          {resettingId === selected.id ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <RotateCcw className="size-4" />
+                          )}
+                          ขอเซ็นใหม่
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => copyShareLink(selected.id)}
+                        className="w-full inline-flex items-center justify-center gap-2 h-10 px-4 text-sm rounded-xl bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50 font-medium"
+                      >
+                        <Copy className="size-4" />
+                        คัดลอกลิงก์ส่งให้ผู้เซ็น
+                      </button>
+                    )
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => copyShareLink(selected.id)}
-                      className="w-full inline-flex items-center justify-center gap-2 h-10 px-4 text-sm rounded-xl bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50 font-medium"
-                    >
-                      <Copy className="size-4" />
-                      คัดลอกลิงก์ส่งให้ผู้เซ็น
-                    </button>
+                    <div className="flex items-center gap-2 text-sm text-zinc-700 bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2">
+                      <CheckCircle2 className="size-4 text-zinc-500" />
+                      เติมอัตโนมัติตอนรวม PDF — ไม่ต้องเซ็นเอง
+                    </div>
                   )}
                 </CardBody>
               </Card>
             ) : (
               <Card>
                 <CardBody className="text-sm text-zinc-500 text-center py-6">
-                  เลือกจุดเซ็นจากเอกสารด้านซ้าย
+                  เลือกจุดจากเอกสารด้านซ้าย
                   <br />
                   หรือแตะพื้นที่ว่างเพื่อเพิ่มจุดใหม่
                 </CardBody>
@@ -625,16 +857,23 @@ export function SignaturePlacementEditor({
             )}
           </Section>
 
-          <Section number="02" label="LIST" title={`ทุกจุดเซ็น (${placements.length})`}>
+          <Section
+            number="02"
+            label="LIST"
+            title={`ทุกจุด (${placements.length})`}
+          >
             <Card>
               <CardBody className="space-y-1.5">
                 {placements.length === 0 && (
                   <p className="text-sm text-zinc-500 py-4 text-center">
-                    ยังไม่มีจุดเซ็น · แตะหน้าเอกสารเพื่อเพิ่ม
+                    ยังไม่มีจุด · เลือกประเภทจาก toolbar แล้วแตะหน้าเอกสาร
                   </p>
                 )}
                 {placements.map((p) => {
                   const isSel = selectedId === p.id;
+                  const TypeIcon =
+                    TYPE_OPTIONS.find((t) => t.value === p.placementType)
+                      ?.Icon ?? PenLine;
                   return (
                     <button
                       key={p.id}
@@ -656,8 +895,13 @@ export function SignaturePlacementEditor({
                         ) : (
                           <Plus className="size-4 text-zinc-400 shrink-0" />
                         )}
+                        <TypeIcon className="size-3.5 text-zinc-500 shrink-0" />
                         <span className="truncate">
-                          หน้า {p.pageNumber} · {roleLabel(p.signerRole)}
+                          หน้า {p.pageNumber} · {typeLabel(p.placementType)}
+                          {p.placementType === "signature" ||
+                          p.placementType === "name"
+                            ? ` · ${roleLabel(p.signerRole)}`
+                            : ""}
                           {p.signerUser?.name
                             ? ` — ${p.signerUser.name}`
                             : p.signerName
@@ -665,7 +909,7 @@ export function SignaturePlacementEditor({
                               : ""}
                         </span>
                       </span>
-                      {!p.signedAt && (
+                      {p.placementType === "signature" && !p.signedAt && (
                         <LinkIcon className="size-3.5 text-zinc-400 shrink-0" />
                       )}
                     </button>
@@ -676,9 +920,11 @@ export function SignaturePlacementEditor({
           </Section>
 
           <p className="text-xs text-zinc-500 leading-relaxed">
-            <strong className="text-zinc-700">ระบบพิกัด:</strong> ตำแหน่งจุดเซ็นเก็บเป็นสัดส่วน 0-1
-            ของหน้า ทำให้แสดงตรงกันที่ทุกขนาดจอ และเมื่อทุกคนเซ็นครบ ระบบจะรวมลายเซ็นลง PDF
-            อัตโนมัติ
+            <strong className="text-zinc-700">ระบบพิกัด:</strong> ตำแหน่งจุด
+            เก็บเป็นสัดส่วน 0-1 ของหน้า
+            ทำให้แสดงตรงกันที่ทุกขนาดจอ ·{" "}
+            <strong className="text-zinc-700">เติมอัตโนมัติ:</strong>
+            วันที่/ชื่อ/ข้อความ จะถูก stamp ตอน embed PDF — ไม่ต้องเซ็นเอง
           </p>
         </div>
       </div>
@@ -693,9 +939,9 @@ export function SignaturePlacementEditor({
       >
         <div className="space-y-5">
           <p className="text-sm text-zinc-700 leading-relaxed">
-            ลบจุดเซ็น
+            ลบจุด
             {pendingDeletePlacement
-              ? ` (หน้า ${pendingDeletePlacement.pageNumber} · ${roleLabel(pendingDeletePlacement.signerRole)})`
+              ? ` (หน้า ${pendingDeletePlacement.pageNumber} · ${typeLabel(pendingDeletePlacement.placementType)})`
               : ""}{" "}
             นี้?
           </p>

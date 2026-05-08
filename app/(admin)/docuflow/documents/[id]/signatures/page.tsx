@@ -71,6 +71,10 @@ export default async function SignaturePlacementPage({
     yRatio: r.yRatio,
     widthRatio: r.widthRatio,
     heightRatio: r.heightRatio,
+    placementType:
+      (r.placementType as "signature" | "date" | "name" | "text") ??
+      "signature",
+    autoFillValue: r.autoFillValue,
     signerRole: r.signerRole as SignerRole,
     signerUserId: r.signerUserId,
     signerName: r.signerName,

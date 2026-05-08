@@ -33,6 +33,10 @@ import {
   daysUntilExpiry,
   type ExpiryStatus,
 } from "@/lib/docuflow/expiry";
+import {
+  getCanonicalDocsForBizType,
+  type CanonicalDocSpec,
+} from "@/lib/docuflow/canonical-docs";
 
 /* ============================================================
    PUBLIC TYPES
@@ -189,14 +193,14 @@ export const AI_SEARCH_TOOLS: Anthropic.Tool[] = [
   {
     name: "getBusinessTypeDocsList",
     description:
-      "ดึงรายการเอกสารทั้งหมดที่ผูกกับประเภทธุรกิจหนึ่งๆ (เช่น 'ปั๊มน้ำมันต้องมีเอกสารอะไรบ้าง'). คืน distinct doc names + tags.",
+      "ตอบทั้งเอกสารที่ org อัปโหลดแล้ว และเอกสารที่กฎหมายกำหนดให้ต้องมี — ใช้เมื่อผู้ใช้ถาม 'ต้องมีใบอนุญาตอะไรบ้าง' หรือ 'มีเอกสารอะไรบ้าง'. คืน 3 ชุด: uploaded (ที่อัปโหลดแล้ว) · canonical (กฎหมายกำหนด) · missing (ยังไม่มี). ตอบได้แม้ org ยังไม่ได้อัปโหลดเอกสารใดๆ.",
     input_schema: {
       type: "object",
       properties: {
         businessType: {
           type: "string",
           description:
-            "ประเภทธุรกิจ เช่น fuel_station, lpg_station, bottling_plant, hotel, convenience_store",
+            "ประเภทธุรกิจ เช่น fuel_station, lpg_station, bottling_plant, hotel, convenience_store, ev_station, cafe, cafe_punthai, lpg_retail, training_center, massage_chair, claw_machine, transport, gas_fleet",
         },
       },
       required: ["businessType"],
@@ -591,43 +595,89 @@ async function execGetBusinessTypeDocsList(
     };
   }
 
+  // 1) Canonical (spec) list — static, ไม่ขึ้นกับ orgId
+  const canonical: CanonicalDocSpec[] = getCanonicalDocsForBizType(bt);
+
+  // 2) Uploaded — ที่ org นี้อัปโหลดผูกกับ biztype แล้วจริงๆ
   const docs = await loadDocuments(orgId, {
     businessType: bt,
     limit: MAX_RESULTS_PER_TOOL,
   });
 
-  if (docs.length === 0) {
-    return {
-      summary: `ยังไม่มีเอกสารผูกกับประเภทธุรกิจ ${bt}`,
-      citations: [],
-      rowCount: 0,
-    };
-  }
-
-  // Group by name (distinct doc kinds)
-  const byName = new Map<string, { count: number; tags: Set<string> }>();
+  // Group uploaded by name (distinct doc kinds)
+  const uploadedByName = new Map<string, { count: number; tags: Set<string>; ids: string[] }>();
   for (const d of docs) {
-    const slot = byName.get(d.name) ?? { count: 0, tags: new Set<string>() };
+    const slot =
+      uploadedByName.get(d.name) ??
+      { count: 0, tags: new Set<string>(), ids: [] };
     slot.count += 1;
+    slot.ids.push(d.id);
     for (const t of d.tags) slot.tags.add(t);
-    byName.set(d.name, slot);
+    uploadedByName.set(d.name, slot);
   }
-
-  const lines = Array.from(byName.entries()).map(
-    ([name, info]) =>
-      `- ${name} · ${info.count} ฉบับ${info.tags.size > 0 ? ` · tag: ${Array.from(info.tags).join(", ")}` : ""}`,
-  );
 
   const btLabel = BUSINESS_TYPES[bt]?.label ?? bt;
 
+  // 3) Missing — canonical name ที่ไม่มีใน uploaded
+  // Match แบบ fuzzy: canonical name ต้องเป็น substring ของ uploaded name หรือกลับกัน
+  // (เผื่อชื่อเอกสารจริงในระบบเขียนยาวกว่า/สั้นกว่าชื่อมาตรฐาน)
+  const uploadedNames = Array.from(uploadedByName.keys());
+  const missing = canonical.filter((c) => {
+    const cName = c.name.toLowerCase();
+    return !uploadedNames.some((u) => {
+      const uName = u.toLowerCase();
+      return uName.includes(cName) || cName.includes(uName);
+    });
+  });
+
+  // Build summary — show all 3 sections so Claude can compose the answer
+  const sections: string[] = [];
+
+  sections.push(
+    `📋 เอกสารที่กฎหมายกำหนดให้ ${btLabel} ต้องมี (canonical · ${canonical.length} รายการ):`,
+  );
+  if (canonical.length === 0) {
+    sections.push("(ไม่มีในฐานความรู้ — กรุณาตรวจ business type)");
+  } else {
+    for (const c of canonical) {
+      const reg = c.regulator ? ` · ${c.regulator}` : "";
+      sections.push(`- ${c.name} · ${c.frequency}${reg} · ${c.dangerLevel}`);
+    }
+  }
+
+  sections.push(
+    `\n✅ เอกสารที่อัปโหลดแล้ว (uploaded · ${uploadedByName.size} ชนิด · ${docs.length} ฉบับ):`,
+  );
+  if (uploadedByName.size === 0) {
+    sections.push("(ยังไม่มีเอกสารใดๆ ใน DocuFlow)");
+  } else {
+    for (const [name, info] of uploadedByName.entries()) {
+      const tagSuffix =
+        info.tags.size > 0 ? ` · tag: ${Array.from(info.tags).join(", ")}` : "";
+      sections.push(`- ${name} · ${info.count} ฉบับ${tagSuffix}`);
+    }
+  }
+
+  sections.push(
+    `\n❌ ยังขาด/ยังไม่มีอัปโหลด (missing · ${missing.length} รายการ):`,
+  );
+  if (missing.length === 0) {
+    sections.push("(ครบทุกรายการตามที่กฎหมายกำหนด)");
+  } else {
+    for (const m of missing) {
+      const reg = m.regulator ? ` · ${m.regulator}` : "";
+      sections.push(`- ${m.name} · ${m.frequency}${reg} · ${m.dangerLevel}`);
+    }
+  }
+
   return {
-    summary: `ประเภทธุรกิจ "${btLabel}" ใช้เอกสาร ${byName.size} ชนิด (${docs.length} ฉบับ):\n${lines.join("\n")}`,
+    summary: sections.join("\n"),
     citations: docs.slice(0, 10).map((d) => ({
       type: "document" as const,
       id: d.id,
       label: d.name,
     })),
-    rowCount: docs.length,
+    rowCount: docs.length + canonical.length,
   };
 }
 
@@ -762,8 +812,14 @@ const SYSTEM_PROMPT = `คุณคือผู้ช่วยค้นหาเ
 2. ถ้าผู้ใช้ถามแบบกว้างๆ (เช่น "อะไรหมดเดือนนี้") ให้เรียก searchExpiringDocs ด้วย withinDays=30
 3. ถ้าระบุชื่อสาขา/รหัสสาขา ให้ใส่ branchCode ใน searchDocuments
 4. ถ้าถาม "รถ" → searchVehicleDocs · ถาม "คนขับ/พนักงาน" → searchPersonDocs
-5. ถ้าถาม "ปั๊มน้ำมันต้องมีเอกสารอะไรบ้าง" → getBusinessTypeDocsList(businessType=fuel_station)
-6. ตอบเป็นภาษาไทย กระชับ 2-6 บรรทัด ใช้ตัวเลขจาก tool result เท่านั้น
+5. ถ้าถาม "ปั๊มน้ำมันต้องมีเอกสารอะไรบ้าง" หรือ "โรงบรรจุก๊าซต้องมีใบอนุญาตอะไรบ้าง" → getBusinessTypeDocsList(businessType=...)
+   tool คืน 3 ส่วน — canonical (กฎหมายกำหนด) · uploaded (อัปโหลดแล้ว) · missing (ขาด)
+   ตอบให้ครบทั้ง 3 ส่วนตามรูปแบบนี้:
+     "📋 [biztype] ต้องมี [N] เอกสารตามกฎหมาย: [ชื่อสั้นๆ 3-5 รายการแรก]..."
+     "✅ อัปโหลดแล้ว [M] รายการ"
+     "❌ ยังขาด [K] รายการ: [ชื่อสำคัญ — เน้น critical/high]"
+   ถ้า uploaded = 0 (ยังไม่อัปโหลดอะไร) ให้บอกชัดเจนว่า "ยังไม่มีเอกสารใน DocuFlow แต่ตามกฎหมายต้องมี: ..."
+6. ตอบเป็นภาษาไทย กระชับ 3-8 บรรทัด ใช้ตัวเลขจาก tool result เท่านั้น
 7. อ้างอิงเอกสาร/รถ/บุคคลด้วย bracket reference [document:ID] / [vehicle:ID] / [person:ID] ที่มากับ tool result — ระบบจะ render เป็นลิงก์ให้
 8. ถ้า tool ไม่พบข้อมูล ตอบตรงๆ ว่า "ไม่พบ..." — ห้ามแต่ง
 

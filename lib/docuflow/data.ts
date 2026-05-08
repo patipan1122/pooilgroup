@@ -195,6 +195,40 @@ export async function loadDocumentById(
 }
 
 /* ============================================================
+   loadDocumentsSharedToBranch — เอกสารที่ถูก share มาที่สาขานี้
+   ผ่านตาราง document_shared_branches (cross-branch sharing)
+   ============================================================ */
+
+export async function loadDocumentsSharedToBranch(
+  orgId: string,
+  branchId: string,
+  opts: { isActive?: boolean; limit?: number } = {},
+): Promise<CanonicalDocument[]> {
+  const { isActive = true, limit = 200 } = opts;
+  const safeLimit = Math.min(Math.max(limit, 1), 500);
+
+  const docs = await prisma.document.findMany({
+    where: {
+      orgId,
+      ...(isActive !== undefined ? { isActive } : {}),
+      sharedBranches: { some: { branchId } },
+    },
+    include: {
+      ownership: true,
+      tags: true,
+      renewals: {
+        orderBy: { expiryDate: "asc" },
+        take: 1,
+      },
+    },
+    orderBy: { uploadedAt: "desc" },
+    take: safeLimit,
+  });
+
+  return docs.map(toCanonicalDocument);
+}
+
+/* ============================================================
    loadRenewals — direct query on document_renewals
    For the expiry dashboard / cron job
    ============================================================ */

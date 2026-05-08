@@ -1,11 +1,17 @@
 "use client";
 
-// SignaturePlacementBox — draggable + resizable signature box overlay.
+// SignaturePlacementBox — draggable + resizable box overlay.
 // ────────────────────────────────────────────────────────────────────
 // Used inside the SignaturePlacementEditor on top of a rendered PDF
 // page. All coordinates come in / go out as 0..1 ratios (top-left
 // origin) so they map cleanly onto whatever the page is currently
 // rendered at.
+//
+// Renders a different visual per placementType (Item 4):
+//   - 'signature' : brand gradient + ✍️ icon + "เซ็น"
+//   - 'date'      : amber tint   + 📅 icon + "วันที่"
+//   - 'name'      : brand-blue   + 📝 icon + "ชื่อ"
+//   - 'text'      : zinc tint    + ✏️ icon + truncated literal value
 //
 // UX:
 //   - Drag anywhere on the body to move the box.
@@ -16,8 +22,16 @@
 // ────────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Trash2, GripHorizontal } from "lucide-react";
+import {
+  Trash2,
+  PenLine,
+  Calendar,
+  User as UserIcon,
+  Pencil,
+} from "lucide-react";
 import { cn } from "@/lib/utils/cn";
+
+export type PlacementType = "signature" | "date" | "name" | "text";
 
 export interface PlacementRect {
   xRatio: number;
@@ -42,6 +56,10 @@ export interface SignaturePlacementBoxProps {
   /** Container size in CSS pixels; required to translate ratios → pixels. */
   containerWidth: number;
   containerHeight: number;
+  /** Box type — drives the in-box visual + chip color. Default 'signature'. */
+  placementType?: PlacementType;
+  /** For type='text': literal value previewed inside the box. */
+  autoFillValue?: string | null;
   onSelect?: () => void;
   onChange?: (next: PlacementRect) => void;
   onDelete?: () => void;
@@ -56,6 +74,43 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+interface TypeStyle {
+  /** Border + bg classes when not selected/signed. */
+  base: string;
+  /** Solid chip bg (paired with white text). */
+  chip: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  /** Default in-box text. */
+  defaultBody: string;
+}
+
+const TYPE_STYLES: Record<PlacementType, TypeStyle> = {
+  signature: {
+    base: "border-[var(--color-brand-500)]/70 bg-gradient-to-br from-[var(--color-brand-50)]/80 to-white",
+    chip: "bg-[var(--color-brand-600)] text-white",
+    Icon: PenLine,
+    defaultBody: "เซ็น",
+  },
+  date: {
+    base: "border-amber-400/70 bg-amber-50/80",
+    chip: "bg-amber-500 text-white",
+    Icon: Calendar,
+    defaultBody: "วันที่",
+  },
+  name: {
+    base: "border-sky-400/70 bg-sky-50/80",
+    chip: "bg-sky-600 text-white",
+    Icon: UserIcon,
+    defaultBody: "ชื่อ",
+  },
+  text: {
+    base: "border-zinc-400/70 bg-zinc-50",
+    chip: "bg-zinc-700 text-white",
+    Icon: Pencil,
+    defaultBody: "ข้อความ",
+  },
+};
+
 export function SignaturePlacementBox({
   id,
   rect,
@@ -65,6 +120,8 @@ export function SignaturePlacementBox({
   selected,
   containerWidth,
   containerHeight,
+  placementType = "signature",
+  autoFillValue,
   onSelect,
   onChange,
   onDelete,
@@ -188,10 +245,18 @@ export function SignaturePlacementBox({
     window.addEventListener("pointercancel", stopHandler);
   }
 
+  const style = TYPE_STYLES[placementType];
+  const Icon = style.Icon;
+  const bodyText =
+    placementType === "text"
+      ? (autoFillValue?.trim() || "ข้อความ")
+      : style.defaultBody;
+
   return (
     <div
       ref={wrapRef}
       data-placement-id={id}
+      data-placement-type={placementType}
       onPointerDown={(e) => startDrag(e, "move")}
       onClick={(e) => {
         e.stopPropagation();
@@ -211,8 +276,11 @@ export function SignaturePlacementBox({
         signed
           ? "border-green-500 bg-green-50/70"
           : selected
-            ? "border-[var(--color-brand-600)] bg-[var(--color-brand-50)]/80 ring-2 ring-[var(--color-brand-300)]"
-            : "border-[var(--color-brand-500)]/70 bg-white/70 hover:bg-white",
+            ? "border-[var(--color-brand-600)] ring-2 ring-[var(--color-brand-300)] " +
+              (placementType === "signature"
+                ? "bg-[var(--color-brand-50)]/80"
+                : style.base)
+            : style.base,
       )}
     >
       {/* Top chrome: role chip + label + delete */}
@@ -221,9 +289,7 @@ export function SignaturePlacementBox({
           <span
             className={cn(
               "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-              signed
-                ? "bg-green-600 text-white"
-                : "bg-[var(--color-brand-600)] text-white",
+              signed ? "bg-green-600 text-white" : style.chip,
             )}
           >
             {roleLabel}
@@ -249,9 +315,10 @@ export function SignaturePlacementBox({
         )}
       </div>
 
-      {/* Body — drag-grip indicator centered */}
-      <div className="w-full h-full flex items-center justify-center text-zinc-400 pointer-events-none select-none">
-        <GripHorizontal className="size-4" />
+      {/* Body — type-specific icon + label centered */}
+      <div className="w-full h-full flex items-center justify-center gap-1.5 px-2 text-zinc-600 pointer-events-none select-none overflow-hidden">
+        <Icon className="size-3.5 shrink-0" />
+        <span className="text-[11px] font-medium truncate">{bodyText}</span>
       </div>
 
       {/* Resize handle (bottom-right) */}
