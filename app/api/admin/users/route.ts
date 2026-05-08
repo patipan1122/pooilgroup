@@ -12,51 +12,17 @@ const InviteSchema = z.object({
   role: z.enum([
     "super_admin",
     "org_admin",
-    "admin",
-    "area_manager",
     "branch_manager",
     "staff",
     "driver",
     "viewer",
   ]),
   branchIds: z.array(z.string().uuid()).optional(),
-  // Module access list — non-admin-tier roles need explicit grants per module
-  // (see lib/auth/module-access.ts). Admin tier bypasses this and the rows
-  // are not stored. Defaults to ["cashhub"] when omitted to preserve old
-  // behaviour for non-admin invites.
-  modules: z.array(z.enum(["cashhub", "fuelos", "docuflow"])).optional(),
   // When provided + email also provided → admin sets password directly:
   // creates the auth user immediately, marks must_change_password so the
   // invitee is forced to change it on first login. Skips invite-link flow.
   password: z.string().min(8).max(72).optional().or(z.literal("")),
 });
-
-const ADMIN_TIER_ROLES = new Set(["super_admin", "org_admin", "admin"]);
-
-/** Insert user_modules rows for a freshly-created user. No-op for admin tier. */
-async function seedUserModules(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  admin: any,
-  orgId: string,
-  userId: string,
-  role: string,
-  modules: string[] | undefined,
-  grantedBy: string,
-): Promise<void> {
-  if (ADMIN_TIER_ROLES.has(role)) return;
-  const list = modules && modules.length > 0 ? modules : ["cashhub"];
-  const now = new Date().toISOString();
-  await admin.from("user_modules").insert(
-    list.map((module_name) => ({
-      org_id: orgId,
-      user_id: userId,
-      module_name,
-      is_active: true,
-      granted_by: grantedBy,
-      updated_at: now,
-    })),
-  );
-}
 
 function makeToken(): string {
   const bytes = new Uint8Array(24);
@@ -65,7 +31,7 @@ function makeToken(): string {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin");
 
   let body: unknown;
   try {
@@ -93,23 +59,6 @@ export async function POST(req: NextRequest) {
       { error: "ตั้งรหัสผ่านต้องระบุอีเมลด้วย" },
       { status: 400 },
     );
-  }
-
-  // Cross-org guard: every branchId in the request must belong to this org.
-  // Without this, a malicious or buggy admin from another org could attach
-  // their user to our branches. (RULE 4 — org_id discipline.)
-  if (data.branchIds && data.branchIds.length > 0) {
-    const { data: validBranches } = await admin
-      .from("branches")
-      .select("id")
-      .eq("org_id", orgId)
-      .in("id", data.branchIds);
-    if (!validBranches || validBranches.length !== data.branchIds.length) {
-      return NextResponse.json(
-        { error: "บางสาขาไม่อยู่ในบริษัท" },
-        { status: 400 },
-      );
-    }
   }
 
   // Branch 1: Direct password — create auth user immediately, account ready to use.
@@ -169,8 +118,6 @@ export async function POST(req: NextRequest) {
       await admin.from("user_branches").insert(rows);
     }
 
-    await seedUserModules(admin, orgId, userId, data.role, data.modules, session.user.id);
-
     await audit({
       orgId,
       userId: session.user.id,
@@ -181,22 +128,19 @@ export async function POST(req: NextRequest) {
         new: {
           name: data.name,
           role: data.role,
-          modules: data.modules ?? null,
           set_password_directly: true,
           must_change_password: true,
         },
       },
     });
 
-    // RULE 18 — never include sensitive credentials in API responses. The
-    // admin already typed the password, so the client form has it; we just
-    // confirm success here. Toast on the client should remind the admin to
-    // copy the password from the form they typed.
     return NextResponse.json({
       success: true,
       mode: "direct_password",
       userId,
       email: data.email,
+      // Echo password back ONCE so admin can copy/share — server doesn't store it.
+      password: directPassword,
     });
   }
 
@@ -241,22 +185,13 @@ export async function POST(req: NextRequest) {
     await admin.from("user_branches").insert(rows);
   }
 
-  await seedUserModules(admin, orgId, userId, data.role, data.modules, session.user.id);
-
   await audit({
     orgId,
     userId: session.user.id,
     action: "CREATE_USER",
     resourceType: "user",
     resourceId: userId,
-    diff: {
-      new: {
-        name: data.name,
-        role: data.role,
-        modules: data.modules ?? null,
-        invited: true,
-      },
-    },
+    diff: { new: { name: data.name, role: data.role, invited: true } },
   });
 
   const inviteUrl = `${getRequestBaseUrl(req)}/invite/${token}`;

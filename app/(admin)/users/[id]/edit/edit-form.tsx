@@ -63,15 +63,6 @@ export function EditUserForm({
     new Set(initialBranchIds),
   );
 
-  function toggleBranch(id: string) {
-    setSelected((s) => {
-      const next = new Set(s);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) {

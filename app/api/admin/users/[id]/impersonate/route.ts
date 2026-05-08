@@ -1,12 +1,10 @@
 // POST /api/admin/users/[id]/impersonate
-// Admin starts impersonating target user. Sets a signed cookie that
+// Super admin starts impersonating target user. Sets a signed cookie that
 // session.ts honors to swap the surface user. Real auth session stays intact —
 // "return to self" just clears the cookie.
 //
 // Restrictions:
-// - Caller must be super_admin / org_admin / admin (real role, not impersonated).
-// - org_admin / admin CANNOT impersonate super_admin (privilege ceiling).
-// - super_admin can impersonate anyone.
+// - Caller must be super_admin (real role, not impersonated).
 // - Cannot impersonate self.
 // - Target must be in same org and active.
 
@@ -24,10 +22,10 @@ export async function POST(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  const session = await requireRealRole("super_admin", "org_admin", "admin");
-  const realAdmin = session.actingAs ? session.actingAs.realUser : session.user;
-  const realAdminId = realAdmin.id;
-  const realAdminRole = realAdmin.role;
+  const session = await requireRealRole("super_admin");
+  const realAdminId = session.actingAs
+    ? session.actingAs.realUser.id
+    : session.user.id;
   const { id: targetId } = await ctx.params;
 
   if (targetId === realAdminId) {
@@ -49,14 +47,6 @@ export async function POST(
     return NextResponse.json(
       { error: "ผู้ใช้ไม่พร้อมใช้งาน" },
       { status: 404 },
-    );
-  }
-
-  // Privilege ceiling: org_admin / admin cannot target super_admin.
-  if (realAdminRole !== "super_admin" && target.role === "super_admin") {
-    return NextResponse.json(
-      { error: "ไม่สามารถเข้าใช้แทนเจ้าของระบบได้" },
-      { status: 403 },
     );
   }
 

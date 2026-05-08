@@ -11,6 +11,7 @@ import { loadUserModules } from "@/lib/auth/module-access";
 const ROLE_LABEL: Record<string, string> = {
   super_admin: "Super Admin",
   org_admin: "Admin",
+  admin: "Admin",
   branch_manager: "Manager",
   area_manager: "Area Manager",
   staff: "Staff",

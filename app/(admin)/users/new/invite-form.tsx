@@ -20,17 +20,11 @@ import { Button } from "@/components/ui/button";
 import { BranchPicker, type BranchOption } from "@/components/users/branch-picker";
 import { cn } from "@/lib/utils/cn";
 
-// Role options for the invite dropdown — shown in increasing privilege order.
-// "Owner" / super_admin is omitted intentionally (only the existing super_admin
-// can promote another super_admin via the edit form, not via invite).
 const ROLES: { value: string; label: string; desc: string }[] = [
-  { value: "staff", label: "พนักงาน", desc: "กรอกรายงาน · เห็นเฉพาะสาขาตัวเอง" },
-  { value: "branch_manager", label: "ผจก.สาขา", desc: "ผู้จัดการสาขา · อนุมัติรายงานสาขาตัวเอง" },
-  { value: "area_manager", label: "ผจก.เขต", desc: "ผู้จัดการเขต · ดูทุกสาขาในเขต · approve ข้ามสาขาได้" },
-  { value: "driver", label: "คนขับ", desc: "ใช้ Driver App ผ่าน Telegram · ไม่ใช้เว็บ" },
-  { value: "viewer", label: "ผู้ดู (Read-only)", desc: "ดูได้อย่างเดียว · ไม่แก้ไข · เหมาะสำหรับนักบัญชีภายนอก" },
-  { value: "admin", label: "Admin (มือกลาง)", desc: "จัดการ user/สาขา · เห็น Audit Log · ตั้งค่าระบบไม่ได้" },
-  { value: "org_admin", label: "Admin (เต็ม)", desc: "ผู้ดูแลระบบ · จัดการทุกอย่างยกเว้น unlock รายงาน" },
+  { value: "branch_manager", label: "Branch Manager", desc: "ผู้จัดการสาขา · อนุมัติรายงานสาขาตัวเอง" },
+  { value: "staff", label: "Staff", desc: "พนักงาน · กรอกรายงาน" },
+  { value: "org_admin", label: "Admin", desc: "ผู้ดูแลระบบ · จัดการผู้ใช้/สาขาทั้งหมด" },
+  { value: "viewer", label: "Viewer", desc: "ดูได้อย่างเดียว · ไม่แก้ไข" },
 ];
 
 type Mode = "invite" | "direct";
@@ -47,15 +41,6 @@ function generatePassword(): string {
   return Array.from(bytes, (b) => chars[b % chars.length]).join("");
 }
 
-// Module slug list — UI labels for the checkbox group below
-const MODULES: { value: "cashhub" | "fuelos" | "docuflow"; label: string; emoji: string; tagline: string; comingSoon?: boolean }[] = [
-  { value: "cashhub", label: "CashHub", emoji: "💰", tagline: "ยอดสาขารายวัน" },
-  { value: "fuelos", label: "FuelOS", emoji: "⛽", tagline: "ขายส่งน้ำมัน B2B", comingSoon: true },
-  { value: "docuflow", label: "DocuFlow", emoji: "📄", tagline: "จัดการเอกสาร", comingSoon: true },
-];
-
-const ADMIN_TIER_VALUES = new Set(["super_admin", "org_admin", "admin"]);
-
 export function InviteForm({ branches }: { branches: BranchOption[] }) {
   const [pending, startTransition] = useTransition();
   const [mode, setMode] = useState<Mode>("invite");
@@ -66,21 +51,8 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  // Default new non-admin users to CashHub only — admin can tick more
-  // before submit. Admin-tier roles see all modules unconditionally so we
-  // hide the checkbox group for them.
-  const [modules, setModules] = useState<Set<string>>(new Set(["cashhub"]));
   const [result, setResult] = useState<SuccessResult | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
-
-  const isAdminTier = ADMIN_TIER_VALUES.has(role);
-
-  function toggleModule(value: string) {
-    const next = new Set(modules);
-    if (next.has(value)) next.delete(value);
-    else next.add(value);
-    setModules(next);
-  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -109,8 +81,6 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
           phone: phone.trim() || undefined,
           role,
           branchIds: Array.from(selected),
-          // Admin-tier roles bypass user_modules — skip sending the array.
-          modules: isAdminTier ? undefined : Array.from(modules),
           password: mode === "direct" ? password : undefined,
         }),
       });
@@ -122,13 +92,10 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
       }
 
       if (json.mode === "direct_password") {
-        // Server no longer echoes the password (RULE 18 — never include
-        // credentials in API responses). Admin already typed it; reuse the
-        // form's local state so the success card can show it once.
         setResult({
           mode: "direct",
           email: json.email,
-          password,
+          password: json.password,
         });
         toast.success("สร้างบัญชีสำเร็จ — พร้อมใช้งาน");
       } else {
@@ -441,59 +408,6 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
               selected={selected}
               onChange={setSelected}
             />
-          </CardBody>
-        </Card>
-      )}
-
-      {/* Module access — non-admin tier users need explicit grants per module.
-          Admin tier (super_admin / org_admin / admin) sees every module
-          unconditionally so we hide this card for them. */}
-      {!isAdminTier && (
-        <Card className="mt-4 animate-fade-up delay-250">
-          <CardHeader>
-            <CardTitle>เปิดให้เห็นโปรแกรมไหน</CardTitle>
-          </CardHeader>
-          <CardBody className="!pt-0">
-            <p className="text-xs text-zinc-500 mb-3">
-              ติ๊กเฉพาะโปรแกรมที่ต้องใช้ — ไม่ติ๊ก = เห็นไม่ได้ในแถบเมนู
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {MODULES.map((m) => {
-                const checked = modules.has(m.value);
-                return (
-                  <label
-                    key={m.value}
-                    className={cn(
-                      "flex items-start gap-2.5 px-3 py-2.5 rounded-xl border-2 cursor-pointer transition-colors",
-                      checked
-                        ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)]"
-                        : "border-zinc-200 hover:bg-zinc-50",
-                    )}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleModule(m.value)}
-                      className="mt-0.5 size-4 rounded shrink-0"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-base">{m.emoji}</span>
-                        <span className="font-bold text-sm">{m.label}</span>
-                        {m.comingSoon && (
-                          <span className="text-[9px] uppercase tracking-wider font-bold text-zinc-400">
-                            soon
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-zinc-500 truncate">
-                        {m.tagline}
-                      </div>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
           </CardBody>
         </Card>
       )}
