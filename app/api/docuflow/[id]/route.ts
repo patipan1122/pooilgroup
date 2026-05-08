@@ -6,6 +6,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
+import { isAdminTier, isExecutiveRole } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { loadDocumentById } from "@/lib/docuflow/data";
@@ -23,6 +24,9 @@ const IdSchema = z.string().uuid();
 
 export async function GET(_req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
+  if (!isExecutiveRole(session.user.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { id } = await ctx.params;
   if (!IdSchema.safeParse(id).success) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
@@ -69,6 +73,9 @@ const PatchSchema = z.object({
 
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
+  if (!isAdminTier(session.user.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { id } = await ctx.params;
   if (!IdSchema.safeParse(id).success) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
@@ -243,6 +250,9 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
+  if (!isAdminTier(session.user.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { id } = await ctx.params;
   if (!IdSchema.safeParse(id).success) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });

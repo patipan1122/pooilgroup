@@ -1,4 +1,5 @@
 import {} from "lucide-react";
+import Link from "next/link";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { BranchForm } from "../branch-form";
@@ -49,7 +50,7 @@ export default async function NewBranchPage() {
         </p>
         {companies.length === 0 && (
           <div className="mt-3 rounded-xl border-2 border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            ⚠️ ยังไม่มีนิติบุคคล (Company) ในระบบ — สร้างที่ <a href="/companies" className="underline font-bold">/companies</a> ก่อน แล้วค่อยมาสร้างสาขา
+            ⚠️ ยังไม่มีนิติบุคคล (Company) ในระบบ — สร้างที่ <Link href="/companies" className="underline font-bold">/companies</Link> ก่อน แล้วค่อยมาสร้างสาขา
           </div>
         )}
       </header>

@@ -19,6 +19,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
+import { isExecutiveRole } from "@/lib/auth/role-guards";
 import { loadDocuments } from "@/lib/docuflow/data";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +49,9 @@ const QuerySchema = z.object({
 
 export async function GET(req: NextRequest) {
   const session = await requireSession();
+  if (!isExecutiveRole(session.user.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const sp = req.nextUrl.searchParams;
   const raw: Record<string, string> = {};

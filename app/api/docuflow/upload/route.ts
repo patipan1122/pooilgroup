@@ -10,6 +10,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
+import { isAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { buildDocumentKey, getUploadUrl } from "@/lib/docuflow/r2";
@@ -85,6 +86,12 @@ export async function POST(req: NextRequest) {
   }
 
   const session = await requireSession();
+  if (!isAdminTier(session.user.role)) {
+    return NextResponse.json(
+      { error: "Forbidden — admin tier only" },
+      { status: 403 },
+    );
+  }
 
   let body: unknown;
   try {

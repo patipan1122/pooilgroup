@@ -3,6 +3,7 @@
 
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/session";
+import { isExecutiveRole } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { getSignedDownloadUrl } from "@/lib/docuflow/r2";
 
@@ -11,6 +12,9 @@ export async function GET(
   ctx: { params: Promise<{ id: string }> },
 ) {
   const session = await requireSession();
+  if (!isExecutiveRole(session.user.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { id } = await ctx.params;
 
   const doc = await prisma.document.findFirst({

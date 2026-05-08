@@ -10,6 +10,11 @@ import { requireSession } from "@/lib/auth/session";
 import { isExecutiveRole } from "@/lib/auth/role-guards";
 import { audit } from "@/lib/audit/log";
 import { runAiSearch } from "@/lib/docuflow/ai-search";
+import { adminClient } from "@/lib/db/server";
+
+// Rate limit window — 10 calls per minute per (orgId, userId)
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_MAX = 10;
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30; // tool-use rounds can take a few seconds
@@ -51,6 +56,26 @@ export async function POST(req: NextRequest) {
 
   const { query } = parsed.data;
   const orgId = session.user.org_id;
+
+  // Rate limit — count recent DOCUFLOW_SEARCH audits by this user
+  const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
+  const admin = adminClient();
+  const { count: recentCount } = await admin
+    .from("audit_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("org_id", orgId)
+    .eq("user_id", session.user.id)
+    .eq("action", "DOCUFLOW_SEARCH")
+    .gte("created_at", since);
+
+  if ((recentCount ?? 0) >= RATE_LIMIT_MAX) {
+    return NextResponse.json(
+      {
+        error: `ค้นหาบ่อยเกินไป (เกิน ${RATE_LIMIT_MAX} ครั้งต่อนาที) · กรุณารอสักครู่`,
+      },
+      { status: 429 },
+    );
+  }
 
   try {
     const result = await runAiSearch(orgId, query);
