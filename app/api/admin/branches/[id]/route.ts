@@ -65,8 +65,25 @@ export async function PATCH(
   if (parsed.data.phone !== undefined) updates.phone = parsed.data.phone;
   if (parsed.data.lat !== undefined) updates.lat = parsed.data.lat;
   if (parsed.data.lng !== undefined) updates.lng = parsed.data.lng;
-  if (parsed.data.managerId !== undefined)
+  if (parsed.data.managerId !== undefined) {
+    // Validate manager belongs to same org + is_active before assigning
+    if (parsed.data.managerId) {
+      const { data: mgr } = await admin
+        .from("users")
+        .select("id")
+        .eq("id", parsed.data.managerId)
+        .eq("org_id", session.user.org_id)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (!mgr) {
+        return NextResponse.json(
+          { error: "ผู้จัดการที่เลือกไม่อยู่ในบริษัท หรือถูกปิดบัญชีแล้ว" },
+          { status: 400 },
+        );
+      }
+    }
     updates.manager_id = parsed.data.managerId;
+  }
   if (parsed.data.lineGroupId !== undefined)
     updates.line_group_id = parsed.data.lineGroupId;
   if (parsed.data.reportDeadline !== undefined)

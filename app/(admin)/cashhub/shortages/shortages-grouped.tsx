@@ -7,7 +7,6 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ChevronRight, AlertCircle } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils/cn";
 import { formatBaht, bkkDate } from "@/lib/utils/format";
 import { BUSINESS_TYPES } from "@/constants/business-types";
@@ -153,7 +152,7 @@ export function ShortagesGrouped({ rows, canApprove }: Props) {
                             {r.note && (
                               <>
                                 <span>·</span>
-                                <span className="italic">"{r.note}"</span>
+                                <span className="italic">&ldquo;{r.note}&rdquo;</span>
                               </>
                             )}
                           </div>

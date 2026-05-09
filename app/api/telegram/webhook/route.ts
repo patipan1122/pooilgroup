@@ -68,12 +68,20 @@ interface TgUpdate {
 }
 
 export async function POST(req: NextRequest) {
-  // Verify secret token
-  if (SECRET) {
-    const provided = req.headers.get("x-telegram-bot-api-secret-token");
-    if (provided !== SECRET) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  // Verify secret token — fail-closed if SECRET ไม่ได้ตั้งค่า
+  // (ก่อนหน้านี้ if (SECRET) {...} → bypass check เมื่อ env ว่าง → spoof ได้)
+  if (!SECRET) {
+    console.error(
+      "[telegram/webhook] TELEGRAM_WEBHOOK_SECRET not set — rejecting all requests",
+    );
+    return NextResponse.json(
+      { error: "Webhook not configured" },
+      { status: 503 },
+    );
+  }
+  const provided = req.headers.get("x-telegram-bot-api-secret-token");
+  if (provided !== SECRET) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   let update: TgUpdate;

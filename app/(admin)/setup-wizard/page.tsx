@@ -86,7 +86,7 @@ export default async function SetupWizardPage() {
               <li>เลือกบริษัท (Pooil Oil หรือ JP Sync) จาก dropdown</li>
               <li>วาง CSV ของสาขา 1 บรรทัด/สาขา</li>
               <li>(ออปชัน) เพิ่มชื่อ/เบอร์ ผจก. — ระบบจะสร้าง invite link ให้</li>
-              <li>กด "สร้างทั้งหมด"</li>
+              <li>กด &ldquo;สร้างทั้งหมด&rdquo;</li>
               <li>หลังจากนั้น มา section 02 — กดปุ่มสร้างบัญชีทดสอบทุก role เพื่อ login เทสได้ทันที</li>
             </ol>
             <p className="text-zinc-500 text-xs mt-3">

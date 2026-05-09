@@ -1,8 +1,6 @@
 // Monthly PDF Report — print-optimized HTML (เลือก "Save as PDF" จาก browser)
 // 4 หน้าตามสเปค: Executive · Branch Ranking · By Type · Compliance
 
-import Link from "next/link";
-import {} from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireAdminTier } from "@/lib/auth/role-guards";
 import { PrintButton } from "./print-button";

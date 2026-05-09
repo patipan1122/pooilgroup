@@ -50,9 +50,33 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "ข้อมูลไม่ถูกต้อง", issues: parsed.error.issues }, { status: 400 });
   }
-  const { companyId, branches, managerInvites } = parsed.data;
+  const { companyId: rawCompanyId, branches, managerInvites } = parsed.data;
   const admin = adminClient();
   const now = new Date().toISOString();
+
+  // Default companyId to first active company in org if not provided
+  // (branches.company_id is NOT NULL — schema requires it)
+  let companyId = rawCompanyId;
+  if (!companyId) {
+    const { data: defaultCompany } = await admin
+      .from("companies")
+      .select("id")
+      .eq("org_id", session.user.org_id)
+      .eq("is_active", true)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (!defaultCompany) {
+      return NextResponse.json(
+        {
+          error:
+            "ยังไม่มี company ในองค์กร — กรุณาสร้าง company ก่อน หรือระบุ companyId",
+        },
+        { status: 400 },
+      );
+    }
+    companyId = defaultCompany.id;
+  }
 
   // Create branches
   let createdBranches = 0;
@@ -72,7 +96,7 @@ export async function POST(req: NextRequest) {
       is_active: true,
       updated_at: now,
     };
-    if (companyId) payload.company_id = companyId;
+    payload.company_id = companyId; // always set (defaulted above if missing)
     const { error } = await admin.from("branches").insert(payload);
     if (error) {
       if (error.code === "23505") {

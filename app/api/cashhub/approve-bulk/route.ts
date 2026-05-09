@@ -69,6 +69,8 @@ export async function POST(req: NextRequest) {
   let approved = 0;
 
   if (eligibleIds.length > 0) {
+    // Atomic: ใส่ .eq("status", "submitted") ใน UPDATE เพื่อกัน race
+    // ถ้ามีคนอื่น approve ระหว่างนั้น row จะ filter ออกเอง (returned id ลดลง)
     const { data: updated, error } = await admin
       .from("daily_reports")
       .update({
@@ -78,23 +80,31 @@ export async function POST(req: NextRequest) {
         updated_at: now,
       })
       .in("id", eligibleIds)
+      .eq("status", "submitted")
       .select("id");
 
     if (error) {
       errors.push(error.message);
     } else {
-      approved = updated?.length ?? 0;
+      const updatedIds = new Set((updated ?? []).map((r) => r.id as string));
+      approved = updatedIds.size;
+      // Track what we lost to race (eligible but not actually updated)
+      const raceSkipped = eligible.filter((r) => !updatedIds.has(r.id as string));
+      skipped += raceSkipped.length;
+      // Audit only reports we actually approved
       await Promise.all(
-        eligible.map((r) =>
-          audit({
-            orgId: r.org_id,
-            userId: session.user.id,
-            action: "APPROVE_REPORT",
-            resourceType: "daily_report",
-            resourceId: r.id,
-            diff: { old: { status: r.status }, new: { status: "approved", bulk: true } },
-          }),
-        ),
+        eligible
+          .filter((r) => updatedIds.has(r.id as string))
+          .map((r) =>
+            audit({
+              orgId: r.org_id,
+              userId: session.user.id,
+              action: "APPROVE_REPORT",
+              resourceType: "daily_report",
+              resourceId: r.id,
+              diff: { old: { status: r.status }, new: { status: "approved", bulk: true } },
+            }),
+          ),
       );
     }
   }

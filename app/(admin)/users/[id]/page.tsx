@@ -266,7 +266,7 @@ export default async function UserDetailPage({ params }: Props) {
             <p className="text-amber-700 text-xs mt-0.5">
               ลิงก์หมดอายุ:{" "}
               {user.invite_expires_at ? bkkDateTime(user.invite_expires_at) : "—"} —
-              ถ้าหมดอายุแล้วกด "ส่งลิงก์ใหม่" ที่ปุ่มด้านบน
+              ถ้าหมดอายุแล้วกด &ldquo;ส่งลิงก์ใหม่&rdquo; ที่ปุ่มด้านบน
             </p>
           </div>
         </div>

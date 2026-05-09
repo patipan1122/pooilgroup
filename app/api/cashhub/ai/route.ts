@@ -7,6 +7,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
 import { isAdmin } from "@/lib/auth/permissions";
+import { checkAiBudget, recordAiUsage } from "@/lib/ai/cost-cap";
 import { buildAiContext, contextToText } from "@/lib/cashhub/ai-context";
 import {
   findPageGuide,
@@ -47,6 +48,16 @@ export async function POST(req: NextRequest) {
   const session = await requireSession();
   if (!isAdmin(session.user) && session.user.role !== "branch_manager") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // BUG-017: AI budget check before calling provider
+  const budget = await checkAiBudget({
+    userId: session.user.id,
+    orgId: session.user.org_id,
+    endpoint: "cashhub.ai",
+  });
+  if (!budget.allowed) {
+    return NextResponse.json({ error: budget.reason }, { status: 429 });
   }
 
   const hasGemini = !!process.env.GEMINI_API_KEY;
@@ -94,9 +105,26 @@ export async function POST(req: NextRequest) {
   try {
     if (hasGemini) {
       const answer = await askGemini(fullContext, question, history);
+      // Track usage (Gemini ฟรี — cost = 0 แต่ track count สำหรับ rate cap)
+      await recordAiUsage({
+        userId: session.user.id,
+        orgId: session.user.org_id,
+        endpoint: "cashhub.ai",
+        provider: "gemini-flash",
+        inputTokens: question.length / 4, // rough estimate
+        outputTokens: answer.length / 4,
+      });
       return NextResponse.json({ answer, provider: "gemini" });
     }
     const answer = await askClaude(fullContext, question, history);
+    await recordAiUsage({
+      userId: session.user.id,
+      orgId: session.user.org_id,
+      endpoint: "cashhub.ai",
+      provider: "claude-haiku",
+      inputTokens: question.length / 4,
+      outputTokens: answer.length / 4,
+    });
     return NextResponse.json({ answer, provider: "claude" });
   } catch (err: unknown) {
     console.error("[ai chat]", err);

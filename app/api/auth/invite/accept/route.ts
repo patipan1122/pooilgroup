@@ -143,9 +143,9 @@ export async function POST(req: NextRequest) {
 
   const newAuthId = authData.user.id;
 
-  // Step 4: insert public.users with NEW id
+  // Step 4: insert public.users with NEW id — rollback auth user on failure
   const now = new Date().toISOString();
-  await admin.from("users").insert({
+  const insertUser = await admin.from("users").insert({
     id: newAuthId,
     org_id: oldUser.org_id,
     email,
@@ -158,10 +158,42 @@ export async function POST(req: NextRequest) {
     invite_expires_at: null,
     updated_at: now,
   });
+  if (insertUser.error) {
+    // Rollback: delete the auth user we just created + restore pending row
+    await admin.auth.admin.deleteUser(newAuthId).catch(() => {});
+    await admin.from("users").insert({
+      id: oldUser.id,
+      org_id: oldUser.org_id,
+      email: null,
+      name: oldUser.name,
+      role: oldUser.role,
+      must_change_password: true,
+      is_active: false,
+      invite_token: token,
+      invite_expires_at: pending.invite_expires_at,
+      updated_at: now,
+    });
+    if (oldBranches) {
+      await admin.from("user_branches").insert(
+        oldBranches.map((b) => ({
+          id: crypto.randomUUID(),
+          org_id: oldUser.org_id,
+          user_id: oldUser.id,
+          branch_id: b.branch_id,
+          is_active: b.is_active,
+        })),
+      );
+    }
+    return NextResponse.json(
+      { error: "บันทึกข้อมูลใหม่ไม่ได้ — ลองใหม่อีกครั้ง" },
+      { status: 500 },
+    );
+  }
 
-  // Step 5: re-link branches
+  // Step 5: re-link branches — best-effort (user is already active)
+  // ถ้า step นี้ fail user ใช้ระบบได้ แต่ไม่มี branch access → admin re-assign ได้
   if (oldBranches && oldBranches.length > 0) {
-    await admin.from("user_branches").insert(
+    const { error: branchErr } = await admin.from("user_branches").insert(
       oldBranches.map((b) => ({
         id: crypto.randomUUID(),
         org_id: oldUser.org_id,
@@ -170,6 +202,29 @@ export async function POST(req: NextRequest) {
         is_active: b.is_active,
       })),
     );
+    if (branchErr) {
+      console.error("[invite/accept] branch relink failed", branchErr);
+      // Don't fail the whole flow — log + audit, admin can fix
+      await audit({
+        orgId: oldUser.org_id,
+        userId: newAuthId,
+        action: "CREATE_USER",
+        resourceType: "user",
+        resourceId: newAuthId,
+        diff: {
+          new: {
+            activated: true,
+            role: oldUser.role,
+            branch_relink_failed: true,
+            error: branchErr.message,
+          },
+        },
+      });
+      return NextResponse.json({
+        success: true,
+        warning: "บัญชีพร้อมใช้งานแล้ว แต่ผูกสาขาไม่ได้ — ติดต่อ admin",
+      });
+    }
   }
 
   await audit({

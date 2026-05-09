@@ -45,6 +45,8 @@ export function AiChat() {
     const text = (question ?? input).trim();
     if (!text || pending) return;
     setInput("");
+    // Event handler (button click) — not render path; Date.now() เป็น OK
+    // eslint-disable-next-line react-hooks/purity
     const userMsg: Msg = { role: "user", content: text, ts: Date.now() };
     setMsgs((cur) => [...cur, userMsg]);
 

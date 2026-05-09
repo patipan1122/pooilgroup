@@ -167,7 +167,7 @@ export default async function MissingPage({
           สาขาที่ <span className="text-gradient-blue">ยังไม่กรอก</span> รายงาน
         </h1>
         <p className="text-sm sm:text-base text-zinc-600 mt-3 leading-relaxed">
-          {days} วันล่าสุด · กดปุ่ม "แจ้งเหตุผล" เพื่อบันทึกว่าทำไมไม่กรอก —
+          {days} วันล่าสุด · กดปุ่ม &ldquo;แจ้งเหตุผล&rdquo; เพื่อบันทึกว่าทำไมไม่กรอก —
           เจ้าของจะเห็นใน Dashboard ไม่ต้องโทรถาม
         </p>
       </header>

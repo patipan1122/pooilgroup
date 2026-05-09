@@ -15,12 +15,8 @@ import {
   Trash2,
   Pencil,
   Star,
-  Copy,
 } from "lucide-react";
 import { BackButton } from "@/components/ui/back-button";
-import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils/cn";
@@ -319,7 +315,7 @@ export function FormEditor({
   // Group preview fields — built-in (with overrides) + custom fields appended
   const previewFields = useMemo(() => {
     const builtIn = defaults.fields
-      .map((f) => effectiveField(f, overrides[f.key], isLocked(f.key)))
+      .map((f) => effectiveField(f, overrides[f.key], lockedSet.has(f.key)))
       .filter((f): f is FieldConfig => f !== null);
     const customSorted = [...customFields].sort(
       (a, b) => a.sortOrder - b.sortOrder,
@@ -656,7 +652,7 @@ export function FormEditor({
               </div>
               {customFields.length === 0 ? (
                 <p className="text-[12px] text-zinc-500 px-3 py-6 rounded-xl border border-dashed border-zinc-200 text-center">
-                  ยังไม่มีช่องที่เพิ่มเอง · กด "เพิ่มช่องใหม่" เพื่อเพิ่ม
+                  ยังไม่มีช่องที่เพิ่มเอง · กด &ldquo;เพิ่มช่องใหม่&rdquo; เพื่อเพิ่ม
                   payment channel ใหม่ (เช่น PromptPay, e-wallet) ฟิลด์นี้จะถูก
                   save เข้า extra_fields ของ daily_reports
                 </p>

@@ -130,6 +130,17 @@ export function BranchAssignmentPanel({
     });
   }
 
+  // Map template id → label "v2" / "v3 (มีคาร์แคร์)" สำหรับโชว์ใน badge
+  // ต้องเรียก hook ก่อน early return เสมอ (rules-of-hooks)
+  const templateLabelById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of allTemplates) {
+      const label = t.name ? `v${t.version} · ${t.name}` : `v${t.version}`;
+      m.set(t.id, label);
+    }
+    return m;
+  }, [allTemplates]);
+
   if (branches.length === 0) {
     return (
       <div className="rounded-2xl border-2 border-dashed border-zinc-200 bg-zinc-50/40 p-6 text-center">
@@ -143,16 +154,6 @@ export function BranchAssignmentPanel({
       </div>
     );
   }
-
-  // Map template id → label "v2" / "v3 (มีคาร์แคร์)" สำหรับโชว์ใน badge
-  const templateLabelById = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const t of allTemplates) {
-      const label = t.name ? `v${t.version} · ${t.name}` : `v${t.version}`;
-      m.set(t.id, label);
-    }
-    return m;
-  }, [allTemplates]);
 
   return (
     <div className="rounded-2xl border-2 border-zinc-200 bg-white overflow-hidden">

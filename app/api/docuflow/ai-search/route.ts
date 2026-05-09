@@ -7,6 +7,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
+import { checkAiBudget, recordAiUsage } from "@/lib/ai/cost-cap";
 import { isExecutiveRole } from "@/lib/auth/role-guards";
 import { audit } from "@/lib/audit/log";
 import { runAiSearch } from "@/lib/docuflow/ai-search";
@@ -32,6 +33,16 @@ export async function POST(req: NextRequest) {
       { error: "ไม่มีสิทธิ์ใช้ AI Search" },
       { status: 403 },
     );
+  }
+
+  // BUG-017: AI budget check
+  const budget = await checkAiBudget({
+    userId: session.user.id,
+    orgId: session.user.org_id,
+    endpoint: "docuflow.ai-search",
+  });
+  if (!budget.allowed) {
+    return NextResponse.json({ error: budget.reason }, { status: 429 });
   }
 
   let body: unknown;
@@ -96,6 +107,18 @@ export async function POST(req: NextRequest) {
         },
       },
     });
+
+    // Record AI usage (rough token estimate)
+    if (!result.cached) {
+      await recordAiUsage({
+        userId: session.user.id,
+        orgId: session.user.org_id,
+        endpoint: "docuflow.ai-search",
+        provider: "claude-haiku",
+        inputTokens: query.length / 4,
+        outputTokens: result.answer.length / 4,
+      });
+    }
 
     return NextResponse.json({
       answer: result.answer,

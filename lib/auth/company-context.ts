@@ -7,10 +7,7 @@
 import { cookies } from "next/headers";
 import { unstable_cache } from "next/cache";
 import { adminClient } from "../db/server";
-import {
-  COMPANY_COOKIE_NAME as COOKIE_NAME,
-  COMPANY_COOKIE_MAX_AGE as COOKIE_MAX_AGE,
-} from "./company-context-shared";
+import { COMPANY_COOKIE_NAME as COOKIE_NAME } from "./company-context-shared";
 
 export async function readCompanyCookie(): Promise<string | undefined> {
   const jar = await cookies();

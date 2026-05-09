@@ -342,7 +342,7 @@ export function ImportClient() {
             </li>
             <li>
               <code className="text-zinc-700">branchCodes</code>: รหัสสาขา หลายอันคั่นด้วย comma
-              (ถ้ามีหลายสาขา ใน 1 cell ให้ครอบด้วย "")
+              (ถ้ามีหลายสาขา ใน 1 cell ให้ครอบด้วย &ldquo;&rdquo;)
             </li>
           </ul>
         </CardBody>

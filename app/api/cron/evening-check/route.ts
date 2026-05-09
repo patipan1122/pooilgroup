@@ -3,6 +3,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { adminClient } from "@/lib/db/server";
+import { runWithMonitor } from "@/lib/cron/runner";
 import { sendTelegramMessage } from "@/lib/telegram/send";
 import { buildEveningCheck } from "@/lib/telegram/messages";
 import { getBaseUrl } from "@/lib/utils/base-url";
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest) {
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return run();
+  return runWithMonitor("evening-check", () => run(), { req });
 }
 export async function POST(req: NextRequest) {
   return GET(req);

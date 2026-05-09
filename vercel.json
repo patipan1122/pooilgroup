@@ -3,7 +3,10 @@
   "crons": [
     { "path": "/api/cron/morning-brief", "schedule": "0 0 * * *" },
     { "path": "/api/cron/evening-check", "schedule": "0 11 * * *" },
-    { "path": "/api/cron/deadline-reminder", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/deadline-reminder", "schedule": "0 13 * * *" },
+    { "path": "/api/cron/deadline-reminder", "schedule": "30 13 * * *" },
+    { "path": "/api/cron/deadline-reminder", "schedule": "0 14 * * *" },
+    { "path": "/api/cron/deadline-reminder", "schedule": "30 14 * * *" },
     { "path": "/api/cron/monthly-report-pdf", "schedule": "0 1 1 * *" },
     { "path": "/api/cron/access-review", "schedule": "0 2 * * *" },
     { "path": "/api/cron/health-score", "schedule": "0 16 * * *" },

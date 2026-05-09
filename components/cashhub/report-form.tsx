@@ -118,9 +118,11 @@ export function ReportForm({
   const draftKey = `cashhub:draft:${branchId}:${reportDate}:${shift}`;
 
   // Load draft on mount and shift change
+  // localStorage hydrate (browser-only) — SSR-safe pattern
   useEffect(() => {
     if (typeof window === "undefined") return;
     const saved = localStorage.getItem(draftKey);
+    /* eslint-disable react-hooks/set-state-in-effect */
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as FormValues;
@@ -132,6 +134,7 @@ export function ReportForm({
       // reset to empty when switching shifts
       setValues(Object.fromEntries(config.fields.map((f) => [f.key, ""])));
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftKey]);
 
@@ -614,7 +617,7 @@ export function ReportForm({
                 ถึง <strong>{spikeRatio.toFixed(1)} เท่า</strong>
               </p>
               <p className="text-xs text-zinc-500 mt-3">
-                ตรวจตัวเลขอีกครั้งก่อนกด "ยืนยันถูกต้อง" — ระบบจะ flag ให้ผู้จัดการรู้ตอน
+                ตรวจตัวเลขอีกครั้งก่อนกด &ldquo;ยืนยันถูกต้อง&rdquo; — ระบบจะ flag ให้ผู้จัดการรู้ตอน
                 approve เพื่อลด error
               </p>
               <div className="mt-5 flex gap-2">

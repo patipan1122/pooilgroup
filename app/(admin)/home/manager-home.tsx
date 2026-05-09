@@ -7,9 +7,6 @@ import Link from "next/link";
 import {
   ClipboardCheck,
   ArrowUpRight,
-  CheckCircle2,
-  Clock,
-  ScrollText,
   UserCircle,
   Inbox,
   ChevronRight,

@@ -19,17 +19,6 @@ import { NotesGrouped, type NoteListRow } from "./notes-grouped";
 export const dynamic = "force-dynamic";
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
-interface NoteRow {
-  id: string;
-  branch_id: string;
-  report_date: string;
-  shift: string;
-  notes: string;
-  status: string;
-  total_sales: number | string;
-  branches: { code?: string; name?: string; business_type?: string } | null;
-}
-
 export default async function NotesInboxPage({
   searchParams,
 }: {

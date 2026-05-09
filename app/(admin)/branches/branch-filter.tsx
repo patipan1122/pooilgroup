@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo } from "react";
 import {
   Filter,
   RotateCcw,
@@ -10,7 +10,6 @@ import {
   Pencil,
   Phone as PhoneIcon,
   MessageSquare,
-  Check,
 } from "lucide-react";
 import Link from "next/link";
 import { BUSINESS_TYPES } from "@/constants/business-types";

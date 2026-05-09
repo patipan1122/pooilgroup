@@ -30,9 +30,12 @@ export function QuickApproveBar({
 }: Props) {
   const [dismissed, setDismissed] = useState(false);
 
-  // sessionStorage check (mount only) — re-show on next session
+  // sessionStorage hydrate (mount only) — re-show on next session
+  // Pattern: setState in mount-effect เป็นวิธีมาตรฐานสำหรับ SSR hydration
+  // (sessionStorage เข้าถึงไม่ได้ระหว่าง SSR → ต้องอ่านหลัง mount)
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDismissed(sessionStorage.getItem(SS_KEY) === "1");
   }, []);
 

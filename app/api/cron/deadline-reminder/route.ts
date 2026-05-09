@@ -41,12 +41,17 @@ const REMINDER_SLOTS = [
 
 const TOLERANCE_MINUTES = 5; // cron may fire ±5 min late/early
 
+import { runWithMonitor } from "@/lib/cron/runner";
+
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization");
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return run();
+  // deadline-reminder fires every 30 min — disable per-day idempotency
+  return runWithMonitor("deadline-reminder", () => run(), { req,
+    allowMultipleRunsPerDay: true,
+  });
 }
 
 export async function POST(req: NextRequest) {

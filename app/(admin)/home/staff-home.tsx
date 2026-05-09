@@ -81,6 +81,8 @@ export async function StaffHome({
   }
 
   // 3. Recent submissions (last 7 days, my own submissions)
+  // Server Component — Date.now() OK (single execution per request)
+  // eslint-disable-next-line react-hooks/purity
   const sinceDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10);

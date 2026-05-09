@@ -146,6 +146,8 @@ export default async function UsersPage() {
 
   // Compute stats — must match the matchesFilter logic in users-by-business.tsx
   // exactly, otherwise clicking a stat card produces a different count than the card shows.
+  // Server Component — Date.now() OK (single execution per request)
+  // eslint-disable-next-line react-hooks/purity
   const now = Date.now();
   const week = 7 * 24 * 60 * 60 * 1000;
   const stats = {
@@ -278,6 +280,8 @@ export default async function UsersPage() {
                 </span>
               )}
             </Link>
+            {/* Download link to API endpoint — Link component ใช้ download ตรง ๆ ไม่ได้ */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a
               href="/api/admin/users/export"
               className="inline-flex items-center gap-2 px-3 h-11 rounded-xl border-2 border-zinc-200 bg-white text-zinc-800 font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm"

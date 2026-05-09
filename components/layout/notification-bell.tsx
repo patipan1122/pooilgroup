@@ -4,7 +4,6 @@ import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import {
   Bell,
-  Check,
   Info,
   AlertTriangle,
   CircleAlert,

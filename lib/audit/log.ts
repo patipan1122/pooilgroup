@@ -50,6 +50,9 @@ export type AuditAction =
   // for the org or a specific user.
   | "PERMISSION_CHANGE"
   | "TOGGLE_MODULE"
+  // Account recovery + admin actions
+  | "PASSWORD_RESET_REQUESTED"
+  | "ADMIN_UNLOCK_USER"
   // Cron jobs — recorded so we can prove a scheduled job ran (and dedupe).
   | "DEADLINE_REMINDER_T60"
   | "DEADLINE_REMINDER_T30"

@@ -66,11 +66,13 @@ export default async function HomePage() {
     session.user.role === "org_admin" ||
     session.user.role === "admin";
 
+  // Server Component — runs once per request; Date.now() / new Date() เป็น OK
   const todayStart = formatInTimeZone(
     startOfDay(new Date()),
     TZ,
     "yyyy-MM-dd'T'HH:mm:ss'+07:00'",
   );
+  // eslint-disable-next-line react-hooks/purity
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
   // ============================================================

@@ -9,7 +9,6 @@ import {
   startOfMonth,
   endOfMonth,
   subDays,
-  subMonths,
   getDate,
   getDaysInMonth,
 } from "date-fns";
@@ -17,12 +16,14 @@ import { formatInTimeZone } from "date-fns-tz";
 
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
+import { runWithMonitor } from "@/lib/cron/runner";
+
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization");
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return run();
+  return runWithMonitor("health-score", () => run(), { req });
 }
 
 export async function POST(req: NextRequest) {
@@ -49,8 +50,11 @@ async function run() {
     .eq("is_active", true);
   if (!branches) return NextResponse.json({ ok: true, computed: 0 });
 
+  // BUG-024: batch parallelism — process 10 branches at a time to avoid Vercel 60s timeout
+  const BATCH_SIZE = 10;
   let computed = 0;
-  for (const b of branches) {
+
+  async function processBranch(b: { id: string; org_id: string }) {
     const [last30Q, prev30Q, monthQ, targetQ] = await Promise.all([
       admin
         .from("daily_reports")
@@ -153,6 +157,12 @@ async function run() {
       { onConflict: "branch_id,computed_for" },
     );
     computed += 1;
+  }
+
+  // Run batches of BATCH_SIZE in parallel
+  for (let i = 0; i < branches.length; i += BATCH_SIZE) {
+    const chunk = branches.slice(i, i + BATCH_SIZE);
+    await Promise.all(chunk.map(processBranch));
   }
 
   return NextResponse.json({ ok: true, computed });

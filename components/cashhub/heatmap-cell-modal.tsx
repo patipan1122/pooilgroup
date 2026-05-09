@@ -88,14 +88,18 @@ export function HeatmapCellModal({
   const [showRejectInput, setShowRejectInput] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
 
+  // Re-fetch + reset state เมื่อ modal เปิด/cell เปลี่ยน
+  // setState ทั้ง batch เป็น initialization sync ไม่ใช่ cascading
   useEffect(() => {
     if (!open) return;
+    /* eslint-disable react-hooks/set-state-in-effect */
     setLoading(true);
     setError(null);
     setReport(null);
     setBranch(null);
     setShowRejectInput(false);
     setRejectReason("");
+    /* eslint-enable react-hooks/set-state-in-effect */
 
     fetch(`/api/cashhub/reports/by-date?branchId=${branchId}&date=${date}`)
       .then(async (r) => {

@@ -106,12 +106,15 @@ export function DataGrid<T extends { id: string }>({
   const [filters, setFilters] = useState<ColumnFilters>({});
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  // localStorage hydrate (mount only) — restore last sort/filter
+  // Pattern: setState ใน mount-effect สำหรับ browser-storage hydration (SSR-safe)
   useEffect(() => {
     if (!persistKey) return;
     try {
       const raw = localStorage.getItem(`dg:${persistKey}`);
       if (raw) {
         const v = JSON.parse(raw);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         if (v.sort) setSort(v.sort);
         if (v.filters) setFilters(v.filters);
       }

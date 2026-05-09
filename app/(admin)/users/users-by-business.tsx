@@ -226,9 +226,11 @@ export function UsersByBusiness({
 }: Props) {
   const router = useRouter();
   const [viewMode, setViewMode] = useState<"card" | "table">("card");
+  // localStorage hydrate (mount only) — SSR-safe pattern
   useEffect(() => {
     if (typeof window === "undefined") return;
     const saved = localStorage.getItem("admin-users-view-mode");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (saved === "card" || saved === "table") setViewMode(saved);
   }, []);
   useEffect(() => {

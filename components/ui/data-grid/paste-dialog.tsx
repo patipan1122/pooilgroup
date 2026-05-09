@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, AlertTriangle, X, Plus, Pencil } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils/cn";
@@ -40,10 +40,11 @@ export function PasteDialog<T extends { id: string }>({
   const [text, setText] = useState(initialText);
   const [submitting, setSubmitting] = useState(false);
 
-  // Re-sync when dialog re-opens with new initialText
-  useMemo(() => {
+  // Re-sync local text เมื่อ dialog เปิดใหม่พร้อม initialText ใหม่
+  // (สถานะถูก reset ตอนเปิด ไม่ใช่ระหว่าง render)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (open) setText(initialText);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialText]);
 
   const parsed = useMemo(() => {
@@ -140,7 +141,7 @@ export function PasteDialog<T extends { id: string }>({
       <div className="space-y-4">
         <p className="text-xs text-zinc-500 -mt-1">
           ก๊อปข้อมูลจาก Excel / Google Sheets / Numbers แล้ววางในช่องด้านล่าง
-          ระบบจะแยกให้ว่า "เพิ่มใหม่" กี่แถว / "อัพเดท" กี่แถว
+          ระบบจะแยกให้ว่า &ldquo;เพิ่มใหม่&rdquo; กี่แถว / &ldquo;อัพเดท&rdquo; กี่แถว
         </p>
 
         <textarea

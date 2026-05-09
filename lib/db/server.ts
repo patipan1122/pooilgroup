@@ -5,6 +5,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { createClient as createSb } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { validateProductionEnv } from "@/lib/env-validate";
+
+// Run env validation on first import — fails-closed in prod if config is bad
+validateProductionEnv();
 
 export async function serverClient() {
   const cookieStore = await cookies();

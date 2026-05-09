@@ -142,6 +142,8 @@ export default async function BranchesPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Download link to API endpoint — Link component ใช้ download ตรง ๆ ไม่ได้ */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a
               href="/api/admin/branches/export"
               className="inline-flex items-center gap-2 px-3 h-11 rounded-xl border-2 border-zinc-200 bg-white text-zinc-800 font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm"
