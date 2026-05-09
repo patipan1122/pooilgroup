@@ -1,8 +1,43 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-04 (ระบบ Dashboard ยอดขาย ครบ MVP)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-09 (DocuFlow ขึ้น + Cron + LINE Rich Menu + RLS audit)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-05-09 — รวม 8 commits หลัง 05-04)
+
+ตั้งแต่ Dashboard pass (05-04) → วันนี้ มี 8 commits ใหญ่:
+
+**DocuFlow (Sprint 8) — bootstrap → polish → UAT fixes ครบในรอบเดียว**
+- Schema + 4 migrations: `20260508000002_docuflow_foundation` / `_advanced` / `_polish` / `_005_audit_renew_chain_index`
+- Pages: `/docuflow/{documents,expiry,persons,vehicles,risk,search,checklist}`
+- Features: sharing, AI search, risk scoring, signature placement, renewal workflow, vehicle/person tracking
+- UAT pass ปิด: role gates, rate limit, perf indexes (commit `5ef20e6`)
+
+**Infra**
+- **Vercel cron 7 jobs** (`vercel.json`): morning-brief 07:00, evening-check 18:00, deadline-reminder ทุก 30 นาที, monthly-report-pdf, access-review, health-score 23:00 BKK, docuflow-expiry
+- **LINE Rich Menu** config + upload script (`scripts/line-rich-menu.mjs` + `npm run line:rich-menu`)
+- **`@line/liff` ติดตั้งแล้ว** (^2.28.0) — แต่ LIFF page ยังใช้ session, ยังไม่ `liff.init()` จริง
+- **RLS audit pass 2** — ปิด 18 ตารางที่ตกหล่น (`_007_rls_for_remaining_tables`)
+- Temp access column + streak retry + form template seed race-fix
+
+**Core**
+- Cross-module Executive Dashboard (CashHub × FuelOS × DocuFlow rollup)
+- Quick Approve Bar (พร้อมจะใช้กับ Telegram inline)
+- 3 settings pages เพิ่ม + `/join` refactor + backup CSV
+- CSP/HSTS/CORS headers ใน proxy.ts (RULES §21 layer 2)
+- ปิด cross-org leaks, soft delete enforce, idempotent submit
+
+**Auth**
+- Per-user module access (CashHub / FuelOS / DocuFlow toggle ต่อ user)
+- Permission cleanup — ปิด `/signup`, fix admin tier, guard PDF, roles ใน invite
+
+**To apply เมื่อ deploy**
+1. `cd web && npx prisma db push` (apply 7 migrations ใหม่)
+2. ตั้ง env: `CRON_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_CHANNEL_SECRET`, `LIFF_ID`
+3. (Optional) `npm run line:rich-menu` — upload Rich Menu
+
+---
 
 ## 🆕 Update (2026-05-04 — Dashboard ยอดขาย full pass)
 
@@ -137,33 +172,34 @@ Working tree changes:
 
 ### Sprint 0 ที่เหลือ
 - [ ] **LINE Messaging API webhook** (`/api/line/webhook`)
-- [ ] **LIFF init จริง** (`@line/liff` package, ยังไม่ install)
+- [ ] **LIFF init จริง** — `@line/liff` install แล้ว แต่ page ยังใช้ `requireSession()` แทน `liff.init()`
 - [ ] **Telegram Bot** (Grammy, ยังไม่ install + ไม่มี `/api/telegram/webhook`)
-- [ ] LINE Rich Menu config + upload script
+- [x] ~~LINE Rich Menu config + upload script~~ — `scripts/line-rich-menu.mjs` + `npm run line:rich-menu`
 - [ ] Telegram Admin Chat ID setup
 
 ### Sprint 1–2 ที่เหลือ
-- [ ] Self-Register flow (`/join` page) + Telegram approval
+- [x] ~~Self-Register flow (`/join` page) + อนุมัติ~~ — admin queue (Telegram notify ค่อยทำกับ bot)
 - [ ] Permission Templates UI (4 preset)
-- [ ] Branch Groups (จัดกลุ่มสาขา)
-- [ ] Module Toggle UI per Org
-- [ ] Smart Digest (กัน Telegram spam)
-- [ ] My Action Center widget
-- [ ] Scheduled PDF Monthly Report
+- [ ] Branch Groups (จัดกลุ่มสาขา) — มี table แล้ว, เหลือ UI
+- [x] ~~Module Toggle UI per Org~~ — เพิ่ม per-user module access ด้วย
+- [ ] Smart Digest (กัน Telegram spam) — รอ Telegram bot
+- [x] ~~My Action Center widget~~
+- [x] ~~Scheduled PDF Monthly Report~~ — Vercel cron `monthly-report-pdf`
 
 ### CashHub (Sprint 3–5)
 - [ ] **ทดสอบ ReportForm 7 ประเภทครบ** (มี config แล้ว แต่ยังไม่ verify ครบทุก type)
-- [ ] Anti-Stupidity Rules: Spike Alert, Time Alert (00:00–05:00), Pre-check Rule 7
-- [ ] Approval ผ่าน **Telegram Inline** [✅][❌][📊]
-- [ ] Smart Approval Panel (Web)
-- [ ] Analytics: Branch View + Super View + Calendar Heatmap
-- [ ] **Health Score A–F** (Cron 23:00)
-- [ ] Branch Leaderboard + Streak Badge
-- [ ] Drill-down: ภาพรวม → ธุรกิจ → สาขา → รายวัน
+- [x] ~~Spike Alert~~ (commit `692bfbb`)
+- [ ] Anti-Stupidity ที่เหลือ: Time Alert (00:00–05:00), Pre-check Rule 7
+- [ ] Approval ผ่าน **Telegram Inline** [✅][❌][📊] — Quick Approve Bar (web) มีแล้ว
+- [x] ~~Smart Approval Panel (Web)~~ — Quick Approve Bar
+- [x] ~~Analytics: Branch View + Super View + Calendar Heatmap~~
+- [x] ~~Health Score A–F~~ + Cron (Vercel `health-score` 23:00 BKK)
+- [x] ~~Branch Leaderboard + Streak Badge~~
+- [x] ~~Drill-down: ภาพรวม → ธุรกิจ → สาขา → รายวัน~~
 - [ ] AI Chat "Ask Me Anything" (Claude Haiku)
-- [ ] Forecast สิ้นเดือน, Pattern Heatmap
+- [x] ~~Forecast สิ้นเดือน, Pattern Heatmap~~
 - [ ] Quick Note Staff → เจ้าของ
-- [ ] Missing Report Reason flow
+- [x] ~~Missing Report Reason flow~~
 
 ### FuelOS (Sprint 6–7) — ยังไม่เริ่ม
 - [ ] Price Engine (2 ราคา, MOPS Alert)
@@ -175,26 +211,24 @@ Working tree changes:
 - [ ] Flash Sale (LINE OA Broadcast)
 - [ ] TRCloud Sync
 
-### DocuFlow (Sprint 8) — ยังไม่เริ่ม
-- [ ] 4 ระดับเอกสาร + 5 บริษัท
-- [ ] Tag System
-- [ ] Expiry Dashboard
-- [ ] Vehicle + Driver tracking
-- [ ] Renewal Workflow + AI Comparison
-- [ ] Signature Placement (Box drag-drop)
-- [ ] External Sign (OTP, ไม่ต้อง Account)
+### DocuFlow (Sprint 8) — ✅ MVP ครบ (ยังไม่ได้ UAT จริง)
+- [x] ~~4 ระดับเอกสาร + 5 บริษัท~~ (foundation migration)
+- [x] ~~Tag System~~
+- [x] ~~Expiry Dashboard~~ + cron `docuflow-expiry`
+- [x] ~~Vehicle + Driver tracking~~
+- [x] ~~Renewal Workflow + AI Comparison~~
+- [x] ~~Signature Placement (Box drag-drop)~~
+- [ ] External Sign (OTP, ไม่ต้อง Account) — ยังไม่ทำ
 
 ---
 
-## 🚀 Next 5 Concrete Steps (ลำดับ)
+## 🚀 Next 5 Concrete Steps (ลำดับ — refresh 2026-05-09)
 
-1. **Commit งานที่ค้าง** — module folder restructure อย่าทิ้งไว้ลอย
-2. **เลือก channel ก่อน:**
-   - **A) Telegram first** (ง่ายกว่า, Admin จำเป็นต้องใช้ทันที) → install grammy + `/api/telegram/webhook` + Approval flow
-   - **B) LINE LIFF first** (Staff ใช้, แต่ต้อง LINE Channel + LIFF App ก่อน) → install @line/liff + `/api/line/webhook` + Rich Menu
-3. **เติม Anti-Stupidity Rules** ที่เหลือใน CashHub (Spike, Time, Pre-check) — ของง่าย, ค่ากลับสูง
-4. **Sprint 4 — Approval flow ครบ** (Telegram inline → DB → web fallback)
-5. **Health Score A–F + Cron 23:00** → unlock Dashboard ของจริง
+1. **Telegram Bot** — install grammy + `/api/telegram/webhook` + Approval inline `[✅][❌][📊]` (Quick Approve Bar ใน web มีแล้ว, ทำให้ทำงานบน Telegram ด้วย)
+2. **LIFF init จริง** — เปลี่ยน `/liff/report/[branchId]` จาก `requireSession()` → `liff.init()` + map LINE userId → User
+3. **LINE Messaging webhook** `/api/line/webhook` — รองรับ Rich Menu actions
+4. **CashHub Anti-Stupidity ที่เหลือ** — Time Alert (00:00–05:00) + Pre-check Rule 7
+5. **เริ่ม FuelOS Price Engine** — module ใหญ่สุดที่ยังไม่แตะ
 
 ---
 
