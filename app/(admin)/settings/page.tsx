@@ -34,10 +34,12 @@ export default async function SettingsPage() {
 
   const settings = (org?.settings as Record<string, unknown>) ?? {};
 
-  // Default modules — if no rows yet, treat all as active
-  // FuelOS + DocuFlow soft-removed · re-add when those modules ship
+  // Default modules — if no rows yet, treat all as active.
+  // Spread DB rows on top so admin-controlled toggles override defaults.
   const moduleStatus = {
     cashhub: true,
+    docuflow: true,
+    fuelos: true,
     ...(Object.fromEntries(
       (modules ?? []).map((m) => [m.module_name, m.is_active]),
     ) as Record<string, boolean>),

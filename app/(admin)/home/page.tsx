@@ -235,7 +235,16 @@ export default async function HomePage() {
               enabled={moduleEnabled.cashhub}
               landingPath="/cashhub/dashboard"
             />
-            {/* FuelOS + DocuFlow soft-removed · feedback_module_isolation.md */}
+            <ModuleCard
+              slug="docuflow"
+              enabled={moduleEnabled.docuflow ?? true}
+              landingPath="/docuflow"
+            />
+            <ModuleCard
+              slug="fuelos"
+              enabled={moduleEnabled.fuelos ?? true}
+              landingPath="/fuelos"
+            />
           </div>
         </Section>
 
