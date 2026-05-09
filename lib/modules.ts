@@ -24,6 +24,9 @@ import {
   Clock,
   Sparkles,
   CheckSquare,
+  GitCompare,
+  Boxes,
+  GraduationCap,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
@@ -113,6 +116,30 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       // Shared — เงินขาด/โน้ต ผู้จัดการสาขาเห็นได้ (auto-scoped to own branches)
       { href: "/cashhub/shortages", label: "เงินขาด", icon: AlertCircle },
       { href: "/cashhub/notes", label: "โน้ตจาก Staff", icon: ScrollText },
+      {
+        href: "/cashhub/missing",
+        label: "ขาดส่งรายงาน",
+        icon: AlertTriangle,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/cashhub/compare",
+        label: "เทียบเดือน",
+        icon: GitCompare,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        href: "/cashhub/kiosk",
+        label: "Kiosk รอบเก็บ",
+        icon: Boxes,
+        roles: ["super_admin", "org_admin", "admin", "area_manager"],
+      },
+      {
+        href: "/cashhub/training",
+        label: "ศูนย์อบรม",
+        icon: GraduationCap,
+        roles: ["super_admin", "org_admin", "admin", "area_manager"],
+      },
 
       {
         href: "/cashhub/monthly-report",
