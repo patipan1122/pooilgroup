@@ -132,6 +132,13 @@ if (!isProdMode) {
     const passed = m ? Number(m[1]) : 0;
     return { ok: r.code === 0, detail: `${passed} passed` };
   });
+
+  addStep("Integration: TG callback + PDF + deep health (11)", async () => {
+    const r = await exec("node scripts/integration-test.mjs", { silent: true });
+    const m = r.stdout.match(/Passed:\s*\x1b\[\d+m(\d+)/);
+    const passed = m ? Number(m[1]) : 0;
+    return { ok: r.code === 0, detail: `${passed} passed` };
+  });
 }
 
 // ────────────────────────────────────────────────
