@@ -759,6 +759,9 @@ model Document {
   orgId           String   @map("org_id") @db.Uuid
   name            String
   description     String?
+  /// Canonical document type — links Document to lib/docuflow/canonical-docs.ts (e.g. "ใบอนุญาตสถานีบริการน้ำมัน").
+  /// Nullable for back-compat; new uploads via smart wizard set this. Phase-2 IA recommendation 2026-05-10.
+  documentType    String?  @map("document_type")
   fileKey         String   @map("file_key") // R2 object key
   filePublicUrl   String?  @map("file_public_url")
   mimeType        String?  @map("mime_type")
@@ -782,6 +785,7 @@ model Document {
 
   @@index([orgId, isActive])
   @@index([orgId, uploadedAt])
+  @@index([orgId, documentType])
   @@map("documents")
 }
 

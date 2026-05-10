@@ -160,7 +160,7 @@ export default async function DocumentsListPage({
         action={
           adminTier ? (
             <Link
-              href="/docuflow/documents/upload"
+              href="/docuflow/documents/upload/template"
               className="inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 bg-[var(--color-brand-600)] text-white hover:bg-[var(--color-brand-700)] active:bg-[var(--color-brand-800)] shadow-soft h-10 px-4 text-sm rounded-xl"
             >
               <Upload className="size-4" />
@@ -238,7 +238,7 @@ export default async function DocumentsListPage({
                 action={
                   adminTier ? (
                     <Link
-                      href="/docuflow/documents/upload"
+                      href="/docuflow/documents/upload/template"
                       className="inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 bg-[var(--color-brand-600)] text-white hover:bg-[var(--color-brand-700)] h-10 px-4 text-sm rounded-xl"
                     >
                       <Upload className="size-4" />

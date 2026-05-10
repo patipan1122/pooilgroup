@@ -63,6 +63,9 @@ const RenewalSchema = z.object({
 const UploadSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().max(2000).optional(),
+  /** Canonical doc type key from canonical-docs.ts (e.g. "fuel_station:ใบอนุญาตสถานีบริการน้ำมัน")
+      — set when admin uses smart-upload template; null for free-form uploads. */
+  documentType: z.string().max(255).optional(),
   filename: z.string().min(1).max(255),
   mimeType: z.string().min(1).max(255),
   fileSize: z.number().int().positive().max(500 * 1024 * 1024), // 500 MB
@@ -111,6 +114,7 @@ export async function POST(req: NextRequest) {
   const {
     name,
     description,
+    documentType,
     filename,
     mimeType,
     fileSize,
@@ -136,6 +140,7 @@ export async function POST(req: NextRequest) {
           orgId,
           name,
           description: description ?? null,
+          documentType: documentType ?? null,
           fileKey,
           filePublicUrl: publicUrl,
           mimeType,
