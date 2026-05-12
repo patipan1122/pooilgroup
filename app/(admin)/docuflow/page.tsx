@@ -19,6 +19,7 @@ import {
   ArrowUpRight,
   ChevronRight,
   Home,
+  FolderTree,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
@@ -160,15 +161,24 @@ function PageHeader({
           <p className="text-zinc-600 mt-1.5 text-sm">{description}</p>
         )}
       </div>
-      {adminTier && (
+      <div className="flex flex-wrap items-center gap-2">
         <Link
-          href="/docuflow/documents/upload/template"
-          className="inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 bg-[var(--color-brand-600)] text-white hover:bg-[var(--color-brand-700)] active:bg-[var(--color-brand-800)] shadow-soft h-10 px-4 text-sm rounded-xl shrink-0"
+          href="/docuflow/browse"
+          className="inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 bg-white text-zinc-900 border-2 border-zinc-200 hover:border-zinc-300 active:bg-zinc-50 h-10 px-4 text-sm rounded-xl shrink-0"
         >
-          <Upload className="size-4" />
-          อัปโหลดเอกสาร
+          <FolderTree className="size-4" />
+          ดูทั้งหมดตามโครงสร้าง
         </Link>
-      )}
+        {adminTier && (
+          <Link
+            href="/docuflow/documents/upload/template"
+            className="inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 bg-[var(--color-brand-600)] text-white hover:bg-[var(--color-brand-700)] active:bg-[var(--color-brand-800)] shadow-soft h-10 px-4 text-sm rounded-xl shrink-0"
+          >
+            <Upload className="size-4" />
+            อัปโหลดเอกสาร
+          </Link>
+        )}
+      </div>
     </header>
   );
 }

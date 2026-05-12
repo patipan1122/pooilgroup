@@ -1,14 +1,16 @@
 // DocuFlow — Upload page (admin tier only)
 // ────────────────────────────────────────────────────────────────────
 // Server component shell. Loads companies/branches/users for the
-// ownership picker, then renders the client UploadForm.
+// multi-select ownership picker, then renders the client UploadForm.
 //
-// Phase 2 redesign 2026-05-10:
-//   - Reads ?template=BIZTYPE:NAME → look up canonical doc → pass defaults
-//   - Loads existing org tags → autocomplete suggestions for tag input
-//   - "Step 1" entry is now /docuflow/documents/upload/template (picker)
-//     This page renders Step 2 (form) — directly accessible too if user
-//     clicks "กรอกข้อมูลเอง"
+// Phase 3 (2026-05-12): No more "template" autofill — wizard at
+// /docuflow/documents/upload/template narrows scope step-by-step.
+// Reads wizard query params to pre-fill ownership multi-select:
+//
+//   ?wizExpiry=yes|no           — has-expiry hint
+//   ?wizGroup=1                 — ทั้งกลุ่ม level
+//   ?wizCompanies=POIL,JPS      — company codes (multi)
+//   ?wizTypes=fuel_station,...  — business types (multi)
 // ────────────────────────────────────────────────────────────────────
 
 import Link from "next/link";
@@ -21,13 +23,14 @@ import { Card, CardBody } from "@/components/ui/card";
 import { thaiDateLong } from "@/lib/utils/format";
 import { BUSINESS_TYPE_LIST } from "@/constants/business-types";
 import { UploadForm } from "@/components/docuflow/upload-form";
-import { getCanonicalDocsForBizType } from "@/lib/docuflow/canonical-docs";
-import { templateDefaults } from "@/lib/docuflow/templates";
 
 export const dynamic = "force-dynamic";
 
 interface SearchParams {
-  template?: string;
+  wizExpiry?: string; // "yes" | "no"
+  wizGroup?: string; // "1" → ownership.group = true
+  wizCompanies?: string; // "POIL,JPS" — company codes
+  wizTypes?: string; // "fuel_station,convenience_store" — biz types
 }
 
 export default async function DocumentUploadPage({
@@ -40,24 +43,6 @@ export default async function DocumentUploadPage({
   const orgId = session.user.org_id;
 
   const params = await searchParams;
-  const templateParam = params.template;
-
-  // Resolve template (BIZTYPE:NAME) → defaults
-  let template = null;
-  let documentTypeKey: string | null = null;
-  if (templateParam) {
-    const sep = templateParam.indexOf(":");
-    if (sep > 0) {
-      const bizType = templateParam.slice(0, sep);
-      const docName = templateParam.slice(sep + 1);
-      const docs = getCanonicalDocsForBizType(bizType);
-      const spec = docs.find((d) => d.name === docName);
-      if (spec) {
-        template = templateDefaults(spec);
-        documentTypeKey = `${bizType}:${docName}`;
-      }
-    }
-  }
 
   const [companies, branches, users, tagRows] = await Promise.all([
     prisma.company.findMany({
@@ -81,7 +66,6 @@ export default async function DocumentUploadPage({
       select: { id: true, name: true, role: true },
       orderBy: { name: "asc" },
     }),
-    // Pull distinct tags from this org for autocomplete
     prisma.documentTag.findMany({
       where: { orgId },
       select: { tag: true },
@@ -98,11 +82,34 @@ export default async function DocumentUploadPage({
 
   const orgTagSuggestions = tagRows.map((r) => r.tag).sort();
 
+  // Translate wizard params → initial ownership state
+  const initialOwnership = {
+    group: params.wizGroup === "1",
+    companyIds: params.wizCompanies
+      ? params.wizCompanies
+          .split(",")
+          .map((code) => companies.find((c) => c.code === code)?.id)
+          .filter((x): x is string => Boolean(x))
+      : [],
+    businessTypes: params.wizTypes
+      ? params.wizTypes.split(",").filter(Boolean)
+      : [],
+    branchIds: [] as string[],
+    personIds: [] as string[],
+  };
+
+  const hasExpiry = params.wizExpiry === "yes";
+  const fromWizard = Boolean(
+    params.wizExpiry || params.wizGroup || params.wizCompanies,
+  );
+
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-3xl mx-auto pb-24">
       <header className="mb-6 animate-fade-up">
         <Link
-          href={template ? "/docuflow/documents/upload/template" : "/docuflow"}
+          href={
+            fromWizard ? "/docuflow/documents/upload/template" : "/docuflow"
+          }
           className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 transition-colors"
         >
           <ArrowLeft className="size-4" />
@@ -115,15 +122,15 @@ export default async function DocumentUploadPage({
           อัปโหลด <span className="text-gradient-blue">เอกสารใหม่</span>
         </h1>
         <p className="text-zinc-600 mt-1.5 text-sm">
-          {template
-            ? "ระบบกรอกข้อมูลเริ่มต้นจาก template — ปรับและกดอัปโหลดได้เลย"
+          {fromWizard
+            ? "ระดับการใช้งานถูก pre-set จากตัวช่วย — เพิ่มเติมได้"
             : "เลือกไฟล์ ติดแท็ก กำหนดวันหมดอายุ — ระบบเก็บไว้ใน R2"}
         </p>
       </header>
 
       <Section
-        number={template ? "02" : "01"}
-        label={template ? "STEP 2" : "UPLOAD"}
+        number="04"
+        label={fromWizard ? "FINAL" : "UPLOAD"}
         title="ข้อมูลเอกสาร"
         className="animate-fade-up delay-100"
       >
@@ -134,9 +141,16 @@ export default async function DocumentUploadPage({
               branches={branches}
               users={users}
               businessTypes={businessTypes}
-              template={template}
-              documentTypeKey={documentTypeKey}
               orgTagSuggestions={orgTagSuggestions}
+              initialOwnership={initialOwnership}
+              hasExpiryHint={
+                params.wizExpiry === "yes"
+                  ? "expires"
+                  : params.wizExpiry === "no"
+                    ? "forever"
+                    : null
+              }
+              fromWizard={fromWizard}
             />
           </CardBody>
         </Card>

@@ -69,9 +69,15 @@ const UploadSchema = z.object({
   filename: z.string().min(1).max(255),
   mimeType: z.string().min(1).max(255),
   fileSize: z.number().int().positive().max(500 * 1024 * 1024), // 500 MB
-  ownership: OwnershipSchema,
+  /** Multi-select ownership: doc can span บริษัท + ธุรกิจ + สาขา + บุคคล + กลุ่ม พร้อมกัน.
+      Legacy single `ownership` still accepted for back-compat. */
+  ownerships: z.array(OwnershipSchema).min(1).optional(),
+  ownership: OwnershipSchema.optional(),
   tags: z.array(z.string().min(1).max(64)).default([]),
   renewal: RenewalSchema.optional(),
+}).refine((v) => v.ownerships !== undefined || v.ownership !== undefined, {
+  message: "ต้องระบุ ownership หรือ ownerships อย่างน้อยหนึ่ง",
+  path: ["ownerships"],
 });
 
 export async function POST(req: NextRequest) {
@@ -118,10 +124,14 @@ export async function POST(req: NextRequest) {
     filename,
     mimeType,
     fileSize,
-    ownership,
+    ownerships: ownershipsInput,
+    ownership: legacyOwnership,
     tags,
     renewal,
   } = parsed.data;
+
+  // Normalize: array form is canonical, legacy single → wrap in array
+  const ownershipRows = ownershipsInput ?? (legacyOwnership ? [legacyOwnership] : []);
   const orgId = session.user.org_id;
 
   // Build the doc id up front so we can compute the R2 key before insert.
@@ -150,16 +160,19 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      await tx.documentOwnership.create({
-        data: {
+      // Multi-select ownership: write one row per (level, scope) the admin
+      // picked. A single doc can belong to บริษัท + ธุรกิจ + สาขา + บุคคล
+      // simultaneously — this matches reality (e.g. ใบผ่อนผัน applies at all).
+      await tx.documentOwnership.createMany({
+        data: ownershipRows.map((o) => ({
           orgId,
           documentId,
-          level: ownership.level,
-          companyId: ownership.companyId ?? null,
-          branchId: ownership.branchId ?? null,
-          personId: ownership.personId ?? null,
-          businessType: ownership.businessType ?? null,
-        },
+          level: o.level,
+          companyId: o.companyId ?? null,
+          branchId: o.branchId ?? null,
+          personId: o.personId ?? null,
+          businessType: o.businessType ?? null,
+        })),
       });
 
       if (dedupedTags.length > 0) {
@@ -210,7 +223,8 @@ export async function POST(req: NextRequest) {
     diff: {
       new: {
         name,
-        ownership: ownership.level,
+        ownerships: ownershipRows.map((o) => o.level),
+        ownershipCount: ownershipRows.length,
         tags: dedupedTags,
         hasRenewal: Boolean(renewal),
       },

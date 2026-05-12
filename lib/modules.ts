@@ -27,6 +27,7 @@ import {
   GitCompare,
   Boxes,
   GraduationCap,
+  FolderTree,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
@@ -198,8 +199,14 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {
+        href: "/docuflow/browse",
+        label: "เอกสารทั้งหมด (ตามโครงสร้าง)",
+        icon: FolderTree,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
         href: "/docuflow/documents",
-        label: "รายการเอกสาร",
+        label: "รายการเอกสาร (ค้นหา/กรอง)",
         icon: FileTextIcon,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
@@ -211,7 +218,7 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       },
       // Upload — admin tier only (gating creation)
       {
-        href: "/docuflow/documents/upload",
+        href: "/docuflow/documents/upload/template",
         label: "อัปโหลด",
         icon: Upload,
         adminOnly: true,
