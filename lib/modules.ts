@@ -191,34 +191,21 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     status: "active",
     basePath: "/docuflow",
     nav: [
-      // Executive views — ภาพรวม + รายการ + ใกล้หมดอายุ + รถ
+      // ─── 4 หลัก: user feedback "ดูง่าย ใช้ง่าย ไม่กี่นาที" (2026-05-12) ───
       {
         href: "/docuflow",
-        label: "ภาพรวม",
+        label: "หน้าหลัก",
         icon: LayoutDashboard,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {
         href: "/docuflow/browse",
-        label: "เอกสารทั้งหมด (ตามโครงสร้าง)",
+        label: "เอกสารทั้งหมด",
         icon: FolderTree,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {
-        href: "/docuflow/documents",
-        label: "รายการเอกสาร (ค้นหา/กรอง)",
-        icon: FileTextIcon,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
-      },
-      {
-        href: "/docuflow/search",
-        label: "ค้นหา AI",
-        icon: Sparkles,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
-      },
-      // Upload — admin tier only (gating creation)
-      {
-        href: "/docuflow/documents/upload/template",
+        href: "/docuflow/documents/upload",
         label: "อัปโหลด",
         icon: Upload,
         adminOnly: true,
@@ -227,6 +214,19 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         href: "/docuflow/expiry",
         label: "ใกล้หมดอายุ",
         icon: Clock,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        href: "/docuflow/search",
+        label: "ค้นหา AI",
+        icon: Sparkles,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      // ─── เฉพาะทาง (ใช้บางครั้ง — อยู่ล่าง ไม่รบกวน 4 หลัก) ───
+      {
+        href: "/docuflow/documents",
+        label: "ค้นหา/กรองขั้นสูง",
+        icon: FileTextIcon,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {
@@ -247,7 +247,6 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: Truck,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
-      // Person docs are HR-sensitive — admin tier only
       {
         href: "/docuflow/persons",
         label: "พนักงาน + เอกสาร",
