@@ -1,8 +1,48 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-09 (DocuFlow ขึ้น + Cron + LINE Rich Menu + RLS audit)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-11 (FuelOS Sprint 6 kickoff: schema + virtual team)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-05-11 — FuelOS Sprint 6 kickoff)
+
+เริ่ม FuelOS อย่างเป็นทางการหลังจากที่ค้างมา ตั้งทีม + ลง schema foundation ทั้งหมดในรอบเดียว.
+
+**Virtual team (`.claude/agents/`)** — map กับ ORG_FULL.md:
+- `pm-fuelos.md` — Senior PM (PMO, T3)
+- `tech-lead-fuelos.md` — Tech Lead — FuelOS (T3)
+- `backend-eng.md` — Senior Backend Engineer (T4)
+- `frontend-eng.md` — Senior Frontend Engineer (T4)
+- `qa-polish.md` — QA Lead + UX Polish (T4)
+- `lean-process.md` — Lean Process Engineer (T3 OPEX)
+
+**Working doc:** `web/FUELOS_PLAN.md` — Sprint 6 → 6.0 (schema), 6.1 (Price Engine), 6.2 (CRM Multi-Entity), 6.3 (Sales Workspace), 6.4 (LINE Bot)
+
+**Sprint 6.0 — Schema foundation (this commit)**
+- Added 16 Prisma models per FUELOS.md §12 / §14.6:
+  - Price: `DepotPrice`, `ZoneMargin`
+  - CRM: `Contact`, `CustomerEntity`, `DeliveryLocation` (Multi-Entity 3-layer)
+  - Sales: `CustomerQuote`, `PriceAlertLog`, `LineResponseLog`
+  - Orders + Fleet: `FuelOrder`, `Truck`, `DriverProfile`, `DriverLocation`
+  - Money: `Payment`, `FlashSale`, `CreditDocument`, `ChequeTracking`
+- Reused `Vehicle` (DocuFlow scope) → `Truck` 1-1; `User.role=driver` + `DriverProfile` satellite
+- Migration SQL: `supabase/migrations/20260511000001_fuelos_sprint6_foundation.sql`
+  - GENERATED columns on `fuel_orders` (margin_per_liter, total_amount, total_profit)
+  - GENERATED column on `line_response_log` (response_minutes)
+  - RLS enabled + org-isolation policies on all 16 tables
+- Deferred to 6.4+: `CreditScoreHistory`, `ChurnSignal` (AI features)
+
+**To apply เมื่อ deploy**
+1. `cd web && npx prisma db push` (apply Sprint 6 models)
+2. Run `supabase/migrations/20260511000001_fuelos_sprint6_foundation.sql` (RLS + GENERATED columns)
+3. Next: Sprint 6.1 — Price Engine UI/API (see FUELOS_PLAN.md §3)
+
+**Open questions (FUELOS_PLAN.md §8)**
+1. PTT scraper Sprint 6 หรือ Sprint 7?
+2. Display format (`฿28.41/L` vs `Intl.NumberFormat`)?
+3. MOPS Alert ก่อนหรือหลัง Telegram bot (Phase C4)?
+
+---
 
 ## 🆕 Update (2026-05-09 — รวม 8 commits หลัง 05-04)
 
@@ -201,15 +241,17 @@ Working tree changes:
 - [ ] Quick Note Staff → เจ้าของ
 - [x] ~~Missing Report Reason flow~~
 
-### FuelOS (Sprint 6–7) — ยังไม่เริ่ม
-- [ ] Price Engine (2 ราคา, MOPS Alert)
-- [ ] CRM ลูกค้า ~1,000 (Multi-Entity, Credit, GPS)
-- [ ] LINE Bot รับออเดอร์จาก Group
-- [ ] Sales Workspace + Win/Loss + Competitor Intel
-- [ ] Driver PWA (GPS + Photo + Invoice)
-- [ ] Dispatch Board + Route Optimization
-- [ ] Flash Sale (LINE OA Broadcast)
-- [ ] TRCloud Sync
+### FuelOS (Sprint 6–7) — Sprint 6.0 schema ✅ (2026-05-11)
+- [x] **Sprint 6.0 — Schema foundation** (16 models + RLS + GENERATED columns)
+- [ ] Sprint 6.1 — Price Engine (depot price entry + zone margin admin) ← **next**
+- [ ] Sprint 6.2 — CRM Multi-Entity (contacts/entities/locations + credit fields)
+- [ ] Sprint 6.3 — Sales Workspace (Priority List + Quote/Win-Loss + Margin Analytics)
+- [ ] Sprint 6.4 — LINE Bot (Reply API + Response Time tracking)
+- [ ] Sprint 7 — MOPS Alert + PTT Scraper
+- [ ] Sprint 7 — Driver PWA (GPS + Photo + Invoice)
+- [ ] Sprint 7 — Dispatch Board + Route Optimization
+- [ ] Sprint 7 — Flash Sale (LINE OA Broadcast)
+- [ ] Sprint 7 — TRCloud Sync
 
 ### DocuFlow (Sprint 8) — ✅ MVP ครบ (ยังไม่ได้ UAT จริง)
 - [x] ~~4 ระดับเอกสาร + 5 บริษัท~~ (foundation migration)
@@ -222,13 +264,13 @@ Working tree changes:
 
 ---
 
-## 🚀 Next 5 Concrete Steps (ลำดับ — refresh 2026-05-09)
+## 🚀 Next 5 Concrete Steps (ลำดับ — refresh 2026-05-11)
 
-1. **Telegram Bot** — install grammy + `/api/telegram/webhook` + Approval inline `[✅][❌][📊]` (Quick Approve Bar ใน web มีแล้ว, ทำให้ทำงานบน Telegram ด้วย)
-2. **LIFF init จริง** — เปลี่ยน `/liff/report/[branchId]` จาก `requireSession()` → `liff.init()` + map LINE userId → User
-3. **LINE Messaging webhook** `/api/line/webhook` — รองรับ Rich Menu actions
-4. **CashHub Anti-Stupidity ที่เหลือ** — Time Alert (00:00–05:00) + Pre-check Rule 7
-5. **เริ่ม FuelOS Price Engine** — module ใหญ่สุดที่ยังไม่แตะ
+1. **Apply FuelOS Sprint 6.0 migration** — `npx prisma db push` + run `20260511000001_fuelos_sprint6_foundation.sql` ใน Supabase
+2. **Sprint 6.1 — Price Engine UI/API** — `/fuelos/price-master` + `lib/fuelos/pricing.ts` (pure compute) + audit log บน publish (FUELOS_PLAN.md §3)
+3. **Telegram Bot** — install grammy + `/api/telegram/webhook` + Approval inline `[✅][❌][📊]` (block FuelOS MOPS Alert + CashHub approve flow)
+4. **LIFF init จริง** — เปลี่ยน `/liff/report/[branchId]` จาก `requireSession()` → `liff.init()` + map LINE userId → User
+5. **CashHub Anti-Stupidity ที่เหลือ** — Time Alert (00:00–05:00) + Pre-check Rule 7
 
 ---
 
