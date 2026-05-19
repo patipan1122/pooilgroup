@@ -19,6 +19,9 @@ const CSP = [
 ].join("; ");
 
 const ALLOWED_ORIGINS = [
+  "https://pooilgroup.com",
+  "https://www.pooilgroup.com",
+  "https://pooilgroup.vercel.app",
   "https://poolgroup.com",
   "https://www.poolgroup.com",
   "https://liff.line.me",
