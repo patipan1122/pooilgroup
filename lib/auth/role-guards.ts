@@ -4,12 +4,23 @@
 import { redirect } from "next/navigation";
 import type { DbUser } from "./session";
 
-/** Roles ที่อนุญาตให้ดูภาพรวมระดับองค์กร (executive matrix, leaderboard, dashboard) */
+/** Roles ที่อนุญาตให้ดูภาพรวมระดับองค์กร (executive matrix, leaderboard, dashboard)
+ *
+ * 2026-05-20: เพิ่ม `branch_manager` หลัง Branch Manager persona audit เผยว่า
+ * ผู้จัดการสาขาถูก block จาก leaderboard ทั้งที่เจ้าของออกแบบให้พนักงาน "แข่งกัน"
+ * → branch_manager ควรเห็น leaderboard เพื่อเทียบกับสาขาอื่นได้
+ *
+ * Note: ยังไม่มี scoped filtering ที่ page-level → ปัจจุบัน branch_manager
+ * เห็น all-org data เหมือน area_manager · จุดนี้ตามเจตนาของ leaderboard
+ * (เปรียบเทียบกับสาขาอื่น) · ถ้าต้องการ data isolation per branch ในอนาคต
+ * ต้องเพิ่ม scoped filter ใน aggregator/executive-matrix
+ */
 const EXECUTIVE_ROLES: DbUser["role"][] = [
   "super_admin",
   "org_admin",
   "admin",
   "area_manager",
+  "branch_manager",
   "viewer",
 ];
 

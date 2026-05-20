@@ -4,6 +4,7 @@ import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { getRequestMeta } from "@/lib/audit/request-meta";
 import { canApproveBranch } from "@/lib/auth/permissions";
 import { editTelegramMessage } from "@/lib/telegram/send";
 import {
@@ -23,6 +24,7 @@ const ApproveSchema = z.object({
 
 export async function POST(req: NextRequest) {
   const session = await requireSession();
+  const meta = getRequestMeta(req);
 
   let body: unknown;
   try {
@@ -78,9 +80,29 @@ export async function POST(req: NextRequest) {
       resourceType: "daily_report",
       resourceId: reportId,
       diff: { new: { attempted: action } },
+      ...meta,
     });
     return NextResponse.json(
       { error: "ไม่มีสิทธิ์อนุมัติสาขานี้" },
+      { status: 403 },
+    );
+  }
+
+  // Segregation of Duties — ผู้กรอกรายงานห้ามอนุมัติเอง (Finance audit · 2026-05-20)
+  // applies only to "approve". "reject" allowed because owner may need to reject
+  // own staff's report via Approval Inline.
+  if (action === "approve" && report.submitted_by_id === session.user.id) {
+    await audit({
+      orgId: report.org_id,
+      userId: session.user.id,
+      action: "PERMISSION_DENIED",
+      resourceType: "daily_report",
+      resourceId: reportId,
+      diff: { new: { attempted: "self_approve", reason: "SoD violation" } },
+      ...meta,
+    });
+    return NextResponse.json(
+      { error: "คุณกรอกรายงานนี้เอง · ต้องให้คนอื่นอนุมัติ (Segregation of Duties)" },
       { status: 403 },
     );
   }
@@ -131,6 +153,7 @@ export async function POST(req: NextRequest) {
       old: { status: report.status },
       new: { status: action === "approve" ? "approved" : "rejected", reason },
     },
+    ...meta,
   });
 
   // ---- Notify Staff (in-app) so they see approval/rejection ----

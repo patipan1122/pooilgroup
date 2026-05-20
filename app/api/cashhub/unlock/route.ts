@@ -7,6 +7,7 @@ import { zUUID } from "@/lib/zod-helpers";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { getRequestMeta } from "@/lib/audit/request-meta";
 import { sendNotification } from "@/lib/notifications/send";
 
 const Schema = z.object({
@@ -16,6 +17,7 @@ const Schema = z.object({
 
 export async function POST(req: NextRequest) {
   const session = await requireRole("super_admin");
+  const meta = getRequestMeta(req);
   let body: unknown;
   try {
     body = await req.json();
@@ -31,7 +33,9 @@ export async function POST(req: NextRequest) {
 
   const { data: report } = await admin
     .from("daily_reports")
-    .select("id, org_id, branch_id, status, submitted_by_id, branches(code)")
+    .select(
+      "id, org_id, branch_id, status, submitted_by_id, approved_by_id, approved_at, branches(code)",
+    )
     .eq("id", reportId)
     .eq("org_id", session.user.org_id)
     .maybeSingle();
@@ -65,13 +69,23 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Snapshot the original approver before unlock blew them away (Finance audit · 2026-05-20)
+  // Without this, "ใครอนุมัติยอดเดิม" จะหายไปจาก current row state.
   await audit({
     orgId: report.org_id,
     userId: session.user.id,
     action: "UNLOCK_REPORT",
     resourceType: "daily_report",
     resourceId: reportId,
-    diff: { old: { status: "approved" }, new: { status: "submitted", reason } },
+    diff: {
+      old: {
+        status: "approved",
+        approved_by_id: report.approved_by_id,
+        approved_at: report.approved_at,
+      },
+      new: { status: "submitted", reason },
+    },
+    ...meta,
   });
 
   const branchRel = Array.isArray(report.branches)

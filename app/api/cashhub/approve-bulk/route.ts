@@ -7,6 +7,7 @@ import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { getRequestMeta } from "@/lib/audit/request-meta";
 import { canApproveBranch } from "@/lib/auth/permissions";
 
 const Schema = z.object({
@@ -15,6 +16,7 @@ const Schema = z.object({
 
 export async function POST(req: NextRequest) {
   const session = await requireSession();
+  const meta = getRequestMeta(req);
 
   let body: unknown;
   try {
@@ -32,9 +34,10 @@ export async function POST(req: NextRequest) {
   const admin = adminClient();
 
   // Pull reports + check org match
+  // submitted_by_id needed for SoD enforcement below
   const { data: reports } = await admin
     .from("daily_reports")
-    .select("id, org_id, branch_id, status")
+    .select("id, org_id, branch_id, status, submitted_by_id")
     .in("id", reportIds)
     .eq("org_id", session.user.org_id);
 
@@ -53,6 +56,7 @@ export async function POST(req: NextRequest) {
   let skipped = 0;
   const now = new Date().toISOString();
 
+  let skippedSelfApprove = 0;
   const eligible = reports.filter((r) => {
     if (r.status === "approved") {
       skipped += 1;
@@ -60,6 +64,12 @@ export async function POST(req: NextRequest) {
     }
     if (!canApproveBranch(session.user, r.branch_id, userBranchIds)) {
       skipped += 1;
+      return false;
+    }
+    // Segregation of Duties — ผู้กรอกห้ามอนุมัติเอง (Finance audit · 2026-05-20)
+    if (r.submitted_by_id === session.user.id) {
+      skipped += 1;
+      skippedSelfApprove += 1;
       return false;
     }
     return true;
@@ -104,6 +114,7 @@ export async function POST(req: NextRequest) {
               resourceType: "daily_report",
               resourceId: r.id,
               diff: { old: { status: r.status }, new: { status: "approved", bulk: true } },
+              ...meta,
             }),
           ),
       );
@@ -114,6 +125,7 @@ export async function POST(req: NextRequest) {
     success: true,
     approved,
     skipped,
+    skippedSelfApprove,
     errors: errors.slice(0, 5),
   });
 }
