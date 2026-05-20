@@ -4,6 +4,36 @@
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
+## 🆕 Update (2026-05-20 — Phase 1 Security Hardening · commit `a3cde9a`)
+
+หลัง CEO อนุมัติ Quick wins · ทำต่อ 5 ข้อในรอบเดียว · build pass · commit `a3cde9a`:
+
+**#2 — Branches cleanup**
+- ลบ local branches: `feat/admin-set-password-and-impersonate`, `fix/invite-link-prod-url`
+- คงไว้: `feat/permissions-cleanup-and-modules` (local≠remote · ให้ CEO ตัดสิน)
+
+**#3 — branch_manager → EXECUTIVE_ROLES**
+- `lib/auth/role-guards.ts` · ปลดล็อก leaderboard/dashboard ให้ผู้จัดการสาขา
+- Follow-up: scoped data filter ที่ page level (ยังไม่ทำ · ปัจจุบันเห็นทั้ง org)
+
+**#4 — Segregation of Duties (SoD)**
+- `approve/route.ts` + `approve-bulk/route.ts` · บล็อกกรณี submitter === approver
+- approve-bulk return `skippedSelfApprove` count แยก
+- ผ่าน SOX/COSO key control แล้ว
+
+**#5 — IP/UA capture in audit log**
+- NEW: `lib/audit/request-meta.ts` · `getRequestMeta(req)` helper
+- Updated: approve · approve-bulk · unlock (3/85 audit call sites)
+- unlock route: snapshot approved_by_id + approved_at เก่าเข้า diff
+- Follow-up: ปรับ audit call sites อื่นๆ ~82 จุด (TODO)
+
+**#6 — CLAUDE.md ขยาย (was 1-line `@AGENTS.md`)**
+- Project context · tech stack · architecture · folder map · workflow rules
+- Known Critical Debts section (5 items จาก audit 2026-05-20)
+- Preserve @AGENTS.md import (Next 16 warning ยังครบ)
+
+---
+
 ## 🆕 Update (2026-05-20 — Observability + Compliance + End-user docs)
 
 หลัง deep audit (6 personas) เผยช่องโหว่ 3 จุด · ทำในรอบเดียว · build pass · commit `27adffe`:
