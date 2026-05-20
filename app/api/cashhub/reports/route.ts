@@ -6,9 +6,11 @@ import { adminClient } from "@/lib/db/server";
 import { reconcile } from "@/lib/cashhub/reconcile";
 import { getBusinessType } from "@/constants/business-types";
 import { audit } from "@/lib/audit/log";
+import { getRequestMeta } from "@/lib/audit/request-meta";
 import { withDbDefaults } from "@/lib/db/insert";
 import { can } from "@/lib/auth/permissions";
 import { sendTelegramMessage, sendToAdminChat } from "@/lib/telegram/send";
+import { sendNotification } from "@/lib/notifications/send";
 import {
   approvalKeyboard,
   buildApprovalMessage,
@@ -55,6 +57,7 @@ const ReportSchema = z.object({
 
 export async function POST(req: NextRequest) {
   const session = await requireSession();
+  const meta = getRequestMeta(req);
   if (!can(session.user, "cashhub.create")) {
     return NextResponse.json({ error: "ไม่มีสิทธิ์กรอกรายงาน" }, { status: 403 });
   }
@@ -216,15 +219,50 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Audit log
+  // Audit log (financial snapshot for accountant audit trail)
   await audit({
     orgId: branch.org_id,
     userId: session.user.id,
     action: "CREATE_REPORT",
     resourceType: "daily_report",
     resourceId: created.id,
-    diff: { new: { totalSales: data.totalSales, shift: data.shift } },
+    diff: {
+      new: {
+        totalSales: data.totalSales,
+        cash: data.cash,
+        transfer: data.transfer,
+        card: data.card,
+        credit: data.credit,
+        shortage: data.shortage,
+        shift: data.shift,
+        reportDate: data.reportDate,
+      },
+    },
+    ...meta,
   });
+
+  // In-app notification → branch manager (กัน Telegram bot ล่ม)
+  // ถ้าไม่มี manager_id จะ skip · Telegram ยังส่งเป็น fallback
+  if (branch.manager_id && branch.manager_id !== session.user.id) {
+    try {
+      const { data: branchInfo } = await admin
+        .from("branches")
+        .select("code, name")
+        .eq("id", branch.id)
+        .maybeSingle();
+      await sendNotification({
+        orgId: branch.org_id,
+        userId: branch.manager_id,
+        type: "info",
+        module: "cashhub",
+        title: `📋 รายงานใหม่รอ approve · ${branchInfo?.code ?? ""}`,
+        body: `${session.user.name} ส่งรายงาน ${data.reportDate} · ยอด ${data.totalSales.toLocaleString()} ฿`,
+        link: `/cashhub/reports/${created.id}`,
+      });
+    } catch (err) {
+      console.error("[reports] failed to notify branch manager", err);
+    }
+  }
 
   // ---- Send Telegram approval card ----
   // Run auto-check to enrich the message

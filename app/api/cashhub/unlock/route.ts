@@ -47,6 +47,37 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // SoD enforcement (CEO 2026-05-20 "อนุมัติเองบ่อยไป")
+  // super_admin ห้าม unlock report ที่ตัวเองเป็นทั้งคนกรอกหรือคนอนุมัติ
+  // ต้องให้ super_admin คนอื่นเป็นคนปลดล็อก
+  const isSelfApprover = report.approved_by_id === session.user.id;
+  const isSelfSubmitter = report.submitted_by_id === session.user.id;
+  if (isSelfApprover || isSelfSubmitter) {
+    await audit({
+      orgId: report.org_id,
+      userId: session.user.id,
+      action: "PERMISSION_DENIED",
+      resourceType: "daily_report",
+      resourceId: reportId,
+      diff: {
+        new: {
+          attempted: "self_unlock",
+          reason: "SoD violation",
+          isSelfApprover,
+          isSelfSubmitter,
+        },
+      },
+      ...meta,
+    });
+    return NextResponse.json(
+      {
+        error:
+          "คุณเป็นผู้กรอกหรืออนุมัติรายงานนี้เอง · ต้องให้ Super Admin คนอื่นเป็นคนปลดล็อก (Segregation of Duties)",
+      },
+      { status: 403 },
+    );
+  }
+
   const now = new Date().toISOString();
   const { error: updateError } = await admin
     .from("daily_reports")
