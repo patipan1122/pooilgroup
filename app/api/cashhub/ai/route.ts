@@ -8,6 +8,7 @@ import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
 import { isAdmin } from "@/lib/auth/permissions";
 import { checkAiBudget, recordAiUsage } from "@/lib/ai/cost-cap";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { buildAiContext, contextToText } from "@/lib/cashhub/ai-context";
 import {
   findPageGuide,
@@ -48,6 +49,33 @@ export async function POST(req: NextRequest) {
   const session = await requireSession();
   if (!isAdmin(session.user) && session.user.role !== "branch_manager") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Rate limit: 20 calls / 5 min per user (DevOps audit 2026-05-20)
+  // budget guard ที่ตามมาเป็น $-cap · rate limit เป็น req-count guard
+  const rl = await checkRateLimit({
+    bucket: `cashhub-ai:${session.user.id}`,
+    max: 20,
+    windowSec: 300,
+  });
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: `ส่งคำถามถี่เกินไป · ลองใหม่อีก ${rl.retryAfterSec} วินาที` },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
+    );
+  }
+  // IP-level cap กัน automation/scraper
+  const ip = getClientIp(req);
+  const rlIp = await checkRateLimit({
+    bucket: `cashhub-ai-ip:${ip}`,
+    max: 60,
+    windowSec: 300,
+  });
+  if (rlIp.limited) {
+    return NextResponse.json(
+      { error: "ระบบกำลังคึกคัก · ลองใหม่อีกสักครู่" },
+      { status: 429 },
+    );
   }
 
   // BUG-017: AI budget check before calling provider
