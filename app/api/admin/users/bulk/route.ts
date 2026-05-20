@@ -4,12 +4,13 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 
 const Schema = z.object({
-  userIds: z.array(z.string().uuid()).min(1).max(100),
+  userIds: z.array(zUUID()).min(1).max(100),
   action: z.enum(["lock", "unlock", "force_logout", "resend_invite"]),
 });
 

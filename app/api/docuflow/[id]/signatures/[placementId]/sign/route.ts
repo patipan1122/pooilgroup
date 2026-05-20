@@ -13,6 +13,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
@@ -26,7 +27,7 @@ type RouteContext = {
   params: Promise<{ id: string; placementId: string }>;
 };
 
-const IdSchema = z.string().uuid();
+const IdSchema = zUUID();
 
 const BodySchema = z.object({
   // PNG data URL: "data:image/png;base64,iVBOR..."

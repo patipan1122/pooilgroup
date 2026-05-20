@@ -3,6 +3,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
@@ -23,7 +24,7 @@ const CreateSchema = z.object({
   name: z.string().min(1).max(120),
   // companyId required: branches.company_id is NOT NULL in schema
   // (Pooil Oil / JP Sync / etc. — picked from org's Companies)
-  companyId: z.string().uuid("เลือกนิติบุคคลก่อน"),
+  companyId: zUUID("เลือกนิติบุคคลก่อน"),
   businessType: z.enum(BUSINESS_TYPES),
   province: z.string().max(50).optional().or(z.literal("")),
   region: z.string().max(50).optional().or(z.literal("")),
@@ -31,7 +32,7 @@ const CreateSchema = z.object({
   phone: z.string().max(50).optional().or(z.literal("")),
   lat: z.number().min(-90).max(90).nullable().optional(),
   lng: z.number().min(-180).max(180).nullable().optional(),
-  managerId: z.string().uuid().nullable().optional(),
+  managerId: zUUID().nullable().optional(),
   lineGroupId: z.string().max(120).optional().or(z.literal("")),
   reportDeadline: z
     .string()

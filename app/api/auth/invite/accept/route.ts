@@ -1,11 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 
 const Schema = z.object({
   token: z.string().min(20),
-  userId: z.string().uuid(),
+  userId: zUUID(),
   email: z.string().email(),
   password: z.string().min(8),
 });

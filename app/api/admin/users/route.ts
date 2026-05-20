@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
@@ -17,7 +18,7 @@ const InviteSchema = z.object({
     "driver",
     "viewer",
   ]),
-  branchIds: z.array(z.string().uuid()).optional(),
+  branchIds: z.array(zUUID()).optional(),
   // When provided + email also provided → admin sets password directly:
   // creates the auth user immediately, marks must_change_password so the
   // invitee is forced to change it on first login. Skips invite-link flow.

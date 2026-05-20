@@ -3,13 +3,14 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { isAdmin } from "@/lib/auth/permissions";
 import { audit } from "@/lib/audit/log";
 
 const Schema = z.object({
-  branchId: z.string().uuid(),
+  branchId: zUUID(),
   reportDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   reasonType: z.enum(["sick", "holiday", "system", "waiting", "other"]),
   reasonText: z.string().max(500).optional(),

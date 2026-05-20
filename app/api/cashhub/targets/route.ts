@@ -5,13 +5,14 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { isAdmin } from "@/lib/auth/permissions";
 import { audit } from "@/lib/audit/log";
 
 const PutSchema = z.object({
-  branchId: z.string().uuid(),
+  branchId: zUUID(),
   year: z.number().int().min(2020).max(2100),
   month: z.number().int().min(1).max(12),
   amount: z.number().min(0),

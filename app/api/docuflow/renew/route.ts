@@ -5,6 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
@@ -14,9 +15,9 @@ import { getUploadUrl } from "@/lib/r2/upload";
 
 const RenewSchema = z.object({
   entityType: z.enum(["vehicle", "person"]),
-  entityId: z.string().uuid(),
+  entityId: zUUID(),
   docType: z.string().min(1).max(64),
-  oldDocumentId: z.string().uuid().optional(),
+  oldDocumentId: zUUID().optional(),
   name: z.string().min(1).max(255),
   filename: z.string().min(1).max(255),
   mimeType: z.string().min(1).max(128),

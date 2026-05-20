@@ -7,6 +7,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { sendNotificationToMany, getOrgAdminIds } from "@/lib/notifications/send";
@@ -26,7 +27,7 @@ const Schema = z.object({
     .min(2, "กรุณากรอกรหัสพนักงาน")
     .max(50)
     .regex(/^[A-Za-z0-9-]+$/, "รหัสพนักงานใช้ได้เฉพาะตัวอักษร ตัวเลข และขีด"),
-  branchId: z.string().uuid().nullable().optional(),
+  branchId: zUUID().nullable().optional(),
   requestedRole: z.enum([
     "staff",
     "branch_manager",

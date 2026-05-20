@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import {
   User as UserIcon,
   Phone,
@@ -89,7 +90,7 @@ const FormSchema = z.object({
     "viewer",
   ]),
   businessType: z.string().optional().or(z.literal("")),
-  branchId: z.string().uuid().nullable().optional(),
+  branchId: zUUID().nullable().optional(),
   notes: z.string().max(500, "หมายเหตุยาวเกิน 500 ตัวอักษร").optional().or(z.literal("")),
 });
 

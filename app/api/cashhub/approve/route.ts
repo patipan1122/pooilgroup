@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
@@ -15,7 +16,7 @@ import { formatInTimeZone } from "date-fns-tz";
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
 const ApproveSchema = z.object({
-  reportId: z.string().uuid(),
+  reportId: zUUID(),
   action: z.enum(["approve", "reject"]),
   reason: z.string().max(500).optional(),
 });

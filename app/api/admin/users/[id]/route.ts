@@ -4,6 +4,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
@@ -24,7 +25,7 @@ const PatchSchema = z.object({
       "viewer",
     ])
     .optional(),
-  branchIds: z.array(z.string().uuid()).optional(),
+  branchIds: z.array(zUUID()).optional(),
 });
 
 export async function GET(

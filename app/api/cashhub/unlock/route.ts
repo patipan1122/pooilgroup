@@ -3,13 +3,14 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { sendNotification } from "@/lib/notifications/send";
 
 const Schema = z.object({
-  reportId: z.string().uuid(),
+  reportId: zUUID(),
   reason: z.string().min(5).max(500),
 });
 

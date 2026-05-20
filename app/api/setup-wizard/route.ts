@@ -3,12 +3,13 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 
 const Schema = z.object({
-  companyId: z.string().uuid().optional(),
+  companyId: zUUID().optional(),
   branches: z
     .array(
       z.object({

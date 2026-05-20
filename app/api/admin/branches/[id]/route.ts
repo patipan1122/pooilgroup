@@ -4,6 +4,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
@@ -16,7 +17,7 @@ const PatchSchema = z.object({
   phone: z.string().max(50).nullable().optional(),
   lat: z.number().min(-90).max(90).nullable().optional(),
   lng: z.number().min(-180).max(180).nullable().optional(),
-  managerId: z.string().uuid().nullable().optional(),
+  managerId: zUUID().nullable().optional(),
   lineGroupId: z.string().max(120).nullable().optional(),
   reportDeadline: z
     .string()

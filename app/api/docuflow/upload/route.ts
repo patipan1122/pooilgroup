@@ -9,6 +9,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
@@ -28,9 +29,9 @@ const OWNERSHIP_LEVELS = [
 const OwnershipSchema = z
   .object({
     level: z.enum(OWNERSHIP_LEVELS),
-    companyId: z.string().uuid().nullish(),
-    branchId: z.string().uuid().nullish(),
-    personId: z.string().uuid().nullish(),
+    companyId: zUUID().nullish(),
+    branchId: zUUID().nullish(),
+    personId: zUUID().nullish(),
     businessType: z.string().min(1).nullish(),
   })
   .refine(
@@ -56,7 +57,7 @@ const RenewalSchema = z.object({
   expiryDate: z.string().min(1), // ISO date "yyyy-MM-dd" or full ISO
   renewalPeriodYears: z.number().int().min(1).max(50).optional(),
   alertDays: z.array(z.number().int().min(0).max(365)).optional(),
-  responsibleUserId: z.string().uuid().optional(),
+  responsibleUserId: zUUID().optional(),
   notes: z.string().max(2000).optional(),
 });
 

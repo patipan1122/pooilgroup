@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { reconcile } from "@/lib/cashhub/reconcile";
@@ -20,7 +21,7 @@ import { formatInTimeZone } from "date-fns-tz";
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
 const ReportSchema = z.object({
-  branchId: z.string().uuid(),
+  branchId: zUUID(),
   reportDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   shift: z.enum(["morning", "midday", "evening", "all"]),
   totalSales: z.number().min(0),
@@ -38,7 +39,7 @@ const ReportSchema = z.object({
   notes: z.string().max(500).nullable().optional(),
   shortageInfo: z
     .object({
-      personId: z.string().uuid().nullable(),
+      personId: zUUID().nullable(),
       personName: z.string().nullable(),
       isIdentified: z.boolean(),
       note: z.string().nullable(),

@@ -7,6 +7,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireRole } from "@/lib/auth/session";
 import { audit } from "@/lib/audit/log";
 import {
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest) {
 const CreateSchema = z.object({
   businessType: z.string().min(1),
   name: z.string().min(1).max(80),
-  cloneFromId: z.string().uuid().optional(),
+  cloneFromId: zUUID().optional(),
 });
 
 export async function POST(req: NextRequest) {

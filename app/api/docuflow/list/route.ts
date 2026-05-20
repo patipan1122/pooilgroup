@@ -18,6 +18,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { isExecutiveRole } from "@/lib/auth/role-guards";
 import { loadDocuments } from "@/lib/docuflow/data";
@@ -36,15 +37,15 @@ const QuerySchema = z.object({
   level: z
     .enum(["group", "company", "business_type", "branch", "person"])
     .optional(),
-  branchId: z.string().uuid().optional(),
-  companyId: z.string().uuid().optional(),
+  branchId: zUUID().optional(),
+  companyId: zUUID().optional(),
   businessType: z.string().optional(),
   tag: z.string().optional(),
   expiryStatus: z.enum(EXPIRY_STATUSES).optional(),
   isActive: z.enum(["true", "false"]).optional(),
   search: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
-  cursor: z.string().uuid().optional(),
+  cursor: zUUID().optional(),
 });
 
 export async function GET(req: NextRequest) {
