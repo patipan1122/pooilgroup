@@ -138,10 +138,10 @@ When you convert a route, add a check next to it here:
 - [x] `app/api/cashhub/drafts/route.ts` ← converted 2026-05-20 (first working example)
 
 ### profile/* notifications/* docuflow/* (6 to convert)
-- [ ] `app/api/profile/password/route.ts`
+- WHITELIST `app/api/profile/password/route.ts` (uses auth.admin.updateUserById)
 - [ ] `app/api/profile/sessions/route.ts`
-- [ ] `app/api/notifications/route.ts`
-- [ ] `app/api/notifications/[id]/route.ts`
+- [x] `app/api/notifications/route.ts` ← converted 2026-05-20
+- [x] `app/api/notifications/[id]/route.ts` ← converted 2026-05-20
 - [ ] `app/api/docuflow/...` (2 routes)
 
 ## Future: ESLint guard
