@@ -36,11 +36,13 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: "Pooilgroup", statusBarStyle: "default" },
 };
 
+// CEO 2026-05-20: ปลด zoom lock เพื่อ WCAG 1.4.4 + ผู้สูงอายุที่ขยายดู
+// คงค่าอื่นไว้เพื่อ PWA + safe-area
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  maximumScale: 5,
+  userScalable: true,
   themeColor: "#0a0a0a",
 };
 
