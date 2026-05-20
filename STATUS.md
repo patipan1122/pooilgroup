@@ -35,13 +35,16 @@
 - ที่เหลือ 43 routes → per-route conversion · checklist ในไฟล์
 - `lib/db/server.ts` adminClient(): TODO comment ชี้ไป plan
 
-**TO APPLY (CEO action)**
-1. `npx prisma db push` → สร้าง `report_drafts` table
-2. paste ใน Supabase SQL editor:
-   - `supabase/migrations/20260520000001_rls_for_6_remaining_tables.sql`
-   - `supabase/migrations/20260520000002_report_drafts.sql`
-3. (ถ้าจะรัน e2e) `npm run test:e2e:install` → download Chromium ~200MB
-4. Vercel redeploy → ทุกอย่าง live
+**APPLIED 2026-05-20 ✅**
+1. ✅ Vercel production redeploy (`dpl_DUwkjE6awAUA6HndtRkZ8Kh6PGzs` · aliased to pooilgroup.vercel.app)
+2. ✅ Sentry env vars set in Vercel (5 vars · Preview + Production · encrypted)
+3. ✅ RLS migration for 6 tables applied via Supabase SQL Editor
+   (companies, branch_rentals, user_modules, ai_search_cache, document_analyses, document_signature_placements)
+4. ✅ `report_drafts` table created + RLS applied via combined SQL in Supabase Editor
+   (CREATE TABLE + indices + FK + RLS policy in 1 transaction · skip prisma db push)
+5. ⏳ Optional: `npm run test:e2e:install` (Playwright browsers ~200MB · CEO decides)
+
+**Production verified live:** `/health` returns `{"status":"healthy"}` with env/supabase/r2 all ok.
 
 ---
 
