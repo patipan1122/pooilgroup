@@ -10,6 +10,7 @@
     { "path": "/api/cron/monthly-report-pdf", "schedule": "0 1 1 * *" },
     { "path": "/api/cron/access-review", "schedule": "0 2 * * *" },
     { "path": "/api/cron/health-score", "schedule": "0 16 * * *" },
-    { "path": "/api/cron/docuflow-expiry", "schedule": "0 1 * * *" }
+    { "path": "/api/cron/docuflow-expiry", "schedule": "0 1 * * *" },
+    { "path": "/api/cron/shortage-digest", "schedule": "0 2 25 * *" }
   ]
 }
