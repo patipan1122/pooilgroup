@@ -122,6 +122,24 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // D-020: ถ้ามี shortage > 0 ต้องระบุชื่อพนักงาน · HR จะเอาไปหักเงินเดือนภายนอก
+  // Client (shortage-modal.tsx) บังคับ identify อยู่แล้ว · server enforce ซ้ำ
+  // กัน POST ตรงด้วย shortageInfo=null
+  if (data.shortage > 0) {
+    if (
+      !data.shortageInfo ||
+      !data.shortageInfo.isIdentified ||
+      !data.shortageInfo.personName
+    ) {
+      return NextResponse.json(
+        {
+          error: "เงินขาดต้องระบุชื่อพนักงานที่รับผิดชอบ (สำหรับฝ่ายบุคคล)",
+        },
+        { status: 422 },
+      );
+    }
+  }
+
   // Insert with idempotent UNIQUE(branch_id, report_date, shift)
   const insertPayload = withDbDefaults({
     org_id: branch.org_id,
