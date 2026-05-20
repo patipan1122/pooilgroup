@@ -115,10 +115,10 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {
-        href: "/cashhub/ev-dashboard",
-        label: "EV Stations",
+        href: "/cashhub/ev-import",
+        label: "นำเข้า EV (CONNEXT)",
         icon: Zap,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+        adminOnly: true,
       },
 
       // Shared — เงินขาด/โน้ต ผู้จัดการสาขาเห็นได้ (auto-scoped to own branches)

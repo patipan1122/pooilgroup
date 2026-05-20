@@ -58,6 +58,8 @@ export type AuditAction =
   | "DEADLINE_REMINDER_T30"
   | "MONTHLY_REPORT_GENERATED"
   | "ACCESS_REVIEW_RAN"
+  // Bulk import of external charge-session data (CONNEXT CSV → DailyReport).
+  | "BULK_IMPORT_EV_REPORTS"
   // Telegram inline-keyboard reject flow: stores pending state so the next
   // text reply from the same Telegram user resolves into the rejection reason.
   | "TELEGRAM_PENDING_REJECT"
