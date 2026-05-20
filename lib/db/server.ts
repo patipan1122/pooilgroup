@@ -39,7 +39,14 @@ export async function serverClient() {
  *  - Webhook handlers (Telegram/LINE) where there is no user session
  *  - Cron jobs
  *  - Initial onboarding flows
+ *  - Audit log writes (must succeed even when RLS would block)
+ *
  * NEVER import this in a "use client" file.
+ *
+ * ⚠️ 2026-05-20: 62 routes currently use adminClient · ~44 should switch to
+ * serverClient() so RLS is defense-in-depth (not decoration). See migration
+ * plan in `lib/db/RLS_REFACTOR.md` for whitelist + conversion recipe.
+ * If you're touching one of those routes, please convert before merging.
  */
 export function adminClient() {
   return createSb(

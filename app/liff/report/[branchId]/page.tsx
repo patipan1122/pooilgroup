@@ -16,6 +16,7 @@ import {
 import { bkkToday } from "@/lib/utils/format";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
+import { computeSpikeBaseline } from "@/lib/cashhub/spike-baseline";
 
 export const dynamic = "force-dynamic";
 
@@ -183,6 +184,28 @@ export default async function LiffReportFormPage({ params, searchParams }: Props
       )
     : { totalSales: 0, qty1: 0 };
 
+  // 7-day rolling median baseline for spike alert (Branch Manager audit · 2026-05-20)
+  // เดิมเทียบ "เมื่อวาน × 1.5" → เด้งทุกจันทร์เพราะเสาร์-อาทิตย์ยอดต่ำ
+  // ใช้ median ของ 7 วันย้อนหลังที่มียอด > 0 → ทนต่อวันหยุด
+  const sevenDaysAgo = formatInTimeZone(
+    subDays(new Date(referenceDate + "T12:00:00"), 6),
+    TZ,
+    "yyyy-MM-dd",
+  );
+  const { data: recent7d } = await admin
+    .from("daily_reports")
+    .select("total_sales, report_date")
+    .eq("branch_id", branchId)
+    .eq("status", "approved")
+    .gte("report_date", sevenDaysAgo)
+    .lte("report_date", referenceDate);
+  const spikeBaseline = computeSpikeBaseline(
+    (recent7d ?? []).map((r) => ({
+      report_date: r.report_date as string,
+      total_sales: r.total_sales as number | string | null,
+    })),
+  );
+
   // Streak from branch_streaks (or compute fallback)
   let streakInfo: { current: number; lastDate: string | null } | null = null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -206,6 +229,7 @@ export default async function LiffReportFormPage({ params, searchParams }: Props
       reportDate={reportDate}
       deadlineHHmm={branch.report_deadline ?? "21:00"}
       previousReference={previousReference}
+      spikeBaseline={spikeBaseline ?? undefined}
       streak={streakInfo}
       availableDates={availableDates}
     />

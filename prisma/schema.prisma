@@ -33,6 +33,7 @@ model Organization {
   branchRentals    BranchRental[]
   reportTemplates  ReportTemplate[]
   dailyReports     DailyReport[]
+  reportDrafts     ReportDraft[]
   cashShortages    CashShortage[]
   auditLogs        AuditLog[]
   userBranches     UserBranch[]
@@ -158,6 +159,7 @@ model User {
   managedBranches     Branch[]               @relation("BranchManager")
   submittedReports    DailyReport[]          @relation("ReportSubmitter")
   approvedReports     DailyReport[]          @relation("ReportApprover")
+  reportDrafts        ReportDraft[]
   unlockedReports     DailyReport[]          @relation("ReportUnlocker")
   shortagesAttributed CashShortage[]         @relation("ShortagePerson")
   auditLogs           AuditLog[]
@@ -237,6 +239,7 @@ model Branch {
   manager         User?                 @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
   userBranches    UserBranch[]
   dailyReports    DailyReport[]
+  reportDrafts    ReportDraft[]
   cashShortages   CashShortage[]
   targets         BranchTarget[]
   healthScores    BranchHealthScore[]
@@ -414,6 +417,33 @@ model DailyReport {
   @@index([branchId, reportDate])
   @@index([branchId, shift, reportDate])
   @@map("daily_reports")
+}
+
+// =============================================================
+// 6b. report_drafts — autosave in-progress form (server-side, replaces localStorage)
+// 2026-05-20 (Branch Manager audit): localStorage หายเมื่อเปลี่ยนเครื่อง
+// → ย้ายเข้า DB · auto-delete หลัง submit สำเร็จ
+// Unique per (user, branch, date, shift) — 1 draft ต่อบริบทเดียว
+// =============================================================
+model ReportDraft {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  reportDate DateTime @map("report_date") @db.Date
+  shift      String   @default("all")
+  formValues Json     @map("form_values")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, branchId, reportDate, shift])
+  @@index([orgId, userId])
+  @@index([branchId, reportDate])
+  @@map("report_drafts")
 }
 
 // =============================================================

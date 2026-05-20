@@ -28,6 +28,8 @@ interface Props {
   reportDate: string; // YYYY-MM-DD
   deadlineHHmm?: string;
   previousReference?: { totalSales: number; qty1: number };
+  /** Rolling 7-day median baseline for spike alert. Falls back to previousReference if undefined. */
+  spikeBaseline?: { totalSales: number; sampleDays: number };
   streak?: { current: number; lastDate: string | null } | null;
   // Anti-Stupidity Rule 2 — pre-computed list of last N days with status.
   // Approved dates appear locked in the dropdown so staff can't pick them.
@@ -75,6 +77,7 @@ export function ReportForm({
   reportDate,
   deadlineHHmm = "21:00",
   previousReference,
+  spikeBaseline,
   streak,
   availableDates,
 }: Props) {
@@ -114,41 +117,82 @@ export function ReportForm({
   const [spikeConfirmed, setSpikeConfirmed] = useState(false);
   const [spikeModalOpen, setSpikeModalOpen] = useState(false);
 
-  // Draft storage key per branch+date+shift
+  // Draft storage — server-side primary, localStorage offline-fallback.
+  // 2026-05-20: ย้ายจาก localStorage-only เข้า DB (Branch Manager audit)
+  // เพื่อกัน data loss เมื่อพนักงานเปลี่ยนเครื่อง/เครื่องสาธารณะ.
   const draftKey = `cashhub:draft:${branchId}:${reportDate}:${shift}`;
+  const draftQuery = `branchId=${encodeURIComponent(branchId)}&date=${encodeURIComponent(reportDate)}&shift=${encodeURIComponent(shift)}`;
 
-  // Load draft on mount and shift change
-  // localStorage hydrate (browser-only) — SSR-safe pattern
+  // Load draft on mount and shift change — server first, localStorage fallback
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const saved = localStorage.getItem(draftKey);
-    /* eslint-disable react-hooks/set-state-in-effect */
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as FormValues;
-        setValues((cur) => ({ ...cur, ...parsed }));
-      } catch {
-        /* ignore */
-      }
-    } else {
-      // reset to empty when switching shifts
-      setValues(Object.fromEntries(config.fields.map((f) => [f.key, ""])));
-    }
-    /* eslint-enable react-hooks/set-state-in-effect */
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftKey]);
+    let cancelled = false;
 
-  // Save draft (debounced)
+    (async () => {
+      try {
+        const res = await fetch(`/api/cashhub/drafts?${draftQuery}`, {
+          method: "GET",
+        });
+        if (!cancelled && res.ok) {
+          const json = (await res.json()) as { values: FormValues | null };
+          /* eslint-disable react-hooks/set-state-in-effect */
+          if (json.values) {
+            setValues((cur) => ({ ...cur, ...json.values }));
+            return;
+          }
+          /* eslint-enable react-hooks/set-state-in-effect */
+        }
+      } catch {
+        // fall through to localStorage
+      }
+
+      // Fallback / offline path
+      const saved = localStorage.getItem(draftKey);
+      /* eslint-disable react-hooks/set-state-in-effect */
+      if (!cancelled && saved) {
+        try {
+          const parsed = JSON.parse(saved) as FormValues;
+          setValues((cur) => ({ ...cur, ...parsed }));
+        } catch {
+          /* ignore */
+        }
+      } else if (!cancelled) {
+        // reset to empty when switching shifts
+        setValues(Object.fromEntries(config.fields.map((f) => [f.key, ""])));
+      }
+      /* eslint-enable react-hooks/set-state-in-effect */
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey, draftQuery]);
+
+  // Save draft (debounced) — write to both localStorage (offline) + server
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handle = setTimeout(() => {
       const hasContent = Object.values(values).some((v) => v !== "");
-      if (hasContent) {
-        localStorage.setItem(draftKey, JSON.stringify(values));
-      }
-    }, 500);
+      if (!hasContent) return;
+      // localStorage fast + offline
+      localStorage.setItem(draftKey, JSON.stringify(values));
+      // server sync (fire and forget — error is OK, localStorage still has it)
+      void fetch("/api/cashhub/drafts", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branchId,
+          date: reportDate,
+          shift,
+          values,
+        }),
+      }).catch(() => {
+        /* swallow — offline mode covered by localStorage */
+      });
+    }, 1000);
     return () => clearTimeout(handle);
-  }, [values, draftKey]);
+  }, [values, draftKey, branchId, reportDate, shift]);
 
   // Aggregate numeric values for reconcile
   const numeric = useMemo(() => {
@@ -199,12 +243,18 @@ export function ReportForm({
     }
   }
 
-  // Spike detection (CASHHUB Rule 3) — uses yesterday's reference if present.
-  // Threshold ×1.5 matches the spec; we only fire once unless user re-edits.
+  // Spike detection (CASHHUB Rule 3) — prefer rolling 7-day median baseline
+  // (Branch Manager audit · 2026-05-20) เพราะ "เมื่อวาน × 1.5" false-positive
+  // ทุกจันทร์ (เสาร์-อาทิตย์ยอดต่ำ). Fall back ไปใช้ previousReference ถ้า
+  // sample data ยังน้อยเกิน (เช่นสาขาเปิดใหม่). Threshold ×1.5 ตาม spec เดิม.
+  const spikeBaselineValue =
+    spikeBaseline && spikeBaseline.totalSales > 0
+      ? spikeBaseline.totalSales
+      : previousReference && previousReference.totalSales > 0
+        ? previousReference.totalSales
+        : 0;
   const spikeRatio =
-    previousReference && previousReference.totalSales > 0
-      ? numeric.totalSales / previousReference.totalSales
-      : 0;
+    spikeBaselineValue > 0 ? numeric.totalSales / spikeBaselineValue : 0;
   const isSpiking = spikeRatio >= 1.5;
 
   async function handleSubmit() {
@@ -280,8 +330,13 @@ export function ReportForm({
         return;
       }
 
-      // Clear draft
+      // Clear draft (both layers)
       localStorage.removeItem(draftKey);
+      void fetch(`/api/cashhub/drafts?${draftQuery}`, {
+        method: "DELETE",
+      }).catch(() => {
+        /* server cleanup best-effort */
+      });
       toast.success("ส่งรายงานเรียบร้อย", {
         description: "รอผู้จัดการอนุมัติ",
       });
@@ -608,12 +663,24 @@ export function ReportForm({
                 <strong className="tabular-num">
                   ฿{Math.round(numeric.totalSales).toLocaleString("th-TH")}
                 </strong>{" "}
-                — สูงกว่าเมื่อวาน{" "}
-                <strong className="text-zinc-500 tabular-num">
-                  {previousReference
-                    ? `฿${Math.round(previousReference.totalSales).toLocaleString("th-TH")}`
-                    : "—"}
-                </strong>{" "}
+                — สูงกว่า{" "}
+                {spikeBaseline ? (
+                  <>
+                    ค่ามัธยฐาน {spikeBaseline.sampleDays} วัน{" "}
+                    <strong className="text-zinc-500 tabular-num">
+                      ฿{Math.round(spikeBaseline.totalSales).toLocaleString("th-TH")}
+                    </strong>
+                  </>
+                ) : (
+                  <>
+                    เมื่อวาน{" "}
+                    <strong className="text-zinc-500 tabular-num">
+                      {previousReference
+                        ? `฿${Math.round(previousReference.totalSales).toLocaleString("th-TH")}`
+                        : "—"}
+                    </strong>
+                  </>
+                )}{" "}
                 ถึง <strong>{spikeRatio.toFixed(1)} เท่า</strong>
               </p>
               <p className="text-xs text-zinc-500 mt-3">
