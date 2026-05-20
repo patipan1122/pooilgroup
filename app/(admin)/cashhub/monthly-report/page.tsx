@@ -116,11 +116,20 @@ export default async function MonthlyReportPage({
       : null;
 
   // Per branch
+  // expected = วันที่คาดว่าจะกรอก ในเดือนนี้
+  //   daily cadence  → daysInMonth (ทุกวัน)
+  //   weekly cadence → Math.ceil(daysInMonth / 7) (รอบเก็บ kiosk/นวด)
+  // CEO 2026-05-20: PDF เคยนับ kiosk เป็นรายวัน → compliance ขึ้น "ขาด 25/30" ทุกเดือน → fix
   const byBranch = new Map<
     string,
-    { code: string; name: string; province: string | null; region: string | null; type: string; total: number; daysFilled: Set<string> }
+    { code: string; name: string; province: string | null; region: string | null; type: string; total: number; daysFilled: Set<string>; expected: number }
   >();
   for (const b of branches) {
+    const cfg = BUSINESS_TYPES[b.business_type as string];
+    const expected =
+      cfg?.reportingCadence === "weekly"
+        ? Math.ceil(daysInMonth / 7)
+        : daysInMonth;
     byBranch.set(b.id as string, {
       code: b.code as string,
       name: b.name as string,
@@ -129,6 +138,7 @@ export default async function MonthlyReportPage({
       type: b.business_type as string,
       total: 0,
       daysFilled: new Set(),
+      expected,
     });
   }
   for (const r of monthRows) {
@@ -159,8 +169,9 @@ export default async function MonthlyReportPage({
   const complianceRows = ranked.map((b) => ({
     code: b.code,
     name: b.name,
+    expected: b.expected,
     daysFilled: b.daysFilled.size,
-    daysMissed: Math.max(0, daysInMonth - b.daysFilled.size),
+    daysMissed: Math.max(0, b.expected - b.daysFilled.size),
   }));
   complianceRows.sort((a, b) => b.daysMissed - a.daysMissed);
 
@@ -294,7 +305,7 @@ export default async function MonthlyReportPage({
                       {formatBahtCompact(b.total)}
                     </td>
                     <td className="p-2 text-right tabular-num text-zinc-500">
-                      {b.daysFilled.size}/{daysInMonth}
+                      {b.daysFilled.size}/{b.expected}
                     </td>
                   </tr>
                 ))}
@@ -354,7 +365,7 @@ export default async function MonthlyReportPage({
               สาขาที่กรอก <span className="accent">ครบ / ไม่ครบ</span>
             </h2>
             <p className="text-sm text-zinc-500 mt-2">
-              รวม {daysInMonth} วันในเดือน · เรียงตามวันที่ขาดจากมากไปน้อย
+              เปรียบเทียบกับ cadence ของแต่ละธุรกิจ (รายวัน {daysInMonth} วัน · kiosk รายสัปดาห์ {Math.ceil(daysInMonth / 7)} รอบ) · เรียงตามที่ขาดมาก
             </p>
             <table className="w-full text-sm mt-6">
               <thead>
@@ -367,7 +378,7 @@ export default async function MonthlyReportPage({
               </thead>
               <tbody>
                 {complianceRows.map((r) => {
-                  const pct = (r.daysFilled / daysInMonth) * 100;
+                  const pct = r.expected > 0 ? (r.daysFilled / r.expected) * 100 : 0;
                   return (
                     <tr key={r.code} className="border-b border-zinc-100">
                       <td className="p-2">
@@ -377,7 +388,7 @@ export default async function MonthlyReportPage({
                         </span>
                       </td>
                       <td className="p-2 text-right tabular-num">
-                        {r.daysFilled}
+                        {r.daysFilled}/{r.expected}
                       </td>
                       <td
                         className={`p-2 text-right tabular-num font-bold ${

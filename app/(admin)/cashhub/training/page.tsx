@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {GraduationCap } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
+import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
@@ -22,6 +23,7 @@ const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
 export default async function TrainingPage() {
   const session = await requireSession();
+  requireExecutiveRole(session.user.role);
   const admin = adminClient();
   const now = new Date();
   const monthStart = formatInTimeZone(startOfMonth(now), TZ, "yyyy-MM-dd");

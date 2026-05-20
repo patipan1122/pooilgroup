@@ -4,6 +4,7 @@
 import Link from "next/link";
 import {Sofa, Gamepad2 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
+import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
@@ -20,6 +21,7 @@ const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
 export default async function KioskPage() {
   const session = await requireSession();
+  requireExecutiveRole(session.user.role);
   const admin = adminClient();
   const today = formatInTimeZone(new Date(), TZ, "yyyy-MM-dd");
   const last30 = formatInTimeZone(subDays(new Date(), 29), TZ, "yyyy-MM-dd");

@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { AlertTriangle,TrendingDown, TrendingUp } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
+import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
@@ -41,6 +42,7 @@ export default async function ComparePage({
   searchParams: Promise<{ a?: string; b?: string; type?: string }>;
 }) {
   const session = await requireSession();
+  requireExecutiveRole(session.user.role);
   const sp = await searchParams;
   const admin = adminClient();
 

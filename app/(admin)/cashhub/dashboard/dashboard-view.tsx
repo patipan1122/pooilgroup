@@ -144,10 +144,12 @@ export function DashboardView({
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <Button onClick={generateTestData} loading={pending} size="lg" fullWidth>
-                <Sparkles className="size-4" />
-                สร้างข้อมูลตัวอย่าง
-              </Button>
+              {process.env.NODE_ENV !== "production" && (
+                <Button onClick={generateTestData} loading={pending} size="lg" fullWidth>
+                  <Sparkles className="size-4" />
+                  สร้างข้อมูลตัวอย่าง (DEV)
+                </Button>
+              )}
               <Link href="/liff/report" className="block">
                 <Button variant="outline" size="lg" fullWidth>
                   <ScrollText className="size-4" />
