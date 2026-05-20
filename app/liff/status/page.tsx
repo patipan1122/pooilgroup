@@ -102,18 +102,26 @@ export default async function LiffStatusPage() {
                   </Badge>
                 </div>
               </div>
-              {/* แสดงเหตุผล reject ให้ staff เห็นชัด · CEO 2026-05-20 */}
-              {status === "rejected" && rejectedReason && (
+              {/* แสดงเหตุผล reject + ปุ่มแก้และส่งใหม่ · CEO 2026-05-20 */}
+              {status === "rejected" && (
                 <div className="mt-2 px-3 py-2 bg-red-50 border border-red-100 rounded-xl">
-                  <div className="text-[11px] uppercase tracking-widest text-red-700 font-bold">
-                    เหตุผลที่ไม่อนุมัติ
-                  </div>
-                  <div className="text-sm text-red-900 mt-0.5">
-                    {rejectedReason}
-                  </div>
-                  <div className="text-[11px] text-zinc-500 mt-1.5">
-                    💡 ติดต่อผู้จัดการเพื่อปลดล็อกและส่งใหม่
-                  </div>
+                  {rejectedReason && (
+                    <>
+                      <div className="text-[11px] uppercase tracking-widest text-red-700 font-bold">
+                        เหตุผลที่ไม่อนุมัติ
+                      </div>
+                      <div className="text-sm text-red-900 mt-0.5">
+                        {rejectedReason}
+                      </div>
+                    </>
+                  )}
+                  <Link
+                    href={`/liff/report/${r.branch_id}?date=${r.report_date}&shift=${r.shift}`}
+                    className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-red-700 hover:text-red-900 underline"
+                  >
+                    📝 แก้และส่งใหม่
+                    <ArrowRight className="size-3.5" />
+                  </Link>
                 </div>
               )}
             </div>

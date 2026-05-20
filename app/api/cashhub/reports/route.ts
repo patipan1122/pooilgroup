@@ -176,18 +176,120 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     if (error.code === "23505") {
-      // Idempotency: race between two near-simultaneous submits, OR a client
-      // retry after the network dropped after the write committed. Look up the
-      // existing row — if same submitter, treat as success (idempotent retry).
-      // Different submitter = real conflict.
+      // Idempotency / resubmit branch:
+      // 1. Same submitter + rejected → RESUBMIT: UPDATE row with new values, audit RESUBMIT_REPORT
+      // 2. Same submitter + submitted/approved/draft → idempotent return (network retry)
+      // 3. Different submitter → real conflict 409
       const { data: existing } = await admin
         .from("daily_reports")
-        .select("id, status, submitted_by_id, submitted_at, total_sales")
+        .select(
+          "id, status, submitted_by_id, submitted_at, total_sales, cash, transfer, card, credit, shortage, rejected_reason",
+        )
         .eq("branch_id", data.branchId)
         .eq("report_date", data.reportDate)
         .eq("shift", data.shift)
         .maybeSingle();
+
       if (existing && existing.submitted_by_id === session.user.id) {
+        // Resubmit path — staff fixes rejected report (CEO 2026-05-20)
+        if (existing.status === "rejected") {
+          const now = new Date().toISOString();
+          const { data: updated, error: updErr } = await admin
+            .from("daily_reports")
+            .update({
+              status: "submitted",
+              total_sales: data.totalSales,
+              qty1: data.qty1 ?? null,
+              qty1_unit: data.qty1Unit ?? null,
+              qty2: data.qty2 ?? null,
+              qty2_unit: data.qty2Unit ?? null,
+              cash: data.cash,
+              transfer: data.transfer,
+              card: data.card,
+              credit: data.credit,
+              shortage: data.shortage,
+              rental_income: data.rentalIncome ?? 0,
+              training_sessions: data.trainingSessions ?? null,
+              notes: data.notes ?? null,
+              extra_fields: data.extraFields ?? {},
+              rejected_reason: null,
+              submitted_at: now,
+              updated_at: now,
+              // clear previous approval so flow re-enters approval queue
+              approved_by_id: null,
+              approved_at: null,
+            })
+            .eq("id", existing.id)
+            .eq("status", "rejected")
+            .select("id")
+            .single();
+
+          if (updErr || !updated) {
+            console.error("[POST /cashhub/reports] resubmit failed", updErr);
+            return NextResponse.json(
+              { error: "ส่งใหม่ไม่สำเร็จ ลองอีกครั้ง" },
+              { status: 500 },
+            );
+          }
+
+          // Update shortage row (delete old + insert new for simplicity)
+          await admin
+            .from("cash_shortages")
+            .delete()
+            .eq("report_id", existing.id);
+          if (data.shortage > 0) {
+            const info = data.shortageInfo;
+            await admin.from("cash_shortages").insert({
+              id: crypto.randomUUID(),
+              org_id: branch.org_id,
+              report_id: existing.id,
+              branch_id: branch.id,
+              report_date: data.reportDate,
+              amount: data.shortage,
+              person_id: info?.personId ?? null,
+              person_name: info?.personName ?? null,
+              is_identified: info?.isIdentified ?? false,
+              note: info?.note ?? null,
+            });
+          }
+
+          await audit({
+            orgId: branch.org_id,
+            userId: session.user.id,
+            action: "RESUBMIT_REPORT",
+            resourceType: "daily_report",
+            resourceId: existing.id,
+            diff: {
+              old: {
+                status: "rejected",
+                total_sales: existing.total_sales,
+                cash: existing.cash,
+                transfer: existing.transfer,
+                card: existing.card,
+                credit: existing.credit,
+                shortage: existing.shortage,
+                rejected_reason: existing.rejected_reason,
+              },
+              new: {
+                status: "submitted",
+                total_sales: data.totalSales,
+                cash: data.cash,
+                transfer: data.transfer,
+                card: data.card,
+                credit: data.credit,
+                shortage: data.shortage,
+              },
+            },
+            ...meta,
+          });
+
+          return NextResponse.json(
+            { ok: true, resubmitted: true, reportId: existing.id },
+            { status: 200 },
+          );
+        }
+
+        // Idempotent network retry
         return NextResponse.json(
           { ok: true, idempotent: true, report: existing },
           { status: 200 },
