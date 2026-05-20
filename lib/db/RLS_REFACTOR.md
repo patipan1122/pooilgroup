@@ -34,6 +34,7 @@
 | `app/api/dev/*` (2 routes) | Dev tools · gated by env |
 | `app/api/setup-wizard/route.ts` | First-time onboarding · creates org |
 | `app/api/health/route.ts` | Public health check |
+| `app/api/profile/password/route.ts` | Uses `auth.admin.updateUserById` (service_role required) |
 | Audit log writes inside `lib/audit/log.ts` | Intentional — must succeed even if RLS would block |
 
 ## Categorization (62 routes total)
@@ -134,7 +135,7 @@ When you convert a route, add a check next to it here:
 - [ ] `app/api/cashhub/notes/route.ts`
 - [ ] `app/api/cashhub/quick-fill/route.ts`
 - [ ] `app/api/cashhub/templates/route.ts`
-- [ ] `app/api/cashhub/drafts/route.ts` ← created 2026-05-20 (NEW)
+- [x] `app/api/cashhub/drafts/route.ts` ← converted 2026-05-20 (first working example)
 
 ### profile/* notifications/* docuflow/* (6 to convert)
 - [ ] `app/api/profile/password/route.ts`

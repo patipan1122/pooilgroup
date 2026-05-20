@@ -9,7 +9,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
-import { adminClient } from "@/lib/db/server";
+import { serverClient } from "@/lib/db/server";
 
 const DateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD");
 
@@ -39,8 +39,8 @@ export async function GET(req: NextRequest) {
   }
   const { branchId, date, shift } = parsed.data;
 
-  const admin = adminClient();
-  const { data } = await admin
+  const supabase = await serverClient();
+  const { data } = await supabase
     .from("report_drafts")
     .select("form_values, updated_at")
     .eq("user_id", session.user.id)
@@ -70,9 +70,9 @@ export async function PUT(req: NextRequest) {
   }
   const { branchId, date, shift, values } = parsed.data;
 
-  const admin = adminClient();
+  const supabase = await serverClient();
   // Verify branch belongs to user's org (defense in depth — RLS will block anyway)
-  const { data: branch } = await admin
+  const { data: branch } = await supabase
     .from("branches")
     .select("id")
     .eq("id", branchId)
@@ -83,7 +83,7 @@ export async function PUT(req: NextRequest) {
   }
 
   const now = new Date().toISOString();
-  const { error } = await admin
+  const { error } = await supabase
     .from("report_drafts")
     .upsert(
       {
@@ -119,8 +119,8 @@ export async function DELETE(req: NextRequest) {
   }
   const { branchId, date, shift } = parsed.data;
 
-  const admin = adminClient();
-  await admin
+  const supabase = await serverClient();
+  await supabase
     .from("report_drafts")
     .delete()
     .eq("user_id", session.user.id)

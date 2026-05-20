@@ -4,6 +4,47 @@
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
+## 🆕 Update (2026-05-20 — Phase 2: RLS + UX + Tests + Drafts + Refactor plan · commit `a365977`)
+
+ต่อจาก Phase 1 · CEO อนุมัติ "ลุยทำทั้งหมด" · 5 items + 1 route conversion · build pass:
+
+**#7 — RLS for last 6 tables (Tech Lead audit)**
+- NEW migration `20260520000001_rls_for_6_remaining_tables.sql`
+- Tables: companies, branch_rentals, user_modules, ai_search_cache, document_analyses, document_signature_placements
+- TO APPLY: `psql ... -f` หรือ paste ใน Supabase SQL editor
+
+**#9 — Spike threshold: rolling 7-day median (Branch Manager audit)**
+- NEW `lib/cashhub/spike-baseline.ts` — pure helper · unit-testable
+- Updated LIFF report page + report-form.tsx
+- ลด false-positive ทุกจันทร์ (เสาร์-อาทิตย์ยอดต่ำ)
+
+**#14 — Playwright e2e smoke tests (Tech Lead "zero tests")**
+- 3 tests: health endpoint · auth pages render · protected routes redirect
+- CEO ต้องรัน `npm run test:e2e:install` ก่อน (~200MB browser download)
+- รัน: `PLAYWRIGHT_BASE_URL=https://pooilgroup.vercel.app npm run test:e2e`
+
+**#10 — Server-side draft autosave (Branch Manager audit)**
+- NEW Prisma model `ReportDraft` + migration `20260520000002_report_drafts.sql`
+- NEW API `app/api/cashhub/drafts/route.ts` (GET/PUT/DELETE)
+- report-form.tsx sync ทั้ง localStorage (offline) + server (cross-device)
+- TO APPLY: `npx prisma db push` แล้ว apply RLS SQL
+
+**#11 — adminClient → serverClient refactor (partial)**
+- NEW `lib/db/RLS_REFACTOR.md` (categorize 62 routes · whitelist 18 · convert plan 44)
+- **Converted 1 route** as working example: `app/api/cashhub/drafts/route.ts`
+- ที่เหลือ 43 routes → per-route conversion · checklist ในไฟล์
+- `lib/db/server.ts` adminClient(): TODO comment ชี้ไป plan
+
+**TO APPLY (CEO action)**
+1. `npx prisma db push` → สร้าง `report_drafts` table
+2. paste ใน Supabase SQL editor:
+   - `supabase/migrations/20260520000001_rls_for_6_remaining_tables.sql`
+   - `supabase/migrations/20260520000002_report_drafts.sql`
+3. (ถ้าจะรัน e2e) `npm run test:e2e:install` → download Chromium ~200MB
+4. Vercel redeploy → ทุกอย่าง live
+
+---
+
 ## 🆕 Update (2026-05-20 — Phase 1 Security Hardening · commit `a3cde9a`)
 
 หลัง CEO อนุมัติ Quick wins · ทำต่อ 5 ข้อในรอบเดียว · build pass · commit `a3cde9a`:
