@@ -5,8 +5,9 @@
 
 import { useState, useRef, useEffect, useTransition } from "react";
 import { usePathname } from "next/navigation";
-import { Bot, Send, X, Sparkles } from "lucide-react";
+import { Bot, Send, X, Sparkles, Bug } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
+import { BugReportModal } from "@/components/bug-report-modal";
 
 interface Msg {
   role: "user" | "assistant";
@@ -29,6 +30,7 @@ const HOWTO_SUGGESTIONS = [
 
 export function AiChat() {
   const [open, setOpen] = useState(false);
+  const [bugOpen, setBugOpen] = useState(false);
   const [input, setInput] = useState("");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [pending, startTransition] = useTransition();
@@ -168,7 +170,7 @@ export function AiChat() {
                   <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1.5">
                     🧭 วิธีใช้งาน
                   </p>
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 mb-3">
                     {HOWTO_SUGGESTIONS.map((s) => (
                       <button
                         key={s}
@@ -180,6 +182,20 @@ export function AiChat() {
                       </button>
                     ))}
                   </div>
+                  <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1.5">
+                    🐛 เจอปัญหา?
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      setBugOpen(true);
+                    }}
+                    className="flex items-center gap-2 w-full text-left px-3 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 border-2 border-amber-200 text-amber-900 text-xs sm:text-sm font-medium transition-colors"
+                  >
+                    <Bug className="size-4" />
+                    <span>แจ้งบัคหน้านี้</span>
+                  </button>
                 </div>
               ) : (
                 msgs.map((m, i) => (
@@ -246,6 +262,9 @@ export function AiChat() {
           </div>
         </>
       )}
+
+      {/* Bug Report Modal — rendered at top level so it overlays the AI sheet */}
+      <BugReportModal open={bugOpen} onClose={() => setBugOpen(false)} />
     </>
   );
 }

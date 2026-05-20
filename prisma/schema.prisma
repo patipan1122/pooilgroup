@@ -27,57 +27,72 @@ model Organization {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  users            User[]
-  companies        Company[]
-  branches         Branch[]
-  branchRentals    BranchRental[]
-  reportTemplates  ReportTemplate[]
-  dailyReports     DailyReport[]
-  reportDrafts     ReportDraft[]
-  cashShortages    CashShortage[]
-  auditLogs        AuditLog[]
-  userBranches     UserBranch[]
-  notifications    Notification[]
-  userSessions     UserSession[]
-  registerRequests RegisterRequest[]
-  orgModules       OrgModule[]
-  branchGroups     BranchGroup[]
-  holidays         Holiday[]
-  telegramSubs     TelegramSubscription[]
-  telegramGroups   TelegramGroup[]
-  telegramTokens   TelegramPairingToken[]
-  branchTargets    BranchTarget[]
-  branchHealthScores BranchHealthScore[]
-  branchStreaks    BranchStreak[]
-  missingReports   MissingReportReason[]
-  documents        Document[]
-  documentOwnerships DocumentOwnership[]
-  documentTags     DocumentTag[]
-  documentRenewals DocumentRenewal[]
-  documentSharedBranches DocumentSharedBranch[]
-  vehicles         Vehicle[]
-  vehicleDocuments VehicleDocument[]
-  personDocuments  PersonDocument[]
-  signaturePlacements DocumentSignaturePlacement[]
-  documentAnalyses DocumentAnalysis[]
-  aiSearchCache    AiSearchCache[]
+  users                   User[]
+  companies               Company[]
+  branches                Branch[]
+  branchRentals           BranchRental[]
+  reportTemplates         ReportTemplate[]
+  dailyReports            DailyReport[]
+  reportDrafts            ReportDraft[]
+  bugReports              BugReport[]
+  cashShortages           CashShortage[]
+  auditLogs               AuditLog[]
+  userBranches            UserBranch[]
+  notifications           Notification[]
+  userSessions            UserSession[]
+  registerRequests        RegisterRequest[]
+  orgModules              OrgModule[]
+  branchGroups            BranchGroup[]
+  holidays                Holiday[]
+  telegramSubs            TelegramSubscription[]
+  telegramGroups          TelegramGroup[]
+  telegramTokens          TelegramPairingToken[]
+  branchTargets           BranchTarget[]
+  branchHealthScores      BranchHealthScore[]
+  branchStreaks           BranchStreak[]
+  missingReports          MissingReportReason[]
+  documents               Document[]
+  documentOwnerships      DocumentOwnership[]
+  documentTags            DocumentTag[]
+  documentRenewals        DocumentRenewal[]
+  documentSharedBranches  DocumentSharedBranch[]
+  vehicles                Vehicle[]
+  vehicleDocuments        VehicleDocument[]
+  personDocuments         PersonDocument[]
+  signaturePlacements     DocumentSignaturePlacement[]
+  documentAnalyses        DocumentAnalysis[]
+  aiSearchCache           AiSearchCache[]
   // FuelOS Sprint 6
-  depotPrices       DepotPrice[]
-  zoneMargins       ZoneMargin[]
-  contacts          Contact[]
-  customerEntities  CustomerEntity[]
-  deliveryLocations DeliveryLocation[]
-  customerQuotes    CustomerQuote[]
-  priceAlertLogs    PriceAlertLog[]
-  lineResponseLogs  LineResponseLog[]
-  fuelOrders        FuelOrder[]
-  trucks            Truck[]
-  driverProfiles    DriverProfile[]
-  driverLocations   DriverLocation[]
-  payments          Payment[]
-  flashSales        FlashSale[]
-  creditDocuments   CreditDocument[]
-  chequeTrackings   ChequeTracking[]
+  depotPrices             DepotPrice[]
+  zoneMargins             ZoneMargin[]
+  contacts                Contact[]
+  customerEntities        CustomerEntity[]
+  deliveryLocations       DeliveryLocation[]
+  customerQuotes          CustomerQuote[]
+  priceAlertLogs          PriceAlertLog[]
+  lineResponseLogs        LineResponseLog[]
+  fuelOrders              FuelOrder[]
+  trucks                  Truck[]
+  driverProfiles          DriverProfile[]
+  driverLocations         DriverLocation[]
+  payments                Payment[]
+  flashSales              FlashSale[]
+  creditDocuments         CreditDocument[]
+  chequeTrackings         ChequeTracking[]
+  // Recruit module
+  recruitPostings         RecruitJobPosting[]
+  recruitApplicants       RecruitApplicant[]
+  recruitApplications     RecruitApplication[]
+  recruitApplicationNotes RecruitApplicationNote[]
+  recruitBlacklist        RecruitBlacklist[]
+  // Repair module
+  repairCategories        RepairCategory[]
+  repairTickets           RepairTicket[]
+  repairTechnicians       RepairTechnician[]
+  repairPhotos            RepairPhoto[]
+  repairParts             RepairPart[]
+  repairTimelineEvents    RepairTimelineEvent[]
+  repairVendorTokens      RepairVendorToken[]
 
   @@map("organizations")
 }
@@ -88,23 +103,25 @@ model Organization {
 // Branches attach to a company; users belong to org and may span companies
 // =============================================================
 model Company {
-  id        String   @id @default(uuid()) @db.Uuid
-  orgId     String   @map("org_id") @db.Uuid
-  code      String // POOIL | JPSYNC
-  name      String // "Pooil Oil" | "JP Sync Group"
-  taxId     String?  @map("tax_id") // เลขผู้เสียภาษี
-  address   String?
-  phone     String?
-  logoUrl   String?  @map("logo_url")
-  brandColor String? @map("brand_color") // optional override per company
-  settings  Json     @default("{}")
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  code       String // POOIL | JPSYNC
+  name       String // "Pooil Oil" | "JP Sync Group"
+  taxId      String?  @map("tax_id") // เลขผู้เสียภาษี
+  address    String?
+  phone      String?
+  logoUrl    String?  @map("logo_url")
+  brandColor String?  @map("brand_color") // optional override per company
+  settings   Json     @default("{}")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org      Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  branches Branch[]
-  vehicles Vehicle[]
+  org             Organization        @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  branches        Branch[]
+  vehicles        Vehicle[]
+  recruitPostings RecruitJobPosting[]
+  repairTickets   RepairTicket[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -115,73 +132,89 @@ model Company {
 // 2. users — auth + RBAC
 // =============================================================
 enum UserRole {
-  super_admin    // Owner — strategic + financial + identity
-  admin          // Operational admin — runs day-to-day
-  area_manager   // Manages multiple branches in a region/business
+  super_admin // Owner — strategic + financial + identity
+  admin // Operational admin — runs day-to-day
+  area_manager // Manages multiple branches in a region/business
   branch_manager // 1-2 per branch
-  staff          // Submits reports / works on branch
-  driver         // FuelOS Phase 2
-  viewer         // Read-only (accountant / HR)
-  org_admin      // [deprecated alias — kept for back-compat, will migrate to admin]
+  staff // Submits reports / works on branch
+  driver // FuelOS Phase 2
+  viewer // Read-only (accountant / HR)
+  org_admin // [deprecated alias — kept for back-compat, will migrate to admin]
 }
 
 model User {
-  id                 String    @id @default(uuid()) @db.Uuid
-  orgId              String    @map("org_id") @db.Uuid
-  employeeCode       String?   @map("employee_code") // referenced from Humansoft HR app
-  email              String?   @unique
-  name               String
-  phone              String?
-  passwordHash       String?   @map("password_hash")
-  role               UserRole
-  lineUserId         String?   @unique @map("line_user_id")
-  telegramUserId     String?   @map("telegram_user_id")
-  telegramChatId     String?   @map("telegram_chat_id")
-  mustChangePassword Boolean   @default(true) @map("must_change_password")
-  isActive           Boolean   @default(true) @map("is_active")
-  lastLoginAt        DateTime? @map("last_login_at") @db.Timestamptz(6)
-  failedLoginCount   Int       @default(0) @map("failed_login_count")
-  lockedUntil        DateTime? @map("locked_until") @db.Timestamptz(6)
-  invitedBy          String?   @map("invited_by") @db.Uuid
-  inviteToken        String?   @unique @map("invite_token")
-  inviteExpiresAt    DateTime? @map("invite_expires_at") @db.Timestamptz(6)
-  inviteUsedAt       DateTime? @map("invite_used_at") @db.Timestamptz(6)
+  id                  String    @id @default(uuid()) @db.Uuid
+  orgId               String    @map("org_id") @db.Uuid
+  employeeCode        String?   @map("employee_code") // referenced from Humansoft HR app
+  email               String?   @unique
+  name                String
+  phone               String?
+  passwordHash        String?   @map("password_hash")
+  role                UserRole
+  lineUserId          String?   @unique @map("line_user_id")
+  telegramUserId      String?   @map("telegram_user_id")
+  telegramChatId      String?   @map("telegram_chat_id")
+  mustChangePassword  Boolean   @default(true) @map("must_change_password")
+  isActive            Boolean   @default(true) @map("is_active")
+  lastLoginAt         DateTime? @map("last_login_at") @db.Timestamptz(6)
+  failedLoginCount    Int       @default(0) @map("failed_login_count")
+  lockedUntil         DateTime? @map("locked_until") @db.Timestamptz(6)
+  invitedBy           String?   @map("invited_by") @db.Uuid
+  inviteToken         String?   @unique @map("invite_token")
+  inviteExpiresAt     DateTime? @map("invite_expires_at") @db.Timestamptz(6)
+  inviteUsedAt        DateTime? @map("invite_used_at") @db.Timestamptz(6)
   // Optional auto-expiry for non-permanent users (auditors, contractors,
   // temp staff). When set + `now() > tempAccessExpiresAt`, the access-review
   // cron deactivates the account. NULL = permanent until manual deactivation.
   // Spec: ดีเทลv1/CORE_SYSTEM.md §2.6 Temporary Access.
   tempAccessExpiresAt DateTime? @map("temp_access_expires_at") @db.Timestamptz(6)
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org                 Organization           @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  userBranches        UserBranch[]
-  managedBranches     Branch[]               @relation("BranchManager")
-  submittedReports    DailyReport[]          @relation("ReportSubmitter")
-  approvedReports     DailyReport[]          @relation("ReportApprover")
-  reportDrafts        ReportDraft[]
-  unlockedReports     DailyReport[]          @relation("ReportUnlocker")
-  shortagesAttributed CashShortage[]         @relation("ShortagePerson")
-  auditLogs           AuditLog[]
-  notifications       Notification[]
-  sessions            UserSession[]
-  reviewedRequests    RegisterRequest[]      @relation("RegisterReviewer")
-  telegramSubs        TelegramSubscription[]
-  telegramTokens      TelegramPairingToken[]
-  uploadedDocuments   Document[]            @relation("DocumentUploader")
-  responsibleRenewals DocumentRenewal[]     @relation("RenewalResponsible")
-  personDocuments     PersonDocument[]
-  signaturePlacements DocumentSignaturePlacement[] @relation("SignaturePlacementSigner")
+  org                     Organization                 @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  userBranches            UserBranch[]
+  managedBranches         Branch[]                     @relation("BranchManager")
+  submittedReports        DailyReport[]                @relation("ReportSubmitter")
+  approvedReports         DailyReport[]                @relation("ReportApprover")
+  reportDrafts            ReportDraft[]
+  reportedBugs            BugReport[]                  @relation("BugReporter")
+  acknowledgedBugs        BugReport[]                  @relation("BugAcknowledger")
+  unlockedReports         DailyReport[]                @relation("ReportUnlocker")
+  shortagesAttributed     CashShortage[]               @relation("ShortagePerson")
+  auditLogs               AuditLog[]
+  notifications           Notification[]
+  sessions                UserSession[]
+  reviewedRequests        RegisterRequest[]            @relation("RegisterReviewer")
+  telegramSubs            TelegramSubscription[]
+  telegramTokens          TelegramPairingToken[]
+  uploadedDocuments       Document[]                   @relation("DocumentUploader")
+  responsibleRenewals     DocumentRenewal[]            @relation("RenewalResponsible")
+  personDocuments         PersonDocument[]
+  signaturePlacements     DocumentSignaturePlacement[] @relation("SignaturePlacementSigner")
   // FuelOS Sprint 6
-  depotPricesEntered  DepotPrice[]          @relation("DepotPriceEntered")
-  assignedContacts    Contact[]             @relation("ContactSales")
-  quotesAsSales       CustomerQuote[]       @relation("QuoteSales")
-  priceAlertsSent     PriceAlertLog[]       @relation("PriceAlertSales")
-  lineResponsesAsSales LineResponseLog[]    @relation("LineResponseSales")
-  fuelOrdersAsSales   FuelOrder[]           @relation("FuelOrderSales")
-  driverProfile       DriverProfile?
-  paymentsCreated     Payment[]             @relation("PaymentCreatedBy")
-  flashSalesCreated   FlashSale[]           @relation("FlashSaleCreatedBy")
+  depotPricesEntered      DepotPrice[]                 @relation("DepotPriceEntered")
+  assignedContacts        Contact[]                    @relation("ContactSales")
+  quotesAsSales           CustomerQuote[]              @relation("QuoteSales")
+  priceAlertsSent         PriceAlertLog[]              @relation("PriceAlertSales")
+  lineResponsesAsSales    LineResponseLog[]            @relation("LineResponseSales")
+  fuelOrdersAsSales       FuelOrder[]                  @relation("FuelOrderSales")
+  driverProfile           DriverProfile?
+  paymentsCreated         Payment[]                    @relation("PaymentCreatedBy")
+  flashSalesCreated       FlashSale[]                  @relation("FlashSaleCreatedBy")
+  // Recruit module
+  recruitPostingsCreated  RecruitJobPosting[]          @relation("RecruitPostingCreator")
+  recruitNotesAuthored    RecruitApplicationNote[]     @relation("RecruitNoteAuthor")
+  recruitBlacklistAdded   RecruitBlacklist[]           @relation("RecruitBlacklistAdder")
+  recruitBlacklistRemoved RecruitBlacklist[]           @relation("RecruitBlacklistRemover")
+  // Repair module
+  repairTicketsReported   RepairTicket[]               @relation("RepairTicketReporter")
+  repairTicketsResolved   RepairTicket[]               @relation("RepairTicketResolver")
+  repairTicketsClosed     RepairTicket[]               @relation("RepairTicketCloser")
+  repairTechnicianLink    RepairTechnician?
+  repairTimelineEvents    RepairTimelineEvent[]        @relation("RepairTimelineActor")
+  repairPhotosUploaded    RepairPhoto[]                @relation("RepairPhotoUploader")
+  repairPartsAdded        RepairPart[]                 @relation("RepairPartAddedBy")
+  repairPartsOrdered      RepairPart[]                 @relation("RepairPartOrderedBy")
 
   @@unique([orgId, employeeCode])
   @@index([orgId, isActive])
@@ -194,20 +227,20 @@ model User {
 // 3. branches — 30+ สาขา / 7 business types
 // =============================================================
 enum BusinessType {
-  fuel_station       // ปั๊มน้ำมัน
-  lpg_station        // ปั๊มแก๊ส (เติมรถ)
-  lpg_retail         // ร้านค้าแก๊ส (ขายถัง)
-  bottling_plant     // โรงบรรจุก๊าซ
-  hotel              // โรงแรม
-  convenience_store  // 7-Eleven
-  ev_station         // EV Station
-  cafe               // Café Amazon
-  cafe_punthai       // ร้านกาแฟพันธุ์ไทย
-  massage_chair      // เก้าอี้นวด (kiosk)
-  claw_machine       // ตู้คีบ (kiosk)
-  training_center    // ศูนย์ฝึกอบรม
-  transport          // FuelOS Phase 2
-  gas_fleet          // FuelOS Phase 2
+  fuel_station // ปั๊มน้ำมัน
+  lpg_station // ปั๊มแก๊ส (เติมรถ)
+  lpg_retail // ร้านค้าแก๊ส (ขายถัง)
+  bottling_plant // โรงบรรจุก๊าซ
+  hotel // โรงแรม
+  convenience_store // 7-Eleven
+  ev_station // EV Station
+  cafe // Café Amazon
+  cafe_punthai // ร้านกาแฟพันธุ์ไทย
+  massage_chair // เก้าอี้นวด (kiosk)
+  claw_machine // ตู้คีบ (kiosk)
+  training_center // ศูนย์ฝึกอบรม
+  transport // FuelOS Phase 2
+  gas_fleet // FuelOS Phase 2
 }
 
 model Branch {
@@ -232,11 +265,11 @@ model Branch {
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org             Organization          @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  company         Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  parentBranch    Branch?               @relation("SubTenants", fields: [parentBranchId], references: [id], onDelete: SetNull)
-  subTenants      Branch[]              @relation("SubTenants")
-  manager         User?                 @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
+  org             Organization           @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  company         Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  parentBranch    Branch?                @relation("SubTenants", fields: [parentBranchId], references: [id], onDelete: SetNull)
+  subTenants      Branch[]               @relation("SubTenants")
+  manager         User?                  @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
   userBranches    UserBranch[]
   dailyReports    DailyReport[]
   reportDrafts    ReportDraft[]
@@ -245,10 +278,11 @@ model Branch {
   healthScores    BranchHealthScore[]
   streak          BranchStreak?
   missingReports  MissingReportReason[]
-  rentalsAsHost   BranchRental[]        @relation("RentalHost")
-  rentalsAsTenant BranchRental[]        @relation("RentalTenant")
+  rentalsAsHost   BranchRental[]         @relation("RentalHost")
+  rentalsAsTenant BranchRental[]         @relation("RentalTenant")
   vehicles        Vehicle[]
   sharedDocuments DocumentSharedBranch[]
+  repairTickets   RepairTicket[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -263,26 +297,26 @@ model Branch {
 // Pump (host) ↔ Tenant (7-11 / Café / external shop) — fixed / % / mixed
 // =============================================================
 enum RentalType {
-  fixed_monthly  // ค่าเช่ารายเดือนตายตัว
-  percentage     // % ของยอดขายผู้เช่า
-  mixed          // ทั้ง fixed + %
+  fixed_monthly // ค่าเช่ารายเดือนตายตัว
+  percentage // % ของยอดขายผู้เช่า
+  mixed // ทั้ง fixed + %
 }
 
 model BranchRental {
-  id              String     @id @default(uuid()) @db.Uuid
-  orgId           String     @map("org_id") @db.Uuid
-  hostBranchId    String     @map("host_branch_id") @db.Uuid // ปั๊ม
-  tenantBranchId  String?    @map("tenant_branch_id") @db.Uuid // ถ้าเป็นร้านในเครือ
-  tenantName      String     @map("tenant_name") // ชื่อร้าน (อาจเป็นภายนอก)
-  rentalType      RentalType @map("rental_type")
-  fixedAmount     Decimal?   @map("fixed_amount") @db.Decimal(15, 2) // ฿/เดือน
-  percentageRate  Decimal?   @map("percentage_rate") @db.Decimal(6, 4) // 0.05 = 5%
-  startDate       DateTime   @map("start_date") @db.Date
-  endDate         DateTime?  @map("end_date") @db.Date
-  notes           String?
-  isActive        Boolean    @default(true) @map("is_active")
-  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id             String     @id @default(uuid()) @db.Uuid
+  orgId          String     @map("org_id") @db.Uuid
+  hostBranchId   String     @map("host_branch_id") @db.Uuid // ปั๊ม
+  tenantBranchId String?    @map("tenant_branch_id") @db.Uuid // ถ้าเป็นร้านในเครือ
+  tenantName     String     @map("tenant_name") // ชื่อร้าน (อาจเป็นภายนอก)
+  rentalType     RentalType @map("rental_type")
+  fixedAmount    Decimal?   @map("fixed_amount") @db.Decimal(15, 2) // ฿/เดือน
+  percentageRate Decimal?   @map("percentage_rate") @db.Decimal(6, 4) // 0.05 = 5%
+  startDate      DateTime   @map("start_date") @db.Date
+  endDate        DateTime?  @map("end_date") @db.Date
+  notes          String?
+  isActive       Boolean    @default(true) @map("is_active")
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org          Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   hostBranch   Branch       @relation("RentalHost", fields: [hostBranchId], references: [id], onDelete: Cascade)
@@ -444,6 +478,45 @@ model ReportDraft {
   @@index([orgId, userId])
   @@index([branchId, reportDate])
   @@map("report_drafts")
+}
+
+// =============================================================
+// 6c. bug_reports — in-app bug report (button hidden under AI floating)
+// 2026-05-20: CEO requested · พนักงานคนไหนเจอ bug บนหน้าไหน
+// → กดปุ่มแจ้ง + แนบ screenshot · admin ดูที่ /bugs · Claude session ใหม่
+// อ่านได้เพื่อ batch-fix
+// =============================================================
+enum BugStatus {
+  new
+  acked
+  fixed
+  closed
+}
+
+model BugReport {
+  id               String    @id @default(uuid()) @db.Uuid
+  orgId            String    @map("org_id") @db.Uuid
+  reporterId       String    @map("reporter_id") @db.Uuid
+  url              String // window.location.pathname + search ตอน report
+  description      String    @db.Text
+  screenshotKey    String?   @map("screenshot_key") // R2 object key (null = no screenshot)
+  userAgent        String?   @map("user_agent")
+  status           BugStatus @default(new)
+  adminNote        String?   @map("admin_note") @db.Text
+  acknowledgedById String?   @map("acknowledged_by_id") @db.Uuid
+  acknowledgedAt   DateTime? @map("acknowledged_at") @db.Timestamptz(6)
+  fixedAt          DateTime? @map("fixed_at") @db.Timestamptz(6)
+  fixedCommitSha   String?   @map("fixed_commit_sha")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org            Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  reporter       User         @relation("BugReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  acknowledgedBy User?        @relation("BugAcknowledger", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+
+  @@index([orgId, status, createdAt])
+  @@index([reporterId, createdAt])
+  @@map("bug_reports")
 }
 
 // =============================================================
@@ -731,15 +804,15 @@ model TelegramPairingToken {
 // 18. branch_targets — monthly sales target per branch
 // =============================================================
 model BranchTarget {
-  id         String   @id @default(uuid()) @db.Uuid
-  orgId      String   @map("org_id") @db.Uuid
-  branchId   String   @map("branch_id") @db.Uuid
-  year       Int
-  month      Int // 1-12
-  amount     Decimal  @db.Decimal(15, 2)
-  source     String   @default("manual") // manual | derived_prev_year | derived_avg_3m
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  year      Int
+  month     Int // 1-12
+  amount    Decimal  @db.Decimal(15, 2)
+  source    String   @default("manual") // manual | derived_prev_year | derived_avg_3m
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   branch Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -775,13 +848,13 @@ model BranchHealthScore {
 // 20. branch_streaks — current/longest fill streak (gamification)
 // =============================================================
 model BranchStreak {
-  id              String    @id @default(uuid()) @db.Uuid
-  orgId           String    @map("org_id") @db.Uuid
-  branchId        String    @unique @map("branch_id") @db.Uuid
-  currentStreak   Int       @default(0) @map("current_streak")
-  longestStreak   Int       @default(0) @map("longest_streak")
-  lastReportDate  DateTime? @map("last_report_date") @db.Date
-  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id             String    @id @default(uuid()) @db.Uuid
+  orgId          String    @map("org_id") @db.Uuid
+  branchId       String    @unique @map("branch_id") @db.Uuid
+  currentStreak  Int       @default(0) @map("current_streak")
+  longestStreak  Int       @default(0) @map("longest_streak")
+  lastReportDate DateTime? @map("last_report_date") @db.Date
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   branch Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -794,14 +867,14 @@ model BranchStreak {
 // 21. missing_report_reasons — why a day was not filled
 // =============================================================
 model MissingReportReason {
-  id          String   @id @default(uuid()) @db.Uuid
-  orgId       String   @map("org_id") @db.Uuid
-  branchId    String   @map("branch_id") @db.Uuid
-  reportDate  DateTime @map("report_date") @db.Date
-  reasonType  String   @map("reason_type") // sick | holiday | system | waiting | other
-  reasonText  String?  @map("reason_text")
-  reportedBy  String?  @map("reported_by") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  reportDate DateTime @map("report_date") @db.Date
+  reasonType String   @map("reason_type") // sick | holiday | system | waiting | other
+  reasonText String?  @map("reason_text")
+  reportedBy String?  @map("reported_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   branch Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -816,33 +889,33 @@ model MissingReportReason {
 // Spec: ดีเทลv1/DOCUFLOW.md · ~1,100 docs across group/company/biz/branch/person
 // =============================================================
 model Document {
-  id              String   @id @default(uuid()) @db.Uuid
-  orgId           String   @map("org_id") @db.Uuid
-  name            String
-  description     String?
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  name          String
+  description   String?
   /// Canonical document type — links Document to lib/docuflow/canonical-docs.ts (e.g. "ใบอนุญาตสถานีบริการน้ำมัน").
   /// Nullable for back-compat; new uploads via smart wizard set this. Phase-2 IA recommendation 2026-05-10.
-  documentType    String?  @map("document_type")
-  fileKey         String   @map("file_key") // R2 object key
-  filePublicUrl   String?  @map("file_public_url")
-  mimeType        String?  @map("mime_type")
-  fileSize        Int?     @map("file_size") // bytes
-  uploadedById    String?  @map("uploaded_by_id") @db.Uuid
-  uploadedAt      DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
-  isActive        Boolean  @default(true) @map("is_active")
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  documentType  String?  @map("document_type")
+  fileKey       String   @map("file_key") // R2 object key
+  filePublicUrl String?  @map("file_public_url")
+  mimeType      String?  @map("mime_type")
+  fileSize      Int?     @map("file_size") // bytes
+  uploadedById  String?  @map("uploaded_by_id") @db.Uuid
+  uploadedAt    DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org            Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  uploadedBy     User?                  @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
-  ownership      DocumentOwnership[]
-  tags           DocumentTag[]
-  renewals       DocumentRenewal[]
-  sharedBranches DocumentSharedBranch[]
-  vehicleDocs    VehicleDocument[]
-  personDocs     PersonDocument[]
+  org                 Organization                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  uploadedBy          User?                        @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  ownership           DocumentOwnership[]
+  tags                DocumentTag[]
+  renewals            DocumentRenewal[]
+  sharedBranches      DocumentSharedBranch[]
+  vehicleDocs         VehicleDocument[]
+  personDocs          PersonDocument[]
   signaturePlacements DocumentSignaturePlacement[]
-  analyses       DocumentAnalysis[]
+  analyses            DocumentAnalysis[]
 
   @@index([orgId, isActive])
   @@index([orgId, uploadedAt])
@@ -895,19 +968,19 @@ model DocumentTag {
 // 25. document_renewals — expiry tracking + renewal workflow
 // =============================================================
 model DocumentRenewal {
-  id                  String    @id @default(uuid()) @db.Uuid
-  orgId               String    @map("org_id") @db.Uuid
-  documentId          String    @map("document_id") @db.Uuid
-  expiryDate          DateTime  @map("expiry_date") @db.Date
-  renewalPeriodYears  Int?      @map("renewal_period_years")
-  alertDays           Int[]     @default([90, 30, 7]) @map("alert_days")
-  responsibleUserId   String?   @map("responsible_user_id") @db.Uuid
-  status              String    @default("pending") // pending | in_progress | renewed | overdue
-  lastRenewedDate     DateTime? @map("last_renewed_date") @db.Date
-  nextRenewalDate     DateTime? @map("next_renewal_date") @db.Date
-  notes               String?
-  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                 String    @id @default(uuid()) @db.Uuid
+  orgId              String    @map("org_id") @db.Uuid
+  documentId         String    @map("document_id") @db.Uuid
+  expiryDate         DateTime  @map("expiry_date") @db.Date
+  renewalPeriodYears Int?      @map("renewal_period_years")
+  alertDays          Int[]     @default([90, 30, 7]) @map("alert_days")
+  responsibleUserId  String?   @map("responsible_user_id") @db.Uuid
+  status             String    @default("pending") // pending | in_progress | renewed | overdue
+  lastRenewedDate    DateTime? @map("last_renewed_date") @db.Date
+  nextRenewalDate    DateTime? @map("next_renewal_date") @db.Date
+  notes              String?
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org             Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   document        Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
@@ -1015,27 +1088,27 @@ model PersonDocument {
 // pdf-lib embeds the image at the position into a signed PDF stored at signedFileKey.
 // =============================================================
 model DocumentSignaturePlacement {
-  id              String    @id @default(uuid()) @db.Uuid
-  orgId           String    @map("org_id") @db.Uuid
-  documentId      String    @map("document_id") @db.Uuid
-  pageNumber      Int       @map("page_number") // 1-indexed
-  xRatio          Float     @map("x_ratio") // 0-1 (left edge / page width)
-  yRatio          Float     @map("y_ratio") // 0-1 (top edge / page height; PDF origin top-left in our normalization)
-  widthRatio      Float     @map("width_ratio") // 0-1
-  heightRatio     Float     @map("height_ratio") // 0-1
+  id             String    @id @default(uuid()) @db.Uuid
+  orgId          String    @map("org_id") @db.Uuid
+  documentId     String    @map("document_id") @db.Uuid
+  pageNumber     Int       @map("page_number") // 1-indexed
+  xRatio         Float     @map("x_ratio") // 0-1 (left edge / page width)
+  yRatio         Float     @map("y_ratio") // 0-1 (top edge / page height; PDF origin top-left in our normalization)
+  widthRatio     Float     @map("width_ratio") // 0-1
+  heightRatio    Float     @map("height_ratio") // 0-1
   // Placement type: signature box (draw) | date (auto today) | name (auto signer) | text (literal)
-  placementType   String    @default("signature") @map("placement_type")
-  autoFillValue   String?   @map("auto_fill_value") // for text type: literal value
-  signerRole      String    @map("signer_role") // owner | employee | counterparty | other
-  signerUserId    String?   @map("signer_user_id") @db.Uuid
-  signerName      String?   @map("signer_name") // free-form fallback when no userId
-  label           String?   // optional caption (e.g. "เจ้าของเซ็น")
-  ordering        Int       @default(0) // visual order on the page
-  signedAt        DateTime? @map("signed_at") @db.Timestamptz(6)
-  signedImageKey  String?   @map("signed_image_key") // R2 key for the signature PNG
-  signedFileKey   String?   @map("signed_file_key") // R2 key for the embedded signed PDF (if generated)
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  placementType  String    @default("signature") @map("placement_type")
+  autoFillValue  String?   @map("auto_fill_value") // for text type: literal value
+  signerRole     String    @map("signer_role") // owner | employee | counterparty | other
+  signerUserId   String?   @map("signer_user_id") @db.Uuid
+  signerName     String?   @map("signer_name") // free-form fallback when no userId
+  label          String? // optional caption (e.g. "เจ้าของเซ็น")
+  ordering       Int       @default(0) // visual order on the page
+  signedAt       DateTime? @map("signed_at") @db.Timestamptz(6)
+  signedImageKey String?   @map("signed_image_key") // R2 key for the signature PNG
+  signedFileKey  String?   @map("signed_file_key") // R2 key for the embedded signed PDF (if generated)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   document   Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
@@ -1052,19 +1125,19 @@ model DocumentSignaturePlacement {
 // a cache key — if the file is replaced (renew), a fresh analysis runs.
 // =============================================================
 model DocumentAnalysis {
-  id              String   @id @default(uuid()) @db.Uuid
-  orgId           String   @map("org_id") @db.Uuid
-  documentId      String   @map("document_id") @db.Uuid
-  fileKey         String   @map("file_key") // doc fileKey at time of analysis
-  analysisType    String   @map("analysis_type") // risk | summary | metadata
-  riskLevel       String?  @map("risk_level") // green | yellow | red
-  summaryText     String?  @map("summary_text") @db.Text
-  watchOutPoints  Json?    @map("watch_out_points") // string[]
-  normalPoints    Json?    @map("normal_points") // string[]
-  metadataJson    Json?    @map("metadata_json") // structured fields (e.g. premium amount, terms)
-  modelUsed       String?  @map("model_used") // claude-haiku-4-5
-  tokensUsed      Int?     @map("tokens_used")
-  analyzedAt      DateTime @default(now()) @map("analyzed_at") @db.Timestamptz(6)
+  id             String   @id @default(uuid()) @db.Uuid
+  orgId          String   @map("org_id") @db.Uuid
+  documentId     String   @map("document_id") @db.Uuid
+  fileKey        String   @map("file_key") // doc fileKey at time of analysis
+  analysisType   String   @map("analysis_type") // risk | summary | metadata
+  riskLevel      String?  @map("risk_level") // green | yellow | red
+  summaryText    String?  @map("summary_text") @db.Text
+  watchOutPoints Json?    @map("watch_out_points") // string[]
+  normalPoints   Json?    @map("normal_points") // string[]
+  metadataJson   Json?    @map("metadata_json") // structured fields (e.g. premium amount, terms)
+  modelUsed      String?  @map("model_used") // claude-haiku-4-5
+  tokensUsed     Int?     @map("tokens_used")
+  analyzedAt     DateTime @default(now()) @map("analyzed_at") @db.Timestamptz(6)
 
   org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   document Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
@@ -1078,14 +1151,14 @@ model DocumentAnalysis {
 // 32. ai_search_cache — capability G query result cache (1h TTL)
 // =============================================================
 model AiSearchCache {
-  id          String   @id @default(uuid()) @db.Uuid
-  orgId       String   @map("org_id") @db.Uuid
-  queryHash   String   @map("query_hash") // SHA-256 of normalized query
-  query       String   @db.Text
-  resultJson  Json     @map("result_json")
-  hitCount    Int      @default(0) @map("hit_count")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  expiresAt   DateTime @map("expires_at") @db.Timestamptz(6)
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  queryHash  String   @map("query_hash") // SHA-256 of normalized query
+  query      String   @db.Text
+  resultJson Json     @map("result_json")
+  hitCount   Int      @default(0) @map("hit_count")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(6)
 
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
@@ -1108,17 +1181,17 @@ model AiSearchCache {
 // หัวหน้ากรอกทุกเช้า; เซลล์เห็นพร้อมกัน
 // =============================================================
 model DepotPrice {
-  id           String   @id @default(uuid()) @db.Uuid
-  orgId        String   @map("org_id") @db.Uuid
-  date         DateTime @db.Date
-  depotName    String   @map("depot_name") // PTT | Shell | DaoEvo
-  productType  String   @map("product_type") // B7 | B10 | 91 | 95
-  depotPrice   Decimal  @map("depot_price") @db.Decimal(10, 4) // ฿/L (4dp)
-  validUntil   String   @map("valid_until") // HH:mm e.g. "17:00"
-  enteredById  String?  @map("entered_by_id") @db.Uuid
-  publishedAt  DateTime? @map("published_at") @db.Timestamptz(6)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id          String    @id @default(uuid()) @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  date        DateTime  @db.Date
+  depotName   String    @map("depot_name") // PTT | Shell | DaoEvo
+  productType String    @map("product_type") // B7 | B10 | 91 | 95
+  depotPrice  Decimal   @map("depot_price") @db.Decimal(10, 4) // ฿/L (4dp)
+  validUntil  String    @map("valid_until") // HH:mm e.g. "17:00"
+  enteredById String?   @map("entered_by_id") @db.Uuid
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   enteredBy User?        @relation("DepotPriceEntered", fields: [enteredById], references: [id], onDelete: SetNull)
@@ -1132,15 +1205,15 @@ model DepotPrice {
 // 34. zone_margins — Zone × product margin (admin config) — FUELOS §2.4
 // =============================================================
 model ZoneMargin {
-  id           String  @id @default(uuid()) @db.Uuid
-  orgId        String  @map("org_id") @db.Uuid
-  zoneName     String  @map("zone_name") // KKN, Udon, Korat, ...
-  productType  String  @map("product_type") // B7 | B10 | 91 | 95
-  baseMargin   Decimal @map("base_margin") @db.Decimal(10, 4) // ฿/L
-  minMargin    Decimal @map("min_margin") @db.Decimal(10, 4) // ฿/L
-  isActive     Boolean @default(true) @map("is_active")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  zoneName    String   @map("zone_name") // KKN, Udon, Korat, ...
+  productType String   @map("product_type") // B7 | B10 | 91 | 95
+  baseMargin  Decimal  @map("base_margin") @db.Decimal(10, 4) // ฿/L
+  minMargin   Decimal  @map("min_margin") @db.Decimal(10, 4) // ฿/L
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
 
@@ -1154,27 +1227,27 @@ model ZoneMargin {
 // Group credit limit aggregates across entities under this contact
 // =============================================================
 model Contact {
-  id                  String   @id @default(uuid()) @db.Uuid
-  orgId               String   @map("org_id") @db.Uuid
-  name                String
-  nickname            String?
-  phone               String?
-  phone2              String?
-  lineUserId          String?  @map("line_user_id")
-  assignedSalesId     String?  @map("assigned_sales_id") @db.Uuid
-  creditGroupLimit    Decimal? @map("credit_group_limit") @db.Decimal(15, 2)
-  creditGroupUsed     Decimal  @default(0) @map("credit_group_used") @db.Decimal(15, 2)
-  notes               String?
-  isActive            Boolean  @default(true) @map("is_active")
-  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id               String   @id @default(uuid()) @db.Uuid
+  orgId            String   @map("org_id") @db.Uuid
+  name             String
+  nickname         String?
+  phone            String?
+  phone2           String?
+  lineUserId       String?  @map("line_user_id")
+  assignedSalesId  String?  @map("assigned_sales_id") @db.Uuid
+  creditGroupLimit Decimal? @map("credit_group_limit") @db.Decimal(15, 2)
+  creditGroupUsed  Decimal  @default(0) @map("credit_group_used") @db.Decimal(15, 2)
+  notes            String?
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org             Organization     @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  assignedSales   User?            @relation("ContactSales", fields: [assignedSalesId], references: [id], onDelete: SetNull)
-  entities        CustomerEntity[]
-  quotes          CustomerQuote[]
-  priceAlerts     PriceAlertLog[]
-  lineResponses   LineResponseLog[]
+  org           Organization      @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  assignedSales User?             @relation("ContactSales", fields: [assignedSalesId], references: [id], onDelete: SetNull)
+  entities      CustomerEntity[]
+  quotes        CustomerQuote[]
+  priceAlerts   PriceAlertLog[]
+  lineResponses LineResponseLog[]
 
   @@unique([orgId, lineUserId])
   @@index([orgId, isActive])
@@ -1187,30 +1260,30 @@ model Contact {
 // Spec: FUELOS §14.1 / §14.6 — invoice ออกในนาม Entity, credit ราย Entity
 // =============================================================
 model CustomerEntity {
-  id              String   @id @default(uuid()) @db.Uuid
-  orgId           String   @map("org_id") @db.Uuid
-  contactId       String   @map("contact_id") @db.Uuid
-  entityType      String   @map("entity_type") // company | partnership | individual
-  legalName       String   @map("legal_name")
-  taxId           String?  @map("tax_id")
-  address         String?
-  creditLimit     Decimal? @map("credit_limit") @db.Decimal(15, 2)
-  creditUsed      Decimal  @default(0) @map("credit_used") @db.Decimal(15, 2)
-  paymentTerms    Int?     @map("payment_terms") // days; null = COD
-  paymentMethod   String?  @map("payment_method") // transfer | cash | cheque | mixed
-  docStatus       String   @default("incomplete") @map("doc_status") // complete | incomplete | expired
-  creditScore     Int?     @map("credit_score") // 0-100, AI-computed (Sprint 6.4+)
-  isActive        Boolean  @default(true) @map("is_active")
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  contactId     String   @map("contact_id") @db.Uuid
+  entityType    String   @map("entity_type") // company | partnership | individual
+  legalName     String   @map("legal_name")
+  taxId         String?  @map("tax_id")
+  address       String?
+  creditLimit   Decimal? @map("credit_limit") @db.Decimal(15, 2)
+  creditUsed    Decimal  @default(0) @map("credit_used") @db.Decimal(15, 2)
+  paymentTerms  Int?     @map("payment_terms") // days; null = COD
+  paymentMethod String?  @map("payment_method") // transfer | cash | cheque | mixed
+  docStatus     String   @default("incomplete") @map("doc_status") // complete | incomplete | expired
+  creditScore   Int?     @map("credit_score") // 0-100, AI-computed (Sprint 6.4+)
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org              Organization        @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  contact          Contact             @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  locations        DeliveryLocation[]
-  fuelOrders       FuelOrder[]
-  payments         Payment[]
-  creditDocuments  CreditDocument[]
-  chequeTrackings  ChequeTracking[]
+  org             Organization       @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  contact         Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  locations       DeliveryLocation[]
+  fuelOrders      FuelOrder[]
+  payments        Payment[]
+  creditDocuments CreditDocument[]
+  chequeTrackings ChequeTracking[]
 
   @@index([orgId, isActive])
   @@index([contactId])
@@ -1221,29 +1294,29 @@ model CustomerEntity {
 // 37. delivery_locations — จุดส่งน้ำมัน (Multi-Entity layer 3) — FUELOS §14.1
 // =============================================================
 model DeliveryLocation {
-  id               String   @id @default(uuid()) @db.Uuid
-  orgId            String   @map("org_id") @db.Uuid
-  entityId         String   @map("entity_id") @db.Uuid
-  name             String
-  address          String?
-  lat              Decimal? @db.Decimal(10, 7)
-  lng              Decimal? @db.Decimal(10, 7)
-  zone             String? // KKN, Udon, ...
-  province         String?
-  preferredDepot   String?  @map("preferred_depot") // PTT | Shell | DaoEvo | null
-  maxTruckLiters   Int?     @map("max_truck_liters")
-  deliveryWindow   String?  @map("delivery_window") // morning | afternoon | anytime
-  contactName      String?  @map("contact_name")
-  contactPhone     String?  @map("contact_phone")
+  id             String   @id @default(uuid()) @db.Uuid
+  orgId          String   @map("org_id") @db.Uuid
+  entityId       String   @map("entity_id") @db.Uuid
+  name           String
+  address        String?
+  lat            Decimal? @db.Decimal(10, 7)
+  lng            Decimal? @db.Decimal(10, 7)
+  zone           String? // KKN, Udon, ...
+  province       String?
+  preferredDepot String?  @map("preferred_depot") // PTT | Shell | DaoEvo | null
+  maxTruckLiters Int?     @map("max_truck_liters")
+  deliveryWindow String?  @map("delivery_window") // morning | afternoon | anytime
+  contactName    String?  @map("contact_name")
+  contactPhone   String?  @map("contact_phone")
   // Distance cache to each depot (km) — recomputed when lat/lng changes
-  distPttKm        Decimal? @map("dist_ptt_km") @db.Decimal(6, 1)
-  distShellKm      Decimal? @map("dist_shell_km") @db.Decimal(6, 1)
-  distDaoKm        Decimal? @map("dist_dao_km") @db.Decimal(6, 1)
-  isActive         Boolean  @default(true) @map("is_active")
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  distPttKm      Decimal? @map("dist_ptt_km") @db.Decimal(6, 1)
+  distShellKm    Decimal? @map("dist_shell_km") @db.Decimal(6, 1)
+  distDaoKm      Decimal? @map("dist_dao_km") @db.Decimal(6, 1)
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org        Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  org        Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
   entity     CustomerEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
   fuelOrders FuelOrder[]
 
@@ -1258,23 +1331,23 @@ model DeliveryLocation {
 // FUELOS §3.3 / §5.2 / §12 — capture lost-to in same step (Lean: 1-click)
 // =============================================================
 model CustomerQuote {
-  id               String   @id @default(uuid()) @db.Uuid
-  orgId            String   @map("org_id") @db.Uuid
-  contactId        String   @map("contact_id") @db.Uuid
-  salesId          String   @map("sales_id") @db.Uuid
-  productType      String   @map("product_type") // B7 | B10 | 91 | 95
-  quoteDate        DateTime @map("quote_date") @db.Date
-  depotPrice       Decimal  @map("depot_price") @db.Decimal(10, 4)
-  zoneMargin       Decimal  @map("zone_margin") @db.Decimal(10, 4)
-  salesMargin      Decimal  @map("sales_margin") @db.Decimal(10, 4) // +N สตาง
-  finalPrice       Decimal  @map("final_price") @db.Decimal(10, 4)
-  status           String   @default("pending") // pending | won | lost | declined | no_response
-  lostTo           String?  @map("lost_to") // competitor name
-  competitorPrice  Decimal? @map("competitor_price") @db.Decimal(10, 4)
-  resultOrderId    String?  @map("result_order_id") @db.Uuid
-  notes            String?
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  contactId       String   @map("contact_id") @db.Uuid
+  salesId         String   @map("sales_id") @db.Uuid
+  productType     String   @map("product_type") // B7 | B10 | 91 | 95
+  quoteDate       DateTime @map("quote_date") @db.Date
+  depotPrice      Decimal  @map("depot_price") @db.Decimal(10, 4)
+  zoneMargin      Decimal  @map("zone_margin") @db.Decimal(10, 4)
+  salesMargin     Decimal  @map("sales_margin") @db.Decimal(10, 4) // +N สตาง
+  finalPrice      Decimal  @map("final_price") @db.Decimal(10, 4)
+  status          String   @default("pending") // pending | won | lost | declined | no_response
+  lostTo          String?  @map("lost_to") // competitor name
+  competitorPrice Decimal? @map("competitor_price") @db.Decimal(10, 4)
+  resultOrderId   String?  @map("result_order_id") @db.Uuid
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org     Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   contact Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
@@ -1292,17 +1365,17 @@ model CustomerQuote {
 // ป้องกัน "ลืมแจ้ง" + วัด conversion ของการแจ้งราคา
 // =============================================================
 model PriceAlertLog {
-  id          String   @id @default(uuid()) @db.Uuid
-  orgId       String   @map("org_id") @db.Uuid
-  contactId   String   @map("contact_id") @db.Uuid
-  salesId     String   @map("sales_id") @db.Uuid
-  alertDate   DateTime @map("alert_date") @db.Date
-  priceSent   Decimal  @map("price_sent") @db.Decimal(10, 4)
-  productType String   @map("product_type")
-  sentAt      DateTime @default(now()) @map("sent_at") @db.Timestamptz(6)
-  result      String   @default("pending") // pending | ordered | declined | no_response
+  id          String    @id @default(uuid()) @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  contactId   String    @map("contact_id") @db.Uuid
+  salesId     String    @map("sales_id") @db.Uuid
+  alertDate   DateTime  @map("alert_date") @db.Date
+  priceSent   Decimal   @map("price_sent") @db.Decimal(10, 4)
+  productType String    @map("product_type")
+  sentAt      DateTime  @default(now()) @map("sent_at") @db.Timestamptz(6)
+  result      String    @default("pending") // pending | ordered | declined | no_response
   resolvedAt  DateTime? @map("resolved_at") @db.Timestamptz(6)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   org     Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   contact Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
@@ -1319,15 +1392,15 @@ model PriceAlertLog {
 // KPI: เวลาเฉลี่ยตอบลูกค้าใน LINE group (target ≤30 นาที)
 // =============================================================
 model LineResponseLog {
-  id                String    @id @default(uuid()) @db.Uuid
-  orgId             String    @map("org_id") @db.Uuid
-  contactId         String    @map("contact_id") @db.Uuid
-  salesId           String?   @map("sales_id") @db.Uuid
-  lineGroupId       String?   @map("line_group_id")
-  customerSentAt    DateTime  @map("customer_sent_at") @db.Timestamptz(6)
-  salesRepliedAt    DateTime? @map("sales_replied_at") @db.Timestamptz(6)
-  responseMinutes   Int?      @map("response_minutes") // computed at reply time
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  id              String    @id @default(uuid()) @db.Uuid
+  orgId           String    @map("org_id") @db.Uuid
+  contactId       String    @map("contact_id") @db.Uuid
+  salesId         String?   @map("sales_id") @db.Uuid
+  lineGroupId     String?   @map("line_group_id")
+  customerSentAt  DateTime  @map("customer_sent_at") @db.Timestamptz(6)
+  salesRepliedAt  DateTime? @map("sales_replied_at") @db.Timestamptz(6)
+  responseMinutes Int?      @map("response_minutes") // computed at reply time
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   org     Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   contact Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
@@ -1344,43 +1417,43 @@ model LineResponseLog {
 // Note: kept distinct name from any future generic `Order` to avoid collision
 // =============================================================
 model FuelOrder {
-  id                       String   @id @default(uuid()) @db.Uuid
-  orgId                    String   @map("org_id") @db.Uuid
-  orderNumber              String   @unique @map("order_number")
-  entityId                 String   @map("entity_id") @db.Uuid
-  locationId               String   @map("location_id") @db.Uuid
-  salesId                  String   @map("sales_id") @db.Uuid
-  productType              String   @map("product_type")
-  qtyOrdered               Decimal  @map("qty_ordered") @db.Decimal(12, 3)
-  qtyDelivered             Decimal? @map("qty_delivered") @db.Decimal(12, 3)
-  pricePerLiter            Decimal  @map("price_per_liter") @db.Decimal(10, 4)
-  depotCost                Decimal  @map("depot_cost") @db.Decimal(10, 4)
-  transportCostPerLiter    Decimal  @default(0) @map("transport_cost_per_liter") @db.Decimal(10, 4)
+  id                    String    @id @default(uuid()) @db.Uuid
+  orgId                 String    @map("org_id") @db.Uuid
+  orderNumber           String    @unique @map("order_number")
+  entityId              String    @map("entity_id") @db.Uuid
+  locationId            String    @map("location_id") @db.Uuid
+  salesId               String    @map("sales_id") @db.Uuid
+  productType           String    @map("product_type")
+  qtyOrdered            Decimal   @map("qty_ordered") @db.Decimal(12, 3)
+  qtyDelivered          Decimal?  @map("qty_delivered") @db.Decimal(12, 3)
+  pricePerLiter         Decimal   @map("price_per_liter") @db.Decimal(10, 4)
+  depotCost             Decimal   @map("depot_cost") @db.Decimal(10, 4)
+  transportCostPerLiter Decimal   @default(0) @map("transport_cost_per_liter") @db.Decimal(10, 4)
   // marginPerLiter + totalAmount + totalProfit are GENERATED columns added in SQL migration
   // (Prisma cannot express GENERATED columns yet; modeled as nullable read-only here)
-  marginPerLiter           Decimal? @map("margin_per_liter") @db.Decimal(10, 4)
-  totalAmount              Decimal? @map("total_amount") @db.Decimal(15, 2)
-  totalProfit              Decimal? @map("total_profit") @db.Decimal(15, 2)
-  truckId                  String?  @map("truck_id") @db.Uuid
-  driverId                 String?  @map("driver_id") @db.Uuid // FK -> users (driver)
-  depot                    String?
-  status                   String   @default("pending") // pending | scheduled | dispatched | delivered | cancelled
-  scheduledDate            DateTime? @map("scheduled_date") @db.Date
-  deliveredAt              DateTime? @map("delivered_at") @db.Timestamptz(6)
-  deliveryPhotoKey         String?  @map("delivery_photo_key")
-  deliveryLat              Decimal? @map("delivery_lat") @db.Decimal(10, 7)
-  deliveryLng              Decimal? @map("delivery_lng") @db.Decimal(10, 7)
-  source                   String   @default("manual") // quote | flash_sale | manual | line_bot
-  sourceQuoteId            String?  @map("source_quote_id") @db.Uuid
-  notes                    String?
-  createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  marginPerLiter        Decimal?  @map("margin_per_liter") @db.Decimal(10, 4)
+  totalAmount           Decimal?  @map("total_amount") @db.Decimal(15, 2)
+  totalProfit           Decimal?  @map("total_profit") @db.Decimal(15, 2)
+  truckId               String?   @map("truck_id") @db.Uuid
+  driverId              String?   @map("driver_id") @db.Uuid // FK -> users (driver)
+  depot                 String?
+  status                String    @default("pending") // pending | scheduled | dispatched | delivered | cancelled
+  scheduledDate         DateTime? @map("scheduled_date") @db.Date
+  deliveredAt           DateTime? @map("delivered_at") @db.Timestamptz(6)
+  deliveryPhotoKey      String?   @map("delivery_photo_key")
+  deliveryLat           Decimal?  @map("delivery_lat") @db.Decimal(10, 7)
+  deliveryLng           Decimal?  @map("delivery_lng") @db.Decimal(10, 7)
+  source                String    @default("manual") // quote | flash_sale | manual | line_bot
+  sourceQuoteId         String?   @map("source_quote_id") @db.Uuid
+  notes                 String?
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org         Organization     @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  entity      CustomerEntity   @relation(fields: [entityId], references: [id], onDelete: Restrict)
-  location    DeliveryLocation @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  sales       User             @relation("FuelOrderSales", fields: [salesId], references: [id], onDelete: Restrict)
-  truck       Truck?           @relation(fields: [truckId], references: [id], onDelete: SetNull)
+  org             Organization     @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  entity          CustomerEntity   @relation(fields: [entityId], references: [id], onDelete: Restrict)
+  location        DeliveryLocation @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  sales           User             @relation("FuelOrderSales", fields: [salesId], references: [id], onDelete: Restrict)
+  truck           Truck?           @relation(fields: [truckId], references: [id], onDelete: SetNull)
   driverLocations DriverLocation[]
 
   @@index([orgId, scheduledDate])
@@ -1407,10 +1480,10 @@ model Truck {
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org      Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  vehicle  Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  org        Organization    @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  vehicle    Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
   fuelOrders FuelOrder[]
-  drivers  DriverProfile[] @relation("DriverCurrentTruck")
+  drivers    DriverProfile[] @relation("DriverCurrentTruck")
 
   @@index([orgId, isActive])
   @@index([orgId, status])
@@ -1432,10 +1505,10 @@ model DriverProfile {
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org           Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  currentTruck  Truck?       @relation("DriverCurrentTruck", fields: [currentTruckId], references: [id], onDelete: SetNull)
-  locations     DriverLocation[]
+  org          Organization     @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentTruck Truck?           @relation("DriverCurrentTruck", fields: [currentTruckId], references: [id], onDelete: SetNull)
+  locations    DriverLocation[]
 
   @@index([orgId, status])
   @@map("driver_profiles")
@@ -1446,18 +1519,18 @@ model DriverProfile {
 // Phase 1: Android phone GPS via Driver PWA. Phase 2: hardware GPS.
 // =============================================================
 model DriverLocation {
-  id          String   @id @default(uuid()) @db.Uuid
-  orgId       String   @map("org_id") @db.Uuid
-  driverId    String   @map("driver_id") @db.Uuid
-  orderId     String?  @map("order_id") @db.Uuid
-  lat         Decimal  @db.Decimal(10, 7)
-  lng         Decimal  @db.Decimal(10, 7)
-  speedKmh    Decimal? @map("speed_kmh") @db.Decimal(5, 1)
-  recordedAt  DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  driverId   String   @map("driver_id") @db.Uuid
+  orderId    String?  @map("order_id") @db.Uuid
+  lat        Decimal  @db.Decimal(10, 7)
+  lng        Decimal  @db.Decimal(10, 7)
+  speedKmh   Decimal? @map("speed_kmh") @db.Decimal(5, 1)
+  recordedAt DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
 
-  org     Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  driver  DriverProfile  @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  order   FuelOrder?     @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  org    Organization  @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  driver DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  order  FuelOrder?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
   @@index([driverId, recordedAt])
   @@index([orderId, recordedAt])
@@ -1468,20 +1541,20 @@ model DriverLocation {
 // 45. payments — รับชำระ — FUELOS §12 / §14.4
 // =============================================================
 model Payment {
-  id            String   @id @default(uuid()) @db.Uuid
-  orgId         String   @map("org_id") @db.Uuid
-  entityId      String   @map("entity_id") @db.Uuid
-  amount        Decimal  @db.Decimal(15, 2)
-  method        String // transfer | cash | cheque
-  paymentDate   DateTime @map("payment_date") @db.Date
-  reference     String? // bank ref, slip number
-  notes         String?
-  createdById   String?  @map("created_by_id") @db.Uuid
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  entityId    String   @map("entity_id") @db.Uuid
+  amount      Decimal  @db.Decimal(15, 2)
+  method      String // transfer | cash | cheque
+  paymentDate DateTime @map("payment_date") @db.Date
+  reference   String? // bank ref, slip number
+  notes       String?
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  org       Organization    @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  entity    CustomerEntity  @relation(fields: [entityId], references: [id], onDelete: Restrict)
-  createdBy User?           @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  org       Organization     @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  entity    CustomerEntity   @relation(fields: [entityId], references: [id], onDelete: Restrict)
+  createdBy User?            @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   cheques   ChequeTracking[]
 
   @@index([orgId, paymentDate])
@@ -1493,18 +1566,18 @@ model Payment {
 // 46. flash_sales — Broadcast offer — FUELOS §11
 // =============================================================
 model FlashSale {
-  id                String   @id @default(uuid()) @db.Uuid
-  orgId             String   @map("org_id") @db.Uuid
-  productType       String   @map("product_type")
-  qtyAvailable      Decimal  @map("qty_available") @db.Decimal(12, 3)
-  qtySold           Decimal  @default(0) @map("qty_sold") @db.Decimal(12, 3)
-  discountPerLiter  Decimal  @map("discount_per_liter") @db.Decimal(10, 4)
-  zoneFilter        String[] @default([]) @map("zone_filter")
-  expiresAt         DateTime @map("expires_at") @db.Timestamptz(6)
-  status            String   @default("active") // active | sold_out | expired | cancelled
-  createdById       String?  @map("created_by_id") @db.Uuid
-  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id               String   @id @default(uuid()) @db.Uuid
+  orgId            String   @map("org_id") @db.Uuid
+  productType      String   @map("product_type")
+  qtyAvailable     Decimal  @map("qty_available") @db.Decimal(12, 3)
+  qtySold          Decimal  @default(0) @map("qty_sold") @db.Decimal(12, 3)
+  discountPerLiter Decimal  @map("discount_per_liter") @db.Decimal(10, 4)
+  zoneFilter       String[] @default([]) @map("zone_filter")
+  expiresAt        DateTime @map("expires_at") @db.Timestamptz(6)
+  status           String   @default("active") // active | sold_out | expired | cancelled
+  createdById      String?  @map("created_by_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   createdBy User?        @relation("FlashSaleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -1519,16 +1592,16 @@ model FlashSale {
 // (e.g. สัญญาซื้อขายน้ำมัน, หนังสือรับรองบริษัท, สำเนาบัตร, statement, หลักประกัน)
 // =============================================================
 model CreditDocument {
-  id           String   @id @default(uuid()) @db.Uuid
-  orgId        String   @map("org_id") @db.Uuid
-  entityId     String   @map("entity_id") @db.Uuid
-  documentId   String?  @map("document_id") @db.Uuid // FK -> documents (DocuFlow); null = required but not yet uploaded
-  docType      String   @map("doc_type") // contract | cert | id | statement | collateral
-  expiryDate   DateTime? @map("expiry_date") @db.Date
-  status       String   @default("pending") // valid | expired | missing | pending
-  uploadedAt   DateTime? @map("uploaded_at") @db.Timestamptz(6)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id         String    @id @default(uuid()) @db.Uuid
+  orgId      String    @map("org_id") @db.Uuid
+  entityId   String    @map("entity_id") @db.Uuid
+  documentId String?   @map("document_id") @db.Uuid // FK -> documents (DocuFlow); null = required but not yet uploaded
+  docType    String    @map("doc_type") // contract | cert | id | statement | collateral
+  expiryDate DateTime? @map("expiry_date") @db.Date
+  status     String    @default("pending") // valid | expired | missing | pending
+  uploadedAt DateTime? @map("uploaded_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org    Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
   entity CustomerEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
@@ -1543,20 +1616,20 @@ model CreditDocument {
 // 48. cheque_tracking — เช็คที่รับชำระ + วันขึ้นเงิน + bounce flag — FUELOS §14.4
 // =============================================================
 model ChequeTracking {
-  id            String   @id @default(uuid()) @db.Uuid
-  orgId         String   @map("org_id") @db.Uuid
-  entityId      String   @map("entity_id") @db.Uuid
-  paymentId     String?  @map("payment_id") @db.Uuid
-  chequeNumber  String   @map("cheque_number")
+  id            String    @id @default(uuid()) @db.Uuid
+  orgId         String    @map("org_id") @db.Uuid
+  entityId      String    @map("entity_id") @db.Uuid
+  paymentId     String?   @map("payment_id") @db.Uuid
+  chequeNumber  String    @map("cheque_number")
   bank          String
-  amount        Decimal  @db.Decimal(15, 2)
-  dueDate       DateTime @map("due_date") @db.Date
-  status        String   @default("pending") // pending | cleared | bounced
+  amount        Decimal   @db.Decimal(15, 2)
+  dueDate       DateTime  @map("due_date") @db.Date
+  status        String    @default("pending") // pending | cleared | bounced
   clearedAt     DateTime? @map("cleared_at") @db.Timestamptz(6)
-  bouncedReason String?  @map("bounced_reason")
+  bouncedReason String?   @map("bounced_reason")
   notes         String?
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org     Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
   entity  CustomerEntity @relation(fields: [entityId], references: [id], onDelete: Restrict)
@@ -1566,4 +1639,423 @@ model ChequeTracking {
   @@index([orgId, status])
   @@index([entityId, dueDate])
   @@map("cheque_tracking")
+}
+
+// =============================================================
+// 49-53. RECRUIT MODULE — "รับสมัครพนักงาน"
+// Spec: docs/RECRUIT_PLAN.md + docs/RECRUIT_DESIGN_PLAN.md
+// CEO decisions (2026-05-20):
+//   - Multi-company = soft tag (no strict isolation between Pooil/JPSync)
+//   - AI = manual trigger only (no auto-score)
+//   - National ID NOT collected at apply time
+//   - Form: HR full control (CRUD field schema)
+// =============================================================
+
+enum RecruitPostingStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+enum RecruitApplicationStatus {
+  NEW
+  SCREENING
+  INTERVIEW
+  OFFERED
+  HIRED
+  REJECTED
+  WITHDRAWN
+}
+
+enum RecruitCompanyScope {
+  POOIL
+  JPSYNC
+  BOTH
+}
+
+// 49. recruit_job_postings — ประกาศรับสมัคร
+model RecruitJobPosting {
+  id          String               @id @default(uuid()) @db.Uuid
+  orgId       String               @map("org_id") @db.Uuid
+  companyId   String?              @map("company_id") @db.Uuid // optional · CEO said "use together"
+  title       String
+  description String?
+  slug        String               @unique // public link path
+  status      RecruitPostingStatus @default(DRAFT)
+  // fieldSchema = { version: 1, sections: [{ title, fields: [...] }] }
+  fieldSchema Json                 @default("{\"version\":1,\"sections\":[]}") @map("field_schema")
+  // settings = { closingDateAutoClose, notifyTemplates, ... }
+  settings    Json                 @default("{}")
+  opensAt     DateTime?            @map("opens_at") @db.Timestamptz(6)
+  closesAt    DateTime?            @map("closes_at") @db.Timestamptz(6)
+  createdById String               @map("created_by_id") @db.Uuid
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org          Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company      Company?             @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  createdBy    User                 @relation("RecruitPostingCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  applications RecruitApplication[]
+
+  @@index([orgId, status])
+  @@index([slug])
+  @@map("recruit_job_postings")
+}
+
+// 50. recruit_applicants — ผู้สมัคร (normalized · dedup by phone)
+model RecruitApplicant {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  fullName  String   @map("full_name")
+  phone     String // primary identifier · CEO Q5: no national ID at apply
+  email     String?
+  lineId    String?  @map("line_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org          Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  applications RecruitApplication[]
+
+  @@index([orgId, phone])
+  @@map("recruit_applicants")
+}
+
+// 51. recruit_applications — ใบสมัคร (1 ใบต่อ posting × applicant submission)
+model RecruitApplication {
+  id               String                   @id @default(uuid()) @db.Uuid
+  orgId            String                   @map("org_id") @db.Uuid
+  postingId        String                   @map("posting_id") @db.Uuid
+  applicantId      String                   @map("applicant_id") @db.Uuid
+  refId            String                   @unique @map("ref_id") // human-readable e.g. "APP-2026-001234"
+  answers          Json                     @default("{}")
+  files            Json                     @default("[]") // [{key, name, size, mime, uploadedAt}]
+  status           RecruitApplicationStatus @default(NEW)
+  aiScore          Int?                     @map("ai_score") // 0-100 · null = not yet evaluated
+  aiSummary        String?                  @map("ai_summary")
+  aiStrengths      Json?                    @map("ai_strengths") // ["...", "...", "..."]
+  aiRisks          Json?                    @map("ai_risks")
+  aiEvaluatedAt    DateTime?                @map("ai_evaluated_at") @db.Timestamptz(6)
+  flaggedBlacklist Boolean                  @default(false) @map("flagged_blacklist")
+  blacklistReason  String?                  @map("blacklist_reason")
+  starRating       Int?                     @map("star_rating") // 1-5 from HR
+  tags             String[]                 @default([])
+  source           String? // utm_source from public link
+  draft            Boolean                  @default(false) // draft saved by applicant
+  submittedAt      DateTime?                @map("submitted_at") @db.Timestamptz(6)
+  schemaVersion    Int                      @default(1) @map("schema_version") // snapshot of posting.fieldSchema version
+  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  posting   RecruitJobPosting        @relation(fields: [postingId], references: [id], onDelete: Cascade)
+  applicant RecruitApplicant         @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  notes     RecruitApplicationNote[]
+
+  @@index([orgId, status])
+  @@index([postingId, status])
+  @@index([applicantId])
+  @@index([orgId, submittedAt(sort: Desc)])
+  @@map("recruit_applications")
+}
+
+// 52. recruit_application_notes — HR internal notes
+model RecruitApplicationNote {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  applicationId String   @map("application_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  body          String
+  rating        Int? // 1-5
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org         Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  application RecruitApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  user        User               @relation("RecruitNoteAuthor", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+  @@map("recruit_application_notes")
+}
+
+// 53. recruit_blacklist — blacklist (phone-based · ไม่ใช้ national ID)
+model RecruitBlacklist {
+  id           String              @id @default(uuid()) @db.Uuid
+  orgId        String              @map("org_id") @db.Uuid
+  phone        String?
+  fullName     String              @map("full_name")
+  reason       String
+  companyScope RecruitCompanyScope @default(BOTH) @map("company_scope")
+  addedById    String              @map("added_by_id") @db.Uuid
+  addedAt      DateTime            @default(now()) @map("added_at") @db.Timestamptz(6)
+  expiresAt    DateTime            @map("expires_at") @db.Timestamptz(6)
+  removedAt    DateTime?           @map("removed_at") @db.Timestamptz(6)
+  removedById  String?             @map("removed_by_id") @db.Uuid
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  addedBy   User         @relation("RecruitBlacklistAdder", fields: [addedById], references: [id], onDelete: Restrict)
+  removedBy User?        @relation("RecruitBlacklistRemover", fields: [removedById], references: [id], onDelete: SetNull)
+
+  @@index([orgId, phone])
+  @@index([orgId, expiresAt])
+  @@map("recruit_blacklist")
+}
+
+// =============================================================
+// REPAIR MODULE — ระบบแจ้งซ่อม
+// 7 tables · ใครก็แจ้งได้ · admin assign + dispatch · tech see own jobs ·
+// purchasing sees parts queue · timeline + photos · tracking via code+phone.
+// =============================================================
+
+enum RepairTicketStatus {
+  NEW
+  ACK
+  IN_PROGRESS
+  WAITING_PARTS
+  RESOLVED
+  CLOSED
+  CANCELLED
+}
+
+enum RepairUrgency {
+  URGENT
+  NORMAL
+  LOW
+}
+
+enum RepairReportSource {
+  GUIDED
+  FREEFORM
+  INTERNAL
+}
+
+enum RepairPhotoPhase {
+  BEFORE
+  DURING
+  AFTER
+  PART
+  RECEIPT
+}
+
+enum RepairTechnicianKind {
+  INTERNAL
+  VENDOR
+}
+
+enum RepairPartStatus {
+  NEEDED
+  ORDERED
+  DELIVERED
+  INSTALLED
+  CANCELLED
+}
+
+enum RepairEventKind {
+  CREATED
+  STATUS_CHANGE
+  ASSIGN
+  UNASSIGN
+  COMMENT
+  PART_ADDED
+  PART_UPDATED
+  PHOTO_ADDED
+  REOPEN
+  CLOSE
+  ETA_SET
+}
+
+model RepairCategory {
+  id             String        @id @default(uuid()) @db.Uuid
+  orgId          String        @map("org_id") @db.Uuid
+  slug           String
+  label          String
+  emoji          String?
+  defaultUrgency RepairUrgency @default(NORMAL) @map("default_urgency")
+  sortOrder      Int           @default(0) @map("sort_order")
+  isActive       Boolean       @default(true) @map("is_active")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org     Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  tickets RepairTicket[]
+
+  @@unique([orgId, slug])
+  @@index([orgId, isActive, sortOrder])
+  @@map("repair_categories")
+}
+
+model RepairTechnician {
+  id          String               @id @default(uuid()) @db.Uuid
+  orgId       String               @map("org_id") @db.Uuid
+  kind        RepairTechnicianKind
+  userId      String?              @unique @map("user_id") @db.Uuid
+  name        String
+  phone       String?
+  lineId      String?              @map("line_id")
+  specialties String[]             @default([])
+  isActive    Boolean              @default(true) @map("is_active")
+  notes       String?
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org          Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user         User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  tickets      RepairTicket[]
+  vendorTokens RepairVendorToken[]
+
+  @@index([orgId, kind, isActive])
+  @@index([orgId, phone])
+  @@map("repair_technicians")
+}
+
+model RepairTicket {
+  id             String             @id @default(uuid()) @db.Uuid
+  orgId          String             @map("org_id") @db.Uuid
+  companyId      String?            @map("company_id") @db.Uuid
+  branchId       String?            @map("branch_id") @db.Uuid
+  categoryId     String?            @map("category_id") @db.Uuid
+  ticketCode     String             @unique @map("ticket_code")
+  title          String
+  description    String             @default("")
+  customerImpact String?            @map("customer_impact")
+  status         RepairTicketStatus @default(NEW)
+  urgency        RepairUrgency      @default(NORMAL)
+  source         RepairReportSource @default(FREEFORM)
+  reporterName   String             @map("reporter_name")
+  reporterPhone  String             @map("reporter_phone")
+  reporterEmail  String?            @map("reporter_email")
+  reporterUserId String?            @map("reporter_user_id") @db.Uuid
+  assignedTechId String?            @map("assigned_tech_id") @db.Uuid
+  assignedAt     DateTime?          @map("assigned_at") @db.Timestamptz(6)
+  responseDueAt  DateTime?          @map("response_due_at") @db.Timestamptz(6)
+  resolveDueAt   DateTime?          @map("resolve_due_at") @db.Timestamptz(6)
+  etaAt          DateTime?          @map("eta_at") @db.Timestamptz(6)
+  acknowledgedAt DateTime?          @map("acknowledged_at") @db.Timestamptz(6)
+  startedAt      DateTime?          @map("started_at") @db.Timestamptz(6)
+  resolvedAt     DateTime?          @map("resolved_at") @db.Timestamptz(6)
+  resolvedById   String?            @map("resolved_by_id") @db.Uuid
+  closedAt       DateTime?          @map("closed_at") @db.Timestamptz(6)
+  closedById     String?            @map("closed_by_id") @db.Uuid
+  cancelledAt    DateTime?          @map("cancelled_at") @db.Timestamptz(6)
+  partsCostCents Int                @default(0) @map("parts_cost_cents")
+  laborCostCents Int                @default(0) @map("labor_cost_cents")
+  ipAddress      String?            @map("ip_address")
+  metadata       Json               @default("{}")
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org          Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company      Company?              @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  branch       Branch?               @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  category     RepairCategory?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  reporterUser User?                 @relation("RepairTicketReporter", fields: [reporterUserId], references: [id], onDelete: SetNull)
+  assignedTech RepairTechnician?     @relation(fields: [assignedTechId], references: [id], onDelete: SetNull)
+  resolvedBy   User?                 @relation("RepairTicketResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  closedBy     User?                 @relation("RepairTicketCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  photos       RepairPhoto[]
+  parts        RepairPart[]
+  events       RepairTimelineEvent[]
+
+  @@index([orgId, status, urgency, createdAt(sort: Desc)])
+  @@index([orgId, branchId, status])
+  @@index([orgId, assignedTechId, status])
+  @@index([orgId, categoryId])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([reporterPhone])
+  @@map("repair_tickets")
+}
+
+model RepairPhoto {
+  id             String           @id @default(uuid()) @db.Uuid
+  orgId          String           @map("org_id") @db.Uuid
+  ticketId       String           @map("ticket_id") @db.Uuid
+  phase          RepairPhotoPhase
+  r2Key          String           @map("r2_key")
+  r2PublicUrl    String           @map("r2_public_url")
+  contentType    String           @default("image/webp") @map("content_type")
+  sizeBytes      Int              @default(0) @map("size_bytes")
+  width          Int?
+  height         Int?
+  caption        String?
+  uploadedById   String?          @map("uploaded_by_id") @db.Uuid
+  uploadedByName String?          @map("uploaded_by_name")
+  expiresAt      DateTime?        @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  ticket     RepairTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  uploadedBy User?        @relation("RepairPhotoUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, phase, createdAt])
+  @@index([orgId, expiresAt])
+  @@map("repair_photos")
+}
+
+model RepairPart {
+  id             String           @id @default(uuid()) @db.Uuid
+  orgId          String           @map("org_id") @db.Uuid
+  ticketId       String           @map("ticket_id") @db.Uuid
+  name           String
+  spec           String?
+  quantity       Int              @default(1)
+  unit           String           @default("ชิ้น")
+  unitPriceCents Int              @default(0) @map("unit_price_cents")
+  status         RepairPartStatus @default(NEEDED)
+  supplier       String?
+  receiptR2Key   String?          @map("receipt_r2_key")
+  notes          String?
+  addedById      String           @map("added_by_id") @db.Uuid
+  orderedAt      DateTime?        @map("ordered_at") @db.Timestamptz(6)
+  orderedById    String?          @map("ordered_by_id") @db.Uuid
+  deliveredAt    DateTime?        @map("delivered_at") @db.Timestamptz(6)
+  installedAt    DateTime?        @map("installed_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  ticket    RepairTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  addedBy   User         @relation("RepairPartAddedBy", fields: [addedById], references: [id], onDelete: Restrict)
+  orderedBy User?        @relation("RepairPartOrderedBy", fields: [orderedById], references: [id], onDelete: SetNull)
+
+  @@index([orgId, status])
+  @@index([ticketId])
+  @@index([orgId, name])
+  @@map("repair_parts")
+}
+
+model RepairTimelineEvent {
+  id          String          @id @default(uuid()) @db.Uuid
+  orgId       String          @map("org_id") @db.Uuid
+  ticketId    String          @map("ticket_id") @db.Uuid
+  kind        RepairEventKind
+  actorUserId String?         @map("actor_user_id") @db.Uuid
+  actorName   String          @map("actor_name")
+  payload     Json            @default("{}")
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  ticket RepairTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actor  User?        @relation("RepairTimelineActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, createdAt])
+  @@index([orgId, createdAt])
+  @@map("repair_timeline_events")
+}
+
+model RepairVendorToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  orgId        String    @map("org_id") @db.Uuid
+  technicianId String    @map("technician_id") @db.Uuid
+  token        String    @unique
+  issuedAt     DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
+  lastUsedAt   DateTime? @map("last_used_at") @db.Timestamptz(6)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(6)
+  usageCount   Int       @default(0) @map("usage_count")
+
+  org        Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  technician RepairTechnician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, technicianId])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("repair_vendor_tokens")
 }
