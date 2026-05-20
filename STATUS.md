@@ -1,8 +1,38 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-11 (FuelOS Sprint 6 kickoff: schema + virtual team)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-20 (Sentry + audit retention + user manuals)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-05-20 — Observability + Compliance + End-user docs)
+
+หลัง deep audit (6 personas) เผยช่องโหว่ 3 จุด · ทำในรอบเดียว · build pass · commit `27adffe`:
+
+**A1 — Audit retention policy**
+- เปลี่ยนแผนใน `CORE_PLAN.md` จาก "1 year cron" → **"5+ ปี · NO auto-delete cron"** (กฎหมายไทย พ.ร.บ.การบัญชี 2543 §14 · สรรพากร 10 ปี)
+- เพิ่ม comment block ใน `prisma/schema.prisma` ที่ AuditLog model — กันคนสร้าง cleanup cron ในอนาคต
+- ปัจจุบันไม่มี cron ลบ audit_logs อยู่แล้ว = compliant by default
+
+**A2 — Sentry error tracking (@sentry/nextjs 10.53.1)**
+- Files: `instrumentation.ts` · `instrumentation-client.ts` · `next.config.ts` (wrap) · `.env.example` (+5 vars)
+- `npm install` + `npm run build` ผ่าน ✅ (Sentry v8/v9 ไม่ support Next 16 · ใช้ v10 ขั้นต่ำ)
+- `enabled: Boolean(SENTRY_DSN)` — ถ้าไม่มี DSN ก็ skip · dev ไม่ crash
+- CEO checklist ใน `SENTRY_SETUP.md` (signup sentry.io → DSN → Vercel env vars)
+
+**B — User manual ภาษาไทย (`docs/user-guide/`)**
+- `README.md` (150 บรรทัด) — index + role navigation
+- `owner.md` (296 บรรทัด) — super_admin / org owner
+- `branch-admin.md` (297 บรรทัด) — branch_manager / area_manager
+- `staff.md` (281 บรรทัด) — staff (LIFF report)
+- ไม่เขียนถึง feature ที่ STATUS บอกยังไม่ทำ (Telegram bot · LIFF จริง)
+- screenshot placeholders ให้เติมภายหลัง
+
+**To apply เมื่อ deploy**
+1. CEO setup Sentry (5 ขั้นใน [`SENTRY_SETUP.md`](./SENTRY_SETUP.md)) · ใส่ env vars ใน Vercel
+2. `git push` → Vercel deploy อัตโนมัติ (commit อยู่ใน main แล้ว)
+3. ทดสอบ Sentry: เปิด `/api/non-existing-route` → ดู event ใน sentry.io
+
+---
 
 ## 🆕 Update (2026-05-11 — FuelOS Sprint 6 kickoff)
 
