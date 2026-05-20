@@ -10,11 +10,13 @@
 import { adminClient } from "@/lib/db/server";
 
 // Pricing reference (USD per 1M tokens) — เก็บเป็น const กลาง อ่านง่าย
+// Gemini Flash 2.5: $0.075/M input · $0.30/M output (above free tier 1500/day)
+// Set actual rates so budget cap kicks in if free quota exhausted
 const PRICING = {
   "claude-haiku-input": 1.0 / 1_000_000,
   "claude-haiku-output": 5.0 / 1_000_000,
-  "gemini-flash-input": 0,    // ฟรี tier
-  "gemini-flash-output": 0,
+  "gemini-flash-input": 0.075 / 1_000_000,
+  "gemini-flash-output": 0.30 / 1_000_000,
 };
 
 // Budget caps (USD)

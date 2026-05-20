@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { ReconcileIndicator } from "./reconcile-indicator";
 import { ShortageModal, type ShortageInfo } from "./shortage-modal";
 import { DatePickerPill } from "./date-picker-pill";
+import { SlipCamera } from "./slip-camera";
 import { reconcile } from "@/lib/cashhub/reconcile";
 import { formatBaht } from "@/lib/utils/format";
 import type {
@@ -111,6 +112,8 @@ export function ReportForm({
   const [submitting, setSubmitting] = useState(false);
   const [shortageInfo, setShortageInfo] = useState<ShortageInfo | null>(null);
   const [shortageModalOpen, setShortageModalOpen] = useState(false);
+  // OCR slip URL — เก็บเข้า extraFields ตอน submit (CEO 2026-05-20 D-020 follow-up)
+  const [slipUrl, setSlipUrl] = useState<string | null>(null);
   // Anti-Stupidity Rule 3 — spike alert state.
   // When totalSales > previousReference × 1.5, ask once for confirmation
   // (does not block — user can confirm, but pause makes them check the figure).
@@ -289,6 +292,10 @@ export function ReportForm({
           extraFields[f.key] = raw;
         }
       }
+    }
+    // Attach OCR slip URL if uploaded (Accountant audit · photo evidence)
+    if (slipUrl) {
+      extraFields.slip_url = slipUrl;
     }
 
     const payload = {
@@ -561,6 +568,16 @@ export function ReportForm({
                   />
                 </Field>
               ))}
+              {/* OCR slip → auto-fill transfer · only show if "transfer" field exists */}
+              {groupedFields.received!.some((f) => f.key === "transfer") && (
+                <SlipCamera
+                  currentSlipUrl={slipUrl}
+                  onSlipUploaded={(url) => setSlipUrl(url || null)}
+                  onAmountDetected={(amt) =>
+                    update("transfer", String(amt))
+                  }
+                />
+              )}
             </CardBody>
           </Card>
         )}
