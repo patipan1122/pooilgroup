@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
     admin
       .from("daily_reports")
       .select(
-        "id, branch_id, report_date, shift, status, total_sales, qty1, qty1_unit, qty2, qty2_unit, cash, transfer, card, credit, shortage, rental_income, training_sessions, notes, submitted_at, approved_at, approved_by, rejected_reason, shortage_info, extra_fields",
+        "id, branch_id, report_date, shift, status, total_sales, qty1, qty1_unit, qty2, qty2_unit, cash, transfer, card, credit, shortage, rental_income, training_sessions, notes, submitted_at, approved_at, rejected_reason",
       )
       .eq("org_id", session.user.org_id)
       .eq("branch_id", branchId)

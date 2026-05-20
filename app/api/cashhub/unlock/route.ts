@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
   }
 
   const now = new Date().toISOString();
-  await admin
+  const { error: updateError } = await admin
     .from("daily_reports")
     .update({
       status: "submitted",
@@ -56,6 +56,14 @@ export async function POST(req: NextRequest) {
       updated_at: now,
     })
     .eq("id", reportId);
+
+  if (updateError) {
+    console.error("[POST /cashhub/unlock]", updateError);
+    return NextResponse.json(
+      { error: "ปลดล็อกไม่สำเร็จ ลองใหม่อีกครั้ง" },
+      { status: 500 },
+    );
+  }
 
   await audit({
     orgId: report.org_id,

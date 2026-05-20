@@ -99,14 +99,26 @@ export async function POST(req: NextRequest) {
           updated_at: new Date().toISOString(),
         };
 
-  const { error } = await admin
+  // Race guard: ใส่ .eq("status", report.status) ให้ row ที่ status ตรงกับตอน read เท่านั้นที่ถูก update
+  // ถ้า admin 2 คนกดอนุมัติพร้อมกัน → คนที่สอง update affects 0 rows → return 409
+  // ป้องกัน audit log บอกผิดคน (เทียบกับ approve-bulk ที่ทำถูกอยู่แล้ว)
+  const { data: updated, error } = await admin
     .from("daily_reports")
     .update(updates)
-    .eq("id", reportId);
+    .eq("id", reportId)
+    .eq("status", report.status)
+    .select("id");
 
   if (error) {
     console.error("[POST /cashhub/approve]", error);
     return NextResponse.json({ error: "อัปเดตไม่ได้ ลองใหม่" }, { status: 500 });
+  }
+
+  if (!updated || updated.length === 0) {
+    return NextResponse.json(
+      { error: "รายงานนี้เพิ่งถูกดำเนินการโดยผู้ใช้คนอื่น โปรดรีเฟรช" },
+      { status: 409 },
+    );
   }
 
   await audit({
