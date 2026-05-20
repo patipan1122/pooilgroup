@@ -229,7 +229,7 @@ export default async function HomePage() {
           description="คลิกการ์ดเพื่อเข้าโปรแกรม — ทุกโปรแกรมใช้บัญชีเดียวกัน"
           className="mb-14 animate-fade-up"
         >
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             <ModuleCard
               slug="cashhub"
               enabled={moduleEnabled.cashhub}
@@ -239,6 +239,11 @@ export default async function HomePage() {
               slug="docuflow"
               enabled={moduleEnabled.docuflow ?? true}
               landingPath="/docuflow"
+            />
+            <ModuleCard
+              slug="recruit"
+              enabled={moduleEnabled.recruit ?? true}
+              landingPath="/recruit"
             />
             <ModuleCard
               slug="fuelos"

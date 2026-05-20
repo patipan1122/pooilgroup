@@ -25,7 +25,7 @@ export async function loadUserModules(
   user: DbUser,
 ): Promise<Set<ModuleSlug>> {
   if (isAdminTier(user.role)) {
-    return new Set<ModuleSlug>(["cashhub", "fuelos", "docuflow"]);
+    return new Set<ModuleSlug>(["cashhub", "fuelos", "docuflow", "recruit", "repairs"]);
   }
 
   const admin = adminClient();
@@ -41,9 +41,11 @@ export async function loadUserModules(
     if (
       row.module_name === "cashhub" ||
       row.module_name === "fuelos" ||
-      row.module_name === "docuflow"
+      row.module_name === "docuflow" ||
+      row.module_name === "recruit" ||
+      row.module_name === "repairs"
     ) {
-      modules.add(row.module_name);
+      modules.add(row.module_name as ModuleSlug);
     }
   }
   return modules;

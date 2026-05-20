@@ -1,0 +1,63 @@
+// /repairs/new — internal create form (admin/staff). Same UX as public form
+// but pre-fills reporter from session.
+import { requireSession } from "@/lib/auth/session";
+import { requireRepairWrite } from "@/lib/repair/role-guard";
+import { prisma } from "@/lib/prisma";
+import { PublicRepairForm } from "@/components/repair/public-form";
+
+export const dynamic = "force-dynamic";
+
+export default async function AdminCreateTicketPage() {
+  const session = await requireSession();
+  requireRepairWrite(session.user.role);
+  const orgId = session.user.org_id;
+
+  const [companies, branches, categories] = await Promise.all([
+    prisma.company.findMany({
+      where: { orgId, isActive: true },
+      select: { id: true, name: true, code: true },
+    }),
+    prisma.branch.findMany({
+      where: { orgId, isActive: true },
+      select: { id: true, name: true, code: true, businessType: true, companyId: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.repairCategory.findMany({
+      where: { orgId, isActive: true },
+      select: { id: true, slug: true, label: true, emoji: true, defaultUrgency: true },
+      orderBy: { sortOrder: "asc" },
+    }),
+  ]);
+
+  // Adapt Prisma model shapes to PublicRepairForm prop shape (snake_case for branches/categories).
+  return (
+    <div className="p-3 sm:p-6 max-w-3xl mx-auto">
+      <header className="mb-4">
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-zinc-900">
+          เปิดใบแจ้งซ่อม
+        </h1>
+        <p className="text-sm text-zinc-500 mt-0.5">
+          กรอกแบบเดียวกับฟอร์มสาธารณะ — ระบบจะบันทึก {session.user.name} เป็นผู้เปิดใบ
+        </p>
+      </header>
+      <PublicRepairForm
+        orgName="ภายในระบบ"
+        companies={companies.map((c) => ({ id: c.id, name: c.name, code: c.code }))}
+        branches={branches.map((b) => ({
+          id: b.id,
+          name: b.name,
+          code: b.code,
+          business_type: b.businessType as string,
+          company_id: b.companyId,
+        }))}
+        categories={categories.map((c) => ({
+          id: c.id,
+          slug: c.slug,
+          label: c.label,
+          emoji: c.emoji,
+          default_urgency: c.defaultUrgency as "URGENT" | "NORMAL" | "LOW",
+        }))}
+      />
+    </div>
+  );
+}

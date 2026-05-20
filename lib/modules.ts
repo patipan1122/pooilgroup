@@ -29,10 +29,18 @@ import {
   Boxes,
   GraduationCap,
   FolderTree,
+  UserPlus,
+  Inbox,
+  KanbanSquare,
+  ShieldX,
+  ListChecks,
+  Wrench,
+  PackageSearch,
+  HardHat,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
-export type ModuleSlug = "cashhub" | "fuelos" | "docuflow";
+export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs";
 export type ModuleStatus = "active" | "coming_soon" | "beta";
 
 export interface NavItem {
@@ -263,6 +271,110 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       {
         href: "/docuflow/settings",
         label: "ตั้งค่า DocuFlow",
+        icon: Settings,
+        adminOnly: true,
+      },
+    ],
+  },
+  repairs: {
+    slug: "repairs",
+    name: "ระบบแจ้งซ่อม",
+    tagline: "ใครก็แจ้งได้ · ช่างเห็นงานตัวเอง · จัดซื้อเห็นอะไหล่",
+    description:
+      "เปิดใบแจ้งซ่อมจากลิ้งค์เดียว · ติดตามสถานะ · มอบหมายช่าง · จัดซื้อรวมอะไหล่ข้ามใบ · timeline + รูปก่อน/หลัง",
+    emoji: "🛠",
+    Icon: Wrench,
+    status: "active",
+    basePath: "/repairs",
+    nav: [
+      {
+        href: "/repairs",
+        label: "กล่องรับเรื่อง",
+        icon: Inbox,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"],
+      },
+      {
+        href: "/repairs/kanban",
+        label: "Kanban",
+        icon: KanbanSquare,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/repairs/my-jobs",
+        label: "งานของฉัน",
+        icon: HardHat,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
+      },
+      {
+        href: "/repairs/parts",
+        label: "อะไหล่ที่ต้องสั่ง",
+        icon: PackageSearch,
+        roles: ["super_admin", "org_admin", "admin", "area_manager"],
+      },
+      {
+        href: "/repairs/technicians",
+        label: "ช่าง",
+        icon: UsersIcon,
+        adminOnly: true,
+      },
+      {
+        href: "/repairs/categories",
+        label: "หมวดงาน",
+        icon: ListChecks,
+        adminOnly: true,
+      },
+      {
+        href: "/repairs/settings",
+        label: "ตั้งค่า",
+        icon: Settings,
+        adminOnly: true,
+      },
+    ],
+  },
+  recruit: {
+    slug: "recruit",
+    name: "รับสมัครพนักงาน",
+    tagline: "Form builder + Pipeline + AI",
+    description:
+      "สร้างลิ้งค์รับสมัครงาน · เก็บใบสมัครถาวร · AI ช่วยคัดกรอง · Blacklist · ใช้รวม Pooil + JPSync",
+    emoji: "📥",
+    Icon: UserPlus,
+    status: "active",
+    basePath: "/recruit",
+    nav: [
+      {
+        href: "/recruit",
+        label: "ใบสมัคร",
+        icon: Inbox,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"],
+      },
+      {
+        href: "/recruit/postings",
+        label: "ประกาศ",
+        icon: ClipboardList,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/recruit/pipeline",
+        label: "Pipeline",
+        icon: KanbanSquare,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/recruit/tasks",
+        label: "งานต้องตาม",
+        icon: ListChecks,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/recruit/blacklist",
+        label: "Blacklist",
+        icon: ShieldX,
+        adminOnly: true,
+      },
+      {
+        href: "/recruit/settings",
+        label: "ตั้งค่า",
         icon: Settings,
         adminOnly: true,
       },

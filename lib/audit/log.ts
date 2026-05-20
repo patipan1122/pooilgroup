@@ -67,7 +67,18 @@ export type AuditAction =
   // Telegram inline-keyboard reject flow: stores pending state so the next
   // text reply from the same Telegram user resolves into the rejection reason.
   | "TELEGRAM_PENDING_REJECT"
-  | "TELEGRAM_PENDING_REJECT_RESOLVED";
+  | "TELEGRAM_PENDING_REJECT_RESOLVED"
+  // Recruit module — รับสมัครพนักงาน
+  | "RECRUIT_POSTING_CREATED"
+  | "RECRUIT_POSTING_PUBLISHED"
+  | "RECRUIT_POSTING_CLOSED"
+  | "RECRUIT_POSTING_DELETED"
+  | "RECRUIT_APPLICATION_SUBMITTED"
+  | "RECRUIT_APPLICATION_STATUS_CHANGED"
+  | "RECRUIT_APPLICATION_NOTE_ADDED"
+  | "RECRUIT_AI_SCORED"
+  | "RECRUIT_BLACKLIST_ADDED"
+  | "RECRUIT_BLACKLIST_REMOVED";
 
 export interface AuditEntry {
   orgId: string;

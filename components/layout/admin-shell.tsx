@@ -93,7 +93,7 @@ const ZERO_COUNTS: NavCountsClient = {
   pendingCashReports: 0,
 };
 
-const ALL_MODULES = ["cashhub", "fuelos", "docuflow"];
+const ALL_MODULES = ["cashhub", "fuelos", "docuflow", "recruit"];
 
 export function AdminShell({
   user,
