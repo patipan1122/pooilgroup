@@ -13,7 +13,7 @@ import { loadBranches, loadReports, indexBranches } from "./data";
 
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
-export type Period = "daily" | "monthly";
+export type Period = "daily" | "monthly" | "annual";
 
 export interface BranchTotals {
   id: string;
@@ -73,22 +73,31 @@ function thaiDayLabel(yyyymmdd: string): string {
  * Load N periods of sales data, grouped by business_type × period.
  * - monthly: last N months (default 6)
  * - daily:   last N days (default 30) — covers full current month
+ * - annual:  full Jan→Dec of selected `year` (default = current calendar year)
  * - companyId: filter by legal entity (Pooil Oil / JP Sync Group)
  */
 export async function loadExecutiveMatrix(
   orgId: string,
-  options: { period?: Period; count?: number; companyId?: string } = {},
+  options: {
+    period?: Period;
+    count?: number;
+    companyId?: string;
+    year?: number;
+  } = {},
 ): Promise<ExecutiveMatrix> {
   const period: Period = options.period ?? "monthly";
   const count = options.count ?? (period === "daily" ? 30 : 6);
   const { companyId } = options;
 
   const now = new Date();
+  const currentYear = Number(formatInTimeZone(now, TZ, "yyyy"));
+  const year = options.year ?? currentYear;
 
-  // Build period keys (newest first)
+  // Build period keys (newest first — sliced reverse-chronological style)
   const periodKeys: string[] = [];
   const periodLabels: string[] = [];
   let oldestStart: string;
+  let newestEnd: string;
 
   if (period === "monthly") {
     for (let i = 0; i < count; i++) {
@@ -102,6 +111,18 @@ export async function loadExecutiveMatrix(
       TZ,
       "yyyy-MM-dd",
     );
+    newestEnd = formatInTimeZone(now, TZ, "yyyy-MM-dd");
+  } else if (period === "annual") {
+    // 12 calendar months Dec→Jan of `year` (newest-first ordering matches table convention).
+    // Labels show month + 2-digit Buddhist year so users can tell "ม.ค. 69" from "ม.ค. 68" if
+    // they switch years.
+    for (let m = 12; m >= 1; m--) {
+      const key = `${year}-${String(m).padStart(2, "0")}`;
+      periodKeys.push(key);
+      periodLabels.push(thaiMonthLabel(key));
+    }
+    oldestStart = `${year}-01-01`;
+    newestEnd = `${year}-12-31`;
   } else {
     // daily
     for (let i = 0; i < count; i++) {
@@ -115,9 +136,10 @@ export async function loadExecutiveMatrix(
       TZ,
       "yyyy-MM-dd",
     );
+    newestEnd = formatInTimeZone(now, TZ, "yyyy-MM-dd");
   }
 
-  const todayKey = formatInTimeZone(now, TZ, "yyyy-MM-dd");
+  const todayKey = newestEnd;
 
   // Canonical branch + report loaders — single source of truth
   const branches = await loadBranches(orgId, { companyId });
@@ -158,7 +180,7 @@ export async function loadExecutiveMatrix(
   }
 
   function bucketKey(reportDate: string): string | null {
-    if (period === "monthly") return reportDate.slice(0, 7);
+    if (period === "monthly" || period === "annual") return reportDate.slice(0, 7);
     return reportDate;
   }
 

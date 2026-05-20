@@ -10,6 +10,9 @@ import {
   AlertTriangle,
   Plus,
   RotateCcw,
+  Sparkles,
+  Equal,
+  ArrowRight,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +22,24 @@ import {
   type ParseResult,
   type EvDailyAgg,
 } from "@/lib/cashhub/ev-csv-parser";
+
+interface PreviewResult {
+  summary: {
+    total: number;
+    new: number;
+    same: number;
+    changed: number;
+    skippedNoBranch: number;
+  };
+  missingStations: string[];
+  changedSample: Array<{
+    stationName: string;
+    reportDate: string;
+    old: { totalSales: number; sessions: number | null; kwh: number | null };
+    new: { totalSales: number; sessions: number; kwh: number };
+  }>;
+  changedTotal: number;
+}
 
 const fmt = new Intl.NumberFormat("th-TH");
 const fmtMoney = new Intl.NumberFormat("th-TH", {
@@ -32,9 +53,10 @@ export function EvImportView() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [parsed, setParsed] = useState<ParseResult | null>(null);
-  const [missingStations, setMissingStations] = useState<string[]>([]);
+  const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [createMissing, setCreateMissing] = useState(true);
   const [overwrite, setOverwrite] = useState(false);
 
@@ -53,50 +75,41 @@ export function EvImportView() {
   function reset() {
     setFileName(null);
     setParsed(null);
-    setMissingStations([]);
+    setPreview(null);
     if (inputRef.current) inputRef.current.value = "";
   }
 
-  async function checkMissing(aggs: EvDailyAgg[]) {
-    // POST a dry-run-ish call with createMissingBranches=false + overwrite=false.
-    // The API will return missingStations in its response.
+  async function loadPreview(aggs: EvDailyAgg[]) {
+    setPreviewLoading(true);
     try {
-      const res = await fetch("/api/cashhub/ev-import", {
+      const res = await fetch("/api/cashhub/ev-import/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          aggregates: aggs,
-          createMissingBranches: false,
-          overwrite: false,
-        }),
+        body: JSON.stringify({ aggregates: aggs }),
       });
       const json = await res.json();
-      if (res.ok && Array.isArray(json.missingStations)) {
-        setMissingStations(json.missingStations);
-        // Undo any side-effect from this probe by NOT actually saving anything
-        // — the probe is harmless because rows w/o matching branch are skipped.
-        // (createdReports may include some matched rows; that's fine, they're
-        // the real saves the user wanted.)
-        if ((json.reportsCreated?.length ?? 0) > 0) {
-          toast.info(
-            `บันทึก ${json.reportsCreated.length} รายงานของสาขาที่มีอยู่แล้วทันที (ที่ขาดสาขา ${json.missingStations.length} รายการ — กดยืนยันด้านล่าง)`,
-          );
-        }
+      if (res.ok && json.summary) {
+        setPreview(json as PreviewResult);
+      } else {
+        toast.error(json.error || "เปรียบเทียบข้อมูลเดิมไม่สำเร็จ");
       }
     } catch {
-      // Non-fatal; user can still try the real import
+      toast.error("เครือข่ายมีปัญหา ลองใหม่อีกครั้ง");
+    } finally {
+      setPreviewLoading(false);
     }
   }
 
   function handleFile(file: File) {
     setFileName(file.name);
+    setPreview(null);
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = String(e.target?.result ?? "");
       const result = parseConnextCsv(text);
       setParsed(result);
       if (result.errors.length === 0 && result.aggregates.length > 0) {
-        void checkMissing(result.aggregates);
+        void loadPreview(result.aggregates);
       }
     };
     reader.readAsText(file, "utf-8");
@@ -230,17 +243,114 @@ export function EvImportView() {
               </div>
             )}
 
+            {/* Diff vs existing data — heart of "ตรวจก่อนลง" UX */}
+            {previewLoading && (
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600">
+                ⏳ กำลังเปรียบเทียบกับข้อมูลเดิมในระบบ...
+              </div>
+            )}
+
+            {preview && (
+              <div className="rounded-xl border-2 border-[var(--color-brand-200)] bg-[var(--color-brand-50)]/40 p-3 space-y-3">
+                <div className="text-sm font-bold flex items-center gap-1.5">
+                  📊 เปรียบเทียบกับข้อมูลเดิมในระบบ
+                </div>
+
+                {/* Diff counts */}
+                <div className="grid grid-cols-3 gap-2">
+                  <DiffStat
+                    Icon={Sparkles}
+                    tone="brand"
+                    label="ใหม่"
+                    value={preview.summary.new}
+                    sub="จะสร้าง"
+                  />
+                  <DiffStat
+                    Icon={Equal}
+                    tone="muted"
+                    label="เหมือนเดิม"
+                    value={preview.summary.same}
+                    sub="ค่าตรงกัน · ข้าม"
+                  />
+                  <DiffStat
+                    Icon={ArrowRight}
+                    tone={preview.summary.changed > 0 ? "warn" : "muted"}
+                    label="ค่าเปลี่ยน"
+                    value={preview.summary.changed}
+                    sub="ติ๊ก overwrite ถ้าจะอัปเดต"
+                  />
+                </div>
+
+                {preview.summary.skippedNoBranch > 0 && (
+                  <div className="text-[11px] text-zinc-500">
+                    ⚠️ {preview.summary.skippedNoBranch} แถวขาดสาขาในระบบ — ต้องสร้างสาขาก่อนถึงจะนำเข้าได้
+                  </div>
+                )}
+
+                {/* Sample changed rows */}
+                {preview.changedSample.length > 0 && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-2">
+                    <div className="text-[11px] font-bold text-amber-900 mb-1">
+                      ตัวอย่าง "ค่าเปลี่ยน" (
+                      {preview.changedSample.length} จาก {preview.changedTotal})
+                    </div>
+                    <table className="w-full text-[11px]">
+                      <thead>
+                        <tr className="text-amber-700">
+                          <th className="text-left py-0.5">วัน · สาขา</th>
+                          <th className="text-right py-0.5">เดิม</th>
+                          <th className="text-right py-0.5">ใหม่</th>
+                          <th className="text-right py-0.5">Δ</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {preview.changedSample.map((c) => {
+                          const delta = c.new.totalSales - c.old.totalSales;
+                          return (
+                            <tr
+                              key={`${c.stationName}__${c.reportDate}`}
+                              className="border-t border-amber-200/60"
+                            >
+                              <td className="py-0.5 truncate max-w-[180px]">
+                                <span className="text-amber-900">{c.reportDate}</span>{" "}
+                                <span className="text-amber-700">· {c.stationName}</span>
+                              </td>
+                              <td className="text-right tabular-nums text-amber-900">
+                                {fmtMoney.format(c.old.totalSales)}
+                              </td>
+                              <td className="text-right tabular-nums font-semibold text-amber-900">
+                                {fmtMoney.format(c.new.totalSales)}
+                              </td>
+                              <td
+                                className={
+                                  "text-right tabular-nums font-bold " +
+                                  (delta >= 0 ? "text-emerald-700" : "text-rose-700")
+                                }
+                              >
+                                {delta >= 0 ? "+" : ""}
+                                {fmtMoney.format(delta)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Missing stations */}
-            {missingStations.length > 0 && (
+            {preview && preview.missingStations.length > 0 && (
               <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-3">
                 <div className="flex items-start gap-2">
                   <Plus className="size-4 text-amber-700 shrink-0 mt-0.5" />
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-bold text-amber-900 mb-1">
-                      ยังไม่มีสาขาเหล่านี้ในระบบ ({missingStations.length})
+                      ยังไม่มีสาขาเหล่านี้ในระบบ ({preview.missingStations.length})
                     </div>
                     <ul className="text-xs text-amber-800 space-y-0.5 max-h-32 overflow-y-auto">
-                      {missingStations.map((s) => (
+                      {preview.missingStations.map((s) => (
                         <li key={s} className="truncate">• {s}</li>
                       ))}
                     </ul>
@@ -261,19 +371,23 @@ export function EvImportView() {
               </div>
             )}
 
-            {/* Overwrite toggle */}
-            <label className="flex items-center gap-2 p-2 rounded-lg bg-zinc-50 border border-zinc-200 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={overwrite}
-                onChange={(e) => setOverwrite(e.target.checked)}
-                className="size-4 accent-[var(--color-brand-600)]"
-              />
-              <div className="text-xs">
-                <span className="font-semibold">ทับรายงานเดิม</span>{" "}
-                <span className="text-zinc-500">(ถ้าวัน-สาขาเดียวกันเคยมีอยู่แล้ว — default = ข้าม)</span>
-              </div>
-            </label>
+            {/* Overwrite toggle — only show if there are actual changes to overwrite */}
+            {preview && preview.summary.changed > 0 && (
+              <label className="flex items-center gap-2 p-2 rounded-lg bg-amber-50 border-2 border-amber-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={overwrite}
+                  onChange={(e) => setOverwrite(e.target.checked)}
+                  className="size-4 accent-[var(--color-brand-600)]"
+                />
+                <div className="text-xs">
+                  <span className="font-bold text-amber-900">
+                    อัปเดตรายงาน {preview.summary.changed} รายการที่ค่าเปลี่ยน
+                  </span>{" "}
+                  <span className="text-amber-700">(default = ข้าม · ไม่ทับ)</span>
+                </div>
+              </label>
+            )}
 
             {/* Aggregate table */}
             <div className="rounded-xl border border-zinc-200 overflow-hidden">
@@ -315,8 +429,13 @@ export function EvImportView() {
                 <CheckCircle2 className="size-3 mr-1" />
                 Audit log จะบันทึก
               </Badge>
-              <Button onClick={handleImport} loading={pending} size="lg">
-                นำเข้าทั้งหมด ({parsed.aggregates.length} แถว)
+              <Button
+                onClick={handleImport}
+                loading={pending}
+                disabled={previewLoading || !preview}
+                size="lg"
+              >
+                {confirmButtonLabel(preview, overwrite, parsed.aggregates.length)}
               </Button>
             </div>
           </CardBody>
@@ -324,6 +443,24 @@ export function EvImportView() {
       )}
     </>
   );
+}
+
+function confirmButtonLabel(
+  preview: PreviewResult | null,
+  overwrite: boolean,
+  fallbackCount: number,
+): string {
+  if (!preview) return `นำเข้าทั้งหมด (${fallbackCount} แถว)`;
+  const willWrite =
+    preview.summary.new + (overwrite ? preview.summary.changed : 0);
+  if (willWrite === 0) {
+    return "ไม่มีรายงานที่จะเขียน (ทุกแถวเหมือนเดิม)";
+  }
+  const parts = [`สร้างใหม่ ${preview.summary.new}`];
+  if (overwrite && preview.summary.changed > 0) {
+    parts.push(`อัปเดต ${preview.summary.changed}`);
+  }
+  return `ยืนยันนำเข้า · ${parts.join(" · ")}`;
 }
 
 function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
@@ -334,6 +471,43 @@ function Stat({ label, value, sub }: { label: string; value: string; sub: string
       </div>
       <div className="text-lg font-extrabold tracking-tight mt-0.5 tabular-nums">{value}</div>
       <div className="text-[11px] text-zinc-500">{sub}</div>
+    </div>
+  );
+}
+
+function DiffStat({
+  Icon,
+  tone,
+  label,
+  value,
+  sub,
+}: {
+  Icon: typeof Sparkles;
+  tone: "brand" | "warn" | "muted";
+  label: string;
+  value: number;
+  sub: string;
+}) {
+  const toneClass =
+    tone === "brand"
+      ? "border-[var(--color-brand-300)] bg-white"
+      : tone === "warn"
+        ? "border-amber-300 bg-amber-50"
+        : "border-zinc-200 bg-white";
+  const iconClass =
+    tone === "brand"
+      ? "text-[var(--color-brand-600)]"
+      : tone === "warn"
+        ? "text-amber-600"
+        : "text-zinc-400";
+  return (
+    <div className={`rounded-lg border-2 p-2.5 ${toneClass}`}>
+      <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold text-zinc-600">
+        <Icon className={`size-3 ${iconClass}`} />
+        {label}
+      </div>
+      <div className="text-2xl font-extrabold tabular-nums mt-0.5">{value}</div>
+      <div className="text-[10px] text-zinc-500">{sub}</div>
     </div>
   );
 }

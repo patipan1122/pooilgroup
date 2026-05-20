@@ -1,4 +1,4 @@
-// ExecutiveTable v2 — รายเดือน / รายวัน + expand แต่ละแถวดูสาขา
+// ExecutiveTable v2 — รายเดือน / รายวัน / รายปี + expand แต่ละแถวดูสาขา
 //
 // Brand DNA: ฟ้า + ขาว + เทา หลัก. เขียว/แดง = trend ↑/↓ binary.
 
@@ -12,6 +12,7 @@ import {
   TrendingDown,
   Calendar,
   CalendarDays,
+  CalendarRange,
   ChevronsDownUp,
   ChevronsUpDown,
 } from "lucide-react";
@@ -28,6 +29,13 @@ export function ExecutiveTable({ data }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const currentYear = new Date().getFullYear();
+  // periodKeys for annual look like "2026-12", "2026-11", ... → use first to infer year
+  const selectedYear =
+    data.period === "annual" && data.periodKeys.length > 0
+      ? Number(data.periodKeys[0]!.slice(0, 4))
+      : currentYear;
 
   const allExpanded = expanded.size === data.rows.length;
   const noneExpanded = expanded.size === 0;
@@ -73,23 +81,59 @@ export function ExecutiveTable({ data }: Props) {
   function setPeriod(p: Period) {
     startTransition(() => {
       const url = new URL(window.location.href);
-      if (p === "monthly") url.searchParams.delete("view");
-      else url.searchParams.set("view", "daily");
+      if (p === "monthly") {
+        url.searchParams.delete("view");
+        url.searchParams.delete("year");
+      } else if (p === "daily") {
+        url.searchParams.set("view", "daily");
+        url.searchParams.delete("year");
+      } else {
+        // annual
+        url.searchParams.set("view", "annual");
+        url.searchParams.set("year", String(selectedYear));
+      }
+      router.push(url.pathname + url.search);
+    });
+  }
+
+  function setYear(year: number) {
+    startTransition(() => {
+      const url = new URL(window.location.href);
+      url.searchParams.set("view", "annual");
+      url.searchParams.set("year", String(year));
       router.push(url.pathname + url.search);
     });
   }
 
   const isDaily = data.period === "daily";
+  const isAnnual = data.period === "annual";
+
+  // Year options: current ± 3 (typical SME look-back). Avoid full DB scan; OK for SME size.
+  const yearOptions = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
 
   return (
     <div className="rounded-2xl border-2 border-zinc-200 bg-white overflow-hidden">
       {/* Filter bar — left: period toggle · right: expand/collapse all */}
       <div className="flex items-center justify-between flex-wrap gap-3 px-4 sm:px-5 py-3 border-b-2 border-zinc-100 bg-zinc-50/40">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[11px] uppercase tracking-[0.18em] text-zinc-600 font-bold">
             ดูแบบ
           </span>
           <PeriodToggle current={data.period} onChange={setPeriod} />
+          {isAnnual && (
+            <select
+              value={selectedYear}
+              onChange={(e) => setYear(Number(e.target.value))}
+              className="h-8 rounded-lg border-2 border-zinc-200 bg-white px-2 text-xs font-bold text-zinc-700 hover:border-[var(--color-brand-400)] focus:border-[var(--color-brand-500)] focus:outline-none"
+            >
+              {yearOptions.map((y) => (
+                <option key={y} value={y}>
+                  พ.ศ. {(y + 543) % 100 < 10 ? "0" : ""}
+                  {(y + 543) % 100} (ค.ศ. {y})
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -436,7 +480,7 @@ function BusinessTypeRow({
 }
 
 /* ============================================================
-   Period toggle (รายเดือน / รายวัน)
+   Period toggle (รายเดือน / รายวัน / รายปี)
    ============================================================ */
 function PeriodToggle({
   current,
@@ -445,17 +489,19 @@ function PeriodToggle({
   current: Period;
   onChange: (p: Period) => void;
 }) {
+  const btn = (active: boolean) =>
+    cn(
+      "inline-flex items-center gap-1.5 px-3 h-8 text-xs font-bold rounded transition-colors",
+      active
+        ? "bg-[var(--color-brand-600)] text-white"
+        : "text-zinc-600 hover:bg-zinc-50",
+    );
   return (
     <div className="inline-flex rounded-lg border-2 border-zinc-200 bg-white p-0.5">
       <button
         type="button"
         onClick={() => onChange("monthly")}
-        className={cn(
-          "inline-flex items-center gap-1.5 px-3 h-8 text-xs font-bold rounded transition-colors",
-          current === "monthly"
-            ? "bg-[var(--color-brand-600)] text-white"
-            : "text-zinc-600 hover:bg-zinc-50",
-        )}
+        className={btn(current === "monthly")}
       >
         <Calendar className="size-3.5" />
         รายเดือน
@@ -463,15 +509,18 @@ function PeriodToggle({
       <button
         type="button"
         onClick={() => onChange("daily")}
-        className={cn(
-          "inline-flex items-center gap-1.5 px-3 h-8 text-xs font-bold rounded transition-colors",
-          current === "daily"
-            ? "bg-[var(--color-brand-600)] text-white"
-            : "text-zinc-600 hover:bg-zinc-50",
-        )}
+        className={btn(current === "daily")}
       >
         <CalendarDays className="size-3.5" />
         รายวัน
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("annual")}
+        className={btn(current === "annual")}
+      >
+        <CalendarRange className="size-3.5" />
+        รายปี
       </button>
     </div>
   );

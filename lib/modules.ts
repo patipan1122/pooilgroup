@@ -115,9 +115,9 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {
-        href: "/cashhub/ev-import",
-        label: "นำเข้า EV (CONNEXT)",
-        icon: Zap,
+        href: "/cashhub/import",
+        label: "ศูนย์นำเข้าข้อมูล",
+        icon: Upload,
         adminOnly: true,
       },
 

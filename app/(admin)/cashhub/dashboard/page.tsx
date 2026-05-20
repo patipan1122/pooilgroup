@@ -13,22 +13,32 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ company?: string; view?: string }>;
+  searchParams: Promise<{ company?: string; view?: string; year?: string }>;
 }) {
   const session = await requireSession();
   requireExecutiveRole(session.user.role);
   const sp = await searchParams;
   const companyId = await resolveCompanyFilter(sp.company);
-  const period: Period = sp.view === "daily" ? "daily" : "monthly";
+  const period: Period =
+    sp.view === "daily"
+      ? "daily"
+      : sp.view === "annual"
+        ? "annual"
+        : "monthly";
+
+  const parsedYear = sp.year ? parseInt(sp.year, 10) : undefined;
+  const validYear =
+    parsedYear && parsedYear >= 2020 && parsedYear <= 2100 ? parsedYear : undefined;
 
   // Load all dashboard data + executive matrix in parallel
-  // monthly = 12 เดือน (full year) · daily = 30 วัน
+  // monthly = 12 trailing months · daily = 30 days · annual = full Jan-Dec of `year`
   // companyId sync ลงตารางด้วย (เลือก Pooil Oil → ตารางโชว์เฉพาะ Pooil Oil)
   const [data, executiveMatrix] = await Promise.all([
     loadDashboard(session.user.org_id, companyId),
     loadExecutiveMatrix(session.user.org_id, {
       period,
       count: period === "monthly" ? 12 : 30,
+      year: validYear,
       companyId,
     }),
   ]);
