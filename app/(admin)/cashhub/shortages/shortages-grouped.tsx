@@ -1,6 +1,7 @@
 "use client";
 
-// Shortages list grouped by ประเภทธุรกิจ — popup-on-row-click
+// Shortages list — group by สาขา / ประเภทธุรกิจ / พนักงาน
+// D-020 (2026-05-20): default group = สาขา · CEO อยากเห็น "สาขานี้มีใครขาดวันไหนบ้าง"
 // feedback_filter_pattern_biztype_first.md · feedback_popup_first_drilldown.md
 
 import Link from "next/link";
@@ -24,13 +25,27 @@ export interface ShortageRow {
   note: string | null;
 }
 
+export type ShortageGroupBy = "branch" | "business_type" | "person";
+
 interface Props {
   rows: ShortageRow[];
   canApprove: boolean;
+  groupBy?: ShortageGroupBy;
 }
 
-export function ShortagesGrouped({ rows, canApprove }: Props) {
-  const [openTypes, setOpenTypes] = useState<Record<string, boolean>>({});
+interface GroupHeader {
+  key: string;
+  label: string;
+  sublabel?: string;
+  icon: string;
+}
+
+export function ShortagesGrouped({
+  rows,
+  canApprove,
+  groupBy = "branch",
+}: Props) {
+  const [openKeys, setOpenKeys] = useState<Record<string, boolean>>({});
   const [popup, setPopup] = useState<{
     branchId: string;
     branchCode: string;
@@ -38,36 +53,70 @@ export function ShortagesGrouped({ rows, canApprove }: Props) {
   } | null>(null);
 
   const groups = useMemo(() => {
-    const map = new Map<string, ShortageRow[]>();
+    const map = new Map<string, { header: GroupHeader; list: ShortageRow[] }>();
     for (const r of rows) {
-      const arr = map.get(r.business_type) ?? [];
-      arr.push(r);
-      map.set(r.business_type, arr);
+      let key: string;
+      let header: GroupHeader;
+      if (groupBy === "branch") {
+        key = r.branch_id;
+        header = {
+          key,
+          label: r.branch_name || r.branch_code,
+          sublabel: r.branch_code,
+          icon: BUSINESS_TYPES[r.business_type]?.emoji ?? "🏪",
+        };
+      } else if (groupBy === "person") {
+        key = r.person_name || "(ไม่ระบุชื่อ)";
+        header = {
+          key,
+          label: key,
+          icon: "👤",
+        };
+      } else {
+        key = r.business_type;
+        const cfg = BUSINESS_TYPES[r.business_type];
+        header = {
+          key,
+          label: cfg?.label ?? r.business_type,
+          icon: cfg?.emoji ?? "📋",
+        };
+      }
+      const cur = map.get(key) ?? { header, list: [] };
+      cur.list.push(r);
+      map.set(key, cur);
     }
-    return Array.from(map.entries()).sort(
+    return Array.from(map.values()).sort(
       (a, b) =>
-        b[1].reduce((s, r) => s + r.amount, 0) -
-        a[1].reduce((s, r) => s + r.amount, 0),
+        b.list.reduce((s, r) => s + r.amount, 0) -
+        a.list.reduce((s, r) => s + r.amount, 0),
     );
-  }, [rows]);
+  }, [rows, groupBy]);
 
   const allOpen =
-    groups.length > 0 && groups.every(([t]) => openTypes[t] !== false);
+    groups.length > 0 &&
+    groups.every((g) => openKeys[g.header.key] !== false);
 
   function expandAll() {
-    setOpenTypes(Object.fromEntries(groups.map(([t]) => [t, true])));
+    setOpenKeys(Object.fromEntries(groups.map((g) => [g.header.key, true])));
   }
   function collapseAll() {
-    setOpenTypes(Object.fromEntries(groups.map(([t]) => [t, false])));
+    setOpenKeys(Object.fromEntries(groups.map((g) => [g.header.key, false])));
   }
-  function toggleType(t: string) {
-    setOpenTypes((o) => ({ ...o, [t]: !(o[t] ?? true) }));
+  function toggleKey(k: string) {
+    setOpenKeys((o) => ({ ...o, [k]: !(o[k] ?? true) }));
   }
+
+  const groupTitle =
+    groupBy === "branch"
+      ? "รายการเงินขาด · จัดกลุ่มตามสาขา"
+      : groupBy === "person"
+        ? "รายการเงินขาด · จัดกลุ่มตามพนักงาน"
+        : "รายการเงินขาด · จัดกลุ่มตามประเภทธุรกิจ";
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>รายการเงินขาด · จัดกลุ่มตามประเภทธุรกิจ</CardTitle>
+        <CardTitle>{groupTitle}</CardTitle>
         {groups.length > 1 && (
           <button
             type="button"
@@ -86,26 +135,25 @@ export function ShortagesGrouped({ rows, canApprove }: Props) {
           </div>
         ) : (
           <ul className="divide-y-2 divide-zinc-100">
-            {groups.map(([type, list]) => {
-              const cfg = BUSINESS_TYPES[type];
-              const isOpen = openTypes[type] ?? true;
+            {groups.map(({ header, list }) => {
+              const isOpen = openKeys[header.key] ?? true;
               const total = list.reduce((s, r) => s + r.amount, 0);
               return (
-                <li key={type}>
+                <li key={header.key}>
                   <button
                     type="button"
-                    onClick={() => toggleType(type)}
+                    onClick={() => toggleKey(header.key)}
                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 transition-colors"
                   >
-                    <span className="text-xl shrink-0">
-                      {cfg?.emoji ?? "📋"}
-                    </span>
+                    <span className="text-xl shrink-0">{header.icon}</span>
                     <div className="text-left flex-1 min-w-0">
-                      <div className="font-bold text-sm">
-                        {cfg?.label ?? type}
+                      <div className="font-bold text-sm truncate">
+                        {header.label}
                       </div>
                       <div className="text-[11px] text-zinc-500 mt-0.5">
-                        {list.length} ครั้ง
+                        {header.sublabel
+                          ? `${header.sublabel} · ${list.length} ครั้ง`
+                          : `${list.length} ครั้ง`}
                       </div>
                     </div>
                     <div className="text-sm font-extrabold tabular-num text-red-700 shrink-0">
@@ -120,44 +168,59 @@ export function ShortagesGrouped({ rows, canApprove }: Props) {
                   </button>
                   {isOpen && (
                     <ul className="border-t border-zinc-100 bg-zinc-50/40 divide-y divide-zinc-100">
-                      {list.map((r) => (
-                        <li key={r.id} className="px-4 py-3 hover:bg-white">
-                          <div className="flex items-center justify-between gap-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setPopup({
-                                  branchId: r.branch_id,
-                                  branchCode: r.branch_code,
-                                  date: r.report_date,
-                                })
-                              }
-                              className="text-sm font-bold tabular-num text-zinc-900 hover:text-[var(--color-brand-700)]"
-                            >
-                              {bkkDate(r.report_date)}
-                            </button>
-                            <div className="text-sm font-extrabold tabular-num text-red-700">
-                              {formatBaht(r.amount)}
+                      {list
+                        .slice()
+                        .sort((a, b) =>
+                          b.report_date.localeCompare(a.report_date),
+                        )
+                        .map((r) => (
+                          <li key={r.id} className="px-4 py-3 hover:bg-white">
+                            <div className="flex items-center justify-between gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setPopup({
+                                    branchId: r.branch_id,
+                                    branchCode: r.branch_code,
+                                    date: r.report_date,
+                                  })
+                                }
+                                className="text-sm font-bold tabular-num text-zinc-900 hover:text-[var(--color-brand-700)]"
+                              >
+                                📅 {bkkDate(r.report_date)}
+                              </button>
+                              <div className="text-sm font-extrabold tabular-num text-red-700">
+                                {formatBaht(r.amount)}
+                              </div>
                             </div>
-                          </div>
-                          <div className="flex items-center flex-wrap gap-1.5 text-[11px] text-zinc-500 mt-1">
-                            <Link
-                              href={`/cashhub/branches/${r.branch_id}`}
-                              className="hover:text-[var(--color-brand-700)] font-semibold"
-                            >
-                              {r.branch_code}
-                            </Link>
-                            <span>·</span>
-                            <span>{r.person_name || "รวมร้าน"}</span>
-                            {r.note && (
-                              <>
-                                <span>·</span>
-                                <span className="italic">&ldquo;{r.note}&rdquo;</span>
-                              </>
-                            )}
-                          </div>
-                        </li>
-                      ))}
+                            <div className="flex items-center flex-wrap gap-1.5 text-[11px] text-zinc-500 mt-1">
+                              {groupBy !== "branch" && (
+                                <>
+                                  <Link
+                                    href={`/cashhub/branches/${r.branch_id}`}
+                                    className="hover:text-[var(--color-brand-700)] font-semibold"
+                                  >
+                                    🏪 {r.branch_code}
+                                  </Link>
+                                  <span>·</span>
+                                </>
+                              )}
+                              {groupBy !== "person" && (
+                                <>
+                                  <span className="font-semibold text-zinc-700">
+                                    👤 {r.person_name || "(ไม่ระบุชื่อ)"}
+                                  </span>
+                                  {r.note && <span>·</span>}
+                                </>
+                              )}
+                              {r.note && (
+                                <span className="italic">
+                                  &ldquo;{r.note}&rdquo;
+                                </span>
+                              )}
+                            </div>
+                          </li>
+                        ))}
                     </ul>
                   )}
                 </li>
