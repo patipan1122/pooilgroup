@@ -25,6 +25,7 @@ import {
   Sparkles,
   CheckSquare,
   GitCompare,
+  Zap,
   Boxes,
   GraduationCap,
   FolderTree,
@@ -111,6 +112,12 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         href: "/cashhub/heatmap",
         label: "Heatmap",
         icon: CalendarDays,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        href: "/cashhub/ev-dashboard",
+        label: "EV Stations",
+        icon: Zap,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
 
