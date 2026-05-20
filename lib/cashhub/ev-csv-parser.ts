@@ -122,6 +122,23 @@ export function parseConnextCsv(csv: string): ParseResult {
   const idxKwh = findColumn(headers, HEADER_HINTS.kwh);
   const idxRevenue = findColumn(headers, HEADER_HINTS.revenue);
 
+  // Heuristic: if we can't find charger + start time, the user probably
+  // exported a chart (bar/line/pie) instead of the transaction table.
+  // Charts aggregate by month/station ONLY → no per-session row → no
+  // station+date pair to import.
+  const looksLikeChartExport = idxCharger < 0 && idxStart < 0;
+
+  if (looksLikeChartExport) {
+    errors.push(
+      "ไฟล์นี้คือ Export จาก 'กราฟ' (Bar/Line chart) — มีแต่ยอดรวม · ไม่มีชื่อสถานี + เวลา",
+    );
+    errors.push(
+      "ต้อง Export จาก 'ตารางรายการชาร์จ' (ตัวล่างสุดของ dashboard ที่มี ชื่อเครื่องชาร์จ · vcard · Start Time · kWh · รายได้)",
+    );
+    errors.push(`คอลัมน์ที่เจอในไฟล์นี้: ${headers.join(" · ")}`);
+    return { rows: [], aggregates: [], stations: [], dateRange: null, errors, warnings };
+  }
+
   if (idxCharger < 0)
     errors.push("ไม่พบคอลัมน์ 'ชื่อเครื่องชาร์จ' / charger");
   if (idxStart < 0) errors.push("ไม่พบคอลัมน์ 'Start Time' / เริ่ม");
@@ -129,6 +146,7 @@ export function parseConnextCsv(csv: string): ParseResult {
   if (idxRevenue < 0) errors.push("ไม่พบคอลัมน์ 'Revenue' / รายได้");
 
   if (errors.length > 0) {
+    errors.push(`คอลัมน์ที่เจอในไฟล์นี้: ${headers.join(" · ")}`);
     return { rows: [], aggregates: [], stations: [], dateRange: null, errors, warnings };
   }
 

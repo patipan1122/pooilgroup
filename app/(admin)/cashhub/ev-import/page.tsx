@@ -34,7 +34,7 @@ export default async function EvImportPage() {
 
       <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 mb-5 animate-fade-up delay-75">
         <p className="font-bold mb-2">ขั้นตอนดาวน์โหลด CSV จาก Looker Studio</p>
-        <ol className="list-decimal pl-5 space-y-1">
+        <ol className="list-decimal pl-5 space-y-1.5">
           <li>
             เปิด{" "}
             <Link
@@ -46,10 +46,22 @@ export default async function EvImportPage() {
               CONNEXT Dashboard <ExternalLink className="size-3" />
             </Link>
           </li>
-          <li>เลือกช่วงเวลาที่ต้องการ (ฟิลเตอร์รายเดือนมุมขวาบน)</li>
-          <li>คลิกขวาที่ตารางรายการชาร์จ → Export → CSV</li>
+          <li>เลือกช่วงเวลาที่ต้องการ (ฟิลเตอร์รายเดือน มุมขวาบน)</li>
+          <li>
+            <strong>เลื่อนลงสุด</strong> ของ dashboard ไปที่
+            <strong className="text-amber-950">
+              {" "}ตารางรายการ session{" "}
+            </strong>
+            (ตารางที่มีคอลัมน์: <em>ชื่อเครื่องชาร์จ · vcard · Start Time · kWh · รายได้</em>)
+          </li>
+          <li>
+            <strong>คลิกขวาในตาราง</strong> นั้น → Export → CSV
+          </li>
           <li>อัปโหลดไฟล์ในช่องด้านล่าง</li>
         </ol>
+        <p className="mt-3 text-xs text-amber-800 bg-amber-100 rounded-lg px-2.5 py-1.5">
+          ⚠️ <strong>อย่า</strong> export จาก "กราฟแท่ง" / "กราฟวงกลม" — มีแต่ยอดรวม · ไม่มีชื่อสถานี → ใช้ไม่ได้
+        </p>
       </div>
 
       <EvImportView />
