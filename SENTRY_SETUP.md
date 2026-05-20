@@ -10,16 +10,15 @@ Sentry จะจับ error อัตโนมัติ + ส่ง alert + เ
 
 ## ขั้นตอน CEO ต้องทำ (manual · ครั้งเดียว)
 
-### 1. สมัคร Sentry (5 นาที)
-- ไปที่ https://sentry.io → "Try Sentry for free"
-- เลือก Team plan (ฟรีจนถึง 5,000 errors/month) หรือ Developer ($26/เดือน)
-- สร้าง Organization ชื่อ `pooilgroup` (ใช้ชื่อนี้ผมตั้งไว้ใน config)
+### 1. Sentry account (เสร็จแล้ว 2026-05-20)
+- ใช้ org `auditmekub` (สมัครไว้ตอน AuditMe setup ก่อนหน้า · share billing)
+- สมาชิก: `patipan1122`
 
-### 2. สร้าง Project (2 นาที)
-- คลิก "Create Project"
-- เลือก platform: **Next.js**
-- Project name: `pooilgroup-web`
-- ก็อปปี้ DSN ที่ได้ (เริ่มด้วย `https://...@...ingest.sentry.io/...`)
+### 2. Project (เสร็จแล้ว 2026-05-20)
+- Project slug: **`javascript-nextjs-uc`** (Sentry auto-generated · ยังไม่ได้ rename)
+- Team: `pooilgroup-web`
+- Platform: Next.js
+- DSN: copy จาก Settings → Projects → `javascript-nextjs-uc` → Client Keys (DSN)
 
 ### 3. สร้าง Auth Token (1 นาที — สำหรับ source-map upload)
 - Settings → Account → Auth Tokens → Create New Token
@@ -33,9 +32,9 @@ Sentry จะจับ error อัตโนมัติ + ส่ง alert + เ
 ```
 SENTRY_DSN              = <DSN ที่ได้จากขั้น 2>
 NEXT_PUBLIC_SENTRY_DSN  = <DSN ตัวเดียวกัน>
-SENTRY_ORG              = pooilgroup
-SENTRY_PROJECT          = pooilgroup-web
-SENTRY_AUTH_TOKEN       = <token จากขั้น 3>
+SENTRY_ORG              = auditmekub
+SENTRY_PROJECT          = javascript-nextjs-uc
+SENTRY_AUTH_TOKEN       = <token ชื่อ "pooilgroup" ที่สร้าง 5:19 UTC>
 ```
 
 ### 5. ใส่ใน `.env.local` (สำหรับ dev เครื่องตัวเอง)
