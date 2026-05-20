@@ -29,7 +29,7 @@ export default async function LiffStatusPage() {
   const { data: reports } = await admin
     .from("daily_reports")
     .select(
-      "id, branch_id, total_sales, status, submitted_at, approved_at, shift, report_date, branches(code, name, business_type)",
+      "id, branch_id, total_sales, status, submitted_at, approved_at, shift, report_date, rejected_reason, branches(code, name, business_type)",
     )
     .eq("submitted_by_id", session.user.id)
     .order("submitted_at", { ascending: false })
@@ -73,6 +73,8 @@ export default async function LiffStatusPage() {
           const Icon = status === "approved" ? CheckCircle2 : status === "rejected" ? XCircle : Clock;
           const iconColor = status === "approved" ? "text-green-600" : status === "rejected" ? "text-red-600" : "text-amber-600";
 
+          const rejectedReason = (r as { rejected_reason?: string | null })
+            .rejected_reason;
           return (
             <div
               key={r.id}
@@ -100,6 +102,20 @@ export default async function LiffStatusPage() {
                   </Badge>
                 </div>
               </div>
+              {/* แสดงเหตุผล reject ให้ staff เห็นชัด · CEO 2026-05-20 */}
+              {status === "rejected" && rejectedReason && (
+                <div className="mt-2 px-3 py-2 bg-red-50 border border-red-100 rounded-xl">
+                  <div className="text-[11px] uppercase tracking-widest text-red-700 font-bold">
+                    เหตุผลที่ไม่อนุมัติ
+                  </div>
+                  <div className="text-sm text-red-900 mt-0.5">
+                    {rejectedReason}
+                  </div>
+                  <div className="text-[11px] text-zinc-500 mt-1.5">
+                    💡 ติดต่อผู้จัดการเพื่อปลดล็อกและส่งใหม่
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
