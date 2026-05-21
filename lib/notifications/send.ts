@@ -5,7 +5,7 @@
 import { adminClient } from "../db/server";
 
 export type NotificationType = "info" | "warning" | "danger" | "success";
-export type NotificationModule = "core" | "cashhub" | "fuelos" | "docuflow";
+export type NotificationModule = "core" | "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs";
 
 export interface NotificationPayload {
   orgId: string;
