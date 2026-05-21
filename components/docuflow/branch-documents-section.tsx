@@ -139,7 +139,7 @@ export async function BranchDocumentsSection({
         {/* Total summary row */}
         <div className="flex items-end justify-between gap-3 pb-3 border-b border-zinc-100">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold">
+            <p className="text-xs font-bold text-zinc-500">
               รวมเอกสารที่ apply กับสาขานี้
             </p>
             <div className="text-2xl sm:text-3xl font-bold tabular-nums mt-0.5">
@@ -177,7 +177,7 @@ interface BucketProps {
 function BucketCard({ title, hint, count, atRisk, href }: BucketProps) {
   const inner = (
     <div className="flex flex-col gap-1.5 rounded-xl border-2 border-zinc-200 bg-white p-4 hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/30 transition-colors h-full">
-      <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold">
+      <p className="text-xs font-bold text-zinc-500">
         {title}
       </p>
       <div className="flex items-end gap-2">

@@ -10,7 +10,10 @@ import {
   type ReactNode,
 } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, Filter as FilterIcon, X } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils/cn";
+import { Button } from "../button";
+import { Dialog } from "../dialog";
 import { rowsToTsv } from "./clipboard";
 import type {
   ColumnFilters,
@@ -123,16 +126,21 @@ export function DataGrid<T extends { id: string }>({
     }
   }, [persistKey]);
 
+  // Debounced — typing in a filter box was hitting localStorage on every
+  // keystroke, blocking the input. 300ms feels instant after typing stops.
   useEffect(() => {
     if (!persistKey) return;
-    try {
-      localStorage.setItem(
-        `dg:${persistKey}`,
-        JSON.stringify({ sort, filters }),
-      );
-    } catch {
-      /* ignore */
-    }
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          `dg:${persistKey}`,
+          JSON.stringify({ sort, filters }),
+        );
+      } catch {
+        /* ignore */
+      }
+    }, 300);
+    return () => clearTimeout(t);
   }, [persistKey, sort, filters]);
 
   // ----- derived rows -----
@@ -205,6 +213,14 @@ export function DataGrid<T extends { id: string }>({
     value: string;
   } | null>(null);
 
+  // ----- bulk-action confirm dialog -----
+  const [pendingBulk, setPendingBulk] = useState<{
+    action: DataGridBulkAction<T>;
+    list: T[];
+    message: string;
+  } | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+
   const startEdit = useCallback(
     (row: T, col: DataGridColumn<T>) => {
       if (!col.editable || !onCellEdit) return;
@@ -231,8 +247,7 @@ export function DataGrid<T extends { id: string }>({
       if (col.validate) {
         const err = col.validate(parsed, row);
         if (err) {
-          // Don't lose the edit; let parent show toast
-          alert(err);
+          toast.error(err);
           return;
         }
       }
@@ -323,7 +338,12 @@ export function DataGrid<T extends { id: string }>({
               type="button"
               onClick={async () => {
                 if (a.confirm) {
-                  if (!confirm(a.confirm(selectionList.length))) return;
+                  setPendingBulk({
+                    action: a,
+                    list: selectionList,
+                    message: a.confirm(selectionList.length),
+                  });
+                  return;
                 }
                 await a.run(selectionList);
               }}
@@ -519,7 +539,7 @@ export function DataGrid<T extends { id: string }>({
                 <tr
                   key={row.id}
                   className={cn(
-                    "transition-colors",
+                    "transition-colors group/datarow",
                     isSelected
                       ? "bg-[var(--color-brand-50)]"
                       : idx % 2 === 0
@@ -529,7 +549,16 @@ export function DataGrid<T extends { id: string }>({
                   )}
                 >
                   {selectable && (
-                    <td className="sticky left-0 z-10 bg-inherit border-b border-zinc-100 border-r px-3 py-2 w-10">
+                    <td
+                      className={cn(
+                        "sticky left-0 z-10 border-b border-zinc-100 border-r px-3 py-2 w-10 transition-colors",
+                        isSelected
+                          ? "bg-[var(--color-brand-50)] group-hover/datarow:bg-[var(--color-brand-100)]"
+                          : idx % 2 === 0
+                            ? "bg-white group-hover/datarow:bg-[var(--color-brand-50)]"
+                            : "bg-zinc-50 group-hover/datarow:bg-[var(--color-brand-50)]",
+                      )}
+                    >
                       <input
                         type="checkbox"
                         checked={isSelected}
@@ -566,7 +595,14 @@ export function DataGrid<T extends { id: string }>({
                         className={cn(
                           "border-b border-zinc-100 px-3 py-2 align-middle whitespace-nowrap",
                           ALIGN[c.align ?? "left"],
-                          c.frozen && "sticky left-10 bg-inherit z-10",
+                          c.frozen && [
+                            "sticky left-10 z-10 transition-colors",
+                            isSelected
+                              ? "bg-[var(--color-brand-50)] group-hover/datarow:bg-[var(--color-brand-100)]"
+                              : idx % 2 === 0
+                                ? "bg-white group-hover/datarow:bg-[var(--color-brand-50)]"
+                                : "bg-zinc-50 group-hover/datarow:bg-[var(--color-brand-50)]",
+                          ],
                           ci === columns.length - 1 ? "" : "border-r border-zinc-100",
                           c.editable && onCellEdit && "cursor-text hover:bg-amber-50/30",
                         )}
@@ -632,6 +668,46 @@ export function DataGrid<T extends { id: string }>({
       <p className="text-[11px] text-zinc-400">
         💡 เลือกแถว → <kbd className="px-1 rounded bg-zinc-100 border border-zinc-300 text-zinc-700 font-mono text-[10px]">⌘C</kbd> ก๊อปไปวาง Excel · วาง <kbd className="px-1 rounded bg-zinc-100 border border-zinc-300 text-zinc-700 font-mono text-[10px]">⌘V</kbd> เพื่อเพิ่ม/แก้แถวจากตาราง · คลิก header เพื่อเรียง
       </p>
+
+      <Dialog
+        open={pendingBulk !== null}
+        onClose={() => {
+          if (bulkBusy) return;
+          setPendingBulk(null);
+        }}
+        title="ยืนยันการดำเนินการ"
+      >
+        <div className="space-y-5">
+          <div className="text-sm text-zinc-700 leading-relaxed whitespace-pre-line">
+            {pendingBulk?.message}
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100">
+            <Button
+              variant="ghost"
+              onClick={() => setPendingBulk(null)}
+              disabled={bulkBusy}
+            >
+              ยกเลิก
+            </Button>
+            <Button
+              variant={pendingBulk?.action.danger ? "danger" : "primary"}
+              loading={bulkBusy}
+              onClick={async () => {
+                if (!pendingBulk) return;
+                setBulkBusy(true);
+                try {
+                  await pendingBulk.action.run(pendingBulk.list);
+                  setPendingBulk(null);
+                } finally {
+                  setBulkBusy(false);
+                }
+              }}
+            >
+              {pendingBulk?.action.label ?? "ยืนยัน"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }

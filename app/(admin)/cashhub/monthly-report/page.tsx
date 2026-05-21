@@ -217,7 +217,7 @@ export default async function MonthlyReportPage({
           <section className="pg">
             <div className="flex items-baseline justify-between">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-brand-600)] font-bold">
+                <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
                   EXECUTIVE SUMMARY
                 </p>
                 <h1 className="text-4xl font-extrabold font-display mt-1 text-zinc-900">
@@ -236,7 +236,7 @@ export default async function MonthlyReportPage({
             </div>
 
             <div className="mt-8">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold mb-3">
+              <p className="text-xs font-bold text-zinc-500 mb-3">
                 ยอดเดือนที่ผ่านมา
               </p>
               <table className="w-full text-sm">
@@ -272,7 +272,7 @@ export default async function MonthlyReportPage({
 
           {/* PAGE 2 — RANKING */}
           <section className="pg">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-brand-600)] font-bold">
+            <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
               BRANCH RANKING
             </p>
             <h2 className="text-3xl font-extrabold font-display mt-1">
@@ -280,7 +280,7 @@ export default async function MonthlyReportPage({
             </h2>
             <table className="w-full text-sm mt-6">
               <thead>
-                <tr className="border-b-2 border-zinc-200 text-[10px] uppercase tracking-widest text-zinc-400">
+                <tr className="border-b-2 border-zinc-200 text-xs font-bold text-zinc-500">
                   <th className="text-left p-2 w-10">#</th>
                   <th className="text-left p-2">รหัส / ชื่อ</th>
                   <th className="text-left p-2">จังหวัด</th>
@@ -315,7 +315,7 @@ export default async function MonthlyReportPage({
 
           {/* PAGE 3 — BY TYPE */}
           <section className="pg">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-brand-600)] font-bold">
+            <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
               BY BUSINESS TYPE
             </p>
             <h2 className="text-3xl font-extrabold font-display mt-1">
@@ -323,7 +323,7 @@ export default async function MonthlyReportPage({
             </h2>
             <table className="w-full text-sm mt-6">
               <thead>
-                <tr className="border-b-2 border-zinc-200 text-[10px] uppercase tracking-widest text-zinc-400">
+                <tr className="border-b-2 border-zinc-200 text-xs font-bold text-zinc-500">
                   <th className="text-left p-2"></th>
                   <th className="text-left p-2">ประเภท</th>
                   <th className="text-right p-2">สาขา</th>
@@ -358,7 +358,7 @@ export default async function MonthlyReportPage({
 
           {/* PAGE 4 — COMPLIANCE */}
           <section>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-brand-600)] font-bold">
+            <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
               REPORT COMPLIANCE
             </p>
             <h2 className="text-3xl font-extrabold font-display mt-1">
@@ -369,7 +369,7 @@ export default async function MonthlyReportPage({
             </p>
             <table className="w-full text-sm mt-6">
               <thead>
-                <tr className="border-b-2 border-zinc-200 text-[10px] uppercase tracking-widest text-zinc-400">
+                <tr className="border-b-2 border-zinc-200 text-xs font-bold text-zinc-500">
                   <th className="text-left p-2">สาขา</th>
                   <th className="text-right p-2">กรอก</th>
                   <th className="text-right p-2">ขาด</th>
@@ -418,7 +418,7 @@ export default async function MonthlyReportPage({
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="border-2 border-zinc-200 rounded-2xl p-4">
-      <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+      <p className="text-xs font-bold text-zinc-500">
         {label}
       </p>
       <div className="text-3xl font-extrabold tabular-num font-display mt-1">

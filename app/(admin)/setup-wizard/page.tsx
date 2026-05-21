@@ -32,7 +32,7 @@ export default async function SetupWizardPage() {
     <div className="p-3 sm:p-6 lg:p-10 max-w-4xl mx-auto pb-24">
       <BackButton label="กลับ" fallbackHref="/home" />
       <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           ✨ SETUP WIZARD
         </p>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1">

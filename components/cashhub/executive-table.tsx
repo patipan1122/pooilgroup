@@ -4,7 +4,7 @@
 
 "use client";
 
-import { useState, useTransition } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
@@ -15,20 +15,109 @@ import {
   CalendarRange,
   ChevronsDownUp,
   ChevronsUpDown,
+  BarChart3,
+  CircleDollarSign,
 } from "lucide-react";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { formatBahtCompact } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 import type { ExecutiveMatrix, Period } from "@/lib/cashhub/executive-matrix";
 
+type ViewMode = "baht" | "quantity";
+
+const VIEW_MODE_STORAGE_KEY = "pool.dashboard.matrix.viewMode";
+
 interface Props {
   data: ExecutiveMatrix;
+}
+
+/** Compact number formatter for quantities — 1.2K / 5.4M / raw */
+function formatQtyCompact(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 10_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
+  if (n >= 1_000) return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+
+/** Per–business-type display config for quantity mode. */
+type QtyDisplay = {
+  /** Primary metric (large, top line) */
+  primary: { values: number[]; unit: string };
+  /** Optional secondary metric (small, second line) */
+  secondary?: { values: number[]; unit: string };
+} | null;
+
+function getQtyDisplay(
+  businessType: string,
+  qty1: number[],
+  qty2: number[],
+): QtyDisplay {
+  switch (businessType) {
+    case "fuel_station":
+      return {
+        primary: { values: qty1, unit: "ลิตร" },
+        secondary: { values: qty2, unit: "คัน" },
+      };
+    case "lpg_station":
+      return {
+        primary: { values: qty1, unit: "ลิตร" },
+        secondary: { values: qty2, unit: "คัน" },
+      };
+    case "lpg_retail":
+      return { primary: { values: qty1, unit: "ถัง" } };
+    case "bottling_plant":
+      return { primary: { values: qty1, unit: "ถัง" } };
+    case "hotel":
+      return { primary: { values: qty1, unit: "ห้อง" } };
+    case "ev_station":
+      // CEO: kWh เป็นตัวหลัก · คัน/Session เป็น secondary
+      return {
+        primary: { values: qty2, unit: "kWh" },
+        secondary: { values: qty1, unit: "คัน" },
+      };
+    case "cafe":
+    case "cafe_punthai":
+      return { primary: { values: qty1, unit: "แก้ว" } };
+    case "massage_chair":
+      return { primary: { values: qty1, unit: "ครั้ง" } };
+    case "claw_machine":
+      return { primary: { values: qty1, unit: "รอบ" } };
+    case "training_center":
+      return { primary: { values: qty1, unit: "ครั้ง" } };
+    case "convenience_store":
+      // 7-Eleven ยังไม่เก็บจำนวนบิล → แสดง "—"
+      return null;
+    default:
+      return null;
+  }
 }
 
 export function ExecutiveTable({ data }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<ViewMode>("baht");
+
+  // Hydrate viewMode from localStorage (client-only)
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+      if (saved === "quantity" || saved === "baht") setViewMode(saved);
+    } catch {
+      // localStorage may be unavailable (SSR / private mode) — ignore
+    }
+  }, []);
+
+  function changeViewMode(mode: ViewMode) {
+    setViewMode(mode);
+    try {
+      window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+    } catch {
+      // ignore
+    }
+  }
+
+  const isQty = viewMode === "quantity";
 
   const currentYear = new Date().getFullYear();
   // periodKeys for annual look like "2026-12", "2026-11", ... → use first to infer year
@@ -47,36 +136,64 @@ export function ExecutiveTable({ data }: Props) {
     setExpanded(new Set());
   }
 
-  // Reverse arrays so OLDEST → NEWEST (left → right, like calendar)
-  const periodLabels = [...data.periodLabels].reverse();
-  const periodTotals = [...data.periodTotals].reverse();
-  const periodReportedCounts = [...data.periodReportedCounts].reverse();
-  const rowsByType = data.rows.map((r) => ({
-    ...r,
-    totals: [...r.totals].reverse(),
-    reportedCounts: [...r.reportedCounts].reverse(),
-    branches: r.branches.map((b) => ({
-      ...b,
-      totals: [...b.totals].reverse(),
-    })),
-  }));
+  // Reverse arrays so OLDEST → NEWEST (left → right, like calendar).
+  // Memoized on `data` only — expand/collapse + viewMode toggles no longer
+  // re-clone the full N-branch × M-period nested array (was O(b × p) per click).
+  const {
+    periodLabels,
+    periodTotals,
+    periodReportedCounts,
+    rowsByType,
+    totalsChangePct,
+  } = useMemo(() => {
+    const periodLabels = [...data.periodLabels].reverse();
+    const periodTotals = [...data.periodTotals].reverse();
+    const periodReportedCounts = [...data.periodReportedCounts].reverse();
+    const rowsByType = data.rows.map((r) => ({
+      ...r,
+      totals: [...r.totals].reverse(),
+      qty1Totals: [...r.qty1Totals].reverse(),
+      qty2Totals: [...r.qty2Totals].reverse(),
+      reportedCounts: [...r.reportedCounts].reverse(),
+      branches: r.branches.map((b) => ({
+        ...b,
+        totals: [...b.totals].reverse(),
+        qty1Totals: b.qty1Totals ? [...b.qty1Totals].reverse() : undefined,
+        qty2Totals: b.qty2Totals ? [...b.qty2Totals].reverse() : undefined,
+      })),
+    }));
+    const totalsChangePct = periodTotals.map((cur, i) => {
+      if (i === 0) return null;
+      const prev = periodTotals[i - 1];
+      if (!prev) return null;
+      return ((cur - prev) / prev) * 100;
+    });
+    return {
+      periodLabels,
+      periodTotals,
+      periodReportedCounts,
+      rowsByType,
+      totalsChangePct,
+    };
+  }, [data]);
 
-  // Newest = last index. Compute change %
-  const totalsChangePct = periodTotals.map((cur, i) => {
-    if (i === 0) return null;
-    const prev = periodTotals[i - 1];
-    if (!prev) return null;
-    return ((cur - prev) / prev) * 100;
-  });
-
-  function toggleExpand(bt: string) {
+  // Stable callbacks — required for React.memo on BusinessTypeRow to skip
+  // re-renders of non-toggled rows when expand state changes.
+  const toggleExpand = useCallback((bt: string) => {
     setExpanded((s) => {
       const next = new Set(s);
       if (next.has(bt)) next.delete(bt);
       else next.add(bt);
       return next;
     });
-  }
+  }, []);
+
+  const navigateBranch = useCallback(
+    (branchId: string) => {
+      startTransition(() => router.push(`/branches/${branchId}`));
+    },
+    [router],
+  );
 
   function setPeriod(p: Period) {
     startTransition(() => {
@@ -124,16 +241,17 @@ export function ExecutiveTable({ data }: Props) {
             <select
               value={selectedYear}
               onChange={(e) => setYear(Number(e.target.value))}
+              aria-label="เลือกปี พ.ศ. ที่ต้องการดู"
               className="h-8 rounded-lg border-2 border-zinc-200 bg-white px-2 text-xs font-bold text-zinc-700 hover:border-[var(--color-brand-400)] focus:border-[var(--color-brand-500)] focus:outline-none"
             >
               {yearOptions.map((y) => (
                 <option key={y} value={y}>
-                  พ.ศ. {(y + 543) % 100 < 10 ? "0" : ""}
-                  {(y + 543) % 100} (ค.ศ. {y})
+                  พ.ศ. {y + 543} (ค.ศ. {y})
                 </option>
               ))}
             </select>
           )}
+          <ViewModeToggle current={viewMode} onChange={changeViewMode} />
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -169,13 +287,16 @@ export function ExecutiveTable({ data }: Props) {
         <span className="text-zinc-500">↔ เลื่อนซ้ายขวาดูช่วงเก่า</span>
       </div>
 
-      {/* Table — horizontal scroll */}
+      {/* Table — horizontal scroll. Thead is sticky-top so the date row stays
+          visible while scrolling deep into branches. Top offset matches the
+          admin header (h-14 / sm:h-16). z-tiers: corner cell (top+left) z-30,
+          other thead cells z-20, body sticky-left cells z-10. */}
       <div className="overflow-x-auto">
         <table className="w-full text-xs sm:text-sm">
           <thead>
             <tr className="bg-white border-b-2 border-zinc-100">
               <th
-                className="text-left px-3 sm:px-4 py-3 font-bold text-zinc-600 sticky left-0 bg-white z-10 min-w-[200px] sm:min-w-[240px]"
+                className="text-left px-3 sm:px-4 py-3 font-bold text-zinc-600 sticky top-14 sm:top-16 left-0 bg-white z-30 min-w-[200px] sm:min-w-[240px]"
                 style={{ borderRight: "1px solid var(--color-border)" }}
               >
                 <span className="text-[10px] uppercase tracking-widest text-zinc-400">
@@ -188,10 +309,10 @@ export function ExecutiveTable({ data }: Props) {
                   <th
                     key={i}
                     className={cn(
-                      "px-2 sm:px-3 py-3 font-bold text-right tabular-num min-w-[80px] sm:min-w-[96px]",
+                      "px-2 sm:px-3 py-3 font-bold text-right tabular-num min-w-[80px] sm:min-w-[96px] sticky top-14 sm:top-16 z-20",
                       isLatest
-                        ? "text-[var(--color-brand-700)] bg-[var(--color-brand-50)]/40"
-                        : "text-zinc-500",
+                        ? "text-[var(--color-brand-700)] bg-[var(--color-brand-50)]"
+                        : "text-zinc-500 bg-white",
                     )}
                   >
                     {label}
@@ -215,16 +336,16 @@ export function ExecutiveTable({ data }: Props) {
                   row={row}
                   cfg={cfg}
                   isExpanded={isExpanded}
-                  onToggle={() => toggleExpand(row.businessType)}
+                  onToggle={toggleExpand}
                   rowIdx={rowIdx}
-                  onNavigateBranch={(branchId) =>
-                    startTransition(() => router.push(`/branches/${branchId}`))
-                  }
+                  viewMode={viewMode}
+                  onNavigateBranch={navigateBranch}
                 />
               );
             })}
 
-            {/* Footer row — totals */}
+            {/* Footer row — totals (hidden in quantity mode: หน่วยต่าง type รวมไม่ได้) */}
+            {!isQty && (
             <tr className="border-t-2 border-zinc-300 bg-[var(--color-brand-50)]/30 font-bold">
               <td
                 className="px-3 sm:px-4 py-3 sticky left-0 bg-[var(--color-brand-50)] z-10"
@@ -290,6 +411,7 @@ export function ExecutiveTable({ data }: Props) {
                 );
               })}
             </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -308,41 +430,66 @@ export function ExecutiveTable({ data }: Props) {
 /* ============================================================
    Business type row + expanded branches
    ============================================================ */
-function BusinessTypeRow({
+const BusinessTypeRow = memo(function BusinessTypeRow({
   row,
   cfg,
   isExpanded,
   onToggle,
   rowIdx,
+  viewMode,
   onNavigateBranch,
 }: {
   row: {
     businessType: string;
     totals: number[];
+    qty1Totals: number[];
+    qty2Totals: number[];
     reportedCounts: number[];
     branchCount: number;
-    branches: Array<{ id: string; code: string; name: string; totals: number[] }>;
+    branches: Array<{
+      id: string;
+      code: string;
+      name: string;
+      totals: number[];
+      qty1Totals?: number[];
+      qty2Totals?: number[];
+    }>;
   };
   cfg: { emoji: string; label: string } | undefined;
   isExpanded: boolean;
-  onToggle: () => void;
+  onToggle: (businessType: string) => void;
   rowIdx: number;
+  viewMode: ViewMode;
   onNavigateBranch: (branchId: string) => void;
 }) {
+  const isQty = viewMode === "quantity";
+  const qtyDisplay = isQty
+    ? getQtyDisplay(row.businessType, row.qty1Totals, row.qty2Totals)
+    : null;
+  // Stable click handler — would otherwise allocate per render, defeating memo.
+  const handleToggle = () => onToggle(row.businessType);
+
   return (
     <>
       <tr
         className={cn(
-          "border-b border-zinc-100 transition-colors cursor-pointer",
+          "border-b border-zinc-100 transition-colors cursor-pointer group/row",
           rowIdx % 2 === 1 && !isExpanded && "bg-zinc-50/40",
           isExpanded
             ? "bg-[var(--color-brand-50)]/40"
             : "hover:bg-[var(--color-brand-50)]/30",
         )}
-        onClick={onToggle}
+        onClick={handleToggle}
       >
         <td
-          className="px-3 sm:px-4 py-2.5 sticky left-0 bg-inherit z-10"
+          className={cn(
+            "px-3 sm:px-4 py-2.5 sticky left-0 z-10 transition-colors",
+            isExpanded
+              ? "bg-[var(--color-brand-100)]"
+              : rowIdx % 2 === 1
+                ? "bg-zinc-50 group-hover/row:bg-[var(--color-brand-50)]"
+                : "bg-white group-hover/row:bg-[var(--color-brand-50)]",
+          )}
           style={{ borderRight: "1px solid var(--color-border)" }}
         >
           <div className="flex items-center gap-2 min-w-0">
@@ -365,21 +512,100 @@ function BusinessTypeRow({
         </td>
         {row.totals.map((val, i) => {
           const isLatest = i === row.totals.length - 1;
-          const prev = i > 0 ? row.totals[i - 1] : 0;
-          const showDiff = i > 0 && prev > 0;
-          const pct = showDiff ? ((val - prev) / prev) * 100 : null;
           const reported = row.reportedCounts[i];
           const incomplete = reported < row.branchCount;
           const tooltip = incomplete
             ? `กรอกแล้ว ${reported}/${row.branchCount} สาขา · ขาด ${row.branchCount - reported} สาขา`
             : undefined;
+
+          // ────── Quantity mode ──────
+          if (isQty) {
+            // No qty data for this business type → "—"
+            if (!qtyDisplay) {
+              return (
+                <td
+                  key={i}
+                  className={cn(
+                    "px-2 sm:px-3 py-2.5 text-right tabular-num",
+                    isLatest && "bg-[var(--color-brand-50)]/30",
+                  )}
+                >
+                  <div className="font-semibold text-zinc-400">—</div>
+                </td>
+              );
+            }
+            const primaryVal = qtyDisplay.primary.values[i] ?? 0;
+            const primaryPrev = i > 0 ? (qtyDisplay.primary.values[i - 1] ?? 0) : 0;
+            const showPct = i > 0 && primaryPrev > 0 && primaryVal > 0;
+            const pct = showPct ? ((primaryVal - primaryPrev) / primaryPrev) * 100 : null;
+            const secondaryVal = qtyDisplay.secondary?.values[i] ?? 0;
+
+            return (
+              <td
+                key={i}
+                title={tooltip}
+                className={cn(
+                  "px-2 sm:px-3 py-2.5 text-right tabular-num",
+                  isLatest && "bg-[var(--color-brand-50)]/30",
+                  primaryVal === 0 && "text-zinc-400",
+                )}
+              >
+                <div
+                  className={cn(
+                    "font-semibold",
+                    incomplete
+                      ? "text-[var(--color-danger)] cursor-help"
+                      : isLatest
+                        ? "text-[var(--color-brand-800)]"
+                        : "text-zinc-700",
+                  )}
+                >
+                  {primaryVal > 0 ? (
+                    <>
+                      {formatQtyCompact(primaryVal)}{" "}
+                      <span className="text-[10px] text-zinc-400 font-normal">
+                        {qtyDisplay.primary.unit}
+                      </span>
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </div>
+                {qtyDisplay.secondary && secondaryVal > 0 && (
+                  <div className="text-[10px] text-zinc-500 tabular-num mt-0.5">
+                    {formatQtyCompact(secondaryVal)} {qtyDisplay.secondary.unit}
+                  </div>
+                )}
+                {pct !== null && (
+                  <div
+                    className={cn(
+                      "text-[10px] font-bold tabular-num",
+                      pct > 0
+                        ? "text-[var(--color-leaf-700)]"
+                        : pct < 0
+                          ? "text-[var(--color-danger)]"
+                          : "text-zinc-400",
+                    )}
+                  >
+                    {pct > 0 ? "+" : ""}
+                    {pct.toFixed(0)}%
+                  </div>
+                )}
+              </td>
+            );
+          }
+
+          // ────── Baht (default) mode ──────
+          const prev = i > 0 ? row.totals[i - 1] : 0;
+          const showDiff = i > 0 && prev > 0;
+          const pct = showDiff ? ((val - prev) / prev) * 100 : null;
           return (
             <td
               key={i}
               className={cn(
                 "px-2 sm:px-3 py-2.5 text-right tabular-num",
                 isLatest && "bg-[var(--color-brand-50)]/30",
-                val === 0 && !incomplete && "text-zinc-300",
+                val === 0 && !incomplete && "text-zinc-400",
               )}
             >
               <div
@@ -421,7 +647,7 @@ function BusinessTypeRow({
           <tr
             key={b.id}
             className={cn(
-              "border-b border-zinc-100 bg-[var(--color-brand-50)]/20 hover:bg-[var(--color-brand-50)]/40 transition-colors",
+              "border-b border-zinc-100 bg-[var(--color-brand-50)]/20 hover:bg-[var(--color-brand-50)]/40 transition-colors group/branchrow",
               bIdx === row.branches.length - 1 &&
                 "border-b-2 border-[var(--color-brand-200)]",
             )}
@@ -432,7 +658,7 @@ function BusinessTypeRow({
             style={{ cursor: "pointer" }}
           >
             <td
-              className="px-3 sm:px-4 py-2 sticky left-0 bg-inherit z-10"
+              className="px-3 sm:px-4 py-2 sticky left-0 z-10 bg-[var(--color-brand-50)] group-hover/branchrow:bg-[var(--color-brand-100)] transition-colors"
               style={{ borderRight: "1px solid var(--color-border)" }}
             >
               <div className="flex items-center gap-2 min-w-0 pl-7">
@@ -449,6 +675,63 @@ function BusinessTypeRow({
             </td>
             {b.totals.map((val, i) => {
               const isLatest = i === b.totals.length - 1;
+
+              // ────── Quantity mode for sub-rows ──────
+              if (isQty) {
+                if (!qtyDisplay) {
+                  return (
+                    <td
+                      key={i}
+                      className={cn(
+                        "px-2 sm:px-3 py-2 text-right tabular-num text-xs",
+                        isLatest && "bg-[var(--color-brand-50)]/40",
+                      )}
+                    >
+                      <span className="text-zinc-300">—</span>
+                    </td>
+                  );
+                }
+                // EV: kWh (qty2) เป็น primary · คัน (qty1) เป็น secondary — swap.
+                // ประเภทอื่น: qty1 = primary · qty2 = secondary
+                const useQty2AsPrimary = row.businessType === "ev_station";
+                const pVal = useQty2AsPrimary
+                  ? (b.qty2Totals?.[i] ?? 0)
+                  : (b.qty1Totals?.[i] ?? 0);
+                const sVal = useQty2AsPrimary
+                  ? (b.qty1Totals?.[i] ?? 0)
+                  : (b.qty2Totals?.[i] ?? 0);
+                const missing = pVal === 0;
+                return (
+                  <td
+                    key={i}
+                    className={cn(
+                      "px-2 sm:px-3 py-2 text-right tabular-num text-xs",
+                      isLatest && "bg-[var(--color-brand-50)]/40",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        missing
+                          ? "text-zinc-300"
+                          : isLatest
+                            ? "text-[var(--color-brand-700)] font-semibold"
+                            : "text-zinc-600",
+                      )}
+                    >
+                      {missing
+                        ? "—"
+                        : `${formatQtyCompact(pVal)} ${qtyDisplay.primary.unit}`}
+                    </span>
+                    {qtyDisplay.secondary && sVal > 0 && (
+                      <div className="text-[10px] text-zinc-400 tabular-num">
+                        {formatQtyCompact(sVal)} {qtyDisplay.secondary.unit}
+                      </div>
+                    )}
+                  </td>
+                );
+              }
+
+              // ────── Baht mode (default) for sub-rows ──────
               const missing = val === 0;
               return (
                 <td
@@ -477,7 +760,7 @@ function BusinessTypeRow({
         ))}
     </>
   );
-}
+});
 
 /* ============================================================
    Period toggle (รายเดือน / รายวัน / รายปี)
@@ -521,6 +804,47 @@ function PeriodToggle({
       >
         <CalendarRange className="size-3.5" />
         รายปี
+      </button>
+    </div>
+  );
+}
+
+/* ============================================================
+   View mode toggle (฿ ยอดขาย / 📊 จำนวน)
+   ============================================================ */
+function ViewModeToggle({
+  current,
+  onChange,
+}: {
+  current: ViewMode;
+  onChange: (m: ViewMode) => void;
+}) {
+  const btn = (active: boolean) =>
+    cn(
+      "inline-flex items-center gap-1.5 px-3 h-8 text-xs font-bold rounded transition-colors",
+      active
+        ? "bg-[var(--color-brand-600)] text-white"
+        : "text-zinc-600 hover:bg-zinc-50",
+    );
+  return (
+    <div className="inline-flex rounded-lg border-2 border-zinc-200 bg-white p-0.5">
+      <button
+        type="button"
+        onClick={() => onChange("baht")}
+        className={btn(current === "baht")}
+        aria-label="แสดงเป็นยอดขาย (บาท)"
+      >
+        <CircleDollarSign className="size-3.5" />
+        ยอดขาย
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("quantity")}
+        className={btn(current === "quantity")}
+        aria-label="แสดงเป็นจำนวน (ลิตร/แก้ว/คัน ตามประเภทธุรกิจ)"
+      >
+        <BarChart3 className="size-3.5" />
+        จำนวน
       </button>
     </div>
   );

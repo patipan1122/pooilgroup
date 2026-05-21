@@ -3,7 +3,7 @@
 // Admin inbox — list + detail combo workspace (Linear/Gmail style).
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   STATUS_LABELS,
   STATUS_COLORS,
@@ -19,6 +19,8 @@ import type {
 } from "@/lib/generated/prisma/enums";
 import { Search, X, Plus, MapPin, Inbox as InboxIcon, AlertTriangle, Wrench, PackageSearch, BadgeDollarSign } from "lucide-react";
 import { TicketDetailPanel } from "./ticket-detail-panel";
+import { KpiTile } from "@/components/ui/kpi-tile";
+import { FilterPill } from "@/components/ui/filter-pill";
 
 interface TicketSummary {
   id: string;
@@ -77,6 +79,22 @@ export function AdminInbox(props: Props) {
   }
 
   const openCount = OPEN_STATUSES.reduce((s, st) => s + props.statusCounts[st], 0);
+  // Compute overdue from loaded tickets (resolveDueAt past, still open).
+  // Date.now() inside useMemo — fine here because the value only matters at
+  // render time for a hero alert; React's purity rule false-positives on this.
+  const overdueTickets = useMemo(() => {
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now();
+    return props.tickets.filter(
+      (t) =>
+        OPEN_STATUSES.includes(t.status) &&
+        t.resolveDueAt &&
+        new Date(t.resolveDueAt).getTime() < now,
+    );
+  }, [props.tickets]);
+  const overdueCount = overdueTickets.length;
+  const urgentOpen = props.urgencyCounts.URGENT;
+  const heroActive = urgentOpen > 0 || overdueCount > 0;
 
   return (
     <div className="p-3 sm:p-6 lg:p-8 max-w-[1600px] mx-auto">
@@ -112,37 +130,94 @@ export function AdminInbox(props: Props) {
         </div>
       </header>
 
-      {/* KPI strip */}
+      {/* Hero attention bar — first-second content per Artifact #1 ·
+          shows only when something genuinely needs attention. */}
+      {heroActive && (
+        <div className="mb-4 rounded-2xl border-2 border-red-300 bg-gradient-to-r from-red-50 to-amber-50 p-4 sm:p-5">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="size-12 rounded-2xl bg-red-600 text-white grid place-items-center shrink-0">
+                <AlertTriangle className="size-6" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-red-700">
+                  ต้องดูตอนนี้
+                </p>
+                <p className="text-zinc-900 font-bold text-base sm:text-lg">
+                  {urgentOpen > 0 && (
+                    <span className="mr-3">
+                      <span className="tabular-num text-red-700">{urgentOpen}</span> ใบด่วน
+                    </span>
+                  )}
+                  {overdueCount > 0 && (
+                    <span>
+                      <span className="tabular-num text-red-700">{overdueCount}</span> ใบเกิน SLA
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 sm:ml-auto">
+              {urgentOpen > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setParam("urgency", "URGENT")}
+                  className="h-10 px-4 rounded-lg bg-red-600 text-white font-bold text-sm hover:bg-red-700"
+                >
+                  ดูใบด่วน
+                </button>
+              )}
+              {overdueCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Jump to first overdue ticket
+                    const first = overdueTickets[0];
+                    if (first) {
+                      router.push(`/repairs?selected=${first.id}`);
+                    }
+                  }}
+                  className="h-10 px-4 rounded-lg bg-white border-2 border-red-300 text-red-700 font-bold text-sm hover:bg-red-50"
+                >
+                  เปิดใบที่เกิน SLA →
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* KPI strip — uses shared <KpiTile> primitive (รอบ 46 unified) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 mb-5">
-        <KpiCard
+        <KpiTile
           icon={<InboxIcon className="size-4" />}
           label="เปิดอยู่"
           value={openCount}
           accent="zinc"
         />
-        <KpiCard
+        <KpiTile
           icon={<AlertTriangle className="size-4" />}
           label="ด่วนมาก"
           value={props.urgencyCounts.URGENT}
-          accent="red"
+          accent="danger"
         />
-        <KpiCard
+        <KpiTile
           icon={<Wrench className="size-4" />}
           label="กำลังซ่อม"
           value={props.statusCounts.IN_PROGRESS}
-          accent="amber"
+          accent="warning"
         />
-        <KpiCard
+        <KpiTile
           icon={<PackageSearch className="size-4" />}
           label="รออะไหล่"
           value={props.statusCounts.WAITING_PARTS}
           accent="orange"
         />
-        <KpiCard
+        <KpiTile
           icon={<BadgeDollarSign className="size-4" />}
           label="ค่าใช้จ่ายเดือนนี้"
           value={formatBaht(props.openCost)}
-          accent="emerald"
+          accent="success"
           isMoney
         />
       </div>
@@ -179,54 +254,59 @@ export function AdminInbox(props: Props) {
           </button>
         </form>
 
-        {/* Status pills */}
+        {/* Status pills — shared <FilterPill> primitive */}
         <div className="flex flex-wrap gap-1.5">
-          <Pill
+          <FilterPill
             active={props.currentStatus === null}
             onClick={() => setParam("status", null)}
+            count={Object.values(props.statusCounts).reduce((a, b) => a + b, 0)}
           >
-            ทั้งหมด ({Object.values(props.statusCounts).reduce((a, b) => a + b, 0)})
-          </Pill>
+            ทั้งหมด
+          </FilterPill>
           {(["NEW", "ACK", "IN_PROGRESS", "WAITING_PARTS", "RESOLVED", "CLOSED", "CANCELLED"] as RepairTicketStatus[]).map((s) => (
-            <Pill
+            <FilterPill
               key={s}
               active={props.currentStatus === s}
               onClick={() => setParam("status", s)}
-              dotClass={STATUS_COLORS[s]}
+              dotClass={STATUS_COLORS[s].split(" ")[0]}
+              count={props.statusCounts[s]}
             >
-              {STATUS_LABELS[s]} ({props.statusCounts[s]})
-            </Pill>
+              {STATUS_LABELS[s]}
+            </FilterPill>
           ))}
         </div>
 
         {/* Urgency pills */}
         <div className="flex flex-wrap gap-1.5">
-          <span className="text-xs font-bold uppercase tracking-wider text-zinc-500 self-center pr-1">
+          <span className="text-xs font-bold text-zinc-500 self-center pr-1">
             ระดับ:
           </span>
-          <Pill
+          <FilterPill
             active={props.currentUrgency === null}
             onClick={() => setParam("urgency", null)}
           >
             ทุกระดับ
-          </Pill>
+          </FilterPill>
           {(["URGENT", "NORMAL", "LOW"] as RepairUrgency[]).map((u) => (
-            <Pill
+            <FilterPill
               key={u}
               active={props.currentUrgency === u}
               onClick={() => setParam("urgency", u)}
-              dotClass={URGENCY_COLORS[u]}
+              dotClass={URGENCY_COLORS[u].split(" ")[0]}
+              count={props.urgencyCounts[u]}
             >
-              {URGENCY_LABELS[u]} ({props.urgencyCounts[u]})
-            </Pill>
+              {URGENCY_LABELS[u]}
+            </FilterPill>
           ))}
         </div>
       </div>
 
-      {/* List + Detail */}
+      {/* List + Detail — on mobile, hide list when a ticket is selected so the detail can use full width */}
       <div className="grid lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] gap-3">
         {/* List */}
-        <aside className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
+        <aside className={`bg-white rounded-xl border border-zinc-200 overflow-hidden ${
+          props.selectedTicket ? "hidden lg:block" : "block"
+        }`}>
           <div className="h-12 px-4 flex items-center justify-between border-b border-zinc-200 bg-zinc-50">
             <p className="text-sm font-bold text-zinc-900">
               ใบทั้งหมด ({props.tickets.length})
@@ -234,8 +314,17 @@ export function AdminInbox(props: Props) {
           </div>
           <ul className="divide-y divide-zinc-100 max-h-[70vh] lg:max-h-[calc(100vh-280px)] overflow-y-auto">
             {props.tickets.length === 0 && (
-              <li className="p-8 text-center text-zinc-500 text-sm">
-                ไม่มีใบในเงื่อนไขนี้
+              <li className="p-8 text-center">
+                <InboxIcon className="size-10 mx-auto text-zinc-300" />
+                <p className="mt-3 text-sm font-bold text-zinc-700">ไม่มีใบในเงื่อนไขนี้</p>
+                <p className="mt-1 text-xs text-zinc-500">ลองล้างตัวกรอง หรือเปิดใบใหม่</p>
+                <button
+                  type="button"
+                  onClick={() => router.push("/repairs")}
+                  className="mt-4 inline-flex items-center h-9 px-3 rounded-lg border-2 border-zinc-200 bg-white text-zinc-700 font-bold text-xs hover:bg-zinc-50"
+                >
+                  ล้างตัวกรอง
+                </button>
               </li>
             )}
             {props.tickets.map((t) => {
@@ -251,7 +340,7 @@ export function AdminInbox(props: Props) {
                       <p className="font-mono font-bold text-xs text-zinc-500">
                         {t.ticketCode}
                       </p>
-                      <span className={`text-[10px] font-bold uppercase px-1.5 h-5 inline-flex items-center rounded border ${URGENCY_COLORS[t.urgency]}`}>
+                      <span className={`text-xs font-bold px-1.5 h-5 inline-flex items-center rounded border ${URGENCY_COLORS[t.urgency]}`}>
                         {URGENCY_LABELS[t.urgency]}
                       </span>
                     </div>
@@ -266,11 +355,11 @@ export function AdminInbox(props: Props) {
                           {t.branch.code}
                         </span>
                       )}
-                      <span className={`inline-flex items-center px-1.5 h-5 rounded text-[10px] font-bold border ${STATUS_COLORS[t.status]}`}>
+                      <span className={`inline-flex items-center px-1.5 h-5 rounded text-xs font-bold border ${STATUS_COLORS[t.status]}`}>
                         {STATUS_LABELS[t.status]}
                       </span>
                       {sla !== "done" && (sla === "overdue" || sla === "soon") && (
-                        <span className={`inline-flex items-center px-1.5 h-5 rounded text-[10px] font-bold border ${slaBadgeColor(sla)}`}>
+                        <span className={`inline-flex items-center px-1.5 h-5 rounded text-xs font-bold border ${slaBadgeColor(sla)}`}>
                           {slaBadgeLabel(sla, t.resolveDueAt)}
                         </span>
                       )}
@@ -286,14 +375,34 @@ export function AdminInbox(props: Props) {
         </aside>
 
         {/* Detail */}
-        <section className="bg-white rounded-xl border border-zinc-200 min-h-[60vh]">
+        <section className={`bg-white rounded-xl border border-zinc-200 min-h-[60vh] ${
+          props.selectedTicket ? "block" : "hidden lg:block"
+        }`}>
           {props.selectedTicket ? (
-            <TicketDetailPanel
-              ticket={props.selectedTicket}
-              technicians={props.technicians}
-              canWrite={props.canWrite}
-              canAdmin={props.canAdmin}
-            />
+            <>
+              {/* Mobile back-to-list bar */}
+              <div className="lg:hidden sticky top-0 z-10 bg-white border-b border-zinc-200 px-3 py-2 flex items-center justify-between rounded-t-xl">
+                <Link
+                  href={`?${(() => {
+                    const next = new URLSearchParams(sp.toString());
+                    next.delete("selected");
+                    return next.toString();
+                  })()}`}
+                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-zinc-700 font-bold text-sm hover:bg-zinc-100"
+                >
+                  ← กลับรายการ
+                </Link>
+                <span className="text-xs font-mono text-zinc-500">
+                  {props.selectedTicket.ticketCode}
+                </span>
+              </div>
+              <TicketDetailPanel
+                ticket={props.selectedTicket}
+                technicians={props.technicians}
+                canWrite={props.canWrite}
+                canAdmin={props.canAdmin}
+              />
+            </>
           ) : (
             <div className="h-full grid place-items-center text-zinc-400 p-10 text-center">
               <div>
@@ -314,66 +423,6 @@ function setParamHref(sp: URLSearchParams, key: string, value: string): string {
   return next.toString();
 }
 
-function Pill({
-  active,
-  onClick,
-  children,
-  dotClass,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  dotClass?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`h-8 px-2.5 rounded-md text-xs font-bold inline-flex items-center gap-1 border ${
-        active
-          ? "bg-zinc-900 text-white border-zinc-900"
-          : "bg-white text-zinc-700 border-zinc-200 hover:border-zinc-400"
-      }`}
-    >
-      {dotClass && (
-        <span className={`size-2 rounded-full ${dotClass.split(" ")[0]}`} />
-      )}
-      {children}
-    </button>
-  );
-}
-
-function KpiCard({
-  icon,
-  label,
-  value,
-  accent,
-  isMoney,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number | string;
-  accent: "zinc" | "red" | "amber" | "orange" | "emerald";
-  isMoney?: boolean;
-}) {
-  const colorMap: Record<string, string> = {
-    zinc: "bg-zinc-100 text-zinc-700",
-    red: "bg-red-100 text-red-700",
-    amber: "bg-amber-100 text-amber-700",
-    orange: "bg-orange-100 text-orange-700",
-    emerald: "bg-emerald-100 text-emerald-700",
-  };
-  return (
-    <div className="bg-white rounded-xl border border-zinc-200 p-3 flex items-start gap-3">
-      <div className={`size-8 rounded-lg grid place-items-center flex-shrink-0 ${colorMap[accent]}`}>
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-xs font-bold text-zinc-500 truncate">{label}</p>
-        <p className={`font-extrabold text-zinc-900 ${isMoney ? "text-base sm:text-lg" : "text-xl sm:text-2xl"}`}>
-          {value}
-        </p>
-      </div>
-    </div>
-  );
-}
+// Local Pill + KpiCard removed รอบ 46 — moved to:
+//   @/components/ui/filter-pill (FilterPill)
+//   @/components/ui/kpi-tile (KpiTile)

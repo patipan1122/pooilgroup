@@ -23,6 +23,7 @@ export function ProfileForm(props: Props) {
   const [pending, startTransition] = useTransition();
   const [name, setName] = useState(props.name);
   const [phone, setPhone] = useState(props.phone ?? "");
+  const [oldPwd, setOldPwd] = useState("");
   const [pwd, setPwd] = useState("");
   const [pwd2, setPwd2] = useState("");
 
@@ -46,6 +47,10 @@ export function ProfileForm(props: Props) {
 
   function changePassword(e: React.FormEvent) {
     e.preventDefault();
+    if (!oldPwd) {
+      toast.error("กรุณาระบุรหัสผ่านปัจจุบัน");
+      return;
+    }
     if (pwd.length < 8) {
       toast.error("รหัสผ่านอย่างน้อย 8 ตัว");
       return;
@@ -58,7 +63,7 @@ export function ProfileForm(props: Props) {
       const res = await fetch("/api/profile/password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: pwd }),
+        body: JSON.stringify({ oldPassword: oldPwd, password: pwd }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -66,6 +71,7 @@ export function ProfileForm(props: Props) {
         return;
       }
       toast.success("เปลี่ยนรหัสผ่านสำเร็จ");
+      setOldPwd("");
       setPwd("");
       setPwd2("");
     });
@@ -123,6 +129,16 @@ export function ProfileForm(props: Props) {
             <CardTitle>เปลี่ยนรหัสผ่าน</CardTitle>
           </CardHeader>
           <CardBody className="space-y-4">
+            <Field label="รหัสผ่านปัจจุบัน" required>
+              <Input
+                type="password"
+                autoComplete="current-password"
+                value={oldPwd}
+                onChange={(e) => setOldPwd(e.target.value)}
+                prefixSlot={<Lock className="size-4" />}
+                required
+              />
+            </Field>
             <Field label="รหัสผ่านใหม่" required hint="อย่างน้อย 8 ตัว">
               <Input
                 type="password"
@@ -146,7 +162,11 @@ export function ProfileForm(props: Props) {
                 required
               />
             </Field>
-            <Button type="submit" loading={pending} disabled={pending || !pwd || !pwd2}>
+            <Button
+              type="submit"
+              loading={pending}
+              disabled={pending || !oldPwd || !pwd || !pwd2}
+            >
               เปลี่ยนรหัสผ่าน
             </Button>
           </CardBody>

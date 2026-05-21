@@ -207,7 +207,7 @@ export function SearchInterface({ examples }: Props) {
       {/* Example chips */}
       {!result && !loading && (
         <div>
-          <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2">
+          <p className="text-xs font-bold text-zinc-500 mb-2">
             ลองถาม
           </p>
           <div className="flex flex-wrap gap-2">
@@ -228,7 +228,7 @@ export function SearchInterface({ examples }: Props) {
       {/* History */}
       {!result && !loading && history.length > 0 && (
         <div>
-          <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2 flex items-center gap-1.5">
+          <p className="text-xs font-bold text-zinc-500 mb-2 flex items-center gap-1.5">
             <History className="size-3.5" />
             คำค้นล่าสุด
           </p>
@@ -299,7 +299,7 @@ export function SearchInterface({ examples }: Props) {
           {/* Citations panel */}
           {result.citations.length > 0 && (
             <div>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2">
+              <p className="text-xs font-bold text-zinc-500 mb-2">
                 เอกสาร / รถ / บุคคล ที่อ้างอิง
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -391,7 +391,7 @@ function CitationLink({ citation }: { citation: Citation }) {
         <Icon className="size-4" />
       </span>
       <span className="flex-1 min-w-0">
-        <span className="block text-[10px] uppercase tracking-wide text-zinc-500 font-semibold">
+        <span className="block text-xs font-bold text-zinc-500">
           {typeLabel[citation.type]}
         </span>
         <span className="block text-sm text-zinc-900 font-medium truncate">

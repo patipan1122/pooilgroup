@@ -2,7 +2,15 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  experimental: {
+    optimizePackageImports: [
+      "lucide-react",
+      "date-fns",
+      "date-fns-tz",
+      "sonner",
+      "@radix-ui/react-icons",
+    ],
+  },
 };
 
 // Sentry v10 + Next 16 (Turbopack):

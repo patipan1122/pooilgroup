@@ -37,7 +37,7 @@ export function ImpersonationBar({
   }
 
   return (
-    <div className="sticky top-0 z-50 bg-amber-500 text-zinc-900 border-b-2 border-amber-600 shadow-soft">
+    <div className="relative z-50 bg-amber-500 text-zinc-900 border-b-2 border-amber-600 shadow-soft">
       <div className="px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2.5 text-sm font-medium min-w-0">
           <Eye className="size-4 shrink-0" />

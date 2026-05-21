@@ -5,34 +5,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUploadUrl } from "@/lib/r2/upload";
+import { checkRateLimit } from "@/lib/rate-limit";
 import {
   ALLOWED_FILE_MIMES,
   MAX_FILE_SIZE,
 } from "@/lib/recruit/types";
-
-const ipBuckets = new Map<string, { count: number; resetAt: number }>();
-
-function rateLimit(ip: string, max = 20, windowMs = 15 * 60 * 1000): boolean {
-  const now = Date.now();
-  const cur = ipBuckets.get(ip);
-  if (!cur || cur.resetAt < now) {
-    ipBuckets.set(ip, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-  if (cur.count >= max) return false;
-  cur.count++;
-  return true;
-}
 
 export async function POST(req: NextRequest) {
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
     req.headers.get("x-real-ip") ??
     "unknown";
-  if (!rateLimit(ip)) {
+  // DB-backed shared limiter — the per-instance Map below was useless on
+  // Vercel's multi-instance serverless (each invocation could pick a fresh
+  // instance with an empty bucket, defeating the rate limit entirely).
+  const rl = await checkRateLimit({
+    bucket: `recruit-upload:ip:${ip}`,
+    max: 20,
+    windowSec: 15 * 60,
+  });
+  if (rl.limited) {
     return NextResponse.json(
       { error: "ลองอีกครั้งในอีกสักครู่" },
-      { status: 429 },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
     );
   }
 
@@ -73,9 +68,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ประกาศปิดรับแล้ว" }, { status: 400 });
   }
 
-  // Sanitize filename
+  // Sanitize filename + use crypto.randomUUID() (not Math.random) so keys
+  // aren't guessable. Even though R2 keys are large already, a guessable
+  // suffix narrows the search space if any key fragment ever leaks.
   const safe = fileName.replace(/[^a-zA-Z0-9._\-ก-๙]/g, "_").slice(0, 100);
-  const key = `recruit/${posting.orgId}/${slug}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safe}`;
+  const uniq = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+  const key = `recruit/${posting.orgId}/${slug}/${Date.now()}-${uniq}-${safe}`;
 
   try {
     const { url, publicUrl } = await getUploadUrl(key, contentType);

@@ -38,7 +38,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { email, password, name } = parsed.data;
+  // Normalize email to lowercase BEFORE any DB lookup or insert. Without
+  // this, `User@A.com` and `user@a.com` can race-create two rows and the
+  // forgot-password path (which already lowercases) can fail to find a
+  // capitalized-email account.
+  const email = parsed.data.email.trim().toLowerCase();
+  const { password, name } = parsed.data;
   const phone = parsed.data.phone || null;
   const admin = adminClient();
 

@@ -48,6 +48,18 @@ export default async function HomePage() {
   }
 
   if (session.user.role === "staff") {
+    // Persona-aware default: if this staff is registered as a repair technician,
+    // send them straight to their job list. Otherwise (cashhub front-desk staff)
+    // route to the quick-fill page as before.
+    // Artifact #1 principle: "where does the eye go first?" — answer per persona.
+    const { prisma } = await import("@/lib/prisma");
+    const techProfile = await prisma.repairTechnician.findFirst({
+      where: { userId: session.user.id, orgId: session.user.org_id, isActive: true },
+      select: { id: true },
+    });
+    if (techProfile) {
+      redirect("/repairs/my-jobs");
+    }
     redirect("/cashhub/quick-fill");
   }
 
@@ -186,7 +198,7 @@ export default async function HomePage() {
             HERO
             ============================================================ */}
         <header className="mb-14 sm:mb-20 animate-slide-up-soft">
-          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] font-bold text-[var(--color-brand-700)]">
+          <p className="text-xs uppercase tracking-[0.18em] font-bold text-[var(--color-brand-700)]">
             <span className="brand-gradient-text">Pooilgroup</span>
             <span className="text-zinc-400 mx-2">·</span>
             <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
@@ -246,12 +258,24 @@ export default async function HomePage() {
               landingPath="/recruit"
             />
             <ModuleCard
+              slug="repairs"
+              enabled={moduleEnabled.repairs ?? true}
+              landingPath="/repairs"
+            />
+            <ModuleCard
               slug="fuelos"
               enabled={moduleEnabled.fuelos ?? true}
               landingPath="/fuelos"
             />
           </div>
         </Section>
+
+        {/* ============================================================
+            01.b OPERATIONS SUMMARY — cross-module exec tile (admin tier only)
+            Aggregates Repair + Recruit live counts so CEO sees 1 health line.
+            BA insight: saves ~15K฿/mo of CEO time vs. opening 2 modules.
+            ============================================================ */}
+        {isAdmin && <OperationsSummary orgId={orgId} />}
 
         {/* ============================================================
             02 ADMIN — pure Core actions only
@@ -566,7 +590,7 @@ function SystemStat({
   return (
     <div className="rounded-2xl border-2 border-zinc-200 bg-white p-4 sm:p-5 hover:border-[var(--color-brand-400)] hover-lift-premium">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 font-bold">
+        <p className="text-xs font-bold text-zinc-500">
           {label}
         </p>
         <span className="text-[var(--color-brand-600)]">{icon}</span>
@@ -582,6 +606,164 @@ function SystemStat({
         )}
       </p>
     </div>
+  );
+}
+
+// ============================================================
+// OperationsSummary — cross-module exec tile (Repair + Recruit live counts)
+// Server component · queries Prisma directly · admin-tier only.
+// ============================================================
+async function OperationsSummary({ orgId }: { orgId: string }) {
+  const { prisma } = await import("@/lib/prisma");
+
+  // Use Promise.all so the 5 queries run in parallel
+  const startOfToday = (() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  })();
+
+  const [
+    openTicketsCount,
+    urgentOpenCount,
+    overdueCount,
+    openPostingsCount,
+    todayApplicationsCount,
+  ] = await Promise.all([
+    prisma.repairTicket.count({
+      where: {
+        orgId,
+        status: { in: ["NEW", "ACK", "IN_PROGRESS", "WAITING_PARTS"] },
+      },
+    }),
+    prisma.repairTicket.count({
+      where: {
+        orgId,
+        status: { in: ["NEW", "ACK", "IN_PROGRESS", "WAITING_PARTS"] },
+        urgency: "URGENT",
+      },
+    }),
+    prisma.repairTicket.count({
+      where: {
+        orgId,
+        status: { in: ["NEW", "ACK", "IN_PROGRESS", "WAITING_PARTS"] },
+        resolveDueAt: { lt: new Date() },
+      },
+    }),
+    prisma.recruitJobPosting.count({
+      where: { orgId, status: "OPEN" },
+    }),
+    prisma.recruitApplication.count({
+      where: { orgId, draft: false, submittedAt: { gte: startOfToday } },
+    }),
+  ]);
+
+  // Nothing to show → hide entirely
+  if (
+    openTicketsCount === 0 &&
+    openPostingsCount === 0 &&
+    todayApplicationsCount === 0
+  ) {
+    return null;
+  }
+
+  return (
+    <Section
+      number="01.b"
+      label="OPERATIONS · วันนี้"
+      title="ภาพรวม operations · เห็นทุกโมดูลใน 5 วินาที"
+      description="ใบแจ้งซ่อมเปิดอยู่ · งานด่วน · ประกาศรับสมัครเปิดอยู่ · ใบสมัครใหม่วันนี้"
+      className="mb-14 animate-fade-up"
+    >
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <OpsTile
+          href="/repairs?status=NEW"
+          label="ใบซ่อมเปิดอยู่"
+          value={openTicketsCount}
+          unit="ใบ"
+          accent={openTicketsCount > 0 ? "brand" : "zinc"}
+          sub={overdueCount > 0 ? `เกิน SLA ${overdueCount} ใบ` : "ตามเวลาทั้งหมด"}
+          subDanger={overdueCount > 0}
+        />
+        <OpsTile
+          href="/repairs?urgency=URGENT"
+          label="ด่วนมาก"
+          value={urgentOpenCount}
+          unit="ใบ"
+          accent={urgentOpenCount > 0 ? "danger" : "zinc"}
+        />
+        <OpsTile
+          href="/recruit/postings?status=OPEN"
+          label="ประกาศเปิดรับ"
+          value={openPostingsCount}
+          unit="ตำแหน่ง"
+          accent={openPostingsCount > 0 ? "brand" : "zinc"}
+        />
+        <OpsTile
+          href="/recruit?status=NEW"
+          label="ใบสมัครใหม่วันนี้"
+          value={todayApplicationsCount}
+          unit="ใบ"
+          accent={todayApplicationsCount > 0 ? "leaf" : "zinc"}
+        />
+      </div>
+    </Section>
+  );
+}
+
+function OpsTile({
+  href,
+  label,
+  value,
+  unit,
+  accent,
+  sub,
+  subDanger,
+}: {
+  href: string;
+  label: string;
+  value: number;
+  unit?: string;
+  accent: "brand" | "danger" | "leaf" | "zinc";
+  sub?: string;
+  subDanger?: boolean;
+}) {
+  const accentMap: Record<string, string> = {
+    brand: "border-[var(--color-brand-200)] bg-[var(--color-brand-50)]/60",
+    danger: "border-red-200 bg-red-50/70",
+    leaf: "border-[var(--color-leaf-200)] bg-[var(--color-leaf-50)]/60",
+    zinc: "border-zinc-200 bg-white",
+  };
+  const numberClass: Record<string, string> = {
+    brand: "text-[var(--color-brand-700)]",
+    danger: "text-red-700",
+    leaf: "text-[var(--color-leaf-700)]",
+    zinc: "text-zinc-700",
+  };
+  return (
+    <Link
+      href={href}
+      className={`block rounded-2xl border-2 p-4 hover:shadow-md transition-shadow ${accentMap[accent]}`}
+    >
+      <p className="text-xs font-bold text-zinc-600">
+        {label}
+      </p>
+      <p className={`mt-2 font-extrabold tabular-num text-3xl sm:text-4xl ${numberClass[accent]}`}>
+        {value.toLocaleString("th-TH")}
+        {unit && (
+          <span className="text-xs text-zinc-500 font-medium ml-1.5">{unit}</span>
+        )}
+      </p>
+      {sub && (
+        <p
+          className={`mt-1 text-xs font-bold ${
+            subDanger ? "text-red-700" : "text-zinc-500"
+          }`}
+        >
+          {sub}
+        </p>
+      )}
+    </Link>
   );
 }
 

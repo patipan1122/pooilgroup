@@ -21,11 +21,13 @@ export default async function SuccessPage({
           ขอบคุณที่ส่งใบสมัครเข้ามา · ทีม HR จะพิจารณาและติดต่อกลับโดยเร็ว
         </p>
         {ref && (
-          <div className="mt-5 inline-block px-4 py-2 rounded-xl bg-zinc-100">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">
-              เลขที่ใบสมัคร
+          <div className="mt-5 inline-block px-4 py-3 rounded-xl bg-zinc-100">
+            <p className="text-xs text-zinc-600 font-bold">
+              เลขที่ใบสมัคร · ใช้แจ้ง HR เมื่อสอบถาม
             </p>
-            <p className="font-mono text-sm font-bold text-zinc-900 mt-1">{ref}</p>
+            <p className="font-mono text-base font-bold text-zinc-900 mt-1.5 tabular-num">
+              {ref}
+            </p>
           </div>
         )}
         <p className="text-xs text-zinc-500 mt-6">

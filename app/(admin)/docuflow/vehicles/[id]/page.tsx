@@ -122,7 +122,7 @@ export default async function VehicleDetailPage({
       </div>
 
       <header className="mb-6 animate-fade-up">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           📄 DocuFlow · ทะเบียนรถ · {thaiDateLong(new Date())}
         </p>
         <div className="mt-3 flex items-center gap-4 flex-wrap">

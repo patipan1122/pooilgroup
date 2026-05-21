@@ -100,7 +100,7 @@ export function VehicleCard({ vm }: { vm: VehicleCardVm }) {
                   key={d.docType}
                   className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5"
                 >
-                  <p className="text-[10px] uppercase tracking-wide text-zinc-500 font-bold">
+                  <p className="text-xs font-bold text-zinc-500">
                     {d.shortLabel}
                   </p>
                   <Badge tone={t.tone} className="mt-1">

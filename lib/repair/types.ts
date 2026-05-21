@@ -159,3 +159,39 @@ export function formatBaht(cents: number): string {
 export function totalTicketCost(ticket: { partsCostCents: number; laborCostCents: number }): number {
   return ticket.partsCostCents + ticket.laborCostCents;
 }
+
+/**
+ * Downtime cost rate per business type (baht/hour while branch is broken).
+ * Conservative averages — CEO can tune per branch in settings later.
+ * BA insight: surfacing this turns a "ticket counter" into an ROI conversation.
+ */
+export const DOWNTIME_BAHT_PER_HOUR: Record<string, number> = {
+  fuel_station: 5000,        // ตู้จ่ายปั๊มเสีย — ขาดรายได้สูง
+  lpg_station: 3000,
+  lpg_retail: 1500,
+  bottling_plant: 4000,
+  hotel: 300,                 // 1 ห้องโดยเฉลี่ย
+  convenience_store: 1200,    // 7-Eleven sub-tenant
+  ev_station: 2000,
+  cafe: 800,
+  cafe_punthai: 800,
+  massage_chair: 100,
+  claw_machine: 50,
+  training_center: 500,
+  transport: 2000,
+  gas_fleet: 2500,
+};
+
+export function downtimeCostBaht(args: {
+  businessType: string | null | undefined;
+  startedAt: Date | null;
+  endedAt: Date | null;
+}): number {
+  if (!args.startedAt) return 0;
+  const rate = args.businessType ? DOWNTIME_BAHT_PER_HOUR[args.businessType] ?? 0 : 0;
+  if (rate === 0) return 0;
+  const end = args.endedAt ?? new Date();
+  const ms = Math.max(0, end.getTime() - args.startedAt.getTime());
+  const hours = ms / (60 * 60 * 1000);
+  return Math.round(rate * hours);
+}

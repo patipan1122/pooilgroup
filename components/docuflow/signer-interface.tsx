@@ -188,7 +188,7 @@ export function SignerInterface({
     <div className="space-y-4">
       <Card>
         <CardBody className="space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold">
+          <p className="text-xs font-bold text-zinc-500">
             เซ็นเอกสาร
           </p>
           <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight font-display line-clamp-2">

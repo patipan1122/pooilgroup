@@ -12,6 +12,7 @@ import {
   PART_STATUS_COLORS,
   formatBaht,
   totalTicketCost,
+  downtimeCostBaht,
 } from "@/lib/repair/types";
 import { slaStatusFor, slaBadgeColor, slaBadgeLabel } from "@/lib/repair/sla";
 import { TicketActions } from "./ticket-actions";
@@ -39,6 +40,15 @@ function fmtDateTime(d: Date | string | null): string {
 export function TicketDetailPanel({ ticket, technicians, canWrite, canAdmin }: Props) {
   const sla = slaStatusFor(ticket);
   const total = totalTicketCost(ticket);
+  const downtime = downtimeCostBaht({
+    businessType: ticket.branch?.businessType ?? null,
+    startedAt: ticket.createdAt ? new Date(ticket.createdAt) : null,
+    endedAt: ticket.resolvedAt ? new Date(ticket.resolvedAt) : null,
+  });
+  const isOpen =
+    ticket.status !== "RESOLVED" &&
+    ticket.status !== "CLOSED" &&
+    ticket.status !== "CANCELLED";
 
   return (
     <div className="p-4 sm:p-6 space-y-5">
@@ -83,6 +93,23 @@ export function TicketDetailPanel({ ticket, technicians, canWrite, canAdmin }: P
             <p className="text-amber-800 mt-0.5">{ticket.customerImpact}</p>
           </div>
         )}
+        {downtime > 0 && (
+          <div className={`mt-3 rounded-lg border p-3 text-sm flex items-baseline justify-between gap-3 ${
+            isOpen ? "bg-red-50 border-red-200" : "bg-zinc-50 border-zinc-200"
+          }`}>
+            <div>
+              <p className={`font-bold text-sm ${isOpen ? "text-red-700" : "text-zinc-600"}`}>
+                {isOpen ? "🔥 ค่าเสียโอกาส (สดๆ)" : "💰 ค่าเสียโอกาสรวม"}
+              </p>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                ประมาณการจากชนิดสาขา · ทุก ชม. ที่ใบยังเปิดอยู่
+              </p>
+            </div>
+            <p className={`font-extrabold text-xl tabular-num ${isOpen ? "text-red-700" : "text-zinc-700"}`}>
+              {formatBaht(downtime * 100)}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Meta */}
@@ -105,6 +132,54 @@ export function TicketDetailPanel({ ticket, technicians, canWrite, canAdmin }: P
             {ticket.reporterPhone}
           </a>
         </Meta>
+      </div>
+
+      {/* Quick contact bar — call / LINE / map (mobile-first) */}
+      <div className="flex flex-wrap gap-2">
+        <a
+          href={`tel:${ticket.reporterPhone}`}
+          className="inline-flex items-center gap-1.5 h-11 px-3.5 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 active:bg-emerald-800"
+        >
+          <Phone className="size-4" />
+          โทรหาผู้แจ้ง
+        </a>
+        <a
+          href={`https://line.me/R/msg/text/?${encodeURIComponent(
+            `เรียน ${ticket.reporterName}\nใบแจ้งซ่อม ${ticket.ticketCode}\nสถานะ: ${ticket.status}`,
+          )}`}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1.5 h-11 px-3.5 rounded-xl bg-[#06C755] text-white font-bold text-sm hover:opacity-90"
+        >
+          <MessageSquare className="size-4" />
+          ส่ง LINE
+        </a>
+        {ticket.branch && (
+          <a
+            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+              `${ticket.branch.code} ${ticket.branch.name} ${ticket.branch.province ?? ""}`,
+            )}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 h-11 px-3.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700"
+          >
+            <MapPin className="size-4" />
+            แผนที่
+          </a>
+        )}
+        {ticket.assignedTech?.phone && (
+          <a
+            href={`tel:${ticket.assignedTech.phone}`}
+            className="inline-flex items-center gap-1.5 h-11 px-3.5 rounded-xl bg-zinc-900 text-white font-bold text-sm hover:bg-zinc-700"
+          >
+            <Phone className="size-4" />
+            โทรหาช่าง
+          </a>
+        )}
+      </div>
+
+      {/* Timeline meta */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
         <Meta icon={<Clock className="size-4 text-zinc-500" />} label="เปิดเมื่อ">
           {fmtDateTime(ticket.createdAt)}
         </Meta>
@@ -155,7 +230,7 @@ export function TicketDetailPanel({ ticket, technicians, canWrite, canAdmin }: P
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={p.r2PublicUrl} alt={p.caption ?? ""} className="absolute inset-0 size-full object-cover" />
-                <span className="absolute top-1 left-1 px-1.5 h-5 inline-flex items-center rounded text-[10px] font-bold bg-zinc-900/80 text-white">
+                <span className="absolute top-1 left-1 px-1.5 h-5 inline-flex items-center rounded text-xs font-bold bg-zinc-900/85 text-white">
                   {PHOTO_PHASE_LABELS[p.phase as "BEFORE"]}
                 </span>
               </a>
@@ -193,7 +268,7 @@ export function TicketDetailPanel({ ticket, technicians, canWrite, canAdmin }: P
                     <td className="px-3 py-2 text-right">{formatBaht(p.unitPriceCents)}</td>
                     <td className="px-3 py-2 text-right font-bold">{formatBaht(p.unitPriceCents * p.quantity)}</td>
                     <td className="px-3 py-2">
-                      <span className={`inline-flex items-center px-2 h-6 rounded text-[10px] font-bold border ${PART_STATUS_COLORS[p.status]}`}>
+                      <span className={`inline-flex items-center px-2 h-6 rounded text-xs font-bold border ${PART_STATUS_COLORS[p.status]}`}>
                         {PART_STATUS_LABELS[p.status]}
                       </span>
                     </td>
@@ -227,12 +302,12 @@ export function TicketDetailPanel({ ticket, technicians, canWrite, canAdmin }: P
               <span className="absolute left-0 top-1.5 size-2.5 rounded-full bg-[var(--color-brand-500)] border-2 border-white shadow" />
               <div className="bg-zinc-50 rounded-lg border border-zinc-200 p-2.5">
                 <div className="flex items-baseline justify-between gap-2 flex-wrap">
-                  <p className="font-bold text-zinc-900 text-xs">
+                  <p className="font-bold text-zinc-900 text-sm">
                     {EVENT_KIND_LABELS[ev.kind as "CREATED"]}
                   </p>
-                  <p className="text-[11px] text-zinc-500">{fmtDateTime(ev.createdAt)}</p>
+                  <p className="text-xs text-zinc-500">{fmtDateTime(ev.createdAt)}</p>
                 </div>
-                <p className="text-[11px] text-zinc-600 mt-0.5">โดย {ev.actorName}</p>
+                <p className="text-xs text-zinc-600 mt-0.5">โดย {ev.actorName}</p>
                 {(() => {
                   const p = ev.payload as Record<string, unknown> | null;
                   const body = (p?.body as string | undefined) ?? (p?.comment as string | undefined);
@@ -263,7 +338,7 @@ function Meta({
     <div className="flex items-start gap-2">
       <div className="mt-0.5 size-5 grid place-items-center flex-shrink-0">{icon}</div>
       <div className="min-w-0">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">{label}</p>
+        <p className="text-xs font-bold text-zinc-500">{label}</p>
         <p className="text-zinc-900 font-medium text-sm">{children}</p>
       </div>
     </div>

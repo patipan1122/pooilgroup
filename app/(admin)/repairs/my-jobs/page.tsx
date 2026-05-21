@@ -25,6 +25,12 @@ export default async function MyJobsPage() {
           <p className="mt-1 text-sm text-zinc-500">
             แจ้ง admin เพื่อให้เพิ่มชื่อคุณเข้าระบบเป็นช่างใน · จากนั้นกลับมาดูงานที่ถูกมอบหมายได้
           </p>
+          <Link
+            href="/repairs"
+            className="mt-4 inline-flex items-center h-10 px-3 rounded-lg border-2 border-zinc-200 bg-white text-zinc-700 font-bold text-sm hover:bg-zinc-50"
+          >
+            ไปกล่องรับเรื่อง
+          </Link>
         </div>
       </div>
     );
@@ -44,8 +50,16 @@ export default async function MyJobsPage() {
       </header>
 
       {jobs.length === 0 ? (
-        <div className="rounded-2xl border-2 border-dashed border-zinc-300 bg-white p-8 text-center text-zinc-500">
-          ไม่มีงานที่ถูกมอบหมายอยู่ตอนนี้
+        <div className="rounded-2xl border-2 border-dashed border-zinc-300 bg-white p-8 text-center">
+          <HardHat className="size-10 mx-auto text-zinc-300" />
+          <p className="mt-3 font-bold text-zinc-900">ยังไม่มีงานที่ถูกมอบหมาย</p>
+          <p className="mt-1 text-sm text-zinc-500">เมื่อแอดมินมอบหมายใบ จะเข้ามาที่นี่ทันที</p>
+          <Link
+            href="/repairs"
+            className="mt-4 inline-flex items-center h-10 px-3 rounded-lg border-2 border-zinc-200 bg-white text-zinc-700 font-bold text-sm hover:bg-zinc-50"
+          >
+            ดูใบทั้งหมด
+          </Link>
         </div>
       ) : (
         <ul className="space-y-2.5">
@@ -60,10 +74,10 @@ export default async function MyJobsPage() {
                   <div className="flex items-baseline justify-between gap-2 flex-wrap">
                     <p className="font-mono font-bold text-xs text-zinc-500">{t.ticketCode}</p>
                     <div className="flex gap-1.5">
-                      <span className={`inline-flex items-center px-1.5 h-5 rounded text-[10px] font-bold border ${URGENCY_COLORS[t.urgency]}`}>
+                      <span className={`inline-flex items-center px-1.5 h-5 rounded text-xs font-bold border ${URGENCY_COLORS[t.urgency]}`}>
                         {URGENCY_LABELS[t.urgency]}
                       </span>
-                      <span className={`inline-flex items-center px-1.5 h-5 rounded text-[10px] font-bold border ${STATUS_COLORS[t.status]}`}>
+                      <span className={`inline-flex items-center px-1.5 h-5 rounded text-xs font-bold border ${STATUS_COLORS[t.status]}`}>
                         {STATUS_LABELS[t.status]}
                       </span>
                     </div>
@@ -80,7 +94,7 @@ export default async function MyJobsPage() {
                       </span>
                     )}
                     {sla !== "done" && (
-                      <span className={`px-1.5 h-5 inline-flex items-center rounded font-bold border ${slaBadgeColor(sla)}`}>
+                      <span className={`px-1.5 h-5 inline-flex items-center rounded text-xs font-bold border ${slaBadgeColor(sla)}`}>
                         {slaBadgeLabel(sla, t.resolveDueAt)}
                       </span>
                     )}

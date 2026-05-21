@@ -88,7 +88,7 @@ export default async function MyBranchesPage() {
   return (
     <div className="p-4 sm:p-8 lg:p-10 max-w-6xl mx-auto pb-24">
       <header className="mb-10 animate-slide-up-soft">
-        <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-700)] font-bold">
           CASHHUB · MY BRANCHES
           <span className="text-zinc-400 mx-2">·</span>
           <span className="text-zinc-500">{thaiDateLong(new Date())}</span>

@@ -3,6 +3,7 @@
 //
 // Add new counts here, then surface them in admin-shell SidebarBody.
 
+import { unstable_cache } from "next/cache";
 import { adminClient } from "@/lib/db/server";
 
 export interface NavCounts {
@@ -14,7 +15,13 @@ export interface NavCounts {
   pendingCashReports: number;
 }
 
-export async function loadNavCounts(orgId: string): Promise<NavCounts> {
+/** Cache tags emitted per-org. Mutations that change badge counts should
+ *  call `revalidateTag(navCountsTag(orgId))`. */
+export function navCountsTag(orgId: string): string {
+  return `nav-counts:${orgId}`;
+}
+
+async function loadNavCountsUncached(orgId: string): Promise<NavCounts> {
   const admin = adminClient();
 
   const [requestsQ, branchesQ, ubQ, pendingReportsQ] = await Promise.all([
@@ -56,4 +63,15 @@ export async function loadNavCounts(orgId: string): Promise<NavCounts> {
     branchesMissingMgr,
     pendingCashReports: pendingReportsQ.count ?? 0,
   };
+}
+
+// 30-second TTL — sidebar badges are tolerant of slight staleness and the
+// underlying mutations (approve report, accept register request, set branch
+// manager) revalidate the tag explicitly.
+export async function loadNavCounts(orgId: string): Promise<NavCounts> {
+  return unstable_cache(
+    () => loadNavCountsUncached(orgId),
+    ["nav-counts", orgId],
+    { revalidate: 30, tags: [navCountsTag(orgId)] },
+  )();
 }

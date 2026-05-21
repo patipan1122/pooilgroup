@@ -149,17 +149,17 @@ export async function RenewalHistorySection({
         <Card>
           <CardBody>
             <div className="grid grid-cols-12 gap-2 pb-2 border-b border-zinc-200 mb-1">
-              <p className="col-span-4 text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold">
+              <p className="col-span-4 text-xs font-bold text-zinc-500">
                 รายการ
               </p>
-              <p className="col-span-3 text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold">
+              <p className="col-span-3 text-xs font-bold text-zinc-500">
                 ฉบับเก่า · {prior ? `พ.ศ. ${prior.year + 543}` : "—"}
               </p>
               <span className="col-span-1" />
-              <p className="col-span-2 text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold">
+              <p className="col-span-2 text-xs font-bold text-zinc-500">
                 ฉบับใหม่ · พ.ศ. {newest.year + 543}
               </p>
-              <p className="col-span-2 text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold text-right">
+              <p className="col-span-2 text-xs font-bold text-zinc-500 text-right">
                 เปลี่ยน
               </p>
             </div>
@@ -200,7 +200,7 @@ export async function RenewalHistorySection({
         {chain.length >= 3 && (
           <Card data-renewal-timeline="true">
             <CardBody className="space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2">
+              <p className="text-xs font-bold text-zinc-500 mb-2">
                 ประวัติทั้งหมด
               </p>
               {chain.map((node, idx) => {
@@ -241,7 +241,7 @@ export async function RenewalHistorySection({
                     <p className="col-span-5 text-sm text-zinc-700 truncate">
                       {node.document.name}
                       {isCurrent && (
-                        <span className="ml-1.5 text-[10px] uppercase tracking-wider text-[var(--color-brand-700)] font-bold">
+                        <span className="ml-1.5 text-xs font-bold text-[var(--color-brand-700)]">
                           (ฉบับนี้)
                         </span>
                       )}
@@ -269,7 +269,7 @@ export async function RenewalHistorySection({
             <CardBody>
               <div className="flex items-start justify-between gap-2 mb-3">
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold flex items-center gap-1">
+                  <p className="text-xs font-bold text-zinc-500 flex items-center gap-1">
                     <TrendingUp className="size-3.5" />
                     เทรนด์ {series.label}
                   </p>

@@ -312,6 +312,12 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager"],
       },
       {
+        href: "/repairs/recurring",
+        label: "ของพังซ้ำ",
+        icon: AlertTriangle,
+        roles: ["super_admin", "org_admin", "admin", "area_manager"],
+      },
+      {
         href: "/repairs/technicians",
         label: "ช่าง",
         icon: UsersIcon,

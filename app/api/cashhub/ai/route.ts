@@ -172,9 +172,17 @@ async function askGemini(
   const { GoogleGenAI } = await import("@google/genai");
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
-  // Convert history to Gemini contents format
+  // Conversation order: [prior history..., current question]. Same fix
+  // as the Claude branch — appending history after the question confused
+  // the model about which turn to answer.
   const contents: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> =
     [];
+  for (const h of history.slice(-6)) {
+    contents.push({
+      role: h.role === "user" ? "user" : "model",
+      parts: [{ text: h.content }],
+    });
+  }
   contents.push({
     role: "user",
     parts: [
@@ -183,12 +191,6 @@ async function askGemini(
       },
     ],
   });
-  for (const h of history.slice(-6)) {
-    contents.push({
-      role: h.role === "user" ? "user" : "model",
-      parts: [{ text: h.content }],
-    });
-  }
 
   const result = await ai.models.generateContent({
     model: "gemini-2.5-flash",
@@ -215,14 +217,17 @@ async function askClaude(
   const Anthropic = (await import("@anthropic-ai/sdk")).default;
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
+  // Conversation order must be: [prior history..., current question]. The
+  // previous code pushed the current question first then appended history
+  // after, which confused the model about which turn to answer.
   const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
+  for (const h of history.slice(-6)) {
+    messages.push({ role: h.role, content: h.content });
+  }
   messages.push({
     role: "user",
     content: `Context (ข้อมูลล่าสุดของ Pooilgroup):\n${contextText}\n\n---\n\nคำถาม: ${question}`,
   });
-  for (const h of history.slice(-6)) {
-    messages.push({ role: h.role, content: h.content });
-  }
 
   const result = await client.messages.create({
     model: "claude-haiku-4-5-20251001",

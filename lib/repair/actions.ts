@@ -8,7 +8,12 @@ import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { putObject } from "@/lib/r2/upload";
 import { getOrgAdminIds, sendNotificationToMany } from "@/lib/notifications/send";
-import { canRepairWrite, canRepairAdmin } from "./role-guard";
+import { audit } from "@/lib/audit/log";
+import {
+  canRepairWrite,
+  canRepairAdmin,
+  canRepairActOnTicket,
+} from "./role-guard";
 import { computeSlaDates } from "./sla";
 import { normalizePhone, normalizeTicketCode } from "./slug";
 import type {
@@ -181,6 +186,16 @@ export async function createTicket(input: CreateTicketInput): Promise<CreateTick
     }
   }
 
+  // Audit log (works even on public submissions where userId is null)
+  await audit({
+    orgId,
+    userId: createdByUserId,
+    action: "REPAIR_TICKET_CREATED",
+    resourceType: "repair_ticket",
+    resourceId: ticket.id,
+    diff: { new: { ticketCode, title: data.title, urgency: data.urgency, source: data.source } },
+  });
+
   // Notify all org admins
   try {
     const adminIds = await getOrgAdminIds(orgId);
@@ -218,13 +233,18 @@ export async function changeStatus(input: z.input<typeof ChangeStatusSchema>): P
   const parsed = ChangeStatusSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" };
   const session = await requireSession();
-  if (!canRepairWrite(session.user.role)) return { ok: false, error: "ไม่มีสิทธิ์" };
 
   const { ticketId, to, comment } = parsed.data;
   const ticket = await prisma.repairTicket.findFirst({
     where: { id: ticketId, orgId: session.user.org_id },
+    include: { assignedTech: { select: { userId: true } } },
   });
   if (!ticket) return { ok: false, error: "ไม่พบใบ" };
+
+  // Permission: admin tier always; staff only if they're the assigned tech
+  if (!canRepairActOnTicket(session.user.role, session.user.id, ticket.assignedTech?.userId ?? null)) {
+    return { ok: false, error: "ไม่มีสิทธิ์" };
+  }
 
   // Special case: CLOSED is admin-only
   if (to === "CLOSED" && !canRepairAdmin(session.user.role)) {
@@ -263,10 +283,17 @@ export async function changeStatus(input: z.input<typeof ChangeStatusSchema>): P
     }),
   ]);
 
-  // Notify reporter if email exists (and status interesting)
-  if (ticket.reporterEmail && (to === "ACK" || to === "RESOLVED")) {
-    // P-later: send email via Resend
-  }
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action:
+      to === "CLOSED" ? "REPAIR_TICKET_CLOSED"
+      : to === "CANCELLED" ? "REPAIR_TICKET_CANCELLED"
+      : "REPAIR_TICKET_STATUS_CHANGED",
+    resourceType: "repair_ticket",
+    resourceId: ticketId,
+    diff: { old: { status: ticket.status }, new: { status: to } },
+  });
 
   revalidatePath(`/repairs/${ticketId}`);
   revalidatePath("/repairs");
@@ -320,6 +347,18 @@ export async function assignTechnician(input: { ticketId: string; technicianId: 
     }),
   ]);
 
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: input.technicianId ? "REPAIR_TICKET_ASSIGNED" : "REPAIR_TICKET_UNASSIGNED",
+    resourceType: "repair_ticket",
+    resourceId: input.ticketId,
+    diff: {
+      old: { technicianId: ticket.assignedTechId },
+      new: { technicianId: input.technicianId, technicianName: techName },
+    },
+  });
+
   revalidatePath(`/repairs/${input.ticketId}`);
   revalidatePath("/repairs");
   revalidatePath("/repairs/kanban");
@@ -332,10 +371,19 @@ export async function assignTechnician(input: { ticketId: string; technicianId: 
 
 export async function addComment(input: { ticketId: string; body: string }): Promise<{ ok: boolean; error?: string }> {
   const session = await requireSession();
-  if (!canRepairWrite(session.user.role)) return { ok: false, error: "ไม่มีสิทธิ์" };
   const body = input.body.trim();
   if (body.length === 0 || body.length > 1000) {
     return { ok: false, error: "ข้อความ 1-1000 ตัวอักษร" };
+  }
+
+  const ticket = await prisma.repairTicket.findFirst({
+    where: { id: input.ticketId, orgId: session.user.org_id },
+    include: { assignedTech: { select: { userId: true } } },
+  });
+  if (!ticket) return { ok: false, error: "ไม่พบใบ" };
+
+  if (!canRepairActOnTicket(session.user.role, session.user.id, ticket.assignedTech?.userId ?? null)) {
+    return { ok: false, error: "ไม่มีสิทธิ์" };
   }
 
   await prisma.repairTimelineEvent.create({
@@ -371,60 +419,68 @@ export async function addPart(input: z.input<typeof AddPartSchema>): Promise<{ o
   const parsed = AddPartSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
   const session = await requireSession();
-  if (!canRepairWrite(session.user.role)) return { ok: false, error: "ไม่มีสิทธิ์" };
   const d = parsed.data;
 
   const ticket = await prisma.repairTicket.findFirst({
     where: { id: d.ticketId, orgId: session.user.org_id },
+    include: { assignedTech: { select: { userId: true } } },
   });
   if (!ticket) return { ok: false, error: "ไม่พบใบ" };
+  if (!canRepairActOnTicket(session.user.role, session.user.id, ticket.assignedTech?.userId ?? null)) {
+    return { ok: false, error: "ไม่มีสิทธิ์" };
+  }
 
-  const part = await prisma.repairPart.create({
-    data: {
-      orgId: session.user.org_id,
-      ticketId: d.ticketId,
-      name: d.name,
-      spec: d.spec || null,
-      quantity: d.quantity,
-      unit: d.unit,
-      unitPriceCents: d.unitPriceCents,
-      supplier: d.supplier || null,
-      addedById: session.user.id,
-    },
-  });
-
-  // Roll up parts cost on ticket
-  const sum = await prisma.repairPart.aggregate({
-    where: { ticketId: d.ticketId, status: { not: "CANCELLED" } },
-    _sum: { unitPriceCents: true, quantity: true },
-  });
-  // Note: aggregate _sum doesn't multiply qty * price. We compute by iteration.
-  const allParts = await prisma.repairPart.findMany({
-    where: { ticketId: d.ticketId, status: { not: "CANCELLED" } },
-    select: { quantity: true, unitPriceCents: true },
-  });
-  const partsCostCents = allParts.reduce((acc, p) => acc + p.quantity * p.unitPriceCents, 0);
-  await prisma.repairTicket.update({
-    where: { id: d.ticketId },
-    data: { partsCostCents },
-  });
-  void sum; // silence unused
-
-  await prisma.repairTimelineEvent.create({
-    data: {
-      orgId: session.user.org_id,
-      ticketId: d.ticketId,
-      kind: "PART_ADDED",
-      actorUserId: session.user.id,
-      actorName: session.user.name,
-      payload: {
-        partId: part.id,
+  // Race-safe: create + sum + rollup in single transaction so concurrent
+  // addPart calls cannot lose each other's contribution to partsCostCents.
+  const { part, partsCostCents } = await prisma.$transaction(async (tx) => {
+    const part = await tx.repairPart.create({
+      data: {
+        orgId: session.user.org_id,
+        ticketId: d.ticketId,
         name: d.name,
-        spec: d.spec ?? null,
+        spec: d.spec || null,
         quantity: d.quantity,
         unit: d.unit,
+        unitPriceCents: d.unitPriceCents,
+        supplier: d.supplier || null,
+        addedById: session.user.id,
       },
-    },
+    });
+    const all = await tx.repairPart.findMany({
+      where: { ticketId: d.ticketId, status: { not: "CANCELLED" } },
+      select: { quantity: true, unitPriceCents: true },
+    });
+    const partsCostCents = all.reduce((acc, p) => acc + p.quantity * p.unitPriceCents, 0);
+    await tx.repairTicket.update({
+      where: { id: d.ticketId },
+      data: { partsCostCents },
+    });
+    await tx.repairTimelineEvent.create({
+      data: {
+        orgId: session.user.org_id,
+        ticketId: d.ticketId,
+        kind: "PART_ADDED",
+        actorUserId: session.user.id,
+        actorName: session.user.name,
+        payload: {
+          partId: part.id,
+          name: d.name,
+          spec: d.spec ?? null,
+          quantity: d.quantity,
+          unit: d.unit,
+        },
+      },
+    });
+    return { part, partsCostCents };
+  });
+
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "REPAIR_PART_ADDED",
+    resourceType: "repair_part",
+    resourceId: part.id,
+    diff: { new: { ticketId: d.ticketId, name: d.name, qty: d.quantity, unitPriceCents: d.unitPriceCents, partsCostCents } },
   });
 
   revalidatePath(`/repairs/${d.ticketId}`);
@@ -453,12 +509,23 @@ export async function updatePartStatus(input: {
   if (input.status === "DELIVERED" && !part.deliveredAt) stamps.deliveredAt = now;
   if (input.status === "INSTALLED" && !part.installedAt) stamps.installedAt = now;
 
-  await prisma.$transaction([
-    prisma.repairPart.update({
+  // Race-safe: status change may flip CANCELLED ↔ active → rollup must
+  // recompute inside the same transaction.
+  const partsCostCents = await prisma.$transaction(async (tx) => {
+    await tx.repairPart.update({
       where: { id: input.partId },
       data: { status: input.status, ...stamps },
-    }),
-    prisma.repairTimelineEvent.create({
+    });
+    const all = await tx.repairPart.findMany({
+      where: { ticketId: part.ticketId, status: { not: "CANCELLED" } },
+      select: { quantity: true, unitPriceCents: true },
+    });
+    const sum = all.reduce((acc, p) => acc + p.quantity * p.unitPriceCents, 0);
+    await tx.repairTicket.update({
+      where: { id: part.ticketId },
+      data: { partsCostCents: sum },
+    });
+    await tx.repairTimelineEvent.create({
       data: {
         orgId: session.user.org_id,
         ticketId: part.ticketId,
@@ -467,8 +534,18 @@ export async function updatePartStatus(input: {
         actorName: session.user.name,
         payload: { partId: part.id, name: part.name, status: input.status },
       },
-    }),
-  ]);
+    });
+    return sum;
+  });
+
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "REPAIR_PART_STATUS_CHANGED",
+    resourceType: "repair_part",
+    resourceId: input.partId,
+    diff: { old: { status: part.status }, new: { status: input.status, partsCostCents } },
+  });
 
   revalidatePath(`/repairs/${part.ticketId}`);
   revalidatePath("/repairs/parts");
@@ -486,17 +563,23 @@ export async function addPhoto(input: {
   caption?: string;
 }): Promise<{ ok: boolean; error?: string }> {
   const session = await requireSession();
-  if (!canRepairWrite(session.user.role) && session.user.role !== "staff") {
-    return { ok: false, error: "ไม่มีสิทธิ์" };
-  }
 
   const ticket = await prisma.repairTicket.findFirst({
     where: { id: input.ticketId, orgId: session.user.org_id },
+    include: { assignedTech: { select: { userId: true } } },
   });
   if (!ticket) return { ok: false, error: "ไม่พบใบ" };
 
+  if (!canRepairActOnTicket(session.user.role, session.user.id, ticket.assignedTech?.userId ?? null)) {
+    return { ok: false, error: "ไม่มีสิทธิ์" };
+  }
+
   if (!input.dataUrl.startsWith("data:image/")) {
     return { ok: false, error: "ไฟล์ไม่ใช่รูป" };
+  }
+  // Reject SVG entirely (XSS vector if ever rendered inline)
+  if (input.dataUrl.startsWith("data:image/svg")) {
+    return { ok: false, error: "ไฟล์ SVG ไม่รองรับ · ใช้ JPG/PNG/WebP" };
   }
 
   try {
@@ -536,6 +619,14 @@ export async function addPhoto(input: {
         payload: { phase: input.phase, caption: input.caption ?? null },
       },
     });
+    await audit({
+      orgId: session.user.org_id,
+      userId: session.user.id,
+      action: "REPAIR_PHOTO_ADDED",
+      resourceType: "repair_photo",
+      resourceId: input.ticketId,
+      diff: { new: { phase: input.phase } },
+    });
   } catch (e) {
     console.error("[repair.addPhoto] upload failed", e);
     return { ok: false, error: "อัปโหลดรูปไม่สำเร็จ" };
@@ -551,12 +642,15 @@ export async function addPhoto(input: {
 
 export async function setEta(input: { ticketId: string; etaAt: string | null }): Promise<{ ok: boolean; error?: string }> {
   const session = await requireSession();
-  if (!canRepairWrite(session.user.role)) return { ok: false, error: "ไม่มีสิทธิ์" };
 
   const ticket = await prisma.repairTicket.findFirst({
     where: { id: input.ticketId, orgId: session.user.org_id },
+    include: { assignedTech: { select: { userId: true } } },
   });
   if (!ticket) return { ok: false, error: "ไม่พบใบ" };
+  if (!canRepairActOnTicket(session.user.role, session.user.id, ticket.assignedTech?.userId ?? null)) {
+    return { ok: false, error: "ไม่มีสิทธิ์" };
+  }
 
   const etaDate = input.etaAt ? new Date(input.etaAt) : null;
   if (input.etaAt && etaDate && Number.isNaN(etaDate.getTime())) {
@@ -671,15 +765,43 @@ export async function trackLookup(input: { ticketCode: string; phone: string }):
   | { ok: true; ticketId: string; orgId: string }
   | { ok: false; error: string }
 > {
+  // Rate-limit per ticket code + per phone: 5 attempts per 15 min.
+  // (Brute-forcing the 4-digit seq becomes 1500x slower; full sweep = 50 hr.)
+  const { checkRateLimit } = await import("@/lib/rate-limit");
+
   const code = normalizeTicketCode(input.ticketCode);
   if (!code) return { ok: false, error: "เลขที่ใบไม่ถูกต้อง" };
   const phone = normalizePhone(input.phone);
   if (!phone) return { ok: false, error: "เบอร์โทรไม่ถูกต้อง" };
 
+  // Bucket on the ticket-code prefix (catches enumeration of sequential codes)
+  const codeBucket = await checkRateLimit({
+    bucket: `repair:track:code:${code}`,
+    max: 5,
+    windowSec: 15 * 60,
+  });
+  if (codeBucket.limited) {
+    return { ok: false, error: "ลองมากเกินไป · รออีกประมาณ 15 นาที" };
+  }
+
+  // Also bucket per phone (one user trying many codes)
+  const phoneBucket = await checkRateLimit({
+    bucket: `repair:track:phone:${phone}`,
+    max: 10,
+    windowSec: 15 * 60,
+  });
+  if (phoneBucket.limited) {
+    return { ok: false, error: "ลองมากเกินไป · รออีกประมาณ 15 นาที" };
+  }
+
   const ticket = await prisma.repairTicket.findFirst({
     where: { ticketCode: code, reporterPhone: phone },
     select: { id: true, orgId: true },
   });
-  if (!ticket) return { ok: false, error: "ไม่พบใบ · เช็คเลขที่+เบอร์อีกครั้ง" };
+  if (!ticket) {
+    // Constant-ish delay on miss to slow brute-force probing
+    await new Promise((r) => setTimeout(r, 250));
+    return { ok: false, error: "ไม่พบใบ · เช็คเลขที่+เบอร์อีกครั้ง" };
+  }
   return { ok: true, ticketId: ticket.id, orgId: ticket.orgId };
 }

@@ -184,6 +184,18 @@ const fuelStation: BusinessTypeConfig = {
       column: "qty1",
       qtyUnit: "liter",
     },
+    {
+      key: "qty2",
+      label: "จำนวนบิล/คัน",
+      placeholder: "เช่น 142",
+      type: "number",
+      unit: "คัน",
+      group: "sales",
+      required: false,
+      hint: "นับจำนวนรถที่เติม (จากสลิป POS)",
+      column: "qty2",
+      qtyUnit: "car",
+    },
     ...RECEIVED_FIELDS,
     SHORTAGE_FIELD,
     NOTES_FIELD,
@@ -192,6 +204,8 @@ const fuelStation: BusinessTypeConfig = {
 
 // =============================================================
 // 🔵 ปั๊มแก๊ส (LPG filling station — รถยนต์เข้าเติม)
+// 2026-05-21: CEO ยืนยันใช้ "ลิตร" (เดิมระบบเก็บเป็น "ถัง" — ข้อมูลเก่ายังเป็น tank
+// ใน DB · ดูได้จาก qty1Unit ของแต่ละ row)
 // =============================================================
 const lpgStation: BusinessTypeConfig = {
   type: "lpg_station",
@@ -206,14 +220,27 @@ const lpgStation: BusinessTypeConfig = {
   fields: [
     {
       key: "qty1",
-      label: "จำนวนถัง",
-      placeholder: "เช่น 24",
+      label: "จำนวนลิตร",
+      placeholder: "เช่น 1800",
       type: "number",
-      unit: "ถัง",
+      unit: "ลิตร",
       group: "sales",
       required: true,
+      hint: "ลิตรรวมจากมิเตอร์ทุกหัว",
       column: "qty1",
-      qtyUnit: "tank",
+      qtyUnit: "liter",
+    },
+    {
+      key: "qty2",
+      label: "จำนวนบิล/คัน",
+      placeholder: "เช่น 38",
+      type: "number",
+      unit: "คัน",
+      group: "sales",
+      required: false,
+      hint: "นับจำนวนรถที่เติม (จากสลิป POS)",
+      column: "qty2",
+      qtyUnit: "car",
     },
     {
       key: "totalSales",

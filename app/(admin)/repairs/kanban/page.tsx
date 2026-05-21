@@ -13,6 +13,10 @@ export default async function RepairKanbanPage() {
   const session = await requireSession();
   requireRepairAccess(session.user.role);
 
+  // Cap at 500 to avoid unbounded load once tickets accumulate. Older
+  // tickets are out of urgent attention scope — surface a "load more" if
+  // the kanban hits the cap.
+  const KANBAN_TAKE = 500;
   const tickets = await prisma.repairTicket.findMany({
     where: {
       orgId: session.user.org_id,
@@ -24,6 +28,7 @@ export default async function RepairKanbanPage() {
       assignedTech: { select: { id: true, name: true } },
     },
     orderBy: [{ urgency: "asc" }, { createdAt: "desc" }],
+    take: KANBAN_TAKE,
   });
 
   const byStatus = new Map<string, typeof tickets>();
@@ -68,8 +73,8 @@ export default async function RepairKanbanPage() {
                       className="block bg-white rounded-lg border border-zinc-200 p-2.5 hover:border-zinc-400 hover:shadow"
                     >
                       <div className="flex items-baseline justify-between gap-2">
-                        <p className="font-mono font-bold text-[10px] text-zinc-500">{t.ticketCode}</p>
-                        <span className={`text-[10px] font-bold uppercase px-1 h-4 inline-flex items-center rounded border ${URGENCY_COLORS[t.urgency]}`}>
+                        <p className="font-mono font-bold text-xs text-zinc-500">{t.ticketCode}</p>
+                        <span className={`text-xs font-bold px-1.5 h-5 inline-flex items-center rounded border ${URGENCY_COLORS[t.urgency]}`}>
                           {URGENCY_LABELS[t.urgency]}
                         </span>
                       </div>
@@ -77,7 +82,7 @@ export default async function RepairKanbanPage() {
                         {t.category?.emoji && <span className="mr-1">{t.category.emoji}</span>}
                         {t.title}
                       </p>
-                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-zinc-500">
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
                         {t.branch && (
                           <span className="inline-flex items-center gap-0.5">
                             <MapPin className="size-3" />
@@ -86,7 +91,7 @@ export default async function RepairKanbanPage() {
                         )}
                         {t.assignedTech && <span>· {t.assignedTech.name}</span>}
                         {sla !== "done" && (sla === "overdue" || sla === "soon") && (
-                          <span className={`px-1.5 h-4 inline-flex items-center rounded font-bold border ${slaBadgeColor(sla)}`}>
+                          <span className={`px-1.5 h-5 inline-flex items-center rounded text-xs font-bold border ${slaBadgeColor(sla)}`}>
                             {slaBadgeLabel(sla, t.resolveDueAt)}
                           </span>
                         )}

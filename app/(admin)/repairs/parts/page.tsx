@@ -28,23 +28,23 @@ export default async function RepairPartsPage() {
         </p>
       </header>
 
-      {/* Summary */}
+      {/* Summary — รอสั่งโผล่ขึ้นก่อน (สิ่งที่ต้องลงมือทำที่สุด) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-5">
-        <div className="bg-white rounded-xl border border-zinc-200 p-3">
-          <p className="text-xs font-bold text-zinc-500">รายการ</p>
-          <p className="text-xl font-extrabold text-zinc-900">{groups.length}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-zinc-200 p-3">
-          <p className="text-xs font-bold text-zinc-500">รอสั่ง</p>
-          <p className="text-xl font-extrabold text-amber-700">
+        <div className="bg-white rounded-xl border border-amber-200 p-3">
+          <p className="text-xs font-bold text-amber-700">รอสั่ง</p>
+          <p className="text-2xl font-extrabold text-amber-700 tabular-num">
             {rawParts.filter((p) => p.status === "NEEDED").length}
           </p>
         </div>
         <div className="bg-white rounded-xl border border-zinc-200 p-3">
           <p className="text-xs font-bold text-zinc-500">สั่งแล้ว</p>
-          <p className="text-xl font-extrabold text-blue-700">
+          <p className="text-2xl font-extrabold text-blue-700 tabular-num">
             {rawParts.filter((p) => p.status === "ORDERED").length}
           </p>
+        </div>
+        <div className="bg-white rounded-xl border border-zinc-200 p-3">
+          <p className="text-xs font-bold text-zinc-500">รายการรวม</p>
+          <p className="text-2xl font-extrabold text-zinc-900 tabular-num">{groups.length}</p>
         </div>
         <div className="bg-white rounded-xl border border-zinc-200 p-3">
           <p className="text-xs font-bold text-zinc-500">มูลค่ารวม</p>
@@ -58,10 +58,14 @@ export default async function RepairPartsPage() {
           <p className="font-bold text-zinc-900 text-sm">รายการอะไหล่ที่ต้องสั่ง (รวม)</p>
         </header>
         {groups.length === 0 ? (
-          <p className="p-8 text-center text-sm text-zinc-500">ยังไม่มีอะไหล่ที่ต้องสั่ง</p>
+          <div className="p-8 text-center">
+            <PackageSearch className="size-10 mx-auto text-zinc-300" />
+            <p className="mt-3 text-sm font-bold text-zinc-700">ยังไม่มีอะไหล่ที่ต้องสั่ง</p>
+            <p className="mt-1 text-xs text-zinc-500">เพิ่มอะไหล่จากหน้าใบแจ้งซ่อมแต่ละใบ</p>
+          </div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-zinc-50 border-b border-zinc-200">
+            <thead className="sticky top-14 sm:top-16 z-20 bg-zinc-50 border-b border-zinc-200">
               <tr className="text-left text-xs uppercase tracking-wide text-zinc-500">
                 <th className="px-3 py-2 font-bold">อะไหล่</th>
                 <th className="px-3 py-2 font-bold text-right">จำนวนรวม</th>
@@ -80,17 +84,17 @@ export default async function RepairPartsPage() {
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-1">
                       {g.statusBreakdown.NEEDED > 0 && (
-                        <span className="px-1.5 h-5 inline-flex items-center rounded text-[10px] font-bold border bg-amber-50 text-amber-700 border-amber-200">
+                        <span className="px-1.5 h-6 inline-flex items-center rounded text-xs font-bold border bg-amber-50 text-amber-700 border-amber-200">
                           รอสั่ง {g.statusBreakdown.NEEDED}
                         </span>
                       )}
                       {g.statusBreakdown.ORDERED > 0 && (
-                        <span className="px-1.5 h-5 inline-flex items-center rounded text-[10px] font-bold border bg-blue-50 text-blue-700 border-blue-200">
+                        <span className="px-1.5 h-6 inline-flex items-center rounded text-xs font-bold border bg-blue-50 text-blue-700 border-blue-200">
                           สั่งแล้ว {g.statusBreakdown.ORDERED}
                         </span>
                       )}
                       {g.statusBreakdown.DELIVERED > 0 && (
-                        <span className="px-1.5 h-5 inline-flex items-center rounded text-[10px] font-bold border bg-violet-50 text-violet-700 border-violet-200">
+                        <span className="px-1.5 h-6 inline-flex items-center rounded text-xs font-bold border bg-violet-50 text-violet-700 border-violet-200">
                           ของถึง {g.statusBreakdown.DELIVERED}
                         </span>
                       )}
@@ -112,7 +116,10 @@ export default async function RepairPartsPage() {
           <p className="font-bold text-zinc-900 text-sm">รายการแยกตามใบ</p>
         </header>
         {rawParts.length === 0 ? (
-          <p className="p-8 text-center text-sm text-zinc-500">ไม่มี</p>
+          <div className="p-8 text-center">
+            <PackageSearch className="size-10 mx-auto text-zinc-300" />
+            <p className="mt-3 text-sm font-bold text-zinc-700">ไม่มีรายการ</p>
+          </div>
         ) : (
           <ul className="divide-y divide-zinc-100">
             {rawParts.map((p) => (
@@ -133,10 +140,10 @@ export default async function RepairPartsPage() {
                   </Link>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`inline-flex items-center px-2 h-6 rounded text-[10px] font-bold border ${PART_STATUS_COLORS[p.status]}`}>
+                  <span className={`inline-flex items-center px-2 h-6 rounded text-xs font-bold border ${PART_STATUS_COLORS[p.status]}`}>
                     {PART_STATUS_LABELS[p.status]}
                   </span>
-                  <span className={`inline-flex items-center px-1.5 h-6 rounded text-[10px] font-bold border ${URGENCY_COLORS[p.ticket.urgency]}`}>
+                  <span className={`inline-flex items-center px-1.5 h-6 rounded text-xs font-bold border ${URGENCY_COLORS[p.ticket.urgency]}`}>
                     {URGENCY_LABELS[p.ticket.urgency]}
                   </span>
                   <PartStatusButtons partId={p.id} current={p.status} />

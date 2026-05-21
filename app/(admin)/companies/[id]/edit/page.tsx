@@ -31,7 +31,7 @@ export default async function EditCompanyPage({ params }: Props) {
       <BackButton label="กลับ" fallbackHref={`/companies/${id}`} />
 
       <header className="mt-4 mb-10 animate-slide-up-soft">
-        <p className="text-[11px] uppercase tracking-[0.22em] font-bold text-[var(--color-brand-700)]">
+        <p className="text-xs uppercase tracking-[0.18em] font-bold text-[var(--color-brand-700)]">
           แก้ไข · {company.code}
         </p>
         <h1 className="text-3xl sm:text-5xl font-extrabold tracking-[-0.04em] font-display mt-3 leading-[0.95]">

@@ -49,7 +49,7 @@ export default async function DocuFlowOverviewPage() {
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <header className="mb-6 animate-fade-up flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
+          <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
             📄 DocuFlow · {thaiDateLong(new Date())}
           </p>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display mt-3 leading-[1.05]">
@@ -283,7 +283,7 @@ function StatCard({
     <>
       <div className="flex items-center gap-2 text-zinc-500">
         <span className="text-current opacity-70">{icon}</span>
-        <p className="text-[11px] uppercase tracking-[0.16em] font-bold">
+        <p className="text-xs font-bold">
           {label}
         </p>
       </div>

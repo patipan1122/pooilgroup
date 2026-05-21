@@ -466,7 +466,7 @@ function confirmButtonLabel(
 function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-3">
-      <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-semibold">
+      <div className="text-xs font-bold text-zinc-500">
         {label}
       </div>
       <div className="text-lg font-extrabold tracking-tight mt-0.5 tabular-nums">{value}</div>
@@ -502,7 +502,7 @@ function DiffStat({
         : "text-zinc-400";
   return (
     <div className={`rounded-lg border-2 p-2.5 ${toneClass}`}>
-      <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold text-zinc-600">
+      <div className="flex items-center gap-1 text-xs font-bold text-zinc-600">
         <Icon className={`size-3 ${iconClass}`} />
         {label}
       </div>

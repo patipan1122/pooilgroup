@@ -20,6 +20,7 @@ import {
   Bell,
   Lock,
   HardDrive,
+  Bot,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { browserClient } from "@/lib/db/client";
@@ -35,10 +36,32 @@ import {
 import { NotificationBell } from "./notification-bell";
 import { QuickApproveBar } from "./quick-approve-bar";
 import { CompanySwitcher } from "./company-switcher";
+
+// Lazy-mount AiChat: the floating launcher button below is plain HTML, so
+// every admin route renders without paying for the 15-25 KB AiChat bundle.
+// The chat module is only fetched after the user first clicks the button.
 const AiChat = dynamic(
   () => import("@/components/cashhub/ai-chat").then((m) => ({ default: m.AiChat })),
   { ssr: false },
 );
+
+function AiChatLauncher() {
+  const [mounted, setMounted] = useState(false);
+  if (mounted) {
+    return <AiChat defaultOpen />;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setMounted(true)}
+      className="fixed bottom-4 right-4 z-30 size-11 rounded-xl shadow-blue flex items-center justify-center transition-transform hover:scale-105 bg-[var(--color-brand-600)] text-white"
+      aria-label="ถาม AI"
+      title="ถาม AI Assistant"
+    >
+      <Bot className="size-5" />
+    </button>
+  );
+}
 
 /** Sidebar nav-counts surfaced as red badges next to specific menu items.
     Loaded server-side in app/(admin)/layout.tsx via loadNavCounts(orgId). */
@@ -419,8 +442,8 @@ export function AdminShell({
 
       {/* Global floating AI Assistant — available to every signed-in user
           (admins for analysis, branch managers for how-to + their own data).
-          The chat sends current pathname so it can answer page-specific questions. */}
-      <AiChat />
+          Lazy-mounted on first click via AiChatLauncher. */}
+      <AiChatLauncher />
     </div>
   );
 }

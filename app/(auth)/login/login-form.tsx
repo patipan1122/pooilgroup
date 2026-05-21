@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Mail, Lock } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
@@ -14,6 +15,7 @@ export function LoginForm() {
   const [pending, startTransition] = useTransition();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function handleSubmit(e: React.FormEvent) {
@@ -103,16 +105,40 @@ export function LoginForm() {
       <Field label="รหัสผ่าน" required htmlFor="password">
         <Input
           id="password"
-          type="password"
+          type={showPassword ? "text" : "password"}
           name="password"
           autoComplete="current-password"
           placeholder="••••••••"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           prefixSlot={<Lock className="size-4" />}
+          suffixSlot={
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="p-1 -m-1 rounded hover:bg-zinc-100 text-zinc-500 hover:text-zinc-700 transition-colors"
+              aria-label={showPassword ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"}
+              aria-pressed={showPassword}
+              tabIndex={-1}
+            >
+              {showPassword ? (
+                <EyeOff className="size-4" />
+              ) : (
+                <Eye className="size-4" />
+              )}
+            </button>
+          }
           disabled={pending}
           required
         />
+        <div className="mt-1.5 text-right">
+          <Link
+            href="/forgot-password"
+            className="text-xs text-[var(--color-brand-700)] hover:underline font-medium"
+          >
+            ลืมรหัสผ่าน?
+          </Link>
+        </div>
       </Field>
 
       {error && (

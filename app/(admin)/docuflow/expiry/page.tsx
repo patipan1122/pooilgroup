@@ -182,7 +182,7 @@ export default async function ExpiryDashboardPage({
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
       <header className="mb-6 animate-fade-up">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           📄 DocuFlow · {thaiDateLong(new Date())}
         </p>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
@@ -210,7 +210,7 @@ export default async function ExpiryDashboardPage({
         <Card>
           <CardBody className="space-y-4">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2">
+              <p className="text-xs font-bold text-zinc-500 mb-2">
                 บริษัท
               </p>
               <DocumentFilters
@@ -221,7 +221,7 @@ export default async function ExpiryDashboardPage({
               />
             </div>
             <div>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2">
+              <p className="text-xs font-bold text-zinc-500 mb-2">
                 ประเภทธุรกิจ
               </p>
               <DocumentFilters
@@ -232,7 +232,7 @@ export default async function ExpiryDashboardPage({
               />
             </div>
             <div>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2">
+              <p className="text-xs font-bold text-zinc-500 mb-2">
                 สาขา {filterCompany && "(ในบริษัทที่เลือก)"}
               </p>
               <DocumentFilters

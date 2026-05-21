@@ -224,6 +224,36 @@ export async function changeApplicationStatus(
     diff: { old: { status: app.status }, new: { status } },
   });
 
+  // Cross-module hook: HIRED applicant becomes a Repair technician profile
+  // (VENDOR kind by default — no User account assumed at hire time).
+  // This solves BA insight: stops paid techs being invisible to dispatch.
+  if (status === "HIRED") {
+    try {
+      const existing = await prisma.repairTechnician.findFirst({
+        where: {
+          orgId: session.user.org_id,
+          phone: app.applicant.phone,
+          isActive: true,
+        },
+      });
+      if (!existing) {
+        await prisma.repairTechnician.create({
+          data: {
+            orgId: session.user.org_id,
+            kind: "VENDOR",
+            name: app.applicant.fullName,
+            phone: app.applicant.phone,
+            lineId: app.applicant.lineId ?? null,
+            specialties: [],
+            notes: `Auto-created from recruit ${app.refId} · ${app.posting.title}`,
+          },
+        });
+      }
+    } catch (e) {
+      console.error("[recruit→repair auto-create technician] failed", e);
+    }
+  }
+
   // Send notification email (best-effort · no throw on fail)
   const ctx: EmailCtx = {
     applicantName: app.applicant.fullName,
@@ -238,6 +268,7 @@ export async function changeApplicationStatus(
   revalidatePath(`/recruit/applications/${applicationId}`);
   revalidatePath("/recruit/pipeline");
   revalidatePath("/recruit/tasks");
+  if (status === "HIRED") revalidatePath("/repairs/technicians");
 }
 
 export async function setApplicationRating(

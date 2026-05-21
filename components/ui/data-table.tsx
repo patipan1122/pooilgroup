@@ -71,16 +71,19 @@ export function DataTable({
     >
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
+          {/* Sticky thead — long lists keep their column headers visible while
+              the user scrolls the page. Top offset matches admin header height. */}
           <thead>
-            <tr className="bg-zinc-50 border-b-2 border-zinc-200">
+            <tr className="border-b-2 border-zinc-200">
               {columns.map((c) => (
                 <th
                   key={c.key}
                   className={cn(
-                    "px-4 py-3 text-xs uppercase tracking-wider font-bold text-zinc-600",
+                    "px-4 py-3 text-xs uppercase tracking-wider font-bold text-zinc-600 sticky top-14 sm:top-16 z-20 bg-zinc-50",
                     alignClass[c.align ?? "left"],
                     c.className,
                   )}
+                  scope="col"
                 >
                   {c.header}
                 </th>

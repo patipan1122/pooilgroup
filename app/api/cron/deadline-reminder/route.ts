@@ -232,73 +232,80 @@ async function run() {
         }
       }
 
-      const slotBranchCodes: string[] = [];
-      for (const b of toSend) {
-        const emoji = BUSINESS_TYPES[b.business_type]?.emoji ?? "🏢";
-        const isUrgent = slot.urgency === "danger";
-        const head = isUrgent
-          ? "🚨 <b>ด่วน — เหลือ 30 นาที</b>"
-          : "⏰ <b>เตือน — เหลือ 1 ชั่วโมง</b>";
-        const lines = [
-          "━━━━━━━━━━━━━━━━━━━━",
-          head,
-          "━━━━━━━━━━━━━━━━━━━━",
-          `${emoji} <b>${htmlEscape(b.code)}</b> · ${htmlEscape(b.name)}`,
-          `📅 ${today} · Deadline ${b.deadline} น.`,
-          "",
-          `ยังไม่ได้กรอกรายงานวันนี้`,
-          isUrgent
-            ? "⚠️ ถ้าไม่กรอกก่อน Deadline จะถือเป็น <b>missing report</b>"
-            : "กรุณากรอกรายงานก่อนเวลา Deadline",
-          "━━━━━━━━━━━━━━━━━━━━",
-        ];
-        const text = lines.join("\n");
+      // Send per-branch reminders in parallel (was sequential — N branches ×
+      // ~200ms each). Each branch returns {code, delivered, auditRow} so we
+      // can batch the audit_logs insert at the end.
+      const slotResults = await Promise.all(
+        toSend.map(async (b) => {
+          const emoji = BUSINESS_TYPES[b.business_type]?.emoji ?? "🏢";
+          const isUrgent = slot.urgency === "danger";
+          const head = isUrgent
+            ? "🚨 <b>ด่วน — เหลือ 30 นาที</b>"
+            : "⏰ <b>เตือน — เหลือ 1 ชั่วโมง</b>";
+          const lines = [
+            "━━━━━━━━━━━━━━━━━━━━",
+            head,
+            "━━━━━━━━━━━━━━━━━━━━",
+            `${emoji} <b>${htmlEscape(b.code)}</b> · ${htmlEscape(b.name)}`,
+            `📅 ${today} · Deadline ${b.deadline} น.`,
+            "",
+            `ยังไม่ได้กรอกรายงานวันนี้`,
+            isUrgent
+              ? "⚠️ ถ้าไม่กรอกก่อน Deadline จะถือเป็น <b>missing report</b>"
+              : "กรุณากรอกรายงานก่อนเวลา Deadline",
+            "━━━━━━━━━━━━━━━━━━━━",
+          ];
+          const text = lines.join("\n");
 
-        // Prefer LINE Group → fallback to manager's Telegram chat
-        let delivered = false;
-        if (b.line_group_id) {
-          // Telegram bot ส่ง LINE Group ไม่ได้ — ใช้ Telegram group ID เก็บใน
-          // line_group_id field (ตามชื่อ field) กรณีนี้ใช้เป็น chatId Telegram
-          // ถ้า org ใช้ LINE จริงต้องเรียก LINE Push (out-of-scope ของ cron นี้)
-          const r = await sendTelegramMessage({
-            chatId: b.line_group_id,
-            text,
-            parseMode: "HTML",
-          });
-          if (r) delivered = true;
-        }
-        if (!delivered && b.manager_id) {
-          const mgr = managerById.get(b.manager_id);
-          if (mgr?.telegram_chat_id) {
+          let delivered = false;
+          if (b.line_group_id) {
             const r = await sendTelegramMessage({
-              chatId: mgr.telegram_chat_id,
+              chatId: b.line_group_id,
               text,
               parseMode: "HTML",
             });
             if (r) delivered = true;
           }
-        }
+          if (!delivered && b.manager_id) {
+            const mgr = managerById.get(b.manager_id);
+            if (mgr?.telegram_chat_id) {
+              const r = await sendTelegramMessage({
+                chatId: mgr.telegram_chat_id,
+                text,
+                parseMode: "HTML",
+              });
+              if (r) delivered = true;
+            }
+          }
+          return { code: b.code, delivered, branchId: b.id, deadline: b.deadline };
+        }),
+      );
 
-        if (delivered) {
-          totalSent += 1;
-          slotBranchCodes.push(b.code);
-          // Audit log (per-branch) — ถ้าส่งจริง
-          await admin.from("audit_logs").insert({
-            id: crypto.randomUUID(),
-            org_id: org.id,
-            user_id: null,
-            action: slot.action,
-            resource_type: "branch",
-            resource_id: b.id,
-            diff: {
-              new: {
-                slot: slot.label,
-                deadline: b.deadline,
-                report_date: today,
-              },
+      const slotBranchCodes: string[] = [];
+      const auditRows: Array<Record<string, unknown>> = [];
+      for (const r of slotResults) {
+        if (!r.delivered) continue;
+        totalSent += 1;
+        slotBranchCodes.push(r.code);
+        auditRows.push({
+          id: crypto.randomUUID(),
+          org_id: org.id,
+          user_id: null,
+          action: slot.action,
+          resource_type: "branch",
+          resource_id: r.branchId,
+          diff: {
+            new: {
+              slot: slot.label,
+              deadline: r.deadline,
+              report_date: today,
             },
-          });
-        }
+          },
+        });
+      }
+      // Single batched insert instead of one-per-branch.
+      if (auditRows.length > 0) {
+        await admin.from("audit_logs").insert(auditRows);
       }
 
       if (slotBranchCodes.length > 0) {

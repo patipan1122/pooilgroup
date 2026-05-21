@@ -52,18 +52,47 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [companyId, setCompanyId] = useState<string>("");
-  const [branchId, setBranchId] = useState<string>("");
+  // Reporter info persists across submissions (frequent reporters don't retype).
+  // Loaded once on mount via lazy initializer so we don't trigger a hydration flicker.
+  const REPORTER_KEY = "pooil.repair.reporter";
+  const initialReporter = (() => {
+    if (typeof window === "undefined") return { name: "", phone: "", email: "", companyId: "", branchId: "" };
+    try {
+      const raw = window.localStorage.getItem(REPORTER_KEY);
+      return raw ? JSON.parse(raw) : { name: "", phone: "", email: "", companyId: "", branchId: "" };
+    } catch {
+      return { name: "", phone: "", email: "", companyId: "", branchId: "" };
+    }
+  })();
+
+  const [companyId, setCompanyId] = useState<string>(initialReporter.companyId ?? "");
+  const [branchId, setBranchId] = useState<string>(initialReporter.branchId ?? "");
   const [categoryId, setCategoryId] = useState<string>("");
   const [urgency, setUrgency] = useState<"URGENT" | "NORMAL" | "LOW">("NORMAL");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [reporterName, setReporterName] = useState("");
-  const [reporterPhone, setReporterPhone] = useState("");
-  const [reporterEmail, setReporterEmail] = useState("");
+  const [reporterName, setReporterName] = useState(initialReporter.name ?? "");
+  const [reporterPhone, setReporterPhone] = useState(initialReporter.phone ?? "");
+  const [reporterEmail, setReporterEmail] = useState(initialReporter.email ?? "");
   const [photos, setPhotos] = useState<PhotoEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ ticketCode: string; id: string } | null>(null);
+
+  function rememberReporter() {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        REPORTER_KEY,
+        JSON.stringify({
+          name: reporterName.trim(),
+          phone: reporterPhone.trim(),
+          email: reporterEmail.trim(),
+          companyId,
+          branchId,
+        }),
+      );
+    } catch {}
+  }
 
   // When a category is picked, suggest urgency
   function pickCategory(id: string) {
@@ -145,6 +174,8 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
         setError(res.error);
         return;
       }
+      // Persist reporter info so next time we pre-fill (saves repeat typing on phone)
+      rememberReporter();
       setResult({ ticketCode: res.ticketCode, id: res.id });
       router.refresh();
     });
@@ -164,7 +195,7 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
               ทีมงานของ {orgName} ได้รับใบแจ้งซ่อมของคุณแล้ว — เริ่มดำเนินการตามเวลา SLA
             </p>
             <div className="mt-4 rounded-xl bg-white border border-emerald-200 p-4">
-              <p className="text-xs text-zinc-500 uppercase tracking-wide font-bold">เลขที่ใบ</p>
+              <p className="text-xs text-zinc-500 font-bold">เลขที่ใบ</p>
               <div className="flex items-center gap-3 mt-1">
                 <span className="text-3xl font-black tracking-tight text-zinc-900">
                   {result.ticketCode}
@@ -237,19 +268,12 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
 
       {/* Branch */}
       {filteredBranches.length > 0 && (
-        <Field label="สาขา" hint="เลือกสาขาที่เกิดปัญหา (ถ้ารู้)">
-          <select
+        <Field label="สาขา" hint="พิมพ์ค้นหา หรือเลือกจากรายการ">
+          <BranchCombobox
             value={branchId}
-            onChange={(e) => setBranchId(e.target.value)}
-            className="w-full h-12 px-3 rounded-xl border-2 border-zinc-200 bg-white text-zinc-900 font-medium focus:border-[var(--color-brand-500)] outline-none"
-          >
-            <option value="">— ไม่ระบุสาขา —</option>
-            {filteredBranches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.code} · {b.name}
-              </option>
-            ))}
-          </select>
+            options={filteredBranches}
+            onChange={setBranchId}
+          />
         </Field>
       )}
 
@@ -326,7 +350,7 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
                 >
                   <X className="size-3.5" />
                 </button>
-                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-zinc-900/70 to-transparent px-1.5 pb-1 pt-3 text-[10px] text-white font-bold">
+                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-zinc-900/80 to-transparent px-1.5 pb-1 pt-3 text-xs text-white font-bold">
                   {p.sizeKB} KB
                 </div>
               </div>
@@ -472,5 +496,95 @@ function ChipButton({
     <button type="button" onClick={onClick} className={cls}>
       {children}
     </button>
+  );
+}
+
+// Searchable combobox for branches — replaces a 30+-option <select> that's
+// painful on mobile (Galaxy A12 popups can't search). Type to filter.
+function BranchCombobox({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: Branch[];
+  onChange: (id: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const selected = options.find((b) => b.id === value);
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? options.filter(
+        (b) =>
+          b.code.toLowerCase().includes(q) ||
+          b.name.toLowerCase().includes(q),
+      )
+    : options;
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full h-12 px-3 rounded-xl border-2 border-zinc-200 bg-white text-left flex items-center justify-between gap-2 focus:border-[var(--color-brand-500)] outline-none"
+      >
+        <span className={selected ? "text-zinc-900 font-medium truncate" : "text-zinc-400"}>
+          {selected ? `${selected.code} · ${selected.name}` : "— ไม่ระบุสาขา —"}
+        </span>
+        <span className="text-zinc-400 shrink-0">▾</span>
+      </button>
+      {open && (
+        <div className="absolute z-20 mt-1 inset-x-0 bg-white rounded-xl border-2 border-zinc-200 shadow-lg max-h-80 overflow-hidden flex flex-col">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            autoFocus
+            placeholder="พิมพ์ค้นหา · ชื่อสาขา / รหัส"
+            className="h-11 px-3 border-b border-zinc-100 text-sm focus:outline-none"
+          />
+          <ul className="overflow-y-auto flex-1">
+            <li>
+              <button
+                type="button"
+                onClick={() => {
+                  onChange("");
+                  setOpen(false);
+                  setQuery("");
+                }}
+                className={`w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-50 ${
+                  !value ? "bg-[var(--color-brand-50)] font-bold" : ""
+                }`}
+              >
+                — ไม่ระบุสาขา —
+              </button>
+            </li>
+            {filtered.length === 0 ? (
+              <li className="px-3 py-4 text-sm text-zinc-400 text-center">
+                ไม่พบสาขา &quot;{query}&quot;
+              </li>
+            ) : (
+              filtered.map((b) => (
+                <li key={b.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange(b.id);
+                      setOpen(false);
+                      setQuery("");
+                    }}
+                    className={`w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-50 flex items-baseline gap-2 ${
+                      value === b.id ? "bg-[var(--color-brand-50)] font-bold" : ""
+                    }`}
+                  >
+                    <span className="font-mono text-xs text-zinc-500 shrink-0">{b.code}</span>
+                    <span className="truncate">{b.name}</span>
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }

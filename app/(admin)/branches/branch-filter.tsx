@@ -130,7 +130,7 @@ export function BranchFilterAndList({ companies, branches }: Props) {
       {/* Sticky filter bar */}
       <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 py-3 bg-white/85 backdrop-blur-md border-b border-zinc-200 mb-5">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
+          <div className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
             <Filter className="size-3" />
             ตัวกรอง
           </div>

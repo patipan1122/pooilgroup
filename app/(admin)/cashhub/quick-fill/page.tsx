@@ -113,7 +113,7 @@ export default async function QuickFillPage({
         <BackButton label="กลับไปหน้าหลัก" fallbackHref="/home" />
 
         <header className="mt-4 mb-12 animate-slide-up-soft">
-          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">
+          <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-700)] font-bold">
             CASHHUB · QUICK FILL
             <span className="text-zinc-400 mx-2">·</span>
             <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
@@ -182,7 +182,7 @@ export default async function QuickFillPage({
                 <div className="flex flex-wrap gap-3 items-end">
                   {isCross && companies.length > 0 && (
                     <div>
-                      <label className="block text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
+                      <label className="block text-xs font-bold text-zinc-500 mb-1">
                         บริษัท
                       </label>
                       <select
@@ -200,7 +200,7 @@ export default async function QuickFillPage({
                     </div>
                   )}
                   <div>
-                    <label className="block text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
+                    <label className="block text-xs font-bold text-zinc-500 mb-1">
                       ประเภทธุรกิจ
                     </label>
                     <select

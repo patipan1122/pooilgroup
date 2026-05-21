@@ -31,7 +31,7 @@ export default async function LoginPage() {
         <div className="inline-flex items-center justify-center size-16 rounded-2xl bg-[var(--color-brand-600)] text-white mb-6 font-display font-extrabold text-2xl shadow-blue glow-blue">
           P
         </div>
-        <p className="text-[11px] uppercase tracking-[0.22em] font-bold text-[var(--color-brand-700)] mb-3">
+        <p className="text-xs uppercase tracking-[0.18em] font-bold text-[var(--color-brand-700)] mb-3">
           <span className="brand-gradient-text">Pooilgroup</span>{" "}
           ERP
         </p>

@@ -234,7 +234,7 @@ export default async function ReportDetailPage({
 
       {/* Header */}
       <header className="mt-3 mb-5">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           📋 REPORT DETAIL
         </p>
         <div className="flex items-start gap-3 mt-1">
@@ -445,7 +445,7 @@ export default async function ReportDetailPage({
               <CardBody className="space-y-3.5">
                 {avg30 > 0 && (
                   <div>
-                    <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+                    <p className="text-xs font-bold text-zinc-500">
                       เฉลี่ย 30 วัน
                     </p>
                     <div className="flex items-baseline justify-between">
@@ -468,7 +468,7 @@ export default async function ReportDetailPage({
                 )}
 
                 <div>
-                  <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
+                  <p className="text-xs font-bold text-zinc-500 mb-1">
                     7 วันล่าสุด
                   </p>
                   <Sparkline data={days7} width={300} height={36} className="w-full" />
@@ -476,7 +476,7 @@ export default async function ReportDetailPage({
 
                 {target > 0 && (
                   <div>
-                    <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+                    <p className="text-xs font-bold text-zinc-500">
                       เป้าเดือนนี้
                     </p>
                     <div className="flex items-baseline justify-between mb-1.5">
@@ -500,7 +500,7 @@ export default async function ReportDetailPage({
 
                 {otherShifts.length > 0 && (
                   <div>
-                    <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
+                    <p className="text-xs font-bold text-zinc-500 mb-1">
                       กะอื่นวันเดียวกัน
                     </p>
                     <ul className="space-y-1 text-xs">

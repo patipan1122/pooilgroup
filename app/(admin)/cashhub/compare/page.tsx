@@ -256,7 +256,7 @@ export default async function ComparePage({
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
       <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           🔁 COMPARE
         </p>
         <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
@@ -415,7 +415,7 @@ export default async function ComparePage({
         <Card>
           <CardBody className="!p-0">
             <table className="w-full text-sm">
-              <thead className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+              <thead className="text-xs font-bold text-zinc-500">
                 <tr className="border-b border-zinc-100">
                   <th className="text-left p-3">ประเภท</th>
                   <th className="text-right p-3">{fmtMonth(aMonth)}</th>
@@ -557,7 +557,7 @@ function Picker({
 }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+      <span className="text-xs font-bold text-zinc-500">
         {label}
       </span>
       <select
@@ -578,7 +578,7 @@ function Picker({
 function TypePicker({ value }: { value: string }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+      <span className="text-xs font-bold text-zinc-500">
         Filter ประเภท (optional)
       </span>
       <select

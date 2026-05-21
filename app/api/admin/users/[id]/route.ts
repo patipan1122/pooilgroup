@@ -8,6 +8,7 @@ import { zUUID } from "@/lib/zod-helpers";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { canAssignRole, canManageUser } from "@/lib/auth/role-guards";
 
 const PatchSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -89,6 +90,31 @@ export async function PATCH(
 
   if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Privilege-escalation guard: caller must out-rank the existing user.
+  // Without this, an `admin` could rewrite any user (including super_admin).
+  if (
+    !canManageUser(
+      session.user.role,
+      existing.role as Parameters<typeof canManageUser>[1],
+    )
+  ) {
+    return NextResponse.json(
+      { error: "ไม่มีสิทธิ์แก้ไขผู้ใช้ระดับนี้" },
+      { status: 403 },
+    );
+  }
+
+  // And if changing role, caller must be allowed to assign that role too.
+  if (
+    parsed.data.role !== undefined &&
+    !canAssignRole(session.user.role, parsed.data.role)
+  ) {
+    return NextResponse.json(
+      { error: "ไม่มีสิทธิ์มอบ role ระดับนี้" },
+      { status: 403 },
+    );
   }
 
   // Prevent demoting the last super_admin

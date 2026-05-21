@@ -111,7 +111,7 @@ export function SignerRiskSummary({ analysis }: SignerRiskSummaryProps) {
                         key={key}
                         className="rounded-lg bg-zinc-50 border border-zinc-200 p-2.5"
                       >
-                        <p className="text-[10px] uppercase tracking-wide text-zinc-500 font-medium">
+                        <p className="text-xs font-bold text-zinc-500">
                           {key}
                         </p>
                         <p className="text-xs font-medium text-zinc-900 mt-0.5 break-words">

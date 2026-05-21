@@ -161,7 +161,7 @@ export function TechnicianAdmin({ technicians }: { technicians: Tech[] }) {
 
       <div className="bg-white rounded-2xl border border-zinc-200 overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="sticky top-14 sm:top-16 z-20 bg-zinc-50 border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-zinc-500">
             <tr>
               <th className="px-3 py-2 font-bold">ชื่อ</th>
               <th className="px-3 py-2 font-bold">ประเภท</th>

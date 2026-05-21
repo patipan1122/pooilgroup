@@ -107,7 +107,7 @@ export default async function LiffStatusPage() {
                 <div className="mt-2 px-3 py-2 bg-red-50 border border-red-100 rounded-xl">
                   {rejectedReason && (
                     <>
-                      <div className="text-[11px] uppercase tracking-widest text-red-700 font-bold">
+                      <div className="text-xs font-bold text-red-700">
                         เหตุผลที่ไม่อนุมัติ
                       </div>
                       <div className="text-sm text-red-900 mt-0.5">

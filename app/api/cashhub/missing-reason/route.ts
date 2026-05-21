@@ -43,6 +43,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ไม่พบสาขา" }, { status: 404 });
   }
 
+  // branch_manager may only post reasons for branches they're assigned to.
+  // Admin tier (super_admin/org_admin/admin) keeps org-wide reach.
+  if (session.user.role === "branch_manager") {
+    const { count } = await admin
+      .from("user_branches")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", session.user.id)
+      .eq("branch_id", branchId)
+      .eq("is_active", true);
+    if (!count || count < 1) {
+      return NextResponse.json(
+        { error: "ไม่มีสิทธิ์บันทึกเหตุผลของสาขานี้" },
+        { status: 403 },
+      );
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const builder: any = admin.from("missing_report_reasons");
   const { error } = await builder.upsert(

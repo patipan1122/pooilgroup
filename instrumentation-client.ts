@@ -40,7 +40,7 @@ Sentry.init({
   release: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA,
   tracesSampleRate: 0.1,
   replaysSessionSampleRate: 0,
-  replaysOnErrorSampleRate: 1.0,
+  replaysOnErrorSampleRate: 0.1,
   enabled: Boolean(process.env.NEXT_PUBLIC_SENTRY_DSN),
   beforeSend: scrubEvent,
 });

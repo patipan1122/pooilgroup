@@ -115,7 +115,7 @@ export async function StaffHome({
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-3xl mx-auto pb-24">
         {/* Hero */}
         <header className="mb-12 sm:mb-14 animate-slide-up-soft">
-          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] font-bold text-[var(--color-brand-700)]">
+          <p className="text-xs uppercase tracking-[0.18em] font-bold text-[var(--color-brand-700)]">
             <span className="brand-gradient-text">Pooilgroup</span>
             <span className="text-zinc-400 mx-2">·</span>
             <span className="text-zinc-500">{thaiDateLong(new Date())}</span>

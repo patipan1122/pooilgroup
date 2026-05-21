@@ -160,7 +160,7 @@ export default async function MissingPage({
     <div className="relative p-4 sm:p-8 lg:p-12 max-w-5xl mx-auto pb-24">
       <BackButton fallbackHref="/cashhub" label="กลับ" />
       <header className="mt-4 mb-8 animate-slide-up-soft">
-        <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-700)] font-bold">
           CashHub · Missing Reports
         </p>
         <h1 className="text-2xl sm:text-3xl font-extrabold font-display mt-3 leading-tight">

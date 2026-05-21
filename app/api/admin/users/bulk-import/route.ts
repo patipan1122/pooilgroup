@@ -10,6 +10,7 @@ import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
+import { canAssignRole } from "@/lib/auth/role-guards";
 
 const RowSchema = z.object({
   name: z.string().min(1).max(100),
@@ -53,6 +54,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" },
       { status: 400 },
+    );
+  }
+
+  // Privilege-escalation guard: every row's role must be assignable by caller.
+  // Reject the whole batch if any row would over-grant; matches existing
+  // "no partial commit" policy.
+  const overGrant = parsed.data.rows.find(
+    (r) => !canAssignRole(session.user.role, r.role),
+  );
+  if (overGrant) {
+    return NextResponse.json(
+      {
+        error: `ไม่มีสิทธิ์เชิญผู้ใช้ role "${overGrant.role}" — แถว "${overGrant.name}"`,
+      },
+      { status: 403 },
     );
   }
 

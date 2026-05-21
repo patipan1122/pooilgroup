@@ -69,7 +69,7 @@ export default async function OrgRiskPage() {
     <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
       {/* Header */}
       <header className="mb-6 animate-fade-up">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           📄 DocuFlow · {thaiDateLong(new Date())}
         </p>
         <div className="mt-4 flex items-end justify-between gap-3 flex-wrap">
@@ -137,7 +137,7 @@ export default async function OrgRiskPage() {
                 <Clock className="size-5 mt-0.5 text-amber-700 shrink-0" />
               )}
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold">
+                <p className="text-xs font-bold text-zinc-500">
                   สรุปภาพรวม
                 </p>
                 <p className="text-sm sm:text-base font-medium text-zinc-900 mt-1 leading-relaxed">
@@ -165,7 +165,7 @@ export default async function OrgRiskPage() {
                     {r.title}
                   </h3>
                   <div className="rounded-xl border border-zinc-100 bg-zinc-50/60 px-3 py-2.5">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-1">
+                    <p className="text-xs font-bold text-zinc-500 mb-1">
                       ผลกระทบธุรกิจ
                     </p>
                     <p className="text-sm text-zinc-800 leading-relaxed">
@@ -173,7 +173,7 @@ export default async function OrgRiskPage() {
                     </p>
                   </div>
                   <div className="rounded-xl border-2 border-[var(--color-brand-100)] bg-[var(--color-brand-50)] px-3 py-2.5">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-[var(--color-brand-700)] font-bold mb-1">
+                    <p className="text-xs font-bold text-[var(--color-brand-700)] mb-1">
                       แนะนำ
                     </p>
                     <p className="text-sm font-medium text-zinc-900 leading-relaxed">
@@ -263,7 +263,7 @@ function StatCell({
         : "text-zinc-900";
   return (
     <div className="rounded-2xl border-2 border-zinc-200 bg-white p-4">
-      <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold">
+      <p className="text-xs font-bold text-zinc-500">
         {label}
       </p>
       <p

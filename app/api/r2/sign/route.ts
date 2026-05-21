@@ -39,8 +39,15 @@ function isAllowedMime(contentType: string): boolean {
 }
 
 function hasBlockedExtension(filename: string): boolean {
+  // Check EVERY dot-segment, not just the final one. Was: `evil.exe.png`
+  // passed because endsWith(".exe") was false — and if contentType lies
+  // as `image/png` the MIME whitelist also lets it through. By splitting
+  // on `.` we catch double-extension tricks like `report.bat.pdf`.
   const lower = filename.toLowerCase();
-  return BLOCKED_EXTENSIONS.some((ext) => lower.endsWith(ext));
+  const segments = lower.split(".").slice(1); // drop the base name
+  return segments.some((seg) =>
+    BLOCKED_EXTENSIONS.some((ext) => ext === "." + seg),
+  );
 }
 
 export async function POST(req: NextRequest) {

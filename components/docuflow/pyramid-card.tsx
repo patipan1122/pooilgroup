@@ -135,7 +135,7 @@ function Cell({
   }[tone];
   return (
     <div className={`rounded-xl border-2 p-3 ${palette}`}>
-      <p className="text-[10px] uppercase tracking-[0.14em] font-bold opacity-70">
+      <p className="text-xs font-bold opacity-70">
         {label}
       </p>
       <p className="text-2xl font-extrabold tabular-nums mt-1">

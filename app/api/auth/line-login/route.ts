@@ -138,13 +138,25 @@ export async function POST(req: NextRequest) {
       resourceId: user.id,
       diff: { new: { via: "line_liff" } },
     });
-    return NextResponse.json({
+    // Don't return the Supabase action_link in the JSON response — anything
+    // that can read the response (XSS, browser extension, leaked log) becomes
+    // that user. Stash the link in a short-lived httpOnly cookie and have the
+    // client navigate to a server route that consumes it via 302.
+    const response = NextResponse.json({
       matched: true,
       needsLink: false,
       ready: true,
-      magicLink: link,
+      completeUrl: "/api/auth/line-complete",
       user: { id: user.id, name: user.name, role: user.role },
     });
+    response.cookies.set("ll_pending", link, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      path: "/api/auth/line-complete",
+      maxAge: 60, // single-use, expires fast
+    });
+    return response;
   } catch (err) {
     console.error("[line-login]", err);
     return NextResponse.json({ error: "ติดต่อ auth ไม่ได้" }, { status: 500 });

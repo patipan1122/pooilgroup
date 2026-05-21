@@ -104,7 +104,7 @@ export default async function SignaturePlacementPage({
     <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
       <header className="mb-6 animate-fade-up">
         <BackButton fallbackHref={`/docuflow/documents/${id}`} />
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold mt-3">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold mt-3">
           📄 DocuFlow · ตั้งจุดเซ็น · {thaiDateLong(new Date())}
         </p>
         <h1 className="mt-3 text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display leading-[0.95] line-clamp-2">

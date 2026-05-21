@@ -1,6 +1,7 @@
 // Auth helpers — read user session + linked DB user record
 // Strict: throw if not authenticated. Use guards in pages/APIs.
 
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { serverClient, adminClient } from "../db/server";
@@ -41,7 +42,10 @@ export type Session = {
 const USER_COLS =
   "id, org_id, email, name, phone, role, line_user_id, telegram_user_id, telegram_chat_id, is_active";
 
-export async function getSession(): Promise<Session | null> {
+// React `cache()` dedupes calls within the same request — layout + page +
+// nested server components all share one resolved Session per render.
+// Was: 3-4× duplicate Supabase round-trips per admin page nav.
+export const getSession = cache(async (): Promise<Session | null> => {
   const supabase = await serverClient();
   const {
     data: { user: authUser },
@@ -89,7 +93,7 @@ export async function getSession(): Promise<Session | null> {
     email: authUser.email ?? null,
     user: dbUser as DbUser,
   };
-}
+});
 
 export async function requireSession(): Promise<Session> {
   const session = await getSession();

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Lock, Mail } from "lucide-react";
+import { Lock, Mail, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
@@ -21,6 +21,7 @@ export function InviteAcceptForm({ token, email: initialEmail, userId }: Props) 
   const [email, setEmail] = useState(initialEmail ?? "");
   const [password, setPassword] = useState("");
   const [confirmPwd, setConfirmPwd] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function handleSubmit(e: React.FormEvent) {
@@ -88,11 +89,27 @@ export function InviteAcceptForm({ token, email: initialEmail, userId }: Props) 
       </Field>
       <Field label="รหัสผ่าน" required hint="อย่างน้อย 8 ตัว">
         <Input
-          type="password"
+          type={showPassword ? "text" : "password"}
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           prefixSlot={<Lock className="size-4" />}
+          suffixSlot={
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="p-1 -m-1 rounded hover:bg-zinc-100 text-zinc-500 hover:text-zinc-700 transition-colors"
+              aria-label={showPassword ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"}
+              aria-pressed={showPassword}
+              tabIndex={-1}
+            >
+              {showPassword ? (
+                <EyeOff className="size-4" />
+              ) : (
+                <Eye className="size-4" />
+              )}
+            </button>
+          }
           required
           minLength={8}
           disabled={pending}
@@ -100,7 +117,7 @@ export function InviteAcceptForm({ token, email: initialEmail, userId }: Props) 
       </Field>
       <Field label="ยืนยันรหัสผ่าน" required>
         <Input
-          type="password"
+          type={showPassword ? "text" : "password"}
           autoComplete="new-password"
           value={confirmPwd}
           onChange={(e) => setConfirmPwd(e.target.value)}

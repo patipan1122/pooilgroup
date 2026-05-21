@@ -8,6 +8,7 @@ import { audit } from "@/lib/audit/log";
 import { checkBlacklist } from "@/lib/recruit/blacklist-match";
 import { makeApplicationRefId } from "@/lib/recruit/slug";
 import { sendStatusEmail } from "@/lib/recruit/email";
+import { normalizePhone } from "@/lib/repair/slug";
 import {
   FormSchemaSchema,
   type FormSchema,
@@ -41,22 +42,32 @@ export async function submitPublicApplication(
 
   // validate inputs
   if (!input.applicant.fullName.trim()) throw new Error("กรอกชื่อ");
-  if (!/^0\d{8,9}$/.test(input.applicant.phone)) {
-    throw new Error("เบอร์โทรไม่ถูกต้อง");
+  const normalizedPhone = normalizePhone(input.applicant.phone);
+  if (!normalizedPhone) {
+    throw new Error("เบอร์โทรไม่ถูกต้อง (กรอก 9-10 หลัก ขึ้นต้นด้วย 0 หรือ +66)");
   }
-  // file count limit
-  if (input.files.length > 9) throw new Error("ไฟล์เยอะเกิน");
+  // file count limit — keep at 6 to match the shared 6-photo cap
+  if (input.files.length > 6) throw new Error("ไฟล์เกิน 6 ไฟล์");
 
-  // 2. upsert applicant
+  // file path security: every R2 key MUST be scoped to this org+slug
+  // (prevents an attacker from stuffing keys from other postings)
+  for (const f of input.files) {
+    const expectedPrefix = `recruit/${posting.orgId}/${input.slug}/`;
+    if (!f.key.startsWith(expectedPrefix)) {
+      throw new Error("ไฟล์ผิดที่จัดเก็บ · ลองอัปโหลดใหม่");
+    }
+  }
+
+  // 2. upsert applicant (dedup by normalized phone)
   let applicant = await prisma.recruitApplicant.findFirst({
-    where: { orgId: posting.orgId, phone: input.applicant.phone },
+    where: { orgId: posting.orgId, phone: normalizedPhone },
   });
   if (!applicant) {
     applicant = await prisma.recruitApplicant.create({
       data: {
         orgId: posting.orgId,
         fullName: input.applicant.fullName.trim(),
-        phone: input.applicant.phone.trim(),
+        phone: normalizedPhone,
         email: input.applicant.email?.trim() || null,
       },
     });
@@ -68,10 +79,10 @@ export async function submitPublicApplication(
     });
   }
 
-  // 3. blacklist check
+  // 3. blacklist check (use normalized phone for consistent match)
   const bl = await checkBlacklist(posting.orgId, {
     fullName: input.applicant.fullName,
-    phone: input.applicant.phone,
+    phone: normalizedPhone,
   });
 
   // 4. create application

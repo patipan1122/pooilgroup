@@ -79,7 +79,11 @@ export async function POST(req: NextRequest) {
   }
 
   const now = new Date().toISOString();
-  const { error: updateError } = await admin
+  // Atomic guard: only flip from approved → submitted. If another admin
+  // already unlocked between our read and write, this returns 0 rows and
+  // we report a friendly conflict instead of silently clobbering their
+  // unlock_by_id/at (which would lose audit trail).
+  const { data: updated, error: updateError } = await admin
     .from("daily_reports")
     .update({
       status: "submitted",
@@ -90,13 +94,24 @@ export async function POST(req: NextRequest) {
       unlock_at: now,
       updated_at: now,
     })
-    .eq("id", reportId);
+    .eq("id", reportId)
+    .eq("status", "approved")
+    .select("id");
 
   if (updateError) {
     console.error("[POST /cashhub/unlock]", updateError);
     return NextResponse.json(
       { error: "ปลดล็อกไม่สำเร็จ ลองใหม่อีกครั้ง" },
       { status: 500 },
+    );
+  }
+  if (!updated || updated.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          "รายงานนี้ถูก unlock โดยคนอื่นไปแล้ว หรือสถานะเปลี่ยน · รีเฟรชหน้าและลองใหม่",
+      },
+      { status: 409 },
     );
   }
 

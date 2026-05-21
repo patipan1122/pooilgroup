@@ -110,7 +110,7 @@ export default async function BranchesPage() {
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-7xl mx-auto pb-24">
         <header className="mb-10 flex items-end justify-between flex-wrap gap-4 animate-fade-up">
           <div>
-            <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">
+            <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-700)] font-bold">
               จัดการระบบ
               <span className="text-zinc-400 mx-2">·</span>
               <span className="text-zinc-500">{thaiDateLong(new Date())}</span>

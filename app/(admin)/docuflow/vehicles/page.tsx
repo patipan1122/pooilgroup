@@ -176,7 +176,7 @@ export default async function DocuFlowVehiclesPage({
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
       <header className="mb-6 animate-fade-up">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           📄 DocuFlow · ทะเบียนรถ · {thaiDateLong(new Date())}
         </p>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">

@@ -101,8 +101,8 @@ CREATE POLICY "repair_vendor_tokens_org_isolation"
 -- ============================================================
 -- Inserts 8 default categories for every org that doesn't have any yet.
 -- Safe to re-run.
-INSERT INTO public.repair_categories (id, org_id, slug, label, emoji, default_urgency, sort_order, is_active)
-SELECT gen_random_uuid(), o.id, c.slug, c.label, c.emoji, c.default_urgency::"RepairUrgency", c.sort_order, true
+INSERT INTO public.repair_categories (id, org_id, slug, label, emoji, default_urgency, sort_order, is_active, created_at, updated_at)
+SELECT gen_random_uuid(), o.id, c.slug, c.label, c.emoji, c.default_urgency::"RepairUrgency", c.sort_order, true, NOW(), NOW()
 FROM public.organizations o
 CROSS JOIN (
   VALUES
@@ -139,8 +139,8 @@ DECLARE
   v_count INT;
   v_code TEXT;
 BEGIN
-  -- Thai Buddhist Era short year (last 2 digits of พ.ศ. = AD year + 543, mod 100)
-  v_buddhist_year := TO_CHAR((EXTRACT(YEAR FROM NOW())::INT + 543) % 100, 'FM00');
+  -- Thai Buddhist Era (full 4-digit year = AD year + 543) — matches mockup "RP-2569-014"
+  v_buddhist_year := (EXTRACT(YEAR FROM NOW())::INT + 543)::TEXT;
 
   SELECT COUNT(*) + 1
     INTO v_count

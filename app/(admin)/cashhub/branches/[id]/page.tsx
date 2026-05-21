@@ -287,7 +287,7 @@ export default async function BranchDetailPage({
         <div className="flex items-start gap-3">
           <div className="text-2xl sm:text-3xl shrink-0">{cfg?.emoji}</div>
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
+            <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
               BRANCH DETAIL · {today}
             </p>
             <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight font-display mt-0.5">
@@ -320,7 +320,7 @@ export default async function BranchDetailPage({
           {health && (
             <div className="text-center shrink-0">
               <HealthBadge grade={health.grade} score={health.score} size="lg" withScore />
-              <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mt-1">
+              <p className="text-xs uppercase tracking-wide text-zinc-500 font-bold mt-1">
                 Health
               </p>
             </div>
@@ -413,7 +413,7 @@ export default async function BranchDetailPage({
               )}
 
               <Sparkline data={days7} width={400} height={48} className="w-full" />
-              <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+              <p className="text-xs font-bold text-zinc-500">
                 ยอด 7 วันล่าสุด
               </p>
             </div>
@@ -599,7 +599,7 @@ function Stat({
 }) {
   return (
     <div className="rounded-xl bg-zinc-50 border border-zinc-100 p-2.5">
-      <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+      <p className="text-xs font-bold text-zinc-500">
         {label}
       </p>
       <div className="text-base font-extrabold tabular-num font-display mt-0.5 flex items-center gap-1">

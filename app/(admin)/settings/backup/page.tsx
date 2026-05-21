@@ -72,7 +72,7 @@ export default async function BackupSettingsPage() {
       <BackButton label="กลับไปตั้งค่าระบบ" fallbackHref="/settings" />
 
       <div className="mt-4 mb-10 animate-slide-up-soft">
-        <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-700)] font-bold">
           ตั้งค่าระบบ · Backup
         </p>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.02em] font-display mt-3 leading-tight">

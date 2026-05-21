@@ -146,7 +146,7 @@ export default async function DocumentDetailPage({
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <header className="mb-6 animate-fade-up">
         <BackButton fallbackHref="/docuflow/documents" />
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold mt-3">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold mt-3">
           📄 DocuFlow · {thaiDateLong(new Date())}
         </p>
         <div className="mt-3 flex items-start justify-between gap-3 flex-wrap">
@@ -267,7 +267,7 @@ export default async function DocumentDetailPage({
                 <div className="flex items-start gap-2.5">
                   <Building2 className="size-4 text-zinc-400 mt-0.5" />
                   <div>
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold">
+                    <p className="text-xs font-bold text-zinc-500">
                       ระดับ
                     </p>
                     <p className="text-sm text-zinc-900 font-medium mt-0.5">
@@ -280,7 +280,7 @@ export default async function DocumentDetailPage({
                 <div className="flex items-start gap-2.5">
                   <UserIcon className="size-4 text-zinc-400 mt-0.5" />
                   <div className="min-w-0">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold">
+                    <p className="text-xs font-bold text-zinc-500">
                       เจ้าของ
                     </p>
                     <p className="text-sm text-zinc-900 font-medium mt-0.5 truncate">
@@ -291,7 +291,7 @@ export default async function DocumentDetailPage({
                 <div className="flex items-start gap-2.5">
                   <CalendarClock className="size-4 text-zinc-400 mt-0.5" />
                   <div>
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold">
+                    <p className="text-xs font-bold text-zinc-500">
                       อัปโหลดเมื่อ
                     </p>
                     <p className="text-sm text-zinc-900 font-medium mt-0.5">

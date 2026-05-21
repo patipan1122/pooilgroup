@@ -38,7 +38,7 @@ export default async function DocuFlowBrowsePage() {
             <ArrowLeft className="size-4" />
             กลับ
           </Link>
-          <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold mt-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold mt-3">
             📄 DocuFlow · {thaiDateLong(new Date())}
           </p>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display mt-3 leading-[1.05]">

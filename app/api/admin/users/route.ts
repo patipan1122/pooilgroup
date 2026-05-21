@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
+import { canAssignRole } from "@/lib/auth/role-guards";
 
 const InviteSchema = z.object({
   name: z.string().min(1).max(100),
@@ -50,6 +51,16 @@ export async function POST(req: NextRequest) {
   }
 
   const data = parsed.data;
+
+  // Privilege-escalation guard: caller can only invite users at a role rank
+  // strictly below their own (super_admin can grant peer-level super_admin).
+  if (!canAssignRole(session.user.role, data.role)) {
+    return NextResponse.json(
+      { error: "ไม่มีสิทธิ์เชิญผู้ใช้ระดับนี้" },
+      { status: 403 },
+    );
+  }
+
   const admin = adminClient();
   const orgId = session.user.org_id;
   const now = new Date().toISOString();

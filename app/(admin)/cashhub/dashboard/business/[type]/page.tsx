@@ -78,7 +78,7 @@ export default async function BusinessDrillPage({
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <BackLink />
       <header className="mb-6 mt-3">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
           <span className="text-2xl">{cfg.emoji}</span>
           BUSINESS DRILL-DOWN
         </p>
@@ -197,7 +197,7 @@ function StatBox({
   return (
     <Card>
       <CardBody className="!p-3 sm:!p-4">
-        <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+        <p className="text-xs font-bold text-zinc-500">
           {label}
         </p>
         <div

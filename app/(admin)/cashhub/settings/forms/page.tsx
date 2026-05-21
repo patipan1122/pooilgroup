@@ -65,7 +65,7 @@ export default async function FormsListPage() {
 
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-5xl mx-auto pb-24">
         <div className="mb-10 animate-slide-up-soft">
-          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">
+          <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-700)] font-bold">
             CashHub · ตั้งค่า
           </p>
           <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-5 leading-[0.95]">

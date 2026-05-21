@@ -363,7 +363,7 @@ export function FormEditor({
             {emoji}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-brand-700)] font-bold">
+            <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-700)] font-bold">
               ฟอร์มกรอกยอด
             </p>
             <h1 className="text-xl sm:text-2xl font-extrabold tracking-[-0.02em] font-display leading-tight">
@@ -471,7 +471,7 @@ export function FormEditor({
           {/* Editor column */}
           <div className="space-y-2">
             <div className="flex items-center justify-between mb-0.5 px-0.5">
-              <h2 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+              <h2 className="text-xs font-bold text-zinc-500">
                 ตั้งค่าช่อง ({defaults.fields.length} ช่อง)
               </h2>
             </div>
@@ -637,7 +637,7 @@ export function FormEditor({
             {/* Custom fields section — admin can add new fields beyond built-in spec */}
             <div className="mt-6 pt-4 border-t-2 border-dashed border-zinc-200">
               <div className="flex items-center justify-between mb-2 px-0.5">
-                <h2 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                <h2 className="text-xs font-bold text-zinc-500">
                   ฟิลด์ที่เพิ่มเอง ({customFields.length})
                 </h2>
                 <Button
@@ -678,7 +678,7 @@ export function FormEditor({
           <div>
             <div className="lg:sticky lg:top-4">
               <div className="flex items-center justify-between mb-2 px-0.5">
-                <h2 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                <h2 className="text-xs font-bold text-zinc-500">
                   พนักงานจะเห็นแบบนี้
                 </h2>
                 <Badge tone="brand" className="!text-[10px]">
@@ -883,7 +883,7 @@ function CompactField({
 }) {
   return (
     <label className="block">
-      <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">
+      <span className="text-xs font-bold text-zinc-500">
         {label}
       </span>
       <input

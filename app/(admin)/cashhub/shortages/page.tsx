@@ -229,7 +229,7 @@ export default async function ShortagesPage({
       <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
       <header className="mt-3 mb-6 flex items-end justify-between gap-4 flex-wrap">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
+          <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
             <AlertCircle className="size-4" /> SHORTAGE
           </p>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.03em] font-display mt-4 leading-tight">
@@ -255,7 +255,7 @@ export default async function ShortagesPage({
             {/* Row 1: Quick range + Month picker */}
             <div className="flex flex-wrap gap-3 items-end">
               <label className="flex flex-col gap-1.5 min-w-[160px]">
-                <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+                <span className="text-xs font-bold text-zinc-500">
                   ช่วงด่วน
                 </span>
                 <select
@@ -274,7 +274,7 @@ export default async function ShortagesPage({
               </label>
 
               <label className="flex flex-col gap-1.5 min-w-[160px]">
-                <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+                <span className="text-xs font-bold text-zinc-500">
                   เลือกเดือน
                 </span>
                 <select
@@ -292,7 +292,7 @@ export default async function ShortagesPage({
               </label>
 
               <label className="flex flex-col gap-1.5">
-                <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+                <span className="text-xs font-bold text-zinc-500">
                   จากวันที่
                 </span>
                 <input
@@ -304,7 +304,7 @@ export default async function ShortagesPage({
               </label>
 
               <label className="flex flex-col gap-1.5">
-                <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+                <span className="text-xs font-bold text-zinc-500">
                   ถึงวันที่
                 </span>
                 <input
@@ -319,7 +319,7 @@ export default async function ShortagesPage({
             {/* Row 2: Branch + Person search + Group toggle */}
             <div className="flex flex-wrap gap-3 items-end">
               <label className="flex flex-col gap-1.5 min-w-[180px]">
-                <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+                <span className="text-xs font-bold text-zinc-500">
                   สาขา
                 </span>
                 <select
@@ -337,7 +337,7 @@ export default async function ShortagesPage({
               </label>
 
               <label className="flex flex-col gap-1.5 flex-1 min-w-[180px]">
-                <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+                <span className="text-xs font-bold text-zinc-500">
                   ค้นชื่อพนักงาน
                 </span>
                 <input
@@ -349,7 +349,7 @@ export default async function ShortagesPage({
               </label>
 
               <label className="flex flex-col gap-1.5">
-                <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+                <span className="text-xs font-bold text-zinc-500">
                   มุมมอง
                 </span>
                 <select

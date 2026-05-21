@@ -54,7 +54,7 @@ export function ApplyClient({
           }}
         />
       </div>
-      <p className="text-center text-[11px] text-zinc-400 mt-6">
+      <p className="text-center text-xs text-zinc-500 mt-6">
         Pooilgroup · ข้อมูลส่วนบุคคลถูกเก็บตามมาตรฐาน PDPA
       </p>
     </div>

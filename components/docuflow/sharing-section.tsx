@@ -98,7 +98,7 @@ export function SharingSection({
                 const cfg = BUSINESS_TYPES[type];
                 return (
                   <div key={type} className="space-y-1.5">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold">
+                    <p className="text-xs font-bold text-zinc-500">
                       <span className="mr-1">{cfg?.emoji ?? "📋"}</span>
                       {cfg?.label ?? type}
                       <span className="ml-1.5 tabular-nums text-zinc-400 font-normal">

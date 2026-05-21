@@ -330,9 +330,18 @@ export async function loadDashboard(orgId: string, companyId?: string) {
     } | null;
     daysSinceLastReport: number | null;
   };
+  // Pre-bucket monthReports by branch_id once — was O(branches × reports)
+  // per branch summary (40 × 1200 = 48k iterations on a healthy org).
+  const monthByBranch = new Map<string, typeof monthReports>();
+  for (const r of monthReports) {
+    const list = monthByBranch.get(r.branch_id) ?? [];
+    list.push(r);
+    monthByBranch.set(r.branch_id, list);
+  }
+
   const branchSummaries: BranchSummary[] = branches.map((b) => {
-    const monthTotal = monthReports
-      .filter((r) => r.branch_id === b.id && r.status === "approved")
+    const monthTotal = (monthByBranch.get(b.id) ?? [])
+      .filter((r) => r.status === "approved")
       .reduce((s, r) => s + Number(r.total_sales || 0), 0);
     const target = targetByBranch.get(b.id) ?? 0;
     const progressPct = target > 0 ? (monthTotal / target) * 100 : 0;

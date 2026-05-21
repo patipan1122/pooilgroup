@@ -72,6 +72,48 @@
   --shadow-pop: 0 16px 64px -16px rgb(0 0 0 / 0.18);
   --shadow-blue: 0 8px 24px -8px oklch(0.50 0.25 264 / 0.30);
   --shadow-leaf: 0 8px 24px -8px oklch(0.55 0.20 148 / 0.30);
+
+  /* ----------------------------------------------------------------
+   * Semantic tokens (Polish Team รอบ 45 Agent C audit)
+   * Use these instead of hardcoded values for consistent visual language.
+   * ---------------------------------------------------------------- */
+
+  /* Surface radius — pick by intent, not size */
+  --radius-card: 12px;       /* default surface card (inbox row, KPI tile) */
+  --radius-pill: 6px;        /* status pill, filter pill */
+  --radius-button: 12px;     /* primary CTA, secondary button */
+  --radius-input: 12px;      /* form input default */
+  --radius-modal: 16px;      /* dialog / drawer */
+
+  /* Border weight — rule: 1px default, 2px for emphasis only (alert/banner/active) */
+  --border-card: 1px;
+  --border-emphasis: 2px;
+
+  /* Eyebrow microtypography — single source of truth */
+  --eyebrow-size: 12px;        /* text-xs · was scattered 10/11/12px */
+  --eyebrow-tracking: 0.18em;  /* was scattered .16/.18/.22 */
+
+  /* Focus ring — unify keyboard a11y across inputs */
+  --ring-focus: 2px var(--color-brand-300);
+
+  /* List-row selected state — unify recruit + repair inbox highlights */
+  --surface-list-selected: var(--color-brand-50);
+  --accent-list-selected: var(--color-brand-600);
+}
+
+/* Utility class — Thai-safe eyebrow (avoid uppercase walls per Polish รอบ 45) */
+.eyebrow {
+  font-size: var(--eyebrow-size);
+  letter-spacing: var(--eyebrow-tracking);
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+.eyebrow-uppercase {
+  font-size: var(--eyebrow-size);
+  letter-spacing: var(--eyebrow-tracking);
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
 }
 
 /* ============================================================

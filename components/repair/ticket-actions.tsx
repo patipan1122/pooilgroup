@@ -5,6 +5,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   changeStatus,
   assignTechnician,
@@ -17,6 +18,12 @@ import {
 import { STATUS_LABELS, STATUS_TRANSITIONS } from "@/lib/repair/types";
 import type { RepairTicketStatus, RepairPhotoPhase, RepairPartStatus } from "@/lib/generated/prisma/enums";
 import { Loader2, Plus, Camera, MessageSquare, Wrench, PackageSearch, Clock, AlertCircle } from "lucide-react";
+
+// Status transitions that warrant a confirm dialog (irreversible or near-so)
+const CONFIRM_TRANSITIONS: Partial<Record<RepairTicketStatus, string>> = {
+  CLOSED: "ปิดถาวรแล้วจะ reopen ไม่ได้ · ยืนยัน?",
+  CANCELLED: "ยกเลิกใบนี้?",
+};
 
 interface Technician { id: string; name: string; kind: "INTERNAL" | "VENDOR"; isActive: boolean }
 
@@ -79,6 +86,72 @@ export function TicketActions({
     });
   }
 
+  // Status change with confirm-on-destructive + 5-second undo toast on cancel.
+  function attemptStatusChange(to: RepairTicketStatus) {
+    const confirmMsg = CONFIRM_TRANSITIONS[to];
+    if (confirmMsg && typeof window !== "undefined" && !window.confirm(confirmMsg)) {
+      return;
+    }
+    setError(null);
+    const previous = currentStatus;
+    startTransition(async () => {
+      const r = await changeStatus({ ticketId, to });
+      if (!r.ok) {
+        setError(r.error ?? "ผิดพลาด");
+        return;
+      }
+      router.refresh();
+      // Offer undo for cancel (state machine allows CANCELLED → NEW)
+      if (to === "CANCELLED") {
+        toast.success(`ยกเลิกใบ ${ticketId.slice(0, 8)}…`, {
+          duration: 6000,
+          action: {
+            label: "เลิกการยกเลิก",
+            onClick: () => {
+              startTransition(async () => {
+                const back = await changeStatus({ ticketId, to: previous });
+                if (back.ok) {
+                  toast.success("ใบกลับมาเปิดแล้ว");
+                  router.refresh();
+                }
+              });
+            },
+          },
+        });
+      }
+    });
+  }
+
+  // Assign/unassign with 6-second undo
+  function attemptAssign(nextTechId: string | null) {
+    setError(null);
+    const previousTechId = currentTechId;
+    startTransition(async () => {
+      const r = await assignTechnician({ ticketId, technicianId: nextTechId });
+      if (!r.ok) {
+        setError(r.error ?? "ผิดพลาด");
+        return;
+      }
+      router.refresh();
+      toast.success(nextTechId ? "มอบหมายช่างแล้ว" : "ปลดช่างแล้ว", {
+        duration: 6000,
+        action: {
+          label: "เลิกทำ",
+          onClick: () => {
+            startTransition(async () => {
+              const back = await assignTechnician({ ticketId, technicianId: previousTechId });
+              if (back.ok) {
+                setTechId(previousTechId ?? "");
+                toast.success("กลับค่าเดิมแล้ว");
+                router.refresh();
+              }
+            });
+          },
+        },
+      });
+    });
+  }
+
   const nextStatuses = STATUS_TRANSITIONS[currentStatus] ?? [];
 
   async function handlePhotoFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -110,19 +183,24 @@ export function TicketActions({
       {/* Status transitions */}
       {nextStatuses.length > 0 && (
         <div>
-          <p className="text-xs font-bold text-zinc-500 uppercase tracking-wide mb-1.5">
+          <p className="text-xs font-bold text-zinc-500 mb-1.5">
             เปลี่ยนสถานะ
           </p>
           <div className="flex flex-wrap gap-1.5">
             {nextStatuses.map((s) => {
               if (s === "CLOSED" && !canAdmin) return null;
+              const isDestructive = s === "CLOSED" || s === "CANCELLED";
               return (
                 <button
                   key={s}
                   type="button"
                   disabled={isPending}
-                  onClick={() => run(() => changeStatus({ ticketId, to: s }))}
-                  className="h-9 px-3 rounded-lg bg-white border-2 border-zinc-200 text-zinc-800 font-bold text-xs hover:border-zinc-900 disabled:opacity-50"
+                  onClick={() => attemptStatusChange(s)}
+                  className={`h-9 px-3 rounded-lg border-2 font-bold text-xs disabled:opacity-50 ${
+                    isDestructive
+                      ? "bg-white border-red-200 text-red-700 hover:border-red-400"
+                      : "bg-white border-zinc-200 text-zinc-800 hover:border-zinc-900"
+                  }`}
                 >
                   → {STATUS_LABELS[s]}
                 </button>
@@ -135,7 +213,7 @@ export function TicketActions({
       {/* Assign technician */}
       <div className="flex gap-2 items-end">
         <div className="flex-1">
-          <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">
+          <label className="text-xs font-bold text-zinc-500">
             ช่างที่ดูแล
           </label>
           <select
@@ -154,7 +232,7 @@ export function TicketActions({
         <button
           type="button"
           disabled={isPending || techId === (currentTechId ?? "")}
-          onClick={() => run(() => assignTechnician({ ticketId, technicianId: techId || null }))}
+          onClick={() => attemptAssign(techId || null)}
           className="h-10 px-3 rounded-lg bg-zinc-900 text-white font-bold text-xs hover:bg-zinc-700 disabled:opacity-50"
         >
           <Wrench className="size-3.5 inline mr-1" />
@@ -165,7 +243,7 @@ export function TicketActions({
       {/* ETA */}
       <div className="flex gap-2 items-end">
         <div className="flex-1">
-          <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">ETA</label>
+          <label className="text-xs font-bold text-zinc-500">ETA</label>
           <input
             type="datetime-local"
             value={eta}
@@ -186,7 +264,7 @@ export function TicketActions({
 
       {/* Add comment */}
       <div>
-        <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">
+        <label className="text-xs font-bold text-zinc-500">
           เพิ่มคอมเมนต์ / โน้ตภายใน
         </label>
         <textarea
@@ -216,7 +294,7 @@ export function TicketActions({
 
       {/* Add photo */}
       <div className="flex flex-wrap gap-2 items-center">
-        <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">เพิ่มรูป</label>
+        <label className="text-xs font-bold text-zinc-500">เพิ่มรูป</label>
         <select
           value={photoPhase}
           onChange={(e) => setPhotoPhase(e.target.value as RepairPhotoPhase)}
@@ -369,7 +447,7 @@ export function PartStatusButtons({
               router.refresh();
             })
           }
-          className="h-7 px-2 rounded text-[10px] font-bold border border-zinc-300 text-zinc-700 bg-white hover:bg-zinc-50 disabled:opacity-50"
+          className="h-9 px-2.5 rounded-md text-xs font-bold border border-zinc-300 text-zinc-700 bg-white hover:bg-zinc-50 disabled:opacity-50"
         >
           → {n.label}
         </button>

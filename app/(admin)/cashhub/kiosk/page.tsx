@@ -70,7 +70,7 @@ export default async function KioskPage() {
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
       <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
           <Sofa className="size-4" /> KIOSK
         </p>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1">
@@ -248,7 +248,7 @@ function Stat({
 }) {
   return (
     <div className="p-4">
-      <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+      <p className="text-xs font-bold text-zinc-500">
         {label}
       </p>
       <div className="text-xl font-extrabold tabular-num font-display mt-0.5">

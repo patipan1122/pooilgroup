@@ -84,28 +84,6 @@ export function ReportForm({
 }: Props) {
   const router = useRouter();
   const [shift, setShift] = useState<string>(config.shifts[0] || "all");
-  const [now, setNow] = useState<Date>(() => new Date());
-
-  // Tick the clock every 30s for the deadline countdown
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(id);
-  }, []);
-
-  const deadline = useMemo(() => {
-    const [h, m] = deadlineHHmm.split(":").map((x) => parseInt(x, 10));
-    const d = new Date();
-    d.setHours(h ?? 21, m ?? 0, 0, 0);
-    return d;
-  }, [deadlineHHmm]);
-
-  const remainingMs = deadline.getTime() - now.getTime();
-  const isPastDeadline = remainingMs <= 0;
-  const remainingHours = Math.max(0, Math.floor(remainingMs / (1000 * 60 * 60)));
-  const remainingMinutes = Math.max(
-    0,
-    Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60)),
-  );
   const [values, setValues] = useState<FormValues>(() =>
     Object.fromEntries(config.fields.map((f) => [f.key, ""])),
   );
@@ -417,16 +395,7 @@ export function ReportForm({
             ) : (
               <Badge tone="brand">{reportDate}</Badge>
             )}
-            <div
-              className={cn(
-                "text-[11px] mt-0.5 tabular-num font-semibold",
-                isPastDeadline ? "text-red-700" : "text-zinc-500",
-              )}
-            >
-              {isPastDeadline
-                ? `⏰ เลย Deadline ${deadlineHHmm} แล้ว`
-                : `⏰ เหลือ ${remainingHours}:${String(remainingMinutes).padStart(2, "0")} ก่อน ${deadlineHHmm}`}
-            </div>
+            <DeadlineCountdown deadlineHHmm={deadlineHHmm} />
           </div>
         </div>
         {streak && streak.current >= 1 && (
@@ -799,6 +768,48 @@ export function ReportForm({
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Isolated countdown chip — owns the 30s setInterval that would otherwise
+ * re-render the entire 800-line ReportForm (incl. controlled inputs).
+ * Was: every keystroke could collide with a clock tick mid-typing.
+ */
+function DeadlineCountdown({ deadlineHHmm }: { deadlineHHmm: string }) {
+  const [now, setNow] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const deadline = useMemo(() => {
+    const [h, m] = deadlineHHmm.split(":").map((x) => parseInt(x, 10));
+    const d = new Date();
+    d.setHours(h ?? 21, m ?? 0, 0, 0);
+    return d;
+  }, [deadlineHHmm]);
+
+  const remainingMs = deadline.getTime() - now.getTime();
+  const isPastDeadline = remainingMs <= 0;
+  const remainingHours = Math.max(0, Math.floor(remainingMs / (1000 * 60 * 60)));
+  const remainingMinutes = Math.max(
+    0,
+    Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60)),
+  );
+
+  return (
+    <div
+      className={cn(
+        "text-[11px] mt-0.5 tabular-num font-semibold",
+        isPastDeadline ? "text-red-700" : "text-zinc-500",
+      )}
+    >
+      {isPastDeadline
+        ? `⏰ เลย Deadline ${deadlineHHmm} แล้ว`
+        : `⏰ เหลือ ${remainingHours}:${String(remainingMinutes).padStart(2, "0")} ก่อน ${deadlineHHmm}`}
     </div>
   );
 }

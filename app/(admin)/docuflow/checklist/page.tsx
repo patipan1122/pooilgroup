@@ -138,7 +138,7 @@ export default async function DocuFlowChecklistPage() {
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
       <header className="mb-6 animate-fade-up">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           📄 DocuFlow · {thaiDateLong(new Date())}
         </p>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
@@ -160,7 +160,7 @@ export default async function DocuFlowChecklistPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Card className="hover-lift">
             <CardBody className="p-4">
-              <p className="text-[11px] uppercase tracking-[0.16em] font-bold text-zinc-500">
+              <p className="text-xs font-bold text-zinc-500">
                 ตามกฎหมายต้องมี
               </p>
               <p className="mt-2 text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight text-zinc-900">
@@ -173,7 +173,7 @@ export default async function DocuFlowChecklistPage() {
           </Card>
           <Card className="hover-lift">
             <CardBody className="p-4">
-              <p className="text-[11px] uppercase tracking-[0.16em] font-bold text-green-700">
+              <p className="text-xs font-bold text-green-700">
                 อัปโหลดครบแล้ว
               </p>
               <p className="mt-2 text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight text-green-700">
@@ -186,7 +186,7 @@ export default async function DocuFlowChecklistPage() {
           </Card>
           <Card className="hover-lift">
             <CardBody className="p-4">
-              <p className="text-[11px] uppercase tracking-[0.16em] font-bold text-rose-700">
+              <p className="text-xs font-bold text-rose-700">
                 ยังขาด
               </p>
               <p className="mt-2 text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight text-rose-700">
@@ -197,7 +197,7 @@ export default async function DocuFlowChecklistPage() {
           </Card>
           <Card className="hover-lift">
             <CardBody className="p-4">
-              <p className="text-[11px] uppercase tracking-[0.16em] font-bold text-[var(--color-brand-700)]">
+              <p className="text-xs font-bold text-[var(--color-brand-700)]">
                 Compliance
               </p>
               <p className="mt-2 text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight text-[var(--color-brand-700)]">
@@ -253,7 +253,7 @@ export default async function DocuFlowChecklistPage() {
                       >
                         {pct}%
                       </p>
-                      <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-zinc-400">
+                      <p className="text-xs uppercase tracking-wide font-bold text-zinc-400">
                         Compliance
                       </p>
                     </div>
@@ -280,7 +280,7 @@ export default async function DocuFlowChecklistPage() {
                       <div>
                         <div className="flex items-center gap-2 mb-2">
                           <XCircle className="size-3.5 text-rose-700" />
-                          <p className="text-[11px] uppercase tracking-[0.16em] font-bold text-rose-700">
+                          <p className="text-xs font-bold text-rose-700">
                             ยังไม่มี ({r.missing.length})
                           </p>
                         </div>
@@ -328,7 +328,7 @@ export default async function DocuFlowChecklistPage() {
                       <div>
                         <div className="flex items-center gap-2 mb-2">
                           <CheckCircle2 className="size-3.5 text-green-700" />
-                          <p className="text-[11px] uppercase tracking-[0.16em] font-bold text-green-700">
+                          <p className="text-xs font-bold text-green-700">
                             อัปโหลดแล้ว ({r.matched.length})
                           </p>
                         </div>

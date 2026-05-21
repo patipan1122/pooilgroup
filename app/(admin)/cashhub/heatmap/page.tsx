@@ -73,7 +73,7 @@ export default async function HeatmapPage() {
     <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
       <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
       <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
           <CalendarDays className="size-4" /> HEATMAP
         </p>
         <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[1]">

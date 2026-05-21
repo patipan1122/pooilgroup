@@ -60,3 +60,45 @@ export function isExecutiveRole(role: DbUser["role"]): boolean {
 export function isAdminTier(role: DbUser["role"]): boolean {
   return ADMIN_TIER_ROLES.includes(role);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Role-hierarchy helpers — prevent privilege escalation in user-management APIs.
+// Rule: a caller may only assign / modify users whose role rank is < caller's.
+// Without this, an `admin`-tier user could grant `super_admin` to themselves
+// or another user via the PATCH endpoint.
+// ─────────────────────────────────────────────────────────────────────────────
+export const ROLE_RANK: Record<DbUser["role"], number> = {
+  super_admin: 100,
+  org_admin: 80,
+  admin: 60,
+  area_manager: 40,
+  branch_manager: 30,
+  staff: 20,
+  driver: 15,
+  viewer: 10,
+};
+
+export function roleRank(role: DbUser["role"]): number {
+  return ROLE_RANK[role] ?? 0;
+}
+
+/** Can `caller` assign `target` as a role on another user (or themselves)?
+ *  Rule: caller must STRICTLY out-rank target. super_admin can assign super_admin
+ *  (peers); admin cannot grant org_admin/super_admin. */
+export function canAssignRole(
+  caller: DbUser["role"],
+  target: DbUser["role"],
+): boolean {
+  if (caller === "super_admin") return true; // super_admin can assign anything
+  return roleRank(caller) > roleRank(target);
+}
+
+/** Can `caller` modify `existing` user at all? Same rule as assignment —
+ *  caller must out-rank existing. super_admin can manage anyone including peers. */
+export function canManageUser(
+  caller: DbUser["role"],
+  existing: DbUser["role"],
+): boolean {
+  if (caller === "super_admin") return true;
+  return roleRank(caller) > roleRank(existing);
+}

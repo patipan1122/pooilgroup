@@ -45,8 +45,10 @@ export function LiffBootstrap({
           }),
         });
         const json = await res.json();
-        if (!cancelled && json.ready && json.magicLink) {
-          window.location.href = json.magicLink as string;
+        if (!cancelled && json.ready && json.completeUrl) {
+          // Navigate to the server route; the Supabase action_link is held
+          // in an httpOnly cookie set by line-login (never seen by JS).
+          window.location.href = json.completeUrl as string;
           return;
         }
         if (!cancelled && json.needsLink) {

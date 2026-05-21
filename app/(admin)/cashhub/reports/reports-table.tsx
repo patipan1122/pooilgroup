@@ -156,7 +156,7 @@ export function ReportsBoard({
         <CardBody className="!py-3 !px-4">
           <div className="flex items-center gap-2 mb-2.5">
             <Filter className="size-3.5 text-zinc-400" />
-            <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+            <span className="text-xs font-bold text-zinc-500">
               สถานะ
             </span>
           </div>
@@ -209,7 +209,7 @@ export function ReportsBoard({
 
           <div className="flex items-center gap-2 mb-2.5">
             <Filter className="size-3.5 text-zinc-400" />
-            <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+            <span className="text-xs font-bold text-zinc-500">
               ประเภทธุรกิจ
             </span>
           </div>
@@ -254,7 +254,7 @@ export function ReportsBoard({
             )}
             {filterType && <input type="hidden" name="type" value={filterType} />}
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+              <span className="text-xs font-bold text-zinc-500">
                 วันที่
               </span>
               <input
@@ -414,7 +414,7 @@ export function ReportsBoard({
                   <div className="text-base font-extrabold tabular-num font-display">
                     {formatBahtCompact(g.totalSales)}
                   </div>
-                  <div className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
+                  <div className="text-xs uppercase tracking-wide text-zinc-400 font-bold">
                     Approved
                   </div>
                 </div>
@@ -536,7 +536,7 @@ function ReportTable({
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-zinc-100 bg-zinc-50/40 text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+          <tr className="border-b border-zinc-100 bg-zinc-50/40 text-xs font-bold text-zinc-500">
             <th className="w-9 p-3"></th>
             <th className="text-left p-3">สาขา</th>
             <th className="text-left p-3 hidden sm:table-cell">วันที่</th>

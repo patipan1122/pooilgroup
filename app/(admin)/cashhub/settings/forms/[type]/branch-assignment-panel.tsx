@@ -255,7 +255,7 @@ export function BranchAssignmentPanel({
                 </div>
                 {isOnOtherTpl && !isOn && otherTplLabel && (
                   <span
-                    className="text-[10px] uppercase tracking-wider font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md shrink-0"
+                    className="text-xs font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md shrink-0"
                     title={`สาขานี้ตอนนี้ใช้ ${otherTplLabel} · ติ๊กที่นี่จะย้ายมา`}
                   >
                     ตอนนี้ใช้ {otherTplLabel}
@@ -263,7 +263,7 @@ export function BranchAssignmentPanel({
                 )}
                 {isOnDefault && !isOn && (
                   <span
-                    className="text-[10px] uppercase tracking-wider font-bold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded-md shrink-0"
+                    className="text-xs font-bold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded-md shrink-0"
                     title="ใช้ v1 default · ติ๊กที่นี่จะย้ายมา"
                   >
                     ใช้ v1 default
