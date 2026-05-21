@@ -44,7 +44,7 @@ import {
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
-export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet";
+export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops";
 export type ModuleStatus = "active" | "coming_soon" | "beta";
 
 export interface NavItem {
@@ -293,7 +293,13 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     nav: [
       {
         href: "/repairs",
-        label: "กล่องรับเรื่อง",
+        label: "ภาพรวม Command",
+        icon: LayoutDashboard,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"],
+      },
+      {
+        href: "/repairs/triage",
+        label: "Triage Inbox",
         icon: Inbox,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"],
       },
@@ -302,6 +308,12 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         label: "Kanban",
         icon: KanbanSquare,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/repairs/table",
+        label: "ใบทั้งหมด · ตาราง",
+        icon: Layers,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"],
       },
       {
         href: "/repairs/my-jobs",
@@ -404,6 +416,100 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         href: "/clawfleet/settings",
         label: "ตั้งค่า",
         icon: Settings,
+        adminOnly: true,
+      },
+    ],
+  },
+  chairops: {
+    slug: "chairops",
+    name: "เก้าอี้นวด",
+    tagline: "บริหาร 30 สาขา · ตรวจเงิน · แม่บ้าน · ของเสีย",
+    description:
+      "ระบบจัดการเก้าอี้นวด 30 สาขา · บันทึกรอบเก็บเงินจากแม่บ้าน · cross-check กับ POS · ของเสีย/อะไหล่ · ความสะอาด",
+    emoji: "💆",
+    Icon: Sparkles,
+    status: "active",
+    basePath: "/chairops",
+    nav: [
+      {
+        href: "/chairops/dashboard",
+        label: "ภาพรวม",
+        icon: LayoutDashboard,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"],
+      },
+      {
+        href: "/chairops/dashboard/all-branches",
+        label: "สาขาทั้งหมด",
+        icon: Building2,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"],
+      },
+      {
+        href: "/chairops/collect",
+        label: "รอบเก็บเงิน (แม่บ้าน)",
+        icon: ClipboardCheck,
+      },
+      {
+        href: "/chairops/pos-ingest",
+        label: "อัปโหลด POS",
+        icon: Upload,
+        roles: ["super_admin", "org_admin", "admin", "area_manager"],
+      },
+      {
+        href: "/chairops/reconcile",
+        label: "Reconcile",
+        icon: GitCompare,
+        roles: ["super_admin", "org_admin", "admin", "area_manager"],
+      },
+      {
+        href: "/chairops/alerts",
+        label: "Alerts",
+        icon: AlertCircle,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/chairops/write-offs",
+        label: "Write-off",
+        icon: ShieldX,
+        roles: ["super_admin", "org_admin", "admin"],
+      },
+      {
+        href: "/chairops/cleanliness",
+        label: "ความสะอาด",
+        icon: CheckSquare,
+      },
+      {
+        href: "/chairops/damage",
+        label: "ของเสีย",
+        icon: Wrench,
+      },
+      {
+        href: "/chairops/parts",
+        label: "อะไหล่",
+        icon: PackageSearch,
+        roles: ["super_admin", "org_admin", "admin", "area_manager"],
+      },
+      {
+        href: "/chairops/accounts",
+        label: "บัญชีธนาคาร",
+        icon: Coins,
+        roles: ["super_admin", "org_admin", "admin", "area_manager"],
+      },
+      {
+        href: "/chairops/reports",
+        label: "รายงาน",
+        icon: ScrollText,
+        roles: ["super_admin", "org_admin", "admin", "area_manager"],
+      },
+      {
+        href: "/chairops/users",
+        label: "ผู้ใช้ ChairOps",
+        icon: UsersIcon,
+        adminOnly: true,
+      },
+      {
+        href: "/chairops/audit",
+        label: "Audit ChairOps",
+        icon: ScrollText,
         adminOnly: true,
       },
     ],

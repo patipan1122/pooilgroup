@@ -10,6 +10,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  schemas  = ["public", "chairops"]
 }
 
 // =============================================================
@@ -109,6 +110,7 @@ model Organization {
   cfStockMovements        CfStockMovement[]
 
   @@map("organizations")
+  @@schema("public")
 }
 
 // =============================================================
@@ -140,6 +142,7 @@ model Company {
   @@unique([orgId, code])
   @@index([orgId, isActive])
   @@map("companies")
+  @@schema("public")
 }
 
 // =============================================================
@@ -154,6 +157,7 @@ enum UserRole {
   driver // FuelOS Phase 2
   viewer // Read-only (accountant / HR)
   org_admin // [deprecated alias — kept for back-compat, will migrate to admin]
+  @@schema("public")
 }
 
 model User {
@@ -246,6 +250,7 @@ model User {
   @@index([orgId, role])
   @@index([lineUserId])
   @@map("users")
+  @@schema("public")
 }
 
 // =============================================================
@@ -266,6 +271,7 @@ enum BusinessType {
   training_center // ศูนย์ฝึกอบรม
   transport // FuelOS Phase 2
   gas_fleet // FuelOS Phase 2
+  @@schema("public")
 }
 
 model Branch {
@@ -319,6 +325,7 @@ model Branch {
   @@index([companyId, isActive])
   @@index([parentBranchId])
   @@map("branches")
+  @@schema("public")
 }
 
 // =============================================================
@@ -329,6 +336,7 @@ enum RentalType {
   fixed_monthly // ค่าเช่ารายเดือนตายตัว
   percentage // % ของยอดขายผู้เช่า
   mixed // ทั้ง fixed + %
+  @@schema("public")
 }
 
 model BranchRental {
@@ -355,6 +363,7 @@ model BranchRental {
   @@index([hostBranchId, isActive])
   @@index([tenantBranchId])
   @@map("branch_rentals")
+  @@schema("public")
 }
 
 // =============================================================
@@ -376,6 +385,7 @@ model UserBranch {
   @@index([orgId])
   @@index([branchId, isActive])
   @@map("user_branches")
+  @@schema("public")
 }
 
 // =============================================================
@@ -397,6 +407,7 @@ model ReportTemplate {
 
   @@index([orgId])
   @@map("report_templates")
+  @@schema("public")
 }
 
 // =============================================================
@@ -407,6 +418,7 @@ enum ReportStatus {
   submitted
   approved
   rejected
+  @@schema("public")
 }
 
 enum Shift {
@@ -414,6 +426,7 @@ enum Shift {
   midday
   evening
   all
+  @@schema("public")
 }
 
 model DailyReport {
@@ -480,6 +493,7 @@ model DailyReport {
   @@index([branchId, reportDate])
   @@index([branchId, shift, reportDate])
   @@map("daily_reports")
+  @@schema("public")
 }
 
 // =============================================================
@@ -507,6 +521,7 @@ model ReportDraft {
   @@index([orgId, userId])
   @@index([branchId, reportDate])
   @@map("report_drafts")
+  @@schema("public")
 }
 
 // =============================================================
@@ -520,6 +535,7 @@ enum BugStatus {
   acked
   fixed
   closed
+  @@schema("public")
 }
 
 model BugReport {
@@ -546,6 +562,7 @@ model BugReport {
   @@index([orgId, status, createdAt])
   @@index([reporterId, createdAt])
   @@map("bug_reports")
+  @@schema("public")
 }
 
 // =============================================================
@@ -573,6 +590,7 @@ model CashShortage {
   @@index([personId, reportDate])
   @@index([branchId, reportDate])
   @@map("cash_shortages")
+  @@schema("public")
 }
 
 // =============================================================
@@ -603,6 +621,7 @@ model AuditLog {
   @@index([userId, createdAt])
   @@index([action, createdAt])
   @@map("audit_logs")
+  @@schema("public")
 }
 
 // =============================================================
@@ -630,6 +649,7 @@ model Notification {
   // Ultraview audit 2026-05-21 — org-wide unread count + admin firehose
   @@index([orgId, isRead, createdAt])
   @@map("notifications")
+  @@schema("public")
 }
 
 // =============================================================
@@ -653,6 +673,7 @@ model UserSession {
   @@index([userId, loginAt])
   @@index([orgId, loginAt])
   @@map("user_sessions")
+  @@schema("public")
 }
 
 // =============================================================
@@ -680,6 +701,7 @@ model RegisterRequest {
 
   @@index([orgId, status, createdAt])
   @@map("register_requests")
+  @@schema("public")
 }
 
 // =============================================================
@@ -699,6 +721,7 @@ model OrgModule {
   // Ultraview audit 2026-05-21 — module-switcher lookup per org
   @@index([orgId, isActive])
   @@map("org_modules")
+  @@schema("public")
 }
 
 // =============================================================
@@ -720,6 +743,7 @@ model UserModule {
   @@index([userId, isActive])
   @@index([orgId, moduleName, isActive])
   @@map("user_modules")
+  @@schema("public")
 }
 
 // =============================================================
@@ -739,6 +763,7 @@ model BranchGroup {
 
   @@index([orgId, groupType])
   @@map("branch_groups")
+  @@schema("public")
 }
 
 model BranchGroupMember {
@@ -751,6 +776,7 @@ model BranchGroupMember {
   @@unique([groupId, branchId])
   @@index([branchId])
   @@map("branch_group_members")
+  @@schema("public")
 }
 
 // =============================================================
@@ -769,6 +795,7 @@ model Holiday {
 
   @@unique([orgId, date])
   @@map("holidays")
+  @@schema("public")
 }
 
 // =============================================================
@@ -790,6 +817,7 @@ model TelegramSubscription {
   @@unique([userId, botName])
   @@index([orgId, botName, isActive])
   @@map("telegram_subscriptions")
+  @@schema("public")
 }
 
 // =============================================================
@@ -810,6 +838,7 @@ model TelegramGroup {
 
   @@index([orgId, module, isActive])
   @@map("telegram_groups")
+  @@schema("public")
 }
 
 // =============================================================
@@ -831,6 +860,7 @@ model TelegramPairingToken {
   @@index([token])
   @@index([userId, usedAt])
   @@map("telegram_pairing_tokens")
+  @@schema("public")
 }
 
 // =============================================================
@@ -853,6 +883,7 @@ model BranchTarget {
   @@unique([branchId, year, month])
   @@index([orgId, year, month])
   @@map("branch_targets")
+  @@schema("public")
 }
 
 // =============================================================
@@ -875,6 +906,7 @@ model BranchHealthScore {
   @@index([orgId, computedFor])
   @@index([branchId, computedFor])
   @@map("branch_health_scores")
+  @@schema("public")
 }
 
 // =============================================================
@@ -894,6 +926,7 @@ model BranchStreak {
 
   @@index([orgId])
   @@map("branch_streaks")
+  @@schema("public")
 }
 
 // =============================================================
@@ -915,6 +948,7 @@ model MissingReportReason {
   @@unique([branchId, reportDate])
   @@index([orgId, reportDate])
   @@map("missing_report_reasons")
+  @@schema("public")
 }
 
 // =============================================================
@@ -954,6 +988,7 @@ model Document {
   @@index([orgId, uploadedAt])
   @@index([orgId, documentType])
   @@map("documents")
+  @@schema("public")
 }
 
 // =============================================================
@@ -977,6 +1012,7 @@ model DocumentOwnership {
   @@index([documentId])
   @@index([branchId])
   @@map("document_ownership")
+  @@schema("public")
 }
 
 // =============================================================
@@ -995,6 +1031,7 @@ model DocumentTag {
   @@unique([documentId, tag])
   @@index([orgId, tag])
   @@map("document_tags")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1022,6 +1059,7 @@ model DocumentRenewal {
   @@index([orgId, expiryDate])
   @@index([orgId, status])
   @@map("document_renewals")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1042,6 +1080,7 @@ model DocumentSharedBranch {
   @@index([orgId])
   @@index([branchId])
   @@map("document_shared_branches")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1070,6 +1109,7 @@ model Vehicle {
   @@index([orgId, isActive])
   @@index([branchId])
   @@map("vehicles")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1091,6 +1131,7 @@ model VehicleDocument {
   @@unique([vehicleId, docType, documentId])
   @@index([orgId, expiryDate])
   @@map("vehicle_documents")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1112,6 +1153,7 @@ model PersonDocument {
   @@unique([userId, docType, documentId])
   @@index([orgId, expiryDate])
   @@map("person_documents")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1150,6 +1192,7 @@ model DocumentSignaturePlacement {
   @@index([orgId, documentId])
   @@index([signerUserId])
   @@map("document_signature_placements")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1178,6 +1221,7 @@ model DocumentAnalysis {
   @@unique([documentId, fileKey, analysisType])
   @@index([orgId])
   @@map("document_analyses")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1198,6 +1242,7 @@ model AiSearchCache {
   @@unique([orgId, queryHash])
   @@index([orgId, expiresAt])
   @@map("ai_search_cache")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1215,6 +1260,7 @@ enum RecruitPostingStatus {
   OPEN
   CLOSED
   ARCHIVED
+  @@schema("public")
 }
 
 enum RecruitApplicationStatus {
@@ -1225,12 +1271,14 @@ enum RecruitApplicationStatus {
   HIRED
   REJECTED
   WITHDRAWN
+  @@schema("public")
 }
 
 enum RecruitCompanyScope {
   POOIL
   JPSYNC
   BOTH
+  @@schema("public")
 }
 
 // 49. recruit_job_postings — ประกาศรับสมัคร
@@ -1261,6 +1309,7 @@ model RecruitJobPosting {
   @@index([orgId, status])
   @@index([slug])
   @@map("recruit_job_postings")
+  @@schema("public")
 }
 
 // 50. recruit_applicants — ผู้สมัคร (normalized · dedup by phone)
@@ -1280,6 +1329,7 @@ model RecruitApplicant {
 
   @@index([orgId, phone])
   @@map("recruit_applicants")
+  @@schema("public")
 }
 
 // 51. recruit_applications — ใบสมัคร (1 ใบต่อ posting × applicant submission)
@@ -1322,6 +1372,7 @@ model RecruitApplication {
   // Ultraview audit 2026-05-21 — inbox query path (org × draft × status × submittedAt)
   @@index([orgId, draft, status, submittedAt(sort: Desc)])
   @@map("recruit_applications")
+  @@schema("public")
 }
 
 // 52. recruit_application_notes — HR internal notes
@@ -1340,6 +1391,7 @@ model RecruitApplicationNote {
 
   @@index([applicationId, createdAt])
   @@map("recruit_application_notes")
+  @@schema("public")
 }
 
 // 53. recruit_blacklist — blacklist (phone-based · ไม่ใช้ national ID)
@@ -1363,6 +1415,7 @@ model RecruitBlacklist {
   @@index([orgId, phone])
   @@index([orgId, expiresAt])
   @@map("recruit_blacklist")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1373,6 +1426,7 @@ enum RecruitInterviewKind {
   ONSITE
   PHONE
   VIDEO
+  @@schema("public")
 }
 
 enum RecruitInterviewStatus {
@@ -1381,6 +1435,7 @@ enum RecruitInterviewStatus {
   COMPLETED
   NO_SHOW
   CANCELLED
+  @@schema("public")
 }
 
 model RecruitInterview {
@@ -1406,6 +1461,7 @@ model RecruitInterview {
   @@index([applicationId, scheduledAt])
   @@index([orgId, status])
   @@map("recruit_interviews")
+  @@schema("public")
 }
 
 enum RecruitMessageChannel {
@@ -1413,11 +1469,13 @@ enum RecruitMessageChannel {
   SMS
   EMAIL
   INAPP
+  @@schema("public")
 }
 
 enum RecruitMessageDirection {
   OUT
   IN
+  @@schema("public")
 }
 
 enum RecruitMessageStatus {
@@ -1427,6 +1485,7 @@ enum RecruitMessageStatus {
   DELIVERED
   READ
   FAILED
+  @@schema("public")
 }
 
 model RecruitMessage {
@@ -1451,6 +1510,7 @@ model RecruitMessage {
   @@index([applicationId, createdAt(sort: Desc)])
   @@index([orgId, status])
   @@map("recruit_messages")
+  @@schema("public")
 }
 
 model RecruitScreeningRule {
@@ -1471,6 +1531,7 @@ model RecruitScreeningRule {
 
   @@index([orgId, enabled])
   @@map("recruit_screening_rules")
+  @@schema("public")
 }
 
 enum RecruitReferralStatus {
@@ -1481,6 +1542,7 @@ enum RecruitReferralStatus {
   HIRED
   PAID
   EXPIRED
+  @@schema("public")
 }
 
 model RecruitReferral {
@@ -1507,6 +1569,7 @@ model RecruitReferral {
   @@index([orgId, status])
   @@index([referrerId, status])
   @@map("recruit_referrals")
+  @@schema("public")
 }
 
 enum RecruitErasureStatus {
@@ -1514,6 +1577,7 @@ enum RecruitErasureStatus {
   APPROVED
   REJECTED
   COMPLETED
+  @@schema("public")
 }
 
 model RecruitErasureRequest {
@@ -1535,6 +1599,7 @@ model RecruitErasureRequest {
   @@index([orgId, status])
   @@index([applicantId])
   @@map("recruit_erasure_requests")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1551,18 +1616,21 @@ enum RepairTicketStatus {
   RESOLVED
   CLOSED
   CANCELLED
+  @@schema("public")
 }
 
 enum RepairUrgency {
   URGENT
   NORMAL
   LOW
+  @@schema("public")
 }
 
 enum RepairReportSource {
   GUIDED
   FREEFORM
   INTERNAL
+  @@schema("public")
 }
 
 enum RepairPhotoPhase {
@@ -1571,11 +1639,13 @@ enum RepairPhotoPhase {
   AFTER
   PART
   RECEIPT
+  @@schema("public")
 }
 
 enum RepairTechnicianKind {
   INTERNAL
   VENDOR
+  @@schema("public")
 }
 
 enum RepairPartStatus {
@@ -1584,6 +1654,7 @@ enum RepairPartStatus {
   DELIVERED
   INSTALLED
   CANCELLED
+  @@schema("public")
 }
 
 enum RepairEventKind {
@@ -1598,6 +1669,7 @@ enum RepairEventKind {
   REOPEN
   CLOSE
   ETA_SET
+  @@schema("public")
 }
 
 model RepairCategory {
@@ -1618,6 +1690,7 @@ model RepairCategory {
   @@unique([orgId, slug])
   @@index([orgId, isActive, sortOrder])
   @@map("repair_categories")
+  @@schema("public")
 }
 
 model RepairTechnician {
@@ -1642,6 +1715,7 @@ model RepairTechnician {
   @@index([orgId, kind, isActive])
   @@index([orgId, phone])
   @@map("repair_technicians")
+  @@schema("public")
 }
 
 model RepairTicket {
@@ -1699,6 +1773,7 @@ model RepairTicket {
   @@index([orgId, createdAt(sort: Desc)])
   @@index([reporterPhone])
   @@map("repair_tickets")
+  @@schema("public")
 }
 
 model RepairPhoto {
@@ -1725,6 +1800,7 @@ model RepairPhoto {
   @@index([ticketId, phase, createdAt])
   @@index([orgId, expiresAt])
   @@map("repair_photos")
+  @@schema("public")
 }
 
 model RepairPart {
@@ -1757,6 +1833,7 @@ model RepairPart {
   @@index([ticketId])
   @@index([orgId, name])
   @@map("repair_parts")
+  @@schema("public")
 }
 
 model RepairTimelineEvent {
@@ -1776,6 +1853,7 @@ model RepairTimelineEvent {
   @@index([ticketId, createdAt])
   @@index([orgId, createdAt])
   @@map("repair_timeline_events")
+  @@schema("public")
 }
 
 model RepairVendorToken {
@@ -1796,6 +1874,7 @@ model RepairVendorToken {
   @@index([token])
   @@index([expiresAt])
   @@map("repair_vendor_tokens")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1838,6 +1917,7 @@ model DepotPrice {
   @@unique([orgId, date, depotName, productType])
   @@index([orgId, date])
   @@map("depot_prices")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1859,6 +1939,7 @@ model ZoneMargin {
   @@unique([orgId, zoneName, productType])
   @@index([orgId, isActive])
   @@map("zone_margins")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1892,6 +1973,7 @@ model Contact {
   @@index([orgId, isActive])
   @@index([assignedSalesId])
   @@map("contacts")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1927,6 +2009,7 @@ model CustomerEntity {
   @@index([orgId, isActive])
   @@index([contactId])
   @@map("customer_entities")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1963,6 +2046,7 @@ model DeliveryLocation {
   @@index([entityId])
   @@index([orgId, zone])
   @@map("delivery_locations")
+  @@schema("public")
 }
 
 // =============================================================
@@ -1997,6 +2081,7 @@ model CustomerQuote {
   @@index([salesId, quoteDate])
   @@index([orgId, status])
   @@map("customer_quotes")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2024,6 +2109,7 @@ model PriceAlertLog {
   @@index([orgId, alertDate])
   @@index([salesId, alertDate])
   @@map("price_alert_log")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2049,6 +2135,7 @@ model LineResponseLog {
   @@index([salesId, customerSentAt])
   @@index([contactId, customerSentAt])
   @@map("line_response_log")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2101,6 +2188,7 @@ model FuelOrder {
   @@index([salesId, scheduledDate])
   @@index([truckId, scheduledDate])
   @@map("fuel_orders")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2127,6 +2215,7 @@ model Truck {
   @@index([orgId, isActive])
   @@index([orgId, status])
   @@map("trucks")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2151,6 +2240,7 @@ model DriverProfile {
 
   @@index([orgId, status])
   @@map("driver_profiles")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2174,6 +2264,7 @@ model DriverLocation {
   @@index([driverId, recordedAt])
   @@index([orderId, recordedAt])
   @@map("driver_locations")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2199,6 +2290,7 @@ model Payment {
   @@index([orgId, paymentDate])
   @@index([entityId, paymentDate])
   @@map("payments")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2224,6 +2316,7 @@ model FlashSale {
   @@index([orgId, status])
   @@index([orgId, expiresAt])
   @@map("flash_sales")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2249,6 +2342,7 @@ model CreditDocument {
   @@index([orgId, status])
   @@index([orgId, expiryDate])
   @@map("credit_documents")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2278,6 +2372,7 @@ model ChequeTracking {
   @@index([orgId, status])
   @@index([entityId, dueDate])
   @@map("cheque_tracking")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2289,12 +2384,14 @@ model ChequeTracking {
 enum CfMachineKind {
   CLAW
   EXCHANGER
+  @@schema("public")
 }
 
 enum CfEventType {
   INITIAL // กรอกครั้งเดียวตอนตั้งตู้ใหม่
   COLLECTION // รอบเก็บปกติ
   VOID // soft delete event
+  @@schema("public")
 }
 
 enum CfStockMoveType {
@@ -2302,6 +2399,7 @@ enum CfStockMoveType {
   LOAD_TO_MACHINE // เติมเข้าตู้
   COUNT_SNAPSHOT // นับสต๊อกวันนี้
   ADJUST // ปรับมือ (require approve)
+  @@schema("public")
 }
 
 enum CfSessionStatus {
@@ -2309,6 +2407,7 @@ enum CfSessionStatus {
   CLOSED
   ANOMALY_REVIEW
   LOCKED
+  @@schema("public")
 }
 
 enum CfProductCategory {
@@ -2320,6 +2419,7 @@ enum CfProductCategory {
   KEYCHAIN // พวงกุญแจ
   SNACK // ขนม
   OTHER
+  @@schema("public")
 }
 
 // =============================================================
@@ -2363,6 +2463,7 @@ model CfMachine {
   @@index([orgId, branchId, kind, isActive])
   @@index([orgId, groupId])
   @@map("cf_machines")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2387,6 +2488,7 @@ model CfMachineGroup {
 
   @@index([orgId, branchId, isActive])
   @@map("cf_machine_groups")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2412,6 +2514,7 @@ model CfProduct {
   @@unique([orgId, sku])
   @@index([orgId, category, isActive])
   @@map("cf_products")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2436,6 +2539,7 @@ model CfMachineLoadout {
   @@index([orgId, machineId, effectiveTo])
   @@index([orgId, productId])
   @@map("cf_machine_loadouts")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2460,6 +2564,7 @@ model CfExchangerLoadout {
 
   @@index([orgId, machineId, effectiveTo])
   @@map("cf_exchanger_loadouts")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2498,6 +2603,7 @@ model CfCollectionSession {
   @@index([orgId, groupId, openedAt(sort: Desc)])
   @@index([orgId, status])
   @@map("cf_collection_sessions")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2544,6 +2650,7 @@ model CfCollectionEvent {
   @@index([sessionId])
   @@index([orgId, eventType, collectedAt(sort: Desc)])
   @@map("cf_collection_events")
+  @@schema("public")
 }
 
 // =============================================================
@@ -2579,4 +2686,408 @@ model CfStockMovement {
   @@index([orgId, type, occurredAt(sort: Desc)])
   @@index([machineId, occurredAt(sort: Desc)])
   @@map("cf_stock_movements")
+  @@schema("public")
+}
+
+// =============================================================
+// ChairOps — massage-chair management for 30 branches
+// Lives in `chairops` schema (multi-schema · separate from public)
+// Source: /Users/patipantantikul/Code/chairops/prisma/schema.prisma
+// Renamed: User→ChairopsUser · Branch→ChairopsBranch · AuditLog→ChairopsAuditLog
+//          UserRole→ChairopsUserRole (Pool already has UserRole)
+// =============================================================
+
+enum ChairopsUserRole {
+  ADMIN
+  CEO
+  MANAGER
+  OFFICE
+  MAID
+  TECHNICIAN
+
+  @@schema("chairops")
+}
+
+enum ChairopsAlertLevel {
+  INFO
+  WARN
+  CRITICAL
+
+  @@schema("chairops")
+}
+
+enum ChairopsAlertStatus {
+  OPEN
+  ACK
+  RESOLVED
+  IGNORED
+
+  @@schema("chairops")
+}
+
+enum ChairopsAlertKind {
+  SHORTAGE
+  MISSED_COLLECTION
+  POS_NOT_INGESTED
+  CHAIR_OFFLINE
+  CLEANLINESS_FAIL
+  REPAIR_OVERDUE
+  WRITE_OFF_REQUESTED
+
+  @@schema("chairops")
+}
+
+enum ChairopsTicketStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  WAITING_PARTS
+  DONE
+  CANCELLED
+
+  @@schema("chairops")
+}
+
+enum ChairopsCleanlinessGrade {
+  PASS
+  WARN
+  FAIL
+
+  @@schema("chairops")
+}
+
+model ChairopsBranch {
+  id          String    @id @default(uuid())
+  slug        String    @unique
+  name        String
+  tabName     String    @unique // ชื่อ tab ใน Sheet เดิม (1 tab = 1 สาขา)
+  parenNumber Int?
+  city        String?
+  region      String?
+  mallGroup   String?
+  floor       String?
+  isActive    Boolean   @default(true)
+  openedAt    DateTime?
+  closedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  chairs             ChairopsChair[]
+  maidAssignments    ChairopsMaidAssignment[]
+  posDaily           ChairopsPosDaily[]
+  cashCollections    ChairopsCashCollection[]
+  drifts             ChairopsDrift[]
+  alerts             ChairopsAlert[]
+  damageTickets      ChairopsDamageTicket[]
+  cleanlinessReports ChairopsCleanlinessReport[]
+
+  @@schema("chairops")
+}
+
+model ChairopsUser {
+  id              String           @id @default(uuid())
+  // Links to Supabase auth.users.id — same id space as Pool's users
+  authUserId      String?          @unique
+  email           String?          @unique
+  phone           String?          @unique
+  lineUserId      String?          @unique
+  displayName     String
+  role            ChairopsUserRole
+  isActive        Boolean          @default(true)
+  primaryBranchId String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  maidAssignments      ChairopsMaidAssignment[]
+  cashCollections      ChairopsCashCollection[]
+  posDailyEntries      ChairopsPosDaily[]
+  damageReported       ChairopsDamageTicket[]      @relation("chairops_damage_reported_by")
+  damageAssigned       ChairopsDamageTicket[]      @relation("chairops_damage_assigned_to")
+  cleanlinessByMaid    ChairopsCleanlinessReport[] @relation("chairops_cleanliness_by_maid")
+  cleanlinessByAuditor ChairopsCleanlinessReport[] @relation("chairops_cleanliness_by_auditor")
+  auditLogs            ChairopsAuditLog[]
+  alertsAcked          ChairopsAlert[]             @relation("chairops_alerts_acked_by")
+  writeOffsByMaker     ChairopsWriteOff[]          @relation("chairops_writeoffs_maker")
+  writeOffsByApprover  ChairopsWriteOff[]          @relation("chairops_writeoffs_approver")
+
+  @@index([role])
+  @@index([primaryBranchId])
+  @@schema("chairops")
+}
+
+model ChairopsMaidAssignment {
+  id        String    @id @default(uuid())
+  userId    String
+  branchId  String
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  isActive  Boolean   @default(true)
+
+  user   ChairopsUser   @relation(fields: [userId], references: [id])
+  branch ChairopsBranch @relation(fields: [branchId], references: [id])
+
+  @@index([branchId, isActive])
+  @@index([userId, isActive])
+  @@schema("chairops")
+}
+
+model ChairopsChair {
+  id            String    @id @default(uuid())
+  chairCode     String    @unique
+  branchId      String
+  generation    String?
+  pricePerCycle Int?
+  isOnline      Boolean   @default(true)
+  isActive      Boolean   @default(true)
+  installedAt   DateTime?
+  retiredAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  branch        ChairopsBranch         @relation(fields: [branchId], references: [id])
+  damageTickets ChairopsDamageTicket[]
+
+  @@index([branchId])
+  @@index([generation])
+  @@schema("chairops")
+}
+
+model ChairopsPosImport {
+  id           String    @id @default(uuid())
+  filename     String
+  uploadedById String
+  uploadedAt   DateTime  @default(now())
+  fileHash     String
+  rowCount     Int
+  diffSummary  Json
+  committed    Boolean   @default(false)
+  committedAt  DateTime?
+  notes        String?
+
+  @@unique([fileHash])
+  @@index([uploadedAt])
+  @@schema("chairops")
+}
+
+model ChairopsPosDaily {
+  id           String   @id @default(uuid())
+  branchId     String
+  chairCode    String?
+  bizDate      DateTime @db.Date
+  online       Int      @default(0)
+  cash         Int      @default(0)
+  coin         Int      @default(0)
+  totalCash    Int      @default(0)
+  totalRevenue Int      @default(0)
+  rawSource    String?
+  importId     String?
+  enteredById  String
+  enteredAt    DateTime @default(now())
+  notes        String?
+
+  branch ChairopsBranch @relation(fields: [branchId], references: [id])
+  user   ChairopsUser   @relation(fields: [enteredById], references: [id])
+
+  @@unique([branchId, chairCode, bizDate])
+  @@index([branchId, bizDate])
+  @@index([bizDate])
+  @@schema("chairops")
+}
+
+model ChairopsCashCollection {
+  id               String    @id @default(uuid())
+  branchId         String
+  maidId           String
+  collectedAt      DateTime  @default(now())
+  countedAmount    Int
+  depositedAmount  Int
+  evidencePhotoUrl String
+  slipPhotoUrl     String?
+  imageHash        String
+  notes            String?
+  lockedAt         DateTime?
+  unlockedById     String?
+  unlockedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  branch ChairopsBranch @relation(fields: [branchId], references: [id])
+  maid   ChairopsUser   @relation(fields: [maidId], references: [id])
+
+  @@index([branchId, collectedAt])
+  @@index([maidId, collectedAt])
+  @@unique([imageHash])
+  @@schema("chairops")
+}
+
+model ChairopsDrift {
+  id                      String    @id @default(uuid())
+  branchId                String    @unique
+  posTotal                Int
+  depositTotal            Int
+  driftAmount             Int
+  driftSince              DateTime?
+  lastPosDate             DateTime? @db.Date
+  lastCollectionAt        DateTime?
+  daysSinceLastCollection Int       @default(0)
+  lastComputedAt          DateTime  @default(now())
+
+  branch ChairopsBranch @relation(fields: [branchId], references: [id])
+
+  @@schema("chairops")
+}
+
+model ChairopsAlert {
+  id          String              @id @default(uuid())
+  branchId    String?
+  kind        ChairopsAlertKind
+  level       ChairopsAlertLevel
+  status      ChairopsAlertStatus @default(OPEN)
+  title       String
+  message     String
+  contextJson Json?
+  ackedById   String?
+  ackedAt     DateTime?
+  resolvedAt  DateTime?
+  createdAt   DateTime            @default(now())
+
+  branch  ChairopsBranch? @relation(fields: [branchId], references: [id])
+  ackedBy ChairopsUser?   @relation("chairops_alerts_acked_by", fields: [ackedById], references: [id])
+
+  @@index([status, level])
+  @@index([branchId, status])
+  @@index([createdAt])
+  @@schema("chairops")
+}
+
+model ChairopsWriteOff {
+  id         String    @id @default(uuid())
+  branchId   String
+  amount     Int
+  reason     String
+  makerId    String
+  makerAt    DateTime  @default(now())
+  approverId String?
+  approverAt DateTime?
+  status     String    @default("PENDING")
+  notes      String?
+
+  maker    ChairopsUser  @relation("chairops_writeoffs_maker", fields: [makerId], references: [id])
+  approver ChairopsUser? @relation("chairops_writeoffs_approver", fields: [approverId], references: [id])
+
+  @@index([branchId, status])
+  @@schema("chairops")
+}
+
+model ChairopsDamageTicket {
+  id           String               @id @default(uuid())
+  ticketCode   String               @unique
+  branchId     String
+  chairId      String?
+  reportedById String
+  assignedToId String?
+  priority     String               @default("NORMAL")
+  category     String
+  description  String
+  photoUrls    String[]
+  status       ChairopsTicketStatus @default(OPEN)
+  openedAt     DateTime             @default(now())
+  closedAt     DateTime?
+  notes        String?
+
+  branch     ChairopsBranch @relation(fields: [branchId], references: [id])
+  chair      ChairopsChair? @relation(fields: [chairId], references: [id])
+  reportedBy ChairopsUser   @relation("chairops_damage_reported_by", fields: [reportedById], references: [id])
+  assignedTo ChairopsUser?  @relation("chairops_damage_assigned_to", fields: [assignedToId], references: [id])
+
+  @@index([branchId, status])
+  @@index([assignedToId, status])
+  @@index([priority, status])
+  @@schema("chairops")
+}
+
+model ChairopsSparePart {
+  id           String   @id @default(uuid())
+  partCode     String   @unique
+  name         String
+  category     String?
+  unit         String   @default("ชิ้น")
+  unitPrice    Int?
+  stockOnHand  Int      @default(0)
+  reorderLevel Int      @default(0)
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  movements ChairopsSparePartMovement[]
+
+  @@schema("chairops")
+}
+
+model ChairopsSparePartMovement {
+  id          String   @id @default(uuid())
+  partId      String
+  branchId    String?
+  delta       Int
+  reason      String
+  refTicketId String?
+  byUserId    String
+  at          DateTime @default(now())
+
+  part ChairopsSparePart @relation(fields: [partId], references: [id])
+
+  @@index([partId, at])
+  @@schema("chairops")
+}
+
+model ChairopsCleanlinessReport {
+  id          String                   @id @default(uuid())
+  branchId    String
+  byMaidId    String
+  auditedById String?
+  auditedAt   DateTime?
+  reportedAt  DateTime                 @default(now())
+  checklist   Json
+  photoUrls   String[]
+  grade       ChairopsCleanlinessGrade @default(PASS)
+  notes       String?
+
+  branch  ChairopsBranch @relation(fields: [branchId], references: [id])
+  maid    ChairopsUser   @relation("chairops_cleanliness_by_maid", fields: [byMaidId], references: [id])
+  auditor ChairopsUser?  @relation("chairops_cleanliness_by_auditor", fields: [auditedById], references: [id])
+
+  @@index([branchId, reportedAt])
+  @@schema("chairops")
+}
+
+model ChairopsAuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String
+  oldValue  Json?
+  newValue  Json?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user ChairopsUser? @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@schema("chairops")
+}
+
+model ChairopsBankAccount {
+  id          String   @id @default(uuid())
+  bankName    String
+  accountNo   String
+  accountName String
+  branchId    String?
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@schema("chairops")
 }
