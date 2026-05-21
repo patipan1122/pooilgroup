@@ -32,7 +32,7 @@ export default async function SettingsPage() {
   return (
     <div className="p-5 sm:p-8 max-w-4xl mx-auto space-y-6">
       <Section
-        number="⚙️"
+        number="00"
         label="SETTINGS"
         title="ตั้งค่าโปรแกรมรับสมัครพนักงาน"
         description="ภาพรวมการใช้งาน + เอกสาร PDPA + การแจ้งเตือน"
@@ -125,7 +125,7 @@ export default async function SettingsPage() {
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-2xl border-2 border-zinc-200 bg-white p-4">
-      <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">
+      <p className="text-xs text-zinc-500 font-bold">
         {label}
       </p>
       <p className="text-3xl font-extrabold tabular-num text-zinc-900 mt-1">
@@ -164,7 +164,7 @@ function Row({
         <p className="text-xs text-zinc-500 mt-0.5">{desc}</p>
       </div>
       <span
-        className={`text-[10px] font-bold px-2 py-1 rounded-full shrink-0 ${toneClass}`}
+        className={`text-xs font-bold px-2.5 py-1 rounded-full shrink-0 ${toneClass}`}
       >
         {status}
       </span>
