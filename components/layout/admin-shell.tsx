@@ -236,7 +236,7 @@ export function AdminShell({
                         </div>
                       </Link>
                       <div className="h-px bg-zinc-100 my-1.5" />
-                      <p className="px-3 text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
+                      <p className="px-3 text-xs font-bold text-zinc-500 mb-1">
                         เปลี่ยนโปรแกรม
                       </p>
                       {visibleModules.map((m) => {
@@ -268,7 +268,7 @@ export function AdminShell({
                               <Check className="size-4 text-[var(--color-brand-600)]" />
                             )}
                             {isComingSoon && (
-                              <span className="text-[10px] uppercase tracking-wider font-bold text-zinc-400">
+                              <span className="text-xs uppercase tracking-wide font-bold text-zinc-400">
                                 Soon
                               </span>
                             )}
@@ -491,7 +491,7 @@ function SidebarBody({
           informational label, not a clickable switcher. */}
       {activeModule && moduleNav.length > 0 && (
         <div className="px-3 mb-3">
-          <p className="px-3 py-1 mb-1 text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">
+          <p className="px-3 py-1 mb-1 text-xs font-bold text-zinc-500">
             {activeModule.emoji}{" "}
             <span className="text-[var(--color-brand-700)]">
               {activeModule.name}
@@ -620,7 +620,7 @@ function SidebarSection({
             !open && "-rotate-90",
           )}
         />
-        <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">
+        <span className="text-xs font-bold text-zinc-500">
           {title}
         </span>
       </button>

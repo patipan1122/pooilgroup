@@ -156,7 +156,7 @@ export function PasteDialog<T extends { id: string }>({
         {diff && (
           <div className="rounded-xl border-2 border-zinc-200 bg-zinc-50/40 overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-2 bg-white border-b-2 border-zinc-200 flex-wrap">
-              <span className="text-[11px] uppercase tracking-wider font-bold text-zinc-700">
+              <span className="text-xs font-bold text-zinc-700">
                 สรุป
               </span>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[var(--color-leaf-50)] border border-[var(--color-leaf-200)] text-[var(--color-leaf-800)] text-xs font-bold">
