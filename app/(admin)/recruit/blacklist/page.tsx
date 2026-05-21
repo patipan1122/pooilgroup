@@ -11,7 +11,7 @@ import {
 } from "@/lib/recruit/role-guard";
 import { prisma } from "@/lib/prisma";
 import { Section } from "@/components/ui/section";
-import { BlacklistManagerV2 } from "@/components/recruit/blacklist-manager-v2";
+import { BlacklistManager } from "@/components/recruit/blacklist-manager";
 import { Shield, AlertTriangle, Calendar, CheckCircle2 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -102,7 +102,7 @@ export default async function BlacklistPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
-          <BlacklistManagerV2
+          <BlacklistManager
             active={active.map(mapEntry)}
             expired={expired.map(mapEntry)}
             removed={removed.map(mapEntry)}

@@ -14,6 +14,7 @@ import {
   Clock,
   ShieldCheck,
   ArrowUpRight,
+  ArrowLeft,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole, isAdminTier } from "@/lib/auth/role-guards";
@@ -32,6 +33,11 @@ import {
   getExpiryStatus,
   type ExpiryStatus,
 } from "@/lib/docuflow/expiry";
+import {
+  DfEyebrow,
+  DfPageHeader,
+  DfStatCard,
+} from "@/components/docuflow/df-ui";
 
 export const dynamic = "force-dynamic";
 
@@ -66,46 +72,101 @@ export default async function OrgRiskPage() {
     summary.totals.expired + summary.totals.critical + summary.totals.urgent;
 
   return (
-    <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
-      {/* Header */}
-      <header className="mb-6 animate-fade-up">
-        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
-          📄 DocuFlow · {thaiDateLong(new Date())}
-        </p>
-        <div className="mt-4 flex items-end justify-between gap-3 flex-wrap">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display leading-[0.95]">
-              ความ <span className="text-gradient-blue">เสี่ยงรวม</span>
-            </h1>
-            <p className="text-zinc-600 mt-1.5 text-sm">
-              ภาพรวม AI วิเคราะห์เอกสารทั้งกลุ่ม — ใบอนุญาต · รถ · พนักงาน
-            </p>
-          </div>
-          {adminTier && <RefreshOrgRiskButton />}
-        </div>
-      </header>
+    <div
+      style={{
+        padding: "28px clamp(16px, 4vw, 40px)",
+        paddingBottom: 96,
+        maxWidth: 1500,
+        margin: "0 auto",
+      }}
+    >
+      <Link
+        href="/docuflow"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 13,
+          color: "var(--df-muted)",
+          textDecoration: "none",
+          marginBottom: 12,
+        }}
+      >
+        <ArrowLeft size={14} />
+        กลับ DocuFlow
+      </Link>
 
-      {/* Top stat strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6 animate-fade-up delay-100">
-        <StatCell
-          label="หมดแล้ว"
+      <DfPageHeader
+        eyebrow={<DfEyebrow>ความเสี่ยงเอกสาร · ทั้งกลุ่ม</DfEyebrow>}
+        title={
+          <>
+            Compliance Score{" "}
+            <span style={{ color: "var(--df-accent)" }}>
+              {Math.max(
+                0,
+                Math.min(
+                  100,
+                  Math.round(
+                    100 -
+                      ((summary.totals.expired * 2 +
+                        summary.totals.critical +
+                        summary.totals.urgent * 0.5) /
+                        Math.max(1, summary.totals.grandTotal)) *
+                        100,
+                  ),
+                ),
+              )}
+              %
+            </span>
+            {dangerCount > 0 && (
+              <span
+                style={{
+                  color: "var(--df-ink-2)",
+                  fontSize: "0.72em",
+                  marginLeft: 8,
+                }}
+              >
+                · ต้องดูแล {dangerCount} ฉบับ
+              </span>
+            )}
+          </>
+        }
+        description={`${orgName} · ${thaiDateLong(new Date())} · AI ช่วยวิเคราะห์ความเสี่ยง`}
+        actions={adminTier ? <RefreshOrgRiskButton /> : null}
+      />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+          gap: 12,
+          marginBottom: 22,
+        }}
+        className="df-fade-up df-fade-up-100"
+      >
+        <DfStatCard
+          label="เอกสารหมดอายุแล้ว"
           value={summary.totals.expired}
-          tone={summary.totals.expired > 0 ? "danger" : "neutral"}
+          tone={summary.totals.expired > 0 ? "danger" : "ink"}
+          icon={<AlertCircle size={17} />}
         />
-        <StatCell
-          label="≤ 7 วัน"
+        <DfStatCard
+          label="วิกฤต ≤ 7 วัน"
           value={summary.totals.critical}
-          tone={summary.totals.critical > 0 ? "danger" : "neutral"}
+          tone={summary.totals.critical > 0 ? "danger" : "ink"}
+          icon={<AlertTriangle size={17} />}
         />
-        <StatCell
-          label="≤ 30 วัน"
+        <DfStatCard
+          label="เร่งด่วน ≤ 30 วัน"
           value={summary.totals.urgent}
-          tone={summary.totals.urgent > 0 ? "warning" : "neutral"}
+          tone={summary.totals.urgent > 0 ? "warn" : "ink"}
+          icon={<Clock size={17} />}
         />
-        <StatCell
-          label="≤ 90 วัน"
+        <DfStatCard
+          label="เฝ้าระวัง ≤ 90 วัน"
           value={summary.totals.watch}
-          tone="neutral"
+          tone="brand"
+          icon={<ShieldCheck size={17} />}
         />
       </div>
 
@@ -245,35 +306,6 @@ export default async function OrgRiskPage() {
 /* ============================================================
    Sub-components
    ============================================================ */
-
-function StatCell({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: "danger" | "warning" | "neutral";
-}) {
-  const valueColor =
-    tone === "danger"
-      ? "text-rose-700"
-      : tone === "warning"
-        ? "text-amber-700"
-        : "text-zinc-900";
-  return (
-    <div className="rounded-2xl border-2 border-zinc-200 bg-white p-4">
-      <p className="text-xs font-bold text-zinc-500">
-        {label}
-      </p>
-      <p
-        className={`mt-1.5 text-2xl sm:text-3xl font-extrabold tabular-num font-display tracking-tight ${valueColor}`}
-      >
-        {value}
-      </p>
-    </div>
-  );
-}
 
 function BucketSection({
   number,

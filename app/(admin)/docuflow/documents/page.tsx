@@ -1,11 +1,11 @@
-// DocuFlow — รายการเอกสารทั้งหมด
+// DocuFlow — รายการเอกสารทั้งหมด (advanced filter)
 // ────────────────────────────────────────────────────────────────────
-// Server component. Executive role guard. Reads canonical loader
-// (lib/docuflow/data.ts — Agent A). Filters via searchParams.
+// Redesign 2026-05-21 — canvas-aligned chrome + DfPill filters.
+// Data source unchanged.
 // ────────────────────────────────────────────────────────────────────
 
 import Link from "next/link";
-import { FileText, Upload } from "lucide-react";
+import { FileText, Upload, ArrowLeft, Filter } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { isAdminTier } from "@/lib/auth/module-access";
@@ -16,12 +16,16 @@ import {
   type CanonicalDocument,
 } from "@/lib/docuflow/data";
 import type { ExpiryStatus } from "@/lib/docuflow/expiry";
-import { Section } from "@/components/ui/section";
-import { Card, CardBody } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
-import { thaiDateLong } from "@/lib/utils/format";
 import { DocumentCard } from "@/components/docuflow/document-card";
 import { DocumentFilters } from "@/components/docuflow/document-filters";
+import {
+  DfButton,
+  DfCard,
+  DfEyebrow,
+  DfPageHeader,
+  DfPill,
+  DfSection,
+} from "@/components/docuflow/df-ui";
 
 export const dynamic = "force-dynamic";
 
@@ -45,11 +49,9 @@ interface SP {
   tag?: string;
   status?: string;
   search?: string;
-  /** Scope filters used by Mode 2 drilldown (BranchDocumentsSection) */
   branchId?: string;
   companyId?: string;
   businessType?: string;
-  /** "1" → show only docs shared to branchId via document_shared_branches */
   shared?: string;
 }
 
@@ -73,9 +75,6 @@ export default async function DocumentsListPage({
   const filterBusinessType = sp.businessType || "";
   const sharedOnly = sp.shared === "1";
 
-  // Load filtered docs + all tags (for filter UI).
-  // When `shared=1` is set, the source is the cross-branch share table —
-  // the loader skips the ownership filter and queries document_shared_branches.
   const [docs, allTags] = await Promise.all([
     sharedOnly && filterBranchId
       ? loadDocumentsSharedToBranch(orgId, filterBranchId, { limit: 200 })
@@ -102,11 +101,8 @@ export default async function DocumentsListPage({
   if (filterBusinessType) preserve.businessType = filterBusinessType;
   if (sharedOnly) preserve.shared = "1";
 
-  // Top tags (limit list — show 12 most common via simple alphabetical)
   const tagChips = allTags.slice(0, 12).map((t) => ({ value: t, label: `#${t}` }));
 
-  // Scope label — shown when drilling in from a Branch/Company/Type page.
-  // Lets the user understand they're looking at a subset, and clear it.
   const scopeLabel = (() => {
     if (sharedOnly && filterBranchId) return "เอกสารใช้ร่วมจากสาขาอื่น";
     if (filterBranchId) return "ขอบเขต: เอกสารของสาขา";
@@ -114,7 +110,6 @@ export default async function DocumentsListPage({
     if (filterBusinessType) return "ขอบเขต: เอกสารตามประเภทธุรกิจ";
     return null;
   })();
-  // Build "clear scope" link — keeps tag/status/search/level
   const scopeClearParams = new URLSearchParams();
   if (filterLevel) scopeClearParams.set("level", filterLevel);
   if (filterTag) scopeClearParams.set("tag", filterTag);
@@ -124,139 +119,216 @@ export default async function DocumentsListPage({
     ? `/docuflow/documents?${scopeClearParams.toString()}`
     : "/docuflow/documents";
 
-  return (
-    <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
-      <header className="mb-6 animate-fade-up">
-        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
-          📄 DocuFlow · {thaiDateLong(new Date())}
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
-          รายการ <span className="text-gradient-blue">เอกสารทั้งหมด</span>
-        </h1>
-        <p className="text-zinc-600 mt-1.5 text-sm">
-          พบ <span className="font-bold text-zinc-900">{docs.length}</span>{" "}
-          เอกสาร
-        </p>
-        {scopeLabel && (
-          <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] px-3 py-1 text-xs">
-            <span className="font-semibold text-[var(--color-brand-700)]">
-              {scopeLabel}
-            </span>
-            <Link
-              href={scopeClearHref}
-              className="text-[var(--color-brand-700)] hover:underline font-medium"
-            >
-              ล้างขอบเขต
-            </Link>
-          </div>
-        )}
-      </header>
+  const activeFilterCount =
+    (filterLevel ? 1 : 0) +
+    (filterStatus ? 1 : 0) +
+    (filterTag ? 1 : 0) +
+    (filterBranchId ? 1 : 0) +
+    (filterCompanyId ? 1 : 0) +
+    (filterBusinessType ? 1 : 0);
 
-      <Section
+  return (
+    <div
+      style={{
+        padding: "28px clamp(16px, 4vw, 40px)",
+        paddingBottom: 96,
+        maxWidth: 1500,
+        margin: "0 auto",
+      }}
+    >
+      <Link
+        href="/docuflow"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 13,
+          color: "var(--df-muted)",
+          textDecoration: "none",
+          marginBottom: 12,
+        }}
+      >
+        <ArrowLeft size={14} />
+        กลับ DocuFlow
+      </Link>
+
+      <DfPageHeader
+        eyebrow={<DfEyebrow>เอกสาร · ค้นหาขั้นสูง</DfEyebrow>}
+        title={
+          <>
+            พบ{" "}
+            <span style={{ color: "var(--df-brand)" }}>
+              {docs.length.toLocaleString("th-TH")}
+            </span>{" "}
+            เอกสาร
+          </>
+        }
+        description={
+          scopeLabel ? (
+            <span>
+              {scopeLabel} ·{" "}
+              <Link
+                href={scopeClearHref}
+                style={{ color: "var(--df-brand)", fontWeight: 600 }}
+              >
+                ล้างขอบเขต
+              </Link>
+            </span>
+          ) : (
+            "ใช้ตัวกรองด้านล่างเพื่อค้นหาเอกสารตามระดับ/สถานะ/แท็ก"
+          )
+        }
+        actions={
+          adminTier ? (
+            <DfButton
+              href="/docuflow/documents/upload/template"
+              variant="brand"
+            >
+              <Upload size={15} />
+              อัปโหลดเอกสาร
+            </DfButton>
+          ) : null
+        }
+      />
+
+      <DfSection
         number="01"
         label="ตัวกรอง"
-        title="กรองเอกสาร"
-        className="mb-6 animate-fade-up delay-100"
         action={
-          adminTier ? (
-            <Link
-              href="/docuflow/documents/upload/template"
-              className="inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 bg-[var(--color-brand-600)] text-white hover:bg-[var(--color-brand-700)] active:bg-[var(--color-brand-800)] shadow-soft h-10 px-4 text-sm rounded-xl"
-            >
-              <Upload className="size-4" />
-              อัปโหลดเอกสาร
-            </Link>
-          ) : undefined
+          activeFilterCount > 0 ? (
+            <DfPill tone="brand" small>
+              <Filter size={11} /> ใช้ {activeFilterCount} เงื่อนไข
+            </DfPill>
+          ) : null
         }
+        className="df-fade-up df-fade-up-100"
       >
-        <Card>
-          <CardBody className="space-y-4">
+        <DfCard padding={18}>
+          <div style={{ marginBottom: 14 }}>
+            <p
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: "var(--df-muted)",
+                letterSpacing: "0.05em",
+                marginBottom: 8,
+              }}
+            >
+              ระดับ
+            </p>
+            <DocumentFilters
+              paramKey="level"
+              current={filterLevel}
+              chips={LEVEL_CHIPS}
+              preserve={(() => {
+                const p = { ...preserve };
+                delete p.level;
+                return p;
+              })()}
+            />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <p
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: "var(--df-muted)",
+                letterSpacing: "0.05em",
+                marginBottom: 8,
+              }}
+            >
+              สถานะวันหมดอายุ
+            </p>
+            <DocumentFilters
+              paramKey="status"
+              current={filterStatus}
+              chips={EXPIRY_CHIPS}
+              preserve={(() => {
+                const p = { ...preserve };
+                delete p.status;
+                return p;
+              })()}
+            />
+          </div>
+          {tagChips.length > 0 && (
             <div>
-              <p className="text-xs font-bold text-zinc-500 mb-2">
-                ระดับ
+              <p
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "var(--df-muted)",
+                  letterSpacing: "0.05em",
+                  marginBottom: 8,
+                }}
+              >
+                แท็ก
               </p>
               <DocumentFilters
-                paramKey="level"
-                current={filterLevel}
-                chips={LEVEL_CHIPS}
+                paramKey="tag"
+                current={filterTag}
+                chips={tagChips}
                 preserve={(() => {
                   const p = { ...preserve };
-                  delete p.level;
+                  delete p.tag;
                   return p;
                 })()}
               />
             </div>
-            <div>
-              <p className="text-xs font-bold text-zinc-500 mb-2">
-                สถานะวันหมดอายุ
-              </p>
-              <DocumentFilters
-                paramKey="status"
-                current={filterStatus}
-                chips={EXPIRY_CHIPS}
-                preserve={(() => {
-                  const p = { ...preserve };
-                  delete p.status;
-                  return p;
-                })()}
-              />
-            </div>
-            {tagChips.length > 0 && (
-              <div>
-                <p className="text-xs font-bold text-zinc-500 mb-2">
-                  Tag
-                </p>
-                <DocumentFilters
-                  paramKey="tag"
-                  current={filterTag}
-                  chips={tagChips}
-                  preserve={(() => {
-                    const p = { ...preserve };
-                    delete p.tag;
-                    return p;
-                  })()}
-                />
-              </div>
-            )}
-          </CardBody>
-        </Card>
-      </Section>
+          )}
+        </DfCard>
+      </DfSection>
 
-      <Section
+      <DfSection
         number="02"
-        label="เอกสาร"
-        title="เอกสาร"
-        className="animate-fade-up delay-200"
+        label={`เอกสาร · ${docs.length} รายการ`}
+        className="df-fade-up df-fade-up-200"
       >
         {docs.length === 0 ? (
-          <Card>
-            <CardBody>
-              <EmptyState
-                icon={<FileText className="size-6" />}
-                title="ไม่พบเอกสารตามเงื่อนไข"
-                description="ลองเปลี่ยนตัวกรอง หรืออัปโหลดเอกสารใหม่"
-                action={
-                  adminTier ? (
-                    <Link
-                      href="/docuflow/documents/upload/template"
-                      className="inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 bg-[var(--color-brand-600)] text-white hover:bg-[var(--color-brand-700)] h-10 px-4 text-sm rounded-xl"
-                    >
-                      <Upload className="size-4" />
-                      อัปโหลดเอกสาร
-                    </Link>
-                  ) : undefined
-                }
-              />
-            </CardBody>
-          </Card>
+          <DfCard padding={36} style={{ textAlign: "center" }}>
+            <FileText
+              size={32}
+              style={{ color: "var(--df-muted)", margin: "0 auto 12px" }}
+            />
+            <h3
+              className="df-serif"
+              style={{ fontSize: 18, marginTop: 0, marginBottom: 8 }}
+            >
+              ไม่พบเอกสารตามเงื่อนไข
+            </h3>
+            <p
+              style={{
+                fontSize: 13,
+                color: "var(--df-muted)",
+                marginBottom: 16,
+                marginTop: 0,
+              }}
+            >
+              ลองเปลี่ยนตัวกรอง หรืออัปโหลดเอกสารใหม่
+            </p>
+            {adminTier && (
+              <DfButton
+                href="/docuflow/documents/upload/template"
+                variant="brand"
+              >
+                <Upload size={14} />
+                อัปโหลดเอกสาร
+              </DfButton>
+            )}
+          </DfCard>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+              gap: 14,
+            }}
+          >
             {docs.map((d: CanonicalDocument) => (
               <DocumentCard key={d.id} doc={d} />
             ))}
           </div>
         )}
-      </Section>
+      </DfSection>
     </div>
   );
 }

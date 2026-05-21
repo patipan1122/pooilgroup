@@ -17,6 +17,8 @@ import {
   CheckCircle2,
   XCircle,
   ChevronRight,
+  ArrowLeft,
+  ShieldCheck,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
@@ -34,6 +36,12 @@ import { Section } from "@/components/ui/section";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { thaiDateLong } from "@/lib/utils/format";
+import {
+  DfCard,
+  DfEyebrow,
+  DfPageHeader,
+  DfStatCard,
+} from "@/components/docuflow/df-ui";
 
 export const dynamic = "force-dynamic";
 
@@ -136,78 +144,93 @@ export default async function DocuFlowChecklistPage() {
     totalCanonical === 0 ? 100 : Math.round((totalMatched / totalCanonical) * 100);
 
   return (
-    <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
-      <header className="mb-6 animate-fade-up">
-        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
-          📄 DocuFlow · {thaiDateLong(new Date())}
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
-          Checklist <span className="text-gradient-blue">เอกสารที่ต้องมี</span>
-        </h1>
-        <p className="text-zinc-600 mt-1.5 text-sm max-w-3xl">
-          เทียบเอกสารที่อัปโหลดแล้วกับมาตรฐานกฎหมาย ต่อประเภทธุรกิจ —
-          ตามสเปคในคู่มือ DOCUFLOW §3
-        </p>
-      </header>
-
-      {/* Summary stat */}
-      <Section
-        number="01"
-        label="ภาพรวม"
-        title="ภาพรวม Compliance"
-        className="mb-10 animate-fade-up delay-100"
+    <div
+      style={{
+        padding: "28px clamp(16px, 4vw, 40px)",
+        paddingBottom: 96,
+        maxWidth: 1500,
+        margin: "0 auto",
+      }}
+    >
+      <Link
+        href="/docuflow"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 13,
+          color: "var(--df-muted)",
+          textDecoration: "none",
+          marginBottom: 12,
+        }}
       >
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Card className="hover-lift">
-            <CardBody className="p-4">
-              <p className="text-xs font-bold text-zinc-500">
-                ตามกฎหมายต้องมี
-              </p>
-              <p className="mt-2 text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight text-zinc-900">
-                {totalCanonical.toLocaleString("th-TH")}
-              </p>
-              <p className="text-[11px] text-zinc-500 mt-1">
-                รวมทุกประเภทธุรกิจ
-              </p>
-            </CardBody>
-          </Card>
-          <Card className="hover-lift">
-            <CardBody className="p-4">
-              <p className="text-xs font-bold text-green-700">
-                อัปโหลดครบแล้ว
-              </p>
-              <p className="mt-2 text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight text-green-700">
-                {totalMatched.toLocaleString("th-TH")}
-              </p>
-              <p className="text-[11px] text-zinc-500 mt-1">
-                ตรงกับ canonical
-              </p>
-            </CardBody>
-          </Card>
-          <Card className="hover-lift">
-            <CardBody className="p-4">
-              <p className="text-xs font-bold text-rose-700">
-                ยังขาด
-              </p>
-              <p className="mt-2 text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight text-rose-700">
-                {totalMissing.toLocaleString("th-TH")}
-              </p>
-              <p className="text-[11px] text-zinc-500 mt-1">ต้องอัปโหลด</p>
-            </CardBody>
-          </Card>
-          <Card className="hover-lift">
-            <CardBody className="p-4">
-              <p className="text-xs font-bold text-[var(--color-brand-700)]">
-                Compliance
-              </p>
-              <p className="mt-2 text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight text-[var(--color-brand-700)]">
-                {overallPct}%
-              </p>
-              <p className="text-[11px] text-zinc-500 mt-1">ครบถ้วนรวม</p>
-            </CardBody>
-          </Card>
-        </div>
-      </Section>
+        <ArrowLeft size={14} />
+        กลับ DocuFlow
+      </Link>
+
+      <DfPageHeader
+        eyebrow={<DfEyebrow>Checklist · เอกสารที่กฎหมายกำหนด</DfEyebrow>}
+        title={
+          <>
+            Compliance{" "}
+            <span
+              style={{
+                color:
+                  overallPct >= 80
+                    ? "var(--df-success)"
+                    : overallPct >= 40
+                      ? "var(--df-warn)"
+                      : "var(--df-danger)",
+              }}
+            >
+              {overallPct}%
+            </span>{" "}
+            · {totalMatched}/{totalCanonical} ฉบับครบ
+          </>
+        }
+        description={`${thaiDateLong(new Date())} · เทียบเอกสารที่อัปโหลดกับมาตรฐานกฎหมายต่อประเภทธุรกิจ`}
+      />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+          gap: 12,
+          marginBottom: 22,
+        }}
+        className="df-fade-up df-fade-up-100"
+      >
+        <DfStatCard
+          label="กฎหมายกำหนด"
+          value={totalCanonical.toLocaleString("th-TH")}
+          sub="ทุกประเภทธุรกิจ"
+          tone="ink"
+          icon={<CheckSquare size={17} />}
+        />
+        <DfStatCard
+          label="อัปโหลดครบ"
+          value={totalMatched.toLocaleString("th-TH")}
+          sub="ตรงกับ canonical"
+          tone="success"
+          icon={<CheckCircle2 size={17} />}
+        />
+        <DfStatCard
+          label="ยังขาด"
+          value={totalMissing.toLocaleString("th-TH")}
+          sub={totalMissing > 0 ? "ต้องอัปโหลด" : "ครบเรียบร้อย"}
+          tone={totalMissing > 0 ? "danger" : "ink"}
+          icon={<XCircle size={17} />}
+        />
+        <DfStatCard
+          label="Compliance Score"
+          value={`${overallPct}%`}
+          sub="ครบถ้วนรวม"
+          tone={
+            overallPct >= 80 ? "success" : overallPct >= 40 ? "warn" : "danger"
+          }
+          icon={<ShieldCheck size={17} />}
+        />
+      </div>
 
       {/* Per-biztype breakdown */}
       <Section

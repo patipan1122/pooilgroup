@@ -1,16 +1,20 @@
-// DocuFlow · AI Search "ภาษาคน" — Capability G
+// DocuFlow · AI Search "ภาษาคน"
 // ────────────────────────────────────────────────────────────────────
-// Server page · executive role guard. Renders client SearchInterface.
-// Spec: ดีเทลv1/DOCUFLOW.md §7
+// Redesign 2026-05-21 — matches DesktopSearch canvas:
+//   centered hero · big search bar · suggestion pills · result rendering
+//   delegated to <SearchInterface />.
 // ────────────────────────────────────────────────────────────────────
 
-import { Sparkles } from "lucide-react";
+import Link from "next/link";
+import { Sparkles, ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
-import { thaiDateLong } from "@/lib/utils/format";
-import { Section } from "@/components/ui/section";
-import { Card, CardBody } from "@/components/ui/card";
 import { SearchInterface } from "@/components/docuflow/search-interface";
+import {
+  DfCard,
+  DfEyebrow,
+  DfPill,
+} from "@/components/docuflow/df-ui";
 
 export const dynamic = "force-dynamic";
 
@@ -27,67 +31,120 @@ export default async function DocuFlowSearchPage() {
   requireExecutiveRole(session.user.role);
 
   return (
-    <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
-      <header className="mb-6 animate-fade-up">
-        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
-          📄 DocuFlow · {thaiDateLong(new Date())}
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
-          ค้นหา <span className="text-gradient-blue">ภาษาคน</span>
+    <div
+      style={{
+        padding: "28px clamp(16px, 4vw, 40px)",
+        paddingBottom: 96,
+        maxWidth: 1280,
+        margin: "0 auto",
+      }}
+    >
+      <Link
+        href="/docuflow"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 13,
+          color: "var(--df-muted)",
+          textDecoration: "none",
+          marginBottom: 12,
+        }}
+      >
+        <ArrowLeft size={14} />
+        กลับ DocuFlow
+      </Link>
+
+      <div style={{ marginBottom: 28, textAlign: "center" }} className="df-fade-up">
+        <DfEyebrow>ค้นหาด้วย AI</DfEyebrow>
+        <h1
+          className="df-serif"
+          style={{
+            fontSize: "clamp(26px, 4vw, 36px)",
+            lineHeight: 1.15,
+            marginTop: 10,
+            marginBottom: 8,
+          }}
+        >
+          ถามอะไรเกี่ยวกับเอกสารก็ได้
         </h1>
-        <p className="text-zinc-600 mt-1.5 text-sm">
-          ถามเป็นภาษาไทย เช่น &ldquo;ใบอนุญาตสถานี KKN ใกล้หมดไหม&rdquo; — ระบบ AI จะค้น + สรุปให้
+        <p style={{ color: "var(--df-muted)", fontSize: 15, margin: 0 }}>
+          ค้นหาเป็นภาษาธรรมชาติ · AI เข้าใจบริบทบริษัท สาขา และประเภทเอกสาร
         </p>
-      </header>
+      </div>
 
-      <Section
-        number="01"
-        label="ค้นหา"
-        title="พิมพ์คำถามของคุณ"
-        className="animate-fade-up delay-100"
+      <DfCard
+        padding={20}
+        className="df-fade-up df-fade-up-100"
+        style={{ boxShadow: "var(--df-shadow-2)", marginBottom: 24 }}
       >
-        <Card>
-          <CardBody className="p-4 sm:p-6">
-            <SearchInterface examples={EXAMPLE_QUERIES} />
-          </CardBody>
-        </Card>
-      </Section>
+        <SearchInterface examples={EXAMPLE_QUERIES} />
+      </DfCard>
 
-      <Section
-        number="02"
-        label="คำแนะนำ"
-        title="เคล็ดลับการถาม"
-        className="mt-6 animate-fade-up delay-200"
+      <div
+        style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 24 }}
+        className="df-fade-up df-fade-up-200"
       >
-        <Card>
-          <CardBody className="p-4 sm:p-6 space-y-2 text-sm text-zinc-700">
-            <p className="flex items-start gap-2">
-              <Sparkles className="size-4 mt-0.5 text-[var(--color-brand-600)] shrink-0" />
-              <span>
-                ระบุชื่อ/รหัสสาขา เช่น &ldquo;สาขา KKN&rdquo; เพื่อจำกัดคำตอบ
-              </span>
-            </p>
-            <p className="flex items-start gap-2">
-              <Sparkles className="size-4 mt-0.5 text-[var(--color-brand-600)] shrink-0" />
-              <span>
-                ระบุช่วงเวลา เช่น &ldquo;หมดใน 30 วัน&rdquo; / &ldquo;หมดเดือนนี้&rdquo;
-              </span>
-            </p>
-            <p className="flex items-start gap-2">
-              <Sparkles className="size-4 mt-0.5 text-[var(--color-brand-600)] shrink-0" />
-              <span>
-                ถามเรื่อง รถ → จะค้นจากทะเบียน/พ.ร.บ./ตรวจสภาพ · ถามเรื่อง คนขับ → ใบขับขี่/ใบรับรอง
-              </span>
-            </p>
-            <p className="flex items-start gap-2">
-              <Sparkles className="size-4 mt-0.5 text-[var(--color-brand-600)] shrink-0" />
-              <span>
-                คำตอบ cache 1 ชั่วโมง — ถ้าพึ่งอัปเดตเอกสาร อาจต้องรอสักครู่
-              </span>
-            </p>
-          </CardBody>
-        </Card>
-      </Section>
+        <span
+          style={{
+            fontSize: 12,
+            color: "var(--df-muted)",
+            marginRight: 8,
+            alignSelf: "center",
+          }}
+        >
+          ลองถามด้วยคำเหล่านี้:
+        </span>
+        {EXAMPLE_QUERIES.map((q, i) => (
+          <DfPill key={i} tone="outline" small>
+            {q}
+          </DfPill>
+        ))}
+      </div>
+
+      <DfCard padding={18} warm className="df-fade-up df-fade-up-300">
+        <DfEyebrow>เคล็ดลับการถาม</DfEyebrow>
+        <ul
+          style={{
+            marginTop: 12,
+            marginBottom: 0,
+            paddingLeft: 0,
+            listStyle: "none",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+          }}
+        >
+          {[
+            "ระบุชื่อ/รหัสสาขา เช่น \"สาขา KKN\" เพื่อจำกัดคำตอบ",
+            "ระบุช่วงเวลา เช่น \"หมดใน 30 วัน\" หรือ \"หมดเดือนนี้\"",
+            "ถามเรื่อง รถ → จะค้นจากทะเบียน/พ.ร.บ./ตรวจสภาพ",
+            "ถามเรื่อง คนขับ → ใบขับขี่/ใบรับรอง",
+            "คำตอบ cache 1 ชั่วโมง — ถ้าพึ่งอัปเดตเอกสาร อาจต้องรอสักครู่",
+          ].map((tip, i) => (
+            <li
+              key={i}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 8,
+                fontSize: 13,
+                color: "var(--df-ink-2)",
+              }}
+            >
+              <Sparkles
+                size={14}
+                style={{
+                  color: "var(--df-brand)",
+                  flexShrink: 0,
+                  marginTop: 2,
+                }}
+              />
+              <span>{tip}</span>
+            </li>
+          ))}
+        </ul>
+      </DfCard>
     </div>
   );
 }

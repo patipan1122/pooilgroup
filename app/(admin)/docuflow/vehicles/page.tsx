@@ -3,7 +3,7 @@
 // Single Source: lib/vehicles/data.ts (loadVehicles, loadVehicleDocuments)
 
 import Link from "next/link";
-import { Truck, Plus } from "lucide-react";
+import { Truck, Plus, ArrowLeft, AlertTriangle, FileText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { Section } from "@/components/ui/section";
@@ -11,6 +11,15 @@ import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { thaiDateLong } from "@/lib/utils/format";
+import {
+  DfButton,
+  DfCard,
+  DfEyebrow,
+  DfPageHeader,
+  DfPill,
+  DfSection,
+  DfStatCard,
+} from "@/components/docuflow/df-ui";
 import { loadBranches, indexBranches } from "@/lib/cashhub/data";
 import {
   loadVehicles,
@@ -174,55 +183,105 @@ export default async function DocuFlowVehiclesPage({
   const canRegister = isAdminTier(session.user.role);
 
   return (
-    <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
-      <header className="mb-6 animate-fade-up">
-        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
-          📄 DocuFlow · ทะเบียนรถ · {thaiDateLong(new Date())}
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
-          ทะเบียน <span className="text-gradient-blue">รถ</span>
-        </h1>
-        <p className="text-zinc-600 mt-1.5 text-sm">
-          {rows.length} คัน
-          {expiringSoonCount > 0 && (
-            <>
-              {" · "}
-              <span className="font-bold text-rose-700">
-                ใกล้หมดอายุ {expiringSoonCount}
-              </span>
-            </>
-          )}
-          {missingCount > 0 && (
-            <>
-              {" · "}
-              <span className="font-bold text-zinc-700">
-                ไม่มีเอกสาร {missingCount}
-              </span>
-            </>
-          )}
-        </p>
-      </header>
+    <div
+      style={{
+        padding: "28px clamp(16px, 4vw, 40px)",
+        paddingBottom: 96,
+        maxWidth: 1500,
+        margin: "0 auto",
+      }}
+    >
+      <Link
+        href="/docuflow"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 13,
+          color: "var(--df-muted)",
+          textDecoration: "none",
+          marginBottom: 12,
+        }}
+      >
+        <ArrowLeft size={14} />
+        กลับ DocuFlow
+      </Link>
 
-      {/* Filter chips */}
-      <Section
-        number="01"
-        label="ตัวกรอง"
-        title="กรองรายการ"
-        action={
+      <DfPageHeader
+        eyebrow={<DfEyebrow>ทะเบียนรถ · กองรถ</DfEyebrow>}
+        title={
+          <>
+            <span style={{ color: "var(--df-brand)" }}>{rows.length}</span> คัน
+            {expiringSoonCount > 0 && (
+              <>
+                <br />
+                <span style={{ color: "var(--df-danger)" }}>
+                  {expiringSoonCount} คันต้องดำเนินการ
+                </span>
+              </>
+            )}
+          </>
+        }
+        description={`${thaiDateLong(new Date())} · ใบขับขี่ · พ.ร.บ. · ตรวจสภาพ`}
+        actions={
           canRegister ? (
-            <Link
-              href="/docuflow/vehicles/new"
-              className="inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 bg-[var(--color-brand-600)] text-white hover:bg-[var(--color-brand-700)] active:bg-[var(--color-brand-800)] shadow-soft h-10 px-4 text-sm rounded-xl"
-            >
-              <Plus className="size-4" />
+            <DfButton href="/docuflow/vehicles/new" variant="brand">
+              <Plus size={15} />
               เพิ่มรถ
-            </Link>
+            </DfButton>
           ) : null
         }
-        className="mb-6"
+      />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+          gap: 12,
+          marginBottom: 22,
+        }}
+        className="df-fade-up df-fade-up-100"
       >
-        <Card>
-          <CardBody className="space-y-4">
+        <DfStatCard
+          label="กองรถทั้งหมด"
+          value={rows.length}
+          tone="ink"
+          icon={<Truck size={17} />}
+        />
+        <DfStatCard
+          label="ใกล้หมดอายุ"
+          value={expiringSoonCount}
+          tone={expiringSoonCount > 0 ? "warn" : "ink"}
+          icon={<AlertTriangle size={17} />}
+        />
+        <DfStatCard
+          label="ไม่มีเอกสาร"
+          value={missingCount}
+          tone={missingCount > 0 ? "danger" : "ink"}
+          icon={<FileText size={17} />}
+        />
+        <DfStatCard
+          label="พร้อมใช้"
+          value={Math.max(0, rows.length - expiringSoonCount - missingCount)}
+          tone="success"
+          icon={<Truck size={17} />}
+        />
+      </div>
+
+      <DfSection
+        number="01"
+        label="ตัวกรอง"
+        action={
+          (sp.company || sp.branch || sp.type) ? (
+            <DfPill tone="brand" small>
+              ผลลัพธ์ {rows.length} คัน
+            </DfPill>
+          ) : null
+        }
+        className="df-fade-up df-fade-up-100"
+      >
+        <DfCard padding={18}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {/* Company chips */}
             <div>
               <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">
@@ -289,46 +348,58 @@ export default async function DocuFlowVehiclesPage({
               </div>
             )}
             {(sp.company || sp.branch || sp.type) && (
-              <div className="flex items-center gap-2 pt-1">
+              <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 4 }}>
                 <Link
                   href="/docuflow/vehicles"
-                  className="text-xs text-[var(--color-brand-700)] hover:underline font-medium"
+                  style={{
+                    fontSize: 12,
+                    color: "var(--df-brand)",
+                    fontWeight: 600,
+                    textDecoration: "none",
+                  }}
                 >
                   ล้างตัวกรอง
                 </Link>
-                <Badge tone="brand">
-                  ผลลัพธ์ {rows.length} คัน
-                </Badge>
               </div>
             )}
-          </CardBody>
-        </Card>
-      </Section>
+          </div>
+        </DfCard>
+      </DfSection>
 
       {/* Vehicle list */}
-      <Section number="02" label="กองรถ" title="รายการรถ" className="mt-8">
+      <DfSection number="02" label={`รายการรถ · ${rows.length} คัน`}>
         {rows.length === 0 ? (
-          <Card>
-            <CardBody>
-              <EmptyState
-                icon={<Truck className="size-6" />}
-                title="ยังไม่มีรถ"
-                description={
-                  canRegister
-                    ? "กดปุ่ม 'เพิ่มรถ' ด้านบนเพื่อลงทะเบียนคันแรก"
-                    : "ขอให้ผู้ดูแลระบบลงทะเบียนรถให้"
-                }
-              />
-            </CardBody>
-          </Card>
+          <DfCard padding={36} style={{ textAlign: "center" }}>
+            <Truck size={32} style={{ color: "var(--df-muted)", margin: "0 auto 12px" }} />
+            <h3 className="df-serif" style={{ fontSize: 18, marginTop: 0, marginBottom: 8 }}>
+              ยังไม่มีรถ
+            </h3>
+            <p style={{ fontSize: 13, color: "var(--df-muted)", marginBottom: 16 }}>
+              {canRegister
+                ? "กดปุ่ม 'เพิ่มรถ' ด้านบนเพื่อลงทะเบียนคันแรก"
+                : "ขอให้ผู้ดูแลระบบลงทะเบียนรถให้"}
+            </p>
+            {canRegister && (
+              <DfButton href="/docuflow/vehicles/new" variant="brand">
+                <Plus size={14} />
+                เพิ่มรถคันแรก
+              </DfButton>
+            )}
+          </DfCard>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
+              gap: 14,
+            }}
+          >
             {rows.map((vm) => (
               <VehicleCard key={vm.id} vm={vm} />
             ))}
           </div>
         )}
-      </Section>
+      </DfSection>
     </div>
   );
 }
