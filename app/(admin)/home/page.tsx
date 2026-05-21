@@ -263,6 +263,11 @@ export default async function HomePage() {
               landingPath="/repairs"
             />
             <ModuleCard
+              slug="clawfleet"
+              enabled={moduleEnabled.clawfleet ?? true}
+              landingPath="/clawfleet/dashboard"
+            />
+            <ModuleCard
               slug="fuelos"
               enabled={moduleEnabled.fuelos ?? true}
               landingPath="/fuelos"
