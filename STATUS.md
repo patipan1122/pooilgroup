@@ -1,8 +1,44 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-20 (Sentry + audit retention + user manuals)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-20 (Bug Report System LIVE)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-05-20 — In-app Bug Report system · commit `963fa9b` · production LIVE)
+
+**CEO request:** "ทุกหน้ามีปุ่มแจ้งบัค ซ่อนใต้ปุ่ม AI · แนบรูปได้ · admin ดูที่เดียวซ่อมรวม"
+
+**Shipped (Phase 1 + 2 in one shot):**
+- **Schema:** Prisma model `BugReport` + back-refs on Organization, User · enum `BugStatus`
+- **DB:** SQL migration `20260520000003_bug_reports.sql` (CREATE TABLE + RLS + policy in one shot · applied via Supabase SQL Editor)
+- **APIs:**
+  - `POST /api/bugs` (create · rate limit 5/hour/user · audit logged)
+  - `GET /api/bugs` (list · admin tier only · includes screenshot URLs from R2)
+  - `PATCH /api/bugs/[id]` (status + admin note · admin tier only · tracks acknowledged_at, fixed_at, fixed_commit_sha)
+- **Modal:** `components/bug-report-modal.tsx`
+  - Auto-captures `window.location.pathname + search` + `navigator.userAgent`
+  - Optional screenshot: paste-from-clipboard (Cmd+V) OR file picker
+  - Image-only (JPG/PNG/WebP/GIF · 10MB cap)
+  - Upload to R2 via existing `/api/r2/sign` endpoint
+- **AI Chat integration:** `components/cashhub/ai-chat.tsx`
+  - New section "🐛 เจอปัญหา?" with "แจ้งบัคหน้านี้" button below existing welcome screen
+  - Renders on every admin page (already integrated in `admin-shell.tsx`)
+- **Admin list page:** `/bugs` (admin tier only)
+  - Filter by status (ใหม่/รับเรื่อง/แก้แล้ว/ปิด)
+  - Inline status update buttons
+  - Screenshot preview (R2 public URL)
+  - Admin note textarea (auto-save on blur)
+  - Reporter info + URL trail per bug
+
+**Production verified:**
+- `pooilgroup-ppcsj3ny1` ● Ready · aliased to https://pooilgroup.vercel.app
+- `/health` returns healthy (env+supabase+r2 ok)
+- `/api/bugs` returns 307 (route alive · auth-redirect works)
+- `/bugs` returns 307 (admin guard works)
+
+**Compat fix included:**
+- prisma/schema.prisma: commented Repair back-refs (parallel session WIP · models not yet)
+- `.vercelignore` added — excludes parallel session WIP from `vercel --prod` uploads
 
 ## 🆕 Update (2026-05-20 — Phase 2: RLS + UX + Tests + Drafts + Refactor plan · commit `a365977`)
 
