@@ -9,6 +9,8 @@ import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { userHasModuleAccess, isAdminTier } from "@/lib/auth/module-access";
 import { isModuleDisabled } from "@/lib/modules";
+import { ApprovalBanner } from "@/components/cashhub/redesign/approval-banner";
+import "@/components/cashhub/redesign/tokens.css";
 
 export default async function CashHubLayout({
   children,
@@ -25,5 +27,12 @@ export default async function CashHubLayout({
     const ok = await userHasModuleAccess(session.user, "cashhub");
     if (!ok) redirect("/403");
   }
-  return <>{children}</>;
+  // .ch-scope owns the design-token CSS vars — every CashHub page reads them.
+  // ApprovalBanner queries pending counts on each render (server component).
+  return (
+    <div className="ch-scope">
+      <ApprovalBanner orgId={session.user.org_id} />
+      {children}
+    </div>
+  );
 }

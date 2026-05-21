@@ -15,10 +15,13 @@ export const dynamic = "force-dynamic";
 
 export default async function ApplyPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ ref?: string }>;
 }) {
   const { slug } = await params;
+  const { ref } = await searchParams;
 
   const posting = await prisma.recruitJobPosting.findUnique({
     where: { slug },
@@ -69,6 +72,7 @@ export default async function ApplyPage({
       jobTitle={posting.title}
       jobDescription={posting.description ?? undefined}
       companyName={posting.company?.name ?? posting.org.name}
+      referralCode={ref}
     />
   );
 }

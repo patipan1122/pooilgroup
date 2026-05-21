@@ -12,6 +12,7 @@ interface Props {
   jobTitle: string;
   jobDescription?: string;
   companyName: string;
+  referralCode?: string;
 }
 
 export function ApplyClient({
@@ -20,6 +21,7 @@ export function ApplyClient({
   jobTitle,
   jobDescription,
   companyName,
+  referralCode,
 }: Props) {
   const router = useRouter();
   // Lazy initialise from localStorage so we don't re-render after first paint.
@@ -49,6 +51,7 @@ export function ApplyClient({
               applicant: input.applicant,
               answers: input.answers,
               files: input.files,
+              referralCode,
             });
             router.push(`/apply/${slug}/success?ref=${result.refId}`);
           }}

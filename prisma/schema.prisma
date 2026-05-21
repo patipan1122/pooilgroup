@@ -85,6 +85,11 @@ model Organization {
   recruitApplications     RecruitApplication[]
   recruitApplicationNotes RecruitApplicationNote[]
   recruitBlacklist        RecruitBlacklist[]
+  recruitInterviews       RecruitInterview[]
+  recruitMessages         RecruitMessage[]
+  recruitRules            RecruitScreeningRule[]
+  recruitReferrals        RecruitReferral[]
+  recruitErasureRequests  RecruitErasureRequest[]
   // Repair module
   repairCategories        RepairCategory[]
   repairTickets           RepairTicket[]
@@ -211,10 +216,15 @@ model User {
   paymentsCreated         Payment[]                    @relation("PaymentCreatedBy")
   flashSalesCreated       FlashSale[]                  @relation("FlashSaleCreatedBy")
   // Recruit module
-  recruitPostingsCreated  RecruitJobPosting[]          @relation("RecruitPostingCreator")
-  recruitNotesAuthored    RecruitApplicationNote[]     @relation("RecruitNoteAuthor")
-  recruitBlacklistAdded   RecruitBlacklist[]           @relation("RecruitBlacklistAdder")
-  recruitBlacklistRemoved RecruitBlacklist[]           @relation("RecruitBlacklistRemover")
+  recruitPostingsCreated   RecruitJobPosting[]          @relation("RecruitPostingCreator")
+  recruitNotesAuthored     RecruitApplicationNote[]     @relation("RecruitNoteAuthor")
+  recruitBlacklistAdded    RecruitBlacklist[]           @relation("RecruitBlacklistAdder")
+  recruitBlacklistRemoved  RecruitBlacklist[]           @relation("RecruitBlacklistRemover")
+  recruitInterviewsCreated RecruitInterview[]           @relation("RecruitInterviewCreator")
+  recruitMessagesSent      RecruitMessage[]             @relation("RecruitMessageSender")
+  recruitRulesCreated      RecruitScreeningRule[]       @relation("RecruitRuleCreator")
+  recruitReferralsAsRef    RecruitReferral[]            @relation("RecruitReferrerUser")
+  recruitErasureDecided    RecruitErasureRequest[]      @relation("RecruitErasureDecider")
   // Repair module
   repairTicketsReported   RepairTicket[]               @relation("RepairTicketReporter")
   repairTicketsResolved   RepairTicket[]               @relation("RepairTicketResolver")
@@ -1246,6 +1256,7 @@ model RecruitJobPosting {
   company      Company?             @relation(fields: [companyId], references: [id], onDelete: SetNull)
   createdBy    User                 @relation("RecruitPostingCreator", fields: [createdById], references: [id], onDelete: Restrict)
   applications RecruitApplication[]
+  referrals    RecruitReferral[]
 
   @@index([orgId, status])
   @@index([slug])
@@ -1262,8 +1273,10 @@ model RecruitApplicant {
   lineId    String?  @map("line_id")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  org          Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  applications RecruitApplication[]
+  org              Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  applications     RecruitApplication[]
+  referrals        RecruitReferral[]
+  erasureRequests  RecruitErasureRequest[]
 
   @@index([orgId, phone])
   @@map("recruit_applicants")
@@ -1295,10 +1308,12 @@ model RecruitApplication {
   createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org       Organization             @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  posting   RecruitJobPosting        @relation(fields: [postingId], references: [id], onDelete: Cascade)
-  applicant RecruitApplicant         @relation(fields: [applicantId], references: [id], onDelete: Cascade)
-  notes     RecruitApplicationNote[]
+  org        Organization             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  posting    RecruitJobPosting        @relation(fields: [postingId], references: [id], onDelete: Cascade)
+  applicant  RecruitApplicant         @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  notes      RecruitApplicationNote[]
+  interviews RecruitInterview[]
+  messages   RecruitMessage[]
 
   @@index([orgId, status])
   @@index([postingId, status])
@@ -1348,6 +1363,178 @@ model RecruitBlacklist {
   @@index([orgId, phone])
   @@index([orgId, expiresAt])
   @@map("recruit_blacklist")
+}
+
+// =============================================================
+// RECRUIT v2 — Phase B-full per design canvas (2026-05-21)
+// =============================================================
+
+enum RecruitInterviewKind {
+  ONSITE
+  PHONE
+  VIDEO
+}
+
+enum RecruitInterviewStatus {
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+}
+
+model RecruitInterview {
+  id            String                 @id @default(uuid()) @db.Uuid
+  orgId         String                 @map("org_id") @db.Uuid
+  applicationId String                 @map("application_id") @db.Uuid
+  scheduledAt   DateTime               @map("scheduled_at") @db.Timestamptz(6)
+  durationMin   Int                    @default(60) @map("duration_min")
+  kind          RecruitInterviewKind   @default(ONSITE)
+  location      String?
+  status        RecruitInterviewStatus @default(SCHEDULED)
+  notes         String?
+  scorecard     Json?
+  createdById   String                 @map("created_by_id") @db.Uuid
+  createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org         Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  application RecruitApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  createdBy   User               @relation("RecruitInterviewCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([orgId, scheduledAt])
+  @@index([applicationId, scheduledAt])
+  @@index([orgId, status])
+  @@map("recruit_interviews")
+}
+
+enum RecruitMessageChannel {
+  LINE
+  SMS
+  EMAIL
+  INAPP
+}
+
+enum RecruitMessageDirection {
+  OUT
+  IN
+}
+
+enum RecruitMessageStatus {
+  DRAFT
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+model RecruitMessage {
+  id            String                  @id @default(uuid()) @db.Uuid
+  orgId         String                  @map("org_id") @db.Uuid
+  applicationId String                  @map("application_id") @db.Uuid
+  channel       RecruitMessageChannel
+  direction     RecruitMessageDirection
+  body          String
+  status        RecruitMessageStatus    @default(QUEUED)
+  externalId    String?                 @map("external_id")
+  errorMessage  String?                 @map("error_message")
+  createdById   String?                 @map("created_by_id") @db.Uuid
+  createdAt     DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  sentAt        DateTime?               @map("sent_at") @db.Timestamptz(6)
+
+  org         Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  application RecruitApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  createdBy   User?              @relation("RecruitMessageSender", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([applicationId, createdAt(sort: Desc)])
+  @@index([orgId, status])
+  @@map("recruit_messages")
+}
+
+model RecruitScreeningRule {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  name        String
+  enabled     Boolean  @default(true)
+  condition   Json
+  action      Json
+  firesCount  Int      @default(0) @map("fires_count")
+  lastFiredAt DateTime? @map("last_fired_at") @db.Timestamptz(6)
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdBy User         @relation("RecruitRuleCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([orgId, enabled])
+  @@map("recruit_screening_rules")
+}
+
+enum RecruitReferralStatus {
+  PENDING
+  CLICKED
+  APPLIED
+  SCREENED
+  HIRED
+  PAID
+  EXPIRED
+}
+
+model RecruitReferral {
+  id           String                @id @default(uuid()) @db.Uuid
+  orgId        String                @map("org_id") @db.Uuid
+  referrerId   String                @map("referrer_id") @db.Uuid
+  code         String                @unique
+  postingId    String?               @map("posting_id") @db.Uuid
+  applicantId  String?               @map("applicant_id") @db.Uuid
+  status       RecruitReferralStatus @default(PENDING)
+  bountyBaht   Decimal?              @map("bounty_baht") @db.Decimal(10, 2)
+  clickedAt    DateTime?             @map("clicked_at") @db.Timestamptz(6)
+  appliedAt    DateTime?             @map("applied_at") @db.Timestamptz(6)
+  hiredAt      DateTime?             @map("hired_at") @db.Timestamptz(6)
+  paidAt       DateTime?             @map("paid_at") @db.Timestamptz(6)
+  notes        String?
+  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org       Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  referrer  User              @relation("RecruitReferrerUser", fields: [referrerId], references: [id], onDelete: Restrict)
+  posting   RecruitJobPosting? @relation(fields: [postingId], references: [id], onDelete: SetNull)
+  applicant RecruitApplicant?  @relation(fields: [applicantId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, status])
+  @@index([referrerId, status])
+  @@map("recruit_referrals")
+}
+
+enum RecruitErasureStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+model RecruitErasureRequest {
+  id          String               @id @default(uuid()) @db.Uuid
+  orgId       String               @map("org_id") @db.Uuid
+  applicantId String               @map("applicant_id") @db.Uuid
+  refId       String               @map("ref_id")
+  reason      String?
+  status      RecruitErasureStatus @default(PENDING)
+  requestedAt DateTime             @default(now()) @map("requested_at") @db.Timestamptz(6)
+  decidedAt   DateTime?            @map("decided_at") @db.Timestamptz(6)
+  decidedById String?              @map("decided_by_id") @db.Uuid
+  decisionNote String?             @map("decision_note")
+
+  org       Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  applicant RecruitApplicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  decidedBy User?            @relation("RecruitErasureDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([orgId, status])
+  @@index([applicantId])
+  @@map("recruit_erasure_requests")
 }
 
 // =============================================================

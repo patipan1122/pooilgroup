@@ -10,6 +10,7 @@ import {
   type ApplicationStatus,
 } from "@/lib/recruit/types";
 import { Phone, MessageCircle, CalendarCheck, Mail, StickyNote, CheckCircle2, XCircle, Building } from "lucide-react";
+import { ErasureForm } from "./erasure-form";
 
 export const dynamic = "force-dynamic";
 
@@ -108,7 +109,7 @@ export default async function MyApplicationPage({
   const app = await prisma.recruitApplication.findUnique({
     where: { refId },
     include: {
-      applicant: { select: { fullName: true, phone: true } },
+      applicant: { select: { id: true, fullName: true, phone: true } },
       posting: {
         select: {
           title: true,
@@ -120,13 +121,21 @@ export default async function MyApplicationPage({
       notes: {
         orderBy: { createdAt: "desc" },
         take: 20,
-        // Public view: only show notes that look like applicant-visible updates
-        // (we'll filter by prefix later; HR-only internal notes start with [NOTE])
       },
     },
   });
 
   if (!app) return notFound();
+
+  // Check for pending erasure request
+  const pendingErasure = await prisma.recruitErasureRequest.findFirst({
+    where: {
+      orgId: app.orgId,
+      applicantId: app.applicant.id,
+      status: "PENDING",
+    },
+    select: { id: true },
+  });
 
   const status = app.status as ApplicationStatus;
   const meta = STATUS_PILL[status];
@@ -262,12 +271,13 @@ export default async function MyApplicationPage({
           </div>
         </div>
 
+        {/* Right to erasure (PDPA) */}
+        <ErasureForm refId={app.refId} hasPendingRequest={!!pendingErasure} />
+
         {/* PDPA footer */}
-        <div className="px-4 mt-8 text-center">
+        <div className="px-4 mt-6 text-center">
           <p className="text-[11px] text-zinc-400 leading-relaxed">
             ข้อมูลในใบสมัครเก็บตาม PDPA · ใช้เฉพาะการพิจารณาจ้างงาน
-            <br />
-            หากต้องการลบข้อมูลให้แจ้ง HR
           </p>
         </div>
       </div>

@@ -6,7 +6,7 @@ import {
   type Period,
 } from "@/lib/cashhub/executive-matrix";
 import { resolveCompanyFilter } from "@/lib/auth/company-context";
-import { DashboardView } from "./dashboard-view";
+import { DashboardV1View } from "./dashboard-v1-view";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +47,7 @@ export default async function DashboardPage({
     session.user.role === "super_admin" || session.user.role === "org_admin";
 
   return (
-    <DashboardView
+    <DashboardV1View
       userName={session.user.name}
       isAdmin={isAdmin}
       monthLabel={bkkMonthLabel()}

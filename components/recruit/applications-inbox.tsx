@@ -16,7 +16,7 @@ import {
 } from "@/lib/recruit/types";
 import { ApplicationDetail } from "./application-detail";
 import { thaiDateLong } from "@/lib/utils/format";
-import { ClipboardList, KanbanSquare, ListChecks, Plus, Inbox, SearchX, CalendarCheck, Users } from "lucide-react";
+import { ClipboardList, KanbanSquare, ListChecks, Plus, Inbox, SearchX, CalendarCheck, Users, MessageCircle, Bolt, Share2, BarChart3 } from "lucide-react";
 import { ViewToggle } from "./view-toggle";
 
 interface Props {
@@ -180,6 +180,34 @@ export async function ApplicationsInbox({
           >
             <Users className="size-4" />
             Talent Pool
+          </Link>
+          <Link
+            href="/recruit/messages"
+            className="flex items-center gap-2 text-sm text-zinc-700 hover:text-[var(--color-brand-700)] px-2 h-10 rounded hover:bg-zinc-50"
+          >
+            <MessageCircle className="size-4" />
+            กล่องข้อความ
+          </Link>
+          <Link
+            href="/recruit/dashboard"
+            className="flex items-center gap-2 text-sm text-zinc-700 hover:text-[var(--color-brand-700)] px-2 h-10 rounded hover:bg-zinc-50"
+          >
+            <BarChart3 className="size-4" />
+            Dashboard
+          </Link>
+          <Link
+            href="/recruit/auto-rules"
+            className="flex items-center gap-2 text-sm text-zinc-700 hover:text-[var(--color-brand-700)] px-2 h-10 rounded hover:bg-zinc-50"
+          >
+            <Bolt className="size-4" />
+            กฎคัดอัตโนมัติ
+          </Link>
+          <Link
+            href="/recruit/referrals"
+            className="flex items-center gap-2 text-sm text-zinc-700 hover:text-[var(--color-brand-700)] px-2 h-10 rounded hover:bg-zinc-50"
+          >
+            <Share2 className="size-4" />
+            Referrals
           </Link>
         </div>
       </aside>

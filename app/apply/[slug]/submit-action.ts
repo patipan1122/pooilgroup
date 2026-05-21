@@ -19,6 +19,7 @@ interface SubmitInput {
   applicant: { fullName: string; phone: string; email?: string };
   answers: Record<string, unknown>;
   files: Array<{ key: string; name: string; size: number; mime: string }>;
+  referralCode?: string;
 }
 
 export async function submitPublicApplication(
@@ -118,7 +119,17 @@ export async function submitPublicApplication(
     diff: { new: { refId, postingId: posting.id, name: applicant.fullName } },
   });
 
-  // 6. send confirmation email to applicant (best-effort)
+  // 6. attribute referral if code present
+  if (input.referralCode) {
+    try {
+      const { attributeReferral } = await import("@/lib/recruit/referral-actions");
+      await attributeReferral(input.referralCode, applicant.id);
+    } catch {
+      // best-effort · don't fail the submission
+    }
+  }
+
+  // 7. send confirmation email to applicant (best-effort)
   if (applicant.email) {
     await sendStatusEmail("NEW", {
       applicantName: applicant.fullName,

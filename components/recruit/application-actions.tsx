@@ -20,6 +20,7 @@ import {
   setApplicationTags,
 } from "@/lib/recruit/actions";
 import { Star, X, Plus } from "lucide-react";
+import { ScheduleInterviewButton } from "./schedule-interview-button";
 
 interface Props {
   applicationId: string;
@@ -102,6 +103,12 @@ export function ApplicationActions({
 
   return (
     <div className="mt-4 mb-6 rounded-2xl border border-zinc-200 bg-white p-4 space-y-3">
+      {/* Quick action row */}
+      <div className="flex items-center justify-between gap-2 pb-3 border-b border-zinc-100">
+        <p className="text-xs font-bold text-zinc-700">การดำเนินการ</p>
+        <ScheduleInterviewButton applicationId={applicationId} />
+      </div>
+
       {/* Status pill row */}
       <div>
         <p className="text-xs text-zinc-500 font-bold mb-2">

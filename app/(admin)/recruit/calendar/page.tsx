@@ -104,43 +104,91 @@ export default async function CalendarPage() {
   const session = await requireSession();
   requireRecruitAccess(session.user.role);
 
-  // Read all [INTERVIEW] notes from the last 60 days + future
   const sixtyDaysAgo = new Date();
   sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+  const sixtyDaysAhead = new Date();
+  sixtyDaysAhead.setDate(sixtyDaysAhead.getDate() + 60);
 
-  const notes = await prisma.recruitApplicationNote.findMany({
-    where: {
-      orgId: session.user.org_id,
-      body: { startsWith: "[INTERVIEW]" },
-      createdAt: { gte: sixtyDaysAgo },
-    },
-    include: {
-      application: {
-        select: {
-          id: true,
-          status: true,
-          applicant: { select: { fullName: true, phone: true } },
-          posting: { select: { title: true } },
+  // Read structured interviews (Phase 2) + legacy notes (Phase 1 backwards compat)
+  const [interviewsRaw, notes] = await Promise.all([
+    prisma.recruitInterview.findMany({
+      where: {
+        orgId: session.user.org_id,
+        scheduledAt: { gte: sixtyDaysAgo, lte: sixtyDaysAhead },
+      },
+      include: {
+        application: {
+          select: {
+            id: true,
+            status: true,
+            applicant: { select: { fullName: true, phone: true } },
+            posting: { select: { title: true } },
+          },
         },
       },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      orderBy: { scheduledAt: "desc" },
+    }),
+    prisma.recruitApplicationNote.findMany({
+      where: {
+        orgId: session.user.org_id,
+        body: { startsWith: "[INTERVIEW]" },
+        createdAt: { gte: sixtyDaysAgo },
+      },
+      include: {
+        application: {
+          select: {
+            id: true,
+            status: true,
+            applicant: { select: { fullName: true, phone: true } },
+            posting: { select: { title: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
 
-  const events: InterviewEvent[] = notes.map((n) => {
-    const text = n.body.replace(/^\[INTERVIEW\]\s*/, "");
-    return {
-      noteId: n.id,
-      applicationId: n.application.id,
-      applicantName: n.application.applicant.fullName,
-      phone: n.application.applicant.phone,
-      postingTitle: n.application.posting.title,
-      noteText: text,
-      parsedDate: parseInterviewDate(text, n.createdAt),
-      createdAt: n.createdAt,
-      status: n.application.status,
-    };
-  });
+  // Prefer structured interviews · skip legacy notes if app already has structured
+  const structuredAppIds = new Set(interviewsRaw.map((iv) => iv.applicationId));
+
+  const fromInterviews: InterviewEvent[] = interviewsRaw.map((iv) => ({
+    noteId: iv.id,
+    applicationId: iv.application.id,
+    applicantName: iv.application.applicant.fullName,
+    phone: iv.application.applicant.phone,
+    postingTitle: iv.application.posting.title,
+    noteText:
+      (iv.kind === "PHONE"
+        ? "📞 โทร"
+        : iv.kind === "VIDEO"
+          ? "💻 วิดีโอ"
+          : "📍 ที่สถานที่") +
+      (iv.location ? ` · ${iv.location}` : "") +
+      (iv.notes ? ` · ${iv.notes}` : "") +
+      ` · สถานะ: ${iv.status}`,
+    parsedDate: iv.scheduledAt,
+    createdAt: iv.createdAt,
+    status: iv.application.status,
+  }));
+
+  const fromNotes: InterviewEvent[] = notes
+    .filter((n) => !structuredAppIds.has(n.application.id))
+    .map((n) => {
+      const text = n.body.replace(/^\[INTERVIEW\]\s*/, "");
+      return {
+        noteId: n.id,
+        applicationId: n.application.id,
+        applicantName: n.application.applicant.fullName,
+        phone: n.application.applicant.phone,
+        postingTitle: n.application.posting.title,
+        noteText: text,
+        parsedDate: parseInterviewDate(text, n.createdAt),
+        createdAt: n.createdAt,
+        status: n.application.status,
+      };
+    });
+
+  const events: InterviewEvent[] = [...fromInterviews, ...fromNotes];
 
   // Group by day
   const byDay = new Map<string, InterviewEvent[]>();
