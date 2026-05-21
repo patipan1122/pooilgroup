@@ -8,6 +8,8 @@ import {
   STATUS_LABELS,
   STATUS_TONE,
   FormSchemaSchema,
+  TAG_COLOR_CHIP,
+  parseTag,
   type ApplicationStatus,
   type FormSchema,
 } from "@/lib/recruit/types";
@@ -96,6 +98,23 @@ export async function ApplicationDetail({ applicationId, canWrite }: Props) {
         </Badge>
       </div>
 
+      {/* Header tag chips (colored · readonly view in header — edit in ApplicationActions below) */}
+      {app.tags && app.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {app.tags.map((raw) => {
+            const { color, label } = parseTag(raw);
+            return (
+              <span
+                key={raw}
+                className={`inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-full ${TAG_COLOR_CHIP[color]}`}
+              >
+                {label}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       {/* Status actions (status change · rating · tags) */}
       {canWrite && (
         <ApplicationActions
@@ -159,10 +178,10 @@ export async function ApplicationDetail({ applicationId, canWrite }: Props) {
         </div>
       </div>
 
-      {/* Notes */}
+      {/* Timeline (โทร · LINE · นัดสัมภาษณ์ · note) */}
       <div className="mt-7">
         <h2 className="text-sm font-bold text-zinc-900 mb-3">
-          บันทึกภายใน HR ({app.notes.length})
+          Timeline · บันทึกกิจกรรม ({app.notes.length})
         </h2>
         <ApplicationNotes
           applicationId={app.id}

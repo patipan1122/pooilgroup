@@ -7,6 +7,8 @@ import {
   STATUS_LABELS,
   STATUS_TONE,
   APPLICATION_STATUSES,
+  TAG_COLOR_CHIP,
+  parseTag,
   type ApplicationStatus,
 } from "@/lib/recruit/types";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +24,7 @@ interface AppCard {
   starRating: number | null;
   flagged: boolean;
   refId: string;
+  tags?: string[];
 }
 
 interface Props {
@@ -134,6 +137,25 @@ function ApplicationCard({
             )}
           </div>
         </div>
+        {/* Colored tags on card */}
+        {app.tags && app.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {app.tags.slice(0, 4).map((raw) => {
+              const { color, label } = parseTag(raw);
+              return (
+                <span
+                  key={raw}
+                  className={`inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded ${TAG_COLOR_CHIP[color]}`}
+                >
+                  {label}
+                </span>
+              );
+            })}
+            {app.tags.length > 4 && (
+              <span className="text-[10px] text-zinc-400">+{app.tags.length - 4}</span>
+            )}
+          </div>
+        )}
       </Link>
       {canWrite && (
         <div className="relative mt-2">

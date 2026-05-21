@@ -319,6 +319,7 @@ export default async function PipelinePage({
                     starRating: a.starRating,
                     flagged: a.flaggedBlacklist,
                     refId: a.refId,
+                    tags: a.tags ?? [],
                   }))}
                   canWrite={canWrite}
                   selectHref={(id) =>

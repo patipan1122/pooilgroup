@@ -15,6 +15,7 @@ import {
   PostingStatus,
 } from "@/lib/recruit/types";
 import { FormBuilder } from "./form-builder";
+import { IPhonePreview } from "./iphone-preview";
 
 interface Props {
   mode: "create" | "edit" | "view";
@@ -147,8 +148,14 @@ export function PostingEditor({
     });
   }
 
+  // Match companyId to its display name for the iPhone preview
+  const companyName =
+    companies.find((c) => c.id === companyId)?.name ?? "Pooilgroup";
+
   return (
-    <div className="space-y-6">
+    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-6">
+      {/* LEFT: editor */}
+      <div className="space-y-6 min-w-0">
       {/* Basic info */}
       <div className="rounded-3xl border border-zinc-200 bg-white p-5 sm:p-6 space-y-4">
         <h2 className="text-sm font-bold text-zinc-900">
@@ -283,6 +290,18 @@ export function PostingEditor({
           </div>
         </div>
       )}
+      </div>
+      {/* RIGHT: iPhone live preview (xl+ only · sticky) */}
+      <aside className="hidden xl:block">
+        <div className="sticky top-20">
+          <IPhonePreview
+            schema={schema}
+            jobTitle={title}
+            jobDescription={description}
+            companyName={companyName}
+          />
+        </div>
+      </aside>
     </div>
   );
 }

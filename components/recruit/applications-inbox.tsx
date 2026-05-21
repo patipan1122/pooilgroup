@@ -10,6 +10,8 @@ import {
   APPLICATION_STATUSES,
   STATUS_LABELS,
   STATUS_TONE,
+  TAG_COLOR_CHIP,
+  parseTag,
   type ApplicationStatus,
 } from "@/lib/recruit/types";
 import { ApplicationDetail } from "./application-detail";
@@ -315,6 +317,27 @@ export async function ApplicationsInbox({
                       : "ยังไม่ส่ง"}
                   </span>
                 </div>
+                {/* Colored tags row */}
+                {app.tags && app.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {app.tags.slice(0, 5).map((raw) => {
+                      const { color, label } = parseTag(raw);
+                      return (
+                        <span
+                          key={raw}
+                          className={`inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded ${TAG_COLOR_CHIP[color]}`}
+                        >
+                          {label}
+                        </span>
+                      );
+                    })}
+                    {app.tags.length > 5 && (
+                      <span className="text-[10px] text-zinc-400">
+                        +{app.tags.length - 5}
+                      </span>
+                    )}
+                  </div>
+                )}
               </Link>
             ))
           )}

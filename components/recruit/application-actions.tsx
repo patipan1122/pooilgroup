@@ -5,7 +5,14 @@ import { toast } from "sonner";
 import {
   APPLICATION_STATUSES,
   STATUS_LABELS,
+  TAG_COLORS,
+  TAG_COLOR_CHIP,
+  TAG_COLOR_LABELS,
+  TAG_COLOR_SWATCH,
+  parseTag,
+  serializeTag,
   type ApplicationStatus,
+  type TagColor,
 } from "@/lib/recruit/types";
 import {
   changeApplicationStatus,
@@ -31,6 +38,7 @@ export function ApplicationActions({
   const [rating, setRating] = useState(currentRating);
   const [tags, setTags] = useState(currentTags);
   const [tagInput, setTagInput] = useState("");
+  const [tagColor, setTagColor] = useState<TagColor>("green");
   const [isPending, startTransition] = useTransition();
 
   function changeStatus(next: ApplicationStatus) {
@@ -62,9 +70,11 @@ export function ApplicationActions({
   }
 
   function addTag() {
-    const t = tagInput.trim();
-    if (!t || tags.includes(t)) return;
-    const next = [...tags, t];
+    const label = tagInput.trim();
+    if (!label) return;
+    const serialized = serializeTag(tagColor, label);
+    if (tags.includes(serialized)) return;
+    const next = [...tags, serialized];
     setTags(next);
     setTagInput("");
     startTransition(async () => {
@@ -157,22 +167,45 @@ export function ApplicationActions({
         <p className="text-xs text-zinc-500 font-bold mb-1.5">
           ป้ายกำกับ
         </p>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {tags.map((t) => (
-            <span
-              key={t}
-              className="inline-flex items-center gap-1 rounded-full bg-[var(--color-brand-50)] text-[var(--color-brand-800)] text-xs px-2 py-1 font-medium"
-            >
-              {t}
-              <button
-                type="button"
-                onClick={() => removeTag(t)}
-                className="hover:text-red-700"
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          {tags.map((raw) => {
+            const { color, label } = parseTag(raw);
+            return (
+              <span
+                key={raw}
+                className={`inline-flex items-center gap-1 rounded-full text-xs px-2.5 py-1 font-bold ${TAG_COLOR_CHIP[color]}`}
               >
-                <X className="size-3" />
-              </button>
-            </span>
-          ))}
+                {label}
+                <button
+                  type="button"
+                  onClick={() => removeTag(raw)}
+                  className="opacity-70 hover:opacity-100"
+                  aria-label={`ลบป้าย ${label}`}
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            );
+          })}
+        </div>
+        {/* Color picker + input */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1">
+            {TAG_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setTagColor(c)}
+                className={`size-7 rounded-full ${TAG_COLOR_SWATCH[c]} ring-offset-2 transition-all ${
+                  tagColor === c
+                    ? "ring-2 ring-zinc-900 scale-110"
+                    : "ring-1 ring-zinc-200 hover:scale-105"
+                }`}
+                title={TAG_COLOR_LABELS[c]}
+                aria-label={TAG_COLOR_LABELS[c]}
+              />
+            ))}
+          </div>
           <div className="flex items-center gap-1">
             <input
               type="text"
@@ -185,19 +218,18 @@ export function ApplicationActions({
                 }
               }}
               placeholder="เพิ่มป้าย..."
-              className="text-sm rounded-lg border border-zinc-200 px-3 h-10 w-32 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)]"
+              className="text-sm rounded-lg border border-zinc-300 px-3 h-10 w-36 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)]"
               maxLength={20}
             />
-            {tagInput && (
-              <button
-                type="button"
-                onClick={addTag}
-                aria-label="เพิ่มป้าย"
-                className="size-10 inline-flex items-center justify-center text-[var(--color-brand-700)] hover:text-[var(--color-brand-900)]"
-              >
-                <Plus className="size-4" />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={addTag}
+              disabled={!tagInput.trim()}
+              aria-label="เพิ่มป้าย"
+              className={`size-10 inline-flex items-center justify-center rounded-lg font-bold ${TAG_COLOR_CHIP[tagColor]} disabled:opacity-30`}
+            >
+              <Plus className="size-4" />
+            </button>
           </div>
         </div>
       </div>

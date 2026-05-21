@@ -232,7 +232,8 @@ export function FormBuilder({ schema, onChange, jobTitle, readonly }: Props) {
             <button
               type="button"
               onClick={() => setShowPreview(true)}
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-700 border border-zinc-300 px-3 py-2 rounded-lg hover:bg-zinc-50"
+              className="xl:hidden inline-flex items-center gap-1.5 text-xs font-bold text-zinc-700 border border-zinc-300 px-3 py-2 rounded-lg hover:bg-zinc-50"
+              title="Preview เต็มจอ (จอใหญ่ดูฝั่งขวาเลย)"
             >
               <Eye className="size-3.5" />
               Preview

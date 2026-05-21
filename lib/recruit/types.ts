@@ -266,3 +266,68 @@ export const ALLOWED_FILE_EXTENSIONS = [
 
 export const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB per file
 export const MAX_FILES_PER_APPLICATION = 3;
+
+// =============================================================
+// Color tags
+// CEO 2026-05-21: ขอสีเขียวสด/แดงสด เพื่อสื่อสารสถานะของผู้สมัครชัด
+// Stored as "color:label" (e.g. "green:VIP") in recruit_applications.tags[]
+// Backwards-compat: tags without prefix render as zinc (neutral)
+// =============================================================
+export const TAG_COLORS = [
+  "green",
+  "red",
+  "amber",
+  "blue",
+  "purple",
+  "zinc",
+] as const;
+export type TagColor = (typeof TAG_COLORS)[number];
+
+export const TAG_COLOR_LABELS: Record<TagColor, string> = {
+  green: "เขียว · ดี",
+  red: "แดง · ระวัง",
+  amber: "เหลือง · รอ",
+  blue: "น้ำเงิน · นัด",
+  purple: "ม่วง · พิเศษ",
+  zinc: "เทา · ทั่วไป",
+};
+
+// Tailwind chip classes per color (solid fill for high contrast)
+export const TAG_COLOR_CHIP: Record<TagColor, string> = {
+  green: "bg-green-500 text-white",
+  red: "bg-red-500 text-white",
+  amber: "bg-amber-400 text-amber-950",
+  blue: "bg-blue-500 text-white",
+  purple: "bg-purple-500 text-white",
+  zinc: "bg-zinc-200 text-zinc-800",
+};
+
+// Tailwind classes for color picker swatches
+export const TAG_COLOR_SWATCH: Record<TagColor, string> = {
+  green: "bg-green-500",
+  red: "bg-red-500",
+  amber: "bg-amber-400",
+  blue: "bg-blue-500",
+  purple: "bg-purple-500",
+  zinc: "bg-zinc-300",
+};
+
+/** Parse "color:label" → { color, label }. Falls back to zinc when no prefix. */
+export function parseTag(raw: string): { color: TagColor; label: string } {
+  const idx = raw.indexOf(":");
+  if (idx <= 0 || idx >= raw.length - 1) {
+    return { color: "zinc", label: raw };
+  }
+  const maybeColor = raw.slice(0, idx);
+  if ((TAG_COLORS as readonly string[]).includes(maybeColor)) {
+    return { color: maybeColor as TagColor, label: raw.slice(idx + 1) };
+  }
+  return { color: "zinc", label: raw };
+}
+
+/** Serialize a color + label into the storage format. */
+export function serializeTag(color: TagColor, label: string): string {
+  const clean = label.trim();
+  if (!clean) return "";
+  return color === "zinc" && !clean.includes(":") ? clean : `${color}:${clean}`;
+}

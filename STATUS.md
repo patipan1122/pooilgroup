@@ -1,8 +1,83 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-21 (Recruit module LIVE prod + polish round 1)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-21 (Recruit UX round 2 · iPhone preview + color tags + timeline)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-05-21 — Recruit UX round 2: iPhone preview + color tags + activity timeline · ยังไม่ deploy)
+
+**CEO request:** "หน้าสร้างประกาศ เพิ่ม UI iPhone เข้าไป เพื่อ preview · ป้ายกำกับใช้สีเขียวสด แดงสด · timeline บันทึก (โทร อัพเดต) ติด tag workflow ใช้ได้ใช่ไหม · Kanban ใช้ไม่ได้"
+
+**Shipped (local · build verified · dev curl OK):**
+- **`components/recruit/iphone-preview.tsx`** (new) — iPhone bezel + notch + status bar + scrollable screen · wrap `PublicFormRenderer` ใน preview mode
+- **`components/recruit/posting-editor.tsx`** — grid 2 cols: editor (left) | sticky iPhone preview (right, xl+) · live updates เมื่อ HR แก้ฟอร์ม
+- **`components/recruit/form-builder.tsx`** — Preview button ซ่อนใน xl+ (iPhone อยู่ข้าง ๆ แล้ว) · mobile/tablet ยังกดดูได้
+- **`lib/recruit/types.ts`** — เพิ่ม `TAG_COLORS` (green/red/amber/blue/purple/zinc) + `parseTag` + `serializeTag` · เก็บใน format `"color:label"` · backwards-compat (tag เก่าไม่มี prefix → zinc)
+- **`components/recruit/application-actions.tsx`** — color picker (6 สี swatch) + colored chip render + add button สีตาม selected color
+- **`components/recruit/applications-inbox.tsx`** — colored tag chips ใต้ status row ใน list item (max 5 + overflow)
+- **`components/recruit/pipeline-column.tsx`** + **`pipeline/page.tsx`** — colored tags ใน Kanban cards (max 4 + overflow)
+- **`components/recruit/application-detail.tsx`** — colored tag header chips + เปลี่ยน label "บันทึกภายใน HR" → "Timeline · บันทึกกิจกรรม"
+- **`components/recruit/application-notes.tsx`** — full rewrite to timeline:
+  - Quick-action buttons: 📞 โทรคุยแล้ว · ❌ โทรไม่รับ · 💬 LINE · 📅 นัดสัมภาษณ์ · ✉️ ส่งอีเมล
+  - Body encoded as `[TYPE] text` (no DB migration needed)
+  - Timeline UI with left vertical rail + colored dot + chip per activity type
+  - Backwards-compat: notes ไม่มี prefix → render as "บันทึก" (zinc)
+
+**No schema migration** — tag color + activity type encoded ใน string · ไม่ต้อง `prisma db push`
+
+**Verified:**
+- ✅ `tsc --noEmit` — clean (เฉพาะ pre-existing clawfleet error)
+- ✅ Local dev server `/apply/demo-hotel-manager-2026` HTTP 200 + IQ questions render
+- ✅ `/recruit` + `/recruit/postings/new` HTTP 307 (login redirect = pages valid)
+- ❌ Full `next build` fails ที่ clawfleet (missing imports · ไม่เกี่ยว) — ต้อง quarantine ก่อน deploy
+- ⏳ Manual visual test ใน browser (CEO ต้องเปิดเอง)
+
+**ยังไม่ได้ทำ (CEO ขอ):**
+- ⏳ **Filter by tag ใน inbox** — ตัด scope รอบนี้เพื่อจบ 3 ข้อใหญ่ก่อน · ทำรอบหน้า
+- ⏳ **Kanban bug fix** — CEO บอก "ใช้ไม่ได้" แต่ผมยังไม่เห็น error · ขอ screenshot
+- ⏳ **Deploy** — รอ clawfleet quarantine หรือ stub ก่อนถึงจะ build ผ่าน · ขอ CEO อนุมัติ
+
+**Next:**
+1. CEO เปิด `https://pooilgroup.vercel.app/recruit/pipeline` ดู Kanban error · ส่ง screenshot/console error มา
+2. ผม quarantine clawfleet stubs (เหมือนที่ทำกับ FuelOS) → build ผ่าน → deploy
+3. เพิ่ม tag filter ใน inbox sidebar (รอบหน้า)
+
+## 🆕 Update (2026-05-21 — Recruit: 4 demo postings + 4 fake applications บน prod · CEO walk-through round)
+
+## 🆕 Update (2026-05-21 — Recruit: 4 demo postings + 4 fake applications บน prod · CEO walk-through round)
+
+**CEO request:** "subagent ทำแค่ตัวโปรแกรมยังไม่ถูกใจ · ลองทำใบสมัคร 4 ตำแหน่ง · ชื่อ อายุ เพศ ประสบการณ์ แนบไฟล์ผลงาน IQ 5 ข้อ ความสามารถพิเศษ · แล้วทดสอบกรอกแบบคนจริงให้เห็น"
+
+**Shipped (script-only · ไม่แตะ code module):**
+- **`scripts/seed-recruit-demo.mjs`** — สร้าง 4 postings status=OPEN
+  - `demo-hotel-manager-2026` — ผู้จัดการโรงแรม (IQ: Occupancy, ADR, leadership)
+  - `demo-gas-station-staff-2026` — พนักงานปั๊มน้ำมัน (IQ: เงินทอน, ความซื่อสัตย์)
+  - `demo-housekeeper-2026` — แม่บ้าน (IQ: เวลา, ความละเอียด, จัดการสถานการณ์)
+  - `demo-convenience-staff-2026` — พนักงานร้านสะดวกซื้อ 7-Eleven (IQ: คำนวณเงิน, บริการ)
+- **`scripts/submit-fake-application.mjs`** — submit fake application 1 ใบต่อ posting (สถานะ NEW)
+
+**Public URLs (เปิดดูได้เลย ไม่ต้อง login):**
+- https://pooilgroup.vercel.app/apply/demo-hotel-manager-2026
+- https://pooilgroup.vercel.app/apply/demo-gas-station-staff-2026
+- https://pooilgroup.vercel.app/apply/demo-housekeeper-2026
+- https://pooilgroup.vercel.app/apply/demo-convenience-staff-2026
+
+**HR Inbox (ต้อง login super_admin):** https://pooilgroup.vercel.app/recruit · เห็น 4 ใบสมัคร NEW
+
+**Verified:**
+- ✅ 4 postings inserted (verified via select after insert)
+- ✅ Public apply pages return HTTP 200 + render IQ questions + amounts (837.50 / Occupancy / etc)
+- ✅ 4 fake applications submitted (refIds: APP-2026-820566, -003385, -577825, -575948)
+
+**ยังไม่ได้ทดสอบ:**
+- ⏳ File upload (R2 sign URL) — ต้องกรอกใน browser จริง ไม่ได้ทำผ่าน script
+- ⏳ Real apply flow ผ่าน `submitPublicApplication` server action — script bypass ตรง DB
+- ⏳ AI scoring + email notification — ต้องกด trigger ใน HR inbox
+
+**Next:**
+1. CEO เปิด `/apply/demo-hotel-manager-2026` ใน browser ดู render จริง
+2. CEO เปิด `/recruit` ดู inbox + กดเข้าใบสมัคร → ดู IQ answers
+3. ระบุจุดที่ "ยังไม่ถูกใจ" → ผมปรับ form builder หรือ public renderer ตามนั้น
 
 ## 🆕 Update (2026-05-21 — Recruit module LIVE บน production · 5 commits · 4-agent UX audit + polish)
 
