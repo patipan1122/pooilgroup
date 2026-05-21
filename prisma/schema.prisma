@@ -598,6 +598,8 @@ model Notification {
 
   @@index([userId, isRead, createdAt])
   @@index([orgId, createdAt])
+  // Ultraview audit 2026-05-21 — org-wide unread count + admin firehose
+  @@index([orgId, isRead, createdAt])
   @@map("notifications")
 }
 
@@ -665,6 +667,8 @@ model OrgModule {
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, moduleName])
+  // Ultraview audit 2026-05-21 — module-switcher lookup per org
+  @@index([orgId, isActive])
   @@map("org_modules")
 }
 
@@ -1168,6 +1172,435 @@ model AiSearchCache {
 }
 
 // =============================================================
+// 49-53. RECRUIT MODULE — "รับสมัครพนักงาน"
+// Spec: docs/RECRUIT_PLAN.md + docs/RECRUIT_DESIGN_PLAN.md
+// CEO decisions (2026-05-20):
+//   - Multi-company = soft tag (no strict isolation between Pooil/JPSync)
+//   - AI = manual trigger only (no auto-score)
+//   - National ID NOT collected at apply time
+//   - Form: HR full control (CRUD field schema)
+// =============================================================
+
+enum RecruitPostingStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+enum RecruitApplicationStatus {
+  NEW
+  SCREENING
+  INTERVIEW
+  OFFERED
+  HIRED
+  REJECTED
+  WITHDRAWN
+}
+
+enum RecruitCompanyScope {
+  POOIL
+  JPSYNC
+  BOTH
+}
+
+// 49. recruit_job_postings — ประกาศรับสมัคร
+model RecruitJobPosting {
+  id          String               @id @default(uuid()) @db.Uuid
+  orgId       String               @map("org_id") @db.Uuid
+  companyId   String?              @map("company_id") @db.Uuid // optional · CEO said "use together"
+  title       String
+  description String?
+  slug        String               @unique // public link path
+  status      RecruitPostingStatus @default(DRAFT)
+  // fieldSchema = { version: 1, sections: [{ title, fields: [...] }] }
+  fieldSchema Json                 @default("{\"version\":1,\"sections\":[]}") @map("field_schema")
+  // settings = { closingDateAutoClose, notifyTemplates, ... }
+  settings    Json                 @default("{}")
+  opensAt     DateTime?            @map("opens_at") @db.Timestamptz(6)
+  closesAt    DateTime?            @map("closes_at") @db.Timestamptz(6)
+  createdById String               @map("created_by_id") @db.Uuid
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org          Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company      Company?             @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  createdBy    User                 @relation("RecruitPostingCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  applications RecruitApplication[]
+
+  @@index([orgId, status])
+  @@index([slug])
+  @@map("recruit_job_postings")
+}
+
+// 50. recruit_applicants — ผู้สมัคร (normalized · dedup by phone)
+model RecruitApplicant {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  fullName  String   @map("full_name")
+  phone     String // primary identifier · CEO Q5: no national ID at apply
+  email     String?
+  lineId    String?  @map("line_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org          Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  applications RecruitApplication[]
+
+  @@index([orgId, phone])
+  @@map("recruit_applicants")
+}
+
+// 51. recruit_applications — ใบสมัคร (1 ใบต่อ posting × applicant submission)
+model RecruitApplication {
+  id               String                   @id @default(uuid()) @db.Uuid
+  orgId            String                   @map("org_id") @db.Uuid
+  postingId        String                   @map("posting_id") @db.Uuid
+  applicantId      String                   @map("applicant_id") @db.Uuid
+  refId            String                   @unique @map("ref_id") // human-readable e.g. "APP-2026-001234"
+  answers          Json                     @default("{}")
+  files            Json                     @default("[]") // [{key, name, size, mime, uploadedAt}]
+  status           RecruitApplicationStatus @default(NEW)
+  aiScore          Int?                     @map("ai_score") // 0-100 · null = not yet evaluated
+  aiSummary        String?                  @map("ai_summary")
+  aiStrengths      Json?                    @map("ai_strengths") // ["...", "...", "..."]
+  aiRisks          Json?                    @map("ai_risks")
+  aiEvaluatedAt    DateTime?                @map("ai_evaluated_at") @db.Timestamptz(6)
+  flaggedBlacklist Boolean                  @default(false) @map("flagged_blacklist")
+  blacklistReason  String?                  @map("blacklist_reason")
+  starRating       Int?                     @map("star_rating") // 1-5 from HR
+  tags             String[]                 @default([])
+  source           String? // utm_source from public link
+  draft            Boolean                  @default(false) // draft saved by applicant
+  submittedAt      DateTime?                @map("submitted_at") @db.Timestamptz(6)
+  schemaVersion    Int                      @default(1) @map("schema_version") // snapshot of posting.fieldSchema version
+  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  posting   RecruitJobPosting        @relation(fields: [postingId], references: [id], onDelete: Cascade)
+  applicant RecruitApplicant         @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  notes     RecruitApplicationNote[]
+
+  @@index([orgId, status])
+  @@index([postingId, status])
+  @@index([applicantId])
+  @@index([orgId, submittedAt(sort: Desc)])
+  // Ultraview audit 2026-05-21 — inbox query path (org × draft × status × submittedAt)
+  @@index([orgId, draft, status, submittedAt(sort: Desc)])
+  @@map("recruit_applications")
+}
+
+// 52. recruit_application_notes — HR internal notes
+model RecruitApplicationNote {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  applicationId String   @map("application_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  body          String
+  rating        Int? // 1-5
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org         Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  application RecruitApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  user        User               @relation("RecruitNoteAuthor", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+  @@map("recruit_application_notes")
+}
+
+// 53. recruit_blacklist — blacklist (phone-based · ไม่ใช้ national ID)
+model RecruitBlacklist {
+  id           String              @id @default(uuid()) @db.Uuid
+  orgId        String              @map("org_id") @db.Uuid
+  phone        String?
+  fullName     String              @map("full_name")
+  reason       String
+  companyScope RecruitCompanyScope @default(BOTH) @map("company_scope")
+  addedById    String              @map("added_by_id") @db.Uuid
+  addedAt      DateTime            @default(now()) @map("added_at") @db.Timestamptz(6)
+  expiresAt    DateTime            @map("expires_at") @db.Timestamptz(6)
+  removedAt    DateTime?           @map("removed_at") @db.Timestamptz(6)
+  removedById  String?             @map("removed_by_id") @db.Uuid
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  addedBy   User         @relation("RecruitBlacklistAdder", fields: [addedById], references: [id], onDelete: Restrict)
+  removedBy User?        @relation("RecruitBlacklistRemover", fields: [removedById], references: [id], onDelete: SetNull)
+
+  @@index([orgId, phone])
+  @@index([orgId, expiresAt])
+  @@map("recruit_blacklist")
+}
+
+// =============================================================
+// REPAIR MODULE — ระบบแจ้งซ่อม
+// 7 tables · ใครก็แจ้งได้ · admin assign + dispatch · tech see own jobs ·
+// purchasing sees parts queue · timeline + photos · tracking via code+phone.
+// =============================================================
+
+enum RepairTicketStatus {
+  NEW
+  ACK
+  IN_PROGRESS
+  WAITING_PARTS
+  RESOLVED
+  CLOSED
+  CANCELLED
+}
+
+enum RepairUrgency {
+  URGENT
+  NORMAL
+  LOW
+}
+
+enum RepairReportSource {
+  GUIDED
+  FREEFORM
+  INTERNAL
+}
+
+enum RepairPhotoPhase {
+  BEFORE
+  DURING
+  AFTER
+  PART
+  RECEIPT
+}
+
+enum RepairTechnicianKind {
+  INTERNAL
+  VENDOR
+}
+
+enum RepairPartStatus {
+  NEEDED
+  ORDERED
+  DELIVERED
+  INSTALLED
+  CANCELLED
+}
+
+enum RepairEventKind {
+  CREATED
+  STATUS_CHANGE
+  ASSIGN
+  UNASSIGN
+  COMMENT
+  PART_ADDED
+  PART_UPDATED
+  PHOTO_ADDED
+  REOPEN
+  CLOSE
+  ETA_SET
+}
+
+model RepairCategory {
+  id             String        @id @default(uuid()) @db.Uuid
+  orgId          String        @map("org_id") @db.Uuid
+  slug           String
+  label          String
+  emoji          String?
+  defaultUrgency RepairUrgency @default(NORMAL) @map("default_urgency")
+  sortOrder      Int           @default(0) @map("sort_order")
+  isActive       Boolean       @default(true) @map("is_active")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org     Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  tickets RepairTicket[]
+
+  @@unique([orgId, slug])
+  @@index([orgId, isActive, sortOrder])
+  @@map("repair_categories")
+}
+
+model RepairTechnician {
+  id          String               @id @default(uuid()) @db.Uuid
+  orgId       String               @map("org_id") @db.Uuid
+  kind        RepairTechnicianKind
+  userId      String?              @unique @map("user_id") @db.Uuid
+  name        String
+  phone       String?
+  lineId      String?              @map("line_id")
+  specialties String[]             @default([])
+  isActive    Boolean              @default(true) @map("is_active")
+  notes       String?
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org          Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user         User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  tickets      RepairTicket[]
+  vendorTokens RepairVendorToken[]
+
+  @@index([orgId, kind, isActive])
+  @@index([orgId, phone])
+  @@map("repair_technicians")
+}
+
+model RepairTicket {
+  id             String             @id @default(uuid()) @db.Uuid
+  orgId          String             @map("org_id") @db.Uuid
+  companyId      String?            @map("company_id") @db.Uuid
+  branchId       String?            @map("branch_id") @db.Uuid
+  categoryId     String?            @map("category_id") @db.Uuid
+  ticketCode     String             @unique @map("ticket_code")
+  title          String
+  description    String             @default("")
+  customerImpact String?            @map("customer_impact")
+  status         RepairTicketStatus @default(NEW)
+  urgency        RepairUrgency      @default(NORMAL)
+  source         RepairReportSource @default(FREEFORM)
+  reporterName   String             @map("reporter_name")
+  reporterPhone  String             @map("reporter_phone")
+  reporterEmail  String?            @map("reporter_email")
+  reporterUserId String?            @map("reporter_user_id") @db.Uuid
+  assignedTechId String?            @map("assigned_tech_id") @db.Uuid
+  assignedAt     DateTime?          @map("assigned_at") @db.Timestamptz(6)
+  responseDueAt  DateTime?          @map("response_due_at") @db.Timestamptz(6)
+  resolveDueAt   DateTime?          @map("resolve_due_at") @db.Timestamptz(6)
+  etaAt          DateTime?          @map("eta_at") @db.Timestamptz(6)
+  acknowledgedAt DateTime?          @map("acknowledged_at") @db.Timestamptz(6)
+  startedAt      DateTime?          @map("started_at") @db.Timestamptz(6)
+  resolvedAt     DateTime?          @map("resolved_at") @db.Timestamptz(6)
+  resolvedById   String?            @map("resolved_by_id") @db.Uuid
+  closedAt       DateTime?          @map("closed_at") @db.Timestamptz(6)
+  closedById     String?            @map("closed_by_id") @db.Uuid
+  cancelledAt    DateTime?          @map("cancelled_at") @db.Timestamptz(6)
+  partsCostCents Int                @default(0) @map("parts_cost_cents")
+  laborCostCents Int                @default(0) @map("labor_cost_cents")
+  ipAddress      String?            @map("ip_address")
+  metadata       Json               @default("{}")
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org          Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company      Company?              @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  branch       Branch?               @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  category     RepairCategory?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  reporterUser User?                 @relation("RepairTicketReporter", fields: [reporterUserId], references: [id], onDelete: SetNull)
+  assignedTech RepairTechnician?     @relation(fields: [assignedTechId], references: [id], onDelete: SetNull)
+  resolvedBy   User?                 @relation("RepairTicketResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  closedBy     User?                 @relation("RepairTicketCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  photos       RepairPhoto[]
+  parts        RepairPart[]
+  events       RepairTimelineEvent[]
+
+  @@index([orgId, status, urgency, createdAt(sort: Desc)])
+  @@index([orgId, branchId, status])
+  @@index([orgId, assignedTechId, status])
+  @@index([orgId, categoryId])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([reporterPhone])
+  @@map("repair_tickets")
+}
+
+model RepairPhoto {
+  id             String           @id @default(uuid()) @db.Uuid
+  orgId          String           @map("org_id") @db.Uuid
+  ticketId       String           @map("ticket_id") @db.Uuid
+  phase          RepairPhotoPhase
+  r2Key          String           @map("r2_key")
+  r2PublicUrl    String           @map("r2_public_url")
+  contentType    String           @default("image/webp") @map("content_type")
+  sizeBytes      Int              @default(0) @map("size_bytes")
+  width          Int?
+  height         Int?
+  caption        String?
+  uploadedById   String?          @map("uploaded_by_id") @db.Uuid
+  uploadedByName String?          @map("uploaded_by_name")
+  expiresAt      DateTime?        @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  ticket     RepairTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  uploadedBy User?        @relation("RepairPhotoUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, phase, createdAt])
+  @@index([orgId, expiresAt])
+  @@map("repair_photos")
+}
+
+model RepairPart {
+  id             String           @id @default(uuid()) @db.Uuid
+  orgId          String           @map("org_id") @db.Uuid
+  ticketId       String           @map("ticket_id") @db.Uuid
+  name           String
+  spec           String?
+  quantity       Int              @default(1)
+  unit           String           @default("ชิ้น")
+  unitPriceCents Int              @default(0) @map("unit_price_cents")
+  status         RepairPartStatus @default(NEEDED)
+  supplier       String?
+  receiptR2Key   String?          @map("receipt_r2_key")
+  notes          String?
+  addedById      String           @map("added_by_id") @db.Uuid
+  orderedAt      DateTime?        @map("ordered_at") @db.Timestamptz(6)
+  orderedById    String?          @map("ordered_by_id") @db.Uuid
+  deliveredAt    DateTime?        @map("delivered_at") @db.Timestamptz(6)
+  installedAt    DateTime?        @map("installed_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  ticket    RepairTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  addedBy   User         @relation("RepairPartAddedBy", fields: [addedById], references: [id], onDelete: Restrict)
+  orderedBy User?        @relation("RepairPartOrderedBy", fields: [orderedById], references: [id], onDelete: SetNull)
+
+  @@index([orgId, status])
+  @@index([ticketId])
+  @@index([orgId, name])
+  @@map("repair_parts")
+}
+
+model RepairTimelineEvent {
+  id          String          @id @default(uuid()) @db.Uuid
+  orgId       String          @map("org_id") @db.Uuid
+  ticketId    String          @map("ticket_id") @db.Uuid
+  kind        RepairEventKind
+  actorUserId String?         @map("actor_user_id") @db.Uuid
+  actorName   String          @map("actor_name")
+  payload     Json            @default("{}")
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  ticket RepairTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actor  User?        @relation("RepairTimelineActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, createdAt])
+  @@index([orgId, createdAt])
+  @@map("repair_timeline_events")
+}
+
+model RepairVendorToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  orgId        String    @map("org_id") @db.Uuid
+  technicianId String    @map("technician_id") @db.Uuid
+  token        String    @unique
+  issuedAt     DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
+  lastUsedAt   DateTime? @map("last_used_at") @db.Timestamptz(6)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(6)
+  usageCount   Int       @default(0) @map("usage_count")
+
+  org        Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  technician RepairTechnician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, technicianId])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("repair_vendor_tokens")
+}
+
+// =============================================================
+// FUELOS QUARANTINE — module rebuild pending (รอบ 46 audit)
+// These 16 models have zero app/lib/component references.
+// Kept in schema to preserve DB tables in prod.
+// DO NOT add new code that imports these — coordinate with CEO first.
+// Audit date: 2026-05-21
+// =============================================================
+
+// =============================================================
 // ============================================================
 // FUELOS — Sprint 6 schema (kicked off 2026-05-11)
 // Spec: ดีเทลv1/FUELOS.md §2 (Price Engine), §3/§14 (CRM Multi-Entity),
@@ -1639,423 +2072,4 @@ model ChequeTracking {
   @@index([orgId, status])
   @@index([entityId, dueDate])
   @@map("cheque_tracking")
-}
-
-// =============================================================
-// 49-53. RECRUIT MODULE — "รับสมัครพนักงาน"
-// Spec: docs/RECRUIT_PLAN.md + docs/RECRUIT_DESIGN_PLAN.md
-// CEO decisions (2026-05-20):
-//   - Multi-company = soft tag (no strict isolation between Pooil/JPSync)
-//   - AI = manual trigger only (no auto-score)
-//   - National ID NOT collected at apply time
-//   - Form: HR full control (CRUD field schema)
-// =============================================================
-
-enum RecruitPostingStatus {
-  DRAFT
-  OPEN
-  CLOSED
-  ARCHIVED
-}
-
-enum RecruitApplicationStatus {
-  NEW
-  SCREENING
-  INTERVIEW
-  OFFERED
-  HIRED
-  REJECTED
-  WITHDRAWN
-}
-
-enum RecruitCompanyScope {
-  POOIL
-  JPSYNC
-  BOTH
-}
-
-// 49. recruit_job_postings — ประกาศรับสมัคร
-model RecruitJobPosting {
-  id          String               @id @default(uuid()) @db.Uuid
-  orgId       String               @map("org_id") @db.Uuid
-  companyId   String?              @map("company_id") @db.Uuid // optional · CEO said "use together"
-  title       String
-  description String?
-  slug        String               @unique // public link path
-  status      RecruitPostingStatus @default(DRAFT)
-  // fieldSchema = { version: 1, sections: [{ title, fields: [...] }] }
-  fieldSchema Json                 @default("{\"version\":1,\"sections\":[]}") @map("field_schema")
-  // settings = { closingDateAutoClose, notifyTemplates, ... }
-  settings    Json                 @default("{}")
-  opensAt     DateTime?            @map("opens_at") @db.Timestamptz(6)
-  closesAt    DateTime?            @map("closes_at") @db.Timestamptz(6)
-  createdById String               @map("created_by_id") @db.Uuid
-  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org          Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  company      Company?             @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  createdBy    User                 @relation("RecruitPostingCreator", fields: [createdById], references: [id], onDelete: Restrict)
-  applications RecruitApplication[]
-
-  @@index([orgId, status])
-  @@index([slug])
-  @@map("recruit_job_postings")
-}
-
-// 50. recruit_applicants — ผู้สมัคร (normalized · dedup by phone)
-model RecruitApplicant {
-  id        String   @id @default(uuid()) @db.Uuid
-  orgId     String   @map("org_id") @db.Uuid
-  fullName  String   @map("full_name")
-  phone     String // primary identifier · CEO Q5: no national ID at apply
-  email     String?
-  lineId    String?  @map("line_id")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  org          Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  applications RecruitApplication[]
-
-  @@index([orgId, phone])
-  @@map("recruit_applicants")
-}
-
-// 51. recruit_applications — ใบสมัคร (1 ใบต่อ posting × applicant submission)
-model RecruitApplication {
-  id               String                   @id @default(uuid()) @db.Uuid
-  orgId            String                   @map("org_id") @db.Uuid
-  postingId        String                   @map("posting_id") @db.Uuid
-  applicantId      String                   @map("applicant_id") @db.Uuid
-  refId            String                   @unique @map("ref_id") // human-readable e.g. "APP-2026-001234"
-  answers          Json                     @default("{}")
-  files            Json                     @default("[]") // [{key, name, size, mime, uploadedAt}]
-  status           RecruitApplicationStatus @default(NEW)
-  aiScore          Int?                     @map("ai_score") // 0-100 · null = not yet evaluated
-  aiSummary        String?                  @map("ai_summary")
-  aiStrengths      Json?                    @map("ai_strengths") // ["...", "...", "..."]
-  aiRisks          Json?                    @map("ai_risks")
-  aiEvaluatedAt    DateTime?                @map("ai_evaluated_at") @db.Timestamptz(6)
-  flaggedBlacklist Boolean                  @default(false) @map("flagged_blacklist")
-  blacklistReason  String?                  @map("blacklist_reason")
-  starRating       Int?                     @map("star_rating") // 1-5 from HR
-  tags             String[]                 @default([])
-  source           String? // utm_source from public link
-  draft            Boolean                  @default(false) // draft saved by applicant
-  submittedAt      DateTime?                @map("submitted_at") @db.Timestamptz(6)
-  schemaVersion    Int                      @default(1) @map("schema_version") // snapshot of posting.fieldSchema version
-  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org       Organization             @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  posting   RecruitJobPosting        @relation(fields: [postingId], references: [id], onDelete: Cascade)
-  applicant RecruitApplicant         @relation(fields: [applicantId], references: [id], onDelete: Cascade)
-  notes     RecruitApplicationNote[]
-
-  @@index([orgId, status])
-  @@index([postingId, status])
-  @@index([applicantId])
-  @@index([orgId, submittedAt(sort: Desc)])
-  @@map("recruit_applications")
-}
-
-// 52. recruit_application_notes — HR internal notes
-model RecruitApplicationNote {
-  id            String   @id @default(uuid()) @db.Uuid
-  orgId         String   @map("org_id") @db.Uuid
-  applicationId String   @map("application_id") @db.Uuid
-  userId        String   @map("user_id") @db.Uuid
-  body          String
-  rating        Int? // 1-5
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  org         Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  application RecruitApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  user        User               @relation("RecruitNoteAuthor", fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([applicationId, createdAt])
-  @@map("recruit_application_notes")
-}
-
-// 53. recruit_blacklist — blacklist (phone-based · ไม่ใช้ national ID)
-model RecruitBlacklist {
-  id           String              @id @default(uuid()) @db.Uuid
-  orgId        String              @map("org_id") @db.Uuid
-  phone        String?
-  fullName     String              @map("full_name")
-  reason       String
-  companyScope RecruitCompanyScope @default(BOTH) @map("company_scope")
-  addedById    String              @map("added_by_id") @db.Uuid
-  addedAt      DateTime            @default(now()) @map("added_at") @db.Timestamptz(6)
-  expiresAt    DateTime            @map("expires_at") @db.Timestamptz(6)
-  removedAt    DateTime?           @map("removed_at") @db.Timestamptz(6)
-  removedById  String?             @map("removed_by_id") @db.Uuid
-
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  addedBy   User         @relation("RecruitBlacklistAdder", fields: [addedById], references: [id], onDelete: Restrict)
-  removedBy User?        @relation("RecruitBlacklistRemover", fields: [removedById], references: [id], onDelete: SetNull)
-
-  @@index([orgId, phone])
-  @@index([orgId, expiresAt])
-  @@map("recruit_blacklist")
-}
-
-// =============================================================
-// REPAIR MODULE — ระบบแจ้งซ่อม
-// 7 tables · ใครก็แจ้งได้ · admin assign + dispatch · tech see own jobs ·
-// purchasing sees parts queue · timeline + photos · tracking via code+phone.
-// =============================================================
-
-enum RepairTicketStatus {
-  NEW
-  ACK
-  IN_PROGRESS
-  WAITING_PARTS
-  RESOLVED
-  CLOSED
-  CANCELLED
-}
-
-enum RepairUrgency {
-  URGENT
-  NORMAL
-  LOW
-}
-
-enum RepairReportSource {
-  GUIDED
-  FREEFORM
-  INTERNAL
-}
-
-enum RepairPhotoPhase {
-  BEFORE
-  DURING
-  AFTER
-  PART
-  RECEIPT
-}
-
-enum RepairTechnicianKind {
-  INTERNAL
-  VENDOR
-}
-
-enum RepairPartStatus {
-  NEEDED
-  ORDERED
-  DELIVERED
-  INSTALLED
-  CANCELLED
-}
-
-enum RepairEventKind {
-  CREATED
-  STATUS_CHANGE
-  ASSIGN
-  UNASSIGN
-  COMMENT
-  PART_ADDED
-  PART_UPDATED
-  PHOTO_ADDED
-  REOPEN
-  CLOSE
-  ETA_SET
-}
-
-model RepairCategory {
-  id             String        @id @default(uuid()) @db.Uuid
-  orgId          String        @map("org_id") @db.Uuid
-  slug           String
-  label          String
-  emoji          String?
-  defaultUrgency RepairUrgency @default(NORMAL) @map("default_urgency")
-  sortOrder      Int           @default(0) @map("sort_order")
-  isActive       Boolean       @default(true) @map("is_active")
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org     Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  tickets RepairTicket[]
-
-  @@unique([orgId, slug])
-  @@index([orgId, isActive, sortOrder])
-  @@map("repair_categories")
-}
-
-model RepairTechnician {
-  id          String               @id @default(uuid()) @db.Uuid
-  orgId       String               @map("org_id") @db.Uuid
-  kind        RepairTechnicianKind
-  userId      String?              @unique @map("user_id") @db.Uuid
-  name        String
-  phone       String?
-  lineId      String?              @map("line_id")
-  specialties String[]             @default([])
-  isActive    Boolean              @default(true) @map("is_active")
-  notes       String?
-  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org          Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  user         User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
-  tickets      RepairTicket[]
-  vendorTokens RepairVendorToken[]
-
-  @@index([orgId, kind, isActive])
-  @@index([orgId, phone])
-  @@map("repair_technicians")
-}
-
-model RepairTicket {
-  id             String             @id @default(uuid()) @db.Uuid
-  orgId          String             @map("org_id") @db.Uuid
-  companyId      String?            @map("company_id") @db.Uuid
-  branchId       String?            @map("branch_id") @db.Uuid
-  categoryId     String?            @map("category_id") @db.Uuid
-  ticketCode     String             @unique @map("ticket_code")
-  title          String
-  description    String             @default("")
-  customerImpact String?            @map("customer_impact")
-  status         RepairTicketStatus @default(NEW)
-  urgency        RepairUrgency      @default(NORMAL)
-  source         RepairReportSource @default(FREEFORM)
-  reporterName   String             @map("reporter_name")
-  reporterPhone  String             @map("reporter_phone")
-  reporterEmail  String?            @map("reporter_email")
-  reporterUserId String?            @map("reporter_user_id") @db.Uuid
-  assignedTechId String?            @map("assigned_tech_id") @db.Uuid
-  assignedAt     DateTime?          @map("assigned_at") @db.Timestamptz(6)
-  responseDueAt  DateTime?          @map("response_due_at") @db.Timestamptz(6)
-  resolveDueAt   DateTime?          @map("resolve_due_at") @db.Timestamptz(6)
-  etaAt          DateTime?          @map("eta_at") @db.Timestamptz(6)
-  acknowledgedAt DateTime?          @map("acknowledged_at") @db.Timestamptz(6)
-  startedAt      DateTime?          @map("started_at") @db.Timestamptz(6)
-  resolvedAt     DateTime?          @map("resolved_at") @db.Timestamptz(6)
-  resolvedById   String?            @map("resolved_by_id") @db.Uuid
-  closedAt       DateTime?          @map("closed_at") @db.Timestamptz(6)
-  closedById     String?            @map("closed_by_id") @db.Uuid
-  cancelledAt    DateTime?          @map("cancelled_at") @db.Timestamptz(6)
-  partsCostCents Int                @default(0) @map("parts_cost_cents")
-  laborCostCents Int                @default(0) @map("labor_cost_cents")
-  ipAddress      String?            @map("ip_address")
-  metadata       Json               @default("{}")
-  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org          Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  company      Company?              @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  branch       Branch?               @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  category     RepairCategory?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  reporterUser User?                 @relation("RepairTicketReporter", fields: [reporterUserId], references: [id], onDelete: SetNull)
-  assignedTech RepairTechnician?     @relation(fields: [assignedTechId], references: [id], onDelete: SetNull)
-  resolvedBy   User?                 @relation("RepairTicketResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
-  closedBy     User?                 @relation("RepairTicketCloser", fields: [closedById], references: [id], onDelete: SetNull)
-  photos       RepairPhoto[]
-  parts        RepairPart[]
-  events       RepairTimelineEvent[]
-
-  @@index([orgId, status, urgency, createdAt(sort: Desc)])
-  @@index([orgId, branchId, status])
-  @@index([orgId, assignedTechId, status])
-  @@index([orgId, categoryId])
-  @@index([orgId, createdAt(sort: Desc)])
-  @@index([reporterPhone])
-  @@map("repair_tickets")
-}
-
-model RepairPhoto {
-  id             String           @id @default(uuid()) @db.Uuid
-  orgId          String           @map("org_id") @db.Uuid
-  ticketId       String           @map("ticket_id") @db.Uuid
-  phase          RepairPhotoPhase
-  r2Key          String           @map("r2_key")
-  r2PublicUrl    String           @map("r2_public_url")
-  contentType    String           @default("image/webp") @map("content_type")
-  sizeBytes      Int              @default(0) @map("size_bytes")
-  width          Int?
-  height         Int?
-  caption        String?
-  uploadedById   String?          @map("uploaded_by_id") @db.Uuid
-  uploadedByName String?          @map("uploaded_by_name")
-  expiresAt      DateTime?        @map("expires_at") @db.Timestamptz(6)
-  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  ticket     RepairTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  uploadedBy User?        @relation("RepairPhotoUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
-
-  @@index([ticketId, phase, createdAt])
-  @@index([orgId, expiresAt])
-  @@map("repair_photos")
-}
-
-model RepairPart {
-  id             String           @id @default(uuid()) @db.Uuid
-  orgId          String           @map("org_id") @db.Uuid
-  ticketId       String           @map("ticket_id") @db.Uuid
-  name           String
-  spec           String?
-  quantity       Int              @default(1)
-  unit           String           @default("ชิ้น")
-  unitPriceCents Int              @default(0) @map("unit_price_cents")
-  status         RepairPartStatus @default(NEEDED)
-  supplier       String?
-  receiptR2Key   String?          @map("receipt_r2_key")
-  notes          String?
-  addedById      String           @map("added_by_id") @db.Uuid
-  orderedAt      DateTime?        @map("ordered_at") @db.Timestamptz(6)
-  orderedById    String?          @map("ordered_by_id") @db.Uuid
-  deliveredAt    DateTime?        @map("delivered_at") @db.Timestamptz(6)
-  installedAt    DateTime?        @map("installed_at") @db.Timestamptz(6)
-  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  ticket    RepairTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  addedBy   User         @relation("RepairPartAddedBy", fields: [addedById], references: [id], onDelete: Restrict)
-  orderedBy User?        @relation("RepairPartOrderedBy", fields: [orderedById], references: [id], onDelete: SetNull)
-
-  @@index([orgId, status])
-  @@index([ticketId])
-  @@index([orgId, name])
-  @@map("repair_parts")
-}
-
-model RepairTimelineEvent {
-  id          String          @id @default(uuid()) @db.Uuid
-  orgId       String          @map("org_id") @db.Uuid
-  ticketId    String          @map("ticket_id") @db.Uuid
-  kind        RepairEventKind
-  actorUserId String?         @map("actor_user_id") @db.Uuid
-  actorName   String          @map("actor_name")
-  payload     Json            @default("{}")
-  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  ticket RepairTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  actor  User?        @relation("RepairTimelineActor", fields: [actorUserId], references: [id], onDelete: SetNull)
-
-  @@index([ticketId, createdAt])
-  @@index([orgId, createdAt])
-  @@map("repair_timeline_events")
-}
-
-model RepairVendorToken {
-  id           String    @id @default(uuid()) @db.Uuid
-  orgId        String    @map("org_id") @db.Uuid
-  technicianId String    @map("technician_id") @db.Uuid
-  token        String    @unique
-  issuedAt     DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
-  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
-  lastUsedAt   DateTime? @map("last_used_at") @db.Timestamptz(6)
-  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(6)
-  usageCount   Int       @default(0) @map("usage_count")
-
-  org        Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  technician RepairTechnician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
-
-  @@index([orgId, technicianId])
-  @@index([token])
-  @@index([expiresAt])
-  @@map("repair_vendor_tokens")
 }

@@ -11,6 +11,7 @@ import { serverClient, adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { getRequestMeta } from "@/lib/audit/request-meta";
 import { isAdminTier } from "@/lib/auth/role-guards";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const CreateSchema = z.object({
   url: z.string().min(1).max(500),
@@ -19,32 +20,24 @@ const CreateSchema = z.object({
   userAgent: z.string().max(500).optional(),
 });
 
-// In-memory rate limit (per process) — 5 bug reports / hour / user.
-// Anti-spam · resets on cold-start which is fine for bug reports.
 const RATE_LIMIT = 5;
-const WINDOW_MS = 60 * 60 * 1000;
-const reportCounts = new Map<string, { count: number; resetAt: number }>();
-
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const entry = reportCounts.get(userId);
-  if (!entry || now > entry.resetAt) {
-    reportCounts.set(userId, { count: 1, resetAt: now + WINDOW_MS });
-    return true;
-  }
-  if (entry.count >= RATE_LIMIT) return false;
-  entry.count += 1;
-  return true;
-}
+const WINDOW_SEC = 60 * 60;
 
 export async function POST(req: NextRequest) {
   const session = await requireSession();
   const meta = getRequestMeta(req);
 
-  if (!checkRateLimit(session.user.id)) {
+  // DB-backed limiter — Map-based limiter doesn't survive serverless cold-starts
+  // and isn't shared across instances; bug reports must use the shared bucket.
+  const rl = await checkRateLimit({
+    bucket: `bug-report:user:${session.user.id}`,
+    max: RATE_LIMIT,
+    windowSec: WINDOW_SEC,
+  });
+  if (rl.limited) {
     return NextResponse.json(
-      { error: "ส่งบัคได้ ${RATE_LIMIT} ครั้งต่อชั่วโมง · ลองใหม่ภายหลัง" },
-      { status: 429 },
+      { error: `ส่งบัคได้ ${RATE_LIMIT} ครั้งต่อชั่วโมง · ลองใหม่ภายหลัง` },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
     );
   }
 
@@ -59,6 +52,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ข้อมูลไม่ถูกต้อง" }, { status: 400 });
   }
   const { url, description, screenshotKey, userAgent } = parsed.data;
+
+  // Screenshot key must live under this user's prefix — prevents an attacker
+  // from attaching someone else's R2 object (or any guessed key) to their bug.
+  if (screenshotKey && !screenshotKey.startsWith(`users/${session.user.id}/`)) {
+    return NextResponse.json(
+      { error: "screenshotKey ไม่ถูกต้อง" },
+      { status: 400 },
+    );
+  }
 
   // Use serverClient — RLS applies (org isolation enforced)
   const supabase = await serverClient();

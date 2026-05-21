@@ -95,7 +95,7 @@ export default async function HeatmapPage() {
 
       <Section
         number="01"
-        label="MATRIX"
+        label="ตารางสรุป"
         title={`${branches.length} สาขา × ${daysInMonth} วัน`}
       >
         <Card>

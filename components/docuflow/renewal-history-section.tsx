@@ -90,7 +90,7 @@ export async function RenewalHistorySection({
     return (
       <Section
         number={sectionNumber}
-        label="RENEWAL HISTORY"
+        label="ประวัติต่ออายุ"
         title="ประวัติการต่ออายุ"
         className="animate-fade-up delay-400"
       >
@@ -131,7 +131,7 @@ export async function RenewalHistorySection({
   return (
     <Section
       number={sectionNumber}
-      label="RENEWAL HISTORY"
+      label="ประวัติต่ออายุ"
       title="ประวัติการต่ออายุ · เปรียบเทียบของเดิม vs ใหม่"
       description={`เอกสารนี้ต่ออายุมาแล้ว ${chain.length - 1} ครั้ง`}
       action={

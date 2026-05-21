@@ -159,7 +159,7 @@ export default async function QuickFillPage({
             {/* Filter bar */}
             <Section
               number="01"
-              label="FILTER"
+              label="ตัวกรอง"
               title="เลือกขอบเขต"
               description="กรองเลือกบริษัท/ประเภทธุรกิจ · ค้นหาด้วยรหัส/ชื่อ/จังหวัด"
               className="mb-8 animate-fade-up delay-100"
@@ -237,7 +237,7 @@ export default async function QuickFillPage({
             {/* Branches grouped */}
             <Section
               number="02"
-              label="BRANCHES"
+              label="สาขา"
               title={`${filtered.length} สาขา · เรียงตามประเภท`}
               description="กดสาขาเพื่อกรอกรายงานวันนี้"
               className="animate-fade-up delay-200"

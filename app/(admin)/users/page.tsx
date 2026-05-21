@@ -319,7 +319,7 @@ export default async function UsersPage() {
         {allUsers.length <= 1 && branches.length === 0 ? (
           <Section
             number="01"
-            label="GETTING STARTED"
+            label="เริ่มต้น"
             title="ยังไม่มีสาขา · ยังไม่มีผู้ใช้"
             description="ก่อนเชิญผู้ใช้ ต้องสร้างสาขาก่อน — สร้างสาขาแรกและเชิญผู้จัดการสาขาในขั้นเดียว"
             className="animate-fade-up delay-100"

@@ -1,8 +1,10 @@
 // /r/track/[code]?p=<phone> — public ticket tracking detail
 // Requires both ticket code + phone match (validated server-side)
+import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { normalizePhone, normalizeTicketCode } from "@/lib/repair/slug";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { PublicTrackDetail } from "@/components/repair/track-detail";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +32,22 @@ export default async function RepairTrackDetailPage({
   const phone = normalizePhone(phoneRaw);
   if (!phone) {
     redirect(`/r/track?code=${encodeURIComponent(code)}&error=${encodeURIComponent("เบอร์โทรไม่ถูกต้อง")}`);
+  }
+
+  // Anti-enumeration: throttle unauthenticated lookups per IP so attackers
+  // can't brute-force code+phone combinations.
+  const hdrs = await headers();
+  const ip =
+    hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    hdrs.get("x-real-ip") ??
+    "unknown";
+  const rl = await checkRateLimit({
+    bucket: `repair-track:ip:${ip}`,
+    max: 30,
+    windowSec: 600,
+  });
+  if (rl.limited) {
+    redirect(`/r/track?code=${encodeURIComponent(code)}&error=${encodeURIComponent("ลองใหม่ภายหลัง (เช็คบ่อยเกินไป)")}`);
   }
 
   const ticket = await prisma.repairTicket.findFirst({

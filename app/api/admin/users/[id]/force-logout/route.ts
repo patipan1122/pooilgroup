@@ -10,6 +10,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { canManageUser } from "@/lib/auth/role-guards";
+import type { DbUser } from "@/lib/auth/session";
 
 export async function POST(
   _req: NextRequest,
@@ -29,12 +31,12 @@ export async function POST(
 
   if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Cannot force logout super_admin (Owner protection — only Owner can do that themselves)
-  if (target.role === "super_admin" && target.id !== session.user.id) {
-    return NextResponse.json(
-      { error: "ไม่สามารถ Force Logout Super Admin คนอื่นได้" },
-      { status: 403 },
-    );
+  // Privilege-rank guard — caller must out-rank target (or be super_admin force-logging-out self).
+  if (
+    target.id !== session.user.id &&
+    !canManageUser(session.user.role, target.role as DbUser["role"])
+  ) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
   // Mark all sessions revoked

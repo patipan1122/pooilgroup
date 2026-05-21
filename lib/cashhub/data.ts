@@ -157,7 +157,9 @@ export async function loadReports(
       .order("report_date", { ascending: false })
       .order("submitted_at", { ascending: false });
   }
-  if (limit) q = q.limit(limit);
+  // safety cap — unbounded scan kill switch (memory: ultraview-รอบ46)
+  const safeLimit = limit ?? 5000;
+  q = q.limit(safeLimit);
 
   const { data } = await q;
   return (data ?? []) as CanonicalReport[];

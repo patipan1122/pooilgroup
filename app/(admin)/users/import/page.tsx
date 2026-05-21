@@ -12,7 +12,7 @@ export default async function ImportUsersPage() {
       <BackButton label="กลับไปรายชื่อผู้ใช้" fallbackHref="/users" />
 
       <header className="mb-6 animate-fade-up">
-        <p className="text-xs uppercase tracking-widest text-[var(--color-brand-600)] font-semibold">
+        <p className="text-xs font-semibold text-[var(--color-brand-600)]">
           จัดการระบบ
         </p>
         <h1 className="text-3xl font-extrabold tracking-tight font-display mt-2">

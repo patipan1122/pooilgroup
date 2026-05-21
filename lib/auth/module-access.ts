@@ -6,9 +6,11 @@
 //
 // Backfill: existing non-admin users were granted cashhub at migration time.
 
+import { redirect } from "next/navigation";
 import { adminClient } from "@/lib/db/server";
 import type { DbUser } from "./session";
 import type { ModuleSlug } from "@/lib/modules";
+import { isModuleDisabled } from "@/lib/modules";
 // Single source of truth for admin-tier role membership lives in role-guards.
 // Re-exported here so existing import sites (`@/lib/auth/module-access`) keep
 // working — see feedback rule on module isolation / single source of truth.
@@ -72,4 +74,29 @@ export async function userHasModuleAccess(
     .maybeSingle();
 
   return !!data;
+}
+
+/**
+ * One-call guard for module layouts. Combines the kill switch
+ * (`MODULES_DISABLED` env) with the per-user entitlement check.
+ * Redirects to /dashboard if the module is globally disabled,
+ * or to /403 if the user lacks entitlement. Returns silently when
+ * access is granted.
+ *
+ * Use inside server layout files:
+ *   export default async function CashHubLayout({ children }) {
+ *     await assertModuleEnabled("cashhub");
+ *     return <>{children}</>;
+ *   }
+ */
+export async function assertModuleEnabled(slug: ModuleSlug): Promise<void> {
+  if (isModuleDisabled(slug)) {
+    redirect("/dashboard");
+  }
+  // Late import to avoid circular dependency with session helpers.
+  const { requireSession } = await import("./session");
+  const session = await requireSession();
+  if (isAdminTier(session.user.role)) return;
+  const ok = await userHasModuleAccess(session.user, slug);
+  if (!ok) redirect("/403");
 }

@@ -92,7 +92,7 @@ export default async function DocuFlowOverviewPage() {
           ============================================================ */}
       <Section
         number="01"
-        label="OVERVIEW"
+        label="ภาพรวม"
         title="สถานะเอกสาร"
         className="mb-10 animate-fade-up delay-100"
       >
@@ -125,7 +125,7 @@ export default async function DocuFlowOverviewPage() {
           ============================================================ */}
       <Section
         number="02"
-        label="EXPIRING"
+        label="ใกล้หมดอายุ"
         title="ใกล้หมดอายุที่สุด"
         description="10 รายการแรก — กดเข้าไปต่ออายุ/ดูรายละเอียด"
         className="mb-10 animate-fade-up delay-200"
@@ -186,7 +186,7 @@ export default async function DocuFlowOverviewPage() {
           ============================================================ */}
       <Section
         number="03"
-        label="RECENT"
+        label="ล่าสุด"
         title="อัปโหลดล่าสุด"
         description="ไฟล์ที่เพิ่มเข้าระบบล่าสุด"
         className="animate-fade-up delay-300"

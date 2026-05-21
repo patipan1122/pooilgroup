@@ -122,7 +122,7 @@ export default async function NotesInboxPage({
         ))}
       </div>
 
-      <Section number="01" label="MESSAGES" title="โน้ตล่าสุด">
+      <Section number="01" label="โน้ต" title="โน้ตล่าสุด">
         {rows.length === 0 ? (
           <Card>
             <CardBody>

@@ -299,7 +299,7 @@ export function ExecutiveTable({ data }: Props) {
                 className="text-left px-3 sm:px-4 py-3 font-bold text-zinc-600 sticky top-14 sm:top-16 left-0 bg-white z-30 min-w-[200px] sm:min-w-[240px]"
                 style={{ borderRight: "1px solid var(--color-border)" }}
               >
-                <span className="text-[10px] uppercase tracking-widest text-zinc-400">
+                <span className="text-xs font-semibold text-zinc-500">
                   ประเภทธุรกิจ
                 </span>
               </th>
@@ -351,7 +351,7 @@ export function ExecutiveTable({ data }: Props) {
                 className="px-3 sm:px-4 py-3 sticky left-0 bg-[var(--color-brand-50)] z-10"
                 style={{ borderRight: "1px solid var(--color-border)" }}
               >
-                <div className="text-[10px] uppercase tracking-widest text-[var(--color-brand-700)] font-bold">
+                <div className="text-xs font-bold text-[var(--color-brand-700)]">
                   รวมทั้งหมด
                 </div>
                 <div className="text-xs text-zinc-600 mt-0.5">

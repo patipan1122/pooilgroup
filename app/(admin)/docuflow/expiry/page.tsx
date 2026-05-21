@@ -203,7 +203,7 @@ export default async function ExpiryDashboardPage({
 
       <Section
         number="01"
-        label="FILTER"
+        label="ตัวกรอง"
         title="กรอง"
         className="mb-6 animate-fade-up delay-100"
       >
@@ -248,7 +248,7 @@ export default async function ExpiryDashboardPage({
 
       <Section
         number="02"
-        label="BUCKETS"
+        label="แบ่งกลุ่ม"
         title="แบ่งตามความเร่งด่วน"
         className="animate-fade-up delay-200"
       >
@@ -259,6 +259,14 @@ export default async function ExpiryDashboardPage({
                 icon={<Clock className="size-6" />}
                 title="ไม่มีเอกสารใกล้หมดอายุ"
                 description="ทุกเอกสารยังเหลืออายุเกิน 90 วัน — เยี่ยม!"
+                action={
+                  <Link
+                    href="/docuflow/browse"
+                    className="inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50 active:bg-zinc-100 h-9 px-4 text-sm rounded-xl"
+                  >
+                    ดูเอกสารทั้งหมด
+                  </Link>
+                }
               />
             </CardBody>
           </Card>

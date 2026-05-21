@@ -181,7 +181,7 @@ export function DashboardView({
             ============================================================ */}
         <Section
           number="01"
-          label="THIS MONTH"
+          label="เดือนนี้"
           title="ยอดสะสมเดือนนี้"
           className="mb-6 animate-fade-up delay-100"
         >
@@ -394,7 +394,7 @@ export function DashboardView({
             ============================================================ */}
         <Section
           number="02"
-          label="BY BUSINESS"
+          label="ตามประเภทธุรกิจ"
           title="แยกตามประเภทธุรกิจ"
           description="กดการ์ด → เข้าดูรายชื่อสาขาในกลุ่มนั้น"
           className="mb-6 animate-fade-up delay-150"
@@ -429,7 +429,7 @@ export function DashboardView({
             ============================================================ */}
         <Section
           number="03"
-          label="MONEY FLOW"
+          label="กระแสเงิน"
           title="ช่องทางรับเงินรวม"
           description="รวมเฉพาะรายงานที่อนุมัติแล้ว"
           className="mb-6 animate-fade-up delay-200"
@@ -534,7 +534,7 @@ export function DashboardView({
             ============================================================ */}
         <Section
           number="04"
-          label="CALENDAR"
+          label="ปฏิทิน"
           title="ปฏิทินกรอกครบ 30 วัน"
           description="กดวันที่ → ดูรายละเอียดวันนั้น (ส่งกี่สาขา · ยอดรวม)"
           className="mb-6 animate-fade-up delay-250"
@@ -576,7 +576,7 @@ export function DashboardView({
             ============================================================ */}
         <Section
           number="05"
-          label="ATTENTION"
+          label="ต้องดูแล"
           title="🚨 ต้องดูแลวันนี้"
           description="สาขาขาดส่ง · ยอดผิดปกติ · เครดิตค้างสูง · เงินขาด"
           action={
@@ -658,7 +658,7 @@ export function DashboardView({
             ============================================================ */}
         <Section
           number="06"
-          label="OTHER MODULES"
+          label="โปรแกรมอื่น"
           title="โปรแกรมอื่น"
           description="FuelOS / DocuFlow — เปิดใช้แล้วจะแสดงสรุปตรงนี้"
           className="mb-6 animate-fade-up delay-350"

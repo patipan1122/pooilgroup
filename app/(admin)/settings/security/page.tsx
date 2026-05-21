@@ -76,7 +76,7 @@ export default async function SecuritySettingsPage() {
 
       <Section
         number="01"
-        label="SECURITY"
+        label="ความปลอดภัย"
         title="Session + Password Policy"
         description="มีผลกับผู้ใช้ใหม่ทุกคน · ผู้ใช้เก่าจะถูกบังคับเปลี่ยนเมื่อ Login ครั้งถัดไป"
       >

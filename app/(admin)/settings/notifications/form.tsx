@@ -398,15 +398,15 @@ function ToggleRow({
         type="button"
         onClick={onToggle}
         className={cn(
-          "relative inline-flex shrink-0 h-7 w-12 rounded-full transition-colors",
+          "relative inline-flex shrink-0 h-9 w-16 rounded-full transition-colors",
           active ? "bg-[var(--color-brand-600)]" : "bg-zinc-300",
         )}
         aria-label={`Toggle ${label}`}
       >
         <span
           className={cn(
-            "inline-block size-5 rounded-full bg-white shadow transition-transform absolute top-1",
-            active ? "translate-x-6" : "translate-x-1",
+            "inline-block size-7 rounded-full bg-white shadow transition-transform absolute top-1",
+            active ? "translate-x-8" : "translate-x-1",
           )}
         />
       </button>

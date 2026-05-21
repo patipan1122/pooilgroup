@@ -3,11 +3,14 @@
 // Why this exists: เจ้าของไม่ต้องโทรถาม Manager — Manager บันทึกใน UI เลย
 // then เจ้าของเห็น "พนักงานลาออก หาคนใหม่อยู่" ใน Dashboard.
 
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { CheckCircle2 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Section } from "@/components/ui/section";
 import { BackButton } from "@/components/ui/back-button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { bkkToday } from "@/lib/utils/format";
 import { subDays } from "date-fns";
@@ -174,7 +177,7 @@ export default async function MissingPage({
 
       <Section
         number="01"
-        label="MISSING"
+        label="ขาดส่ง"
         title={`${rows.length} สาขายังไม่กรอกบางวัน`}
         description={
           rows.length === 0
@@ -183,12 +186,19 @@ export default async function MissingPage({
         }
       >
         {rows.length === 0 ? (
-          <div className="rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50 p-10 text-center">
-            <div className="text-4xl mb-3">✅</div>
-            <p className="text-base text-emerald-900 font-bold">
-              ทุกสาขากรอกครบทุกวันใน {days} วันที่ผ่านมา
-            </p>
-          </div>
+          <EmptyState
+            icon={<CheckCircle2 className="size-6" />}
+            title={`ทุกสาขากรอกครบทุกวันใน ${days} วันที่ผ่านมา`}
+            description="ระบบไม่พบสาขาที่ขาดส่ง · ไปดูภาพรวมประจำเดือนได้เลย"
+            action={
+              <Link
+                href="/cashhub/dashboard"
+                className="inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50 active:bg-zinc-100 h-9 px-4 text-sm rounded-xl"
+              >
+                ไปดูภาพรวม
+              </Link>
+            }
+          />
         ) : (
           <MissingList rows={rows} />
         )}

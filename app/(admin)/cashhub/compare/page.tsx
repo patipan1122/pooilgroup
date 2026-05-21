@@ -271,7 +271,7 @@ export default async function ComparePage({
       {anomalies.length > 0 && (
         <Section
           number="00"
-          label="ANOMALIES"
+          label="ผิดปกติ"
           title={`พบ ${anomalies.length} จุดผิดปกติ`}
           description="สาขาที่ต้องตรวจสอบ — เรียงตามความสำคัญ"
           className="mb-6"
@@ -392,7 +392,7 @@ export default async function ComparePage({
       {/* Total comparison */}
       <Section
         number="01"
-        label="TOTALS"
+        label="ยอดรวม"
         title="ยอดรวมอนุมัติ (Approved)"
         className="mb-6"
       >
@@ -411,11 +411,11 @@ export default async function ComparePage({
       </Section>
 
       {/* Type breakdown */}
-      <Section number="02" label="BY TYPE" title="แยกตามประเภทธุรกิจ" className="mb-6">
+      <Section number="02" label="ตามประเภท" title="แยกตามประเภทธุรกิจ" className="mb-6">
         <Card>
           <CardBody className="!p-0">
             <table className="w-full text-sm">
-              <thead className="text-xs font-bold text-zinc-500">
+              <thead className="sticky top-14 sm:top-16 z-20 bg-white text-xs font-bold text-zinc-500">
                 <tr className="border-b border-zinc-100">
                   <th className="text-left p-3">ประเภท</th>
                   <th className="text-right p-3">{fmtMonth(aMonth)}</th>
@@ -459,7 +459,7 @@ export default async function ComparePage({
       {/* Payment mix */}
       <Section
         number="03"
-        label="MONEY FLOW"
+        label="กระแสเงิน"
         title="ช่องทางรับเงิน"
         className="mb-6"
       >

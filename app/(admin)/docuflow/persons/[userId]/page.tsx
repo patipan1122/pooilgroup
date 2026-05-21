@@ -190,7 +190,7 @@ export default async function PersonDocDetailPage({
         </div>
       </header>
 
-      <Section number="01" label="DOCUMENTS" title="เอกสารหลัก 4 ประเภท">
+      <Section number="01" label="เอกสาร" title="เอกสารหลัก 4 ประเภท">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {slots.map((slot) => (
             <DocSlotCard key={slot.type} slot={slot} userId={user.id} />
@@ -201,7 +201,7 @@ export default async function PersonDocDetailPage({
       {otherDocs.length > 0 && (
         <Section
           number="02"
-          label="OTHER"
+          label="อื่น ๆ"
           title="เอกสารเพิ่มเติม"
           className="mt-8"
         >

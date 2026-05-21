@@ -115,7 +115,7 @@ export default async function LeaderboardPage({
         </CardBody>
       </Card>
 
-      <Section number="01" label="RANKINGS" title={`${sorted.length} สาขา`}>
+      <Section number="01" label="อันดับ" title={`${sorted.length} สาขา`}>
         <Card>
           <CardHeader>
             <CardTitle>เรียงตาม {SORTS[sort]}</CardTitle>

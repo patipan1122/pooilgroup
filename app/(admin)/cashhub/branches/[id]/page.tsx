@@ -329,7 +329,7 @@ export default async function BranchDetailPage({
       </header>
 
       {/* Hero */}
-      <Section number="01" label="THIS MONTH" title="ยอดเดือนนี้" className="mb-6">
+      <Section number="01" label="เดือนนี้" title="ยอดเดือนนี้" className="mb-6">
         <Card>
           <CardBody>
             <div className="flex flex-col gap-4">

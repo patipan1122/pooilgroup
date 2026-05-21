@@ -109,53 +109,71 @@ export async function POST(req: NextRequest) {
 
   const createdBranches: Array<{ id: string; code: string; name: string }> = [];
 
-  // 3. Create missing branches if asked
+  // 3. Create missing branches if asked — single bulk insert
   if (missingStations.length > 0 && createMissingBranches) {
     const nextCode = await nextEvBranchCode(admin, orgId);
+    const now = new Date().toISOString();
 
-    for (const stationName of missingStations) {
+    const newRows = missingStations.map((stationName) => {
       const code = nextCode(2); // PO-EV-001 is reserved for the existing manual seed
       const id = crypto.randomUUID();
-      const now = new Date().toISOString();
-      const { error } = await admin.from("branches").insert({
+      return {
+        row: {
+          id,
+          org_id: orgId,
+          company_id: POOIL_OIL_COMPANY_ID,
+          code,
+          name: stationName,
+          business_type: "ev_station",
+          province: null,
+          region: null,
+          address: null,
+          phone: null,
+          lat: null,
+          lng: null,
+          manager_id: null,
+          line_group_id: null,
+          report_deadline: "21:00",
+          is_active: true,
+          created_at: now,
+          updated_at: now,
+        },
+        stationName,
         id,
-        org_id: orgId,
-        company_id: POOIL_OIL_COMPANY_ID,
         code,
-        name: stationName,
-        business_type: "ev_station",
-        province: null,
-        region: null,
-        address: null,
-        phone: null,
-        lat: null,
-        lng: null,
-        manager_id: null,
-        line_group_id: null,
-        report_deadline: "21:00",
-        is_active: true,
-        created_at: now,
-        updated_at: now,
+      };
+    });
+
+    const { error } = await admin
+      .from("branches")
+      .insert(newRows.map((r) => r.row));
+    if (error) {
+      return NextResponse.json(
+        {
+          error: `สร้างสาขาไม่สำเร็จ: ${error.message}`,
+          createdBranches,
+        },
+        { status: 500 },
+      );
+    }
+    for (const r of newRows) {
+      branchByNormName.set(normalizeName(r.stationName), {
+        id: r.id,
+        code: r.code,
       });
-      if (error) {
-        return NextResponse.json(
-          {
-            error: `สร้างสาขา ${stationName} ไม่สำเร็จ: ${error.message}`,
-            createdBranches,
-          },
-          { status: 500 },
-        );
-      }
-      branchByNormName.set(normalizeName(stationName), { id, code });
-      createdBranches.push({ id, code, name: stationName });
+      createdBranches.push({ id: r.id, code: r.code, name: r.stationName });
     }
   }
 
-  // 4. Upsert daily reports
+  // 4. Upsert daily reports — single bulk upsert (was N×30ms inserts +
+  // 23505 fallback updates). Unique key: (branch_id, report_date, shift).
   const reportsCreated: Array<{ branchCode: string; date: string }> = [];
   const reportsUpdated: Array<{ branchCode: string; date: string }> = [];
   const skipped: Array<{ stationName: string; date: string; reason: string }> = [];
 
+  // 4a. Split aggregates into "resolvable" (have a branch) vs "skipped" (no branch)
+  type Resolvable = { agg: Aggregate; branch: { id: string; code: string } };
+  const resolvable: Resolvable[] = [];
   for (const agg of aggregates) {
     const branch = branchByNormName.get(normalizeName(agg.stationName));
     if (!branch) {
@@ -166,86 +184,111 @@ export async function POST(req: NextRequest) {
       });
       continue;
     }
+    resolvable.push({ agg, branch });
+  }
 
-    // EV stations don't take cash — all revenue from app/QR/card.
-    // We don't know the split → put everything in `transfer` (app payment),
-    // formula `totalSales == cash + transfer + card + shortage` still balances.
-    const payload = withDbDefaults({
-      org_id: orgId,
-      branch_id: branch.id,
-      report_date: agg.reportDate,
-      shift: "all",
-      total_sales: agg.totalRevenue,
-      qty1: agg.sessions,
-      qty1_unit: "session",
-      qty2: agg.totalKwh,
-      qty2_unit: "kwh",
-      cash: 0,
-      transfer: agg.totalRevenue,
-      card: 0,
-      credit: 0,
-      shortage: 0,
-      rental_income: 0,
-      training_sessions: null,
-      notes: `[CONNEXT import ${new Date().toISOString().slice(0, 10)}]`,
-      extra_fields: { source: "connext_csv" },
-      status: "submitted",
-      submitted_by_id: session.user.id,
-      submitted_at: new Date().toISOString(),
-    });
-
-    const { error } = await admin.from("daily_reports").insert(payload);
-
-    if (!error) {
-      reportsCreated.push({ branchCode: branch.code, date: agg.reportDate });
-      continue;
+  if (resolvable.length > 0) {
+    // 4b. Pre-query existing (branch_id, report_date, shift='all') so we know
+    // which rows are inserts vs updates BEFORE the upsert (preserves CEO's
+    // diff-before-write expectation from pool-csv-import-must-diff-before-write).
+    const branchIds = Array.from(new Set(resolvable.map((r) => r.branch.id)));
+    const dates = Array.from(new Set(resolvable.map((r) => r.agg.reportDate)));
+    const { data: existingRows } = await admin
+      .from("daily_reports")
+      .select("branch_id, report_date")
+      .in("branch_id", branchIds)
+      .in("report_date", dates)
+      .eq("shift", "all");
+    const existingKeys = new Set<string>();
+    for (const r of (existingRows ?? []) as Array<{
+      branch_id: string;
+      report_date: string;
+    }>) {
+      existingKeys.add(`${r.branch_id}|${r.report_date}`);
     }
 
-    if (error.code === "23505") {
-      // Already exists for (branch, date, shift)
-      if (!overwrite) {
+    // 4c. Filter out collisions when overwrite=false
+    const importNow = new Date().toISOString();
+    const importDay = importNow.slice(0, 10);
+    const rowsToImport: Resolvable[] = [];
+    for (const r of resolvable) {
+      const key = `${r.branch.id}|${r.agg.reportDate}`;
+      const exists = existingKeys.has(key);
+      if (exists && !overwrite) {
         skipped.push({
-          stationName: agg.stationName,
-          date: agg.reportDate,
+          stationName: r.agg.stationName,
+          date: r.agg.reportDate,
           reason: "มีรายงานเดิมอยู่แล้ว (overwrite=false)",
         });
         continue;
       }
-      const { error: updateError } = await admin
-        .from("daily_reports")
-        .update({
-          total_sales: agg.totalRevenue,
-          qty1: agg.sessions,
-          qty1_unit: "session",
-          qty2: agg.totalKwh,
-          qty2_unit: "kwh",
-          transfer: agg.totalRevenue,
-          cash: 0,
-          card: 0,
-          notes: `[CONNEXT import ${new Date().toISOString().slice(0, 10)} · overwrite]`,
-          extra_fields: { source: "connext_csv" },
-          updated_at: new Date().toISOString(),
-        })
-        .eq("branch_id", branch.id)
-        .eq("report_date", agg.reportDate)
-        .eq("shift", "all");
-      if (updateError) {
-        skipped.push({
-          stationName: agg.stationName,
-          date: agg.reportDate,
-          reason: `อัปเดตไม่สำเร็จ: ${updateError.message}`,
-        });
-      } else {
-        reportsUpdated.push({ branchCode: branch.code, date: agg.reportDate });
-      }
-      continue;
+      rowsToImport.push(r);
     }
 
-    skipped.push({
-      stationName: agg.stationName,
-      date: agg.reportDate,
-      reason: `DB error: ${error.message}`,
-    });
+    if (rowsToImport.length > 0) {
+      // EV stations don't take cash — all revenue from app/QR/card.
+      // We don't know the split → put everything in `transfer` (app payment),
+      // formula `totalSales == cash + transfer + card + shortage` still balances.
+      const payloads = rowsToImport.map((r) => {
+        const exists = existingKeys.has(`${r.branch.id}|${r.agg.reportDate}`);
+        return withDbDefaults({
+          org_id: orgId,
+          branch_id: r.branch.id,
+          report_date: r.agg.reportDate,
+          shift: "all",
+          total_sales: r.agg.totalRevenue,
+          qty1: r.agg.sessions,
+          qty1_unit: "session",
+          qty2: r.agg.totalKwh,
+          qty2_unit: "kwh",
+          cash: 0,
+          transfer: r.agg.totalRevenue,
+          card: 0,
+          credit: 0,
+          shortage: 0,
+          rental_income: 0,
+          training_sessions: null,
+          notes: exists
+            ? `[CONNEXT import ${importDay} · overwrite]`
+            : `[CONNEXT import ${importDay}]`,
+          extra_fields: { source: "connext_csv" },
+          status: "submitted",
+          submitted_by_id: session.user.id,
+          submitted_at: importNow,
+          updated_at: importNow,
+        });
+      });
+
+      const { error: upsertError } = await admin
+        .from("daily_reports")
+        .upsert(payloads, { onConflict: "branch_id,report_date,shift" });
+
+      if (upsertError) {
+        // All-or-nothing failure — flag everything as skipped with the DB error.
+        for (const r of rowsToImport) {
+          skipped.push({
+            stationName: r.agg.stationName,
+            date: r.agg.reportDate,
+            reason: `DB error: ${upsertError.message}`,
+          });
+        }
+      } else {
+        for (const r of rowsToImport) {
+          const exists = existingKeys.has(`${r.branch.id}|${r.agg.reportDate}`);
+          if (exists) {
+            reportsUpdated.push({
+              branchCode: r.branch.code,
+              date: r.agg.reportDate,
+            });
+          } else {
+            reportsCreated.push({
+              branchCode: r.branch.code,
+              date: r.agg.reportDate,
+            });
+          }
+        }
+      }
+    }
   }
 
   await audit({

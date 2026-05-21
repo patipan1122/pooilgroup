@@ -59,7 +59,7 @@ export default async function NewVehiclePage() {
         </p>
       </header>
 
-      <Section number="01" label="REGISTER" title="ข้อมูลรถ">
+      <Section number="01" label="ลงทะเบียน" title="ข้อมูลรถ">
         <NewVehicleForm
           companies={companies}
           branches={branchOptions}

@@ -205,7 +205,7 @@ export default async function DocumentDetailPage({
         <div className="lg:col-span-2 space-y-6">
           <Section
             number="01"
-            label="PREVIEW"
+            label="ตัวอย่าง"
             title="ดูตัวอย่างเอกสาร"
             className="animate-fade-up delay-100"
           >
@@ -228,7 +228,7 @@ export default async function DocumentDetailPage({
                 )}
                 {(!downloadUrl || (!isPdf && !isImage)) && (
                   <div className="p-10 flex flex-col items-center justify-center gap-3 text-center">
-                    <div className="size-14 rounded-2xl bg-zinc-50 border-2 border-zinc-200 flex items-center justify-center text-zinc-400">
+                    <div className="size-14 rounded-2xl bg-zinc-50 border-2 border-zinc-200 flex items-center justify-center text-zinc-500">
                       <FileText className="size-6" />
                     </div>
                     <p className="text-sm text-zinc-600">
@@ -258,7 +258,7 @@ export default async function DocumentDetailPage({
         <div className="space-y-6">
           <Section
             number="02"
-            label="OWNER"
+            label="ผู้ครอบครอง"
             title="ผู้ใช้งานเอกสาร"
             className="animate-fade-up delay-200"
           >
@@ -306,7 +306,7 @@ export default async function DocumentDetailPage({
           {doc.tags.length > 0 && (
             <Section
               number="03"
-              label="TAGS"
+              label="แท็ก"
               title="แท็ก"
               className="animate-fade-up delay-300"
             >
@@ -327,7 +327,7 @@ export default async function DocumentDetailPage({
           {doc.renewal && (
             <Section
               number="04"
-              label="RENEWAL"
+              label="ต่ออายุ"
               title="วันหมดอายุ"
               className="animate-fade-up delay-300"
             >

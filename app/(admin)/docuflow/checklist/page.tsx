@@ -153,7 +153,7 @@ export default async function DocuFlowChecklistPage() {
       {/* Summary stat */}
       <Section
         number="01"
-        label="OVERVIEW"
+        label="ภาพรวม"
         title="ภาพรวม Compliance"
         className="mb-10 animate-fade-up delay-100"
       >
@@ -212,7 +212,7 @@ export default async function DocuFlowChecklistPage() {
       {/* Per-biztype breakdown */}
       <Section
         number="02"
-        label="BY BIZTYPE"
+        label="ตามประเภทธุรกิจ"
         title="แยกตามประเภทธุรกิจ"
         description="เรียงตามสัดส่วน 'ยังขาด' มากสุดก่อน"
         className="mb-10 animate-fade-up delay-200"

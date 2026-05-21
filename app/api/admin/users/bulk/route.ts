@@ -105,15 +105,17 @@ export async function POST(req: NextRequest) {
         .update({ is_revoked: true, logout_at: now })
         .in("user_id", eligibleIds)
         .eq("is_revoked", false);
-      // Best-effort: invalidate Supabase Auth tokens
-      for (const uid of eligibleIds) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (admin.auth.admin as any).signOut(uid);
-        } catch {
-          /* noop */
-        }
-      }
+      // Best-effort: invalidate Supabase Auth tokens (parallel — was N×50ms sequential)
+      await Promise.all(
+        eligibleIds.map(async (uid) => {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (admin.auth.admin as any).signOut(uid);
+          } catch {
+            /* noop */
+          }
+        }),
+      );
       result = {
         processed: eligibleIds.length,
         skipped: targets.length - eligibleIds.length,
@@ -129,17 +131,20 @@ export async function POST(req: NextRequest) {
         invite_expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
         updated_at: now,
       }));
-      // Update one-by-one (no bulk update for distinct values in supabase-js)
-      for (const u of updates) {
-        await admin
-          .from("users")
-          .update({
-            invite_token: u.invite_token,
-            invite_expires_at: u.invite_expires_at,
-            updated_at: u.updated_at,
-          })
-          .eq("id", u.id);
-      }
+      // Each row has a distinct invite_token → can't batch into a single SQL
+      // update. Parallelize instead (was N×50ms sequential).
+      await Promise.all(
+        updates.map((u) =>
+          admin
+            .from("users")
+            .update({
+              invite_token: u.invite_token,
+              invite_expires_at: u.invite_expires_at,
+              updated_at: u.updated_at,
+            })
+            .eq("id", u.id),
+        ),
+      );
       result = {
         processed: pending.length,
         skipped: targets.length - pending.length,

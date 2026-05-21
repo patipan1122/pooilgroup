@@ -140,7 +140,7 @@ export function RiskAnalysisPanel({ documentId, canAnalyze, documentName }: Prop
   return (
     <Section
       number="05"
-      label="AI ANALYSIS"
+      label="วิเคราะห์ AI"
       title="น่ากลัวไหม? — AI ช่วยอ่านเอกสาร"
       description="Claude อ่านเนื้อหาและสรุปจุดที่ควรระวังก่อนเซ็น"
       action={action}

@@ -8,12 +8,17 @@
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { userHasModuleAccess, isAdminTier } from "@/lib/auth/module-access";
+import { isModuleDisabled } from "@/lib/modules";
 
 export default async function CashHubLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Kill switch (MODULES_DISABLED env) takes precedence over per-user grants —
+  // even super_admin gets bounced when ops flips the module off.
+  if (isModuleDisabled("cashhub")) redirect("/dashboard");
+
   const session = await requireSession();
   // Fast path — admin tier always has access; skip the DB query.
   if (!isAdminTier(session.user.role)) {

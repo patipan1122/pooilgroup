@@ -42,7 +42,7 @@ export default async function DocuFlowSearchPage() {
 
       <Section
         number="01"
-        label="ASK"
+        label="ค้นหา"
         title="พิมพ์คำถามของคุณ"
         className="animate-fade-up delay-100"
       >
@@ -55,7 +55,7 @@ export default async function DocuFlowSearchPage() {
 
       <Section
         number="02"
-        label="HINTS"
+        label="คำแนะนำ"
         title="เคล็ดลับการถาม"
         className="mt-6 animate-fade-up delay-200"
       >

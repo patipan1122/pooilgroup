@@ -279,7 +279,7 @@ export default async function CashHubReportsPage({
       {groups.length === 0 && (
         <Section
           number="01"
-          label="REPORTS"
+          label="รายงาน"
           title="รายงานล่าสุด"
           action={
             <a

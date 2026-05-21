@@ -103,7 +103,7 @@ export default async function RentalsPage() {
         </Card>
       )}
 
-      <Section number="01" label="ACTIVE" title="สัญญาที่ใช้งานอยู่">
+      <Section number="01" label="ใช้งานอยู่" title="สัญญาที่ใช้งานอยู่">
         {active.length === 0 ? (
           <Card>
             <CardBody>
@@ -130,7 +130,7 @@ export default async function RentalsPage() {
       {expired.length > 0 && (
         <Section
           number="02"
-          label="EXPIRED"
+          label="สิ้นสุดแล้ว"
           title="สัญญาที่สิ้นสุดแล้ว"
           className="mt-8"
         >

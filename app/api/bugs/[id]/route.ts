@@ -78,7 +78,8 @@ export async function PATCH(
   const { error } = await admin
     .from("bug_reports")
     .update(updates)
-    .eq("id", id);
+    .eq("id", id)
+    .eq("org_id", session.user.org_id);
 
   if (error) {
     console.error("[PATCH /bugs] error", error);

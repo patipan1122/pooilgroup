@@ -282,7 +282,7 @@ export async function ManagerHome({
         {executiveMatrix && (
           <Section
             number={pendingReports.length > 0 ? "03" : "02"}
-            label="EXECUTIVE OVERVIEW"
+            label="ภาพรวมผู้บริหาร"
             title="ยอดขาย ทุกประเภทธุรกิจ"
             description="ภาพรวม Pooilgroup · กดแถวขยายดูสาขา"
             className="mb-12 animate-fade-up delay-200"

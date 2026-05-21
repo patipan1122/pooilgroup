@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ChevronRight, AlertCircle } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils/cn";
 import { formatBaht, bkkDate } from "@/lib/utils/format";
 import { BUSINESS_TYPES } from "@/constants/business-types";
@@ -129,9 +130,20 @@ export function ShortagesGrouped({
       </CardHeader>
       <CardBody className="!p-0">
         {groups.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-zinc-500">
-            <AlertCircle className="size-6 mx-auto mb-2 text-zinc-400" />
-            ไม่มีรายการในตัวกรองนี้
+          <div className="p-5">
+            <EmptyState
+              icon={<AlertCircle className="size-6" />}
+              title="ไม่มีรายการในตัวกรองนี้"
+              description="ลองเปลี่ยนตัวกรอง · หรือไปตั้งค่าฟอร์มเก็บเงินขาด"
+              action={
+                <Link
+                  href="/cashhub/settings/forms"
+                  className="inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50 active:bg-zinc-100 h-9 px-4 text-sm rounded-xl"
+                >
+                  ไปตั้งค่าฟอร์ม
+                </Link>
+              }
+            />
           </div>
         ) : (
           <ul className="divide-y-2 divide-zinc-100">

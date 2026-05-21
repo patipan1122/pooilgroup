@@ -62,7 +62,7 @@ export default async function NotificationsSettingsPage() {
 
       <Section
         number="01"
-        label="NOTIFICATIONS"
+        label="การแจ้งเตือน"
         title="ตั้งค่าการแจ้งเตือน"
         description="ค่าที่ตั้งใช้กับ Cron จริง — Morning Brief 07:00, Evening Check 18:00 ตามค่าเริ่มต้น"
       >

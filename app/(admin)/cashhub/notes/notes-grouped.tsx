@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 import { ChevronRight, MessageSquare } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils/cn";
 import { formatBahtCompact, bkkDate } from "@/lib/utils/format";
 import { BUSINESS_TYPES } from "@/constants/business-types";
@@ -79,9 +80,20 @@ export function NotesGrouped({ rows, days, canApprove }: Props) {
       </CardHeader>
       <CardBody className="!p-0">
         {groups.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-zinc-500">
-            <MessageSquare className="size-6 mx-auto mb-2 text-zinc-400" />
-            ยังไม่มีโน้ต
+          <div className="p-5">
+            <EmptyState
+              icon={<MessageSquare className="size-6" />}
+              title="ยังไม่มีโน้ต"
+              description="Staff ยังไม่ได้เขียนหมายเหตุในรายงาน · ลองเปิดฟอร์มกรอกแล้วบันทึกรอบใหม่"
+              action={
+                <Link
+                  href="/cashhub/quick-fill"
+                  className="inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50 active:bg-zinc-100 h-9 px-4 text-sm rounded-xl"
+                >
+                  ไปดูฟอร์มกรอก
+                </Link>
+              }
+            />
           </div>
         ) : (
           <ul className="divide-y-2 divide-zinc-100">

@@ -97,7 +97,7 @@ export default async function BusinessDrillPage({
         <StatBox label="ขาดวันนี้" value={missing.toString()} tone={missing > 0 ? "danger" : "neutral"} />
       </div>
 
-      <Section number="01" label="BRANCHES" title="รายชื่อสาขา" className="animate-fade-up">
+      <Section number="01" label="สาขา" title="รายชื่อสาขา" className="animate-fade-up">
         <Card>
           <CardHeader>
             <CardTitle>{cfg.label} · เดือนนี้</CardTitle>

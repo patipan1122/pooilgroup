@@ -1,22 +1,23 @@
+// Layout guard for /docuflow/** routes — blocks users who don't have DocuFlow
+// in their user_modules grants. Admin tier (super/org_admin/admin) bypasses.
+
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { requireRepairAccess } from "@/lib/repair/role-guard";
 import { userHasModuleAccess, isAdminTier } from "@/lib/auth/module-access";
 import { isModuleDisabled } from "@/lib/modules";
 
 export const dynamic = "force-dynamic";
 
-export default async function RepairsLayout({
+export default async function DocuFlowLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  if (isModuleDisabled("repairs")) redirect("/dashboard");
+  if (isModuleDisabled("docuflow")) redirect("/dashboard");
   const session = await requireSession();
-  requireRepairAccess(session.user.role);
   if (!isAdminTier(session.user.role)) {
-    const ok = await userHasModuleAccess(session.user, "repairs");
+    const ok = await userHasModuleAccess(session.user, "docuflow");
     if (!ok) redirect("/403");
   }
-  return <div className="min-h-screen bg-zinc-50/30">{children}</div>;
+  return <>{children}</>;
 }

@@ -75,7 +75,7 @@ export default async function DocumentUploadPage() {
 
       <Section
         number="01"
-        label="UPLOAD"
+        label="อัปโหลด"
         title="ข้อมูลเอกสาร"
         className="animate-fade-up delay-100"
       >

@@ -120,7 +120,7 @@ export default async function CompaniesPage() {
 
         <Section
           number="01"
-          label="LIST"
+          label="รายการ"
           title="ทุกบริษัท"
           description="คลิกเพื่อดูรายละเอียดและรายการสาขา"
           className="animate-fade-up delay-100"

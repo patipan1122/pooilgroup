@@ -236,7 +236,7 @@ export default async function HomePage() {
             ============================================================ */}
         <Section
           number="01"
-          label="PROGRAMS"
+          label="โปรแกรม"
           title="โปรแกรมที่ใช้งาน"
           description="คลิกการ์ดเพื่อเข้าโปรแกรม — ทุกโปรแกรมใช้บัญชีเดียวกัน"
           className="mb-14 animate-fade-up"
@@ -283,7 +283,7 @@ export default async function HomePage() {
         {isAdmin && (
           <Section
             number="02"
-            label="ADMIN"
+            label="ผู้ดูแลระบบ"
             title={
               adminActionTotal > 0
                 ? `มี ${adminActionTotal} เรื่อง รอคุณดูแล`
@@ -350,7 +350,7 @@ export default async function HomePage() {
             ============================================================ */}
         <Section
           number="03"
-          label="SYSTEM"
+          label="ระบบ"
           title="ภาพรวมระบบ"
           description="ตัวเลขจริงของ Pooilgroup ณ ตอนนี้"
           className="mb-14 animate-fade-up delay-200"

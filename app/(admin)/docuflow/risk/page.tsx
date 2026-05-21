@@ -112,7 +112,7 @@ export default async function OrgRiskPage() {
       {/* AI narrative — top 3 risks */}
       <Section
         number="01"
-        label="AI ANALYSIS"
+        label="วิเคราะห์ AI"
         title="🔍 AI วิเคราะห์ Pool Group"
         description="ความเสี่ยงสูงสุด 3 อันดับแรก + คำแนะนำ"
         className="mb-6 animate-fade-up delay-150"
@@ -211,7 +211,7 @@ export default async function OrgRiskPage() {
         <>
           <BucketSection
             number="02"
-            label="CRITICAL"
+            label="วิกฤต"
             title="วิกฤต ≤ 30 วัน (รวมหมดแล้ว)"
             description="ต้องดำเนินการก่อน — ไม่ทำคือผิดกฎหมาย / หยุดดำเนินการ"
             emptyText="ไม่มีเอกสารวิกฤต — ดี"
@@ -220,7 +220,7 @@ export default async function OrgRiskPage() {
           />
           <BucketSection
             number="03"
-            label="URGENT"
+            label="เร่งด่วน"
             title="เร่งด่วน 31-60 วัน"
             description="ควรเริ่มดำเนินการในเดือนนี้"
             emptyText="ไม่มีเอกสารในช่วง 31-60 วัน"
@@ -229,7 +229,7 @@ export default async function OrgRiskPage() {
           />
           <BucketSection
             number="04"
-            label="WATCH"
+            label="เฝ้าระวัง"
             title="เฝ้าระวัง 61-90 วัน"
             description="วางแผนล่วงหน้า — ยังไม่ต้องรีบ"
             emptyText="ไม่มีเอกสารในช่วง 61-90 วัน"

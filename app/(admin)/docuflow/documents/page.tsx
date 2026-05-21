@@ -154,7 +154,7 @@ export default async function DocumentsListPage({
 
       <Section
         number="01"
-        label="FILTER"
+        label="ตัวกรอง"
         title="กรองเอกสาร"
         className="mb-6 animate-fade-up delay-100"
         action={
@@ -224,7 +224,7 @@ export default async function DocumentsListPage({
 
       <Section
         number="02"
-        label="DOCUMENTS"
+        label="เอกสาร"
         title="เอกสาร"
         className="animate-fade-up delay-200"
       >

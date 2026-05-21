@@ -201,7 +201,7 @@ export default async function TrainingPage() {
 
       <Section
         number="01"
-        label="HISTORY"
+        label="ประวัติ"
         title="ประวัติเดือนที่ผ่านมา"
         className="mt-8"
       >

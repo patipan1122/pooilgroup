@@ -237,7 +237,7 @@ export default async function BranchDetailPage({ params }: Props) {
       {/* DocuFlow — Mode 2: เอกสารทั้งหมดที่ apply กับสาขา */}
       <Section
         number="01"
-        label="DOCUFLOW"
+        label="DocuFlow"
         title="เอกสารของสาขา"
         description="แยกตามระดับ — เฉพาะสาขา / ประเภทธุรกิจ / บริษัท / กลุ่ม / ใช้ร่วมจากสาขาอื่น"
         className="mt-8 animate-fade-up delay-300"

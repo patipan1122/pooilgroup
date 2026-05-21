@@ -7,6 +7,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { canManageUser } from "@/lib/auth/role-guards";
+import type { DbUser } from "@/lib/auth/session";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -19,12 +21,16 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
   const admin = adminClient();
   const { data: user, error: fetchErr } = await admin
     .from("users")
-    .select("id, org_id, email, failed_login_count, locked_until")
+    .select("id, org_id, email, role, failed_login_count, locked_until")
     .eq("id", id)
     .eq("org_id", session.user.org_id)
     .maybeSingle();
   if (fetchErr || !user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  if (!canManageUser(session.user.role, user.role as DbUser["role"])) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
   const wasLocked = !!user.locked_until && new Date(user.locked_until) > new Date();
@@ -37,7 +43,8 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
       locked_until: null,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("org_id", session.user.org_id);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

@@ -45,7 +45,7 @@ export default async function SetupWizardPage() {
 
       <Section
         number="01"
-        label="WIZARD"
+        label="ตัวช่วยตั้งค่า"
         title="กรอกข้อมูลครั้งเดียว"
         className="mb-6"
       >
@@ -61,7 +61,7 @@ export default async function SetupWizardPage() {
 
       <Section
         number="02"
-        label="QA · TEST USERS"
+        label="QA · ผู้ใช้ทดสอบ"
         title="สร้างบัญชีทดสอบทุก role"
         description="ใช้ทดสอบ flow แต่ละบทบาท (เจ้าของ/ผจก./พนักงาน/บัญชี) — สร้างได้ทีเดียว ทุกสาขา"
         className="mb-6"
@@ -76,7 +76,7 @@ export default async function SetupWizardPage() {
         </Card>
       </Section>
 
-      <Section number="03" label="HELP" title="ช่วยเหลือ">
+      <Section number="03" label="ช่วยเหลือ" title="ช่วยเหลือ">
         <Card>
           <CardBody className="space-y-2 text-sm text-zinc-700">
             <p>

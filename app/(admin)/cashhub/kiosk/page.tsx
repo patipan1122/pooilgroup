@@ -87,7 +87,15 @@ export default async function KioskPage() {
             <EmptyState
               icon={<Sofa className="size-6" />}
               title="ยังไม่มี kiosk"
-              description="เพิ่มสาขาประเภท เก้าอี้นวด หรือ ตู้คีบ ก่อน"
+              description="เพิ่มสาขาประเภท เก้าอี้นวด หรือ ตู้คีบ ก่อน · ไปตั้งค่าสาขาได้ที่หน้าตั้งค่า"
+              action={
+                <Link
+                  href="/cashhub/settings"
+                  className="inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50 active:bg-zinc-100 h-9 px-4 text-sm rounded-xl"
+                >
+                  ไปตั้งค่า Kiosk
+                </Link>
+              }
             />
           </CardBody>
         </Card>
@@ -192,7 +200,7 @@ export default async function KioskPage() {
         </div>
       )}
 
-      <Section number="01" label="HISTORY" title="รอบล่าสุด" className="mt-8">
+      <Section number="01" label="ประวัติ" title="รอบล่าสุด" className="mt-8">
         <Card>
           <CardBody className="!p-0">
             <ul className="divide-y divide-zinc-100">

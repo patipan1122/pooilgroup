@@ -62,7 +62,7 @@ export function SharingSection({
   return (
     <Section
       number={number}
-      label="SHARING"
+      label="แชร์"
       title={
         total > 0
           ? `ใช้กับ ${total} สาขา`

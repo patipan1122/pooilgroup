@@ -399,3 +399,24 @@ export function getModuleFromPath(pathname: string): ModuleSlug | null {
   }
   return null;
 }
+
+// =============================================================
+// Per-module kill switch (รอบ 46 ultraview audit · 2026-05-21)
+// Set env `MODULES_DISABLED=fuelos,docuflow` to hide modules from
+// the nav switcher AND block direct URL access via assertModuleEnabled.
+// Env is read at module load — process must restart for changes to apply.
+// =============================================================
+const DISABLED_SLUGS = new Set<string>(
+  (process.env.MODULES_DISABLED ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+);
+
+export function isModuleDisabled(slug: ModuleSlug): boolean {
+  return DISABLED_SLUGS.has(slug);
+}
+
+export function getEnabledModules(): ModuleConfig[] {
+  return MODULE_LIST.filter((m) => !DISABLED_SLUGS.has(m.slug));
+}

@@ -151,7 +151,7 @@ export default async function VehicleDetailPage({
         )}
       </header>
 
-      <Section number="01" label="DOCUMENTS" title="เอกสารหลัก 4 ประเภท">
+      <Section number="01" label="เอกสาร" title="เอกสารหลัก 4 ประเภท">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {slots.map((slot) => (
             <DocSlotCard
@@ -167,7 +167,7 @@ export default async function VehicleDetailPage({
       {otherDocs.length > 0 && (
         <Section
           number="02"
-          label="OTHER"
+          label="อื่น ๆ"
           title="เอกสารเพิ่มเติม"
           className="mt-8"
         >

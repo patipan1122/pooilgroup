@@ -73,7 +73,7 @@ export default async function RegisterRequestsPage() {
 
       <Section
         number="01"
-        label="PENDING"
+        label="รอพิจารณา"
         title="รอพิจารณา"
         description="กดอนุมัติเพื่อสร้าง invite link · กดปฏิเสธพร้อมเหตุผลถ้าไม่อนุมัติ"
         className="mb-8 animate-fade-up delay-100"
@@ -96,7 +96,7 @@ export default async function RegisterRequestsPage() {
       {reviewed.length > 0 && (
         <Section
           number="02"
-          label="HISTORY"
+          label="ประวัติ"
           title="ประวัติการพิจารณา"
           className="animate-fade-up delay-200"
         >

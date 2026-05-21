@@ -258,7 +258,7 @@ export default async function ReportDetailPage({
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* LEFT — Numbers */}
         <div className="lg:col-span-3 space-y-4">
-          <Section number="01" label="NUMBERS" title="ตัวเลข">
+          <Section number="01" label="ตัวเลข" title="ตัวเลข">
             <Card>
               <CardBody className="space-y-2.5">
                 <Row
@@ -396,7 +396,7 @@ export default async function ReportDetailPage({
 
         {/* RIGHT — Smart Context Panel */}
         <div className="lg:col-span-2 space-y-4">
-          <Section number="02" label="AUTO CHECK" title="ตรวจอัตโนมัติ">
+          <Section number="02" label="ตรวจอัตโนมัติ" title="ตรวจอัตโนมัติ">
             <Card>
               <CardHeader>
                 <CardTitle>{ac.summary}</CardTitle>
@@ -440,7 +440,7 @@ export default async function ReportDetailPage({
             </Card>
           </Section>
 
-          <Section number="03" label="CONTEXT" title="ภาพรอบ ๆ">
+          <Section number="03" label="บริบท" title="ภาพรอบ ๆ">
             <Card>
               <CardBody className="space-y-3.5">
                 {avg30 > 0 && (

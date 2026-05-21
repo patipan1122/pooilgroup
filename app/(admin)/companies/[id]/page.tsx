@@ -141,7 +141,7 @@ export default async function CompanyDetailPage({ params }: Props) {
         {/* Contact info */}
         <Section
           number="01"
-          label="CONTACT"
+          label="ติดต่อ"
           title="ข้อมูลติดต่อ"
           className="mb-12 animate-fade-up delay-100"
         >
@@ -169,7 +169,7 @@ export default async function CompanyDetailPage({ params }: Props) {
             add/edit/view from here directly. */}
         <Section
           number="02"
-          label="BRANCHES"
+          label="สาขา"
           title={`${active.length} สาขาใต้ ${c.name}`}
           description="กดประเภทธุรกิจเพื่อย่อ/ขยาย · แอดมินกดเพิ่ม/แก้ได้จากตรงนี้เลย"
           className="animate-fade-up delay-200"

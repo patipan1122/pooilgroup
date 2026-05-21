@@ -206,7 +206,7 @@ export default async function DocuFlowVehiclesPage({
       {/* Filter chips */}
       <Section
         number="01"
-        label="FILTER"
+        label="ตัวกรอง"
         title="กรองรายการ"
         action={
           canRegister ? (
@@ -306,7 +306,7 @@ export default async function DocuFlowVehiclesPage({
       </Section>
 
       {/* Vehicle list */}
-      <Section number="02" label="FLEET" title="รายการรถ" className="mt-8">
+      <Section number="02" label="กองรถ" title="รายการรถ" className="mt-8">
         {rows.length === 0 ? (
           <Card>
             <CardBody>

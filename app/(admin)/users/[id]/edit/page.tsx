@@ -44,7 +44,7 @@ export default async function EditUserPage({ params }: Props) {
       </div>
 
       <header className="mb-6 animate-fade-up">
-        <p className="text-xs uppercase tracking-widest text-[var(--color-brand-600)] font-semibold">
+        <p className="text-xs font-semibold text-[var(--color-brand-600)]">
           แก้ไขผู้ใช้
         </p>
         <h1 className="text-3xl font-extrabold tracking-tight font-display mt-2">

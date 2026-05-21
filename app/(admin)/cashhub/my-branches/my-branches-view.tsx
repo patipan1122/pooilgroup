@@ -96,7 +96,7 @@ export function MyBranchesView({
       {/* TODAY — same pattern, grouped */}
       <Section
         number="01"
-        label="TODAY"
+        label="วันนี้"
         title={`วันนี้ ${todayDone}/${branches.length} สาขา กรอกแล้ว`}
         description="กดสาขาที่ยังไม่กรอกเพื่อกรอกได้เลย"
         className="mb-10 animate-fade-up"
@@ -244,7 +244,7 @@ export function MyBranchesView({
       {/* HISTORY — heatmap, also grouped + popup on cell click */}
       <Section
         number="02"
-        label="HISTORY"
+        label="ประวัติ"
         title={`${days.length} วันย้อนหลัง`}
         description="กดเซลล์เพื่อดูรายงาน · กดที่ชื่อสาขาเพื่อดูประวัติเต็ม"
         className="mb-10 animate-fade-up delay-100"
@@ -372,7 +372,7 @@ export function MyBranchesView({
       {/* QUICK ACCESS */}
       <Section
         number="03"
-        label="QUICK ACCESS"
+        label="ทางลัด"
         title="ทางลัด"
         description="ดูเงินขาดของสาขาฉัน · โน้ตจาก Staff"
         className="animate-fade-up delay-200"

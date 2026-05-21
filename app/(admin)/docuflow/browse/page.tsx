@@ -61,7 +61,7 @@ export default async function DocuFlowBrowsePage() {
 
       <Section
         number="BR"
-        label="BROWSE"
+        label="เรียกดู"
         title="โครงสร้างเอกสาร Pooilgroup"
         description={`${tree.totals.docCount.toLocaleString("th-TH")} เอกสาร · ต้องต่ออายุด่วน ${tree.totals.expiringCount.toLocaleString("th-TH")}`}
         className="animate-fade-up delay-100"

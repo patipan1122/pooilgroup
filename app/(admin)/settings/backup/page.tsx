@@ -85,7 +85,7 @@ export default async function BackupSettingsPage() {
 
       <Section
         number="01"
-        label="BACKUP"
+        label="สำรองข้อมูล"
         title="ค่าสำรองข้อมูล + ประวัติ"
         description="ค่าเริ่มต้น 03:00 น. เก็บ 30 วัน ปลายทาง Cloudflare R2"
       >

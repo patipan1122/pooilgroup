@@ -632,7 +632,7 @@ export function SignaturePlacementEditor({
 
         {/* Side panel */}
         <div className="space-y-4">
-          <Section number="01" label="SELECTED" title="จุดที่เลือก">
+          <Section number="01" label="ที่เลือก" title="จุดที่เลือก">
             {selected ? (
               <Card>
                 <CardBody className="space-y-4">
@@ -859,7 +859,7 @@ export function SignaturePlacementEditor({
 
           <Section
             number="02"
-            label="LIST"
+            label="รายการ"
             title={`ทุกจุด (${placements.length})`}
           >
             <Card>

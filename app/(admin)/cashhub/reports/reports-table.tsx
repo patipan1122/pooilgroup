@@ -535,8 +535,8 @@ function ReportTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-zinc-100 bg-zinc-50/40 text-xs font-bold text-zinc-500">
+        <thead className="sticky top-14 sm:top-16 z-20 bg-white">
+          <tr className="border-b border-zinc-100 bg-zinc-50 text-xs font-bold text-zinc-500">
             <th className="w-9 p-3"></th>
             <th className="text-left p-3">สาขา</th>
             <th className="text-left p-3 hidden sm:table-cell">วันที่</th>
