@@ -343,6 +343,18 @@ export async function submitEvent(input: unknown): Promise<Result<{ id: string }
   const cashPerCoin = machine.kind === "CLAW" && machine.loadouts[0]
     ? machine.loadouts[0].pricePerPlayCoins * 1000
     : 1000; // default 1 coin = ฿10
+
+  // A1 baseline — 30-day median revenue for this machine
+  // (QA Phase 2 follow-up: wire previously-dead anomaly rule)
+  const medianRow = await prisma.$queryRaw<{ median: number | null }[]>`
+    SELECT (PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY cash_counted_cents))::int as median
+    FROM cf_collection_events
+    WHERE machine_id = ${machine.id}::uuid
+      AND event_type = 'COLLECTION'
+      AND collected_at > NOW() - INTERVAL '30 days'
+  `;
+  const medianRevenueCents = medianRow[0]?.median ?? null;
+
   const derived = deriveEvent({
     kind: machine.kind,
     coinMeterBefore: machine.lastCoinMeter,
@@ -355,6 +367,7 @@ export async function submitEvent(input: unknown): Promise<Result<{ id: string }
     refillQty: data.refillQty ?? null,
     promoCoinsDispensed: data.promoCoinsDispensed ?? null,
     cashPerCoinCents: cashPerCoin,
+    medianRevenueCents,
   });
 
   if (derived.blockReason) return fail(derived.blockReason, "VALIDATION_BLOCK");

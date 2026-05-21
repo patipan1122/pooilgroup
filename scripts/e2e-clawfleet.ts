@@ -17,7 +17,6 @@
 
 import { prisma } from "@/lib/prisma";
 
-const T = "E2E"; // prefix for codes
 const STAMP = Date.now().toString().slice(-6);
 
 type Step = { label: string; pass: boolean; detail?: string };
@@ -68,7 +67,6 @@ async function main() {
     record("1. Use existing claw_machine branch", true, branch.code);
   }
 
-  const createdProductIds: string[] = [];
   const createdMachineIds: string[] = [];
   const createdLoadoutIds: string[] = [];
   const createdExchLoadoutIds: string[] = [];
