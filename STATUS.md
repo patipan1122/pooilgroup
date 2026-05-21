@@ -1,8 +1,76 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-21 (Recruit UX round 2 · iPhone preview + color tags + timeline)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-21 (Recruit Redesign full ship · 3 commits · Phase A+B-lite)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-05-21 — Recruit Redesign canvas → 3 phases shipped · 24 files · ~3,800 lines · ยังไม่ deploy)
+
+**CEO goal:** "redesign การใช้งานทั้งหมด · ทำให้มันใช้ได้จริง ทั้ง backend frontend · มือถือ + คอม · ยึก design canvas Recruit Redesign.html"
+
+**Commits this round:**
+- `22af0f7` Phase A1 — iPhone preview + color tags + activity timeline
+- `e2b7590` Phase A2+A3 — postings/applicant redesign + /my/[refId] tracking
+- `d768611` Phase B-lite — Calendar + Talent Pool + PDPA Compliance
+
+**Routes added/redesigned:**
+- ✅ `/recruit/postings` (admin) — funnel mini bar + source chips + share/copy
+- ✅ `/recruit/applications/[id]` (admin) — AI score header + big stepper + 4 tabs (Profile/IQ/Answers/Timeline) + IQ auto-grading
+- ✅ `/recruit/postings/new` (admin) — iPhone live preview side-by-side
+- ✅ `/recruit/calendar` (admin · NEW) — interview calendar from [INTERVIEW] notes · 28-day mini grid
+- ✅ `/recruit/talent-pool` (admin · NEW) — past applicants segmented (rejected/high-score/repeat/withdrawn)
+- ✅ `/recruit/settings/pdpa` (admin · NEW) — compliance checklist + audit log preview + retention recommendations
+- ✅ `/my/[refId]` (public · NEW) — candidate tracking page · stepper + next step hint + HR contact log
+- ✅ `/apply/[slug]/success` — now links to /my/[refId]
+
+**Components added:**
+- `components/recruit/iphone-preview.tsx` — sticky iPhone bezel + live update
+- `components/recruit/application-tabs.tsx` — client tab switcher + IQ auto-grader
+- `components/recruit/copy-link-button.tsx` — copy posting share link to clipboard
+
+**No schema changes** — all 3 phases ride on existing tables (recruit_applications · recruit_applicants · recruit_application_notes · audit_logs). Color tags + activity types encoded in string fields.
+
+**Verified:**
+- ✅ `tsc --noEmit` clean (เฉพาะ pre-existing clawfleet/photo)
+- ✅ Local dev server boots fine · all routes 200 (public) / 307 (admin login redirect)
+- ✅ Public `/my/APP-2026-820566` renders status pill + stepper + next-step hint
+- ⏳ Manual UI test ใน browser (CEO เปิดเอง)
+- ❌ `next build` ยัง pre-existing clawfleet broken (ต้อง quarantine ก่อน deploy)
+
+**Phase A canvas coverage:**
+| Design section | Status |
+|---|---|
+| 01 Analysis | n/a (just diagnosis) |
+| 02A Postings list | ✅ shipped |
+| 02B Applicant detail | ✅ shipped |
+| 02C Form builder + iPhone preview | ✅ shipped (Phase A1) |
+| 03 Candidate flow (9 mobile screens) | partial — single tracking page /my/[refId] |
+| 04 HR mobile (9 screens) | deferred — desktop admin works on mobile via responsive |
+| 05 Pipeline/Kanban | ✅ existing already; tag chips added Phase A1 |
+| 06 Candidate portal | partial — /my/[refId] (single) · list view deferred |
+| 07 Blacklist | existing; design canvas refinement deferred |
+| 08 Messaging hub | deferred (needs schema + LINE OA integration) |
+| 09 Calendar | ✅ shipped (B-lite-1, from existing notes) |
+| 10 Exec dashboard | deferred |
+| 11A Talent pool | ✅ shipped (B-lite-2) |
+| 11B Auto-screen rules | deferred (needs schema) |
+| 12 Referral | deferred (needs schema) |
+| 13A Permission matrix | existing in lib/auth; UI deferred |
+| 13B PDPA | ✅ shipped (B-lite-4, read-only) |
+
+**Next session priorities (handoff):**
+1. **Messaging hub** — schema (recruit_message_threads + recruit_messages) + LINE OA webhook
+2. **HR mobile dedicated UI** — current desktop is responsive but not optimized for HR-on-phone (per design canvas Section 04 swipe triage)
+3. **Auto-screen rules** — schema (recruit_rules) + rule engine running on each application change
+4. **Referral program** — schema (recruit_referrals) + employee landing /refer + admin tracker
+5. **Right-to-erasure** — public form at /my/[refId] for candidate to request data deletion
+6. **Exec dashboard** — KPI hero + funnel chart + source ROI + time-to-hire by role
+
+**Deploy blocker:** `next build` fails at clawfleet (missing components). Need to either:
+- Quarantine clawfleet routes (rename to `.disabled` like FuelOS pattern)
+- Or revert clawfleet commits until that work resumes
+
+
 
 ## 🆕 Update (2026-05-21 — Recruit UX round 2: iPhone preview + color tags + activity timeline · ยังไม่ deploy)
 
