@@ -29,7 +29,6 @@ export default async function RepairPublicNewPage() {
   // (no session). RLS would block these for anon, so we use service-role bypass.
   const admin = adminClient();
 
-  // First active org (Pooil single-tenant)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: orgs } = await (admin.from as any)("organizations")
     .select("id, name")
@@ -55,21 +54,11 @@ export default async function RepairPublicNewPage() {
     .order("sort_order");
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-zinc-900">
-          แจ้งซ่อมใหม่
-        </h1>
-        <p className="mt-1 text-zinc-600 text-sm">
-          กรอกรายละเอียดให้ครบ · ระบบจะออกเลขที่ใบให้ทันที
-        </p>
-      </header>
-      <PublicRepairForm
-        orgName={org?.name ?? "Pooilgroup"}
-        companies={(companies as CompanyRow[] | null) ?? []}
-        branches={(branches as BranchRow[] | null) ?? []}
-        categories={(categories as CategoryRow[] | null) ?? []}
-      />
-    </div>
+    <PublicRepairForm
+      orgName={org?.name ?? "Pooilgroup"}
+      companies={(companies as CompanyRow[] | null) ?? []}
+      branches={(branches as BranchRow[] | null) ?? []}
+      categories={(categories as CategoryRow[] | null) ?? []}
+    />
   );
 }

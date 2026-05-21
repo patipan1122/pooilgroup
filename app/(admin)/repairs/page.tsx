@@ -1,34 +1,30 @@
-// /repairs — Admin inbox: list (left) + detail (right) on desktop · stacked on mobile
+// /repairs — Command Center Overview (KPIs · action queue · workload · pipeline · hotspots · activity)
 import { requireSession } from "@/lib/auth/session";
-import { requireRepairAccess } from "@/lib/repair/role-guard";
+import { requireRepairAccess, canRepairWrite } from "@/lib/repair/role-guard";
 import {
   countTicketsByStatus,
   countTicketsByUrgency,
   sumOpenCost,
-  listTickets,
-  getTicketDetail,
-  listCategories,
-  listBranches,
-  listTechnicians,
+  countNewSince,
+  hotspotBranches,
+  technicianWorkload,
+  categoryBreakdown,
+  recentActivity,
+  actionQueueBuckets,
+  costTrend8w,
+  volumeByDay,
+  listCompanies,
 } from "@/lib/repair/queries";
-import { canRepairWrite, canRepairAdmin } from "@/lib/repair/role-guard";
-import { AdminInbox } from "@/components/repair/admin-inbox";
-import { TICKET_STATUSES } from "@/lib/repair/types";
-import type {
-  RepairTicketStatus,
-  RepairUrgency,
-} from "@/lib/generated/prisma/enums";
+import { OverviewDashboard } from "@/components/repair/overview-dashboard";
+import { RepairViewHeader } from "@/components/repair/view-header";
+
+export const dynamic = "force-dynamic";
 
 interface Search {
-  status?: string;
-  urgency?: string;
-  branch?: string;
-  category?: string;
-  q?: string;
-  selected?: string;
+  company?: string;
 }
 
-export default async function RepairsInboxPage({
+export default async function RepairsOverviewPage({
   searchParams,
 }: {
   searchParams: Promise<Search>;
@@ -37,59 +33,75 @@ export default async function RepairsInboxPage({
   requireRepairAccess(session.user.role);
   const orgId = session.user.org_id;
   const params = await searchParams;
-
-  const status = (params.status && TICKET_STATUSES.includes(params.status as RepairTicketStatus)
-    ? (params.status as RepairTicketStatus)
-    : null);
-  const urgency = (params.urgency && ["URGENT", "NORMAL", "LOW"].includes(params.urgency)
-    ? (params.urgency as RepairUrgency)
-    : null);
+  const companyId = params.company || null;
 
   const [
     statusCounts,
     urgencyCounts,
     openCost,
-    tickets,
-    selectedTicket,
+    newToday,
+    hotspots,
+    workload,
     categories,
-    branches,
-    technicians,
+    activity,
+    buckets,
+    costTrend,
+    volume,
+    companies,
   ] = await Promise.all([
-    countTicketsByStatus(orgId),
-    countTicketsByUrgency(orgId, true),
-    sumOpenCost(orgId),
-    listTickets({
-      orgId,
-      status,
-      urgency,
-      branchId: params.branch || null,
-      categoryId: params.category || null,
-      query: params.q || null,
-    }),
-    params.selected ? getTicketDetail(orgId, params.selected) : Promise.resolve(null),
-    listCategories(orgId),
-    listBranches(orgId),
-    listTechnicians(orgId),
+    countTicketsByStatus(orgId, companyId),
+    countTicketsByUrgency(orgId, true, companyId),
+    sumOpenCost(orgId, companyId),
+    countNewSince(orgId, 24, companyId),
+    hotspotBranches(orgId, 6, companyId),
+    technicianWorkload(orgId, companyId),
+    categoryBreakdown(orgId, companyId),
+    recentActivity(orgId, 8, companyId),
+    actionQueueBuckets(orgId, 12, companyId),
+    costTrend8w(orgId, companyId),
+    volumeByDay(orgId, companyId),
+    listCompanies(orgId),
   ]);
 
+  const openCount =
+    statusCounts.NEW + statusCounts.ACK + statusCounts.IN_PROGRESS + statusCounts.WAITING_PARTS;
+  const total =
+    openCount + statusCounts.RESOLVED + statusCounts.CLOSED + statusCounts.CANCELLED;
+
   return (
-    <AdminInbox
-      orgId={orgId}
-      statusCounts={statusCounts}
-      urgencyCounts={urgencyCounts}
-      openCost={openCost}
-      tickets={tickets}
-      selectedTicket={selectedTicket}
-      categories={categories}
-      branches={branches}
-      technicians={technicians}
-      currentStatus={status}
-      currentUrgency={urgency}
-      currentBranch={params.branch ?? null}
-      currentCategory={params.category ?? null}
-      currentQuery={params.q ?? ""}
-      canWrite={canRepairWrite(session.user.role)}
-      canAdmin={canRepairAdmin(session.user.role)}
-    />
+    <>
+      <RepairViewHeader
+        active="overview"
+        companies={companies}
+        currentCompanyId={companyId}
+        openCount={openCount}
+        urgentCount={urgencyCounts.URGENT}
+        canWrite={canRepairWrite(session.user.role)}
+        ticketTotal={total}
+        newSinceYesterday={newToday}
+      />
+      <OverviewDashboard
+        statusCounts={statusCounts}
+        urgencyCounts={urgencyCounts}
+        openCost={openCost}
+        newSinceYesterday={newToday}
+        hotspots={hotspots}
+        workload={workload.map((w) => ({
+          tech: {
+            id: w.tech.id,
+            name: w.tech.name,
+            kind: w.tech.kind,
+            specialties: w.tech.specialties ?? [],
+          },
+          active: w.active,
+          urgent: w.urgent,
+        }))}
+        categories={categories}
+        activity={activity}
+        buckets={buckets}
+        costTrend={costTrend}
+        volume={volume}
+      />
+    </>
   );
 }

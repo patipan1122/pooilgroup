@@ -206,7 +206,7 @@ export async function createTicket(input: CreateTicketInput): Promise<CreateTick
         module: "repairs",
         title: `แจ้งซ่อมใหม่: ${ticketCode}`,
         body: `${data.title.slice(0, 80)} · จาก ${data.reporterName}`,
-        link: `/repairs?selected=${ticket.id}`,
+        link: `/repairs/triage?selected=${ticket.id}`,
       });
     }
   } catch (e) {
@@ -214,7 +214,9 @@ export async function createTicket(input: CreateTicketInput): Promise<CreateTick
   }
 
   revalidatePath("/repairs");
+  revalidatePath("/repairs/triage");
   revalidatePath("/repairs/kanban");
+  revalidatePath("/repairs/table");
 
   return { ok: true, id: ticket.id, ticketCode };
 }
@@ -297,7 +299,9 @@ export async function changeStatus(input: z.input<typeof ChangeStatusSchema>): P
 
   revalidatePath(`/repairs/${ticketId}`);
   revalidatePath("/repairs");
+  revalidatePath("/repairs/triage");
   revalidatePath("/repairs/kanban");
+  revalidatePath("/repairs/table");
   return { ok: true };
 }
 
@@ -361,7 +365,9 @@ export async function assignTechnician(input: { ticketId: string; technicianId: 
 
   revalidatePath(`/repairs/${input.ticketId}`);
   revalidatePath("/repairs");
+  revalidatePath("/repairs/triage");
   revalidatePath("/repairs/kanban");
+  revalidatePath("/repairs/table");
   return { ok: true };
 }
 

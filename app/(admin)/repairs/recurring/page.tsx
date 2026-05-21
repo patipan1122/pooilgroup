@@ -1,4 +1,4 @@
-// /repairs/recurring — Recurring failure report
+// /repairs/recurring — Recurring failure report (Pooil App redesign)
 // "Pumps that fail every 30 days never get capex-replaced." (BA insight)
 // Groups closed/resolved tickets by (branch, category) over a window and shows
 // repeat offenders so CEO can flag for replacement instead of repeated repair.
@@ -7,7 +7,8 @@ import { requireSession } from "@/lib/auth/session";
 import { requireRepairAccess } from "@/lib/repair/role-guard";
 import { prisma } from "@/lib/prisma";
 import { formatBaht, downtimeCostBaht } from "@/lib/repair/types";
-import { AlertTriangle, MapPin } from "lucide-react";
+import { AlertTriangle, MapPin, ChevronRight, TrendingUp } from "lucide-react";
+import { RepairSubHeader } from "@/components/repair/sub-header";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,6 @@ export default async function RecurringFailurePage({
     },
   });
 
-  // Group by (branchId, categoryId)
   type Row = {
     key: string;
     branchId: string;
@@ -93,101 +93,128 @@ export default async function RecurringFailurePage({
     .filter((r) => r.tickets.length >= 2)
     .sort((a, b) => b.tickets.length - a.tickets.length);
 
-  return (
-    <div className="p-3 sm:p-6 max-w-5xl mx-auto">
-      <header className="mb-5">
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-zinc-900 flex items-center gap-2">
-          <AlertTriangle className="size-7 text-amber-600" />
-          ของพังซ้ำ
-        </h1>
-        <p className="text-sm text-zinc-500 mt-0.5">
-          สาขา + หมวด ที่ซ่อมซ้ำ ≥ 2 ครั้ง ใน {days} วันที่ผ่านมา · แทนที่จะซ่อม ลองเปลี่ยนของใหม่อาจคุ้มกว่า
-        </p>
-        <div className="mt-3 flex gap-1.5">
-          {[30, 60, 90, 180, 365].map((d) => (
-            <Link
-              key={d}
-              href={`/repairs/recurring?days=${d}`}
-              className={`h-8 px-3 inline-flex items-center rounded-lg text-xs font-bold border ${
-                days === d
-                  ? "bg-zinc-900 text-white border-zinc-900"
-                  : "bg-white text-zinc-700 border-zinc-200 hover:border-zinc-400"
-              }`}
-            >
-              {d} วัน
-            </Link>
-          ))}
-        </div>
-      </header>
+  const totalSpent = offenders.reduce((s, r) => s + r.totalCostCents, 0);
+  const totalDowntime = offenders.reduce((s, r) => s + r.downtimeBaht * 100, 0);
 
-      {offenders.length === 0 ? (
-        <div className="rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50 p-10 text-center">
-          <p className="text-2xl">✅</p>
-          <p className="mt-3 font-extrabold text-emerald-900">ไม่มีของพังซ้ำใน {days} วัน</p>
-          <p className="text-sm text-emerald-700 mt-1">เครื่องยนต์ของบริษัทเสถียรดี</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-zinc-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="sticky top-14 sm:top-16 z-20 bg-zinc-50 border-b border-zinc-200">
-              <tr className="text-left text-xs uppercase tracking-wide text-zinc-500">
-                <th className="px-3 py-2 font-bold">สาขา · หมวด</th>
-                <th className="px-3 py-2 font-bold text-right">ครั้งที่ซ่อม</th>
-                <th className="px-3 py-2 font-bold text-right">ค่าซ่อมรวม</th>
-                <th className="px-3 py-2 font-bold text-right">ค่าเสียโอกาสรวม</th>
-                <th className="px-3 py-2 font-bold">ใบล่าสุด</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {offenders.map((row) => (
-                <tr key={row.key} className="hover:bg-zinc-50">
-                  <td className="px-3 py-3">
-                    <p className="font-bold text-zinc-900">
-                      <span className="mr-1">{row.categoryEmoji ?? "🛠"}</span>
-                      {row.categoryLabel}
-                    </p>
-                    <p className="text-xs text-zinc-500 flex items-center gap-1 mt-0.5">
-                      <MapPin className="size-3" />
-                      {row.branchCode} · {row.branchName}
-                    </p>
-                  </td>
-                  <td className="px-3 py-3 text-right">
-                    <span className={`inline-flex items-center px-2 h-7 rounded font-extrabold text-base tabular-num ${
-                      row.tickets.length >= 5
-                        ? "bg-red-50 text-red-700 border border-red-200"
-                        : row.tickets.length >= 3
-                        ? "bg-amber-50 text-amber-700 border border-amber-200"
-                        : "bg-zinc-100 text-zinc-700"
-                    }`}>
-                      {row.tickets.length} ครั้ง
-                    </span>
-                  </td>
-                  <td className="px-3 py-3 text-right tabular-num font-medium">
-                    {formatBaht(row.totalCostCents)}
-                  </td>
-                  <td className="px-3 py-3 text-right tabular-num font-medium text-red-700">
-                    {formatBaht(row.downtimeBaht * 100)}
-                  </td>
-                  <td className="px-3 py-3 text-xs">
-                    <Link
-                      href={`/repairs/${row.tickets[0].id}`}
-                      className="font-bold text-[var(--color-brand-700)] hover:underline"
-                    >
-                      {row.tickets[0].ticketCode}
-                    </Link>
-                    <span className="text-zinc-400 ml-1">
-                      ·{" "}
-                      {new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short" }).format(
-                        row.tickets[0].createdAt,
-                      )}
-                    </span>
-                  </td>
+  return (
+    <>
+      <RepairSubHeader
+        icon={AlertTriangle}
+        eyebrow="Insights · Recurring failures"
+        title="ของพังซ้ำ"
+        subtitle={`สาขา + หมวด ที่ซ่อมซ้ำ ≥ 2 ครั้ง ใน ${days} วันที่ผ่านมา · แทนที่จะซ่อมซ้ำ ลองเปลี่ยนของใหม่อาจคุ้มกว่า`}
+        stats={[
+          { label: "จุดที่ซ้ำ", value: offenders.length, tone: offenders.length > 0 ? "warn" : "default" },
+          { label: "ค่าซ่อมรวม", value: formatBaht(totalSpent) },
+          { label: "ค่าเสียโอกาส", value: formatBaht(totalDowntime), tone: "danger" },
+        ]}
+        actions={
+          <div className="flex gap-1">
+            {[30, 60, 90, 180, 365].map((d) => (
+              <Link
+                key={d}
+                href={`/repairs/recurring?days=${d}`}
+                className={`h-8 px-2.5 inline-flex items-center rounded text-[11.5px] font-semibold border ${
+                  days === d
+                    ? "bg-zinc-900 text-white border-zinc-900"
+                    : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50"
+                }`}
+              >
+                {d} วัน
+              </Link>
+            ))}
+          </div>
+        }
+      />
+
+      <div className="p-3 sm:p-5 lg:p-6 max-w-[1200px] mx-auto">
+        {offenders.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-dashed border-emerald-300 p-12 text-center">
+            <div className="size-16 mx-auto rounded-full bg-emerald-50 grid place-items-center text-emerald-600">
+              <TrendingUp className="size-7" />
+            </div>
+            <p className="mt-4 font-bold text-zinc-900 text-lg">ไม่มีของพังซ้ำใน {days} วัน</p>
+            <p className="text-sm text-zinc-500 mt-1">
+              เครื่องยนต์/อุปกรณ์ของทุกสาขาเสถียร · ไม่ต้องห่วง capex
+            </p>
+          </div>
+        ) : (
+          <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden">
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="text-left text-[10.5px] uppercase tracking-wide text-zinc-500 border-b border-zinc-100 bg-zinc-50">
+                  <th className="px-4 py-2.5 font-bold">สาขา · หมวด</th>
+                  <th className="px-4 py-2.5 font-bold text-right">ครั้งที่ซ่อม</th>
+                  <th className="px-4 py-2.5 font-bold text-right">ค่าซ่อมรวม</th>
+                  <th className="px-4 py-2.5 font-bold text-right">ค่าเสียโอกาส</th>
+                  <th className="px-4 py-2.5 font-bold">ใบล่าสุด</th>
+                  <th className="px-4 py-2.5"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {offenders.map((row) => (
+                  <tr key={row.key} className="hover:bg-zinc-50">
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-zinc-900 flex items-center gap-1.5">
+                        <span className="text-lg">{row.categoryEmoji ?? "🛠"}</span>
+                        {row.categoryLabel}
+                      </p>
+                      <p className="text-[11px] text-zinc-500 flex items-center gap-1 mt-0.5">
+                        <MapPin className="size-3" />
+                        <span className="font-mono font-bold text-zinc-700">{row.branchCode}</span>
+                        {row.branchName}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded font-bold text-[14px] tabular-nums border ${
+                          row.tickets.length >= 5
+                            ? "bg-red-50 text-red-700 border-red-200"
+                            : row.tickets.length >= 3
+                              ? "bg-amber-50 text-amber-700 border-amber-200"
+                              : "bg-zinc-100 text-zinc-700 border-zinc-200"
+                        }`}
+                      >
+                        {row.tickets.length}
+                        <span className="ml-1 text-[10px] font-medium opacity-80">ครั้ง</span>
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums font-semibold text-zinc-900">
+                      {formatBaht(row.totalCostCents)}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums font-semibold text-red-700">
+                      {formatBaht(row.downtimeBaht * 100)}
+                    </td>
+                    <td className="px-4 py-3 text-[11.5px]">
+                      <Link
+                        href={`/repairs/${row.tickets[0].id}`}
+                        className="font-mono font-semibold text-blue-700 hover:text-blue-900"
+                      >
+                        {row.tickets[0].ticketCode}
+                      </Link>
+                      <span className="text-zinc-400 ml-1">
+                        ·{" "}
+                        {new Intl.DateTimeFormat("th-TH", {
+                          day: "numeric",
+                          month: "short",
+                        }).format(row.tickets[0].createdAt)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Link
+                        href={`/repairs/triage?branch=${row.branchId}&category=${row.categoryId}`}
+                        className="inline-flex items-center gap-0.5 text-[11.5px] font-semibold text-blue-700 hover:text-blue-900"
+                      >
+                        ดูใบทั้งหมด <ChevronRight className="size-3" />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

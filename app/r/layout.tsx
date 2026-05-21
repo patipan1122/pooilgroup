@@ -13,7 +13,7 @@ export default function RepairPublicLayout({
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-white">
       <header className="sticky top-0 z-30 bg-white/85 backdrop-blur border-b border-zinc-200">
-        <div className="mx-auto max-w-4xl px-4 sm:px-6 h-14 flex items-center justify-between">
+        <div className="mx-auto max-w-[1100px] px-4 sm:px-6 h-14 flex items-center justify-between">
           <Link href="/r" className="flex items-center gap-2 font-extrabold text-zinc-900">
             <span className="size-8 rounded-lg bg-[var(--color-brand-600)] text-white grid place-items-center">
               <Wrench className="size-4" />
@@ -36,8 +36,8 @@ export default function RepairPublicLayout({
           </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-4xl px-4 sm:px-6 py-6 sm:py-10">{children}</main>
-      <footer className="mx-auto max-w-4xl px-4 sm:px-6 pb-10 pt-6 text-xs text-zinc-500 text-center">
+      <main className="mx-auto max-w-[1100px] px-4 sm:px-6 py-6 sm:py-10">{children}</main>
+      <footer className="mx-auto max-w-[1100px] px-4 sm:px-6 pb-10 pt-6 text-xs text-zinc-500 text-center">
         © Pooilgroup · ระบบแจ้งซ่อม · ใช้สำหรับแจ้งงานซ่อมภายในเท่านั้น
       </footer>
     </div>

@@ -17,7 +17,7 @@ import type {
   RepairTicketStatus,
   RepairUrgency,
 } from "@/lib/generated/prisma/enums";
-import { Search, X, Plus, MapPin, Inbox as InboxIcon, AlertTriangle, Wrench, PackageSearch, BadgeDollarSign } from "lucide-react";
+import { Search, X, MapPin, Inbox as InboxIcon, AlertTriangle, Wrench, PackageSearch, BadgeDollarSign } from "lucide-react";
 import { TicketDetailPanel } from "./ticket-detail-panel";
 import { KpiTile } from "@/components/ui/kpi-tile";
 import { FilterPill } from "@/components/ui/filter-pill";
@@ -70,7 +70,7 @@ export function AdminInbox(props: Props) {
     const next = new URLSearchParams(sp.toString());
     if (value === null || value === "") next.delete(key);
     else next.set(key, value);
-    router.push(`/repairs?${next.toString()}`);
+    router.push(`/repairs/triage?${next.toString()}`);
   }
 
   function submitSearch(e: React.FormEvent) {
@@ -97,39 +97,7 @@ export function AdminInbox(props: Props) {
   const heroActive = urgentOpen > 0 || overdueCount > 0;
 
   return (
-    <div className="p-3 sm:p-6 lg:p-8 max-w-[1600px] mx-auto">
-      {/* Header */}
-      <header className="flex flex-wrap items-baseline justify-between gap-3 mb-5">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-zinc-900">
-            ระบบแจ้งซ่อม
-          </h1>
-          <p className="text-sm text-zinc-500 mt-0.5">
-            กล่องรับเรื่อง · ติดตามงาน · มอบหมายช่าง
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Link
-            href="/r/new"
-            target="_blank"
-            className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg border-2 border-zinc-200 bg-white text-zinc-700 font-bold text-sm hover:bg-zinc-50"
-            title="เปิดฟอร์มสาธารณะในแท็บใหม่"
-          >
-            <Search className="size-4" />
-            ดูฟอร์มสาธารณะ
-          </Link>
-          {props.canWrite && (
-            <Link
-              href="/repairs/new"
-              className="inline-flex items-center gap-1.5 h-10 px-4 rounded-lg bg-[var(--color-brand-600)] text-white font-bold text-sm hover:bg-[var(--color-brand-700)]"
-            >
-              <Plus className="size-4" />
-              แจ้งซ่อมใหม่
-            </Link>
-          )}
-        </div>
-      </header>
-
+    <div className="p-3 sm:p-5 lg:p-6 max-w-[1600px] mx-auto">
       {/* Hero attention bar — first-second content per Artifact #1 ·
           shows only when something genuinely needs attention. */}
       {heroActive && (
@@ -171,10 +139,9 @@ export function AdminInbox(props: Props) {
                 <button
                   type="button"
                   onClick={() => {
-                    // Jump to first overdue ticket
                     const first = overdueTickets[0];
                     if (first) {
-                      router.push(`/repairs?selected=${first.id}`);
+                      router.push(`/repairs/triage?selected=${first.id}`);
                     }
                   }}
                   className="h-10 px-4 rounded-lg bg-white border-2 border-red-300 text-red-700 font-bold text-sm hover:bg-red-50"
@@ -320,7 +287,7 @@ export function AdminInbox(props: Props) {
                 <p className="mt-1 text-xs text-zinc-500">ลองล้างตัวกรอง หรือเปิดใบใหม่</p>
                 <button
                   type="button"
-                  onClick={() => router.push("/repairs")}
+                  onClick={() => router.push("/repairs/triage")}
                   className="mt-4 inline-flex items-center h-9 px-3 rounded-lg border-2 border-zinc-200 bg-white text-zinc-700 font-bold text-xs hover:bg-zinc-50"
                 >
                   ล้างตัวกรอง
