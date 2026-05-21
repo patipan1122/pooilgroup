@@ -1,15 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { toast } from "sonner";
 import { Copy, QrCode, ExternalLink } from "lucide-react";
 
 interface Props {
   slug: string;
-  title: string;
+  /** Job title — currently displayed only via the underlying posting page header */
+  title?: string;
 }
 
-export function PostingShareCard({ slug, title }: Props) {
+export function PostingShareCard({ slug }: Props) {
   const [showQR, setShowQR] = useState(false);
   const url = `${getOrigin()}/apply/${slug}`;
   // QR via free public API (no library dependency)
@@ -65,11 +67,12 @@ export function PostingShareCard({ slug, title }: Props) {
 
         {showQR && (
           <div className="text-center">
-            <img
+            <Image
               src={qrUrl}
               alt="QR code สำหรับลิ้งค์รับสมัคร"
               width={180}
               height={180}
+              unoptimized
               className="rounded-2xl border border-zinc-200 bg-white p-2"
             />
             <a

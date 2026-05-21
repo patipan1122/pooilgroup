@@ -10,7 +10,7 @@ import {
   suggestFields,
   type FieldSuggestion,
 } from "@/lib/recruit/ai";
-import { FormSchemaSchema, type FormSchema } from "@/lib/recruit/types";
+import { FormSchemaSchema } from "@/lib/recruit/types";
 
 export async function scoreApplicationAction(applicationId: string) {
   const session = await requireSession();

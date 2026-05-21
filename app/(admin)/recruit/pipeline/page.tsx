@@ -1,17 +1,10 @@
 // /recruit/pipeline — Kanban view by status
 
-import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { requireRecruitAccess, canRecruitWrite } from "@/lib/recruit/role-guard";
 import { prisma } from "@/lib/prisma";
 import { Section } from "@/components/ui/section";
-import {
-  APPLICATION_STATUSES,
-  STATUS_LABELS,
-  STATUS_TONE,
-  type ApplicationStatus,
-} from "@/lib/recruit/types";
-import { Badge } from "@/components/ui/badge";
+import { type ApplicationStatus } from "@/lib/recruit/types";
 import { PipelineColumn } from "@/components/recruit/pipeline-column";
 import { PipelineFilter } from "@/components/recruit/pipeline-filter";
 

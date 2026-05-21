@@ -12,7 +12,6 @@ import {
 } from "@/lib/recruit/actions";
 import {
   FormSchema,
-  EMPTY_FORM_SCHEMA,
   PostingStatus,
 } from "@/lib/recruit/types";
 import { FormBuilder } from "./form-builder";

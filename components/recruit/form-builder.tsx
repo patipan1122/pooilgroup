@@ -3,7 +3,6 @@
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
-  Plus,
   Trash2,
   ChevronUp,
   ChevronDown,
@@ -37,6 +36,7 @@ export function FormBuilder({ schema, onChange, jobTitle, readonly }: Props) {
   const [pendingAI, startAI] = useTransition();
 
   function uid(prefix = "f"): string {
+    // eslint-disable-next-line react-hooks/purity
     return `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
   }
 

@@ -262,13 +262,13 @@ function FilterLink({
   label,
   count,
   active,
-  tone,
   truncate,
 }: {
   href: string;
   label: string;
   count?: number;
   active?: boolean;
+  /** Color tone — accepted by callers; currently unused by render but reserved for future styling. */
   tone?: "neutral" | "brand" | "warning" | "success" | "danger" | "info";
   truncate?: boolean;
 }) {

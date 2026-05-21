@@ -11,7 +11,7 @@ import {
   type PostingStatus,
 } from "@/lib/recruit/types";
 import { thaiDateLong } from "@/lib/utils/format";
-import { Plus, ExternalLink, FileQuestion } from "lucide-react";
+import { Plus, FileQuestion } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 

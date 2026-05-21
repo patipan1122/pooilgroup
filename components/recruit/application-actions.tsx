@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import {
   APPLICATION_STATUSES,
   STATUS_LABELS,
-  STATUS_TONE,
   type ApplicationStatus,
 } from "@/lib/recruit/types";
 import {
@@ -13,7 +12,6 @@ import {
   setApplicationRating,
   setApplicationTags,
 } from "@/lib/recruit/actions";
-import { Badge } from "@/components/ui/badge";
 import { Star, X, Plus } from "lucide-react";
 
 interface Props {

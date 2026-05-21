@@ -44,6 +44,7 @@ export default async function TasksPage() {
     take: 200,
   });
 
+  // eslint-disable-next-line react-hooks/purity
   const now = Date.now();
 
   // Sort: most overdue first, then by status priority

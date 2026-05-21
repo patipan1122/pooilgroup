@@ -3,19 +3,16 @@
 // CEO preference [[ceo-prefers-multi-pane-workspace]]
 
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { requireRecruitAccess } from "@/lib/recruit/role-guard";
 import { prisma } from "@/lib/prisma";
 import { Section } from "@/components/ui/section";
-import { Badge } from "@/components/ui/badge";
 import { ApplicationsInbox } from "@/components/recruit/applications-inbox";
 import {
   APPLICATION_STATUSES,
-  STATUS_LABELS,
   type ApplicationStatus,
 } from "@/lib/recruit/types";
-import { Inbox, FileQuestion } from "lucide-react";
+import { FileQuestion } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 

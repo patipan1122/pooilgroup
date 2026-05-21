@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { PublicFormRenderer } from "@/components/recruit/public-form-renderer";
 import { submitPublicApplication } from "./submit-action";
@@ -22,15 +22,16 @@ export function ApplyClient({
   companyName,
 }: Props) {
   const router = useRouter();
-  const [initialAnswers, setInitialAnswers] = useState<Record<string, unknown>>({});
-
-  // Load draft from localStorage
-  useEffect(() => {
+  // Lazy initialise from localStorage so we don't re-render after first paint.
+  const [initialAnswers] = useState<Record<string, unknown>>(() => {
+    if (typeof window === "undefined") return {};
     try {
-      const raw = localStorage.getItem(`recruit_draft_${slug}`);
-      if (raw) setInitialAnswers(JSON.parse(raw));
-    } catch {}
-  }, [slug]);
+      const raw = window.localStorage.getItem(`recruit_draft_${slug}`);
+      return raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  });
 
   return (
     <div className="min-h-screen bg-zinc-50 py-6 sm:py-12 px-4">

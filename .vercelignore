@@ -1,0 +1,9 @@
+# Parallel session WIP — files in working tree but not yet shipped to git remote.
+# Vercel uploads local files (incl untracked) when running `vercel --prod` from CLI;
+# this exclusion list keeps the WIP from breaking production builds until parallel
+# session ships them as a complete unit.
+
+# (Recruit module shipped 2026-05-20 commit 0068022 · removed from this list)
+
+# Repair module (planning stage · models in schema · routes shipped via concurrent commit)
+# Remove this block once repair module is verified working end-to-end.
