@@ -34,10 +34,10 @@ export default async function BlacklistPage() {
   return (
     <div className="p-5 sm:p-8 max-w-4xl mx-auto">
       <Section
-        number="🚫"
+        number="04"
         label="BLACKLIST"
         title="Blacklist ผู้สมัคร"
-        description="คนเก่าที่มีปัญหา · ตรงนี้ระบบจะใช้ตรวจสอบใบสมัครใหม่ทันที"
+        description="คนเก่าที่มีปัญหา · ระบบจะใช้ตรวจสอบใบสมัครใหม่ทันที"
       >
         <BlacklistManager
           active={active.map((e) => ({

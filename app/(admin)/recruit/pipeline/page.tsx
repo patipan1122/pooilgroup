@@ -70,15 +70,15 @@ export default async function PipelinePage({
   return (
     <div className="p-5 sm:p-8">
       <Section
-        number="📊"
+        number="03"
         label="PIPELINE"
         title="Pipeline ใบสมัครงาน"
         description="ดูใบสมัครเรียงตาม status · กดเข้าใบเพื่อดู / เปลี่ยน status"
         action={<PipelineFilter postings={postings} currentValue={filter} />}
       >
-        {/* Horizontal scroll on mobile · grid on desktop */}
+        {/* Mobile = horizontal scroll · iPad portrait = 2 cols · iPad landscape = 3 · desktop = 6 */}
         <div className="overflow-x-auto -mx-5 sm:mx-0 pb-4">
-          <div className="flex gap-3 px-5 sm:px-0 min-w-max sm:min-w-0 sm:grid sm:grid-cols-3 lg:grid-cols-6">
+          <div className="flex gap-3 px-5 sm:px-0 min-w-max sm:min-w-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
             {showStatuses.map((s) => (
               <PipelineColumn
                 key={s}

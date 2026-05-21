@@ -40,7 +40,7 @@ export function PostingShareCard({ slug }: Props) {
             <button
               type="button"
               onClick={copyLink}
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-[var(--color-brand-600)] px-3 py-2 rounded-lg hover:bg-[var(--color-brand-700)]"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-[var(--color-brand-600)] px-3 py-2 rounded-xl hover:bg-[var(--color-brand-700)]"
             >
               <Copy className="size-3.5" />
               คัดลอก
@@ -49,7 +49,7 @@ export function PostingShareCard({ slug }: Props) {
               href={url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-700 border border-zinc-300 px-3 py-2 rounded-lg hover:bg-zinc-50"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-700 border border-zinc-300 px-3 py-2 rounded-xl hover:bg-zinc-50"
             >
               <ExternalLink className="size-3.5" />
               เปิดดู
@@ -57,7 +57,7 @@ export function PostingShareCard({ slug }: Props) {
             <button
               type="button"
               onClick={() => setShowQR(!showQR)}
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-700 border border-zinc-300 px-3 py-2 rounded-lg hover:bg-zinc-50"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-700 border border-zinc-300 px-3 py-2 rounded-xl hover:bg-zinc-50"
             >
               <QrCode className="size-3.5" />
               {showQR ? "ซ่อน QR" : "ดู QR"}

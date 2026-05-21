@@ -13,6 +13,7 @@ import {
 } from "@/lib/recruit/types";
 import { ApplicationDetail } from "./application-detail";
 import { thaiDateLong } from "@/lib/utils/format";
+import { ClipboardList, KanbanSquare, ListChecks, Plus } from "lucide-react";
 
 interface Props {
   orgId: string;
@@ -22,6 +23,7 @@ interface Props {
   currentSelectedId: string | null;
   countMap: Record<ApplicationStatus, number>;
   postings: Array<{ id: string; title: string }>;
+  postingsCount?: number;
   canWrite: boolean;
 }
 
@@ -60,15 +62,17 @@ export async function ApplicationsInbox({
     },
   });
 
-  // Auto-select first app if none selected
-  const selectedId = currentSelectedId ?? apps[0]?.id ?? null;
+  // Selection only triggers when user explicitly picks an item (no auto-select).
+  // On mobile this keeps the list as the default view; on desktop the right pane
+  // shows a placeholder until something is clicked.
+  const selectedId = currentSelectedId ?? null;
   const selected =
     selectedId && apps.find((a) => a.id === selectedId)
       ? apps.find((a) => a.id === selectedId)!
       : null;
 
   return (
-    <div className="flex h-[calc(100vh-60px)]">
+    <div className="flex flex-col lg:flex-row h-[calc(100vh-60px)]">
       {/* PANE 1: Filters (left) */}
       <aside className="hidden lg:flex flex-col w-56 shrink-0 border-r border-zinc-200 bg-white overflow-y-auto">
         <div className="p-4 border-b border-zinc-100">
@@ -133,27 +137,63 @@ export async function ApplicationsInbox({
           </p>
           <Link
             href="/recruit/postings"
-            className="block text-xs text-zinc-600 hover:text-[var(--color-brand-700)] px-2 py-1.5 rounded hover:bg-zinc-50"
+            className="flex items-center gap-2 text-xs text-zinc-600 hover:text-[var(--color-brand-700)] px-2 py-1.5 rounded hover:bg-zinc-50"
           >
-            📋 ประกาศทั้งหมด
+            <ClipboardList className="size-3.5" />
+            ประกาศทั้งหมด
           </Link>
           <Link
             href="/recruit/pipeline"
-            className="block text-xs text-zinc-600 hover:text-[var(--color-brand-700)] px-2 py-1.5 rounded hover:bg-zinc-50"
+            className="flex items-center gap-2 text-xs text-zinc-600 hover:text-[var(--color-brand-700)] px-2 py-1.5 rounded hover:bg-zinc-50"
           >
-            📊 Pipeline view
+            <KanbanSquare className="size-3.5" />
+            Pipeline view
           </Link>
           <Link
             href="/recruit/tasks"
-            className="block text-xs text-zinc-600 hover:text-[var(--color-brand-700)] px-2 py-1.5 rounded hover:bg-zinc-50"
+            className="flex items-center gap-2 text-xs text-zinc-600 hover:text-[var(--color-brand-700)] px-2 py-1.5 rounded hover:bg-zinc-50"
           >
-            ✓ งานต้องตาม
+            <ListChecks className="size-3.5" />
+            งานต้องตาม
           </Link>
         </div>
       </aside>
 
-      {/* PANE 2: List (middle) */}
-      <section className="flex flex-col w-full lg:w-[380px] shrink-0 border-r border-zinc-200 bg-white overflow-hidden">
+      {/* Mobile filter pills (replaces hidden desktop sidebar on <lg) */}
+      <div className={`lg:hidden border-b border-zinc-200 bg-white px-3 py-2 overflow-x-auto ${
+        selectedId ? "hidden" : "flex"
+      }`}>
+        <div className="flex items-center gap-1.5 min-w-fit">
+          <Link
+            href={buildUrl({ status: null, posting: currentPosting, q: currentQuery })}
+            className={`h-9 px-3 inline-flex items-center rounded-lg text-xs font-bold whitespace-nowrap border ${
+              !currentStatus
+                ? "bg-zinc-900 text-white border-zinc-900"
+                : "bg-white text-zinc-700 border-zinc-200"
+            }`}
+          >
+            ทั้งหมด ({Object.values(countMap).reduce((s, n) => s + n, 0)})
+          </Link>
+          {APPLICATION_STATUSES.map((s) => (
+            <Link
+              key={s}
+              href={buildUrl({ status: s, posting: currentPosting, q: currentQuery })}
+              className={`h-9 px-3 inline-flex items-center rounded-lg text-xs font-bold whitespace-nowrap border ${
+                currentStatus === s
+                  ? "bg-zinc-900 text-white border-zinc-900"
+                  : "bg-white text-zinc-700 border-zinc-200"
+              }`}
+            >
+              {STATUS_LABELS[s]} ({countMap[s]})
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {/* PANE 2: List (middle) — on mobile, hide when a row is selected so detail can take over */}
+      <section className={`flex-col w-full lg:w-[380px] shrink-0 border-r border-zinc-200 bg-white overflow-hidden ${
+        selectedId ? "hidden lg:flex" : "flex"
+      }`}>
         <div className="p-3 border-b border-zinc-100">
           <SearchBar defaultValue={currentQuery} />
           <div className="flex items-center justify-between mt-3 text-xs">
@@ -169,9 +209,10 @@ export async function ApplicationsInbox({
             {canWrite && (
               <Link
                 href="/recruit/postings/new"
-                className="text-[var(--color-brand-700)] font-bold hover:underline"
+                className="inline-flex items-center gap-1 text-[var(--color-brand-700)] font-bold hover:underline"
               >
-                + ประกาศใหม่
+                <Plus className="size-3" />
+                ประกาศใหม่
               </Link>
             )}
           </div>
@@ -179,9 +220,12 @@ export async function ApplicationsInbox({
 
         <div className="flex-1 overflow-y-auto">
           {apps.length === 0 ? (
-            <div className="p-10 text-center text-sm text-zinc-500">
-              ยังไม่มีใบสมัครที่ตรงเงื่อนไข
-            </div>
+            <EmptyListState
+              hasFilter={!!(currentStatus || currentPosting || currentQuery)}
+              statusLabel={currentStatus ? STATUS_LABELS[currentStatus] : null}
+              query={currentQuery}
+              clearHref={buildUrl({})}
+            />
           ) : (
             apps.map((app) => (
               <Link
@@ -240,13 +284,34 @@ export async function ApplicationsInbox({
         </div>
       </section>
 
-      {/* PANE 3: Detail (right) */}
-      <main className="flex-1 overflow-y-auto bg-zinc-50/50 hidden lg:block">
+      {/* PANE 3: Detail (right) — on mobile, show full-screen when a row is selected */}
+      <main className={`flex-1 overflow-y-auto bg-zinc-50/50 ${
+        selectedId ? "block" : "hidden lg:block"
+      }`}>
         {selected ? (
-          <ApplicationDetail
-            applicationId={selected.id}
-            canWrite={canWrite}
-          />
+          <>
+            {/* Mobile back-to-list bar (hidden on desktop where the list is always visible) */}
+            <div className="lg:hidden sticky top-0 z-10 bg-white border-b border-zinc-200 px-3 py-2 flex items-center justify-between">
+              <Link
+                href={buildUrl({
+                  status: currentStatus,
+                  posting: currentPosting,
+                  q: currentQuery,
+                  selected: null,
+                })}
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-zinc-700 font-bold text-sm hover:bg-zinc-100"
+              >
+                ← กลับรายการ
+              </Link>
+              <span className="text-xs font-mono text-zinc-500">
+                {selected.refId ?? ""}
+              </span>
+            </div>
+            <ApplicationDetail
+              applicationId={selected.id}
+              canWrite={canWrite}
+            />
+          </>
         ) : (
           <div className="p-20 text-center text-sm text-zinc-400">
             เลือกใบสมัครจากรายการ
@@ -297,9 +362,55 @@ function SearchBar({ defaultValue }: { defaultValue: string }) {
         name="q"
         defaultValue={defaultValue}
         placeholder="ค้นชื่อ / เบอร์ / เลขใบสมัคร..."
-        className="w-full text-xs rounded-xl border border-zinc-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)]"
+        className="w-full text-sm rounded-xl border border-zinc-200 h-10 px-3 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)]"
       />
     </form>
+  );
+}
+
+function EmptyListState({
+  hasFilter,
+  statusLabel,
+  query,
+  clearHref,
+}: {
+  hasFilter: boolean;
+  statusLabel: string | null;
+  query: string;
+  clearHref: string;
+}) {
+  if (!hasFilter) {
+    return (
+      <div className="p-10 text-center">
+        <p className="text-sm text-zinc-500">ยังไม่มีใบสมัคร</p>
+        <p className="text-xs text-zinc-400 mt-2">
+          แชร์ลิ้งค์ประกาศใน Facebook / LINE เพื่อให้คนสมัครเข้ามา
+        </p>
+        <Link
+          href="/recruit/postings"
+          className="inline-flex mt-4 text-xs font-bold text-[var(--color-brand-700)] hover:underline"
+        >
+          ดูประกาศทั้งหมด →
+        </Link>
+      </div>
+    );
+  }
+  const filterParts: string[] = [];
+  if (statusLabel) filterParts.push(`status "${statusLabel}"`);
+  if (query) filterParts.push(`ค้นหา "${query}"`);
+  return (
+    <div className="p-10 text-center">
+      <p className="text-sm text-zinc-500">ไม่พบใบสมัครที่ตรง</p>
+      {filterParts.length > 0 && (
+        <p className="text-xs text-zinc-400 mt-1.5">{filterParts.join(" · ")}</p>
+      )}
+      <Link
+        href={clearHref}
+        className="inline-flex mt-4 text-xs font-bold text-[var(--color-brand-700)] hover:underline"
+      >
+        ล้างเงื่อนไข
+      </Link>
+    </div>
   );
 }
 
@@ -307,7 +418,7 @@ function buildUrl(params: {
   status?: ApplicationStatus | null;
   posting?: string | null;
   q?: string;
-  selected?: string;
+  selected?: string | null;
 }): string {
   const sp = new URLSearchParams();
   if (params.status) sp.set("status", params.status);

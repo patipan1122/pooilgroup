@@ -63,7 +63,7 @@ export default async function TasksPage() {
   return (
     <div className="p-5 sm:p-8 max-w-4xl mx-auto">
       <Section
-        number="✓"
+        number="02"
         label="งานต้องตาม"
         title="ใบสมัครที่ค้างอยู่ในกระบวนการ"
         description="ทุกใบที่ status รออยู่ · ใบที่ค้างนานเกิน SLA จะอยู่ด้านบน"

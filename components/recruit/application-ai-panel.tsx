@@ -84,10 +84,17 @@ export function ApplicationAIPanel({
           <p className="font-bold text-zinc-900 text-sm">ผู้ช่วย AI ประเมินแล้ว</p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-4xl font-extrabold text-[var(--color-brand-700)] tabular-num">
-            {isPending ? "..." : score}
-            <span className="text-base font-medium text-zinc-400 ml-1">/100</span>
-          </span>
+          {isPending ? (
+            <div className="flex items-baseline gap-1">
+              <span className="inline-block h-10 w-16 rounded-lg bg-[var(--color-brand-100)] animate-pulse" />
+              <span className="text-base font-medium text-zinc-400">/100</span>
+            </div>
+          ) : (
+            <span className="text-4xl font-extrabold text-[var(--color-brand-700)] tabular-num">
+              {score}
+              <span className="text-base font-medium text-zinc-400 ml-1">/100</span>
+            </span>
+          )}
           {canWrite && (
             <button
               type="button"

@@ -277,7 +277,7 @@ export function PostingEditor({
                 disabled={pending}
                 className="text-sm font-bold text-white bg-[var(--color-brand-600)] px-4 h-10 rounded-xl hover:bg-[var(--color-brand-700)] disabled:opacity-40"
               >
-                🚀 Publish (เปิดรับ)
+                Publish · เปิดรับ
               </button>
             )}
           </div>

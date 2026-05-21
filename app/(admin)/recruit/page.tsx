@@ -1,6 +1,7 @@
 // /recruit — Applications Inbox (default landing)
 // Multi-pane workspace: filter bar | list | detail link
 // CEO preference [[ceo-prefers-multi-pane-workspace]]
+// Dashboard KPI strip at top (CEO needs 30-second overview · per UX audit)
 
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
@@ -12,7 +13,12 @@ import {
   APPLICATION_STATUSES,
   type ApplicationStatus,
 } from "@/lib/recruit/types";
-import { FileQuestion } from "lucide-react";
+import {
+  FileText,
+  Inbox as InboxIcon,
+  Sparkles,
+  FileQuestion,
+} from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -74,10 +80,10 @@ export default async function RecruitInboxPage({
             <div className="size-16 mx-auto rounded-2xl bg-[var(--color-brand-50)] border-2 border-[var(--color-brand-200)] flex items-center justify-center text-[var(--color-brand-700)]">
               <FileQuestion className="size-7" />
             </div>
-            <h3 className="mt-5 text-2xl font-extrabold tracking-tight text-zinc-900">
+            <h3 className="mt-5 text-2xl font-extrabold tracking-tight text-zinc-900 font-display">
               เริ่มสร้างประกาศแรก
             </h3>
-            <p className="mt-2 text-sm text-zinc-600 max-w-md mx-auto">
+            <p className="mt-2 text-sm text-zinc-600 max-w-md mx-auto leading-relaxed">
               สร้างประกาศรับสมัครงาน → ได้ลิ้งค์ + QR ทันที →
               เอาไปแปะ Facebook / LINE / หน้าร้านได้เลย
             </p>
@@ -85,23 +91,23 @@ export default async function RecruitInboxPage({
               href="/recruit/postings/new"
               className="inline-flex items-center gap-2 mt-6 rounded-xl bg-[var(--color-brand-600)] text-white px-5 h-12 font-bold hover:bg-[var(--color-brand-700)] transition-colors"
             >
-              + สร้างประกาศแรก
+              สร้างประกาศแรก
             </Link>
             <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
               <FeatureMini
-                emoji="📝"
+                Icon={FileText}
                 title="สร้างฟอร์ม"
-                desc="เลือก field ตามต้องการ"
+                desc="เลือก field ตามต้องการ · 10 ชนิด · AI ช่วยแนะนำ"
               />
               <FeatureMini
-                emoji="📥"
+                Icon={InboxIcon}
                 title="รับใบสมัคร"
-                desc="เก็บถาวร · ค้นได้ตลอด"
+                desc="เก็บถาวร · ค้นได้ตลอด · pipeline ตาม status"
               />
               <FeatureMini
-                emoji="🤖"
+                Icon={Sparkles}
                 title="AI ช่วยคัด"
-                desc="กดประเมินได้รายคน"
+                desc="กดประเมินรายคน · ไม่ auto · ประหยัด"
               />
             </div>
           </div>
@@ -119,25 +125,28 @@ export default async function RecruitInboxPage({
       currentSelectedId={params.selected ?? null}
       countMap={countMap}
       postings={postings}
+      postingsCount={postingsCount}
       canWrite={["super_admin","org_admin","admin","area_manager","branch_manager"].includes(session.user.role)}
     />
   );
 }
 
 function FeatureMini({
-  emoji,
+  Icon,
   title,
   desc,
 }: {
-  emoji: string;
+  Icon: React.ComponentType<{ className?: string }>;
   title: string;
   desc: string;
 }) {
   return (
-    <div className="rounded-2xl border-2 border-zinc-200 p-4 bg-zinc-50/40">
-      <div className="text-2xl">{emoji}</div>
-      <p className="mt-2 font-bold text-zinc-900 text-sm">{title}</p>
-      <p className="text-xs text-zinc-500 mt-0.5">{desc}</p>
+    <div className="rounded-2xl border-2 border-zinc-200 p-5 bg-zinc-50/40">
+      <div className="size-10 rounded-xl bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] text-[var(--color-brand-700)] flex items-center justify-center">
+        <Icon className="size-5" />
+      </div>
+      <p className="mt-3 font-bold text-zinc-900 text-sm">{title}</p>
+      <p className="text-xs text-zinc-500 mt-1 leading-relaxed">{desc}</p>
     </div>
   );
 }

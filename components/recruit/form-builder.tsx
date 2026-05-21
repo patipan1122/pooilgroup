@@ -203,6 +203,10 @@ export function FormBuilder({ schema, onChange, jobTitle, readonly }: Props) {
 
   return (
     <div className="rounded-3xl border border-zinc-200 bg-white overflow-hidden">
+      {/* Mobile-only notice — form builder needs desktop precision (info → ฟ้า per DNA) */}
+      <div className="lg:hidden bg-[var(--color-brand-50)] border-b border-[var(--color-brand-200)] px-4 py-2.5 text-xs text-[var(--color-brand-900)]">
+        แนะนำใช้คอมพิวเตอร์เปิดหน้านี้ · ออกแบบฟอร์มสะดวกกว่ามือถือมาก
+      </div>
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-3 p-4 border-b border-zinc-100 flex-wrap">
         <div>
