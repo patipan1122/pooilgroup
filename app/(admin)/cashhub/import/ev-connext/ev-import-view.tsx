@@ -393,7 +393,8 @@ export function EvImportView() {
             <div className="rounded-xl border border-zinc-200 overflow-hidden">
               <div className="max-h-72 overflow-y-auto">
                 <table className="w-full text-xs">
-                  <thead className="bg-zinc-50 sticky top-0">
+                  {/* sticky to inner scroll container (max-h-72 overflow-y-auto) — top-0 correct here */}
+                  <thead className="bg-zinc-50 sticky top-0 z-10">
                     <tr>
                       <th className="text-left px-2 py-1.5 font-semibold text-zinc-600">วันที่</th>
                       <th className="text-left px-2 py-1.5 font-semibold text-zinc-600">สาขา</th>

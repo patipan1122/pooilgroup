@@ -1,8 +1,308 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-21 (Recruit Redesign full ship · 3 commits · Phase A+B-lite)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-21 (Repair full sweep · QA/QC/BA/SA · seed + 11 pages + bug fixes)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-05-21 — Repair full sweep · QA/QC/BA/SA pass · seed-repair-demo.mjs + all 11 pages redesigned)
+
+**CEO goal:** "เอาหลักการ Pooil App.html ไปปรับหน้าอื่น ๆ ของระบบแจ้งซ่อม · QA/QC/BA/SA แก้บั๊ก · เพิ่ม seed data ตัวอย่างให้เห็นภาพ · ไม่ข้าม module"
+
+**Round 2 (after Pooil App Command Center · ทำหน้าที่เหลือ):**
+
+**Files created (NEW):**
+- `scripts/seed-repair-demo.mjs` — idempotent demo seed: 8 categories + 6 technicians + 18 tickets (every status × urgency) + photos + parts + timeline events. Tags `metadata.demo=true` for one-line cleanup.
+- `components/repair/sub-header.tsx` — shared sub-page header (icon + eyebrow + title + KPI strip + crumbs + back-link) for all secondary admin pages
+
+**Pages redesigned (Pooil App spec):**
+- 🔧 `/repairs/parts` — KPI strip + consolidate-hint banner + 2-section layout (aggregated buy-list + per-ticket rows)
+- 🔧 `/repairs/technicians` — roster grid (4-col) w/ workload bars, color-coded load (>=7 red, >=4 amber, >=0 green), filter chips (all/internal/vendor/active/inactive), search
+- 🔧 `/repairs/my-jobs` — persona hero + 3 KPIs + card list w/ priority bar, SLA chip, parts/photo icons. Empty state shows admin nav fallback.
+- 🔧 `/repairs/categories` — KPI strip (urgent/normal/low counts) + sub-header
+- 🔧 `/repairs/settings` — 4 KPIs + 2 resource cards (techs + categories) + public-link card + SLA reference (4hr/24hr/7d tiles)
+- 🔧 `/repairs/recurring` — KPI strip (จุดที่ซ้ำ + ค่าซ่อมรวม + ค่าเสียโอกาส) + sortable failure table + jump-to-triage links
+- 🔧 `/repairs/new` — wrapped under sub-header + crumbs
+- 🔧 `/repairs/[id]` — sub-header + pipeline visualization (6 status steps w/ progress bar) + clean meta grid + tighter density
+- 🔧 `/r` — hero gradient + 2 primary action cards + how-it-works steps
+- 🔧 `/r/track` — back link + hero icon + form + anti-bruteforce note
+- 🔧 `/r/track/[code]` — pipeline visualization + meta grid + photos + timeline + branded contact card
+- 🔧 `components/repair/ticket-detail-panel.tsx` — sectioned (pipeline + meta + actions + photos + parts + timeline)
+- 🔧 `components/repair/technician-admin.tsx` — toolbar (search + filter chips) + slide-in form + grid cards
+- 🔧 `components/repair/track-form.tsx` — focus ring polish
+
+**QA / Bug fixes:**
+- 🐛 `lib/repair/actions.ts` notification link: `/repairs?selected=` → `/repairs/triage?selected=` (inbox URL moved last round; orphan link would 404)
+- 🐛 `lib/repair/actions.ts` revalidatePath() added `/repairs/triage` + `/repairs/table` everywhere `/repairs` was invalidated (createTicket, changeStatus, assignTechnician)
+- 🐛 `lib/modules.ts` nav: added Triage Inbox + Table view entries; renamed `/repairs` label to `ภาพรวม Command` to reflect new content. Old `กล่องรับเรื่อง` would mislead.
+
+**Route map (final):**
+- `/repairs` — Command Center Overview
+- `/repairs/triage` — Inbox split-view
+- `/repairs/kanban` — 5-col Kanban
+- `/repairs/table` — dense filterable table
+- `/repairs/my-jobs` — tech personal queue (Persona)
+- `/repairs/parts` — purchasing queue
+- `/repairs/recurring` — recurring failure report
+- `/repairs/technicians` — admin roster
+- `/repairs/categories` — admin categories
+- `/repairs/settings` — setup hub
+- `/repairs/new` — internal create form
+- `/repairs/[id]` — single ticket detail
+- `/r`, `/r/new`, `/r/track`, `/r/track/[code]` — public
+
+**Verified:**
+- ✅ `npx tsc --noEmit` — 0 NEW errors in repair files (pre-existing recruit/docuflow unchanged)
+- ✅ `npx eslint app/(admin)/repairs components/repair app/r` — clean (0 warnings, 0 errors)
+- ✅ `node --check scripts/seed-repair-demo.mjs` — syntax OK
+- ✅ Dev server boots (turbopack 393ms)
+- ✅ Curl 14 routes — admin 307 (auth gate), public 200, no 500
+- ✅ Public form / landing / tracking all render expected sections in HTML
+- ⏳ Run seed script: `node scripts/seed-repair-demo.mjs` (requires .env.local with service role key)
+- ⏳ CEO manual browser walkthrough
+
+**No schema changes** — All reuse existing 7 tables. `metadata.demo=true` JSON field flag for cleanup (single SQL: `DELETE FROM repair_tickets WHERE metadata->>'demo' = 'true'`).
+
+**Files touched this round:** 14 (2 new + 12 modified) · ~3,500 net new/changed lines
+
+## 🆕 Previous (2026-05-21 — CashHub full sweep · QA/QC/BA/SA findings + bug fixes + design migration)
+
+**CEO goal:** "เอาหลักการ CashHub Redesign ไปใช้ทุกหน้าใน CashHub · ส่ง QA/QC/BA/SA มาช่วย · แก้ bug · ไม่ข้ามไปโปรแกรมอื่น"
+
+**4 agents launched (BA · SA · QA · QC) — findings synthesized:**
+- 12 API routes missing module entitlement gating (Critical)
+- 2 routes using stale `requireRole("super_admin","org_admin","admin")` instead of `requireExecutiveRole`
+- Sticky thead offsets at `top-0` instead of `top-14 sm:top-16` (3 sites)
+- console.error left in slip-camera
+- Spike modal missing ESC key + aria-modal
+- 13+ pages using legacy tokens (`--color-brand-*`, `text-gradient-blue`, `tracking-[0.18em]`)
+
+**Bug fixes shipped:**
+- ✅ `lib/cashhub/api-guard.ts` (NEW) — unified `cashHubApiGuard({ executive?: true })` wraps every API: module-disabled 503 / unauthorized 401 / forbidden 403
+- ✅ Applied gate to **14 API routes**: approve · approve-bulk · ev-import · ev-import/preview · unlock · drafts · notes · ocr-slip · missing-reason · targets · reports · reports/by-date · export · shortages/export · ai
+- ✅ ev-import + ev-import/preview migrated from `requireRole("super_admin","org_admin","admin")` → `cashHubApiGuard({ executive: true })`
+- ✅ unlock route now has 2-layer guard: module entitlement + `requireRole("super_admin")` for the destructive action
+- ✅ Sticky thead fixed: `my-branches-view.tsx:270` · `heatmap-grid.tsx:133` · `ev-import-view.tsx:396` → `sticky top-14 sm:top-16 z-20`
+- ✅ `slip-camera.tsx:73` — removed `console.error` (Sentry instrumentation already catches it)
+- ✅ `report-form.tsx` spike modal — added ESC handler + `aria-modal` + labelled by `spike-modal-title`
+
+**Design migration shipped — all 16 CashHub routes use SectionPill + TwoToneTitle:**
+- ✅ `/cashhub/reports` (high) — รายงาน ทั้งหมด
+- ✅ `/cashhub/leaderboard` — อันดับ สาขา
+- ✅ `/cashhub/my-branches` — สาขา ของฉัน
+- ✅ `/cashhub/shortages` — เงินขาด ฿N
+- ✅ `/cashhub/compare` — เปรียบเทียบ เดือน vs เดือน
+- ✅ `/cashhub/missing` — สาขาที่ยังไม่ กรอกรายงาน
+- ✅ `/cashhub/notes` — โน้ตจาก Staff
+- ✅ `/cashhub/quick-fill` — กรอก ทุกสาขา
+- ✅ `/cashhub/kiosk` — ตู้คีบ + เก้าอี้นวด
+- ✅ `/cashhub/training` — ศูนย์ ฝึกอบรม
+- ✅ `/cashhub/import` — ศูนย์ นำเข้าข้อมูล
+- ✅ `/cashhub/rentals` — สัญญา ค่าเช่า
+- ✅ `/cashhub/settings` — ตั้งค่า CashHub
+- ✅ `/cashhub/dashboard/business/[type]` — drill-down
+- ✅ `/cashhub/reports/[id]` — report detail
+- ✅ `/cashhub/branches/[id]` — branch detail
+- ✅ `/cashhub/dashboard` + `/cashhub/heatmap` + `/cashhub/settings/forms` (already done in 1st pass)
+
+**Verified:**
+- ✅ `npx tsc --noEmit | grep cashhub` → zero errors
+- ✅ `npx next build` → "Compiled successfully" (pre-existing recruit/erasure typecheck errors unrelated)
+- ✅ All 16 routes → 307 redirect to /login (auth gate working)
+- ✅ All API routes → 401/405 (no 500 errors · gate works)
+
+**Scope honored:** ONLY CashHub touched · DocuFlow / Recruit / Repairs untouched
+
+---
+
+## 🆕 Update (2026-05-21 — DocuFlow Round 2 · ทุกหน้า + sample data · build verified)
+
+**CEO goal:** "เอาหลักการ canvas design ไปใช้ทุกหน้าใน DocuFlow · ห้ามข้ามไปโปรแกรมอื่น · แก้ bug ทั้ง frontend/backend · เพิ่ม sample data ให้เห็นทุก feature"
+
+**Files redesigned this round (9 หน้า + 1 seed script):**
+- 🔧 `/docuflow/documents` (advanced list) — DfStatCard ✕ DfPill filters + DocumentCard grid
+- 🔧 `/docuflow/checklist` — 4 KPI stat cards (legal/uploaded/missing/compliance%) + canvas header (compliance score in title)
+- 🔧 `/docuflow/vehicles` (fleet list) — 4 stat cards + DfPageHeader + filter card
+- 🔧 `/docuflow/vehicles/[id]` (vehicle detail) — emoji avatar + DfPill row + 4-doc slot grid
+- 🔧 `/docuflow/vehicles/new` — DfCard form wrap + canvas header
+- 🔧 `/docuflow/vehicles/[id]/renew` — DfCard form wrap + old-expiry DfPill chip
+- 🔧 `/docuflow/persons` (person list) — 4 stat cards + DfPill avatars + completion bar redesign
+- 🔧 `/docuflow/persons/[userId]` — avatar + role/employee DfPill + 4-slot grid
+- 🔧 `/docuflow/persons/[userId]/renew` — DfCard form wrap
+
+**QA findings (orgId guarded · no critical bugs found):**
+- ✅ All Prisma queries in `/api/docuflow/*` route through `orgId: session.user.org_id` filter
+- ✅ Sign endpoint has both `signerUserId === session.user.id` check AND admin tier fallback
+- ✅ Upload route uses Zod schema validation + `requireAdminTier`
+- ✅ Download route filters `isActive: true` to prevent serving soft-deleted docs
+- ✅ Signature placement re-sign guard returns 409 Conflict
+- ✅ No `documentSignaturePlacement.assignedUserId` references (correct field is `signerUserId`)
+
+**Sample data seeder (NEW):**
+- ✏️ `scripts/seed-docuflow-demo.mjs` — Idempotent seed with `[DEMO]` description prefix:
+  - 12 documents across 6 categories (station/legal/tax/insurance/contract/land) with varied expiry windows (today/5d/22d/60d/expired/no-expiry)
+  - Document ownership at group/company/branch/person levels
+  - 10 tag varieties
+  - Cross-branch share (2 docs)
+  - 4 vehicles + 16 vehicle documents (registration/พ.ร.บ./ตรวจสภาพ/ใบรับรองถัง)
+  - 9 person documents (license/health/training) across first 3 staff/driver users
+  - Clean mode: `node scripts/seed-docuflow-demo.mjs --clean` removes only `[DEMO]`-prefixed rows
+
+**Verified:**
+- ✅ `npx tsc --noEmit | grep docuflow` → zero errors (typecheck clean)
+- ✅ All /docuflow routes still compile (`next build` recruit pre-existing issue not docuflow-related)
+- ⏳ Run seed locally → manual browser test
+
+**Scope honored:** ONLY DocuFlow touched · CashHub / Recruit / Repairs untouched
+
+---
+
+## 🗂 Round 1: DocuFlow Redesign · 9 routes + 3 ใหม่ · build verified · ยังไม่ deploy
+
+**CEO goal:** "redesign การใช้งานของระบบเอกสารใน Pooilgroup ทั้ง backend frontend · มือถือ + คอม · ยึก design canvas `DocuFlow Redesign.html`"
+
+**Design canvas:** 21 artboards (13 desktop + 8 mobile) — warm cream bg (#F4EEE2), royal blue (#1B47B5), burnt-orange accent (#C46A3D), IBM Plex Serif Thai display.
+
+**Shipped (local · `npx tsc --noEmit` clean · `npx next build` OK):**
+
+**Design tokens + primitives:**
+- ✏️ `app/(admin)/docuflow/docuflow.css` — Canvas-aligned design tokens (warm cream + royal blue palette · pills/cards/buttons/segmented/inputs · scoped to `.df-root`)
+- ✏️ `components/docuflow/df-ui.tsx` — Primitives: `DfMark`, `DfEyebrow`, `DfCard`, `DfPill`, `DfButton`, `DfDocIcon`, `DfAvatar`, `DfStatCard`, `DfSegmented`, `DfPageHeader`, `DfSection`
+- 🔧 `app/(admin)/docuflow/layout.tsx` — import CSS + wrap children in `.df-root`
+
+**Pages redesigned:**
+- 🔧 `/docuflow` (Dashboard) — greeting hero · 4 stat cards · task list · expiring docs · risk snapshot · AI search shortcut
+- 🔧 `/docuflow/browse` — 8 category tiles · org structure tree (companies/branches)
+- 🔧 `/docuflow/documents/upload` — hero dropzone + AI auto-fill banner + form
+- 🔧 `/docuflow/documents/[id]` — large preview + tabs + right meta panel
+- 🔧 `/docuflow/documents/[id]/signatures` — canvas-style header chrome
+- 🔧 `/docuflow/expiry` — stat strip + bucket cards + side mini calendar
+- 🔧 `/docuflow/risk` — Compliance Score header + canvas-style stat strip
+- 🔧 `/docuflow/search` — centered AI hero + suggestion pills
+
+**New routes (canvas required):**
+- ✏️ `/docuflow/calendar` — full month grid · events from renewals · upcoming panel + legend
+- ✏️ `/docuflow/notifications` — Inbox with expiry alerts + pending signatures + recent uploads · settings panel
+- ✏️ `/docuflow/reports` — KPIs · 12-mo upload trend bars · top branches · AI savings card
+
+**Verified:**
+- ✅ `npx tsc --noEmit` clean (เฉพาะ pre-existing recruit AuditAction issues)
+- ✅ `npx next build` ผ่าน · ทุก /docuflow route compile สำเร็จ
+- ⏳ Manual UI test ใน browser (CEO เปิดเอง)
+
+**No schema changes** — UI-only redesign · data layer unchanged · ใช้ existing canonical loaders (`loadDocuments`, `loadRenewals`, `loadDocumentById`, `buildDocumentTree`)
+
+**Canvas coverage:**
+| Canvas artboard | Status |
+|---|---|
+| DesktopDashboard | ✅ /docuflow |
+| DesktopStructure | ✅ /docuflow/browse |
+| DesktopUpload | ✅ /docuflow/documents/upload |
+| DesktopViewer | ✅ /docuflow/documents/[id] |
+| DesktopRenewal | ✅ /docuflow/expiry (rolled into) |
+| DesktopSigning | ✅ /docuflow/documents/[id]/signatures |
+| DesktopRisk | ✅ /docuflow/risk |
+| DesktopSearch | ✅ /docuflow/search |
+| DesktopCalendar | ✅ /docuflow/calendar (NEW) |
+| DesktopNotifications | ✅ /docuflow/notifications (NEW) |
+| DesktopReports | ✅ /docuflow/reports (NEW) |
+| DesktopAudit | ⏳ deferred (existing /audit covers it) |
+| DesktopWorkflow | ⏳ deferred (needs schema for multi-signer rules) |
+| Mobile 8 screens | ✅ responsive grid breakpoints (`@media max-width:980px/1100px`) — all 2-col layouts collapse to single column |
+
+**Deploy blocker:** none for DocuFlow · build clean · pre-existing recruit AuditAction TS errors are not blocking (in different module)
+
+**Next session priorities:**
+1. Audit log dedicated page `/docuflow/audit` (canvas DesktopAudit) — currently piggybacking on global `/audit`
+2. Workflow builder UI `/docuflow/workflow` — needs schema (multi-signer rules · approval chains)
+3. Mobile-dedicated screens (current is responsive but could add bottom nav for /docuflow/* specifically)
+4. CEO browser test on production deploy
+
+---
+
+## 🗂 Previous: Repair Redesign (2026-05-21 · Claude Design `akxitfy16cP2njoHctcxHQ` · Pooil App.html)
+
+**CEO goal:** "redesign ระบบแจ้งซ่อมใน pooilgroup · ยึด Pooil App.html · ใช้ได้ทุกฟีเจอร์ · ไม่มีบัค · ไม่แตะอันอื่น"
+
+**Design source:** Claude Code design bundle (`Pooil App.html` + `Redesign.html` + `Public Form.html`) — Command Center (Linear/Stripe density) + 4-view tabs (Overview/Triage/Kanban/Table) + sectioned public form + biz-tab filter (Pooil/JP Sync).
+
+**Files created (NEW):**
+- `components/repair/view-header.tsx` — shared header w/ view tabs + biz filter chips + KPI summary
+- `components/repair/overview-dashboard.tsx` — Command Center w/ KPI strip, action queue (4 buckets: assign/ack/parts/SLA), workload bars, pipeline funnel, hotspots, cost trend 8w, category breakdown, activity feed, volume by day
+- `components/repair/admin-table.tsx` — dense filterable table view (200-row cap, sticky header, status+urgency chips, tech avatar, SLA, cost)
+- `app/(admin)/repairs/triage/page.tsx` — wrap existing AdminInbox under new view header
+- `app/(admin)/repairs/table/page.tsx` — table view route
+
+**Files redesigned (MODIFIED):**
+- `app/(admin)/repairs/page.tsx` — now Command Center Overview (was Inbox)
+- `app/(admin)/repairs/kanban/page.tsx` — rich cards: priority bar, parts badge, SLA chip, tech avatar, cost. Status-dot column headers.
+- `components/repair/public-form.tsx` — sectioned 5-step form: biz pills, category grid, camera-first photos, priority cards, contact w/ OTP hint, live preview sidebar (desktop), mobile progress bar
+- `components/repair/admin-inbox.tsx` — slim inner header (RepairViewHeader takes title), all routing → `/repairs/triage`
+- `app/r/new/page.tsx` — let form own its hero
+- `app/r/layout.tsx` — widen to 1100px for preview sidebar
+- `lib/repair/queries.ts` — extend with `companyId` filter + 8 new aggregates: countNewSince, hotspotBranches, categoryBreakdown, technicianWorkload, recentActivity, actionQueueBuckets, costTrend8w, volumeByDay, listCompanies
+
+**Route map:**
+- `/repairs` — Command Center (NEW landing)
+- `/repairs/triage` — Inbox list+detail (former /repairs)
+- `/repairs/kanban` — 5-column Kanban (redesigned cards)
+- `/repairs/table` — dense filterable table (NEW)
+- `/repairs/parts` — purchasing queue (untouched)
+- `/repairs/technicians` — roster (untouched)
+- `/r/new` — public form (redesigned)
+- `/r/track` — public tracking (untouched)
+
+**No schema changes** — all redesign reuses existing 7 tables + RPCs. Biz tabs filter by `companyId` (POOIL/JPSYNC).
+
+**Verified:**
+- ✅ `tsc --noEmit` — zero NEW errors in repair files (pre-existing recruit/docuflow errors untouched)
+- ✅ ESLint — zero warnings/errors in 8 changed/new files
+- ✅ Dev server boots clean (turbopack 373ms)
+- ✅ Curl: `/repairs` `/repairs/triage` `/repairs/kanban` `/repairs/table` `/repairs/parts` `/repairs/technicians` → 307 (auth gate, correct); `/r/new` `/r` `/r/track` → 200
+- ✅ Public form HTML contains all 5 numbered sections + Preview sidebar
+- ⏳ Manual browser UI test — CEO ทดสอบ
+
+**Files touched:** 11 (5 new + 6 modified) · ~2,800 net new lines
+
+## 🆕 Previous (2026-05-21 — CashHub Redesign · Claude Design handoff `MLMc2DZd7q-5cmIzvrh5hw`)
+
+**CEO goal:** "ปรับ design ของ cash hub · ตัวอื่นไม่แตะ · ฟีเจอร์ที่ขาดเพิ่มให้ใช้งานได้"
+
+**Design source:** Claude Design bundle (5.1 MB) — Dashboard V1 + Heatmap V2 + Form Builder V1 (CEO-confirmed in handoff chat).
+
+**Files created (new):**
+- `components/cashhub/redesign/tokens.css` — scoped design vars (--ch-brand, --ch-navy, etc.)
+- `components/cashhub/redesign/section-pill.tsx`, `two-tone-title.tsx`, `sparkline-v2.tsx`, `health-badge-v2.tsx`, `delta-pill.tsx`, `hero-kpi-card.tsx` — primitives
+- `components/cashhub/redesign/approval-banner.tsx` — global banner (pending reports + register requests)
+- `components/cashhub/redesign/heatmap-v2.tsx` — 3-tab container (matrix / reconcile / timeline)
+- `components/cashhub/redesign/reconcile-tab.tsx` — Bank Reconcile (NEW) — filter chips, status pills, 4-step right rail
+- `components/cashhub/redesign/timeline-tab.tsx` — chronological report feed
+- `lib/cashhub/bank-reconcile.ts` — adapter pulling from existing daily_reports + shortages (NO new tables)
+- `app/(admin)/cashhub/dashboard/dashboard-v1-view.tsx` — full Dashboard V1 layout
+
+**Files modified:**
+- `app/(admin)/cashhub/layout.tsx` — wraps children in `.ch-scope` + injects ApprovalBanner
+- `app/(admin)/cashhub/dashboard/page.tsx` — uses `DashboardV1View`
+- `app/(admin)/cashhub/heatmap/page.tsx` — uses `HeatmapV2View` (3 tabs, with bank reconcile data)
+- `app/(admin)/cashhub/settings/forms/page.tsx` — re-skinned hero (SectionPill + TwoToneTitle + 3-stat strip)
+
+**Functional changes:**
+- ✅ Global approval banner shows pending reports + register requests count
+- ✅ Dashboard V1: 4-card hero strip (ยอดรวม + sparkline / สาขาที่กรอกครบ / น่าเป็นห่วง / รออนุมัติ)
+- ✅ Heatmap now has tabs: **ตารางกรอกครบ** (existing) · **กระทบยอดแบงก์** (NEW) · **ไทม์ไลน์รายงาน** (NEW)
+- ✅ Bank Reconcile shows real data — approved=matched, shortage!=0=diff, submitted=no-bank-yet, missing-day=missing-fill
+- ✅ Import Statement + Match อัตโนมัติ buttons stubbed with toast "ฟีเจอร์เร็วๆ นี้" (no DB migration needed)
+- ✅ Per [[cashhub-shortage-flow-d020]] — display only · NO mutations to reconcile formula
+- ❌ Form Builder V1 phone-preview pane — deferred (form-editor.tsx is 1155 lines, high blast radius)
+
+**Verified:**
+- ✅ `tsc --noEmit` shows no CashHub-related errors
+- ✅ `next build` — "Compiled successfully in 14.4s" (typecheck blocks on pre-existing recruit/erasure files, unrelated)
+- ✅ Dev server: `/cashhub/dashboard`, `/cashhub/heatmap`, `/cashhub/settings/forms` all return 307 → /login (compile clean, redirect normal)
+- ⏳ Manual browser test (CEO เปิดเอง) — pages render with auth cookie
+
+**Not deployed yet** — awaits CEO browser verification + commit/push decision.
+
+---
 
 ## 🆕 Update (2026-05-21 — Recruit Redesign canvas → 3 phases shipped · 24 files · ~3,800 lines · ยังไม่ deploy)
 

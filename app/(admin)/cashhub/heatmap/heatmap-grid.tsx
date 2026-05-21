@@ -130,7 +130,7 @@ export function HeatmapGrid({
           (no separate cards/tables per group · header วันแถวเดียวด้านบน) */}
       <div className="rounded-2xl border-2 border-zinc-200 bg-white overflow-x-auto">
         <table className="text-xs min-w-full">
-          <thead className="bg-zinc-50 sticky top-0 z-20">
+          <thead className="bg-zinc-50 sticky top-14 sm:top-16 z-20">
             <tr className="border-b border-zinc-100">
               <th className="text-left p-2 sticky left-0 bg-zinc-50 z-30 whitespace-nowrap">
                 สาขา

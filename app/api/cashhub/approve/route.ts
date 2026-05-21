@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
-import { requireSession } from "@/lib/auth/session";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { getRequestMeta } from "@/lib/audit/request-meta";
@@ -23,7 +23,9 @@ const ApproveSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard({ executive: true });
+  if (gate.error) return gate.error;
+  const session = gate.session;
   const meta = getRequestMeta(req);
 
   let body: unknown;

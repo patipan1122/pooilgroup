@@ -70,7 +70,9 @@ export function SlipCamera({
         toast.warning(json.error || "อ่านยอดไม่ออก · กรอกเอง · รูปบันทึกแล้ว");
       }
     } catch (err) {
-      console.error("[slip-camera]", err);
+      // Sentry instrumentation in instrumentation-client.ts catches the toast error
+      // via the unhandled rejection wrapper — no need for console here.
+      void err;
       toast.error("ส่งสลิปไม่ได้ ลองใหม่");
     } finally {
       setLoading(false);

@@ -10,6 +10,8 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import {
   Sparkline,
   ProgressBar,
@@ -76,14 +78,9 @@ export default async function BusinessDrillPage({
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <BackLink />
-      <header className="mb-6 mt-3">
-        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
-          <span className="text-2xl">{cfg.emoji}</span>
-          BUSINESS DRILL-DOWN
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1.5">
-          {cfg.label} <span className="accent">{branchesInType.length} สาขา</span>
-        </h1>
+      <header className="mb-6 mt-3 flex flex-col gap-2">
+        <SectionPill num={cfg.emoji} label="Business drill-down" />
+        <TwoToneTitle first={cfg.label} accent={`${branchesInType.length} สาขา`} size={32} />
       </header>
 
       {/* Quick stats */}

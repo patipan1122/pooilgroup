@@ -5,13 +5,15 @@
 // Returns: { data: { report } | null, branch: { code, name, business_type } }
 
 import { NextResponse, type NextRequest } from "next/server";
-import { requireSession } from "@/lib/auth/session";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 import { can } from "@/lib/auth/permissions";
 import { canFillForBranch } from "@/lib/auth/branch-access";
 
 export async function GET(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
   if (!can(session.user, "cashhub.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

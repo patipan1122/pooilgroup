@@ -18,6 +18,7 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section, SectionDivider } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
 import {
   Sparkline,
   ProgressBar,
@@ -287,11 +288,9 @@ export default async function BranchDetailPage({
         <div className="flex items-start gap-3">
           <div className="text-2xl sm:text-3xl shrink-0">{cfg?.emoji}</div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
-              BRANCH DETAIL · {today}
-            </p>
-            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight font-display mt-0.5">
-              <span className="tabular-num">{branch.code}</span>
+            <SectionPill num="🏢" label={`Branch detail · ${today}`} />
+            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight font-display mt-2 text-[var(--ch-navy)]">
+              <span className="ch-tnum">{branch.code}</span>
             </h1>
             <p className="text-zinc-600 text-sm mt-0.5 truncate">
               {branch.name}

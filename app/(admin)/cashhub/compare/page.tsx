@@ -22,6 +22,8 @@ import { formatInTimeZone } from "date-fns-tz";
 import { formatBaht, formatBahtCompact } from "@/lib/utils/format";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { BackButton } from "@/components/ui/back-button";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 
 export const dynamic = "force-dynamic";
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
@@ -255,14 +257,10 @@ export default async function ComparePage({
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
-      <header className="mt-3 mb-6">
-        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
-          🔁 COMPARE
-        </p>
-        <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
-          เปรียบเทียบ <span className="text-gradient-blue">เดือน vs เดือน</span>
-        </h1>
-        <p className="text-zinc-600 mt-1 text-sm">
+      <header className="mt-3 mb-6 flex flex-col gap-2">
+        <SectionPill num="00" label="Compare · เปรียบเทียบ" />
+        <TwoToneTitle first="เปรียบเทียบ" accent="เดือน vs เดือน" size={36} />
+        <p className="text-[var(--ch-text-2)] mt-1 text-sm">
           ดูภาพรวม + จับสาขาที่ผิดปกติ — เทียบกับตัวเอง · เทียบกับเพื่อนกลุ่มเดียวกัน · เช็คสัดส่วนช่องทางรับเงิน
         </p>
       </header>

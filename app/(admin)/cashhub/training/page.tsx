@@ -9,6 +9,8 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { formatBaht, bkkDate } from "@/lib/utils/format";
 import {
   startOfMonth,
@@ -74,14 +76,10 @@ export default async function TrainingPage() {
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
-      <header className="mt-3 mb-6">
-        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
-          <GraduationCap className="size-4" /> TRAINING
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1">
-          ศูนย์ <span className="accent">ฝึกอบรม</span>
-        </h1>
-        <p className="text-zinc-600 mt-1 text-sm">
+      <header className="mt-3 mb-6 flex flex-col gap-2">
+        <SectionPill num="00" label="Training Center · ศูนย์อบรม" />
+        <TwoToneTitle first="ศูนย์" accent="ฝึกอบรม" size={32} />
+        <p className="text-[var(--ch-text-2)] mt-1 text-sm">
           กรอกรายเดือน — รวมจำนวนครั้งที่จัดอบรม + รายได้
         </p>
       </header>

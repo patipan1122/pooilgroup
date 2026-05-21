@@ -8,7 +8,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
-import { requireSession } from "@/lib/auth/session";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { serverClient } from "@/lib/db/server";
 
 const DateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD");
@@ -27,7 +27,9 @@ const QuerySchema = z.object({
 });
 
 export async function GET(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
   const url = new URL(req.url);
   const parsed = QuerySchema.safeParse({
     branchId: url.searchParams.get("branchId"),
@@ -57,7 +59,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
   let body: unknown;
   try {
     body = await req.json();
@@ -107,7 +111,9 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
   const url = new URL(req.url);
   const parsed = QuerySchema.safeParse({
     branchId: url.searchParams.get("branchId"),

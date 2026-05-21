@@ -9,6 +9,7 @@ import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
 import {
   formatBaht,
   formatBahtCompact,
@@ -234,10 +235,8 @@ export default async function ReportDetailPage({
 
       {/* Header */}
       <header className="mt-3 mb-5">
-        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
-          📋 REPORT DETAIL
-        </p>
-        <div className="flex items-start gap-3 mt-1">
+        <SectionPill num="📋" label="Report detail" />
+        <div className="flex items-start gap-3 mt-2">
           <div className="text-2xl sm:text-3xl shrink-0">{cfg?.emoji ?? "📋"}</div>
           <div className="min-w-0 flex-1">
             <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight font-display">

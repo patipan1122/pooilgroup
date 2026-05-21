@@ -11,7 +11,7 @@
 // 4. Parse JSON → return + record AI usage + audit
 
 import { NextResponse, type NextRequest } from "next/server";
-import { requireSession } from "@/lib/auth/session";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { can } from "@/lib/auth/permissions";
 import { putObject } from "@/lib/r2/upload";
 import { checkAiBudget, recordAiUsage } from "@/lib/ai/cost-cap";
@@ -31,7 +31,9 @@ interface OcrResult {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
   const meta = getRequestMeta(req);
 
   if (!can(session.user, "cashhub.create")) {

@@ -633,15 +633,22 @@ export function ReportForm({
         {/* Anti-Stupidity Rule 3 — spike alert (sales × ≥1.5 of yesterday) */}
         {spikeModalOpen && (
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="spike-modal-title"
+            tabIndex={-1}
             className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4"
             onClick={() => setSpikeModalOpen(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setSpikeModalOpen(false);
+            }}
           >
             <div
               className="w-full sm:max-w-md bg-white rounded-2xl shadow-2xl p-6"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="text-3xl mb-3">🚨</div>
-              <h3 className="text-lg font-bold text-zinc-900 font-display">
+              <div className="text-3xl mb-3" aria-hidden>🚨</div>
+              <h3 id="spike-modal-title" className="text-lg font-bold text-zinc-900 font-display">
                 ยอดวันนี้สูงกว่าปกติมาก
               </h3>
               <p className="text-sm text-zinc-700 mt-2 leading-relaxed">

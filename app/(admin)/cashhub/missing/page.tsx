@@ -11,6 +11,8 @@ import { adminClient } from "@/lib/db/server";
 import { Section } from "@/components/ui/section";
 import { BackButton } from "@/components/ui/back-button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { bkkToday } from "@/lib/utils/format";
 import { subDays } from "date-fns";
@@ -162,14 +164,10 @@ export default async function MissingPage({
   return (
     <div className="relative p-4 sm:p-8 lg:p-12 max-w-5xl mx-auto pb-24">
       <BackButton fallbackHref="/cashhub" label="กลับ" />
-      <header className="mt-4 mb-8 animate-slide-up-soft">
-        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-700)] font-bold">
-          CashHub · Missing Reports
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold font-display mt-3 leading-tight">
-          สาขาที่ <span className="text-gradient-blue">ยังไม่กรอก</span> รายงาน
-        </h1>
-        <p className="text-sm sm:text-base text-zinc-600 mt-3 leading-relaxed">
+      <header className="mt-4 mb-8 animate-slide-up-soft flex flex-col gap-2">
+        <SectionPill num="00" label="Missing Reports · ขาดส่งรายงาน" />
+        <TwoToneTitle first="สาขาที่ยังไม่" accent="กรอกรายงาน" size={32} />
+        <p className="text-sm sm:text-base text-[var(--ch-text-2)] mt-1 leading-relaxed">
           {days} วันล่าสุด · กดปุ่ม &ldquo;แจ้งเหตุผล&rdquo; เพื่อบันทึกว่าทำไมไม่กรอก —
           เจ้าของจะเห็นใน Dashboard ไม่ต้องโทรถาม
         </p>

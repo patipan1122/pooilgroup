@@ -13,6 +13,8 @@ import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { BackButton } from "@/components/ui/back-button";
 import { Badge } from "@/components/ui/badge";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 
 export const dynamic = "force-dynamic";
 
@@ -102,14 +104,10 @@ export default async function ImportHubPage() {
     <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto">
       <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
 
-      <header className="mb-6 animate-fade-up">
-        <p className="text-xs uppercase tracking-widest text-[var(--color-brand-600)] font-semibold">
-          DATA IMPORT
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-2">
-          📥 <span className="accent">ศูนย์นำเข้าข้อมูล</span>
-        </h1>
-        <p className="text-zinc-600 mt-2 text-sm max-w-2xl">
+      <header className="mb-6 animate-fade-up flex flex-col gap-2">
+        <SectionPill num="00" label="Data Import · นำเข้า" />
+        <TwoToneTitle first="ศูนย์" accent="นำเข้าข้อมูล" size={32} />
+        <p className="text-[var(--ch-text-2)] mt-1 text-sm max-w-2xl">
           เลือกประเภทข้อมูลที่ต้องการนำเข้าระบบ · ระบบจะแปลงเป็น DailyReport
           และแสดงในหน้า ภาพรวม / รายงาน / Leaderboard ได้ปกติ
         </p>

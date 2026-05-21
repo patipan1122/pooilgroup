@@ -5,7 +5,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { requireRole } from "@/lib/auth/session";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 
 const AggSchema = z.object({
@@ -31,7 +31,9 @@ function isClose(a: number, b: number): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const gate = await cashHubApiGuard({ executive: true });
+  if (gate.error) return gate.error;
+  const session = gate.session;
 
   let body: unknown;
   try {

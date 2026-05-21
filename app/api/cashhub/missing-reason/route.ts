@@ -4,7 +4,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
-import { requireSession } from "@/lib/auth/session";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 import { isAdmin } from "@/lib/auth/permissions";
 import { audit } from "@/lib/audit/log";
@@ -17,7 +17,9 @@ const Schema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
   if (!isAdmin(session.user) && session.user.role !== "branch_manager") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

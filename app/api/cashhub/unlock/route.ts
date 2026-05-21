@@ -4,6 +4,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
@@ -16,7 +17,12 @@ const Schema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  // Two-layer guard: module entitlement (anyone with CashHub) + super_admin role
+  // (only super_admin can unlock approved reports — CASHHUB §4 Rule 4).
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
   const session = await requireRole("super_admin");
+  void gate;
   const meta = getRequestMeta(req);
   let body: unknown;
   try {

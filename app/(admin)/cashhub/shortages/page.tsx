@@ -20,6 +20,8 @@ import {
 import { formatInTimeZone } from "date-fns-tz";
 import { formatBaht } from "@/lib/utils/format";
 import { BackButton } from "@/components/ui/back-button";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { loadManageableBranches } from "@/lib/auth/branch-access";
 import { can } from "@/lib/auth/permissions";
 import {
@@ -228,14 +230,10 @@ export default async function ShortagesPage({
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
       <header className="mt-3 mb-6 flex items-end justify-between gap-4 flex-wrap">
-        <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
-            <AlertCircle className="size-4" /> SHORTAGE
-          </p>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.03em] font-display mt-4 leading-tight">
-            เงินขาด <span className="text-gradient-blue">{formatBaht(total)}</span>
-          </h1>
-          <p className="text-zinc-600 mt-1 text-sm">
+        <div className="flex flex-col gap-2">
+          <SectionPill num="00" label="Shortage · เงินขาด" />
+          <TwoToneTitle first="เงินขาด" accent={formatBaht(total)} size={32} />
+          <p className="text-[var(--ch-text-2)] mt-1 text-sm">
             {rangeLabel} · {filtered.length} ครั้ง · {byPerson.size} คน/ทีม
           </p>
         </div>

@@ -9,6 +9,8 @@ import { loadBranches, loadReports, indexBranches } from "@/lib/cashhub/data";
 import { Section } from "@/components/ui/section";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { thaiDateLong } from "@/lib/utils/format";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { formatInTimeZone } from "date-fns-tz";
@@ -245,20 +247,16 @@ export default async function CashHubReportsPage({
 
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
-      <header className="mb-6 animate-fade-up">
-        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
-          💰 CashHub · {thaiDateLong(new Date())}
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
-          รายงาน <span className="text-gradient-blue">ทั้งหมด</span>
-        </h1>
-        <p className="text-zinc-600 mt-1.5 text-sm">
+      <header className="mb-6 animate-fade-up flex flex-col gap-2">
+        <SectionPill num="00" label={`CashHub · ${thaiDateLong(new Date())}`} />
+        <TwoToneTitle first="รายงาน" accent="ทั้งหมด" size={32} />
+        <p className="text-[var(--ch-text-2)] mt-1 text-sm">
           {totalReports} รายงาน · รออนุมัติ{" "}
-          <span className="font-bold text-amber-700">{totalPending}</span>
+          <span className="font-bold text-[#a16207]">{totalPending}</span>
           {totalMissing > 0 && (
             <>
               {" · "}
-              <span className="font-bold text-rose-700">
+              <span className="font-bold text-[var(--ch-danger)]">
                 ยังไม่ส่งวันนี้ {totalMissing}
               </span>
             </>

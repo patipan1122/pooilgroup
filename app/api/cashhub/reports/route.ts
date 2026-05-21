@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
-import { requireSession } from "@/lib/auth/session";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 import { reconcile } from "@/lib/cashhub/reconcile";
 import { getBusinessType } from "@/constants/business-types";
@@ -56,7 +56,9 @@ const ReportSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
   const meta = getRequestMeta(req);
   if (!can(session.user, "cashhub.create")) {
     return NextResponse.json({ error: "ไม่มีสิทธิ์กรอกรายงาน" }, { status: 403 });
@@ -475,7 +477,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
   if (!can(session.user, "cashhub.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

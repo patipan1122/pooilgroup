@@ -13,6 +13,8 @@ import { loadManageableBranches } from "@/lib/auth/branch-access";
 import { can } from "@/lib/auth/permissions";
 import { EmptyState } from "@/components/ui/empty-state";
 import { thaiDateLong, bkkToday } from "@/lib/utils/format";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { MyBranchesView } from "./my-branches-view";
 
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
@@ -87,18 +89,12 @@ export default async function MyBranchesPage() {
 
   return (
     <div className="p-4 sm:p-8 lg:p-10 max-w-6xl mx-auto pb-24">
-      <header className="mb-10 animate-slide-up-soft">
-        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-700)] font-bold">
-          CASHHUB · MY BRANCHES
-          <span className="text-zinc-400 mx-2">·</span>
-          <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
-        </p>
-        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[1]">
-          สาขา <span className="text-gradient-blue">ของฉัน</span>
-        </h1>
-        <p className="text-sm sm:text-base text-zinc-600 mt-3 max-w-2xl">
+      <header className="mb-10 animate-slide-up-soft flex flex-col gap-2">
+        <SectionPill num="00" label={`My Branches · ${thaiDateLong(new Date())}`} />
+        <TwoToneTitle first="สาขา" accent="ของฉัน" size={36} />
+        <p className="text-sm sm:text-base text-[var(--ch-text-2)] mt-1 max-w-2xl">
           {session.user.name} · ผู้จัดการสาขา ·{" "}
-          <strong className="text-zinc-900 tabular-num">
+          <strong className="text-[var(--ch-navy)] ch-tnum">
             {branches.length}
           </strong>{" "}
           สาขาในความดูแล
