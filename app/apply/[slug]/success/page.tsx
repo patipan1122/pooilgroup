@@ -1,4 +1,5 @@
-import { CheckCircle2 } from "lucide-react";
+import Link from "next/link";
+import { CheckCircle2, ArrowRight } from "lucide-react";
 
 export default async function SuccessPage({
   searchParams,
@@ -21,14 +22,28 @@ export default async function SuccessPage({
           ขอบคุณที่ส่งใบสมัครเข้ามา · ทีม HR จะพิจารณาและติดต่อกลับโดยเร็ว
         </p>
         {ref && (
-          <div className="mt-5 inline-block px-4 py-3 rounded-xl bg-zinc-100">
-            <p className="text-xs text-zinc-600 font-bold">
-              เลขที่ใบสมัคร · ใช้แจ้ง HR เมื่อสอบถาม
-            </p>
-            <p className="font-mono text-base font-bold text-zinc-900 mt-1.5 tabular-num">
-              {ref}
-            </p>
-          </div>
+          <>
+            <div className="mt-5 inline-block px-4 py-3 rounded-xl bg-zinc-100">
+              <p className="text-xs text-zinc-600 font-bold">
+                เลขที่ใบสมัคร · ใช้แจ้ง HR เมื่อสอบถาม
+              </p>
+              <p className="font-mono text-base font-bold text-zinc-900 mt-1.5 tabular-num">
+                {ref}
+              </p>
+            </div>
+            <div className="mt-5">
+              <Link
+                href={`/my/${ref}`}
+                className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-brand-600)] text-white px-5 h-12 font-bold hover:bg-[var(--color-brand-700)] transition-colors"
+              >
+                ดูสถานะใบสมัครของฉัน
+                <ArrowRight className="size-4" />
+              </Link>
+              <p className="text-[11px] text-zinc-400 mt-2">
+                บันทึกลิ้งค์นี้ไว้ · กดดูสถานะได้ตลอดเวลา
+              </p>
+            </div>
+          </>
         )}
         <p className="text-xs text-zinc-500 mt-6">
           ปิดหน้านี้ได้เลย · หากมีคำถามติดต่อ HR ที่บริษัท
