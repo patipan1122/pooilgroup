@@ -37,10 +37,14 @@ import {
   Wrench,
   PackageSearch,
   HardHat,
+  Gamepad2,
+  Coins,
+  PackageOpen,
+  Layers,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
-export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs";
+export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet";
 export type ModuleStatus = "active" | "coming_soon" | "beta";
 
 export interface NavItem {
@@ -331,6 +335,73 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       },
       {
         href: "/repairs/settings",
+        label: "ตั้งค่า",
+        icon: Settings,
+        adminOnly: true,
+      },
+    ],
+  },
+  clawfleet: {
+    slug: "clawfleet",
+    name: "ClawFleet",
+    tagline: "ตู้คีบ + ตู้แลกเหรียญ · cross-check",
+    description:
+      "เก็บเงินตู้คีบทุกสาขา · cross-check ตู้แลกเหรียญ ห้าม 'แลกนอกตู้' · ระบบกันโง่ 32 ข้อ · stock + รีพอตรายวัน",
+    emoji: "🎮",
+    Icon: Gamepad2,
+    status: "active",
+    basePath: "/clawfleet",
+    nav: [
+      {
+        href: "/clawfleet/sessions",
+        label: "รอบเก็บเงิน",
+        icon: ClipboardCheck,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
+      },
+      {
+        href: "/clawfleet/dashboard",
+        label: "ภาพรวม",
+        icon: LayoutDashboard,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"],
+      },
+      {
+        href: "/clawfleet/machines",
+        label: "ตู้",
+        icon: Gamepad2,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/clawfleet/groups",
+        label: "กลุ่มตู้แลก",
+        icon: Layers,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/clawfleet/products",
+        label: "สินค้า",
+        icon: PackageOpen,
+        roles: ["super_admin", "org_admin", "admin", "area_manager"],
+      },
+      {
+        href: "/clawfleet/stock",
+        label: "คลังสินค้า",
+        icon: Boxes,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/clawfleet/reports",
+        label: "รีพอต",
+        icon: ScrollText,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"],
+      },
+      {
+        href: "/clawfleet/anomalies",
+        label: "Anomaly",
+        icon: AlertTriangle,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/clawfleet/settings",
         label: "ตั้งค่า",
         icon: Settings,
         adminOnly: true,

@@ -93,6 +93,15 @@ model Organization {
   repairParts             RepairPart[]
   repairTimelineEvents    RepairTimelineEvent[]
   repairVendorTokens      RepairVendorToken[]
+  // ClawFleet module
+  cfMachines              CfMachine[]
+  cfMachineGroups         CfMachineGroup[]
+  cfProducts              CfProduct[]
+  cfMachineLoadouts       CfMachineLoadout[]
+  cfExchangerLoadouts     CfExchangerLoadout[]
+  cfCollectionSessions    CfCollectionSession[]
+  cfCollectionEvents      CfCollectionEvent[]
+  cfStockMovements        CfStockMovement[]
 
   @@map("organizations")
 }
@@ -215,6 +224,12 @@ model User {
   repairPhotosUploaded    RepairPhoto[]                @relation("RepairPhotoUploader")
   repairPartsAdded        RepairPart[]                 @relation("RepairPartAddedBy")
   repairPartsOrdered      RepairPart[]                 @relation("RepairPartOrderedBy")
+  // ClawFleet module
+  cfSessionsOpened        CfCollectionSession[]        @relation("CfSessionOpener")
+  cfSessionsClosed        CfCollectionSession[]        @relation("CfSessionCloser")
+  cfSessionsReviewed      CfCollectionSession[]        @relation("CfSessionReviewer")
+  cfEventsCollected       CfCollectionEvent[]          @relation("CfEventCollector")
+  cfStockMovementsCreated CfStockMovement[]            @relation("CfStockCreator")
 
   @@unique([orgId, employeeCode])
   @@index([orgId, isActive])
@@ -283,6 +298,10 @@ model Branch {
   vehicles        Vehicle[]
   sharedDocuments DocumentSharedBranch[]
   repairTickets   RepairTicket[]
+  // ClawFleet
+  cfMachines      CfMachine[]
+  cfMachineGroups CfMachineGroup[]
+  cfStockMovements CfStockMovement[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -2072,4 +2091,305 @@ model ChequeTracking {
   @@index([orgId, status])
   @@index([entityId, dueDate])
   @@map("cheque_tracking")
+}
+
+// =============================================================
+// CLAWFLEET — ระบบบริหารตู้คีบ + ตู้แลกเหรียญ
+// Spec: docs/CLAWFLEET_PLAN.md (v2 · 2026-05-21)
+// 9 tables · token-exchange group cross-check · multi-branch
+// =============================================================
+
+enum CfMachineKind {
+  CLAW
+  EXCHANGER
+}
+
+enum CfEventType {
+  INITIAL // กรอกครั้งเดียวตอนตั้งตู้ใหม่
+  COLLECTION // รอบเก็บปกติ
+  VOID // soft delete event
+}
+
+enum CfStockMoveType {
+  RECEIVE // รับสินค้าเข้าคลัง
+  LOAD_TO_MACHINE // เติมเข้าตู้
+  COUNT_SNAPSHOT // นับสต๊อกวันนี้
+  ADJUST // ปรับมือ (require approve)
+}
+
+enum CfSessionStatus {
+  OPEN
+  CLOSED
+  ANOMALY_REVIEW
+  LOCKED
+}
+
+enum CfProductCategory {
+  PLUSH // ตุ๊กตา
+  TOY // ของเล่น
+  UTILITY // ของใช้
+  MYSTERY_BOX // กล่องสุ่ม
+  MODEL // โมเดล
+  KEYCHAIN // พวงกุญแจ
+  SNACK // ขนม
+  OTHER
+}
+
+// =============================================================
+// CF.1 — cf_machines (ทุกตู้: CLAW + EXCHANGER)
+// =============================================================
+model CfMachine {
+  id              String          @id @default(uuid()) @db.Uuid
+  orgId           String          @map("org_id") @db.Uuid
+  branchId        String          @map("branch_id") @db.Uuid
+  groupId         String?         @map("group_id") @db.Uuid
+  code            String // "CW-001" หรือ "EX-01"
+  nickname        String?
+  kind            CfMachineKind
+  qrToken         String          @unique @map("qr_token") // สำหรับ scan ก่อนกรอก
+  serial          String?
+  // mirror (updated via AFTER INSERT trigger on cf_collection_events)
+  lastCoinMeter   Int             @default(0) @map("last_coin_meter")
+  lastDollMeter   Int             @default(0) @map("last_doll_meter")
+  lastDollStock   Int             @default(0) @map("last_doll_stock")
+  lastEventAt     DateTime?       @map("last_event_at") @db.Timestamptz(6)
+  // initial values (กรอกตอนสร้างตู้ · ใช้ตอน INITIAL event)
+  initialCoinMeter Int            @default(0) @map("initial_coin_meter")
+  initialDollMeter Int            @default(0) @map("initial_doll_meter")
+  installedAt     DateTime?       @map("installed_at") @db.Date
+  retiredAt       DateTime?       @map("retired_at") @db.Timestamptz(6)
+  isActive        Boolean         @default(true) @map("is_active")
+  notes           String?
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch   Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  group    CfMachineGroup?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  loadouts CfMachineLoadout[]
+  exchangerLoadouts CfExchangerLoadout[]
+  events   CfCollectionEvent[]
+  exchangerOfGroup CfMachineGroup? @relation("CfGroupExchanger")
+  stockMovements CfStockMovement[]
+
+  @@unique([orgId, code])
+  @@index([orgId, branchId, kind, isActive])
+  @@index([orgId, groupId])
+  @@map("cf_machines")
+}
+
+// =============================================================
+// CF.2 — cf_machine_groups (1 EX + N CLAW)
+// =============================================================
+model CfMachineGroup {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  branchId      String   @map("branch_id") @db.Uuid
+  name          String // "โซน A ชุมพวง"
+  exchangerId   String?  @unique @map("exchanger_id") @db.Uuid // 1 group = 1 ตู้แลก
+  toleranceBps  Int      @default(500) @map("tolerance_bps") // 500 = 5%
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch    Branch              @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  exchanger CfMachine?          @relation("CfGroupExchanger", fields: [exchangerId], references: [id], onDelete: SetNull)
+  machines  CfMachine[]
+  sessions  CfCollectionSession[]
+
+  @@index([orgId, branchId, isActive])
+  @@map("cf_machine_groups")
+}
+
+// =============================================================
+// CF.3 — cf_products (สินค้าในตู้)
+// =============================================================
+model CfProduct {
+  id                String            @id @default(uuid()) @db.Uuid
+  orgId             String            @map("org_id") @db.Uuid
+  sku               String
+  name              String
+  category          CfProductCategory @default(PLUSH)
+  defaultPriceCoins Int               @default(1) @map("default_price_coins") // ค่าเล่นเริ่มต้น (จำนวนเหรียญ/ครั้ง)
+  unitCostCents     Int               @default(0) @map("unit_cost_cents") // ราคาทุน
+  imageUrl          String?           @map("image_url")
+  isActive          Boolean           @default(true) @map("is_active")
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  loadouts CfMachineLoadout[]
+  stockMovements CfStockMovement[]
+
+  @@unique([orgId, sku])
+  @@index([orgId, category, isActive])
+  @@map("cf_products")
+}
+
+// =============================================================
+// CF.4 — cf_machine_loadouts (CLAW: สินค้า + ราคา/ครั้ง ใน effective period)
+// =============================================================
+model CfMachineLoadout {
+  id              String    @id @default(uuid()) @db.Uuid
+  orgId           String    @map("org_id") @db.Uuid
+  machineId       String    @map("machine_id") @db.Uuid
+  productId       String    @map("product_id") @db.Uuid
+  pricePerPlayCoins Int     @default(1) @map("price_per_play_coins") // ค่าเล่น (เหรียญ/ครั้ง · ปกติ 1 เหรียญ = 10฿)
+  effectiveFrom   DateTime  @default(now()) @map("effective_from") @db.Timestamptz(6)
+  effectiveTo     DateTime? @map("effective_to") @db.Timestamptz(6)
+  setById         String?   @map("set_by_id") @db.Uuid
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  machine CfMachine    @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  product CfProduct    @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([orgId, machineId, effectiveTo])
+  @@index([orgId, productId])
+  @@map("cf_machine_loadouts")
+}
+
+// =============================================================
+// CF.5 — cf_exchanger_loadouts (EXCHANGER: rate + promo tiers)
+// =============================================================
+model CfExchangerLoadout {
+  id            String    @id @default(uuid()) @db.Uuid
+  orgId         String    @map("org_id") @db.Uuid
+  machineId     String    @map("machine_id") @db.Uuid
+  // base rate: ฿1 → กี่เหรียญ (default 1.0)
+  baseCoinPerBaht Decimal @default(1.0) @map("base_coin_per_baht") @db.Decimal(8, 4)
+  // promo tiers JSON [{thb:100, coins:11}, {thb:500, coins:60}]
+  promoTiers    Json      @default("[]") @map("promo_tiers")
+  effectiveFrom DateTime  @default(now()) @map("effective_from") @db.Timestamptz(6)
+  effectiveTo   DateTime? @map("effective_to") @db.Timestamptz(6)
+  setById       String?   @map("set_by_id") @db.Uuid
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  machine CfMachine    @relation(fields: [machineId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, machineId, effectiveTo])
+  @@map("cf_exchanger_loadouts")
+}
+
+// =============================================================
+// CF.6 — cf_collection_sessions (รอบเก็บกลุ่ม · cross-check ที่นี่)
+// =============================================================
+model CfCollectionSession {
+  id                String          @id @default(uuid()) @db.Uuid
+  orgId             String          @map("org_id") @db.Uuid
+  groupId           String          @map("group_id") @db.Uuid
+  sessionCode       String          @map("session_code") // CFS-2569-NNNNNN · unique per org (not global)
+  openedAt          DateTime        @default(now()) @map("opened_at") @db.Timestamptz(6)
+  openedById        String          @map("opened_by_id") @db.Uuid
+  closedAt          DateTime?       @map("closed_at") @db.Timestamptz(6)
+  closedById        String?         @map("closed_by_id") @db.Uuid
+  status            CfSessionStatus @default(OPEN)
+  // cross-check result (filled by trigger ที่ status = CLOSED)
+  exchangerCoinsOut Int?            @map("exchanger_coins_out")
+  clawCoinsIn       Int?            @map("claw_coins_in")
+  coinVarianceBps   Int?            @map("coin_variance_bps")
+  totalCashCents    Int             @default(0) @map("total_cash_cents")
+  anomalyFlags      String[]        @default([]) @map("anomaly_flags")
+  reviewerId        String?         @map("reviewer_id") @db.Uuid
+  reviewedAt        DateTime?       @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote        String?         @map("review_note")
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org      Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  group    CfMachineGroup      @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  openedBy User                @relation("CfSessionOpener", fields: [openedById], references: [id], onDelete: Restrict)
+  closedBy User?               @relation("CfSessionCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  reviewer User?               @relation("CfSessionReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  events   CfCollectionEvent[]
+
+  @@unique([orgId, sessionCode])
+  @@index([orgId, groupId, openedAt(sort: Desc)])
+  @@index([orgId, status])
+  @@map("cf_collection_sessions")
+}
+
+// =============================================================
+// CF.7 — cf_collection_events (รายตู้ใน session)
+// =============================================================
+model CfCollectionEvent {
+  id                  String      @id @default(uuid()) @db.Uuid
+  orgId               String      @map("org_id") @db.Uuid
+  sessionId           String?     @map("session_id") @db.Uuid // null สำหรับ INITIAL/VOID
+  machineId           String      @map("machine_id") @db.Uuid
+  eventType           CfEventType @default(COLLECTION) @map("event_type")
+  collectedAt         DateTime    @map("collected_at") @db.Timestamptz(6)
+  collectedById       String      @map("collected_by_id") @db.Uuid
+  // ทุก kind
+  coinMeterBefore     Int         @map("coin_meter_before")
+  coinMeterAfter      Int         @map("coin_meter_after")
+  cashCountedCents    Int         @map("cash_counted_cents")
+  // CLAW only (nullable for EXCHANGER)
+  dollMeterBefore     Int?        @map("doll_meter_before")
+  dollMeterAfter      Int?        @map("doll_meter_after")
+  stockBefore         Int?        @map("stock_before")
+  stockAfter          Int?        @map("stock_after")
+  refillQty           Int?        @map("refill_qty")
+  // EXCHANGER only (nullable for CLAW)
+  promoCoinsDispensed Int?        @map("promo_coins_dispensed") // เหรียญที่แจกจาก promo (รวมใน meter แล้ว · บันทึกแยกเพื่อ G6)
+  // photos (R2 URLs)
+  photoMeterBeforeUrl String?     @map("photo_meter_before_url")
+  photoCashUrl        String?     @map("photo_cash_url")
+  photoMeterAfterUrl  String?     @map("photo_meter_after_url")
+  photoStockUrl       String?     @map("photo_stock_url")
+  photosPurgedAt      DateTime?   @map("photos_purged_at") @db.Timestamptz(6)
+  // anomaly flags ราย event (เก็บแยกจาก session-level)
+  anomalyFlags        String[]    @default([]) @map("anomaly_flags")
+  notes               String?
+  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org         Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  session     CfCollectionSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  machine     CfMachine            @relation(fields: [machineId], references: [id], onDelete: Restrict)
+  collectedBy User                 @relation("CfEventCollector", fields: [collectedById], references: [id], onDelete: Restrict)
+
+  @@index([orgId, machineId, collectedAt(sort: Desc)])
+  @@index([sessionId])
+  @@index([orgId, eventType, collectedAt(sort: Desc)])
+  @@map("cf_collection_events")
+}
+
+// =============================================================
+// CF.8 — cf_stock_movements (รับเข้า + เติมเข้าตู้ + นับ + ปรับ)
+// =============================================================
+model CfStockMovement {
+  id          String          @id @default(uuid()) @db.Uuid
+  orgId       String          @map("org_id") @db.Uuid
+  branchId    String          @map("branch_id") @db.Uuid
+  type        CfStockMoveType
+  productId   String          @map("product_id") @db.Uuid
+  machineId   String?         @map("machine_id") @db.Uuid // null สำหรับ RECEIVE / COUNT
+  qty         Int // +/− signed (RECEIVE=+, LOAD_TO_MACHINE=-, COUNT=actual, ADJUST=delta)
+  refTable    String?         @map("ref_table") // 'cf_collection_events' for LOAD
+  refId       String?         @map("ref_id") @db.Uuid
+  unitCostCents Int           @default(0) @map("unit_cost_cents") // snapshot ราคาทุนตอน RECEIVE
+  receiptR2Key String?        @map("receipt_r2_key") // ใบเสร็จ
+  expectedQty Int?            @map("expected_qty") // ที่ระบบคาด (สำหรับ COUNT_SNAPSHOT compare)
+  varianceQty Int?            @map("variance_qty") // expected - actual (สำหรับ COUNT)
+  reason      String?
+  occurredAt  DateTime        @map("occurred_at") @db.Timestamptz(6)
+  createdById String          @map("created_by_id") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch    Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  product   CfProduct    @relation(fields: [productId], references: [id], onDelete: Restrict)
+  machine   CfMachine?   @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  createdBy User         @relation("CfStockCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([orgId, branchId, occurredAt(sort: Desc)])
+  @@index([orgId, productId, occurredAt(sort: Desc)])
+  @@index([orgId, type, occurredAt(sort: Desc)])
+  @@index([machineId, occurredAt(sort: Desc)])
+  @@map("cf_stock_movements")
 }

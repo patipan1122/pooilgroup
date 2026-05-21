@@ -11,6 +11,8 @@
     { "path": "/api/cron/access-review", "schedule": "0 2 * * *" },
     { "path": "/api/cron/health-score", "schedule": "0 16 * * *" },
     { "path": "/api/cron/docuflow-expiry", "schedule": "0 1 * * *" },
-    { "path": "/api/cron/shortage-digest", "schedule": "0 2 25 * *" }
+    { "path": "/api/cron/shortage-digest", "schedule": "0 2 25 * *" },
+    { "path": "/api/cron/clawfleet-photo-retention", "schedule": "0 19 * * *" },
+    { "path": "/api/cron/clawfleet-session-autoclose", "schedule": "0 23 * * *" }
   ]
 }
