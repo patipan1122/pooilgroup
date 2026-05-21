@@ -24,7 +24,7 @@ export async function scheduleInterview(input: ScheduleInput) {
 
   const app = await prisma.recruitApplication.findUnique({
     where: { id: input.applicationId },
-    select: { orgId: true, applicantId: true, postingId: true },
+    select: { orgId: true, applicantId: true, postingId: true, status: true },
   });
   if (!app) throw new Error("ไม่พบใบสมัคร");
   if (app.orgId !== session.user.org_id) throw new Error("ไม่มีสิทธิ์");
@@ -69,6 +69,12 @@ export async function scheduleInterview(input: ScheduleInput) {
     resourceId: interview.id,
     diff: { new: { scheduledAt: scheduledAt.toISOString(), kind: input.kind, location: input.location } },
   });
+
+  // BA fix #8: auto-advance status NEW/SCREENING → INTERVIEW when first interview scheduled
+  if (app.status === "NEW" || app.status === "SCREENING") {
+    const { changeApplicationStatus } = await import("./actions");
+    await changeApplicationStatus(input.applicationId, "INTERVIEW");
+  }
 
   revalidatePath("/recruit/calendar");
   revalidatePath(`/recruit/applications/${input.applicationId}`);

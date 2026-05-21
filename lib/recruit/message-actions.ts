@@ -104,6 +104,11 @@ export async function sendMessage(input: SendMessageInput) {
 }
 
 export async function listThreads(orgId: string) {
+  // SA fix #13: validate orgId matches session to prevent cross-org leak
+  const session = await requireSession();
+  if (orgId !== session.user.org_id && session.user.role !== "super_admin") {
+    throw new Error("ไม่มีสิทธิ์");
+  }
   // Group messages by application · take most recent per app
   const messages = await prisma.recruitMessage.findMany({
     where: { orgId },

@@ -143,6 +143,13 @@ export async function closePosting(postingId: string) {
     throw new Error("ไม่มีสิทธิ์");
   }
 
+  // SA agent fix: verify org_id match before updating (cross-org guard)
+  const posting = await prisma.recruitJobPosting.findFirst({
+    where: { id: postingId, orgId: session.user.org_id },
+    select: { id: true, status: true },
+  });
+  if (!posting) throw new Error("ไม่พบประกาศ");
+
   await prisma.recruitJobPosting.update({
     where: { id: postingId },
     data: { status: "CLOSED" },
@@ -154,9 +161,11 @@ export async function closePosting(postingId: string) {
     action: "RECRUIT_POSTING_CLOSED",
     resourceType: "recruit_job_posting",
     resourceId: postingId,
+    diff: { old: { status: posting.status }, new: { status: "CLOSED" } },
   });
 
   revalidatePath("/recruit/postings");
+  revalidatePath(`/recruit/postings/${postingId}`);
 }
 
 export async function deletePosting(postingId: string) {
@@ -264,6 +273,25 @@ export async function changeApplicationStatus(
   };
   await sendStatusEmail(status, ctx);
 
+  // BA fix #13: when application HIRED · auto-mark its referral as HIRED too
+  if (status === "HIRED") {
+    try {
+      await prisma.recruitReferral.updateMany({
+        where: {
+          applicantId: app.applicantId,
+          orgId: session.user.org_id,
+          status: { notIn: ["HIRED", "PAID", "EXPIRED"] },
+        },
+        data: {
+          status: "HIRED",
+          hiredAt: new Date(),
+        },
+      });
+    } catch (e) {
+      console.error("[recruit→referral HIRED propagation] failed", e);
+    }
+  }
+
   revalidatePath("/recruit");
   revalidatePath(`/recruit/applications/${applicationId}`);
   revalidatePath("/recruit/pipeline");
@@ -283,12 +311,30 @@ export async function setApplicationRating(
     throw new Error("rating ต้อง 1-5");
   }
 
-  await prisma.recruitApplication.updateMany({
+  // SA agent fix: verify exists in org first
+  const app = await prisma.recruitApplication.findFirst({
     where: { id: applicationId, orgId: session.user.org_id },
+    select: { id: true, starRating: true },
+  });
+  if (!app) throw new Error("ไม่พบใบสมัคร");
+
+  await prisma.recruitApplication.update({
+    where: { id: applicationId },
     data: { starRating: rating },
   });
 
+  // SA agent fix: add audit log
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "RECRUIT_APPLICATION_NOTE_ADDED", // reuse existing audit type
+    resourceType: "recruit_application",
+    resourceId: applicationId,
+    diff: { old: { starRating: app.starRating }, new: { starRating: rating } },
+  });
+
   revalidatePath(`/recruit/applications/${applicationId}`);
+  revalidatePath("/recruit");
 }
 
 export async function setApplicationTags(
@@ -299,11 +345,34 @@ export async function setApplicationTags(
   if (!canRecruitWrite(session.user.role)) {
     throw new Error("ไม่มีสิทธิ์");
   }
-  await prisma.recruitApplication.updateMany({
+
+  // SA agent fix: explicit validation instead of silent truncation
+  if (tags.length > 10) {
+    throw new Error("ป้ายกำกับสูงสุด 10 ป้าย");
+  }
+
+  const app = await prisma.recruitApplication.findFirst({
     where: { id: applicationId, orgId: session.user.org_id },
-    data: { tags: tags.slice(0, 10) },
+    select: { id: true, tags: true },
   });
+  if (!app) throw new Error("ไม่พบใบสมัคร");
+
+  await prisma.recruitApplication.update({
+    where: { id: applicationId },
+    data: { tags },
+  });
+
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "RECRUIT_APPLICATION_NOTE_ADDED",
+    resourceType: "recruit_application",
+    resourceId: applicationId,
+    diff: { old: { tags: app.tags }, new: { tags } },
+  });
+
   revalidatePath(`/recruit/applications/${applicationId}`);
+  revalidatePath("/recruit");
 }
 
 // =============================================================

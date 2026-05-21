@@ -16,7 +16,7 @@ import {
 } from "@/lib/recruit/types";
 import { ApplicationDetail } from "./application-detail";
 import { thaiDateLong } from "@/lib/utils/format";
-import { ClipboardList, KanbanSquare, ListChecks, Plus, Inbox, SearchX, CalendarCheck, Users, MessageCircle, Bolt, Share2, BarChart3 } from "lucide-react";
+import { ClipboardList, KanbanSquare, ListChecks, Plus, Inbox, SearchX, CalendarCheck, Users, MessageCircle, Bolt, Share2, BarChart3, Zap } from "lucide-react";
 import { ViewToggle } from "./view-toggle";
 
 interface Props {
@@ -194,6 +194,13 @@ export async function ApplicationsInbox({
           >
             <BarChart3 className="size-4" />
             Dashboard
+          </Link>
+          <Link
+            href="/recruit/triage"
+            className="flex items-center gap-2 text-sm text-zinc-700 hover:text-[var(--color-brand-700)] px-2 h-10 rounded hover:bg-zinc-50"
+          >
+            <Zap className="size-4" />
+            Triage (คัดเร็ว)
           </Link>
           <Link
             href="/recruit/auto-rules"

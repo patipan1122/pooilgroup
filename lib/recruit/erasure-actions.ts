@@ -3,6 +3,7 @@
 // Admin server actions for PDPA right-to-erasure decisions
 
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { audit } from "@/lib/audit/log";
@@ -45,14 +46,15 @@ export async function approveErasure(requestId: string, note?: string) {
     });
 
     // Anonymize all applications for this applicant
+    // SA fix #3: use Prisma.JsonNull instead of undefined to actually clear JSON fields
     await tx.recruitApplication.updateMany({
       where: { applicantId: req.applicantId },
       data: {
         answers: {},
         files: [],
         aiSummary: null,
-        aiStrengths: undefined,
-        aiRisks: undefined,
+        aiStrengths: Prisma.JsonNull,
+        aiRisks: Prisma.JsonNull,
         blacklistReason: null,
       },
     });
@@ -66,6 +68,13 @@ export async function approveErasure(requestId: string, note?: string) {
 
     // Clear all messages
     await tx.recruitMessage.deleteMany({
+      where: {
+        application: { applicantId: req.applicantId },
+      },
+    });
+
+    // SA fix #2: also delete interviews (PDPA · interview notes may identify applicant)
+    await tx.recruitInterview.deleteMany({
       where: {
         application: { applicantId: req.applicantId },
       },
