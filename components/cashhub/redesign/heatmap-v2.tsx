@@ -1,0 +1,220 @@
+"use client";
+
+// Heatmap V2 — 3-tab container matching Claude Design handoff
+// MLMc2DZd7q-5cmIzvrh5hw (variant V2).
+// Tabs: ตารางกรอกครบ · กระทบยอดแบงก์ · ไทม์ไลน์รายงาน
+
+import { useState } from "react";
+import { CalendarDays, Banknote, ListChecks } from "lucide-react";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
+import { ReconcileTab } from "@/components/cashhub/redesign/reconcile-tab";
+import { TimelineTab, type TimelineEntry } from "@/components/cashhub/redesign/timeline-tab";
+import { HeatmapGrid } from "@/app/(admin)/cashhub/heatmap/heatmap-grid";
+import type { ReconcileRow } from "@/lib/cashhub/bank-reconcile";
+
+type Tab = "heatmap" | "reconcile" | "timeline";
+
+interface HeatmapBranchRow {
+  id: string;
+  code: string;
+  name: string;
+  business_type: string;
+}
+
+interface Props {
+  branches: HeatmapBranchRow[];
+  matrix: Record<string, Record<number, string>>;
+  daysInMonth: number;
+  todayDay: number;
+  monthYm: string;
+  monthLabelTh: string;
+  daysElapsed: number;
+  reportsTotalMonth: number;
+  canFill: boolean;
+  canApprove: boolean;
+  reconcile: {
+    rows: ReconcileRow[];
+    summary: {
+      matched: number;
+      diff: number;
+      noBank: number;
+      missingFill: number;
+      bankIncomeToday: number;
+    };
+  };
+  timeline: TimelineEntry[];
+}
+
+function formatBahtCompact(n: number) {
+  if (Math.abs(n) >= 1_000_000)
+    return "฿" + (n / 1_000_000).toFixed(2).replace(/\.00$/, "") + "M";
+  if (Math.abs(n) >= 1_000)
+    return "฿" + Math.round(n / 1_000) + "K";
+  return "฿" + Math.round(n).toLocaleString("en-US");
+}
+
+export function HeatmapV2View({
+  branches,
+  matrix,
+  daysInMonth,
+  todayDay,
+  monthYm,
+  monthLabelTh,
+  daysElapsed,
+  reportsTotalMonth,
+  canFill,
+  canApprove,
+  reconcile,
+  timeline,
+}: Props) {
+  const [tab, setTab] = useState<Tab>("reconcile");
+
+  const tabs: { id: Tab; label: string; Icon: typeof CalendarDays; count: string; badge?: boolean }[] = [
+    {
+      id: "heatmap",
+      label: "ตารางกรอกครบ",
+      Icon: CalendarDays,
+      count: `${branches.length} × ${daysInMonth}`,
+    },
+    {
+      id: "reconcile",
+      label: "กระทบยอดแบงก์",
+      Icon: Banknote,
+      count: `${reconcile.summary.diff + reconcile.summary.noBank} ผิดปกติ`,
+      badge: reconcile.summary.diff > 0,
+    },
+    {
+      id: "timeline",
+      label: "ไทม์ไลน์รายงาน",
+      Icon: ListChecks,
+      count: `${timeline.length}`,
+    },
+  ];
+
+  return (
+    <div className="min-h-full bg-[var(--ch-bg-2)]">
+      <div className="px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+        {/* Hero */}
+        <div className="flex flex-col lg:flex-row lg:items-end gap-4 lg:gap-6">
+          <div>
+            <SectionPill num="00" label="Heatmap · Reconcile" />
+            <div className="mt-2">
+              <TwoToneTitle first="ครบ &" accent="กระทบยอด" size={36} />
+            </div>
+            <div className="text-sm text-[var(--ch-text-2)] mt-1.5 max-w-xl">
+              ดูใครยังไม่กรอก + จับคู่ยอดที่กรอกกับเงินเข้าธนาคารในที่เดียว
+            </div>
+          </div>
+          <div className="flex-1" />
+          <div className="ch-card-v2 bg-white p-3 sm:p-4 flex gap-4 sm:gap-6 text-xs">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider font-semibold text-[var(--ch-text-3)]">
+                เงินเข้าวันนี้
+              </div>
+              <div className="ch-tnum text-lg sm:text-xl font-bold text-[var(--ch-ok)] mt-0.5">
+                {formatBahtCompact(reconcile.summary.bankIncomeToday)}
+              </div>
+            </div>
+            <div className="w-px bg-[var(--ch-border)]" />
+            <div>
+              <div className="text-[10px] uppercase tracking-wider font-semibold text-[var(--ch-text-3)]">
+                จับคู่แล้ว
+              </div>
+              <div className="ch-tnum text-lg sm:text-xl font-bold text-[var(--ch-navy)] mt-0.5">
+                {reconcile.summary.matched} /{" "}
+                {reconcile.summary.matched +
+                  reconcile.summary.diff +
+                  reconcile.summary.noBank}
+              </div>
+            </div>
+            <div className="w-px bg-[var(--ch-border)]" />
+            <div>
+              <div className="text-[10px] uppercase tracking-wider font-semibold text-[var(--ch-text-3)]">
+                ผิดปกติ
+              </div>
+              <div className="ch-tnum text-lg sm:text-xl font-bold text-[var(--ch-danger)] mt-0.5">
+                {reconcile.summary.diff}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="mt-5 flex gap-1 border-b border-[var(--ch-border)] overflow-x-auto ch-no-scroll">
+          {tabs.map((t) => {
+            const active = tab === t.id;
+            const { Icon } = t;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-colors whitespace-nowrap -mb-px"
+                style={{
+                  color: active ? "var(--ch-brand)" : "var(--ch-text-2)",
+                  borderBottom: active
+                    ? "2px solid var(--ch-brand)"
+                    : "2px solid transparent",
+                  background: "transparent",
+                  border: "none",
+                  borderBottomWidth: 2,
+                  borderBottomStyle: "solid",
+                  borderBottomColor: active
+                    ? "var(--ch-brand)"
+                    : "transparent",
+                  cursor: "pointer",
+                }}
+              >
+                <Icon className="size-3.5" />
+                {t.label}
+                <span
+                  className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                  style={{
+                    background: t.badge ? "var(--ch-danger)" : "var(--ch-bg-3)",
+                    color: t.badge ? "white" : "var(--ch-text-3)",
+                  }}
+                >
+                  {t.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Body */}
+        {tab === "heatmap" && (
+          <div className="mt-5">
+            <div className="ch-card-v2 bg-white p-3 sm:p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <SectionPill num="01" label="Matrix" />
+                  <span className="text-xs text-[var(--ch-text-2)]">
+                    <b>{branches.length} สาขา × {daysInMonth} วัน</b>
+                  </span>
+                </div>
+                <div className="text-[11px] text-[var(--ch-text-3)]">
+                  เดือน {monthLabelTh} · {daysElapsed}/{daysInMonth} วัน ·{" "}
+                  {reportsTotalMonth} รายงาน
+                </div>
+              </div>
+              <HeatmapGrid
+                branches={branches}
+                matrix={matrix}
+                daysInMonth={daysInMonth}
+                todayDay={todayDay}
+                monthYm={monthYm}
+                canFill={canFill}
+                canApprove={canApprove}
+              />
+            </div>
+          </div>
+        )}
+        {tab === "reconcile" && (
+          <ReconcileTab rows={reconcile.rows} summary={reconcile.summary} />
+        )}
+        {tab === "timeline" && <TimelineTab entries={timeline} />}
+      </div>
+    </div>
+  );
+}
