@@ -151,8 +151,11 @@ export function PublicFormRenderer({
       toast.error("กรอกชื่อ-นามสกุล");
       return false;
     }
-    if (!/^0\d{8,9}$/.test(phone.trim())) {
-      toast.error("กรอกเบอร์โทร 9-10 หลัก ขึ้นต้นด้วย 0");
+    // Accept Thai phones in many forms (+66, dashes, spaces, leading 0)
+    const cleaned = phone.trim().replace(/[\s-]/g, "");
+    const phoneRe = /^(?:\+?66|0)?(\d{8,9})$/;
+    if (!phoneRe.test(cleaned)) {
+      toast.error("เบอร์โทรไม่ถูกต้อง (9-10 หลัก · ขึ้น 0 หรือ +66)");
       return false;
     }
     const newErrors: Record<string, string> = {};
@@ -236,7 +239,7 @@ export function PublicFormRenderer({
 
       {/* Header */}
       <header className="text-center pb-4 border-b border-zinc-200">
-        <p className="text-[10px] uppercase tracking-[0.22em] font-bold text-[var(--color-brand-700)]">
+        <p className="text-xs font-bold text-[var(--color-brand-700)]">
           {companyName}
         </p>
         <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight font-display mt-2 text-zinc-900">
@@ -251,7 +254,7 @@ export function PublicFormRenderer({
 
       {/* Applicant top fields */}
       <section className="space-y-3">
-        <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">
+        <p className="text-sm font-bold text-zinc-700">
           ข้อมูลติดต่อ
         </p>
         <Field label="ชื่อ-นามสกุล" required>
@@ -296,8 +299,11 @@ export function PublicFormRenderer({
       {/* Sections from schema */}
       {schema.sections.map((section, idx) => (
         <section key={section.id}>
-          <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold mb-3">
-            {String(idx + 1).padStart(2, "0")} · {section.title}
+          <p className="text-sm font-bold text-zinc-700 mb-3">
+            <span className="text-zinc-400 tabular-num mr-1.5">
+              {String(idx + 1).padStart(2, "0")}
+            </span>
+            {section.title}
           </p>
           <div className="space-y-3">
             {section.fields.map((field) => (
@@ -351,8 +357,8 @@ export function PublicFormRenderer({
           "✓ ส่งใบสมัคร"
         )}
       </button>
-      <p className="text-[10px] text-zinc-400 text-center">
-        เปลี่ยน device ระหว่างกรอกได้ · บันทึกอัตโนมัติ
+      <p className="text-xs text-zinc-500 text-center">
+        กรอกบนมือถือต่อจากคอมพิวเตอร์ได้ · ระบบบันทึกอัตโนมัติ
       </p>
     </form>
   );

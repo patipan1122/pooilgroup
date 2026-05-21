@@ -59,7 +59,7 @@ export default async function PostingDetailPage({
         <div>
           <Link
             href="/recruit/postings"
-            className="text-xs text-zinc-500 hover:text-zinc-900"
+            className="inline-flex items-center h-10 -ml-2 px-2 text-sm text-zinc-500 hover:text-zinc-900 rounded-lg hover:bg-zinc-100"
           >
             ← ประกาศทั้งหมด
           </Link>
@@ -109,7 +109,7 @@ export default async function PostingDetailPage({
       {/* Recent applications quick link */}
       {posting._count.applications > 0 && (
         <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-          <p className="text-xs uppercase tracking-[0.18em] text-zinc-500 font-bold mb-2">
+          <p className="text-xs text-zinc-500 font-bold mb-2">
             ใบสมัคร
           </p>
           <Link

@@ -29,12 +29,12 @@ export default async function ApplicationFullPage({
 
   return (
     <div className="bg-white min-h-screen">
-      <div className="border-b border-zinc-200 px-5 sm:px-8 py-4 sticky top-0 bg-white z-10">
+      <div className="border-b border-zinc-200 px-5 sm:px-8 py-2 sticky top-0 bg-white z-10">
         <Link
           href="/recruit"
-          className="text-sm text-zinc-500 hover:text-zinc-900"
+          className="inline-flex items-center h-10 -ml-2 px-3 text-sm text-zinc-600 hover:text-zinc-900 rounded-lg hover:bg-zinc-100"
         >
-          ← กลับ Inbox
+          ← กลับรายการใบสมัคร
         </Link>
       </div>
       <ApplicationDetail

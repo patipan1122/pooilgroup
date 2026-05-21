@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
+import { KpiTile } from "@/components/ui/kpi-tile";
 import {
   APPLICATION_STATUSES,
   STATUS_LABELS,
@@ -13,7 +14,8 @@ import {
 } from "@/lib/recruit/types";
 import { ApplicationDetail } from "./application-detail";
 import { thaiDateLong } from "@/lib/utils/format";
-import { ClipboardList, KanbanSquare, ListChecks, Plus } from "lucide-react";
+import { ClipboardList, KanbanSquare, ListChecks, Plus, Inbox, SearchX } from "lucide-react";
+import { ViewToggle } from "./view-toggle";
 
 interface Props {
   orgId: string;
@@ -75,26 +77,26 @@ export async function ApplicationsInbox({
     <div className="flex flex-col lg:flex-row h-[calc(100vh-60px)]">
       {/* PANE 1: Filters (left) — KPI strip + filters */}
       <aside className="hidden lg:flex flex-col w-56 shrink-0 border-r border-zinc-200 bg-white overflow-y-auto">
-        {/* KPI strip — CEO 30-second health check */}
+        {/* KPI strip — CEO 30-second health check · shared <KpiTile> รอบ 46 */}
         <div className="p-3 border-b border-zinc-100 grid grid-cols-2 gap-2">
           <KpiTile
             label="ทั้งหมด"
             value={Object.values(countMap).reduce((s, n) => s + n, 0)}
-            tone="brand"
+            accent="brand"
           />
-          <KpiTile label="ใหม่" value={countMap.NEW} tone="brand" />
+          <KpiTile label="ใหม่" value={countMap.NEW} accent="brand" />
           <KpiTile
             label="กำลังคุย"
             value={countMap.SCREENING + countMap.INTERVIEW + countMap.OFFERED}
-            tone="warning"
+            accent="warning"
           />
-          <KpiTile label="รับแล้ว" value={countMap.HIRED} tone="success" />
+          <KpiTile label="รับแล้ว" value={countMap.HIRED} accent="success" />
         </div>
 
         {/* Status filters */}
         <div className="p-3">
-          <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-400 font-bold px-2 mb-1.5">
-            STATUS
+          <p className="text-[11px] text-zinc-500 font-bold px-2 mb-1.5">
+            สถานะ
           </p>
           <FilterLink
             href={buildUrl({ status: null, posting: currentPosting, q: currentQuery })}
@@ -117,7 +119,7 @@ export async function ApplicationsInbox({
         {/* Posting filter */}
         {postings.length > 0 && (
           <div className="p-3 border-t border-zinc-100">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-400 font-bold px-2 mb-1.5">
+            <p className="text-[11px] text-zinc-500 font-bold px-2 mb-1.5">
               ตำแหน่ง
             </p>
             <FilterLink
@@ -139,29 +141,29 @@ export async function ApplicationsInbox({
 
         {/* Quick links */}
         <div className="p-3 border-t border-zinc-100 mt-auto">
-          <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-400 font-bold px-2 mb-1.5">
+          <p className="text-[11px] text-zinc-500 font-bold px-2 mb-1.5">
             ลิ้งค์ด่วน
           </p>
           <Link
             href="/recruit/postings"
-            className="flex items-center gap-2 text-xs text-zinc-600 hover:text-[var(--color-brand-700)] px-2 py-1.5 rounded hover:bg-zinc-50"
+            className="flex items-center gap-2 text-sm text-zinc-700 hover:text-[var(--color-brand-700)] px-2 h-10 rounded hover:bg-zinc-50"
           >
-            <ClipboardList className="size-3.5" />
+            <ClipboardList className="size-4" />
             ประกาศทั้งหมด
           </Link>
           <Link
             href="/recruit/pipeline"
-            className="flex items-center gap-2 text-xs text-zinc-600 hover:text-[var(--color-brand-700)] px-2 py-1.5 rounded hover:bg-zinc-50"
+            className="flex items-center gap-2 text-sm text-zinc-700 hover:text-[var(--color-brand-700)] px-2 h-10 rounded hover:bg-zinc-50"
           >
-            <KanbanSquare className="size-3.5" />
-            Pipeline view
+            <KanbanSquare className="size-4" />
+            ดูแบบบอร์ด (Pipeline)
           </Link>
           <Link
             href="/recruit/tasks"
-            className="flex items-center gap-2 text-xs text-zinc-600 hover:text-[var(--color-brand-700)] px-2 py-1.5 rounded hover:bg-zinc-50"
+            className="flex items-center gap-2 text-sm text-zinc-700 hover:text-[var(--color-brand-700)] px-2 h-10 rounded hover:bg-zinc-50"
           >
-            <ListChecks className="size-3.5" />
-            งานต้องตาม
+            <ListChecks className="size-4" />
+            งานที่ต้องตาม
           </Link>
         </div>
       </aside>
@@ -201,9 +203,22 @@ export async function ApplicationsInbox({
       <section className={`flex-col w-full lg:w-[380px] shrink-0 border-r border-zinc-200 bg-white overflow-hidden ${
         selectedId ? "hidden lg:flex" : "flex"
       }`}>
-        <div className="p-3 border-b border-zinc-100">
-          <SearchBar defaultValue={currentQuery} />
-          <div className="flex items-center justify-between mt-3 text-xs">
+        <div className="p-3 border-b border-zinc-100 space-y-3">
+          <div className="flex items-center gap-2">
+            <SearchBar defaultValue={currentQuery} />
+            <ViewToggle
+              current="list"
+              listHref={buildUrl({
+                status: currentStatus,
+                posting: currentPosting,
+                q: currentQuery,
+              })}
+              kanbanHref={`/recruit/pipeline${
+                currentPosting ? `?posting=${currentPosting}` : ""
+              }`}
+            />
+          </div>
+          <div className="flex items-center justify-between text-xs">
             <p className="text-zinc-500">
               <span className="font-bold text-zinc-900 tabular-num">{apps.length}</span> ใบสมัคร
               {currentStatus && (
@@ -265,7 +280,12 @@ export async function ApplicationsInbox({
                       </span>
                     )}
                     {app.flaggedBlacklist && (
-                      <span className="text-[10px] font-bold text-red-600">⚠ BL</span>
+                      <span
+                        className="text-[11px] font-bold text-red-600"
+                        title="ตรงกับ Blacklist"
+                      >
+                        ⚠ ติดบัญชี
+                      </span>
                     )}
                     {app.starRating != null && (
                       <span className="text-xs text-amber-500">
@@ -274,12 +294,22 @@ export async function ApplicationsInbox({
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 mt-2">
-                  <Badge tone={STATUS_TONE[app.status as ApplicationStatus]}>
-                    <span className="size-1.5 rounded-full bg-current opacity-60" />
-                    {STATUS_LABELS[app.status as ApplicationStatus]}
-                  </Badge>
-                  <span className="text-[10px] text-zinc-400">
+                <div className="flex items-center justify-between gap-2 mt-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Badge tone={STATUS_TONE[app.status as ApplicationStatus]}>
+                      <span className="size-1.5 rounded-full bg-current opacity-60" />
+                      {STATUS_LABELS[app.status as ApplicationStatus]}
+                    </Badge>
+                    {app.refId && (
+                      <span
+                        className="font-mono text-[11px] text-zinc-400 tabular-num"
+                        title={app.refId}
+                      >
+                        #{app.refId.slice(-6)}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-zinc-400 shrink-0">
                     {app.submittedAt
                       ? thaiDateLong(app.submittedAt)
                       : "ยังไม่ส่ง"}
@@ -310,8 +340,11 @@ export async function ApplicationsInbox({
               >
                 ← กลับรายการ
               </Link>
-              <span className="text-xs font-mono text-zinc-500">
-                {selected.refId ?? ""}
+              <span
+                className="text-xs font-mono text-zinc-500"
+                title={selected.refId ?? ""}
+              >
+                {selected.refId ? `#${selected.refId.slice(-6)}` : ""}
               </span>
             </div>
             <ApplicationDetail
@@ -320,8 +353,12 @@ export async function ApplicationsInbox({
             />
           </>
         ) : (
-          <div className="p-20 text-center text-sm text-zinc-400">
-            เลือกใบสมัครจากรายการ
+          <div className="hidden lg:flex flex-col items-center justify-center h-full p-20 text-center">
+            <Inbox className="size-12 text-zinc-300" />
+            <p className="mt-3 text-sm font-bold text-zinc-700">เลือกใบสมัครจากรายการ</p>
+            <p className="text-xs text-zinc-500 mt-1">
+              คลิกที่ชื่อในแถบกลางเพื่อดูรายละเอียด
+            </p>
           </div>
         )}
       </main>
@@ -355,44 +392,17 @@ function FilterLink({
     >
       <span className={truncate ? "truncate" : ""}>{label}</span>
       {count != null && (
-        <span className="text-[10px] tabular-num text-zinc-400 shrink-0">{count}</span>
+        <span className="text-[11px] tabular-num text-zinc-400 shrink-0">{count}</span>
       )}
     </Link>
   );
 }
 
-function KpiTile({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: "brand" | "warning" | "success";
-}) {
-  const toneClass =
-    tone === "warning"
-      ? "text-amber-700"
-      : tone === "success"
-        ? "text-green-700"
-        : "text-[var(--color-brand-700)]";
-  return (
-    <div className="rounded-xl border border-zinc-200 bg-zinc-50/40 p-2.5">
-      <p className="text-[9px] uppercase tracking-[0.16em] text-zinc-500 font-bold leading-tight">
-        {label}
-      </p>
-      <p
-        className={`mt-1 text-xl font-extrabold tabular-num leading-none ${toneClass}`}
-      >
-        {value.toLocaleString("th-TH")}
-      </p>
-    </div>
-  );
-}
+// Local KpiTile removed รอบ 46 · use shared @/components/ui/kpi-tile
 
 function SearchBar({ defaultValue }: { defaultValue: string }) {
   return (
-    <form action="" method="GET">
+    <form action="" method="GET" className="flex-1 min-w-0">
       <input
         type="search"
         name="q"
@@ -418,13 +428,14 @@ function EmptyListState({
   if (!hasFilter) {
     return (
       <div className="p-10 text-center">
-        <p className="text-sm text-zinc-500">ยังไม่มีใบสมัคร</p>
-        <p className="text-xs text-zinc-400 mt-2">
+        <Inbox className="size-10 mx-auto text-zinc-300" />
+        <p className="text-sm font-bold text-zinc-700 mt-3">ยังไม่มีใบสมัคร</p>
+        <p className="text-xs text-zinc-500 mt-2 leading-relaxed">
           แชร์ลิ้งค์ประกาศใน Facebook / LINE เพื่อให้คนสมัครเข้ามา
         </p>
         <Link
           href="/recruit/postings"
-          className="inline-flex mt-4 text-xs font-bold text-[var(--color-brand-700)] hover:underline"
+          className="inline-flex items-center justify-center mt-4 h-10 px-4 rounded-xl text-xs font-bold text-white bg-[var(--color-brand-600)] hover:bg-[var(--color-brand-700)]"
         >
           ดูประกาศทั้งหมด →
         </Link>
@@ -432,17 +443,18 @@ function EmptyListState({
     );
   }
   const filterParts: string[] = [];
-  if (statusLabel) filterParts.push(`status "${statusLabel}"`);
+  if (statusLabel) filterParts.push(`สถานะ "${statusLabel}"`);
   if (query) filterParts.push(`ค้นหา "${query}"`);
   return (
     <div className="p-10 text-center">
-      <p className="text-sm text-zinc-500">ไม่พบใบสมัครที่ตรง</p>
+      <SearchX className="size-10 mx-auto text-zinc-300" />
+      <p className="text-sm font-bold text-zinc-700 mt-3">ไม่พบใบสมัครที่ตรง</p>
       {filterParts.length > 0 && (
-        <p className="text-xs text-zinc-400 mt-1.5">{filterParts.join(" · ")}</p>
+        <p className="text-xs text-zinc-500 mt-1.5">{filterParts.join(" · ")}</p>
       )}
       <Link
         href={clearHref}
-        className="inline-flex mt-4 text-xs font-bold text-[var(--color-brand-700)] hover:underline"
+        className="inline-flex items-center justify-center mt-4 h-10 px-4 rounded-xl text-xs font-bold text-[var(--color-brand-700)] border border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]"
       >
         ล้างเงื่อนไข
       </Link>

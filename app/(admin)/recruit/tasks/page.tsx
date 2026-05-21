@@ -66,7 +66,7 @@ export default async function TasksPage() {
         number="02"
         label="งานต้องตาม"
         title="ใบสมัครที่ค้างอยู่ในกระบวนการ"
-        description="ทุกใบที่ status รออยู่ · ใบที่ค้างนานเกิน SLA จะอยู่ด้านบน"
+        description="ทุกใบที่อยู่ในกระบวนการ · ใบค้างนานเกินกำหนดจะแสดงด้านบน"
       >
         {tasks.length === 0 ? (
           <div className="rounded-3xl border-2 border-dashed border-zinc-200 bg-white p-12 text-center">
@@ -80,8 +80,8 @@ export default async function TasksPage() {
           <div className="space-y-6">
             {overdue.length > 0 && (
               <div>
-                <p className="text-[10px] uppercase tracking-[0.18em] font-bold text-red-600 mb-3">
-                  ⚠ เกิน SLA ({overdue.length})
+                <p className="text-sm font-bold text-red-600 mb-3">
+                  ⚠ ค้างเกินกำหนด ({overdue.length})
                 </p>
                 <div className="space-y-2">
                   {overdue.map((t) => (
@@ -92,8 +92,8 @@ export default async function TasksPage() {
             )}
             {upcoming.length > 0 && (
               <div>
-                <p className="text-[10px] uppercase tracking-[0.18em] font-bold text-zinc-500 mb-3">
-                  ภายใน SLA ({upcoming.length})
+                <p className="text-sm font-bold text-zinc-700 mb-3">
+                  ยังอยู่ในกำหนด ({upcoming.length})
                 </p>
                 <div className="space-y-2">
                   {upcoming.map((t) => (
@@ -155,8 +155,8 @@ function TaskRow({ task }: { task: Task }) {
           </span>
         </div>
         {isOverdue && (
-          <p className="text-[10px] text-red-500 mt-0.5">
-            เกิน SLA {task.overdue} วัน
+          <p className="text-xs text-red-600 mt-0.5">
+            เกินกำหนด {task.overdue} วัน
           </p>
         )}
       </div>

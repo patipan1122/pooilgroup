@@ -26,7 +26,7 @@ export function PostingShareCard({ slug }: Props) {
     <div className="rounded-3xl border-2 border-[var(--color-brand-200)] bg-gradient-to-br from-[var(--color-brand-50)]/40 to-white p-5">
       <div className="flex items-start gap-4 flex-wrap">
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] uppercase tracking-[0.18em] font-bold text-[var(--color-brand-700)]">
+          <p className="text-xs font-bold text-[var(--color-brand-700)]">
             ลิ้งค์รับสมัคร
           </p>
           <p className="font-mono text-sm text-zinc-900 mt-2 break-all bg-white rounded-lg border border-zinc-200 px-3 py-2">
@@ -40,26 +40,26 @@ export function PostingShareCard({ slug }: Props) {
             <button
               type="button"
               onClick={copyLink}
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-[var(--color-brand-600)] px-3 py-2 rounded-xl hover:bg-[var(--color-brand-700)]"
+              className="inline-flex items-center gap-1.5 text-sm font-bold text-white bg-[var(--color-brand-600)] px-4 h-10 rounded-xl hover:bg-[var(--color-brand-700)]"
             >
-              <Copy className="size-3.5" />
-              คัดลอก
+              <Copy className="size-4" />
+              คัดลอกลิ้งค์
             </button>
             <a
               href={url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-700 border border-zinc-300 px-3 py-2 rounded-xl hover:bg-zinc-50"
+              className="inline-flex items-center gap-1.5 text-sm font-bold text-zinc-700 border border-zinc-300 px-4 h-10 rounded-xl hover:bg-zinc-50"
             >
-              <ExternalLink className="size-3.5" />
+              <ExternalLink className="size-4" />
               เปิดดู
             </a>
             <button
               type="button"
               onClick={() => setShowQR(!showQR)}
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-700 border border-zinc-300 px-3 py-2 rounded-xl hover:bg-zinc-50"
+              className="inline-flex items-center gap-1.5 text-sm font-bold text-zinc-700 border border-zinc-300 px-4 h-10 rounded-xl hover:bg-zinc-50"
             >
-              <QrCode className="size-3.5" />
+              <QrCode className="size-4" />
               {showQR ? "ซ่อน QR" : "ดู QR"}
             </button>
           </div>

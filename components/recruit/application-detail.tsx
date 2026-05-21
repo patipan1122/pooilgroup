@@ -77,7 +77,10 @@ export async function ApplicationDetail({ applicationId, canWrite }: Props) {
       <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
         <div>
           <p className="text-xs text-zinc-500">
-            {app.refId} · {app.posting.title}
+            <span className="font-mono" title={app.refId}>
+              #{app.refId?.slice(-6) ?? ""}
+            </span>{" "}
+            · {app.posting.title}
           </p>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-zinc-900 font-display mt-1">
             {app.applicant.fullName}
@@ -119,13 +122,13 @@ export async function ApplicationDetail({ applicationId, canWrite }: Props) {
 
       {/* Answers */}
       <div className="mt-6">
-        <h2 className="text-sm font-bold text-zinc-900 mb-3 uppercase tracking-wider">
+        <h2 className="text-sm font-bold text-zinc-900 mb-3">
           คำตอบ ({Object.keys(answers).length} ข้อ)
         </h2>
         <div className="space-y-3">
           {schema?.sections.map((section) => (
             <div key={section.id}>
-              <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 font-bold mb-2">
+              <p className="text-xs text-zinc-500 font-bold mb-2">
                 {section.title}
               </p>
               <div className="rounded-2xl border border-zinc-200 bg-white divide-y divide-zinc-100">
@@ -158,8 +161,8 @@ export async function ApplicationDetail({ applicationId, canWrite }: Props) {
 
       {/* Notes */}
       <div className="mt-7">
-        <h2 className="text-sm font-bold text-zinc-900 mb-3 uppercase tracking-wider">
-          Notes ภายใน HR ({app.notes.length})
+        <h2 className="text-sm font-bold text-zinc-900 mb-3">
+          บันทึกภายใน HR ({app.notes.length})
         </h2>
         <ApplicationNotes
           applicationId={app.id}

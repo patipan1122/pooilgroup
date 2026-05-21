@@ -151,7 +151,7 @@ export function PostingEditor({
     <div className="space-y-6">
       {/* Basic info */}
       <div className="rounded-3xl border border-zinc-200 bg-white p-5 sm:p-6 space-y-4">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-700">
+        <h2 className="text-sm font-bold text-zinc-900">
           ข้อมูลประกาศ
         </h2>
         <Field label="ตำแหน่ง" required>
@@ -247,9 +247,9 @@ export function PostingEditor({
                 type="button"
                 onClick={deleteMe}
                 disabled={pending}
-                className="text-xs font-bold text-red-600 px-3 h-10 hover:bg-red-50 rounded-lg"
+                className="text-sm font-bold text-red-600 px-3 h-11 hover:bg-red-50 rounded-lg"
               >
-                ลบ
+                ลบประกาศ
               </button>
             )}
             {canClose && (
@@ -257,27 +257,27 @@ export function PostingEditor({
                 type="button"
                 onClick={close}
                 disabled={pending}
-                className="text-sm font-bold text-amber-700 bg-amber-50 px-4 h-10 rounded-xl hover:bg-amber-100"
+                className="text-sm font-bold text-amber-700 bg-amber-50 px-4 h-11 rounded-xl hover:bg-amber-100"
               >
-                ปิดรับ
+                ปิดรับสมัคร
               </button>
             )}
             <button
               type="button"
               onClick={save}
               disabled={pending}
-              className="text-sm font-bold text-zinc-700 border border-zinc-300 px-4 h-10 rounded-xl hover:bg-zinc-50 disabled:opacity-40"
+              className="text-sm font-bold text-zinc-700 border border-zinc-300 px-4 h-11 rounded-xl hover:bg-zinc-50 disabled:opacity-40"
             >
-              {pending ? "บันทึก..." : "บันทึก"}
+              {pending ? "กำลังบันทึก..." : "บันทึก"}
             </button>
             {canPublish && (
               <button
                 type="button"
                 onClick={publish}
                 disabled={pending}
-                className="text-sm font-bold text-white bg-[var(--color-brand-600)] px-4 h-10 rounded-xl hover:bg-[var(--color-brand-700)] disabled:opacity-40"
+                className="text-sm font-bold text-white bg-[var(--color-brand-600)] px-4 h-11 rounded-xl hover:bg-[var(--color-brand-700)] disabled:opacity-40"
               >
-                Publish · เปิดรับ
+                เปิดประกาศ · ให้คนสมัครได้
               </button>
             )}
           </div>

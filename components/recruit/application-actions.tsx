@@ -94,8 +94,8 @@ export function ApplicationActions({
     <div className="mt-4 mb-6 rounded-2xl border border-zinc-200 bg-white p-4 space-y-3">
       {/* Status pill row */}
       <div>
-        <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-400 font-bold mb-2">
-          เปลี่ยน status
+        <p className="text-xs text-zinc-500 font-bold mb-2">
+          เปลี่ยนสถานะ
         </p>
         <div className="flex flex-wrap gap-1.5">
           {APPLICATION_STATUSES.map((s) => (
@@ -104,7 +104,7 @@ export function ApplicationActions({
               type="button"
               onClick={() => changeStatus(s)}
               disabled={isPending}
-              className={`text-xs px-2.5 py-1 rounded-full font-medium border transition-colors ${
+              className={`text-xs h-10 px-3 rounded-full font-medium border transition-colors ${
                 status === s
                   ? `border-[var(--color-brand-500)] bg-[var(--color-brand-50)] text-[var(--color-brand-800)]`
                   : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
@@ -118,8 +118,8 @@ export function ApplicationActions({
 
       {/* Rating */}
       <div className="flex items-center gap-3">
-        <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-400 font-bold">
-          ดาว
+        <p className="text-xs text-zinc-500 font-bold">
+          ให้ดาว
         </p>
         <div className="flex gap-0.5">
           {[1, 2, 3, 4, 5].map((n) => (
@@ -128,11 +128,11 @@ export function ApplicationActions({
               type="button"
               onClick={() => changeRating(rating === n ? null : n)}
               disabled={isPending}
-              className="hover:scale-110 transition-transform"
+              className="size-10 inline-flex items-center justify-center hover:scale-110 transition-transform"
               aria-label={`${n} ดาว`}
             >
               <Star
-                className={`size-5 ${
+                className={`size-6 ${
                   rating != null && rating >= n
                     ? "fill-amber-400 text-amber-400"
                     : "text-zinc-300"
@@ -145,17 +145,17 @@ export function ApplicationActions({
           <button
             type="button"
             onClick={() => changeRating(null)}
-            className="text-[10px] text-zinc-400 hover:text-zinc-700"
+            className="text-xs text-zinc-500 hover:text-zinc-900 h-10 px-2"
           >
-            ลบ
+            ลบดาว
           </button>
         )}
       </div>
 
       {/* Tags */}
       <div>
-        <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-400 font-bold mb-1.5">
-          Tag
+        <p className="text-xs text-zinc-500 font-bold mb-1.5">
+          ป้ายกำกับ
         </p>
         <div className="flex flex-wrap items-center gap-1.5">
           {tags.map((t) => (
@@ -184,15 +184,16 @@ export function ApplicationActions({
                   addTag();
                 }
               }}
-              placeholder="เพิ่ม tag..."
-              className="text-xs rounded-lg border border-zinc-200 px-2 py-1 w-28 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)]"
+              placeholder="เพิ่มป้าย..."
+              className="text-sm rounded-lg border border-zinc-200 px-3 h-10 w-32 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)]"
               maxLength={20}
             />
             {tagInput && (
               <button
                 type="button"
                 onClick={addTag}
-                className="text-[var(--color-brand-700)] hover:text-[var(--color-brand-900)]"
+                aria-label="เพิ่มป้าย"
+                className="size-10 inline-flex items-center justify-center text-[var(--color-brand-700)] hover:text-[var(--color-brand-900)]"
               >
                 <Plus className="size-4" />
               </button>

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { addToBlacklist, removeFromBlacklist } from "@/lib/recruit/actions";
-import { Plus, Trash2, X } from "lucide-react";
+import { Plus, ShieldCheck, Trash2, X } from "lucide-react";
 
 interface Entry {
   id: string;
@@ -44,13 +44,13 @@ export function BlacklistManager({
               key={t}
               type="button"
               onClick={() => setTab(t)}
-              className={`text-xs px-3 py-1.5 rounded-full font-medium ${
+              className={`text-sm h-10 px-4 rounded-full font-medium ${
                 tab === t
                   ? "bg-[var(--color-brand-100)] text-[var(--color-brand-800)]"
                   : "text-zinc-600 hover:bg-zinc-100"
               }`}
             >
-              {t === "active" ? "Active" : t === "expired" ? "หมดอายุ" : "ถอนแล้ว"}
+              {t === "active" ? "ใช้งานอยู่" : t === "expired" ? "หมดอายุ" : "ถอนแล้ว"}
               <span className="ml-1.5 tabular-num">{lists[t].length}</span>
             </button>
           ))}
@@ -71,9 +71,21 @@ export function BlacklistManager({
 
       <div className="space-y-2">
         {lists[tab].length === 0 ? (
-          <p className="text-center text-sm text-zinc-400 py-10 italic">
-            ไม่มีรายการ
-          </p>
+          <div className="rounded-3xl border-2 border-dashed border-zinc-200 bg-white py-12 text-center">
+            <ShieldCheck className="size-10 mx-auto text-zinc-300" />
+            <p className="mt-3 text-sm font-bold text-zinc-700">
+              {tab === "active"
+                ? "ยังไม่มีคนใน Blacklist"
+                : tab === "expired"
+                  ? "ยังไม่มีรายการที่หมดอายุ"
+                  : "ยังไม่มีรายการที่ถอน"}
+            </p>
+            {tab === "active" && (
+              <p className="text-xs text-zinc-500 mt-1">
+                กดปุ่ม &quot;เพิ่ม Blacklist&quot; ด้านบนเมื่อเจอเคสที่ต้องบันทึก
+              </p>
+            )}
+          </div>
         ) : (
           lists[tab].map((e) => (
             <BlacklistRow
@@ -147,7 +159,7 @@ function AddForm({ onClose }: { onClose: () => void }) {
         <button
           type="button"
           onClick={onClose}
-          className="text-xs px-3 h-9 rounded-lg text-zinc-600 hover:bg-zinc-100"
+          className="text-sm px-4 h-10 rounded-lg text-zinc-600 hover:bg-zinc-100"
         >
           ยกเลิก
         </button>
@@ -155,9 +167,9 @@ function AddForm({ onClose }: { onClose: () => void }) {
           type="button"
           onClick={submit}
           disabled={pending || !fullName.trim() || reason.trim().length < 20}
-          className="text-xs font-bold text-white bg-red-600 px-4 h-9 rounded-lg hover:bg-red-700 disabled:opacity-40"
+          className="text-sm font-bold text-white bg-red-600 px-4 h-10 rounded-lg hover:bg-red-700 disabled:opacity-40"
         >
-          {pending ? "บันทึก..." : "เพิ่มเข้า Blacklist"}
+          {pending ? "กำลังบันทึก..." : "เพิ่มเข้า Blacklist"}
         </button>
       </div>
     </div>
@@ -196,13 +208,13 @@ function BlacklistRow({
           <p className="text-sm text-zinc-700 mt-2 leading-relaxed">
             {entry.reason}
           </p>
-          <div className="flex items-center gap-3 mt-2 text-[10px] text-zinc-400 flex-wrap">
+          <div className="flex items-center gap-2 mt-2 text-xs text-zinc-500 flex-wrap">
             <span>เพิ่ม: {entry.addedBy}</span>
-            <span>·</span>
+            <span className="text-zinc-300">·</span>
             <span>{new Date(entry.addedAt).toLocaleDateString("th-TH")}</span>
-            <span>·</span>
+            <span className="text-zinc-300">·</span>
             <span>หมดอายุ: {new Date(entry.expiresAt).toLocaleDateString("th-TH")}</span>
-            <span>·</span>
+            <span className="text-zinc-300">·</span>
             <span>{entry.scope === "BOTH" ? "ทั้งคู่" : entry.scope}</span>
           </div>
         </div>
@@ -211,9 +223,9 @@ function BlacklistRow({
             type="button"
             onClick={remove}
             disabled={pending}
-            className="text-xs text-red-600 hover:bg-red-50 px-3 h-8 rounded-lg flex items-center gap-1.5 shrink-0"
+            className="text-sm text-red-600 hover:bg-red-50 px-3 h-10 rounded-lg flex items-center gap-1.5 shrink-0"
           >
-            <Trash2 className="size-3.5" />
+            <Trash2 className="size-4" />
             ถอน
           </button>
         )}

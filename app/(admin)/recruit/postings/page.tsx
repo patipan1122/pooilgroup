@@ -77,15 +77,32 @@ export default async function PostingsListPage({
               active={filter === s}
             />
           ))}
+          <Link
+            href="/recruit"
+            className="text-xs h-10 px-3 inline-flex items-center rounded-full font-medium text-zinc-500 hover:text-[var(--color-brand-700)] hover:bg-zinc-50"
+          >
+            → ดูใบสมัคร
+          </Link>
         </div>
 
         {postings.length === 0 ? (
           <div className="rounded-3xl border-2 border-dashed border-zinc-200 bg-white p-12 text-center">
             <FileQuestion className="size-12 mx-auto text-zinc-300" />
-            <p className="mt-4 font-bold text-zinc-900">ยังไม่มีประกาศ</p>
-            <p className="text-sm text-zinc-500 mt-1">
-              สร้างประกาศแรกได้ที่ปุ่มมุมขวาบน
+            <p className="mt-4 font-bold text-zinc-900">
+              {filter ? `ยังไม่มีประกาศใน "${POSTING_STATUS_LABELS[filter]}"` : "ยังไม่มีประกาศ"}
             </p>
+            <p className="text-sm text-zinc-500 mt-1">
+              สร้างประกาศ → ได้ลิ้งค์ + QR ทันที → แชร์ใน Facebook / LINE
+            </p>
+            {canWrite && (
+              <Link
+                href="/recruit/postings/new"
+                className="inline-flex items-center gap-2 mt-5 rounded-xl bg-[var(--color-brand-600)] text-white px-5 h-11 font-bold hover:bg-[var(--color-brand-700)]"
+              >
+                <Plus className="size-4" />
+                สร้างประกาศแรก
+              </Link>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -143,7 +160,7 @@ function FilterChip({
   return (
     <Link
       href={href}
-      className={`text-xs px-3 py-1.5 rounded-full font-medium border transition-colors ${
+      className={`text-xs h-10 px-4 inline-flex items-center rounded-full font-medium border transition-colors ${
         active
           ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)] text-[var(--color-brand-800)]"
           : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"

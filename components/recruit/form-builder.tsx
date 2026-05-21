@@ -210,12 +210,12 @@ export function FormBuilder({ schema, onChange, jobTitle, readonly }: Props) {
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-3 p-4 border-b border-zinc-100 flex-wrap">
         <div>
-          <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-700">
+          <h2 className="text-sm font-bold text-zinc-900">
             ฟอร์มรับสมัคร
           </h2>
           <p className="text-xs text-zinc-500 mt-0.5">
-            {schema.sections.reduce((s, sec) => s + sec.fields.length, 0)} field ·
-            ฟอร์มฝั่งซ้าย · เพิ่ม field ฝั่งขวา
+            {schema.sections.reduce((s, sec) => s + sec.fields.length, 0)} ช่อง ·
+            ฟอร์มฝั่งซ้าย · เพิ่มช่องฝั่งขวา
           </p>
         </div>
         {!readonly && (
@@ -277,8 +277,8 @@ export function FormBuilder({ schema, onChange, jobTitle, readonly }: Props) {
         {/* PALETTE */}
         {!readonly && (
           <aside className="p-3 bg-zinc-50/40 border-t lg:border-t-0 lg:border-l border-zinc-100">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold mb-2 px-1.5">
-              ชนิด field
+            <p className="text-xs text-zinc-600 font-bold mb-2 px-1.5">
+              ชนิดของช่อง
             </p>
             <div className="grid grid-cols-2 lg:grid-cols-1 gap-1.5">
               {FIELD_TYPES.map((t) => (
@@ -299,8 +299,8 @@ export function FormBuilder({ schema, onChange, jobTitle, readonly }: Props) {
                 </button>
               ))}
             </div>
-            <p className="text-[10px] text-zinc-400 mt-3 px-1.5 leading-relaxed">
-              คลิกชนิดเพื่อเพิ่ม field เข้าส่วนแรก หรือกด + ในแต่ละ section
+            <p className="text-xs text-zinc-500 mt-3 px-1.5 leading-relaxed">
+              คลิกชนิดเพื่อเพิ่มช่องเข้าส่วนแรก หรือกด + ในแต่ละส่วน
             </p>
           </aside>
         )}
@@ -371,8 +371,8 @@ function SectionEditor({
       {/* Fields */}
       <div className="p-3 space-y-2">
         {section.fields.length === 0 ? (
-          <div className="text-center py-6 text-xs text-zinc-400 border-2 border-dashed border-zinc-200 rounded-xl">
-            ยังไม่มี field · กดปุ่มฝั่งขวา หรือเลือก type ด้านล่าง
+          <div className="text-center py-6 text-xs text-zinc-500 border-2 border-dashed border-zinc-200 rounded-xl">
+            ยังไม่มีช่อง · กดเพิ่มจากเมนูฝั่งขวา หรือใช้ปุ่มด้านล่าง
           </div>
         ) : (
           section.fields.map((field, idx) => (
@@ -666,11 +666,11 @@ function OptionsEditor({
 
   return (
     <div className="space-y-1.5">
-      <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-400 font-bold">
+      <p className="text-xs text-zinc-500 font-bold">
         ตัวเลือก
       </p>
       {options.length === 0 ? (
-        <p className="text-xs text-zinc-400 italic">ยังไม่มีตัวเลือก</p>
+        <p className="text-xs text-zinc-500 italic">ยังไม่มีตัวเลือก · พิมพ์ด้านล่าง</p>
       ) : (
         <div className="flex flex-wrap gap-1">
           {options.map((o, i) => (
