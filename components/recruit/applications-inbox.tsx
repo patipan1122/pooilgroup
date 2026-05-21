@@ -73,15 +73,22 @@ export async function ApplicationsInbox({
 
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-60px)]">
-      {/* PANE 1: Filters (left) */}
+      {/* PANE 1: Filters (left) — KPI strip + filters */}
       <aside className="hidden lg:flex flex-col w-56 shrink-0 border-r border-zinc-200 bg-white overflow-y-auto">
-        <div className="p-4 border-b border-zinc-100">
-          <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">
-            ใบสมัคร
-          </p>
-          <p className="text-xl font-extrabold text-zinc-900 mt-1 tabular-num">
-            {Object.values(countMap).reduce((s, n) => s + n, 0).toLocaleString("th-TH")}
-          </p>
+        {/* KPI strip — CEO 30-second health check */}
+        <div className="p-3 border-b border-zinc-100 grid grid-cols-2 gap-2">
+          <KpiTile
+            label="ทั้งหมด"
+            value={Object.values(countMap).reduce((s, n) => s + n, 0)}
+            tone="brand"
+          />
+          <KpiTile label="ใหม่" value={countMap.NEW} tone="brand" />
+          <KpiTile
+            label="กำลังคุย"
+            value={countMap.SCREENING + countMap.INTERVIEW + countMap.OFFERED}
+            tone="warning"
+          />
+          <KpiTile label="รับแล้ว" value={countMap.HIRED} tone="success" />
         </div>
 
         {/* Status filters */}
@@ -351,6 +358,35 @@ function FilterLink({
         <span className="text-[10px] tabular-num text-zinc-400 shrink-0">{count}</span>
       )}
     </Link>
+  );
+}
+
+function KpiTile({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "brand" | "warning" | "success";
+}) {
+  const toneClass =
+    tone === "warning"
+      ? "text-amber-700"
+      : tone === "success"
+        ? "text-green-700"
+        : "text-[var(--color-brand-700)]";
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-zinc-50/40 p-2.5">
+      <p className="text-[9px] uppercase tracking-[0.16em] text-zinc-500 font-bold leading-tight">
+        {label}
+      </p>
+      <p
+        className={`mt-1 text-xl font-extrabold tabular-num leading-none ${toneClass}`}
+      >
+        {value.toLocaleString("th-TH")}
+      </p>
+    </div>
   );
 }
 

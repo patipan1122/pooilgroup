@@ -1,8 +1,66 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-20 (Bug Report System LIVE)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-21 (Recruit module LIVE prod + polish round 1)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-05-21 — Recruit module LIVE บน production · 5 commits · 4-agent UX audit + polish)
+
+**Production deployment:** `pooilgroup-7xhb2g4x7` Ready 12h ago · `/recruit` returns 307 (login redirect = page exists)
+
+**Commits this session:**
+- `0068022` feat(recruit): complete module R0-R6 (85 files · 12,370 lines · 5 tables + 9 routes + builder + public form + AI manual triggers + blacklist + tasks)
+- `2ff9f15` chore(recruit): linter cleanup + remove from .vercelignore
+- `83b1aaf` fix(notifications): extend NotificationModule with recruit + repairs
+- `cca3474` feat(recruit): polish round 1 — orchestra audit fixes (P0/P1)
+
+**DB applied:** surgical SQL `/tmp/recruit-create.sql` ran via `prisma db execute` ·
+5 tables + 3 enums + 12 indexes + 11 FKs + 5 RLS policies · existing data untouched
+
+**Vercel:** preview built → promoted to production via `vercel promote`
+
+**Polish round 1 (orchestra audit · 4 parallel agents):**
+- Persona walkthrough · Mobile responsive · Empty/loading/error states · Design system compliance
+- 40 issues identified · 13 P0/P1 implemented (error.tsx + loading.tsx + brand cleanup + empty state context)
+
+**Open follow-ups (round 2):**
+- Bulk action bar in inbox (checkbox + bulk status change)
+- Dashboard KPI strip at /recruit landing for CEO 30-sec health check
+- Schema drift audit (4 prod tables not in schema.prisma · prevents `prisma db push` from working safely)
+
+---
+
+## 🆕 Update (2026-05-21 — Executive matrix: toggle ฿ ↔ จำนวน · build pass · ยังไม่ deploy)
+
+**CEO request:** "อยากได้ปุ่มข้างรายเดือน/รายปี · กดสลับดูยอดขาย ↔ จำนวน · น้ำมัน=ลิตร EV=kWh+คัน กาแฟ=แก้ว ฯลฯ"
+
+**Shipped (build green · TS clean):**
+- **`constants/business-types.ts`** —
+  - ⛽ `fuel_station`: เพิ่ม `qty2` = "จำนวนบิล/คัน" (optional · qtyUnit='car')
+  - 🔵 `lpg_station`: เปลี่ยน `qty1` หน่วยจาก "ถัง" → "ลิตร" (qtyUnit 'tank'→'liter') + เพิ่ม `qty2` = "จำนวนบิล/คัน"
+- **`lib/cashhub/data.ts`** — `loadReports` SELECT เพิ่ม `qty1_unit`, `qty2`, `qty2_unit` + เพิ่มฟิลด์ใน `CanonicalReport`
+- **`lib/cashhub/executive-matrix.ts`** —
+  - เพิ่ม `qty1Totals`, `qty2Totals` ใน row + per branch
+  - ปั๊มแก๊ส LPG: ข้ามข้อมูลเก่า (qty1_unit='tank') · นับเฉพาะ row ที่หน่วยตรงกับ config (`EXPECTED_QTY1_UNIT` map)
+- **`components/cashhub/executive-table.tsx`** —
+  - เพิ่ม `ViewModeToggle` component (segmented control `ยอดขาย / จำนวน`) ข้าง period toggle
+  - `localStorage` persistence (`pool.dashboard.matrix.viewMode`)
+  - Cell renderer แยก 2 mode: baht (เดิม) + quantity (ใหม่)
+  - EV row: `kWh` เป็น primary · `คัน` เป็น secondary (qty2 swap with qty1 specifically for ev_station)
+  - แถว "รวมทุกประเภท" ถูกซ่อนตอน mode จำนวน (รวมหน่วยต่างกันไม่ได้)
+  - 7-Eleven (convenience_store): แสดง "—" ตอน mode จำนวน (form ยังไม่เก็บจำนวนบิล)
+
+**สิ่งที่ CEO ต้องทำต่อ:**
+1. **ทดลอง local:** `npm run dev` → เปิด `/dashboard` → กดปุ่ม "จำนวน" ดูแถว ⛽/⚡/☕
+2. **ตัดสินใจเรื่อง deploy:**
+   - ฟอร์ม CashHub ปั๊มแก๊ส LPG จะเปลี่ยนจาก "ถัง" → "ลิตร" → ต้องแจ้งพนักงานหน้างาน
+   - ข้อมูลเก่าของ ปั๊มแก๊ส LPG ใน mode "จำนวน" จะเป็น `—` จนกว่ามีข้อมูลใหม่ ~12 เดือน
+3. **ถ้าอยากให้ 7-Eleven แสดงด้วย** → ต้องเพิ่ม field "จำนวนบิล" ในฟอร์ม (ยังไม่ทำ · CEO เลือก A)
+
+**Verified:**
+- ✅ `npx tsc --noEmit` clean
+- ✅ `npm run build` (12.6s compile · 70 static pages · 0 errors)
+- ⏳ Manual UI test pending (CEO ต้องเปิด /dashboard ดู)
 
 ## 🆕 Update (2026-05-20 — In-app Bug Report system · commit `963fa9b` · production LIVE)
 
