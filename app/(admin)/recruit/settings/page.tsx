@@ -1,10 +1,11 @@
 // /recruit/settings — module settings (read-only info for now)
 
+import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { requireRecruitAdmin } from "@/lib/recruit/role-guard";
 import { prisma } from "@/lib/prisma";
 import { Section } from "@/components/ui/section";
-import { Settings, Mail, Shield, FileText } from "lucide-react";
+import { Settings, Mail, Shield, FileText, ChevronRight } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -67,29 +68,25 @@ export default async function SettingsPage() {
 
       {/* PDPA */}
       <Section number="02" label="PDPA" title="ข้อมูลส่วนบุคคล">
-        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-3">
-          <Row
-            icon={<Shield className="size-5" />}
-            title="Consent บังคับก่อน submit"
-            desc="ผู้สมัครต้องติ๊กยินยอม PDPA ก่อนกดส่งใบสมัคร"
-            status="ทำงานอยู่"
-            statusTone="success"
-          />
-          <Row
-            icon={<Shield className="size-5" />}
-            title="National ID"
-            desc="ไม่เก็บบัตรประชาชนตอนสมัคร · เก็บตอน onboarding offline"
-            status="ทำงานอยู่"
-            statusTone="success"
-          />
-          <Row
-            icon={<FileText className="size-5" />}
-            title="Retention (อายุข้อมูล)"
-            desc="2 ปี หลังไม่ active · auto-delete (รอ cron · ยังไม่ทำ)"
-            status="Phase 2"
-            statusTone="neutral"
-          />
-        </div>
+        <Link
+          href="/recruit/settings/pdpa"
+          className="block rounded-2xl border-2 border-[var(--color-brand-200)] bg-gradient-to-br from-[var(--color-brand-50)] to-white p-5 hover:border-[var(--color-brand-400)] transition-colors group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="size-12 rounded-xl bg-[var(--color-brand-100)] flex items-center justify-center text-[var(--color-brand-700)] shrink-0">
+              <Shield className="size-6" />
+            </div>
+            <div className="flex-1">
+              <p className="font-bold text-zinc-900 text-base group-hover:text-[var(--color-brand-700)]">
+                เปิดหน้า PDPA Compliance →
+              </p>
+              <p className="text-xs text-zinc-600 mt-1">
+                ตรวจ checklist · ดู audit log · แนะนำลบข้อมูลเก่า
+              </p>
+            </div>
+            <ChevronRight className="size-5 text-zinc-400" />
+          </div>
+        </Link>
       </Section>
 
       {/* AI */}

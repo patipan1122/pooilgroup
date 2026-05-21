@@ -16,7 +16,7 @@ import {
 } from "@/lib/recruit/types";
 import { ApplicationDetail } from "./application-detail";
 import { thaiDateLong } from "@/lib/utils/format";
-import { ClipboardList, KanbanSquare, ListChecks, Plus, Inbox, SearchX } from "lucide-react";
+import { ClipboardList, KanbanSquare, ListChecks, Plus, Inbox, SearchX, CalendarCheck, Users } from "lucide-react";
 import { ViewToggle } from "./view-toggle";
 
 interface Props {
@@ -166,6 +166,20 @@ export async function ApplicationsInbox({
           >
             <ListChecks className="size-4" />
             งานที่ต้องตาม
+          </Link>
+          <Link
+            href="/recruit/calendar"
+            className="flex items-center gap-2 text-sm text-zinc-700 hover:text-[var(--color-brand-700)] px-2 h-10 rounded hover:bg-zinc-50"
+          >
+            <CalendarCheck className="size-4" />
+            ปฏิทินสัมภาษณ์
+          </Link>
+          <Link
+            href="/recruit/talent-pool"
+            className="flex items-center gap-2 text-sm text-zinc-700 hover:text-[var(--color-brand-700)] px-2 h-10 rounded hover:bg-zinc-50"
+          >
+            <Users className="size-4" />
+            Talent Pool
           </Link>
         </div>
       </aside>
