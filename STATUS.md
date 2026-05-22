@@ -1,8 +1,24 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-21 (Repair full sweep · QA/QC/BA/SA · seed + 11 pages + bug fixes)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-22 (Recruit canvas parity · รอบ 48)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-05-22 · รอบ 48 — Recruit canvas parity pass)
+
+**CEO goal:** "เทียบหน้าต่อหน้ากับ Recruit Redesign canvas · ทำให้แอฟ HR เหมือนตามรูป HTML 100%"
+
+**5 gap หลักที่ปิด (commit `3eb9503` · deploy `pooilgroup-ok19v2144`):**
+1. **Status tones แยกชัด** — เดิม SCREENING=น้ำเงิน, INTERVIEW+OFFERED=อำพันคล้ายกัน → ตอนนี้ amber/orange/purple ตาม canvas. Badge primitive ได้ tone ใหม่ `orange` + `purple`.
+2. **Status pill มีจุดสีนำหน้า** ทุกที่ (ApplicationDetail hero · Inbox filter · PostingCard) — เดิมมีแต่ pipeline column
+3. **/apply/[slug] hero** — gradient brand-600→brand-900 + trust chips (เวลา 4-7 นาที · ไม่ต้องล็อกอิน · PDPA ปลอดภัย) ตรงตาม canvas Screen 03-1
+4. **Public form section dots** — สี brand/orange/purple/green ตามประเภท section (ติดต่อ→brand, ประสบการณ์→orange, IQ→purple, ไฟล์→green) + arrow CTA + emerald "บันทึกอัตโนมัติ" pulse
+5. **Posting card urgent** — border canvas #f5b800 + gradient #fffbeb→white
+
+**Deferred (massive scope · separate):** OTP wizard 9-step · Branch Needs sidebar · HR native mobile screens · form-builder 3-pane palette
+
+**Verified live:** /jobs + /apply/* + /recruit/* return 200/307 OK · hero text "ใช้เวลา 4-7 นาที" + "PDPA ปลอดภัย" + "บันทึกอัตโนมัติ" rendering on prod
+
 
 ## 🆕 Update (2026-05-21 — Repair full sweep · QA/QC/BA/SA pass · seed-repair-demo.mjs + all 11 pages redesigned)
 
