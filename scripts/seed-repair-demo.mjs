@@ -244,6 +244,7 @@ async function ensureCategories(orgId) {
     .eq("org_id", orgId);
   if (error) throw error;
   const haveSlugs = new Set((existing ?? []).map((c) => c.slug));
+  const nowISO = new Date().toISOString();
   const toInsert = CATEGORIES.filter((c) => !haveSlugs.has(c.slug)).map((c) => ({
     id: randomUUID(),
     org_id: orgId,
@@ -253,6 +254,7 @@ async function ensureCategories(orgId) {
     default_urgency: c.defaultUrgency,
     sort_order: c.sortOrder,
     is_active: true,
+    updated_at: nowISO,
   }));
   if (toInsert.length > 0) {
     const { error: ie } = await sb.from("repair_categories").insert(toInsert);
@@ -275,6 +277,7 @@ async function ensureTechnicians(orgId) {
     .eq("org_id", orgId)
     .in("name", TECHS.map((t) => t.name));
   const existingNames = new Set((existing ?? []).map((t) => t.name));
+  const nowISO = new Date().toISOString();
   const toInsert = TECHS.filter((t) => !existingNames.has(t.name)).map((t) => ({
     id: randomUUID(),
     org_id: orgId,
@@ -283,6 +286,7 @@ async function ensureTechnicians(orgId) {
     phone: t.phone,
     specialties: t.specialties,
     is_active: true,
+    updated_at: nowISO,
   }));
   if (toInsert.length > 0) {
     const { error } = await sb.from("repair_technicians").insert(toInsert);
@@ -538,6 +542,7 @@ async function createParts(orgId, ticket, template) {
       ? addHours(ticket.createdAt, 20).toISOString()
       : null,
     created_at: addHours(ticket.createdAt, 2).toISOString(),
+    updated_at: addHours(ticket.createdAt, 2).toISOString(),
   }));
   const { error } = await sb.from("repair_parts").insert(rows);
   if (error) throw error;

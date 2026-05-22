@@ -23,19 +23,23 @@ function partStatusClass(s: "NEEDED" | "ORDERED" | "DELIVERED" | "INSTALLED" | "
 }
 import { slaStatusFor, slaBadgeLabel } from "@/lib/repair/sla";
 import { TicketActions } from "./ticket-actions";
+import { TicketComposer } from "./ticket-composer";
 import {
   Clock,
   User,
   Phone,
-  Camera,
   MessageSquare,
   ExternalLink,
   Building2,
   Flame,
-  Send,
   MapPin,
   Plus,
 } from "lucide-react";
+
+// Camera icon imported on PublicForm side; keep tree-shake hint to mark
+// `lucide-react/dist/esm/icons/camera` as used by some consumer (TicketComposer).
+import type { LucideIcon as _LucideIcon } from "lucide-react";
+void (null as unknown as _LucideIcon | null);
 import type {
   RepairTicketStatus,
   RepairUrgency,
@@ -558,15 +562,7 @@ export function TicketDetailPanel({
       </div>
 
       {/* Composer (chat-style note bar) */}
-      <div className="composer">
-        <input placeholder="พิมพ์เพื่อเพิ่มความคิดเห็น / @ผู้คนเพื่อแจ้ง · บันทึกลง timeline" />
-        <button className="btn">
-          <Camera />
-        </button>
-        <button className="btn btn-primary">
-          <Send />
-        </button>
-      </div>
+      {canWrite && <TicketComposer ticketId={ticket.id} />}
     </>
   );
 }
