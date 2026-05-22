@@ -314,25 +314,29 @@ export function ReconcileTab({ rows, summary }: Props) {
 // "ห้ามแก้ reconcile formula") or a bank-statement matching backend we haven't shipped.
 function RowActions({ row }: { row: ReconcileRow }) {
   if (row.status === "diff" && row.reportId) {
+    // ทักผู้กรอก: prefer phone call (tel:) since LINE deep-link requires the
+    // user's LINE ID we don't store. SMS link `sms:` opens default messaging
+    // app. If no phone, fall back to report-detail view with #staff anchor.
+    const messageUrl = row.staffPhone
+      ? `tel:${row.staffPhone.replace(/[^+\d]/g, "")}`
+      : `/cashhub/reports/${row.reportId}#staff`;
+    const messageLabel = row.staffPhone ? "ทักผู้กรอก ☎" : "ทักผู้กรอก";
     return (
       <div className="flex gap-1 justify-end">
-        <button
-          type="button"
-          onClick={() =>
-            toast.info(
-              "ปรับยอดต้องผ่าน Manager · เปิดรายงานเพื่อดูรายละเอียดก่อน",
-            )
-          }
-          className="inline-flex items-center h-7 px-2.5 rounded-md border border-[var(--ch-border-strong)] bg-white text-[11px] font-semibold hover:bg-zinc-50"
-        >
-          ปรับยอด
-        </button>
         <Link
           href={`/cashhub/reports/${row.reportId}`}
-          className="inline-flex items-center h-7 px-2.5 rounded-md bg-[var(--ch-brand)] text-white text-[11px] font-semibold hover:bg-[var(--ch-brand-700)]"
+          className="inline-flex items-center h-7 px-2.5 rounded-md border border-[var(--ch-border-strong)] bg-white text-[11px] font-semibold hover:bg-zinc-50"
+          title="เปิดรายงานเพื่อปรับยอด — ต้องผ่าน Manager"
         >
-          ทักผู้กรอก
+          ปรับยอด
         </Link>
+        <a
+          href={messageUrl}
+          className="inline-flex items-center h-7 px-2.5 rounded-md bg-[var(--ch-brand)] text-white text-[11px] font-semibold hover:bg-[var(--ch-brand-700)]"
+          title={row.staffPhone ? `โทร ${row.staffPhone}` : "ดูรายงาน · ไม่มีเบอร์โทร"}
+        >
+          {messageLabel}
+        </a>
       </div>
     );
   }

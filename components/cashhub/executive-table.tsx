@@ -17,13 +17,51 @@ import {
   ChevronsUpDown,
   BarChart3,
   CircleDollarSign,
+  Hash,
+  TrendingUpIcon,
+  TrendingDownIcon,
+  MinusIcon,
+  SparklesIcon,
+  XIcon,
+  PlusIcon,
 } from "lucide-react";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { formatBahtCompact } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
+import { Sparkline } from "@/components/cashhub/charts";
 import type { ExecutiveMatrix, Period } from "@/lib/cashhub/executive-matrix";
 
-type ViewMode = "baht" | "quantity";
+type HealthKind = "growing" | "steady" | "watch" | "new" | "silent";
+
+// Inline HealthChip — design canvas dashboard.jsx:10-28 / health-badge-v2.tsx.
+// Kept inline to avoid the cross-component dependency from a UI primitive
+// that's only used inside this table (and keep ExecutiveTable self-contained).
+function HealthChip({ kind, compact = false }: { kind: HealthKind; compact?: boolean }) {
+  const map = {
+    growing: { label: "เติบโต", bg: "var(--color-leaf-50)", fg: "var(--color-leaf-700)", Icon: TrendingUpIcon },
+    steady: { label: "ทรงตัว", bg: "var(--color-zinc-50)", fg: "var(--color-zinc-600)", Icon: MinusIcon },
+    watch: { label: "น่าห่วง", bg: "var(--color-danger-bg)", fg: "var(--color-danger)", Icon: TrendingDownIcon },
+    new: { label: "เริ่มกรอก", bg: "var(--color-info-bg)", fg: "var(--color-info)", Icon: PlusIcon },
+    silent: { label: "ยังไม่กรอก", bg: "#f1f5f9", fg: "#94a3b8", Icon: XIcon },
+  } as const;
+  const m = map[kind];
+  const { Icon } = m;
+  void SparklesIcon;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full font-semibold",
+        compact ? "px-1.5 py-0 text-[10px]" : "px-2 py-0.5 text-[11px]",
+      )}
+      style={{ background: m.bg, color: m.fg }}
+    >
+      <Icon className={compact ? "size-2.5" : "size-3"} strokeWidth={2} />
+      {compact ? null : m.label}
+    </span>
+  );
+}
+
+type ViewMode = "baht" | "quantity" | "count";
 
 const VIEW_MODE_STORAGE_KEY = "pool.dashboard.matrix.viewMode";
 
@@ -102,7 +140,7 @@ export function ExecutiveTable({ data }: Props) {
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
-      if (saved === "quantity" || saved === "baht") setViewMode(saved);
+      if (saved === "quantity" || saved === "baht" || saved === "count") setViewMode(saved);
     } catch {
       // localStorage may be unavailable (SSR / private mode) — ignore
     }
@@ -324,6 +362,17 @@ export function ExecutiveTable({ data }: Props) {
                   </th>
                 );
               })}
+              {/* Trend + Status columns — design dashboard.jsx:211-212 */}
+              <th
+                className="px-2 py-3 font-bold text-center text-zinc-500 sticky top-14 sm:top-16 z-20 bg-white min-w-[80px]"
+              >
+                <span className="text-[11px] uppercase tracking-wider">เทรนด์</span>
+              </th>
+              <th
+                className="px-2 py-3 font-bold text-center text-zinc-500 sticky top-14 sm:top-16 z-20 bg-white min-w-[100px]"
+              >
+                <span className="text-[11px] uppercase tracking-wider">สถานะ</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -410,6 +459,36 @@ export function ExecutiveTable({ data }: Props) {
                   </td>
                 );
               })}
+              {/* Footer trend + status — overall sparkline of period totals + global health */}
+              <td className="px-2 py-3 text-center bg-[var(--color-brand-100)]/30">
+                {periodTotals.some((v) => v > 0) ? (
+                  <Sparkline
+                    data={periodTotals.map((value, idx) => ({
+                      date: `p${idx}`,
+                      value,
+                    }))}
+                    width={72}
+                    height={22}
+                    className="inline-block"
+                  />
+                ) : (
+                  <span className="text-zinc-300">—</span>
+                )}
+              </td>
+              <td className="px-2 py-3 text-center bg-[var(--color-brand-100)]/30">
+                {(() => {
+                  const fCur = periodTotals[periodTotals.length - 1] ?? 0;
+                  const fPrev = periodTotals[periodTotals.length - 2] ?? 0;
+                  let k: HealthKind = "silent";
+                  if (fCur === 0 && fPrev === 0) k = "silent";
+                  else if (fPrev === 0 && fCur > 0) k = "new";
+                  else if (fPrev > 0) {
+                    const p = ((fCur - fPrev) / fPrev) * 100;
+                    k = p >= 15 ? "growing" : p <= -15 ? "watch" : "steady";
+                  }
+                  return <HealthChip kind={k} />;
+                })()}
+              </td>
             </tr>
             )}
           </tbody>
@@ -463,11 +542,34 @@ const BusinessTypeRow = memo(function BusinessTypeRow({
   onNavigateBranch: (branchId: string) => void;
 }) {
   const isQty = viewMode === "quantity";
+  const isCount = viewMode === "count";
   const qtyDisplay = isQty
     ? getQtyDisplay(row.businessType, row.qty1Totals, row.qty2Totals)
     : null;
   // Stable click handler — would otherwise allocate per render, defeating memo.
   const handleToggle = () => onToggle(row.businessType);
+
+  // Trend sparkline + health pill — drives the right-most cells per design canvas
+  // dashboard.jsx:257-262. Computed from current viewMode's series.
+  const sparkSeries = isQty
+    ? (qtyDisplay?.primary.values ?? row.qty1Totals)
+    : isCount
+      ? row.reportedCounts
+      : row.totals;
+  const cur = sparkSeries[sparkSeries.length - 1] ?? 0;
+  const prev = sparkSeries[sparkSeries.length - 2] ?? 0;
+  const healthKind: HealthKind =
+    cur === 0 && prev === 0
+      ? "silent"
+      : prev === 0 && cur > 0
+        ? "new"
+        : prev === 0
+          ? "silent"
+          : ((cur - prev) / prev) * 100 >= 15
+            ? "growing"
+            : ((cur - prev) / prev) * 100 <= -15
+              ? "watch"
+              : "steady";
 
   return (
     <>
@@ -517,6 +619,57 @@ const BusinessTypeRow = memo(function BusinessTypeRow({
           const tooltip = incomplete
             ? `กรอกแล้ว ${reported}/${row.branchCount} สาขา · ขาด ${row.branchCount - reported} สาขา`
             : undefined;
+
+          // ────── Count mode (# รายงาน) — show reported count vs total branches ──────
+          if (isCount) {
+            const countVal = reported ?? 0;
+            const denom = row.branchCount;
+            const prevCount = i > 0 ? (row.reportedCounts[i - 1] ?? 0) : 0;
+            const showDiff = i > 0 && prevCount > 0;
+            const pct = showDiff
+              ? ((countVal - prevCount) / prevCount) * 100
+              : null;
+            return (
+              <td
+                key={i}
+                className={cn(
+                  "px-2 sm:px-3 py-2.5 text-right tabular-num",
+                  isLatest && "bg-[var(--color-brand-50)]/30",
+                )}
+              >
+                <div
+                  className={cn(
+                    "font-semibold",
+                    countVal === 0
+                      ? "text-zinc-400"
+                      : isLatest
+                        ? "text-[var(--color-brand-800)]"
+                        : "text-zinc-700",
+                  )}
+                >
+                  {countVal}
+                  <span className="text-[10px] text-zinc-400 font-normal">
+                    {" "}/ {denom}
+                  </span>
+                </div>
+                {pct !== null && countVal > 0 && (
+                  <div
+                    className={cn(
+                      "text-[10px] font-bold tabular-num",
+                      pct > 0
+                        ? "text-[var(--color-leaf-700)]"
+                        : pct < 0
+                          ? "text-[var(--color-danger)]"
+                          : "text-zinc-400",
+                    )}
+                  >
+                    {pct > 0 ? "+" : ""}
+                    {pct.toFixed(0)}%
+                  </div>
+                )}
+              </td>
+            );
+          }
 
           // ────── Quantity mode ──────
           if (isQty) {
@@ -639,6 +792,26 @@ const BusinessTypeRow = memo(function BusinessTypeRow({
             </td>
           );
         })}
+        {/* Trend column — sparkline of current viewMode series (design dashboard.jsx:257-259) */}
+        <td className="px-2 py-2.5 text-center">
+          {sparkSeries.some((v) => v > 0) ? (
+            <Sparkline
+              data={sparkSeries.map((value, idx) => ({
+                date: `p${idx}`,
+                value,
+              }))}
+              width={72}
+              height={22}
+              className="inline-block"
+            />
+          ) : (
+            <span className="text-zinc-300">—</span>
+          )}
+        </td>
+        {/* Status column — HealthBadge (design dashboard.jsx:260-262) */}
+        <td className="px-2 py-2.5 text-center">
+          <HealthChip kind={healthKind} />
+        </td>
       </tr>
 
       {/* Expanded branch sub-rows — use Next router for SPA navigation */}
@@ -756,6 +929,36 @@ const BusinessTypeRow = memo(function BusinessTypeRow({
                 </td>
               );
             })}
+            {/* Sub-row trend + status — show per-branch sparkline */}
+            <td className="px-2 py-2 text-center">
+              {b.totals.some((v) => v > 0) ? (
+                <Sparkline
+                  data={b.totals.map((value, idx) => ({
+                    date: `p${idx}`,
+                    value,
+                  }))}
+                  width={64}
+                  height={18}
+                  className="inline-block opacity-70"
+                />
+              ) : (
+                <span className="text-zinc-300">—</span>
+              )}
+            </td>
+            <td className="px-2 py-2 text-center">
+              {(() => {
+                const sCur = b.totals[b.totals.length - 1] ?? 0;
+                const sPrev = b.totals[b.totals.length - 2] ?? 0;
+                let k: HealthKind = "silent";
+                if (sCur === 0 && sPrev === 0) k = "silent";
+                else if (sPrev === 0 && sCur > 0) k = "new";
+                else if (sPrev > 0) {
+                  const p = ((sCur - sPrev) / sPrev) * 100;
+                  k = p >= 15 ? "growing" : p <= -15 ? "watch" : "steady";
+                }
+                return <HealthChip kind={k} compact />;
+              })()}
+            </td>
           </tr>
         ))}
     </>
@@ -845,6 +1048,15 @@ function ViewModeToggle({
       >
         <BarChart3 className="size-3.5" />
         จำนวน
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("count")}
+        className={btn(current === "count")}
+        aria-label="แสดงเป็นจำนวนรายงาน"
+      >
+        <Hash className="size-3.5" />
+        # รายงาน
       </button>
     </div>
   );

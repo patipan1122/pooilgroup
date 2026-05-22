@@ -29,6 +29,7 @@ export interface ReconcileRow {
   diff: number | null;
   status: ReconcileStatus;
   staffName: string | null;
+  staffPhone: string | null;
   shift: string | null;
   reportId: string | null;
 }
@@ -67,6 +68,7 @@ function buildRow(args: {
   status: string;
   branchId: string | null;
   staffName: string | null;
+  staffPhone: string | null;
   shift: string | null;
 }): ReconcileRow {
   const received =
@@ -92,6 +94,7 @@ function buildRow(args: {
     diff,
     status,
     staffName: args.staffName,
+    staffPhone: args.staffPhone,
     shift: args.shift,
     reportId: args.reportId,
   };
@@ -121,10 +124,18 @@ async function fetchRows(
 async function fetchSubmitterNames(
   admin: SupabaseClient,
   ids: string[],
-): Promise<Map<string, string>> {
+): Promise<Map<string, { name: string; phone: string | null }>> {
   if (ids.length === 0) return new Map();
-  const { data } = await admin.from("users").select("id, name").in("id", ids);
-  return new Map((data ?? []).map((u) => [u.id, u.name]));
+  const { data } = await admin
+    .from("users")
+    .select("id, name, phone")
+    .in("id", ids);
+  return new Map(
+    (data ?? []).map((u) => [
+      u.id,
+      { name: u.name, phone: (u as { phone?: string | null }).phone ?? null },
+    ]),
+  );
 }
 
 async function fetchActiveBranches(admin: SupabaseClient, orgId: string) {
@@ -191,7 +202,10 @@ export async function loadReconcile(
       shortage: Number(r.shortage || 0),
       status: r.status,
       staffName: r.submitted_by_id
-        ? submitterNames.get(r.submitted_by_id) ?? null
+        ? submitterNames.get(r.submitted_by_id)?.name ?? null
+        : null,
+      staffPhone: r.submitted_by_id
+        ? submitterNames.get(r.submitted_by_id)?.phone ?? null
         : null,
       shift: r.shift,
     });
@@ -216,6 +230,7 @@ export async function loadReconcile(
           diff: null,
           status: "missing-fill",
           staffName: null,
+          staffPhone: null,
           shift: null,
           reportId: null,
         });

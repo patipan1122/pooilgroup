@@ -4,8 +4,17 @@
 // MLMc2DZd7q-5cmIzvrh5hw (variant V2).
 // Tabs: ตารางกรอกครบ · กระทบยอดแบงก์ · ไทม์ไลน์รายงาน
 
-import { useState } from "react";
-import { CalendarDays, Banknote, ListChecks } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  CalendarDays,
+  Banknote,
+  ListChecks,
+  CheckCircle2,
+  Clock,
+  XCircle,
+  AlertCircle,
+  Flame,
+} from "lucide-react";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
 import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { ReconcileTab } from "@/components/cashhub/redesign/reconcile-tab";
@@ -186,7 +195,12 @@ export function HeatmapV2View({
         {/* Body */}
         {tab === "heatmap" && (
           <div className="mt-5">
-            <div className="ch-card-v2 bg-white p-3 sm:p-4">
+            <HeatmapStatStrip
+              branches={branches}
+              matrix={matrix}
+              todayDay={todayDay}
+            />
+            <div className="ch-card-v2 bg-white p-3 sm:p-4 mt-3">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <SectionPill num="01" label="Matrix" />
@@ -216,6 +230,87 @@ export function HeatmapV2View({
         )}
         {tab === "timeline" && <TimelineTab entries={timeline} />}
       </div>
+    </div>
+  );
+}
+
+// 5-stat strip — design heatmap.jsx:128-148 · counts derived from matrix prop.
+function HeatmapStatStrip({
+  branches,
+  matrix,
+  todayDay,
+}: {
+  branches: HeatmapBranchRow[];
+  matrix: Record<string, Record<number, string>>;
+  todayDay: number;
+}) {
+  const stats = useMemo(() => {
+    let approved = 0;
+    let pending = 0;
+    let rejected = 0;
+    for (const b of branches) {
+      const m = matrix[b.id] ?? {};
+      for (const day of Object.keys(m)) {
+        const s = m[Number(day)];
+        if (s === "approved") approved++;
+        else if (s === "submitted") pending++;
+        else if (s === "rejected") rejected++;
+      }
+    }
+    const missingToday = branches.filter((b) => !(matrix[b.id]?.[todayDay])).length;
+    // Approx streak: last 21 days all have a status
+    const streak21 = branches.filter((b) => {
+      const m = matrix[b.id] ?? {};
+      const look = Math.min(21, todayDay);
+      for (let d = todayDay; d > todayDay - look; d--) {
+        const s = m[d];
+        if (s !== "approved" && s !== "submitted") return false;
+      }
+      return look > 0;
+    }).length;
+    return { approved, pending, rejected, missingToday, streak21 };
+  }, [branches, matrix, todayDay]);
+
+  const items: {
+    Icon: typeof CheckCircle2;
+    label: string;
+    value: number;
+    color: string;
+    bg: string;
+  }[] = [
+    { Icon: CheckCircle2, label: "อนุมัติแล้ว", value: stats.approved, color: "var(--ch-brand)", bg: "var(--ch-brand-50)" },
+    { Icon: Clock, label: "รออนุมัติ", value: stats.pending, color: "#a16207", bg: "var(--ch-pending-soft)" },
+    { Icon: XCircle, label: "ปฏิเสธ", value: stats.rejected, color: "var(--ch-danger)", bg: "var(--ch-danger-soft)" },
+    { Icon: AlertCircle, label: "ไม่กรอก (วันนี้)", value: stats.missingToday, color: "var(--ch-text-2)", bg: "var(--ch-bg-3)" },
+    { Icon: Flame, label: "ติดต่อกัน ≥ 21 วัน", value: stats.streak21, color: "var(--ch-ok)", bg: "var(--ch-ok-soft)" },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+      {items.map((s) => {
+        const { Icon } = s;
+        return (
+          <div key={s.label} className="ch-card-v2 bg-white p-3">
+            <div className="flex items-center gap-2">
+              <span
+                className="size-7 rounded-md grid place-items-center"
+                style={{ background: s.bg, color: s.color }}
+              >
+                <Icon className="size-3.5" />
+              </span>
+              <div className="text-xs text-[var(--ch-text-2)] font-medium">
+                {s.label}
+              </div>
+            </div>
+            <div
+              className="ch-tnum text-2xl font-bold mt-1.5"
+              style={{ color: "var(--ch-navy)", letterSpacing: "-.02em" }}
+            >
+              {s.value}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
