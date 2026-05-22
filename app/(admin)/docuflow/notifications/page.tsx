@@ -38,6 +38,7 @@ interface NotifItem {
   title: string;
   body: string;
   time: string;
+  at: Date;
   unread: boolean;
   href: string;
   action?: string;
@@ -66,7 +67,9 @@ export default async function NotificationsCenterPage() {
 
   const notifs: NotifItem[] = [];
 
-  // Expiry alerts
+  const now = new Date();
+
+  // Expiry alerts (use today as the trigger date)
   for (const r of renewals.slice(0, 5)) {
     if (r.daysUntilExpiry > 30) continue;
     const isExpired = r.daysUntilExpiry < 0;
@@ -78,7 +81,8 @@ export default async function NotificationsCenterPage() {
         ? `${r.document.name} หมดอายุแล้ว`
         : `${r.document.name} ใกล้หมด ${r.daysUntilExpiry} วัน`,
       body: r.notes ?? "ต้องดำเนินการต่ออายุ",
-      time: thaiDateLong(r.expiryDate),
+      time: bkkRelative(now),
+      at: now,
       unread: true,
       href: `/docuflow/documents/${r.document.id}`,
       action: "ต่ออายุเลย",
@@ -93,7 +97,8 @@ export default async function NotificationsCenterPage() {
       icon: <PenSquare size={18} />,
       title: `รอเซ็น: ${p.document.name}`,
       body: "เอกสารพร้อมรับลายเซ็น — เปิดดูเพื่อดำเนินการ",
-      time: "วันนี้",
+      time: bkkRelative(now),
+      at: now,
       unread: true,
       href: `/docuflow/documents/${p.document.id}/signatures`,
       action: "ดู",
@@ -109,12 +114,31 @@ export default async function NotificationsCenterPage() {
       title: `อัปโหลดแล้ว: ${d.name}`,
       body: "เอกสารพร้อมใช้งานในระบบ",
       time: bkkRelative(d.uploadedAt),
+      at: d.uploadedAt,
       unread: false,
       href: `/docuflow/documents/${d.id}`,
     });
   }
 
   const unreadCount = notifs.filter((n) => n.unread).length;
+
+  // Group by day bucket: วันนี้ / เมื่อวาน / เก่ากว่า
+  const startOfDay = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const today0 = startOfDay(now);
+  const yest0 = new Date(today0.getTime() - 86400000);
+
+  const groups: Array<{ label: string; items: NotifItem[] }> = [
+    { label: "วันนี้", items: [] },
+    { label: "เมื่อวาน", items: [] },
+    { label: "เก่ากว่า", items: [] },
+  ];
+  for (const n of notifs) {
+    const nd = startOfDay(n.at);
+    if (nd.getTime() >= today0.getTime()) groups[0].items.push(n);
+    else if (nd.getTime() >= yest0.getTime()) groups[1].items.push(n);
+    else groups[2].items.push(n);
+  }
 
   return (
     <div
@@ -199,100 +223,125 @@ export default async function NotificationsCenterPage() {
                 <div style={{ fontSize: 14 }}>ยังไม่มีการแจ้งเตือนล่าสุด</div>
               </div>
             ) : (
-              notifs.map((n, i) => {
-                const last = i === notifs.length - 1;
+              groups.map((g) => {
+                if (g.items.length === 0) return null;
                 return (
-                  <Link
-                    key={n.id}
-                    href={n.href}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "auto 1fr auto",
-                      gap: 14,
-                      padding: "16px 20px",
-                      alignItems: "center",
-                      borderBottom: last
-                        ? "none"
-                        : "1px solid var(--df-line-soft)",
-                      background: n.unread
-                        ? "var(--df-surface)"
-                        : "var(--df-surface-soft)",
-                      position: "relative",
-                      textDecoration: "none",
-                      color: "inherit",
-                    }}
-                  >
-                    {n.unread && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          left: 8,
-                          top: 22,
-                          width: 6,
-                          height: 6,
-                          borderRadius: 99,
-                          background: "var(--df-accent)",
-                        }}
-                      />
-                    )}
+                  <div key={g.label}>
                     <div
                       style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: 10,
-                        background:
-                          n.kind === "ink"
-                            ? "var(--df-bg-warm)"
-                            : `var(--df-${n.kind}-soft)`,
-                        color:
-                          n.kind === "ink"
-                            ? "var(--df-ink-2)"
-                            : `var(--df-${n.kind})`,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
+                        padding: "10px 20px",
+                        background: "var(--df-surface-soft)",
+                        borderBottom: "1px solid var(--df-line)",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "var(--df-muted)",
+                        letterSpacing: "0.05em",
                       }}
                     >
-                      {n.icon}
+                      {g.label} · {g.items.length} เหตุการณ์
                     </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontSize: 14,
-                          fontWeight: n.unread ? 700 : 500,
-                          marginBottom: 2,
-                        }}
-                      >
-                        {n.title}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "var(--df-muted)",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {n.body}
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                      }}
-                    >
-                      <span
-                        style={{ fontSize: 11, color: "var(--df-muted)" }}
-                        className="df-tnum"
-                      >
-                        {n.time}
-                      </span>
-                    </div>
-                  </Link>
+                    {g.items.map((n, i) => {
+                      const last = i === g.items.length - 1;
+                      return (
+                        <Link
+                          key={n.id}
+                          href={n.href}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "auto 1fr auto",
+                            gap: 14,
+                            padding: "16px 20px",
+                            alignItems: "center",
+                            borderBottom: last
+                              ? "none"
+                              : "1px solid var(--df-line-soft)",
+                            background: n.unread
+                              ? "var(--df-surface)"
+                              : "var(--df-surface-soft)",
+                            position: "relative",
+                            textDecoration: "none",
+                            color: "inherit",
+                          }}
+                        >
+                          {n.unread && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                left: 8,
+                                top: 22,
+                                width: 6,
+                                height: 6,
+                                borderRadius: 99,
+                                background: "var(--df-accent)",
+                              }}
+                            />
+                          )}
+                          <div
+                            style={{
+                              width: 38,
+                              height: 38,
+                              borderRadius: 10,
+                              background:
+                                n.kind === "ink"
+                                  ? "var(--df-bg-warm)"
+                                  : `var(--df-${n.kind}-soft)`,
+                              color:
+                                n.kind === "ink"
+                                  ? "var(--df-ink-2)"
+                                  : `var(--df-${n.kind})`,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {n.icon}
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div
+                              style={{
+                                fontSize: 14,
+                                fontWeight: n.unread ? 700 : 500,
+                                marginBottom: 2,
+                              }}
+                            >
+                              {n.title}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 12,
+                                color: "var(--df-muted)",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {n.body}
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                            }}
+                          >
+                            {n.action && (
+                              <DfPill tone="brand" small>
+                                {n.action}
+                              </DfPill>
+                            )}
+                            <span
+                              style={{ fontSize: 11, color: "var(--df-muted)" }}
+                              className="df-tnum"
+                            >
+                              {n.time}
+                            </span>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
                 );
               })
             )}

@@ -63,6 +63,7 @@ export default async function ReportsPage() {
     uploadedLast12mo,
     aiAnalyses,
     branchSpread,
+    signingSpeed,
   ] = await Promise.all([
     prisma.document.count({ where: { orgId, isActive: true } }),
     prisma.document.count({
@@ -88,6 +89,20 @@ export default async function ReportsPage() {
       _count: true,
       orderBy: { _count: { branchId: "desc" } },
       take: 5,
+    }),
+    // Signing speed: avg time from placement creation → sign per user
+    prisma.documentSignaturePlacement.findMany({
+      where: {
+        orgId,
+        signedAt: { not: null },
+        signerUserId: { not: null },
+      },
+      select: {
+        createdAt: true,
+        signedAt: true,
+        signerUser: { select: { id: true, name: true } },
+      },
+      take: 200,
     }),
   ]);
 
@@ -136,6 +151,36 @@ export default async function ReportsPage() {
     100,
     Math.round((aiAnalyses / Math.max(1, totalDocs)) * 100),
   );
+
+  // Per-user signing speed (avg hours)
+  const speedByUser = new Map<
+    string,
+    { name: string; totalMs: number; count: number }
+  >();
+  for (const s of signingSpeed) {
+    if (!s.signedAt || !s.signerUser) continue;
+    const elapsed = s.signedAt.getTime() - s.createdAt.getTime();
+    if (elapsed < 0) continue;
+    const cur = speedByUser.get(s.signerUser.id) ?? {
+      name: s.signerUser.name,
+      totalMs: 0,
+      count: 0,
+    };
+    cur.totalMs += elapsed;
+    cur.count++;
+    speedByUser.set(s.signerUser.id, cur);
+  }
+  const userSpeeds = Array.from(speedByUser.values())
+    .map((u) => ({
+      name: u.name,
+      avgHours: u.totalMs / u.count / 3600000,
+    }))
+    .sort((a, b) => a.avgHours - b.avgHours)
+    .slice(0, 5);
+  const overallAvgHours =
+    userSpeeds.length > 0
+      ? userSpeeds.reduce((s, u) => s + u.avgHours, 0) / userSpeeds.length
+      : 0;
 
   return (
     <div
@@ -455,6 +500,93 @@ export default async function ReportsPage() {
           >
             AI auto-fill ลดเวลากรอกเอกสารจาก 12 นาที → 2 นาที · ใช้ไป {aiAnalyses} ครั้งปีนี้
           </p>
+        </DfCard>
+
+        {/* Signing speed per user — canvas DesktopReports bottom row */}
+        <DfCard padding={18}>
+          <DfEyebrow>ความเร็วในการเซ็น</DfEyebrow>
+          <div
+            className="df-tnum df-serif"
+            style={{
+              fontSize: 38,
+              fontWeight: 600,
+              color:
+                overallAvgHours <= 4
+                  ? "var(--df-success)"
+                  : overallAvgHours <= 12
+                    ? "var(--df-warn)"
+                    : "var(--df-danger)",
+              lineHeight: 1,
+              marginBottom: 4,
+              marginTop: 10,
+            }}
+          >
+            {overallAvgHours.toFixed(1)}
+            <span style={{ fontSize: 14, color: "var(--df-muted)", marginLeft: 4 }}>
+              ชม.
+            </span>
+          </div>
+          <p
+            style={{
+              fontSize: 11,
+              color: "var(--df-muted)",
+              marginBottom: 12,
+              marginTop: 0,
+            }}
+          >
+            เฉลี่ยต่อคน · ตามลายเซ็นที่บันทึก
+          </p>
+          {userSpeeds.length === 0 ? (
+            <p
+              style={{
+                fontSize: 12,
+                color: "var(--df-muted)",
+                marginTop: 4,
+                marginBottom: 0,
+              }}
+            >
+              ยังไม่มีข้อมูล — รอลายเซ็นแรก
+            </p>
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+                fontSize: 12,
+              }}
+            >
+              {userSpeeds.map((u, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    padding: "5px 0",
+                    borderBottom:
+                      i < userSpeeds.length - 1
+                        ? "1px solid var(--df-line-soft)"
+                        : "none",
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>{u.name}</span>
+                  <span
+                    className="df-tnum"
+                    style={{
+                      color:
+                        u.avgHours <= 2
+                          ? "var(--df-success)"
+                          : u.avgHours <= 8
+                            ? "var(--df-muted)"
+                            : "var(--df-warn)",
+                    }}
+                  >
+                    {u.avgHours.toFixed(1)} ชม.
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </DfCard>
 
         <DfCard padding={18}>
