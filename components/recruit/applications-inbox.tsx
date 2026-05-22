@@ -275,7 +275,10 @@ export async function ApplicationsInbox({
               {currentStatus && (
                 <>
                   {" · "}
-                  <Badge tone={STATUS_TONE[currentStatus]}>{STATUS_LABELS[currentStatus]}</Badge>
+                  <Badge tone={STATUS_TONE[currentStatus]}>
+                    <span className="size-1.5 rounded-full bg-current opacity-70" />
+                    {STATUS_LABELS[currentStatus]}
+                  </Badge>
                 </>
               )}
             </p>
@@ -450,7 +453,15 @@ function FilterLink({
   count?: number;
   active?: boolean;
   /** Color tone — accepted by callers; currently unused by render but reserved for future styling. */
-  tone?: "neutral" | "brand" | "warning" | "success" | "danger" | "info";
+  tone?:
+    | "neutral"
+    | "brand"
+    | "warning"
+    | "success"
+    | "danger"
+    | "info"
+    | "orange"
+    | "purple";
   truncate?: boolean;
 }) {
   return (

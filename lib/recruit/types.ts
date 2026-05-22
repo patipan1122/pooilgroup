@@ -130,14 +130,16 @@ export const STATUS_LABELS: Record<ApplicationStatus, string> = {
   WITHDRAWN: "ถอน",
 };
 
+// Status tone — aligned with Recruit Redesign canvas 2026-05-22
+// canvas: NEW=blue · SCREEN=amber · INTERVIEW=orange · OFFER=purple · HIRED=green · REJECTED=red
 export const STATUS_TONE: Record<
   ApplicationStatus,
-  "neutral" | "brand" | "warning" | "success" | "danger" | "info"
+  "neutral" | "brand" | "warning" | "success" | "danger" | "info" | "orange" | "purple"
 > = {
   NEW: "brand",
-  SCREENING: "info",
-  INTERVIEW: "warning",
-  OFFERED: "warning",
+  SCREENING: "warning",
+  INTERVIEW: "orange",
+  OFFERED: "purple",
   HIRED: "success",
   REJECTED: "danger",
   WITHDRAWN: "neutral",
@@ -159,6 +161,16 @@ export const POSTING_STATUS_LABELS: Record<PostingStatus, string> = {
   OPEN: "เปิดรับ",
   CLOSED: "ปิดรับ",
   ARCHIVED: "เก็บถาวร",
+};
+
+export const POSTING_STATUS_TONE: Record<
+  PostingStatus,
+  "neutral" | "success" | "warning"
+> = {
+  DRAFT: "neutral",
+  OPEN: "success",
+  CLOSED: "warning",
+  ARCHIVED: "neutral",
 };
 
 // Helper: get all fields flat (across sections)

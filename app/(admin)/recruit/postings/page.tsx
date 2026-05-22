@@ -171,9 +171,9 @@ function PostingCard({ posting }: { posting: PostingWithStats }) {
 
   return (
     <div
-      className={`relative rounded-3xl border-2 bg-white p-5 transition-colors group flex flex-col gap-3 ${
+      className={`relative rounded-3xl border-2 bg-white p-5 transition-all group flex flex-col gap-3 hover:shadow-[0_4px_12px_rgba(15,23,42,0.06)] ${
         urgent
-          ? "border-amber-300 bg-gradient-to-b from-amber-50/40 to-white"
+          ? "border-[#f5b800] bg-gradient-to-b from-[#fffbeb] to-white"
           : "border-zinc-200 hover:border-[var(--color-brand-300)]"
       }`}
     >
@@ -181,6 +181,7 @@ function PostingCard({ posting }: { posting: PostingWithStats }) {
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <Badge tone={STATUS_TONE[posting.status as PostingStatus]}>
+            <span className="size-1.5 rounded-full bg-current opacity-70" />
             {POSTING_STATUS_LABELS[posting.status as PostingStatus]}
           </Badge>
           {urgent && (

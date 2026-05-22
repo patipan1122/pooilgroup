@@ -103,7 +103,10 @@ export async function ApplicationDetail({ applicationId, canWrite }: Props) {
                 </span>
                 <span className="text-zinc-300">·</span>
                 <span className="text-xs text-zinc-600">{app.posting.title}</span>
-                <Badge tone={STATUS_TONE[status]}>{STATUS_LABELS[status]}</Badge>
+                <Badge tone={STATUS_TONE[status]}>
+                  <span className="size-1.5 rounded-full bg-current opacity-70" />
+                  {STATUS_LABELS[status]}
+                </Badge>
               </div>
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-zinc-900 font-display leading-tight">
                 {app.applicant.fullName}

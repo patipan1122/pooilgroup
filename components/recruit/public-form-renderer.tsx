@@ -33,6 +33,32 @@ interface Props {
   preview?: boolean;
   /** Initial draft (from localStorage) */
   initialAnswers?: Record<string, unknown>;
+  /** Skip internal header (used when caller provides its own hero) */
+  hideHeader?: boolean;
+}
+
+// Canvas section accent colors — brand → orange → purple → green cycle.
+// Maps to canvas Screen 03-8 review (Section 1-2 brand, 3-4 orange, 5 purple, 6 green).
+const SECTION_DOT_CLASSES = [
+  "bg-[var(--color-brand-500)]",
+  "bg-orange-500",
+  "bg-purple-500",
+  "bg-green-500",
+];
+const SECTION_TEXT_CLASSES = [
+  "text-[var(--color-brand-700)]",
+  "text-orange-700",
+  "text-purple-700",
+  "text-green-700",
+];
+
+function sectionAccent(title: string, index: number) {
+  const t = title.toLowerCase();
+  if (/iq|ทดสอบ|quiz|สถานการณ์/.test(t)) return 2; // purple
+  if (/ไฟล์|แนบ|รูป|ภาพ|เอกสาร|file|photo/.test(t)) return 3; // green
+  if (/ประสบการณ์|ทักษะ|skill|experience/.test(t)) return 1; // orange
+  if (index <= 1) return 0; // brand
+  return index % SECTION_DOT_CLASSES.length;
 }
 
 export function PublicFormRenderer({
@@ -45,6 +71,7 @@ export function PublicFormRenderer({
   disabled,
   preview,
   initialAnswers,
+  hideHeader,
 }: Props) {
   const [answers, setAnswers] = useState<Record<string, unknown>>(
     initialAnswers ?? {},
@@ -237,24 +264,28 @@ export function PublicFormRenderer({
         aria-hidden
       />
 
-      {/* Header */}
-      <header className="text-center pb-4 border-b border-zinc-200">
-        <p className="text-xs font-bold text-[var(--color-brand-700)]">
-          {companyName}
-        </p>
-        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight font-display mt-2 text-zinc-900">
-          {jobTitle}
-        </h1>
-        {jobDescription && (
-          <p className="text-sm text-zinc-600 mt-3 leading-relaxed whitespace-pre-wrap">
-            {jobDescription}
+      {/* Header — hidden when caller provides hero (e.g. /apply page) */}
+      {!hideHeader && (
+        <header className="text-center pb-4 border-b border-zinc-200">
+          <p className="text-xs font-bold text-[var(--color-brand-700)]">
+            {companyName}
           </p>
-        )}
-      </header>
+          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight font-display mt-2 text-zinc-900">
+            {jobTitle}
+          </h1>
+          {jobDescription && (
+            <p className="text-sm text-zinc-600 mt-3 leading-relaxed whitespace-pre-wrap">
+              {jobDescription}
+            </p>
+          )}
+        </header>
+      )}
 
-      {/* Applicant top fields */}
+      {/* Applicant top fields — section "00 · ข้อมูลติดต่อ" */}
       <section className="space-y-3">
-        <p className="text-sm font-bold text-zinc-700">
+        <p className="flex items-center gap-2 text-sm font-bold text-[var(--color-brand-700)]">
+          <span className="size-2 rounded-full bg-[var(--color-brand-500)]" />
+          <span className="text-zinc-400 tabular-num text-xs">01</span>
           ข้อมูลติดต่อ
         </p>
         <Field label="ชื่อ-นามสกุล" required>
@@ -296,32 +327,36 @@ export function PublicFormRenderer({
         </div>
       </section>
 
-      {/* Sections from schema */}
-      {schema.sections.map((section, idx) => (
-        <section key={section.id}>
-          <p className="text-sm font-bold text-zinc-700 mb-3">
-            <span className="text-zinc-400 tabular-num mr-1.5">
-              {String(idx + 1).padStart(2, "0")}
-            </span>
-            {section.title}
-          </p>
-          <div className="space-y-3">
-            {section.fields.map((field) => (
-              <FieldInput
-                key={field.id}
-                field={field}
-                value={answers[field.id]}
-                onChange={(v) => setAnswer(field.id, v)}
-                error={errors[field.id]}
-                files={files[field.id] ?? []}
-                onUpload={(file) => uploadFile(field.id, file)}
-                onRemoveFile={(key) => removeFile(field.id, key)}
-                disabled={disabled}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
+      {/* Sections from schema — colored dot per canvas Screen 03-8 */}
+      {schema.sections.map((section, idx) => {
+        const accent = sectionAccent(section.title, idx + 1);
+        return (
+          <section key={section.id}>
+            <p className={`flex items-center gap-2 text-sm font-bold mb-3 ${SECTION_TEXT_CLASSES[accent]}`}>
+              <span className={`size-2 rounded-full ${SECTION_DOT_CLASSES[accent]}`} />
+              <span className="text-zinc-400 tabular-num text-xs">
+                {String(idx + 2).padStart(2, "0")}
+              </span>
+              {section.title}
+            </p>
+            <div className="space-y-3">
+              {section.fields.map((field) => (
+                <FieldInput
+                  key={field.id}
+                  field={field}
+                  value={answers[field.id]}
+                  onChange={(v) => setAnswer(field.id, v)}
+                  error={errors[field.id]}
+                  files={files[field.id] ?? []}
+                  onUpload={(file) => uploadFile(field.id, file)}
+                  onRemoveFile={(key) => removeFile(field.id, key)}
+                  disabled={disabled}
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })}
 
       {/* PDPA consent */}
       <div className="rounded-2xl border border-zinc-200 bg-zinc-50/40 p-4">
@@ -340,11 +375,11 @@ export function PublicFormRenderer({
         </label>
       </div>
 
-      {/* Submit */}
+      {/* Submit — canvas-style elevated CTA with brand-shadow */}
       <button
         type="submit"
         disabled={disabled || submitting || !consent}
-        className="w-full h-14 rounded-2xl bg-[var(--color-brand-600)] text-white font-extrabold text-base hover:bg-[var(--color-brand-700)] disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
+        className="w-full h-14 rounded-2xl bg-[var(--color-brand-600)] text-white font-extrabold text-base hover:bg-[var(--color-brand-700)] disabled:opacity-40 transition-all flex items-center justify-center gap-2 shadow-[0_6px_16px_rgba(30,58,255,0.25)] disabled:shadow-none"
       >
         {submitting ? (
           <>
@@ -354,11 +389,15 @@ export function PublicFormRenderer({
         ) : preview ? (
           "ตัวอย่าง — ปุ่มส่งจะใช้ได้ตอนผู้สมัครจริง"
         ) : (
-          "✓ ส่งใบสมัคร"
+          <>
+            ส่งใบสมัคร
+            <span aria-hidden>→</span>
+          </>
         )}
       </button>
-      <p className="text-xs text-zinc-500 text-center">
-        กรอกบนมือถือต่อจากคอมพิวเตอร์ได้ · ระบบบันทึกอัตโนมัติ
+      <p className="text-xs text-zinc-500 text-center inline-flex items-center justify-center gap-1.5 w-full">
+        <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+        บันทึกอัตโนมัติทุกครั้งที่กรอก · กลับมาต่อจากเครื่องอื่นได้
       </p>
     </form>
   );

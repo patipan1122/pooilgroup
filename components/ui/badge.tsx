@@ -1,15 +1,25 @@
 import { cn } from "@/lib/utils/cn";
 import type { HTMLAttributes } from "react";
 
-type Tone = "neutral" | "brand" | "success" | "warning" | "danger" | "info";
+type Tone =
+  | "neutral"
+  | "brand"
+  | "success"
+  | "warning"
+  | "danger"
+  | "info"
+  | "orange"
+  | "purple";
 
 const tones: Record<Tone, string> = {
   neutral: "bg-zinc-100 text-zinc-700",
   brand: "bg-[var(--color-brand-50)] text-[var(--color-brand-700)]",
   success: "bg-green-50 text-green-700",
-  warning: "bg-amber-50 text-amber-700",
+  warning: "bg-amber-50 text-amber-800",
   danger: "bg-red-50 text-red-700",
   info: "bg-blue-50 text-blue-700",
+  orange: "bg-orange-50 text-orange-700",
+  purple: "bg-purple-50 text-purple-700",
 };
 
 export function Badge({
