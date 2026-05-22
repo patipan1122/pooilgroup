@@ -10,7 +10,10 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { changeApplicationStatus } from "@/lib/recruit/actions";
+import {
+  changeApplicationStatus,
+  addApplicationNote,
+} from "@/lib/recruit/actions";
 import { ChevronLeft, Check, X, Eye, Sparkles, ShieldAlert, Star } from "lucide-react";
 
 interface Application {
@@ -56,7 +59,14 @@ export function TriageStack({
           setStats((s) => ({ ...s, rejected: s.rejected + 1 }));
           toast.success(`${current.applicantName} → ไม่ผ่าน`, { duration: 1500 });
         } else {
+          // Skip = persist as timeline note so HR sees deferral history
+          // (status stays NEW so applicant remains in inbox for full review)
+          await addApplicationNote(
+            current.id,
+            "[NOTE] HR ข้ามจาก triage · รอตรวจรายละเอียดอีกครั้ง",
+          );
           setStats((s) => ({ ...s, skipped: s.skipped + 1 }));
+          toast.success(`${current.applicantName} → บันทึก "ข้าม"`, { duration: 1500 });
         }
         setQueue((q) => q.slice(1));
       } catch (e) {

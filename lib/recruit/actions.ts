@@ -105,6 +105,15 @@ export async function updatePosting(
     data,
   });
 
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "RECRUIT_POSTING_UPDATED",
+    resourceType: "recruit_job_posting",
+    resourceId: postingId,
+    diff: { new: Object.keys(data).reduce((acc, k) => ({ ...acc, [k]: true }), {}) },
+  });
+
   revalidatePath("/recruit/postings");
   revalidatePath(`/recruit/postings/${postingId}`);
 }

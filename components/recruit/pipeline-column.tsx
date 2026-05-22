@@ -25,6 +25,24 @@ interface AppCard {
   flagged: boolean;
   refId: string;
   tags?: string[];
+  updatedAt?: string | null;
+}
+
+// Per-stage SLA in days — overdue indicator triggers when status hasn't
+// moved within this window (canvas Section 05A red border + 🔥 flag).
+const STAGE_SLA_DAYS: Partial<Record<ApplicationStatus, number>> = {
+  NEW: 3,
+  SCREENING: 5,
+  INTERVIEW: 7,
+  OFFERED: 5,
+};
+
+function isOverdue(status: ApplicationStatus, updatedAt: string | null | undefined): boolean {
+  if (!updatedAt) return false;
+  const sla = STAGE_SLA_DAYS[status];
+  if (!sla) return false;
+  const days = (Date.now() - new Date(updatedAt).getTime()) / (1000 * 60 * 60 * 24);
+  return days > sla;
 }
 
 interface Props {
@@ -102,8 +120,21 @@ function ApplicationCard({
     });
   }
 
+  const overdue = isOverdue(currentStatus, app.updatedAt);
+
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-2.5 hover:border-[var(--color-brand-400)] transition-colors">
+    <div
+      className={`rounded-xl p-2.5 transition-colors ${
+        overdue
+          ? "border-2 border-red-300 bg-gradient-to-br from-red-50 to-white"
+          : "border border-zinc-200 bg-white hover:border-[var(--color-brand-400)]"
+      }`}
+    >
+      {overdue && (
+        <div className="mb-1.5 inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded">
+          🔥 เกิน SLA
+        </div>
+      )}
       <Link href={cardHref} className="block">
         <div className="flex items-start justify-between gap-1.5">
           <p className="font-bold text-zinc-900 text-sm truncate flex-1">

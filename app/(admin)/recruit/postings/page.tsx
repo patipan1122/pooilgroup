@@ -302,19 +302,24 @@ function MiniFunnel({
         />
       </div>
       <div className="flex justify-between mt-2 text-[11px] text-zinc-600">
-        <span>
+        <span className="inline-flex items-center gap-1">
+          <span className="size-1.5 rounded-full bg-[var(--color-brand-500)]" />
           <b className="text-zinc-900 tabular-num">{apply}</b> สมัคร
         </span>
-        <span>
+        <span className="inline-flex items-center gap-1">
+          <span className="size-1.5 rounded-full bg-amber-400" />
           คัด <b className="tabular-num">{screen}</b>
         </span>
-        <span>
+        <span className="inline-flex items-center gap-1">
+          <span className="size-1.5 rounded-full bg-orange-500" />
           สัมภาษณ์ <b className="tabular-num">{interview}</b>
         </span>
-        <span>
+        <span className="inline-flex items-center gap-1">
+          <span className="size-1.5 rounded-full bg-purple-500" />
           เสนอ <b className="tabular-num">{offer}</b>
         </span>
-        <span>
+        <span className="inline-flex items-center gap-1">
+          <span className="size-1.5 rounded-full bg-green-500" />
           รับ <b className="tabular-num text-green-700">{hired}</b>
         </span>
       </div>

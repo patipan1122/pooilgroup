@@ -66,28 +66,11 @@ export async function sendMessage(input: SendMessageInput) {
     },
   });
 
-  // Attempt actual delivery for channels we can deliver
-  let deliveryError: string | null = null;
-  if (input.channel === "EMAIL") {
-    try {
-      // Reuse existing email infra (Resend)
-      const { sendStatusEmail: _sendStatusEmail } = await import("./email");
-      // sendStatusEmail is templated · we don't want that for ad-hoc messages.
-      // For Phase 2 we'll add a generic sendEmail. For now mark as SENT
-      // optimistically and add a TODO note in audit.
-      await prisma.recruitMessage.update({
-        where: { id: msg.id },
-        data: { status: "SENT", sentAt: new Date() },
-      });
-    } catch (e) {
-      deliveryError = (e as Error).message;
-      await prisma.recruitMessage.update({
-        where: { id: msg.id },
-        data: { status: "FAILED", errorMessage: deliveryError },
-      });
-    }
-  }
-  // LINE / SMS: stay as QUEUED · webhook integration is Phase 2
+  // Delivery status — only INAPP is sent immediately.
+  // EMAIL / LINE / SMS stay QUEUED until external integration ships (Phase 2).
+  // Keeping all 3 channels in the same QUEUED state avoids the "false SENT"
+  // pattern where the UI shows ✓ Sent but no email actually goes out.
+  const deliveryError: string | null = null;
 
   await audit({
     orgId: app.orgId,
@@ -104,14 +87,16 @@ export async function sendMessage(input: SendMessageInput) {
 }
 
 export async function listThreads(orgId: string) {
-  // SA fix #13: validate orgId matches session to prevent cross-org leak
+  // Strict org isolation — even super_admin must pass their own org_id from
+  // a tenant-aware switcher. Bypassing this previously created a cross-org
+  // leak (see wiring audit 2026-05-22 Bug #4).
   const session = await requireSession();
-  if (orgId !== session.user.org_id && session.user.role !== "super_admin") {
-    throw new Error("ไม่มีสิทธิ์");
+  if (orgId !== session.user.org_id) {
+    throw new Error("ไม่มีสิทธิ์ดูข้อความองค์กรอื่น");
   }
   // Group messages by application · take most recent per app
   const messages = await prisma.recruitMessage.findMany({
-    where: { orgId },
+    where: { orgId: session.user.org_id },
     orderBy: { createdAt: "desc" },
     take: 200,
     include: {

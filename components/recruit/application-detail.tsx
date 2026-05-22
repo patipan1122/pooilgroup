@@ -255,7 +255,18 @@ function AIScoreCard({
               strokeDasharray={circumference}
               strokeDashoffset={offset}
               strokeLinecap="round"
-            />
+            >
+              {/* Canvas Section 02B — animate fill on mount */}
+              <animate
+                attributeName="stroke-dashoffset"
+                from={circumference}
+                to={offset}
+                dur="0.9s"
+                fill="freeze"
+                calcMode="spline"
+                keySplines="0 0 0.2 1"
+              />
+            </circle>
           </svg>
           <span
             className={`absolute inset-0 flex items-center justify-center text-xl font-extrabold font-display ${color}`}

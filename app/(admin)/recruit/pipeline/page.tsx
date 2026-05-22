@@ -320,6 +320,7 @@ export default async function PipelinePage({
                     flagged: a.flaggedBlacklist,
                     refId: a.refId,
                     tags: a.tags ?? [],
+                    updatedAt: (a.updatedAt ?? a.submittedAt ?? a.createdAt)?.toISOString() ?? null,
                   }))}
                   canWrite={canWrite}
                   selectHref={(id) =>

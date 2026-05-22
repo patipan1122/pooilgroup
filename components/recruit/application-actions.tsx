@@ -19,7 +19,8 @@ import {
   setApplicationRating,
   setApplicationTags,
 } from "@/lib/recruit/actions";
-import { Star, X, Plus } from "lucide-react";
+import { applyRulesToApplication } from "@/lib/recruit/rule-actions";
+import { Star, X, Plus, Zap, Loader2 } from "lucide-react";
 import { ScheduleInterviewButton } from "./schedule-interview-button";
 
 interface Props {
@@ -41,6 +42,26 @@ export function ApplicationActions({
   const [tagInput, setTagInput] = useState("");
   const [tagColor, setTagColor] = useState<TagColor>("green");
   const [isPending, startTransition] = useTransition();
+  const [applyingRules, setApplyingRules] = useState(false);
+
+  function runAllRules() {
+    if (applyingRules) return;
+    setApplyingRules(true);
+    startTransition(async () => {
+      try {
+        const res = await applyRulesToApplication(applicationId);
+        if (res.applied.length === 0) {
+          toast.info("ไม่มีกฎที่ตรงกับใบสมัครนี้");
+        } else {
+          toast.success(`ใช้กฎ ${res.applied.length} ข้อ: ${res.applied.join(" · ")}`);
+        }
+      } catch (e) {
+        toast.error((e as Error).message);
+      } finally {
+        setApplyingRules(false);
+      }
+    });
+  }
 
   function changeStatus(next: ApplicationStatus) {
     if (next === status) return;
@@ -106,7 +127,23 @@ export function ApplicationActions({
       {/* Quick action row */}
       <div className="flex items-center justify-between gap-2 pb-3 border-b border-zinc-100">
         <p className="text-xs font-bold text-zinc-700">การดำเนินการ</p>
-        <ScheduleInterviewButton applicationId={applicationId} />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={runAllRules}
+            disabled={applyingRules || isPending}
+            title="ใช้กฎคัดอัตโนมัติทั้งหมดกับใบสมัครนี้"
+            className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-xs font-bold border border-amber-200 bg-gradient-to-br from-amber-50 to-white text-amber-800 hover:bg-amber-100 disabled:opacity-50 transition-colors"
+          >
+            {applyingRules ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Zap className="size-3.5" />
+            )}
+            ใช้กฎทั้งหมด
+          </button>
+          <ScheduleInterviewButton applicationId={applicationId} />
+        </div>
       </div>
 
       {/* Status pill row */}
