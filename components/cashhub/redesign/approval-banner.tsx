@@ -65,7 +65,7 @@ export async function ApprovalBanner({ orgId }: Props) {
       )}
       {requests > 0 && (
         <Link
-          href="/admin/users"
+          href="/users/requests"
           className="inline-flex items-center gap-1 bg-white/15 text-white px-3 py-1 rounded-md text-xs font-semibold hover:bg-white/25 transition-colors"
         >
           คำขอเข้าใช้งาน <ChevronRight className="size-3" />
