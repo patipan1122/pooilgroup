@@ -1,5 +1,5 @@
 "use client";
-
+// Pooil App · public track-form (uses .rf-* classes)
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { trackLookup } from "@/lib/repair/actions";
@@ -20,10 +20,7 @@ export function TrackForm({
     setError(null);
     startTransition(async () => {
       const r = await trackLookup({ ticketCode: code, phone });
-      if (!r.ok) {
-        setError(r.error);
-        return;
-      }
+      if (!r.ok) { setError(r.error); return; }
       router.push(
         `/r/track/${encodeURIComponent(code.toUpperCase())}?p=${encodeURIComponent(phone)}`,
       );
@@ -33,49 +30,58 @@ export function TrackForm({
   return (
     <form
       onSubmit={submit}
-      className="rounded-3xl border border-zinc-200 bg-white p-5 sm:p-6 space-y-4"
+      style={{
+        background: "white", border: "1px solid #E5EAF2",
+        borderRadius: 24, padding: 24,
+        display: "flex", flexDirection: "column", gap: 14,
+      }}
     >
       <div>
-        <label className="text-[12.5px] font-bold text-zinc-800">เลขที่ใบ</label>
+        <label style={{ fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 6, display: "block" }}>
+          เลขที่ใบ
+        </label>
         <input
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          required
-          autoFocus
+          required autoFocus
           placeholder="RP-2569-0001"
-          className="mt-1.5 w-full h-12 px-3.5 rounded-xl border-[1.5px] border-zinc-200 bg-white text-zinc-900 font-mono font-bold focus:border-blue-400 focus:ring-4 focus:ring-blue-100 outline-none uppercase"
+          className="rf-input"
+          style={{
+            fontFamily: "IBM Plex Mono, ui-monospace, monospace",
+            fontWeight: 700, textTransform: "uppercase",
+          }}
         />
-        <p className="mt-1 text-[11.5px] text-zinc-500">รูปแบบ RP-25YY-NNNN</p>
+        <p style={{ marginTop: 4, fontSize: 11, color: "#94A3B8" }}>รูปแบบ RP-25YY-NNNN</p>
       </div>
       <div>
-        <label className="text-[12.5px] font-bold text-zinc-800">
+        <label style={{ fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 6, display: "block" }}>
           เบอร์โทรที่ใช้ตอนแจ้ง
         </label>
         <input
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
-          required
-          inputMode="tel"
+          required inputMode="tel"
           placeholder="08x-xxx-xxxx"
-          className="mt-1.5 w-full h-12 px-3.5 rounded-xl border-[1.5px] border-zinc-200 bg-white text-zinc-900 font-medium focus:border-blue-400 focus:ring-4 focus:ring-blue-100 outline-none"
+          className="rf-input"
         />
       </div>
       {error && (
-        <div className="rounded-xl bg-red-50 border border-red-200 p-3 flex gap-2 text-red-800 text-[12.5px]">
-          <AlertCircle className="size-4 flex-shrink-0 mt-0.5" />
+        <div style={{
+          background: "#FEF2F2", border: "1px solid #FECACA",
+          borderRadius: 12, padding: 12,
+          display: "flex", gap: 8, alignItems: "flex-start",
+          color: "#B91C1C", fontSize: 12.5,
+        }}>
+          <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
           <span>{error}</span>
         </div>
       )}
       <button
         type="submit"
         disabled={isPending}
-        className="w-full h-12 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2 shadow-md shadow-blue-600/20"
+        className="rf-btn primary"
       >
-        {isPending ? (
-          <Loader2 className="size-5 animate-spin" />
-        ) : (
-          <Search className="size-5" />
-        )}
+        {isPending ? <Loader2 size={18} /> : <Search size={18} />}
         ดูสถานะ
       </button>
     </form>

@@ -1,33 +1,40 @@
-// Server component renderer for a single ticket (Pooil App redesign · รอบ 49)
-// Shared between Triage inbox right pane and /repairs/[id] standalone page.
+// Pooil App · single-ticket detail panel. Uses design's .detail-*, .timeline,
+// .cost-row, .composer, .photos classes. Server component.
 import Link from "next/link";
 import {
   STATUS_LABELS,
-  STATUS_COLORS,
   URGENCY_LABELS,
-  URGENCY_COLORS,
   PHOTO_PHASE_LABELS,
   EVENT_KIND_LABELS,
   PART_STATUS_LABELS,
-  PART_STATUS_COLORS,
   formatBaht,
   totalTicketCost,
   downtimeCostBaht,
 } from "@/lib/repair/types";
-import { slaStatusFor, slaBadgeColor, slaBadgeLabel } from "@/lib/repair/sla";
+
+function partStatusClass(s: "NEEDED" | "ORDERED" | "DELIVERED" | "INSTALLED" | "CANCELLED"): string {
+  switch (s) {
+    case "NEEDED": return "pill-approval";
+    case "ORDERED": return "pill-new";
+    case "DELIVERED": return "pill-assess";
+    case "INSTALLED": return "pill-done";
+    default: return "pill-low";
+  }
+}
+import { slaStatusFor, slaBadgeLabel } from "@/lib/repair/sla";
 import { TicketActions } from "./ticket-actions";
 import {
   Clock,
-  MapPin,
   User,
   Phone,
   Camera,
   MessageSquare,
-  PackageSearch,
   ExternalLink,
-  AlarmClock,
-  Flame,
   Building2,
+  Flame,
+  Send,
+  MapPin,
+  Plus,
 } from "lucide-react";
 import type {
   RepairTicketStatus,
@@ -49,6 +56,16 @@ interface Props {
   canAdmin: boolean;
 }
 
+const STATUS_CLS: Record<RepairTicketStatus, string> = {
+  NEW: "pill-new",
+  ACK: "pill-assess",
+  IN_PROGRESS: "pill-approval",
+  WAITING_PARTS: "pill-parts",
+  RESOLVED: "pill-done",
+  CLOSED: "pill-done",
+  CANCELLED: "pill-low",
+};
+
 function fmtDateTime(d: Date | string | null): string {
   if (!d) return "—";
   return new Intl.DateTimeFormat("th-TH", {
@@ -57,23 +74,8 @@ function fmtDateTime(d: Date | string | null): string {
   }).format(typeof d === "string" ? new Date(d) : d);
 }
 
-const STATUS_DOT: Record<string, string> = {
-  NEW: "bg-blue-500",
-  ACK: "bg-violet-500",
-  IN_PROGRESS: "bg-amber-500",
-  WAITING_PARTS: "bg-cyan-500",
-  RESOLVED: "bg-emerald-500",
-  CLOSED: "bg-zinc-400",
-  CANCELLED: "bg-zinc-300",
-};
-
 const STATUS_PIPELINE: RepairTicketStatus[] = [
-  "NEW",
-  "ACK",
-  "IN_PROGRESS",
-  "WAITING_PARTS",
-  "RESOLVED",
-  "CLOSED",
+  "NEW", "ACK", "IN_PROGRESS", "WAITING_PARTS", "RESOLVED", "CLOSED",
 ];
 
 export function TicketDetailPanel({
@@ -93,441 +95,489 @@ export function TicketDetailPanel({
     ticket.status !== "RESOLVED" &&
     ticket.status !== "CLOSED" &&
     ticket.status !== "CANCELLED";
-
   const pipelineIdx = STATUS_PIPELINE.indexOf(ticket.status as RepairTicketStatus);
+  const currentStatus = ticket.status as RepairTicketStatus;
 
   return (
-    <div className="p-4 sm:p-5 space-y-5">
-      {/* Top bar — pills + open-fullpage link */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <p className="font-mono font-extrabold text-[15px] text-zinc-900">
-            {ticket.ticketCode}
-          </p>
+    <>
+      {/* head */}
+      <div className="detail-head">
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span className="detail-id">{ticket.ticketCode}</span>
           <Link
             href={`/repairs/${ticket.id}`}
-            className="text-[11px] text-zinc-500 hover:text-zinc-900 inline-flex items-center gap-1"
+            className="btn btn-ghost btn-sm"
             title="เปิดเต็มหน้า"
+            style={{ padding: "2px 6px" }}
           >
-            <ExternalLink className="size-3" />
-            เต็มหน้า
+            <ExternalLink size={11} /> เต็มหน้า
           </Link>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          <span
-            className={`inline-flex items-center gap-1 px-2 h-6 rounded text-[11px] font-bold border ${STATUS_COLORS[ticket.status as RepairTicketStatus]}`}
-          >
-            <span className={`size-1.5 rounded-full ${STATUS_DOT[ticket.status]}`} />
-            {STATUS_LABELS[ticket.status as RepairTicketStatus]}
+          <span className={"pill " + STATUS_CLS[currentStatus]}>
+            <span className="dot" />
+            {STATUS_LABELS[currentStatus]}
           </span>
-          <span
-            className={`inline-flex items-center px-2 h-6 rounded text-[11px] font-bold border ${URGENCY_COLORS[ticket.urgency as RepairUrgency]}`}
-          >
-            {ticket.urgency === "URGENT" && <Flame className="size-3 mr-1" />}
+          <span className={
+            "pill " +
+            (ticket.urgency === "URGENT" ? "pill-urgent" :
+             ticket.urgency === "NORMAL" ? "pill-normal" : "pill-low")
+          }>
+            {ticket.urgency === "URGENT" && <Flame size={10} style={{ marginRight: 2 }} />}
             {URGENCY_LABELS[ticket.urgency as RepairUrgency]}
           </span>
+          <span style={{ flex: 1 }} />
           {sla !== "done" && (
-            <span
-              className={`inline-flex items-center gap-1 px-2 h-6 rounded text-[11px] font-bold border ${slaBadgeColor(sla)}`}
-            >
-              <Clock className="size-3" />
+            <span className={"sla " + sla}>
+              <Clock />
               {slaBadgeLabel(sla, ticket.resolveDueAt)}
             </span>
           )}
         </div>
-      </div>
-
-      {/* Title + description */}
-      <div>
-        <h2 className="text-[20px] sm:text-[22px] font-extrabold tracking-tight text-zinc-900 leading-snug">
-          {ticket.title}
-        </h2>
-        {ticket.description && (
-          <p className="mt-2 text-[13.5px] text-zinc-700 leading-relaxed whitespace-pre-wrap">
-            {ticket.description}
-          </p>
-        )}
-        {ticket.customerImpact && (
-          <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-[13px]">
-            <p className="font-bold text-amber-900">⚠️ ผลกระทบลูกค้า</p>
-            <p className="text-amber-800 mt-0.5">{ticket.customerImpact}</p>
-          </div>
-        )}
-        {downtime > 0 && (
-          <div
-            className={`mt-3 rounded-lg border p-3 text-[13px] flex items-baseline justify-between gap-3 ${
-              isOpen ? "bg-red-50 border-red-200" : "bg-zinc-50 border-zinc-200"
-            }`}
-          >
-            <div>
-              <p
-                className={`font-bold text-[13px] ${
-                  isOpen ? "text-red-700" : "text-zinc-600"
-                }`}
-              >
-                {isOpen ? "🔥 ค่าเสียโอกาส (สดๆ)" : "💰 ค่าเสียโอกาสรวม"}
-              </p>
-              <p className="text-[11px] text-zinc-500 mt-0.5">
-                ประมาณจากชนิดสาขา · ทุก ชม. ที่ใบยังเปิด
-              </p>
-            </div>
-            <p
-              className={`font-extrabold text-[20px] tabular-nums ${
-                isOpen ? "text-red-700" : "text-zinc-700"
-              }`}
-            >
-              {formatBaht(downtime * 100)}
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* Status pipeline visualization */}
-      {ticket.status !== "CANCELLED" && (
-        <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-3">
-          <div className="text-[10.5px] font-bold uppercase tracking-wide text-zinc-500 mb-2">
-            สถานะปัจจุบัน
-          </div>
-          <div className="flex items-center gap-1">
-            {STATUS_PIPELINE.map((s, i) => {
-              const isCurrent = i === pipelineIdx;
-              const isPast = i < pipelineIdx;
-              return (
-                <div key={s} className="flex-1 flex items-center gap-1 min-w-0">
-                  <div className="flex-1 min-w-0">
-                    <div
-                      className={`h-1.5 rounded-full ${
-                        isPast || isCurrent ? "bg-blue-500" : "bg-zinc-200"
-                      }`}
-                    />
-                    <p
-                      className={`mt-1 text-[10px] font-semibold leading-tight truncate ${
-                        isCurrent ? "text-blue-700" : isPast ? "text-zinc-700" : "text-zinc-400"
-                      }`}
-                    >
-                      {STATUS_LABELS[s]}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Meta grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[13px]">
-        {ticket.branch && (
-          <Meta
-            icon={<Building2 className="size-3.5 text-zinc-500" />}
-            label="สาขา"
-          >
-            <span className="font-mono font-bold text-zinc-700">{ticket.branch.code}</span>{" "}
-            {ticket.branch.name}
-          </Meta>
-        )}
-        {ticket.category && (
-          <Meta icon={<span>{ticket.category.emoji ?? "🛠"}</span>} label="หมวด">
-            {ticket.category.label}
-          </Meta>
-        )}
-        {ticket.assignedTech && (
-          <Meta icon={<User className="size-3.5 text-zinc-500" />} label="ช่าง">
-            {ticket.assignedTech.name}
-            {ticket.assignedTech.kind === "VENDOR" && (
-              <span className="ml-1 text-[10px] bg-violet-50 text-violet-700 px-1 py-px rounded font-bold">
-                VENDOR
+        <h2 className="detail-title">{ticket.title}</h2>
+        <div className="detail-meta-row">
+          {ticket.branch && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <Building2 size={12} />
+              <span className="num" style={{ fontWeight: 600, color: "var(--ink-800)" }}>
+                {ticket.branch.code}
               </span>
-            )}
-          </Meta>
-        )}
-        <Meta icon={<User className="size-3.5 text-zinc-500" />} label="ผู้แจ้ง">
-          {ticket.reporterName}
-        </Meta>
-        <Meta icon={<Phone className="size-3.5 text-zinc-500" />} label="เบอร์">
+              <span>{ticket.branch.name}</span>
+              {ticket.branch.province && (
+                <>
+                  <span style={{ color: "var(--ink-300)" }}>·</span>
+                  <span>{ticket.branch.province}</span>
+                </>
+              )}
+            </span>
+          )}
+          {ticket.category && (
+            <>
+              <span style={{ color: "var(--ink-300)" }}>·</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                {ticket.category.emoji && <span>{ticket.category.emoji}</span>}
+                {ticket.category.label}
+              </span>
+            </>
+          )}
+          <span style={{ color: "var(--ink-300)" }}>·</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <User size={12} /> {ticket.reporterName}
+          </span>
+        </div>
+
+        {/* Quick action bar */}
+        <div className="detail-actions">
           <a
             href={`tel:${ticket.reporterPhone}`}
-            className="hover:underline tabular-nums"
+            className="btn"
+            style={{ background: "var(--good)", borderColor: "#047857", color: "#fff" }}
           >
-            {ticket.reporterPhone}
+            <Phone /> โทรหาผู้แจ้ง
           </a>
-        </Meta>
-        <Meta icon={<Clock className="size-3.5 text-zinc-500" />} label="เปิดเมื่อ">
-          {fmtDateTime(ticket.createdAt)}
-        </Meta>
-      </div>
-
-      {/* Quick contact bar */}
-      <div className="flex flex-wrap gap-2">
-        <a
-          href={`tel:${ticket.reporterPhone}`}
-          className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-emerald-600 text-white font-bold text-[13px] hover:bg-emerald-700 active:bg-emerald-800"
-        >
-          <Phone className="size-4" />
-          โทรหาผู้แจ้ง
-        </a>
-        <a
-          href={`https://line.me/R/msg/text/?${encodeURIComponent(
-            `เรียน ${ticket.reporterName}\nใบแจ้งซ่อม ${ticket.ticketCode}\nสถานะ: ${STATUS_LABELS[ticket.status as RepairTicketStatus]}`,
-          )}`}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-[#06C755] text-white font-bold text-[13px] hover:opacity-90"
-        >
-          <MessageSquare className="size-4" />
-          ส่ง LINE
-        </a>
-        {ticket.branch && (
           <a
-            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-              `${ticket.branch.code} ${ticket.branch.name} ${ticket.branch.province ?? ""}`,
+            href={`https://line.me/R/msg/text/?${encodeURIComponent(
+              `เรียน ${ticket.reporterName}\nใบแจ้งซ่อม ${ticket.ticketCode}\nสถานะ: ${STATUS_LABELS[currentStatus]}`,
             )}`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-blue-600 text-white font-bold text-[13px] hover:bg-blue-700"
+            className="btn"
+            style={{ background: "#06C755", borderColor: "#05A047", color: "#fff" }}
           >
-            <MapPin className="size-4" />
-            แผนที่
+            <MessageSquare /> ส่ง LINE
           </a>
-        )}
-        {ticket.assignedTech?.phone && (
-          <a
-            href={`tel:${ticket.assignedTech.phone}`}
-            className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-zinc-900 text-white font-bold text-[13px] hover:bg-zinc-700"
-          >
-            <Phone className="size-4" />
-            โทรหาช่าง
-          </a>
-        )}
-      </div>
-
-      {/* Other timeline dates */}
-      {(ticket.etaAt || ticket.resolveDueAt || ticket.resolvedAt) && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[12.5px] bg-zinc-50 border border-zinc-200 rounded-xl p-3">
-          {ticket.etaAt && (
-            <Meta icon={<AlarmClock className="size-3.5 text-zinc-500" />} label="ETA">
-              {fmtDateTime(ticket.etaAt)}
-            </Meta>
-          )}
-          {ticket.resolveDueAt && (
-            <Meta
-              icon={<AlarmClock className="size-3.5 text-zinc-500" />}
-              label="ต้องเสร็จก่อน"
+          {ticket.branch && (
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                `${ticket.branch.code} ${ticket.branch.name} ${ticket.branch.province ?? ""}`,
+              )}`}
+              target="_blank"
+              rel="noreferrer"
+              className="btn btn-primary"
             >
-              {fmtDateTime(ticket.resolveDueAt)}
-            </Meta>
+              <MapPin /> แผนที่
+            </a>
           )}
-          {ticket.resolvedAt && ticket.resolvedBy && (
-            <Meta icon={<Clock className="size-3.5 text-zinc-500" />} label="เสร็จเมื่อ">
-              {fmtDateTime(ticket.resolvedAt)} · โดย {ticket.resolvedBy.name}
-            </Meta>
+          {ticket.assignedTech?.phone && (
+            <a
+              href={`tel:${ticket.assignedTech.phone}`}
+              className="btn"
+              style={{ background: "var(--ink-900)", borderColor: "var(--ink-1000)", color: "#fff" }}
+            >
+              <Phone /> โทรหาช่าง
+            </a>
+          )}
+          <span style={{ flex: 1 }} />
+          {canWrite && (
+            <Link href={`/repairs/${ticket.id}`} className="btn btn-ghost btn-sm">
+              <Plus /> เพิ่ม action
+            </Link>
           )}
         </div>
-      )}
+      </div>
 
-      {/* Actions */}
-      {canWrite && (
-        <TicketActions
-          ticketId={ticket.id}
-          currentStatus={ticket.status}
-          currentTechId={ticket.assignedTech?.id ?? null}
-          currentEta={ticket.etaAt ? new Date(ticket.etaAt).toISOString() : null}
-          technicians={technicians}
-          canAdmin={canAdmin}
-        />
-      )}
+      {/* body */}
+      <div className="detail-body">
+        {/* MAIN */}
+        <div className="detail-main">
+          {/* Status pipeline */}
+          {ticket.status !== "CANCELLED" && (
+            <div style={{
+              background: "var(--surface-2)", border: "1px solid var(--line-2)",
+              borderRadius: 10, padding: 12, marginBottom: 16,
+            }}>
+              <div style={{
+                fontSize: 10.5, color: "var(--ink-500)", textTransform: "uppercase",
+                letterSpacing: "0.06em", fontWeight: 600, marginBottom: 8,
+              }}>
+                สถานะปัจจุบัน
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                {STATUS_PIPELINE.map((s, i) => {
+                  const isCurrent = i === pipelineIdx;
+                  const isPast = i < pipelineIdx;
+                  return (
+                    <div key={s} style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        height: 6, borderRadius: 99,
+                        background: isPast || isCurrent ? "var(--brand-500)" : "var(--ink-200)",
+                      }} />
+                      <div style={{
+                        marginTop: 4, fontSize: 10, fontWeight: 600,
+                        color: isCurrent ? "var(--brand-700)" :
+                               isPast ? "var(--ink-700)" : "var(--ink-400)",
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>
+                        {STATUS_LABELS[s]}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
-      {/* Photos */}
-      {ticket.photos && ticket.photos.length > 0 && (
-        <section>
-          <h3 className="font-bold text-zinc-900 mb-2 flex items-center gap-2 text-[13.5px]">
-            <Camera className="size-3.5" />
-            รูปภาพ ({ticket.photos.length})
-          </h3>
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-            {ticket.photos.map(
-              (p: {
-                id: string;
-                phase: string;
-                r2PublicUrl: string;
-                caption: string | null;
-              }) => (
-                <a
-                  key={p.id}
-                  href={p.r2PublicUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="relative aspect-square rounded-lg overflow-hidden border border-zinc-200 bg-zinc-100"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={p.r2PublicUrl}
-                    alt={p.caption ?? ""}
-                    className="absolute inset-0 size-full object-cover"
-                  />
-                  <span className="absolute top-1 left-1 px-1.5 h-5 inline-flex items-center rounded text-[10px] font-bold bg-zinc-900/85 text-white">
-                    {PHOTO_PHASE_LABELS[p.phase as "BEFORE"]}
-                  </span>
-                </a>
-              ),
-            )}
-          </div>
-        </section>
-      )}
+          <div className="section-h">รายละเอียดอาการ</div>
+          {ticket.description ? (
+            <div style={{ fontSize: 13, color: "var(--ink-800)", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
+              {ticket.description}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: "var(--ink-400)", fontStyle: "italic" }}>—</div>
+          )}
+          {ticket.customerImpact && (
+            <div style={{
+              marginTop: 12, background: "#FFFBEB", border: "1px solid #FDE68A",
+              borderRadius: 8, padding: 10, fontSize: 12.5,
+            }}>
+              <p style={{ fontWeight: 700, color: "#92400E", margin: 0 }}>⚠️ ผลกระทบลูกค้า</p>
+              <p style={{ color: "#92400E", margin: "2px 0 0", opacity: 0.85 }}>{ticket.customerImpact}</p>
+            </div>
+          )}
+          {downtime > 0 && (
+            <div style={{
+              marginTop: 12,
+              background: isOpen ? "#FEF2F2" : "var(--surface-2)",
+              border: "1px solid " + (isOpen ? "#FECACA" : "var(--line)"),
+              borderRadius: 8, padding: 10,
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+              fontSize: 12.5,
+            }}>
+              <div>
+                <p style={{ fontWeight: 700, margin: 0, color: isOpen ? "var(--bad)" : "var(--ink-600)" }}>
+                  {isOpen ? "🔥 ค่าเสียโอกาสสด" : "💰 ค่าเสียโอกาสรวม"}
+                </p>
+                <p style={{ fontSize: 11, color: "var(--ink-500)", margin: "2px 0 0" }}>
+                  ประมาณจากชนิดสาขา · ทุก ชม. ที่ใบยังเปิด
+                </p>
+              </div>
+              <p className="num" style={{
+                fontWeight: 700, fontSize: 20,
+                color: isOpen ? "var(--bad)" : "var(--ink-700)", margin: 0,
+              }}>
+                {formatBaht(downtime * 100)}
+              </p>
+            </div>
+          )}
 
-      {/* Parts */}
-      {ticket.parts && ticket.parts.length > 0 && (
-        <section>
-          <h3 className="font-bold text-zinc-900 mb-2 flex items-center gap-2 text-[13.5px]">
-            <PackageSearch className="size-3.5" />
-            อะไหล่ ({ticket.parts.length})
-          </h3>
-          <div className="rounded-lg border border-zinc-200 overflow-hidden">
-            <table className="w-full text-[12.5px]">
-              <thead>
-                <tr className="text-left text-[10.5px] uppercase tracking-wide text-zinc-500 border-b border-zinc-100 bg-zinc-50">
-                  <th className="px-3 py-2 font-bold">รายการ</th>
-                  <th className="px-3 py-2 font-bold text-right">จำนวน</th>
-                  <th className="px-3 py-2 font-bold text-right">ราคา/หน่วย</th>
-                  <th className="px-3 py-2 font-bold text-right">รวม</th>
-                  <th className="px-3 py-2 font-bold">สถานะ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {ticket.parts.map(
+          {/* Photos */}
+          {ticket.photos && ticket.photos.length > 0 && (
+            <>
+              <div className="section-h">รูปภาพ ({ticket.photos.length})</div>
+              <div className="photos">
+                {ticket.photos.map(
                   (p: {
                     id: string;
-                    name: string;
-                    spec: string | null;
-                    quantity: number;
-                    unit: string;
-                    unitPriceCents: number;
-                    status:
-                      | "NEEDED"
-                      | "ORDERED"
-                      | "DELIVERED"
-                      | "INSTALLED"
-                      | "CANCELLED";
+                    phase: string;
+                    r2PublicUrl: string;
+                    caption: string | null;
                   }) => (
-                    <tr key={p.id}>
-                      <td className="px-3 py-2">
-                        <p className="font-medium text-zinc-900">{p.name}</p>
-                        {p.spec && (
-                          <p className="text-[11px] text-zinc-500 font-mono">{p.spec}</p>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {p.quantity} {p.unit}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatBaht(p.unitPriceCents)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums font-bold">
-                        {formatBaht(p.unitPriceCents * p.quantity)}
-                      </td>
-                      <td className="px-3 py-2">
-                        <span
-                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10.5px] font-bold border ${PART_STATUS_COLORS[p.status]}`}
-                        >
-                          {PART_STATUS_LABELS[p.status]}
-                        </span>
-                      </td>
-                    </tr>
+                    <a
+                      key={p.id}
+                      href={p.r2PublicUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="photo-tile"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={p.r2PublicUrl}
+                        alt={p.caption ?? ""}
+                        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                      <span style={{
+                        position: "absolute", top: 4, left: 4,
+                        padding: "1px 6px", height: 18,
+                        display: "inline-flex", alignItems: "center",
+                        borderRadius: 4, fontSize: 10, fontWeight: 700,
+                        background: "rgba(11, 18, 32, 0.85)", color: "#fff",
+                      }}>
+                        {PHOTO_PHASE_LABELS[p.phase as "BEFORE"]}
+                      </span>
+                    </a>
                   ),
                 )}
-                {total > 0 && (
-                  <tr className="bg-zinc-50">
-                    <td
-                      colSpan={3}
-                      className="px-3 py-2 text-right text-[10.5px] uppercase font-bold tracking-wide text-zinc-500"
-                    >
-                      รวมค่าใช้จ่าย
-                    </td>
-                    <td
-                      colSpan={2}
-                      className="px-3 py-2 text-right font-extrabold text-zinc-900 tabular-nums"
-                    >
-                      {formatBaht(total)}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
-      {/* Timeline */}
-      <section>
-        <h3 className="font-bold text-zinc-900 mb-2 flex items-center gap-2 text-[13.5px]">
-          <MessageSquare className="size-3.5" />
-          ไทม์ไลน์ ({ticket.events?.length ?? 0})
-        </h3>
-        <ol className="space-y-2 border-l-2 border-zinc-200 pl-4">
-          {(ticket.events ?? []).map(
-            (ev: {
-              id: string;
-              kind: string;
-              actorName: string;
-              payload: unknown;
-              createdAt: Date | string;
-            }) => (
-              <li key={ev.id} className="relative -left-[22px] pl-5">
-                <span className="absolute left-0 top-1.5 size-2.5 rounded-full bg-blue-500 border-2 border-white shadow" />
-                <div className="bg-zinc-50 rounded-lg border border-zinc-200 p-2.5">
-                  <div className="flex items-baseline justify-between gap-2 flex-wrap">
-                    <p className="font-bold text-zinc-900 text-[13px]">
-                      {EVENT_KIND_LABELS[ev.kind as "CREATED"]}
-                    </p>
-                    <p className="text-[11px] text-zinc-500 tabular-nums">
-                      {fmtDateTime(ev.createdAt)}
-                    </p>
-                  </div>
-                  <p className="text-[11px] text-zinc-600 mt-0.5">
-                    โดย {ev.actorName}
-                  </p>
-                  {(() => {
-                    const p = ev.payload as Record<string, unknown> | null;
-                    const body =
-                      (p?.body as string | undefined) ??
-                      (p?.comment as string | undefined);
-                    if (!body) return null;
-                    return (
-                      <p className="mt-1.5 text-[13px] text-zinc-800 whitespace-pre-wrap leading-relaxed">
-                        {body}
-                      </p>
-                    );
-                  })()}
-                </div>
-              </li>
-            ),
+              </div>
+            </>
           )}
-        </ol>
-      </section>
-    </div>
+
+          {/* Parts */}
+          {ticket.parts && ticket.parts.length > 0 && (
+            <>
+              <div className="section-h">อะไหล่ ({ticket.parts.length})</div>
+              <div style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
+                <table className="dtable">
+                  <thead>
+                    <tr>
+                      <th>รายการ</th>
+                      <th className="num">จำนวน</th>
+                      <th className="num">ราคา/หน่วย</th>
+                      <th className="num">รวม</th>
+                      <th>สถานะ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ticket.parts.map(
+                      (p: {
+                        id: string;
+                        name: string;
+                        spec: string | null;
+                        quantity: number;
+                        unit: string;
+                        unitPriceCents: number;
+                        status: "NEEDED" | "ORDERED" | "DELIVERED" | "INSTALLED" | "CANCELLED";
+                      }) => (
+                        <tr key={p.id}>
+                          <td>
+                            <p style={{ fontWeight: 500, color: "var(--ink-900)", margin: 0 }}>{p.name}</p>
+                            {p.spec && (
+                              <p style={{ fontSize: 10.5, color: "var(--ink-500)", margin: "1px 0 0" }}>
+                                {p.spec}
+                              </p>
+                            )}
+                          </td>
+                          <td className="num">{p.quantity} {p.unit}</td>
+                          <td className="num">{formatBaht(p.unitPriceCents)}</td>
+                          <td className="num" style={{ fontWeight: 600 }}>
+                            {formatBaht(p.unitPriceCents * p.quantity)}
+                          </td>
+                          <td>
+                            <span
+                              className={"pill " + partStatusClass(p.status)}
+                              style={{ padding: "1px 6px", fontSize: 10 }}
+                            >
+                              {PART_STATUS_LABELS[p.status]}
+                            </span>
+                          </td>
+                        </tr>
+                      ),
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {/* Timeline */}
+          <div className="section-h">ไทม์ไลน์ ({ticket.events?.length ?? 0})</div>
+          <div className="timeline">
+            {(ticket.events ?? []).map(
+              (
+                ev: {
+                  id: string;
+                  kind: string;
+                  actorName: string;
+                  payload: unknown;
+                  createdAt: Date | string;
+                },
+                i: number,
+                arr: { length: number }[],
+              ) => {
+                const isLast = i === arr.length - 1;
+                return (
+                  <div
+                    className={"timeline-item " + (isLast ? "now" : "done")}
+                    key={ev.id}
+                  >
+                    <div className="who">{ev.actorName}</div>
+                    <div className="what">{EVENT_KIND_LABELS[ev.kind as "CREATED"]}</div>
+                    {(() => {
+                      const p = ev.payload as Record<string, unknown> | null;
+                      const body =
+                        (p?.body as string | undefined) ??
+                        (p?.comment as string | undefined);
+                      if (body) {
+                        return <div className="detail">{body}</div>;
+                      }
+                      return <div className="detail">{fmtDateTime(ev.createdAt)}</div>;
+                    })()}
+                  </div>
+                );
+              },
+            )}
+          </div>
+        </div>
+
+        {/* SIDE */}
+        <div className="detail-side">
+          {ticket.assignedTech && (
+            <div className="detail-side-section">
+              <div className="detail-side-label">ช่างที่รับผิดชอบ</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="tech-chip" style={{
+                  width: 30, height: 30, fontSize: 11.5,
+                  background: techColor(ticket.assignedTech.id),
+                }}>
+                  {ticket.assignedTech.name.charAt(0)}
+                </span>
+                <div>
+                  <div className="detail-side-value">{ticket.assignedTech.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--ink-500)" }}>
+                    {ticket.assignedTech.kind === "INTERNAL" ? "ช่างใน" : "Vendor"}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="detail-side-section">
+            <div className="detail-side-label">SLA</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span className={"sla " + sla}>
+                <Clock />
+                {slaBadgeLabel(sla, ticket.resolveDueAt)}
+              </span>
+              {ticket.resolveDueAt && (
+                <div style={{ fontSize: 11, color: "var(--ink-500)" }}>
+                  ต้องเสร็จก่อน <b className="num" style={{ color: "var(--ink-700)" }}>
+                    {fmtDateTime(ticket.resolveDueAt)}
+                  </b>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="detail-side-section">
+            <div className="detail-side-label">ค่าใช้จ่าย</div>
+            <div className="cost-row">
+              <span className="label">อะไหล่</span>
+              <span className="val num">{formatBaht(ticket.partsCostCents)}</span>
+            </div>
+            <div className="cost-row">
+              <span className="label">ค่าแรง</span>
+              <span className="val num">{formatBaht(ticket.laborCostCents)}</span>
+            </div>
+            <div className="cost-row total">
+              <span className="label">{ticket.resolvedAt ? "ใช้จริง" : "ประเมิน"}</span>
+              <span className="val num" style={{
+                color: ticket.resolvedAt ? "var(--good)" : "var(--brand-700)",
+              }}>
+                {total > 0 ? formatBaht(total) : "ยังไม่ประเมิน"}
+              </span>
+            </div>
+          </div>
+
+          <div className="detail-side-section">
+            <div className="detail-side-label">ผู้แจ้ง</div>
+            <div className="detail-side-value">{ticket.reporterName}</div>
+            <div style={{ fontSize: 11, color: "var(--ink-500)", marginTop: 2 }}>
+              <Phone size={10} style={{ display: "inline" }} /> {ticket.reporterPhone}
+            </div>
+          </div>
+
+          {ticket.branch && (
+            <div className="detail-side-section">
+              <div className="detail-side-label">สาขา</div>
+              <div className="detail-side-value">{ticket.branch.name}</div>
+              <div style={{ fontSize: 11, color: "var(--ink-500)", marginTop: 2 }}>
+                <span className="num" style={{ color: "var(--ink-700)", fontWeight: 600 }}>
+                  {ticket.branch.code}
+                </span>{" "}
+                {ticket.branch.province && `· ${ticket.branch.province}`}
+              </div>
+            </div>
+          )}
+
+          <div className="detail-side-section">
+            <div className="detail-side-label">เปิดเมื่อ</div>
+            <div className="num" style={{ fontSize: 12, color: "var(--ink-700)" }}>
+              {fmtDateTime(ticket.createdAt)}
+            </div>
+            {ticket.resolvedAt && (
+              <>
+                <div className="detail-side-label" style={{ marginTop: 8 }}>เสร็จเมื่อ</div>
+                <div className="num" style={{ fontSize: 12, color: "var(--ink-700)" }}>
+                  {fmtDateTime(ticket.resolvedAt)}
+                </div>
+                {ticket.resolvedBy && (
+                  <div style={{ fontSize: 11, color: "var(--ink-500)" }}>
+                    โดย {ticket.resolvedBy.name}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Action panel (status/assign/etc.) — collapsed below sidebar */}
+          {canWrite && (
+            <div className="detail-side-section" style={{
+              background: "var(--surface-2)",
+              padding: 10, borderRadius: 8,
+              marginTop: 12,
+            }}>
+              <div className="detail-side-label">ดำเนินการ</div>
+              <TicketActions
+                ticketId={ticket.id}
+                currentStatus={ticket.status}
+                currentTechId={ticket.assignedTech?.id ?? null}
+                currentEta={ticket.etaAt ? new Date(ticket.etaAt).toISOString() : null}
+                technicians={technicians}
+                canAdmin={canAdmin}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Composer (chat-style note bar) */}
+      <div className="composer">
+        <input placeholder="พิมพ์เพื่อเพิ่มความคิดเห็น / @ผู้คนเพื่อแจ้ง · บันทึกลง timeline" />
+        <button className="btn">
+          <Camera />
+        </button>
+        <button className="btn btn-primary">
+          <Send />
+        </button>
+      </div>
+    </>
   );
 }
 
-function Meta({
-  icon,
-  label,
-  children,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-start gap-2">
-      <div className="mt-0.5 size-4 grid place-items-center flex-shrink-0">
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-[10.5px] font-bold uppercase tracking-wide text-zinc-500">
-          {label}
-        </p>
-        <p className="text-zinc-900 font-medium text-[13px] truncate">{children}</p>
-      </div>
-    </div>
-  );
+function techColor(id: string): string {
+  const palette = [
+    "#2563EB", "#7C3AED", "#DB2777", "#059669",
+    "#EA580C", "#0891B2", "#CA8A04", "#475569",
+  ];
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h + id.charCodeAt(i)) >>> 0;
+  return palette[h % palette.length];
 }
+

@@ -1,4 +1,4 @@
-// /repairs/settings — admin entry point to all setup tasks (Pooil App redesign)
+// /repairs/settings — Pooil App vocab (.panel .btn)
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { requireRepairAdmin } from "@/lib/repair/role-guard";
@@ -13,11 +13,11 @@ import {
   Wrench,
   ListChecks,
   ExternalLink,
-  Copy,
   Globe,
   Building2,
   Link as LinkIcon,
   QrCode,
+  Copy,
 } from "lucide-react";
 import { RepairSubHeader } from "@/components/repair/sub-header";
 
@@ -42,7 +42,7 @@ export default async function RepairSettingsPage() {
         icon={Settings}
         eyebrow="Setup · Configuration"
         title="ตั้งค่าระบบแจ้งซ่อม"
-        subtitle="หมวดงาน · ช่าง · ลิงก์สาธารณะ · พรีวิวฟอร์มต่าง ๆ"
+        subtitle="หมวดงาน · ช่าง · ลิงก์สาธารณะ · พรีวิวฟอร์ม"
         stats={[
           { label: "หมวดงาน", value: cats.length },
           { label: "ช่าง active", value: activeTechs, tone: "success" },
@@ -51,25 +51,23 @@ export default async function RepairSettingsPage() {
         ]}
       />
 
-      <div className="p-3 sm:p-5 lg:p-6 max-w-4xl mx-auto space-y-4">
+      <div className="repair-content" style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 1000 }}>
         {/* Resource management */}
         <section>
-          <h2 className="text-[11px] uppercase tracking-wide font-bold text-zinc-500 mb-2">
-            จัดการทรัพยากร
-          </h2>
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="section-h" style={{ marginTop: 0 }}>จัดการทรัพยากร</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <SettingCard
               href="/repairs/technicians"
-              icon={<Wrench className="size-5" />}
-              tone="blue"
+              icon={<Wrench size={18} />}
+              tone="brand"
               title="จัดการช่าง"
               subtitle={`${activeTechs} active · ${techs.length} ทั้งหมด`}
               cta="เปิดหน้า Technicians"
             />
             <SettingCard
               href="/repairs/categories"
-              icon={<ListChecks className="size-5" />}
-              tone="amber"
+              icon={<ListChecks size={18} />}
+              tone="warn"
               title="หมวดงานซ่อม"
               subtitle={`${cats.length} หมวด · ผู้แจ้งเลือกได้`}
               cta="เปิดหน้า Categories"
@@ -78,74 +76,102 @@ export default async function RepairSettingsPage() {
         </section>
 
         {/* Public link */}
-        <section className="bg-white border border-zinc-200 rounded-2xl p-5">
-          <div className="flex items-start gap-3">
-            <div className="size-10 rounded-xl bg-emerald-50 text-emerald-700 grid place-items-center shrink-0">
-              <LinkIcon className="size-5" />
+        <section className="panel" style={{ padding: 18 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 10,
+              background: "#ECFDF5", color: "var(--good)",
+              display: "grid", placeItems: "center", flexShrink: 0,
+            }}>
+              <LinkIcon size={18} />
             </div>
-            <div className="flex-1">
-              <h3 className="font-bold text-zinc-900">ลิงก์ฟอร์มสาธารณะ</h3>
-              <p className="text-[12.5px] text-zinc-500 mt-0.5">
+            <div style={{ flex: 1 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: "var(--ink-900)" }}>
+                ลิงก์ฟอร์มสาธารณะ
+              </h3>
+              <p style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 2 }}>
                 ใช้แปะหน้าร้าน · LINE · QR code · ใครก็แจ้งซ่อมได้
               </p>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 6 }}>
                 <Link
                   href="/r"
                   target="_blank"
-                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-zinc-900 text-white font-semibold text-[12px] hover:bg-zinc-700"
+                  className="btn btn-primary btn-sm"
+                  style={{ background: "var(--ink-900)", borderColor: "var(--ink-1000)" }}
                 >
-                  <Globe className="size-3.5" />
+                  <Globe />
                   หน้าหลัก /r
-                  <ExternalLink className="size-3" />
+                  <ExternalLink size={11} />
                 </Link>
                 <Link
                   href="/r/new"
                   target="_blank"
-                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-blue-600 text-white font-semibold text-[12px] hover:bg-blue-700"
+                  className="btn btn-primary btn-sm"
                 >
-                  <ExternalLink className="size-3.5" />
+                  <ExternalLink />
                   ฟอร์มแจ้งซ่อม /r/new
                 </Link>
-                <Link
-                  href="/r/track"
-                  target="_blank"
-                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-white border border-zinc-200 text-zinc-700 font-semibold text-[12px] hover:bg-zinc-50"
-                >
-                  <ExternalLink className="size-3.5" />
+                <Link href="/r/track" target="_blank" className="btn btn-sm">
+                  <ExternalLink />
                   หน้าติดตาม /r/track
                 </Link>
               </div>
-              <div className="mt-3 inline-flex items-center gap-2 px-3 h-8 bg-zinc-50 border border-zinc-200 rounded-md text-[12px] text-zinc-700 font-mono">
-                <Copy className="size-3 text-zinc-400" />
+              <div style={{
+                marginTop: 10, display: "inline-flex", alignItems: "center", gap: 8,
+                padding: "4px 12px",
+                background: "var(--surface-2)", border: "1px solid var(--line)",
+                borderRadius: 6,
+                fontSize: 11.5, color: "var(--ink-700)",
+                fontFamily: "var(--font-mono)",
+              }}>
+                <Copy size={11} style={{ color: "var(--ink-400)" }} />
                 /r/new
-                <span className="text-zinc-400">·</span>
-                <QrCode className="size-3 text-zinc-400" />
-                แชร์ลิงก์นี้ในกรุ๊ปไลน์สาขา
+                <span style={{ color: "var(--ink-400)" }}>·</span>
+                <QrCode size={11} style={{ color: "var(--ink-400)" }} />
+                แชร์ในกรุ๊ปไลน์สาขา
               </div>
             </div>
           </div>
         </section>
 
-        {/* Company list snapshot */}
+        {/* Company list */}
         {companies.length > 0 && (
-          <section className="bg-white border border-zinc-200 rounded-2xl p-5">
-            <h3 className="font-bold text-zinc-900 flex items-center gap-2">
-              <Building2 className="size-4 text-zinc-500" />
+          <section className="panel" style={{ padding: 18 }}>
+            <h3 style={{
+              fontSize: 14, fontWeight: 700, margin: 0, color: "var(--ink-900)",
+              display: "flex", alignItems: "center", gap: 6,
+            }}>
+              <Building2 size={14} style={{ color: "var(--ink-500)" }} />
               บริษัทในระบบ
             </h3>
-            <p className="text-[12.5px] text-zinc-500 mt-0.5">
+            <p style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 2 }}>
               ใช้แยก ticket ตามบริษัท · biz tab ในหน้าภาพรวม / Triage / Kanban / ตาราง
               จะกรองตามบริษัทนี้
             </p>
-            <ul className="mt-3 divide-y divide-zinc-100">
-              {companies.map((c) => (
-                <li key={c.id} className="flex items-center py-2 text-[13px]">
-                  <span className="size-7 rounded-full bg-blue-50 text-blue-700 grid place-items-center font-bold mr-3">
+            <ul style={{ listStyle: "none", margin: "10px 0 0", padding: 0 }}>
+              {companies.map((c, i) => (
+                <li
+                  key={c.id}
+                  style={{
+                    display: "flex", alignItems: "center", padding: "10px 0",
+                    borderBottom: i === companies.length - 1 ? 0 : "1px solid var(--line-2)",
+                  }}
+                >
+                  <span style={{
+                    width: 28, height: 28, borderRadius: 14,
+                    background: "var(--brand-50)", color: "var(--brand-700)",
+                    display: "grid", placeItems: "center",
+                    fontWeight: 700, marginRight: 12,
+                  }}>
                     {c.code.charAt(0)}
                   </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-zinc-900">{c.name}</div>
-                    <div className="text-[11px] text-zinc-500 font-mono">{c.code}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-900)" }}>
+                      {c.name}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--ink-500)", fontFamily: "var(--font-mono)" }}>
+                      {c.code}
+                    </div>
                   </div>
                 </li>
               ))}
@@ -153,13 +179,20 @@ export default async function RepairSettingsPage() {
           </section>
         )}
 
-        {/* SLA reference card */}
-        <section className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5">
-          <h3 className="font-bold text-zinc-900">SLA เริ่มต้น</h3>
-          <p className="text-[12.5px] text-zinc-500 mt-0.5">
+        {/* SLA reference */}
+        <section className="panel" style={{
+          padding: 18, background: "var(--surface-2)",
+        }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: "var(--ink-900)" }}>
+            SLA เริ่มต้น
+          </h3>
+          <p style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 2 }}>
             ระยะเวลาที่ระบบใช้ในการตั้งวันต้องเสร็จ (อ้างอิงจาก urgency ที่ผู้แจ้งเลือก)
           </p>
-          <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+          <div style={{
+            marginTop: 12, display: "grid",
+            gridTemplateColumns: "1fr 1fr 1fr", gap: 8,
+          }}>
             <SlaTile label="ด่วนมาก" response="4 ชม." resolve="24 ชม." tone="red" />
             <SlaTile label="ปานกลาง" response="24 ชม." resolve="72 ชม." tone="amber" />
             <SlaTile label="ไม่เร่งด่วน" response="72 ชม." resolve="7 วัน" tone="zinc" />
@@ -171,71 +204,75 @@ export default async function RepairSettingsPage() {
 }
 
 function SettingCard({
-  href,
-  icon,
-  tone,
-  title,
-  subtitle,
-  cta,
+  href, icon, tone, title, subtitle, cta,
 }: {
   href: string;
   icon: React.ReactNode;
-  tone: "blue" | "amber" | "violet" | "emerald";
+  tone: "brand" | "warn" | "good";
   title: string;
   subtitle: string;
   cta: string;
 }) {
-  const toneClass: Record<typeof tone, string> = {
-    blue: "bg-blue-50 text-blue-700",
-    amber: "bg-amber-50 text-amber-700",
-    violet: "bg-violet-50 text-violet-700",
-    emerald: "bg-emerald-50 text-emerald-700",
+  const toneBg: Record<typeof tone, string> = {
+    brand: "var(--brand-50)",
+    warn: "#FFFBEB",
+    good: "#ECFDF5",
+  };
+  const toneColor: Record<typeof tone, string> = {
+    brand: "var(--brand-700)",
+    warn: "var(--warn)",
+    good: "var(--good)",
   };
   return (
-    <Link
-      href={href}
-      className="block bg-white rounded-2xl border border-zinc-200 p-4 hover:border-zinc-300 hover:shadow-sm transition-all"
-    >
-      <div className="flex items-start gap-3">
-        <div className={`size-10 rounded-xl grid place-items-center shrink-0 ${toneClass[tone]}`}>
-          {icon}
-        </div>
-        <div className="flex-1">
-          <p className="font-bold text-zinc-900">{title}</p>
-          <p className="text-[12.5px] text-zinc-500 mt-0.5">{subtitle}</p>
-          <p className="mt-2 text-[12px] font-semibold text-blue-700">{cta} →</p>
-        </div>
+    <Link href={href} className="panel" style={{
+      padding: 16, textDecoration: "none", color: "inherit",
+      display: "flex", alignItems: "flex-start", gap: 12,
+      cursor: "pointer",
+    }}>
+      <div style={{
+        width: 40, height: 40, borderRadius: 10,
+        background: toneBg[tone], color: toneColor[tone],
+        display: "grid", placeItems: "center", flexShrink: 0,
+      }}>
+        {icon}
+      </div>
+      <div style={{ flex: 1 }}>
+        <p style={{ fontWeight: 700, color: "var(--ink-900)", margin: 0 }}>{title}</p>
+        <p style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 2 }}>{subtitle}</p>
+        <p style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: "var(--brand-700)" }}>
+          {cta} →
+        </p>
       </div>
     </Link>
   );
 }
 
 function SlaTile({
-  label,
-  response,
-  resolve,
-  tone,
+  label, response, resolve, tone,
 }: {
   label: string;
   response: string;
   resolve: string;
   tone: "red" | "amber" | "zinc";
 }) {
-  const toneClass: Record<typeof tone, string> = {
-    red: "bg-red-50 text-red-700 border-red-200",
-    amber: "bg-amber-50 text-amber-700 border-amber-200",
-    zinc: "bg-white text-zinc-700 border-zinc-200",
+  const map: Record<typeof tone, { bg: string; border: string; color: string }> = {
+    red:   { bg: "#FEF2F2", border: "#FECACA", color: "var(--bad)" },
+    amber: { bg: "#FFFBEB", border: "#FDE68A", color: "var(--warn)" },
+    zinc:  { bg: "var(--surface)", border: "var(--line)", color: "var(--ink-700)" },
   };
+  const m = map[tone];
   return (
-    <div className={`rounded-xl border p-3 ${toneClass[tone]}`}>
-      <div className="text-[11px] font-bold uppercase tracking-wide">{label}</div>
-      <div className="mt-1.5 text-[11px] flex flex-col gap-0.5">
-        <div className="tabular-nums">
-          <b className="font-bold">ตอบ:</b> {response}
-        </div>
-        <div className="tabular-nums">
-          <b className="font-bold">ปิด:</b> {resolve}
-        </div>
+    <div style={{
+      background: m.bg, border: `1px solid ${m.border}`,
+      borderRadius: 10, padding: 12,
+      color: m.color,
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        {label}
+      </div>
+      <div style={{ marginTop: 6, fontSize: 11.5, display: "flex", flexDirection: "column", gap: 2 }} className="num">
+        <div><b style={{ fontWeight: 700 }}>ตอบ:</b> {response}</div>
+        <div><b style={{ fontWeight: 700 }}>ปิด:</b> {resolve}</div>
       </div>
     </div>
   );

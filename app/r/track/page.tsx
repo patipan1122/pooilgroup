@@ -1,4 +1,4 @@
-// /r/track — entry form to look up ticket by code + phone (Pooil App redesign)
+// /r/track — entry form (Pooil App design vocab)
 import Link from "next/link";
 import { TrackForm } from "@/components/repair/track-form";
 import { Search, ChevronLeft, Plus } from "lucide-react";
@@ -14,23 +14,35 @@ export default async function RepairTrackEntryPage({
 }) {
   const p = await searchParams;
   return (
-    <div className="max-w-md mx-auto">
+    <div style={{ maxWidth: 480, margin: "0 auto" }}>
       <Link
         href="/r"
-        className="inline-flex items-center gap-1 text-[12px] text-blue-700 font-semibold hover:text-blue-900 mb-3"
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 4,
+          fontSize: 12, color: "#1740A3", fontWeight: 600,
+          textDecoration: "none", marginBottom: 12,
+        }}
       >
-        <ChevronLeft className="size-3.5" />
+        <ChevronLeft size={13} />
         กลับหน้าหลัก
       </Link>
 
-      <div className="bg-white border border-zinc-200 rounded-3xl p-6 sm:p-7 text-center mb-3">
-        <div className="size-12 mx-auto rounded-2xl bg-blue-50 text-blue-700 grid place-items-center mb-3">
-          <Search className="size-6" />
+      <div style={{
+        background: "white", border: "1px solid #E5EAF2",
+        borderRadius: 24, padding: 28, textAlign: "center",
+        marginBottom: 12,
+      }}>
+        <div style={{
+          width: 48, height: 48, borderRadius: 14,
+          background: "#EFF4FF", color: "#1740A3",
+          display: "grid", placeItems: "center", margin: "0 auto 12px",
+        }}>
+          <Search size={22} />
         </div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900">
+        <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.015em", color: "#0B1220", margin: 0 }}>
           ติดตามใบแจ้งซ่อม
         </h1>
-        <p className="mt-2 text-[13.5px] text-zinc-600 leading-relaxed">
+        <p style={{ marginTop: 8, fontSize: 13, color: "#475569", lineHeight: 1.5 }}>
           กรอกเลขที่ใบ + เบอร์โทรที่ใช้ตอนแจ้ง
           <br />
           ระบบจะแสดงสถานะปัจจุบัน + รูปงาน + ช่างที่ดูแล
@@ -39,19 +51,26 @@ export default async function RepairTrackEntryPage({
 
       <TrackForm initialCode={p.code ?? ""} initialError={p.error ?? null} />
 
-      <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-4 mt-3 text-[12px] text-zinc-600 leading-relaxed">
-        <p>
-          <b className="text-zinc-900">หมายเหตุ:</b> ระบบจำกัดจำนวนครั้งที่ค้นต่อ IP
+      <div style={{
+        background: "#F8FAFD", border: "1px solid #E5EAF2",
+        borderRadius: 14, padding: 14, marginTop: 12,
+        fontSize: 11.5, color: "#475569", lineHeight: 1.5,
+      }}>
+        <p style={{ margin: 0 }}>
+          <b style={{ color: "#0B1220" }}>หมายเหตุ:</b> ระบบจำกัดจำนวนครั้งที่ค้นต่อ IP
           (anti-bruteforce) · ถ้าค้นบ่อยเกินไปจะถูกบล็อก 10 นาที
         </p>
-        <p className="mt-2">
+        <p style={{ marginTop: 8, marginBottom: 0 }}>
           ลืมเลขที่ใบ? · ดู SMS ที่เคยได้รับ หรือ
           <Link
             href="/r/new"
-            className="font-semibold text-blue-700 hover:text-blue-900 ml-1 inline-flex items-center gap-0.5"
+            style={{
+              fontWeight: 600, color: "#1740A3", textDecoration: "none",
+              marginLeft: 4,
+              display: "inline-flex", alignItems: "center", gap: 2,
+            }}
           >
-            <Plus className="size-3" />
-            แจ้งใบใหม่
+            <Plus size={11} /> แจ้งใบใหม่
           </Link>
         </p>
       </div>

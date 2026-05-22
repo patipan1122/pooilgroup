@@ -1,26 +1,30 @@
 "use client";
 
-// Admin inbox — list + detail combo workspace (Linear/Gmail style).
+// Pooil App · Triage Inbox · uses exact design CSS (.triage / .triage-list /
+// .triage-row / detail panel). list left + detail right.
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   STATUS_LABELS,
-  STATUS_COLORS,
   URGENCY_LABELS,
-  URGENCY_COLORS,
   OPEN_STATUSES,
   formatBaht,
 } from "@/lib/repair/types";
-import { slaStatusFor, slaBadgeColor, slaBadgeLabel } from "@/lib/repair/sla";
+import { slaStatusFor, slaBadgeLabel } from "@/lib/repair/sla";
 import type {
   RepairTicketStatus,
   RepairUrgency,
 } from "@/lib/generated/prisma/enums";
-import { Search, X, MapPin, Inbox as InboxIcon, AlertTriangle, Wrench, PackageSearch, BadgeDollarSign } from "lucide-react";
+import {
+  Search,
+  X,
+  Inbox as InboxIcon,
+  AlertTriangle,
+  Clock,
+  Filter,
+} from "lucide-react";
 import { TicketDetailPanel } from "./ticket-detail-panel";
-import { KpiTile } from "@/components/ui/kpi-tile";
-import { FilterPill } from "@/components/ui/filter-pill";
 
 interface TicketSummary {
   id: string;
@@ -61,6 +65,26 @@ interface Props {
   canAdmin: boolean;
 }
 
+const STATUS_DOT: Record<RepairTicketStatus, string> = {
+  NEW: "var(--st-new)",
+  ACK: "var(--st-assess)",
+  IN_PROGRESS: "var(--st-approval)",
+  WAITING_PARTS: "var(--st-parts)",
+  RESOLVED: "var(--st-done)",
+  CLOSED: "var(--ink-400)",
+  CANCELLED: "var(--ink-300)",
+};
+
+const STATUS_CLS: Record<RepairTicketStatus, string> = {
+  NEW: "pill-new",
+  ACK: "pill-assess",
+  IN_PROGRESS: "pill-approval",
+  WAITING_PARTS: "pill-parts",
+  RESOLVED: "pill-done",
+  CLOSED: "pill-done",
+  CANCELLED: "pill-low",
+};
+
 export function AdminInbox(props: Props) {
   const router = useRouter();
   const sp = useSearchParams();
@@ -79,9 +103,6 @@ export function AdminInbox(props: Props) {
   }
 
   const openCount = OPEN_STATUSES.reduce((s, st) => s + props.statusCounts[st], 0);
-  // Compute overdue from loaded tickets (resolveDueAt past, still open).
-  // Date.now() inside useMemo — fine here because the value only matters at
-  // render time for a hero alert; React's purity rule false-positives on this.
   const overdueTickets = useMemo(() => {
     // eslint-disable-next-line react-hooks/purity
     const now = Date.now();
@@ -97,284 +118,271 @@ export function AdminInbox(props: Props) {
   const heroActive = urgentOpen > 0 || overdueCount > 0;
 
   return (
-    <div className="p-3 sm:p-5 lg:p-6 max-w-[1600px] mx-auto">
-      {/* Hero attention bar — first-second content per Artifact #1 ·
-          shows only when something genuinely needs attention. */}
+    <div className="repair-content">
       {heroActive && (
-        <div className="mb-4 rounded-2xl border-2 border-red-300 bg-gradient-to-r from-red-50 to-amber-50 p-4 sm:p-5">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-3">
-              <div className="size-12 rounded-2xl bg-red-600 text-white grid place-items-center shrink-0">
-                <AlertTriangle className="size-6" />
-              </div>
-              <div>
-                <p className="text-xs font-bold text-red-700">
-                  ต้องดูตอนนี้
-                </p>
-                <p className="text-zinc-900 font-bold text-base sm:text-lg">
-                  {urgentOpen > 0 && (
-                    <span className="mr-3">
-                      <span className="tabular-num text-red-700">{urgentOpen}</span> ใบด่วน
-                    </span>
-                  )}
-                  {overdueCount > 0 && (
-                    <span>
-                      <span className="tabular-num text-red-700">{overdueCount}</span> ใบเกิน SLA
-                    </span>
-                  )}
-                </p>
+        <div className="attention-bar">
+          <div className="attention-pip">
+            <div className="attention-mark"><AlertTriangle size={20} /></div>
+            <div>
+              <div className="attention-label">ต้องดูตอนนี้</div>
+              <div className="attention-title">
+                {urgentOpen > 0 && (
+                  <span style={{ marginRight: 12 }}>
+                    <span className="num" style={{ color: "var(--bad)" }}>{urgentOpen}</span> ใบด่วน
+                  </span>
+                )}
+                {overdueCount > 0 && (
+                  <span>
+                    <span className="num" style={{ color: "var(--bad)" }}>{overdueCount}</span> ใบเกิน SLA
+                  </span>
+                )}
               </div>
             </div>
-            <div className="flex gap-2 sm:ml-auto">
-              {urgentOpen > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setParam("urgency", "URGENT")}
-                  className="h-10 px-4 rounded-lg bg-red-600 text-white font-bold text-sm hover:bg-red-700"
-                >
-                  ดูใบด่วน
-                </button>
-              )}
-              {overdueCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const first = overdueTickets[0];
-                    if (first) {
-                      router.push(`/repairs/triage?selected=${first.id}`);
-                    }
-                  }}
-                  className="h-10 px-4 rounded-lg bg-white border-2 border-red-300 text-red-700 font-bold text-sm hover:bg-red-50"
-                >
-                  เปิดใบที่เกิน SLA →
-                </button>
-              )}
-            </div>
+          </div>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            {urgentOpen > 0 && (
+              <button
+                type="button"
+                onClick={() => setParam("urgency", "URGENT")}
+                className="btn btn-primary btn-sm"
+                style={{ background: "var(--bad)", borderColor: "#B91C1C" }}
+              >
+                ดูใบด่วน
+              </button>
+            )}
+            {overdueCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const first = overdueTickets[0];
+                  if (first) router.push(`/repairs/triage?selected=${first.id}`);
+                }}
+                className="btn btn-sm"
+                style={{ background: "#fff", borderColor: "#FECACA", color: "var(--bad)" }}
+              >
+                เปิดใบเกิน SLA →
+              </button>
+            )}
           </div>
         </div>
       )}
 
-      {/* KPI strip — uses shared <KpiTile> primitive (รอบ 46 unified) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 mb-5">
-        <KpiTile
-          icon={<InboxIcon className="size-4" />}
-          label="เปิดอยู่"
-          value={openCount}
-          accent="zinc"
-        />
-        <KpiTile
-          icon={<AlertTriangle className="size-4" />}
-          label="ด่วนมาก"
-          value={props.urgencyCounts.URGENT}
-          accent="danger"
-        />
-        <KpiTile
-          icon={<Wrench className="size-4" />}
-          label="กำลังซ่อม"
-          value={props.statusCounts.IN_PROGRESS}
-          accent="warning"
-        />
-        <KpiTile
-          icon={<PackageSearch className="size-4" />}
-          label="รออะไหล่"
-          value={props.statusCounts.WAITING_PARTS}
-          accent="orange"
-        />
-        <KpiTile
-          icon={<BadgeDollarSign className="size-4" />}
-          label="ค่าใช้จ่ายเดือนนี้"
-          value={formatBaht(props.openCost)}
-          accent="success"
-          isMoney
-        />
+      {/* Quick KPIs */}
+      <div className="kpi-row" style={{ marginBottom: 14 }}>
+        <div className="kpi" style={{ cursor: "default" }}>
+          <div className="kpi-label"><span className="kpi-label-icon"><InboxIcon /></span>เปิดอยู่</div>
+          <div className="kpi-value num">{openCount}</div>
+        </div>
+        <div className={"kpi " + (urgentOpen > 0 ? "danger" : "")} style={{ cursor: "default" }}>
+          <div className="kpi-label"><span className="kpi-label-icon"><AlertTriangle /></span>ด่วนมาก</div>
+          <div className="kpi-value num">{urgentOpen}</div>
+        </div>
+        <div className="kpi warn" style={{ cursor: "default" }}>
+          <div className="kpi-label"><span className="kpi-label-icon"><AlertTriangle /></span>เกิน SLA</div>
+          <div className="kpi-value num">{overdueCount}</div>
+        </div>
+        <div className="kpi" style={{ cursor: "default" }}>
+          <div className="kpi-label"><span className="kpi-label-icon"><InboxIcon /></span>กำลังซ่อม</div>
+          <div className="kpi-value num">{props.statusCounts.IN_PROGRESS}</div>
+        </div>
+        <div className="kpi" style={{ cursor: "default" }}>
+          <div className="kpi-label"><span className="kpi-label-icon"><InboxIcon /></span>รออะไหล่</div>
+          <div className="kpi-value num">{props.statusCounts.WAITING_PARTS}</div>
+        </div>
+        <div className="kpi" style={{ cursor: "default" }}>
+          <div className="kpi-label"><span className="kpi-label-icon"><InboxIcon /></span>เดือนนี้</div>
+          <div className="kpi-value num" style={{ fontSize: 16 }}>{formatBaht(props.openCost)}</div>
+        </div>
       </div>
 
-      {/* Search + filters */}
-      <div className="rounded-xl bg-white border border-zinc-200 p-3 mb-3 space-y-2.5">
-        <form onSubmit={submitSearch} className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="ค้นเลขที่ใบ · หัวเรื่อง · ผู้แจ้ง · เบอร์"
-              className="w-full h-10 pl-9 pr-3 rounded-lg border-2 border-zinc-200 bg-white text-sm focus:border-[var(--color-brand-500)] outline-none"
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => {
-                  setQuery("");
-                  setParam("q", null);
-                }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 size-6 grid place-items-center rounded text-zinc-400 hover:bg-zinc-100"
-              >
-                <X className="size-4" />
-              </button>
-            )}
-          </div>
-          <button
-            type="submit"
-            className="h-10 px-4 rounded-lg bg-zinc-900 text-white font-bold text-sm hover:bg-zinc-700"
-          >
-            ค้นหา
-          </button>
-        </form>
+      {/* Search + filter chips */}
+      <div className="panel" style={{ marginBottom: 12 }}>
+        <div style={{ padding: 12, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+          <form onSubmit={submitSearch} style={{ display: "flex", gap: 6, flex: 1, maxWidth: 320 }}>
+            <div style={{
+              display: "flex", alignItems: "center", gap: 7,
+              flex: 1, background: "var(--surface)", border: "1px solid var(--line)",
+              borderRadius: 8, padding: "4px 9px",
+            }}>
+              <Search size={13} style={{ color: "var(--ink-400)" }} />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="ค้นเลขที่ใบ · หัวเรื่อง · ผู้แจ้ง · เบอร์"
+                style={{ border: 0, outline: 0, flex: 1, fontSize: 12.5, background: "transparent" }}
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => { setQuery(""); setParam("q", null); }}
+                  style={{
+                    width: 22, height: 22, borderRadius: 4, border: 0,
+                    background: "transparent", display: "grid", placeItems: "center",
+                    color: "var(--ink-400)", cursor: "pointer",
+                  }}
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+            <button type="submit" className="btn btn-sm btn-primary">ค้นหา</button>
+          </form>
 
-        {/* Status pills — shared <FilterPill> primitive */}
-        <div className="flex flex-wrap gap-1.5">
-          <FilterPill
-            active={props.currentStatus === null}
+          <span style={{ flex: 1 }} />
+
+          <span style={{ fontSize: 11, color: "var(--ink-500)" }}>สถานะ:</span>
+          <button
+            type="button"
+            className={"table-filter " + (props.currentStatus === null ? "is-active" : "")}
             onClick={() => setParam("status", null)}
-            count={Object.values(props.statusCounts).reduce((a, b) => a + b, 0)}
           >
             ทั้งหมด
-          </FilterPill>
-          {(["NEW", "ACK", "IN_PROGRESS", "WAITING_PARTS", "RESOLVED", "CLOSED", "CANCELLED"] as RepairTicketStatus[]).map((s) => (
-            <FilterPill
+          </button>
+          {(["NEW", "ACK", "IN_PROGRESS", "WAITING_PARTS", "RESOLVED", "CLOSED"] as RepairTicketStatus[]).map((s) => (
+            <button
               key={s}
-              active={props.currentStatus === s}
+              type="button"
+              className={"table-filter " + (props.currentStatus === s ? "is-active" : "")}
               onClick={() => setParam("status", s)}
-              dotClass={STATUS_COLORS[s].split(" ")[0]}
-              count={props.statusCounts[s]}
             >
+              <span className="step-dot" style={{ background: STATUS_DOT[s] }} />
               {STATUS_LABELS[s]}
-            </FilterPill>
+            </button>
           ))}
-        </div>
-
-        {/* Urgency pills */}
-        <div className="flex flex-wrap gap-1.5">
-          <span className="text-xs font-bold text-zinc-500 self-center pr-1">
-            ระดับ:
-          </span>
-          <FilterPill
-            active={props.currentUrgency === null}
+          <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)", margin: "0 4px" }} />
+          <span style={{ fontSize: 11, color: "var(--ink-500)" }}>ระดับ:</span>
+          <button
+            type="button"
+            className={"table-filter " + (props.currentUrgency === null ? "is-active" : "")}
             onClick={() => setParam("urgency", null)}
           >
             ทุกระดับ
-          </FilterPill>
+          </button>
           {(["URGENT", "NORMAL", "LOW"] as RepairUrgency[]).map((u) => (
-            <FilterPill
+            <button
               key={u}
-              active={props.currentUrgency === u}
+              type="button"
+              className={"table-filter " + (props.currentUrgency === u ? "is-active" : "")}
               onClick={() => setParam("urgency", u)}
-              dotClass={URGENCY_COLORS[u].split(" ")[0]}
-              count={props.urgencyCounts[u]}
             >
+              <span className="step-dot" style={{
+                background: u === "URGENT" ? "var(--p-urgent)" : u === "NORMAL" ? "var(--p-normal)" : "var(--p-low)",
+              }} />
               {URGENCY_LABELS[u]}
-            </FilterPill>
+            </button>
           ))}
         </div>
       </div>
 
-      {/* List + Detail — on mobile, hide list when a ticket is selected so the detail can use full width */}
-      <div className="grid lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] gap-3">
-        {/* List */}
-        <aside className={`bg-white rounded-xl border border-zinc-200 overflow-hidden ${
-          props.selectedTicket ? "hidden lg:block" : "block"
-        }`}>
-          <div className="h-12 px-4 flex items-center justify-between border-b border-zinc-200 bg-zinc-50">
-            <p className="text-sm font-bold text-zinc-900">
-              ใบทั้งหมด ({props.tickets.length})
-            </p>
+      {/* Triage split-view */}
+      <div className="triage">
+        {/* LIST */}
+        <aside className="triage-list" style={{ display: props.selectedTicket ? undefined : undefined }}>
+          <div style={{
+            height: 44, padding: "0 14px", display: "flex", alignItems: "center",
+            borderBottom: "1px solid var(--line-2)", background: "var(--surface-2)",
+            fontSize: 12, color: "var(--ink-700)", fontWeight: 600,
+          }}>
+            <Filter size={13} style={{ marginRight: 6, color: "var(--ink-500)" }} />
+            ใบทั้งหมด ({props.tickets.length})
           </div>
-          <ul className="divide-y divide-zinc-100 max-h-[70vh] lg:max-h-[calc(100vh-280px)] overflow-y-auto">
+          <div className="triage-rows">
             {props.tickets.length === 0 && (
-              <li className="p-8 text-center">
-                <InboxIcon className="size-10 mx-auto text-zinc-300" />
-                <p className="mt-3 text-sm font-bold text-zinc-700">ไม่มีใบในเงื่อนไขนี้</p>
-                <p className="mt-1 text-xs text-zinc-500">ลองล้างตัวกรอง หรือเปิดใบใหม่</p>
+              <div style={{ padding: 32, textAlign: "center" }}>
+                <InboxIcon size={32} style={{ color: "var(--ink-300)" }} />
+                <p style={{ marginTop: 8, fontSize: 12, color: "var(--ink-500)" }}>ไม่มีใบในเงื่อนไขนี้</p>
                 <button
                   type="button"
                   onClick={() => router.push("/repairs/triage")}
-                  className="mt-4 inline-flex items-center h-9 px-3 rounded-lg border-2 border-zinc-200 bg-white text-zinc-700 font-bold text-xs hover:bg-zinc-50"
+                  className="btn btn-sm"
+                  style={{ marginTop: 10 }}
                 >
                   ล้างตัวกรอง
                 </button>
-              </li>
+              </div>
             )}
             {props.tickets.map((t) => {
               const sla = slaStatusFor(t);
               const isSelected = props.selectedTicket?.id === t.id;
+              const prioColor =
+                t.urgency === "URGENT" ? "var(--p-urgent)"
+                : t.urgency === "NORMAL" ? "var(--p-normal)"
+                : "var(--p-low)";
               return (
-                <li key={t.id}>
-                  <Link
-                    href={`?${setParamHref(sp, "selected", t.id)}`}
-                    className={`block p-3 hover:bg-zinc-50 ${isSelected ? "bg-[var(--color-brand-50)] border-l-4 border-[var(--color-brand-600)]" : ""}`}
-                  >
-                    <div className="flex items-baseline justify-between gap-2">
-                      <p className="font-mono font-bold text-xs text-zinc-500">
-                        {t.ticketCode}
-                      </p>
-                      <span className={`text-xs font-bold px-1.5 h-5 inline-flex items-center rounded border ${URGENCY_COLORS[t.urgency]}`}>
-                        {URGENCY_LABELS[t.urgency]}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-sm font-bold text-zinc-900 line-clamp-2">
-                      {t.category?.emoji && <span className="mr-1">{t.category.emoji}</span>}
+                <Link
+                  key={t.id}
+                  href={`?${setParamHref(sp, "selected", t.id)}`}
+                  className={"triage-row " + (isSelected ? "is-selected" : "")}
+                >
+                  <div className="prio-dot" style={{ background: prioColor }} />
+                  <div style={{ minWidth: 0 }}>
+                    <div className="triage-row-title">
+                      {t.category?.emoji && <span style={{ marginRight: 4 }}>{t.category.emoji}</span>}
                       {t.title}
-                    </p>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500">
+                    </div>
+                    <div className="triage-row-meta">
+                      <span className="branch-id num">{t.ticketCode}</span>
                       {t.branch && (
-                        <span className="inline-flex items-center gap-1">
-                          <MapPin className="size-3" />
-                          {t.branch.code}
-                        </span>
+                        <>
+                          <span style={{ color: "var(--ink-300)" }}>·</span>
+                          <span className="branch-id num">{t.branch.code}</span>
+                          <span style={{
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            minWidth: 0,
+                          }}>{t.branch.name}</span>
+                        </>
                       )}
-                      <span className={`inline-flex items-center px-1.5 h-5 rounded text-xs font-bold border ${STATUS_COLORS[t.status]}`}>
+                    </div>
+                    <div className="triage-row-foot">
+                      <span className={"pill " + STATUS_CLS[t.status]}>
+                        <span className="dot" />
                         {STATUS_LABELS[t.status]}
                       </span>
-                      {sla !== "done" && (sla === "overdue" || sla === "soon") && (
-                        <span className={`inline-flex items-center px-1.5 h-5 rounded text-xs font-bold border ${slaBadgeColor(sla)}`}>
+                      {t.category && (
+                        <span className="tag">{t.category.label.split("/")[0]}</span>
+                      )}
+                      {t.assignedTech && (
+                        <span style={{ fontSize: 10.5, color: "var(--ink-600)" }}>
+                          ·{" "}{t.assignedTech.name}
+                        </span>
+                      )}
+                      <span style={{ flex: 1 }} />
+                      {sla !== "done" && sla !== "ok" && (
+                        <span className={"sla " + sla}>
+                          <Clock />
                           {slaBadgeLabel(sla, t.resolveDueAt)}
                         </span>
                       )}
-                      {t.assignedTech && (
-                        <span className="text-zinc-600 font-medium">· {t.assignedTech.name}</span>
-                      )}
                     </div>
-                  </Link>
-                </li>
+                  </div>
+                </Link>
               );
             })}
-          </ul>
+          </div>
         </aside>
 
-        {/* Detail */}
-        <section className={`bg-white rounded-xl border border-zinc-200 min-h-[60vh] ${
-          props.selectedTicket ? "block" : "hidden lg:block"
-        }`}>
+        {/* DETAIL */}
+        <section className="triage-detail">
           {props.selectedTicket ? (
-            <>
-              {/* Mobile back-to-list bar */}
-              <div className="lg:hidden sticky top-0 z-10 bg-white border-b border-zinc-200 px-3 py-2 flex items-center justify-between rounded-t-xl">
-                <Link
-                  href={`?${(() => {
-                    const next = new URLSearchParams(sp.toString());
-                    next.delete("selected");
-                    return next.toString();
-                  })()}`}
-                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-zinc-700 font-bold text-sm hover:bg-zinc-100"
-                >
-                  ← กลับรายการ
-                </Link>
-                <span className="text-xs font-mono text-zinc-500">
-                  {props.selectedTicket.ticketCode}
-                </span>
-              </div>
-              <TicketDetailPanel
-                ticket={props.selectedTicket}
-                technicians={props.technicians}
-                canWrite={props.canWrite}
-                canAdmin={props.canAdmin}
-              />
-            </>
+            <TicketDetailPanel
+              ticket={props.selectedTicket}
+              technicians={props.technicians}
+              canWrite={props.canWrite}
+              canAdmin={props.canAdmin}
+            />
           ) : (
-            <div className="h-full grid place-items-center text-zinc-400 p-10 text-center">
+            <div style={{
+              height: "100%", display: "grid", placeItems: "center",
+              color: "var(--ink-500)", padding: 32, textAlign: "center",
+            }}>
               <div>
-                <InboxIcon className="size-12 mx-auto opacity-40" />
-                <p className="mt-4 text-sm font-bold">เลือกใบจากรายการซ้ายเพื่อดูรายละเอียด</p>
+                <InboxIcon size={32} style={{ color: "var(--ink-300)" }} />
+                <p style={{ marginTop: 8, fontSize: 13, fontWeight: 600 }}>
+                  เลือกใบจากรายการซ้ายเพื่อดูรายละเอียด
+                </p>
+                <p style={{ marginTop: 4, fontSize: 11.5, color: "var(--ink-500)" }}>
+                  หรือกรองด้วยสถานะ / ระดับ / สาขา ทางด้านบน
+                </p>
               </div>
             </div>
           )}
@@ -390,6 +398,3 @@ function setParamHref(sp: URLSearchParams, key: string, value: string): string {
   return next.toString();
 }
 
-// Local Pill + KpiCard removed รอบ 46 — moved to:
-//   @/components/ui/filter-pill (FilterPill)
-//   @/components/ui/kpi-tile (KpiTile)

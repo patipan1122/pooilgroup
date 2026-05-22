@@ -1,11 +1,8 @@
-// Server component — public-facing tracking detail (Pooil App redesign)
-// Shows status pipeline + branch + photos + timeline. No edit actions.
+// Public-facing track detail · Pooil App vocab
 import Link from "next/link";
 import {
   STATUS_LABELS,
-  STATUS_COLORS,
   URGENCY_LABELS,
-  URGENCY_COLORS,
   PHOTO_PHASE_LABELS,
   EVENT_KIND_LABELS,
   formatBaht,
@@ -59,16 +56,6 @@ interface Ticket {
   events: Event[];
 }
 
-const STATUS_DOT: Record<string, string> = {
-  NEW: "bg-blue-500",
-  ACK: "bg-violet-500",
-  IN_PROGRESS: "bg-amber-500",
-  WAITING_PARTS: "bg-cyan-500",
-  RESOLVED: "bg-emerald-500",
-  CLOSED: "bg-zinc-400",
-  CANCELLED: "bg-zinc-300",
-};
-
 const PIPELINE: Array<{
   key: import("@/lib/generated/prisma/enums").RepairTicketStatus;
   label: string;
@@ -96,84 +83,89 @@ export function PublicTrackDetail({ ticket }: { ticket: Ticket }) {
   const isCancelled = ticket.status === "CANCELLED";
 
   return (
-    <div className="max-w-2xl mx-auto space-y-3">
+    <div style={{ maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12 }}>
       <Link
         href="/r/track"
-        className="inline-flex items-center gap-1 text-[12px] text-blue-700 font-semibold hover:text-blue-900"
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 4,
+          fontSize: 12, color: "#1740A3", fontWeight: 600, textDecoration: "none",
+        }}
       >
-        <ChevronLeft className="size-3.5" />
+        <ChevronLeft size={13} />
         ค้นใบอื่น
       </Link>
 
       {/* Hero header */}
-      <div className="bg-white border border-zinc-200 rounded-3xl p-5 sm:p-6">
-        <div className="flex items-baseline justify-between gap-2 flex-wrap">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-800 rounded-full font-mono font-bold text-sm">
-            <Receipt className="size-3.5" />
+      <div style={{
+        background: "white", border: "1px solid #E5EAF2",
+        borderRadius: 24, padding: 24,
+      }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "4px 14px", background: "#EFF4FF", color: "#1740A3",
+            borderRadius: 99, fontWeight: 700, fontSize: 14,
+            fontFamily: "IBM Plex Sans, system-ui",
+          }}>
+            <Receipt size={13} />
             {ticket.ticketCode}
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            <span
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border ${STATUS_COLORS[ticket.status]}`}
-            >
-              <span className={`size-1.5 rounded-full ${STATUS_DOT[ticket.status]}`} />
-              {STATUS_LABELS[ticket.status]}
-            </span>
-            <span
-              className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold border ${URGENCY_COLORS[ticket.urgency]}`}
-            >
-              {URGENCY_LABELS[ticket.urgency]}
-            </span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <StatusPill status={ticket.status} />
+            <UrgencyPill urgency={ticket.urgency} />
             {sla !== "done" && (
-              <span
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border ${slaBadgeColor(sla)}`}
-              >
-                <Clock className="size-3" />
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 4,
+                padding: "2px 8px", borderRadius: 4,
+                fontSize: 11, fontWeight: 700,
+                border: "1px solid",
+                ...slaBadgePalette(sla),
+              }}>
+                <Clock size={11} />
                 {slaBadgeLabel(sla, ticket.resolveDueAt)}
               </span>
             )}
           </div>
         </div>
-
-        <h1 className="mt-3 text-xl sm:text-2xl font-extrabold tracking-tight text-zinc-900 leading-snug">
-          {ticket.category?.emoji && <span className="mr-1">{ticket.category.emoji}</span>}
+        <h1 style={{
+          marginTop: 12, fontSize: 22, fontWeight: 700, letterSpacing: "-0.015em",
+          color: "#0B1220", lineHeight: 1.3,
+        }}>
+          {ticket.category?.emoji && <span style={{ marginRight: 6 }}>{ticket.category.emoji}</span>}
           {ticket.title}
         </h1>
         {ticket.description && (
-          <p className="mt-2 text-[13.5px] text-zinc-700 whitespace-pre-wrap leading-relaxed">
+          <p style={{ marginTop: 8, fontSize: 13, color: "#374151", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
             {ticket.description}
           </p>
         )}
       </div>
 
-      {/* Status pipeline */}
+      {/* Pipeline */}
       {!isCancelled && (
-        <div className="bg-white border border-zinc-200 rounded-2xl p-4">
-          <div className="text-[10.5px] font-bold uppercase tracking-wide text-zinc-500 mb-2">
+        <div style={{
+          background: "white", border: "1px solid #E5EAF2",
+          borderRadius: 16, padding: 16,
+        }}>
+          <div style={{
+            fontSize: 10.5, color: "#64748B", fontWeight: 700,
+            textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8,
+          }}>
             ความก้าวหน้า
           </div>
-          <div className="flex items-center gap-1">
+          <div className="rf-track-pipeline">
             {PIPELINE.map((p, i) => {
               const isCurrent = i === pipelineIdx;
               const isPast = i < pipelineIdx;
               return (
-                <div key={p.key} className="flex-1 min-w-0">
-                  <div
-                    className={`h-2 rounded-full ${
-                      isPast || isCurrent ? "bg-blue-500" : "bg-zinc-200"
-                    }`}
-                  />
-                  <p
-                    className={`mt-1 text-[10.5px] font-semibold text-center truncate ${
-                      isCurrent
-                        ? "text-blue-700"
-                        : isPast
-                          ? "text-zinc-700"
-                          : "text-zinc-400"
-                    }`}
-                  >
+                <div key={p.key}>
+                  <div className={"rf-track-bar " + (isPast || isCurrent ? "is-active" : "")} />
+                  <div className={
+                    "rf-track-label " +
+                    (isCurrent ? "is-current" : isPast ? "is-past" : "")
+                  }>
                     {p.label}
-                  </p>
+                  </div>
                 </div>
               );
             })}
@@ -182,79 +174,79 @@ export function PublicTrackDetail({ ticket }: { ticket: Ticket }) {
       )}
 
       {/* Meta */}
-      <div className="bg-white border border-zinc-200 rounded-2xl p-4 grid sm:grid-cols-2 gap-3 text-[12.5px]">
+      <div style={{
+        background: "white", border: "1px solid #E5EAF2",
+        borderRadius: 16, padding: 16,
+        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12,
+        fontSize: 12.5,
+      }}>
         {ticket.branch && (
-          <Meta
-            icon={<Building2 className="size-3.5 text-zinc-500" />}
-            label="สาขา"
-          >
-            <span className="font-mono font-bold text-zinc-700">
-              {ticket.branch.code}
-            </span>
-            {" · "}
-            {ticket.branch.name}
+          <Meta icon={<Building2 size={13} />} label="สาขา">
+            <span className="num" style={{ fontWeight: 700, color: "#374151" }}>{ticket.branch.code}</span>
+            <span style={{ marginLeft: 6 }}>{ticket.branch.name}</span>
           </Meta>
         )}
         {ticket.assignedTech && (
-          <Meta
-            icon={<User className="size-3.5 text-zinc-500" />}
-            label="ช่างที่ดูแล"
-          >
+          <Meta icon={<User size={13} />} label="ช่างที่ดูแล">
             {ticket.assignedTech.name}
             {ticket.assignedTech.kind === "VENDOR" && (
-              <span className="ml-1 text-[10px] bg-violet-50 text-violet-700 px-1 py-px rounded font-bold">
+              <span style={{
+                marginLeft: 6, fontSize: 10, padding: "1px 6px",
+                background: "#F5F3FF", color: "#6D28D9", borderRadius: 4, fontWeight: 700,
+              }}>
                 VENDOR
               </span>
             )}
           </Meta>
         )}
-        <Meta icon={<Clock className="size-3.5 text-zinc-500" />} label="เปิดเมื่อ">
+        <Meta icon={<Clock size={13} />} label="เปิดเมื่อ">
           {fmtDateTime(ticket.createdAt)}
         </Meta>
         {ticket.resolvedAt && (
-          <Meta
-            icon={<CheckCircle2 className="size-3.5 text-emerald-600" />}
-            label="เสร็จเมื่อ"
-          >
+          <Meta icon={<CheckCircle2 size={13} />} label="เสร็จเมื่อ">
             {fmtDateTime(ticket.resolvedAt)}
           </Meta>
         )}
         {total > 0 && (
-          <Meta
-            icon={<Receipt className="size-3.5 text-zinc-500" />}
-            label="ค่าใช้จ่าย"
-          >
-            <span className="tabular-nums font-bold">{formatBaht(total)}</span>
+          <Meta icon={<Receipt size={13} />} label="ค่าใช้จ่าย">
+            <span className="num" style={{ fontWeight: 700 }}>{formatBaht(total)}</span>
           </Meta>
         )}
-        <Meta icon={<MapPin className="size-3.5 text-zinc-500" />} label="ผู้แจ้ง">
+        <Meta icon={<MapPin size={13} />} label="ผู้แจ้ง">
           {ticket.reporterName}
         </Meta>
       </div>
 
       {/* Photos */}
       {ticket.photos.length > 0 && (
-        <div className="bg-white border border-zinc-200 rounded-2xl p-4">
-          <h3 className="font-bold text-zinc-900 mb-2 flex items-center gap-2 text-[13.5px]">
-            <Camera className="size-3.5" />
+        <div style={{ background: "white", border: "1px solid #E5EAF2", borderRadius: 16, padding: 16 }}>
+          <h3 style={{
+            fontSize: 13, fontWeight: 700, color: "#0B1220",
+            margin: "0 0 10px", display: "flex", alignItems: "center", gap: 6,
+          }}>
+            <Camera size={14} />
             รูปภาพ ({ticket.photos.length})
           </h3>
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+          <div className="rf-photo-grid">
             {ticket.photos.map((p) => (
               <a
                 key={p.id}
                 href={p.r2PublicUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="relative aspect-square rounded-lg overflow-hidden border border-zinc-200 bg-zinc-100"
+                className="rf-photo-tile"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={p.r2PublicUrl}
-                  alt={p.caption ?? ""}
-                  className="absolute inset-0 size-full object-cover"
+                  src={p.r2PublicUrl} alt={p.caption ?? ""}
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
                 />
-                <span className="absolute top-1 left-1 px-1.5 h-5 inline-flex items-center rounded text-[10px] font-bold bg-zinc-900/85 text-white">
+                <span style={{
+                  position: "absolute", top: 4, left: 4,
+                  padding: "1px 6px", borderRadius: 4,
+                  fontSize: 10, fontWeight: 700,
+                  background: "rgba(11, 18, 32, 0.85)", color: "white",
+                }}>
                   {PHOTO_PHASE_LABELS[p.phase]}
                 </span>
               </a>
@@ -264,32 +256,48 @@ export function PublicTrackDetail({ ticket }: { ticket: Ticket }) {
       )}
 
       {/* Timeline */}
-      <div className="bg-white border border-zinc-200 rounded-2xl p-4">
-        <h3 className="font-bold text-zinc-900 mb-3 text-[13.5px]">
+      <div style={{ background: "white", border: "1px solid #E5EAF2", borderRadius: 16, padding: 16 }}>
+        <h3 style={{ fontSize: 13, fontWeight: 700, color: "#0B1220", margin: "0 0 12px" }}>
           ไทม์ไลน์
         </h3>
-        <ol className="space-y-2 border-l-2 border-zinc-200 pl-4">
+        <ol style={{
+          listStyle: "none", margin: 0, padding: "0 0 0 18px",
+          borderLeft: "2px solid #E5EAF2", display: "flex", flexDirection: "column", gap: 10,
+        }}>
           {ticket.events.map((ev) => {
             const p = ev.payload as Record<string, unknown> | null;
             const body =
               (p?.body as string | undefined) ?? (p?.comment as string | undefined);
             return (
-              <li key={ev.id} className="relative -left-[22px] pl-5">
-                <span className="absolute left-0 top-1.5 size-2.5 rounded-full bg-blue-500 border-2 border-white shadow" />
-                <div className="bg-zinc-50 rounded-lg border border-zinc-200 p-2.5">
-                  <div className="flex items-baseline justify-between gap-2 flex-wrap">
-                    <p className="font-bold text-zinc-900 text-[12.5px]">
+              <li key={ev.id} style={{ position: "relative", paddingLeft: 16 }}>
+                <span style={{
+                  position: "absolute", left: -23, top: 6,
+                  width: 10, height: 10, borderRadius: 5,
+                  background: "#1E4FCC",
+                  border: "2px solid white",
+                  boxShadow: "0 0 0 1px #E5EAF2",
+                }} />
+                <div style={{
+                  background: "#F8FAFD",
+                  border: "1px solid #E5EAF2",
+                  borderRadius: 10, padding: 10,
+                }}>
+                  <div style={{
+                    display: "flex", alignItems: "baseline", justifyContent: "space-between",
+                    gap: 6, flexWrap: "wrap",
+                  }}>
+                    <p style={{ fontSize: 12.5, fontWeight: 700, color: "#0B1220", margin: 0 }}>
                       {EVENT_KIND_LABELS[ev.kind]}
                     </p>
-                    <p className="text-[10.5px] text-zinc-500 tabular-nums">
+                    <p className="num" style={{ fontSize: 10.5, color: "#64748B", margin: 0 }}>
                       {fmtDateTime(ev.createdAt)}
                     </p>
                   </div>
-                  <p className="text-[11px] text-zinc-600 mt-0.5">
+                  <p style={{ fontSize: 11, color: "#64748B", margin: "2px 0 0" }}>
                     โดย {ev.actorName}
                   </p>
                   {body && (
-                    <p className="mt-1.5 text-[12.5px] text-zinc-800 whitespace-pre-wrap leading-relaxed">
+                    <p style={{ fontSize: 12.5, color: "#1F2937", margin: "6px 0 0", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
                       {body}
                     </p>
                   )}
@@ -300,26 +308,28 @@ export function PublicTrackDetail({ ticket }: { ticket: Ticket }) {
         </ol>
       </div>
 
-      {/* Contact info */}
-      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-[12.5px] text-blue-900">
-        <p className="font-bold">ใบนี้เป็นของ {ticket.reporterName}</p>
-        <p className="mt-1 text-blue-800">
+      {/* Contact card */}
+      <div style={{
+        background: "#EFF4FF", border: "1px solid #DBE6FF",
+        borderRadius: 16, padding: 14,
+        fontSize: 12.5, color: "#1740A3",
+      }}>
+        <p style={{ fontWeight: 700, margin: 0 }}>ใบนี้เป็นของ {ticket.reporterName}</p>
+        <p style={{ marginTop: 4, color: "#1E4FCC" }}>
           เบอร์ที่ใช้แจ้ง:{" "}
-          <a
-            href={`tel:${ticket.reporterPhone}`}
-            className="font-mono font-bold tabular-nums underline"
-          >
+          <a href={`tel:${ticket.reporterPhone}`} className="num" style={{
+            fontWeight: 700, textDecoration: "underline", color: "inherit",
+          }}>
             {ticket.reporterPhone}
           </a>
         </p>
         {ticket.assignedTech?.phone && (
-          <p className="mt-2 text-blue-800">
+          <p style={{ marginTop: 8 }}>
             ติดต่อช่าง {ticket.assignedTech.name}:{" "}
-            <a
-              href={`tel:${ticket.assignedTech.phone}`}
-              className="font-mono font-bold tabular-nums underline"
-            >
-              <Phone className="size-3 inline" /> {ticket.assignedTech.phone}
+            <a href={`tel:${ticket.assignedTech.phone}`} className="num" style={{
+              fontWeight: 700, textDecoration: "underline", color: "inherit",
+            }}>
+              <Phone size={11} style={{ display: "inline" }} /> {ticket.assignedTech.phone}
             </a>
           </p>
         )}
@@ -329,25 +339,71 @@ export function PublicTrackDetail({ ticket }: { ticket: Ticket }) {
 }
 
 function Meta({
-  icon,
-  label,
-  children,
+  icon, label, children,
 }: {
-  icon: React.ReactNode;
-  label: string;
-  children: React.ReactNode;
+  icon: React.ReactNode; label: string; children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start gap-2">
-      <div className="mt-0.5 size-4 grid place-items-center flex-shrink-0">
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+      <div style={{ marginTop: 2, color: "#64748B" }}>{icon}</div>
+      <div style={{ minWidth: 0 }}>
+        <p style={{ fontSize: 10, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", margin: 0 }}>
           {label}
         </p>
-        <p className="text-zinc-900 font-medium text-[13px]">{children}</p>
+        <p style={{ fontWeight: 500, color: "#0B1220", margin: "2px 0 0" }}>{children}</p>
       </div>
     </div>
   );
 }
+
+function StatusPill({ status }: { status: import("@/lib/generated/prisma/enums").RepairTicketStatus }) {
+  const palette: Record<typeof status, { bg: string; color: string; border: string }> = {
+    NEW:           { bg: "#EFF6FF", color: "#1D4ED8", border: "#BFDBFE" },
+    ACK:           { bg: "#F5F3FF", color: "#6D28D9", border: "#DDD6FE" },
+    IN_PROGRESS:   { bg: "#FFFBEB", color: "#B45309", border: "#FDE68A" },
+    WAITING_PARTS: { bg: "#ECFEFF", color: "#0E7490", border: "#A5F3FC" },
+    RESOLVED:      { bg: "#ECFDF5", color: "#047857", border: "#A7F3D0" },
+    CLOSED:        { bg: "#F1F5F9", color: "#475569", border: "#CBD5E1" },
+    CANCELLED:     { bg: "#F1F5F9", color: "#64748B", border: "#E2E8F0" },
+  };
+  const p = palette[status];
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      padding: "2px 8px", borderRadius: 4,
+      fontSize: 11, fontWeight: 700,
+      background: p.bg, color: p.color, border: `1px solid ${p.border}`,
+    }}>
+      <span style={{ width: 6, height: 6, borderRadius: 3, background: "currentColor" }} />
+      {STATUS_LABELS[status]}
+    </span>
+  );
+}
+
+function UrgencyPill({ urgency }: { urgency: import("@/lib/generated/prisma/enums").RepairUrgency }) {
+  const palette: Record<typeof urgency, { bg: string; color: string; border: string }> = {
+    URGENT: { bg: "#FEF2F2", color: "#B91C1C", border: "#FECACA" },
+    NORMAL: { bg: "#EFF6FF", color: "#1D4ED8", border: "#BFDBFE" },
+    LOW:    { bg: "#F1F5F9", color: "#475569", border: "#CBD5E1" },
+  };
+  const p = palette[urgency];
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", padding: "2px 8px",
+      borderRadius: 4, fontSize: 11, fontWeight: 700,
+      background: p.bg, color: p.color, border: `1px solid ${p.border}`,
+    }}>
+      {URGENCY_LABELS[urgency]}
+    </span>
+  );
+}
+
+function slaBadgePalette(s: ReturnType<typeof slaStatusFor>): React.CSSProperties {
+  if (s === "overdue") return { background: "#FEF2F2", color: "#B91C1C", borderColor: "#FECACA" };
+  if (s === "soon") return { background: "#FFFBEB", color: "#B45309", borderColor: "#FDE68A" };
+  if (s === "done") return { background: "#F1F5F9", color: "#64748B", borderColor: "#E2E8F0" };
+  return { background: "#ECFDF5", color: "#047857", borderColor: "#A7F3D0" };
+}
+
+// Keep tree-shake hint
+void slaBadgeColor;

@@ -1,7 +1,4 @@
-// /repairs/recurring — Recurring failure report (Pooil App redesign)
-// "Pumps that fail every 30 days never get capex-replaced." (BA insight)
-// Groups closed/resolved tickets by (branch, category) over a window and shows
-// repeat offenders so CEO can flag for replacement instead of repeated repair.
+// /repairs/recurring — Recurring failure report (Pooil App vocab: .panel .dtable)
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { requireRepairAccess } from "@/lib/repair/role-guard";
@@ -34,14 +31,9 @@ export default async function RecurringFailurePage({
       categoryId: { not: null },
     },
     select: {
-      id: true,
-      ticketCode: true,
-      title: true,
-      status: true,
-      createdAt: true,
-      resolvedAt: true,
-      partsCostCents: true,
-      laborCostCents: true,
+      id: true, ticketCode: true, title: true, status: true,
+      createdAt: true, resolvedAt: true,
+      partsCostCents: true, laborCostCents: true,
       branch: { select: { id: true, code: true, name: true, businessType: true } },
       category: { select: { id: true, label: true, emoji: true } },
     },
@@ -67,16 +59,10 @@ export default async function RecurringFailurePage({
     if (!map.has(key)) {
       map.set(key, {
         key,
-        branchId: t.branch.id,
-        branchCode: t.branch.code,
-        branchName: t.branch.name,
+        branchId: t.branch.id, branchCode: t.branch.code, branchName: t.branch.name,
         businessType: t.branch.businessType as string,
-        categoryId: t.category.id,
-        categoryLabel: t.category.label,
-        categoryEmoji: t.category.emoji,
-        tickets: [],
-        totalCostCents: 0,
-        downtimeBaht: 0,
+        categoryId: t.category.id, categoryLabel: t.category.label, categoryEmoji: t.category.emoji,
+        tickets: [], totalCostCents: 0, downtimeBaht: 0,
       });
     }
     const row = map.get(key)!;
@@ -102,23 +88,19 @@ export default async function RecurringFailurePage({
         icon={AlertTriangle}
         eyebrow="Insights · Recurring failures"
         title="ของพังซ้ำ"
-        subtitle={`สาขา + หมวด ที่ซ่อมซ้ำ ≥ 2 ครั้ง ใน ${days} วันที่ผ่านมา · แทนที่จะซ่อมซ้ำ ลองเปลี่ยนของใหม่อาจคุ้มกว่า`}
+        subtitle={`สาขา + หมวด ที่ซ่อมซ้ำ ≥ 2 ครั้ง ใน ${days} วัน · เปลี่ยนของใหม่อาจคุ้มกว่าซ่อมซ้ำ`}
         stats={[
           { label: "จุดที่ซ้ำ", value: offenders.length, tone: offenders.length > 0 ? "warn" : "default" },
           { label: "ค่าซ่อมรวม", value: formatBaht(totalSpent) },
           { label: "ค่าเสียโอกาส", value: formatBaht(totalDowntime), tone: "danger" },
         ]}
         actions={
-          <div className="flex gap-1">
+          <div style={{ display: "flex", gap: 4 }}>
             {[30, 60, 90, 180, 365].map((d) => (
               <Link
                 key={d}
                 href={`/repairs/recurring?days=${d}`}
-                className={`h-8 px-2.5 inline-flex items-center rounded text-[11.5px] font-semibold border ${
-                  days === d
-                    ? "bg-zinc-900 text-white border-zinc-900"
-                    : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50"
-                }`}
+                className={"table-filter " + (days === d ? "is-active" : "")}
               >
                 {d} วัน
               </Link>
@@ -127,91 +109,113 @@ export default async function RecurringFailurePage({
         }
       />
 
-      <div className="p-3 sm:p-5 lg:p-6 max-w-[1200px] mx-auto">
+      <div className="repair-content">
         {offenders.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-dashed border-emerald-300 p-12 text-center">
-            <div className="size-16 mx-auto rounded-full bg-emerald-50 grid place-items-center text-emerald-600">
-              <TrendingUp className="size-7" />
+          <div className="panel" style={{
+            padding: 48, textAlign: "center",
+            borderStyle: "dashed", borderColor: "#A7F3D0",
+            background: "#ECFDF5",
+          }}>
+            <div style={{
+              width: 56, height: 56, borderRadius: 28,
+              background: "#fff", color: "var(--good)",
+              display: "grid", placeItems: "center",
+              margin: "0 auto",
+            }}>
+              <TrendingUp size={26} />
             </div>
-            <p className="mt-4 font-bold text-zinc-900 text-lg">ไม่มีของพังซ้ำใน {days} วัน</p>
-            <p className="text-sm text-zinc-500 mt-1">
-              เครื่องยนต์/อุปกรณ์ของทุกสาขาเสถียร · ไม่ต้องห่วง capex
+            <p style={{ fontSize: 16, fontWeight: 700, color: "var(--ink-900)", marginTop: 14 }}>
+              ไม่มีของพังซ้ำใน {days} วัน
+            </p>
+            <p style={{ fontSize: 12, color: "var(--ink-600)", marginTop: 4 }}>
+              เครื่อง / อุปกรณ์ของทุกสาขาเสถียร · ไม่ต้องห่วง capex
             </p>
           </div>
         ) : (
-          <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden">
-            <table className="w-full text-[12.5px]">
-              <thead>
-                <tr className="text-left text-[10.5px] uppercase tracking-wide text-zinc-500 border-b border-zinc-100 bg-zinc-50">
-                  <th className="px-4 py-2.5 font-bold">สาขา · หมวด</th>
-                  <th className="px-4 py-2.5 font-bold text-right">ครั้งที่ซ่อม</th>
-                  <th className="px-4 py-2.5 font-bold text-right">ค่าซ่อมรวม</th>
-                  <th className="px-4 py-2.5 font-bold text-right">ค่าเสียโอกาส</th>
-                  <th className="px-4 py-2.5 font-bold">ใบล่าสุด</th>
-                  <th className="px-4 py-2.5"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {offenders.map((row) => (
-                  <tr key={row.key} className="hover:bg-zinc-50">
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-zinc-900 flex items-center gap-1.5">
-                        <span className="text-lg">{row.categoryEmoji ?? "🛠"}</span>
-                        {row.categoryLabel}
-                      </p>
-                      <p className="text-[11px] text-zinc-500 flex items-center gap-1 mt-0.5">
-                        <MapPin className="size-3" />
-                        <span className="font-mono font-bold text-zinc-700">{row.branchCode}</span>
-                        {row.branchName}
-                      </p>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded font-bold text-[14px] tabular-nums border ${
-                          row.tickets.length >= 5
-                            ? "bg-red-50 text-red-700 border-red-200"
-                            : row.tickets.length >= 3
-                              ? "bg-amber-50 text-amber-700 border-amber-200"
-                              : "bg-zinc-100 text-zinc-700 border-zinc-200"
-                        }`}
-                      >
-                        {row.tickets.length}
-                        <span className="ml-1 text-[10px] font-medium opacity-80">ครั้ง</span>
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums font-semibold text-zinc-900">
-                      {formatBaht(row.totalCostCents)}
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums font-semibold text-red-700">
-                      {formatBaht(row.downtimeBaht * 100)}
-                    </td>
-                    <td className="px-4 py-3 text-[11.5px]">
-                      <Link
-                        href={`/repairs/${row.tickets[0].id}`}
-                        className="font-mono font-semibold text-blue-700 hover:text-blue-900"
-                      >
-                        {row.tickets[0].ticketCode}
-                      </Link>
-                      <span className="text-zinc-400 ml-1">
-                        ·{" "}
-                        {new Intl.DateTimeFormat("th-TH", {
-                          day: "numeric",
-                          month: "short",
-                        }).format(row.tickets[0].createdAt)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Link
-                        href={`/repairs/triage?branch=${row.branchId}&category=${row.categoryId}`}
-                        className="inline-flex items-center gap-0.5 text-[11.5px] font-semibold text-blue-700 hover:text-blue-900"
-                      >
-                        ดูใบทั้งหมด <ChevronRight className="size-3" />
-                      </Link>
-                    </td>
+          <div className="panel">
+            <div style={{ overflowX: "auto" }}>
+              <table className="dtable">
+                <thead>
+                  <tr>
+                    <th>สาขา · หมวด</th>
+                    <th className="num">ครั้งที่ซ่อม</th>
+                    <th className="num">ค่าซ่อมรวม</th>
+                    <th className="num">ค่าเสียโอกาส</th>
+                    <th>ใบล่าสุด</th>
+                    <th />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {offenders.map((row) => (
+                    <tr key={row.key}>
+                      <td>
+                        <p style={{
+                          fontWeight: 600, color: "var(--ink-900)", margin: 0,
+                          display: "flex", alignItems: "center", gap: 6,
+                        }}>
+                          <span style={{ fontSize: 18 }}>{row.categoryEmoji ?? "🛠"}</span>
+                          {row.categoryLabel}
+                        </p>
+                        <p style={{
+                          fontSize: 11, color: "var(--ink-500)",
+                          display: "flex", alignItems: "center", gap: 4,
+                          marginTop: 2,
+                        }}>
+                          <MapPin size={10} />
+                          <span className="num" style={{ fontWeight: 600, color: "var(--ink-700)" }}>
+                            {row.branchCode}
+                          </span>
+                          {row.branchName}
+                        </p>
+                      </td>
+                      <td className="num">
+                        <span className={
+                          "pill " +
+                          (row.tickets.length >= 5 ? "pill-urgent" :
+                           row.tickets.length >= 3 ? "pill-approval" : "pill-low")
+                        } style={{ fontSize: 13, padding: "2px 8px" }}>
+                          {row.tickets.length} ครั้ง
+                        </span>
+                      </td>
+                      <td className="num" style={{ fontWeight: 600 }}>
+                        {formatBaht(row.totalCostCents)}
+                      </td>
+                      <td className="num" style={{ fontWeight: 600, color: "var(--bad)" }}>
+                        {formatBaht(row.downtimeBaht * 100)}
+                      </td>
+                      <td>
+                        <Link
+                          href={`/repairs/${row.tickets[0].id}`}
+                          style={{
+                            fontSize: 11.5, fontWeight: 600,
+                            color: "var(--brand-700)", textDecoration: "none",
+                          }}
+                        >
+                          <span className="num" style={{ fontFamily: "var(--font-mono)" }}>
+                            {row.tickets[0].ticketCode}
+                          </span>
+                          <span style={{ color: "var(--ink-400)", marginLeft: 4 }}>
+                            · {new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short" }).format(row.tickets[0].createdAt)}
+                          </span>
+                        </Link>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <Link
+                          href={`/repairs/triage?branch=${row.branchId}&category=${row.categoryId}`}
+                          style={{
+                            fontSize: 11, fontWeight: 600,
+                            color: "var(--brand-700)", textDecoration: "none",
+                            display: "inline-flex", alignItems: "center", gap: 2,
+                          }}
+                        >
+                          ดูทั้งหมด <ChevronRight size={12} />
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

@@ -1,8 +1,6 @@
 "use client";
-// Shared header for all /repairs/* admin views.
-// View tabs (Overview / Triage / Kanban / Table) + business filter chip row.
-// Mirrors the Pooil App design (Linear/Stripe density).
-
+// Shared header for /repairs/* views — uses Pooil App design CSS classes
+// (page-head, page-title, view-tabs, biz-tabs, brand-mark)
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
@@ -13,8 +11,8 @@ import {
   Table as TableIcon,
   Plus,
   ExternalLink,
-  Building2,
   Globe,
+  Building2,
 } from "lucide-react";
 
 interface Company {
@@ -40,10 +38,10 @@ const VIEWS: Array<{
   label: string;
   icon: React.ComponentType<{ className?: string }>;
 }> = [
-  { key: "overview", href: "/repairs", label: "ภาพรวม", icon: LayoutDashboard },
-  { key: "triage", href: "/repairs/triage", label: "Triage Inbox", icon: Inbox },
-  { key: "kanban", href: "/repairs/kanban", label: "Kanban", icon: KanbanSquare },
-  { key: "table", href: "/repairs/table", label: "ตาราง", icon: TableIcon },
+  { key: "overview", href: "/repairs",         label: "ภาพรวม",       icon: LayoutDashboard },
+  { key: "triage",   href: "/repairs/triage",  label: "Triage",        icon: Inbox },
+  { key: "kanban",   href: "/repairs/kanban",  label: "Kanban",        icon: KanbanSquare },
+  { key: "table",    href: "/repairs/table",   label: "ตาราง",         icon: TableIcon },
 ];
 
 export function RepairViewHeader({
@@ -74,102 +72,79 @@ export function RepairViewHeader({
   }
 
   return (
-    <div className="bg-white border-b border-zinc-200">
-      {/* Top row: title + actions */}
-      <div className="px-4 sm:px-6 lg:px-8 pt-4 pb-2 flex flex-wrap items-start gap-3">
-        <div className="flex items-start gap-3 min-w-0">
-          <div className="size-10 rounded-xl bg-gradient-to-br from-blue-600 to-blue-900 grid place-items-center text-white font-extrabold text-base shrink-0">
-            P
-          </div>
-          <div className="min-w-0">
-            <div className="text-[10px] uppercase tracking-[0.14em] font-bold text-blue-600">
-              Pooilgroup · Command Center
-            </div>
-            <h1 className="text-[19px] sm:text-[22px] font-extrabold tracking-tight text-zinc-900 leading-tight">
-              {active === "overview" && "ภาพรวมระบบแจ้งซ่อม"}
-              {active === "triage" && "Triage Inbox"}
-              {active === "kanban" && "Kanban Board"}
-              {active === "table" && "ใบทั้งหมด"}
-            </h1>
-            <p className="text-xs text-zinc-500 mt-0.5 leading-tight tabular-nums">
-              <span className="font-semibold text-zinc-700">{openCount}</span> เปิดอยู่ ·{" "}
-              <span className="font-semibold text-red-600">{urgentCount}</span> ด่วน
-              {newSinceYesterday !== undefined && (
-                <>
-                  {" "}
-                  · <span className="font-semibold text-zinc-700">+{newSinceYesterday}</span>{" "}
-                  วันนี้
-                </>
-              )}
-              {ticketTotal !== undefined && (
-                <> · ทั้งหมด {ticketTotal.toLocaleString()} ใบ</>
-              )}
-            </p>
+    <div className="page-head">
+      <div className="page-head-row">
+        <div className="brand-mark">P</div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div className="page-eyebrow">Pooilgroup · Command Center</div>
+          <h1 className="page-title">
+            {active === "overview" && "ภาพรวมระบบแจ้งซ่อม"}
+            {active === "triage" && "Triage Inbox"}
+            {active === "kanban" && "Kanban Board"}
+            {active === "table" && "ใบทั้งหมด"}
+          </h1>
+          <div className="page-sub">
+            <b className="num">{openCount}</b> เปิดอยู่
+            <span style={{ margin: "0 6px" }}>·</span>
+            <b className="num" style={{ color: urgentCount > 0 ? "var(--bad)" : "inherit" }}>
+              {urgentCount}
+            </b>{" "}
+            ด่วน
+            {newSinceYesterday !== undefined && (
+              <>
+                <span style={{ margin: "0 6px" }}>·</span>
+                <b className="num">+{newSinceYesterday}</b> วันนี้
+              </>
+            )}
+            {ticketTotal !== undefined && (
+              <>
+                <span style={{ margin: "0 6px" }}>·</span>ทั้งหมด <b className="num">{ticketTotal.toLocaleString()}</b> ใบ
+              </>
+            )}
           </div>
         </div>
 
-        <div className="ml-auto flex flex-wrap gap-2">
-          <Link
-            href="/r/new"
-            target="_blank"
-            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-zinc-200 bg-white text-zinc-700 font-semibold text-xs hover:bg-zinc-50"
-            title="เปิดฟอร์มสาธารณะในแท็บใหม่"
-          >
-            <ExternalLink className="size-3.5" />
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          {companies.length > 1 && (
+            <div className="biz-tabs">
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => setCompany(null)}
+                className={"biz-tab " + (!currentCompanyId ? "is-active" : "")}
+              >
+                <Globe size={12} />
+                ทั้งหมด
+              </button>
+              {companies.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  disabled={pending}
+                  onClick={() => setCompany(c.id)}
+                  className={"biz-tab " + (currentCompanyId === c.id ? "is-active" : "")}
+                >
+                  <Building2 size={12} />
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <Link href="/r/new" target="_blank" className="btn btn-sm">
+            <ExternalLink />
             ฟอร์มสาธารณะ
           </Link>
           {canWrite && (
-            <Link
-              href="/repairs/new"
-              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-sm shadow-blue-600/20"
-            >
-              <Plus className="size-3.5" />
+            <Link href="/repairs/new" className="btn btn-primary btn-sm">
+              <Plus />
               แจ้งซ่อมใหม่
             </Link>
           )}
         </div>
       </div>
 
-      {/* Business tabs */}
-      {companies.length > 1 && (
-        <div className="px-4 sm:px-6 lg:px-8 py-2 flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => setCompany(null)}
-            className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11.5px] font-medium transition-colors ${
-              !currentCompanyId
-                ? "bg-zinc-900 text-white shadow-sm"
-                : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
-            }`}
-          >
-            <Globe className="size-3" />
-            ทั้งหมด
-          </button>
-          {companies.map((c) => {
-            const active = currentCompanyId === c.id;
-            return (
-              <button
-                key={c.id}
-                type="button"
-                disabled={pending}
-                onClick={() => setCompany(c.id)}
-                className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11.5px] font-medium transition-colors ${
-                  active
-                    ? "bg-zinc-900 text-white shadow-sm"
-                    : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
-                }`}
-              >
-                <Building2 className="size-3" />
-                {c.name}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* View tabs */}
-      <div className="px-4 sm:px-6 lg:px-8 flex items-center gap-0.5 overflow-x-auto -mb-px">
+      <div className="view-tabs">
         {VIEWS.map((v) => {
           const isActive = v.key === active;
           const Icon = v.icon;
@@ -177,13 +152,9 @@ export function RepairViewHeader({
             <Link
               key={v.key}
               href={tabHref(v.href)}
-              className={`inline-flex items-center gap-1.5 px-3 py-2.5 text-[12.5px] font-semibold border-b-2 transition-colors whitespace-nowrap ${
-                isActive
-                  ? "text-blue-700 border-blue-600"
-                  : "text-zinc-500 hover:text-zinc-900 border-transparent"
-              }`}
+              className={"view-tab " + (isActive ? "is-active" : "")}
             >
-              <Icon className="size-3.5" />
+              <Icon />
               {v.label}
             </Link>
           );

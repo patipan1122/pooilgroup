@@ -1,7 +1,5 @@
 "use client";
-
-// Public repair ticket form — sectioned, numbered, camera-first.
-// Mirrors the Pooil App design (Linear-style density · biz tabs · category grid · live preview).
+// Pooil App · Public repair form (1:1 port using .rf-* classes from form-styles.css)
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -90,9 +88,9 @@ const SLA_HINT: Record<"URGENT" | "NORMAL" | "LOW", string> = {
 };
 
 const SLA_BADGE: Record<"URGENT" | "NORMAL" | "LOW", { label: string; bg: string; color: string }> = {
-  URGENT: { label: "4 ชม.", bg: "bg-red-50", color: "text-red-700" },
-  NORMAL: { label: "48 ชม.", bg: "bg-blue-50", color: "text-blue-700" },
-  LOW: { label: "7 วัน", bg: "bg-zinc-100", color: "text-zinc-700" },
+  URGENT: { label: "4 ชม.",  bg: "#FEF2F2", color: "#B91C1C" },
+  NORMAL: { label: "48 ชม.", bg: "#EFF6FF", color: "#1D4ED8" },
+  LOW:    { label: "7 วัน",  bg: "#F1F5F9", color: "#475569" },
 };
 
 export function PublicRepairForm({ orgName, companies, branches, categories }: Props) {
@@ -105,9 +103,7 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
       return { name: "", phone: "", email: "", companyId: "", branchId: "" };
     try {
       const raw = window.localStorage.getItem(REPORTER_KEY);
-      return raw
-        ? JSON.parse(raw)
-        : { name: "", phone: "", email: "", companyId: "", branchId: "" };
+      return raw ? JSON.parse(raw) : { name: "", phone: "", email: "", companyId: "", branchId: "" };
     } catch {
       return { name: "", phone: "", email: "", companyId: "", branchId: "" };
     }
@@ -129,16 +125,12 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
   function rememberReporter() {
     if (typeof window === "undefined") return;
     try {
-      window.localStorage.setItem(
-        REPORTER_KEY,
-        JSON.stringify({
-          name: reporterName.trim(),
-          phone: reporterPhone.trim(),
-          email: reporterEmail.trim(),
-          companyId,
-          branchId,
-        }),
-      );
+      window.localStorage.setItem(REPORTER_KEY, JSON.stringify({
+        name: reporterName.trim(),
+        phone: reporterPhone.trim(),
+        email: reporterEmail.trim(),
+        companyId, branchId,
+      }));
     } catch {}
   }
 
@@ -157,7 +149,6 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
     () => branches.find((b) => b.id === branchId) || null,
     [branches, branchId],
   );
-
   const selectedCategory = useMemo(
     () => categories.find((c) => c.id === categoryId) || null,
     [categories, categoryId],
@@ -180,25 +171,15 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
     const remaining = 6 - photos.length;
-    if (remaining <= 0) {
-      setError("รูปสูงสุด 6 รูป");
-      return;
-    }
+    if (remaining <= 0) { setError("รูปสูงสุด 6 รูป"); return; }
     const accept = files.slice(0, remaining);
     const out: PhotoEntry[] = [];
     for (const f of accept) {
       if (!f.type.startsWith("image/")) continue;
       try {
         const { dataUrl, sizeKB } = await compressImage(f);
-        out.push({
-          id: crypto.randomUUID(),
-          dataUrl,
-          sizeKB,
-          phase: "BEFORE",
-        });
-      } catch {
-        setError("ย่อรูปไม่สำเร็จ · ใช้รูปอื่นได้ไหม");
-      }
+        out.push({ id: crypto.randomUUID(), dataUrl, sizeKB, phase: "BEFORE" });
+      } catch { setError("ย่อรูปไม่สำเร็จ · ใช้รูปอื่นได้ไหม"); }
     }
     setPhotos((prev) => [...prev, ...out]);
     e.target.value = "";
@@ -211,18 +192,9 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (title.trim().length < 5) {
-      setError("หัวเรื่องสั้นไป · เขียนให้บอกอาการได้ (อย่างน้อย 5 ตัวอักษร)");
-      return;
-    }
-    if (reporterName.trim().length < 2) {
-      setError("กรอกชื่อ-นามสกุล");
-      return;
-    }
-    if (reporterPhone.trim().length < 9) {
-      setError("กรอกเบอร์โทรให้ครบ");
-      return;
-    }
+    if (title.trim().length < 5) { setError("หัวเรื่องสั้นไป · เขียนให้บอกอาการได้ (อย่างน้อย 5 ตัวอักษร)"); return; }
+    if (reporterName.trim().length < 2) { setError("กรอกชื่อ-นามสกุล"); return; }
+    if (reporterPhone.trim().length < 9) { setError("กรอกเบอร์โทรให้ครบ"); return; }
 
     startTransition(async () => {
       const res = await createTicket({
@@ -238,44 +210,33 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
         reporterEmail: reporterEmail.trim() || undefined,
         photos: photos.map((p) => ({ phase: p.phase, dataUrl: p.dataUrl })),
       });
-      if (!res.ok) {
-        setError(res.error);
-        return;
-      }
+      if (!res.ok) { setError(res.error); return; }
       rememberReporter();
       setResult({ ticketCode: res.ticketCode, id: res.id });
       router.refresh();
     });
   }
 
-  // ===== success page =====
   if (result) {
     const trackUrl = `/r/track?code=${encodeURIComponent(result.ticketCode)}`;
     return (
-      <div className="max-w-[560px] mx-auto">
-        <div className="bg-white border border-zinc-200 rounded-3xl p-7 sm:p-9 text-center">
-          <div className="size-16 mx-auto rounded-full bg-emerald-50 grid place-items-center text-emerald-600">
-            <Check className="size-8" />
+      <div className="rf-success">
+        <div className="rf-success-card">
+          <div className="check"><Check size={32} /></div>
+          <h2>เราได้รับเรื่องของคุณแล้ว</h2>
+          <div className="ticket-id">
+            <Receipt size={14} /> {result.ticketCode}
           </div>
-          <h2 className="text-2xl font-extrabold tracking-tight text-zinc-900 mt-4">
-            เราได้รับเรื่องของคุณแล้ว
-          </h2>
-          <div className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-50 text-blue-800 rounded-full font-mono font-bold text-sm">
-            <Receipt className="size-3.5" /> {result.ticketCode}
-          </div>
-          <p className="mt-3 text-sm text-zinc-600 leading-relaxed">
+          <p className="desc">
             ทีมประสานงานของ {orgName} จะติดต่อกลับใน{" "}
             <b>{SLA_HINT[urgency].replace("ทีมจะติดต่อกลับใน ", "")}</b>
             <br />
             ส่งสถานะให้ทาง LINE และลิงก์ติดตามทางข้อความ
           </p>
 
-          <div className="grid sm:grid-cols-2 gap-2.5 mt-5">
-            <Link
-              href={trackUrl}
-              className="inline-flex items-center justify-center gap-2 h-12 px-5 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700"
-            >
-              <MessageCircle className="size-4" />
+          <div className="rf-success-actions">
+            <Link href={trackUrl} className="rf-btn primary" style={{ background: "#059669", borderColor: "#047857" }}>
+              <MessageCircle size={16} />
               ดูสถานะใบนี้
             </Link>
             <button
@@ -283,116 +244,119 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
               onClick={async () => {
                 await navigator.clipboard.writeText(window.location.origin + trackUrl);
               }}
-              className="inline-flex items-center justify-center gap-2 h-12 px-5 rounded-xl border border-zinc-200 bg-white text-zinc-900 font-bold hover:bg-zinc-50"
+              className="rf-btn"
             >
-              <Copy className="size-4" />
+              <Copy size={16} />
               คัดลอกลิงก์ติดตาม
             </button>
           </div>
         </div>
 
-        <div className="bg-white border border-zinc-200 rounded-2xl mt-3 p-5">
-          <h3 className="text-[11px] uppercase tracking-wide font-bold text-zinc-500">
+        <div className="rf-success-card" style={{ marginTop: 12, textAlign: "left", padding: "20px 24px" }}>
+          <h3 style={{
+            fontSize: 11, fontWeight: 700, color: "#6B7280",
+            textTransform: "uppercase", letterSpacing: "0.06em", margin: 0,
+          }}>
             กระบวนการถัดไป
           </h3>
           <Step done label="ส่งใบเรียบร้อย" when={`เมื่อสักครู่ · ${result.ticketCode}`} n={1} />
-          <Step
-            now
-            label="ทีมประสานงานรับเรื่อง + มอบหมายช่าง"
-            when={`ภายใน ${SLA_HINT[urgency].replace("ทีมจะติดต่อกลับใน ", "")}`}
-            n={2}
+          <Step now label="ทีมประสานงานรับเรื่อง + มอบหมายช่าง"
+            when={`ภายใน ${SLA_HINT[urgency].replace("ทีมจะติดต่อกลับใน ", "")}`} n={2}
           />
           <Step label="ช่างประเมินหน้างาน + แจ้งเวลามาถึง" when="ภายในวันนี้" n={3} />
           <Step label="ซ่อมเสร็จ · ปิดงาน" when="ตาม SLA" n={4} />
         </div>
 
-        <div className="text-center mt-5">
+        <div style={{ textAlign: "center", marginTop: 20 }}>
           <button
             type="button"
             onClick={() => {
               setResult(null);
-              setTitle("");
-              setDescription("");
-              setPhotos([]);
-              setCategoryId("");
+              setTitle(""); setDescription("");
+              setPhotos([]); setCategoryId("");
               setUrgency("NORMAL");
             }}
-            className="inline-flex items-center gap-1 text-blue-700 hover:text-blue-900 text-sm font-bold"
+            style={{
+              background: "transparent", border: 0,
+              color: "#1740A3", fontSize: 13, fontWeight: 600,
+              cursor: "pointer", fontFamily: "inherit",
+              display: "inline-flex", alignItems: "center", gap: 4,
+            }}
           >
-            <Plus className="size-3.5" /> แจ้งใบใหม่
+            <Plus size={12} /> แจ้งใบใหม่
           </button>
         </div>
       </div>
     );
   }
 
-  // ===== form =====
   return (
     <div>
       {/* Hero */}
-      <div className="bg-gradient-to-br from-blue-600 to-blue-900 text-white rounded-3xl p-6 sm:p-8 text-center mb-4">
-        <div className="size-10 mx-auto rounded-xl bg-white/20 backdrop-blur grid place-items-center font-extrabold text-base mb-2">
-          P
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight leading-tight">
-          แจ้งซ่อม {orgName}
-        </h1>
-        <p className="text-[13px] sm:text-sm opacity-85 mt-1 leading-relaxed max-w-md mx-auto">
-          ให้ทันที · ใช้คุณภาพ · ทีมรับเรื่องภายใน 30 นาที
-        </p>
+      <div className="rf-hero" style={{ marginBottom: 16 }}>
+        <div className="rf-hero-mark">P</div>
+        <h1>แจ้งซ่อม {orgName}</h1>
+        <div className="sub">ให้ทันที · ใช้คุณภาพ · ทีมรับเรื่องภายใน 30 นาที</div>
       </div>
 
-      <form onSubmit={submit} className="grid lg:grid-cols-[1fr_320px] gap-4 pb-32 lg:pb-6">
-        <div className="space-y-3">
+      <form
+        onSubmit={submit}
+        className="rf-grid"
+        style={{ paddingBottom: 120 }}
+      >
+        <div style={{ display: "flex", flexDirection: "column" }}>
           {/* SECTION 1 — Branch */}
           <Section n={1} title="สาขาที่แจ้ง" done={!!branchId || filteredBranches.length === 0}>
             {companies.length > 1 && (
               <>
                 <Label required>บริษัท</Label>
-                <div className="grid grid-cols-2 gap-2 mb-3">
+                <div className="rf-pills" style={{ marginBottom: 14 }}>
                   {companies.map((c) => (
-                    <CompanyPill
+                    <button
                       key={c.id}
-                      active={companyId === c.id}
+                      type="button"
                       onClick={() => {
                         setCompanyId(c.id === companyId ? "" : c.id);
                         setBranchId("");
                       }}
-                      code={c.code}
+                      className={"rf-pill " + (companyId === c.id ? "is-selected" : "")}
                     >
+                      {c.code === "POOIL" ? <Fuel size={16} /> : <Building2 size={16} />}
                       {c.name}
-                    </CompanyPill>
+                    </button>
                   ))}
                 </div>
               </>
             )}
             <Label required>สาขา</Label>
-            <BranchCombobox
-              value={branchId}
-              options={filteredBranches}
-              onChange={setBranchId}
-            />
-            <Help>พิมพ์ค้นหา หรือเลือกจากรายการ · กว่า {branches.length} สาขา</Help>
+            <BranchCombobox value={branchId} options={filteredBranches} onChange={setBranchId} />
+            <div className="rf-help">
+              พิมพ์ค้นหา หรือเลือกจากรายการ · กว่า {branches.length} สาขา
+            </div>
           </Section>
 
           {/* SECTION 2 — Category */}
           <Section n={2} title="เรื่องที่แจ้ง" done={!!categoryId} hint="ช่วยทีมจัดงานได้ตรงคน">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="rf-cat-grid">
               {categories.map((c) => (
-                <CategoryCard
+                <button
                   key={c.id}
-                  active={categoryId === c.id}
+                  type="button"
                   onClick={() => pickCategory(c.id)}
-                  emoji={c.emoji ?? "🛠"}
-                  label={c.label}
-                />
+                  className={"rf-cat " + (categoryId === c.id ? "is-selected" : "")}
+                >
+                  <span className="rf-cat-emoji">{c.emoji ?? "🛠"}</span>
+                  {c.label}
+                </button>
               ))}
-              <CategoryCard
-                active={categoryId === ""}
+              <button
+                type="button"
                 onClick={() => setCategoryId("")}
-                emoji="❓"
-                label="อื่น ๆ"
-              />
+                className={"rf-cat " + (categoryId === "" ? "is-selected" : "")}
+              >
+                <span className="rf-cat-emoji">❓</span>
+                อื่น ๆ
+              </button>
             </div>
           </Section>
 
@@ -403,44 +367,42 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
             done={photos.length > 0}
             hint="ช่วยให้ทีมเตรียมตัวได้ดีขึ้น"
           >
-            <label className="cursor-pointer flex items-center justify-center gap-2 h-14 rounded-2xl bg-zinc-900 text-white font-bold text-base hover:bg-zinc-800 transition-colors">
-              <Camera className="size-5" />
+            <label className="rf-photo-cta" style={{ cursor: "pointer" }}>
+              <Camera size={20} />
               <span>ถ่ายรูป / เลือกรูป</span>
               <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                multiple
-                className="hidden"
+                type="file" accept="image/*" capture="environment"
+                multiple style={{ display: "none" }}
                 onChange={handlePickFiles}
               />
             </label>
-            <Help>
-              <Check className="size-3 text-emerald-600 inline mr-0.5" />
-              รูปจะถูกย่อให้เล็กก่อนส่ง · ใช้คลังภัย
-            </Help>
+            <div className="rf-help">
+              <Check size={11} style={{ color: "#047857", display: "inline" }} /> รูปจะถูกย่อให้เล็กก่อนส่ง
+            </div>
             {photos.length > 0 && (
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-3">
+              <div className="rf-photo-grid">
                 {photos.map((p) => (
-                  <div
-                    key={p.id}
-                    className="relative aspect-square rounded-xl overflow-hidden bg-zinc-100"
-                  >
+                  <div key={p.id} className="rf-photo-tile">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={p.dataUrl}
-                      alt=""
-                      className="absolute inset-0 size-full object-cover"
+                      src={p.dataUrl} alt=""
+                      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
                     />
                     <button
                       type="button"
                       onClick={() => removePhoto(p.id)}
-                      className="absolute top-1 right-1 size-6 rounded-full bg-zinc-900/70 backdrop-blur text-white grid place-items-center hover:bg-zinc-900"
+                      className="rf-photo-remove"
                       aria-label="ลบรูป"
                     >
-                      <X className="size-3" />
+                      <X size={12} />
                     </button>
-                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-zinc-900/70 to-transparent text-[10px] font-bold text-white px-1 pb-0.5 pt-2 text-right">
+                    <div style={{
+                      position: "absolute", bottom: 0, left: 0, right: 0,
+                      background: "linear-gradient(to top, rgba(11,18,32,0.7), transparent)",
+                      fontSize: 10, fontWeight: 700, color: "white",
+                      padding: "8px 4px 4px",
+                      textAlign: "right",
+                    }}>
                       {p.sizeKB} KB
                     </div>
                   </div>
@@ -450,63 +412,53 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
           </Section>
 
           {/* SECTION 4 — Title + Priority + Description */}
-          <Section
-            n={4}
-            title="อาการ + ความเร่งด่วน"
-            done={title.trim().length >= 5}
-          >
+          <Section n={4} title="อาการ + ความเร่งด่วน" done={title.trim().length >= 5}>
             <Label required>หัวเรื่อง</Label>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              maxLength={200}
-              required
-              minLength={5}
+              maxLength={200} required minLength={5}
               placeholder="เช่น แอร์ห้อง 305 ไม่เย็น เสียงดัง"
-              className="w-full h-12 px-3.5 rounded-xl border-[1.5px] border-zinc-200 bg-white text-zinc-900 font-medium focus:border-blue-400 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
+              className="rf-input"
             />
-            <Help>
+            <div className="rf-help">
               บอกสั้น ๆ ว่าอะไรเสีย
-              {title.length > 0 && (
-                <span className="tabular-nums"> · {title.length} ตัวอักษร</span>
-              )}
-            </Help>
+              {title.length > 0 && <span className="num"> · {title.length} ตัวอักษร</span>}
+            </div>
 
-            <div className="h-3" />
+            <div style={{ height: 12 }} />
 
             <Label required>ความเร่งด่วน</Label>
-            <div className="grid grid-cols-3 gap-2">
-              <PriorityPill active={urgency === "URGENT"} onClick={() => setUrgency("URGENT")} tone="urgent">
-                ด่วนมาก
-                <span className="block text-[10.5px] font-medium opacity-75 mt-0.5">
-                  ภายใน 4 ชม.
-                </span>
-              </PriorityPill>
-              <PriorityPill active={urgency === "NORMAL"} onClick={() => setUrgency("NORMAL")} tone="normal">
-                ปานกลาง
-                <span className="block text-[10.5px] font-medium opacity-75 mt-0.5">
-                  ภายใน 48 ชม.
-                </span>
-              </PriorityPill>
-              <PriorityPill active={urgency === "LOW"} onClick={() => setUrgency("LOW")} tone="low">
-                ไม่เร่งด่วน
-                <span className="block text-[10.5px] font-medium opacity-75 mt-0.5">
-                  ภายใน 7 วัน
-                </span>
-              </PriorityPill>
+            <div className="rf-prio-row">
+              {(["URGENT", "NORMAL", "LOW"] as const).map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => setUrgency(u)}
+                  className={
+                    "rf-prio " +
+                    (u === "URGENT" ? "urgent" : u === "NORMAL" ? "normal" : "low") +
+                    (urgency === u ? " is-selected" : "")
+                  }
+                >
+                  {u === "URGENT" ? "ด่วนมาก" : u === "NORMAL" ? "ปานกลาง" : "ไม่เร่งด่วน"}
+                  <span className="sub">
+                    {u === "URGENT" ? "ภายใน 4 ชม." : u === "NORMAL" ? "ภายใน 48 ชม." : "ภายใน 7 วัน"}
+                  </span>
+                </button>
+              ))}
             </div>
-            <Help>{SLA_HINT[urgency]}</Help>
+            <div className="rf-help">{SLA_HINT[urgency]}</div>
 
-            <div className="h-3" />
+            <div style={{ height: 12 }} />
 
             <Label hint="(ไม่บังคับ)">รายละเอียดเพิ่มเติม</Label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              maxLength={2000}
-              rows={4}
+              maxLength={2000} rows={4}
               placeholder="อาการ · สังเกตเห็นเมื่อไหร่ · เคยเป็นก่อนหรือไม่ · มีอะไรเปลี่ยนแปลงก่อนหน้า"
-              className="w-full px-3.5 py-3 rounded-xl border-[1.5px] border-zinc-200 bg-white text-zinc-900 font-medium focus:border-blue-400 focus:ring-4 focus:ring-blue-100 outline-none resize-y leading-relaxed"
+              className="rf-textarea"
             />
           </Section>
 
@@ -517,16 +469,15 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
             done={reporterName.trim().length >= 2 && reporterPhone.trim().length >= 9}
             hint="ยืนยันด้วย OTP"
           >
-            <div className="grid sm:grid-cols-2 gap-3">
+            <div className="rf-row two">
               <div>
                 <Label hint="(ไม่บังคับ)">ชื่อ-นามสกุล</Label>
                 <input
                   value={reporterName}
                   onChange={(e) => setReporterName(e.target.value)}
-                  maxLength={100}
-                  required
+                  maxLength={100} required
                   placeholder="ชื่อ นามสกุล หรือชื่อเล่น"
-                  className="w-full h-12 px-3.5 rounded-xl border-[1.5px] border-zinc-200 bg-white text-zinc-900 font-medium focus:border-blue-400 focus:ring-4 focus:ring-blue-100 outline-none"
+                  className="rf-input"
                 />
               </div>
               <div>
@@ -534,16 +485,14 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
                 <input
                   value={reporterPhone}
                   onChange={(e) => setReporterPhone(e.target.value)}
-                  maxLength={20}
-                  required
+                  maxLength={20} required
                   inputMode="tel"
                   placeholder="08x-xxx-xxxx"
-                  className="w-full h-12 px-3.5 rounded-xl border-[1.5px] border-zinc-200 bg-white text-zinc-900 font-medium focus:border-blue-400 focus:ring-4 focus:ring-blue-100 outline-none"
+                  className="rf-input"
                 />
               </div>
             </div>
-
-            <div className="mt-3">
+            <div style={{ marginTop: 12 }}>
               <Label hint="(ไม่บังคับ)">อีเมล</Label>
               <input
                 type="email"
@@ -551,138 +500,171 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
                 onChange={(e) => setReporterEmail(e.target.value)}
                 maxLength={150}
                 placeholder="you@example.com"
-                className="w-full h-12 px-3.5 rounded-xl border-[1.5px] border-zinc-200 bg-white text-zinc-900 font-medium focus:border-blue-400 focus:ring-4 focus:ring-blue-100 outline-none"
+                className="rf-input"
               />
             </div>
-
-            <div className="mt-3 p-3 bg-blue-50 rounded-xl flex items-center gap-2 text-blue-800 text-[12.5px]">
-              <Shield className="size-4 shrink-0" />
-              <span>
-                ระบบจะส่งสถานะให้ทาง LINE และลิงก์ติดตามทางข้อความตามอัตโนมัติ
-              </span>
+            <div style={{
+              marginTop: 12, padding: 12,
+              background: "#EFF4FF", borderRadius: 12,
+              display: "flex", alignItems: "center", gap: 8,
+              color: "#1740A3", fontSize: 12.5,
+            }}>
+              <Shield size={14} />
+              <span>ระบบจะส่งสถานะให้ทาง LINE และลิงก์ติดตามทางข้อความตามอัตโนมัติ</span>
             </div>
           </Section>
 
           {error && (
-            <div className="rounded-xl bg-red-50 border border-red-200 p-3.5 flex gap-2.5 text-red-800 text-[13px]">
-              <AlertCircle className="size-4 flex-shrink-0 mt-0.5" />
+            <div style={{
+              background: "#FEF2F2", border: "1px solid #FECACA",
+              borderRadius: 12, padding: 14,
+              display: "flex", alignItems: "flex-start", gap: 10,
+              color: "#B91C1C", fontSize: 13,
+              marginTop: 12,
+            }}>
+              <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
               <span>{error}</span>
             </div>
           )}
 
-          {/* Submit (desktop) */}
+          {/* desktop submit */}
           <button
             type="submit"
             disabled={isPending}
-            className="hidden lg:flex w-full items-center justify-center gap-2 h-14 rounded-2xl bg-blue-600 text-white font-extrabold text-base shadow-lg shadow-blue-600/25 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+            className="rf-btn primary"
+            style={{
+              display: "none",
+              marginTop: 16,
+            }}
+            data-desktop-only="1"
           >
             {isPending ? (
               <>
-                <Loader2 className="size-5 animate-spin" /> กำลังส่ง...
+                <Loader2 size={18} className="rf-spin" /> กำลังส่ง...
               </>
             ) : (
               <>
-                <Send className="size-5" /> ส่งใบแจ้งซ่อม
+                <Send size={18} /> ส่งใบแจ้งซ่อม
               </>
             )}
           </button>
+          <style>{`
+            @media (min-width: 900px) {
+              button[data-desktop-only="1"] { display: inline-flex !important; }
+            }
+            @keyframes rfSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+            .rf-spin { animation: rfSpin 0.9s linear infinite; }
+          `}</style>
         </div>
 
-        {/* Preview — desktop only */}
-        <aside className="hidden lg:block">
-          <div className="sticky top-20 bg-white border border-zinc-200 rounded-2xl p-5">
-            <h3 className="text-[11px] uppercase tracking-wide font-bold text-zinc-500 mb-2.5">
-              Preview
-            </h3>
-            <div className="text-[17px] font-bold text-zinc-900 leading-snug mb-3">
-              {title || (
-                <span className="text-zinc-400 italic font-medium">
-                  (หัวเรื่องจะแสดงที่นี่)
-                </span>
-              )}
-            </div>
-            <PreviewRow label="บริษัท">
-              {companyId ? companies.find((c) => c.id === companyId)?.name : "—"}
-            </PreviewRow>
-            <PreviewRow label="สาขา">
-              {selectedBranch ? (
-                <>
-                  <span className="font-mono font-bold">{selectedBranch.code}</span>
-                  <span className="ml-1.5">{selectedBranch.name}</span>
-                </>
-              ) : (
-                "—"
-              )}
-            </PreviewRow>
-            <PreviewRow label="หมวด">
-              {selectedCategory ? (
-                <>
-                  {selectedCategory.emoji && <span className="mr-1">{selectedCategory.emoji}</span>}
-                  {selectedCategory.label}
-                </>
-              ) : (
-                "—"
-              )}
-            </PreviewRow>
-            <PreviewRow label="เร่งด่วน">
-              <span
-                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-bold ${SLA_BADGE[urgency].bg} ${SLA_BADGE[urgency].color}`}
-              >
-                {URGENCY_LABELS[urgency]}
-              </span>
-            </PreviewRow>
-            <PreviewRow label="รูป">{photos.length} รูป</PreviewRow>
-            <PreviewRow label="SLA">
-              <span
-                className={`tabular-nums font-bold ${urgency === "URGENT" ? "text-red-600" : "text-zinc-700"}`}
-              >
-                {SLA_BADGE[urgency].label}
-              </span>
-            </PreviewRow>
-            <PreviewRow label="ผู้แจ้ง">{reporterName || "—"}</PreviewRow>
-            <PreviewRow label="ติดต่อ">{reporterPhone || "—"}</PreviewRow>
-
-            <div className="mt-4 p-3 bg-zinc-50 rounded-xl text-[11px] text-zinc-600 leading-relaxed flex gap-2">
-              <AlarmClock className="size-3.5 shrink-0 mt-0.5 text-zinc-500" />
-              <div>
-                <span className="font-bold text-zinc-900">หลังกดส่ง</span> · ทีมจะเห็นทันที
-                <br />
-                {SLA_HINT[urgency]}
-              </div>
+        {/* PREVIEW SIDEBAR */}
+        <aside className="rf-preview">
+          <h3>Preview</h3>
+          <div className="rf-preview-title">
+            {title || <span className="none">(หัวเรื่องจะแสดงที่นี่)</span>}
+          </div>
+          <PreviewRow label="บริษัท">
+            {companyId ? companies.find((c) => c.id === companyId)?.name : <span className="none">—</span>}
+          </PreviewRow>
+          <PreviewRow label="สาขา">
+            {selectedBranch ? (
+              <>
+                <span className="num" style={{ fontWeight: 700 }}>{selectedBranch.code}</span>
+                <span style={{ marginLeft: 6 }}>{selectedBranch.name}</span>
+              </>
+            ) : (
+              <span className="none">—</span>
+            )}
+          </PreviewRow>
+          <PreviewRow label="หมวด">
+            {selectedCategory ? (
+              <>
+                {selectedCategory.emoji && <span style={{ marginRight: 4 }}>{selectedCategory.emoji}</span>}
+                {selectedCategory.label}
+              </>
+            ) : (
+              <span className="none">—</span>
+            )}
+          </PreviewRow>
+          <PreviewRow label="เร่งด่วน">
+            <span style={{
+              display: "inline-flex", alignItems: "center",
+              padding: "2px 10px", borderRadius: 999,
+              fontSize: 11, fontWeight: 700,
+              background: SLA_BADGE[urgency].bg,
+              color: SLA_BADGE[urgency].color,
+            }}>
+              {URGENCY_LABELS[urgency]}
+            </span>
+          </PreviewRow>
+          <PreviewRow label="รูป">{photos.length} รูป</PreviewRow>
+          <PreviewRow label="SLA">
+            <span className="num" style={{
+              fontWeight: 700,
+              color: urgency === "URGENT" ? "#B91C1C" : "#475569",
+            }}>
+              {SLA_BADGE[urgency].label}
+            </span>
+          </PreviewRow>
+          <PreviewRow label="ผู้แจ้ง">
+            {reporterName || <span className="none">—</span>}
+          </PreviewRow>
+          <PreviewRow label="ติดต่อ">
+            {reporterPhone || <span className="none">—</span>}
+          </PreviewRow>
+          <div style={{
+            marginTop: 16, padding: 12,
+            background: "#F8FAFD", borderRadius: 10,
+            fontSize: 11.5, color: "#475569",
+            lineHeight: 1.5,
+            display: "flex", gap: 8,
+          }}>
+            <AlarmClock size={14} style={{ flexShrink: 0, marginTop: 2, color: "#64748B" }} />
+            <div>
+              <b style={{ color: "#0B1220" }}>หลังกดส่ง</b> · ทีมจะเห็นทันที
+              <br />
+              {SLA_HINT[urgency]}
             </div>
           </div>
         </aside>
       </form>
 
-      {/* Mobile sticky bottom: progress + submit */}
-      <div className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-zinc-200 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),16px)]">
-        <div className="flex items-center gap-3 mb-2.5">
-          <span className="text-[11px] text-zinc-500 font-medium">กรอกครบ</span>
-          <div className="flex-1 h-1.5 bg-zinc-200 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-blue-600 transition-all"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <span className="text-[12px] font-bold text-blue-700 tabular-nums">{progress}%</span>
+      {/* Mobile sticky progress + submit */}
+      <div className="rf-progress-bar">
+        <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
+          <span style={{ fontSize: 11, color: "#475569", fontWeight: 500 }}>กรอกครบ</span>
+          <div className="rf-progress-fill"><div style={{ width: `${progress}%` }} /></div>
+          <span className="rf-progress-pct">{progress}%</span>
         </div>
+      </div>
+      <div style={{
+        position: "fixed", bottom: 16, left: 16, right: 16,
+        zIndex: 31, maxWidth: 480, margin: "0 auto",
+      }} className="rf-mobile-submit">
         <button
           type="button"
           onClick={submit}
           disabled={isPending}
-          className="w-full flex items-center justify-center gap-2 h-12 rounded-xl bg-blue-600 text-white font-bold text-base shadow-md shadow-blue-600/20 disabled:opacity-60"
+          className="rf-btn primary"
+          style={{ width: "100%" }}
         >
           {isPending ? (
             <>
-              <Loader2 className="size-4 animate-spin" /> กำลังส่ง...
+              <Loader2 size={16} className="rf-spin" /> กำลังส่ง...
             </>
           ) : (
             <>
-              <Send className="size-4" /> ส่งใบแจ้งซ่อม
+              <Send size={16} /> ส่งใบแจ้งซ่อม
             </>
           )}
         </button>
       </div>
+      <style>{`
+        .rf-mobile-submit { display: block; }
+        @media (min-width: 900px) {
+          .rf-mobile-submit { display: none; }
+        }
+      `}</style>
     </div>
   );
 }
@@ -690,34 +672,18 @@ export function PublicRepairForm({ orgName, companies, branches, categories }: P
 // ---- atoms ----
 
 function Section({
-  n,
-  title,
-  hint,
-  done,
-  children,
+  n, title, hint, done, children,
 }: {
-  n: number;
-  title: string;
-  hint?: string;
-  done?: boolean;
-  children: React.ReactNode;
+  n: number; title: string; hint?: string; done?: boolean; children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white border border-zinc-200 rounded-2xl p-4 sm:p-5">
-      <div className="flex items-center gap-2.5 mb-3.5">
-        <span
-          className={`size-7 grid place-items-center rounded-full font-bold text-[12.5px] shrink-0 ${
-            done ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-700"
-          }`}
-        >
-          {done ? <Check className="size-3.5" /> : n}
+    <div className="rf-section">
+      <div className="rf-section-h">
+        <span className={"rf-section-num " + (done ? "done" : "")}>
+          {done ? <Check size={14} /> : n}
         </span>
-        <span className="text-[15.5px] font-bold text-zinc-900">{title}</span>
-        {hint && (
-          <span className="ml-auto text-[11.5px] text-zinc-500 hidden sm:inline">
-            {hint}
-          </span>
-        )}
+        <span className="rf-section-title">{title}</span>
+        {hint && <span className="rf-section-sub">{hint}</span>}
       </div>
       {children}
     </div>
@@ -725,194 +691,97 @@ function Section({
 }
 
 function Label({
-  children,
-  required,
-  hint,
+  children, required, hint,
 }: {
-  children: React.ReactNode;
-  required?: boolean;
-  hint?: string;
+  children: React.ReactNode; required?: boolean; hint?: string;
 }) {
   return (
-    <div className="flex items-baseline gap-2 mb-1.5">
-      <label className="text-[12.5px] font-bold text-zinc-800">
+    <div className="rf-label">
+      <label style={{ display: "inline" }}>
         {children}
-        {required && <span className="text-red-500 ml-0.5">*</span>}
-        {hint && <span className="font-medium text-zinc-400 ml-1.5">{hint}</span>}
+        {required && <span className="req"> *</span>}
+        {hint && <span className="opt" style={{ marginLeft: 6 }}>{hint}</span>}
       </label>
     </div>
   );
 }
 
-function Help({ children }: { children: React.ReactNode }) {
-  return <p className="text-[11.5px] text-zinc-500 mt-1.5 leading-relaxed">{children}</p>;
-}
-
-function CompanyPill({
-  active,
-  onClick,
-  children,
-  code,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  code: string;
-}) {
-  const isPooil = code === "POOIL";
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center justify-center gap-1.5 h-11 px-3 rounded-xl border-[1.5px] font-semibold text-[13.5px] transition-colors whitespace-nowrap ${
-        active
-          ? "bg-blue-50 text-blue-800 border-blue-500"
-          : "bg-white text-zinc-700 border-zinc-200 hover:border-zinc-300"
-      }`}
-    >
-      {isPooil ? <Fuel className="size-4" /> : <Building2 className="size-4" />}
-      {children}
-    </button>
-  );
-}
-
-function CategoryCard({
-  active,
-  onClick,
-  emoji,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  emoji: string;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex flex-col items-center justify-center gap-1 p-3 min-h-[86px] rounded-xl border-[1.5px] transition-colors ${
-        active
-          ? "bg-blue-50 text-blue-800 border-blue-500"
-          : "bg-white text-zinc-700 border-zinc-200 hover:border-zinc-300"
-      }`}
-    >
-      <span className="text-2xl">{emoji}</span>
-      <span className="text-[12px] font-semibold text-center leading-tight">{label}</span>
-    </button>
-  );
-}
-
-function PriorityPill({
-  active,
-  onClick,
-  tone,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  tone: "urgent" | "normal" | "low";
-  children: React.ReactNode;
-}) {
-  const map = {
-    urgent: active ? "bg-red-50 text-red-700 border-red-400" : "bg-white text-zinc-700 border-zinc-200",
-    normal: active ? "bg-blue-50 text-blue-800 border-blue-400" : "bg-white text-zinc-700 border-zinc-200",
-    low: active ? "bg-zinc-100 text-zinc-700 border-zinc-400" : "bg-white text-zinc-700 border-zinc-200",
-  };
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex flex-col items-center justify-center gap-1 p-3 rounded-xl border-[1.5px] font-bold text-[13.5px] transition-colors min-h-[64px] ${map[tone]}`}
-    >
-      {children}
-    </button>
-  );
-}
-
 function PreviewRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[80px_1fr] py-1.5 text-[12px] border-b border-dashed border-zinc-100 last:border-0">
-      <span className="text-zinc-400">{label}</span>
-      <span className="text-zinc-900 font-medium">{children}</span>
+    <div className="rf-preview-row">
+      <span className="l">{label}</span>
+      <span className="v">{children}</span>
     </div>
   );
 }
 
 function Step({
-  n,
-  label,
-  when,
-  done,
-  now,
+  n, label, when, done, now,
 }: {
-  n: number;
-  label: string;
-  when?: string;
-  done?: boolean;
-  now?: boolean;
+  n: number; label: string; when?: string; done?: boolean; now?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-[24px_1fr] gap-3 py-2.5 text-left">
-      <span
-        className={`size-6 rounded-full grid place-items-center text-[11px] font-bold shrink-0 ${
-          done
-            ? "bg-emerald-50 text-emerald-600"
-            : now
-              ? "bg-blue-600 text-white ring-4 ring-blue-100"
-              : "bg-zinc-100 text-zinc-400"
-        }`}
-      >
-        {done ? <Check className="size-3" /> : n}
+    <div style={{ display: "grid", gridTemplateColumns: "24px 1fr", gap: 12, padding: "10px 0" }}>
+      <span style={{
+        width: 22, height: 22, borderRadius: 50,
+        display: "grid", placeItems: "center",
+        fontSize: 11, fontWeight: 700, flexShrink: 0,
+        background: done ? "#ECFDF5" : now ? "#1E4FCC" : "#F1F5F9",
+        color: done ? "#047857" : now ? "white" : "#94A3B8",
+        boxShadow: now ? "0 0 0 4px #DBE6FF" : undefined,
+      }}>
+        {done ? <Check size={11} /> : n}
       </span>
       <div>
-        <div
-          className={`text-[13px] leading-tight ${now ? "text-blue-800 font-bold" : "text-zinc-900 font-semibold"}`}
-        >
+        <div style={{
+          fontSize: 13, lineHeight: 1.3,
+          color: now ? "#1740A3" : "#0B1220",
+          fontWeight: now ? 700 : 600,
+        }}>
           {label}
         </div>
-        {when && <div className="text-[11px] text-zinc-500 mt-0.5">{when}</div>}
+        {when && (
+          <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>{when}</div>
+        )}
       </div>
     </div>
   );
 }
 
-// Branch searchable combobox
+// Branch combobox
 function BranchCombobox({
-  value,
-  options,
-  onChange,
+  value, options, onChange,
 }: {
-  value: string;
-  options: Branch[];
-  onChange: (id: string) => void;
+  value: string; options: Branch[]; onChange: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const selected = options.find((b) => b.id === value);
   const q = query.trim().toLowerCase();
   const filtered = q
-    ? options.filter(
-        (b) => b.code.toLowerCase().includes(q) || b.name.toLowerCase().includes(q),
+    ? options.filter((b) =>
+        b.code.toLowerCase().includes(q) || b.name.toLowerCase().includes(q),
       )
     : options;
   return (
-    <div className="relative">
+    <div style={{ position: "relative" }}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full h-12 px-3.5 rounded-xl border-[1.5px] border-zinc-200 bg-white text-left flex items-center justify-between gap-2 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 outline-none"
+        className="rf-input"
+        style={{
+          textAlign: "left", height: 48,
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+        }}
       >
-        <span
-          className={
-            selected
-              ? "text-zinc-900 font-medium truncate"
-              : "text-zinc-400"
-          }
-        >
+        <span style={{
+          color: selected ? "#0B1220" : "#9CA3AF",
+          fontWeight: selected ? 500 : 400,
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>
           {selected ? (
             <>
-              <span className="font-mono font-bold text-zinc-700 mr-1.5">
+              <span className="num" style={{ fontWeight: 700, color: "#374151", marginRight: 6 }}>
                 {selected.code}
               </span>
               {selected.name}
@@ -921,35 +790,46 @@ function BranchCombobox({
             "— เลือกสาขา —"
           )}
         </span>
-        <ChevronDown className="size-4 text-zinc-400 shrink-0" />
+        <ChevronDown size={16} style={{ color: "#9CA3AF", flexShrink: 0 }} />
       </button>
       {open && (
-        <div className="absolute z-30 mt-1.5 inset-x-0 bg-white rounded-xl border border-zinc-200 shadow-lg max-h-80 overflow-hidden flex flex-col">
+        <div style={{
+          position: "absolute", zIndex: 30, marginTop: 6, left: 0, right: 0,
+          background: "white", borderRadius: 12,
+          border: "1px solid #E5EAF2",
+          boxShadow: "0 10px 30px rgba(15,23,42,0.12)",
+          maxHeight: 320, overflow: "hidden",
+          display: "flex", flexDirection: "column",
+        }}>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoFocus
             placeholder="พิมพ์ค้นหา · ชื่อสาขา / รหัส"
-            className="h-11 px-3.5 border-b border-zinc-100 text-[13px] focus:outline-none"
+            style={{
+              height: 44, padding: "0 14px",
+              borderBottom: "1px solid #F1F5F9",
+              fontSize: 13, outline: 0, border: 0,
+            }}
           />
-          <ul className="overflow-y-auto flex-1">
+          <ul style={{ listStyle: "none", margin: 0, padding: 0, overflow: "auto", flex: 1 }}>
             <li>
               <button
                 type="button"
-                onClick={() => {
-                  onChange("");
-                  setOpen(false);
-                  setQuery("");
+                onClick={() => { onChange(""); setOpen(false); setQuery(""); }}
+                style={{
+                  width: "100%", textAlign: "left",
+                  padding: "10px 14px", fontSize: 13,
+                  background: !value ? "#EFF4FF" : "transparent",
+                  fontWeight: !value ? 700 : 400,
+                  border: 0, cursor: "pointer", color: "#0B1220",
                 }}
-                className={`w-full text-left px-3.5 py-2.5 text-[13px] hover:bg-zinc-50 ${
-                  !value ? "bg-blue-50 font-bold" : ""
-                }`}
               >
                 — ไม่ระบุสาขา —
               </button>
             </li>
             {filtered.length === 0 ? (
-              <li className="px-3.5 py-4 text-[12.5px] text-zinc-400 text-center">
+              <li style={{ padding: "16px 14px", fontSize: 12.5, color: "#94A3B8", textAlign: "center" }}>
                 ไม่พบสาขา &quot;{query}&quot;
               </li>
             ) : (
@@ -957,19 +837,25 @@ function BranchCombobox({
                 <li key={b.id}>
                   <button
                     type="button"
-                    onClick={() => {
-                      onChange(b.id);
-                      setOpen(false);
-                      setQuery("");
+                    onClick={() => { onChange(b.id); setOpen(false); setQuery(""); }}
+                    style={{
+                      width: "100%", textAlign: "left",
+                      padding: "10px 14px", fontSize: 13,
+                      background: value === b.id ? "#EFF4FF" : "transparent",
+                      fontWeight: value === b.id ? 700 : 400,
+                      border: 0, cursor: "pointer", color: "#0B1220",
+                      display: "flex", alignItems: "baseline", gap: 8,
                     }}
-                    className={`w-full text-left px-3.5 py-2 text-[13px] hover:bg-zinc-50 flex items-baseline gap-2 ${
-                      value === b.id ? "bg-blue-50 font-bold" : ""
-                    }`}
                   >
-                    <span className="font-mono font-bold text-[11px] text-zinc-500 shrink-0">
+                    <span className="num" style={{
+                      fontFamily: "IBM Plex Sans, system-ui",
+                      fontWeight: 700, fontSize: 11, color: "#64748B", flexShrink: 0,
+                    }}>
                       {b.code}
                     </span>
-                    <span className="truncate">{b.name}</span>
+                    <span style={{
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}>{b.name}</span>
                   </button>
                 </li>
               ))

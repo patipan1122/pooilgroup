@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/auth/session";
 import { requireRepairAccess } from "@/lib/repair/role-guard";
 import { userHasModuleAccess, isAdminTier } from "@/lib/auth/module-access";
 import { isModuleDisabled } from "@/lib/modules";
+import "./repairs.css";
 
 export const dynamic = "force-dynamic";
 
@@ -18,5 +19,5 @@ export default async function RepairsLayout({
     const ok = await userHasModuleAccess(session.user, "repairs");
     if (!ok) redirect("/403");
   }
-  return <div className="min-h-screen bg-zinc-50/30">{children}</div>;
+  return <div className="repair-root repair-shell">{children}</div>;
 }

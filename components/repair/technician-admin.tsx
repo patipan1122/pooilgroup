@@ -1,5 +1,7 @@
 "use client";
 
+// Pooil App · technicians admin · uses .panel .workload-row tech-chip + .table-filter pills
+
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createTechnician, toggleTechnicianActive } from "@/lib/repair/actions";
@@ -56,15 +58,8 @@ export function TechnicianAdmin({ technicians }: { technicians: Tech[] }) {
         specialties: specialties.split(",").map((s) => s.trim()).filter(Boolean),
         notes: notes.trim() || undefined,
       });
-      if (!r.ok) {
-        setError(r.error ?? "เพิ่มไม่สำเร็จ");
-        return;
-      }
-      setName("");
-      setPhone("");
-      setLineId("");
-      setSpecialties("");
-      setNotes("");
+      if (!r.ok) { setError(r.error ?? "เพิ่มไม่สำเร็จ"); return; }
+      setName(""); setPhone(""); setLineId(""); setSpecialties(""); setNotes("");
       setOpen(false);
       router.refresh();
     });
@@ -85,13 +80,7 @@ export function TechnicianAdmin({ technicians }: { technicians: Tech[] }) {
       if (filter === "active" && !t.isActive) return false;
       if (filter === "inactive" && t.isActive) return false;
       if (q) {
-        const s = (
-          t.name +
-          " " +
-          (t.phone ?? "") +
-          " " +
-          t.specialties.join(" ")
-        ).toLowerCase();
+        const s = (t.name + " " + (t.phone ?? "") + " " + t.specialties.join(" ")).toLowerCase();
         if (!s.includes(q)) return false;
       }
       return true;
@@ -109,88 +98,68 @@ export function TechnicianAdmin({ technicians }: { technicians: Tech[] }) {
   const maxLoad = Math.max(1, ...technicians.map((t) => t.activeJobs));
 
   return (
-    <div className="space-y-4">
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* Toolbar */}
-      <div className="bg-white border border-zinc-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 max-w-[280px] min-w-[200px]">
-          <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+      <div className="panel" style={{ padding: 12, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+        <div className="table-search" style={{ maxWidth: 280, flex: 1 }}>
+          <Search size={13} style={{ color: "var(--ink-400)" }} />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="ค้นหาชื่อ · เบอร์ · ทักษะ"
-            className="w-full h-8 pl-8 pr-2 rounded-md border border-zinc-200 text-[12.5px] focus:border-blue-400 outline-none"
+            placeholder="ค้นชื่อ · เบอร์ · ทักษะ"
           />
         </div>
-        <div className="flex items-center gap-1 text-[11px]">
-          {(
-            [
-              { key: "all", label: "ทั้งหมด" },
-              { key: "INTERNAL", label: "ช่างใน" },
-              { key: "VENDOR", label: "Vendor" },
-              { key: "active", label: "ใช้งาน" },
-              { key: "inactive", label: "ปิด" },
-            ] as const
-          ).map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              onClick={() => setFilter(f.key)}
-              className={`inline-flex items-center h-6 px-2 rounded border text-[11px] font-medium ${
-                filter === f.key
-                  ? "bg-blue-50 text-blue-700 border-blue-200"
-                  : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-        <span className="ml-auto text-[11.5px] text-zinc-500 tabular-nums">
+        {(
+          [
+            { key: "all", label: "ทั้งหมด" },
+            { key: "INTERNAL", label: "ช่างใน" },
+            { key: "VENDOR", label: "Vendor" },
+            { key: "active", label: "ใช้งาน" },
+            { key: "inactive", label: "ปิด" },
+          ] as const
+        ).map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            onClick={() => setFilter(f.key)}
+            className={"table-filter " + (filter === f.key ? "is-active" : "")}
+          >
+            {f.label}
+          </button>
+        ))}
+        <span style={{ flex: 1 }} />
+        <span className="num" style={{ fontSize: 11.5, color: "var(--ink-500)" }}>
           {sorted.length} / {technicians.length} คน
         </span>
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[12px] shadow-sm shadow-blue-600/20"
-        >
-          <Plus className="size-3.5" />
+        <button type="button" onClick={() => setOpen(true)} className="btn btn-primary btn-sm">
+          <Plus />
           เพิ่มช่าง
         </button>
       </div>
 
-      {/* Add form (slide-in) */}
       {open && (
-        <form
-          onSubmit={submit}
-          className="bg-white rounded-xl border border-zinc-200 p-4 space-y-3"
-        >
-          <div className="flex items-center justify-between">
-            <h2 className="font-bold text-zinc-900">เพิ่มช่างใหม่</h2>
+        <form onSubmit={submit} className="panel" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--ink-900)", margin: 0 }}>
+              เพิ่มช่างใหม่
+            </h2>
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="size-7 grid place-items-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+              className="btn btn-icon btn-ghost"
             >
-              <X className="size-3.5" />
+              <X />
             </button>
           </div>
-          <div className="flex gap-2">
+          <div style={{ display: "flex", gap: 8 }}>
             {(["INTERNAL", "VENDOR"] as const).map((k) => (
               <button
                 key={k}
                 type="button"
                 onClick={() => setKind(k)}
-                className={`h-9 px-3 rounded-lg font-semibold text-[12.5px] border ${
-                  kind === k
-                    ? "bg-zinc-900 text-white border-zinc-900"
-                    : "bg-white text-zinc-700 border-zinc-200"
-                }`}
+                className={"btn btn-sm " + (kind === k ? "btn-primary" : "")}
               >
-                {k === "INTERNAL" ? (
-                  <Wrench className="size-3.5 inline mr-1.5" />
-                ) : (
-                  <Building2 className="size-3.5 inline mr-1.5" />
-                )}
+                {k === "INTERNAL" ? <Wrench /> : <Building2 />}
                 {TECHNICIAN_KIND_LABELS[k]}
               </button>
             ))}
@@ -200,54 +169,86 @@ export function TechnicianAdmin({ technicians }: { technicians: Tech[] }) {
             onChange={(e) => setName(e.target.value)}
             required
             placeholder="ชื่อ-นามสกุล"
-            className="w-full h-10 px-3 rounded-lg border border-zinc-200 text-[13px] focus:border-blue-400 focus:ring-4 focus:ring-blue-100 outline-none"
+            className="composer-input"
+            style={{
+              width: "100%", height: 36, padding: "0 12px",
+              borderRadius: 8, border: "1px solid var(--line)",
+              fontFamily: "inherit", fontSize: 13, outline: 0,
+              background: "var(--surface)",
+            }}
           />
-          <div className="grid sm:grid-cols-2 gap-2">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <input
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="เบอร์โทร"
               inputMode="tel"
-              className="h-10 px-3 rounded-lg border border-zinc-200 text-[13px] focus:border-blue-400 outline-none"
+              style={{
+                height: 36, padding: "0 12px",
+                borderRadius: 8, border: "1px solid var(--line)",
+                fontFamily: "inherit", fontSize: 13, outline: 0,
+                background: "var(--surface)",
+              }}
             />
             <input
               value={lineId}
               onChange={(e) => setLineId(e.target.value)}
               placeholder="LINE ID (ไม่บังคับ)"
-              className="h-10 px-3 rounded-lg border border-zinc-200 text-[13px] focus:border-blue-400 outline-none"
+              style={{
+                height: 36, padding: "0 12px",
+                borderRadius: 8, border: "1px solid var(--line)",
+                fontFamily: "inherit", fontSize: 13, outline: 0,
+                background: "var(--surface)",
+              }}
             />
           </div>
           <input
             value={specialties}
             onChange={(e) => setSpecialties(e.target.value)}
             placeholder="ทักษะ คั่นด้วย comma เช่น แอร์, ไฟฟ้า, ท่อ"
-            className="w-full h-10 px-3 rounded-lg border border-zinc-200 text-[13px] focus:border-blue-400 outline-none"
+            style={{
+              height: 36, padding: "0 12px",
+              borderRadius: 8, border: "1px solid var(--line)",
+              fontFamily: "inherit", fontSize: 13, outline: 0,
+              background: "var(--surface)",
+            }}
           />
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={2}
             placeholder="โน้ตเพิ่มเติม (ไม่บังคับ)"
-            className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-[13px] focus:border-blue-400 outline-none resize-y"
+            style={{
+              padding: 12,
+              borderRadius: 8, border: "1px solid var(--line)",
+              fontFamily: "inherit", fontSize: 13, outline: 0,
+              background: "var(--surface)", resize: "vertical",
+            }}
           />
           {error && (
-            <div className="rounded-lg bg-red-50 border border-red-200 p-2.5 flex gap-2 text-red-800 text-[12.5px]">
-              <AlertCircle className="size-4 flex-shrink-0" />
+            <div style={{
+              background: "#FEF2F2", border: "1px solid #FECACA",
+              borderRadius: 8, padding: 10,
+              display: "flex", alignItems: "flex-start", gap: 8,
+              color: "var(--bad)", fontSize: 12.5,
+            }}>
+              <AlertCircle size={14} />
               <span>{error}</span>
             </div>
           )}
-          <div className="flex gap-2">
+          <div style={{ display: "flex", gap: 8 }}>
             <button
               type="submit"
               disabled={isPending || name.trim().length < 2}
-              className="h-10 px-4 rounded-lg bg-zinc-900 text-white font-semibold text-[12.5px] hover:bg-zinc-700 disabled:opacity-50"
+              className="btn btn-primary"
+              style={{ background: "var(--ink-900)", borderColor: "var(--ink-1000)" }}
             >
               บันทึก
             </button>
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="h-10 px-4 rounded-lg bg-white border border-zinc-200 text-zinc-700 font-semibold text-[12.5px] hover:bg-zinc-50"
+              className="btn"
             >
               ยกเลิก
             </button>
@@ -257,57 +258,65 @@ export function TechnicianAdmin({ technicians }: { technicians: Tech[] }) {
 
       {/* Roster grid */}
       {sorted.length === 0 ? (
-        <div className="bg-white border border-dashed border-zinc-300 rounded-xl p-10 text-center">
-          <Wrench className="size-10 mx-auto text-zinc-300" />
-          <p className="mt-3 text-sm font-semibold text-zinc-900">ไม่พบช่างที่ตรงเงื่อนไข</p>
-          <p className="mt-1 text-[12px] text-zinc-500">ลองล้างตัวกรอง หรือ เพิ่มช่างใหม่</p>
+        <div className="panel" style={{
+          padding: 40, textAlign: "center",
+          borderStyle: "dashed", borderColor: "var(--ink-300)",
+        }}>
+          <Wrench size={32} style={{ color: "var(--ink-300)" }} />
+          <p style={{ marginTop: 10, fontSize: 13, fontWeight: 700, color: "var(--ink-900)" }}>
+            ไม่พบช่างตรงเงื่อนไข
+          </p>
+          <p style={{ marginTop: 4, fontSize: 12, color: "var(--ink-500)" }}>
+            ลองล้างตัวกรอง หรือเพิ่มช่างใหม่
+          </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+          gap: 12,
+        }}>
           {sorted.map((t) => {
             const loadPct = Math.min(100, (t.activeJobs / maxLoad) * 100);
-            const loadTone =
-              t.activeJobs >= 7
-                ? "bg-red-500"
-                : t.activeJobs >= 4
-                  ? "bg-amber-500"
-                  : "bg-emerald-500";
+            const tone = t.activeJobs >= 7 ? "is-high" : t.activeJobs >= 4 ? "is-med" : "is-low";
             return (
               <div
                 key={t.id}
-                className={`bg-white border border-zinc-200 rounded-xl p-4 flex flex-col gap-3 ${
-                  !t.isActive ? "opacity-60" : ""
-                }`}
+                className="panel"
+                style={{
+                  padding: 14, display: "flex", flexDirection: "column", gap: 10,
+                  opacity: t.isActive ? 1 : 0.6,
+                }}
               >
-                <div className="flex items-start gap-3">
-                  <div
-                    className="size-10 rounded-full grid place-items-center text-white font-bold text-sm shrink-0"
-                    style={{ background: techColor(t.id) }}
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <span
+                    className="tech-chip"
+                    style={{
+                      width: 40, height: 40, fontSize: 15,
+                      background: techColor(t.id),
+                    }}
                   >
                     {t.name.charAt(0)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-zinc-900 truncate">{t.name}</p>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span
-                        className={`inline-flex items-center px-1.5 py-0 rounded text-[10px] font-bold border ${
-                          t.kind === "INTERNAL"
-                            ? "bg-blue-50 text-blue-700 border-blue-200"
-                            : "bg-violet-50 text-violet-700 border-violet-200"
-                        }`}
-                      >
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink-900)" }}>
+                      {t.name}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                      <span className={
+                        "pill " +
+                        (t.kind === "INTERNAL" ? "pill-new" : "pill-assess")
+                      }>
                         {TECHNICIAN_KIND_LABELS[t.kind]}
                       </span>
                       {!t.isActive && (
-                        <span className="inline-flex items-center px-1.5 py-0 rounded text-[10px] font-bold border bg-zinc-100 text-zinc-600 border-zinc-200">
-                          ปิดใช้งาน
-                        </span>
+                        <span className="pill pill-low">ปิด</span>
                       )}
                     </div>
                     {t.userName && (
-                      <p className="text-[10.5px] text-zinc-500 mt-0.5">
+                      <div style={{ fontSize: 10.5, color: "var(--ink-500)", marginTop: 2 }}>
                         user: {t.userName}
-                      </p>
+                      </div>
                     )}
                   </div>
                   <button
@@ -315,63 +324,55 @@ export function TechnicianAdmin({ technicians }: { technicians: Tech[] }) {
                     onClick={() => toggle(t.id)}
                     disabled={isPending}
                     title={t.isActive ? "ปิดใช้งาน" : "เปิดใช้งาน"}
-                    className="size-7 grid place-items-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-50"
+                    className="btn btn-icon btn-ghost"
                   >
-                    <Power className="size-3.5" />
+                    <Power />
                   </button>
                 </div>
 
-                {/* Workload */}
                 <div>
-                  <div className="flex items-center justify-between text-[11.5px] mb-1">
-                    <span className="text-zinc-500">Workload</span>
-                    <span className="tabular-nums font-bold text-zinc-900">
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, marginBottom: 4 }}>
+                    <span style={{ color: "var(--ink-500)" }}>Workload</span>
+                    <span className="num" style={{ color: "var(--ink-900)", fontWeight: 600 }}>
                       {t.activeJobs}
                       {t.urgentJobs > 0 && (
-                        <span className="text-red-600 font-semibold ml-1.5">
+                        <span style={{ color: "var(--bad)", marginLeft: 6, fontWeight: 600 }}>
                           · {t.urgentJobs} ด่วน
                         </span>
                       )}
                     </span>
                   </div>
-                  <div className="h-1.5 bg-zinc-100 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full ${loadTone}`}
-                      style={{ width: `${Math.max(2, loadPct)}%` }}
-                    />
+                  <div className={"workload-bar " + tone}>
+                    <div style={{ width: `${Math.max(2, loadPct)}%` }} />
                   </div>
                 </div>
 
-                {/* Contact */}
                 {(t.phone || t.lineId) && (
-                  <div className="flex flex-wrap gap-1.5 text-[11.5px]">
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                     {t.phone && (
                       <a
                         href={`tel:${t.phone}`}
-                        className="inline-flex items-center gap-1 px-2 h-6 rounded bg-zinc-100 text-zinc-700 hover:bg-zinc-200 font-medium tabular-nums"
+                        className="tag"
+                        style={{ fontSize: 11.5, padding: "2px 8px" }}
                       >
-                        <Phone className="size-3" />
-                        {t.phone}
+                        <Phone size={10} /> {t.phone}
                       </a>
                     )}
                     {t.lineId && (
-                      <span className="inline-flex items-center gap-1 px-2 h-6 rounded bg-emerald-50 text-emerald-700 font-medium">
+                      <span className="tag" style={{
+                        fontSize: 11.5, padding: "2px 8px",
+                        background: "#ECFDF5", color: "#047857",
+                      }}>
                         LINE · {t.lineId}
                       </span>
                     )}
                   </div>
                 )}
 
-                {/* Skills */}
                 {t.specialties.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                     {t.specialties.map((s) => (
-                      <span
-                        key={s}
-                        className="text-[10.5px] bg-zinc-100 text-zinc-700 px-1.5 py-0.5 rounded font-medium"
-                      >
-                        {s}
-                      </span>
+                      <span key={s} className="tag">{s}</span>
                     ))}
                   </div>
                 )}

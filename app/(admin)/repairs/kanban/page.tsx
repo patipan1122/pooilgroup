@@ -1,4 +1,4 @@
-// /repairs/kanban — Kanban board with 5 status columns (Pooil App redesign · รอบ 48)
+// /repairs/kanban — Pooil App Kanban (.kanban .kanban-col .kcard exact structure)
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { requireRepairAccess, canRepairWrite } from "@/lib/repair/role-guard";
@@ -11,7 +11,7 @@ import {
   totalTicketCost,
   OPEN_STATUSES,
 } from "@/lib/repair/types";
-import { slaStatusFor, slaBadgeColor, slaBadgeLabel } from "@/lib/repair/sla";
+import { slaStatusFor, slaBadgeLabel } from "@/lib/repair/sla";
 import { MapPin, Camera, MessageSquare } from "lucide-react";
 import { RepairViewHeader } from "@/components/repair/view-header";
 import {
@@ -24,16 +24,14 @@ import {
 export const dynamic = "force-dynamic";
 
 const STATUS_DOT: Record<string, string> = {
-  NEW: "bg-blue-500",
-  ACK: "bg-violet-500",
-  IN_PROGRESS: "bg-amber-500",
-  WAITING_PARTS: "bg-cyan-500",
-  RESOLVED: "bg-emerald-500",
+  NEW: "var(--st-new)",
+  ACK: "var(--st-assess)",
+  IN_PROGRESS: "var(--st-approval)",
+  WAITING_PARTS: "var(--st-parts)",
+  RESOLVED: "var(--st-done)",
 };
 
-interface Search {
-  company?: string;
-}
+interface Search { company?: string }
 
 export default async function RepairKanbanPage({
   searchParams,
@@ -46,7 +44,6 @@ export default async function RepairKanbanPage({
   const params = await searchParams;
   const companyId = params.company || null;
 
-  const KANBAN_TAKE = 500;
   const where: Record<string, unknown> = {
     orgId,
     status: { in: KANBAN_STATUSES },
@@ -63,7 +60,7 @@ export default async function RepairKanbanPage({
         _count: { select: { photos: true, parts: true, events: true } },
       },
       orderBy: [{ urgency: "asc" }, { createdAt: "desc" }],
-      take: KANBAN_TAKE,
+      take: 500,
     }),
     countTicketsByStatus(orgId, companyId),
     countTicketsByUrgency(orgId, true, companyId),
@@ -90,130 +87,132 @@ export default async function RepairKanbanPage({
         ticketTotal={total}
         newSinceYesterday={newToday}
       />
-      <div className="p-3 sm:p-5 lg:p-6 max-w-[1800px] mx-auto">
-        <div className="flex gap-3 overflow-x-auto pb-4">
-          {KANBAN_STATUSES.map((s) => {
-            const col = byStatus.get(s) ?? [];
-            return (
-              <div
-                key={s}
-                className="bg-zinc-50 rounded-xl border border-zinc-200 w-[280px] shrink-0 flex flex-col"
-              >
-                <div className="px-3 py-2.5 border-b border-zinc-200 bg-white rounded-t-xl flex items-center gap-2">
-                  <span
-                    className={`size-2 rounded-full shrink-0 ${STATUS_DOT[s] ?? "bg-zinc-400"}`}
-                  />
-                  <span className="text-[12.5px] font-bold text-zinc-800">
-                    {STATUS_LABELS[s]}
-                  </span>
-                  <span className="ml-auto text-[10.5px] tabular-nums font-bold bg-zinc-100 text-zinc-700 px-1.5 rounded-full">
-                    {col.length}
-                  </span>
-                </div>
-                <div className="space-y-2 p-2.5 flex-1 min-h-[60vh] max-h-[calc(100vh-260px)] overflow-y-auto">
-                  {col.length === 0 && (
-                    <p className="text-center text-[11.5px] text-zinc-400 py-8">ว่าง</p>
-                  )}
-                  {col.map((t) => {
-                    const sla = slaStatusFor(t);
-                    const isUrgent = t.urgency === "URGENT";
-                    const cost = totalTicketCost(t);
-                    return (
-                      <Link
-                        key={t.id}
-                        href={`/repairs/triage?selected=${t.id}`}
-                        className={`block bg-white rounded-md border border-zinc-200 p-2.5 hover:border-zinc-300 hover:shadow-sm transition-all space-y-1.5 ${
-                          isUrgent ? "border-l-[3px] border-l-red-500 pl-2" : ""
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5 text-[10.5px] text-zinc-500">
-                          <span className="font-mono font-bold text-zinc-700">{t.ticketCode}</span>
-                          {t.branch && (
-                            <>
-                              <span className="text-zinc-300">·</span>
-                              <span className="font-mono font-bold text-zinc-700">
-                                {t.branch.code}
+      <div className="repair-content">
+        <div style={{ overflowX: "auto", paddingBottom: 8 }}>
+          <div className="kanban">
+            {KANBAN_STATUSES.map((s) => {
+              const col = (byStatus.get(s) ?? []).slice().sort((a, b) => {
+                const pa = a.urgency === "URGENT" ? 0 : a.urgency === "NORMAL" ? 1 : 2;
+                const pb = b.urgency === "URGENT" ? 0 : b.urgency === "NORMAL" ? 1 : 2;
+                if (pa !== pb) return pa - pb;
+                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+              });
+              return (
+                <div className="kanban-col" key={s}>
+                  <div className="kanban-col-head">
+                    <span className="kanban-col-dot" style={{ background: STATUS_DOT[s] ?? "var(--ink-400)" }} />
+                    <span className="kanban-col-title">{STATUS_LABELS[s]}</span>
+                    <span className="kanban-col-count num">{col.length}</span>
+                  </div>
+                  <div className="kanban-col-body">
+                    {col.length === 0 && (
+                      <div style={{ padding: "20px 0", textAlign: "center", color: "var(--ink-400)", fontSize: 11 }}>
+                        — ว่าง —
+                      </div>
+                    )}
+                    {col.map((t) => {
+                      const sla = slaStatusFor(t);
+                      const isUrgent = t.urgency === "URGENT";
+                      const cost = totalTicketCost(t);
+                      return (
+                        <Link
+                          key={t.id}
+                          href={`/repairs/triage?selected=${t.id}`}
+                          className={"kcard " + (isUrgent ? "is-urgent" : "")}
+                        >
+                          <div className="kcard-top">
+                            <span className="kcard-id">{t.ticketCode}</span>
+                            <span style={{ color: "var(--ink-400)" }}>·</span>
+                            <span className="num" style={{ fontWeight: 600, color: "var(--ink-700)" }}>
+                              {t.branch?.code ?? "—"}
+                            </span>
+                            <span style={{
+                              color: "var(--ink-500)",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              flex: 1, minWidth: 0,
+                            }}>
+                              {t.branch?.name ?? ""}
+                            </span>
+                          </div>
+                          <div className="kcard-title">
+                            {t.category?.emoji && <span style={{ marginRight: 4 }}>{t.category.emoji}</span>}
+                            {t.title}
+                          </div>
+                          <div className="kcard-tags">
+                            {t.category && (
+                              <span className="tag">{t.category.label.split("/")[0]}</span>
+                            )}
+                            {isUrgent && (
+                              <span className="pill pill-urgent">
+                                <span className="dot" />
+                                {URGENCY_LABELS.URGENT}
                               </span>
-                            </>
-                          )}
-                        </div>
-                        <p className="text-[12.5px] font-semibold text-zinc-900 leading-snug line-clamp-2">
-                          {t.category?.emoji && <span className="mr-1">{t.category.emoji}</span>}
-                          {t.title}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-1">
-                          {t.category && (
-                            <span className="text-[10px] bg-zinc-100 text-zinc-700 px-1.5 py-px rounded font-medium">
-                              {t.category.label.split("/")[0]}
-                            </span>
-                          )}
-                          {isUrgent && (
-                            <span className="text-[10px] bg-red-50 text-red-700 border border-red-200 px-1.5 py-px rounded font-bold">
-                              {URGENCY_LABELS.URGENT}
-                            </span>
-                          )}
-                          {t._count.parts > 0 && (
-                            <span className="text-[10px] bg-cyan-50 text-cyan-700 border border-cyan-200 px-1.5 py-px rounded font-bold">
-                              อะไหล่ {t._count.parts}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5 pt-1.5 border-t border-dashed border-zinc-100">
-                          {t.assignedTech ? (
-                            <>
-                              <span
-                                className="size-4 rounded-full grid place-items-center text-white text-[9px] font-bold"
-                                style={{ background: techColor(t.assignedTech.id) }}
-                              >
-                                {t.assignedTech.name.charAt(0)}
+                            )}
+                            {t._count.parts > 0 && (
+                              <span className="tag" style={{ background: "var(--st-parts-bg)", color: "#0E7490" }}>
+                                อะไหล่ {t._count.parts}
                               </span>
-                              <span className="text-[10.5px] text-zinc-700 font-medium truncate">
-                                {t.assignedTech.name}
+                            )}
+                          </div>
+                          <div className="kcard-bottom">
+                            {t.assignedTech ? (
+                              <>
+                                <span className="tech-chip" style={{
+                                  width: 18, height: 18, fontSize: 9,
+                                  background: techColor(t.assignedTech.id),
+                                }}>
+                                  {t.assignedTech.name.charAt(0)}
+                                </span>
+                                <span style={{
+                                  fontSize: 11, color: "var(--ink-700)",
+                                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                  maxWidth: 90,
+                                }}>
+                                  {t.assignedTech.name}
+                                </span>
+                              </>
+                            ) : (
+                              <span style={{
+                                fontSize: 11, color: "var(--ink-400)",
+                                fontStyle: "italic",
+                                display: "inline-flex", alignItems: "center", gap: 4,
+                              }}>
+                                <MapPin size={11} />
+                                ยังไม่มอบ
                               </span>
-                            </>
-                          ) : (
-                            <span className="text-[10.5px] text-zinc-400 italic flex items-center gap-1">
-                              <MapPin className="size-3" />
-                              ยังไม่มอบหมาย
-                            </span>
-                          )}
-                          <span className="ml-auto flex items-center gap-1.5 text-[10px] text-zinc-500">
+                            )}
+                            <span className="spacer" />
                             {t._count.photos > 0 && (
-                              <span className="inline-flex items-center gap-0.5 tabular-nums">
-                                <Camera className="size-2.5" />
-                                {t._count.photos}
-                              </span>
+                              <span className="kcard-iconlet"><Camera /> {t._count.photos}</span>
                             )}
                             {t._count.events > 0 && (
-                              <span className="inline-flex items-center gap-0.5 tabular-nums">
-                                <MessageSquare className="size-2.5" />
-                                {t._count.events}
-                              </span>
+                              <span className="kcard-iconlet"><MessageSquare /> {t._count.events}</span>
                             )}
                             {sla !== "done" && sla !== "ok" && (
-                              <span
-                                className={`px-1 py-px rounded text-[9.5px] font-bold border ${slaBadgeColor(sla)}`}
-                              >
+                              <span className={"sla " + sla}>
                                 {slaBadgeLabel(sla, t.resolveDueAt)}
                               </span>
                             )}
-                          </span>
-                        </div>
-                        {cost > 0 && (
-                          <div className="flex items-baseline gap-1 text-[10.5px] text-zinc-500">
-                            <span>ค่าซ่อม</span>
-                            <span className="tabular-nums font-bold text-zinc-800">
-                              {formatBaht(cost)}
-                            </span>
                           </div>
-                        )}
-                      </Link>
-                    );
-                  })}
+                          {cost > 0 && (
+                            <div style={{
+                              display: "flex", alignItems: "baseline", gap: 6,
+                              fontSize: 11, color: "var(--ink-500)", paddingTop: 2,
+                            }}>
+                              <span>ค่าซ่อม</span>
+                              <span className="kcard-cost">{formatBaht(cost)}</span>
+                            </div>
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
     </>
@@ -229,3 +228,4 @@ function techColor(id: string): string {
   for (let i = 0; i < id.length; i++) h = (h + id.charCodeAt(i)) >>> 0;
   return palette[h % palette.length];
 }
+

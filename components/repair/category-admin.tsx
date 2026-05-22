@@ -1,11 +1,13 @@
 "use client";
 
+// Pooil App · categories admin · uses design vocab (.panel, .btn, .pill)
+
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createCategory } from "@/lib/repair/actions";
 import { URGENCY_LABELS } from "@/lib/repair/types";
 import type { RepairUrgency } from "@/lib/generated/prisma/enums";
-import { Plus, AlertCircle } from "lucide-react";
+import { Plus, AlertCircle, X } from "lucide-react";
 
 interface Cat {
   id: string;
@@ -15,6 +17,12 @@ interface Cat {
   defaultUrgency: RepairUrgency;
   sortOrder: number;
 }
+
+const URGENCY_CLS: Record<RepairUrgency, string> = {
+  URGENT: "pill-urgent",
+  NORMAL: "pill-normal",
+  LOW: "pill-low",
+};
 
 export function CategoryAdmin({ categories }: { categories: Cat[] }) {
   const router = useRouter();
@@ -39,131 +47,173 @@ export function CategoryAdmin({ categories }: { categories: Cat[] }) {
         defaultUrgency: urgency,
         sortOrder,
       });
-      if (!r.ok) {
-        setError(r.error ?? "เพิ่มไม่สำเร็จ");
-        return;
-      }
-      setSlug("");
-      setLabel("");
-      setEmoji("🛠");
-      setSortOrder(100);
+      if (!r.ok) { setError(r.error ?? "เพิ่มไม่สำเร็จ"); return; }
+      setSlug(""); setLabel(""); setEmoji("🛠"); setSortOrder(100);
       setOpen(false);
       router.refresh();
     });
   }
 
   return (
-    <div className="space-y-4">
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {!open ? (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="inline-flex items-center gap-2 h-11 px-4 rounded-xl bg-[var(--color-brand-600)] text-white font-bold hover:bg-[var(--color-brand-700)]"
-        >
-          <Plus className="size-4" />
-          เพิ่มหมวด
-        </button>
+        <div>
+          <button type="button" onClick={() => setOpen(true)} className="btn btn-primary">
+            <Plus />
+            เพิ่มหมวด
+          </button>
+        </div>
       ) : (
-        <form onSubmit={submit} className="bg-white rounded-2xl border-2 border-zinc-200 p-4 space-y-3">
-          <div className="grid sm:grid-cols-3 gap-2">
-            <div className="sm:col-span-2">
-              <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">ชื่อแสดง</label>
+        <form
+          onSubmit={submit}
+          className="panel"
+          style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: "var(--ink-900)" }}>
+              เพิ่มหมวดใหม่
+            </h2>
+            <button type="button" onClick={() => setOpen(false)} className="btn btn-icon btn-ghost">
+              <X />
+            </button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8 }}>
+            <div>
+              <label style={{ fontSize: 10.5, fontWeight: 700, color: "var(--ink-500)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                ชื่อแสดง
+              </label>
               <input
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
                 required
-                placeholder="เช่น แอร์/เครื่องปรับอากาศ"
-                className="mt-1 w-full h-10 px-3 rounded-lg border-2 border-zinc-200 text-sm focus:border-[var(--color-brand-500)] outline-none"
+                placeholder="เช่น แอร์ / เครื่องปรับอากาศ"
+                style={inputStyle}
               />
             </div>
             <div>
-              <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Emoji</label>
+              <label style={{ fontSize: 10.5, fontWeight: 700, color: "var(--ink-500)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Emoji
+              </label>
               <input
                 value={emoji}
                 onChange={(e) => setEmoji(e.target.value)}
                 maxLength={4}
-                className="mt-1 w-full h-10 px-3 rounded-lg border-2 border-zinc-200 text-2xl text-center"
+                style={{ ...inputStyle, fontSize: 22, textAlign: "center" }}
               />
             </div>
           </div>
-          <div className="grid sm:grid-cols-3 gap-2">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
             <div>
-              <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Slug (a-z, dash)</label>
+              <label style={{ fontSize: 10.5, fontWeight: 700, color: "var(--ink-500)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Slug
+              </label>
               <input
                 value={slug}
                 onChange={(e) => setSlug(e.target.value)}
                 required
                 pattern="[a-z0-9\-]+"
                 placeholder="เช่น ac"
-                className="mt-1 w-full h-10 px-3 rounded-lg border-2 border-zinc-200 text-sm font-mono lowercase focus:border-[var(--color-brand-500)] outline-none"
+                style={{ ...inputStyle, fontFamily: "var(--font-mono)" }}
               />
             </div>
             <div>
-              <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">เร่งด่วน default</label>
+              <label style={{ fontSize: 10.5, fontWeight: 700, color: "var(--ink-500)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                เร่งด่วน default
+              </label>
               <select
                 value={urgency}
                 onChange={(e) => setUrgency(e.target.value as RepairUrgency)}
-                className="mt-1 w-full h-10 px-3 rounded-lg border-2 border-zinc-200 text-sm font-medium"
+                style={inputStyle}
               >
                 {(["URGENT", "NORMAL", "LOW"] as const).map((u) => (
-                  <option key={u} value={u}>
-                    {URGENCY_LABELS[u]}
-                  </option>
+                  <option key={u} value={u}>{URGENCY_LABELS[u]}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">ลำดับแสดง</label>
+              <label style={{ fontSize: 10.5, fontWeight: 700, color: "var(--ink-500)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                ลำดับแสดง
+              </label>
               <input
                 type="number"
                 value={sortOrder}
                 onChange={(e) => setSortOrder(parseInt(e.target.value || "0", 10))}
-                className="mt-1 w-full h-10 px-3 rounded-lg border-2 border-zinc-200 text-sm font-medium"
+                style={inputStyle}
               />
             </div>
           </div>
           {error && (
-            <div className="rounded-lg bg-red-50 border border-red-200 p-2.5 flex gap-2 text-red-800 text-sm">
-              <AlertCircle className="size-4 flex-shrink-0" />
+            <div style={{
+              background: "#FEF2F2", border: "1px solid #FECACA",
+              borderRadius: 8, padding: 8,
+              display: "flex", gap: 6, color: "var(--bad)", fontSize: 12,
+            }}>
+              <AlertCircle size={14} />
               <span>{error}</span>
             </div>
           )}
-          <div className="flex gap-2">
+          <div style={{ display: "flex", gap: 8 }}>
             <button
               type="submit"
-              disabled={isPending || label.trim().length === 0 || slug.trim().length === 0}
-              className="h-10 px-4 rounded-lg bg-zinc-900 text-white font-bold text-sm hover:bg-zinc-700 disabled:opacity-50"
+              disabled={isPending || !label.trim() || !slug.trim()}
+              className="btn btn-primary"
+              style={{ background: "var(--ink-900)", borderColor: "var(--ink-1000)" }}
             >
               บันทึก
             </button>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="h-10 px-4 rounded-lg bg-white border-2 border-zinc-200 text-zinc-700 font-bold text-sm hover:bg-zinc-50"
-            >
+            <button type="button" onClick={() => setOpen(false)} className="btn">
               ยกเลิก
             </button>
           </div>
         </form>
       )}
 
-      <ul className="bg-white rounded-2xl border border-zinc-200 divide-y divide-zinc-100 overflow-hidden">
+      <div className="panel">
         {categories.length === 0 ? (
-          <li className="p-8 text-center text-zinc-500">ยังไม่มีหมวด</li>
+          <div style={{ padding: 40, textAlign: "center", color: "var(--ink-500)" }}>
+            ยังไม่มีหมวด
+          </div>
         ) : (
-          categories.map((c) => (
-            <li key={c.id} className="px-4 py-3 flex items-center gap-3">
-              <span className="text-2xl">{c.emoji ?? "🛠"}</span>
-              <div className="flex-1 min-w-0">
-                <p className="font-bold text-zinc-900">{c.label}</p>
-                <p className="text-xs text-zinc-500 font-mono">
-                  {c.slug} · default {URGENCY_LABELS[c.defaultUrgency]} · sort {c.sortOrder}
-                </p>
+          categories.map((c, i) => (
+            <div
+              key={c.id}
+              style={{
+                display: "flex", alignItems: "center", gap: 12,
+                padding: "12px 14px",
+                borderBottom: i === categories.length - 1 ? 0 : "1px solid var(--line-2)",
+              }}
+            >
+              <span style={{ fontSize: 24 }}>{c.emoji ?? "🛠"}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink-900)" }}>
+                  {c.label}
+                </div>
+                <div style={{
+                  fontSize: 11, color: "var(--ink-500)",
+                  display: "flex", alignItems: "center", gap: 8, marginTop: 1,
+                }}>
+                  <span style={{ fontFamily: "var(--font-mono)" }}>{c.slug}</span>
+                  <span style={{ color: "var(--ink-300)" }}>·</span>
+                  <span>default</span>
+                  <span className={"pill " + URGENCY_CLS[c.defaultUrgency]} style={{ fontSize: 10 }}>
+                    {URGENCY_LABELS[c.defaultUrgency]}
+                  </span>
+                  <span style={{ color: "var(--ink-300)" }}>·</span>
+                  <span>sort {c.sortOrder}</span>
+                </div>
               </div>
-            </li>
+            </div>
           ))
         )}
-      </ul>
+      </div>
     </div>
   );
 }
+
+const inputStyle: React.CSSProperties = {
+  marginTop: 4,
+  width: "100%", height: 34, padding: "0 10px",
+  borderRadius: 8, border: "1px solid var(--line)",
+  fontFamily: "inherit", fontSize: 13, outline: 0,
+  background: "var(--surface)",
+};
