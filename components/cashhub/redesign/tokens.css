@@ -46,7 +46,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-plex-mono, "IBM Plex Mono"), ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -63,6 +63,13 @@
   border-radius: 999px;
   font-size: 10.5px;
   letter-spacing: 0.06em;
+  font-family: var(--font-plex-mono, "IBM Plex Mono"), ui-monospace, Menlo, monospace;
+}
+
+/* tabular numerals use Plex Mono inside .ch-scope for that crisp design feel */
+.ch-scope .ch-tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
 }
 
 /* two-tone Thai title */

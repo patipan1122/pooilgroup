@@ -2,27 +2,26 @@
 
 // Dashboard V1 — matches Claude Design handoff MLMc2DZd7q-5cmIzvrh5hw
 // (variant V1: refined matrix + 4-card hero strip).
-// Bottom legacy sections (alerts/payment/leaderboard) kept since they're
-// real shipped features; only re-skinned with the new tokens.
+//
+// Per UI audit 2026-05-22 (รอบ 49):
+// - SectionPill numbering follows design: "💰" for hero · "00" for Executive overview
+// - Removed 5 Pool-legacy sections (Forecast, Alerts, Payment-mix, Leaderboard, Calendar)
+//   — they live on their own routes (/leaderboard, /missing, /heatmap, etc.).
+// - Pool-specific extensions kept compact below a clear divider so the page
+//   reads as "design canvas + Pool extras" rather than "Pool admin masquerading".
 
-import { useState } from "react";
 import Link from "next/link";
 import {
   Download,
   RefreshCw,
-  ScrollText,
-  Trophy,
-  Wallet,
   AlertCircle,
   AlertTriangle,
-  CheckCircle2,
-  Clock,
-  CalendarDays,
   Banknote,
   Smartphone,
   CreditCard,
   Receipt,
-  ChevronRight,
+  Target,
+  Filter,
 } from "lucide-react";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
 import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
@@ -30,19 +29,11 @@ import { SparklineV2 } from "@/components/cashhub/redesign/sparkline-v2";
 import { HeroKpiCard } from "@/components/cashhub/redesign/hero-kpi-card";
 import { DeltaPill } from "@/components/cashhub/redesign/delta-pill";
 import { ExecutiveTable } from "@/components/cashhub/executive-table";
+import { ProgressBar, Donut } from "@/components/cashhub/charts";
 import {
-  CalendarHeatmap,
-  ProgressBar,
-  Donut,
-  HealthBadge,
-  Sparkline as SparklineLegacy,
-} from "@/components/cashhub/charts";
-import {
-  formatBaht,
   formatBahtCompact,
   thaiDateLong,
 } from "@/lib/utils/format";
-import { BUSINESS_TYPES } from "@/constants/business-types";
 import { cn } from "@/lib/utils/cn";
 import type { DashboardData } from "@/lib/cashhub/aggregator";
 import type { ExecutiveMatrix } from "@/lib/cashhub/executive-matrix";
@@ -74,19 +65,17 @@ export function DashboardV1View({
 
   // 11-month total sparkline from executive-matrix (sums all biz rows per period)
   const totalSpark: number[] = (() => {
-    const keys = executiveMatrix.periodKeys.slice().reverse(); // oldest → newest
+    const keys = executiveMatrix.periodKeys.slice().reverse();
     return keys.map((_, i) => {
       const colIndex = executiveMatrix.periodKeys.length - 1 - i;
       return executiveMatrix.periodTotals[colIndex] ?? 0;
     });
   })();
 
-  // Top 3 "น่าเป็นห่วง" — branches with biggest MoM drop ≥ 20%.
-  // Use branchSummaries with prev-month snapshot derived from monthTotal vs branch target.
+  // Top 3 "น่าเป็นห่วง" — branches with biggest MoM drop ≥ 20% (or stale ≥3 days)
   const watchlist = data.branchSummaries
     .filter((s) => s.monthTotal > 0 || s.daysSinceLastReport != null)
     .map((s) => {
-      // Approximate MoM via current vs target — when target missing fallback to monthDelta.
       const pct =
         s.target > 0 ? (s.monthTotal / s.target) * 100 - 100 : null;
       return {
@@ -108,15 +97,15 @@ export function DashboardV1View({
   const filledPct =
     branchCount > 0 ? Math.round((filledCount / branchCount) * 100) : 0;
 
-  const [period] = useState<"monthly" | "daily" | "annual">("monthly");
-  void period;
-
+  // Pending breakdown — design shows "1,023 รายงาน + 16 คำขอ"
+  // We don't have register-requests count here so display "X รายงาน · รออนุมัติ"
+  // (parent ApprovalBanner already shows the dual count globally).
   return (
     <div className="min-h-full bg-white">
       <div className="px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
-        {/* Hero header */}
+        {/* Hero — design dashboard.jsx:88-101 */}
         <div className="flex flex-col gap-3 mb-2">
-          <SectionPill num="00" label={`CashHub · ${today}`} />
+          <SectionPill num="💰" label={`CashHub · ${today}`} />
           <div className="flex flex-wrap items-end gap-4">
             <TwoToneTitle first="ภาพรวม" accent="ยอดสาขา" size={42} />
             <div className="flex-1" />
@@ -142,16 +131,16 @@ export function DashboardV1View({
           </div>
         </div>
 
-        {/* Hero KPI strip — 4 cards */}
+        {/* Hero KPI strip — design dashboard.jsx:104-155 (4 cards) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr] gap-3 mt-4">
           {/* Total */}
           <HeroKpiCard eyebrow={`ยอดขายรวม · ${monthLabel}`}>
             <div className="flex items-baseline gap-2 mt-1">
               <div
                 className="ch-tnum font-display font-bold text-[var(--ch-navy)] leading-none"
-                style={{ fontSize: 36, letterSpacing: "-0.02em" }}
+                style={{ fontSize: 38, letterSpacing: "-0.02em" }}
               >
-                {formatBahtCompact(data.monthTotal).replace("฿", "฿")}
+                {formatBahtCompact(data.monthTotal)}
               </div>
               <div className="ml-auto">
                 <DeltaPill pct={monthDelta} />
@@ -168,7 +157,7 @@ export function DashboardV1View({
               />
             </div>
             <div className="text-[11px] text-[var(--ch-text-3)] mt-1">
-              เดือนก่อน {formatBahtCompact(data.prevMonthTotal)}
+              vs เดือนก่อน {formatBahtCompact(data.prevMonthTotal)}
               {data.targetTotal > 0
                 ? ` · เป้า ${formatBahtCompact(data.targetTotal)}`
                 : ""}
@@ -180,7 +169,7 @@ export function DashboardV1View({
             <div className="flex items-baseline gap-1 mt-1">
               <span
                 className="ch-tnum font-display font-bold text-[var(--ch-navy)] leading-none"
-                style={{ fontSize: 36 }}
+                style={{ fontSize: 38 }}
               >
                 {filledCount}
               </span>
@@ -193,7 +182,8 @@ export function DashboardV1View({
                 className="h-full"
                 style={{
                   width: `${filledPct}%`,
-                  background: "linear-gradient(90deg,var(--ch-brand),var(--ch-info))",
+                  background:
+                    "linear-gradient(90deg,var(--ch-brand),var(--ch-info))",
                 }}
               />
             </div>
@@ -207,7 +197,7 @@ export function DashboardV1View({
             <div className="flex items-baseline gap-1 mt-1">
               <span
                 className="ch-tnum font-display font-bold text-[var(--ch-danger)] leading-none"
-                style={{ fontSize: 36 }}
+                style={{ fontSize: 38 }}
               >
                 {watchlist.length}
               </span>
@@ -226,7 +216,7 @@ export function DashboardV1View({
                   >
                     <span className="truncate mr-2">
                       <span className="font-semibold">{w.code}</span>
-                      <span className="text-[var(--ch-text-3)] ml-1">
+                      <span className="text-[var(--ch-text-3)] ml-1 truncate inline-block max-w-[110px] align-bottom">
                         {w.name}
                       </span>
                     </span>
@@ -250,13 +240,13 @@ export function DashboardV1View({
             <div className="flex items-baseline gap-1 mt-1">
               <span
                 className="ch-tnum font-display font-bold text-[var(--ch-navy)] leading-none"
-                style={{ fontSize: 36 }}
+                style={{ fontSize: 38 }}
               >
                 {data.pendingCount.toLocaleString("en-US")}
               </span>
             </div>
             <div className="text-[11px] text-[var(--ch-text-3)] mt-1.5">
-              รายงานที่ส่งแล้ว · รออนุมัติ
+              {data.pendingCount.toLocaleString("en-US")} รายงาน รออนุมัติ
             </div>
             <Link
               href="/cashhub/reports?status=submitted"
@@ -267,16 +257,16 @@ export function DashboardV1View({
           </HeroKpiCard>
         </div>
 
-        {/* Section 01 — Executive matrix */}
+        {/* Section 00 — Executive matrix — design dashboard.jsx:159-280 */}
         <div className="mt-8 mb-3">
-          <SectionPill num="01" label="Executive overview" />
+          <SectionPill num="00" label="Executive overview" />
           <div className="flex flex-wrap items-baseline gap-3 mt-2">
             <h2 className="text-xl font-bold text-[var(--ch-navy)] m-0">
               สรุปยอดขาย{" "}
               <span className="text-[var(--ch-brand)]">ทุกประเภทธุรกิจ</span>
             </h2>
             <span className="text-xs text-[var(--ch-text-3)]">
-              กดที่แถวเพื่อขยายดูสาขา · สลับ ฿ / ปริมาณ · เลื่อนซ้ายขวาดูช่วงเก่า
+              กดที่แถวเพื่อขยายดูสาขา · ปุ่ม ฿/⚖ บนตาราง สลับหน่วย · เลื่อนซ้ายขวาดูช่วงเก่า
             </span>
           </div>
         </div>
@@ -284,11 +274,22 @@ export function DashboardV1View({
           <ExecutiveTable data={executiveMatrix} />
         </div>
 
-        {/* Forecast + Target hero (kept — Pool-specific feature, restyled) */}
+        {/* ─── Pool extensions divider ─── */}
+        <div className="my-10 flex items-center gap-3 text-[11px] uppercase tracking-wider font-semibold text-[var(--ch-text-3)]">
+          <span className="h-px flex-1 bg-[var(--ch-border)]" />
+          <Filter className="size-3" />
+          <span>Pool extras · ไม่อยู่ใน Design canvas</span>
+          <span className="h-px flex-1 bg-[var(--ch-border)]" />
+        </div>
+
+        {/* Pool extras: compact Forecast + Alerts + Payment-mix (Pool-specific) */}
+
+        {/* Forecast + Target */}
         {(fc.forecastEom > 0 || data.targetTotal > 0) && (
-          <div className="mb-8 ch-card-v2 bg-[var(--ch-bg-2)] p-4 sm:p-6 flex flex-col sm:flex-row gap-4">
+          <div className="mb-6 ch-card-v2 bg-[var(--ch-bg-2)] p-4 sm:p-5 flex flex-col sm:flex-row gap-4">
             <div className="flex-1 min-w-0">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ch-text-3)]">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ch-text-3)] flex items-center gap-1.5">
+                <Target className="size-3" />
                 คาดการณ์สิ้นเดือน
               </div>
               <div className="ch-tnum font-display font-extrabold text-[var(--ch-navy)] mt-1 text-2xl sm:text-3xl">
@@ -322,28 +323,28 @@ export function DashboardV1View({
           </div>
         )}
 
-        {/* Section 02 — Critical alerts (kept) */}
+        {/* Alerts (compact) */}
         {data.alerts.length > 0 && (
-          <div className="mb-8">
-            <SectionPill num="02" label="ต้องดูแล" />
-            <div className="flex flex-wrap items-baseline gap-3 mt-2 mb-3">
-              <h2 className="text-xl font-bold text-[var(--ch-navy)] m-0">
-                ต้องดูแล <span className="text-[var(--ch-brand)]">วันนี้</span>
-              </h2>
+          <div className="mb-6">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle className="size-4 text-[var(--ch-danger)]" />
+              <h3 className="text-sm font-bold text-[var(--ch-navy)] m-0">
+                ต้องดูแลวันนี้
+              </h3>
               <span className="text-xs text-[var(--ch-text-3)]">
-                ขาดส่ง · ยอดผิดปกติ · เครดิตค้างสูง · เงินขาด
+                · {data.alerts.length} รายการ
               </span>
             </div>
             <div className="ch-card-v2 overflow-hidden">
               <ul className="divide-y divide-[var(--ch-border)]">
-                {data.alerts.slice(0, 8).map((a, i) => (
+                {data.alerts.slice(0, 5).map((a, i) => (
                   <li
                     key={i}
-                    className="flex items-center gap-3 px-4 sm:px-5 py-3"
+                    className="flex items-center gap-3 px-3 sm:px-4 py-2.5"
                   >
                     <div
                       className={cn(
-                        "size-8 rounded-lg flex items-center justify-center shrink-0",
+                        "size-7 rounded-lg flex items-center justify-center shrink-0",
                         a.severity === "danger"
                           ? "bg-[var(--ch-danger-soft)] text-[var(--ch-danger)]"
                           : a.severity === "warning"
@@ -351,7 +352,7 @@ export function DashboardV1View({
                             : "bg-[var(--ch-info-soft)] text-[var(--ch-info)]",
                       )}
                     >
-                      <AlertTriangle className="size-4" />
+                      <AlertTriangle className="size-3.5" />
                     </div>
                     <div className="min-w-0 flex-1 text-sm">{a.message}</div>
                     {a.branch && (
@@ -364,281 +365,108 @@ export function DashboardV1View({
                     )}
                   </li>
                 ))}
+                {data.alerts.length > 5 && (
+                  <li className="px-4 py-2 text-xs text-[var(--ch-text-3)] bg-[var(--ch-bg-2)]">
+                    <Link
+                      href="/cashhub/missing"
+                      className="text-[var(--ch-brand)] font-semibold hover:underline"
+                    >
+                      ดูทั้งหมด {data.alerts.length} รายการ →
+                    </Link>
+                  </li>
+                )}
               </ul>
-              {data.alerts.length > 8 && (
-                <div className="px-4 py-2 text-xs text-[var(--ch-text-3)] border-t border-[var(--ch-border)] bg-[var(--ch-bg-2)]">
-                  + อีก {data.alerts.length - 8} รายการ
-                </div>
-              )}
             </div>
           </div>
         )}
 
-        {/* Section 03 — Payment mix + Pending action */}
-        <div className="mb-8">
-          <SectionPill num="03" label="กระแสเงิน" />
-          <div className="flex flex-wrap items-baseline gap-3 mt-2 mb-3">
-            <h2 className="text-xl font-bold text-[var(--ch-navy)] m-0">
-              ช่องทาง<span className="text-[var(--ch-brand)]">รับเงิน</span>
-            </h2>
-            <span className="text-xs text-[var(--ch-text-3)]">
-              สัดส่วน (อนุมัติแล้ว) · รวม {formatBahtCompact(data.paymentMixTotal)}
-            </span>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <div className="ch-card-v2 lg:col-span-2 p-4 sm:p-5">
-              <div className="flex flex-col sm:flex-row items-center gap-5">
-                <div className="shrink-0">
-                  <Donut
-                    size={120}
-                    thickness={20}
-                    segments={[
-                      { label: "เงินสด", value: data.paymentMix.cash, color: "#16a34a" },
-                      { label: "โอน", value: data.paymentMix.transfer, color: "#2563eb" },
-                      { label: "บัตร", value: data.paymentMix.card, color: "#9333ea" },
-                      { label: "เครดิต", value: data.paymentMix.credit, color: "#f97316" },
-                      { label: "เงินขาด", value: data.paymentMix.shortage, color: "#dc2626" },
-                    ]}
-                  />
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-1 gap-1.5 flex-1 w-full">
-                  <MixRow
-                    icon={<Banknote className="size-4 text-emerald-700" />}
-                    color="#16a34a"
-                    label="เงินสด"
-                    value={data.paymentMix.cash}
-                    total={data.paymentMixTotal}
-                  />
-                  <MixRow
-                    icon={<Smartphone className="size-4 text-blue-700" />}
-                    color="#2563eb"
-                    label="โอน/QR"
-                    value={data.paymentMix.transfer}
-                    total={data.paymentMixTotal}
-                  />
-                  <MixRow
-                    icon={<CreditCard className="size-4 text-violet-700" />}
-                    color="#9333ea"
-                    label="บัตร"
-                    value={data.paymentMix.card}
-                    total={data.paymentMixTotal}
-                  />
-                  <MixRow
-                    icon={<Receipt className="size-4 text-orange-700" />}
-                    color="#f97316"
-                    label="เครดิต"
-                    value={data.paymentMix.credit}
-                    total={data.paymentMixTotal}
-                  />
-                  {data.paymentMix.shortage > 0 && (
-                    <MixRow
-                      icon={<AlertCircle className="size-4 text-red-700" />}
-                      color="#dc2626"
-                      label="เงินขาด"
-                      value={data.paymentMix.shortage}
-                      total={data.paymentMixTotal}
-                    />
-                  )}
-                </div>
-              </div>
+        {/* Payment mix (compact donut + bars) */}
+        {data.paymentMixTotal > 0 && (
+          <div className="mb-6">
+            <div className="flex items-center gap-2 mb-2">
+              <Banknote className="size-4 text-[var(--ch-brand)]" />
+              <h3 className="text-sm font-bold text-[var(--ch-navy)] m-0">
+                ช่องทางรับเงิน
+              </h3>
+              <span className="text-xs text-[var(--ch-text-3)]">
+                · รวม {formatBahtCompact(data.paymentMixTotal)} (อนุมัติแล้ว)
+              </span>
             </div>
-
-            <Link
-              href="/cashhub/reports?status=submitted"
-              className="ch-card-v2 p-5 flex flex-col items-center justify-center text-center hover:border-[var(--ch-brand)] transition-colors group"
-            >
-              <div
-                className={cn(
-                  "size-12 rounded-xl grid place-items-center mb-2",
-                  data.pendingCount > 0
-                    ? "bg-[var(--ch-pending-soft)] text-[#a16207]"
-                    : "bg-[var(--ch-ok-soft)] text-[var(--ch-ok)]",
-                )}
-              >
-                {data.pendingCount > 0 ? (
-                  <Clock className="size-6" />
-                ) : (
-                  <CheckCircle2 className="size-6" />
-                )}
-              </div>
-              <div className="ch-tnum text-4xl font-display font-bold text-[var(--ch-navy)]">
-                {data.pendingCount}
-              </div>
-              <div className="text-sm font-semibold text-[var(--ch-text)] mt-0.5">
-                รออนุมัติ
-              </div>
-              <div className="text-[11px] text-[var(--ch-text-3)] mt-1">
-                {data.pendingCount > 0
-                  ? "กดเพื่อจัดการในหน้ารายงาน →"
-                  : "ทุกรายงานเรียบร้อย"}
-              </div>
-            </Link>
-          </div>
-        </div>
-
-        {/* Section 04 — Leaderboard + Calendar (kept) */}
-        <div className="mb-8">
-          <SectionPill num="04" label="อันดับ" />
-          <div className="flex flex-wrap items-baseline gap-3 mt-2 mb-3">
-            <h2 className="text-xl font-bold text-[var(--ch-navy)] m-0">
-              ตาราง<span className="text-[var(--ch-brand)]">อันดับ</span> · ปฏิทินกรอกครบ
-            </h2>
-            <Link
-              href="/cashhub/leaderboard"
-              className="text-xs font-bold text-[var(--ch-brand)] hover:underline ml-auto"
-            >
-              ดูทั้งหมด →
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <div className="ch-card-v2 overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--ch-border)] bg-[var(--ch-bg-2)]">
-                <Trophy className="size-4 text-amber-600" />
-                <span className="text-sm font-bold text-[var(--ch-navy)]">
-                  Top สาขา (เดือนนี้)
-                </span>
-              </div>
-              <ul className="divide-y divide-[var(--ch-border)]">
-                {data.branchSummaries.length === 0 ? (
-                  <li className="p-6 text-center text-sm text-[var(--ch-text-3)]">
-                    ยังไม่มีรายงาน
-                  </li>
-                ) : (
-                  [...data.branchSummaries]
-                    .sort((a, b) => b.monthTotal - a.monthTotal)
-                    .slice(0, 8)
-                    .map((s, i) => {
-                      const cfg = BUSINESS_TYPES[s.branch.business_type];
-                      return (
-                        <li key={s.branch.id}>
-                          <Link
-                            href={`/cashhub/branches/${s.branch.id}`}
-                            className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--ch-bg-2)] transition-colors"
-                          >
-                            <div className="ch-tnum text-xs font-bold text-[var(--ch-text-3)] w-6 text-center">
-                              #{i + 1}
-                            </div>
-                            <span className="text-lg shrink-0">
-                              {cfg?.emoji}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <div className="text-sm font-semibold truncate flex items-center gap-1.5">
-                                {s.branch.code}
-                                {s.streak && s.streak.current >= 7 && (
-                                  <span
-                                    title={`Streak ${s.streak.current} วัน`}
-                                  >
-                                    🔥
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-[11px] text-[var(--ch-text-3)] truncate">
-                                {s.branch.name}
-                              </div>
-                            </div>
-                            <SparklineLegacy
-                              data={s.spark}
-                              width={56}
-                              height={20}
-                              className="shrink-0"
-                            />
-                            <div className="text-right shrink-0 min-w-[68px]">
-                              <div className="ch-tnum text-sm font-bold text-[var(--ch-text)]">
-                                {formatBahtCompact(s.monthTotal)}
-                              </div>
-                              {s.health && (
-                                <HealthBadge
-                                  grade={s.health.grade}
-                                  size="sm"
-                                  className="mt-0.5 justify-end"
-                                />
-                              )}
-                            </div>
-                          </Link>
-                        </li>
-                      );
-                    })
-                )}
-              </ul>
-            </div>
-
-            <div className="ch-card-v2 overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--ch-border)] bg-[var(--ch-bg-2)]">
-                <CalendarDays className="size-4 text-[var(--ch-brand)]" />
-                <span className="text-sm font-bold text-[var(--ch-navy)]">
-                  ปฏิทินกรอกครบ · {monthLabel}
-                </span>
-              </div>
-              <div className="p-4">
-                <CalendarHeatmap
-                  cells={data.dailyTotals}
-                  monthYear={monthLabel}
+            <div className="ch-card-v2 p-4 sm:p-5 flex flex-col sm:flex-row items-center gap-5">
+              <div className="shrink-0">
+                <Donut
+                  size={100}
+                  thickness={16}
+                  segments={[
+                    { label: "เงินสด", value: data.paymentMix.cash, color: "#16a34a" },
+                    { label: "โอน", value: data.paymentMix.transfer, color: "#2563eb" },
+                    { label: "บัตร", value: data.paymentMix.card, color: "#9333ea" },
+                    { label: "เครดิต", value: data.paymentMix.credit, color: "#f97316" },
+                    { label: "เงินขาด", value: data.paymentMix.shortage, color: "#dc2626" },
+                  ]}
                 />
-                <div className="mt-3 text-xs text-[var(--ch-text-3)]">
-                  สีเข้ม = % สาขากรอกครบสูง · กด{" "}
-                  <Link
-                    href="/cashhub/heatmap"
-                    className="text-[var(--ch-brand)] font-semibold hover:underline"
-                  >
-                    Heatmap แบบเต็ม
-                  </Link>{" "}
-                  เพื่อดูแยกเป็นเซลล์
-                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 flex-1 w-full text-xs">
+                <MixRow
+                  icon={<Banknote className="size-3.5 text-emerald-700" />}
+                  color="#16a34a"
+                  label="เงินสด"
+                  value={data.paymentMix.cash}
+                  total={data.paymentMixTotal}
+                />
+                <MixRow
+                  icon={<Smartphone className="size-3.5 text-blue-700" />}
+                  color="#2563eb"
+                  label="โอน/QR"
+                  value={data.paymentMix.transfer}
+                  total={data.paymentMixTotal}
+                />
+                <MixRow
+                  icon={<CreditCard className="size-3.5 text-violet-700" />}
+                  color="#9333ea"
+                  label="บัตร"
+                  value={data.paymentMix.card}
+                  total={data.paymentMixTotal}
+                />
+                <MixRow
+                  icon={<Receipt className="size-3.5 text-orange-700" />}
+                  color="#f97316"
+                  label="เครดิต"
+                  value={data.paymentMix.credit}
+                  total={data.paymentMixTotal}
+                />
+                {data.paymentMix.shortage > 0 && (
+                  <MixRow
+                    icon={<AlertCircle className="size-3.5 text-red-700" />}
+                    color="#dc2626"
+                    label="เงินขาด"
+                    value={data.paymentMix.shortage}
+                    total={data.paymentMixTotal}
+                  />
+                )}
               </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Footer hint — quick links to common ops */}
-        <div className="ch-card-v2 bg-[var(--ch-bg-2)] p-4 flex flex-wrap items-center gap-3 text-sm text-[var(--ch-text-2)]">
-          <Wallet className="size-4 text-[var(--ch-brand)]" />
-          <span>ทางลัด:</span>
-          <Link
-            href="/cashhub/reports"
-            className="font-semibold text-[var(--ch-brand)] hover:underline"
-          >
-            <ScrollText className="size-3.5 inline mr-1" />
-            รายงานทั้งหมด
-          </Link>
-          <span className="text-[var(--ch-text-3)]">·</span>
-          <Link
-            href="/cashhub/missing"
-            className="font-semibold text-[var(--ch-brand)] hover:underline"
-          >
-            เงินขาด
-          </Link>
-          <span className="text-[var(--ch-text-3)]">·</span>
-          <Link
-            href="/cashhub/notes"
-            className="font-semibold text-[var(--ch-brand)] hover:underline"
-          >
-            โน้ตจาก Staff
-          </Link>
-          <span className="text-[var(--ch-text-3)]">·</span>
-          <Link
-            href="/cashhub/compare"
-            className="font-semibold text-[var(--ch-brand)] hover:underline"
-          >
-            เทียบเดือน
-          </Link>
-          <span className="text-[var(--ch-text-3)]">·</span>
-          <Link
-            href="/cashhub/monthly-report"
-            className="font-semibold text-[var(--ch-brand)] hover:underline"
-          >
-            รายงานเดือน PDF
-          </Link>
-          <span className="text-[var(--ch-text-3)]">·</span>
-          <Link
-            href="/cashhub/settings/forms"
-            className="font-semibold text-[var(--ch-brand)] hover:underline"
-          >
-            ฟอร์มกรอกยอด
-          </Link>
-          <span className="text-[var(--ch-text-3)] ml-auto">
-            <ChevronRight className="size-3 inline" />
-            {formatBaht(data.monthTotal)} เดือนนี้
-          </span>
+        {/* Footer quick-links — Pool-only navigation aid */}
+        <div className="ch-card-v2 bg-[var(--ch-bg-2)] p-3 sm:p-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-[var(--ch-text-2)]">
+          <span className="font-semibold text-[var(--ch-text-3)]">ทางลัด:</span>
+          <Link href="/cashhub/reports" className="font-semibold text-[var(--ch-brand)] hover:underline">รายงาน</Link>
+          <span className="text-[var(--ch-border-strong)]">·</span>
+          <Link href="/cashhub/leaderboard" className="font-semibold text-[var(--ch-brand)] hover:underline">Leaderboard</Link>
+          <span className="text-[var(--ch-border-strong)]">·</span>
+          <Link href="/cashhub/heatmap" className="font-semibold text-[var(--ch-brand)] hover:underline">Heatmap</Link>
+          <span className="text-[var(--ch-border-strong)]">·</span>
+          <Link href="/cashhub/missing" className="font-semibold text-[var(--ch-brand)] hover:underline">เงินขาด</Link>
+          <span className="text-[var(--ch-border-strong)]">·</span>
+          <Link href="/cashhub/notes" className="font-semibold text-[var(--ch-brand)] hover:underline">โน้ตจาก Staff</Link>
+          <span className="text-[var(--ch-border-strong)]">·</span>
+          <Link href="/cashhub/compare" className="font-semibold text-[var(--ch-brand)] hover:underline">เทียบเดือน</Link>
+          <span className="text-[var(--ch-border-strong)]">·</span>
+          <Link href="/cashhub/monthly-report" className="font-semibold text-[var(--ch-brand)] hover:underline">รายงาน PDF</Link>
+          <span className="text-[var(--ch-border-strong)]">·</span>
+          <Link href="/cashhub/settings/forms" className="font-semibold text-[var(--ch-brand)] hover:underline">ฟอร์มกรอกยอด</Link>
         </div>
       </div>
     </div>

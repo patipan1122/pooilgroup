@@ -37,6 +37,8 @@ import type {
 } from "@/lib/cashhub/form-templates-types";
 import { generateCustomFieldKey } from "@/lib/cashhub/form-templates-types";
 import { BranchAssignmentPanel } from "./branch-assignment-panel";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 
 interface BranchOption {
   id: string;
@@ -358,22 +360,19 @@ export function FormEditor({
           <BackButton label="กลับ" fallbackHref="/cashhub/settings/forms" />
         </div>
 
-        <div className="flex items-center gap-3 mb-5">
-          <div className="size-11 rounded-xl bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] flex items-center justify-center text-xl shrink-0">
+        {/* Hero — matches design forms.jsx:42-63 (56×56 icon + SectionPill + Title + actions) */}
+        <div className="flex items-center gap-4 mb-5">
+          <div className="size-14 shrink-0 rounded-2xl bg-[var(--ch-brand-50)] border border-[var(--ch-brand-100)] flex items-center justify-center text-2xl">
             {emoji}
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-700)] font-bold">
-              ฟอร์มกรอกยอด
-            </p>
-            <h1 className="text-xl sm:text-2xl font-extrabold tracking-[-0.02em] font-display leading-tight">
-              {label}
-            </h1>
-            <p className="text-xs text-zinc-500 mt-0.5">
+          <div className="min-w-0 flex-1 flex flex-col gap-1">
+            <SectionPill num="📋" label="Form Builder" />
+            <TwoToneTitle first="ฟอร์ม" accent={label} size={32} />
+            <p className="text-xs text-[var(--ch-text-2)] mt-0.5">
               {branchCount} สาขาทั้งหมด · เวอร์ชั่นนี้ใช้กับ{" "}
-              <strong className="text-zinc-700 tabular-num">
+              <strong className="text-[var(--ch-navy)] ch-tnum">
                 {activeTemplate.is_default
-                  ? `default (${branchCount - templates.filter((t) => !t.is_default).reduce(() => 0, 0)} สาขา)`
+                  ? `ค่าเริ่มต้น (${branchCount} สาขา)`
                   : `${activeTemplateBranchCount} สาขา`}
               </strong>
             </p>

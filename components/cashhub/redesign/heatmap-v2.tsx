@@ -98,9 +98,9 @@ export function HeatmapV2View({
         {/* Hero */}
         <div className="flex flex-col lg:flex-row lg:items-end gap-4 lg:gap-6">
           <div>
-            <SectionPill num="00" label="Heatmap · Reconcile" />
+            <SectionPill num="📅" label="Heatmap · Reconcile" />
             <div className="mt-2">
-              <TwoToneTitle first="ครบ &" accent="กระทบยอด" size={36} />
+              <TwoToneTitle first="ครบ &" accent="กระทบยอด" size={40} />
             </div>
             <div className="text-sm text-[var(--ch-text-2)] mt-1.5 max-w-xl">
               ดูใครยังไม่กรอก + จับคู่ยอดที่กรอกกับเงินเข้าธนาคารในที่เดียว
@@ -125,7 +125,8 @@ export function HeatmapV2View({
                 {reconcile.summary.matched} /{" "}
                 {reconcile.summary.matched +
                   reconcile.summary.diff +
-                  reconcile.summary.noBank}
+                  reconcile.summary.noBank +
+                  reconcile.summary.missingFill}
               </div>
             </div>
             <div className="w-px bg-[var(--ch-border)]" />

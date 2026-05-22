@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Plus_Jakarta_Sans, IBM_Plex_Sans_Thai, Anuphan } from "next/font/google";
+import { Plus_Jakarta_Sans, IBM_Plex_Sans_Thai, IBM_Plex_Mono, Anuphan } from "next/font/google";
 import { Toaster } from "sonner";
 import { ServiceWorkerRegister } from "@/components/layout/sw-register";
 import "./globals.css";
@@ -28,6 +28,15 @@ const thaiSans = IBM_Plex_Sans_Thai({
   display: "swap",
 });
 
+// IBM Plex Mono — used by CashHub Redesign numbered pills (.ch-pill .num)
+// + tnum-heavy numeric callouts. Scoped to .ch-scope via tokens.css.
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "Pooilgroup ERP",
   description: "ระบบบริหารจัดการ Pooilgroup — ยอดสาขา / เอกสาร / ขนส่งน้ำมัน",
@@ -52,7 +61,7 @@ export default function RootLayout({
   return (
     <html
       lang="th"
-      className={`${jakarta.variable} ${anuphan.variable} ${thaiSans.variable} h-full`}
+      className={`${jakarta.variable} ${anuphan.variable} ${thaiSans.variable} ${plexMono.variable} h-full`}
       suppressHydrationWarning
     >
       <body className="min-h-full antialiased font-thai bg-white text-zinc-900">

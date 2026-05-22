@@ -63,7 +63,7 @@ export function ReconcileTab({ rows, summary }: Props) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3 mt-5">
       <div className="ch-card-v2 bg-white overflow-hidden">
-        {/* Filters */}
+        {/* Filters — design heatmap.jsx:406-419 */}
         <div className="px-4 py-3 border-b border-[var(--ch-border)] flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold text-[var(--ch-text-3)]">
             กรอง:
@@ -78,6 +78,22 @@ export function ReconcileTab({ rows, summary }: Props) {
           <span className="ch-chip-v2 cursor-default opacity-70">
             ช่วง 3 วันล่าสุด
           </span>
+          <button
+            type="button"
+            onClick={() => toast.info("ตัวกรองธนาคารจะเปิดใช้พร้อม Statement import")}
+            className="ch-chip-v2 cursor-default opacity-60"
+            disabled
+          >
+            ทุกธนาคาร
+          </button>
+          <button
+            type="button"
+            onClick={() => toast.info("ตัวกรองประเภทธุรกิจกำลังจะมา")}
+            className="ch-chip-v2 cursor-default opacity-60"
+            disabled
+          >
+            ทุกธุรกิจ
+          </button>
           <div className="flex-1" />
           <button
             type="button"
@@ -198,21 +214,7 @@ export function ReconcileTab({ rows, summary }: Props) {
                         </span>
                       </td>
                       <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                        {r.reportId ? (
-                          <Link
-                            href={`/cashhub/reports/${r.reportId}`}
-                            className="inline-flex items-center h-7 px-2.5 rounded-md border border-[var(--ch-border-strong)] bg-white text-[11px] font-semibold hover:bg-zinc-50"
-                          >
-                            ดู
-                          </Link>
-                        ) : (
-                          <Link
-                            href="/liff/report"
-                            className="inline-flex items-center h-7 px-2.5 rounded-md border border-[var(--ch-border-strong)] bg-white text-[11px] font-semibold hover:bg-zinc-50"
-                          >
-                            เปิดยอด
-                          </Link>
-                        )}
+                        <RowActions row={r} />
                       </td>
                     </tr>
                   );
@@ -304,4 +306,71 @@ export function ReconcileTab({ rows, summary }: Props) {
       </div>
     </div>
   );
+}
+
+// Per-row action buttons — status-dependent CTAs matching design heatmap.jsx:468-481.
+// "ปรับยอด" and "หาเงินเข้า" are deferred behind toast stubs since they require
+// either a manual override flow (which would violate [[cashhub-shortage-flow-d020]]:
+// "ห้ามแก้ reconcile formula") or a bank-statement matching backend we haven't shipped.
+function RowActions({ row }: { row: ReconcileRow }) {
+  if (row.status === "diff" && row.reportId) {
+    return (
+      <div className="flex gap-1 justify-end">
+        <button
+          type="button"
+          onClick={() =>
+            toast.info(
+              "ปรับยอดต้องผ่าน Manager · เปิดรายงานเพื่อดูรายละเอียดก่อน",
+            )
+          }
+          className="inline-flex items-center h-7 px-2.5 rounded-md border border-[var(--ch-border-strong)] bg-white text-[11px] font-semibold hover:bg-zinc-50"
+        >
+          ปรับยอด
+        </button>
+        <Link
+          href={`/cashhub/reports/${row.reportId}`}
+          className="inline-flex items-center h-7 px-2.5 rounded-md bg-[var(--ch-brand)] text-white text-[11px] font-semibold hover:bg-[var(--ch-brand-700)]"
+        >
+          ทักผู้กรอก
+        </Link>
+      </div>
+    );
+  }
+  if (row.status === "no-bank" && row.reportId) {
+    return (
+      <button
+        type="button"
+        onClick={() =>
+          toast.info(
+            "หาเงินเข้า … ต้องเชื่อม Bank statement · กำลังจะมาเฟสถัดไป",
+          )
+        }
+        className="inline-flex items-center h-7 px-2.5 rounded-md border border-[var(--ch-border-strong)] bg-white text-[11px] font-semibold hover:bg-zinc-50"
+      >
+        หาเงินเข้า…
+      </button>
+    );
+  }
+  if (row.status === "missing-fill") {
+    return (
+      <Link
+        href="/liff/report"
+        className="inline-flex items-center h-7 px-2.5 rounded-md border border-[var(--ch-border-strong)] bg-white text-[11px] font-semibold hover:bg-zinc-50"
+      >
+        เปิดยอด
+      </Link>
+    );
+  }
+  // matched (or fallback)
+  if (row.reportId) {
+    return (
+      <Link
+        href={`/cashhub/reports/${row.reportId}`}
+        className="inline-flex items-center h-7 px-2.5 rounded-md border border-[var(--ch-border-strong)] bg-white text-[11px] font-semibold hover:bg-zinc-50"
+      >
+        ดู
+      </Link>
+    );
+  }
+  return <span className="text-[var(--ch-text-3)] text-xs">—</span>;
 }
