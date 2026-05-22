@@ -40,6 +40,7 @@ import {
   DfAvatar,
   DfPageHeader,
 } from "@/components/docuflow/df-ui";
+import { DfTopBanner } from "@/components/docuflow/df-top-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -223,6 +224,8 @@ export default async function DocuFlowOverviewPage() {
         margin: "0 auto",
       }}
     >
+      <DfTopBanner breadcrumbs={[{ label: "หน้าหลัก" }]} />
+
       <DfPageHeader
         eyebrow={
           <DfEyebrow>

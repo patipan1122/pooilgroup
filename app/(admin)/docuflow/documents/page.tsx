@@ -26,6 +26,7 @@ import {
   DfPill,
   DfSection,
 } from "@/components/docuflow/df-ui";
+import { DfTopBanner } from "@/components/docuflow/df-top-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -136,21 +137,7 @@ export default async function DocumentsListPage({
         margin: "0 auto",
       }}
     >
-      <Link
-        href="/docuflow"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          fontSize: 13,
-          color: "var(--df-muted)",
-          textDecoration: "none",
-          marginBottom: 12,
-        }}
-      >
-        <ArrowLeft size={14} />
-        กลับ DocuFlow
-      </Link>
+      <DfTopBanner breadcrumbs={[{ label: "หน้าหลัก", href: "/docuflow" }, { label: "เอกสาร · ค้นหา" }]} />
 
       <DfPageHeader
         eyebrow={<DfEyebrow>เอกสาร · ค้นหาขั้นสูง</DfEyebrow>}

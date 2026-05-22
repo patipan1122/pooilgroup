@@ -20,6 +20,7 @@ import {
   DfSection,
   DfStatCard,
 } from "@/components/docuflow/df-ui";
+import { DfTopBanner } from "@/components/docuflow/df-top-banner";
 import { loadBranches, indexBranches } from "@/lib/cashhub/data";
 import {
   loadVehicles,
@@ -191,21 +192,7 @@ export default async function DocuFlowVehiclesPage({
         margin: "0 auto",
       }}
     >
-      <Link
-        href="/docuflow"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          fontSize: 13,
-          color: "var(--df-muted)",
-          textDecoration: "none",
-          marginBottom: 12,
-        }}
-      >
-        <ArrowLeft size={14} />
-        กลับ DocuFlow
-      </Link>
+      <DfTopBanner breadcrumbs={[{ label: "หน้าหลัก", href: "/docuflow" }, { label: "ทะเบียนรถ" }]} />
 
       <DfPageHeader
         eyebrow={<DfEyebrow>ทะเบียนรถ · กองรถ</DfEyebrow>}
