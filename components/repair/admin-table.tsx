@@ -8,7 +8,6 @@ import {
   X,
   Filter,
   Download,
-  MoreHorizontal,
 } from "lucide-react";
 import {
   STATUS_LABELS,
@@ -38,6 +37,9 @@ type Row = {
   assignedTech: { id: string; name: string } | null;
 };
 
+interface BranchOpt { id: string; code: string; name: string }
+interface CatOpt { id: string; label: string; emoji: string | null }
+
 interface Props {
   rows: Row[];
   total: number;
@@ -45,6 +47,10 @@ interface Props {
   currentUrgency: RepairUrgency | null;
   currentQuery: string;
   statusCounts: Record<RepairTicketStatus, number>;
+  branches?: BranchOpt[];
+  categories?: CatOpt[];
+  currentBranch?: string | null;
+  currentCategory?: string | null;
 }
 
 const STATUS_DOT: Record<RepairTicketStatus, string> = {
@@ -75,6 +81,7 @@ export function AdminTable(props: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const [query, setQuery] = useState(props.currentQuery);
+  const [filterOpen, setFilterOpen] = useState(false);
 
   function setParam(key: string, value: string | null) {
     const next = new URLSearchParams(sp.toString());
@@ -86,6 +93,43 @@ export function AdminTable(props: Props) {
   function submitSearch(e: React.FormEvent) {
     e.preventDefault();
     setParam("q", query.trim() || null);
+  }
+
+  function exportCsv() {
+    const headers = [
+      "ticketCode", "title", "status", "urgency",
+      "branchCode", "branchName", "category",
+      "assignedTech", "createdAt", "resolveDueAt",
+      "totalCostTHB",
+    ];
+    const esc = (v: unknown) => {
+      const s = v == null ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const rows = props.rows.map((t) => [
+      t.ticketCode,
+      t.title,
+      STATUS_LABELS[t.status],
+      URGENCY_LABELS[t.urgency],
+      t.branch?.code ?? "",
+      t.branch?.name ?? "",
+      t.category?.label ?? "",
+      t.assignedTech?.name ?? "",
+      new Date(t.createdAt).toISOString(),
+      t.resolveDueAt ? new Date(t.resolveDueAt).toISOString() : "",
+      ((t.partsCostCents + t.laborCostCents) / 100).toFixed(2),
+    ]);
+    const csv = [headers, ...rows].map((r) => r.map(esc).join(",")).join("\n");
+    // BOM so Excel reads Thai correctly
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pooil-repairs-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   // eslint-disable-next-line react-hooks/purity
@@ -171,19 +215,90 @@ export function AdminTable(props: Props) {
           <span className="num" style={{ fontSize: 11.5, color: "var(--ink-500)" }}>
             {props.rows.length} / {props.total} ใบ
           </span>
-          <button type="button" className="btn btn-sm btn-ghost">
-            <Filter /> Filter
-          </button>
-          <button type="button" className="btn btn-sm btn-ghost">
+          {props.branches && props.categories && (
+            <button
+              type="button"
+              onClick={() => setFilterOpen((o) => !o)}
+              className={"btn btn-sm " + (filterOpen ? "btn-primary" : "btn-ghost")}
+            >
+              <Filter /> Filter
+            </button>
+          )}
+          <button type="button" className="btn btn-sm btn-ghost" onClick={exportCsv}>
             <Download /> Export
           </button>
         </div>
+
+        {/* Advanced filter row */}
+        {filterOpen && props.branches && props.categories && (
+          <div style={{
+            display: "flex", flexWrap: "wrap", gap: 8,
+            padding: "10px 12px",
+            borderBottom: "1px solid var(--line-2)",
+            background: "var(--surface)",
+            fontSize: 12,
+          }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--ink-600)" }}>
+              <span style={{ fontWeight: 600 }}>สาขา:</span>
+              <select
+                value={props.currentBranch ?? ""}
+                onChange={(e) => setParam("branch", e.target.value || null)}
+                style={{
+                  height: 28, padding: "0 8px",
+                  border: "1px solid var(--line)", borderRadius: 6,
+                  background: "var(--surface)", outline: 0,
+                  fontFamily: "inherit", fontSize: 12,
+                }}
+              >
+                <option value="">ทุกสาขา</option>
+                {props.branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.code} · {b.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--ink-600)" }}>
+              <span style={{ fontWeight: 600 }}>หมวด:</span>
+              <select
+                value={props.currentCategory ?? ""}
+                onChange={(e) => setParam("category", e.target.value || null)}
+                style={{
+                  height: 28, padding: "0 8px",
+                  border: "1px solid var(--line)", borderRadius: 6,
+                  background: "var(--surface)", outline: 0,
+                  fontFamily: "inherit", fontSize: 12,
+                }}
+              >
+                <option value="">ทุกหมวด</option>
+                {props.categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.emoji ?? ""} {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {(props.currentBranch || props.currentCategory) && (
+              <button
+                type="button"
+                className="table-filter"
+                onClick={() => {
+                  const next = new URLSearchParams(sp.toString());
+                  next.delete("branch");
+                  next.delete("category");
+                  router.push(`/repairs/table?${next.toString()}`);
+                }}
+              >
+                <X size={11} /> ล้าง
+              </button>
+            )}
+          </div>
+        )}
 
         <div style={{ overflowX: "auto", maxHeight: "calc(100vh - 320px)" }}>
           <table className="dtable">
             <thead>
               <tr>
-                <th style={{ width: 32 }}><input type="checkbox" /></th>
                 <th>เลขที่</th>
                 <th>หัวเรื่อง</th>
                 <th>สาขา</th>
@@ -194,13 +309,12 @@ export function AdminTable(props: Props) {
                 <th>SLA</th>
                 <th className="num">อายุ</th>
                 <th className="num">ค่าใช้จ่าย</th>
-                <th style={{ width: 32 }} />
               </tr>
             </thead>
             <tbody>
               {props.rows.length === 0 && (
                 <tr>
-                  <td colSpan={12} style={{ padding: 40, textAlign: "center", color: "var(--ink-500)" }}>
+                  <td colSpan={10} style={{ padding: 40, textAlign: "center", color: "var(--ink-500)" }}>
                     <Search size={24} style={{ color: "var(--ink-300)", marginBottom: 6 }} />
                     <div>ไม่พบใบในเงื่อนไขนี้</div>
                   </td>
@@ -215,9 +329,6 @@ export function AdminTable(props: Props) {
                     onClick={() => router.push(`/repairs/triage?selected=${t.id}`)}
                     style={{ cursor: "pointer" }}
                   >
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <input type="checkbox" />
-                    </td>
                     <td className="ticket-id">{t.ticketCode}</td>
                     <td className="ticket-title">{t.title}</td>
                     <td>
@@ -293,11 +404,6 @@ export function AdminTable(props: Props) {
                       ) : (
                         <span style={{ color: "var(--ink-400)" }}>—</span>
                       )}
-                    </td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <button className="btn btn-icon btn-ghost">
-                        <MoreHorizontal />
-                      </button>
                     </td>
                   </tr>
                 );

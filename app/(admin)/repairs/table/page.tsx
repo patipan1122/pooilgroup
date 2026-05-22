@@ -6,6 +6,8 @@ import {
   countTicketsByUrgency,
   listTickets,
   listCompanies,
+  listBranches,
+  listCategories,
   countNewSince,
 } from "@/lib/repair/queries";
 import { TICKET_STATUSES } from "@/lib/repair/types";
@@ -45,7 +47,7 @@ export default async function RepairsTablePage({
     ? (params.urgency as RepairUrgency)
     : null;
 
-  const [statusCounts, urgencyCounts, rows, companies, newToday] = await Promise.all([
+  const [statusCounts, urgencyCounts, rows, companies, branches, categories, newToday] = await Promise.all([
     countTicketsByStatus(orgId, companyId),
     countTicketsByUrgency(orgId, true, companyId),
     listTickets(
@@ -61,6 +63,8 @@ export default async function RepairsTablePage({
       200,
     ),
     listCompanies(orgId),
+    listBranches(orgId),
+    listCategories(orgId),
     countNewSince(orgId, 24, companyId),
   ]);
 
@@ -88,6 +92,10 @@ export default async function RepairsTablePage({
         currentUrgency={urgency}
         currentQuery={params.q ?? ""}
         statusCounts={statusCounts}
+        branches={branches.map((b) => ({ id: b.id, code: b.code, name: b.name }))}
+        categories={categories.map((c) => ({ id: c.id, label: c.label, emoji: c.emoji }))}
+        currentBranch={params.branch ?? null}
+        currentCategory={params.category ?? null}
       />
     </>
   );

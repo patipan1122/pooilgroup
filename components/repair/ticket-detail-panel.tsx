@@ -33,7 +33,6 @@ import {
   Building2,
   Flame,
   MapPin,
-  Plus,
 } from "lucide-react";
 
 // Camera icon imported on PublicForm side; keep tree-shake hint to mark
@@ -208,12 +207,6 @@ export function TicketDetailPanel({
             >
               <Phone /> โทรหาช่าง
             </a>
-          )}
-          <span style={{ flex: 1 }} />
-          {canWrite && (
-            <Link href={`/repairs/${ticket.id}`} className="btn btn-ghost btn-sm">
-              <Plus /> เพิ่ม action
-            </Link>
           )}
         </div>
       </div>
@@ -416,23 +409,30 @@ export function TicketDetailPanel({
                 arr: { length: number }[],
               ) => {
                 const isLast = i === arr.length - 1;
+                const p = ev.payload as Record<string, unknown> | null;
+                const body =
+                  (p?.body as string | undefined) ??
+                  (p?.comment as string | undefined);
+                const from = p?.from as string | undefined;
+                const to = p?.to as string | undefined;
                 return (
                   <div
                     className={"timeline-item " + (isLast ? "now" : "done")}
                     key={ev.id}
                   >
-                    <div className="who">{ev.actorName}</div>
-                    <div className="what">{EVENT_KIND_LABELS[ev.kind as "CREATED"]}</div>
-                    {(() => {
-                      const p = ev.payload as Record<string, unknown> | null;
-                      const body =
-                        (p?.body as string | undefined) ??
-                        (p?.comment as string | undefined);
-                      if (body) {
-                        return <div className="detail">{body}</div>;
-                      }
-                      return <div className="detail">{fmtDateTime(ev.createdAt)}</div>;
-                    })()}
+                    <div className="who">
+                      {ev.actorName} · {fmtDateTime(ev.createdAt)}
+                    </div>
+                    <div className="what">
+                      {EVENT_KIND_LABELS[ev.kind as "CREATED"]}
+                      {from && to && (
+                        <span style={{ color: "var(--ink-500)", fontWeight: 400, marginLeft: 6 }}>
+                          {STATUS_LABELS[from as RepairTicketStatus] ?? from} →{" "}
+                          {STATUS_LABELS[to as RepairTicketStatus] ?? to}
+                        </span>
+                      )}
+                    </div>
+                    {body && <div className="detail">{body}</div>}
                   </div>
                 );
               },
