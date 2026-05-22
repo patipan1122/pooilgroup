@@ -289,12 +289,28 @@ export function DfStatCard({
             {icon}
           </span>
         )}
+        {/* Top-right ArrowUpRight indicator when card is clickable — canvas-exact */}
+        {href && (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--df-muted-2)"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M7 17 17 7M9 7h8v8" />
+          </svg>
+        )}
       </div>
       <div
         className="df-serif df-tnum"
         style={{
-          fontSize: 36,
-          fontWeight: 600,
+          fontSize: 38,
+          fontWeight: 500,
           color: colorMap[tone],
           lineHeight: 1,
           marginBottom: 8,

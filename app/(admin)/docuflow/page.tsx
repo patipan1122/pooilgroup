@@ -513,25 +513,34 @@ export default async function DocuFlowOverviewPage() {
                       : r.daysUntilExpiry === 0
                         ? "หมดวันนี้"
                         : `เหลือ ${r.daysUntilExpiry} วัน`;
+                  // Try to extract a cost number from `notes` field (e.g., "12,000 บาท")
+                  const costMatch = r.notes?.match(/(\d{1,3}(?:,\d{3})+|\d{4,})/);
+                  const cost = costMatch
+                    ? parseInt(costMatch[0].replace(/,/g, ""), 10)
+                    : null;
                   return (
-                    <Link
+                    <div
                       key={r.id}
-                      href={`/docuflow/documents/${r.document.id}`}
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "auto 1fr auto auto",
+                        gridTemplateColumns: "auto 1fr auto auto auto",
                         gap: 14,
                         alignItems: "center",
                         padding: "12px 4px",
                         borderBottom: "1px solid var(--df-line-soft)",
-                        textDecoration: "none",
-                        color: "inherit",
                       }}
                     >
                       <DfDocIcon>
                         <FileText size={17} />
                       </DfDocIcon>
-                      <div style={{ minWidth: 0 }}>
+                      <Link
+                        href={`/docuflow/documents/${r.document.id}`}
+                        style={{
+                          minWidth: 0,
+                          textDecoration: "none",
+                          color: "inherit",
+                        }}
+                      >
                         <div
                           style={{
                             fontWeight: 600,
@@ -557,15 +566,32 @@ export default async function DocuFlowOverviewPage() {
                             {r.notes}
                           </div>
                         )}
-                      </div>
+                      </Link>
+                      {cost ? (
+                        <div
+                          className="df-tnum"
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: "var(--df-ink-2)",
+                          }}
+                        >
+                          ฿{cost.toLocaleString("th-TH")}
+                        </div>
+                      ) : (
+                        <div />
+                      )}
                       <DfPill tone={tone} small>
                         {label}
                       </DfPill>
-                      <ChevronRight
-                        size={14}
-                        style={{ color: "var(--df-muted-2)" }}
-                      />
-                    </Link>
+                      <DfButton
+                        href={`/docuflow/documents/${r.document.id}`}
+                        variant="ghost"
+                        size="sm"
+                      >
+                        ต่ออายุ
+                      </DfButton>
+                    </div>
                   );
                 })}
               </div>
