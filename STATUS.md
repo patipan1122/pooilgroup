@@ -4,6 +4,30 @@
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
+## 🆕 Update (2026-05-22 · รอบ 49 — Recruit 4-agent deep audit · 5 bug fixes + 3 visual polish)
+
+**CEO goal:** "deep research ว่าไม่มีฟีเจอรไหน ใช้งานไม่ได้ · ตรวจหน้าต่อหน้า ดูทุกดีเทบว่าปุ่มไหนเค้ามีเราไม่มี"
+
+**Workflow:** spawned 4 parallel Explore agents (detail-diff · live-QA · wiring-audit · submit-flow) → ~2,000 lines of audit output → synthesized into actionable list → fixed Tier 1 + 2.
+
+**Functional bugs fixed (commit `9953c0f`):**
+1. ⚠️ "ใช้กฎทั้งหมด" ปุ่มหาย → wired in ApplicationActions (action `applyRulesToApplication` มีนานแล้ว · ไม่เคยมี UI). Toast confirms how many rules fired.
+2. 🔒 Cross-org leak ใน `listThreads` → ลบ super_admin bypass · บังคับ org_id match (security)
+3. 📧 EMAIL channel marked SENT optimistically (false success) → keep QUEUED ตาม LINE/SMS จนกว่า Resend จะ wire
+4. 📝 Triage "Skip" ไม่ persist → save เป็น timeline note "HR ข้ามจาก triage" สำหรับ audit trail
+5. 📋 `updatePosting` ไม่มี audit log → เพิ่ม `RECRUIT_POSTING_UPDATED` action
+
+**Visual polish (canvas Section 02B + 05A):**
+- Pipeline KCard: red border + 🔥 "เกิน SLA" badge เมื่อ stage overdue (NEW=3d · SCREENING=5d · INTERVIEW=7d · OFFERED=5d)
+- MiniFunnel legend: colored dot นำหน้า label ตรงกับสีของแท่ง
+- AI Score ring: SVG `<animate>` draws stroke-dashoffset on mount (0.9s · apple-out easing)
+
+**False alarm verified:** Blacklist add/remove wired ผ่าน blacklist-manager.tsx + v2 (agent grep missed)
+
+**Deferred (separate scope · need CEO direction):** Cmd+K · Bulk actions · drag-drop pipeline · AI JD suggest · Branch Needs · OTP wizard
+
+**Live + smoked:** /jobs /apply /recruit/* all 200 OK · no 500s · deployed `pooilgroup-nmrqow029`
+
 ## 🆕 Update (2026-05-22 · รอบ 48 — Recruit canvas parity pass)
 
 **CEO goal:** "เทียบหน้าต่อหน้ากับ Recruit Redesign canvas · ทำให้แอฟ HR เหมือนตามรูป HTML 100%"
