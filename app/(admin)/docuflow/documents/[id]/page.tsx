@@ -42,6 +42,7 @@ import {
   DfPill,
   DfDocIcon,
 } from "@/components/docuflow/df-ui";
+import { ViewerTabs } from "@/components/docuflow/viewer-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -266,84 +267,78 @@ export default async function DocumentDetailPage({
         className="df-grid-2col"
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          <DfCard padding={0} className="df-fade-up df-fade-up-100">
-            <div
-              style={{
-                padding: "12px 18px",
-                borderBottom: "1px solid var(--df-line)",
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-              }}
-            >
-              <div className="df-seg">
-                <button className="df-on">
-                  <Eye size={13} /> Preview
-                </button>
-                <button>
-                  <FileText size={13} /> ข้อมูล
-                </button>
-                <button>
-                  <Clock size={13} /> ประวัติ
-                </button>
-              </div>
-            </div>
-            <div
-              style={{
-                background: "#E8E1D2",
-                minHeight: 480,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: 18,
-              }}
-            >
-              {downloadUrl && isPdf && (
-                <iframe
-                  src={downloadUrl}
-                  title={doc.name}
-                  style={{
-                    width: "100%",
-                    height: 640,
-                    border: "none",
-                    borderRadius: 6,
-                    background: "#fff",
-                    boxShadow: "0 10px 40px -10px rgba(0,0,0,0.25)",
-                  }}
-                />
-              )}
-              {downloadUrl && isImage && (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={downloadUrl}
-                  alt={doc.name}
-                  style={{
-                    maxWidth: "100%",
-                    maxHeight: 640,
-                    objectFit: "contain",
-                    boxShadow: "0 10px 40px -10px rgba(0,0,0,0.25)",
-                  }}
-                />
-              )}
-              {(!downloadUrl || (!isPdf && !isImage)) && (
-                <div
-                  style={{
-                    padding: 40,
-                    textAlign: "center",
-                    color: "var(--df-muted)",
-                  }}
-                >
-                  <DfDocIcon size="lg">
-                    <FileText size={22} />
-                  </DfDocIcon>
-                  <p style={{ marginTop: 10, fontSize: 14 }}>
-                    ไฟล์นี้ไม่รองรับ Preview
-                    <br />
-                    กด &ldquo;ดาวน์โหลด&rdquo; ด้านบนเพื่อเปิดไฟล์
-                  </p>
-                </div>
-              )}
-            </div>
+          <DfCard
+            padding={0}
+            className="df-fade-up df-fade-up-100"
+            style={{ overflow: "hidden" }}
+          >
+            <ViewerTabs
+              downloadUrl={downloadUrl}
+              mimeType={doc.mimeType}
+              docName={doc.name}
+              meta={[
+                ...(ownership
+                  ? [
+                      {
+                        k: "ประเภท",
+                        v:
+                          LEVEL_LABEL[ownership.level] ?? ownership.level,
+                      },
+                    ]
+                  : []),
+                { k: "ผู้ครอบครอง", v: ownerName },
+                { k: "อัปโหลดเมื่อ", v: bkkDateTime(doc.uploadedAt) },
+                ...(doc.renewal
+                  ? [
+                      {
+                        k: "วันหมดอายุ",
+                        v: thaiDateLong(doc.renewal.expiryDate),
+                      },
+                    ]
+                  : []),
+                ...(doc.fileSize
+                  ? [
+                      {
+                        k: "ขนาดไฟล์",
+                        v: `${(doc.fileSize / 1024).toFixed(0)} KB`,
+                      },
+                    ]
+                  : []),
+                ...(doc.mimeType
+                  ? [{ k: "ประเภทไฟล์", v: doc.mimeType }]
+                  : []),
+              ]}
+              history={[
+                {
+                  at: bkkDateTime(doc.uploadedAt),
+                  by: "ระบบ",
+                  label: "อัปโหลดเอกสาร",
+                  detail: doc.description ?? undefined,
+                },
+                ...(doc.renewal && doc.renewal.lastRenewedDate
+                  ? [
+                      {
+                        at: thaiDateLong(doc.renewal.lastRenewedDate),
+                        by: "ผู้รับผิดชอบ",
+                        label: "ต่ออายุล่าสุด",
+                      },
+                    ]
+                  : []),
+                ...(placementTotal > 0
+                  ? [
+                      {
+                        at: bkkDateTime(doc.uploadedAt),
+                        by: "ระบบ",
+                        label: `ตั้งจุดเซ็น ${placementTotal} จุด`,
+                        detail:
+                          placementSigned === placementTotal
+                            ? "ลงนามครบแล้ว"
+                            : `ลงนามแล้ว ${placementSigned}/${placementTotal}`,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           </DfCard>
 
           <RiskAnalysisPanel
