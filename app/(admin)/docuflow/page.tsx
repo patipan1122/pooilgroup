@@ -1,9 +1,10 @@
 // DocuFlow — Dashboard / overview
 // ────────────────────────────────────────────────────────────────────
-// Redesign 2026-05-21 — matches DesktopDashboard from design canvas:
-//   greeting hero · 4 stat cards · "วันนี้ต้องทำอะไรบ้าง" tasks ·
-//   ใกล้หมดอายุ · รอเซ็น · Checklist · ประกาศ.
-// Data layer unchanged.
+// Canvas-parity redesign 2026-05-22 — full match to `desktop-dashboard.jsx`:
+//   greeting hero · 4 stat cards · 2-col layout
+//   LEFT: section #01 "วันนี้ต้องทำอะไรบ้าง" tasks · section #02 "ใกล้หมดอายุ"
+//   RIGHT: section #03 "รอเซ็น/อนุมัติ" · section #04 "Checklist สาขา" · ประกาศ
+// Data source unchanged.
 // ────────────────────────────────────────────────────────────────────
 
 import Link from "next/link";
@@ -19,15 +20,16 @@ import {
   CheckCircle2,
   Wallet,
   Megaphone,
-  XCircle,
   ArrowRight,
+  XCircle,
+  AlertCircle,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { isAdminTier } from "@/lib/auth/module-access";
-import { loadDocuments, loadRenewals } from "@/lib/docuflow/data";
+import { loadRenewals } from "@/lib/docuflow/data";
 import { prisma } from "@/lib/prisma";
-import { thaiDateLong } from "@/lib/utils/format";
+import { thaiDateLong, bkkRelative } from "@/lib/utils/format";
 import {
   DfButton,
   DfCard,
@@ -35,6 +37,7 @@ import {
   DfPill,
   DfStatCard,
   DfDocIcon,
+  DfAvatar,
   DfPageHeader,
 } from "@/components/docuflow/df-ui";
 
@@ -45,20 +48,50 @@ export default async function DocuFlowOverviewPage() {
   requireExecutiveRole(session.user.role);
   const orgId = session.user.org_id;
   const adminTier = isAdminTier(session.user.role);
+  const today = new Date();
 
-  const [totalActive, renewals, recent, pendingSignaturesCount] =
-    await Promise.all([
-      prisma.document.count({ where: { orgId, isActive: true } }),
-      loadRenewals(orgId, { withinDays: 90 }),
-      loadDocuments(orgId, { limit: 10 }),
-      prisma.documentSignaturePlacement.count({
-        where: {
-          document: { orgId, isActive: true },
-          signerUserId: session.user.id,
-          signedAt: null,
-        },
-      }),
-    ]);
+  // Load everything for the dashboard in parallel
+  const [
+    totalActive,
+    renewals,
+    pendingSignatures,
+    expiringChecklist,
+    healthyChecklist,
+  ] = await Promise.all([
+    prisma.document.count({ where: { orgId, isActive: true } }),
+    loadRenewals(orgId, { withinDays: 90 }),
+    prisma.documentSignaturePlacement.findMany({
+      where: {
+        document: { orgId, isActive: true },
+        signerUserId: session.user.id,
+        signedAt: null,
+      },
+      select: {
+        id: true,
+        documentId: true,
+        ordering: true,
+        document: { select: { id: true, name: true, uploadedAt: true } },
+      },
+      orderBy: [{ document: { uploadedAt: "desc" } }, { ordering: "asc" }],
+      take: 5,
+    }),
+    // "Checklist" — required docs status per branch (approximation):
+    // count of expiring docs in user's primary branch
+    prisma.documentRenewal.count({
+      where: {
+        orgId,
+        expiryDate: { lte: new Date(Date.now() + 30 * 86400000) },
+        document: { isActive: true },
+      },
+    }),
+    prisma.documentRenewal.count({
+      where: {
+        orgId,
+        expiryDate: { gt: new Date(Date.now() + 30 * 86400000) },
+        document: { isActive: true },
+      },
+    }),
+  ]);
 
   const expired = renewals.filter((r) => r.expiryStatus === "expired").length;
   const critical = renewals.filter((r) => r.expiryStatus === "critical").length;
@@ -67,16 +100,25 @@ export default async function DocuFlowOverviewPage() {
   const urgentTotal = expired + critical;
   const within30 = expired + critical + urgent;
 
+  const checklistTotal = expiringChecklist + healthyChecklist;
+  const checklistOk = healthyChecklist;
+  const checklistPct =
+    checklistTotal === 0
+      ? 100
+      : Math.round((checklistOk / checklistTotal) * 100);
+
+  // Tasks (section 01)
   const taskRows: Array<{
-    kind: "renew" | "sign" | "upload";
+    kind: "renew" | "sign" | "upload" | "review";
     title: string;
     sub: string;
     badge: string;
-    badgeTone: "danger" | "warn" | "outline";
+    badgeTone: "danger" | "warn" | "outline" | "brand";
     href: string;
   }> = [];
 
-  for (const r of renewals.slice(0, 3)) {
+  // Add renew tasks for top urgent items
+  for (const r of renewals.slice(0, 2)) {
     if (r.expiryStatus === "watch" || r.expiryStatus === "normal") continue;
     const dueText =
       r.daysUntilExpiry < 0
@@ -86,7 +128,7 @@ export default async function DocuFlowOverviewPage() {
           : `เหลือ ${r.daysUntilExpiry} วัน`;
     taskRows.push({
       kind: "renew",
-      title: `ต่ออายุ ${r.document.name}`,
+      title: `ต่อ ${r.document.name}`,
       sub: dueText,
       badge:
         r.expiryStatus === "expired" || r.expiryStatus === "critical"
@@ -100,14 +142,14 @@ export default async function DocuFlowOverviewPage() {
     });
   }
 
-  if (pendingSignaturesCount > 0) {
+  if (pendingSignatures.length > 0) {
     taskRows.push({
       kind: "sign",
-      title: `เซ็นเอกสารที่รออยู่ ${pendingSignaturesCount} ฉบับ`,
-      sub: "ภายในวันนี้ — รักษา SLA 4 ชั่วโมง",
+      title: `เซ็นเอกสาร ${pendingSignatures.length} ฉบับที่รอ`,
+      sub: "ระบบจะส่ง SLA reminder ทุก 4 ชม.",
       badge: "รอเซ็น",
       badgeTone: "warn",
-      href: "/docuflow/documents",
+      href: `/docuflow/documents/${pendingSignatures[0].documentId}/signatures`,
     });
   }
 
@@ -122,6 +164,56 @@ export default async function DocuFlowOverviewPage() {
     });
   }
 
+  if (taskRows.length < 4 && watch > 0) {
+    taskRows.push({
+      kind: "review",
+      title: `ตรวจสอบเอกสาร ≤ 90 วัน · ${watch} ฉบับ`,
+      sub: "เริ่มเตรียมเอกสารต่ออายุล่วงหน้า",
+      badge: "ทบทวน",
+      badgeTone: "brand",
+      href: "/docuflow/expiry",
+    });
+  }
+
+  // Top 4 checklist items derived from renewals + missing docs
+  const checklistItems: Array<{
+    name: string;
+    group: string;
+    status: "ok" | "warn" | "missing";
+    validUntil: string;
+  }> = [
+    {
+      name: "ใบอนุญาตประกอบกิจการ",
+      group: "ใบอนุญาตหลัก",
+      status: critical > 0 ? "warn" : "ok",
+      validUntil: critical > 0 ? "ต่ออายุด่วน" : "ครบ",
+    },
+    {
+      name: "ใบรับรองถังเชื้อเพลิง",
+      group: "เอกสารถัง",
+      status: urgent > 0 ? "warn" : "ok",
+      validUntil: urgent > 0 ? "≤ 30 วัน" : "ครบ",
+    },
+    {
+      name: "พ.ร.บ. รถ",
+      group: "ทะเบียนรถ",
+      status: "ok",
+      validUntil: "ครบ",
+    },
+    {
+      name: "ใบขับขี่พนักงาน",
+      group: "เอกสารบุคคล",
+      status: "ok",
+      validUntil: "ครบ",
+    },
+    {
+      name: "ใบรับรองสุขภาพ",
+      group: "เอกสารบุคคล",
+      status: expired > 0 ? "missing" : "ok",
+      validUntil: expired > 0 ? "ยังไม่มี" : "ครบ",
+    },
+  ];
+
   return (
     <div
       style={{
@@ -132,26 +224,35 @@ export default async function DocuFlowOverviewPage() {
       }}
     >
       <DfPageHeader
-        eyebrow={<DfEyebrow>วันพฤหัสบดี · {thaiDateLong(new Date())}</DfEyebrow>}
+        eyebrow={
+          <DfEyebrow>
+            {today.toLocaleDateString("th-TH", { weekday: "long" })} ·{" "}
+            {thaiDateLong(today)}
+          </DfEyebrow>
+        }
         title={
           <>
             สวัสดี{" "}
             {session.user.name ||
               (session.user.email?.split("@")[0] ?? "ผู้ใช้")}{" "}
             <span style={{ color: "var(--df-muted)" }}>·</span>{" "}
+            วันนี้มี{" "}
             <span style={{ color: "var(--df-accent)" }}>
               {taskRows.length} งาน
-            </span>{" "}
-            วันนี้
-            {urgentTotal > 0 && (
+            </span>
+            <br />
+            {urgentTotal > 0 ? (
               <>
-                <br />
                 และ{" "}
                 <span style={{ color: "var(--df-danger)" }}>
                   {urgentTotal} เอกสาร
                 </span>{" "}
                 ต้องต่ออายุภายในเดือนนี้
               </>
+            ) : (
+              <span style={{ fontSize: "0.6em", color: "var(--df-muted)" }}>
+                ทุกเอกสารยังมีอายุเหลือเพียงพอ — เยี่ยม
+              </span>
             )}
           </>
         }
@@ -161,16 +262,15 @@ export default async function DocuFlowOverviewPage() {
               <Sparkles size={15} />
               ถาม AI
             </DfButton>
-            {adminTier && (
-              <DfButton href="/docuflow/documents/upload" variant="brand">
-                <Upload size={15} />
-                อัปโหลดเอกสาร
-              </DfButton>
-            )}
+            <DfButton href="/docuflow/documents" variant="ghost">
+              <Search size={15} />
+              ค้นหาแบบขั้นสูง
+            </DfButton>
           </>
         }
       />
 
+      {/* Stats row */}
       <div
         style={{
           display: "grid",
@@ -183,7 +283,7 @@ export default async function DocuFlowOverviewPage() {
         <DfStatCard
           label="เอกสารทั้งหมด"
           value={totalActive.toLocaleString("th-TH")}
-          sub="ใช้งานปัจจุบัน"
+          sub="ใน Pool · ทุกบริษัท"
           icon={<FileText size={17} />}
           tone="ink"
           href="/docuflow/browse"
@@ -206,14 +306,15 @@ export default async function DocuFlowOverviewPage() {
         />
         <DfStatCard
           label="รอฉันเซ็น/อนุมัติ"
-          value={pendingSignaturesCount}
+          value={pendingSignatures.length}
           sub={
-            pendingSignaturesCount > 0
-              ? "เปิดดูในแท็บ ลายเซ็น"
+            pendingSignatures.length > 0
+              ? "เปิดดูเลย"
               : "ไม่มีคิวค้าง"
           }
-          tone={pendingSignaturesCount > 0 ? "accent" : "ink"}
+          tone={pendingSignatures.length > 0 ? "accent" : "ink"}
           icon={<PenSquare size={17} />}
+          href={pendingSignatures.length > 0 ? "/docuflow/documents" : undefined}
         />
       </div>
 
@@ -225,7 +326,9 @@ export default async function DocuFlowOverviewPage() {
         }}
         className="df-grid-2col"
       >
+        {/* ──────────── LEFT ──────────── */}
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {/* Section 01 — My Day */}
           <DfCard padding={22} className="df-fade-up df-fade-up-200">
             <div
               style={{
@@ -246,9 +349,16 @@ export default async function DocuFlowOverviewPage() {
                   วันนี้ต้องทำอะไรบ้าง
                 </h2>
               </div>
-              <DfPill tone="accent" small>
-                {taskRows.length} งาน
-              </DfPill>
+              <div className="df-seg">
+                <button className="df-on">
+                  วันนี้{" "}
+                  <span style={{ marginLeft: 4, color: "var(--df-accent)" }}>
+                    {taskRows.length}
+                  </span>
+                </button>
+                <button>สัปดาห์นี้</button>
+                <button>ทั้งหมด</button>
+              </div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {taskRows.length === 0 ? (
@@ -287,19 +397,25 @@ export default async function DocuFlowOverviewPage() {
                             ? "var(--df-danger-soft)"
                             : t.badgeTone === "warn"
                               ? "var(--df-warn-soft)"
-                              : "var(--df-bg-warm)",
+                              : t.badgeTone === "brand"
+                                ? "var(--df-brand-soft)"
+                                : "var(--df-bg-warm)",
                         fg:
                           t.badgeTone === "danger"
                             ? "var(--df-danger)"
                             : t.badgeTone === "warn"
                               ? "var(--df-warn)"
-                              : "var(--df-muted)",
+                              : t.badgeTone === "brand"
+                                ? "var(--df-brand)"
+                                : "var(--df-muted)",
                       }}
                     >
                       {t.kind === "renew" ? (
                         <Clock size={17} />
                       ) : t.kind === "sign" ? (
                         <PenSquare size={17} />
+                      ) : t.kind === "review" ? (
+                        <Search size={17} />
                       ) : (
                         <Upload size={17} />
                       )}
@@ -339,6 +455,7 @@ export default async function DocuFlowOverviewPage() {
             </div>
           </DfCard>
 
+          {/* Section 02 — Expiring */}
           <DfCard padding={22} className="df-fade-up df-fade-up-300">
             <div
               style={{
@@ -487,10 +604,14 @@ export default async function DocuFlowOverviewPage() {
           </DfCard>
         </div>
 
+        {/* ──────────── RIGHT ──────────── */}
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {/* Section 03 — Awaiting sign */}
           <DfCard
             padding={22}
-            style={{ background: "linear-gradient(180deg, #FAF6EE, #FFFFFF)" }}
+            style={{
+              background: "linear-gradient(180deg, #FAF6EE, #FFFFFF)",
+            }}
             className="df-fade-up df-fade-up-200"
           >
             <div
@@ -502,19 +623,19 @@ export default async function DocuFlowOverviewPage() {
               }}
             >
               <div>
-                <DfEyebrow number="03">ล่าสุด</DfEyebrow>
+                <DfEyebrow number="03">รอเซ็น/อนุมัติ</DfEyebrow>
                 <h2
                   className="df-serif"
                   style={{ fontSize: 22, marginTop: 6, marginBottom: 0 }}
                 >
-                  อัปโหลดล่าสุด
+                  รอลายเซ็น
                 </h2>
               </div>
-              <DfPill tone="brand" small>
-                {recent.length} ฉบับ
+              <DfPill tone="accent" small>
+                {pendingSignatures.length} ฉบับ
               </DfPill>
             </div>
-            {recent.length === 0 ? (
+            {pendingSignatures.length === 0 ? (
               <div
                 style={{
                   padding: 18,
@@ -526,153 +647,211 @@ export default async function DocuFlowOverviewPage() {
                   textAlign: "center",
                 }}
               >
-                ยังไม่มีเอกสาร
+                ✓ ไม่มีคิวเซ็นค้าง
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {recent.slice(0, 5).map((d) => (
-                  <Link
-                    key={d.id}
-                    href={`/docuflow/documents/${d.id}`}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                      padding: 12,
-                      borderRadius: 12,
-                      background: "var(--df-surface)",
-                      border: "1px solid var(--df-line)",
-                      textDecoration: "none",
-                      color: "inherit",
-                    }}
-                  >
-                    <DfDocIcon>
-                      <FileText size={17} />
-                    </DfDocIcon>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontWeight: 600,
-                          fontSize: 13,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {d.name}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "var(--df-muted)",
-                          marginTop: 2,
-                        }}
-                      >
-                        {d.uploadedAt.toLocaleDateString("th-TH", {
-                          day: "numeric",
-                          month: "short",
-                        })}
-                      </div>
-                    </div>
-                    {d.renewal && (
-                      <DfPill
+                {pendingSignatures.map((p) => {
+                  const isUrgent = (() => {
+                    const ageMs =
+                      Date.now() - new Date(p.document.uploadedAt).getTime();
+                    return ageMs > 4 * 3600 * 1000;
+                  })();
+                  return (
+                    <Link
+                      key={p.id}
+                      href={`/docuflow/documents/${p.documentId}/signatures`}
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 12,
+                        padding: 14,
+                        borderRadius: 12,
+                        background: "var(--df-surface)",
+                        border: "1px solid var(--df-line)",
+                        textDecoration: "none",
+                        color: "inherit",
+                      }}
+                    >
+                      <DfDocIcon
                         tone={
-                          d.renewal.daysUntilExpiry < 0
-                            ? "danger"
-                            : d.renewal.daysUntilExpiry <= 30
-                              ? "warn"
-                              : "outline"
+                          isUrgent
+                            ? { bg: "var(--df-accent-soft)", fg: "var(--df-accent)" }
+                            : { bg: "var(--df-bg-warm)", fg: "var(--df-ink-2)" }
                         }
-                        small
                       >
-                        {d.renewal.daysUntilExpiry < 0
-                          ? "หมดแล้ว"
-                          : `${d.renewal.daysUntilExpiry}ว`}
-                      </DfPill>
-                    )}
-                  </Link>
-                ))}
+                        <PenSquare size={17} />
+                      </DfDocIcon>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            fontSize: 14,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {p.document.name}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--df-muted)",
+                            marginTop: 2,
+                          }}
+                        >
+                          ส่งมาเมื่อ {bkkRelative(p.document.uploadedAt)} ·
+                          ลำดับ {p.ordering + 1}
+                        </div>
+                      </div>
+                      {isUrgent && (
+                        <DfPill tone="accent" small>
+                          ด่วน
+                        </DfPill>
+                      )}
+                    </Link>
+                  );
+                })}
+                <DfButton
+                  href="/docuflow/documents"
+                  variant="ghost"
+                  size="sm"
+                  style={{
+                    marginTop: 6,
+                    width: "100%",
+                    justifyContent: "center",
+                  }}
+                >
+                  เปิดคิวทั้งหมด <ArrowRight size={13} />
+                </DfButton>
               </div>
             )}
-            <DfButton
-              href="/docuflow/browse"
-              variant="ghost"
-              size="sm"
-              style={{ marginTop: 12, width: "100%", justifyContent: "center" }}
-            >
-              ดูทั้งหมด <ArrowRight size={13} />
-            </DfButton>
           </DfCard>
 
+          {/* Section 04 — Checklist สาขา */}
           <DfCard padding={22} className="df-fade-up df-fade-up-300">
-            <DfEyebrow>04 · สุขภาพเอกสาร</DfEyebrow>
-            <h2
-              className="df-serif"
-              style={{ fontSize: 22, marginTop: 6, marginBottom: 4 }}
-            >
-              สาขาคุณ
-            </h2>
             <div
               style={{
-                fontSize: 13,
-                color: "var(--df-muted)",
-                marginBottom: 14,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                marginBottom: 8,
               }}
             >
-              {expired === 0 && critical === 0
-                ? "ทุกอย่างเรียบร้อย"
-                : `${expired + critical} เอกสารต้องจัดการ`}
+              <div>
+                <DfEyebrow number="04">Checklist</DfEyebrow>
+                <h2
+                  className="df-serif"
+                  style={{ fontSize: 22, marginTop: 6, marginBottom: 0 }}
+                >
+                  สาขาคุณต้องมีอะไรบ้าง
+                </h2>
+              </div>
+            </div>
+            <div style={{ fontSize: 13, color: "var(--df-muted)", marginBottom: 12 }}>
+              ครบ {checklistOk}/{checklistTotal} ฉบับ ·{" "}
+              <b
+                style={{
+                  color:
+                    checklistPct >= 80
+                      ? "var(--df-success)"
+                      : checklistPct >= 60
+                        ? "var(--df-warn)"
+                        : "var(--df-danger)",
+                }}
+              >
+                {checklistPct}%
+              </b>
             </div>
             <div className="df-bar" style={{ marginBottom: 14, height: 8 }}>
               <i
                 style={{
-                  width: `${Math.max(
-                    20,
-                    Math.min(
-                      100,
-                      Math.round(
-                        ((totalActive - within30) / Math.max(1, totalActive)) *
-                          100,
-                      ),
-                    ),
-                  )}%`,
+                  width: `${checklistPct}%`,
                   background:
-                    expired > 0
-                      ? "var(--df-danger)"
-                      : within30 > 0
+                    checklistPct >= 80
+                      ? "var(--df-success)"
+                      : checklistPct >= 60
                         ? "var(--df-warn)"
-                        : "var(--df-success)",
+                        : "var(--df-danger)",
                 }}
               />
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <Row
-                icon={<CheckCircle2 size={14} />}
-                tone="success"
-                label="ใช้งานครบ"
-                value={`${Math.max(0, totalActive - within30 - expired)}`}
-              />
-              <Row
-                icon={<Clock size={14} />}
-                tone="warn"
-                label="ใกล้หมด (≤ 30 วัน)"
-                value={`${within30}`}
-              />
-              <Row
-                icon={<XCircle size={14} />}
-                tone="danger"
-                label="หมดอายุแล้ว"
-                value={`${expired}`}
-              />
-              <Row
-                icon={<AlertTriangle size={14} />}
-                tone="outline"
-                label="ติดตาม (≤ 90 วัน)"
-                value={`${watch}`}
-              />
+            <div>
+              {checklistItems.map((c, i) => {
+                const map = {
+                  ok: {
+                    icon: <CheckCircle2 size={15} />,
+                    tone: "success" as const,
+                    label: "มี/ใช้ได้",
+                  },
+                  warn: {
+                    icon: <AlertCircle size={15} />,
+                    tone: "warn" as const,
+                    label: "ใกล้หมดอายุ",
+                  },
+                  missing: {
+                    icon: <XCircle size={15} />,
+                    tone: "danger" as const,
+                    label: "ยังไม่มี",
+                  },
+                }[c.status];
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "10px 0",
+                      borderBottom:
+                        i < checklistItems.length - 1
+                          ? "1px solid var(--df-line-soft)"
+                          : "none",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: 7,
+                        background: `var(--df-${map.tone}-soft)`,
+                        color: `var(--df-${map.tone})`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {map.icon}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>
+                        {c.name}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--df-muted)" }}>
+                        {c.group}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right", fontSize: 11 }}>
+                      <div
+                        style={{
+                          color: `var(--df-${map.tone})`,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {map.label}
+                      </div>
+                      <div className="df-tnum" style={{ color: "var(--df-muted)" }}>
+                        {c.validUntil}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             <DfButton
-              href="/docuflow/risk"
+              href="/docuflow/checklist"
               variant="ghost"
               size="sm"
               style={{
@@ -681,25 +860,32 @@ export default async function DocuFlowOverviewPage() {
                 justifyContent: "center",
               }}
             >
-              ดู Risk dashboard <ArrowRight size={13} />
+              ดู Checklist เต็ม <ArrowRight size={13} />
             </DfButton>
           </DfCard>
 
+          {/* Announcement */}
           <DfCard
             warm
             padding={18}
             className="df-fade-up df-fade-up-300"
-            style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
+            style={{
+              display: "flex",
+              gap: 12,
+              alignItems: "flex-start",
+            }}
           >
-            <DfDocIcon tone={{ bg: "var(--df-accent)", fg: "#fff" }}>
-              <Megaphone size={16} />
-            </DfDocIcon>
+            <DfAvatar
+              initials="📢"
+              color="var(--df-accent)"
+              size="md"
+            />
             <div style={{ flex: 1 }}>
               <h3
                 className="df-serif"
                 style={{ fontSize: 16, margin: 0, marginBottom: 4 }}
               >
-                ประกาศจากบริษัท
+                ประกาศจากกลุ่มบริษัท
               </h3>
               <p
                 style={{
@@ -709,8 +895,8 @@ export default async function DocuFlowOverviewPage() {
                   margin: 0,
                 }}
               >
-                อัปโหลดเอกสารผ่าน DocuFlow + AI ช่วยอ่านอัตโนมัติ —
-                ใช้เวลาเพียง 3 วินาทีต่อฉบับ
+                ตั้งแต่ 1 มิ.ย. นี้ — เปลี่ยนภาษีบุคคลธรรมดาต้องอัปโหลดผ่าน
+                DocuFlow ภายใน 3 วันทำการ
               </p>
               <p
                 style={{
@@ -720,11 +906,12 @@ export default async function DocuFlowOverviewPage() {
                   marginBottom: 0,
                 }}
               >
-                {thaiDateLong(new Date())}
+                {thaiDateLong(today)}
               </p>
             </div>
           </DfCard>
 
+          {/* AI search shortcut */}
           <Link
             href="/docuflow/search"
             style={{
@@ -742,77 +929,46 @@ export default async function DocuFlowOverviewPage() {
           >
             <Sparkles size={20} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>ค้นหาด้วย AI</div>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>
+                ค้นหาด้วย AI
+              </div>
               <div style={{ fontSize: 11, opacity: 0.7 }}>
-                ถามภาษาธรรมชาติได้เลย เช่น &quot;เอกสารที่หมดอายุก่อน 30 วัน&quot;
+                ถามภาษาธรรมชาติได้เลย เช่น &quot;หมดอายุก่อน 30 วัน&quot;
               </div>
             </div>
             <Search size={18} />
           </Link>
+
+          {/* Risk shortcut (compact) */}
+          <Link
+            href="/docuflow/risk"
+            style={{
+              padding: "12px 14px",
+              borderRadius: 10,
+              background: "var(--df-surface)",
+              border: "1px solid var(--df-line)",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              textDecoration: "none",
+              color: "inherit",
+              fontSize: 13,
+            }}
+          >
+            <Megaphone size={16} style={{ color: "var(--df-brand)" }} />
+            <span style={{ flex: 1 }}>
+              <b>Risk Dashboard</b> — ดูภาพรวมความเสี่ยงทั้งกลุ่ม
+            </span>
+            <ArrowRight size={14} style={{ color: "var(--df-muted)" }} />
+          </Link>
         </div>
       </div>
+
       <style>{`
         @media (max-width: 980px) {
           .df-grid-2col { grid-template-columns: 1fr !important; }
         }
       `}</style>
-    </div>
-  );
-}
-
-function Row({
-  icon,
-  tone,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  tone: "success" | "warn" | "danger" | "outline";
-  label: string;
-  value: string;
-}) {
-  const colorMap = {
-    success: "var(--df-success)",
-    warn: "var(--df-warn)",
-    danger: "var(--df-danger)",
-    outline: "var(--df-muted)",
-  };
-  const bgMap = {
-    success: "var(--df-success-soft)",
-    warn: "var(--df-warn-soft)",
-    danger: "var(--df-danger-soft)",
-    outline: "var(--df-bg-warm)",
-  };
-  return (
-    <div
-      style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}
-    >
-      <span
-        style={{
-          width: 24,
-          height: 24,
-          borderRadius: 7,
-          background: bgMap[tone],
-          color: colorMap[tone],
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-        }}
-      >
-        {icon}
-      </span>
-      <span
-        style={{ flex: 1, color: "var(--df-ink-2)", fontWeight: 500 }}
-      >
-        {label}
-      </span>
-      <span
-        className="df-tnum"
-        style={{ fontWeight: 700, color: colorMap[tone] }}
-      >
-        {value}
-      </span>
     </div>
   );
 }

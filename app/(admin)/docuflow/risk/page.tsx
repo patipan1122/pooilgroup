@@ -34,10 +34,13 @@ import {
   type ExpiryStatus,
 } from "@/lib/docuflow/expiry";
 import {
+  DfCard,
   DfEyebrow,
   DfPageHeader,
+  DfPill,
   DfStatCard,
 } from "@/components/docuflow/df-ui";
+import { prisma as risk_prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -61,11 +64,76 @@ export default async function OrgRiskPage() {
   const orgId = session.user.org_id;
   const adminTier = isAdminTier(session.user.role);
 
-  const [summary, orgName] = await Promise.all([
+  const [summary, orgName, branchRows, branchExpRows] = await Promise.all([
     computeOrgRiskSummary(orgId),
     loadOrgName(orgId),
+    risk_prisma.branch.findMany({
+      where: { orgId, isActive: true },
+      select: { id: true, code: true, name: true },
+      orderBy: { code: "asc" },
+      take: 30,
+    }),
+    risk_prisma.documentOwnership.findMany({
+      where: { orgId, branchId: { not: null } },
+      select: {
+        branchId: true,
+        document: {
+          select: {
+            id: true,
+            renewals: { select: { expiryDate: true }, take: 1 },
+          },
+        },
+      },
+    }),
   ]);
   const narrative = await narrateOrgRisk(summary, orgName);
+
+  // Per-branch compliance computation
+  const branchStats = branchRows.map((b) => {
+    const docs = branchExpRows.filter((r) => r.branchId === b.id);
+    let expired = 0;
+    let expiring = 0;
+    let healthy = 0;
+    let missing = 0;
+    const today = new Date();
+    for (const d of docs) {
+      const r = d.document.renewals[0];
+      if (!r) {
+        healthy++;
+        continue;
+      }
+      const days = Math.floor(
+        (r.expiryDate.getTime() - today.getTime()) / 86400000,
+      );
+      if (days < 0) expired++;
+      else if (days <= 30) expiring++;
+      else healthy++;
+    }
+    const total = docs.length;
+    const score =
+      total === 0
+        ? 100
+        : Math.max(
+            0,
+            Math.min(
+              100,
+              Math.round(((healthy - expired) / Math.max(1, total)) * 100),
+            ),
+          );
+    return {
+      id: b.id,
+      code: b.code,
+      name: b.name,
+      total,
+      expired,
+      expiring,
+      missing,
+      score,
+      risk:
+        expired > 0 ? ("high" as const) : expiring > 0 ? ("mid" as const) : ("low" as const),
+    };
+  });
+  branchStats.sort((a, b) => a.score - b.score);
 
   const isEmpty = summary.totals.grandTotal === 0;
   const dangerCount =
@@ -256,6 +324,146 @@ export default async function OrgRiskPage() {
           {narrative.modelUsed && <span>{narrative.modelUsed}</span>}
         </div>
       </Section>
+
+      {/* Branch risk table (canvas-distinctive section) */}
+      {branchStats.length > 0 && (
+        <DfCard
+          padding={0}
+          className="df-fade-up df-fade-up-200"
+          style={{ marginBottom: 22, overflow: "hidden" }}
+        >
+          <div
+            style={{
+              padding: "16px 22px",
+              borderBottom: "1px solid var(--df-line)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <DfEyebrow>ตามสาขา</DfEyebrow>
+              <h2
+                className="df-serif"
+                style={{ fontSize: 20, marginTop: 4, marginBottom: 0 }}
+              >
+                ความเสี่ยงในแต่ละสาขา
+              </h2>
+            </div>
+            <div className="df-seg">
+              <button className="df-on">เสี่ยงมากก่อน</button>
+              <button>คะแนน</button>
+            </div>
+          </div>
+          <div>
+            {branchStats.slice(0, 12).map((b) => {
+              const riskColor =
+                b.risk === "high"
+                  ? "var(--df-danger)"
+                  : b.risk === "mid"
+                    ? "var(--df-warn)"
+                    : "var(--df-success)";
+              return (
+                <Link
+                  key={b.id}
+                  href={`/docuflow/documents?branchId=${b.id}`}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 80px 80px 80px auto",
+                    gap: 14,
+                    alignItems: "center",
+                    padding: "14px 22px",
+                    borderBottom: "1px solid var(--df-line-soft)",
+                    textDecoration: "none",
+                    color: "inherit",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+                      {b.code} · {b.name}
+                    </div>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 8 }}
+                    >
+                      <div className="df-bar" style={{ flex: 1, height: 5 }}>
+                        <i
+                          style={{
+                            width: `${b.score}%`,
+                            background: riskColor,
+                          }}
+                        />
+                      </div>
+                      <span
+                        className="df-tnum"
+                        style={{
+                          fontSize: 11,
+                          color: riskColor,
+                          fontWeight: 700,
+                          minWidth: 32,
+                        }}
+                      >
+                        {b.score}%
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    {b.expired > 0 ? (
+                      <DfPill tone="danger" small>
+                        {b.expired}
+                      </DfPill>
+                    ) : (
+                      <span style={{ fontSize: 11, color: "var(--df-muted-2)" }}>
+                        —
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    {b.expiring > 0 ? (
+                      <DfPill tone="warn" small>
+                        {b.expiring}
+                      </DfPill>
+                    ) : (
+                      <span style={{ fontSize: 11, color: "var(--df-muted-2)" }}>
+                        —
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    className="df-tnum"
+                    style={{ textAlign: "center", fontSize: 12, color: "var(--df-muted)" }}
+                  >
+                    {b.total}
+                  </div>
+                  <ArrowUpRight
+                    size={14}
+                    style={{ color: "var(--df-muted-2)" }}
+                  />
+                </Link>
+              );
+            })}
+          </div>
+          <div
+            style={{
+              padding: "10px 22px",
+              background: "var(--df-surface-soft)",
+              display: "grid",
+              gridTemplateColumns: "1fr 80px 80px 80px auto",
+              gap: 14,
+              fontSize: 11,
+              color: "var(--df-muted)",
+              letterSpacing: "0.05em",
+            }}
+          >
+            <span>สาขา · Compliance Score</span>
+            <span style={{ textAlign: "center" }}>หมด</span>
+            <span style={{ textAlign: "center" }}>ใกล้หมด</span>
+            <span style={{ textAlign: "center" }}>เอกสาร</span>
+            <span />
+          </div>
+        </DfCard>
+      )}
 
       {/* Empty-state shortcut */}
       {isEmpty ? (

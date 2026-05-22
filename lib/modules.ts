@@ -41,6 +41,11 @@ import {
   Coins,
   PackageOpen,
   Layers,
+  Bell,
+  BarChart3,
+  CalendarRange,
+  Workflow,
+  History,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
@@ -259,6 +264,36 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         label: "ความเสี่ยงรวม",
         icon: AlertTriangle,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        href: "/docuflow/calendar",
+        label: "ปฏิทินวันหมดอายุ",
+        icon: CalendarRange,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        href: "/docuflow/notifications",
+        label: "การแจ้งเตือน",
+        icon: Bell,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        href: "/docuflow/reports",
+        label: "รายงาน & สถิติ",
+        icon: BarChart3,
+        adminOnly: true,
+      },
+      {
+        href: "/docuflow/workflow",
+        label: "Workflow ลายเซ็น",
+        icon: Workflow,
+        adminOnly: true,
+      },
+      {
+        href: "/docuflow/audit",
+        label: "Audit Log",
+        icon: History,
+        adminOnly: true,
       },
       {
         href: "/docuflow/vehicles",
