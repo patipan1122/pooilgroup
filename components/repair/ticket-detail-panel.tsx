@@ -551,7 +551,12 @@ export function TicketDetailPanel({
       </div>
 
       {/* Composer (chat-style note bar) */}
-      {canWrite && <TicketComposer ticketId={ticket.id} />}
+      {canWrite && (
+        <TicketComposer
+          ticketId={ticket.id}
+          ticketStatus={ticket.status as RepairTicketStatus}
+        />
+      )}
     </>
   );
 }

@@ -91,6 +91,30 @@ export async function createTicket(input: CreateTicketInput): Promise<CreateTick
   } catch {
     // public submission — no session
   }
+
+  // Rate-limit public (unauthenticated) submissions to prevent spam/DoS.
+  // 10 tickets per phone per hour + 30 per IP per hour.
+  if (!createdByUserId) {
+    const { checkRateLimit } = await import("@/lib/rate-limit");
+    const phoneBucket = await checkRateLimit({
+      bucket: `repair:create:phone:${data.reporterPhone}`,
+      max: 10,
+      windowSec: 60 * 60,
+    });
+    if (phoneBucket.limited) {
+      return { ok: false, error: "แจ้งซ่อมจากเบอร์นี้บ่อยเกินไป · ลองอีกครั้งใน 1 ชั่วโมง" };
+    }
+    if (data.ipAddress) {
+      const ipBucket = await checkRateLimit({
+        bucket: `repair:create:ip:${data.ipAddress}`,
+        max: 30,
+        windowSec: 60 * 60,
+      });
+      if (ipBucket.limited) {
+        return { ok: false, error: "ส่งจาก IP นี้บ่อยเกินไป · ลองใหม่ภายหลัง" };
+      }
+    }
+  }
   if (!orgId) {
     // Pick the first active org (Pooil single-tenant deployment)
     const admin = adminClient();
@@ -157,10 +181,15 @@ export async function createTicket(input: CreateTicketInput): Promise<CreateTick
   // Photo data URL is base64-encoded image — already compressed client-side.
   for (let i = 0; i < data.photos.length; i++) {
     const ph = data.photos[i];
+    // Reject SVG (XSS vector if ever served inline) — same guard as addPhoto.
+    if (ph.dataUrl.startsWith("data:image/svg")) continue;
     try {
       const b64 = ph.dataUrl.split(",")[1] ?? "";
       const buf = Buffer.from(b64, "base64");
+      // Hard size cap per photo (1.5MB raw bytes) — client compresses but trust nothing.
+      if (buf.byteLength > 1_500_000) continue;
       const ct = ph.dataUrl.match(/^data:([^;]+);/)?.[1] ?? "image/webp";
+      if (!ct.startsWith("image/") || ct.includes("svg")) continue;
       const ext = ct.includes("png") ? "png" : ct.includes("jpeg") ? "jpg" : "webp";
       const key = `repair/${orgId}/${ticket.id}/${Date.now()}-${i}.${ext}`;
       const publicUrl = await putObject(key, buf, ct);
@@ -319,12 +348,14 @@ export async function assignTechnician(input: { ticketId: string; technicianId: 
   if (!ticket) return { ok: false, error: "ไม่พบใบ" };
 
   let techName: string | null = null;
+  let techUserId: string | null = null;
   if (input.technicianId) {
     const tech = await prisma.repairTechnician.findFirst({
       where: { id: input.technicianId, orgId: session.user.org_id },
     });
     if (!tech) return { ok: false, error: "ไม่พบช่าง" };
     techName = tech.name;
+    techUserId = tech.userId;
   }
 
   await prisma.$transaction([
@@ -363,11 +394,29 @@ export async function assignTechnician(input: { ticketId: string; technicianId: 
     },
   });
 
+  // Notify the assigned tech (in-app) — RealUser persona feedback: tech
+  // currently has to manually refresh /repairs/my-jobs to see new assignments.
+  if (techUserId) {
+    try {
+      await sendNotificationToMany([techUserId], {
+        orgId: session.user.org_id,
+        type: ticket.urgency === "URGENT" ? "danger" : "info",
+        module: "repairs",
+        title: `งานใหม่ที่ได้รับมอบหมาย: ${ticket.ticketCode}`,
+        body: `${ticket.title.slice(0, 80)}${ticket.urgency === "URGENT" ? " · ⚠️ ด่วนมาก" : ""}`,
+        link: `/repairs/my-jobs?selected=${input.ticketId}`,
+      });
+    } catch (e) {
+      console.error("[repair.assignTechnician] notify tech failed", e);
+    }
+  }
+
   revalidatePath(`/repairs/${input.ticketId}`);
   revalidatePath("/repairs");
   revalidatePath("/repairs/triage");
   revalidatePath("/repairs/kanban");
   revalidatePath("/repairs/table");
+  revalidatePath("/repairs/my-jobs");
   return { ok: true };
 }
 
@@ -401,6 +450,15 @@ export async function addComment(input: { ticketId: string; body: string }): Pro
       actorName: session.user.name,
       payload: { body },
     },
+  });
+
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "REPAIR_COMMENT_ADDED",
+    resourceType: "repair_ticket",
+    resourceId: input.ticketId,
+    diff: { new: { bodyPreview: body.slice(0, 120) } },
   });
 
   revalidatePath(`/repairs/${input.ticketId}`);
@@ -743,6 +801,18 @@ export async function setEta(input: { ticketId: string; etaAt: string | null }):
     }),
   ]);
 
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "REPAIR_ETA_SET",
+    resourceType: "repair_ticket",
+    resourceId: input.ticketId,
+    diff: {
+      old: { etaAt: ticket.etaAt?.toISOString() ?? null },
+      new: { etaAt: etaDate?.toISOString() ?? null },
+    },
+  });
+
   revalidatePath(`/repairs/${input.ticketId}`);
   return { ok: true };
 }
@@ -781,21 +851,56 @@ export async function createTechnician(input: z.input<typeof CreateTechnicianSch
     },
   });
 
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "REPAIR_TECHNICIAN_CREATED",
+    resourceType: "repair_technician",
+    resourceId: tech.id,
+    diff: { new: { kind: d.kind, name: d.name } },
+  });
+
   revalidatePath("/repairs/technicians");
   return { ok: true, id: tech.id };
 }
 
-export async function toggleTechnicianActive(input: { id: string }): Promise<{ ok: boolean }> {
+export async function toggleTechnicianActive(input: { id: string }): Promise<{ ok: boolean; error?: string }> {
   const session = await requireSession();
-  if (!canRepairAdmin(session.user.role)) return { ok: false };
+  if (!canRepairAdmin(session.user.role)) return { ok: false, error: "ไม่มีสิทธิ์" };
   const tech = await prisma.repairTechnician.findFirst({
     where: { id: input.id, orgId: session.user.org_id },
   });
-  if (!tech) return { ok: false };
+  if (!tech) return { ok: false, error: "ไม่พบช่าง" };
+
+  // Guard: cannot deactivate a tech who has open tickets assigned
+  // (avoids silent orphaning of in-flight work). Manager must reassign first.
+  if (tech.isActive) {
+    const openCount = await prisma.repairTicket.count({
+      where: {
+        orgId: session.user.org_id,
+        assignedTechId: tech.id,
+        status: { in: ["NEW", "ACK", "IN_PROGRESS", "WAITING_PARTS"] },
+      },
+    });
+    if (openCount > 0) {
+      return { ok: false, error: `ปิดช่างนี้ไม่ได้ · ยังมีงาน ${openCount} ใบที่ยังเปิดอยู่ · กรุณามอบหมายช่างคนอื่นก่อน` };
+    }
+  }
+
   await prisma.repairTechnician.update({
     where: { id: input.id },
     data: { isActive: !tech.isActive },
   });
+
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "REPAIR_TECHNICIAN_TOGGLED",
+    resourceType: "repair_technician",
+    resourceId: input.id,
+    diff: { old: { isActive: tech.isActive }, new: { isActive: !tech.isActive } },
+  });
+
   revalidatePath("/repairs/technicians");
   return { ok: true };
 }
@@ -818,13 +923,25 @@ export async function createCategory(input: z.input<typeof CreateCategorySchema>
   const session = await requireSession();
   if (!canRepairAdmin(session.user.role)) return { ok: false, error: "ไม่มีสิทธิ์" };
 
+  let createdId: string | null = null;
   try {
-    await prisma.repairCategory.create({
+    const cat = await prisma.repairCategory.create({
       data: { orgId: session.user.org_id, ...parsed.data, emoji: parsed.data.emoji || null },
     });
+    createdId = cat.id;
   } catch {
     return { ok: false, error: "slug ซ้ำ" };
   }
+
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "REPAIR_CATEGORY_CREATED",
+    resourceType: "repair_category",
+    resourceId: createdId,
+    diff: { new: { slug: parsed.data.slug, label: parsed.data.label } },
+  });
+
   revalidatePath("/repairs/categories");
   return { ok: true };
 }

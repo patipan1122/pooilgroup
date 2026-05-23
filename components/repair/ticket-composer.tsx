@@ -6,7 +6,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addComment, addPhoto } from "@/lib/repair/actions";
-import type { RepairPhotoPhase } from "@/lib/generated/prisma/enums";
+import type { RepairPhotoPhase, RepairTicketStatus } from "@/lib/generated/prisma/enums";
 import { Camera, Send, Loader2 } from "lucide-react";
 
 async function compressImage(file: File, maxEdge = 1024, quality = 0.65): Promise<string> {
@@ -32,10 +32,36 @@ const PHASE_OPTIONS: { value: RepairPhotoPhase; label: string }[] = [
   { value: "RECEIPT", label: "บิล/ใบเสร็จ" },
 ];
 
-export function TicketComposer({ ticketId }: { ticketId: string }) {
+/**
+ * Pick a sensible default photo phase based on the current ticket status.
+ * RealUser persona feedback: tech uploads "after" photo when closing, but
+ * dropdown defaulted to "ระหว่างซ่อม" causing mis-tagged photos.
+ */
+function defaultPhotoPhase(status?: RepairTicketStatus): RepairPhotoPhase {
+  switch (status) {
+    case "NEW":
+    case "ACK":
+      return "BEFORE";
+    case "RESOLVED":
+    case "CLOSED":
+      return "AFTER";
+    case "WAITING_PARTS":
+      return "PART";
+    default:
+      return "DURING";
+  }
+}
+
+export function TicketComposer({
+  ticketId,
+  ticketStatus,
+}: {
+  ticketId: string;
+  ticketStatus?: RepairTicketStatus;
+}) {
   const router = useRouter();
   const [body, setBody] = useState("");
-  const [photoPhase, setPhotoPhase] = useState<RepairPhotoPhase>("DURING");
+  const [photoPhase, setPhotoPhase] = useState<RepairPhotoPhase>(defaultPhotoPhase(ticketStatus));
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
