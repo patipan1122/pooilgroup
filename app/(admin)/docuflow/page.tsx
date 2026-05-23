@@ -94,6 +94,51 @@ export default async function DocuFlowOverviewPage() {
     }),
   ]);
 
+  // Enrich top 6 renewals with company/branch/owner labels for the canvas-style
+  // "name + company · branch · ผู้รับผิดชอบ X" subline.
+  const topRenewalIds = renewals.slice(0, 6).map((r) => r.documentId);
+  const responsibleUserIds = Array.from(
+    new Set(
+      renewals
+        .slice(0, 6)
+        .map((r) => r.responsibleUserId)
+        .filter((u): u is string => !!u),
+    ),
+  );
+  const [ownershipsRaw, branchRows, companyRows, userRows] = topRenewalIds.length
+    ? await Promise.all([
+        prisma.documentOwnership.findMany({
+          where: { orgId, documentId: { in: topRenewalIds } },
+          select: {
+            documentId: true,
+            branchId: true,
+            companyId: true,
+          },
+        }),
+        prisma.branch.findMany({
+          where: { orgId, isActive: true },
+          select: { id: true, code: true, name: true },
+        }),
+        prisma.company.findMany({
+          where: { orgId, isActive: true },
+          select: { id: true, name: true },
+        }),
+        responsibleUserIds.length
+          ? prisma.user.findMany({
+              where: { orgId, id: { in: responsibleUserIds } },
+              select: { id: true, name: true },
+            })
+          : Promise.resolve([]),
+      ])
+    : [[], [], [], []];
+  const branchById = new Map(branchRows.map((b) => [b.id, b]));
+  const companyById = new Map(companyRows.map((c) => [c.id, c]));
+  const userNameById = new Map(userRows.map((u) => [u.id, u.name]));
+  const ownByDocId = new Map<string, (typeof ownershipsRaw)[number]>();
+  for (const o of ownershipsRaw) {
+    if (!ownByDocId.has(o.documentId)) ownByDocId.set(o.documentId, o);
+  }
+
   const expired = renewals.filter((r) => r.expiryStatus === "expired").length;
   const critical = renewals.filter((r) => r.expiryStatus === "critical").length;
   const urgent = renewals.filter((r) => r.expiryStatus === "urgent").length;
@@ -552,20 +597,65 @@ export default async function DocuFlowOverviewPage() {
                         >
                           {r.document.name}
                         </div>
-                        {r.notes && (
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: "var(--df-muted)",
-                              marginTop: 2,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {r.notes}
-                          </div>
-                        )}
+                        {(() => {
+                          const own = ownByDocId.get(r.documentId);
+                          const company = own?.companyId
+                            ? companyById.get(own.companyId)?.name
+                            : null;
+                          const branchEntry = own?.branchId
+                            ? branchById.get(own.branchId)
+                            : null;
+                          const branch = branchEntry
+                            ? `${branchEntry.code} · ${branchEntry.name}`
+                            : null;
+                          const ownerName = r.responsibleUserId
+                            ? userNameById.get(r.responsibleUserId)
+                            : null;
+                          const parts = [
+                            company,
+                            branch,
+                            ownerName ? `ผู้รับผิดชอบ ${ownerName}` : null,
+                          ].filter(Boolean) as string[];
+                          if (parts.length === 0) {
+                            return r.notes ? (
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: "var(--df-muted)",
+                                  marginTop: 2,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {r.notes}
+                              </div>
+                            ) : null;
+                          }
+                          return (
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "var(--df-muted)",
+                                marginTop: 2,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {parts.map((p, i) => (
+                                <span key={i}>
+                                  {i > 0 && (
+                                    <span style={{ color: "var(--df-muted-2)", margin: "0 6px" }}>
+                                      ·
+                                    </span>
+                                  )}
+                                  {p}
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </Link>
                       {cost ? (
                         <div
