@@ -1318,13 +1318,15 @@ model RecruitJobPosting {
 
 // 50. recruit_applicants — ผู้สมัคร (normalized · dedup by phone)
 model RecruitApplicant {
-  id        String   @id @default(uuid()) @db.Uuid
-  orgId     String   @map("org_id") @db.Uuid
-  fullName  String   @map("full_name")
-  phone     String // primary identifier · CEO Q5: no national ID at apply
-  email     String?
-  lineId    String?  @map("line_id")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  fullName      String   @map("full_name")
+  phone         String // primary identifier · CEO Q5: no national ID at apply
+  email         String?
+  lineId        String?  @map("line_id") // LINE basic ID (legacy · user-supplied)
+  lineUserId    String?  @map("line_user_id") // LINE userId from webhook (per-channel · opaque)
+  facebookPsid  String?  @map("facebook_psid") // FB Page-scoped Sender ID
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   org              Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   applications     RecruitApplication[]
@@ -1332,6 +1334,8 @@ model RecruitApplicant {
   erasureRequests  RecruitErasureRequest[]
 
   @@index([orgId, phone])
+  @@index([orgId, lineUserId])
+  @@index([orgId, facebookPsid])
   @@map("recruit_applicants")
   @@schema("public")
 }
@@ -1473,6 +1477,7 @@ enum RecruitMessageChannel {
   SMS
   EMAIL
   INAPP
+  FACEBOOK
   @@schema("public")
 }
 
@@ -1493,22 +1498,28 @@ enum RecruitMessageStatus {
 }
 
 model RecruitMessage {
-  id            String                  @id @default(uuid()) @db.Uuid
-  orgId         String                  @map("org_id") @db.Uuid
-  applicationId String                  @map("application_id") @db.Uuid
-  channel       RecruitMessageChannel
-  direction     RecruitMessageDirection
-  body          String
-  status        RecruitMessageStatus    @default(QUEUED)
-  externalId    String?                 @map("external_id")
-  errorMessage  String?                 @map("error_message")
-  createdById   String?                 @map("created_by_id") @db.Uuid
-  createdAt     DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  sentAt        DateTime?               @map("sent_at") @db.Timestamptz(6)
+  id                 String                  @id @default(uuid()) @db.Uuid
+  orgId              String                  @map("org_id") @db.Uuid
+  applicationId      String                  @map("application_id") @db.Uuid
+  channel            RecruitMessageChannel
+  direction          RecruitMessageDirection
+  body               String
+  status             RecruitMessageStatus    @default(QUEUED)
+  externalId         String?                 @map("external_id") // provider-side message ID
+  // Inbox channel routing (2026-05-23)
+  channelInstanceId  String?                 @map("channel_instance_id") @db.Uuid // FK → recruit_inbox_channels.id (null for INAPP/EMAIL legacy)
+  senderExternalId   String?                 @map("sender_external_id") // LINE userId / FB PSID for inbound · used for re-matching
+  replyToken         String?                 @map("reply_token") // LINE 1-min reply token (preferred over push)
+  attachments        Json?                   // image/file/sticker payload for IN messages
+  errorMessage       String?                 @map("error_message")
+  createdById        String?                 @map("created_by_id") @db.Uuid
+  createdAt          DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  sentAt             DateTime?               @map("sent_at") @db.Timestamptz(6)
 
-  org         Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  application RecruitApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  createdBy   User?              @relation("RecruitMessageSender", fields: [createdById], references: [id], onDelete: SetNull)
+  org             Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  application     RecruitApplication   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  createdBy       User?                @relation("RecruitMessageSender", fields: [createdById], references: [id], onDelete: SetNull)
+  channelInstance RecruitInboxChannel? @relation(fields: [channelInstanceId], references: [id], onDelete: SetNull)
 
   @@index([orgId, createdAt(sort: Desc)])
   @@index([applicationId, createdAt(sort: Desc)])
@@ -1568,8 +1579,9 @@ model RecruitInboxChannel {
   createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  createdBy User         @relation("RecruitInboxChannelCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  org       Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdBy User             @relation("RecruitInboxChannelCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  messages  RecruitMessage[]
 
   @@index([orgId, type])
   @@map("recruit_inbox_channels")

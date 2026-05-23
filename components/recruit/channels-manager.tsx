@@ -9,9 +9,10 @@ import {
   createChannel,
   deleteChannel,
   toggleChannelStatus,
+  updateChannelSecrets,
   type ChannelType,
 } from "@/lib/recruit/channel-actions";
-import { Plus, Copy, Check, Trash2, Power, PowerOff, MessageCircle, Globe } from "lucide-react";
+import { Plus, Copy, Check, Trash2, Power, PowerOff, MessageCircle, Globe, Key } from "lucide-react";
 
 interface Channel {
   id: string;
@@ -21,7 +22,9 @@ interface Channel {
   status: string;
   lastEventAt: string | null;
   createdAt: string;
-  webhookSecretPrefix: string | null;
+  hasProviderSecret: boolean;
+  hasAccessToken: boolean;
+  verifyToken: string | null;
 }
 
 const TYPE_META: Record<ChannelType, { label: string; color: string; icon: typeof MessageCircle }> = {
@@ -44,7 +47,13 @@ export function ChannelsManager({ initialChannels }: { initialChannels: Channel[
   const [displayName, setDisplayName] = useState("");
   const [externalId, setExternalId] = useState("");
   const [accessToken, setAccessToken] = useState("");
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [providerSecret, setProviderSecret] = useState("");
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editSecret, setEditSecret] = useState("");
+  const [editToken, setEditToken] = useState("");
+  const [editExternalId, setEditExternalId] = useState("");
+  const [savingEdit, startEdit] = useTransition();
 
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
 
@@ -52,11 +61,11 @@ export function ChannelsManager({ initialChannels }: { initialChannels: Channel[
     return `${baseUrl}/api/webhooks/recruit/${c.type.toLowerCase()}/${c.id}`;
   }
 
-  async function copyUrl(c: Channel) {
-    await navigator.clipboard.writeText(webhookUrl(c));
-    setCopiedId(c.id);
-    toast.success("คัดลอก URL แล้ว");
-    setTimeout(() => setCopiedId(null), 2000);
+  async function copyText(key: string, text: string, label: string) {
+    await navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    toast.success(`คัดลอก ${label} แล้ว`);
+    setTimeout(() => setCopiedKey(null), 2000);
   }
 
   function add() {
@@ -72,6 +81,7 @@ export function ChannelsManager({ initialChannels }: { initialChannels: Channel[
           displayName: name,
           externalId: externalId.trim() || undefined,
           accessToken: accessToken.trim() || undefined,
+          providerSecret: providerSecret.trim() || undefined,
         });
         toast.success(`เพิ่ม channel "${name}" แล้ว · คัดลอก webhook URL ไปวางใน ${TYPE_META[type].label}`);
         setChannels((cs) => [
@@ -80,10 +90,12 @@ export function ChannelsManager({ initialChannels }: { initialChannels: Channel[
             type,
             displayName: name,
             externalId: externalId.trim() || null,
-            status: "setup",
+            status: accessToken.trim() && providerSecret.trim() ? "active" : "setup",
             lastEventAt: null,
             createdAt: new Date().toISOString(),
-            webhookSecretPrefix: res.webhookSecret.slice(0, 8),
+            hasProviderSecret: !!providerSecret.trim(),
+            hasAccessToken: !!accessToken.trim(),
+            verifyToken: res.verifyToken,
           },
           ...cs,
         ]);
@@ -91,10 +103,52 @@ export function ChannelsManager({ initialChannels }: { initialChannels: Channel[
         setDisplayName("");
         setExternalId("");
         setAccessToken("");
+        setProviderSecret("");
       } catch (e) {
         toast.error((e as Error).message);
       }
     });
+  }
+
+  function saveEdit(c: Channel) {
+    startEdit(async () => {
+      try {
+        await updateChannelSecrets(c.id, {
+          providerSecret: editSecret.trim() || undefined,
+          accessToken: editToken.trim() || undefined,
+          externalId: editExternalId !== c.externalId ? editExternalId : undefined,
+        });
+        const nextHasSecret = !!editSecret.trim() || c.hasProviderSecret;
+        const nextHasToken = !!editToken.trim() || c.hasAccessToken;
+        setChannels((cs) =>
+          cs.map((x) =>
+            x.id === c.id
+              ? {
+                  ...x,
+                  hasProviderSecret: nextHasSecret,
+                  hasAccessToken: nextHasToken,
+                  externalId: editExternalId.trim() || null,
+                  status: nextHasSecret && nextHasToken ? "active" : "setup",
+                }
+              : x,
+          ),
+        );
+        toast.success("บันทึก secret แล้ว");
+        setEditingId(null);
+        setEditSecret("");
+        setEditToken("");
+        setEditExternalId("");
+      } catch (e) {
+        toast.error((e as Error).message);
+      }
+    });
+  }
+
+  function startEditing(c: Channel) {
+    setEditingId(c.id);
+    setEditSecret("");
+    setEditToken("");
+    setEditExternalId(c.externalId ?? "");
   }
 
   async function remove(c: Channel) {
@@ -167,19 +221,37 @@ export function ChannelsManager({ initialChannels }: { initialChannels: Channel[
           </div>
           <label className="block">
             <span className="text-xs font-bold text-zinc-700 mb-1.5 block">
-              External ID (LINE Channel ID / FB Page ID · ไม่บังคับ)
+              External ID (LINE basic ID / FB Page ID · ไม่บังคับ)
             </span>
             <input
               type="text"
               value={externalId}
               onChange={(e) => setExternalId(e.target.value)}
-              placeholder={type === "LINE" ? "เช่น 1234567890" : "เช่น 102345678901234"}
+              placeholder={type === "LINE" ? "@pooil-hr" : "102345678901234"}
               className="w-full h-10 px-3 rounded-lg border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-400)]"
             />
           </label>
           <label className="block">
             <span className="text-xs font-bold text-zinc-700 mb-1.5 block">
-              Long-lived Access Token (สำหรับตอบกลับ · ใส่ทีหลังได้)
+              {type === "LINE" ? "LINE Channel Secret" : "Facebook App Secret"} <span className="text-red-500">*</span>
+            </span>
+            <input
+              type="password"
+              value={providerSecret}
+              onChange={(e) => setProviderSecret(e.target.value)}
+              placeholder="••••••••••••••••"
+              className="w-full h-10 px-3 rounded-lg border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-400)] font-mono"
+            />
+            <span className="text-[10px] text-zinc-500 mt-1 block">
+              ใช้ตรวจสอบลายเซ็น HMAC ของ webhook · จากหน้า{" "}
+              {type === "LINE"
+                ? "LINE Developers Console → Messaging API → Channel secret"
+                : "FB for Developers → Settings → Basic → App Secret (Show)"}
+            </span>
+          </label>
+          <label className="block">
+            <span className="text-xs font-bold text-zinc-700 mb-1.5 block">
+              {type === "LINE" ? "Channel Access Token (long-lived)" : "Page Access Token"}
             </span>
             <input
               type="password"
@@ -189,7 +261,7 @@ export function ChannelsManager({ initialChannels }: { initialChannels: Channel[
               className="w-full h-10 px-3 rounded-lg border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-400)] font-mono"
             />
             <span className="text-[10px] text-zinc-500 mt-1 block">
-              เก็บแบบ encrypted · ใช้เฉพาะตอน admin ตอบกลับ
+              ใช้ส่งข้อความตอบกลับ · เก็บแบบ encrypted (AES-256-GCM)
             </span>
           </label>
           <div className="flex items-center justify-end gap-2 pt-2">
@@ -284,31 +356,131 @@ export function ChannelsManager({ initialChannels }: { initialChannels: Channel[
                 </div>
 
                 {/* Webhook URL */}
-                <div className="rounded-lg bg-zinc-50 border border-zinc-200 p-3">
-                  <p className="text-[10px] font-bold text-zinc-500 mb-1.5">
-                    WEBHOOK URL — พาสต์เข้า {meta.label} settings:
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 min-w-0 font-mono text-[11px] text-zinc-700 break-all">
-                      {webhookUrl(c)}
-                    </code>
+                <div className="rounded-lg bg-zinc-50 border border-zinc-200 p-3 space-y-2">
+                  <div>
+                    <p className="text-[10px] font-bold text-zinc-500 mb-1.5">
+                      WEBHOOK URL — พาสต์เข้า {meta.label} settings:
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 min-w-0 font-mono text-[11px] text-zinc-700 break-all">
+                        {webhookUrl(c)}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => copyText(`url:${c.id}`, webhookUrl(c), "webhook URL")}
+                        className="size-8 inline-flex items-center justify-center text-zinc-600 hover:text-[var(--color-brand-700)] hover:bg-white rounded-lg shrink-0"
+                        title="คัดลอก URL"
+                      >
+                        {copiedKey === `url:${c.id}` ? (
+                          <Check className="size-4 text-green-600" />
+                        ) : (
+                          <Copy className="size-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* FB-only verify token */}
+                  {c.type === "FACEBOOK" && c.verifyToken && (
+                    <div>
+                      <p className="text-[10px] font-bold text-zinc-500 mb-1.5">
+                        VERIFY TOKEN — วางในช่อง "Verify Token" ของ FB App webhook:
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 min-w-0 font-mono text-[11px] text-zinc-700 break-all">
+                          {c.verifyToken}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => copyText(`vt:${c.id}`, c.verifyToken!, "verify token")}
+                          className="size-8 inline-flex items-center justify-center text-zinc-600 hover:text-[var(--color-brand-700)] hover:bg-white rounded-lg shrink-0"
+                          title="คัดลอก verify token"
+                        >
+                          {copiedKey === `vt:${c.id}` ? (
+                            <Check className="size-4 text-green-600" />
+                          ) : (
+                            <Copy className="size-4" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Secret status indicators */}
+                  <div className="flex items-center gap-2 text-[10px] flex-wrap pt-1 border-t border-zinc-200">
+                    <SecretStatusChip
+                      ok={c.hasProviderSecret}
+                      label={c.type === "LINE" ? "Channel Secret" : "App Secret"}
+                    />
+                    <SecretStatusChip
+                      ok={c.hasAccessToken}
+                      label={c.type === "LINE" ? "Access Token" : "Page Token"}
+                    />
                     <button
                       type="button"
-                      onClick={() => copyUrl(c)}
-                      className="size-8 inline-flex items-center justify-center text-zinc-600 hover:text-[var(--color-brand-700)] hover:bg-white rounded-lg shrink-0"
-                      title="คัดลอก URL"
+                      onClick={() => (editingId === c.id ? setEditingId(null) : startEditing(c))}
+                      className="text-[10px] text-[var(--color-brand-700)] hover:underline ml-auto inline-flex items-center gap-1"
                     >
-                      {copiedId === c.id ? (
-                        <Check className="size-4 text-green-600" />
-                      ) : (
-                        <Copy className="size-4" />
-                      )}
+                      <Key className="size-3" />
+                      {editingId === c.id ? "ยกเลิก" : "ใส่ / อัปเดต secret"}
                     </button>
                   </div>
-                  {c.webhookSecretPrefix && (
-                    <p className="text-[10px] text-zinc-400 mt-2 font-mono">
-                      secret prefix: {c.webhookSecretPrefix}…
-                    </p>
+
+                  {/* Inline edit form */}
+                  {editingId === c.id && (
+                    <div className="space-y-2 pt-2 border-t border-zinc-200">
+                      <label className="block">
+                        <span className="text-[10px] font-bold text-zinc-600 mb-1 block">
+                          {c.type === "LINE" ? "LINE Channel Secret" : "FB App Secret"} (ว่างไว้ = ไม่เปลี่ยน)
+                        </span>
+                        <input
+                          type="password"
+                          value={editSecret}
+                          onChange={(e) => setEditSecret(e.target.value)}
+                          placeholder={c.hasProviderSecret ? "•••• already set ••••" : "paste secret here"}
+                          className="w-full h-9 px-2.5 rounded-lg border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-400)] font-mono text-xs"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-[10px] font-bold text-zinc-600 mb-1 block">
+                          {c.type === "LINE" ? "Channel Access Token" : "Page Access Token"} (ว่างไว้ = ไม่เปลี่ยน)
+                        </span>
+                        <input
+                          type="password"
+                          value={editToken}
+                          onChange={(e) => setEditToken(e.target.value)}
+                          placeholder={c.hasAccessToken ? "•••• already set ••••" : "paste token here"}
+                          className="w-full h-9 px-2.5 rounded-lg border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-400)] font-mono text-xs"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-[10px] font-bold text-zinc-600 mb-1 block">External ID</span>
+                        <input
+                          type="text"
+                          value={editExternalId}
+                          onChange={(e) => setEditExternalId(e.target.value)}
+                          placeholder={c.type === "LINE" ? "@pooil-hr" : "102345678901234"}
+                          className="w-full h-9 px-2.5 rounded-lg border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-400)] font-mono text-xs"
+                        />
+                      </label>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingId(null)}
+                          className="text-xs font-bold text-zinc-700 px-3 h-9 rounded-lg hover:bg-zinc-100"
+                        >
+                          ยกเลิก
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => saveEdit(c)}
+                          disabled={savingEdit}
+                          className="text-xs font-bold text-white bg-[var(--color-brand-600)] px-3 h-9 rounded-lg hover:bg-[var(--color-brand-700)] disabled:opacity-40"
+                        >
+                          {savingEdit ? "กำลังบันทึก..." : "บันทึก"}
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
@@ -317,5 +489,18 @@ export function ChannelsManager({ initialChannels }: { initialChannels: Channel[
         </div>
       )}
     </div>
+  );
+}
+
+function SecretStatusChip({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${
+        ok ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"
+      }`}
+    >
+      <span className={`size-1.5 rounded-full ${ok ? "bg-green-600" : "bg-amber-600"}`} />
+      {label}: {ok ? "✓" : "ยังไม่ใส่"}
+    </span>
   );
 }

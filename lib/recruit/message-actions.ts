@@ -15,13 +15,19 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { audit } from "@/lib/audit/log";
 import { canRecruitWrite } from "./role-guard";
+import { decryptToken } from "./channel-crypto";
+import { sendLineMessage, sendFacebookMessage } from "./inbox-send";
 
-type Channel = "LINE" | "SMS" | "EMAIL" | "INAPP";
+type Channel = "LINE" | "SMS" | "EMAIL" | "INAPP" | "FACEBOOK";
 
 export interface SendMessageInput {
   applicationId: string;
   channel: Channel;
   body: string;
+  /** Optional: when replying to a specific inbound thread on LINE/FB · we'll
+   *  resolve channelInstanceId + recipient external id from the last inbound
+   *  message. Passing explicit channelInstanceId overrides that. */
+  channelInstanceId?: string;
 }
 
 export async function sendMessage(input: SendMessageInput) {
@@ -35,15 +41,27 @@ export async function sendMessage(input: SendMessageInput) {
     where: { id: input.applicationId },
     select: {
       orgId: true,
-      applicant: { select: { fullName: true, phone: true, email: true, lineId: true } },
+      applicant: {
+        select: {
+          fullName: true,
+          phone: true,
+          email: true,
+          lineId: true,
+          lineUserId: true,
+          facebookPsid: true,
+        },
+      },
     },
   });
   if (!app) throw new Error("ไม่พบใบสมัคร");
   if (app.orgId !== session.user.org_id) throw new Error("ไม่มีสิทธิ์");
 
   // Validate channel can be used for this applicant
-  if (input.channel === "LINE" && !app.applicant.lineId) {
-    throw new Error("ผู้สมัครไม่มี LINE ID · ใช้ช่องอื่นก่อน");
+  if (input.channel === "LINE" && !app.applicant.lineUserId && !app.applicant.lineId) {
+    throw new Error("ผู้สมัครยังไม่ได้ทัก LINE · ให้ผู้สมัครทักหา OA ก่อน");
+  }
+  if (input.channel === "FACEBOOK" && !app.applicant.facebookPsid) {
+    throw new Error("ผู้สมัครยังไม่ได้ทัก Facebook · ให้ผู้สมัครทักหา Page ก่อน");
   }
   if (input.channel === "SMS" && !app.applicant.phone) {
     throw new Error("ผู้สมัครไม่มีเบอร์โทร");
@@ -52,7 +70,59 @@ export async function sendMessage(input: SendMessageInput) {
     throw new Error("ผู้สมัครไม่มีอีเมล");
   }
 
-  // Persist message
+  // For LINE/FB outbound, resolve the channel instance + access token.
+  // Pick by explicit input · else use the channel from the most recent inbound message.
+  let channelInstanceId: string | null = null;
+  let accessToken: string | null = null;
+  let replyToken: string | null = null;
+
+  if (input.channel === "LINE" || input.channel === "FACEBOOK") {
+    let instanceId = input.channelInstanceId ?? null;
+
+    if (!instanceId) {
+      const lastInbound = await prisma.recruitMessage.findFirst({
+        where: {
+          applicationId: input.applicationId,
+          direction: "IN",
+          channel: input.channel,
+          channelInstanceId: { not: null },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { channelInstanceId: true, replyToken: true },
+      });
+      if (lastInbound?.channelInstanceId) {
+        instanceId = lastInbound.channelInstanceId;
+        if (input.channel === "LINE" && lastInbound.replyToken) {
+          // Use reply token if last inbound was within 1 minute
+          replyToken = lastInbound.replyToken;
+        }
+      }
+    }
+
+    if (!instanceId) {
+      throw new Error(
+        `ยังไม่ได้เชื่อม ${input.channel} channel · เพิ่มที่ /recruit/settings/channels`,
+      );
+    }
+
+    const channel = await prisma.recruitInboxChannel.findUnique({
+      where: { id: instanceId },
+      select: { orgId: true, accessTokenEnc: true, status: true },
+    });
+    if (!channel || channel.orgId !== app.orgId) {
+      throw new Error("ไม่พบ channel หรือไม่มีสิทธิ์");
+    }
+    if (channel.status === "disabled") {
+      throw new Error("Channel ปิดใช้งานอยู่ · เปิดที่ /recruit/settings/channels ก่อน");
+    }
+    accessToken = decryptToken(channel.accessTokenEnc);
+    if (!accessToken) {
+      throw new Error("ยังไม่ได้ใส่ access token ของ channel · เพิ่มที่ /recruit/settings/channels");
+    }
+    channelInstanceId = instanceId;
+  }
+
+  // Persist message (initial state QUEUED for external channels)
   const msg = await prisma.recruitMessage.create({
     data: {
       orgId: app.orgId,
@@ -61,16 +131,53 @@ export async function sendMessage(input: SendMessageInput) {
       direction: "OUT",
       body,
       status: input.channel === "INAPP" ? "SENT" : "QUEUED",
+      channelInstanceId,
       createdById: session.user.id,
       sentAt: input.channel === "INAPP" ? new Date() : null,
     },
   });
 
-  // Delivery status — only INAPP is sent immediately.
-  // EMAIL / LINE / SMS stay QUEUED until external integration ships (Phase 2).
-  // Keeping all 3 channels in the same QUEUED state avoids the "false SENT"
-  // pattern where the UI shows ✓ Sent but no email actually goes out.
-  const deliveryError: string | null = null;
+  // Outbound delivery
+  let deliveryError: string | null = null;
+  if (input.channel === "LINE" && accessToken && app.applicant.lineUserId) {
+    const result = await sendLineMessage({
+      body,
+      recipientExternalId: app.applicant.lineUserId,
+      accessToken,
+      replyToken,
+    });
+    if (result.ok) {
+      await prisma.recruitMessage.update({
+        where: { id: msg.id },
+        data: { status: "SENT", sentAt: new Date(), externalId: result.externalId ?? null },
+      });
+    } else {
+      deliveryError = result.error ?? "send failed";
+      await prisma.recruitMessage.update({
+        where: { id: msg.id },
+        data: { status: "FAILED", errorMessage: deliveryError },
+      });
+    }
+  } else if (input.channel === "FACEBOOK" && accessToken && app.applicant.facebookPsid) {
+    const result = await sendFacebookMessage({
+      body,
+      recipientExternalId: app.applicant.facebookPsid,
+      accessToken,
+    });
+    if (result.ok) {
+      await prisma.recruitMessage.update({
+        where: { id: msg.id },
+        data: { status: "SENT", sentAt: new Date(), externalId: result.externalId ?? null },
+      });
+    } else {
+      deliveryError = result.error ?? "send failed";
+      await prisma.recruitMessage.update({
+        where: { id: msg.id },
+        data: { status: "FAILED", errorMessage: deliveryError },
+      });
+    }
+  }
+  // EMAIL / SMS still QUEUED — wired in a later pass
 
   await audit({
     orgId: app.orgId,
@@ -78,7 +185,7 @@ export async function sendMessage(input: SendMessageInput) {
     action: "RECRUIT_MESSAGE_SENT",
     resourceType: "recruit_message",
     resourceId: msg.id,
-    diff: { new: { channel: input.channel, length: body.length } },
+    diff: { new: { channel: input.channel, length: body.length, deliveryError } },
   });
 
   revalidatePath("/recruit/messages");

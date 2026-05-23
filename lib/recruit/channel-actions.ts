@@ -4,21 +4,21 @@
 // DMs flow into /recruit/messages.
 //
 // SECURITY:
-// - Tokens stored as `access_token_enc` (encrypted in app layer · key from env)
-// - Webhook signature verified before persisting messages (route handlers)
+// - Tokens (access + signing secret) stored encrypted via channel-crypto.ts
+// - Webhook signature verified per request inside route handlers
 // - Cross-org access blocked by org_id match (no super_admin bypass)
 //
-// CURRENT STATUS (2026-05-23 · plan-only / scaffolding):
-// - DB model + CRUD ✅ wired
-// - Settings UI ✅ wired
-// - Webhook routes ✅ stubs respond 200 + log
-// - Actual LINE / FB OAuth + signature verification: pending dedicated session
-//   (see docs/RECRUIT_OMNICHAT_PLAN.md)
+// SECRETS WE STORE (per channel, both encrypted):
+// - webhookSecret    = provider's signing key (LINE Channel Secret / FB App Secret)
+// - accessTokenEnc   = long-lived bot token for outbound replies
+// - metadata.verifyToken = our generated random (FB only · for hub.challenge step)
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { canRecruitAdmin } from "./role-guard";
+import { encryptToken } from "./channel-crypto";
+import crypto from "node:crypto";
 
 export type ChannelType = "LINE" | "FACEBOOK";
 
@@ -26,7 +26,8 @@ export async function createChannel(input: {
   type: ChannelType;
   displayName: string;
   externalId?: string;
-  accessToken?: string; // user-pasted token; we store encrypted
+  accessToken?: string; // long-lived bot token (LINE Channel Access Token / FB Page Access Token)
+  providerSecret?: string; // LINE Channel Secret / FB App Secret · used for HMAC verify
   metadata?: Record<string, unknown>;
 }) {
   const session = await requireSession();
@@ -35,33 +36,48 @@ export async function createChannel(input: {
   const displayName = input.displayName.trim();
   if (!displayName) throw new Error("ตั้งชื่อเรียกของ channel");
 
-  // Generate webhook secret per channel — used for signature verification
-  // in the webhook handler. 32-byte hex.
-  const webhookSecret = crypto
-    .getRandomValues(new Uint8Array(32))
-    .reduce((s, b) => s + b.toString(16).padStart(2, "0"), "");
+  // FB requires a "verify token" we choose so FB can echo it back when
+  // confirming webhook ownership. Generate one we'll show to admin.
+  const verifyToken =
+    input.type === "FACEBOOK"
+      ? crypto.randomBytes(24).toString("hex")
+      : null;
 
-  // SCAFFOLDING: real implementation would envelope-encrypt accessToken with
-  // KMS / env key before persisting. For now we store plaintext if provided
-  // (only admin can read this row anyway · RLS) and mark a TODO.
-  const accessTokenEnc = input.accessToken ?? null;
+  // Encrypt secrets at rest. Empty strings stored as null so prod can detect
+  // partial setup and flag "missing token" state.
+  const providerSecretEnc = input.providerSecret?.trim()
+    ? encryptToken(input.providerSecret.trim())
+    : null;
+  const accessTokenEnc = input.accessToken?.trim()
+    ? encryptToken(input.accessToken.trim())
+    : null;
+
+  // Status: active only when BOTH secrets present (verify + reply ready)
+  const status = providerSecretEnc && accessTokenEnc ? "active" : "setup";
 
   const channel = await prisma.recruitInboxChannel.create({
     data: {
       orgId: session.user.org_id,
       type: input.type,
       displayName,
-      externalId: input.externalId ?? null,
+      externalId: input.externalId?.trim() || null,
       accessTokenEnc,
-      webhookSecret,
-      status: accessTokenEnc ? "setup" : "setup",
-      metadata: (input.metadata as object) ?? undefined,
+      webhookSecret: providerSecretEnc, // repurposed — was random scaffolding
+      status,
+      metadata: {
+        ...(input.metadata ?? {}),
+        ...(verifyToken ? { verifyToken } : {}),
+      } as object,
       createdById: session.user.id,
     },
   });
 
   revalidatePath("/recruit/settings/channels");
-  return { ok: true, id: channel.id, webhookSecret };
+  return {
+    ok: true,
+    id: channel.id,
+    verifyToken, // FB only · admin copies this into FB App "Verify Token" field
+  };
 }
 
 export async function listChannels() {
@@ -80,20 +96,65 @@ export async function listChannels() {
       lastEventAt: true,
       createdAt: true,
       webhookSecret: true,
+      accessTokenEnc: true,
+      metadata: true,
     },
   });
-  return channels.map((c) => ({
-    id: c.id,
-    type: c.type as ChannelType,
-    displayName: c.displayName,
-    externalId: c.externalId,
-    status: c.status,
-    lastEventAt: c.lastEventAt?.toISOString() ?? null,
-    createdAt: c.createdAt.toISOString(),
-    // Return only the prefix so users can verify the URL was registered;
-    // full secret is never re-exposed after creation.
-    webhookSecretPrefix: c.webhookSecret ? c.webhookSecret.slice(0, 8) : null,
-  }));
+  return channels.map((c) => {
+    const md = (c.metadata ?? {}) as { verifyToken?: string };
+    return {
+      id: c.id,
+      type: c.type as ChannelType,
+      displayName: c.displayName,
+      externalId: c.externalId,
+      status: c.status,
+      lastEventAt: c.lastEventAt?.toISOString() ?? null,
+      createdAt: c.createdAt.toISOString(),
+      hasProviderSecret: !!c.webhookSecret,
+      hasAccessToken: !!c.accessTokenEnc,
+      verifyToken: md.verifyToken ?? null, // FB only · we generated it · safe to expose
+    };
+  });
+}
+
+/** Re-issue a provider secret or access token after admin gets a fresh value from LINE/FB. */
+export async function updateChannelSecrets(
+  id: string,
+  input: {
+    providerSecret?: string;
+    accessToken?: string;
+    externalId?: string;
+  },
+) {
+  const session = await requireSession();
+  if (!canRecruitAdmin(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+
+  const existing = await prisma.recruitInboxChannel.findUnique({
+    where: { id },
+    select: { orgId: true, accessTokenEnc: true, webhookSecret: true },
+  });
+  if (!existing) throw new Error("ไม่พบ channel");
+  if (existing.orgId !== session.user.org_id) throw new Error("ไม่มีสิทธิ์");
+
+  const data: Record<string, unknown> = {};
+  if (input.providerSecret?.trim()) {
+    data.webhookSecret = encryptToken(input.providerSecret.trim());
+  }
+  if (input.accessToken?.trim()) {
+    data.accessTokenEnc = encryptToken(input.accessToken.trim());
+  }
+  if (input.externalId !== undefined) {
+    data.externalId = input.externalId.trim() || null;
+  }
+
+  // Re-evaluate status — active only when both secrets present
+  const nextProviderSecret = data.webhookSecret ?? existing.webhookSecret;
+  const nextAccessToken = data.accessTokenEnc ?? existing.accessTokenEnc;
+  data.status = nextProviderSecret && nextAccessToken ? "active" : "setup";
+
+  await prisma.recruitInboxChannel.update({ where: { id }, data });
+  revalidatePath("/recruit/settings/channels");
+  return { ok: true };
 }
 
 export async function deleteChannel(id: string) {

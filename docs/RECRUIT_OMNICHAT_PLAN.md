@@ -127,31 +127,33 @@ model RecruitInboxChannel {
 - ChannelsManager UI (add / list / toggle / delete + webhook URL copy)
 - Webhook stub routes return 200 + log
 
-### Phase 2 — LINE inbound (~1.5 day)
-- HMAC verify against `webhookSecret`
-- Parse `events[].source.userId` + `events[].message`
-- Match LINE userId → recruit_applicant.lineId
-- Auto-create RecruitApplicant if first contact (status=NEW, no posting yet)
-- Persist message (direction=IN, channel=LINE)
-- Set `lastEventAt`
+### Phase 2 — LINE inbound ✅ DONE (2026-05-23)
+- HMAC verify against decrypted Channel Secret (base64 hash)
+- Parse `events[].source.userId` + `events[].message` (text/image/sticker)
+- Match LINE userId → recruit_applicants.line_user_id · auto-create stub applicant
+- Best-effort profile fetch via `/v2/bot/profile/{userId}` (2s timeout · upgrades placeholder name)
+- Auto-anchor message to most-recent posting · or create draft INBOX application
+- Persist message (direction=IN · channel=LINE · with replyToken for 1-min cheap reply)
 
-### Phase 3 — FB inbound (~1.5 day)
-- Hub challenge verification on GET (already stubbed)
-- HMAC SHA256 verify on POST
-- Parse `entry[].messaging[]`
-- Match FB PSID → recruit_applicant.facebookPsid (new field)
-- Auto-create + persist same as LINE
+### Phase 3 — FB inbound ✅ DONE (2026-05-23)
+- Hub challenge verification on GET via per-channel verifyToken
+- HMAC SHA256 verify (X-Hub-Signature-256) against decrypted App Secret
+- Parse `entry[].messaging[]` (text + attachments)
+- Match FB PSID → recruit_applicants.facebook_psid · auto-create stub
+- Best-effort profile fetch via Graph API `/{psid}?fields=name`
 
-### Phase 4 — Outbound reply (~1 day)
-- `sendMessage` action: if channel is LINE/FB, decrypt token + POST to provider API
-- Handle delivery errors (token expired, user blocked, rate limit)
-- Update message.status = SENT / FAILED accordingly
+### Phase 4 — Outbound reply ✅ DONE (2026-05-23)
+- `sendMessage` resolves channelInstanceId from explicit input or latest inbound thread
+- Decrypts access token (AES-256-GCM · envelope key `RECRUIT_CHANNEL_KEY` or fallback)
+- LINE: tries Reply API (1-min replyToken · free quota) → falls back to Push API
+- FB: Send API with `messaging_type=RESPONSE` (24h messaging window)
+- Updates message.status SENT/FAILED + errorMessage on result
 
-### Phase 5 — Apply linkage (~0.5 day)
-- When applicant first messages: show banner in /recruit/messages "ผู้สมัครยังไม่กรอกใบสมัคร · ส่งลิงค์ /apply"
-- One-click button to send the org's main posting link via the same channel
-
-**Total ~4.5 dev-days** for full production.
+### Phase 5 — Apply linkage (~0.5 day · STILL OPEN)
+- When applicant first messages: show banner in /recruit/messages "ยังไม่กรอกใบสมัคร · ส่งลิงค์ /apply"
+- One-click button to send posting link via the same channel
+- ALSO TODO: when applicant submits /apply with phone matching a LINE/FB stub,
+  merge profiles (combine lineUserId + phone + email under one applicant)
 
 ---
 
