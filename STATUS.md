@@ -4,6 +4,24 @@
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
+## 🆕 Update (2026-05-23 · รอบ 51 — LINE OA + Facebook inbox production-ready)
+
+**CEO goal:** "ทำระบบช่อง chat Line fb ให้ใช้ได้จริง"
+
+**Phases 2-4 ของ `docs/RECRUIT_OMNICHAT_PLAN.md` ลงจอ (commit `bf1fa7b` · deploy `pooilgroup-pesoay1aa`):**
+
+- **Schema:** เพิ่ม `line_user_id` + `facebook_psid` ใน `recruit_applicants` · เพิ่ม `channel_instance_id` + `sender_external_id` + `reply_token` + `attachments` ใน `recruit_messages` · เพิ่ม `FACEBOOK` ใน enum
+- **Crypto:** AES-256-GCM envelope encryption (env `RECRUIT_CHANNEL_KEY` หรือ fallback sha256(NEXTAUTH_SECRET)) · HMAC verifiers สำหรับ LINE (base64) + FB (`sha256=hex`)
+- **Inbound:** `/api/webhooks/recruit/{line,facebook}/[channelId]` verify ลายเซ็น → parse event → match applicant ด้วย lineUserId/facebookPsid → auto-create stub พร้อม placeholder phone + ดึง profile name → persist `recruit_messages` (direction=IN · attach replyToken สำหรับ LINE 1-min cheap reply path)
+- **Outbound:** `sendMessage` action ต่อยอด · ถ้า channel เป็น LINE/FB → resolve channelInstanceId → decrypt access token → LINE: Reply API (free) → fallback Push · FB: Send API `RESPONSE` mode · update msg.status SENT/FAILED
+- **UI:** ChannelsManager รับ Channel Secret + Access Token จากผู้ใช้ · `SecretStatusChip` แสดงสถานะ secret ต่อ channel · edit-in-place rotate secret ได้ · FB cards show "VERIFY TOKEN" copy button สำหรับ hub.challenge step
+
+**Smoke pass:** GET health 200 · POST bogus channel 404 · FB hub.challenge wrong token 403 · admin route 200
+
+**CEO action item:** ใส่ env `RECRUIT_CHANNEL_KEY` ใน Vercel (= `openssl rand -base64 32`) · ตอนนี้ระบบใช้งานได้แต่ encryption key fallback จาก NEXTAUTH_SECRET พร้อมเตือนใน prod log
+
+**Remaining open (Phase 5 · ~0.5d):** banner "ยังไม่กรอกใบสมัคร" ใน inbox · profile merge ตอน applicant ทั้งทักทาง LINE และกรอก /apply
+
 ## 🆕 Update (2026-05-23 · รอบ 50 — Recruit: templates + IQ image + LINE/FB scaffolding + wider layout)
 
 **CEO goal:** ทำให้ recruit ใช้ได้จริงทุก feature · พื้นที่ซ้ายขวาว่างเยอะ · scroll bug ตอนสร้างคำถาม · template ช่วยสร้างคำถามเร็ว · แนบรูป IQ · template เซฟเพื่อใช้ใหม่ · LINE OA + FB inbox รวมแชท (หลายบัญชี)
