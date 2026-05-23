@@ -4,6 +4,32 @@
  * Source of truth: design canvas (DocuFlow Redesign.html, 21 artboards).
  * ============================================================ */
 
+/* ============================================================
+ * Tailwind token REMAP — inside .df-root, the global Tailwind
+ * --color-brand-* / --color-zinc-* (oklch palette) are overridden
+ * to the DocuFlow warm-cream palette. This lets legacy DocuFlow
+ * components (SearchInterface, DocumentCard, RenewalHistorySection,
+ * etc.) inherit canvas colors WITHOUT rewriting their internals.
+ * ============================================================ */
+.df-root {
+  --color-brand-50: #E6ECFA;
+  --color-brand-100: #D5DEF5;
+  --color-brand-200: #B5C5EB;
+  --color-brand-300: #8FA5DE;
+  --color-brand-400: #5A7CC6;
+  --color-brand-500: #1B47B5;
+  --color-brand-600: #1B47B5;
+  --color-brand-700: #0E2D7A;
+  --color-brand-800: #0E2D7A;
+  --color-brand-900: #0E1B2C;
+  --color-brand-vivid: #1B47B5;
+
+  --color-leaf-50: #DCEFE2;
+  --color-leaf-500: #1F7A4D;
+  --color-leaf-600: #176239;
+  --color-leaf-700: #0F4A2C;
+}
+
 .df-root {
   /* Surfaces */
   --df-bg: #F4EEE2;
