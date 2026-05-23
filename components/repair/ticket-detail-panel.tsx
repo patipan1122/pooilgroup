@@ -22,7 +22,7 @@ function partStatusClass(s: "NEEDED" | "ORDERED" | "DELIVERED" | "INSTALLED" | "
   }
 }
 import { slaStatusFor, slaBadgeLabel } from "@/lib/repair/sla";
-import { TicketActions } from "./ticket-actions";
+import { TicketActions, PartStatusButtons } from "./ticket-actions";
 import { TicketComposer } from "./ticket-composer";
 import {
   Clock,
@@ -363,12 +363,15 @@ export function TicketDetailPanel({
                             {formatBaht(p.unitPriceCents * p.quantity)}
                           </td>
                           <td>
-                            <span
-                              className={"pill " + partStatusClass(p.status)}
-                              style={{ padding: "1px 6px", fontSize: 10 }}
-                            >
-                              {PART_STATUS_LABELS[p.status]}
-                            </span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                              <span
+                                className={"pill " + partStatusClass(p.status)}
+                                style={{ padding: "1px 6px", fontSize: 10 }}
+                              >
+                                {PART_STATUS_LABELS[p.status]}
+                              </span>
+                              {canWrite && <PartStatusButtons partId={p.id} current={p.status} />}
+                            </div>
                           </td>
                         </tr>
                       ),

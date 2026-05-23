@@ -656,15 +656,13 @@ export async function setLaborCost(input: z.input<typeof SetLaborCostSchema>): P
   const parsed = SetLaborCostSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
   const session = await requireSession();
+  // Tighter than canRepairActOnTicket — cost integrity is a write-tier concern.
+  if (!canRepairWrite(session.user.role)) return { ok: false, error: "ไม่มีสิทธิ์" };
 
   const ticket = await prisma.repairTicket.findFirst({
     where: { id: parsed.data.ticketId, orgId: session.user.org_id },
-    include: { assignedTech: { select: { userId: true } } },
   });
   if (!ticket) return { ok: false, error: "ไม่พบใบ" };
-  if (!canRepairActOnTicket(session.user.role, session.user.id, ticket.assignedTech?.userId ?? null)) {
-    return { ok: false, error: "ไม่มีสิทธิ์" };
-  }
 
   if (ticket.laborCostCents === parsed.data.laborCostCents) return { ok: true };
 

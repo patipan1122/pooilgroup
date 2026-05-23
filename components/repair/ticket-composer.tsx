@@ -1,10 +1,12 @@
 "use client";
 // Chat-style composer attached to the bottom of TicketDetailPanel.
-// Wires the `.composer` input to lib/repair/actions.addComment + photo upload.
+// Wires the `.composer` input to lib/repair/actions.addComment + photo upload
+// with a phase selector (BEFORE / DURING / AFTER / PART / RECEIPT).
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addComment, addPhoto } from "@/lib/repair/actions";
+import type { RepairPhotoPhase } from "@/lib/generated/prisma/enums";
 import { Camera, Send, Loader2 } from "lucide-react";
 
 async function compressImage(file: File, maxEdge = 1024, quality = 0.65): Promise<string> {
@@ -22,9 +24,18 @@ async function compressImage(file: File, maxEdge = 1024, quality = 0.65): Promis
   return url;
 }
 
+const PHASE_OPTIONS: { value: RepairPhotoPhase; label: string }[] = [
+  { value: "BEFORE", label: "ก่อนซ่อม" },
+  { value: "DURING", label: "ระหว่างซ่อม" },
+  { value: "AFTER", label: "หลังซ่อม" },
+  { value: "PART", label: "อะไหล่" },
+  { value: "RECEIPT", label: "บิล/ใบเสร็จ" },
+];
+
 export function TicketComposer({ ticketId }: { ticketId: string }) {
   const router = useRouter();
   const [body, setBody] = useState("");
+  const [photoPhase, setPhotoPhase] = useState<RepairPhotoPhase>("DURING");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -51,7 +62,7 @@ export function TicketComposer({ ticketId }: { ticketId: string }) {
     try {
       const dataUrl = await compressImage(file);
       startTransition(async () => {
-        const r = await addPhoto({ ticketId, phase: "DURING", dataUrl });
+        const r = await addPhoto({ ticketId, phase: photoPhase, dataUrl });
         if (!r.ok) {
           setError(r.error ?? "อัปโหลดไม่สำเร็จ");
           return;
@@ -64,7 +75,7 @@ export function TicketComposer({ ticketId }: { ticketId: string }) {
   }
 
   return (
-    <div className="composer" style={{ flexDirection: "column", gap: 4 }}>
+    <div className="composer" style={{ flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", gap: 8, width: "100%" }}>
         <input
           value={body}
@@ -75,7 +86,29 @@ export function TicketComposer({ ticketId }: { ticketId: string }) {
           placeholder="พิมพ์เพื่อเพิ่มความคิดเห็น · กด Enter ส่ง"
           disabled={isPending}
         />
-        <label className="btn" style={{ cursor: "pointer" }}>
+        <select
+          value={photoPhase}
+          onChange={(e) => setPhotoPhase(e.target.value as RepairPhotoPhase)}
+          title="ระยะของรูป"
+          style={{
+            height: 32,
+            padding: "0 8px",
+            borderRadius: 8,
+            border: "1px solid var(--line)",
+            background: "var(--surface)",
+            fontSize: 11.5,
+            fontFamily: "inherit",
+            color: "var(--ink-700)",
+            outline: "none",
+            cursor: "pointer",
+          }}
+          disabled={isPending}
+        >
+          {PHASE_OPTIONS.map((p) => (
+            <option key={p.value} value={p.value}>{p.label}</option>
+          ))}
+        </select>
+        <label className="btn" style={{ cursor: "pointer" }} title={"แนบรูป · " + PHASE_OPTIONS.find((p) => p.value === photoPhase)?.label}>
           <Camera />
           <input
             type="file" accept="image/*" capture="environment"

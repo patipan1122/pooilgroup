@@ -27,6 +27,26 @@ const CONFIRM_TRANSITIONS: Partial<Record<RepairTicketStatus, string>> = {
   CANCELLED: "ยกเลิกใบนี้?",
 };
 
+/**
+ * Action button label keyed by (from, to). Falls back to STATUS_LABELS[to]
+ * if no contextual label. CEO wants the "approval" semantic visible.
+ */
+function actionLabel(from: RepairTicketStatus, to: RepairTicketStatus): string {
+  // Approval semantic — NEW means "report awaiting manager review"
+  if (from === "NEW" && to === "ACK") return "อนุมัติซ่อม";
+  // Started work
+  if (from === "ACK" && to === "IN_PROGRESS") return "เริ่มลงมือซ่อม";
+  if (from === "WAITING_PARTS" && to === "IN_PROGRESS") return "อะไหล่ถึงแล้ว · ซ่อมต่อ";
+  if (from === "RESOLVED" && to === "IN_PROGRESS") return "เปิดใบใหม่ (ยังไม่หาย)";
+  // Resolved
+  if (to === "RESOLVED") return "ทำเสร็จแล้ว";
+  if (to === "CLOSED") return "ปิดถาวร";
+  if (to === "CANCELLED") return "ยกเลิกใบนี้";
+  if (to === "WAITING_PARTS") return "รออะไหล่";
+  if (to === "NEW" && from === "CANCELLED") return "เปิดใบใหม่อีกครั้ง";
+  return STATUS_LABELS[to];
+}
+
 interface Technician { id: string; name: string; kind: "INTERNAL" | "VENDOR"; isActive: boolean }
 
 interface Props {
@@ -172,7 +192,7 @@ export function TicketActions({
                 className="btn btn-primary"
                 style={{ fontWeight: 600 }}
               >
-                → {STATUS_LABELS[primaryStatus]}
+                {actionLabel(currentStatus, primaryStatus)}
               </button>
             )}
             {secondaryStatuses.map((s) => {
@@ -191,7 +211,7 @@ export function TicketActions({
                     color: "var(--bad)",
                   } : undefined}
                 >
-                  → {STATUS_LABELS[s]}
+                  {actionLabel(currentStatus, s)}
                 </button>
               );
             })}
@@ -441,23 +461,35 @@ export function PartStatusButtons({
 
   if (next.length === 0) return null;
   return (
-    <div className="inline-flex gap-1">
-      {next.map((n) => (
-        <button
-          key={n.to}
-          type="button"
-          disabled={isPending}
-          onClick={() =>
-            startTransition(async () => {
-              await updatePartStatus({ partId, status: n.to });
-              router.refresh();
-            })
-          }
-          className="h-9 px-2.5 rounded-md text-xs font-bold border border-zinc-300 text-zinc-700 bg-white hover:bg-zinc-50 disabled:opacity-50"
-        >
-          → {n.label}
-        </button>
-      ))}
-    </div>
+    <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+      {next.map((n) => {
+        const isDestructive = n.to === "CANCELLED";
+        return (
+          <button
+            key={n.to}
+            type="button"
+            disabled={isPending}
+            onClick={() =>
+              startTransition(async () => {
+                await updatePartStatus({ partId, status: n.to });
+                router.refresh();
+              })
+            }
+            className="btn btn-sm"
+            style={{
+              padding: "2px 7px",
+              fontSize: 10.5,
+              ...(isDestructive ? {
+                background: "#fff",
+                borderColor: "#FECACA",
+                color: "var(--bad)",
+              } : undefined),
+            }}
+          >
+            → {n.label}
+          </button>
+        );
+      })}
+    </span>
   );
 }
