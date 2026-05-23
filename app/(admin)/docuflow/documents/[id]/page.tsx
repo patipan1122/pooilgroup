@@ -209,7 +209,7 @@ export default async function DocumentDetailPage({
             <h1
               className="df-serif"
               style={{
-                fontSize: "clamp(20px, 3.2vw, 28px)",
+                fontSize: "clamp(22px, 3.5vw, 30px)",
                 lineHeight: 1.15,
                 margin: 0,
               }}

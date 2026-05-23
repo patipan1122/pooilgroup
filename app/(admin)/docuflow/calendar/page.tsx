@@ -381,6 +381,20 @@ export default async function CalendarPage({
                   </div>
                 </Link>
               ))}
+              {todayEvents.length > 0 && (
+                <DfButton
+                  href={`/docuflow/documents/${todayEvents[0].document.id}`}
+                  variant="brand"
+                  style={{
+                    width: "100%",
+                    justifyContent: "center",
+                    marginTop: 10,
+                  }}
+                >
+                  <Clock size={14} />
+                  ต่ออายุเลย
+                </DfButton>
+              )}
             </DfCard>
           )}
 

@@ -96,15 +96,22 @@ export default async function DocuFlowBrowsePage() {
         }
         description="เลือกประเภทเพื่อดู/แก้ไขโครงสร้างและกฎการเก็บ"
         actions={
-          adminTier ? (
-            <DfButton
-              href="/docuflow/documents/upload/template"
-              variant="brand"
-            >
-              <Upload size={15} />
-              อัปโหลดเอกสาร
-            </DfButton>
-          ) : null
+          <>
+            <div className="df-seg" aria-label="มุมมอง">
+              <button className="df-on">ตามประเภท</button>
+              <button>ตามบริษัท</button>
+              <button>รายการ</button>
+            </div>
+            {adminTier ? (
+              <DfButton
+                href="/docuflow/documents/upload/template"
+                variant="brand"
+              >
+                <Upload size={15} />
+                อัปโหลดเอกสาร
+              </DfButton>
+            ) : null}
+          </>
         }
       />
 

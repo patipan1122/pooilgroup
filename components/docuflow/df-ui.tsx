@@ -414,10 +414,12 @@ export function DfPageHeader({
         <h1
           className="df-serif"
           style={{
-            fontSize: "clamp(22px, 3.5vw, 30px)",
-            lineHeight: 1.15,
+            fontSize: "clamp(26px, 3.8vw, 36px)",
+            lineHeight: 1.1,
             color: "var(--df-ink)",
             margin: 0,
+            fontWeight: 500,
+            letterSpacing: "-0.01em",
           }}
         >
           {title}

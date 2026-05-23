@@ -176,10 +176,12 @@ export default async function VehicleDetailPage({
           <h1
             className="df-serif df-tnum"
             style={{
-              fontSize: "clamp(22px, 3.5vw, 30px)",
-              lineHeight: 1.15,
+              fontSize: "clamp(26px, 3.8vw, 36px)",
+              lineHeight: 1.1,
               margin: 0,
               marginTop: 6,
+              fontWeight: 500,
+              letterSpacing: "-0.01em",
             }}
           >
             {vehicle.license_plate}
