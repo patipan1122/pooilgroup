@@ -155,6 +155,19 @@ async function seedDocuments(orgId, ctx) {
     return [];
   }
 
+  // Canvas category labels (must match browse page CATEGORIES.name for filter
+  // links to land on a populated result set).
+  const CAT = {
+    station: "เอกสารปั๊ม / สถานี",
+    legal: "เอกสารนิติบุคคล",
+    tax: "ภาษี & การเงิน",
+    insurance: "ประกัน",
+    vehicle: "ทะเบียนรถ",
+    land: "ที่ดิน · สัญญาที่ดิน",
+    contract: "สัญญา",
+    signoff: "เซ็นทิ้ง · ไม่เก็บ",
+  };
+
   const docs = [
     // Station — fuel
     {
@@ -162,7 +175,7 @@ async function seedDocuments(orgId, ctx) {
       cat: "station",
       ownership: { level: "branch", branchId: branch1.id, companyId: company1.id },
       expiry: daysFromNow(0), // หมดวันนี้
-      tags: ["ต่ออายุด่วน", "ใบอนุญาตหลัก"],
+      tags: ["ต่ออายุด่วน", "ใบอนุญาตหลัก", CAT.station],
       notes: "ต้องต่ออายุภายในวันนี้ — มิฉะนั้นปั๊มจะปิดดำเนินการ",
     },
     {
@@ -170,7 +183,7 @@ async function seedDocuments(orgId, ctx) {
       cat: "station",
       ownership: { level: "branch", branchId: branch1.id, companyId: company1.id },
       expiry: daysFromNow(5),
-      tags: ["ต่ออายุด่วน"],
+      tags: ["ต่ออายุด่วน", CAT.station],
       notes: "ตรวจสภาพ + ออกใบใหม่",
     },
     // Insurance
@@ -179,7 +192,7 @@ async function seedDocuments(orgId, ctx) {
       cat: "insurance",
       ownership: { level: "branch", branchId: branch1.id, companyId: company1.id },
       expiry: daysFromNow(5),
-      tags: ["พ.ร.บ.", "รถ"],
+      tags: ["พ.ร.บ.", "รถ", CAT.insurance],
     },
     // Contract — land lease
     {
@@ -187,7 +200,7 @@ async function seedDocuments(orgId, ctx) {
       cat: "land",
       ownership: { level: "branch", branchId: branch2.id, companyId: company1.id },
       expiry: daysFromNow(12),
-      tags: ["สัญญาที่ดิน"],
+      tags: ["สัญญาที่ดิน", CAT.land],
       notes: "ต่อสัญญา 3 ปี · ปีละ 84,000 บาท",
     },
     // Legal — สัญญาเช่า
@@ -196,7 +209,7 @@ async function seedDocuments(orgId, ctx) {
       cat: "legal",
       ownership: { level: "group", branchId: null, companyId: null },
       expiry: daysFromNow(18),
-      tags: ["ภาษี", "กลุ่ม"],
+      tags: ["ภาษี", "กลุ่ม", CAT.legal],
     },
     // Tax
     {
@@ -204,7 +217,7 @@ async function seedDocuments(orgId, ctx) {
       cat: "tax",
       ownership: { level: "branch", branchId: branch3.id, companyId: company1.id },
       expiry: daysFromNow(27),
-      tags: ["ภาษี"],
+      tags: ["ภาษี", CAT.tax],
     },
     // Vehicle docs
     {
@@ -212,7 +225,7 @@ async function seedDocuments(orgId, ctx) {
       cat: "vehicle",
       ownership: { level: "company", companyId: company1.id },
       expiry: daysFromNow(60),
-      tags: ["ทะเบียนรถ"],
+      tags: ["ทะเบียนรถ", CAT.vehicle],
     },
     // Long-term renewal
     {
@@ -220,14 +233,14 @@ async function seedDocuments(orgId, ctx) {
       cat: "station",
       ownership: { level: "branch", branchId: branch2.id, companyId: company1.id },
       expiry: daysFromNow(60),
-      tags: ["ตรวจสอบ"],
+      tags: ["ตรวจสอบ", CAT.station],
     },
     {
       name: "ใบ อบต. สิ่งแวดล้อม KKN-002",
       cat: "station",
       ownership: { level: "branch", branchId: branch1.id, companyId: company1.id },
       expiry: daysFromNow(84),
-      tags: ["สิ่งแวดล้อม"],
+      tags: ["สิ่งแวดล้อม", CAT.station],
     },
     // Multi-company
     {
@@ -235,7 +248,7 @@ async function seedDocuments(orgId, ctx) {
       cat: "legal",
       ownership: { level: "company", companyId: company2.id },
       expiry: daysFromNow(180),
-      tags: ["JP Sync", "ทะเบียน"],
+      tags: ["JP Sync", "ทะเบียน", CAT.legal],
     },
     // Expired (เพื่อให้เห็น danger state)
     {
@@ -243,7 +256,7 @@ async function seedDocuments(orgId, ctx) {
       cat: "station",
       ownership: { level: "branch", branchId: branch1.id, companyId: company1.id },
       expiry: daysFromNow(-15),
-      tags: ["หมดแล้ว"],
+      tags: ["หมดแล้ว", CAT.station],
       notes: "ต่อใหม่แล้ว — ฉบับนี้เก็บเป็นประวัติ",
     },
     // Without renewal (ไม่หมดอายุ)
@@ -252,7 +265,7 @@ async function seedDocuments(orgId, ctx) {
       cat: "legal",
       ownership: { level: "branch", branchId: branch1.id, companyId: company1.id },
       expiry: null,
-      tags: ["มอบอำนาจ"],
+      tags: ["มอบอำนาจ", CAT.legal],
     },
   ];
 
@@ -505,7 +518,7 @@ async function seedSignaturePlacements(orgId, ctx, seededDocs) {
       ordering: 0,
       signerUserId: signer1.id,
       signerName: signer1.name,
-      signerRole: "approver",
+      signerRole: "employee",
       pageNumber: 1,
       signedAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
     },
@@ -513,7 +526,7 @@ async function seedSignaturePlacements(orgId, ctx, seededDocs) {
       ordering: 1,
       signerUserId: signer2.id,
       signerName: signer2.name,
-      signerRole: "approver",
+      signerRole: "employee",
       pageNumber: 1,
       signedAt: null, // current step
     },
@@ -521,7 +534,7 @@ async function seedSignaturePlacements(orgId, ctx, seededDocs) {
       ordering: 2,
       signerUserId: adminUser.id,
       signerName: adminUser.name,
-      signerRole: "executive",
+      signerRole: "owner",
       pageNumber: 1,
       signedAt: null, // pending
     },
@@ -548,7 +561,11 @@ async function seedSignaturePlacements(orgId, ctx, seededDocs) {
         ordering: p.ordering,
         signed_at: p.signedAt,
       });
-    if (!error) count++;
+    if (error) {
+      console.error(`✗ Signature insert ${p.ordering}:`, error.message);
+    } else {
+      count++;
+    }
   }
   console.log(
     `✓ Seeded ${count} signature placements on "${targetDoc.name}" (1 signed, 1 current, 1 pending)`,
@@ -572,7 +589,7 @@ async function seedAuditEntries(orgId, ctx, seededDocs) {
       action: "DOCUFLOW_TAG",
       resourceType: "document",
       resourceId: seededDocs[0].id,
-      diff: { new: { tags: ["ต่ออายุด่วน"] } },
+      diff: { new: { tags: ["ต่ออายุด่วน", "เอกสารนิติบุคคล"] } },
       hoursAgo: 1,
     },
     {
