@@ -643,6 +643,74 @@ export async function addPhoto(input: {
 }
 
 // =============================================================
+// Labor cost (manual entry — includes travel/diem)
+// =============================================================
+
+const SetLaborCostSchema = z.object({
+  ticketId: z.string().uuid(),
+  laborCostCents: z.number().int().min(0).max(10_000_000_00),
+  note: z.string().trim().max(200).optional(),
+});
+
+export async function setLaborCost(input: z.input<typeof SetLaborCostSchema>): Promise<{ ok: boolean; error?: string }> {
+  const parsed = SetLaborCostSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const session = await requireSession();
+
+  const ticket = await prisma.repairTicket.findFirst({
+    where: { id: parsed.data.ticketId, orgId: session.user.org_id },
+    include: { assignedTech: { select: { userId: true } } },
+  });
+  if (!ticket) return { ok: false, error: "ไม่พบใบ" };
+  if (!canRepairActOnTicket(session.user.role, session.user.id, ticket.assignedTech?.userId ?? null)) {
+    return { ok: false, error: "ไม่มีสิทธิ์" };
+  }
+
+  if (ticket.laborCostCents === parsed.data.laborCostCents) return { ok: true };
+
+  await prisma.$transaction([
+    prisma.repairTicket.update({
+      where: { id: parsed.data.ticketId },
+      data: { laborCostCents: parsed.data.laborCostCents },
+    }),
+    prisma.repairTimelineEvent.create({
+      data: {
+        orgId: session.user.org_id,
+        ticketId: parsed.data.ticketId,
+        kind: "COMMENT",
+        actorUserId: session.user.id,
+        actorName: session.user.name,
+        payload: {
+          body:
+            "อัปเดตค่าแรง: " +
+            (parsed.data.laborCostCents / 100).toLocaleString("th-TH") +
+            " บาท" +
+            (parsed.data.note ? ` · ${parsed.data.note}` : ""),
+          laborCostCents: parsed.data.laborCostCents,
+        },
+      },
+    }),
+  ]);
+
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "REPAIR_LABOR_COST_SET",
+    resourceType: "repair_ticket",
+    resourceId: parsed.data.ticketId,
+    diff: {
+      old: { laborCostCents: ticket.laborCostCents },
+      new: { laborCostCents: parsed.data.laborCostCents },
+    },
+  });
+
+  revalidatePath(`/repairs/${parsed.data.ticketId}`);
+  revalidatePath("/repairs");
+  revalidatePath("/repairs/triage");
+  return { ok: true };
+}
+
+// =============================================================
 // ETA
 // =============================================================
 

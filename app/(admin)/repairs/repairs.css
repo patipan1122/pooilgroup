@@ -1018,12 +1018,19 @@
 /* ===== TRIAGE SPLIT VIEW ===== */
 .repair-root .triage {
   display: grid;
-  grid-template-columns: 420px 1fr;
+  grid-template-columns: 380px minmax(0, 1fr);
   gap: 14px;
   height: 100%;
 }
 @media (max-width: 1100px) {
   .repair-root .triage { grid-template-columns: 1fr; }
+}
+.repair-root .rf-spin {
+  animation: rf-spin-kf 0.8s linear infinite;
+}
+@keyframes rf-spin-kf {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 .repair-root .triage-list {
   background: var(--surface);
@@ -1157,7 +1164,7 @@
 }
 .repair-root .detail-body {
   display: grid;
-  grid-template-columns: 1fr 240px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   flex: 1;
   overflow: auto;
 }
@@ -1167,10 +1174,19 @@
 .repair-root .detail-main {
   padding: 16px 18px;
   border-right: 1px solid var(--line-2);
+  min-width: 0;
 }
 .repair-root .detail-side {
-  padding: 16px 14px;
+  padding: 14px 14px 18px;
   font-size: 12px;
+}
+/* Prominent "ดำเนินการ" panel pinned at top of sidebar */
+.repair-root .detail-actions-panel {
+  background: var(--brand-50);
+  border: 1px solid var(--brand-100);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 0 0 16px;
 }
 .repair-root .detail-side-section { margin-bottom: 18px; }
 .repair-root .detail-side-label {
@@ -1365,7 +1381,7 @@
 }
 .repair-root .repair-content {
   padding: 18px 24px 32px;
-  max-width: 1600px;
+  max-width: 1800px;
   margin: 0 auto;
 }
 @media (max-width: 720px) {

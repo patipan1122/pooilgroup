@@ -59,16 +59,6 @@ interface Props {
   canAdmin: boolean;
 }
 
-const STATUS_CLS: Record<RepairTicketStatus, string> = {
-  NEW: "pill-new",
-  ACK: "pill-assess",
-  IN_PROGRESS: "pill-approval",
-  WAITING_PARTS: "pill-parts",
-  RESOLVED: "pill-done",
-  CLOSED: "pill-done",
-  CANCELLED: "pill-low",
-};
-
 function fmtDateTime(d: Date | string | null): string {
   if (!d) return "—";
   return new Intl.DateTimeFormat("th-TH", {
@@ -115,10 +105,6 @@ export function TicketDetailPanel({
           >
             <ExternalLink size={11} /> เต็มหน้า
           </Link>
-          <span className={"pill " + STATUS_CLS[currentStatus]}>
-            <span className="dot" />
-            {STATUS_LABELS[currentStatus]}
-          </span>
           <span className={
             "pill " +
             (ticket.urgency === "URGENT" ? "pill-urgent" :
@@ -442,6 +428,24 @@ export function TicketDetailPanel({
 
         {/* SIDE */}
         <div className="detail-side">
+          {/* Action panel pinned at TOP of sidebar — was buried at bottom */}
+          {canWrite && (
+            <div className="detail-side-section detail-actions-panel">
+              <div className="detail-side-label" style={{ color: "var(--brand-700)" }}>
+                ดำเนินการ
+              </div>
+              <TicketActions
+                ticketId={ticket.id}
+                currentStatus={ticket.status}
+                currentTechId={ticket.assignedTech?.id ?? null}
+                currentEta={ticket.etaAt ? new Date(ticket.etaAt).toISOString() : null}
+                currentLaborCostCents={ticket.laborCostCents ?? 0}
+                technicians={technicians}
+                canAdmin={canAdmin}
+              />
+            </div>
+          )}
+
           {ticket.assignedTech && (
             <div className="detail-side-section">
               <div className="detail-side-label">ช่างที่รับผิดชอบ</div>
@@ -540,24 +544,6 @@ export function TicketDetailPanel({
             )}
           </div>
 
-          {/* Action panel (status/assign/etc.) — collapsed below sidebar */}
-          {canWrite && (
-            <div className="detail-side-section" style={{
-              background: "var(--surface-2)",
-              padding: 10, borderRadius: 8,
-              marginTop: 12,
-            }}>
-              <div className="detail-side-label">ดำเนินการ</div>
-              <TicketActions
-                ticketId={ticket.id}
-                currentStatus={ticket.status}
-                currentTechId={ticket.assignedTech?.id ?? null}
-                currentEta={ticket.etaAt ? new Date(ticket.etaAt).toISOString() : null}
-                technicians={technicians}
-                canAdmin={canAdmin}
-              />
-            </div>
-          )}
         </div>
       </div>
 
