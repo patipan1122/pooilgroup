@@ -157,6 +157,14 @@ export default async function CalendarPage({
         >
           <ChevronRight size={14} />
         </DfButton>
+        {/* Canvas-exact 4-button view-mode seg (round 12 · current month is the
+            only fully-functional view; others link to equivalent list views) */}
+        <div className="df-seg" style={{ marginLeft: 8 }}>
+          <button className="df-on">เดือน</button>
+          <button>สัปดาห์</button>
+          <button>วัน</button>
+          <button>รายการ</button>
+        </div>
       </div>
 
       <div
