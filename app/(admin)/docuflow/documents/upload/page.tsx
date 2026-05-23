@@ -4,16 +4,7 @@
 //   hero dropzone (visual) · AI auto-fill banner · structured form right.
 // ────────────────────────────────────────────────────────────────────
 
-import Link from "next/link";
-import {
-  ArrowLeft,
-  Upload as UploadIcon,
-  Sparkles,
-  FileText,
-  Folder,
-  Camera,
-  Link as LinkIcon,
-} from "lucide-react";
+import { Sparkles, FileText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
@@ -97,91 +88,9 @@ export default async function DocumentUploadPage() {
         className="df-grid-2col"
       >
         <div className="df-fade-up df-fade-up-100">
-          <div
-            style={{
-              position: "relative",
-              border: "2px dashed var(--df-brand)",
-              borderRadius: 18,
-              background: "linear-gradient(180deg, #EFF3FC, #FAF6EE)",
-              padding: "40px 28px",
-              textAlign: "center",
-              marginBottom: 18,
-            }}
-          >
-            <div
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: 16,
-                background: "#fff",
-                boxShadow: "0 8px 24px -8px rgba(27,71,181,0.3)",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--df-brand)",
-                marginBottom: 14,
-              }}
-            >
-              <UploadIcon size={28} strokeWidth={2} />
-            </div>
-            <h3
-              className="df-serif"
-              style={{ fontSize: 22, marginBottom: 6, marginTop: 0 }}
-            >
-              ลากไฟล์มาวางตรงนี้
-            </h3>
-            <p
-              style={{
-                fontSize: 14,
-                color: "var(--df-muted)",
-                marginBottom: 16,
-                marginTop: 0,
-              }}
-            >
-              หรือเลือกจากเครื่อง · ถ่ายรูปจากกล้อง · วางลิงก์จาก Drive
-            </p>
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                justifyContent: "center",
-                flexWrap: "wrap",
-              }}
-            >
-              <DfButton variant="brand">
-                <Folder size={15} />
-                เลือกไฟล์
-              </DfButton>
-              <DfButton variant="ghost">
-                <Camera size={15} />
-                ถ่ายรูป
-              </DfButton>
-              <DfButton variant="ghost">
-                <LinkIcon size={15} />
-                จาก Google Drive
-              </DfButton>
-            </div>
-            <div
-              style={{
-                position: "absolute",
-                top: 14,
-                right: 14,
-                background: "var(--df-surface)",
-                padding: "6px 10px",
-                borderRadius: 999,
-                fontSize: 11,
-                fontWeight: 600,
-                color: "var(--df-brand)",
-                border: "1px solid var(--df-brand-soft)",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <Sparkles size={11} />
-              AI Auto-fill เปิดอยู่
-            </div>
-          </div>
+          {/* NOTE: dropzone hero is rendered inside UploadForm (canvas-style,
+              fully functional drag-drop + click-to-select). Previous duplicate
+              visual block was confusing — single zone now. */}
 
           {/* Upload queue preview — canvas DesktopUpload */}
           <DfCard padding={20}>

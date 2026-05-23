@@ -296,15 +296,35 @@ export function UploadForm({
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-      {/* 1. File */}
+      {/* 1. File — canvas-style hero dropzone (single, functional) */}
       <Field label="ไฟล์เอกสาร" required>
         <label
           className={cn(
-            "flex flex-col items-center justify-center gap-2 h-32 rounded-xl border-2 border-dashed cursor-pointer transition-colors",
+            "df-upload-zone relative flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed cursor-pointer transition-colors",
             file
               ? "border-[var(--color-brand-300)] bg-[var(--color-brand-50)]/40"
-              : "border-zinc-200 bg-zinc-50/40 hover:border-zinc-300",
+              : "border-[var(--color-brand-500)] hover:border-[var(--color-brand-700)]",
           )}
+          style={{
+            padding: "32px 24px",
+            minHeight: file ? 140 : 220,
+            background: file
+              ? undefined
+              : "linear-gradient(180deg, #EFF3FC, #FAF6EE)",
+          }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.currentTarget.classList.add("df-drop-hover");
+          }}
+          onDragLeave={(e) =>
+            e.currentTarget.classList.remove("df-drop-hover")
+          }
+          onDrop={(e) => {
+            e.preventDefault();
+            e.currentTarget.classList.remove("df-drop-hover");
+            const f = e.dataTransfer.files?.[0];
+            if (f) handleFileChange(f);
+          }}
         >
           <input
             type="file"
@@ -313,18 +333,92 @@ export function UploadForm({
             onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
             disabled={busy}
           />
-          <UploadIcon className="size-6 text-zinc-500" />
           {file ? (
-            <div className="text-center">
-              <p className="text-sm font-medium text-zinc-900">{file.name}</p>
-              <p className="text-xs text-zinc-500 mt-0.5">
-                {(file.size / 1024 / 1024).toFixed(2)} MB
-              </p>
-            </div>
+            <>
+              <div
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 14,
+                  background: "var(--color-brand-50)",
+                  color: "var(--color-brand-700)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <UploadIcon className="size-7" />
+              </div>
+              <div className="text-center">
+                <p className="text-base font-bold text-zinc-900">{file.name}</p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  {(file.size / 1024 / 1024).toFixed(2)} MB · พร้อมส่ง
+                </p>
+                <p className="text-[11px] text-zinc-500 mt-2">
+                  คลิกอีกครั้งเพื่อเปลี่ยนไฟล์
+                </p>
+              </div>
+            </>
           ) : (
-            <p className="text-sm text-zinc-500">
-              คลิกหรือลากไฟล์มาวาง · PDF / รูป / DOCX
-            </p>
+            <>
+              <div
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: 16,
+                  background: "#fff",
+                  boxShadow: "0 8px 24px -8px rgba(27,71,181,0.3)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--color-brand-600)",
+                }}
+              >
+                <UploadIcon className="size-7" />
+              </div>
+              <div className="text-center">
+                <p
+                  style={{
+                    fontSize: 18,
+                    fontWeight: 600,
+                    color: "var(--color-zinc-900, #18181b)",
+                    margin: 0,
+                  }}
+                >
+                  ลากไฟล์มาวางตรงนี้
+                </p>
+                <p
+                  style={{
+                    fontSize: 13,
+                    color: "var(--color-zinc-500, #71717a)",
+                    marginTop: 6,
+                    marginBottom: 0,
+                  }}
+                >
+                  หรือคลิกเพื่อเลือกจากเครื่อง · PDF · รูป · DOCX
+                </p>
+              </div>
+              {/* AI badge top-right (canvas-exact) */}
+              <span
+                style={{
+                  position: "absolute",
+                  top: 14,
+                  right: 14,
+                  background: "#fff",
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: "var(--color-brand-600)",
+                  border: "1px solid var(--color-brand-200)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                ✦ AI Auto-fill เปิดอยู่
+              </span>
+            </>
           )}
         </label>
       </Field>

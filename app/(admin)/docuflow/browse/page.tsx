@@ -45,15 +45,17 @@ const CATEGORIES: Array<{
   color: string;
   icon: React.ReactNode;
   bucket: "keep" | "signoff";
+  /** Tag value the category routes to via `?tag=` filter (must exist on Document rows) */
+  tag: string;
 }> = [
-  { id: "legal", name: "เอกสารนิติบุคคล", color: "#1B47B5", icon: <Scale size={20} />, bucket: "keep" },
-  { id: "tax", name: "ภาษี & การเงิน", color: "#15803D", icon: <Wallet size={20} />, bucket: "keep" },
-  { id: "insurance", name: "ประกัน", color: "#7C3AED", icon: <Shield size={20} />, bucket: "keep" },
-  { id: "station", name: "เอกสารปั๊ม / สถานี", color: "#C46A3D", icon: <Fuel size={20} />, bucket: "keep" },
-  { id: "vehicle", name: "ทะเบียนรถ", color: "#0EA5A4", icon: <Car size={20} />, bucket: "keep" },
-  { id: "land", name: "ที่ดิน · สัญญาที่ดิน", color: "#B45309", icon: <TreePine size={20} />, bucket: "keep" },
-  { id: "contract", name: "สัญญา", color: "#0E2D7A", icon: <FileText size={20} />, bucket: "keep" },
-  { id: "signoff", name: "เซ็นทิ้ง · ไม่เก็บ", color: "#6B7488", icon: <Stamp size={20} />, bucket: "signoff" },
+  { id: "legal", name: "เอกสารนิติบุคคล", color: "#1B47B5", icon: <Scale size={20} />, bucket: "keep", tag: "นิติบุคคล" },
+  { id: "tax", name: "ภาษี & การเงิน", color: "#15803D", icon: <Wallet size={20} />, bucket: "keep", tag: "ภาษี" },
+  { id: "insurance", name: "ประกัน", color: "#7C3AED", icon: <Shield size={20} />, bucket: "keep", tag: "ประกัน" },
+  { id: "station", name: "เอกสารปั๊ม / สถานี", color: "#C46A3D", icon: <Fuel size={20} />, bucket: "keep", tag: "ใบอนุญาตหลัก" },
+  { id: "vehicle", name: "ทะเบียนรถ", color: "#0EA5A4", icon: <Car size={20} />, bucket: "keep", tag: "ทะเบียนรถ" },
+  { id: "land", name: "ที่ดิน · สัญญาที่ดิน", color: "#B45309", icon: <TreePine size={20} />, bucket: "keep", tag: "สัญญาที่ดิน" },
+  { id: "contract", name: "สัญญา", color: "#0E2D7A", icon: <FileText size={20} />, bucket: "keep", tag: "สัญญา" },
+  { id: "signoff", name: "เซ็นทิ้ง · ไม่เก็บ", color: "#6B7488", icon: <Stamp size={20} />, bucket: "signoff", tag: "มอบอำนาจ" },
 ];
 
 export default async function DocuFlowBrowsePage() {
@@ -176,7 +178,7 @@ export default async function DocuFlowBrowsePage() {
           {CATEGORIES.map((c) => (
             <Link
               key={c.id}
-              href={`/docuflow/documents?category=${c.id}`}
+              href={`/docuflow/documents?tag=${encodeURIComponent(c.tag)}`}
               className="df-card"
               style={{
                 padding: 16,

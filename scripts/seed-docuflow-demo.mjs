@@ -97,6 +97,15 @@ async function clean(orgId) {
     await supa.from("vehicles").delete().in("id", demoVehIds);
     console.log(`  · Removed ${demoVehIds.length} demo vehicles`);
   }
+  // demo audit logs marked via user_agent
+  const { error: aErr, count: aDeleted } = await supa
+    .from("audit_logs")
+    .delete({ count: "exact" })
+    .eq("org_id", orgId)
+    .like("user_agent", `${DEMO_PREFIX}%`);
+  if (!aErr && aDeleted) {
+    console.log(`  · Removed ${aDeleted} demo audit entries`);
+  }
 }
 
 async function loadContext(orgId) {
@@ -477,6 +486,143 @@ async function seedPersonDocs(orgId, ctx) {
   console.log(`✓ Seeded ${count} person docs across ${targets.length} users`);
 }
 
+async function seedSignaturePlacements(orgId, ctx, seededDocs) {
+  // Pick first PDF doc (or any doc) and add 3 signature placements with a
+  // signed/current/pending chain — gives /docuflow/workflow + signing pages
+  // a real multi-signer example.
+  const targetDoc = seededDocs.find((d) => d.name.includes("สัญญา")) ?? seededDocs[0];
+  if (!targetDoc) {
+    console.warn("⚠ Skip signature placements (no docs to attach to)");
+    return;
+  }
+  const adminUser = ctx.users[0];
+  const signer1 = ctx.users[1] ?? adminUser;
+  const signer2 = ctx.users[2] ?? adminUser;
+  if (!adminUser) return;
+
+  const placements = [
+    {
+      ordering: 0,
+      signerUserId: signer1.id,
+      signerName: signer1.name,
+      signerRole: "approver",
+      pageNumber: 1,
+      signedAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
+    },
+    {
+      ordering: 1,
+      signerUserId: signer2.id,
+      signerName: signer2.name,
+      signerRole: "approver",
+      pageNumber: 1,
+      signedAt: null, // current step
+    },
+    {
+      ordering: 2,
+      signerUserId: adminUser.id,
+      signerName: adminUser.name,
+      signerRole: "executive",
+      pageNumber: 1,
+      signedAt: null, // pending
+    },
+  ];
+
+  let count = 0;
+  for (const p of placements) {
+    const { error } = await supa
+      .from("document_signature_placements")
+      .insert({
+        id: randomUUID(),
+        org_id: orgId,
+        document_id: targetDoc.id,
+        page_number: p.pageNumber,
+        x_ratio: 0.2 + p.ordering * 0.1,
+        y_ratio: 0.7,
+        width_ratio: 0.2,
+        height_ratio: 0.06,
+        placement_type: "signature",
+        signer_role: p.signerRole,
+        signer_user_id: p.signerUserId,
+        signer_name: p.signerName,
+        label: `Sign step ${p.ordering + 1}`,
+        ordering: p.ordering,
+        signed_at: p.signedAt,
+      });
+    if (!error) count++;
+  }
+  console.log(
+    `✓ Seeded ${count} signature placements on "${targetDoc.name}" (1 signed, 1 current, 1 pending)`,
+  );
+}
+
+async function seedAuditEntries(orgId, ctx, seededDocs) {
+  // Replay common DOCUFLOW_* audit events for the demo timeline.
+  const adminUser = ctx.users[0];
+  if (!adminUser || seededDocs.length === 0) return;
+
+  const events = [
+    {
+      action: "DOCUFLOW_UPLOAD",
+      resourceType: "document",
+      resourceId: seededDocs[0].id,
+      diff: { new: { name: seededDocs[0].name } },
+      hoursAgo: 1,
+    },
+    {
+      action: "DOCUFLOW_TAG",
+      resourceType: "document",
+      resourceId: seededDocs[0].id,
+      diff: { new: { tags: ["ต่ออายุด่วน"] } },
+      hoursAgo: 1,
+    },
+    {
+      action: "DOCUFLOW_RENEW",
+      resourceType: "document_renewal",
+      resourceId: seededDocs[1]?.id ?? seededDocs[0].id,
+      diff: { new: { name: seededDocs[1]?.name ?? seededDocs[0].name } },
+      hoursAgo: 4,
+    },
+    {
+      action: "DOCUFLOW_SIGN_PLACEMENT_ADD",
+      resourceType: "document_signature_placement",
+      resourceId: null,
+      diff: { new: { count: 3 } },
+      hoursAgo: 5,
+    },
+    {
+      action: "DOCUFLOW_SIGNATURE_SIGNED",
+      resourceType: "document_signature_placement",
+      resourceId: null,
+      diff: { new: { ordering: 0 } },
+      hoursAgo: 26, // yesterday
+    },
+    {
+      action: "DOCUFLOW_SHARE",
+      resourceType: "document",
+      resourceId: seededDocs[0].id,
+      diff: { new: { sharedTo: 2 } },
+      hoursAgo: 50,
+    },
+  ];
+  let count = 0;
+  for (const e of events) {
+    const { error } = await supa.from("audit_logs").insert({
+      id: randomUUID(),
+      org_id: orgId,
+      user_id: adminUser.id,
+      action: e.action,
+      resource_type: e.resourceType,
+      resource_id: e.resourceId,
+      diff: e.diff,
+      ip_address: "203.0.113.42",
+      user_agent: "[DEMO] seed-docuflow-demo.mjs",
+      created_at: new Date(Date.now() - e.hoursAgo * 3600 * 1000).toISOString(),
+    });
+    if (!error) count++;
+  }
+  console.log(`✓ Seeded ${count} audit events for DocuFlow timeline`);
+}
+
 async function main() {
   const orgId = await pickOrg();
   await clean(orgId);
@@ -488,9 +634,11 @@ async function main() {
   console.log(
     `→ Context: ${ctx.companies.length} companies · ${ctx.branches.length} branches · ${ctx.users.length} users`,
   );
-  await seedDocuments(orgId, ctx);
+  const docs = await seedDocuments(orgId, ctx);
   await seedVehicles(orgId, ctx);
   await seedPersonDocs(orgId, ctx);
+  await seedSignaturePlacements(orgId, ctx, docs);
+  await seedAuditEntries(orgId, ctx, docs);
   console.log("");
   console.log("✓ Done. Open /docuflow to see the demo data.");
   console.log(`  To remove later:  node scripts/seed-docuflow-demo.mjs --clean`);
