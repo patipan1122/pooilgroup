@@ -171,7 +171,7 @@ export default async function DocuFlowOverviewPage() {
         ? `หมดแล้ว ${Math.abs(r.daysUntilExpiry)} วัน`
         : r.daysUntilExpiry === 0
           ? "หมดวันนี้"
-          : `เหลือ ${r.daysUntilExpiry} วัน`;
+          : `อีก ${r.daysUntilExpiry} วัน`;
     taskRows.push({
       kind: "renew",
       title: `ต่อ ${r.document.name}`,
@@ -280,7 +280,7 @@ export default async function DocuFlowOverviewPage() {
         }
         title={
           <>
-            สวัสดี{" "}
+            สวัสดี คุณ
             {session.user.name ||
               (session.user.email?.split("@")[0] ?? "ผู้ใช้")}{" "}
             <span style={{ color: "var(--df-muted)" }}>·</span>{" "}
@@ -288,9 +288,9 @@ export default async function DocuFlowOverviewPage() {
             <span style={{ color: "var(--df-accent)" }}>
               {taskRows.length} งาน
             </span>
-            <br />
             {urgentTotal > 0 ? (
               <>
+                <br />
                 และ{" "}
                 <span style={{ color: "var(--df-danger)" }}>
                   {urgentTotal} เอกสาร
@@ -298,9 +298,12 @@ export default async function DocuFlowOverviewPage() {
                 ต้องต่ออายุภายในเดือนนี้
               </>
             ) : (
-              <span style={{ fontSize: "0.6em", color: "var(--df-muted)" }}>
-                ทุกเอกสารยังมีอายุเหลือเพียงพอ — เยี่ยม
-              </span>
+              <>
+                <br />
+                <span style={{ fontSize: "0.6em", color: "var(--df-muted)" }}>
+                  ทุกเอกสารยังมีอายุเหลือเพียงพอ — เยี่ยม
+                </span>
+              </>
             )}
           </>
         }
@@ -557,7 +560,7 @@ export default async function DocuFlowOverviewPage() {
                       ? `หมดแล้ว ${Math.abs(r.daysUntilExpiry)} วัน`
                       : r.daysUntilExpiry === 0
                         ? "หมดวันนี้"
-                        : `เหลือ ${r.daysUntilExpiry} วัน`;
+                        : `อีก ${r.daysUntilExpiry} วัน`;
                   // Try to extract a cost number from `notes` field (e.g., "12,000 บาท")
                   const costMatch = r.notes?.match(/(\d{1,3}(?:,\d{3})+|\d{4,})/);
                   const cost = costMatch
@@ -820,8 +823,8 @@ export default async function DocuFlowOverviewPage() {
                             marginTop: 2,
                           }}
                         >
-                          ส่งมาเมื่อ {bkkRelative(p.document.uploadedAt)} ·
-                          ลำดับ {p.ordering + 1}
+                          จากระบบ · {bkkRelative(p.document.uploadedAt)} ·
+                          จุดที่ {p.ordering + 1}
                         </div>
                       </div>
                       {isUrgent && (

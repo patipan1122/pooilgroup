@@ -151,7 +151,7 @@ export default async function DocumentDetailPage({
         ? `หมดแล้ว ${Math.abs(doc.renewal.daysUntilExpiry)} วัน`
         : doc.renewal.daysUntilExpiry === 0
           ? "หมดวันนี้"
-          : `เหลือ ${doc.renewal.daysUntilExpiry} วัน`;
+          : `อีก ${doc.renewal.daysUntilExpiry} วัน`;
 
   return (
     <div

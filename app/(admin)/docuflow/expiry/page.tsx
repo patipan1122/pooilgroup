@@ -397,7 +397,7 @@ export default async function ExpiryDashboardPage({
                           ? `หมดแล้ว ${Math.abs(r.daysUntilExpiry)} วัน`
                           : r.daysUntilExpiry === 0
                             ? "หมดวันนี้"
-                            : `เหลือ ${r.daysUntilExpiry} วัน`;
+                            : `อีก ${r.daysUntilExpiry} วัน`;
                       return (
                         <li
                           key={r.id}
