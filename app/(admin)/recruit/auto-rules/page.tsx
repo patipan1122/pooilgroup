@@ -22,7 +22,7 @@ export default async function AutoRulesPage() {
   });
 
   return (
-    <div className="p-5 sm:p-8 max-w-6xl mx-auto">
+    <div className="p-5 sm:p-8 max-w-[1600px] mx-auto">
       <Section
         number="11"
         label="Auto-screen"

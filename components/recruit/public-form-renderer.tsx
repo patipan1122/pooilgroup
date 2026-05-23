@@ -458,6 +458,17 @@ function FieldInput({
           </span>
         )}
       </label>
+      {field.imageUrl && (
+        <div className="mt-2 rounded-xl border border-zinc-200 bg-zinc-50 overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={field.imageUrl}
+            alt={`รูปประกอบคำถาม ${field.label}`}
+            className="w-full max-h-72 object-contain"
+            loading="lazy"
+          />
+        </div>
+      )}
       <div className="mt-1.5">{renderInput(field, value, onChange, files, onUpload, onRemoveFile, disabled)}</div>
       {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
     </div>

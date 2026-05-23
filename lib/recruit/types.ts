@@ -80,6 +80,9 @@ export const FieldSchema = z.object({
   hasCorrectAnswer: z.boolean().optional(),
   correctAnswer: z.union([z.string(), z.array(z.string())]).optional(),
   correctPoints: z.number().int().positive().optional(),
+  // Image prompt — render <img> above the question (e.g. "ภาพนี้คือ ซ้าย หรือ ขวา?")
+  imageUrl: z.string().url().optional(),
+  imageR2Key: z.string().optional(),
 });
 export type Field = z.infer<typeof FieldSchema>;
 

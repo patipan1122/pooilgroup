@@ -151,7 +151,7 @@ export default async function RecruitExecDashboard() {
   ).length;
 
   return (
-    <div className="p-5 sm:p-8 max-w-7xl mx-auto">
+    <div className="p-5 sm:p-8 max-w-[1600px] mx-auto">
       <Section
         number="10"
         label="Dashboard"

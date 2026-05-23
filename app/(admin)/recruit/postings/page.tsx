@@ -113,7 +113,7 @@ export default async function PostingsListPage({
     .includes(session.user.role);
 
   return (
-    <div className="p-5 sm:p-8 max-w-6xl mx-auto">
+    <div className="p-5 sm:p-8 max-w-[1600px] mx-auto">
       <Section
         number="01"
         label="ประกาศ"

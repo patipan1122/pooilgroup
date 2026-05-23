@@ -64,7 +64,7 @@ export default async function BlacklistPage() {
   }
 
   return (
-    <div className="p-5 sm:p-8 max-w-7xl mx-auto">
+    <div className="p-5 sm:p-8 max-w-[1600px] mx-auto">
       <Section
         number="07"
         label="BLACKLIST"

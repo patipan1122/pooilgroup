@@ -16,6 +16,7 @@ import {
   Trash2,
   Sparkles,
   Users,
+  MessageCircle,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -91,6 +92,14 @@ export default async function SettingsPage() {
           title="โปรแกรมแนะนำเพื่อน"
           desc="พนักงานชวนเพื่อนสมัคร · ติด UTM + จ่ายโบนัสเมื่อรับเข้า"
           tone="purple"
+        />
+        <SettingsCard
+          href="/recruit/settings/channels"
+          Icon={MessageCircle}
+          title="LINE OA + Facebook"
+          desc="รวมแชท · ผู้สมัครทักมาช่องไหนก็โผล่ที่ /recruit/messages · รองรับหลายบัญชี"
+          tone="success"
+          badge="ใหม่"
         />
         <SettingsCard
           href="/recruit/settings/permissions"

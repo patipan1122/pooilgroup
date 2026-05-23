@@ -219,7 +219,7 @@ export default async function CalendarPage() {
   const conflicts: string[] = []; // TODO: detect time overlap if needed
 
   return (
-    <div className="p-5 sm:p-8 max-w-6xl mx-auto">
+    <div className="p-5 sm:p-8 max-w-[1600px] mx-auto">
       <Section
         number="08"
         label="ปฏิทิน"

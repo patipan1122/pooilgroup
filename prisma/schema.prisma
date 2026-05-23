@@ -89,6 +89,8 @@ model Organization {
   recruitInterviews       RecruitInterview[]
   recruitMessages         RecruitMessage[]
   recruitRules            RecruitScreeningRule[]
+  recruitFormTemplates    RecruitFormTemplate[]
+  recruitInboxChannels    RecruitInboxChannel[]
   recruitReferrals        RecruitReferral[]
   recruitErasureRequests  RecruitErasureRequest[]
   // Repair module
@@ -227,6 +229,8 @@ model User {
   recruitInterviewsCreated RecruitInterview[]           @relation("RecruitInterviewCreator")
   recruitMessagesSent      RecruitMessage[]             @relation("RecruitMessageSender")
   recruitRulesCreated      RecruitScreeningRule[]       @relation("RecruitRuleCreator")
+  recruitFormTemplates     RecruitFormTemplate[]        @relation("RecruitFormTemplateCreator")
+  recruitInboxChannels     RecruitInboxChannel[]        @relation("RecruitInboxChannelCreator")
   recruitReferralsAsRef    RecruitReferral[]            @relation("RecruitReferrerUser")
   recruitErasureDecided    RecruitErasureRequest[]      @relation("RecruitErasureDecider")
   // Repair module
@@ -1531,6 +1535,65 @@ model RecruitScreeningRule {
 
   @@index([orgId, enabled])
   @@map("recruit_screening_rules")
+  @@schema("public")
+}
+
+enum RecruitInboxChannelType {
+  LINE
+  FACEBOOK
+  @@schema("public")
+}
+
+// External chat sources (LINE OA · FB Page) that feed into /recruit/messages
+// One org may connect MULTIPLE accounts of each type (e.g. 2 LINE OAs +
+// 3 FB pages). Inbox merges all inbound messages and labels them by source.
+//
+// CEO 2026-05-23: "คนสมัครทักมาใน line oa แล้วมาโผล่ในนี้เลย" + multi-account
+//
+// Token storage note: accessToken is stored encrypted (envelope key in
+// env LINE_ENCRYPTION_KEY / FB_ENCRYPTION_KEY). Webhook signature verified
+// using the channel's webhookSecret on every inbound POST.
+model RecruitInboxChannel {
+  id              String                  @id @default(uuid()) @db.Uuid
+  orgId           String                  @map("org_id") @db.Uuid
+  type            RecruitInboxChannelType
+  displayName     String                  @map("display_name") // "Pooil HR LINE", "Pooil ราชบุรี FB"
+  externalId      String?                 @map("external_id") // LINE Channel ID · FB Page ID
+  accessTokenEnc  String?                 @map("access_token_enc") // encrypted long-lived token
+  webhookSecret   String?                 @map("webhook_secret") // for signature verification
+  status          String                  @default("setup") // setup | active | error | disabled
+  lastEventAt     DateTime?               @map("last_event_at") @db.Timestamptz(6)
+  metadata        Json?                   // misc per-channel info (page URL etc.)
+  createdById     String                  @map("created_by_id") @db.Uuid
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdBy User         @relation("RecruitInboxChannelCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([orgId, type])
+  @@map("recruit_inbox_channels")
+  @@schema("public")
+}
+
+// Reusable form templates per-org so HR can save common form layouts
+// (e.g. "พนักงานปั๊ม v2", "แม่บ้านโรงแรม") and reuse them when creating
+// new postings instead of rebuilding fields from scratch.
+model RecruitFormTemplate {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  name        String
+  description String?
+  schema      Json
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdBy User         @relation("RecruitFormTemplateCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([orgId, createdAt])
+  @@map("recruit_form_templates")
   @@schema("public")
 }
 

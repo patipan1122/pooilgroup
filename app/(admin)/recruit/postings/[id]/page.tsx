@@ -116,7 +116,7 @@ export default async function PostingDetailPage({
   const recentApps = apps.slice(0, 5);
 
   return (
-    <div className="p-5 sm:p-8 max-w-6xl mx-auto space-y-6">
+    <div className="p-5 sm:p-8 max-w-[1600px] mx-auto space-y-6">
       {/* Breadcrumb + back */}
       <div>
         <Link
