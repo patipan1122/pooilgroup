@@ -4,6 +4,37 @@
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
+## 🆕 Update (2026-05-23 · รอบ 50 — Recruit: templates + IQ image + LINE/FB scaffolding + wider layout)
+
+**CEO goal:** ทำให้ recruit ใช้ได้จริงทุก feature · พื้นที่ซ้ายขวาว่างเยอะ · scroll bug ตอนสร้างคำถาม · template ช่วยสร้างคำถามเร็ว · แนบรูป IQ · template เซฟเพื่อใช้ใหม่ · LINE OA + FB inbox รวมแชท (หลายบัญชี)
+
+**Shipped commit `0457e34` · deploy `pooilgroup-azny73lh3`:**
+
+### Phase A — Layout + scroll fix
+- 9 หน้า data-heavy ขยายจาก `max-w-6xl/7xl` → `max-w-[1600px]`
+- FormBuilder palette sticky + scroll · FieldTypePicker dropdown มี max-h + backdrop click-to-close
+
+### Phase B — Section templates (preset blocks)
+- `lib/recruit/section-templates.ts` · 5 presets (Personal · Experience · IQ · IQ-image · Documents)
+- Modal picker คลิก template → เพิ่ม section ทันที
+
+### Phase C — Image attach + IQ correct-answer marker
+- Field schema + `imageUrl` · admin upload route + RLS · render img เหนือคำถาม
+- IQ correct-answer checkbox + selector ใน radio/dropdown editor
+
+### Phase D — Save/load form templates per-org
+- New model `RecruitFormTemplate` + DDL + RLS
+- create/list/delete actions · 2 modal ใน FormBuilder (save + load)
+
+### Phase E — LINE OA + Facebook scaffolding
+- New enum + model `RecruitInboxChannel` (multi-account · webhook secret · encrypted token slot)
+- `/recruit/settings/channels` page + ChannelsManager UI · copy webhook URL
+- Webhook stubs `/api/webhooks/recruit/{line,facebook}/[channelId]` (return 200 + log)
+- FB hub.challenge GET verification working
+- Architecture doc `docs/RECRUIT_OMNICHAT_PLAN.md` · 5 phases · ~4.5 dev-day remaining for production
+
+**Live + smoked:** /recruit/settings/channels · /api/webhooks/recruit/line/* · /api/webhooks/recruit/facebook/* all 200 OK · build clean · DDL applied to prod
+
 ## 🆕 Update (2026-05-22 · รอบ 49 — Recruit 4-agent deep audit · 5 bug fixes + 3 visual polish)
 
 **CEO goal:** "deep research ว่าไม่มีฟีเจอรไหน ใช้งานไม่ได้ · ตรวจหน้าต่อหน้า ดูทุกดีเทบว่าปุ่มไหนเค้ามีเราไม่มี"
