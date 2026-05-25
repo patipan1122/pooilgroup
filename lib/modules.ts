@@ -46,10 +46,16 @@ import {
   CalendarRange,
   Workflow,
   History,
+  Smile,
+  TicketCheck,
+  ScanFace,
+  Tv,
+  ShoppingBasket,
+  CalendarClock,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
-export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops";
+export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland";
 export type ModuleStatus = "active" | "coming_soon" | "beta";
 
 export interface NavItem {
@@ -593,6 +599,70 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       {
         href: "/recruit/settings",
         label: "ตั้งค่า",
+        icon: Settings,
+        adminOnly: true,
+      },
+    ],
+  },
+  playland: {
+    slug: "playland",
+    name: "Playland",
+    tagline: "ระบบบริหารสวนสนุก · Face Gate",
+    description:
+      "ลงทะเบียนสมาชิก + face recognition + คิดเวลาเล่นอัตโนมัติ + POS ขนม + จองล่วงหน้า + รายงานรายวัน · ACS-F606 + ACS302",
+    emoji: "🎡",
+    Icon: Smile,
+    status: "beta",
+    basePath: "/playland",
+    nav: [
+      // Cashier — workspace หลัก รวมทุกอย่างในหน้าเดียว
+      {
+        href: "/playland",
+        label: "Workspace",
+        icon: LayoutDashboard,
+      },
+      {
+        href: "/playland/monitor",
+        label: "Monitor (จอใหญ่)",
+        icon: Tv,
+      },
+      {
+        href: "/playland/members",
+        label: "สมาชิก",
+        icon: ScanFace,
+      },
+      {
+        href: "/playland/bookings",
+        label: "จองล่วงหน้า",
+        icon: CalendarClock,
+      },
+      {
+        href: "/playland/pos",
+        label: "POS ขายของ",
+        icon: ShoppingBasket,
+      },
+      {
+        href: "/playland/shifts",
+        label: "ปิดกะ/ปิดวัน",
+        icon: TicketCheck,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
+      },
+      // Admin/Manager — รายงาน · cross-branch · ตั้งค่า
+      {
+        href: "/playland/reports",
+        label: "รายงาน",
+        icon: BarChart3,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/playland/audit",
+        label: "Audit Log",
+        icon: History,
+        adminOnly: true,
+      },
+      {
+        href: "/playland/settings",
+        label: "ตั้งค่า Playland",
         icon: Settings,
         adminOnly: true,
       },

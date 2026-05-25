@@ -10,7 +10,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "chairops"]
+  schemas  = ["public", "chairops", "playland"]
 }
 
 // =============================================================
@@ -3165,4 +3165,751 @@ model ChairopsBankAccount {
   createdAt   DateTime @default(now())
 
   @@schema("chairops")
+}
+
+// =============================================================
+// PLAYLAND — สวนสนุก / โซนเครื่องเล่นเด็ก · ACS-F606 face gate (Version C)
+// 18 tables · all in `playland` schema · all org-scoped via RLS
+// Spec: /Users/patipantantikul/Code/pooilgroup/legacy/pooilgroup-web/docs/WORKSHOP_playland.md
+// Decisions: ~/.claude/projects/-Users-patipantantikul-Code-buildlygo/memory/playland-workshop-decisions.md
+// =============================================================
+
+enum PlaylandMemberType {
+  KID
+  PARENT
+  STAFF
+  CLEANER
+  VIP
+  BABYSITTER
+  GUEST
+
+  @@schema("playland")
+}
+
+enum PlaylandPackageType {
+  FIXED          // 30น/60฿
+  PER_MINUTE     // 2฿/นาที
+  DAY_PASS       // 250฿ ไม่จำกัด
+
+  @@schema("playland")
+}
+
+enum PlaylandSessionStatus {
+  ACTIVE
+  PAUSED         // ออกชั่วคราว · 15 นาที grace
+  COMPLETED      // ออกถาวร
+  EXPIRED        // หมดเวลา · ยังไม่ออก
+  FORFEITED      // re-entry เกิน 15 นาที
+  CANCELLED
+
+  @@schema("playland")
+}
+
+enum PlaylandBookingStatus {
+  PENDING
+  PAID
+  CHECKED_IN
+  CANCELLED
+  EXPIRED        // ไม่จ่ายเงิน > 30 นาที
+  NO_SHOW
+
+  @@schema("playland")
+}
+
+enum PlaylandFaceEventType {
+  RECOGNIZED
+  UNRECOGNIZED   // หน้าไม่อยู่ในระบบ
+  TAILGATE       // คนแอบเข้าตาม
+  STRANGER       // unregister พยายามเข้า
+  DOOR_OPEN      // manual override
+  DEVICE_HEARTBEAT
+  ERROR
+
+  @@schema("playland")
+}
+
+enum PlaylandFaceDirection {
+  IN
+  OUT
+  UNKNOWN
+
+  @@schema("playland")
+}
+
+enum PlaylandAlertType {
+  TIME_WARNING       // เหลือ 10 นาที
+  TIME_EXPIRED       // หมดเวลา
+  STRANGER
+  TAILGATE
+  MISMATCH           // pairing ไม่ตรง
+  REENTRY_EXPIRED    // ขาดสิทธิ์เพราะกลับมาเกิน 15 นาที
+  DEVICE_OFFLINE
+  MANUAL
+
+  @@schema("playland")
+}
+
+enum PlaylandAlertSeverity {
+  INFO
+  WARNING
+  DANGER
+
+  @@schema("playland")
+}
+
+enum PlaylandPaymentMethod {
+  CASH
+  STRIPE
+  PROMPTPAY
+  KBANK
+  SCB
+  TRUEMONEY
+  LINEPAY
+  CHARGE_TO_MEMBER   // ใส่บิลรอจ่ายตอนออก
+  COMPLIMENTARY
+
+  @@schema("playland")
+}
+
+enum PlaylandPromoType {
+  COUPON
+  LOYALTY_POINTS
+  BIRTHDAY
+  WEEKDAY
+  HAPPY_HOUR
+  PACKAGE_DISCOUNT
+
+  @@schema("playland")
+}
+
+enum PlaylandShiftStatus {
+  OPEN
+  CLOSED
+
+  @@schema("playland")
+}
+
+enum PlaylandDeviceStatus {
+  ONLINE
+  OFFLINE
+  ERROR
+  PAIRING
+  DISABLED
+
+  @@schema("playland")
+}
+
+enum PlaylandFaceSyncStatus {
+  PENDING        // จะ push ครั้งถัดไป
+  SYNCING        // กำลังส่ง
+  SYNCED         // สำเร็จแล้ว
+  FAILED         // error · retry
+  DELETE_PENDING
+  DELETED
+
+  @@schema("playland")
+}
+
+// ---------- 1. Branches ----------
+model PlaylandBranch {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  companyId     String?  @map("company_id") @db.Uuid
+  slug          String   @unique
+  name          String
+  address       String?
+  phone         String?
+  email         String?
+  openingHours  Json?    @map("opening_hours")   // { mon: { open: "10:00", close: "21:00" }, ... }
+  settings      Json?                              // { parentFee: 50, exitRequiresStaff: true, maxAgeAlone: 12, ... }
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  devices       PlaylandDevice[]
+  members       PlaylandMember[]
+  packages      PlaylandPackage[]
+  products      PlaylandProduct[]
+  sessions      PlaylandSession[]
+  bookings      PlaylandBooking[]
+  sales         PlaylandSale[]
+  shifts        PlaylandShift[]
+  promos        PlaylandPromo[]
+  alerts        PlaylandAlert[]
+  faceEvents    PlaylandFaceEvent[]
+  familyGroups  PlaylandFamilyGroup[]
+  dailyReports  PlaylandDailyReport[]
+
+  @@index([orgId])
+  @@map("branches")
+  @@schema("playland")
+}
+
+// ---------- 2. ACS Devices (per branch) ----------
+model PlaylandDevice {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  orgId                 String                 @map("org_id") @db.Uuid
+  branchId              String                 @map("branch_id") @db.Uuid
+  vendor                String                 @default("acs-auto")
+  model                 String                 @default("ACS-F606")
+  deviceId              String                 @unique @map("device_id")
+  deviceName            String                 @map("device_name")
+  baseUrl               String?                @map("base_url")        // for our → device calls (TCP/HTTP push)
+  protocol              String                 @default("http")         // "http" | "tcp"
+  modelVersion          String                 @default("C")            // "B" online-only | "C" mixed
+  secretEncrypted       String?                @map("secret_encrypted")
+  webhookSecret         String?                @map("webhook_secret")   // shared in URL query · since no HMAC support
+  status                PlaylandDeviceStatus   @default(PAIRING)
+  lastSeenAt            DateTime?              @map("last_seen_at") @db.Timestamptz(6)
+  lastEventAt           DateTime?              @map("last_event_at") @db.Timestamptz(6)
+  firmwareVersion       String?                @map("firmware_version")
+  notes                 String?
+  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch                PlaylandBranch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  faceEvents            PlaylandFaceEvent[]
+  faceSync              PlaylandFaceSync[]
+
+  @@index([orgId, branchId])
+  @@map("devices")
+  @@schema("playland")
+}
+
+// ---------- 3. Family Group (พ่อ+แม่+ลูกๆ) ----------
+model PlaylandFamilyGroup {
+  id          String              @id @default(uuid()) @db.Uuid
+  orgId       String              @map("org_id") @db.Uuid
+  branchId    String              @map("branch_id") @db.Uuid
+  displayName String              @map("display_name")           // "ครอบครัวคุณสมศักดิ์"
+  primaryPhone String?            @map("primary_phone")
+  notes       String?
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch      PlaylandBranch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  members     PlaylandFamilyMember[]
+
+  @@index([orgId, branchId])
+  @@map("family_groups")
+  @@schema("playland")
+}
+
+// ---------- 4. Family group join (many-to-many between members) ----------
+model PlaylandFamilyMember {
+  id              String              @id @default(uuid()) @db.Uuid
+  orgId           String              @map("org_id") @db.Uuid
+  familyGroupId   String              @map("family_group_id") @db.Uuid
+  memberId        String              @map("member_id") @db.Uuid
+  role            String              @default("relative")  // "primary_guardian" | "guardian" | "child" | "relative"
+  canPickUp       Boolean             @default(true) @map("can_pick_up")
+  addedAt         DateTime            @default(now()) @map("added_at") @db.Timestamptz(6)
+
+  familyGroup     PlaylandFamilyGroup @relation(fields: [familyGroupId], references: [id], onDelete: Cascade)
+  member          PlaylandMember      @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([familyGroupId, memberId])
+  @@index([orgId])
+  @@index([memberId])
+  @@map("family_members")
+  @@schema("playland")
+}
+
+// ---------- 5. Members (เด็ก/ผู้ปกครอง/พนักงาน/แม่บ้าน/VIP/babysitter/guest) ----------
+model PlaylandMember {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  orgId                String                  @map("org_id") @db.Uuid
+  branchId             String                  @map("branch_id") @db.Uuid
+  memberCode           String?                 @unique @map("member_code")     // PL-2569-NNNN
+  type                 PlaylandMemberType
+  name                 String
+  nickname             String?
+  phone                String?
+  email                String?
+  dateOfBirth          DateTime?               @map("date_of_birth") @db.Date
+  gender               String?                                                   // "M" | "F" | "O"
+  photoR2Path          String?                 @map("photo_r2_path")            // R2 key
+  photoUrl             String?                 @map("photo_url")                // signed URL cache
+  faceId               String?                 @map("face_id")                  // ACS device face_id
+  externalLineId       String?                 @map("external_line_id")
+  registeredById       String?                 @map("registered_by_id") @db.Uuid // staff user
+  consentAt            DateTime?               @map("consent_at") @db.Timestamptz(6)
+  consentRevokedAt     DateTime?               @map("consent_revoked_at") @db.Timestamptz(6)
+  retentionUntil       DateTime?               @map("retention_until") @db.Timestamptz(6) // PDPA
+  lastVisitAt          DateTime?               @map("last_visit_at") @db.Timestamptz(6)
+  notes                String?
+  metadata             Json?                                                     // birthday discount given? VIP perks?
+  deletedAt            DateTime?               @map("deleted_at") @db.Timestamptz(6)
+  createdAt            DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch               PlaylandBranch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  familyMemberships    PlaylandFamilyMember[]
+  sessions             PlaylandSession[]
+  bookings             PlaylandBooking[]
+  waivers              PlaylandWaiver[]
+  loyalty              PlaylandLoyalty?
+  faceSync             PlaylandFaceSync[]
+  faceEvents           PlaylandFaceEvent[]
+
+  @@index([orgId, branchId])
+  @@index([branchId, type])
+  @@index([faceId])
+  @@index([phone])
+  @@map("members")
+  @@schema("playland")
+}
+
+// ---------- 6. Packages ----------
+model PlaylandPackage {
+  id                String                 @id @default(uuid()) @db.Uuid
+  orgId             String                 @map("org_id") @db.Uuid
+  branchId          String?                @map("branch_id") @db.Uuid             // null = all branches
+  type              PlaylandPackageType
+  name              String
+  description       String?
+  minutes           Int?                                                          // null for DAY_PASS
+  price             Int                                                           // satang (฿*100)
+  perMinuteRate     Int?                   @map("per_minute_rate")               // satang/นาที for PER_MINUTE
+  memberTypesAllowed Json?                 @map("member_types_allowed")          // ["KID", "VIP"] or null=all
+  active            Boolean                @default(true)
+  sortOrder         Int                    @default(0) @map("sort_order")
+  createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch            PlaylandBranch?        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  sessions          PlaylandSession[]
+  bookings          PlaylandBooking[]
+
+  @@index([orgId, branchId])
+  @@index([branchId, active, sortOrder])
+  @@map("packages")
+  @@schema("playland")
+}
+
+// ---------- 7. Sessions (เซสชั่นเล่น) ----------
+model PlaylandSession {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  orgId               String                 @map("org_id") @db.Uuid
+  branchId            String                 @map("branch_id") @db.Uuid
+  memberId            String                 @map("member_id") @db.Uuid
+  packageId           String?                @map("package_id") @db.Uuid
+  bookingId           String?                @map("booking_id") @db.Uuid
+  packageMinutes      Int                    @map("package_minutes")            // 0 = day pass
+  packagePriceCents   Int                    @map("package_price_cents")
+  minutesUsed         Int                    @default(0) @map("minutes_used")
+  totalPausedSeconds  Int                    @default(0) @map("total_paused_seconds")
+  status              PlaylandSessionStatus  @default(ACTIVE)
+  checkInAt           DateTime               @default(now()) @map("check_in_at") @db.Timestamptz(6)
+  pausedAt            DateTime?              @map("paused_at") @db.Timestamptz(6)
+  resumedAt           DateTime?              @map("resumed_at") @db.Timestamptz(6)
+  checkOutAt          DateTime?              @map("check_out_at") @db.Timestamptz(6)
+  expiresAt           DateTime?              @map("expires_at") @db.Timestamptz(6)
+  reentryDeadlineAt   DateTime?              @map("reentry_deadline_at") @db.Timestamptz(6)
+  extendedCount       Int                    @default(0) @map("extended_count")
+  cashierUserId       String?                @map("cashier_user_id") @db.Uuid
+  closedByUserId      String?                @map("closed_by_user_id") @db.Uuid
+  notes               String?
+  metadata            Json?
+  createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch              PlaylandBranch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  member              PlaylandMember         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  package             PlaylandPackage?       @relation(fields: [packageId], references: [id])
+  booking             PlaylandBooking?       @relation(fields: [bookingId], references: [id])
+  faceEvents          PlaylandFaceEvent[]
+  alerts              PlaylandAlert[]
+  sales               PlaylandSale[]
+
+  @@index([orgId, branchId])
+  @@index([branchId, status])
+  @@index([memberId, checkInAt])
+  @@index([expiresAt])
+  @@map("sessions")
+  @@schema("playland")
+}
+
+// ---------- 8. Face Events (log จาก ACS device · idempotent via webhookId) ----------
+model PlaylandFaceEvent {
+  id              String                  @id @default(uuid()) @db.Uuid
+  orgId           String                  @map("org_id") @db.Uuid
+  branchId        String                  @map("branch_id") @db.Uuid
+  deviceId        String                  @map("device_id") @db.Uuid
+  sessionId       String?                 @map("session_id") @db.Uuid
+  memberId        String?                 @map("member_id") @db.Uuid
+  faceId          String?                 @map("face_id")
+  type            PlaylandFaceEventType
+  direction       PlaylandFaceDirection   @default(UNKNOWN)
+  confidence      Int?                                                  // 0-100
+  snapshotR2Path  String?                 @map("snapshot_r2_path")
+  rawPayload      Json?                   @map("raw_payload")
+  webhookId       String                  @unique @map("webhook_id")    // idempotency
+  eventAt         DateTime                @map("event_at") @db.Timestamptz(6)
+  receivedAt      DateTime                @default(now()) @map("received_at") @db.Timestamptz(6)
+
+  branch          PlaylandBranch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  device          PlaylandDevice          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  session         PlaylandSession?        @relation(fields: [sessionId], references: [id])
+  member          PlaylandMember?         @relation(fields: [memberId], references: [id])
+
+  @@index([orgId, branchId])
+  @@index([branchId, eventAt])
+  @@index([memberId, eventAt])
+  @@index([type, eventAt])
+  @@map("face_events")
+  @@schema("playland")
+}
+
+// ---------- 9. Bookings (จองล่วงหน้า) ----------
+model PlaylandBooking {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  orgId              String                  @map("org_id") @db.Uuid
+  branchId           String                  @map("branch_id") @db.Uuid
+  memberId           String?                 @map("member_id") @db.Uuid
+  packageId          String                  @map("package_id") @db.Uuid
+  bookingCode        String                  @unique @map("booking_code")    // PB-2569-NNNN
+  customerName       String                  @map("customer_name")
+  customerPhone      String                  @map("customer_phone")
+  customerEmail      String?                 @map("customer_email")
+  partySize          Int                     @default(1) @map("party_size")
+  slotStart          DateTime                @map("slot_start") @db.Timestamptz(6)
+  slotEnd            DateTime                @map("slot_end") @db.Timestamptz(6)
+  amountCents        Int                     @map("amount_cents")
+  paymentMethod      PlaylandPaymentMethod?  @map("payment_method")
+  paymentRef         String?                 @map("payment_ref")            // Stripe session_id
+  paymentStatus      String                  @default("pending") @map("payment_status")
+  qrCodeUrl          String?                 @map("qr_code_url")
+  status             PlaylandBookingStatus   @default(PENDING)
+  expiresAt          DateTime?               @map("expires_at") @db.Timestamptz(6)
+  confirmedByUserId  String?                 @map("confirmed_by_user_id") @db.Uuid
+  confirmedAt        DateTime?               @map("confirmed_at") @db.Timestamptz(6)
+  cancelledAt        DateTime?               @map("cancelled_at") @db.Timestamptz(6)
+  cancelReason       String?                 @map("cancel_reason")
+  notes              String?
+  metadata           Json?
+  createdAt          DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch             PlaylandBranch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  member             PlaylandMember?         @relation(fields: [memberId], references: [id])
+  package            PlaylandPackage         @relation(fields: [packageId], references: [id])
+  sessions           PlaylandSession[]
+
+  @@index([orgId, branchId])
+  @@index([branchId, slotStart])
+  @@index([status, expiresAt])
+  @@index([customerPhone])
+  @@map("bookings")
+  @@schema("playland")
+}
+
+// ---------- 10. Products (POS) ----------
+model PlaylandProduct {
+  id            String              @id @default(uuid()) @db.Uuid
+  orgId         String              @map("org_id") @db.Uuid
+  branchId      String              @map("branch_id") @db.Uuid
+  sku           String?
+  barcode       String?
+  category      String?
+  name          String
+  description   String?
+  priceCents    Int                 @map("price_cents")
+  costCents     Int?                @map("cost_cents")
+  stock         Int                 @default(0)
+  reorderLevel  Int                 @default(0) @map("reorder_level")
+  imageR2Path   String?             @map("image_r2_path")
+  active        Boolean             @default(true)
+  sortOrder     Int                 @default(0) @map("sort_order")
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch        PlaylandBranch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  saleLines     PlaylandSaleLine[]
+
+  @@unique([branchId, barcode])
+  @@index([orgId, branchId])
+  @@index([branchId, active, sortOrder])
+  @@map("products")
+  @@schema("playland")
+}
+
+// ---------- 11. Sales (POS transactions) ----------
+model PlaylandSale {
+  id              String                 @id @default(uuid()) @db.Uuid
+  orgId           String                 @map("org_id") @db.Uuid
+  branchId        String                 @map("branch_id") @db.Uuid
+  shiftId         String?                @map("shift_id") @db.Uuid
+  sessionId       String?                @map("session_id") @db.Uuid           // null = walk-in sale
+  saleCode        String                 @unique @map("sale_code")             // S-2569-NNNN
+  totalCents      Int                    @map("total_cents")
+  discountCents   Int                    @default(0) @map("discount_cents")
+  promoId         String?                @map("promo_id") @db.Uuid
+  paymentMethod   PlaylandPaymentMethod
+  paymentRef      String?                @map("payment_ref")
+  cashierUserId   String                 @map("cashier_user_id") @db.Uuid
+  soldAt          DateTime               @default(now()) @map("sold_at") @db.Timestamptz(6)
+  voidedAt        DateTime?              @map("voided_at") @db.Timestamptz(6)
+  voidedByUserId  String?                @map("voided_by_user_id") @db.Uuid
+  voidReason      String?                @map("void_reason")
+
+  branch          PlaylandBranch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  shift           PlaylandShift?         @relation(fields: [shiftId], references: [id])
+  session         PlaylandSession?       @relation(fields: [sessionId], references: [id])
+  promo           PlaylandPromo?         @relation(fields: [promoId], references: [id])
+  lines           PlaylandSaleLine[]
+
+  @@index([orgId, branchId])
+  @@index([branchId, soldAt])
+  @@index([shiftId])
+  @@index([sessionId])
+  @@map("sales")
+  @@schema("playland")
+}
+
+// ---------- 11b. Sale Line Items ----------
+model PlaylandSaleLine {
+  id            String           @id @default(uuid()) @db.Uuid
+  orgId         String           @map("org_id") @db.Uuid
+  saleId        String           @map("sale_id") @db.Uuid
+  productId     String           @map("product_id") @db.Uuid
+  productName   String           @map("product_name")            // snapshot
+  quantity      Int
+  unitCents     Int              @map("unit_cents")
+  lineCents     Int              @map("line_cents")
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  sale          PlaylandSale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product       PlaylandProduct  @relation(fields: [productId], references: [id])
+
+  @@index([saleId])
+  @@index([productId])
+  @@map("sale_lines")
+  @@schema("playland")
+}
+
+// ---------- 12. Promos ----------
+model PlaylandPromo {
+  id              String              @id @default(uuid()) @db.Uuid
+  orgId           String              @map("org_id") @db.Uuid
+  branchId        String?             @map("branch_id") @db.Uuid               // null = all branches
+  type            PlaylandPromoType
+  code            String?                                                      // for COUPON
+  name            String
+  description     String?
+  discountPercent Int?                @map("discount_percent")                 // 0-100
+  discountCents   Int?                @map("discount_cents")                   // fixed amount
+  conditions      Json?                                                        // {minSpend, daysOfWeek, packageIds, etc.}
+  active          Boolean             @default(true)
+  startsAt        DateTime?           @map("starts_at") @db.Timestamptz(6)
+  endsAt          DateTime?           @map("ends_at") @db.Timestamptz(6)
+  maxUses         Int?                @map("max_uses")
+  usesCount       Int                 @default(0) @map("uses_count")
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch          PlaylandBranch?     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  sales           PlaylandSale[]
+
+  @@index([orgId])
+  @@index([type, active])
+  @@unique([code, orgId])
+  @@map("promos")
+  @@schema("playland")
+}
+
+// ---------- 13. Loyalty (per-member points wallet) ----------
+model PlaylandLoyalty {
+  id              String                  @id @default(uuid()) @db.Uuid
+  orgId           String                  @map("org_id") @db.Uuid
+  memberId        String                  @unique @map("member_id") @db.Uuid
+  points          Int                     @default(0)
+  lifetimePoints  Int                     @default(0) @map("lifetime_points")
+  lastEarnedAt    DateTime?               @map("last_earned_at") @db.Timestamptz(6)
+  expiresAt       DateTime?               @map("expires_at") @db.Timestamptz(6)
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  member          PlaylandMember          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  ledger          PlaylandLoyaltyLedger[]
+
+  @@map("loyalty")
+  @@schema("playland")
+}
+
+model PlaylandLoyaltyLedger {
+  id            String            @id @default(uuid()) @db.Uuid
+  orgId         String            @map("org_id") @db.Uuid
+  loyaltyId     String            @map("loyalty_id") @db.Uuid
+  delta         Int                                                  // + earn, - redeem
+  reason        String                                                // "session", "birthday", "redeem", etc.
+  refType       String?           @map("ref_type")                   // "session" | "sale" | "manual"
+  refId         String?           @map("ref_id") @db.Uuid
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  loyalty       PlaylandLoyalty   @relation(fields: [loyaltyId], references: [id], onDelete: Cascade)
+
+  @@index([loyaltyId, createdAt])
+  @@map("loyalty_ledger")
+  @@schema("playland")
+}
+
+// ---------- 14. Waivers (ใบยินยอม) ----------
+model PlaylandWaiver {
+  id              String              @id @default(uuid()) @db.Uuid
+  orgId           String              @map("org_id") @db.Uuid
+  memberId        String              @map("member_id") @db.Uuid
+  version         String              @default("v1")
+  signedAt        DateTime            @default(now()) @map("signed_at") @db.Timestamptz(6)
+  signatureR2Path String?             @map("signature_r2_path")        // PDF or PNG
+  signatureType   String              @default("tablet") @map("signature_type") // "tablet" | "paper" | "checkbox"
+  signedByName    String              @map("signed_by_name")
+  signedByPhone   String?             @map("signed_by_phone")
+  scannedR2Path   String?             @map("scanned_r2_path")          // if paper, scan
+  metadata        Json?
+  revokedAt       DateTime?           @map("revoked_at") @db.Timestamptz(6)
+
+  member          PlaylandMember      @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([memberId, signedAt])
+  @@map("waivers")
+  @@schema("playland")
+}
+
+// ---------- 15. Alerts ----------
+model PlaylandAlert {
+  id              String                  @id @default(uuid()) @db.Uuid
+  orgId           String                  @map("org_id") @db.Uuid
+  branchId        String                  @map("branch_id") @db.Uuid
+  sessionId       String?                 @map("session_id") @db.Uuid
+  type            PlaylandAlertType
+  severity        PlaylandAlertSeverity   @default(WARNING)
+  title           String
+  message         String?
+  metadata        Json?
+  resolvedAt      DateTime?               @map("resolved_at") @db.Timestamptz(6)
+  resolvedByUserId String?                @map("resolved_by_user_id") @db.Uuid
+  acknowledgedAt  DateTime?               @map("acknowledged_at") @db.Timestamptz(6)
+  acknowledgedByUserId String?            @map("acknowledged_by_user_id") @db.Uuid
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  branch          PlaylandBranch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  session         PlaylandSession?        @relation(fields: [sessionId], references: [id])
+
+  @@index([orgId, branchId])
+  @@index([branchId, resolvedAt])
+  @@index([type, createdAt])
+  @@map("alerts")
+  @@schema("playland")
+}
+
+// ---------- 16. Shifts (per-cashier per-branch) ----------
+model PlaylandShift {
+  id              String              @id @default(uuid()) @db.Uuid
+  orgId           String              @map("org_id") @db.Uuid
+  branchId        String              @map("branch_id") @db.Uuid
+  cashierUserId   String              @map("cashier_user_id") @db.Uuid
+  shiftCode       String              @unique @map("shift_code")              // SH-YYMMDD-NN
+  startedAt       DateTime            @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt         DateTime?           @map("ended_at") @db.Timestamptz(6)
+  openingCashCents Int                @default(0) @map("opening_cash_cents")
+  closingCashCents Int?               @map("closing_cash_cents")
+  expectedCashCents Int?              @map("expected_cash_cents")
+  varianceCents   Int?                @map("variance_cents")                  // closing - expected
+  totalSalesCents Int                 @default(0) @map("total_sales_cents")
+  totalSessionsCents Int              @default(0) @map("total_sessions_cents")
+  status          PlaylandShiftStatus @default(OPEN)
+  notes           String?
+  closedByUserId  String?             @map("closed_by_user_id") @db.Uuid
+  isDayClose      Boolean             @default(false) @map("is_day_close")    // mark as day-end close
+
+  branch          PlaylandBranch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  sales           PlaylandSale[]
+
+  @@index([orgId, branchId])
+  @@index([branchId, startedAt])
+  @@index([cashierUserId, startedAt])
+  @@map("shifts")
+  @@schema("playland")
+}
+
+// ---------- 17. Daily Reports (per-branch per-day rollup) ----------
+model PlaylandDailyReport {
+  id                  String              @id @default(uuid()) @db.Uuid
+  orgId               String              @map("org_id") @db.Uuid
+  branchId            String              @map("branch_id") @db.Uuid
+  reportDate          DateTime            @map("report_date") @db.Date
+  entryRevenueCents   Int                 @default(0) @map("entry_revenue_cents")
+  productRevenueCents Int                 @default(0) @map("product_revenue_cents")
+  totalRevenueCents   Int                 @default(0) @map("total_revenue_cents")
+  memberCount         Int                 @default(0) @map("member_count")
+  sessionsCompleted   Int                 @default(0) @map("sessions_completed")
+  sessionsExpired     Int                 @default(0) @map("sessions_expired")
+  sessionsForfeited   Int                 @default(0) @map("sessions_forfeited")
+  productsSold        Int                 @default(0) @map("products_sold")
+  alertsCount         Int                 @default(0) @map("alerts_count")
+  breakdown           Json?                                                       // per-package, per-product, per-hour breakdown
+  cashScannedIn       Int                 @default(0) @map("cash_scanned_in")    // anti-fraud: face scan count
+  cashScannedOut      Int                 @default(0) @map("cash_scanned_out")
+  fraudVariance       Int                 @default(0) @map("fraud_variance")     // scan in/out vs paid count
+  submittedAt         DateTime?           @map("submitted_at") @db.Timestamptz(6)
+  submittedByUserId   String?             @map("submitted_by_user_id") @db.Uuid
+
+  branch              PlaylandBranch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, reportDate])
+  @@index([orgId, reportDate])
+  @@map("daily_reports")
+  @@schema("playland")
+}
+
+// ---------- 18. Face Sync (Version C — local cache on device) ----------
+model PlaylandFaceSync {
+  id              String                  @id @default(uuid()) @db.Uuid
+  orgId           String                  @map("org_id") @db.Uuid
+  deviceId        String                  @map("device_id") @db.Uuid
+  memberId        String                  @map("member_id") @db.Uuid
+  status          PlaylandFaceSyncStatus  @default(PENDING)
+  attempts        Int                     @default(0)
+  lastAttemptAt   DateTime?               @map("last_attempt_at") @db.Timestamptz(6)
+  syncedAt        DateTime?               @map("synced_at") @db.Timestamptz(6)
+  errorMessage    String?                 @map("error_message")
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  device          PlaylandDevice          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  member          PlaylandMember          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, memberId])
+  @@index([orgId])
+  @@index([status, lastAttemptAt])
+  @@map("face_sync")
+  @@schema("playland")
+}
+
+// ---------- 19. Audit Log (separate from Pool's AuditLog to keep playland-scoped) ----------
+model PlaylandAuditLog {
+  id              String      @id @default(uuid()) @db.Uuid
+  orgId           String      @map("org_id") @db.Uuid
+  branchId        String?     @map("branch_id") @db.Uuid
+  actorUserId     String?     @map("actor_user_id") @db.Uuid
+  actorRole       String?     @map("actor_role")
+  action          String                                                  // "session.checkin", "member.delete", "sale.void", "shift.close"
+  entityType      String      @map("entity_type")
+  entityId        String?     @map("entity_id") @db.Uuid
+  before          Json?
+  after           Json?
+  ip              String?
+  userAgent       String?     @map("user_agent")
+  metadata        Json?
+  category        String      @default("general")                         // "money" | "device" | "general" — different retention
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([orgId, branchId])
+  @@index([entityType, entityId])
+  @@index([actorUserId, createdAt])
+  @@index([category, createdAt])
+  @@map("audit_logs")
+  @@schema("playland")
 }
