@@ -98,9 +98,9 @@ export default async function CashierCockpit({ searchParams }: { searchParams: P
           </h1>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button className="pl-btn pl-btn-ghost" onClick={undefined} style={{ pointerEvents: "none" }}>
-            <Search size={14} /> ค้นหา <span className="pl-kbd-inline">⌘K</span>
-          </button>
+          <span className="pl-btn pl-btn-ghost" aria-hidden="true" style={{ cursor: "default" }} title="กด ⌘K (Mac) หรือ Ctrl+K (Windows) เพื่อค้นหา">
+            <Search size={14} /> ค้นหา · จองให้ลูกค้า <span className="pl-kbd-inline">⌘K</span>
+          </span>
           {branches.length > 1 && (
             <NavSelect param="branch" value={branchId} options={branches.map((b) => ({ value: b.id, label: b.name }))} style={{ width: 170 }} />
           )}

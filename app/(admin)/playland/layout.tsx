@@ -12,6 +12,7 @@ import { userHasModuleAccess, isAdminTier } from "@/lib/auth/module-access";
 import { isModuleDisabled } from "@/lib/modules";
 import { requirePlaylandAccess } from "@/lib/playland/role-guard";
 import { CommandPalette } from "@/components/playland/command-palette";
+import { MobileBottomNav } from "@/components/playland/mobile-bottom-nav";
 import "./playland.css";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,7 @@ export default async function PlaylandLayout({ children }: { children: React.Rea
     <div className="pl-root pl-shell">
       <CommandPalette />
       {children}
+      <MobileBottomNav />
     </div>
   );
 }

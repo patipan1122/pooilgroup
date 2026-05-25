@@ -52,6 +52,8 @@ import {
   Tv,
   ShoppingBasket,
   CalendarClock,
+  Home,
+  Activity,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
@@ -406,55 +408,25 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     basePath: "/clawfleet",
     nav: [
       {
-        href: "/clawfleet/sessions",
-        label: "รอบเก็บเงิน",
-        icon: ClipboardCheck,
+        href: "/clawfleet/hub",
+        label: "หน้าแรก",
+        icon: Home,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff", "viewer"],
+      },
+      {
+        href: "/clawfleet/operations",
+        label: "ปฏิบัติการ",
+        icon: Activity,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
       },
       {
-        href: "/clawfleet/dashboard",
-        label: "ภาพรวม",
-        icon: LayoutDashboard,
+        href: "/clawfleet/insights",
+        label: "ข้อมูล",
+        icon: BarChart3,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"],
       },
       {
-        href: "/clawfleet/machines",
-        label: "ตู้",
-        icon: Gamepad2,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
-      },
-      {
-        href: "/clawfleet/groups",
-        label: "กลุ่มตู้แลก",
-        icon: Layers,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
-      },
-      {
-        href: "/clawfleet/products",
-        label: "สินค้า",
-        icon: PackageOpen,
-        roles: ["super_admin", "org_admin", "admin", "area_manager"],
-      },
-      {
-        href: "/clawfleet/stock",
-        label: "คลังสินค้า",
-        icon: Boxes,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
-      },
-      {
-        href: "/clawfleet/reports",
-        label: "รีพอต",
-        icon: ScrollText,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"],
-      },
-      {
-        href: "/clawfleet/anomalies",
-        label: "Anomaly",
-        icon: AlertTriangle,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
-      },
-      {
-        href: "/clawfleet/settings",
+        href: "/clawfleet/setup",
         label: "ตั้งค่า",
         icon: Settings,
         adminOnly: true,
@@ -615,57 +587,32 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     status: "beta",
     basePath: "/playland",
     nav: [
-      // Cashier — workspace หลัก รวมทุกอย่างในหน้าเดียว
-      {
-        href: "/playland",
-        label: "Workspace",
-        icon: LayoutDashboard,
-      },
-      {
-        href: "/playland/monitor",
-        label: "Monitor (จอใหญ่)",
-        icon: Tv,
-      },
-      {
-        href: "/playland/members",
-        label: "สมาชิก",
-        icon: ScanFace,
-      },
-      {
-        href: "/playland/bookings",
-        label: "จองล่วงหน้า",
-        icon: CalendarClock,
-      },
-      {
-        href: "/playland/pos",
-        label: "POS ขายของ",
-        icon: ShoppingBasket,
-      },
+      // ─── Cockpit — daily home (cashier) ───
+      { href: "/playland",         label: "Cockpit",        icon: Activity },
+      { href: "/playland/monitor", label: "Monitor (TV)",   icon: Tv },
+
+      // ─── Customers · relationships ───
+      { href: "/playland/members",  label: "สมาชิก",        icon: ScanFace },
+      { href: "/playland/bookings", label: "จองล่วงหน้า",   icon: CalendarClock },
+
+      // ─── Operations · sell + serve ───
+      { href: "/playland/pos",     label: "POS · ขายของ",   icon: ShoppingBasket },
       {
         href: "/playland/shifts",
-        label: "ปิดกะ/ปิดวัน",
+        label: "กะ · ปิดวัน",
         icon: TicketCheck,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
       },
-      // Admin/Manager — รายงาน · cross-branch · ตั้งค่า
+
+      // ─── Back-office · insights + audit (manager+) ───
       {
         href: "/playland/reports",
         label: "รายงาน",
         icon: BarChart3,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
       },
-      {
-        href: "/playland/audit",
-        label: "Audit Log",
-        icon: History,
-        adminOnly: true,
-      },
-      {
-        href: "/playland/settings",
-        label: "ตั้งค่า Playland",
-        icon: Settings,
-        adminOnly: true,
-      },
+      { href: "/playland/audit",   label: "Audit Log",   icon: History,  adminOnly: true },
+      { href: "/playland/settings",label: "ตั้งค่า",     icon: Settings, adminOnly: true },
     ],
   },
 };
