@@ -11,6 +11,7 @@ import { requireSession } from "@/lib/auth/session";
 import { userHasModuleAccess, isAdminTier } from "@/lib/auth/module-access";
 import { isModuleDisabled } from "@/lib/modules";
 import { requirePlaylandAccess } from "@/lib/playland/role-guard";
+import { CommandPalette } from "@/components/playland/command-palette";
 import "./playland.css";
 
 export const dynamic = "force-dynamic";
@@ -23,5 +24,10 @@ export default async function PlaylandLayout({ children }: { children: React.Rea
     const ok = await userHasModuleAccess(session.user, "playland");
     if (!ok) redirect("/403");
   }
-  return <div className="pl-root pl-shell">{children}</div>;
+  return (
+    <div className="pl-root pl-shell">
+      <CommandPalette />
+      {children}
+    </div>
+  );
 }

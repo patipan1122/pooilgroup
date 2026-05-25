@@ -1,13 +1,15 @@
-// Playland · Live Monitor (TV mode + dashboard mode)
-// Auto-refreshes every 5 seconds via meta refresh + cache: no-store
-// Shows: active sessions with countdown + alerts feed + occupancy
+// Playland · Live Monitor
+// Two modes:
+//   default · dashboard view (in admin shell · for cashier/manager polling)
+//   ?tv=1   · cinema TV mode (jumbo screen behind counter · public can see)
 
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
-import { getActiveSessions, getUnreadAlerts, getTodayStats } from "@/lib/playland/queries";
-import { fmtTime, fmtElapsed, sessionStatusChipClass, sessionStatusLabel, thbShort, alertSeverityChipClass } from "@/lib/playland/format";
-import { Tv, AlertTriangle, Users, Activity, CheckCircle2 } from "lucide-react";
+import { getActiveSessions, getUnreadAlerts, getTodayStats, listBranches } from "@/lib/playland/queries";
+import { fmtTime, fmtElapsed, sessionStatusLabel, thb, thbShort, memberTypeLabel } from "@/lib/playland/format";
 import { MonitorTickClient } from "@/components/playland/monitor-tick-client";
+import { NavSelect } from "@/components/playland/nav-select";
+import { Tv, ArrowLeft, Smile, Bell } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -16,7 +18,8 @@ export default async function MonitorPage({ searchParams }: { searchParams: Prom
   const sp = await searchParams;
   const session = await requireSession();
   const orgId = session.user.org_id;
-  const branchId = sp.branch;
+  const branches = await listBranches(orgId);
+  const branchId = sp.branch || branches[0]?.id;
   const isTV = sp.tv === "1";
 
   const [activeSessions, alerts, stats] = await Promise.all([
@@ -25,39 +28,53 @@ export default async function MonitorPage({ searchParams }: { searchParams: Prom
     getTodayStats(orgId, branchId),
   ]);
 
+  // ╭───────────────────────────────────────────╮
+  // │  TV MODE · cinema dark · public-facing    │
+  // ╰───────────────────────────────────────────╯
   if (isTV) {
+    const branchName = branches.find((b) => b.id === branchId)?.name ?? "Playland";
     return (
-      <div style={{ background: "#0c0a09", minHeight: "100vh", color: "white", padding: 24 }}>
+      <div className="pl-tv">
         <MonitorTickClient />
-        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 20 }}>
+        <div className="pl-tv-header">
           <div>
-            <div style={{ fontSize: 14, opacity: 0.6, letterSpacing: 0.5 }}>PLAYLAND · LIVE</div>
-            <div style={{ fontSize: 28, fontWeight: 700 }}>คนในร้าน · {activeSessions.length} คน</div>
+            <div className="pl-tv-meta">PLAYLAND · LIVE · {branchName}</div>
+            <h1 className="pl-tv-title">
+              คนในร้านตอนนี้ · {activeSessions.length} คน
+            </h1>
           </div>
-          <div style={{ fontSize: 14, opacity: 0.6 }}>อัปเดต {fmtTime(new Date())}</div>
-        </header>
+          <div style={{ textAlign: "right" }}>
+            <div className="pl-tv-meta" style={{ marginBottom: 4 }}>วันนี้</div>
+            <div style={{ fontFamily: "var(--pl-font-display)", fontSize: "2rem", fontWeight: 500, letterSpacing: "-0.02em", color: "#fed7aa" }}>
+              {thbShort(stats.totalRevenueCents)}
+            </div>
+          </div>
+        </div>
+
         {activeSessions.length === 0 ? (
-          <div style={{ display: "grid", placeItems: "center", height: "60vh", color: "#71717a" }}>
-            <Tv size={64} opacity={0.4} />
-            <div style={{ marginTop: 12 }}>ยังไม่มีใครเล่นในร้าน</div>
+          <div style={{ display: "grid", placeItems: "center", height: "60vh", color: "rgba(255, 255, 255, 0.4)" }}>
+            <Smile size={72} opacity={0.3} />
+            <div style={{ marginTop: 16, fontFamily: "var(--pl-font-display)", fontSize: "1.4rem" }}>ยังไม่มีใครเล่นในร้าน</div>
           </div>
         ) : (
-          <div className="pl-tv-grid" style={{ background: "transparent" }}>
+          <div className="pl-tv-grid pl-stagger">
             {activeSessions.map((s) => {
               const remainingMs = s.expiresAt ? new Date(s.expiresAt).getTime() - Date.now() : null;
               const remainMin = remainingMs ? Math.max(0, Math.floor(remainingMs / 60000)) : null;
               const warn = remainMin !== null && remainMin < 10;
               const danger = remainMin !== null && remainMin <= 0;
               return (
-                <div key={s.id} className={`pl-tv-card${danger ? " is-danger" : warn ? " is-warn" : ""}`} style={{ background: "#1c1917", color: "white", borderColor: danger ? "#dc2626" : warn ? "#f97316" : "#27272a" }}>
-                  <div className="pl-avatar" style={{ background: "#3f3f46", display: "grid", placeItems: "center", color: "white", fontSize: 24, fontWeight: 700 }}>
-                    {s.member.nickname?.[0] ?? s.member.name?.[0] ?? "?"}
-                  </div>
-                  <div>
+                <div key={s.id} className={`pl-tv-card${danger ? " is-danger" : warn ? " is-warn" : ""}`}>
+                  {s.member.photoR2Path ? (
+                    <img src={s.member.photoR2Path} alt="" className="pl-tv-avatar" />
+                  ) : (
+                    <div className="pl-tv-avatar">{(s.member.nickname ?? s.member.name)[0]}</div>
+                  )}
+                  <div style={{ minWidth: 0 }}>
                     <div className="pl-tv-name">{s.member.nickname ?? s.member.name}</div>
-                    <div style={{ fontSize: 12, opacity: 0.6 }}>{s.package?.name ?? "—"}</div>
-                    <div className="pl-tv-time" data-expires-at={s.expiresAt?.toISOString() ?? ""} style={{ color: danger ? "#fca5a5" : warn ? "#fdba74" : "#a3e635" }}>
-                      {s.packageMinutes === 0 ? "Day Pass" : remainMin !== null ? `${remainMin} นาที` : "—"}
+                    <div className="pl-tv-meta-line">{s.package?.name ?? "—"}</div>
+                    <div className={`pl-tv-time${danger ? " is-danger" : warn ? " is-warn" : ""}`} data-expires-at={s.expiresAt?.toISOString() ?? ""}>
+                      {s.packageMinutes === 0 ? "∞" : remainMin !== null ? `${remainMin} นาที` : "—"}
                     </div>
                   </div>
                 </div>
@@ -69,32 +86,48 @@ export default async function MonitorPage({ searchParams }: { searchParams: Prom
     );
   }
 
-  // Dashboard mode (default)
+  // ╭───────────────────────────────────────────╮
+  // │  DASHBOARD MODE · in-app polling view     │
+  // ╰───────────────────────────────────────────╯
   return (
     <div className="pl-page">
       <MonitorTickClient />
       <header className="pl-header">
         <div>
-          <div className="pl-eyebrow">Live Monitor</div>
-          <h1>คนในร้าน · {activeSessions.length} คน</h1>
+          <Link href="/playland" className="pl-eyebrow" style={{ textDecoration: "none" }}><ArrowLeft size={11} /> กลับ Workspace</Link>
+          <h1>Live Monitor</h1>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <Link href="/playland/monitor?tv=1" className="pl-btn">
-            <Tv size={14} /> โหมด TV (จอใหญ่)
-          </Link>
-          <Link href="/playland" className="pl-btn">กลับ Workspace</Link>
+          {branches.length > 1 && <NavSelect param="branch" value={branchId ?? ""} options={branches.map((b) => ({ value: b.id, label: b.name }))} style={{ width: 170 }} />}
+          <Link href={`/playland/monitor?tv=1&branch=${branchId}`} className="pl-btn pl-btn-primary"><Tv size={14} /> TV mode</Link>
         </div>
       </header>
 
-      <div style={{ padding: 16, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
-        <div className="pl-card pl-stat"><span className="pl-stat-label">ในร้าน</span><span className="pl-stat-value">{stats.activeSessions}</span></div>
-        <div className="pl-card pl-stat"><span className="pl-stat-label">วันนี้รวม</span><span className="pl-stat-value">{stats.sessionsToday}</span></div>
-        <div className="pl-card pl-stat"><span className="pl-stat-label">หมดเวลา</span><span className="pl-stat-value">{stats.expiredSessions}</span></div>
-        <div className="pl-card pl-stat"><span className="pl-stat-label">รายได้วันนี้</span><span className="pl-stat-value">{thbShort(stats.totalRevenueCents)}</span></div>
-        <div className="pl-card pl-stat"><span className="pl-stat-label">จองวันนี้</span><span className="pl-stat-value">{stats.bookingsToday}</span></div>
+      {/* Hero stats inline · dense · numbers are heroes */}
+      <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, borderBottom: "1px solid var(--pl-line)", background: "var(--pl-paper)" }}>
+        <div className="pl-stat">
+          <span className="pl-stat-label">ในร้านตอนนี้</span>
+          <span className="pl-stat-value">{stats.activeSessions}</span>
+        </div>
+        <div className="pl-stat">
+          <span className="pl-stat-label">วันนี้รวม</span>
+          <span className="pl-stat-value">{stats.sessionsToday}</span>
+        </div>
+        <div className="pl-stat">
+          <span className="pl-stat-label">หมดเวลา</span>
+          <span className="pl-stat-value" style={{ color: stats.expiredSessions > 0 ? "var(--pl-warn)" : undefined }}>{stats.expiredSessions}</span>
+        </div>
+        <div className="pl-stat">
+          <span className="pl-stat-label">รายได้วันนี้</span>
+          <span className="pl-stat-value">{thbShort(stats.totalRevenueCents)}</span>
+        </div>
+        <div className="pl-stat">
+          <span className="pl-stat-label">จองวันนี้</span>
+          <span className="pl-stat-value">{stats.bookingsToday}</span>
+        </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 0, height: "calc(100% - 130px)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", height: "calc(100% - 130px)" }}>
         <div className="pl-pane" style={{ overflowY: "auto" }}>
           <table className="pl-table">
             <thead>
@@ -105,31 +138,31 @@ export default async function MonitorPage({ searchParams }: { searchParams: Prom
                 <th>เข้า</th>
                 <th>เวลาเล่น</th>
                 <th>คงเหลือ</th>
-                <th>สถานะ</th>
               </tr>
             </thead>
-            <tbody>
-              {activeSessions.length === 0 && (
-                <tr>
-                  <td colSpan={7}>
-                    <div className="pl-empty"><Activity size={32} opacity={0.4} />ไม่มี session ที่ active</div>
-                  </td>
-                </tr>
-              )}
-              {activeSessions.map((s) => {
+            <tbody className="pl-stagger">
+              {activeSessions.length === 0 ? (
+                <tr><td colSpan={6}><div className="pl-empty"><div className="pl-empty-icon"><Smile size={22} /></div><div className="pl-empty-title">ไม่มีใครเล่น</div><div className="pl-empty-message">รายชื่อจะ live ขึ้นที่นี่</div></div></td></tr>
+              ) : activeSessions.map((s) => {
                 const remainingMs = s.expiresAt ? new Date(s.expiresAt).getTime() - Date.now() : null;
                 const remainMin = remainingMs !== null ? Math.max(0, Math.floor(remainingMs / 60000)) : null;
                 const danger = remainMin !== null && remainMin <= 0;
                 const warn = remainMin !== null && remainMin < 10;
                 return (
                   <tr key={s.id}>
-                    <td><div style={{ fontWeight: 600 }}>{s.member.nickname ?? s.member.name}</div><div style={{ fontSize: 11, color: "var(--pl-text-muted)" }}>{s.member.memberCode}</div></td>
-                    <td><span className="pl-chip pl-chip-brand">{s.member.type}</span></td>
-                    <td>{s.package?.name ?? "—"} · {s.packageMinutes === 0 ? "ทั้งวัน" : `${s.packageMinutes} นาที`}</td>
-                    <td>{fmtTime(s.checkInAt)}</td>
-                    <td>{fmtElapsed(s.checkInAt)}</td>
-                    <td><span className={`pl-countdown${danger ? " is-danger" : warn ? " is-warn" : ""}`} data-expires-at={s.expiresAt?.toISOString() ?? ""}>{s.packageMinutes === 0 ? "ไม่จำกัด" : remainMin !== null ? `${remainMin}น.` : "—"}</span></td>
-                    <td><span className={sessionStatusChipClass(s.status)}>{sessionStatusLabel(s.status)}</span></td>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{s.member.nickname ?? s.member.name}</div>
+                      <div style={{ fontSize: 11, color: "var(--pl-text-muted)", fontFamily: "var(--pl-font-mono)" }}>{s.member.memberCode ?? "—"}</div>
+                    </td>
+                    <td><span className="pl-chip pl-chip-brand">{memberTypeLabel(s.member.type)}</span></td>
+                    <td>{s.package?.name ?? "—"}</td>
+                    <td className="pl-num">{fmtTime(s.checkInAt)}</td>
+                    <td className="pl-num" style={{ color: "var(--pl-text-muted)" }}>{fmtElapsed(s.checkInAt)}</td>
+                    <td>
+                      <span className={`pl-countdown${danger ? " is-danger" : warn ? " is-warn" : ""}`} data-expires-at={s.expiresAt?.toISOString() ?? ""}>
+                        {s.packageMinutes === 0 ? "∞" : remainMin !== null ? `${remainMin}น` : "—"}
+                      </span>
+                    </td>
                   </tr>
                 );
               })}
@@ -137,22 +170,25 @@ export default async function MonitorPage({ searchParams }: { searchParams: Prom
           </table>
         </div>
 
-        <aside className="pl-pane" style={{ overflowY: "auto" }}>
-          <div style={{ padding: "0.875rem 1rem", borderBottom: "1px solid var(--pl-line)" }}>
-            <div className="pl-eyebrow">แจ้งเตือนล่าสุด · {alerts.length}</div>
+        <aside className="pl-pane">
+          <div className="pl-pane-head">
+            <div>
+              <div className="pl-pane-title">แจ้งเตือน</div>
+              <div className="pl-pane-count">{alerts.length} รายการ</div>
+            </div>
           </div>
           {alerts.length === 0 ? (
-            <div className="pl-empty"><CheckCircle2 size={28} opacity={0.4} />ไม่มีแจ้งเตือน</div>
+            <div className="pl-empty">
+              <div className="pl-empty-icon"><Bell size={22} /></div>
+              <div className="pl-empty-title">เงียบ ๆ ดี</div>
+            </div>
           ) : (
-            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            <ul className="pl-stagger" style={{ listStyle: "none", padding: 0, margin: 0 }}>
               {alerts.map((a) => (
-                <li key={a.id} style={{ padding: "10px 16px", borderBottom: "1px solid var(--pl-line)" }}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
-                    <span className={alertSeverityChipClass(a.severity)}>{a.severity}</span>
-                    <span style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>{fmtTime(a.createdAt)}</span>
-                  </div>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{a.title}</div>
-                  {a.message && <div style={{ fontSize: 12, color: "var(--pl-text-muted)", marginTop: 2 }}>{a.message}</div>}
+                <li key={a.id} className={`pl-alert is-${a.severity.toLowerCase()}`}>
+                  <div className="pl-alert-time">{fmtTime(a.createdAt)} · {a.type.toLowerCase()}</div>
+                  <div className="pl-alert-title">{a.title}</div>
+                  {a.message && <div className="pl-alert-message">{a.message}</div>}
                 </li>
               ))}
             </ul>

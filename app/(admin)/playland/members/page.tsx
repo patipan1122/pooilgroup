@@ -4,7 +4,8 @@ import { listBranches, searchMembers, getMemberDetail, listPackages } from "@/li
 import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime, memberTypeLabel } from "@/lib/playland/format";
 import { CheckinExistingButton } from "@/components/playland/checkin-existing-button";
-import { Users, ScanFace } from "lucide-react";
+import { NavSelect } from "@/components/playland/nav-select";
+import { Users, ScanFace, ArrowLeft, Search, Phone, Calendar } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -31,14 +32,16 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
     <div className="pl-page">
       <header className="pl-header">
         <div>
-          <div className="pl-eyebrow">Playland · สมาชิก</div>
-          <h1>สมาชิกทั้งหมด · {members.length} คน</h1>
+          <Link href="/playland" className="pl-eyebrow" style={{ textDecoration: "none" }}><ArrowLeft size={11} /> Workspace</Link>
+          <h1>สมาชิก · <span style={{ fontFamily: "var(--pl-font-mono)", fontSize: "0.85rem", color: "var(--pl-text-muted)", fontWeight: 400 }}>{members.length} ราย</span></h1>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <form>
-            <input className="pl-input" name="q" placeholder="ค้นชื่อ · เบอร์ · code (Enter)" defaultValue={query} style={{ width: 280 }} />
+          <form style={{ position: "relative" }}>
+            <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--pl-text-muted)" }} />
+            <input className="pl-input" name="q" placeholder="ค้น ชื่อ · เบอร์ · code" defaultValue={query} style={{ width: 280, paddingLeft: 32 }} />
             {sp.branch && <input type="hidden" name="branch" value={sp.branch} />}
           </form>
+          {branches.length > 1 && <NavSelect param="branch" value={branchId ?? ""} options={branches.map((b) => ({ value: b.id, label: b.name }))} style={{ width: 160 }} />}
           <Link href={`/playland?branch=${branchId ?? ""}`} className="pl-btn pl-btn-primary"><ScanFace size={14} /> ลงทะเบียนใหม่</Link>
         </div>
       </header>
@@ -51,24 +54,32 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
                 <th>ชื่อ</th>
                 <th>ประเภท</th>
                 <th>เบอร์</th>
-                <th>สมัครเมื่อ</th>
                 <th>มาล่าสุด</th>
               </tr>
             </thead>
-            <tbody>
-              {members.length === 0 && (
-                <tr><td colSpan={5}><div className="pl-empty"><Users size={32} opacity={0.4} />ไม่มีสมาชิก</div></td></tr>
-              )}
-              {members.map((m) => (
-                <tr key={m.id} className={selectedId === m.id ? "is-selected" : ""} onClick={() => { window.location.href = `/playland/members?selected=${m.id}${branchId ? `&branch=${branchId}` : ""}${query ? `&q=${query}` : ""}`; }}>
+            <tbody className="pl-stagger">
+              {members.length === 0 ? (
+                <tr><td colSpan={4}>
+                  <div className="pl-empty">
+                    <div className="pl-empty-icon"><Users size={22} /></div>
+                    <div className="pl-empty-title">{query ? "ไม่พบผู้ตรงกับ" : "ยังไม่มีสมาชิก"}</div>
+                    <div className="pl-empty-message">{query ? `ค้น "${query}"` : "ลงทะเบียนคนแรกที่ Workspace"}</div>
+                    <Link href={`/playland?branch=${branchId ?? ""}`} className="pl-btn pl-btn-primary" style={{ marginTop: 8 }}>
+                      <ScanFace size={14} /> ลงทะเบียนสมาชิก
+                    </Link>
+                  </div>
+                </td></tr>
+              ) : members.map((m) => (
+                <tr key={m.id} className={selectedId === m.id ? "is-selected" : ""}>
                   <td>
-                    <div style={{ fontWeight: 600 }}>{m.name} {m.nickname ? <span style={{ color: "var(--pl-text-muted)", fontWeight: 400 }}>({m.nickname})</span> : null}</div>
-                    <div style={{ fontSize: 11, color: "var(--pl-text-muted)" }}>{m.memberCode}</div>
+                    <Link href={`/playland/members?selected=${m.id}${branchId ? `&branch=${branchId}` : ""}${query ? `&q=${query}` : ""}`} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
+                      <div style={{ fontWeight: 600 }}>{m.name} {m.nickname && <span style={{ color: "var(--pl-text-muted)", fontWeight: 400 }}>· {m.nickname}</span>}</div>
+                      <div style={{ fontSize: 11, color: "var(--pl-text-muted)", fontFamily: "var(--pl-font-mono)" }}>{m.memberCode ?? "—"}</div>
+                    </Link>
                   </td>
                   <td><span className="pl-chip pl-chip-brand">{memberTypeLabel(m.type)}</span></td>
-                  <td>{m.phone ?? "—"}</td>
-                  <td>{fmtDate(m.createdAt)}</td>
-                  <td>{m.lastVisitAt ? fmtDateTime(m.lastVisitAt) : "—"}</td>
+                  <td className="pl-num" style={{ color: "var(--pl-text-muted)" }}>{m.phone ?? "—"}</td>
+                  <td className="pl-num" style={{ color: "var(--pl-text-muted)" }}>{m.lastVisitAt ? fmtDate(m.lastVisitAt) : "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -78,53 +89,59 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
         <aside className="pl-pane">
           {!selected ? (
             <div className="pl-empty">
-              <Users size={32} opacity={0.4} />
-              เลือกสมาชิกเพื่อดูรายละเอียด
+              <div className="pl-empty-icon"><Users size={22} /></div>
+              <div className="pl-empty-title">เลือกสมาชิก</div>
+              <div className="pl-empty-message">คลิกแถวซ้ายเพื่อดู profile + check-in</div>
             </div>
           ) : (
-            <div style={{ padding: 16 }}>
-              <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+            <div style={{ padding: 20 }}>
+              <div style={{ display: "flex", gap: 14, marginBottom: 16 }}>
                 {selected.photoR2Path ? (
-                  <img src={selected.photoR2Path} alt={selected.name} style={{ width: 80, height: 80, borderRadius: 12, objectFit: "cover" }} />
+                  <img src={selected.photoR2Path} alt={selected.name} style={{ width: 88, height: 88, borderRadius: 14, objectFit: "cover" }} />
                 ) : (
-                  <div style={{ width: 80, height: 80, borderRadius: 12, background: "var(--pl-line)", display: "grid", placeItems: "center", fontSize: 28, fontWeight: 700, color: "var(--pl-text-muted)" }}>{selected.name[0]}</div>
+                  <div style={{
+                    width: 88, height: 88, borderRadius: 14,
+                    background: "linear-gradient(135deg, var(--pl-amber-100), var(--pl-amber-200))",
+                    display: "grid", placeItems: "center",
+                    fontFamily: "var(--pl-font-display)", fontSize: 36, fontWeight: 500,
+                    color: "var(--pl-amber-900)",
+                  }}>{selected.name[0]}</div>
                 )}
-                <div>
-                  <div style={{ fontSize: 18, fontWeight: 700 }}>{selected.name}</div>
-                  <div style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>{selected.memberCode}</div>
-                  <span className="pl-chip pl-chip-brand" style={{ marginTop: 4 }}>{memberTypeLabel(selected.type)}</span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontFamily: "var(--pl-font-display)", fontSize: "1.25rem", fontWeight: 500, letterSpacing: "-0.02em" }}>{selected.name}</div>
+                  {selected.nickname && <div style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>· {selected.nickname}</div>}
+                  <div style={{ fontFamily: "var(--pl-font-mono)", fontSize: 11, color: "var(--pl-text-muted)", marginTop: 2 }}>{selected.memberCode ?? "—"}</div>
+                  <span className="pl-chip pl-chip-brand" style={{ marginTop: 6 }}>{memberTypeLabel(selected.type)}</span>
                 </div>
               </div>
-              <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
-                <div><span style={{ color: "var(--pl-text-muted)" }}>เบอร์:</span> {selected.phone ?? "—"}</div>
-                <div><span style={{ color: "var(--pl-text-muted)" }}>วันเกิด:</span> {selected.dateOfBirth ? fmtDate(selected.dateOfBirth) : "—"}</div>
-                <div><span style={{ color: "var(--pl-text-muted)" }}>Face ID:</span> {selected.faceId ?? "ยังไม่มี"}</div>
-                <div><span style={{ color: "var(--pl-text-muted)" }}>สมัครเมื่อ:</span> {fmtDateTime(selected.createdAt)}</div>
-                <div><span style={{ color: "var(--pl-text-muted)" }}>มาล่าสุด:</span> {selected.lastVisitAt ? fmtDateTime(selected.lastVisitAt) : "—"}</div>
-                <div><span style={{ color: "var(--pl-text-muted)" }}>Consent:</span> {selected.consentAt ? `ใช่ · ${fmtDate(selected.consentAt)}` : "ไม่"}</div>
-                <div><span style={{ color: "var(--pl-text-muted)" }}>Loyalty:</span> {selected.loyalty?.points ?? 0} แต้ม</div>
+
+              <div style={{ display: "grid", gap: 6, fontSize: 13, marginBottom: 14 }}>
+                {selected.phone && <Detail icon={<Phone size={11} />} label="โทร" value={selected.phone} />}
+                {selected.dateOfBirth && <Detail icon={<Calendar size={11} />} label="วันเกิด" value={fmtDate(selected.dateOfBirth)} />}
+                <Detail icon={<ScanFace size={11} />} label="Face ID" value={selected.faceId ?? "ยังไม่มี"} />
+                <Detail label="สมัครเมื่อ" value={fmtDateTime(selected.createdAt)} />
+                <Detail label="มาล่าสุด" value={selected.lastVisitAt ? fmtDateTime(selected.lastVisitAt) : "—"} />
+                <Detail label="Loyalty" value={`${selected.loyalty?.points ?? 0} แต้ม`} />
               </div>
 
               {branchId && (
-                <div style={{ marginTop: 12 }}>
-                  <CheckinExistingButton
-                    branchId={branchId}
-                    memberId={selected.id}
-                    memberName={selected.name}
-                    packages={packages.map((p) => ({ id: p.id, name: p.name, price: p.price, minutes: p.minutes ?? 0, type: p.type }))}
-                  />
-                </div>
+                <CheckinExistingButton
+                  branchId={branchId}
+                  memberId={selected.id}
+                  memberName={selected.name}
+                  packages={packages.map((p) => ({ id: p.id, name: p.name, price: p.price, minutes: p.minutes ?? 0, type: p.type }))}
+                />
               )}
 
               {selected.familyMemberships.length > 0 && (
                 <>
                   <div className="pl-divider" />
-                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>ครอบครัว</div>
+                  <div className="pl-eyebrow" style={{ marginBottom: 8 }}>ครอบครัว</div>
                   {selected.familyMemberships.map((fm) => (
-                    <div key={fm.id} style={{ fontSize: 13 }}>
+                    <div key={fm.id} className="pl-card" style={{ padding: 10, marginBottom: 6 }}>
                       <div style={{ fontWeight: 500 }}>{fm.familyGroup.displayName}</div>
-                      <div style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>
-                        สมาชิก: {fm.familyGroup.members.map((m) => m.member.name).join(" · ")}
+                      <div style={{ fontSize: 12, color: "var(--pl-text-muted)", marginTop: 2 }}>
+                        {fm.familyGroup.members.map((m) => m.member.name).join(" · ")}
                       </div>
                     </div>
                   ))}
@@ -132,14 +149,15 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
               )}
 
               <div className="pl-divider" />
-              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>ประวัติเข้าใช้ล่าสุด</div>
+              <div className="pl-eyebrow" style={{ marginBottom: 8 }}>ประวัติเข้าใช้</div>
               {selected.sessions.length === 0 ? (
                 <div style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>ยังไม่เคยเข้า</div>
               ) : (
                 <ul style={{ listStyle: "none", padding: 0, margin: 0, fontSize: 12 }}>
                   {selected.sessions.slice(0, 10).map((s) => (
-                    <li key={s.id} style={{ padding: "4px 0", borderBottom: "1px dashed var(--pl-line)" }}>
-                      {fmtDateTime(s.checkInAt)} · {s.package?.name ?? "—"} · <span style={{ color: "var(--pl-text-muted)" }}>{s.status}</span>
+                    <li key={s.id} style={{ padding: "6px 0", borderBottom: "1px dashed var(--pl-line)", display: "flex", justifyContent: "space-between" }}>
+                      <span>{fmtDateTime(s.checkInAt)}</span>
+                      <span style={{ color: "var(--pl-text-muted)" }}>{s.package?.name} · {s.status}</span>
                     </li>
                   ))}
                 </ul>
@@ -148,6 +166,16 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
           )}
         </aside>
       </div>
+    </div>
+  );
+}
+
+function Detail({ icon, label, value }: { icon?: React.ReactNode; label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      {icon && <span style={{ color: "var(--pl-text-muted)" }}>{icon}</span>}
+      <span style={{ color: "var(--pl-text-muted)", fontFamily: "var(--pl-font-mono)", fontSize: 11 }}>{label}</span>
+      <span style={{ marginLeft: "auto", textAlign: "right" }}>{value}</span>
     </div>
   );
 }

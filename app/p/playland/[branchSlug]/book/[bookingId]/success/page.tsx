@@ -1,10 +1,8 @@
-// Stripe success callback · marks booking as PAID
-
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { thb, fmtDateTime } from "@/lib/playland/format";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, ScanFace, ArrowRight } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +15,6 @@ export default async function SuccessPage({ params, searchParams }: { params: Pr
   });
   if (!booking || booking.branch.slug !== branchSlug) notFound();
 
-  // If stripe returned session_id, optimistically mark as PAID
-  // (proper flow: stripe webhook does this · this is fallback for missing webhook)
   if (sp.session_id && booking.status === "PENDING") {
     await prisma.playlandBooking.update({
       where: { id: booking.id },
@@ -28,30 +24,60 @@ export default async function SuccessPage({ params, searchParams }: { params: Pr
   }
 
   return (
-    <div style={{ maxWidth: 540, margin: "0 auto", padding: "48px 16px", textAlign: "center" }}>
-      <CheckCircle2 size={64} color="var(--pl-ok)" style={{ margin: "0 auto 16px" }} />
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 6 }}>จองสำเร็จ!</h1>
-      <p style={{ color: "var(--pl-text-muted)", marginBottom: 24 }}>เก็บ booking code นี้ไว้แสดงที่ร้าน</p>
+    <div style={{ maxWidth: 560, margin: "0 auto", padding: "64px 20px", textAlign: "center" }}>
+      <div style={{
+        width: 80, height: 80, borderRadius: 40, margin: "0 auto 20px",
+        background: "linear-gradient(135deg, var(--pl-ok-soft), #bbf7d0)",
+        display: "grid", placeItems: "center",
+        boxShadow: "0 8px 24px rgba(21, 128, 61, 0.15)",
+      }}>
+        <CheckCircle2 size={40} color="var(--pl-ok)" />
+      </div>
 
-      <div className="pl-card" style={{ textAlign: "left" }}>
-        <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: 1, textAlign: "center", color: "var(--pl-brand-dark)", marginBottom: 12 }}>{booking.bookingCode}</div>
+      <div className="pl-eyebrow" style={{ marginBottom: 8 }}>BOOKING CONFIRMED</div>
+      <h1 style={{ fontFamily: "var(--pl-font-display)", fontSize: "2.2rem", fontWeight: 500, letterSpacing: "-0.025em", marginBottom: 6 }}>เก็บ Booking Code นี้</h1>
+      <p style={{ color: "var(--pl-text-muted)", marginBottom: 28 }}>แสดงที่เคาน์เตอร์เพื่อ check-in</p>
+
+      <div className="pl-card pl-card-accent" style={{ textAlign: "left", marginBottom: 24 }}>
+        <div style={{
+          fontFamily: "var(--pl-font-display)",
+          fontSize: "2.4rem", fontWeight: 600,
+          letterSpacing: "0.06em",
+          textAlign: "center",
+          color: "var(--pl-brand-dark)",
+          padding: "12px 0 16px",
+          borderBottom: "1px dashed var(--pl-amber-400)",
+          marginBottom: 14,
+        }}>
+          {booking.bookingCode}
+        </div>
         <div style={{ display: "grid", gap: 6, fontSize: 14 }}>
-          <div><span style={{ color: "var(--pl-text-muted)" }}>สาขา:</span> {booking.branch.name}</div>
-          <div><span style={{ color: "var(--pl-text-muted)" }}>แพคเกจ:</span> {booking.package.name}</div>
-          <div><span style={{ color: "var(--pl-text-muted)" }}>วัน-เวลา:</span> {fmtDateTime(booking.slotStart)}</div>
-          <div><span style={{ color: "var(--pl-text-muted)" }}>ลูกค้า:</span> {booking.customerName}</div>
-          <div style={{ fontSize: 16, fontWeight: 700, marginTop: 6 }}>{thb(booking.amountCents)} {booking.status === "PAID" && <span className="pl-chip pl-chip-ok" style={{ marginLeft: 8 }}>ชำระแล้ว</span>}</div>
+          <Row label="สาขา" value={booking.branch.name} />
+          <Row label="แพคเกจ" value={booking.package.name} />
+          <Row label="วันเวลา" value={fmtDateTime(booking.slotStart)} />
+          <Row label="ลูกค้า" value={booking.customerName} />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 8 }}>
+            <span className="pl-stat-value" style={{ fontSize: "1.5rem" }}>{thb(booking.amountCents)}</span>
+            {booking.status === "PAID" && <span className="pl-chip pl-chip-ok">ชำระแล้ว</span>}
+          </div>
         </div>
       </div>
 
-      <div style={{ marginTop: 24 }}>
-        <Link href={`/p/playland/${branchSlug}/register-face?booking=${booking.id}`} className="pl-btn pl-btn-primary" style={{ padding: "10px 20px" }}>
-          ลงทะเบียนหน้าก่อนมาถึงร้าน →
-        </Link>
-        <div style={{ fontSize: 12, color: "var(--pl-text-muted)", marginTop: 8 }}>
-          ลงทะเบียนหน้าผ่านมือถือนี้ก่อน · ที่ร้านจะเข้าได้เลยโดยไม่ต้องลงทะเบียนใหม่
-        </div>
+      <Link href={`/p/playland/${branchSlug}/register-face?booking=${booking.id}`} className="pl-btn pl-btn-primary pl-btn-lg" style={{ width: "100%" }}>
+        <ScanFace size={18} /> ลงทะเบียนหน้าก่อนมาถึง <ArrowRight size={14} />
+      </Link>
+      <div style={{ fontSize: 12, color: "var(--pl-text-muted)", marginTop: 10 }}>
+        ลงทะเบียนผ่านมือถือนี้ก่อน · เข้าร้านสแกนหน้าได้เลย ไม่ต้องรอที่เคาน์เตอร์
       </div>
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between" }}>
+      <span style={{ color: "var(--pl-text-muted)" }}>{label}</span>
+      <span style={{ fontWeight: 500 }}>{value}</span>
     </div>
   );
 }

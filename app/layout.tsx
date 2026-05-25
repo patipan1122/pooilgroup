@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Plus_Jakarta_Sans, IBM_Plex_Sans_Thai, IBM_Plex_Mono, Anuphan } from "next/font/google";
+import { Plus_Jakarta_Sans, IBM_Plex_Sans_Thai, IBM_Plex_Mono, Anuphan, Fraunces } from "next/font/google";
 import { Toaster } from "sonner";
 import { ServiceWorkerRegister } from "@/components/layout/sw-register";
 import "./globals.css";
@@ -37,6 +37,14 @@ const plexMono = IBM_Plex_Mono({
   display: "swap",
 });
 
+// Fraunces — Playland scoped (display serif · personality moments only · ใช้แค่ใน .pl-root)
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  axes: ["SOFT", "WONK", "opsz"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "Pooilgroup ERP",
   description: "ระบบบริหารจัดการ Pooilgroup — ยอดสาขา / เอกสาร / ขนส่งน้ำมัน",
@@ -61,7 +69,7 @@ export default function RootLayout({
   return (
     <html
       lang="th"
-      className={`${jakarta.variable} ${anuphan.variable} ${thaiSans.variable} ${plexMono.variable} h-full`}
+      className={`${jakarta.variable} ${anuphan.variable} ${thaiSans.variable} ${plexMono.variable} ${fraunces.variable} h-full`}
       suppressHydrationWarning
     >
       <body className="min-h-full antialiased font-thai bg-white text-zinc-900">
