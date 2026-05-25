@@ -1,9 +1,12 @@
 // Alert emission triggered by drift engine
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import { ChairopsAlertKind, ChairopsAlertLevel, ChairopsAlertStatus } from "@/lib/generated/prisma/enums";
 import { recomputeAllDrifts, DRIFT_DEFAULTS } from "./drift-engine";
 import { sendLineNotify } from "@/lib/chairops/line/notify";
 import { baht } from "@/lib/chairops/utils/format";
+
+type AlertClient = Pick<Prisma.TransactionClient, "chairopsAlert"> | typeof prisma;
 
 export async function evaluateAndEmitAlerts() {
   const snapshots = await recomputeAllDrifts();
@@ -69,15 +72,15 @@ export async function evaluateAndEmitAlerts() {
   return { snapshots, emitted };
 }
 
-export async function ackAlert(alertId: string, userId: string) {
-  return prisma.chairopsAlert.update({
+export async function ackAlert(alertId: string, userId: string, client: AlertClient = prisma) {
+  return client.chairopsAlert.update({
     where: { id: alertId },
     data: { status: ChairopsAlertStatus.ACK, ackedById: userId, ackedAt: new Date() },
   });
 }
 
-export async function resolveAlert(alertId: string, userId: string) {
-  return prisma.chairopsAlert.update({
+export async function resolveAlert(alertId: string, userId: string, client: AlertClient = prisma) {
+  return client.chairopsAlert.update({
     where: { id: alertId },
     data: { status: ChairopsAlertStatus.RESOLVED, ackedById: userId, resolvedAt: new Date() },
   });

@@ -43,15 +43,22 @@ export async function nextTicketCode(): Promise<string> {
 /**
  * Create a DamageTicket with race-safe ticket code generation.
  * Retries up to 3 times on P2002 (unique constraint) by incrementing seq.
+ *
+ * Wave-0 fix: accept optional tx client so caller can run create+audit
+ * inside one transaction. NOTE: retry on P2002 inside a transaction will
+ * abort the tx — when tx is supplied we skip the retry loop and let the
+ * caller's tx retry the whole block.
  */
 export async function createTicketWithCode<T>(
   data: Omit<Prisma.ChairopsDamageTicketUncheckedCreateInput, "ticketCode">,
-  select?: Prisma.ChairopsDamageTicketSelect
+  select?: Prisma.ChairopsDamageTicketSelect,
+  client: Pick<Prisma.TransactionClient, "chairopsDamageTicket"> | typeof prisma = prisma,
 ): Promise<T> {
   let code = await nextTicketCode();
-  for (let attempt = 0; attempt < 4; attempt++) {
+  const maxAttempts = client === prisma ? 4 : 1;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      const result = await prisma.chairopsDamageTicket.create({
+      const result = await client.chairopsDamageTicket.create({
         data: { ...data, ticketCode: code },
         ...(select ? { select } : {}),
       });
@@ -64,7 +71,7 @@ export async function createTicketWithCode<T>(
         e !== null &&
         "code" in e &&
         (e as { code: unknown }).code === "P2002";
-      if (code2002 && attempt < 3) {
+      if (code2002 && attempt < maxAttempts - 1) {
         const year = buddhistYear();
         const prefix = `CH-${year}-`;
         const tail = code.slice(prefix.length);

@@ -78,34 +78,44 @@ export async function createCashCollection(
   }
 
   try {
-    const created = await prisma.chairopsCashCollection.create({
-      data: {
-        branchId,
-        maidId: session.user.id,
-        countedAmount: data.countedAmount,
-        depositedAmount: data.depositedAmount,
-        evidencePhotoUrl: data.evidencePhotoUrl,
-        slipPhotoUrl: data.slipPhotoUrl ?? null,
-        imageHash: data.imageHash,
-        notes: data.notes ?? null,
-      },
+    // Wave-0 fix: create + audit atomic in one tx
+    const created = await prisma.$transaction(async (tx) => {
+      const row = await tx.chairopsCashCollection.create({
+        data: {
+          branchId,
+          maidId: session.user.id,
+          countedAmount: data.countedAmount,
+          depositedAmount: data.depositedAmount,
+          evidencePhotoUrl: data.evidencePhotoUrl,
+          slipPhotoUrl: data.slipPhotoUrl ?? null,
+          imageHash: data.imageHash,
+          notes: data.notes ?? null,
+        },
+      });
+
+      await writeAudit(
+        {
+          userId: session.user.id,
+          action: "cash_collection.create",
+          entity: "CashCollection",
+          entityId: row.id,
+          newValue: {
+            branchId,
+            countedAmount: data.countedAmount,
+            depositedAmount: data.depositedAmount,
+            notes: data.notes ?? null,
+          },
+          metadata: { route: "/chairops/collect/new" },
+        },
+        tx,
+      );
+
+      return row;
     });
 
-    await writeAudit({
-      userId: session.user.id,
-      action: "cash_collection.create",
-      entity: "CashCollection",
-      entityId: created.id,
-      newValue: {
-        branchId,
-        countedAmount: data.countedAmount,
-        depositedAmount: data.depositedAmount,
-        notes: data.notes ?? null,
-      },
-      metadata: { route: "/chairops/collect/new" },
-    });
-
-    // Recompute drift after every collection (mandated by spec)
+    // Recompute drift after every collection (mandated by spec).
+    // Kept outside tx — heavy read+write across multiple tables, would
+    // hold tx open too long.
     await recomputeDriftForBranch(branchId);
 
     revalidatePath("/chairops/collect");
@@ -134,23 +144,31 @@ export async function requestUnlock(id: string): Promise<ActionResult> {
   });
   if (!existing) return { ok: false, error: "ไม่พบรายการ" };
 
-  const updated = await prisma.chairopsCashCollection.update({
-    where: { id: parsedId.data },
-    data: {
-      lockedAt: null,
-      unlockedById: session.user.id,
-      unlockedAt: new Date(),
-    },
-  });
+  // Wave-0 fix: update + audit atomic
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.chairopsCashCollection.update({
+      where: { id: parsedId.data },
+      data: {
+        lockedAt: null,
+        unlockedById: session.user.id,
+        unlockedAt: new Date(),
+      },
+    });
 
-  await writeAudit({
-    userId: session.user.id,
-    action: "cash_collection.unlock",
-    entity: "CashCollection",
-    entityId: updated.id,
-    oldValue: { lockedAt: existing.lockedAt },
-    newValue: { lockedAt: null, unlockedById: session.user.id },
-    metadata: { route: "/chairops/collect/[id]" },
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "cash_collection.unlock",
+        entity: "CashCollection",
+        entityId: row.id,
+        oldValue: { lockedAt: existing.lockedAt },
+        newValue: { lockedAt: null, unlockedById: session.user.id },
+        metadata: { route: "/chairops/collect/[id]" },
+      },
+      tx,
+    );
+
+    return row;
   });
 
   revalidatePath(`/chairops/collect/${updated.id}`);

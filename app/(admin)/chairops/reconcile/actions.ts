@@ -39,18 +39,24 @@ export async function disputeCollection(formData: FormData) {
   if (!c) redirect(`/reconcile?error=${encodeURIComponent("ไม่พบรายการ")}`);
 
   // We don't have a "disputed" column in schema; we use notes + audit.
+  // Wave-0 fix: note update + audit atomic
   const stampedNote = `[dispute ${new Date().toISOString()} by ${session.user.displayName}] ${reason}`;
-  const updated = await prisma.chairopsCashCollection.update({
-    where: { id: collectionId },
-    data: { notes: c!.notes ? `${c!.notes}\n${stampedNote}` : stampedNote },
-  });
-  await writeAudit({
-    userId: session.user.id,
-    action: "cash_collection.dispute",
-    entity: "CashCollection",
-    entityId: collectionId,
-    oldValue: { notes: c!.notes },
-    newValue: { notes: updated.notes, reason },
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.chairopsCashCollection.update({
+      where: { id: collectionId },
+      data: { notes: c!.notes ? `${c!.notes}\n${stampedNote}` : stampedNote },
+    });
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "cash_collection.dispute",
+        entity: "CashCollection",
+        entityId: collectionId,
+        oldValue: { notes: c!.notes },
+        newValue: { notes: updated.notes, reason },
+      },
+      tx,
+    );
   });
   revalidatePath(`/chairops/reconcile/${c!.branchId}`);
   redirect(`/chairops/reconcile/${c!.branchId}?disputed=${collectionId}`);
@@ -81,34 +87,42 @@ export async function requestWriteOff(formData: FormData) {
   const branch = await prisma.chairopsBranch.findUnique({ where: { id: branchId }, select: { id: true, name: true } });
   if (!branch) redirect(`/reconcile?error=${encodeURIComponent("ไม่พบสาขา")}`);
 
-  const wo = await prisma.chairopsWriteOff.create({
-    data: {
-      branchId,
-      amount,
-      reason,
-      makerId: session.user.id,
-      status: "PENDING",
-    },
-  });
+  // Wave-0 fix: write-off + alert + audit atomic in one tx
+  const wo = await prisma.$transaction(async (tx) => {
+    const row = await tx.chairopsWriteOff.create({
+      data: {
+        branchId,
+        amount,
+        reason,
+        makerId: session.user.id,
+        status: "PENDING",
+      },
+    });
 
-  // Emit alert so CEO/manager sees it in the queue
-  await prisma.chairopsAlert.create({
-    data: {
-      branchId,
-      kind: ChairopsAlertKind.WRITE_OFF_REQUESTED,
-      level: amount >= 500 ? ChairopsAlertLevel.WARN : ChairopsAlertLevel.INFO,
-      title: `ขอตัดเงินขาด ${amount.toLocaleString()} ฿ ที่ ${branch!.name}`,
-      message: `โดย ${session.user.displayName} · เหตุผล: ${reason}`,
-      contextJson: { writeOffId: wo.id, amount },
-    },
-  });
+    // Emit alert so CEO/manager sees it in the queue
+    await tx.chairopsAlert.create({
+      data: {
+        branchId,
+        kind: ChairopsAlertKind.WRITE_OFF_REQUESTED,
+        level: amount >= 500 ? ChairopsAlertLevel.WARN : ChairopsAlertLevel.INFO,
+        title: `ขอตัดเงินขาด ${amount.toLocaleString()} ฿ ที่ ${branch!.name}`,
+        message: `โดย ${session.user.displayName} · เหตุผล: ${reason}`,
+        contextJson: { writeOffId: row.id, amount },
+      },
+    });
 
-  await writeAudit({
-    userId: session.user.id,
-    action: "write_off.request",
-    entity: "WriteOff",
-    entityId: wo.id,
-    newValue: { branchId, amount, reason },
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "write_off.request",
+        entity: "WriteOff",
+        entityId: row.id,
+        newValue: { branchId, amount, reason },
+      },
+      tx,
+    );
+
+    return row;
   });
 
   revalidatePath("/chairops/write-offs");
@@ -138,25 +152,31 @@ export async function approveWriteOff(formData: FormData) {
     redirect(`/write-offs?error=${encodeURIComponent("ห้ามอนุมัติ write-off ที่ตัวเองขอ (maker/checker)")}`);
   }
 
-  const updated = await prisma.chairopsWriteOff.update({
-    where: { id: writeOffId },
-    data: {
-      status: "APPROVED",
-      approverId: session.user.id,
-      approverAt: new Date(),
-    },
-  });
+  // Wave-0 fix: approve + audit atomic
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.chairopsWriteOff.update({
+      where: { id: writeOffId },
+      data: {
+        status: "APPROVED",
+        approverId: session.user.id,
+        approverAt: new Date(),
+      },
+    });
 
-  // Note: WRITE_OFF_REQUESTED alerts are resolved manually on /alerts (we don't
-  // do JSON-path filtering here to keep the action lean + Prisma-version-safe).
+    // Note: WRITE_OFF_REQUESTED alerts are resolved manually on /alerts (we don't
+    // do JSON-path filtering here to keep the action lean + Prisma-version-safe).
 
-  await writeAudit({
-    userId: session.user.id,
-    action: "write_off.approve",
-    entity: "WriteOff",
-    entityId: writeOffId,
-    oldValue: { status: wo.status },
-    newValue: { status: updated.status, amount: wo.amount },
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "write_off.approve",
+        entity: "WriteOff",
+        entityId: writeOffId,
+        oldValue: { status: wo.status },
+        newValue: { status: updated.status, amount: wo.amount },
+      },
+      tx,
+    );
   });
 
   // Drift is computed from POS − deposits. Write-offs are tracked but do NOT
@@ -190,23 +210,29 @@ export async function rejectWriteOff(formData: FormData) {
     );
   }
 
-  const updated = await prisma.chairopsWriteOff.update({
-    where: { id: writeOffId },
-    data: {
-      status: "REJECTED",
-      approverId: session.user.id,
-      approverAt: new Date(),
-      notes: reason,
-    },
-  });
+  // Wave-0 fix: reject + audit atomic
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.chairopsWriteOff.update({
+      where: { id: writeOffId },
+      data: {
+        status: "REJECTED",
+        approverId: session.user.id,
+        approverAt: new Date(),
+        notes: reason,
+      },
+    });
 
-  await writeAudit({
-    userId: session.user.id,
-    action: "write_off.reject",
-    entity: "WriteOff",
-    entityId: writeOffId,
-    oldValue: { status: wo.status },
-    newValue: { status: updated.status, reason },
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "write_off.reject",
+        entity: "WriteOff",
+        entityId: writeOffId,
+        oldValue: { status: wo.status },
+        newValue: { status: updated.status, reason },
+      },
+      tx,
+    );
   });
 
   revalidatePath("/chairops/write-offs");

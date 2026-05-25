@@ -1,9 +1,12 @@
-// Maid-only PWA layout · mobile-first · bottom nav with safe-area inset.
-// MAID gate via requireRole; shell shared with /cleanliness and /damage/new.
-import { requireRole, requireExactRole } from "@/lib/chairops/auth/session";
-import { MaidShell } from "./_components/maid-shell";
-
-export default async function MaidLayout({ children }: { children: React.ReactNode }) {
-  const session = await requireExactRole("MAID");
-  return <MaidShell displayName={session.user.displayName}>{children}</MaidShell>;
+// DEPRECATED · 2026-05-25 · W6 claude-design cutover.
+// Old `/chairops/collect/*` routes now redirect to `(maid)/m/collect/*` —
+// pages handle the redirect; this layout is a passthrough so the redirect
+// fires immediately without a MaidShell render. Slated for delete +1 week
+// per IA backward-compat plan.
+export default function DeprecatedCollectLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return <>{children}</>;
 }

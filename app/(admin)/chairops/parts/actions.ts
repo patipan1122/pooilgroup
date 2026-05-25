@@ -43,38 +43,45 @@ export async function createPart(formData: FormData): Promise<ActionResult<{ id:
   const dup = await prisma.chairopsSparePart.findUnique({ where: { partCode: parsed.data.partCode } });
   if (dup) return { ok: false, error: `รหัสอะไหล่ ${parsed.data.partCode} มีอยู่แล้ว` };
 
-  const part = await prisma.chairopsSparePart.create({
-    data: {
-      partCode: parsed.data.partCode,
-      name: parsed.data.name,
-      category: parsed.data.category || null,
-      unit: parsed.data.unit,
-      unitPrice: parsed.data.unitPrice ?? null,
-      stockOnHand: parsed.data.stockOnHand,
-      reorderLevel: parsed.data.reorderLevel,
-      notes: parsed.data.notes || null,
-    },
-  });
-
-  // Seed movement if starting stock > 0
-  if (part.stockOnHand > 0) {
-    await prisma.chairopsSparePartMovement.create({
+  // Wave-0 fix: create part + seed movement + audit atomic
+  const part = await prisma.$transaction(async (tx) => {
+    const row = await tx.chairopsSparePart.create({
       data: {
-        partId: part.id,
-        delta: part.stockOnHand,
-        reason: "initial-stock",
-        byUserId: session.user.id,
+        partCode: parsed.data.partCode,
+        name: parsed.data.name,
+        category: parsed.data.category || null,
+        unit: parsed.data.unit,
+        unitPrice: parsed.data.unitPrice ?? null,
+        stockOnHand: parsed.data.stockOnHand,
+        reorderLevel: parsed.data.reorderLevel,
+        notes: parsed.data.notes || null,
       },
     });
-  }
 
-  await writeAudit({
-    userId: session.user.id,
-    action: "spare_part.create",
-    entity: "SparePart",
-    entityId: part.id,
-    oldValue: null,
-    newValue: part,
+    if (row.stockOnHand > 0) {
+      await tx.chairopsSparePartMovement.create({
+        data: {
+          partId: row.id,
+          delta: row.stockOnHand,
+          reason: "initial-stock",
+          byUserId: session.user.id,
+        },
+      });
+    }
+
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "spare_part.create",
+        entity: "SparePart",
+        entityId: row.id,
+        oldValue: null,
+        newValue: row,
+      },
+      tx,
+    );
+
+    return row;
   });
 
   revalidatePath("/chairops/parts");
@@ -109,25 +116,33 @@ export async function updatePart(formData: FormData): Promise<ActionResult> {
   const old = await prisma.chairopsSparePart.findUnique({ where: { id: parsed.data.id } });
   if (!old) return { ok: false, error: "ไม่พบอะไหล่" };
 
-  const updated = await prisma.chairopsSparePart.update({
-    where: { id: parsed.data.id },
-    data: {
-      name: parsed.data.name,
-      category: parsed.data.category || null,
-      unit: parsed.data.unit,
-      unitPrice: parsed.data.unitPrice ?? null,
-      reorderLevel: parsed.data.reorderLevel,
-      notes: parsed.data.notes || null,
-    },
-  });
+  // Wave-0 fix: update + audit atomic
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.chairopsSparePart.update({
+      where: { id: parsed.data.id },
+      data: {
+        name: parsed.data.name,
+        category: parsed.data.category || null,
+        unit: parsed.data.unit,
+        unitPrice: parsed.data.unitPrice ?? null,
+        reorderLevel: parsed.data.reorderLevel,
+        notes: parsed.data.notes || null,
+      },
+    });
 
-  await writeAudit({
-    userId: session.user.id,
-    action: "spare_part.update",
-    entity: "SparePart",
-    entityId: updated.id,
-    oldValue: old,
-    newValue: updated,
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "spare_part.update",
+        entity: "SparePart",
+        entityId: row.id,
+        oldValue: old,
+        newValue: row,
+      },
+      tx,
+    );
+
+    return row;
   });
 
   revalidatePath("/chairops/parts");
@@ -159,28 +174,33 @@ export async function adjustStock(formData: FormData): Promise<ActionResult> {
   if (newStock < 0)
     return { ok: false, error: `จะติดลบ (เหลือ ${part.stockOnHand}, จะลด ${Math.abs(parsed.data.delta)})` };
 
-  await prisma.$transaction([
-    prisma.chairopsSparePart.update({
+  // Wave-0 fix: stock update + movement + audit atomic (moved from sequential
+  // tx-array into async tx so audit can use the same tx client)
+  await prisma.$transaction(async (tx) => {
+    await tx.chairopsSparePart.update({
       where: { id: part.id },
       data: { stockOnHand: newStock },
-    }),
-    prisma.chairopsSparePartMovement.create({
+    });
+    await tx.chairopsSparePartMovement.create({
       data: {
         partId: part.id,
         delta: parsed.data.delta,
         reason: parsed.data.reason,
         byUserId: session.user.id,
       },
-    }),
-  ]);
+    });
 
-  await writeAudit({
-    userId: session.user.id,
-    action: "spare_part.adjust_stock",
-    entity: "SparePart",
-    entityId: part.id,
-    oldValue: { stockOnHand: part.stockOnHand },
-    newValue: { stockOnHand: newStock, delta: parsed.data.delta, reason: parsed.data.reason },
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "spare_part.adjust_stock",
+        entity: "SparePart",
+        entityId: part.id,
+        oldValue: { stockOnHand: part.stockOnHand },
+        newValue: { stockOnHand: newStock, delta: parsed.data.delta, reason: parsed.data.reason },
+      },
+      tx,
+    );
   });
 
   revalidatePath("/chairops/parts");

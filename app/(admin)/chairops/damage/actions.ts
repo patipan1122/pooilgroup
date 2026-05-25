@@ -63,43 +63,68 @@ export async function createDamageTicket(
     }
   }
 
+  // Wave-0 fix: mutation + audit in one transaction (atomic).
+  // createTicketWithCode skips its retry loop when given a tx — we retry the
+  // whole tx ourselves below to keep the race-safety guarantee.
   try {
-    const created = await createTicketWithCode<{ id: string; ticketCode: string }>(
-      {
-        branchId,
-        chairId: parsed.data.chairId || null,
-        reportedById: session.user.id,
-        category: parsed.data.category,
-        description: parsed.data.description,
-        priority: parsed.data.priority,
-        photoUrls: parsed.data.photoUrls,
-        status: "OPEN",
-      },
-      { id: true, ticketCode: true }
-    );
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const created = await prisma.$transaction(async (tx) => {
+          const row = await createTicketWithCode<{ id: string; ticketCode: string }>(
+            {
+              branchId,
+              chairId: parsed.data.chairId || null,
+              reportedById: session.user.id,
+              category: parsed.data.category,
+              description: parsed.data.description,
+              priority: parsed.data.priority,
+              photoUrls: parsed.data.photoUrls,
+              status: "OPEN",
+            },
+            { id: true, ticketCode: true },
+            tx,
+          );
 
-    await writeAudit({
-      userId: session.user.id,
-      action: "damage.create",
-      entity: "DamageTicket",
-      entityId: created.id,
-      newValue: {
-        ticketCode: created.ticketCode,
-        branchId,
-        chairId: parsed.data.chairId || null,
-        category: parsed.data.category,
-        priority: parsed.data.priority,
-        photoCount: parsed.data.photoUrls.length,
-      },
-      metadata: { route: "/chairops/damage/new" },
-    });
+          await writeAudit(
+            {
+              userId: session.user.id,
+              action: "damage.create",
+              entity: "DamageTicket",
+              entityId: row.id,
+              newValue: {
+                ticketCode: row.ticketCode,
+                branchId,
+                chairId: parsed.data.chairId || null,
+                category: parsed.data.category,
+                priority: parsed.data.priority,
+                photoCount: parsed.data.photoUrls.length,
+              },
+              metadata: { route: "/chairops/damage/new" },
+            },
+            tx,
+          );
 
-    revalidatePath("/chairops/damage");
-    return { ok: true, data: { id: created.id, ticketCode: created.ticketCode } };
+          return row;
+        });
+
+        revalidatePath("/chairops/damage");
+        return { ok: true, data: { id: created.id, ticketCode: created.ticketCode } };
+      } catch (e) {
+        const isUniq =
+          typeof e === "object" && e !== null && "code" in e &&
+          (e as { code: unknown }).code === "P2002";
+        if (isUniq && attempt < 3) {
+          lastErr = e;
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw lastErr ?? new Error("สร้างเลขใบแจ้งซ่อมไม่สำเร็จ · race condition เกิน 4 ครั้ง");
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "บันทึกไม่สำเร็จ" };
   }
-  return { ok: false, error: "สร้างเลขใบแจ้งซ่อมไม่สำเร็จ · ลองอีกครั้ง" };
 }
 
 export async function presignDamageUpload(args: {

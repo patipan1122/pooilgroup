@@ -65,26 +65,44 @@ export const getSession = cache(async (): Promise<Session | null> => {
   const authUserId = poolSession.authUserId;
   const email = poolSession.email ?? poolDbUser.email ?? null;
 
-  let chairUser = await prisma.chairopsUser.findFirst({
+  const chairUser = await prisma.chairopsUser.findFirst({
     where: { authUserId },
   });
 
-  // First-touch: create a shim ChairopsUser so Pool admins can use ChairOps
-  // immediately. Role is derived from their Pool role.
+  // SECURITY (Wave-0 fix · audit Phase-1 BE/SA flagged): NO auto-bootstrap.
+  // First-touch users used to be auto-granted ADMIN derived from Pool role —
+  // that turned any Pool admin (incl. fresh signups) into a ChairOps admin
+  // without explicit approval. Now: unknown user → log denial → return null
+  // so requireAuth() redirects to access-denied. Admin must explicitly create
+  // a ChairopsUser row (future /chairops/access-requests page) before the
+  // user can enter the module.
   if (!chairUser) {
-    const derivedRole = deriveChairopsRoleFromPool(poolDbUser.role);
-    chairUser = await prisma.chairopsUser.create({
-      data: {
-        authUserId,
-        email,
-        displayName: poolDbUser.name || email || "ChairOps user",
-        role: derivedRole,
-        isActive: true,
-      },
-    });
+    // Best-effort audit (don't block login flow if audit write fails).
+    try {
+      await prisma.chairopsAuditLog.create({
+        data: {
+          userId: null,
+          action: "access.denied_no_chairops_user",
+          entity: "ChairopsUser",
+          entityId: authUserId,
+          metadata: {
+            email,
+            poolRole: poolDbUser.role,
+            reason: "no_chairops_user_row",
+            note: "ขออนุมัติเข้าใช้งาน · admin must approve",
+          },
+        },
+      });
+    } catch {
+      // swallow — denial still effective via return null
+    }
+    return null;
   }
 
   if (!chairUser.isActive) return null;
+  // Suppress unused-helper warning while we transition: kept exported for the
+  // future admin-approval flow that will derive role from Pool tier.
+  void deriveChairopsRoleFromPool;
 
   return {
     authUser: { id: authUserId, email },
@@ -97,7 +115,9 @@ export async function requireAuth(): Promise<Session> {
   // Force Pool auth — if user not logged in at all, Pool redirects to /login
   await poolRequireSession();
   const session = await getSession();
-  if (!session) redirect("/login");
+  // User is Pool-authenticated but has no ChairopsUser row → access denied.
+  // Audit log already written inside getSession() · just redirect.
+  if (!session) redirect("/403?reason=chairops_access_pending");
   return session;
 }
 

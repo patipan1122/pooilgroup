@@ -64,29 +64,37 @@ export async function createCleanlinessReport(
 
   const grade = gradeFromChecklist(parsed.data.checklist);
 
-  const created = await prisma.chairopsCleanlinessReport.create({
-    data: {
-      branchId,
-      byMaidId: session.user.id,
-      checklist: parsed.data.checklist,
-      photoUrls: parsed.data.photoUrls,
-      grade,
-      notes: parsed.data.notes ?? null,
-    },
-  });
+  // Wave-0 fix: create + audit atomic
+  const created = await prisma.$transaction(async (tx) => {
+    const row = await tx.chairopsCleanlinessReport.create({
+      data: {
+        branchId,
+        byMaidId: session.user.id,
+        checklist: parsed.data.checklist,
+        photoUrls: parsed.data.photoUrls,
+        grade,
+        notes: parsed.data.notes ?? null,
+      },
+    });
 
-  await writeAudit({
-    userId: session.user.id,
-    action: "cleanliness.create",
-    entity: "CleanlinessReport",
-    entityId: created.id,
-    newValue: {
-      branchId,
-      checklist: parsed.data.checklist,
-      grade,
-      photoCount: parsed.data.photoUrls.length,
-    },
-    metadata: { route: "/chairops/cleanliness/new" },
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "cleanliness.create",
+        entity: "CleanlinessReport",
+        entityId: row.id,
+        newValue: {
+          branchId,
+          checklist: parsed.data.checklist,
+          grade,
+          photoCount: parsed.data.photoUrls.length,
+        },
+        metadata: { route: "/chairops/cleanliness/new" },
+      },
+      tx,
+    );
+
+    return row;
   });
 
   revalidatePath("/chairops/cleanliness");

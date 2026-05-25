@@ -99,32 +99,39 @@ export async function createUser(formData: FormData): Promise<ActionResult<{ id:
     };
   }
 
-  // Create Prisma profile
+  // Create Prisma profile — Wave-0 fix: profile + audit atomic
   try {
-    const user = await prisma.chairopsUser.create({
-      data: {
-        authUserId: authData.user.id,
-        email: parsed.data.email,
-        displayName: parsed.data.displayName,
-        role: parsed.data.role,
-        primaryBranchId: parsed.data.primaryBranchId || null,
-        isActive: true,
-      },
-    });
+    const user = await prisma.$transaction(async (tx) => {
+      const row = await tx.chairopsUser.create({
+        data: {
+          authUserId: authData.user.id,
+          email: parsed.data.email,
+          displayName: parsed.data.displayName,
+          role: parsed.data.role,
+          primaryBranchId: parsed.data.primaryBranchId || null,
+          isActive: true,
+        },
+      });
 
-    await writeAudit({
-      userId: session.user.id,
-      action: "user.create",
-      entity: "User",
-      entityId: user.id,
-      oldValue: null,
-      newValue: {
-        email: user.email,
-        role: user.role,
-        displayName: user.displayName,
-        primaryBranchId: user.primaryBranchId,
-      },
-      metadata: { tempPasswordGenerated: !parsed.data.tempPassword },
+      await writeAudit(
+        {
+          userId: session.user.id,
+          action: "user.create",
+          entity: "User",
+          entityId: row.id,
+          oldValue: null,
+          newValue: {
+            email: row.email,
+            role: row.role,
+            displayName: row.displayName,
+            primaryBranchId: row.primaryBranchId,
+          },
+          metadata: { tempPasswordGenerated: !parsed.data.tempPassword },
+        },
+        tx,
+      );
+
+      return row;
     });
 
     revalidatePath("/chairops/users");
@@ -180,19 +187,27 @@ export async function updateUserRole(
     return { ok: false, error: "สิทธิ์เดิมอยู่แล้ว" };
   }
 
-  const updated = await prisma.chairopsUser.update({
-    where: { id: target.id },
-    data: { role: parsed.data.newRole },
-  });
+  // Wave-0 fix: role update + audit atomic
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.chairopsUser.update({
+      where: { id: target.id },
+      data: { role: parsed.data.newRole },
+    });
 
-  await writeAudit({
-    userId: session.user.id,
-    action: "user.update_role",
-    entity: "User",
-    entityId: updated.id,
-    oldValue: { role: target.role },
-    newValue: { role: updated.role },
-    metadata: { targetEmail: target.email },
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "user.update_role",
+        entity: "User",
+        entityId: row.id,
+        oldValue: { role: target.role },
+        newValue: { role: row.role },
+        metadata: { targetEmail: target.email },
+      },
+      tx,
+    );
+
+    return row;
   });
 
   revalidatePath(`/chairops/users/${updated.id}`);
@@ -230,18 +245,26 @@ export async function assignBranch(
     if (!branch) return { ok: false, error: "ไม่พบสาขา" };
   }
 
-  const updated = await prisma.chairopsUser.update({
-    where: { id: target.id },
-    data: { primaryBranchId: parsed.data.branchId },
-  });
+  // Wave-0 fix: branch assign + audit atomic
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.chairopsUser.update({
+      where: { id: target.id },
+      data: { primaryBranchId: parsed.data.branchId },
+    });
 
-  await writeAudit({
-    userId: session.user.id,
-    action: "user.assign_branch",
-    entity: "User",
-    entityId: updated.id,
-    oldValue: { primaryBranchId: target.primaryBranchId },
-    newValue: { primaryBranchId: updated.primaryBranchId },
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "user.assign_branch",
+        entity: "User",
+        entityId: row.id,
+        oldValue: { primaryBranchId: target.primaryBranchId },
+        newValue: { primaryBranchId: row.primaryBranchId },
+      },
+      tx,
+    );
+
+    return row;
   });
 
   revalidatePath(`/chairops/users/${updated.id}`);
@@ -272,18 +295,26 @@ export async function updateDisplayName(formData: FormData): Promise<ActionResul
     return { ok: false, error: `คุณไม่มีสิทธิ์แก้ไขผู้ใช้ระดับ ${target.role}` };
   }
 
-  const updated = await prisma.chairopsUser.update({
-    where: { id: target.id },
-    data: { displayName: parsed.data.displayName },
-  });
+  // Wave-0 fix: display-name update + audit atomic
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.chairopsUser.update({
+      where: { id: target.id },
+      data: { displayName: parsed.data.displayName },
+    });
 
-  await writeAudit({
-    userId: session.user.id,
-    action: "user.update_display_name",
-    entity: "User",
-    entityId: updated.id,
-    oldValue: { displayName: target.displayName },
-    newValue: { displayName: updated.displayName },
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "user.update_display_name",
+        entity: "User",
+        entityId: row.id,
+        oldValue: { displayName: target.displayName },
+        newValue: { displayName: row.displayName },
+      },
+      tx,
+    );
+
+    return row;
   });
 
   revalidatePath(`/chairops/users/${updated.id}`);
@@ -313,19 +344,27 @@ export async function deactivateUser(userId: string): Promise<ActionResult> {
 
   if (!target.isActive) return { ok: false, error: "ปิดบัญชีไปแล้ว" };
 
-  const updated = await prisma.chairopsUser.update({
-    where: { id: target.id },
-    data: { isActive: false },
-  });
+  // Wave-0 fix: deactivate + audit atomic
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.chairopsUser.update({
+      where: { id: target.id },
+      data: { isActive: false },
+    });
 
-  await writeAudit({
-    userId: session.user.id,
-    action: "user.deactivate",
-    entity: "User",
-    entityId: updated.id,
-    oldValue: { isActive: true },
-    newValue: { isActive: false },
-    metadata: { targetEmail: target.email },
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "user.deactivate",
+        entity: "User",
+        entityId: row.id,
+        oldValue: { isActive: true },
+        newValue: { isActive: false },
+        metadata: { targetEmail: target.email },
+      },
+      tx,
+    );
+
+    return row;
   });
 
   revalidatePath(`/chairops/users/${updated.id}`);
@@ -349,18 +388,26 @@ export async function reactivateUser(userId: string): Promise<ActionResult> {
 
   if (target.isActive) return { ok: false, error: "บัญชีเปิดอยู่แล้ว" };
 
-  const updated = await prisma.chairopsUser.update({
-    where: { id: target.id },
-    data: { isActive: true },
-  });
+  // Wave-0 fix: reactivate + audit atomic
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.chairopsUser.update({
+      where: { id: target.id },
+      data: { isActive: true },
+    });
 
-  await writeAudit({
-    userId: session.user.id,
-    action: "user.reactivate",
-    entity: "User",
-    entityId: updated.id,
-    oldValue: { isActive: false },
-    newValue: { isActive: true },
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "user.reactivate",
+        entity: "User",
+        entityId: row.id,
+        oldValue: { isActive: false },
+        newValue: { isActive: true },
+      },
+      tx,
+    );
+
+    return row;
   });
 
   revalidatePath(`/chairops/users/${updated.id}`);

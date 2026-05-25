@@ -594,6 +594,74 @@ export async function commitImport(importId: string): Promise<{ ok: true } | { o
   return { ok: true };
 }
 
+// ----- W3 (claude-design) · Maker-Checker enforced commit ------------------
+//
+// commitPosImportWithCheck — wraps commitImport with hard maker-checker gate
+// per BR16 (audit master spec §3 · POS Ingest workspace). Different from
+// the legacy commitImport which only soft-warns on self-commit; this variant
+// REFUSES when uploader === current user UNLESS the current user is MANAGER+.
+//
+// TODO[claude-design]: real impl needs a Prisma migration adding a DB-level
+// CHECK constraint (committed_by != uploaded_by OR commiter.role >= MANAGER)
+// + a `committedById` column on ChairopsPosImport. Until that ships we
+// enforce in application layer only — sufficient for pilot per Wave-1 cut.
+// Planned Wave 2.
+
+export async function commitPosImportWithCheck(
+  importId: string,
+  ack: { reviewedRows: boolean; reviewedWarnings: boolean; acceptResponsibility: boolean }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await requireRole("OFFICE");
+
+  // 1) checklist gate — UI enforces too, but server is the source of truth
+  if (!ack.reviewedRows || !ack.reviewedWarnings || !ack.acceptResponsibility) {
+    return {
+      ok: false,
+      error: "กรุณายืนยัน checklist ทั้ง 3 ข้อก่อน commit",
+    };
+  }
+
+  const imp = await prisma.chairopsPosImport.findUnique({ where: { id: importId } });
+  if (!imp) return { ok: false, error: "ไม่พบ import นี้" };
+  if (imp.committed) return { ok: false, error: "import นี้ commit ไปแล้ว" };
+
+  // 2) maker/checker enforcement (BR16) — uploader cannot self-commit unless MANAGER+
+  const isSelfCommit = imp.uploadedById === session.user.id;
+  const role = session.user.role;
+  const isManagerOrAbove = role === "MANAGER" || role === "CEO" || role === "ADMIN";
+
+  if (isSelfCommit && !isManagerOrAbove) {
+    return {
+      ok: false,
+      error:
+        "คุณเป็นผู้ upload ไฟล์นี้เอง · ต้องให้ผู้ใช้คนอื่น (OFFICE/MANAGER) เป็นผู้ commit (maker-checker)",
+    };
+  }
+
+  // 3) delegate the heavy lifting to the existing commitImport flow
+  //    (CSV re-parse · transaction · drift recompute · alerts)
+  const res = await commitImport(importId);
+  if (!res.ok) return res;
+
+  // 4) audit log the maker-checker decision
+  await writeAudit({
+    userId: session.user.id,
+    action: "pos_import.commit_with_check",
+    entity: "PosImport",
+    entityId: imp.id,
+    newValue: {
+      makerId: imp.uploadedById,
+      checkerId: session.user.id,
+      isSelfCommit,
+      role,
+      ack,
+    },
+  });
+
+  revalidatePath("/chairops/pos-ingest");
+  return { ok: true };
+}
+
 export async function cancelImport(importId: string) {
   const session = await requireRole("OFFICE");
   const imp = await prisma.chairopsPosImport.findUnique({ where: { id: importId } });
