@@ -164,7 +164,10 @@ export function AdminShell({
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-zinc-50">
+    <div
+      className="min-h-screen flex flex-col bg-zinc-50"
+      data-module={activeModuleSlug ?? "home"}
+    >
       {/* Top Navbar */}
       <header className="sticky top-0 z-40 h-14 sm:h-16 bg-white border-b-2 border-zinc-200 flex items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-3 min-w-0">

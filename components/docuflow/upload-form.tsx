@@ -2,20 +2,10 @@
 
 // UploadForm — DocuFlow (admin tier only)
 // ────────────────────────────────────────────────────────────────────
-// Phase 4 radical strip 2026-05-12 — user complained "ใช้โคตรยาก เยอะเกิน"
-//
-//   4 input only:
-//     1. ไฟล์
-//     2. ชื่อเอกสาร (auto-fill จาก filename)
-//     3. เก็บไว้ที่ไหน — single search picker (group/บริษัท/สาขา/ฯลฯ)
-//     4. วันหมดอายุ (optional)
-//
-//   Cut: description, tags input, alert chips, notes, last-context UI,
-//   multi-checkbox 5-level ownership, template autofill, wizard pre-fill banner.
-//
-//   Default alert days = [90,30,7] hard-coded (org-level setting later).
-//   Multi-ownership still supported in schema; UI is single pick + chip
-//   "เพิ่มที่อื่นด้วย" to add a 2nd/3rd scope when needed.
+// 2026-05-25 — switched to server-side proxy upload for files ≤ 25 MB.
+// Reason: browser → R2 PUT was failing silently on prod (R2 bucket CORS
+// not allowlisted). Proxy uploads via Next.js server, eliminating CORS
+// as a failure mode. Files > 25 MB still use presigned PUT.
 // ────────────────────────────────────────────────────────────────────
 
 import { useState, useTransition, useRef, useMemo, useEffect } from "react";
@@ -29,12 +19,13 @@ import {
   Upload as UploadIcon,
   Search,
   X,
-  Plus,
   Building2,
   Store,
   Layers,
   UserCircle,
   Globe2,
+  ChevronDown,
+  Settings2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -42,10 +33,14 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
 
 const DEFAULT_ALERT_DAYS = [90, 30, 7];
+const PROXY_MAX_BYTES = 25 * 1024 * 1024;
 
 const FormSchema = z.object({
   name: z.string().min(1, "ใส่ชื่อเอกสาร").max(255),
   expiryDate: z.string().optional(),
+  description: z.string().max(2000).optional(),
+  responsibleUserId: z.string().optional(),
+  notes: z.string().max(2000).optional(),
 });
 
 type FormValues = z.infer<typeof FormSchema>;
@@ -84,7 +79,6 @@ type ScopeKind = "group" | "company" | "business_type" | "branch" | "person";
 
 interface Scope {
   kind: ScopeKind;
-  /** id (company/branch/person) or businessType value */
   refId: string | null;
   label: string;
   emoji: string;
@@ -120,6 +114,7 @@ export function UploadForm({
   const [scopeOpen, setScopeOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [uploading, setUploading] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const fileNameSyncRef = useRef(false);
 
   const {
@@ -130,10 +125,17 @@ export function UploadForm({
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(FormSchema),
-    defaultValues: { name: "", expiryDate: "" },
+    defaultValues: {
+      name: "",
+      expiryDate: "",
+      description: "",
+      responsibleUserId: "",
+      notes: "",
+    },
   });
 
-  // Build searchable scope universe
+  const expiryWatch = watch("expiryDate");
+
   const allScopes: Scope[] = useMemo(() => {
     const list: Scope[] = [];
     list.push({
@@ -159,7 +161,6 @@ export function UploadForm({
       });
     }
     for (const br of branches) {
-      const company = companies.find((c) => c.id === br.companyId);
       list.push({
         kind: "branch",
         refId: br.id,
@@ -210,7 +211,6 @@ export function UploadForm({
     }
   }
 
-  // Close scope picker on outside click
   const pickerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -220,6 +220,107 @@ export function UploadForm({
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
+
+  function buildOwnerships() {
+    return scopes.map((s) => {
+      if (s.kind === "group") return { level: "group" as const };
+      if (s.kind === "company")
+        return { level: "company" as const, companyId: s.refId ?? undefined };
+      if (s.kind === "business_type")
+        return {
+          level: "business_type" as const,
+          businessType: s.refId ?? undefined,
+        };
+      if (s.kind === "branch")
+        return { level: "branch" as const, branchId: s.refId ?? undefined };
+      return { level: "person" as const, personId: s.refId ?? undefined };
+    });
+  }
+
+  function buildRenewal(values: FormValues) {
+    if (!values.expiryDate) return undefined;
+    return {
+      expiryDate: values.expiryDate,
+      alertDays: DEFAULT_ALERT_DAYS,
+      ...(values.responsibleUserId
+        ? { responsibleUserId: values.responsibleUserId }
+        : {}),
+      ...(values.notes ? { notes: values.notes } : {}),
+    };
+  }
+
+  async function uploadViaProxy(values: FormValues, fileObj: File) {
+    const fd = new FormData();
+    fd.append("file", fileObj);
+    fd.append(
+      "metadata",
+      JSON.stringify({
+        name: values.name,
+        description: values.description || undefined,
+        ownerships: buildOwnerships(),
+        tags: [],
+        renewal: buildRenewal(values),
+      }),
+    );
+
+    const res = await fetch("/api/docuflow/upload-proxy", {
+      method: "POST",
+      body: fd,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(
+        err.error ||
+          `อัปโหลดไม่สำเร็จ (HTTP ${res.status})${err.detail ? " · " + err.detail : ""}`,
+      );
+    }
+    const data = (await res.json()) as { documentId: string };
+    return data.documentId;
+  }
+
+  async function uploadViaPresigned(values: FormValues, fileObj: File) {
+    const res = await fetch("/api/docuflow/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: values.name,
+        description: values.description || undefined,
+        filename: fileObj.name,
+        mimeType: fileObj.type || "application/octet-stream",
+        fileSize: fileObj.size,
+        ownerships: buildOwnerships(),
+        tags: [],
+        renewal: buildRenewal(values),
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "เตรียมอัปโหลดไม่สำเร็จ");
+    }
+    const { documentId, uploadUrl } = (await res.json()) as {
+      documentId: string;
+      uploadUrl: string;
+    };
+
+    const putRes = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Type": fileObj.type || "application/octet-stream",
+      },
+      body: fileObj,
+    });
+    if (!putRes.ok) {
+      const text = await putRes.text().catch(() => "");
+      // Try to cleanup the orphan row server-side
+      fetch(`/api/docuflow/upload?id=${documentId}`, {
+        method: "DELETE",
+      }).catch(() => {});
+      throw new Error(
+        `ส่งไฟล์ไป R2 ไม่สำเร็จ (HTTP ${putRes.status})${text ? " · " + text.slice(0, 120) : ""}`,
+      );
+    }
+    return documentId;
+  }
 
   async function onSubmit(values: FormValues) {
     if (!file) {
@@ -235,50 +336,12 @@ export function UploadForm({
       return;
     }
 
-    const ownerships = scopes.map((s) => {
-      if (s.kind === "group") return { level: "group" };
-      if (s.kind === "company")
-        return { level: "company", companyId: s.refId ?? undefined };
-      if (s.kind === "business_type")
-        return { level: "business_type", businessType: s.refId ?? undefined };
-      if (s.kind === "branch")
-        return { level: "branch", branchId: s.refId ?? undefined };
-      return { level: "person", personId: s.refId ?? undefined };
-    });
-
-    const renewal = values.expiryDate
-      ? { expiryDate: values.expiryDate, alertDays: DEFAULT_ALERT_DAYS }
-      : undefined;
-
     setUploading(true);
     try {
-      const res = await fetch("/api/docuflow/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: values.name,
-          filename: file.name,
-          mimeType: file.type || "application/octet-stream",
-          fileSize: file.size,
-          ownerships,
-          tags: [],
-          renewal,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "อัปโหลดไม่สำเร็จ");
-      }
-      const { documentId, uploadUrl } = (await res.json()) as {
-        documentId: string;
-        uploadUrl: string;
-      };
-      const putRes = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-        body: file,
-      });
-      if (!putRes.ok) throw new Error("ส่งไฟล์ไป R2 ไม่สำเร็จ");
+      const documentId =
+        file.size <= PROXY_MAX_BYTES
+          ? await uploadViaProxy(values, file)
+          : await uploadViaPresigned(values, file);
 
       toast.success("อัปโหลดเสร็จ");
       startTransition(() => {
@@ -286,17 +349,19 @@ export function UploadForm({
         router.refresh();
       });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "อัปโหลดไม่สำเร็จ");
+      const msg = e instanceof Error ? e.message : "อัปโหลดไม่สำเร็จ";
+      toast.error(msg);
+      console.error("[upload]", e);
     } finally {
       setUploading(false);
     }
   }
 
   const busy = uploading || isPending;
+  const hasExpiry = Boolean(expiryWatch);
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-      {/* 1. File — canvas-style hero dropzone (single, functional) */}
       <Field label="ไฟล์เอกสาร" required>
         <label
           className={cn(
@@ -353,6 +418,7 @@ export function UploadForm({
                 <p className="text-base font-bold text-zinc-900">{file.name}</p>
                 <p className="text-xs text-zinc-500 mt-1">
                   {(file.size / 1024 / 1024).toFixed(2)} MB · พร้อมส่ง
+                  {file.size > PROXY_MAX_BYTES ? " · presigned mode" : ""}
                 </p>
                 <p className="text-[11px] text-zinc-500 mt-2">
                   คลิกอีกครั้งเพื่อเปลี่ยนไฟล์
@@ -395,10 +461,9 @@ export function UploadForm({
                     marginBottom: 0,
                   }}
                 >
-                  หรือคลิกเพื่อเลือกจากเครื่อง · PDF · รูป · DOCX
+                  หรือคลิกเพื่อเลือกจากเครื่อง · PDF · รูป · DOCX (สูงสุด 500 MB)
                 </p>
               </div>
-              {/* AI badge top-right (canvas-exact) */}
               <span
                 style={{
                   position: "absolute",
@@ -423,7 +488,6 @@ export function UploadForm({
         </label>
       </Field>
 
-      {/* 2. Name */}
       <Field
         label="ชื่อเอกสาร"
         required
@@ -440,7 +504,6 @@ export function UploadForm({
         />
       </Field>
 
-      {/* 3. Scope — single search picker with multi chips */}
       <Field
         label="เก็บไว้ที่ไหน"
         required
@@ -508,7 +571,6 @@ export function UploadForm({
         </div>
       </Field>
 
-      {/* 4. Expiry (optional) */}
       <Field
         label="วันหมดอายุ"
         optional
@@ -522,6 +584,94 @@ export function UploadForm({
           disabled={busy}
         />
       </Field>
+
+      {/* Advanced section — collapsed by default */}
+      <div className="border-2 border-zinc-200 rounded-xl overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-zinc-50 hover:bg-zinc-100 transition-colors"
+          aria-expanded={advancedOpen}
+        >
+          <span className="inline-flex items-center gap-2 text-sm font-bold text-zinc-700">
+            <Settings2 className="size-4 text-[var(--color-brand-600)]" />
+            ตั้งค่าขั้นสูง
+            <span className="text-[11px] font-medium text-zinc-500 ml-1">
+              คำอธิบาย · ผู้รับผิดชอบ · หมายเหตุ
+            </span>
+          </span>
+          <ChevronDown
+            className={cn(
+              "size-4 text-zinc-500 transition-transform",
+              advancedOpen && "rotate-180",
+            )}
+          />
+        </button>
+        {advancedOpen && (
+          <div className="p-4 space-y-4 bg-white">
+            <Field
+              label="คำอธิบาย"
+              optional
+              htmlFor="description"
+              hint="บอกข้อมูลเพิ่มเติม · เช่น สำหรับยื่นกระทรวงพลังงาน"
+            >
+              <textarea
+                id="description"
+                {...register("description")}
+                rows={3}
+                disabled={busy}
+                className="w-full rounded-lg border-2 border-zinc-200 px-3 py-2 text-sm focus:border-[var(--color-brand-500)] focus:outline-none resize-none"
+                placeholder="(ไม่บังคับ)"
+              />
+            </Field>
+
+            <Field
+              label="ผู้รับผิดชอบ"
+              optional
+              htmlFor="responsibleUserId"
+              hint={
+                hasExpiry
+                  ? "ระบบจะส่ง notification ให้คนนี้ก่อนหมดอายุ"
+                  : "ใช้คู่กับวันหมดอายุ · ระบบจะเตือนคนนี้"
+              }
+            >
+              <select
+                id="responsibleUserId"
+                {...register("responsibleUserId")}
+                disabled={busy || !hasExpiry}
+                className="w-full rounded-lg border-2 border-zinc-200 px-3 py-2 text-sm focus:border-[var(--color-brand-500)] focus:outline-none bg-white disabled:bg-zinc-50 disabled:text-zinc-400"
+              >
+                <option value="">— ไม่ระบุ —</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.role})
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field
+              label="หมายเหตุการต่ออายุ"
+              optional
+              htmlFor="notes"
+              hint={
+                hasExpiry
+                  ? "บอกขั้นตอนพิเศษ · เช่น ต้องยื่นล่วงหน้า 60 วัน"
+                  : "ใช้คู่กับวันหมดอายุ"
+              }
+            >
+              <textarea
+                id="notes"
+                {...register("notes")}
+                rows={2}
+                disabled={busy || !hasExpiry}
+                className="w-full rounded-lg border-2 border-zinc-200 px-3 py-2 text-sm focus:border-[var(--color-brand-500)] focus:outline-none resize-none disabled:bg-zinc-50 disabled:text-zinc-400"
+                placeholder="(ไม่บังคับ)"
+              />
+            </Field>
+          </div>
+        )}
+      </div>
 
       <div className="flex items-center gap-2 justify-end pt-2">
         <Button

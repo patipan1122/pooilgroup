@@ -239,3 +239,36 @@ export async function POST(req: NextRequest) {
     publicUrl,
   });
 }
+
+// DELETE /api/docuflow/upload?id=<docId>
+// Orphan cleanup — called by the client when the browser → R2 PUT fails so
+// we don't leave a stub document row pointing at a file that never existed.
+export async function DELETE(req: NextRequest) {
+  const session = await requireSession();
+  if (!isAdminTier(session.user.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const url = new URL(req.url);
+  const id = url.searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ error: "missing id" }, { status: 400 });
+  }
+
+  try {
+    // Only delete docs owned by this org AND uploaded by this user within
+    // the last 10 min — safeguards against stray DELETE calls.
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const result = await prisma.document.deleteMany({
+      where: {
+        id,
+        orgId: session.user.org_id,
+        uploadedById: session.user.id,
+        uploadedAt: { gte: tenMinAgo },
+      },
+    });
+    return NextResponse.json({ deleted: result.count });
+  } catch (err) {
+    console.error("[DELETE /api/docuflow/upload]", err);
+    return NextResponse.json({ error: "cleanup failed" }, { status: 500 });
+  }
+}

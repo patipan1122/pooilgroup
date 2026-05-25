@@ -29,6 +29,7 @@ import { BackButton } from "@/components/ui/back-button";
 import { DeleteDocumentButton } from "@/components/docuflow/delete-document-button";
 import { RiskAnalysisPanel } from "@/components/docuflow/risk-analysis-panel";
 import { RenewalHistorySection } from "@/components/docuflow/renewal-history-section";
+import { ApprovalTimeline } from "@/components/docuflow/approval-timeline";
 import {
   SharingSection,
   type SharedBranchItem,
@@ -101,15 +102,48 @@ export default async function DocumentDetailPage({
   const isPdf = doc.mimeType === "application/pdf";
   const isImage = doc.mimeType?.startsWith("image/") ?? false;
 
-  const [placementTotal, placementSigned] = await Promise.all([
-    prisma.documentSignaturePlacement.count({
-      where: { orgId, documentId: id },
-    }),
-    prisma.documentSignaturePlacement.count({
-      where: { orgId, documentId: id, signedAt: { not: null } },
-    }),
-  ]);
+  const [placementTotal, placementSigned, signerRows, auditRows] =
+    await Promise.all([
+      prisma.documentSignaturePlacement.count({
+        where: { orgId, documentId: id },
+      }),
+      prisma.documentSignaturePlacement.count({
+        where: { orgId, documentId: id, signedAt: { not: null } },
+      }),
+      prisma.documentSignaturePlacement.findMany({
+        where: { orgId, documentId: id },
+        orderBy: { ordering: "asc" },
+        include: { signerUser: { select: { name: true } } },
+      }),
+      prisma.auditLog.findMany({
+        where: {
+          orgId,
+          resourceType: "document",
+          resourceId: id,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        include: { user: { select: { name: true } } },
+      }),
+    ]);
   const allSigned = placementTotal > 0 && placementSigned === placementTotal;
+
+  const signers = signerRows.map((s) => ({
+    id: s.id,
+    ordering: s.ordering,
+    signerName: s.signerName,
+    signerUserName: s.signerUser?.name ?? null,
+    signerRole: s.signerRole,
+    label: s.label,
+    signedAt: s.signedAt,
+  }));
+  const auditEvents = auditRows.map((a) => ({
+    id: a.id,
+    action: a.action,
+    createdAt: a.createdAt,
+    userName: a.user?.name ?? null,
+    diff: a.diff,
+  }));
 
   const [sharedRows, allBranchRows] = await Promise.all([
     prisma.documentSharedBranch.findMany({
@@ -345,6 +379,14 @@ export default async function DocumentDetailPage({
             documentId={doc.id}
             canAnalyze={adminTier}
             documentName={doc.name}
+          />
+
+          <ApprovalTimeline
+            signers={signers}
+            events={auditEvents}
+            expiryDate={doc.renewal?.expiryDate ?? null}
+            alertDays={doc.renewal?.alertDays}
+            lastRenewedDate={doc.renewal?.lastRenewedDate ?? null}
           />
 
           <RenewalHistorySection

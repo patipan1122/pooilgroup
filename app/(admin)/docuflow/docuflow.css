@@ -365,3 +365,64 @@
 .df-text-sm { font-size: 13px; line-height: 1.5; }
 .df-text { font-size: 14px; line-height: 1.6; }
 .df-text-lg { font-size: 17px; line-height: 1.5; }
+
+/* ============================================================
+ * AdminShell — dark navy theme overrides for DocuFlow routes
+ * ----------------------------------------------------------------
+ * The shared AdminShell renders OUTSIDE `.df-root` (sidebar + top
+ * navbar wrap `<main>` which contains df-root). When the user is in
+ * a docuflow route, AdminShell sets `data-module="docuflow"` on its
+ * outer div. We override the sidebar + topbar palette here so the
+ * chrome matches the DocuFlow Redesign canvas (dark navy sidebar +
+ * warm cream content area).
+ * ============================================================ */
+[data-module="docuflow"] {
+  background: var(--df-bg, #F4EEE2);
+}
+
+[data-module="docuflow"] > header {
+  background: #FAF6EE;
+  border-bottom-color: #E4DCCB;
+}
+
+[data-module="docuflow"] > .flex-1 > aside {
+  background: linear-gradient(180deg, #0E1B2C 0%, #16243C 100%);
+  border-right-color: rgba(255, 255, 255, 0.06);
+  color: #FFF6E5;
+}
+
+[data-module="docuflow"] > .flex-1 > aside a,
+[data-module="docuflow"] > .flex-1 > aside button {
+  color: #C8D2E2;
+}
+
+[data-module="docuflow"] > .flex-1 > aside a:hover,
+[data-module="docuflow"] > .flex-1 > aside button:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #FFF6E5;
+}
+
+/* Active sidebar link — brand blue strip */
+[data-module="docuflow"] > .flex-1 > aside a.bg-\[var\(--color-brand-50\)\] {
+  background: rgba(27, 71, 181, 0.18) !important;
+  border-color: rgba(27, 71, 181, 0.4) !important;
+  color: #FFF6E5 !important;
+}
+
+/* Section headers / labels inside docuflow sidebar */
+[data-module="docuflow"] > .flex-1 > aside .text-zinc-500,
+[data-module="docuflow"] > .flex-1 > aside .text-\[10px\] {
+  color: #8595B0 !important;
+}
+[data-module="docuflow"] > .flex-1 > aside .text-zinc-400 {
+  color: #6B7A95 !important;
+}
+[data-module="docuflow"] > .flex-1 > aside .text-zinc-600 {
+  color: #C8D2E2 !important;
+}
+
+/* Sidebar divider line */
+[data-module="docuflow"] > .flex-1 > aside .border-zinc-100,
+[data-module="docuflow"] > .flex-1 > aside .border-t-2 {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
