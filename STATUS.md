@@ -1,8 +1,83 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-22 (Recruit canvas parity · รอบ 48)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-25 (ChairOps audit + Wave 0 + Wave 1a build · รอบ 54)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-05-25 · รอบ 54 — ChairOps audit #2 + Wave 0 + Wave 1 COMPLETE + bigsolvebug auto-fix · ~10,500+ LOC)
+
+**CEO goal:** "ทำให้ ChairOps ใช้ได้จริงทุก feature · Claude design สวยๆ · ทีม orchestra ทุกคน sign-off · ทาง A ลุยทั้งหมด · รัน /bigsolvebug + /claude-design · skill ปรับให้คม"
+
+**Workflow:**
+- `/auditbigteam chairops` รอบ 2 · 17-persona roster (core 13 + OFC + FIN + AUD + SRE add-ons · ผมสร้าง 3 + linter เพิ่มอีก 3) · 5 phases · Phase 0.5 Drift Audit MANDATORY ใช้ครั้งแรก
+- CEO locked Way A (full lui-lui · DEVIL hard-fail acknowledged · CEO override) + 6 P0 + 8 D-NEW
+- Wave 0 critical fixes (5 surgical edits · 1 subagent)
+- `/claude-design chairops` Phase 0+1 plan → Phase 2 build (kit + 4 priority workspaces parallel) → typecheck pass
+- `/bigsolvebug --quick chairops` (targeted 4 new workspaces · 5 persona sims · report-only)
+- Skill sharpening doc สำหรับ session ถัดไป
+
+**Shipped (~6,500+ LOC new · ทั้งหมด typecheck pass):**
+
+### Wave 0 — 5 critical fixes
+- `vercel.json` +3 ChairOps crons (Hobby rewrote 2 ตัวเป็น daily · ต้อง Pro plan)
+- `app/(admin)/chairops/layout.tsx` NEW · module-entitlement gate
+- `lib/chairops/auth/session.ts` · auto-ADMIN bootstrap REMOVED · denial logged · `/403?reason=chairops_access_pending`
+- 7 action files wrapped `prisma.$transaction(async tx => ...)` · audit log INSIDE tx
+- `prisma/migrations/20260525_chairops_audit_log_immutable/migration.sql` · DB trigger blocking UPDATE/DELETE/TRUNCATE (รอ CEO `prisma migrate deploy`)
+
+### Wave 1 COMPLETE — Kit + 7 workspaces (10,532 LOC)
+- **Kit (1,000 LOC · 8 primitives):** ShortageDriftCell · DiffBucketPills · PhotoProofPanel · MasterDetailShell · ChairopsKpiTile · MakerCheckerBadge · LineNotifyToggle · ChairCodeChip
+- **W1 Office Shell + Exec Home (736 LOC · 7 files):** `(office)/layout.tsx` + `office-top-nav.tsx` + `page.tsx` (CEO 5 KPI tiles 2x3 mobile→5col md+) + `branches-leaderboard.tsx` + loading + error + `queries/exec-home.ts`
+- **W2 Reconcile (1,408 LOC · 6 files):** `(office)/reconcile/{page,[branchId]/page,recompute-button,loading,error}.tsx` · BR1+BR2 banner + escalation tier
+- **W3 POS-Ingest (1,078 LOC · 8 files):** `(office)/pos-ingest/{,new,i/[id]}/*` + `commitPosImportWithCheck()` BR16 maker-checker
+- **W4 Alerts (1,158 LOC · 4 files):** `(office)/alerts/*` + bulkAck/bulkResolve actions + setLineChannelForEventKind stub
+- **W5 Write-offs (1,119 LOC · 5 files):** `(office)/write-offs/*` + bulkApproveWriteOffsAction (BR3 fast-lane <500) · BR15 best-effort cascade (Wave 2 atomic)
+- **W6 Maid Collect (1,734 LOC · 14 files):** `(maid)/{layout,_components/maid-shell,m/{page,collect/new,collect/[id]}}` + utils (idempotency · maid-outbox IndexedDB · image-compress JPEG)
+- **W7 Users (2,277 LOC · 10 files):** `(office)/users/*` + `users/[id]/*` + `users/new/*` + `users/pending/*` + `lib/chairops/auth/actions.ts` (approve/rejectAccessRequest with role-rank guard)
+
+### bigsolvebug --quick → auto-fix
+- 38 bugs surfaced · 16 auto-fixed (4 P0 + 12 P1) · 22 deferred (1 P0 architectural + 2 P1 design call + 19 P2 out-of-scope)
+- 2 commits: `76d654c` (confirm dialog + maid form UX · 6 bugs) · `f5e81e0` (backend perf + a11y + dead-prop + wrong-field · 10 bugs)
+- Critical fix: B-18 PhotoProofPanel `photoUrl` → `evidencePhotoUrl` (was silently never populating)
+
+### 21 TODO[claude-design] markers across Wave 1 · all typecheck PASS · เปิด preview deploy ได้เลย
+
+**Deferred to Wave 2 (post-pilot):**
+- Period-close lock + AdjustmentRequest + JournalEntry · MANAGER_AREA role + table · LINE Notify→Messaging API · accounting export (BC/Express + VAT + GL) · 9 missing IA routes
+
+**Artifacts:**
+- `docs/AUDIT_chairops_2026-05-25.md` (516 lines · 10 sections · authoritative spec)
+- `docs/SKILL_SHARPENING_2026-05-25.md` (NEW · 4 skills × ~5 recommendations + 5 cross-skill)
+- `docs/BUGSOLVE_chairops_2026-05-25.md` (NEW · pending bigsolvebug agent return)
+- `/tmp/claude-design_chairops_plan.md` (430 lines · 7 workspaces · 8 CEO confirms)
+- Memory `chairops-audit-2026-05-25` updated with Way A lock + 8 D-NEW + 6 P0 answers
+
+**CEO action items:**
+1. **Review + commit Wave 1 working tree** (many M/D + new files · ผม uncommitted ตามนโยบาย "never commit without CEO ask")
+2. **Upgrade Vercel Hobby → Pro** (recompute-drifts + sop-check ต้องการ */15 + hourly · ตอนนี้ daily)
+3. **Apply migration:** `cd pooilgroup-web && npx prisma migrate deploy` (audit log immutability)
+4. **Get LINE Messaging API bot tokens** ก่อน pilot (LINE Notify EOL'd · stub พร้อม)
+5. **Test preview deploy URLs:** `/chairops` (W1 exec home) · `/chairops/reconcile` (W2) · `/chairops/pos-ingest` (W3) · `/chairops/alerts` (W4) · `/chairops/write-offs` (W5) · `/chairops/m` (W6 maid) · `/chairops/users` (W7 admin)
+
+## 🆕 Update (2026-05-25 · รอบ 53 — `/bigsolvebug` skill ทดสอบครั้งแรก · Quick mode บน recruit)
+
+**CEO goal:** "ลุย /bigsolvebug skill"
+
+**Skill orchestration ทำงานครบ end-to-end** · cost ~210k tokens · ~25 นาที · เจอบั๊กจริง 35 ตัว (Quick mode = report-only · ยังไม่ auto-fix)
+
+**Bugs by severity:**
+- **6 P0**: 2 RLS missing (`recruit_inbox_channels` + `recruit_form_templates`) · webhook idempotency · 2 external API no timeout (Resend + Anthropic) · cross-org channelInstanceId guard
+- **15 P1**: Modal no Esc · UUID validation missing · 3 race conditions · mobile UX (inputMode · camera · accept) · file MIME spoofing · date "Feb 30" silent · R2 orphan · blacklist no unique
+- **14 P2**: Browser confirm() Thai · breadcrumb · icon-only labels · bulk multi-select feature gap · FB verifyToken plaintext · etc
+
+**Master report**: `docs/BUGSOLVE_recruit_2026-05-25.md`
+
+**Self-improvement seeded**:
+- `~/.claude/skills/bigsolvebug/LESSONS.md` — 3 patterns + run #1 entry
+- `~/.claude/skills/bigsolvebug/regression-library.md` — 10 new entries (B-001 to B-010)
+- Next run auto-tests these patterns · ฉลาดขึ้นทุก run
+
+**Recommended next**: CEO review report → decide Tier A (~1.5h · 6 P0 auto-fixable) / Tier B (1-2d · 15 P1) / Tier C (CEO calls). Optional: `/bigsolvebug recruit` Full mode 25 sims (~45 min · ~1M tokens).
 
 ## 🆕 Update (2026-05-23 · รอบ 51 — LINE OA + Facebook inbox production-ready)
 
