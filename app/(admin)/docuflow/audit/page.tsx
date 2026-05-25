@@ -169,18 +169,18 @@ export default async function DocuFlowAuditPage({
           createdAt: { gte: since },
         },
       }),
-      prisma.auditLog
-        .findMany({
-          where: {
-            orgId,
-            action: { in: DOCUFLOW_ACTIONS as unknown as string[] },
-            createdAt: { gte: since },
-            ipAddress: { not: null },
-          },
-          select: { ipAddress: true },
-          distinct: ["ipAddress"],
-        })
-        .then((rs) => rs.length),
+      // B16 fix: previous `findMany({distinct})` then `.length` ships every
+      // row to the app server before counting. Push the COUNT DISTINCT into
+      // Postgres so a 100k-row audit log stays cheap. RLS still applies via
+      // the explicit orgId filter — we never bypass with admin client here.
+      prisma.$queryRaw<Array<{ count: bigint }>>`
+        SELECT COUNT(DISTINCT ip_address)::bigint AS count
+        FROM public.audit_logs
+        WHERE org_id = ${orgId}::uuid
+          AND action = ANY(${DOCUFLOW_ACTIONS as unknown as string[]})
+          AND created_at >= ${since}
+          AND ip_address IS NOT NULL
+      `.then((rows) => Number(rows[0]?.count ?? 0)),
       prisma.user.findMany({
         where: { orgId, isActive: true },
         select: { id: true, name: true },

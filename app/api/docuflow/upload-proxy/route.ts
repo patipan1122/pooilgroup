@@ -18,7 +18,8 @@ import { isAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { buildDocumentKey } from "@/lib/docuflow/r2";
-import { putObject } from "@/lib/r2/upload";
+import { deleteObject, putObject } from "@/lib/r2/upload";
+import { validateDocumentMime } from "@/lib/docuflow/mime-validate";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -142,13 +143,27 @@ export async function POST(req: NextRequest) {
   const documentId = crypto.randomUUID();
   const fileKey = buildDocumentKey(orgId, documentId, file.name);
   const publicUrl = `${process.env.R2_PUBLIC_URL}/${fileKey}`;
-  const mimeType = file.type || "application/octet-stream";
+
+  // MIME validation — sniff magic bytes before touching R2 (B9 fix).
+  const arrayBuffer = await file.arrayBuffer();
+  const fileBuffer = Buffer.from(arrayBuffer);
+  const mimeCheck = validateDocumentMime({
+    filename: file.name,
+    mimeType: file.type || "application/octet-stream",
+    buffer: fileBuffer,
+  });
+  if (!mimeCheck.ok) {
+    return NextResponse.json(
+      { error: mimeCheck.reason || "ประเภทไฟล์ไม่อนุญาต" },
+      { status: 415 },
+    );
+  }
+  const mimeType = mimeCheck.effectiveMime || "application/octet-stream";
 
   // Upload to R2 FIRST so we don't have orphan DB rows if the network blip
   // happens server-side. If R2 fails, we never wrote anything.
   try {
-    const arrayBuffer = await file.arrayBuffer();
-    await putObject(fileKey, Buffer.from(arrayBuffer), mimeType);
+    await putObject(fileKey, fileBuffer, mimeType);
   } catch (err) {
     console.error("[upload-proxy] R2 put failed", err);
     return NextResponse.json(
@@ -217,7 +232,9 @@ export async function POST(req: NextRequest) {
       }
     });
   } catch (err) {
-    console.error("[upload-proxy] DB transaction failed", err);
+    console.error("[upload-proxy] DB transaction failed — rolling back R2", err);
+    // B23 fix: clean up orphan R2 object since DB failed
+    await deleteObject(fileKey);
     return NextResponse.json(
       {
         error: "บันทึกเอกสารไม่สำเร็จ",

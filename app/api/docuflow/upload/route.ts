@@ -15,6 +15,7 @@ import { isAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { buildDocumentKey, getUploadUrl } from "@/lib/docuflow/r2";
+import { validateDocumentMime } from "@/lib/docuflow/mime-validate";
 
 export const dynamic = "force-dynamic";
 
@@ -130,6 +131,18 @@ export async function POST(req: NextRequest) {
     tags,
     renewal,
   } = parsed.data;
+
+  // MIME / extension whitelist (B9 fix). Presigned flow can't sniff bytes
+  // here — the file hasn't been uploaded yet — so we rely on the declared
+  // MIME + filename extension. The browser still has to PUT with the same
+  // Content-Type that was signed, so a malicious client can't lie cheaply.
+  const mimeCheck = validateDocumentMime({ filename, mimeType });
+  if (!mimeCheck.ok) {
+    return NextResponse.json(
+      { error: mimeCheck.reason || "ประเภทไฟล์ไม่อนุญาต" },
+      { status: 415 },
+    );
+  }
 
   // Normalize: array form is canonical, legacy single → wrap in array
   const ownershipRows = ownershipsInput ?? (legacyOwnership ? [legacyOwnership] : []);
