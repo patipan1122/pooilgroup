@@ -31,6 +31,24 @@ export async function scheduleInterview(input: ScheduleInput) {
 
   const scheduledAt = new Date(input.scheduledAt);
   if (isNaN(scheduledAt.getTime())) throw new Error("วันเวลาไม่ถูกต้อง");
+  // Guard against silent coercion (e.g., "2026-02-30" → "2026-03-02"):
+  // round-trip the input through Date and confirm month + day match if input is ISO-style.
+  const isoMatch = input.scheduledAt.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    const [, y, m, d] = isoMatch;
+    if (
+      scheduledAt.getFullYear() !== Number(y) ||
+      scheduledAt.getMonth() + 1 !== Number(m) ||
+      scheduledAt.getDate() !== Number(d)
+    ) {
+      throw new Error("วันเวลาไม่ถูกต้อง (วันที่ไม่มีในปฏิทิน)");
+    }
+  }
+  // Range guard: reject ridiculous dates (typo / data corruption)
+  const year = scheduledAt.getFullYear();
+  if (year < 2020 || year > 2100) {
+    throw new Error("ปีต้องอยู่ในช่วง 2020–2100");
+  }
 
   const interview = await prisma.recruitInterview.create({
     data: {
@@ -71,9 +89,16 @@ export async function scheduleInterview(input: ScheduleInput) {
   });
 
   // BA fix #8: auto-advance status NEW/SCREENING → INTERVIEW when first interview scheduled
+  // B-008: re-read status before advancing (concurrent scheduleInterview may have advanced it already)
   if (app.status === "NEW" || app.status === "SCREENING") {
-    const { changeApplicationStatus } = await import("./actions");
-    await changeApplicationStatus(input.applicationId, "INTERVIEW");
+    const fresh = await prisma.recruitApplication.findUnique({
+      where: { id: input.applicationId },
+      select: { status: true },
+    });
+    if (fresh && (fresh.status === "NEW" || fresh.status === "SCREENING")) {
+      const { changeApplicationStatus } = await import("./actions");
+      await changeApplicationStatus(input.applicationId, "INTERVIEW");
+    }
   }
 
   revalidatePath("/recruit/calendar");

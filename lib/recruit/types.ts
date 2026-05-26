@@ -60,7 +60,8 @@ export const FieldSchema = z.object({
   placeholder: z.string().max(200).optional(),
   // short_text
   format: z.enum(["phone", "email", "thai_id", "url"]).optional(),
-  maxLength: z.number().int().positive().optional(),
+  // B-005 guard: cap maxLength at 10_000 so admins can't break Prisma JSON with huge values
+  maxLength: z.number().int().positive().max(10_000).optional(),
   minLength: z.number().int().nonnegative().optional(),
   // number, range
   min: z.number().optional(),
