@@ -104,9 +104,13 @@ async function handle(req: NextRequest) {
   });
 
   // Decide whether to open gate. Per CEO decision: exit MUST go through cashier.
-  // So we OPEN on direction=in (if valid session) · DO NOT auto-open on direction=out.
+  // Open ONLY when direction=in AND member has a valid session that's progressing
+  // (resumed re-entry OR already active = duplicate in-scan). Bug from Test 3:
+  // outcome "logged_only" also covers "recognized face but no active session" —
+  // that case must NOT open. Gate it on session presence via sessionId.
   const shouldOpen =
     event.direction === "in" &&
+    outcome.sessionId !== null &&
     (outcome.outcome === "session_resumed" || outcome.outcome === "logged_only");
 
   return NextResponse.json(deviceReply(shouldOpen, outcome.outcome));
