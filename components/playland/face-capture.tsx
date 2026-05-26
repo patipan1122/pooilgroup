@@ -6,8 +6,8 @@
 //   3. Upload existing image file (laptop without webcam · or after denial)
 // All paths produce same 480x480 JPEG ~200KB base64 dataURL.
 
-import { useEffect, useRef, useState } from "react";
-import { Camera, RotateCcw, CheckCircle2, Upload, AlertTriangle } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Camera, RotateCcw, CheckCircle2, Upload, AlertTriangle, ShieldQuestion } from "lucide-react";
 
 interface Props {
   value: string | null;
@@ -69,41 +69,53 @@ export function FaceCapture({ value, onChange, label = "ถ่ายรูปห
   const [error, setError] = useState<CameraError | null>(null);
   const [ready, setReady] = useState(false);
   const [mode, setMode] = useState<"webcam" | "upload">("webcam");
-  const [retryNonce, setRetryNonce] = useState(0);
+  const [cameraStarted, setCameraStarted] = useState(false); // user-gesture gate
 
+  // Cleanup on unmount or value capture
   useEffect(() => {
-    let cancelled = false;
-    if (value || mode === "upload") return;
+    return () => {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    };
+  }, []);
+
+  // Stop stream when a photo is captured (don't keep camera on)
+  useEffect(() => {
+    if (value && streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      setCameraStarted(false);
+      setReady(false);
+    }
+  }, [value]);
+
+  // User-gesture-driven camera start · permission prompt only fires after click
+  // (Browsers may silently fail useEffect-triggered getUserMedia · be explicit)
+  const startCamera = useCallback(async () => {
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       setError({ kind: "no-support", detail: "browser นี้ไม่รองรับกล้อง" });
       return;
     }
-    (async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 720 } },
-          audio: false,
-        });
-        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-          setReady(true);
-          setError(null);
-        }
-      } catch (e) {
-        const classified = classifyError(e);
-        setError(classified);
-        console.warn("[face-capture] getUserMedia failed", classified.kind, e);
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 720 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        setReady(true);
+        setCameraStarted(true);
       }
-    })();
-    return () => {
-      cancelled = true;
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    };
-  }, [value, mode, retryNonce]);
+    } catch (e) {
+      const classified = classifyError(e);
+      setError(classified);
+      setCameraStarted(false);
+      console.warn("[face-capture] getUserMedia failed", classified.kind, e);
+    }
+  }, []);
 
   function capture() {
     const video = videoRef.current;
@@ -125,7 +137,9 @@ export function FaceCapture({ value, onChange, label = "ถ่ายรูปห
 
   function retake() {
     onChange(null);
-    if (mode === "webcam") setRetryNonce((n) => n + 1);
+    setReady(false);
+    setCameraStarted(false);
+    // Don't auto-restart · user clicks "เปิดกล้อง" again (consistent UX)
   }
 
   async function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
@@ -171,6 +185,26 @@ export function FaceCapture({ value, onChange, label = "ถ่ายรูปห
             <Upload size={32} opacity={0.6} />
             <div style={{ fontSize: 13 }}>กดปุ่ม "เลือกรูป" ด้านล่าง<br />(มือถือจะเปิดกล้องในตัว · laptop เลือกไฟล์)</div>
           </div>
+        ) : mode === "webcam" && !cameraStarted ? (
+          // Pre-permission state · explicit user gesture to trigger browser prompt
+          <button
+            type="button"
+            onClick={startCamera}
+            style={{
+              display: "grid", placeItems: "center", height: "100%", width: "100%",
+              border: "none", cursor: "pointer", color: "#e7e5e4",
+              background: "linear-gradient(135deg, #292524 0%, #1c1917 100%)",
+              gap: 12, padding: 24, textAlign: "center",
+            }}
+          >
+            <div style={{ display: "inline-flex", padding: 16, borderRadius: 999, background: "rgba(245,158,11,0.18)", color: "#fbbf24" }}>
+              <ShieldQuestion size={36} />
+            </div>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>ขออนุญาตเปิดกล้อง</div>
+            <div style={{ fontSize: 12, color: "#a8a29e", maxWidth: 240, lineHeight: 1.5 }}>
+              กดที่นี่ · browser จะถามให้อนุญาต<br />หรือใช้ "อัปโหลด" ด้านล่างก็ได้
+            </div>
+          </button>
         ) : (
           <video ref={videoRef} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }} />
         )}
@@ -192,21 +226,27 @@ export function FaceCapture({ value, onChange, label = "ถ่ายรูปห
             <RotateCcw size={14} /> ถ่ายใหม่
           </button>
         ) : mode === "webcam" && !error ? (
-          <>
-            <button type="button" className="pl-btn pl-btn-primary" onClick={capture} disabled={!ready}>
-              <Camera size={14} /> ถ่ายเลย
-            </button>
+          cameraStarted ? (
+            <>
+              <button type="button" className="pl-btn pl-btn-primary" onClick={capture} disabled={!ready}>
+                <Camera size={14} /> ถ่ายเลย
+              </button>
+              <button type="button" className="pl-btn pl-btn-sm" onClick={() => { setMode("upload"); setError(null); }}>
+                <Upload size={12} /> หรืออัปโหลด
+              </button>
+            </>
+          ) : (
             <button type="button" className="pl-btn pl-btn-sm" onClick={() => { setMode("upload"); setError(null); }}>
-              <Upload size={12} /> หรืออัปโหลด
+              <Upload size={12} /> หรืออัปโหลดรูปจากเครื่อง
             </button>
-          </>
+          )
         ) : (
           <>
             <button type="button" className="pl-btn pl-btn-primary" onClick={() => fileRef.current?.click()}>
               <Upload size={14} /> เลือกรูป
             </button>
-            <button type="button" className="pl-btn pl-btn-sm" onClick={() => { setMode("webcam"); setError(null); setRetryNonce((n) => n + 1); }}>
-              <Camera size={12} /> ลองกล้องใหม่
+            <button type="button" className="pl-btn pl-btn-sm" onClick={() => { setMode("webcam"); setError(null); setCameraStarted(false); }}>
+              <Camera size={12} /> ลองกล้องอีกครั้ง
             </button>
           </>
         )}
