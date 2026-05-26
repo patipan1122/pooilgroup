@@ -5,9 +5,6 @@
 -- ====================================================
 -- PART 1: Tables (16) + enums + indexes + foreign keys
 -- ====================================================
-◇ injected env (22) from .env.local // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
-◇ injected env (0) from .env // tip: ⌘ suppress logs { quiet: true }
-Loaded Prisma config from prisma.config.ts.
 
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "chairops";
@@ -485,8 +482,10 @@ ALTER TABLE "chairops"."ChairopsAuditLog" ADD CONSTRAINT "ChairopsAuditLog_userI
 CREATE SCHEMA IF NOT EXISTS chairops;
 
 -- Helper: get caller's chairops.User row (cached via SECURITY DEFINER)
+-- NOTE: Prisma generates String columns as Postgres `text`, not `uuid`.
+-- Functions return text to match column type (avoids text=uuid operator errors in RLS policies).
 CREATE OR REPLACE FUNCTION chairops.current_user_id()
-RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER AS $$
+RETURNS text LANGUAGE sql STABLE SECURITY DEFINER AS $$
   SELECT u.id FROM chairops."ChairopsUser" u WHERE u."authUserId" = auth.uid()::text LIMIT 1
 $$;
 
@@ -496,8 +495,8 @@ RETURNS text LANGUAGE sql STABLE SECURITY DEFINER AS $$
 $$;
 
 CREATE OR REPLACE FUNCTION chairops.current_user_branch()
-RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER AS $$
-  SELECT u."primaryBranchId"::uuid FROM chairops."ChairopsUser" u WHERE u."authUserId" = auth.uid()::text LIMIT 1
+RETURNS text LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT u."primaryBranchId" FROM chairops."ChairopsUser" u WHERE u."authUserId" = auth.uid()::text LIMIT 1
 $$;
 
 CREATE OR REPLACE FUNCTION chairops.role_rank(r text)
