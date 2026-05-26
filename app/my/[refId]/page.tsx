@@ -263,8 +263,9 @@ export default async function MyApplicationPage({
             </div>
             <a
               href={`tel:${app.applicant.phone.replace(/[^0-9+]/g, "")}`}
-              className="size-10 rounded-xl bg-green-500 text-white flex items-center justify-center hover:bg-green-600"
-              title="โทรเข้าเบอร์ของคุณ (สำหรับทดสอบ)"
+              aria-label="โทรหา HR"
+              className="min-h-11 min-w-11 size-11 rounded-xl bg-green-500 text-white flex items-center justify-center hover:bg-green-600"
+              title="โทรหา HR"
             >
               <Phone className="size-4" />
             </a>

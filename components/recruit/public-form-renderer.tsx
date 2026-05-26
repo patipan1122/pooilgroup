@@ -252,7 +252,7 @@ export function PublicFormRenderer({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5 max-w-2xl mx-auto">
+    <form onSubmit={handleSubmit} className="space-y-5 max-w-2xl mx-auto pb-[env(safe-area-inset-bottom)]">
       {/* Honeypot — hidden field bots fill */}
       <input
         ref={honeypotRef}
@@ -304,6 +304,8 @@ export function PublicFormRenderer({
           <Field label="เบอร์โทร" required>
             <input
               type="tel"
+              inputMode="tel"
+              autoComplete="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value.replace(/[^0-9]/g, ""))}
               disabled={disabled}
@@ -316,6 +318,8 @@ export function PublicFormRenderer({
           <Field label="อีเมล (ถ้ามี)">
             <input
               type="email"
+              inputMode="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={disabled}
@@ -376,9 +380,11 @@ export function PublicFormRenderer({
       </div>
 
       {/* Submit — canvas-style elevated CTA with brand-shadow */}
+      {/* B-006 (mobile): pb on parent + scroll-margin lets iOS keyboard not hide submit */}
       <button
         type="submit"
         disabled={disabled || submitting || !consent}
+        style={{ scrollMarginBottom: "100px" }}
         className="w-full h-14 rounded-2xl bg-[var(--color-brand-600)] text-white font-extrabold text-base hover:bg-[var(--color-brand-700)] disabled:opacity-40 transition-all flex items-center justify-center gap-2 shadow-[0_6px_16px_rgba(30,58,255,0.25)] disabled:shadow-none"
       >
         {submitting ? (
@@ -656,9 +662,15 @@ function renderInput(
         />
       );
     case "file": {
-      const accept = (field.accept ?? ["pdf", "doc", "docx", "jpg", "png"])
-        .map((ext) => `.${ext}`)
-        .join(",");
+      // B-006: build accept string with MIME wildcards (image/*, application/pdf, ...)
+      // so iOS file picker shows Photos directly · also keep extension fallback for desktop
+      const exts = field.accept ?? ["pdf", "doc", "docx", "jpg", "png"];
+      const hasImage = exts.some((e) => ["jpg", "jpeg", "png", "webp", "heic"].includes(e));
+      const acceptParts: string[] = [...exts.map((ext) => `.${ext}`)];
+      if (hasImage) acceptParts.unshift("image/*");
+      if (exts.includes("pdf")) acceptParts.push("application/pdf");
+      if (exts.includes("doc") || exts.includes("docx")) acceptParts.push("application/msword");
+      const accept = Array.from(new Set(acceptParts)).join(",");
       const maxFiles = field.maxFiles ?? 3;
       return (
         <div className="space-y-2">
