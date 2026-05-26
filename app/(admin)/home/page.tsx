@@ -273,6 +273,11 @@ export default async function HomePage() {
               landingPath="/chairops/dashboard"
             />
             <ModuleCard
+              slug="playland"
+              enabled={moduleEnabled.playland ?? true}
+              landingPath="/playland"
+            />
+            <ModuleCard
               slug="fuelos"
               enabled={moduleEnabled.fuelos ?? true}
               landingPath="/fuelos"

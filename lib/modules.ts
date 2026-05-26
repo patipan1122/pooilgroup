@@ -591,7 +591,7 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       "ลงทะเบียนสมาชิก + face recognition + คิดเวลาเล่นอัตโนมัติ + POS ขนม + จองล่วงหน้า + รายงานรายวัน · ACS-F606 + ACS302",
     emoji: "🎡",
     Icon: Smile,
-    status: "beta",
+    status: "active",
     basePath: "/playland",
     nav: [
       // Sections render as visual group headers in the sidebar (admin-shell.tsx)
