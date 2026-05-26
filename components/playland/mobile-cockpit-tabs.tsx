@@ -42,6 +42,8 @@ export function MobileCockpitTabs({ alertCount, inRoomCount }: Props) {
   return (
     <div
       className="pl-mobile-cockpit-tabs"
+      role="tablist"
+      aria-label="Cockpit sections"
       style={{
         position: "sticky",
         top: 0,
@@ -64,9 +66,13 @@ export function MobileCockpitTabs({ alertCount, inRoomCount }: Props) {
 function TabBtn({ active, onClick, icon, label, count, accent }: {
   active: boolean; onClick: () => void; icon: React.ReactNode; label: string; count?: number; accent?: boolean;
 }) {
+  const accessibleLabel = count !== undefined && count > 0 ? `${label} · ${count} รายการ` : label;
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={active}
+      aria-label={accessibleLabel}
       onClick={onClick}
       style={{
         display: "flex", flexDirection: "column", alignItems: "center",
@@ -83,9 +89,10 @@ function TabBtn({ active, onClick, icon, label, count, accent }: {
       }}
     >
       {icon}
-      <span>{label}</span>
+      <span aria-hidden="true">{label}</span>
       {count !== undefined && count > 0 && (
         <span
+          aria-hidden="true"
           style={{
             position: "absolute", top: 4, right: "calc(50% - 22px)",
             background: accent ? "var(--pl-danger)" : "var(--pl-amber-500)",

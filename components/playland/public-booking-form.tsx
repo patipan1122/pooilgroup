@@ -48,8 +48,10 @@ export function PublicBookingForm({ branchId, branchSlug, packages }: { branchId
       });
       const data = await res.json();
       if (!res.ok || !data.ok) { setMsg({ kind: "err", text: data.error ?? `error ${res.status}` }); return; }
-      setMsg({ kind: "ok", text: `จองสำเร็จ · ${data.bookingCode}`, url: data.paymentUrl });
-      if (data.paymentUrl) window.location.href = data.paymentUrl;
+      // Show booking code for 4 seconds so parent can screenshot before Stripe redirect
+      // (per UX review: parent never sees code if redirect is immediate)
+      setMsg({ kind: "ok", text: `จองสำเร็จ · code ${data.bookingCode} · กำลังพาไปจ่าย...`, url: data.paymentUrl });
+      if (data.paymentUrl) setTimeout(() => { window.location.href = data.paymentUrl; }, 4000);
     });
   }
 

@@ -3,13 +3,15 @@
 // Mobile bottom nav · 5 icons for the most-used cashier flows
 // Hidden ≥900px (desktop uses sidebar) · sticky bottom on mobile
 // Per LESSONS run #1: cross-workspace nav was missing from clawfleet · ship here
+// Owner-mode addition: alert badge on Cockpit icon · polls /api/playland/alerts/count
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Activity, Users, ShoppingBasket, CalendarClock, BarChart3 } from "lucide-react";
 
 const ITEMS = [
-  { href: "/playland", icon: Activity, label: "Cockpit" },
+  { href: "/playland", icon: Activity, label: "Cockpit", badgeKey: "alerts" as const },
   { href: "/playland/members", icon: Users, label: "สมาชิก" },
   { href: "/playland/pos", icon: ShoppingBasket, label: "POS" },
   { href: "/playland/bookings", icon: CalendarClock, label: "จอง" },
@@ -18,6 +20,24 @@ const ITEMS = [
 
 export function MobileBottomNav() {
   const pathname = usePathname();
+  const [alertCount, setAlertCount] = useState(0);
+
+  // Poll alert count every 30s so owner-on-phone sees critical alerts even
+  // when not on the cockpit (per Owner Mobile review · alert blindness)
+  useEffect(() => {
+    let cancelled = false;
+    const fetchCount = async () => {
+      try {
+        const res = await fetch("/api/playland/alerts/count", { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (typeof data?.count === "number") setAlertCount(data.count);
+      } catch { /* silent · don't crash nav for a counter */ }
+    };
+    fetchCount();
+    const id = setInterval(fetchCount, 30_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
   return (
     <nav
       aria-label="Playland mobile navigation"
@@ -37,10 +57,12 @@ export function MobileBottomNav() {
         {ITEMS.map((it) => {
           const Icon = it.icon;
           const isActive = pathname === it.href || (it.href !== "/playland" && pathname.startsWith(it.href));
+          const badge = ("badgeKey" in it && it.badgeKey === "alerts") ? alertCount : 0;
           return (
             <Link
               key={it.href}
               href={it.href}
+              aria-label={badge > 0 ? `${it.label} · ${badge} แจ้งเตือนใหม่` : it.label}
               style={{
                 display: "flex", flexDirection: "column", alignItems: "center",
                 gap: 2, padding: "10px 4px 12px",
@@ -50,7 +72,25 @@ export function MobileBottomNav() {
                 position: "relative",
               }}
             >
-              <Icon size={20} strokeWidth={isActive ? 2.4 : 1.8} />
+              <span style={{ position: "relative" }}>
+                <Icon size={20} strokeWidth={isActive ? 2.4 : 1.8} />
+                {badge > 0 && (
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      position: "absolute", top: -4, right: -8,
+                      background: "var(--pl-danger)",
+                      color: "white", fontSize: 9, fontWeight: 700,
+                      borderRadius: 999, padding: "1px 5px",
+                      minWidth: 16, height: 14, lineHeight: "12px",
+                      textAlign: "center",
+                      boxShadow: "0 0 0 2px var(--pl-paper)",
+                    }}
+                  >
+                    {badge > 9 ? "9+" : badge}
+                  </span>
+                )}
+              </span>
               <span>{it.label}</span>
               {isActive && (
                 <span

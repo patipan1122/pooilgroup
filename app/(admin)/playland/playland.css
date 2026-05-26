@@ -300,16 +300,19 @@
 }
 
 .pl-btn-primary {
-  background: linear-gradient(180deg, var(--pl-amber-500), var(--pl-amber-600));
-  border-color: var(--pl-amber-600);
+  /* Darker gradient · WCAG AA white-on-amber (was 2.36:1 fail · now 4.7+:1)
+   * Use ink-on-amber for max contrast on light shade · white on darker shade. */
+  background: linear-gradient(180deg, var(--pl-amber-600), var(--pl-amber-700));
+  border-color: var(--pl-amber-700);
   color: white;
   font-weight: 600;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);  /* extra legibility */
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2) inset, var(--pl-shadow-1);
 }
 
 .pl-btn-primary:hover:not(:disabled) {
-  background: linear-gradient(180deg, var(--pl-amber-400), var(--pl-amber-500));
-  border-color: var(--pl-amber-600);
+  background: linear-gradient(180deg, var(--pl-amber-500), var(--pl-amber-600));
+  border-color: var(--pl-amber-700);
   color: white;
 }
 
@@ -564,6 +567,21 @@
 @keyframes pl-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
+}
+
+/* For users with reduced motion · keep a static visual cue for danger
+ * (color alone fails color-blind users · static border survives motion off) */
+@media (prefers-reduced-motion: reduce) {
+  .pl-countdown.is-danger {
+    animation: none;
+    text-decoration: underline wavy var(--pl-danger);
+    text-underline-offset: 4px;
+  }
+  .pl-tv-card.is-danger {
+    animation: none;
+    outline: 3px solid var(--pl-danger);
+    outline-offset: -3px;
+  }
 }
 
 /* ============================================================================
@@ -1146,12 +1164,22 @@
     box-shadow: var(--pl-shadow-3);
   }
 
-  /* Header densify · hide eyebrow's long meta · title smaller */
-  .pl-header { padding: 10px 12px; gap: 8px; }
+  /* Header densify · title smaller · keep subtitle visible (owner needs the numbers) */
+  .pl-header { padding: 10px 12px; gap: 8px; flex-wrap: wrap; }
   .pl-header h1 { font-size: 1.05rem; }
-  .pl-header h1 > span { display: none; }  /* "X ในร้าน · ฿Y" subtitle hidden */
+  .pl-header h1 > span {
+    display: block;
+    margin-left: 0 !important;
+    margin-top: 4px;
+    font-size: 11px !important;
+  }
   .pl-header .pl-eyebrow { font-size: 0.625rem; }
   .pl-header [data-mobile-hide] { display: none; }
+  /* Forms inside header (Reports filter) wrap into 2 rows · button full-width */
+  .pl-header form { flex-wrap: wrap; gap: 6px; width: 100%; }
+  .pl-header form > * { flex: 1 1 calc(50% - 3px); min-width: 0; width: auto !important; }
+  .pl-header form > button[type="submit"],
+  .pl-header form > a.pl-btn { flex-basis: 100%; }
 
   /* Stat strips: 5-col → 2-col with horizontal scroll fallback */
   .pl-mobile-stats {

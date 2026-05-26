@@ -16,9 +16,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const branches = await listBranches(orgId);
   const branchId = sp.branch || "";
 
+  // Default range = today only (per UX review · owner asks "วันนี้เท่าไหร่" not "7 วัน avg")
   const to = sp.to ? new Date(sp.to) : new Date();
   to.setHours(23, 59, 59, 999);
-  const from = sp.from ? new Date(sp.from) : new Date(to.getTime() - 7 * 24 * 60 * 60_000);
+  const from = sp.from ? new Date(sp.from) : new Date(to);
   from.setHours(0, 0, 0, 0);
 
   const where = { orgId, soldAt: { gte: from, lte: to }, voidedAt: null, ...(branchId ? { branchId } : {}) };

@@ -112,17 +112,27 @@ export function CommandPalette() {
   return (
     <>
       {open && (
-        <div className="pl-cmdk-overlay" onClick={() => setOpen(false)}>
-          <div className="pl-cmdk" onClick={(e) => e.stopPropagation()}>
+        <div className="pl-cmdk-overlay" role="presentation" onClick={() => setOpen(false)}>
+          <div
+            className="pl-cmdk"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Command palette"
+            onClick={(e) => e.stopPropagation()}
+          >
             <input
               ref={inputRef}
               className="pl-cmdk-input"
-              placeholder="ค้นหา หรือ พิมพ์คำสั่ง..."
+              role="combobox"
+              aria-expanded="true"
+              aria-controls="pl-cmdk-list"
+              aria-autocomplete="list"
+              placeholder="ค้นหาสมาชิก หรือ พิมพ์คำสั่ง..."
               value={query}
               onChange={(e) => { setQuery(e.target.value); setActive(0); }}
               onKeyDown={onKeyDown}
             />
-            <div className="pl-cmdk-list">
+            <div className="pl-cmdk-list" id="pl-cmdk-list" role="listbox">
               {allItems.length === 0 ? (
                 <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--pl-text-muted)", fontSize: 14 }}>
                   ไม่พบรายการ

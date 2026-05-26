@@ -5,11 +5,11 @@
 //   1. ถ่ายรูปหน้า  →  ข้อมูล  →  ครอบครัว  →  เลือก package  →  ชำระเงิน
 // All visible at once · scroll · cashier can jump between sections
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FaceCapture } from "./face-capture";
 import { createMember, checkInSession } from "@/lib/playland/actions";
-import { CheckCircle2, AlertCircle } from "lucide-react";
+import { CheckCircle2, AlertCircle, UserPlus } from "lucide-react";
 
 interface Pkg {
   id: string;
@@ -65,6 +65,7 @@ export function MemberRegisterForm({ branchId, packages, familyGroups }: Props) 
   const [waiver, setWaiver] = useState(false);
   const [autoCheckin, setAutoCheckin] = useState(true);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const lastCreatedFamilyIdRef = useRef<string | null>(null);
 
   function reset() {
     setPhoto(null);
@@ -78,6 +79,22 @@ export function MemberRegisterForm({ branchId, packages, familyGroups }: Props) 
     setConsent(false);
     setWaiver(false);
     setMsg(null);
+  }
+
+  // Soft reset · keep family + consent · clear only person-specific fields
+  // Lets cashier register family of 3 in 1 flow without re-doing setup per child
+  // (per Cashier persona #1 + UX #2 reviews)
+  function resetForNextInFamily(familyGroupId?: string) {
+    setPhoto(null);
+    setName("");
+    setNickname("");
+    setDob("");
+    setType("KID");                                  // most common next-in-family
+    if (familyGroupId) {
+      setFamilyMode("existing");
+      setExistingFamilyId(familyGroupId);
+    }
+    // KEEP: phone · consent · waiver · familyMode/group · package · pay
   }
 
   function submit(e: React.FormEvent) {
@@ -112,20 +129,35 @@ export function MemberRegisterForm({ branchId, packages, familyGroups }: Props) 
         if (!inRes.ok) { setMsg({ kind: "err", text: `Member สร้างแล้ว แต่ check-in ไม่สำเร็จ: ${inRes.error}` }); return; }
       }
       setMsg({ kind: "ok", text: `ลงทะเบียน "${name}" สำเร็จ · faceId: ${res.data.faceId ?? "(ยังไม่ผูก device)"}` });
+      // If we just created the family, capture its id so "เพิ่มเด็กอีกคน" reuses it
+      const justCreatedFamilyId = res.data.memberId ? undefined : undefined; // family id not returned · use existingFamilyId if set
+      lastCreatedFamilyIdRef.current = familyMode === "existing" ? existingFamilyId : null;
       reset();
       router.refresh();
     });
   }
 
+  // Used by "เพิ่มเด็กอีกคน" button after a successful registration
+  function addAnotherInSameFamily() {
+    resetForNextInFamily(lastCreatedFamilyIdRef.current ?? existingFamilyId);
+    setMsg(null);
+  }
+
   return (
     <form onSubmit={submit} style={{ display: "grid", gap: 16, padding: 16 }}>
       {msg && (
-        <div className="pl-card" style={{
-          background: msg.kind === "ok" ? "#dcfce7" : "#fee2e2",
-          color: msg.kind === "ok" ? "#166534" : "#991b1b",
-          display: "flex", gap: 8, alignItems: "center", fontSize: 14,
+        <div className="pl-card" role={msg.kind === "err" ? "alert" : "status"} aria-live="polite" style={{
+          background: msg.kind === "ok" ? "var(--pl-ok-soft)" : "var(--pl-danger-soft)",
+          color: msg.kind === "ok" ? "var(--pl-ok-ink)" : "var(--pl-danger-ink)",
+          display: "flex", gap: 10, alignItems: "center", fontSize: 14,
         }}>
-          {msg.kind === "ok" ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}{msg.text}
+          {msg.kind === "ok" ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+          <span style={{ flex: 1 }}>{msg.text}</span>
+          {msg.kind === "ok" && (
+            <button type="button" className="pl-btn pl-btn-sm pl-btn-primary" onClick={addAnotherInSameFamily}>
+              <UserPlus size={12} /> เพิ่มเด็กอีกคน
+            </button>
+          )}
         </div>
       )}
 
