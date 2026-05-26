@@ -66,8 +66,16 @@ export async function sendStatusEmail(
 
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
+    // P2-13: silent no-op in dev is fine · but in prod = real bug · scream loud.
+    if (process.env.NODE_ENV === "production") {
+      console.error(
+        "[recruit-email] FATAL · RESEND_API_KEY missing in production · email NOT sent:",
+        template.subject,
+      );
+      return { sent: false, error: "no_api_key_prod" };
+    }
     console.log(
-      "[recruit-email] RESEND_API_KEY missing · would send:",
+      "[recruit-email] RESEND_API_KEY missing (dev) · would send:",
       template.subject.replace(/\{(\w+)\}/g, (_, k) => String(ctx[k as keyof EmailCtx] ?? "")),
     );
     return { sent: false, error: "no_api_key" };

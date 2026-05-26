@@ -170,9 +170,16 @@ export async function GET(
     where: { id: channelId },
     select: { metadata: true },
   });
-  const expectedToken = ((channel?.metadata ?? {}) as { verifyToken?: string }).verifyToken;
+  // P2-11: support new encrypted `verifyTokenEnc` AND legacy plaintext `verifyToken` (backwards compat).
+  const md = (channel?.metadata ?? {}) as {
+    verifyToken?: string;
+    verifyTokenEnc?: string;
+  };
+  const expectedToken = md.verifyTokenEnc
+    ? decryptToken(md.verifyTokenEnc)
+    : (md.verifyToken ?? null);
 
-  if (mode === "subscribe" && token && challenge && token === expectedToken) {
+  if (mode === "subscribe" && token && challenge && expectedToken && token === expectedToken) {
     return new Response(challenge, { status: 200 });
   }
 

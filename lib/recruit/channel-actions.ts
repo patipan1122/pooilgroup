@@ -17,7 +17,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { canRecruitAdmin } from "./role-guard";
-import { encryptToken } from "./channel-crypto";
+import { encryptToken, decryptToken } from "./channel-crypto";
 import crypto from "node:crypto";
 
 export type ChannelType = "LINE" | "FACEBOOK";
@@ -38,10 +38,12 @@ export async function createChannel(input: {
 
   // FB requires a "verify token" we choose so FB can echo it back when
   // confirming webhook ownership. Generate one we'll show to admin.
+  // P2-11: store encrypted at rest (admin sees decrypted value in UI · webhook decrypts before compare).
   const verifyToken =
     input.type === "FACEBOOK"
       ? crypto.randomBytes(24).toString("hex")
       : null;
+  const verifyTokenEnc = verifyToken ? encryptToken(verifyToken) : null;
 
   // Encrypt secrets at rest. Empty strings stored as null so prod can detect
   // partial setup and flag "missing token" state.
@@ -66,7 +68,7 @@ export async function createChannel(input: {
       status,
       metadata: {
         ...(input.metadata ?? {}),
-        ...(verifyToken ? { verifyToken } : {}),
+        ...(verifyTokenEnc ? { verifyTokenEnc } : {}),
       } as object,
       createdById: session.user.id,
     },
@@ -101,7 +103,11 @@ export async function listChannels() {
     },
   });
   return channels.map((c) => {
-    const md = (c.metadata ?? {}) as { verifyToken?: string };
+    // P2-11: read either new encrypted `verifyTokenEnc` or legacy plaintext `verifyToken`.
+    const md = (c.metadata ?? {}) as { verifyToken?: string; verifyTokenEnc?: string };
+    const verifyToken = md.verifyTokenEnc
+      ? decryptToken(md.verifyTokenEnc)
+      : (md.verifyToken ?? null);
     return {
       id: c.id,
       type: c.type as ChannelType,
@@ -112,7 +118,7 @@ export async function listChannels() {
       createdAt: c.createdAt.toISOString(),
       hasProviderSecret: !!c.webhookSecret,
       hasAccessToken: !!c.accessTokenEnc,
-      verifyToken: md.verifyToken ?? null, // FB only · we generated it · safe to expose
+      verifyToken, // FB only · admin pastes this into FB App webhook config
     };
   });
 }
