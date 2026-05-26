@@ -3,7 +3,7 @@
 // Schedule Interview button + modal dialog
 // Embedded in ApplicationActions or any context where HR wants to schedule
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { scheduleInterview } from "@/lib/recruit/interview-actions";
 import { CalendarCheck, X } from "lucide-react";
@@ -14,6 +14,17 @@ interface Props {
 
 export function ScheduleInterviewButton({ applicationId }: Props) {
   const [open, setOpen] = useState(false);
+
+  // B-007: close modal on Escape (keyboard-only users)
+  useEffect(() => {
+    if (!open) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
+
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [kind, setKind] = useState<"ONSITE" | "PHONE" | "VIDEO">("ONSITE");

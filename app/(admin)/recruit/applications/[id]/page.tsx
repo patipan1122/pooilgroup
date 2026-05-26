@@ -9,6 +9,7 @@ import {
 } from "@/lib/recruit/role-guard";
 import { prisma } from "@/lib/prisma";
 import { ApplicationDetail } from "@/components/recruit/application-detail";
+import { zUUID } from "@/lib/zod-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,12 @@ export default async function ApplicationFullPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
+  const { id: rawId } = await params;
+  // B-004 related: validate UUID format before hitting DB · fail fast on garbage input
+  const parsed = zUUID().safeParse(rawId);
+  if (!parsed.success) return notFound();
+  const id = parsed.data;
+
   const session = await requireSession();
   requireRecruitAccess(session.user.role);
 
