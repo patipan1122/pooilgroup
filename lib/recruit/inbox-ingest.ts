@@ -94,6 +94,26 @@ export async function ingestInboundMessage(p: IngestParams) {
     });
   }
 
+  // B-001: idempotency · LINE/FB retry → same (channelInstanceId, externalId) pair.
+  // DB partial unique enforces this · check first so we return existing instead of throwing.
+  if (p.externalId) {
+    const existing = await prisma.recruitMessage.findFirst({
+      where: {
+        channelInstanceId: p.channelInstanceId,
+        externalId: p.externalId,
+      },
+      select: { id: true, applicationId: true },
+    });
+    if (existing) {
+      return {
+        messageId: existing.id,
+        applicationId: existing.applicationId,
+        applicantId: applicant.id,
+        duplicate: true,
+      };
+    }
+  }
+
   const msg = await prisma.recruitMessage.create({
     data: {
       orgId: p.orgId,
