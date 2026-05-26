@@ -81,24 +81,36 @@ export interface DiffSummary {
 
 // XLSX → string[][] grid (first sheet only · dates as ISO yyyy-mm-dd strings).
 // Empty cells become "" not undefined (matches parseRows expectations).
+//
+// Date handling:
+//   - cellDates:true on read makes Excel date cells = JS Date objects.
+//   - raw:true on sheet_to_json bypasses .w formatted-string (which defaults
+//     to "m/d/yy" and breaks downstream parseDate's regex), surfaces raw values.
+//   - We format Date manually using UTC getters so output is stable across
+//     server timezones (Vercel = UTC · local dev = +07:00). Excel dates are
+//     calendar dates (no time component) so UTC interpretation is correct.
 function parseXlsxToGrid(buf: Buffer): string[][] {
-  const wb = XLSX.read(buf, { type: "buffer", cellDates: false, cellNF: false });
+  const wb = XLSX.read(buf, { type: "buffer", cellDates: true });
   const firstName = wb.SheetNames[0];
   if (!firstName) return [];
   const sheet = wb.Sheets[firstName];
-  // header:1 → array of arrays. raw:false → format cells using NumberFormat.
-  // dateNF forces dates to render yyyy-mm-dd (existing parseDate handles ISO).
   const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
     header: 1,
-    raw: false,
-    dateNF: "yyyy-mm-dd",
+    raw: true,
     defval: "",
     blankrows: false,
   });
-  // Coerce every cell to string (numbers/dates already formatted as strings via raw:false).
-  return rows.map((r) =>
-    Array.isArray(r) ? r.map((c) => (c == null ? "" : String(c))) : []
-  );
+  const formatCell = (c: unknown): string => {
+    if (c == null || c === "") return "";
+    if (c instanceof Date) {
+      const y = c.getUTCFullYear();
+      const m = String(c.getUTCMonth() + 1).padStart(2, "0");
+      const d = String(c.getUTCDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+    return String(c);
+  };
+  return rows.map((r) => (Array.isArray(r) ? r.map(formatCell) : []));
 }
 
 // Detect file kind by filename + magic bytes (XLSX = PK zip header · 50 4b 03 04).
