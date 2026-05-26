@@ -228,10 +228,15 @@ export async function changeApplicationStatus(
   if (!app) throw new Error("ไม่พบใบสมัคร");
   if (app.status === status) return;
 
-  await prisma.recruitApplication.update({
-    where: { id: applicationId },
+  // B-008: optimistic lock — only update if status hasn't changed since we read it.
+  // If 2 tabs race to change status, the slower one fails fast with a clear error.
+  const result = await prisma.recruitApplication.updateMany({
+    where: { id: applicationId, orgId: session.user.org_id, status: app.status },
     data: { status },
   });
+  if (result.count === 0) {
+    throw new Error("สถานะถูกเปลี่ยนจากที่อื่นแล้ว · กรุณาโหลดใหม่");
+  }
 
   await audit({
     orgId: session.user.org_id,
