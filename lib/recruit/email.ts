@@ -80,6 +80,7 @@ export async function sendStatusEmail(
   const body = template.body(ctx);
 
   try {
+    // B-002: explicit timeout to prevent hang if Resend is slow/down
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -92,6 +93,7 @@ export async function sendStatusEmail(
         subject,
         text: body,
       }),
+      signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) {
       const err = await res.text();

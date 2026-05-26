@@ -56,11 +56,15 @@ export async function suggestFields(input: {
 - คำถามต้องเป็นภาษาไทย เข้าใจง่าย
 - คืนเฉพาะ JSON · ห้ามอธิบายเพิ่ม`;
 
-  const response = await anthropic.messages.create({
-    model: HAIKU_MODEL,
-    max_tokens: 2000,
-    messages: [{ role: "user", content: prompt }],
-  });
+  // B-002: explicit timeout — Anthropic call should fail fast if unreachable
+  const response = await anthropic.messages.create(
+    {
+      model: HAIKU_MODEL,
+      max_tokens: 2000,
+      messages: [{ role: "user", content: prompt }],
+    },
+    { timeout: 15_000 },
+  );
 
   const text =
     response.content[0]?.type === "text" ? response.content[0].text : "";
@@ -133,11 +137,15 @@ ${readableAnswers.join("\n")}
 - ใช้ภาษาไทย ตรงไปตรงมา
 - คืนเฉพาะ JSON`;
 
-  const response = await anthropic.messages.create({
-    model: SONNET_MODEL,
-    max_tokens: 1000,
-    messages: [{ role: "user", content: prompt }],
-  });
+  // B-002: explicit timeout
+  const response = await anthropic.messages.create(
+    {
+      model: SONNET_MODEL,
+      max_tokens: 1000,
+      messages: [{ role: "user", content: prompt }],
+    },
+    { timeout: 20_000 },
+  );
 
   const text =
     response.content[0]?.type === "text" ? response.content[0].text : "";
@@ -194,12 +202,16 @@ ${input.context ? `\nContext ปัจจุบัน: ${input.context}` : ""}`;
   }));
   messages.push({ role: "user", content: input.message });
 
-  const response = await anthropic.messages.create({
-    model: SONNET_MODEL,
-    max_tokens: 1500,
-    system: systemPrompt,
-    messages: messages as Anthropic.MessageParam[],
-  });
+  // B-002: explicit timeout
+  const response = await anthropic.messages.create(
+    {
+      model: SONNET_MODEL,
+      max_tokens: 1500,
+      system: systemPrompt,
+      messages: messages as Anthropic.MessageParam[],
+    },
+    { timeout: 20_000 },
+  );
 
   return response.content[0]?.type === "text" ? response.content[0].text : "";
 }
