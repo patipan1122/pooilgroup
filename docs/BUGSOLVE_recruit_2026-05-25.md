@@ -1,9 +1,45 @@
-# BugSolve · recruit · 2026-05-25
+# BugSolve · recruit · 2026-05-25 → 2026-05-26
 
 **Mode**: Quick (Phase 0 → 1 → 2 [5 sims] → 4 → 7 · no auto-fix · report only)
 **Skill**: `/bigsolvebug --quick recruit` (first ever run · seeds LESSONS + regression-library)
 **Cost**: ~210k input tokens · 25 min wall time
 **Skill version**: v1.0 (2026-05-25)
+
+---
+
+## 🟢 Update 2026-05-26 — CEO said "ลุยทั้งหมด" · 8 batches shipped
+
+CEO authorized full fix on 2026-05-26. Status now:
+
+| Severity | Found | Fixed | Deferred | False positive |
+|---|---|---|---|---|
+| **P0** | 6 | **5** (RLS×2 · timeouts · ext-MIME guard) | **1** (schema migration · CEO approval pending) | 1 (P0-6 cross-org guard already exists) |
+| **P1** | 15 | **9** | 4 (R2 infra · 2 schema · tag race) | 2 (UUID validate added · TabButton label already) |
+| **P2** | 14 | **3** (breadcrumb · verifyToken encrypt · Resend prod throw) | 11 (Modal refactor · feature gap · cosmetic) | 1 (maxFiles server check already exists) |
+
+**Commits shipped (NOT deployed · `git log --oneline` since 2026-05-26):**
+- `0103de5` — RLS policies for inbox_channels + form_templates [B-003]
+- `dd63c03` — Resend + Anthropic AbortSignal timeouts [B-002]
+- `67f0806` — Modal Esc key + UUID validation [B-007]
+- `96faca7` — Mobile UX (inputMode · MIME accept · safe-area · tap target) [B-006]
+- `e782bf5` — Validation (Feb-30 + maxLength cap + interview race partial)
+- `d7252a6` — Optimistic lock on changeApplicationStatus [B-008]
+- `99f260d` — Filename ext vs Content-Type match [partial B-002]
+- `974c9a4` — Breadcrumb + encrypt FB verifyToken + Resend prod-throw
+
+**Pending CEO confirmation:**
+1. **Schema migration `20260526000002_recruit_unique_constraints.sql`** — adds 2 partial unique indexes (webhook idempotency + blacklist dedup). Auto-mode classifier blocked auto-apply (correctly · prod DB). CEO confirms = apply.
+2. **R2 lifecycle policy** — Cloudflare-side · 24h auto-delete of orphan files.
+3. **Modal primitive refactor** — to replace 5 `window.confirm()` calls (P2 polish · ~1 day).
+4. **Bulk multi-select feature** (P2-7) — design call · feature gap not bug.
+
+**Verification (Phase 6):**
+- `tsc --noEmit` clean
+- `next build` clean · all 80+ routes compile
+- Regression-library greps: 5 of 10 patterns now clean post-fix
+- NOT deployed to prod (per memory `feedback-push-not-equals-deploy` · CEO must approve `vercel --prod`)
+
+---
 
 ---
 

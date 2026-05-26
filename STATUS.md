@@ -1,8 +1,46 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-25 (ChairOps audit + Wave 0 + Wave 1a build · รอบ 54)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-26 (`/bigsolvebug recruit` auto-fix · รอบ 55)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-05-26 · รอบ 55 — `/bigsolvebug` ลุยทั้งหมด · 8 commits · 17 bugs fixed)
+
+**CEO goal**: "ลุยทั้งหมด" (after `/bigsolvebug --quick recruit` run #1 found 35 bugs)
+
+**8 commits shipped** (`0103de5 → 974c9a4` · ยังไม่ deploy prod):
+1. `0103de5` — RLS policy migration applied to prod DB (recruit_inbox_channels + recruit_form_templates) [B-003]
+2. `dd63c03` — Resend + Anthropic AbortSignal.timeout (Resend 10s · Haiku 15s · Sonnet 20s) [B-002]
+3. `67f0806` — ScheduleInterview modal Esc + UUID validation on /recruit/applications/[id] [B-007]
+4. `96faca7` — Mobile UX (inputMode tel/email · MIME accept image/* · pb-safe submit · tap target 44px) [B-006]
+5. `e782bf5` — Validation (Feb-30 detection · maxLength cap 10k · interview status re-read)
+6. `d7252a6` — Optimistic lock `updateMany WHERE status: expectedPrev` on changeApplicationStatus [B-008]
+7. `99f260d` — Filename ext vs Content-Type match on /api/recruit/upload (partial MIME guard)
+8. `974c9a4` — P2 polish · breadcrumb + encrypt FB verifyToken + Resend prod-throw
+
+**4 false positives caught (proves the LESSONS pattern "always read full file")**:
+- P0-6 cross-org channelInstanceId guard — already exists at message-actions.ts:112-114
+- P1-3 TabButton aria-label — has visible `{label}` already
+- P1-9 long_text max — schema already had `max(field.maxLength ?? 5000)`
+- P2-12 server-side maxFiles — exists at submit-action.ts:51
+
+**Phase 6 verify · ALL CLEAN**:
+- `tsc --noEmit` clean
+- `next build` clean · all 80+ routes compile
+- Regression-library greps: 5/10 patterns now resolved
+
+**Pending CEO confirmation (4 items)**:
+1. **Schema migration** `supabase/migrations/20260526000002_recruit_unique_constraints.sql` — 2 partial unique indexes (webhook idempotency + blacklist dedup). Auto-classifier blocked apply correctly.
+2. **R2 lifecycle policy** — Cloudflare 24h auto-delete (P1-14)
+3. **Modal primitive refactor** — replace 5 `window.confirm()` (P2 polish · ~1 day)
+4. **Deploy to prod** — review commits then `vercel --prod`
+
+**Skill self-improvement**:
+- `~/.claude/skills/bigsolvebug/LESSONS.md` — Run #2 entry added
+- Pattern reinforced: "always read full file before trusting agent report" (caught 4 false positives)
+- Pattern emerging: "Phase 4 triage should re-verify each finding by opening file"
+
+**Master report**: `docs/BUGSOLVE_recruit_2026-05-25.md` (appended "2026-05-26 update" section)
 
 ## 🆕 Update (2026-05-25 · รอบ 54 — ChairOps audit #2 + Wave 0 + Wave 1 COMPLETE + bigsolvebug auto-fix · ~10,500+ LOC)
 
