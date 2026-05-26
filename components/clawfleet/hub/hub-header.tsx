@@ -11,6 +11,7 @@ import Link from "next/link";
 import { Sun, Moon, Sunrise, Sunset, RefreshCw, MapPin } from "lucide-react";
 import { thaiDateLong, bkkTime } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
+import { HelpLink } from "@/components/clawfleet/help/help-link";
 
 interface BranchOption {
   id: string;
@@ -154,6 +155,8 @@ export function HubHeader({
               กรอง: {selectedBranch.code}
             </span>
           )}
+
+          <HelpLink variant="icon" />
 
           <Link
             href={formAction}
