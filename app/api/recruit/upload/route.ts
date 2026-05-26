@@ -58,6 +58,27 @@ export async function POST(req: NextRequest) {
   if (size > MAX_FILE_SIZE) {
     return NextResponse.json({ error: "ไฟล์ใหญ่เกิน 5 MB" }, { status: 400 });
   }
+  // P1-8 partial fix: filename ext must match contentType (catches `.exe` lying as image/jpeg).
+  // Note: real magic-bytes check requires server-side stream (current flow is client→R2 direct
+  // via signed URL) · CEO architectural call to add R2-side post-validation worker.
+  const expectedExts: Record<string, string[]> = {
+    "image/jpeg": ["jpg", "jpeg"],
+    "image/png": ["png"],
+    "image/webp": ["webp"],
+    "application/pdf": ["pdf"],
+    "application/msword": ["doc"],
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ["docx"],
+  };
+  const allowedExts = expectedExts[contentType];
+  if (allowedExts) {
+    const lower = fileName.toLowerCase();
+    if (!allowedExts.some((ext) => lower.endsWith(`.${ext}`))) {
+      return NextResponse.json(
+        { error: `นามสกุลไฟล์ไม่ตรงกับ ${contentType}` },
+        { status: 400 },
+      );
+    }
+  }
 
   // Validate posting open
   const posting = await prisma.recruitJobPosting.findUnique({
