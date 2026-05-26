@@ -71,6 +71,13 @@ export interface NavItem {
    * feedback_role_scoped_views.md — ผู้จัดการสาขาเห็นแค่ฟีเจอร์ที่จำเป็น
    */
   roles?: DbUser["role"][];
+  /**
+   * Optional section label · admin-shell renders a small heading above the first
+   * item of each section, then a divider above subsequent sections. When omitted,
+   * the item joins the previous section (or renders flat if no module sets section).
+   * Modules opt in independently · zero impact on modules that don't set it.
+   */
+  section?: string;
 }
 
 export interface ModuleConfig {
@@ -587,16 +594,14 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     status: "beta",
     basePath: "/playland",
     nav: [
-      // ─── Cockpit — daily home (cashier) ───
-      { href: "/playland",         label: "Cockpit",        icon: Activity },
+      // Sections render as visual group headers in the sidebar (admin-shell.tsx)
+      { href: "/playland",         label: "Cockpit",        icon: Activity, section: "Cockpit" },
       { href: "/playland/monitor", label: "Monitor (TV)",   icon: Tv },
 
-      // ─── Customers · relationships ───
-      { href: "/playland/members",  label: "สมาชิก",        icon: ScanFace },
+      { href: "/playland/members",  label: "สมาชิก",        icon: ScanFace,       section: "ลูกค้า" },
       { href: "/playland/bookings", label: "จองล่วงหน้า",   icon: CalendarClock },
 
-      // ─── Operations · sell + serve ───
-      { href: "/playland/pos",     label: "POS · ขายของ",   icon: ShoppingBasket },
+      { href: "/playland/pos",     label: "POS · ขายของ",   icon: ShoppingBasket, section: "หน้าร้าน" },
       {
         href: "/playland/shifts",
         label: "กะ · ปิดวัน",
@@ -604,12 +609,12 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
       },
 
-      // ─── Back-office · insights + audit (manager+) ───
       {
         href: "/playland/reports",
         label: "รายงาน",
         icon: BarChart3,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+        section: "Back-office",
       },
       { href: "/playland/audit",   label: "Audit Log",   icon: History,  adminOnly: true },
       { href: "/playland/settings",label: "ตั้งค่า",     icon: Settings, adminOnly: true },

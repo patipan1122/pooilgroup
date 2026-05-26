@@ -33,7 +33,14 @@ const PAY = [
   { v: "CHARGE_TO_MEMBER", label: "ใส่บิล member" },
 ] as const;
 
-export function PosClient({ branchId, products }: { branchId: string; products: Product[] }) {
+interface PosClientProps {
+  branchId: string;
+  products: Product[];
+  /** When user came from Session Inspector "ขายให้คนนี้" · scopes sale to active session for charge-to-bill */
+  chargeSession?: { id: string; memberName: string } | null;
+}
+
+export function PosClient({ branchId, products, chargeSession }: PosClientProps) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -96,14 +103,19 @@ export function PosClient({ branchId, products }: { branchId: string; products: 
 
   function checkout() {
     if (cart.length === 0) return;
+    // If charging to a session, force CHARGE_TO_MEMBER payment method so the
+    // bill rolls up at member check-out instead of immediate cash drawer.
+    const effectivePay = chargeSession ? "CHARGE_TO_MEMBER" : pay;
     start(async () => {
       const res = await createSale({
         branchId,
+        sessionId: chargeSession?.id,
         items: cart.map((c) => ({ productId: c.productId, quantity: c.quantity })),
-        paymentMethod: pay,
+        paymentMethod: effectivePay,
       });
       if (!res.ok) { setMsg({ kind: "err", text: res.error }); return; }
-      setMsg({ kind: "ok", text: `ขายสำเร็จ · ${thb(res.data.totalCents)} · saleId ${res.data.saleId.slice(0, 8)}` });
+      const tail = chargeSession ? ` · ใส่บิล ${chargeSession.memberName}` : "";
+      setMsg({ kind: "ok", text: `ขายสำเร็จ · ${thb(res.data.totalCents)}${tail}` });
       setCart([]);
       router.refresh();
     });
@@ -117,7 +129,12 @@ export function PosClient({ branchId, products }: { branchId: string; products: 
     <div className="pl-page">
       <header className="pl-header">
         <div>
-          <div className="pl-eyebrow">Playland · POS ขายของ</div>
+          <div className="pl-eyebrow">
+            Playland · POS ขายของ
+            {chargeSession && <span style={{ marginLeft: 8, padding: "1px 8px", background: "var(--pl-amber-100)", color: "var(--pl-amber-900)", borderRadius: 999, fontWeight: 700 }}>
+              ใส่บิล · {chargeSession.memberName}
+            </span>}
+          </div>
           <h1>ตะกร้า · {cart.length} รายการ · {thb(total)}</h1>
         </div>
         <form onSubmit={handleBarcodeSubmit} style={{ display: "flex", gap: 8, alignItems: "center" }}>

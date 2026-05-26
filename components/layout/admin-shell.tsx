@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
@@ -501,15 +501,23 @@ function SidebarBody({
             </span>
           </p>
           <div className="space-y-0.5">
-            {moduleNav.map((it) => (
-              <SidebarLink
-                key={it.href}
-                href={it.href}
-                icon={it.icon}
-                label={it.label}
-                pathname={pathname}
-                onNavigate={onNavigate}
-              />
+            {moduleNav.map((it, i) => (
+              <Fragment key={it.href}>
+                {it.section && (
+                  <p
+                    className={`px-3 ${i === 0 ? "pt-0.5" : "pt-3"} pb-1 text-[10px] font-semibold text-zinc-400 tracking-wide uppercase`}
+                  >
+                    {it.section}
+                  </p>
+                )}
+                <SidebarLink
+                  href={it.href}
+                  icon={it.icon}
+                  label={it.label}
+                  pathname={pathname}
+                  onNavigate={onNavigate}
+                />
+              </Fragment>
             ))}
           </div>
         </div>

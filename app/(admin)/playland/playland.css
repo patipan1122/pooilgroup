@@ -1098,7 +1098,7 @@
   .pl-two-pane > .pl-pane:first-child { max-height: 32vh; border-right: none; border-bottom: 1px solid var(--pl-line); }
   .pl-header h1 { font-size: 1.2rem; }
   /* Show mobile bottom nav · leave room for it */
-  .pl-mobile-nav { display: block !important; }
+  .pl-mobile-nav { display: block; }
   .pl-shell { padding-bottom: 68px; }
 }
 
