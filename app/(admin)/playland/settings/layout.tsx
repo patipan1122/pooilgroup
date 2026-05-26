@@ -7,6 +7,7 @@ import { requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { listBranches } from "@/lib/playland/queries";
 import { SettingsRail } from "@/components/playland/settings-rail";
+import { MobileRailToggle } from "@/components/playland/mobile-rail-toggle";
 import { ArrowLeft, Settings } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +46,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
           <SettingsRail sections={sections} />
         </aside>
         <main className="pl-pane">{children}</main>
+        <MobileRailToggle label="ตั้งค่า" />
       </div>
     </div>
   );

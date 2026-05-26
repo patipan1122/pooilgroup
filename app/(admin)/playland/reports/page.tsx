@@ -92,7 +92,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
       <div style={{ overflowY: "auto", padding: 20 }}>
         {/* Hero stats — numbers are hero */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14, marginBottom: 20 }}>
+        <div className="pl-mobile-stats" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14, marginBottom: 20 }}>
           <div className="pl-card pl-card-accent pl-stat-hero">
             <span className="pl-stat-label">รายได้รวม</span>
             <span className="pl-stat-value">{thb(total)}</span>
@@ -120,7 +120,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <div className="pl-mobile-stack" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
           {/* Per-branch */}
           <div className="pl-card" style={{ padding: 0, overflow: "hidden" }}>
             <div style={{ padding: "14px 18px 10px", borderBottom: "1px solid var(--pl-line)" }}>

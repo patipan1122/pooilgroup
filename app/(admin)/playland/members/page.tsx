@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime, memberTypeLabel } from "@/lib/playland/format";
 import { CheckinExistingButton } from "@/components/playland/checkin-existing-button";
 import { NavSelect } from "@/components/playland/nav-select";
+import { MobileRailToggle } from "@/components/playland/mobile-rail-toggle";
 import { Users, ScanFace, ArrowLeft, Search, Phone, Calendar } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -165,6 +166,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
             </div>
           )}
         </aside>
+        <MobileRailToggle label="สมาชิก" />
       </div>
     </div>
   );

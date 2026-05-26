@@ -18,6 +18,7 @@ import { MonitorTickClient } from "@/components/playland/monitor-tick-client";
 import { SessionInspector } from "@/components/playland/session-inspector";
 import { NavSelect } from "@/components/playland/nav-select";
 import { CashierHeaderActions } from "@/components/playland/cashier-header-actions";
+import { MobileCockpitTabs } from "@/components/playland/mobile-cockpit-tabs";
 import { Activity, Bell, Smile, Sparkles, Tv, Search } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -98,17 +99,19 @@ export default async function CashierCockpit({ searchParams }: { searchParams: P
           </h1>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span className="pl-btn pl-btn-ghost" aria-hidden="true" style={{ cursor: "default" }} title="กด ⌘K (Mac) หรือ Ctrl+K (Windows) เพื่อค้นหา">
-            <Search size={14} /> ค้นหา · จองให้ลูกค้า <span className="pl-kbd-inline">⌘K</span>
+          <span data-mobile-hide className="pl-btn pl-btn-ghost" aria-hidden="true" style={{ cursor: "default" }} title="กด ⌘K (Mac) หรือ Ctrl+K (Windows) เพื่อค้นหา">
+            <Search size={14} /> ค้นหา <span className="pl-kbd-inline">⌘K</span>
           </span>
           {branches.length > 1 && (
             <NavSelect param="branch" value={branchId} options={branches.map((b) => ({ value: b.id, label: b.name }))} style={{ width: 170 }} />
           )}
-          <Link href={`/playland/monitor?branch=${branchId}`} className="pl-btn"><Activity size={14} /> Monitor</Link>
-          <Link href={`/playland/monitor?tv=1&branch=${branchId}`} className="pl-btn"><Tv size={14} /> TV</Link>
+          <Link data-mobile-hide href={`/playland/monitor?branch=${branchId}`} className="pl-btn"><Activity size={14} /> Monitor</Link>
+          <Link data-mobile-hide href={`/playland/monitor?tv=1&branch=${branchId}`} className="pl-btn"><Tv size={14} /> TV</Link>
           <CashierHeaderActions branchId={branchId} openShift={openShift ? { id: openShift.id, totalSalesCents: openShift.totalSalesCents } : null} />
         </div>
       </header>
+
+      <MobileCockpitTabs alertCount={alerts.length} inRoomCount={activeSessions.length} />
 
       <div className="pl-three-pane">
         {/* ╭─ LEFT ─ Active sessions live list ───────────────────╮ */}

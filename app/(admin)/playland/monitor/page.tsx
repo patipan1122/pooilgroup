@@ -104,7 +104,7 @@ export default async function MonitorPage({ searchParams }: { searchParams: Prom
       </header>
 
       {/* Hero stats inline · dense · numbers are heroes */}
-      <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, borderBottom: "1px solid var(--pl-line)", background: "var(--pl-paper)" }}>
+      <div className="pl-mobile-stats" style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, borderBottom: "1px solid var(--pl-line)", background: "var(--pl-paper)" }}>
         <div className="pl-stat">
           <span className="pl-stat-label">ในร้านตอนนี้</span>
           <span className="pl-stat-value">{stats.activeSessions}</span>

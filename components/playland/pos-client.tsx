@@ -137,7 +137,7 @@ export function PosClient({ branchId, products, chargeSession }: PosClientProps)
           </div>
           <h1>ตะกร้า · {cart.length} รายการ · {thb(total)}</h1>
         </div>
-        <form onSubmit={handleBarcodeSubmit} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <form onSubmit={handleBarcodeSubmit} className="pl-pos-search" style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <Barcode size={16} color="var(--pl-text-muted)" />
           <input
             ref={barcodeRef}
@@ -157,7 +157,7 @@ export function PosClient({ branchId, products, chargeSession }: PosClientProps)
         </div>
       )}
 
-      <div className="pl-two-pane">
+      <div className="pl-two-pane pl-pos-pane">
         <div className="pl-pane" style={{ padding: 12 }}>
           {categories.length > 0 && (
             <div style={{ display: "flex", gap: 4, marginBottom: 10, flexWrap: "wrap" }}>
@@ -187,9 +187,11 @@ export function PosClient({ branchId, products, chargeSession }: PosClientProps)
           )}
         </div>
 
-        <aside className="pl-pane" style={{ display: "grid", gridTemplateRows: "auto 1fr auto" }}>
-          <div style={{ padding: "0.875rem 1rem", borderBottom: "1px solid var(--pl-line)", display: "flex", justifyContent: "space-between" }}>
-            <div className="pl-eyebrow">ตะกร้า</div>
+        <aside className="pl-pane pl-pos-cart" data-has-items={cart.length > 0} style={{ display: "grid", gridTemplateRows: "auto 1fr auto" }}>
+          <div style={{ padding: "0.875rem 1rem", borderBottom: "1px solid var(--pl-line)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div className="pl-eyebrow">ตะกร้า {cart.length > 0 && `· ${cart.length} รายการ · ${thb(total)}`}</div>
+            </div>
             {cart.length > 0 && <button className="pl-btn pl-btn-sm" onClick={clearCart}><Trash2 size={12} /> เคลียร์</button>}
           </div>
           <div style={{ overflowY: "auto" }}>

@@ -49,7 +49,7 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
         </div>
       </header>
 
-      <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, borderBottom: "1px solid var(--pl-line)", background: "var(--pl-paper)" }}>
+      <div className="pl-mobile-stats" style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, borderBottom: "1px solid var(--pl-line)", background: "var(--pl-paper)" }}>
         <div className="pl-stat"><span className="pl-stat-label">ทั้งหมด</span><span className="pl-stat-value">{summary.total}</span></div>
         <div className="pl-stat"><span className="pl-stat-label">รอชำระ</span><span className="pl-stat-value" style={{ color: summary.pending > 0 ? "var(--pl-warn)" : undefined }}>{summary.pending}</span></div>
         <div className="pl-stat"><span className="pl-stat-label">ชำระแล้ว</span><span className="pl-stat-value" style={{ color: "var(--pl-ok)" }}>{summary.paid}</span></div>
