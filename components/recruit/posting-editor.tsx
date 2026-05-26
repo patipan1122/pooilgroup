@@ -16,6 +16,7 @@ import {
 } from "@/lib/recruit/types";
 import { FormBuilder } from "./form-builder";
 import { IPhonePreview } from "./iphone-preview";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface Props {
   mode: "create" | "edit" | "view";
@@ -120,32 +121,26 @@ export function PostingEditor({
     });
   }
 
-  function close() {
+  async function close() {
     if (!postingId) return;
-    if (!confirm("ปิดรับสมัครประกาศนี้?")) return;
-    startTransition(async () => {
-      try {
-        await closePosting(postingId);
-        toast.success("ปิดรับแล้ว");
-        router.refresh();
-      } catch (e) {
-        toast.error((e as Error).message);
-      }
-    });
+    try {
+      await closePosting(postingId);
+      toast.success("ปิดรับแล้ว");
+      router.refresh();
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   }
 
-  function deleteMe() {
+  async function deleteMe() {
     if (!postingId) return;
-    if (!confirm("ลบประกาศนี้? · ลบแล้วกู้คืนไม่ได้")) return;
-    startTransition(async () => {
-      try {
-        await deletePosting(postingId);
-        toast.success("ลบแล้ว");
-        router.push("/recruit/postings");
-      } catch (e) {
-        toast.error((e as Error).message);
-      }
-    });
+    try {
+      await deletePosting(postingId);
+      toast.success("ลบแล้ว");
+      router.push("/recruit/postings");
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   }
 
   // Match companyId to its display name for the iPhone preview
@@ -250,24 +245,39 @@ export function PostingEditor({
           </div>
           <div className="flex items-center gap-2">
             {mode === "edit" && (
-              <button
-                type="button"
-                onClick={deleteMe}
-                disabled={pending}
-                className="text-sm font-bold text-red-600 px-3 h-11 hover:bg-red-50 rounded-lg"
-              >
-                ลบประกาศ
-              </button>
+              <ConfirmDialog
+                title="ลบประกาศนี้?"
+                body="ประกาศและใบสมัครทั้งหมดจะถูกลบ · ลบแล้วกู้คืนไม่ได้"
+                confirmLabel="ลบประกาศ"
+                onConfirm={deleteMe}
+                trigger={
+                  <button
+                    type="button"
+                    disabled={pending}
+                    className="text-sm font-bold text-red-600 px-3 h-11 hover:bg-red-50 rounded-lg"
+                  >
+                    ลบประกาศ
+                  </button>
+                }
+              />
             )}
             {canClose && (
-              <button
-                type="button"
-                onClick={close}
-                disabled={pending}
-                className="text-sm font-bold text-amber-700 bg-amber-50 px-4 h-11 rounded-xl hover:bg-amber-100"
-              >
-                ปิดรับสมัคร
-              </button>
+              <ConfirmDialog
+                title="ปิดรับสมัคร?"
+                body="ประกาศจะไม่รับใบสมัครใหม่ · เปิดใหม่ภายหลังได้"
+                confirmLabel="ปิดรับสมัคร"
+                variant="primary"
+                onConfirm={close}
+                trigger={
+                  <button
+                    type="button"
+                    disabled={pending}
+                    className="text-sm font-bold text-amber-700 bg-amber-50 px-4 h-11 rounded-xl hover:bg-amber-100"
+                  >
+                    ปิดรับสมัคร
+                  </button>
+                }
+              />
             )}
             <button
               type="button"

@@ -7,6 +7,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { addToBlacklist, removeFromBlacklist } from "@/lib/recruit/actions";
 import { Plus, ShieldCheck, Trash2, X, AlertTriangle } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type Severity = "critical" | "medium" | "low";
 
@@ -274,7 +275,6 @@ function BlacklistRowV2({
   const sev = SEVERITY_META[entry.severity];
 
   function remove() {
-    if (!confirm(`ถอน ${entry.fullName} ออกจาก Blacklist?`)) return;
     startTransition(async () => {
       try {
         await removeFromBlacklist(entry.id);
@@ -332,15 +332,24 @@ function BlacklistRowV2({
       </div>
       <div className="md:col-span-1 flex md:justify-end">
         {canRemove && (
-          <button
-            type="button"
-            onClick={remove}
-            disabled={pending}
-            title="ถอนจาก Blacklist"
-            className="size-9 rounded-lg border border-zinc-200 text-zinc-500 hover:text-red-700 hover:border-red-200 hover:bg-red-50 flex items-center justify-center"
-          >
-            <Trash2 className="size-3.5" />
-          </button>
+          <ConfirmDialog
+            title={`ถอน ${entry.fullName} ออกจาก Blacklist?`}
+            body="ผู้สมัครคนนี้จะกลับมาสมัครได้อีกครั้ง"
+            confirmLabel="ถอน"
+            variant="primary"
+            onConfirm={remove}
+            trigger={
+              <button
+                type="button"
+                disabled={pending}
+                title="ถอนจาก Blacklist"
+                aria-label={`ถอน ${entry.fullName} ออกจาก Blacklist`}
+                className="size-9 rounded-lg border border-zinc-200 text-zinc-500 hover:text-red-700 hover:border-red-200 hover:bg-red-50 flex items-center justify-center"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            }
+          />
         )}
       </div>
     </div>

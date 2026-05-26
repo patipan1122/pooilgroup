@@ -13,6 +13,7 @@ import {
   type ChannelType,
 } from "@/lib/recruit/channel-actions";
 import { Plus, Copy, Check, Trash2, Power, PowerOff, MessageCircle, Globe, Key } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface Channel {
   id: string;
@@ -152,7 +153,6 @@ export function ChannelsManager({ initialChannels }: { initialChannels: Channel[
   }
 
   async function remove(c: Channel) {
-    if (!confirm(`ลบ channel "${c.displayName}"? · ข้อความใน thread ที่มาทาง channel นี้จะอ่านไม่ออก`)) return;
     try {
       await deleteChannel(c.id);
       setChannels((cs) => cs.filter((x) => x.id !== c.id));
@@ -344,14 +344,22 @@ export function ChannelsManager({ initialChannels }: { initialChannels: Channel[
                         <PowerOff className="size-4" />
                       )}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => remove(c)}
-                      className="size-9 inline-flex items-center justify-center text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                      title="ลบ channel"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
+                    <ConfirmDialog
+                      title={`ลบ channel "${c.displayName}"?`}
+                      body="ข้อความใน thread ที่มาทาง channel นี้จะอ่านไม่ออก · ลบแล้วกู้คืนไม่ได้"
+                      confirmLabel="ลบ channel"
+                      onConfirm={() => remove(c)}
+                      trigger={
+                        <button
+                          type="button"
+                          className="size-9 inline-flex items-center justify-center text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                          title="ลบ channel"
+                          aria-label={`ลบ channel ${c.displayName}`}
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      }
+                    />
                   </div>
                 </div>
 
