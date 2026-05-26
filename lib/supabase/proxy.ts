@@ -39,7 +39,9 @@ function applySecurityHeaders(headers: Headers) {
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   headers.set(
     "Permissions-Policy",
-    "camera=(), microphone=(), geolocation=(self), payment=()",
+    // camera=(self) lets our origin call getUserMedia (Playland face register).
+    // Mic/payment stay blocked (we don't need them). Geo stays for CashHub.
+    "camera=(self), microphone=(), geolocation=(self), payment=()",
   );
   headers.set("X-XSS-Protection", "0");
 }
