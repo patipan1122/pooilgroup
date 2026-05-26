@@ -1,20 +1,23 @@
 "use server";
 
-// POS Ingest server actions (CSV upload → diff preview → confirm commit)
+// POS Ingest server actions (CSV/XLSX upload → diff preview → confirm commit)
 //
 // Per memory [[pool-csv-import-must-diff-before-write]]:
 //   Show "ใหม่ / เหมือนเดิม / เปลี่ยน / ผิด" counts BEFORE writing.
 //   CEO re-imports overlapping ranges — silent skip-on-conflict confuses them.
 //
+// Supports BOTH .csv and .xlsx (SheetJS · reads first sheet only) — detected
+// by filename extension. Hash dedup works for both (sha256 of raw bytes).
+//
 // Flow:
-//   1) previewImport(formData) — parse CSV, classify rows vs existing PosDaily,
+//   1) previewImport(formData) — parse CSV/XLSX, classify rows vs existing PosDaily,
 //      persist a PosImport with committed=false + diffSummary JSON. Return id.
 //   2) commitImport(id) — re-parse from diffSummary, upsert PosDaily rows,
 //      audit-log each row, recompute drift + alerts, set committed=true.
 //   3) cancelImport(id) — delete the pending PosImport row.
 //
 // Anti-stupid:
-//   - sha256 of CSV body deduped via PosImport.fileHash unique constraint.
+//   - sha256 of CSV/XLSX body deduped via PosImport.fileHash unique constraint.
 //   - Past-day edits (bizDate older than 1 day) require CEO via canEditPastDay.
 //   - Maker/checker: committing your own preview = soft warning persisted into
 //     the diff summary (front-end shows it; commit still allowed).
@@ -22,6 +25,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { writeAudit } from "@/lib/chairops/audit/log";
@@ -74,6 +78,40 @@ export interface DiffSummary {
 }
 
 // ----- CSV parsing ----------------------------------------------------------
+
+// XLSX → string[][] grid (first sheet only · dates as ISO yyyy-mm-dd strings).
+// Empty cells become "" not undefined (matches parseRows expectations).
+function parseXlsxToGrid(buf: Buffer): string[][] {
+  const wb = XLSX.read(buf, { type: "buffer", cellDates: false, cellNF: false });
+  const firstName = wb.SheetNames[0];
+  if (!firstName) return [];
+  const sheet = wb.Sheets[firstName];
+  // header:1 → array of arrays. raw:false → format cells using NumberFormat.
+  // dateNF forces dates to render yyyy-mm-dd (existing parseDate handles ISO).
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+    header: 1,
+    raw: false,
+    dateNF: "yyyy-mm-dd",
+    defval: "",
+    blankrows: false,
+  });
+  // Coerce every cell to string (numbers/dates already formatted as strings via raw:false).
+  return rows.map((r) =>
+    Array.isArray(r) ? r.map((c) => (c == null ? "" : String(c))) : []
+  );
+}
+
+// Detect file kind by filename + magic bytes (XLSX = PK zip header · 50 4b 03 04).
+function detectFileKind(name: string, buf: Buffer): "csv" | "xlsx" | "unknown" {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".xlsx") || lower.endsWith(".xls") || lower.endsWith(".xlsm")) return "xlsx";
+  if (lower.endsWith(".csv") || lower.endsWith(".txt")) return "csv";
+  // Magic-byte fallback: XLSX is a ZIP container → starts with PK\x03\x04.
+  if (buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04) {
+    return "xlsx";
+  }
+  return "unknown";
+}
 
 // Minimal CSV parser — supports quoted fields, escaped quotes, CRLF.
 function parseCsv(text: string): string[][] {
@@ -286,12 +324,11 @@ export async function previewImport(formData: FormData): Promise<{ ok: true; imp
   const manualBranchId = typeof manualBranchIdRaw === "string" && manualBranchIdRaw ? manualBranchIdRaw : null;
   const notes = typeof formData.get("notes") === "string" ? (formData.get("notes") as string) : null;
 
-  if (!(file instanceof File)) return { ok: false, error: "ยังไม่ได้เลือกไฟล์ CSV" };
+  if (!(file instanceof File)) return { ok: false, error: "ยังไม่ได้เลือกไฟล์ POS (.csv หรือ .xlsx)" };
   if (file.size === 0) return { ok: false, error: "ไฟล์ว่าง" };
-  if (file.size > 5 * 1024 * 1024) return { ok: false, error: "ไฟล์ใหญ่เกิน 5MB" };
+  if (file.size > 10 * 1024 * 1024) return { ok: false, error: "ไฟล์ใหญ่เกิน 10MB" };
 
   const buf = Buffer.from(await file.arrayBuffer());
-  const text = buf.toString("utf-8");
   const fileHash = sha256Hex(buf);
 
   // Dedup by hash — if same file already imported AND committed, surface that.
@@ -307,8 +344,21 @@ export async function previewImport(formData: FormData): Promise<{ ok: true; imp
     return { ok: true, importId: existingByHash.id };
   }
 
-  // Parse
-  const grid = parseCsv(text);
+  // Parse — branch on file kind. CSV uses minimal in-house parser · XLSX uses SheetJS.
+  const kind = detectFileKind(file.name, buf);
+  let grid: string[][];
+  try {
+    if (kind === "xlsx") {
+      grid = parseXlsxToGrid(buf);
+    } else if (kind === "csv") {
+      grid = parseCsv(buf.toString("utf-8"));
+    } else {
+      return { ok: false, error: `ไฟล์ไม่รองรับ (${file.name}) · ใช้ .csv หรือ .xlsx เท่านั้น` };
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "ไม่ทราบสาเหตุ";
+    return { ok: false, error: `อ่านไฟล์ไม่สำเร็จ · ${msg}` };
+  }
   if (grid.length < 2) return { ok: false, error: "อ่านแถวข้อมูลไม่เจอ (ต้องมี header + อย่างน้อย 1 แถว)" };
   const { headers, parsed } = parseRows(grid);
 

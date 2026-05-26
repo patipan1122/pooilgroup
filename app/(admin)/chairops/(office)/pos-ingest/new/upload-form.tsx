@@ -46,20 +46,24 @@ export function UploadForm({ branches }: { branches: Branch[] }) {
     <form action={onSubmit} className="space-y-5">
       <div>
         <label className="mb-1.5 block text-sm font-semibold text-foreground">
-          ไฟล์ CSV
+          ไฟล์ POS (.csv หรือ .xlsx)
         </label>
         <Input
           type="file"
           name="file"
-          accept=".csv,text/csv"
+          accept=".csv,.xlsx,.xls,.xlsm,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           required
           onChange={(e) => setFileName(e.target.files?.[0]?.name ?? null)}
           disabled={isPending}
           className="h-12 file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-2 file:text-sm file:font-medium"
         />
-        {fileName && (
+        {fileName ? (
           <p className="mt-1 text-xs text-muted-foreground">
             เลือกไฟล์: {fileName}
+          </p>
+        ) : (
+          <p className="mt-1 text-xs text-muted-foreground">
+            XLSX จะอ่าน sheet แรกเท่านั้น · ขนาดไม่เกิน 10MB
           </p>
         )}
       </div>
