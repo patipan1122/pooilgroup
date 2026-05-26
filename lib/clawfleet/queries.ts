@@ -440,3 +440,147 @@ export async function getReportEvents(opts: {
     take: 1000,
   });
 }
+
+// =============================================================
+// Hub — "ตอนนี้คุณต้องทำ X อย่าง" action item buckets
+// Used by /clawfleet/hub. Counts only · top-item code as breadcrumb.
+// Branch-scoped via requireSession + branchScopedWhere helper.
+// =============================================================
+export const getActionItems = cache(async () => {
+  const session = await requireSession();
+  const where = await branchScopedWhere(session);
+
+  const now = new Date();
+  const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  const groupScope = where.branchId
+    ? { branchId: where.branchId }
+    : undefined;
+
+  const [
+    anomalyCount,
+    topAnomaly,
+    staleCount,
+    oldestStale,
+    lowStockCount,
+    topLowStock,
+    silentCount,
+    topSilent,
+  ] = await Promise.all([
+    // 1. Anomaly review queue
+    prisma.cfCollectionSession.count({
+      where: {
+        orgId: session.user.org_id,
+        status: "ANOMALY_REVIEW",
+        ...(groupScope ? { group: groupScope } : {}),
+      },
+    }),
+    prisma.cfCollectionSession.findFirst({
+      where: {
+        orgId: session.user.org_id,
+        status: "ANOMALY_REVIEW",
+        ...(groupScope ? { group: groupScope } : {}),
+      },
+      select: { sessionCode: true },
+      orderBy: { closedAt: "desc" },
+    }),
+
+    // 2. Stale OPEN sessions (>12h)
+    prisma.cfCollectionSession.count({
+      where: {
+        orgId: session.user.org_id,
+        status: "OPEN",
+        openedAt: { lt: twelveHoursAgo },
+        ...(groupScope ? { group: groupScope } : {}),
+      },
+    }),
+    prisma.cfCollectionSession.findFirst({
+      where: {
+        orgId: session.user.org_id,
+        status: "OPEN",
+        openedAt: { lt: twelveHoursAgo },
+        ...(groupScope ? { group: groupScope } : {}),
+      },
+      select: { openedAt: true },
+      orderBy: { openedAt: "asc" },
+    }),
+
+    // 3. Low stock machines (<10 dolls remaining · CLAW only)
+    prisma.cfMachine.count({
+      where: {
+        ...where,
+        kind: "CLAW",
+        isActive: true,
+        lastDollStock: { lt: 10 },
+      },
+    }),
+    prisma.cfMachine.findFirst({
+      where: {
+        ...where,
+        kind: "CLAW",
+        isActive: true,
+        lastDollStock: { lt: 10 },
+      },
+      select: { code: true },
+      orderBy: { lastDollStock: "asc" },
+    }),
+
+    // 4. Silent machines — active >7d ago but no collection event in last 7d
+    // Implemented as: machines with isActive=true AND lastEventAt < 7d-ago
+    // (treat null lastEventAt as silent only if createdAt < 7d-ago)
+    prisma.cfMachine.count({
+      where: {
+        ...where,
+        isActive: true,
+        OR: [
+          { lastEventAt: { lt: sevenDaysAgo } },
+          {
+            lastEventAt: null,
+            createdAt: { lt: sevenDaysAgo },
+          },
+        ],
+      },
+    }),
+    prisma.cfMachine.findFirst({
+      where: {
+        ...where,
+        isActive: true,
+        OR: [
+          { lastEventAt: { lt: sevenDaysAgo } },
+          {
+            lastEventAt: null,
+            createdAt: { lt: sevenDaysAgo },
+          },
+        ],
+      },
+      select: { code: true },
+      orderBy: { lastEventAt: { sort: "asc", nulls: "first" } },
+    }),
+  ]);
+
+  const oldestHoursAgo = oldestStale?.openedAt
+    ? Math.floor(
+        (now.getTime() - oldestStale.openedAt.getTime()) / (60 * 60 * 1000),
+      )
+    : undefined;
+
+  return {
+    anomalies: {
+      count: anomalyCount,
+      topSessionCode: topAnomaly?.sessionCode,
+    },
+    staleSessions: {
+      count: staleCount,
+      oldestHoursAgo,
+    },
+    lowStock: {
+      count: lowStockCount,
+      topMachineCode: topLowStock?.code,
+    },
+    silentMachines: {
+      count: silentCount,
+      topMachineCode: topSilent?.code,
+    },
+  };
+});

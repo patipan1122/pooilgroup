@@ -65,21 +65,21 @@ export function DataTable({
   return (
     <div
       className={cn(
-        "rounded-2xl border-2 border-zinc-200 bg-white overflow-hidden",
+        "rounded-2xl border border-zinc-200 bg-white overflow-hidden",
         className,
       )}
     >
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          {/* Sticky thead — long lists keep their column headers visible while
-              the user scrolls the page. Top offset matches admin header height. */}
+          {/* Sticky thead — solid bg per tokens.md (NEVER bg-inherit / NEVER translucent).
+              Top offset matches admin header height. */}
           <thead>
-            <tr className="border-b-2 border-zinc-200">
+            <tr>
               {columns.map((c) => (
                 <th
                   key={c.key}
                   className={cn(
-                    "px-4 py-3 text-xs uppercase tracking-wider font-bold text-zinc-600 sticky top-14 sm:top-16 z-20 bg-zinc-50",
+                    "px-4 py-3 text-xs font-semibold text-zinc-600 sticky top-14 sm:top-16 z-20 bg-white border-b border-zinc-200 shadow-sm",
                     alignClass[c.align ?? "left"],
                     c.className,
                   )}
@@ -91,11 +91,11 @@ export function DataTable({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, idx) => {
+            {rows.map((row) => {
+              // Row hover only — NO alternating bg (per tokens.md QC-D9).
               const rowClass = cn(
-                "transition-colors",
-                idx % 2 === 0 ? "bg-white" : "bg-zinc-50/40",
-                row.href && "hover:bg-[var(--color-brand-50)] cursor-pointer",
+                "transition-colors bg-white",
+                row.href && "hover:bg-zinc-50 cursor-pointer",
               );
               return (
                 <tr
