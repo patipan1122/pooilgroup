@@ -254,7 +254,7 @@ erDiagram
 
 | # | Question | Why deferred | Who decides | When needed |
 |---|---|---|---|---|
-| OQ1a | **PARTIAL** — Cloud controller interconnection guide received 2026-05-25 · NAT solved (device dials out) · but missing face register endpoint + sample payloads + version B/C confirm + TCP vs HTTP choice + HTTPS workaround | Vendor sent general guide · need specific protocol doc | CEO ขอจาก Lilly (4 อย่าง list ด้านล่าง) | ก่อน Phase 2 ~2 สัปดาห์ |
+| ~~OQ1a~~ | ✅ **RESOLVED 2026-05-26** — Official protocol PDFs received via Drive · `pooilgroup-web/docs/acs/{acs-doc-1.pdf,acs-doc-2.pdf}` · using doc-2 HTTP LAN (port 8091 · UTF-8 · NOT GB2312) · all endpoints documented in `pooilgroup-web/docs/acs/README.md` | — | — | — |
 | ~~OQ1b~~ | ✅ **RESOLVED 2026-05-25** — CEO เลือก **Version C** (mixed/offline-tolerant) · เหตุผล: "1 ปีหลุดก็รับได้ แต่ C ดีกว่า" · schema ต้องมี face sync table + background job push faces to device | — | — | — |
 | OQ1c | **NEW** HTTPS not supported by device — face data + events in plaintext over internet · how to mitigate? | Security risk | CEO + tech | ก่อน open สาขาแรก (PDPA compliance) |
 | OQ2 | Q15 hardware fallback (ACS พัง) — CEO ตอบเป็น "ระบบพี่เลี้ยง" ซึ่งเป็นคนละเรื่อง · ต้องถามใหม่ | คำตอบ ambiguous | CEO | ก่อน Phase 3 (session engine) |

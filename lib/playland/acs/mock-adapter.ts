@@ -61,17 +61,20 @@ export const mockAdapter: ACSAdapter = {
   },
 };
 
-export const acsAutoAdapterStub: ACSAdapter = {
-  // Stub for real ACS-Auto vendor · implementation pending API docs
-  // For now, delegates to mock so dev can proceed
-  ...mockAdapter,
-  vendor: "acs-auto",
-};
+/** @deprecated · use acsAutoAdapter from ./acs-auto-adapter instead.
+ *  Kept as alias for any code that imported acsAutoAdapterStub before the
+ *  real adapter shipped. */
+export { acsAutoAdapter as acsAutoAdapterStub } from "./acs-auto-adapter";
 
 export function getAdapter(vendor: string): ACSAdapter {
   switch (vendor) {
-    case "acs-auto":
-      return acsAutoAdapterStub;
+    case "acs-auto": {
+      // Real adapter implements doc-2 HTTP LAN protocol (port 8091)
+      // See pooilgroup-web/docs/acs/README.md for spec + open issues
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { acsAutoAdapter } = require("./acs-auto-adapter") as typeof import("./acs-auto-adapter");
+      return acsAutoAdapter;
+    }
     case "mock":
     default:
       return mockAdapter;
