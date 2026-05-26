@@ -5,11 +5,13 @@
 // the workspace · check out · extend · charge POS to this session
 
 import Link from "next/link";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { checkOutSession, extendSession } from "@/lib/playland/actions";
 import { fmtTime, fmtElapsed, thb, memberTypeLabel } from "@/lib/playland/format";
 import { X, LogOut, Plus, ShoppingBasket, Clock, Award } from "lucide-react";
+
+type PayMethod = "CASH" | "PROMPTPAY" | "STRIPE" | "CHARGE_TO_MEMBER";
 
 interface Props {
   session: {
@@ -33,6 +35,8 @@ interface Props {
 export function SessionInspector({ session, packages, backHref }: Props) {
   const router = useRouter();
   const [pending, start] = useTransition();
+  const [extendPkg, setExtendPkg] = useState<{ id: string; name: string; price: number; minutes: number } | null>(null);
+  const [pay, setPay] = useState<PayMethod>("CASH");
   const s = session;
 
   const remainingMs = s.expiresAt ? new Date(s.expiresAt).getTime() - Date.now() : null;
@@ -48,10 +52,14 @@ export function SessionInspector({ session, packages, backHref }: Props) {
     });
   }
 
-  function doExtend(packageId: string) {
+  function confirmExtend() {
+    if (!extendPkg) return;
     start(async () => {
-      const res = await extendSession({ sessionId: s.id, extraPackageId: packageId, paymentMethod: "CASH" });
-      if (!res.ok) alert(res.error); else router.refresh();
+      const res = await extendSession({ sessionId: s.id, extraPackageId: extendPkg.id, paymentMethod: pay });
+      if (!res.ok) { alert(res.error); return; }
+      setExtendPkg(null);
+      setPay("CASH");
+      router.refresh();
     });
   }
 
@@ -120,7 +128,7 @@ export function SessionInspector({ session, packages, backHref }: Props) {
                   key={p.id}
                   className="pl-btn pl-btn-sm"
                   style={{ width: "100%", justifyContent: "space-between", marginBottom: 4 }}
-                  onClick={() => doExtend(p.id)}
+                  onClick={() => setExtendPkg(p)}
                   disabled={pending}
                 >
                   <span>{p.name}</span>
@@ -156,6 +164,64 @@ export function SessionInspector({ session, packages, backHref }: Props) {
           </>
         )}
       </div>
+
+      {extendPkg && (
+        <div
+          onClick={() => !pending && setExtendPkg(null)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+            display: "grid", placeItems: "center", padding: 16, zIndex: 100,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="pl-card"
+            style={{ maxWidth: 420, width: "100%", display: "grid", gap: 12, padding: 18, background: "white" }}
+          >
+            <div>
+              <div className="pl-eyebrow">ต่อเวลา</div>
+              <div style={{ fontFamily: "var(--pl-font-display)", fontSize: "1.3rem", fontWeight: 600 }}>{extendPkg.name}</div>
+              <div style={{ fontSize: 13, color: "var(--pl-text-muted)" }}>
+                +{extendPkg.minutes} นาที · {thb(extendPkg.price)}
+              </div>
+            </div>
+
+            <div>
+              <label className="pl-label">ชำระเงิน</label>
+              <div className="pl-toggle-group">
+                {(["CASH", "PROMPTPAY", "STRIPE", "CHARGE_TO_MEMBER"] as const).map((m) => (
+                  <button type="button" key={m} className={pay === m ? "is-active" : ""} onClick={() => setPay(m)}>
+                    {m === "CASH" ? "เงินสด" : m === "PROMPTPAY" ? "PromptPay" : m === "STRIPE" ? "บัตร" : "ใส่บิล"}
+                  </button>
+                ))}
+              </div>
+              {pay === "PROMPTPAY" && (
+                <div style={{ marginTop: 10, padding: 12, background: "var(--pl-ink-50)", borderRadius: 10, border: "1px dashed var(--pl-amber-400)", textAlign: "center" }}>
+                  <div style={{ fontSize: 11, color: "var(--pl-text-muted)", marginBottom: 6 }}>QR PromptPay (placeholder · API จริง v2)</div>
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(`promptpay://extend/${s.id}/${extendPkg.price}`)}&qzone=1`}
+                    alt="QR PromptPay"
+                    width={160} height={160}
+                    style={{ width: 160, height: 160 }}
+                  />
+                  <div style={{ fontSize: 11, color: "var(--pl-text-muted)", marginTop: 4 }}>
+                    {thb(extendPkg.price)}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+              <button type="button" className="pl-btn" onClick={() => setExtendPkg(null)} disabled={pending} style={{ flex: 1 }}>
+                ยกเลิก
+              </button>
+              <button type="button" className="pl-btn pl-btn-primary" onClick={confirmExtend} disabled={pending} style={{ flex: 2 }}>
+                {pending ? "กำลังต่อ..." : `✅ ยืนยัน · +${extendPkg.minutes} นาที`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

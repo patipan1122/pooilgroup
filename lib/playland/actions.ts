@@ -12,6 +12,7 @@ import { canPlaylandCashier, canPlaylandManage, canPlaylandAdmin } from "./role-
 import { newMemberCode, newSaleCode, newShiftCode } from "./codes";
 import { getAdapter } from "./acs/mock-adapter";
 import { verifyBranchOrg, verifyMemberOrg, verifyPackageOrg, verifyBookingOrg, isValidThaiPhone, decodePhotoDataUrl } from "./guards";
+import { requireOpenShift } from "./wristband";
 
 type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -175,6 +176,8 @@ export async function checkInSession(input: CheckInInput): Promise<ActionResult<
   if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
   if (!(await verifyMemberOrg(input.memberId, session.user.org_id))) return err("สมาชิกไม่อยู่ใน org");
   if (input.bookingId && !(await verifyBookingOrg(input.bookingId, session.user.org_id))) return err("booking ไม่อยู่ใน org");
+  try { await requireOpenShift(session.user.org_id, input.branchId, session.user.id); }
+  catch (e) { return err(e instanceof Error ? e.message : "shift required"); }
 
   // Prevent double check-in: if member has ACTIVE/PAUSED session, error
   const existing = await prisma.playlandSession.findFirst({
@@ -272,6 +275,8 @@ export async function extendSession(input: ExtendSessionInput): Promise<ActionRe
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
   const sRow = await prisma.playlandSession.findFirst({ where: { id: input.sessionId, orgId: session.user.org_id } });
   if (!sRow) return err("Session not found");
+  try { await requireOpenShift(session.user.org_id, sRow.branchId, session.user.id); }
+  catch (e) { return err(e instanceof Error ? e.message : "shift required"); }
   const pkg = await prisma.playlandPackage.findFirst({ where: { id: input.extraPackageId, orgId: session.user.org_id, active: true } });
   if (!pkg) return err("Package not found");
   const extra = pkg.minutes ?? 0;
@@ -335,10 +340,11 @@ export async function createSale(input: CreateSaleInput): Promise<ActionResult<{
   if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
   if (input.items.length === 0) return err("ยังไม่ได้เลือกสินค้า");
 
-  // Find open shift
-  const openShift = await prisma.playlandShift.findFirst({
-    where: { branchId: input.branchId, cashierUserId: session.user.id, status: "OPEN" },
-  });
+  // W3 · shift required (per CEO ans 4A)
+  let openShiftId: string;
+  try { openShiftId = await requireOpenShift(session.user.org_id, input.branchId, session.user.id); }
+  catch (e) { return err(e instanceof Error ? e.message : "shift required"); }
+  const openShift = { id: openShiftId };
 
   const discount = input.discountCents ?? 0;
   // Stock check INSIDE transaction with SELECT FOR UPDATE-style row lock via update

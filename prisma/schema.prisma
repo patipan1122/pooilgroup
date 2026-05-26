@@ -3446,6 +3446,7 @@ model PlaylandMember {
   branch               PlaylandBranch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
   familyMemberships    PlaylandFamilyMember[]
   sessions             PlaylandSession[]
+  wristbands           PlaylandWristband[]
   bookings             PlaylandBooking[]
   waivers              PlaylandWaiver[]
   loyalty              PlaylandLoyalty?
@@ -3521,6 +3522,7 @@ model PlaylandSession {
   faceEvents          PlaylandFaceEvent[]
   alerts              PlaylandAlert[]
   sales               PlaylandSale[]
+  wristbands          PlaylandWristband[]
 
   @@index([orgId, branchId])
   @@index([branchId, status])
@@ -3911,5 +3913,65 @@ model PlaylandAuditLog {
   @@index([actorUserId, createdAt])
   @@index([category, createdAt])
   @@map("audit_logs")
+  @@schema("playland")
+}
+
+// =============================================================
+// PLAYLAND · Wristband (Harborland-style · /bigfeature W1 · 2026-05-26)
+// CEO 2026-05-26: paid kid → cashier issues QR wristband → scan #1 bind →
+// scan #2 at gate activates session → scan #3+ picker (ออก / ขายของ)
+// =============================================================
+enum PlaylandWristbandStatus {
+  ISSUED      // bound to member · waiting for first gate scan
+  ACTIVE      // entered through gate at least once
+  RETURNED    // checked out · returned to cashier
+  LOST        // marked lost · prevented from re-use
+
+  @@schema("playland")
+}
+
+model PlaylandWristband {
+  id              String                   @id @default(uuid()) @db.Uuid
+  orgId           String                   @map("org_id") @db.Uuid
+  branchId        String                   @map("branch_id") @db.Uuid
+  code            String                   @unique
+  memberId        String?                  @map("member_id") @db.Uuid
+  sessionId       String?                  @map("session_id") @db.Uuid
+  status          PlaylandWristbandStatus  @default(ISSUED)
+  issuedAt        DateTime                 @default(now()) @map("issued_at") @db.Timestamptz(6)
+  issuedByUserId  String                   @map("issued_by_user_id") @db.Uuid
+  boundAt         DateTime?                @map("bound_at") @db.Timestamptz(6)
+  activatedAt     DateTime?                @map("activated_at") @db.Timestamptz(6)
+  returnedAt      DateTime?                @map("returned_at") @db.Timestamptz(6)
+  lastScanAt      DateTime?                @map("last_scan_at") @db.Timestamptz(6)
+  notes           String?
+  createdAt       DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  member          PlaylandMember?          @relation(fields: [memberId], references: [id])
+  session         PlaylandSession?         @relation(fields: [sessionId], references: [id])
+  scans           PlaylandWristbandScan[]
+
+  @@index([orgId, branchId])
+  @@index([memberId])
+  @@index([status])
+  @@map("wristbands")
+  @@schema("playland")
+}
+
+model PlaylandWristbandScan {
+  id              String              @id @default(uuid()) @db.Uuid
+  orgId           String              @map("org_id") @db.Uuid
+  wristbandId     String              @map("wristband_id") @db.Uuid
+  scannedByUserId String?             @map("scanned_by_user_id") @db.Uuid
+  scanType        String                                              // BIND / GATE_IN / GATE_OUT / POS_CHARGE / EXIT / LOOKUP
+  outcome         String                                              // ok / blocked / error / picker_shown
+  metadata        Json?
+  scannedAt       DateTime            @default(now()) @map("scanned_at") @db.Timestamptz(6)
+
+  wristband       PlaylandWristband   @relation(fields: [wristbandId], references: [id], onDelete: Cascade)
+
+  @@index([wristbandId, scannedAt])
+  @@map("wristband_scans")
   @@schema("playland")
 }

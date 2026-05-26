@@ -54,6 +54,8 @@ import {
   CalendarClock,
   Home,
   Activity,
+  ScanLine,
+  QrCode,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
@@ -597,15 +599,23 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       // Sections render as visual group headers in the sidebar (admin-shell.tsx)
       { href: "/playland",         label: "Cockpit",        icon: Activity, section: "Cockpit" },
       { href: "/playland/monitor", label: "Monitor (TV)",   icon: Tv },
+      { href: "/playland/scan",    label: "สแกน wristband", icon: ScanLine },
 
-      { href: "/playland/members",  label: "สมาชิก",        icon: ScanFace,       section: "ลูกค้า" },
-      { href: "/playland/bookings", label: "จองล่วงหน้า",   icon: CalendarClock },
+      { href: "/playland/members",     label: "สมาชิก",       icon: ScanFace,       section: "ลูกค้า" },
+      { href: "/playland/wristbands",  label: "สายรัดข้อมือ",  icon: QrCode },
+      { href: "/playland/bookings",    label: "จองล่วงหน้า",  icon: CalendarClock },
 
       { href: "/playland/pos",     label: "POS · ขายของ",   icon: ShoppingBasket, section: "หน้าร้าน" },
       {
         href: "/playland/shifts",
         label: "กะ · ปิดวัน",
         icon: TicketCheck,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
+      },
+      {
+        href: "/playland/settings/stock-count",
+        label: "นับสต๊อก",
+        icon: ClipboardList,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
       },
 
