@@ -41,12 +41,22 @@ export const mockAdapter: ACSAdapter = {
     const webhookId = typeof r.webhookId === "string" ? r.webhookId : typeof r.id === "string" ? r.id : null;
     if (!webhookId) return null;
 
-    const type = (typeof r.type === "string" ? r.type : "recognized") as ACSEvent["type"];
+    // QR scan detection · field name guessed (Lily pending) · accept several
+    const qrCode =
+      typeof r.qrCode === "string" ? r.qrCode :
+      typeof r.qr === "string" ? r.qr :
+      typeof r.barcode === "string" ? r.barcode :
+      typeof r.QRCode === "string" ? r.QRCode :
+      null;
+
+    const rawType = typeof r.type === "string" ? r.type : null;
+    const type = (rawType ?? (qrCode ? "qr_scan" : "recognized")) as ACSEvent["type"];
     const direction = (typeof r.direction === "string" ? r.direction : "unknown") as ACSEvent["direction"];
 
     return {
       webhookId,
       faceId: typeof r.faceId === "string" ? r.faceId : null,
+      qrCode,
       type,
       direction,
       confidence: typeof r.confidence === "number" ? r.confidence : null,

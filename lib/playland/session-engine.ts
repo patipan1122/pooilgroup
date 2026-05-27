@@ -255,6 +255,7 @@ function mapEventType(t: ACSEvent["type"]) {
     stranger: "STRANGER",
     door_open: "DOOR_OPEN",
     heartbeat: "DEVICE_HEARTBEAT",
+    qr_scan: "RECOGNIZED",   // unused: webhook router branches qr_scan to handleQRScan
     error: "ERROR",
   } as const)[t];
 }

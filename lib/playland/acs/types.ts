@@ -18,6 +18,7 @@ export type ACSEventType =
   | "stranger"
   | "door_open"
   | "heartbeat"
+  | "qr_scan"
   | "error";
 
 /** Normalized event after vendor-specific payload is decoded. */
@@ -26,6 +27,8 @@ export interface ACSEvent {
   webhookId: string;
   /** Vendor's internal face ID (string). null = unrecognized face. */
   faceId: string | null;
+  /** Raw QR text from QR scanner (only set when type === "qr_scan"). */
+  qrCode: string | null;
   type: ACSEventType;
   direction: ACSDirection;
   /** 0-100 confidence score · null if N/A. */

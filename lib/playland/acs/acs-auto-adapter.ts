@@ -118,9 +118,18 @@ export const acsAutoAdapter: ACSAdapter = {
       : typeof r.inout === "string" ? Number(r.inout) : 1;
     const identifyType = typeof r.IdentifyType === "number" ? r.IdentifyType : 0;
 
-    // Map type: identifyType=0 face · resultStatus=1 recognized · =0 stranger
+    // QR scan detection · field name TBC by Lily (likely qrCode/qr/barcode/QRCode)
+    const qrCode =
+      typeof r.qrCode === "string" ? r.qrCode :
+      typeof r.qr === "string" ? r.qr :
+      typeof r.QRCode === "string" ? r.QRCode :
+      typeof r.barcode === "string" ? r.barcode :
+      null;
+
+    // Map type: QR scan wins · then face match outcomes
     let type: ACSEvent["type"];
-    if (resultStatus === 0) type = "stranger";
+    if (qrCode) type = "qr_scan";
+    else if (resultStatus === 0) type = "stranger";
     else if (identifyType === 1) type = "stranger";  // blacklist hit
     else type = "recognized";
 
@@ -133,6 +142,7 @@ export const acsAutoAdapter: ACSAdapter = {
     return {
       webhookId: id,
       faceId: type === "recognized" ? employeeNumber : null,
+      qrCode,
       type,
       direction: inout === 0 ? "out" : inout === 1 ? "in" : "unknown",
       confidence: null,                         // doc doesn't expose match score in event
