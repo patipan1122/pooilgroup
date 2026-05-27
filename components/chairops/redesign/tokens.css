@@ -1,0 +1,58 @@
+/* ChairOps tokens — scoped to .co-scope · Wave 0 W0.8
+ *
+ * Reuses Pool brand color · adds ChairOps-only swatches for status grids,
+ * cell tones, bill/period palettes. WCAG AA verified by UI persona.
+ *
+ * Apply via <body class="co-scope"> in app/(admin)/chairops/layout.tsx
+ * (AFTER the entitlement gate).
+ */
+
+.co-scope {
+  /* Brand — reuse Pool */
+  --co-brand: var(--color-brand-500, #2563eb);
+  --co-brand-50: var(--color-brand-50, #eff6ff);
+
+  /* Status grid cell tones (30 branch × 4 task) */
+  --co-cell-ok: #dcfce7;        /* light green · done */
+  --co-cell-pending: #fef3c7;   /* light amber · in progress */
+  --co-cell-late: #fed7aa;      /* light orange · overdue */
+  --co-cell-missing: #fee2e2;   /* light red · missing entirely */
+
+  /* LINE OA brand (for LIFF Mini App banner) */
+  --co-line-green: #06c755;
+
+  /* Spacing scale (matches Pool 4px base) */
+  --co-spacing-1: 4px;
+  --co-spacing-2: 8px;
+  --co-spacing-3: 12px;
+  --co-spacing-4: 16px;
+  --co-spacing-6: 24px;
+  --co-spacing-8: 32px;
+
+  /* Radii */
+  --co-radius-sm: 6px;
+  --co-radius-md: 10px;
+  --co-radius-lg: 14px;
+
+  /* Shadows */
+  --co-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --co-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
+}
+
+/* ChairopsAlertStatus palette (4 tones) */
+.co-status-OPEN     { background: #fee2e2; color: #991b1b; }
+.co-status-ACK      { background: #fef3c7; color: #92400e; }
+.co-status-RESOLVED { background: #dcfce7; color: #166534; }
+.co-status-IGNORED  { background: #f3f4f6; color: #4b5563; }
+
+/* ChairopsBillStatus palette (5 tones · for Wave 2) */
+.co-bill-RECEIVED  { background: #dbeafe; color: #1e40af; }
+.co-bill-APPROVED  { background: #fef3c7; color: #92400e; }
+.co-bill-PAID      { background: #dcfce7; color: #166534; }
+.co-bill-DISPUTED  { background: #fee2e2; color: #991b1b; }
+.co-bill-OVERDUE   { background: #fecaca; color: #7f1d1d; font-weight: 600; }
+
+/* ChairopsPeriodStatus palette (3 tones · for Wave 2) */
+.co-period-OPEN         { background: #dcfce7; color: #166534; }
+.co-period-SOFT_CLOSED  { background: #fef3c7; color: #92400e; }
+.co-period-HARD_CLOSED  { background: #f3f4f6; color: #1f2937; }

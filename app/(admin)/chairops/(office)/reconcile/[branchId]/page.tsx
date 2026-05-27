@@ -154,7 +154,7 @@ export default async function BranchReconcilePage({
 
             {/* Notification controls — UI only · Wave 2 wires delivery */}
             <section className="space-y-2">
-              <p className="px-1 text-[10px] font-bold uppercase tracking-wide text-zinc-500">
+              <p className="px-1 text-[10px] font-bold tracking-[0.02em] text-zinc-500">
                 การแจ้งเตือนของสาขานี้
               </p>
               <LineNotifyToggle
@@ -344,7 +344,7 @@ export default async function BranchReconcilePage({
                           </StatusPill>
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums font-semibold text-zinc-900">
-                          {baht(e.data.totalRevenue)}
+                          {baht(Number(e.data.grossTotal))}
                         </td>
                         <td className="px-3 py-2 text-xs text-zinc-600">
                           {e.data.chairCode ? (
@@ -355,10 +355,11 @@ export default async function BranchReconcilePage({
                             "ยอดรวมสาขา"
                           )}{" "}
                           <span className="text-zinc-400">·</span> ออน{" "}
-                          {baht(e.data.online)} <span className="text-zinc-400">·</span>{" "}
-                          แบงค์ {baht(e.data.cash)}{" "}
+                          {baht(Number(e.data.onlineTotal))}{" "}
+                          <span className="text-zinc-400">·</span> แบงค์{" "}
+                          {baht(Number(e.data.cashTotal))}{" "}
                           <span className="text-zinc-400">·</span> เหรียญ{" "}
-                          {baht(e.data.coin)}
+                          {e.data.coinInsertCount.toLocaleString()} ครั้ง
                         </td>
                         <td className="px-3 py-2" />
                       </tr>

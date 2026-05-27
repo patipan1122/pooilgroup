@@ -4,8 +4,8 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/chairops/auth/session";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/chairops/ui/card";
-import { Badge } from "@/components/chairops/ui/badge";
+import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { thaiDateTime, thaiRelative } from "@/lib/chairops/utils/format";
 import { ChairopsTicketStatus } from "@/lib/generated/prisma/enums";
 import { TicketActions } from "./ticket-actions";
@@ -19,13 +19,13 @@ const STATUS_LABEL: Record<ChairopsTicketStatus, string> = {
   CANCELLED: "ยกเลิก",
 };
 
-const STATUS_VARIANT: Record<ChairopsTicketStatus, "default" | "secondary" | "success" | "warning" | "danger"> = {
+const STATUS_TONE: Record<ChairopsTicketStatus, "brand" | "neutral" | "success" | "warning" | "danger"> = {
   OPEN: "danger",
   ASSIGNED: "warning",
   IN_PROGRESS: "warning",
-  WAITING_PARTS: "secondary",
+  WAITING_PARTS: "neutral",
   DONE: "success",
-  CANCELLED: "secondary",
+  CANCELLED: "neutral",
 };
 
 export default async function DamageTicketDetail({
@@ -39,7 +39,9 @@ export default async function DamageTicketDetail({
   const { ticketCode } = await params;
 
   const ticket = await prisma.chairopsDamageTicket.findUnique({
-    where: { ticketCode },
+    where: {
+      orgId_ticketCode: { orgId: session.user.orgId, ticketCode },
+    },
     include: {
       branch: { select: { id: true, name: true, slug: true } },
       chair: { select: { chairCode: true, generation: true } },
@@ -60,22 +62,22 @@ export default async function DamageTicketDetail({
 
   const [technicians, parts, movements, auditLogs] = await Promise.all([
     prisma.chairopsUser.findMany({
-      where: { role: "TECHNICIAN", isActive: true },
+      where: { orgId: session.user.orgId, role: "TECHNICIAN", isActive: true },
       select: { id: true, displayName: true },
       orderBy: { displayName: "asc" },
     }),
     prisma.chairopsSparePart.findMany({
-      where: { stockOnHand: { gt: 0 } },
+      where: { orgId: session.user.orgId, stockOnHand: { gt: 0 } },
       select: { id: true, partCode: true, name: true, unit: true, stockOnHand: true },
       orderBy: { name: "asc" },
     }),
     prisma.chairopsSparePartMovement.findMany({
-      where: { refTicketId: ticket.id },
+      where: { orgId: session.user.orgId, refTicketId: ticket.id },
       include: { part: { select: { partCode: true, name: true, unit: true } } },
       orderBy: { at: "desc" },
     }),
     prisma.chairopsAuditLog.findMany({
-      where: { entity: "DamageTicket", entityId: ticket.id },
+      where: { orgId: session.user.orgId, entity: "DamageTicket", entityId: ticket.id },
       include: { user: { select: { displayName: true } } },
       orderBy: { createdAt: "desc" },
       take: 20,
@@ -97,7 +99,7 @@ export default async function DamageTicketDetail({
           <h1 className="font-mono text-2xl font-bold tracking-tight">
             {ticket.ticketCode}
             {ticket.priority === "URGENT" && (
-              <Badge variant="danger" className="ml-3 align-middle">
+              <Badge tone="danger" className="ml-3 align-middle">
                 ด่วน
               </Badge>
             )}
@@ -106,7 +108,7 @@ export default async function DamageTicketDetail({
             แจ้งโดย {ticket.reportedBy.displayName} · {thaiDateTime(ticket.openedAt)}
           </p>
         </div>
-        <Badge variant={STATUS_VARIANT[ticket.status]} className="text-sm">
+        <Badge tone={STATUS_TONE[ticket.status]} className="text-sm">
           {STATUS_LABEL[ticket.status]}
         </Badge>
       </div>
@@ -117,7 +119,7 @@ export default async function DamageTicketDetail({
             <CardHeader>
               <CardTitle className="text-base">อาการ / รายละเอียด</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm">
+            <CardBody className="space-y-3 text-sm">
               <div>
                 <div className="text-xs text-muted-foreground">หมวด</div>
                 <div className="font-medium">{ticket.category}</div>
@@ -151,7 +153,7 @@ export default async function DamageTicketDetail({
                   </div>
                 </div>
               )}
-            </CardContent>
+            </CardBody>
           </Card>
 
           {ticket.photoUrls.length > 0 && (
@@ -159,7 +161,7 @@ export default async function DamageTicketDetail({
               <CardHeader>
                 <CardTitle className="text-base">รูปภาพ ({ticket.photoUrls.length})</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardBody>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
                   {ticket.photoUrls.map((url, i) => (
                     <a
@@ -178,7 +180,7 @@ export default async function DamageTicketDetail({
                     </a>
                   ))}
                 </div>
-              </CardContent>
+              </CardBody>
             </Card>
           )}
 
@@ -188,7 +190,7 @@ export default async function DamageTicketDetail({
                 อะไหล่ที่ใช้ ({movements.length})
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardBody>
               {movements.length === 0 ? (
                 <p className="text-sm text-muted-foreground">ยังไม่มีอะไหล่ที่ใช้</p>
               ) : (
@@ -218,14 +220,14 @@ export default async function DamageTicketDetail({
                   </tbody>
                 </table>
               )}
-            </CardContent>
+            </CardBody>
           </Card>
 
           <Card>
             <CardHeader>
               <CardTitle className="text-base">ประวัติเปลี่ยนแปลง</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardBody>
               {auditLogs.length === 0 ? (
                 <p className="text-sm text-muted-foreground">ยังไม่มีประวัติ</p>
               ) : (
@@ -241,7 +243,7 @@ export default async function DamageTicketDetail({
                   ))}
                 </ol>
               )}
-            </CardContent>
+            </CardBody>
           </Card>
         </div>
 

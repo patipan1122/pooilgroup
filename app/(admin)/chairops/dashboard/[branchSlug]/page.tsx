@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/chairops/auth/session";
 import { baht, thaiDate, thaiDateTime, thaiRelative, ageHours } from "@/lib/chairops/utils/format";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/chairops/ui/card";
-import { Badge } from "@/components/chairops/ui/badge";
+import { Card, CardHeader, CardBody } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   StatusBadge,
   deriveStatus,
@@ -14,16 +15,16 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const TICKET_STATUS_VARIANT = {
+const TICKET_STATUS_TONE = {
   OPEN: "danger" as const,
   ASSIGNED: "warning" as const,
   IN_PROGRESS: "warning" as const,
   WAITING_PARTS: "warning" as const,
   DONE: "success" as const,
-  CANCELLED: "secondary" as const,
+  CANCELLED: "neutral" as const,
 };
 
-const CLEANLINESS_VARIANT = {
+const CLEANLINESS_TONE = {
   PASS: "success" as const,
   WARN: "warning" as const,
   FAIL: "danger" as const,
@@ -34,10 +35,13 @@ export default async function BranchDetailPage({
 }: {
   params: Promise<{ branchSlug: string }>;
 }) {
+  const session = await requireAuth();
   const { branchSlug } = await params;
 
   const branch = await prisma.chairopsBranch.findUnique({
-    where: { slug: branchSlug },
+    where: {
+      orgId_slug: { orgId: session.user.orgId, slug: branchSlug },
+    },
     include: { drifts: true },
   });
   if (!branch) notFound();
@@ -119,9 +123,11 @@ export default async function BranchDetailPage({
       kind: "pos",
       at: p.enteredAt,
       bizDate: p.bizDate,
-      revenue: p.totalRevenue,
-      online: p.online,
-      cash: p.totalCash,
+      // W0 column rename: totalRevenue → grossTotal · online → onlineTotal ·
+      // totalCash is now Decimal · convert to number for UI math/format.
+      revenue: p.grossTotal.toNumber(),
+      online: p.onlineTotal.toNumber(),
+      cash: p.totalCash.toNumber(),
       chairCode: p.chairCode,
     })),
   ].sort((a, b) => b.at.getTime() - a.at.getTime());
@@ -155,9 +161,9 @@ export default async function BranchDetailPage({
               POS รวม
             </div>
           </CardHeader>
-          <CardContent className="p-4 pt-0 text-2xl font-bold tabular-nums sm:p-5 sm:pt-0">
+          <CardBody className="p-4 pt-0 text-2xl font-bold tabular-nums sm:p-5 sm:pt-0">
             {baht(posTotal)}
-          </CardContent>
+          </CardBody>
         </Card>
         <Card>
           <CardHeader className="p-4 pb-1 sm:p-5">
@@ -165,9 +171,9 @@ export default async function BranchDetailPage({
               ฝากรวม
             </div>
           </CardHeader>
-          <CardContent className="p-4 pt-0 text-2xl font-bold tabular-nums sm:p-5 sm:pt-0">
+          <CardBody className="p-4 pt-0 text-2xl font-bold tabular-nums sm:p-5 sm:pt-0">
             {baht(depositTotal)}
-          </CardContent>
+          </CardBody>
         </Card>
         <Card>
           <CardHeader className="p-4 pb-1 sm:p-5">
@@ -175,7 +181,7 @@ export default async function BranchDetailPage({
               DRIFT
             </div>
           </CardHeader>
-          <CardContent
+          <CardBody
             className={
               "p-4 pt-0 text-2xl font-bold tabular-nums sm:p-5 sm:pt-0 " +
               (driftAmount > 0
@@ -191,7 +197,7 @@ export default async function BranchDetailPage({
                 ค้าง {formatAgeThai(driftHours)}
               </div>
             ) : null}
-          </CardContent>
+          </CardBody>
         </Card>
         <Card>
           <CardHeader className="p-4 pb-1 sm:p-5">
@@ -199,7 +205,7 @@ export default async function BranchDetailPage({
               เก็บล่าสุด
             </div>
           </CardHeader>
-          <CardContent className="p-4 pt-0 text-base font-semibold sm:p-5 sm:pt-0">
+          <CardBody className="p-4 pt-0 text-base font-semibold sm:p-5 sm:pt-0">
             {drift?.lastCollectionAt ? (
               <>
                 <div>{thaiRelative(drift.lastCollectionAt)}</div>
@@ -210,7 +216,7 @@ export default async function BranchDetailPage({
             ) : (
               <span className="text-muted-foreground">ไม่เคยเก็บ</span>
             )}
-          </CardContent>
+          </CardBody>
         </Card>
       </section>
 
@@ -232,9 +238,9 @@ export default async function BranchDetailPage({
               <li key={`${t.kind}-${i}`} className="flex items-start gap-3 p-3 sm:gap-4 sm:p-4">
                 <div className="mt-1 shrink-0">
                   {t.kind === "collection" ? (
-                    <Badge variant="success">เก็บเงิน</Badge>
+                    <Badge tone="success">เก็บเงิน</Badge>
                   ) : (
-                    <Badge variant="secondary">POS</Badge>
+                    <Badge tone="neutral">POS</Badge>
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -287,7 +293,7 @@ export default async function BranchDetailPage({
             <ul className="divide-y divide-border">
               {cleanlinessReports.map((c) => (
                 <li key={c.id} className="flex items-center gap-3 p-3 sm:p-4">
-                  <Badge variant={CLEANLINESS_VARIANT[c.grade]}>{c.grade}</Badge>
+                  <Badge tone={CLEANLINESS_TONE[c.grade]}>{c.grade}</Badge>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">
                       โดย {c.maid?.displayName ?? "—"}
@@ -317,7 +323,7 @@ export default async function BranchDetailPage({
             <ul className="divide-y divide-border">
               {openTickets.map((t) => (
                 <li key={t.id} className="flex items-start gap-3 p-3 sm:p-4">
-                  <Badge variant={TICKET_STATUS_VARIANT[t.status]} className="shrink-0">
+                  <Badge tone={TICKET_STATUS_TONE[t.status]} className="shrink-0">
                     {t.status}
                   </Badge>
                   <div className="min-w-0 flex-1">

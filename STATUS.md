@@ -1,8 +1,153 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-26 (`/bigsolvebug recruit` auto-fix · รอบ 55)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-27 (รอบ 58 · ChairOps /bigfeature Wave 0 ship)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-05-27 · รอบ 58 — ChairOps `/bigfeature` Wave 0 ship · 12-persona roundtable + 6 parallel build agents)
+
+**CEO trigger:** `/goal "ทำทั้งหมดให้สมบูรณ์ /bigfeature skill"` กับ ChairOps · CEO locked 6 P0 decisions + 3 new features (cost+deposit · vendor bill tracker · LINE OA + LIFF Mini App)
+
+**Phases shipped this round (all 7 of `/bigfeature` skill):**
+1. ✅ Phase 0 · Project context sync → `docs/BIGFEATURE_chairops_CONTEXT.md`
+2. ✅ Phase 1+2 · Stakeholder form + goal lock → `docs/BIGFEATURE_chairops_GOAL.md`
+3. ✅ Phase 3 · 12 personas in parallel → 12 × `docs/BIGFEATURE_chairops_PERSONA_*.md`
+4. ✅ Phase 4 · Synthesis → `docs/BIGFEATURE_chairops_SPEC.md` (3,400 words · 10/12 GO · 1 DESCOPE)
+5. ✅ Phase 5 · CEO brief + decision gate (GO Wave 0 unconditional · checkpoint after)
+6. ✅ Phase 6 · Wave 0 implementation (6 parallel build agents · 2 rounds)
+7. ⏭ Phase 7 · LESSONS + memory updates (in-progress)
+
+**Wave 0 outcomes (94 files changed · +2052 -1407 LOC):**
+
+🔴 **5 audit risks status revised:**
+- ~~Risk #2 cron not registered~~ ✅ already closed (verified in vercel.json:19-21)
+- ~~Risk #3 module gate~~ ✅ already closed (chairops/layout.tsx:25-29)
+- ~~Risk #4 auto-bootstrap~~ ✅ already closed (session.ts:72-100)
+- Risk #1 drift lifetime-sum ✅ CLOSED this round (daily-window rewrite + feature flag)
+- Risk #5 LINE Notify EOL → flagged for Wave 1 (curl-test pending)
+
+🔴 **3 NEW P0 bugs found + fixed:**
+- `lib/auth/module-access.ts:30/43-49` admin allowlist missing chairops/clawfleet/playland → replaced with `Object.keys(MODULES)`
+- Zero `orgId` on all 16 ChairOps models → added + backfill SQL
+- `ChairopsPosDaily.totalRevenue` Int → widened to Decimal(12,2) + renamed grossTotal/cashTotal/onlineTotal
+
+🟢 **3 new features shipped (Wave 0 part):**
+- 5 cost fields on `ChairopsBranch` (monthlyRent · monthlyUtility · monthlyStaff · monthlyOther · securityDeposit)
+- 2 new tables: `ChairopsBranchDailyRevenue` + `ChairopsAccessRequest` + `secondaryAlertUserId` FK
+- StarThing XLSX parser `lib/chairops/pos-ingest/starthing-xlsx.ts` (571 LOC · 20 cols · BE+AD dates · idempotent SHA256)
+- 2-click upload UX (drag XLSX → diff preview → commit → exec home)
+
+🎨 **UI cleanup:**
+- 4 forked Pool primitives deleted (button/card/input/badge · 121 LOC) + 31 imports migrated to `@/components/ui/*`
+- New `.co-scope` scoped tokens at `components/chairops/redesign/tokens.css`
+- 15 uppercase-Thai violations fixed (per `[[section-component-eyebrow-rootcause]]`)
+- 5 translucent sticky-bg violations fixed (per `[[sticky-bg-inherit-anti-pattern]]`)
+
+🔧 **Pool-core fixes:**
+- 3 ChairOps crons wrapped in `runWithMonitor()` (recompute-drifts · sop-check · ceo-digest)
+- `loadUserModules` admin allowlist now uses `Object.keys(MODULES)` (drift-free Pool-wide)
+
+**Verify:**
+- ✅ `npx tsc --noEmit` clean (0 errors · was 81 before BA-2 round)
+- ✅ `npm run build` succeeded (77 static pages generated · 25s compile)
+- ✅ Lint clean on Wave 0 file scope (23 pre-existing problems unchanged)
+- ✅ Smoke test: BA-5 parsed sample XLSX (BE date · Thai headers · idempotent fileHash)
+
+**Migration SQL written but NOT applied:**
+- File: `supabase/migrations/20260527130540_chairops_w0.sql` (360 lines · BEGIN/COMMIT + ROLLBACK section)
+- Default org slug = `pooilgroup` (verified in seed.ts)
+- Backfill: `UPDATE chairops_<table> SET org_id = (SELECT id FROM organizations WHERE slug='pooilgroup')`
+
+**Pending CEO action (2 deploy steps):**
+1. **Review + apply migration** via Supabase Studio or `psql "$PROD_DIRECT_URL" < supabase/migrations/20260527130540_chairops_w0.sql`
+2. **Confirm `vercel --prod`** (per `[[verify-cwd-before-vercel-prod]]` — cwd verified as `pooilgroup` project)
+
+**CEO checkpoint after deploy (per synthesizer + DEVIL recommendation):**
+- Run `SELECT count(*) FROM chairops_cash_collection WHERE created_at > now() - interval '14 days'` — if <50, interview 2 maids before W1
+- Check Playland device arrival ETA (competing priority)
+- Show LIFF rich-menu mockup before W1 build starts
+- Re-decide Wave 1 scope (Full vs DEVIL Lite)
+
+**Memory updates (this round):**
+- New: `[[chairops-pos-vendor-starthing]]` · `[[chairops-line-group-structure-current]]` · `[[chairops-p0-decisions-locked-2026-05-27]]` · `[[chairops-starthing-xlsx-schema-2026-05-27]]` · `[[chairops-branch-cost-field-2026-05-27]]` · `[[chairops-vendor-billing-feature-2026-05-27]]` · `[[chairops-upload-flow-simple-2026-05-27]]` · `[[chairops-only-session-scope-2026-05-27]]` · `[[reference-starthing-portal]]`
+
+---
+
+## 🆕 Update (2026-05-27 · รอบ 57 — Playland ACS · dual-mode device offer + 2-of-5 Lily answers)
+
+**CEO trigger:** Lily Huang เสนอ device รุ่นใหม่ $239/ตัว · face + QR ในเครื่องเดียว · CEO ถามรายละเอียด 5 ข้อ · Lily ตอบ 2 ข้อก่อน · ที่เหลือรอ engineer
+
+**Lily ยืนยันแล้ว (สำคัญทั้งคู่):**
+- ✅ Q1 — webhook + protocol **เหมือน F606 เป๊ะ** · ของที่ทำไว้ใช้ต่อได้หมด (bridge · reply format · adapter)
+- ✅ Q4 — เครื่องเดียวรองรับทั้ง face + QR **พร้อมกัน** · ไม่ต้องสลับโหมด
+
+**ยังรอ Lily/engineer ตอบ (3 ข้อ):**
+- ⏳ Sample webhook JSON × 4 event types (face match · face fail · stranger · QR scan) — ต้องใช้สร้าง parser ก่อน device มาถึง
+- ⏳ Cloud test endpoint / simulator — เทสได้ก่อนของจริง
+- ⏳ Gate relay behavior สำหรับ QR (local recogRelay vs server-decided)
+- ⏳ HTTPS support สำหรับ firmware ใหม่ (สำคัญสุด · ตัดสินเรื่อง deploy bridge)
+
+**Shipped this round:**
+1. `tools/acs-http-bridge/LILY_FOLLOWUP_2026-05-27.md` — draft message 4 ข้อ merged จาก 2 chat sessions
+2. Memory new: [[acs-dual-mode-device-2026-05-27]] — บันทึก device ใหม่ + 2/5 answers
+3. MEMORY.md index updated
+
+**Strategic implication (Playland UX):**
+- Device ใหม่ดีกว่า F606 สำหรับ Playland — ตรงกับ [[playland-workshop-decisions]] (QR เคยวางไว้สำหรับ visitor entry)
+- Members → face scan · Visitors → QR ticket (no face enroll · privacy-friendly สำหรับเด็ก)
+- Babysitters/พี่เลี้ยง → QR ผูกกับ session · ไม่ต้อง enroll
+- ราคา $239 vs F606 (ยังไม่ได้ราคา) — ต้องเปรียบเทียบ
+
+**Pending CEO action:**
+1. ส่ง `LILY_FOLLOWUP_2026-05-27.md` ให้ Lily (เมื่อพร้อม)
+2. รอ engineer ตอบ 4 ข้อ → ค่อยตัดสินใจ deploy bridge หรือไม่
+3. ตัดสินใจระหว่าง F606 vs device ใหม่ ($239) สำหรับ order 3 ตัวจริง
+
+**Memory + sync state:**
+- ทุก memory file อยู่ที่ `~/.claude/projects/-Users-patipantantikul-Code-buildlygo/memory/` · chat ทั้งของ Pool + Buildly Go ดึง memory จากที่เดียวกัน → ทุก chat อ่านเจอ
+- STATUS.md (ไฟล์นี้) อยู่ใน pooilgroup-web repo · chat ที่ทำงานในที่อื่นอาจไม่อ่านอัตโนมัติ → ใช้ memory เป็นช่องทาง sync หลัก
+
+---
+
+## 🆕 Update (2026-05-26 · รอบ 56 — Playland ACS-F606 deep audit + HTTP bridge ship)
+
+## 🆕 Update (2026-05-26 · รอบ 56 — Playland ACS-F606 deep audit + HTTP bridge ship)
+
+**CEO trigger:** ACS engineer (Lily Huang) report "your interface cannot be connected" หลัง cloud-test ของ device F606 ยิง webhook ของเรา
+
+**Deep investigation findings (proven, not guessed):**
+- ✅ Endpoint ของเรา live + ตอบถูก spec (curl 4 รอบจาก outside ผ่านหมด · HTTPS · auth · device-registered · adapter parse)
+- ❌ Root cause = **F606 firmware HTTP-only** · doc-2 §2.6.1 หน้า 28 มี red-text "must set up http server to receive data" + debug log ภายใน device ที่อยู่ในเอกสารเอง (หน้า 30) แสดง `http api post record url:http://...` · Vercel = HTTPS-only + device ไม่ตาม redirect → ตี TLS port 443 ไม่สำเร็จ
+- 🐛 **Secondary bug** — route.ts reply ด้วย `{"AcsRes","ActIndex","Time","Msg"}` format อ้าง "PDF §11.11" ที่ **ไม่มีอยู่จริง** (AI-hallucinated เก่า) · spec จริง §2.6.1 บอก `{"result":0,"message":"OK"}`
+
+**Shipped this round (NOT yet committed · pending CEO review):**
+1. `app/api/playland/acs/event/route.ts` — แก้ reply format ตาม §2.6.1 + ลบ logic shouldOpen (device ตัดสินใจเปิดประตูเองผ่าน `recogRelay=1`) + แก้ comment ที่อ้าง §11.11 ผิด
+2. `tools/acs-http-bridge/worker.js` — Cloudflare Worker HTTP→HTTPS bridge
+3. `tools/acs-http-bridge/wrangler.toml` — deploy config
+4. `tools/acs-http-bridge/nginx-fallback.conf` — alt VPS-based bridge
+5. `tools/acs-http-bridge/README.md` — CEO deploy guide (Thai)
+6. `tools/acs-http-bridge/LILY_REPLY_DRAFT.md` — draft message ถาม Lily (firmware HTTPS / cloud relay / device error log)
+
+**Verify:**
+- `tsc --noEmit` clean
+- `eslint app/api/playland/acs/event/route.ts` clean
+- curl prod endpoint (4 calls) — ทุก path ตอบถูกต้อง
+
+**Pending CEO action (4 ข้อ):**
+1. ส่ง draft message ถึง Lily (LILY_REPLY_DRAFT.md)
+2. เลือก deploy bridge แบบไหน — Cloudflare Worker (ต้องมีโดเมน) หรือ nginx VPS
+3. Confirm commit ไหม (ของผม + ไฟล์ bridge · ยังไม่ deploy)
+4. หลัง bridge live → update `platformIp` ของทุก F606 device ใน admin UI
+
+**Skip (out of session scope per [[playland-only-session-scope-2026-05-26]]):**
+- ยังไม่แตะไฟล์ wristband/scan/stock-count ที่ค้างใน working tree (เป็นของ playland-wristband-pos · งานคนละก้อน)
+
+**Memory updates:**
+- New: [[acs-http-bridge-required-2026-05-26]] — บันทึก root cause + solution
+- Updated: [[acs-architecture-confirmed]] — fix reply-format claim ที่ผิด · ใส่ corrigendum
+- MEMORY.md index updated
+
+---
 
 ## 🆕 Update (2026-05-26 · รอบ 55 — `/bigsolvebug` ลุยทั้งหมด · 8 commits · 17 bugs fixed)
 

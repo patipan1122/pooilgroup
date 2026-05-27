@@ -12,9 +12,9 @@ import {
   canUnlockCollection,
 } from "@/lib/chairops/auth/role-guards";
 import { prisma } from "@/lib/prisma";
-import { Card, CardContent } from "@/components/chairops/ui/card";
-import { Badge } from "@/components/chairops/ui/badge";
-import { Button } from "@/components/chairops/ui/button";
+import { Card, CardBody } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { baht, thaiDateTime } from "@/lib/chairops/utils/format";
 import { ChevronLeft, Lock, Unlock } from "lucide-react";
 import { UnlockButton } from "@/app/(admin)/chairops/collect/[id]/unlock-button";
@@ -69,22 +69,22 @@ export default async function MaidCollectDetailPage({ params }: Props) {
 
       <div className="flex items-center gap-2">
         {isLocked ? (
-          <Badge variant="secondary" className="gap-1">
+          <Badge tone="neutral" className="gap-1">
             <Lock className="h-3 w-3" aria-hidden /> ล็อค · แก้ไขไม่ได้
           </Badge>
         ) : row.unlockedAt ? (
-          <Badge variant="warning" className="gap-1">
+          <Badge tone="warning" className="gap-1">
             <Unlock className="h-3 w-3" aria-hidden /> ออฟฟิศปลดล็อกแล้ว
           </Badge>
         ) : (
-          <Badge variant="success">
+          <Badge tone="success">
             ยังแก้ไขได้ · เหลือ {minutesLeft} นาที
           </Badge>
         )}
       </div>
 
       <Card>
-        <CardContent className="space-y-3 p-4 text-sm">
+        <CardBody className="space-y-3 p-4 text-sm">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <div className="text-xs text-zinc-500">ยอดที่นับ</div>
@@ -138,11 +138,11 @@ export default async function MaidCollectDetailPage({ params }: Props) {
               <p className="whitespace-pre-wrap text-zinc-800">{row.notes}</p>
             </div>
           )}
-        </CardContent>
+        </CardBody>
       </Card>
 
       <Card>
-        <CardContent className="space-y-2 p-4">
+        <CardBody className="space-y-2 p-4">
           <div className="text-sm font-semibold text-zinc-800">รูปหลักฐาน</div>
           <PhotoLightbox
             url={row.evidencePhotoUrl}
@@ -156,12 +156,12 @@ export default async function MaidCollectDetailPage({ params }: Props) {
               <PhotoLightbox url={row.slipPhotoUrl} alt="สลิปธนาคาร" />
             </>
           )}
-        </CardContent>
+        </CardBody>
       </Card>
 
       {isLocked && (
         <Card className="border-zinc-200">
-          <CardContent className="space-y-3 p-4 text-sm text-zinc-600">
+          <CardBody className="space-y-3 p-4 text-sm text-zinc-600">
             <p>
               รายการนี้อยู่ในช่วง 30 นาทีหลังบันทึก ·
               ระบบล็อคไม่ให้แก้ไขเพื่อความปลอดภัย (เหลือ {minutesLeft} นาที)
@@ -173,16 +173,16 @@ export default async function MaidCollectDetailPage({ params }: Props) {
                 ถ้าต้องแก้ไข · ให้ออฟฟิศหรือผู้จัดการเป็นคนปลดล็อก
               </p>
             )}
-          </CardContent>
+          </CardBody>
         </Card>
       )}
 
       {row.unlockedAt && (
         <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="p-3 text-xs text-amber-800">
+          <CardBody className="p-3 text-xs text-amber-800">
             ออฟฟิศปลดล็อกเมื่อ {thaiDateTime(row.unlockedAt)} ·
             บันทึกการแก้ไขถูกเก็บใน audit log
-          </CardContent>
+          </CardBody>
         </Card>
       )}
 

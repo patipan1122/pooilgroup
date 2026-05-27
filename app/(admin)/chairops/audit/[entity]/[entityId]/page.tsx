@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/chairops/ui/card";
+import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { thaiDateTime } from "@/lib/chairops/utils/format";
 
 export default async function AuditEntityPage({
@@ -35,9 +35,9 @@ export default async function AuditEntityPage({
 
       {logs.length === 0 ? (
         <Card>
-          <CardContent className="p-8 text-center text-muted-foreground">
+          <CardBody className="p-8 text-center text-muted-foreground">
             ไม่พบประวัติของ entity นี้
-          </CardContent>
+          </CardBody>
         </Card>
       ) : (
         <ol className="space-y-3">
@@ -52,7 +52,7 @@ export default async function AuditEntityPage({
                     </span>
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardBody>
                   <DiffTable oldValue={l.oldValue} newValue={l.newValue} />
                   {l.metadata != null && (
                     <details className="mt-3">
@@ -64,7 +64,7 @@ export default async function AuditEntityPage({
                       </pre>
                     </details>
                   )}
-                </CardContent>
+                </CardBody>
               </Card>
             </li>
           ))}

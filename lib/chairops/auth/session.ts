@@ -78,9 +78,12 @@ export const getSession = cache(async (): Promise<Session | null> => {
   // user can enter the module.
   if (!chairUser) {
     // Best-effort audit (don't block login flow if audit write fails).
+    // W0: AuditLog.orgId now required · use the Pool user's org_id (cross-
+    // schema text reference). See [[chairops-audit-2026-05-25]].
     try {
       await prisma.chairopsAuditLog.create({
         data: {
+          orgId: poolDbUser.org_id,
           userId: null,
           action: "access.denied_no_chairops_user",
           entity: "ChairopsUser",

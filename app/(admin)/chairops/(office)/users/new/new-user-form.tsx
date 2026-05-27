@@ -70,7 +70,7 @@ export function NewUserForm({ assignableRoles, branches }: Props) {
       className="rounded-2xl border-2 border-zinc-200 bg-white p-5 shadow-soft"
     >
       <header className="mb-4 border-b border-zinc-200 pb-3">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">
+        <p className="text-[10px] font-bold tracking-[0.02em] text-zinc-500">
           ข้อมูลใหม่
         </p>
         <h2 className="mt-0.5 text-sm font-semibold text-zinc-900">

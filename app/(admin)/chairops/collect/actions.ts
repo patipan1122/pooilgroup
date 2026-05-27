@@ -65,9 +65,11 @@ export async function createCashCollection(
     return { ok: false, error: "บัญชีของคุณยังไม่ได้กำหนดสาขา · ติดต่อออฟฟิศ" };
   }
 
-  // กันรูปซ้ำ — schema มี @@unique([imageHash]) แล้ว แต่ check ก่อนเพื่อ error message ดี
+  // กันรูปซ้ำ — schema มี @@unique([orgId, imageHash]) แล้ว แต่ check ก่อนเพื่อ error message ดี
   const dup = await prisma.chairopsCashCollection.findUnique({
-    where: { imageHash: data.imageHash },
+    where: {
+      orgId_imageHash: { orgId: session.user.orgId, imageHash: data.imageHash },
+    },
     select: { id: true, collectedAt: true },
   });
   if (dup) {
@@ -82,6 +84,7 @@ export async function createCashCollection(
     const created = await prisma.$transaction(async (tx) => {
       const row = await tx.chairopsCashCollection.create({
         data: {
+          orgId: session.user.orgId,
           branchId,
           maidId: session.user.id,
           countedAmount: data.countedAmount,
@@ -138,8 +141,8 @@ export async function requestUnlock(id: string): Promise<ActionResult> {
   const parsedId = zUUID().safeParse(id);
   if (!parsedId.success) return { ok: false, error: "id ไม่ถูกต้อง" };
 
-  const existing = await prisma.chairopsCashCollection.findUnique({
-    where: { id: parsedId.data },
+  const existing = await prisma.chairopsCashCollection.findFirst({
+    where: { id: parsedId.data, orgId: session.user.orgId },
     select: { id: true, lockedAt: true, branchId: true },
   });
   if (!existing) return { ok: false, error: "ไม่พบรายการ" };
@@ -199,8 +202,8 @@ export async function presignEvidenceUpload(args: {
     return { ok: false, error: "ต้องเป็นไฟล์รูปภาพเท่านั้น" };
   }
 
-  const branch = await prisma.chairopsBranch.findUniqueOrThrow({
-    where: { id: session.user.primaryBranchId },
+  const branch = await prisma.chairopsBranch.findFirstOrThrow({
+    where: { id: session.user.primaryBranchId, orgId: session.user.orgId },
     select: { slug: true },
   });
 

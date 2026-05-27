@@ -159,6 +159,7 @@ enum UserRole {
   driver // FuelOS Phase 2
   viewer // Read-only (accountant / HR)
   org_admin // [deprecated alias — kept for back-compat, will migrate to admin]
+
   @@schema("public")
 }
 
@@ -191,36 +192,36 @@ model User {
   createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org                     Organization                 @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  userBranches            UserBranch[]
-  managedBranches         Branch[]                     @relation("BranchManager")
-  submittedReports        DailyReport[]                @relation("ReportSubmitter")
-  approvedReports         DailyReport[]                @relation("ReportApprover")
-  reportDrafts            ReportDraft[]
-  reportedBugs            BugReport[]                  @relation("BugReporter")
-  acknowledgedBugs        BugReport[]                  @relation("BugAcknowledger")
-  unlockedReports         DailyReport[]                @relation("ReportUnlocker")
-  shortagesAttributed     CashShortage[]               @relation("ShortagePerson")
-  auditLogs               AuditLog[]
-  notifications           Notification[]
-  sessions                UserSession[]
-  reviewedRequests        RegisterRequest[]            @relation("RegisterReviewer")
-  telegramSubs            TelegramSubscription[]
-  telegramTokens          TelegramPairingToken[]
-  uploadedDocuments       Document[]                   @relation("DocumentUploader")
-  responsibleRenewals     DocumentRenewal[]            @relation("RenewalResponsible")
-  personDocuments         PersonDocument[]
-  signaturePlacements     DocumentSignaturePlacement[] @relation("SignaturePlacementSigner")
+  org                      Organization                 @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  userBranches             UserBranch[]
+  managedBranches          Branch[]                     @relation("BranchManager")
+  submittedReports         DailyReport[]                @relation("ReportSubmitter")
+  approvedReports          DailyReport[]                @relation("ReportApprover")
+  reportDrafts             ReportDraft[]
+  reportedBugs             BugReport[]                  @relation("BugReporter")
+  acknowledgedBugs         BugReport[]                  @relation("BugAcknowledger")
+  unlockedReports          DailyReport[]                @relation("ReportUnlocker")
+  shortagesAttributed      CashShortage[]               @relation("ShortagePerson")
+  auditLogs                AuditLog[]
+  notifications            Notification[]
+  sessions                 UserSession[]
+  reviewedRequests         RegisterRequest[]            @relation("RegisterReviewer")
+  telegramSubs             TelegramSubscription[]
+  telegramTokens           TelegramPairingToken[]
+  uploadedDocuments        Document[]                   @relation("DocumentUploader")
+  responsibleRenewals      DocumentRenewal[]            @relation("RenewalResponsible")
+  personDocuments          PersonDocument[]
+  signaturePlacements      DocumentSignaturePlacement[] @relation("SignaturePlacementSigner")
   // FuelOS Sprint 6
-  depotPricesEntered      DepotPrice[]                 @relation("DepotPriceEntered")
-  assignedContacts        Contact[]                    @relation("ContactSales")
-  quotesAsSales           CustomerQuote[]              @relation("QuoteSales")
-  priceAlertsSent         PriceAlertLog[]              @relation("PriceAlertSales")
-  lineResponsesAsSales    LineResponseLog[]            @relation("LineResponseSales")
-  fuelOrdersAsSales       FuelOrder[]                  @relation("FuelOrderSales")
-  driverProfile           DriverProfile?
-  paymentsCreated         Payment[]                    @relation("PaymentCreatedBy")
-  flashSalesCreated       FlashSale[]                  @relation("FlashSaleCreatedBy")
+  depotPricesEntered       DepotPrice[]                 @relation("DepotPriceEntered")
+  assignedContacts         Contact[]                    @relation("ContactSales")
+  quotesAsSales            CustomerQuote[]              @relation("QuoteSales")
+  priceAlertsSent          PriceAlertLog[]              @relation("PriceAlertSales")
+  lineResponsesAsSales     LineResponseLog[]            @relation("LineResponseSales")
+  fuelOrdersAsSales        FuelOrder[]                  @relation("FuelOrderSales")
+  driverProfile            DriverProfile?
+  paymentsCreated          Payment[]                    @relation("PaymentCreatedBy")
+  flashSalesCreated        FlashSale[]                  @relation("FlashSaleCreatedBy")
   // Recruit module
   recruitPostingsCreated   RecruitJobPosting[]          @relation("RecruitPostingCreator")
   recruitNotesAuthored     RecruitApplicationNote[]     @relation("RecruitNoteAuthor")
@@ -234,20 +235,20 @@ model User {
   recruitReferralsAsRef    RecruitReferral[]            @relation("RecruitReferrerUser")
   recruitErasureDecided    RecruitErasureRequest[]      @relation("RecruitErasureDecider")
   // Repair module
-  repairTicketsReported   RepairTicket[]               @relation("RepairTicketReporter")
-  repairTicketsResolved   RepairTicket[]               @relation("RepairTicketResolver")
-  repairTicketsClosed     RepairTicket[]               @relation("RepairTicketCloser")
-  repairTechnicianLink    RepairTechnician?
-  repairTimelineEvents    RepairTimelineEvent[]        @relation("RepairTimelineActor")
-  repairPhotosUploaded    RepairPhoto[]                @relation("RepairPhotoUploader")
-  repairPartsAdded        RepairPart[]                 @relation("RepairPartAddedBy")
-  repairPartsOrdered      RepairPart[]                 @relation("RepairPartOrderedBy")
+  repairTicketsReported    RepairTicket[]               @relation("RepairTicketReporter")
+  repairTicketsResolved    RepairTicket[]               @relation("RepairTicketResolver")
+  repairTicketsClosed      RepairTicket[]               @relation("RepairTicketCloser")
+  repairTechnicianLink     RepairTechnician?
+  repairTimelineEvents     RepairTimelineEvent[]        @relation("RepairTimelineActor")
+  repairPhotosUploaded     RepairPhoto[]                @relation("RepairPhotoUploader")
+  repairPartsAdded         RepairPart[]                 @relation("RepairPartAddedBy")
+  repairPartsOrdered       RepairPart[]                 @relation("RepairPartOrderedBy")
   // ClawFleet module
-  cfSessionsOpened        CfCollectionSession[]        @relation("CfSessionOpener")
-  cfSessionsClosed        CfCollectionSession[]        @relation("CfSessionCloser")
-  cfSessionsReviewed      CfCollectionSession[]        @relation("CfSessionReviewer")
-  cfEventsCollected       CfCollectionEvent[]          @relation("CfEventCollector")
-  cfStockMovementsCreated CfStockMovement[]            @relation("CfStockCreator")
+  cfSessionsOpened         CfCollectionSession[]        @relation("CfSessionOpener")
+  cfSessionsClosed         CfCollectionSession[]        @relation("CfSessionCloser")
+  cfSessionsReviewed       CfCollectionSession[]        @relation("CfSessionReviewer")
+  cfEventsCollected        CfCollectionEvent[]          @relation("CfEventCollector")
+  cfStockMovementsCreated  CfStockMovement[]            @relation("CfStockCreator")
 
   @@unique([orgId, employeeCode])
   @@index([orgId, isActive])
@@ -275,6 +276,7 @@ enum BusinessType {
   training_center // ศูนย์ฝึกอบรม
   transport // FuelOS Phase 2
   gas_fleet // FuelOS Phase 2
+
   @@schema("public")
 }
 
@@ -300,27 +302,27 @@ model Branch {
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org             Organization           @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  company         Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  parentBranch    Branch?                @relation("SubTenants", fields: [parentBranchId], references: [id], onDelete: SetNull)
-  subTenants      Branch[]               @relation("SubTenants")
-  manager         User?                  @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
-  userBranches    UserBranch[]
-  dailyReports    DailyReport[]
-  reportDrafts    ReportDraft[]
-  cashShortages   CashShortage[]
-  targets         BranchTarget[]
-  healthScores    BranchHealthScore[]
-  streak          BranchStreak?
-  missingReports  MissingReportReason[]
-  rentalsAsHost   BranchRental[]         @relation("RentalHost")
-  rentalsAsTenant BranchRental[]         @relation("RentalTenant")
-  vehicles        Vehicle[]
-  sharedDocuments DocumentSharedBranch[]
-  repairTickets   RepairTicket[]
+  org              Organization           @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  company          Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  parentBranch     Branch?                @relation("SubTenants", fields: [parentBranchId], references: [id], onDelete: SetNull)
+  subTenants       Branch[]               @relation("SubTenants")
+  manager          User?                  @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
+  userBranches     UserBranch[]
+  dailyReports     DailyReport[]
+  reportDrafts     ReportDraft[]
+  cashShortages    CashShortage[]
+  targets          BranchTarget[]
+  healthScores     BranchHealthScore[]
+  streak           BranchStreak?
+  missingReports   MissingReportReason[]
+  rentalsAsHost    BranchRental[]         @relation("RentalHost")
+  rentalsAsTenant  BranchRental[]         @relation("RentalTenant")
+  vehicles         Vehicle[]
+  sharedDocuments  DocumentSharedBranch[]
+  repairTickets    RepairTicket[]
   // ClawFleet
-  cfMachines      CfMachine[]
-  cfMachineGroups CfMachineGroup[]
+  cfMachines       CfMachine[]
+  cfMachineGroups  CfMachineGroup[]
   cfStockMovements CfStockMovement[]
 
   @@unique([orgId, code])
@@ -340,6 +342,7 @@ enum RentalType {
   fixed_monthly // ค่าเช่ารายเดือนตายตัว
   percentage // % ของยอดขายผู้เช่า
   mixed // ทั้ง fixed + %
+
   @@schema("public")
 }
 
@@ -422,6 +425,7 @@ enum ReportStatus {
   submitted
   approved
   rejected
+
   @@schema("public")
 }
 
@@ -430,6 +434,7 @@ enum Shift {
   midday
   evening
   all
+
   @@schema("public")
 }
 
@@ -539,6 +544,7 @@ enum BugStatus {
   acked
   fixed
   closed
+
   @@schema("public")
 }
 
@@ -1264,6 +1270,7 @@ enum RecruitPostingStatus {
   OPEN
   CLOSED
   ARCHIVED
+
   @@schema("public")
 }
 
@@ -1275,6 +1282,7 @@ enum RecruitApplicationStatus {
   HIRED
   REJECTED
   WITHDRAWN
+
   @@schema("public")
 }
 
@@ -1282,6 +1290,7 @@ enum RecruitCompanyScope {
   POOIL
   JPSYNC
   BOTH
+
   @@schema("public")
 }
 
@@ -1318,20 +1327,20 @@ model RecruitJobPosting {
 
 // 50. recruit_applicants — ผู้สมัคร (normalized · dedup by phone)
 model RecruitApplicant {
-  id            String   @id @default(uuid()) @db.Uuid
-  orgId         String   @map("org_id") @db.Uuid
-  fullName      String   @map("full_name")
-  phone         String // primary identifier · CEO Q5: no national ID at apply
-  email         String?
-  lineId        String?  @map("line_id") // LINE basic ID (legacy · user-supplied)
-  lineUserId    String?  @map("line_user_id") // LINE userId from webhook (per-channel · opaque)
-  facebookPsid  String?  @map("facebook_psid") // FB Page-scoped Sender ID
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  fullName     String   @map("full_name")
+  phone        String // primary identifier · CEO Q5: no national ID at apply
+  email        String?
+  lineId       String?  @map("line_id") // LINE basic ID (legacy · user-supplied)
+  lineUserId   String?  @map("line_user_id") // LINE userId from webhook (per-channel · opaque)
+  facebookPsid String?  @map("facebook_psid") // FB Page-scoped Sender ID
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  org              Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  applications     RecruitApplication[]
-  referrals        RecruitReferral[]
-  erasureRequests  RecruitErasureRequest[]
+  org             Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  applications    RecruitApplication[]
+  referrals       RecruitReferral[]
+  erasureRequests RecruitErasureRequest[]
 
   @@index([orgId, phone])
   @@index([orgId, lineUserId])
@@ -1434,6 +1443,7 @@ enum RecruitInterviewKind {
   ONSITE
   PHONE
   VIDEO
+
   @@schema("public")
 }
 
@@ -1443,6 +1453,7 @@ enum RecruitInterviewStatus {
   COMPLETED
   NO_SHOW
   CANCELLED
+
   @@schema("public")
 }
 
@@ -1478,12 +1489,14 @@ enum RecruitMessageChannel {
   EMAIL
   INAPP
   FACEBOOK
+
   @@schema("public")
 }
 
 enum RecruitMessageDirection {
   OUT
   IN
+
   @@schema("public")
 }
 
@@ -1494,27 +1507,28 @@ enum RecruitMessageStatus {
   DELIVERED
   READ
   FAILED
+
   @@schema("public")
 }
 
 model RecruitMessage {
-  id                 String                  @id @default(uuid()) @db.Uuid
-  orgId              String                  @map("org_id") @db.Uuid
-  applicationId      String                  @map("application_id") @db.Uuid
-  channel            RecruitMessageChannel
-  direction          RecruitMessageDirection
-  body               String
-  status             RecruitMessageStatus    @default(QUEUED)
-  externalId         String?                 @map("external_id") // provider-side message ID
+  id                String                  @id @default(uuid()) @db.Uuid
+  orgId             String                  @map("org_id") @db.Uuid
+  applicationId     String                  @map("application_id") @db.Uuid
+  channel           RecruitMessageChannel
+  direction         RecruitMessageDirection
+  body              String
+  status            RecruitMessageStatus    @default(QUEUED)
+  externalId        String?                 @map("external_id") // provider-side message ID
   // Inbox channel routing (2026-05-23)
-  channelInstanceId  String?                 @map("channel_instance_id") @db.Uuid // FK → recruit_inbox_channels.id (null for INAPP/EMAIL legacy)
-  senderExternalId   String?                 @map("sender_external_id") // LINE userId / FB PSID for inbound · used for re-matching
-  replyToken         String?                 @map("reply_token") // LINE 1-min reply token (preferred over push)
-  attachments        Json?                   // image/file/sticker payload for IN messages
-  errorMessage       String?                 @map("error_message")
-  createdById        String?                 @map("created_by_id") @db.Uuid
-  createdAt          DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  sentAt             DateTime?               @map("sent_at") @db.Timestamptz(6)
+  channelInstanceId String?                 @map("channel_instance_id") @db.Uuid // FK → recruit_inbox_channels.id (null for INAPP/EMAIL legacy)
+  senderExternalId  String?                 @map("sender_external_id") // LINE userId / FB PSID for inbound · used for re-matching
+  replyToken        String?                 @map("reply_token") // LINE 1-min reply token (preferred over push)
+  attachments       Json? // image/file/sticker payload for IN messages
+  errorMessage      String?                 @map("error_message")
+  createdById       String?                 @map("created_by_id") @db.Uuid
+  createdAt         DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  sentAt            DateTime?               @map("sent_at") @db.Timestamptz(6)
 
   org             Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
   application     RecruitApplication   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
@@ -1529,17 +1543,17 @@ model RecruitMessage {
 }
 
 model RecruitScreeningRule {
-  id          String   @id @default(uuid()) @db.Uuid
-  orgId       String   @map("org_id") @db.Uuid
+  id          String    @id @default(uuid()) @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
   name        String
-  enabled     Boolean  @default(true)
+  enabled     Boolean   @default(true)
   condition   Json
   action      Json
-  firesCount  Int      @default(0) @map("fires_count")
+  firesCount  Int       @default(0) @map("fires_count")
   lastFiredAt DateTime? @map("last_fired_at") @db.Timestamptz(6)
-  createdById String   @map("created_by_id") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdById String    @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   createdBy User         @relation("RecruitRuleCreator", fields: [createdById], references: [id], onDelete: Restrict)
@@ -1552,6 +1566,7 @@ model RecruitScreeningRule {
 enum RecruitInboxChannelType {
   LINE
   FACEBOOK
+
   @@schema("public")
 }
 
@@ -1565,19 +1580,19 @@ enum RecruitInboxChannelType {
 // env LINE_ENCRYPTION_KEY / FB_ENCRYPTION_KEY). Webhook signature verified
 // using the channel's webhookSecret on every inbound POST.
 model RecruitInboxChannel {
-  id              String                  @id @default(uuid()) @db.Uuid
-  orgId           String                  @map("org_id") @db.Uuid
-  type            RecruitInboxChannelType
-  displayName     String                  @map("display_name") // "Pooil HR LINE", "Pooil ราชบุรี FB"
-  externalId      String?                 @map("external_id") // LINE Channel ID · FB Page ID
-  accessTokenEnc  String?                 @map("access_token_enc") // encrypted long-lived token
-  webhookSecret   String?                 @map("webhook_secret") // for signature verification
-  status          String                  @default("setup") // setup | active | error | disabled
-  lastEventAt     DateTime?               @map("last_event_at") @db.Timestamptz(6)
-  metadata        Json?                   // misc per-channel info (page URL etc.)
-  createdById     String                  @map("created_by_id") @db.Uuid
-  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id             String                  @id @default(uuid()) @db.Uuid
+  orgId          String                  @map("org_id") @db.Uuid
+  type           RecruitInboxChannelType
+  displayName    String                  @map("display_name") // "Pooil HR LINE", "Pooil ราชบุรี FB"
+  externalId     String?                 @map("external_id") // LINE Channel ID · FB Page ID
+  accessTokenEnc String?                 @map("access_token_enc") // encrypted long-lived token
+  webhookSecret  String?                 @map("webhook_secret") // for signature verification
+  status         String                  @default("setup") // setup | active | error | disabled
+  lastEventAt    DateTime?               @map("last_event_at") @db.Timestamptz(6)
+  metadata       Json? // misc per-channel info (page URL etc.)
+  createdById    String                  @map("created_by_id") @db.Uuid
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org       Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   createdBy User             @relation("RecruitInboxChannelCreator", fields: [createdById], references: [id], onDelete: Restrict)
@@ -1617,27 +1632,28 @@ enum RecruitReferralStatus {
   HIRED
   PAID
   EXPIRED
+
   @@schema("public")
 }
 
 model RecruitReferral {
-  id           String                @id @default(uuid()) @db.Uuid
-  orgId        String                @map("org_id") @db.Uuid
-  referrerId   String                @map("referrer_id") @db.Uuid
-  code         String                @unique
-  postingId    String?               @map("posting_id") @db.Uuid
-  applicantId  String?               @map("applicant_id") @db.Uuid
-  status       RecruitReferralStatus @default(PENDING)
-  bountyBaht   Decimal?              @map("bounty_baht") @db.Decimal(10, 2)
-  clickedAt    DateTime?             @map("clicked_at") @db.Timestamptz(6)
-  appliedAt    DateTime?             @map("applied_at") @db.Timestamptz(6)
-  hiredAt      DateTime?             @map("hired_at") @db.Timestamptz(6)
-  paidAt       DateTime?             @map("paid_at") @db.Timestamptz(6)
-  notes        String?
-  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  id          String                @id @default(uuid()) @db.Uuid
+  orgId       String                @map("org_id") @db.Uuid
+  referrerId  String                @map("referrer_id") @db.Uuid
+  code        String                @unique
+  postingId   String?               @map("posting_id") @db.Uuid
+  applicantId String?               @map("applicant_id") @db.Uuid
+  status      RecruitReferralStatus @default(PENDING)
+  bountyBaht  Decimal?              @map("bounty_baht") @db.Decimal(10, 2)
+  clickedAt   DateTime?             @map("clicked_at") @db.Timestamptz(6)
+  appliedAt   DateTime?             @map("applied_at") @db.Timestamptz(6)
+  hiredAt     DateTime?             @map("hired_at") @db.Timestamptz(6)
+  paidAt      DateTime?             @map("paid_at") @db.Timestamptz(6)
+  notes       String?
+  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  org       Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  referrer  User              @relation("RecruitReferrerUser", fields: [referrerId], references: [id], onDelete: Restrict)
+  org       Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  referrer  User               @relation("RecruitReferrerUser", fields: [referrerId], references: [id], onDelete: Restrict)
   posting   RecruitJobPosting? @relation(fields: [postingId], references: [id], onDelete: SetNull)
   applicant RecruitApplicant?  @relation(fields: [applicantId], references: [id], onDelete: SetNull)
 
@@ -1652,20 +1668,21 @@ enum RecruitErasureStatus {
   APPROVED
   REJECTED
   COMPLETED
+
   @@schema("public")
 }
 
 model RecruitErasureRequest {
-  id          String               @id @default(uuid()) @db.Uuid
-  orgId       String               @map("org_id") @db.Uuid
-  applicantId String               @map("applicant_id") @db.Uuid
-  refId       String               @map("ref_id")
-  reason      String?
-  status      RecruitErasureStatus @default(PENDING)
-  requestedAt DateTime             @default(now()) @map("requested_at") @db.Timestamptz(6)
-  decidedAt   DateTime?            @map("decided_at") @db.Timestamptz(6)
-  decidedById String?              @map("decided_by_id") @db.Uuid
-  decisionNote String?             @map("decision_note")
+  id           String               @id @default(uuid()) @db.Uuid
+  orgId        String               @map("org_id") @db.Uuid
+  applicantId  String               @map("applicant_id") @db.Uuid
+  refId        String               @map("ref_id")
+  reason       String?
+  status       RecruitErasureStatus @default(PENDING)
+  requestedAt  DateTime             @default(now()) @map("requested_at") @db.Timestamptz(6)
+  decidedAt    DateTime?            @map("decided_at") @db.Timestamptz(6)
+  decidedById  String?              @map("decided_by_id") @db.Uuid
+  decisionNote String?              @map("decision_note")
 
   org       Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   applicant RecruitApplicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
@@ -1691,6 +1708,7 @@ enum RepairTicketStatus {
   RESOLVED
   CLOSED
   CANCELLED
+
   @@schema("public")
 }
 
@@ -1698,6 +1716,7 @@ enum RepairUrgency {
   URGENT
   NORMAL
   LOW
+
   @@schema("public")
 }
 
@@ -1705,6 +1724,7 @@ enum RepairReportSource {
   GUIDED
   FREEFORM
   INTERNAL
+
   @@schema("public")
 }
 
@@ -1714,12 +1734,14 @@ enum RepairPhotoPhase {
   AFTER
   PART
   RECEIPT
+
   @@schema("public")
 }
 
 enum RepairTechnicianKind {
   INTERNAL
   VENDOR
+
   @@schema("public")
 }
 
@@ -1729,6 +1751,7 @@ enum RepairPartStatus {
   DELIVERED
   INSTALLED
   CANCELLED
+
   @@schema("public")
 }
 
@@ -1744,6 +1767,7 @@ enum RepairEventKind {
   REOPEN
   CLOSE
   ETA_SET
+
   @@schema("public")
 }
 
@@ -2459,6 +2483,7 @@ model ChequeTracking {
 enum CfMachineKind {
   CLAW
   EXCHANGER
+
   @@schema("public")
 }
 
@@ -2466,6 +2491,7 @@ enum CfEventType {
   INITIAL // กรอกครั้งเดียวตอนตั้งตู้ใหม่
   COLLECTION // รอบเก็บปกติ
   VOID // soft delete event
+
   @@schema("public")
 }
 
@@ -2474,6 +2500,7 @@ enum CfStockMoveType {
   LOAD_TO_MACHINE // เติมเข้าตู้
   COUNT_SNAPSHOT // นับสต๊อกวันนี้
   ADJUST // ปรับมือ (require approve)
+
   @@schema("public")
 }
 
@@ -2482,6 +2509,7 @@ enum CfSessionStatus {
   CLOSED
   ANOMALY_REVIEW
   LOCKED
+
   @@schema("public")
 }
 
@@ -2494,6 +2522,7 @@ enum CfProductCategory {
   KEYCHAIN // พวงกุญแจ
   SNACK // ขนม
   OTHER
+
   @@schema("public")
 }
 
@@ -2501,38 +2530,38 @@ enum CfProductCategory {
 // CF.1 — cf_machines (ทุกตู้: CLAW + EXCHANGER)
 // =============================================================
 model CfMachine {
-  id              String          @id @default(uuid()) @db.Uuid
-  orgId           String          @map("org_id") @db.Uuid
-  branchId        String          @map("branch_id") @db.Uuid
-  groupId         String?         @map("group_id") @db.Uuid
-  code            String // "CW-001" หรือ "EX-01"
-  nickname        String?
-  kind            CfMachineKind
-  qrToken         String          @unique @map("qr_token") // สำหรับ scan ก่อนกรอก
-  serial          String?
+  id               String        @id @default(uuid()) @db.Uuid
+  orgId            String        @map("org_id") @db.Uuid
+  branchId         String        @map("branch_id") @db.Uuid
+  groupId          String?       @map("group_id") @db.Uuid
+  code             String // "CW-001" หรือ "EX-01"
+  nickname         String?
+  kind             CfMachineKind
+  qrToken          String        @unique @map("qr_token") // สำหรับ scan ก่อนกรอก
+  serial           String?
   // mirror (updated via AFTER INSERT trigger on cf_collection_events)
-  lastCoinMeter   Int             @default(0) @map("last_coin_meter")
-  lastDollMeter   Int             @default(0) @map("last_doll_meter")
-  lastDollStock   Int             @default(0) @map("last_doll_stock")
-  lastEventAt     DateTime?       @map("last_event_at") @db.Timestamptz(6)
+  lastCoinMeter    Int           @default(0) @map("last_coin_meter")
+  lastDollMeter    Int           @default(0) @map("last_doll_meter")
+  lastDollStock    Int           @default(0) @map("last_doll_stock")
+  lastEventAt      DateTime?     @map("last_event_at") @db.Timestamptz(6)
   // initial values (กรอกตอนสร้างตู้ · ใช้ตอน INITIAL event)
-  initialCoinMeter Int            @default(0) @map("initial_coin_meter")
-  initialDollMeter Int            @default(0) @map("initial_doll_meter")
-  installedAt     DateTime?       @map("installed_at") @db.Date
-  retiredAt       DateTime?       @map("retired_at") @db.Timestamptz(6)
-  isActive        Boolean         @default(true) @map("is_active")
-  notes           String?
-  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  initialCoinMeter Int           @default(0) @map("initial_coin_meter")
+  initialDollMeter Int           @default(0) @map("initial_doll_meter")
+  installedAt      DateTime?     @map("installed_at") @db.Date
+  retiredAt        DateTime?     @map("retired_at") @db.Timestamptz(6)
+  isActive         Boolean       @default(true) @map("is_active")
+  notes            String?
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  branch   Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  group    CfMachineGroup?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  loadouts CfMachineLoadout[]
+  org               Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch            Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  group             CfMachineGroup?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  loadouts          CfMachineLoadout[]
   exchangerLoadouts CfExchangerLoadout[]
-  events   CfCollectionEvent[]
-  exchangerOfGroup CfMachineGroup? @relation("CfGroupExchanger")
-  stockMovements CfStockMovement[]
+  events            CfCollectionEvent[]
+  exchangerOfGroup  CfMachineGroup?      @relation("CfGroupExchanger")
+  stockMovements    CfStockMovement[]
 
   @@unique([orgId, code])
   @@index([orgId, branchId, kind, isActive])
@@ -2545,19 +2574,19 @@ model CfMachine {
 // CF.2 — cf_machine_groups (1 EX + N CLAW)
 // =============================================================
 model CfMachineGroup {
-  id            String   @id @default(uuid()) @db.Uuid
-  orgId         String   @map("org_id") @db.Uuid
-  branchId      String   @map("branch_id") @db.Uuid
-  name          String // "โซน A ชุมพวง"
-  exchangerId   String?  @unique @map("exchanger_id") @db.Uuid // 1 group = 1 ตู้แลก
-  toleranceBps  Int      @default(500) @map("tolerance_bps") // 500 = 5%
-  isActive      Boolean  @default(true) @map("is_active")
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  branchId     String   @map("branch_id") @db.Uuid
+  name         String // "โซน A ชุมพวง"
+  exchangerId  String?  @unique @map("exchanger_id") @db.Uuid // 1 group = 1 ตู้แลก
+  toleranceBps Int      @default(500) @map("tolerance_bps") // 500 = 5%
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org       Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  branch    Branch              @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  exchanger CfMachine?          @relation("CfGroupExchanger", fields: [exchangerId], references: [id], onDelete: SetNull)
+  org       Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch    Branch                @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  exchanger CfMachine?            @relation("CfGroupExchanger", fields: [exchangerId], references: [id], onDelete: SetNull)
   machines  CfMachine[]
   sessions  CfCollectionSession[]
 
@@ -2582,8 +2611,8 @@ model CfProduct {
   createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  loadouts CfMachineLoadout[]
+  org            Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  loadouts       CfMachineLoadout[]
   stockMovements CfStockMovement[]
 
   @@unique([orgId, sku])
@@ -2596,16 +2625,16 @@ model CfProduct {
 // CF.4 — cf_machine_loadouts (CLAW: สินค้า + ราคา/ครั้ง ใน effective period)
 // =============================================================
 model CfMachineLoadout {
-  id              String    @id @default(uuid()) @db.Uuid
-  orgId           String    @map("org_id") @db.Uuid
-  machineId       String    @map("machine_id") @db.Uuid
-  productId       String    @map("product_id") @db.Uuid
-  pricePerPlayCoins Int     @default(1) @map("price_per_play_coins") // ค่าเล่น (เหรียญ/ครั้ง · ปกติ 1 เหรียญ = 10฿)
-  effectiveFrom   DateTime  @default(now()) @map("effective_from") @db.Timestamptz(6)
-  effectiveTo     DateTime? @map("effective_to") @db.Timestamptz(6)
-  setById         String?   @map("set_by_id") @db.Uuid
-  notes           String?
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                String    @id @default(uuid()) @db.Uuid
+  orgId             String    @map("org_id") @db.Uuid
+  machineId         String    @map("machine_id") @db.Uuid
+  productId         String    @map("product_id") @db.Uuid
+  pricePerPlayCoins Int       @default(1) @map("price_per_play_coins") // ค่าเล่น (เหรียญ/ครั้ง · ปกติ 1 เหรียญ = 10฿)
+  effectiveFrom     DateTime  @default(now()) @map("effective_from") @db.Timestamptz(6)
+  effectiveTo       DateTime? @map("effective_to") @db.Timestamptz(6)
+  setById           String?   @map("set_by_id") @db.Uuid
+  notes             String?
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   machine CfMachine    @relation(fields: [machineId], references: [id], onDelete: Cascade)
@@ -2621,18 +2650,18 @@ model CfMachineLoadout {
 // CF.5 — cf_exchanger_loadouts (EXCHANGER: rate + promo tiers)
 // =============================================================
 model CfExchangerLoadout {
-  id            String    @id @default(uuid()) @db.Uuid
-  orgId         String    @map("org_id") @db.Uuid
-  machineId     String    @map("machine_id") @db.Uuid
+  id              String    @id @default(uuid()) @db.Uuid
+  orgId           String    @map("org_id") @db.Uuid
+  machineId       String    @map("machine_id") @db.Uuid
   // base rate: ฿1 → กี่เหรียญ (default 1.0)
-  baseCoinPerBaht Decimal @default(1.0) @map("base_coin_per_baht") @db.Decimal(8, 4)
+  baseCoinPerBaht Decimal   @default(1.0) @map("base_coin_per_baht") @db.Decimal(8, 4)
   // promo tiers JSON [{thb:100, coins:11}, {thb:500, coins:60}]
-  promoTiers    Json      @default("[]") @map("promo_tiers")
-  effectiveFrom DateTime  @default(now()) @map("effective_from") @db.Timestamptz(6)
-  effectiveTo   DateTime? @map("effective_to") @db.Timestamptz(6)
-  setById       String?   @map("set_by_id") @db.Uuid
-  notes         String?
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  promoTiers      Json      @default("[]") @map("promo_tiers")
+  effectiveFrom   DateTime  @default(now()) @map("effective_from") @db.Timestamptz(6)
+  effectiveTo     DateTime? @map("effective_to") @db.Timestamptz(6)
+  setById         String?   @map("set_by_id") @db.Uuid
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   machine CfMachine    @relation(fields: [machineId], references: [id], onDelete: Cascade)
@@ -2732,23 +2761,23 @@ model CfCollectionEvent {
 // CF.8 — cf_stock_movements (รับเข้า + เติมเข้าตู้ + นับ + ปรับ)
 // =============================================================
 model CfStockMovement {
-  id          String          @id @default(uuid()) @db.Uuid
-  orgId       String          @map("org_id") @db.Uuid
-  branchId    String          @map("branch_id") @db.Uuid
-  type        CfStockMoveType
-  productId   String          @map("product_id") @db.Uuid
-  machineId   String?         @map("machine_id") @db.Uuid // null สำหรับ RECEIVE / COUNT
-  qty         Int // +/− signed (RECEIVE=+, LOAD_TO_MACHINE=-, COUNT=actual, ADJUST=delta)
-  refTable    String?         @map("ref_table") // 'cf_collection_events' for LOAD
-  refId       String?         @map("ref_id") @db.Uuid
-  unitCostCents Int           @default(0) @map("unit_cost_cents") // snapshot ราคาทุนตอน RECEIVE
-  receiptR2Key String?        @map("receipt_r2_key") // ใบเสร็จ
-  expectedQty Int?            @map("expected_qty") // ที่ระบบคาด (สำหรับ COUNT_SNAPSHOT compare)
-  varianceQty Int?            @map("variance_qty") // expected - actual (สำหรับ COUNT)
-  reason      String?
-  occurredAt  DateTime        @map("occurred_at") @db.Timestamptz(6)
-  createdById String          @map("created_by_id") @db.Uuid
-  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  id            String          @id @default(uuid()) @db.Uuid
+  orgId         String          @map("org_id") @db.Uuid
+  branchId      String          @map("branch_id") @db.Uuid
+  type          CfStockMoveType
+  productId     String          @map("product_id") @db.Uuid
+  machineId     String?         @map("machine_id") @db.Uuid // null สำหรับ RECEIVE / COUNT
+  qty           Int // +/− signed (RECEIVE=+, LOAD_TO_MACHINE=-, COUNT=actual, ADJUST=delta)
+  refTable      String?         @map("ref_table") // 'cf_collection_events' for LOAD
+  refId         String?         @map("ref_id") @db.Uuid
+  unitCostCents Int             @default(0) @map("unit_cost_cents") // snapshot ราคาทุนตอน RECEIVE
+  receiptR2Key  String?         @map("receipt_r2_key") // ใบเสร็จ
+  expectedQty   Int?            @map("expected_qty") // ที่ระบบคาด (สำหรับ COUNT_SNAPSHOT compare)
+  varianceQty   Int?            @map("variance_qty") // expected - actual (สำหรับ COUNT)
+  reason        String?
+  occurredAt    DateTime        @map("occurred_at") @db.Timestamptz(6)
+  createdById   String          @map("created_by_id") @db.Uuid
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
 
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   branch    Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
@@ -2833,9 +2862,10 @@ enum ChairopsCleanlinessGrade {
 
 model ChairopsBranch {
   id          String    @id @default(uuid())
-  slug        String    @unique
+  orgId       String
+  slug        String
   name        String
-  tabName     String    @unique // ชื่อ tab ใน Sheet เดิม (1 tab = 1 สาขา)
+  tabName     String
   parenNumber Int?
   city        String?
   region      String?
@@ -2847,6 +2877,20 @@ model ChairopsBranch {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  // Cost fields (admin-tier visibility only · per SPEC §2.11 Owner pre-commit #1)
+  monthlyRent     Decimal? @db.Decimal(12, 2)
+  monthlyUtility  Decimal? @db.Decimal(12, 2)
+  monthlyStaff    Decimal? @db.Decimal(12, 2)
+  monthlyOther    Decimal? @db.Decimal(12, 2)
+  securityDeposit Decimal? @db.Decimal(12, 2)
+
+  // Drift refactor (SPEC §2.3) — anchors per-branch reconcile window
+  lastReconcileClosedAt DateTime?
+
+  // Alert routing (Owner pre-commit #2 · SPEC §2.11)
+  secondaryAlertUserId String?
+  secondaryAlertUser   ChairopsUser? @relation("chairops_secondary_alert", fields: [secondaryAlertUserId], references: [id])
+
   chairs             ChairopsChair[]
   maidAssignments    ChairopsMaidAssignment[]
   posDaily           ChairopsPosDaily[]
@@ -2855,17 +2899,22 @@ model ChairopsBranch {
   alerts             ChairopsAlert[]
   damageTickets      ChairopsDamageTicket[]
   cleanlinessReports ChairopsCleanlinessReport[]
+  dailyRevenue       ChairopsBranchDailyRevenue[]
 
+  @@unique([orgId, slug])
+  @@unique([orgId, tabName])
+  @@index([orgId])
   @@schema("chairops")
 }
 
 model ChairopsUser {
   id              String           @id @default(uuid())
+  orgId           String
   // Links to Supabase auth.users.id — same id space as Pool's users
-  authUserId      String?          @unique
-  email           String?          @unique
-  phone           String?          @unique
-  lineUserId      String?          @unique
+  authUserId      String?
+  email           String?
+  phone           String?
+  lineUserId      String?
   displayName     String
   role            ChairopsUserRole
   isActive        Boolean          @default(true)
@@ -2873,18 +2922,24 @@ model ChairopsUser {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  maidAssignments      ChairopsMaidAssignment[]
-  cashCollections      ChairopsCashCollection[]
-  posDailyEntries      ChairopsPosDaily[]
-  damageReported       ChairopsDamageTicket[]      @relation("chairops_damage_reported_by")
-  damageAssigned       ChairopsDamageTicket[]      @relation("chairops_damage_assigned_to")
-  cleanlinessByMaid    ChairopsCleanlinessReport[] @relation("chairops_cleanliness_by_maid")
-  cleanlinessByAuditor ChairopsCleanlinessReport[] @relation("chairops_cleanliness_by_auditor")
-  auditLogs            ChairopsAuditLog[]
-  alertsAcked          ChairopsAlert[]             @relation("chairops_alerts_acked_by")
-  writeOffsByMaker     ChairopsWriteOff[]          @relation("chairops_writeoffs_maker")
-  writeOffsByApprover  ChairopsWriteOff[]          @relation("chairops_writeoffs_approver")
+  maidAssignments        ChairopsMaidAssignment[]
+  cashCollections        ChairopsCashCollection[]
+  posDailyEntries        ChairopsPosDaily[]
+  damageReported         ChairopsDamageTicket[]      @relation("chairops_damage_reported_by")
+  damageAssigned         ChairopsDamageTicket[]      @relation("chairops_damage_assigned_to")
+  cleanlinessByMaid      ChairopsCleanlinessReport[] @relation("chairops_cleanliness_by_maid")
+  cleanlinessByAuditor   ChairopsCleanlinessReport[] @relation("chairops_cleanliness_by_auditor")
+  auditLogs              ChairopsAuditLog[]
+  alertsAcked            ChairopsAlert[]             @relation("chairops_alerts_acked_by")
+  writeOffsByMaker       ChairopsWriteOff[]          @relation("chairops_writeoffs_maker")
+  writeOffsByApprover    ChairopsWriteOff[]          @relation("chairops_writeoffs_approver")
+  branchesSecondaryAlert ChairopsBranch[]            @relation("chairops_secondary_alert")
 
+  @@unique([orgId, authUserId])
+  @@unique([orgId, email])
+  @@unique([orgId, phone])
+  @@unique([orgId, lineUserId])
+  @@index([orgId])
   @@index([role])
   @@index([primaryBranchId])
   @@schema("chairops")
@@ -2892,6 +2947,7 @@ model ChairopsUser {
 
 model ChairopsMaidAssignment {
   id        String    @id @default(uuid())
+  orgId     String
   userId    String
   branchId  String
   startedAt DateTime  @default(now())
@@ -2901,6 +2957,7 @@ model ChairopsMaidAssignment {
   user   ChairopsUser   @relation(fields: [userId], references: [id])
   branch ChairopsBranch @relation(fields: [branchId], references: [id])
 
+  @@index([orgId])
   @@index([branchId, isActive])
   @@index([userId, isActive])
   @@schema("chairops")
@@ -2908,7 +2965,8 @@ model ChairopsMaidAssignment {
 
 model ChairopsChair {
   id            String    @id @default(uuid())
-  chairCode     String    @unique
+  orgId         String
+  chairCode     String
   branchId      String
   generation    String?
   pricePerCycle Int?
@@ -2922,6 +2980,8 @@ model ChairopsChair {
   branch        ChairopsBranch         @relation(fields: [branchId], references: [id])
   damageTickets ChairopsDamageTicket[]
 
+  @@unique([orgId, chairCode])
+  @@index([orgId])
   @@index([branchId])
   @@index([generation])
   @@schema("chairops")
@@ -2929,6 +2989,7 @@ model ChairopsChair {
 
 model ChairopsPosImport {
   id           String    @id @default(uuid())
+  orgId        String
   filename     String
   uploadedById String
   uploadedAt   DateTime  @default(now())
@@ -2939,31 +3000,36 @@ model ChairopsPosImport {
   committedAt  DateTime?
   notes        String?
 
-  @@unique([fileHash])
+  dailyRevenue ChairopsBranchDailyRevenue[]
+
+  @@unique([orgId, fileHash])
+  @@index([orgId])
   @@index([uploadedAt])
   @@schema("chairops")
 }
 
 model ChairopsPosDaily {
-  id           String   @id @default(uuid())
-  branchId     String
-  chairCode    String?
-  bizDate      DateTime @db.Date
-  online       Int      @default(0)
-  cash         Int      @default(0)
-  coin         Int      @default(0)
-  totalCash    Int      @default(0)
-  totalRevenue Int      @default(0)
-  rawSource    String?
-  importId     String?
-  enteredById  String
-  enteredAt    DateTime @default(now())
-  notes        String?
+  id              String   @id @default(uuid())
+  orgId           String
+  branchId        String
+  chairCode       String?
+  bizDate         DateTime @db.Date
+  onlineTotal     Decimal  @default(0) @db.Decimal(12, 2)
+  cashTotal       Decimal  @default(0) @db.Decimal(12, 2)
+  coinInsertCount Int      @default(0)
+  totalCash       Decimal  @default(0) @db.Decimal(12, 2)
+  grossTotal      Decimal  @default(0) @db.Decimal(12, 2)
+  rawSource       String?
+  importId        String?
+  enteredById     String
+  enteredAt       DateTime @default(now())
+  notes           String?
 
   branch ChairopsBranch @relation(fields: [branchId], references: [id])
   user   ChairopsUser   @relation(fields: [enteredById], references: [id])
 
-  @@unique([branchId, chairCode, bizDate])
+  @@unique([orgId, branchId, chairCode, bizDate])
+  @@index([orgId])
   @@index([branchId, bizDate])
   @@index([bizDate])
   @@schema("chairops")
@@ -2971,6 +3037,7 @@ model ChairopsPosDaily {
 
 model ChairopsCashCollection {
   id               String    @id @default(uuid())
+  orgId            String
   branchId         String
   maidId           String
   collectedAt      DateTime  @default(now())
@@ -2989,15 +3056,17 @@ model ChairopsCashCollection {
   branch ChairopsBranch @relation(fields: [branchId], references: [id])
   maid   ChairopsUser   @relation(fields: [maidId], references: [id])
 
+  @@unique([orgId, imageHash])
+  @@index([orgId])
   @@index([branchId, collectedAt])
   @@index([maidId, collectedAt])
-  @@unique([imageHash])
   @@schema("chairops")
 }
 
 model ChairopsDrift {
   id                      String    @id @default(uuid())
-  branchId                String    @unique
+  orgId                   String
+  branchId                String
   posTotal                Int
   depositTotal            Int
   driftAmount             Int
@@ -3009,11 +3078,14 @@ model ChairopsDrift {
 
   branch ChairopsBranch @relation(fields: [branchId], references: [id])
 
+  @@unique([orgId, branchId])
+  @@index([orgId])
   @@schema("chairops")
 }
 
 model ChairopsAlert {
   id          String              @id @default(uuid())
+  orgId       String
   branchId    String?
   kind        ChairopsAlertKind
   level       ChairopsAlertLevel
@@ -3029,6 +3101,7 @@ model ChairopsAlert {
   branch  ChairopsBranch? @relation(fields: [branchId], references: [id])
   ackedBy ChairopsUser?   @relation("chairops_alerts_acked_by", fields: [ackedById], references: [id])
 
+  @@index([orgId])
   @@index([status, level])
   @@index([branchId, status])
   @@index([createdAt])
@@ -3037,6 +3110,7 @@ model ChairopsAlert {
 
 model ChairopsWriteOff {
   id         String    @id @default(uuid())
+  orgId      String
   branchId   String
   amount     Int
   reason     String
@@ -3050,13 +3124,15 @@ model ChairopsWriteOff {
   maker    ChairopsUser  @relation("chairops_writeoffs_maker", fields: [makerId], references: [id])
   approver ChairopsUser? @relation("chairops_writeoffs_approver", fields: [approverId], references: [id])
 
+  @@index([orgId])
   @@index([branchId, status])
   @@schema("chairops")
 }
 
 model ChairopsDamageTicket {
   id           String               @id @default(uuid())
-  ticketCode   String               @unique
+  orgId        String
+  ticketCode   String
   branchId     String
   chairId      String?
   reportedById String
@@ -3075,6 +3151,8 @@ model ChairopsDamageTicket {
   reportedBy ChairopsUser   @relation("chairops_damage_reported_by", fields: [reportedById], references: [id])
   assignedTo ChairopsUser?  @relation("chairops_damage_assigned_to", fields: [assignedToId], references: [id])
 
+  @@unique([orgId, ticketCode])
+  @@index([orgId])
   @@index([branchId, status])
   @@index([assignedToId, status])
   @@index([priority, status])
@@ -3083,7 +3161,8 @@ model ChairopsDamageTicket {
 
 model ChairopsSparePart {
   id           String   @id @default(uuid())
-  partCode     String   @unique
+  orgId        String
+  partCode     String
   name         String
   category     String?
   unit         String   @default("ชิ้น")
@@ -3096,11 +3175,14 @@ model ChairopsSparePart {
 
   movements ChairopsSparePartMovement[]
 
+  @@unique([orgId, partCode])
+  @@index([orgId])
   @@schema("chairops")
 }
 
 model ChairopsSparePartMovement {
   id          String   @id @default(uuid())
+  orgId       String
   partId      String
   branchId    String?
   delta       Int
@@ -3111,12 +3193,14 @@ model ChairopsSparePartMovement {
 
   part ChairopsSparePart @relation(fields: [partId], references: [id])
 
+  @@index([orgId])
   @@index([partId, at])
   @@schema("chairops")
 }
 
 model ChairopsCleanlinessReport {
   id          String                   @id @default(uuid())
+  orgId       String
   branchId    String
   byMaidId    String
   auditedById String?
@@ -3131,12 +3215,14 @@ model ChairopsCleanlinessReport {
   maid    ChairopsUser   @relation("chairops_cleanliness_by_maid", fields: [byMaidId], references: [id])
   auditor ChairopsUser?  @relation("chairops_cleanliness_by_auditor", fields: [auditedById], references: [id])
 
+  @@index([orgId])
   @@index([branchId, reportedAt])
   @@schema("chairops")
 }
 
 model ChairopsAuditLog {
   id        String   @id @default(uuid())
+  orgId     String
   userId    String?
   action    String
   entity    String
@@ -3148,6 +3234,7 @@ model ChairopsAuditLog {
 
   user ChairopsUser? @relation(fields: [userId], references: [id])
 
+  @@index([orgId])
   @@index([entity, entityId])
   @@index([userId, createdAt])
   @@index([createdAt])
@@ -3156,6 +3243,7 @@ model ChairopsAuditLog {
 
 model ChairopsBankAccount {
   id          String   @id @default(uuid())
+  orgId       String
   bankName    String
   accountNo   String
   accountName String
@@ -3164,6 +3252,58 @@ model ChairopsBankAccount {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
 
+  @@index([orgId])
+  @@schema("chairops")
+}
+
+// =============================================================
+// ChairOps Wave 0 additions (per BIGFEATURE_chairops_SPEC §2.2)
+// =============================================================
+
+// Per-branch-per-day aggregate (computed from XLSX import)
+// See [[chairops-upload-flow-simple-2026-05-27]]
+model ChairopsBranchDailyRevenue {
+  id              String   @id @default(cuid())
+  orgId           String
+  branchId        String
+  bizDate         DateTime @db.Date
+  cashTotal       Decimal  @db.Decimal(12, 2)
+  onlineTotal     Decimal  @db.Decimal(12, 2)
+  otherTotal      Decimal  @default(0) @db.Decimal(12, 2)
+  grossTotal      Decimal  @db.Decimal(12, 2)
+  paymentCount    Int      @default(0)
+  coinInsertCount Int      @default(0)
+  roundCount      Int      @default(0)
+  sourceImportId  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  branch       ChairopsBranch     @relation(fields: [branchId], references: [id])
+  sourceImport ChairopsPosImport? @relation(fields: [sourceImportId], references: [id])
+
+  @@unique([orgId, branchId, bizDate])
+  @@index([orgId])
+  @@index([branchId, bizDate])
+  @@map("chairops_branch_daily_revenue")
+  @@schema("chairops")
+}
+
+// Required by `lib/chairops/auth/session.ts:79-100` denial path (SPEC §2.4)
+// Loose FK to Pool users — just store the id (cross-schema).
+model ChairopsAccessRequest {
+  id         String    @id @default(cuid())
+  orgId      String
+  poolUserId String
+  email      String
+  name       String?
+  reason     String?
+  status     String    @default("PENDING") // PENDING / APPROVED / DENIED
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([orgId])
+  @@index([status])
+  @@map("chairops_access_request")
   @@schema("chairops")
 }
 
@@ -3187,19 +3327,19 @@ enum PlaylandMemberType {
 }
 
 enum PlaylandPackageType {
-  FIXED          // 30น/60฿
-  PER_MINUTE     // 2฿/นาที
-  DAY_PASS       // 250฿ ไม่จำกัด
+  FIXED // 30น/60฿
+  PER_MINUTE // 2฿/นาที
+  DAY_PASS // 250฿ ไม่จำกัด
 
   @@schema("playland")
 }
 
 enum PlaylandSessionStatus {
   ACTIVE
-  PAUSED         // ออกชั่วคราว · 15 นาที grace
-  COMPLETED      // ออกถาวร
-  EXPIRED        // หมดเวลา · ยังไม่ออก
-  FORFEITED      // re-entry เกิน 15 นาที
+  PAUSED // ออกชั่วคราว · 15 นาที grace
+  COMPLETED // ออกถาวร
+  EXPIRED // หมดเวลา · ยังไม่ออก
+  FORFEITED // re-entry เกิน 15 นาที
   CANCELLED
 
   @@schema("playland")
@@ -3210,7 +3350,7 @@ enum PlaylandBookingStatus {
   PAID
   CHECKED_IN
   CANCELLED
-  EXPIRED        // ไม่จ่ายเงิน > 30 นาที
+  EXPIRED // ไม่จ่ายเงิน > 30 นาที
   NO_SHOW
 
   @@schema("playland")
@@ -3218,10 +3358,10 @@ enum PlaylandBookingStatus {
 
 enum PlaylandFaceEventType {
   RECOGNIZED
-  UNRECOGNIZED   // หน้าไม่อยู่ในระบบ
-  TAILGATE       // คนแอบเข้าตาม
-  STRANGER       // unregister พยายามเข้า
-  DOOR_OPEN      // manual override
+  UNRECOGNIZED // หน้าไม่อยู่ในระบบ
+  TAILGATE // คนแอบเข้าตาม
+  STRANGER // unregister พยายามเข้า
+  DOOR_OPEN // manual override
   DEVICE_HEARTBEAT
   ERROR
 
@@ -3237,12 +3377,12 @@ enum PlaylandFaceDirection {
 }
 
 enum PlaylandAlertType {
-  TIME_WARNING       // เหลือ 10 นาที
-  TIME_EXPIRED       // หมดเวลา
+  TIME_WARNING // เหลือ 10 นาที
+  TIME_EXPIRED // หมดเวลา
   STRANGER
   TAILGATE
-  MISMATCH           // pairing ไม่ตรง
-  REENTRY_EXPIRED    // ขาดสิทธิ์เพราะกลับมาเกิน 15 นาที
+  MISMATCH // pairing ไม่ตรง
+  REENTRY_EXPIRED // ขาดสิทธิ์เพราะกลับมาเกิน 15 นาที
   DEVICE_OFFLINE
   MANUAL
 
@@ -3265,7 +3405,7 @@ enum PlaylandPaymentMethod {
   SCB
   TRUEMONEY
   LINEPAY
-  CHARGE_TO_MEMBER   // ใส่บิลรอจ่ายตอนออก
+  CHARGE_TO_MEMBER // ใส่บิลรอจ่ายตอนออก
   COMPLIMENTARY
 
   @@schema("playland")
@@ -3300,10 +3440,10 @@ enum PlaylandDeviceStatus {
 }
 
 enum PlaylandFaceSyncStatus {
-  PENDING        // จะ push ครั้งถัดไป
-  SYNCING        // กำลังส่ง
-  SYNCED         // สำเร็จแล้ว
-  FAILED         // error · retry
+  PENDING // จะ push ครั้งถัดไป
+  SYNCING // กำลังส่ง
+  SYNCED // สำเร็จแล้ว
+  FAILED // error · retry
   DELETE_PENDING
   DELETED
 
@@ -3312,33 +3452,33 @@ enum PlaylandFaceSyncStatus {
 
 // ---------- 1. Branches ----------
 model PlaylandBranch {
-  id            String   @id @default(uuid()) @db.Uuid
-  orgId         String   @map("org_id") @db.Uuid
-  companyId     String?  @map("company_id") @db.Uuid
-  slug          String   @unique
-  name          String
-  address       String?
-  phone         String?
-  email         String?
-  openingHours  Json?    @map("opening_hours")   // { mon: { open: "10:00", close: "21:00" }, ... }
-  settings      Json?                              // { parentFee: 50, exitRequiresStaff: true, maxAgeAlone: 12, ... }
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  companyId    String?  @map("company_id") @db.Uuid
+  slug         String   @unique
+  name         String
+  address      String?
+  phone        String?
+  email        String?
+  openingHours Json?    @map("opening_hours") // { mon: { open: "10:00", close: "21:00" }, ... }
+  settings     Json? // { parentFee: 50, exitRequiresStaff: true, maxAgeAlone: 12, ... }
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  devices       PlaylandDevice[]
-  members       PlaylandMember[]
-  packages      PlaylandPackage[]
-  products      PlaylandProduct[]
-  sessions      PlaylandSession[]
-  bookings      PlaylandBooking[]
-  sales         PlaylandSale[]
-  shifts        PlaylandShift[]
-  promos        PlaylandPromo[]
-  alerts        PlaylandAlert[]
-  faceEvents    PlaylandFaceEvent[]
-  familyGroups  PlaylandFamilyGroup[]
-  dailyReports  PlaylandDailyReport[]
+  devices      PlaylandDevice[]
+  members      PlaylandMember[]
+  packages     PlaylandPackage[]
+  products     PlaylandProduct[]
+  sessions     PlaylandSession[]
+  bookings     PlaylandBooking[]
+  sales        PlaylandSale[]
+  shifts       PlaylandShift[]
+  promos       PlaylandPromo[]
+  alerts       PlaylandAlert[]
+  faceEvents   PlaylandFaceEvent[]
+  familyGroups PlaylandFamilyGroup[]
+  dailyReports PlaylandDailyReport[]
 
   @@index([orgId])
   @@map("branches")
@@ -3347,29 +3487,29 @@ model PlaylandBranch {
 
 // ---------- 2. ACS Devices (per branch) ----------
 model PlaylandDevice {
-  id                    String                 @id @default(uuid()) @db.Uuid
-  orgId                 String                 @map("org_id") @db.Uuid
-  branchId              String                 @map("branch_id") @db.Uuid
-  vendor                String                 @default("acs-auto")
-  model                 String                 @default("ACS-F606")
-  deviceId              String                 @unique @map("device_id")
-  deviceName            String                 @map("device_name")
-  baseUrl               String?                @map("base_url")        // for our → device calls (TCP/HTTP push)
-  protocol              String                 @default("http")         // "http" | "tcp"
-  modelVersion          String                 @default("C")            // "B" online-only | "C" mixed
-  secretEncrypted       String?                @map("secret_encrypted")
-  webhookSecret         String?                @map("webhook_secret")   // shared in URL query · since no HMAC support
-  status                PlaylandDeviceStatus   @default(PAIRING)
-  lastSeenAt            DateTime?              @map("last_seen_at") @db.Timestamptz(6)
-  lastEventAt           DateTime?              @map("last_event_at") @db.Timestamptz(6)
-  firmwareVersion       String?                @map("firmware_version")
-  notes                 String?
-  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id              String               @id @default(uuid()) @db.Uuid
+  orgId           String               @map("org_id") @db.Uuid
+  branchId        String               @map("branch_id") @db.Uuid
+  vendor          String               @default("acs-auto")
+  model           String               @default("ACS-F606")
+  deviceId        String               @unique @map("device_id")
+  deviceName      String               @map("device_name")
+  baseUrl         String?              @map("base_url") // for our → device calls (TCP/HTTP push)
+  protocol        String               @default("http") // "http" | "tcp"
+  modelVersion    String               @default("C") // "B" online-only | "C" mixed
+  secretEncrypted String?              @map("secret_encrypted")
+  webhookSecret   String?              @map("webhook_secret") // shared in URL query · since no HMAC support
+  status          PlaylandDeviceStatus @default(PAIRING)
+  lastSeenAt      DateTime?            @map("last_seen_at") @db.Timestamptz(6)
+  lastEventAt     DateTime?            @map("last_event_at") @db.Timestamptz(6)
+  firmwareVersion String?              @map("firmware_version")
+  notes           String?
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  branch                PlaylandBranch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  faceEvents            PlaylandFaceEvent[]
-  faceSync              PlaylandFaceSync[]
+  branch     PlaylandBranch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  faceEvents PlaylandFaceEvent[]
+  faceSync   PlaylandFaceSync[]
 
   @@index([orgId, branchId])
   @@map("devices")
@@ -3378,17 +3518,17 @@ model PlaylandDevice {
 
 // ---------- 3. Family Group (พ่อ+แม่+ลูกๆ) ----------
 model PlaylandFamilyGroup {
-  id          String              @id @default(uuid()) @db.Uuid
-  orgId       String              @map("org_id") @db.Uuid
-  branchId    String              @map("branch_id") @db.Uuid
-  displayName String              @map("display_name")           // "ครอบครัวคุณสมศักดิ์"
-  primaryPhone String?            @map("primary_phone")
-  notes       String?
-  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  branchId     String   @map("branch_id") @db.Uuid
+  displayName  String   @map("display_name") // "ครอบครัวคุณสมศักดิ์"
+  primaryPhone String?  @map("primary_phone")
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  branch      PlaylandBranch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  members     PlaylandFamilyMember[]
+  branch  PlaylandBranch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  members PlaylandFamilyMember[]
 
   @@index([orgId, branchId])
   @@map("family_groups")
@@ -3397,16 +3537,16 @@ model PlaylandFamilyGroup {
 
 // ---------- 4. Family group join (many-to-many between members) ----------
 model PlaylandFamilyMember {
-  id              String              @id @default(uuid()) @db.Uuid
-  orgId           String              @map("org_id") @db.Uuid
-  familyGroupId   String              @map("family_group_id") @db.Uuid
-  memberId        String              @map("member_id") @db.Uuid
-  role            String              @default("relative")  // "primary_guardian" | "guardian" | "child" | "relative"
-  canPickUp       Boolean             @default(true) @map("can_pick_up")
-  addedAt         DateTime            @default(now()) @map("added_at") @db.Timestamptz(6)
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  familyGroupId String   @map("family_group_id") @db.Uuid
+  memberId      String   @map("member_id") @db.Uuid
+  role          String   @default("relative") // "primary_guardian" | "guardian" | "child" | "relative"
+  canPickUp     Boolean  @default(true) @map("can_pick_up")
+  addedAt       DateTime @default(now()) @map("added_at") @db.Timestamptz(6)
 
-  familyGroup     PlaylandFamilyGroup @relation(fields: [familyGroupId], references: [id], onDelete: Cascade)
-  member          PlaylandMember      @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  familyGroup PlaylandFamilyGroup @relation(fields: [familyGroupId], references: [id], onDelete: Cascade)
+  member      PlaylandMember      @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   @@unique([familyGroupId, memberId])
   @@index([orgId])
@@ -3417,41 +3557,41 @@ model PlaylandFamilyMember {
 
 // ---------- 5. Members (เด็ก/ผู้ปกครอง/พนักงาน/แม่บ้าน/VIP/babysitter/guest) ----------
 model PlaylandMember {
-  id                   String                  @id @default(uuid()) @db.Uuid
-  orgId                String                  @map("org_id") @db.Uuid
-  branchId             String                  @map("branch_id") @db.Uuid
-  memberCode           String?                 @unique @map("member_code")     // PL-2569-NNNN
-  type                 PlaylandMemberType
-  name                 String
-  nickname             String?
-  phone                String?
-  email                String?
-  dateOfBirth          DateTime?               @map("date_of_birth") @db.Date
-  gender               String?                                                   // "M" | "F" | "O"
-  photoR2Path          String?                 @map("photo_r2_path")            // R2 key
-  photoUrl             String?                 @map("photo_url")                // signed URL cache
-  faceId               String?                 @map("face_id")                  // ACS device face_id
-  externalLineId       String?                 @map("external_line_id")
-  registeredById       String?                 @map("registered_by_id") @db.Uuid // staff user
-  consentAt            DateTime?               @map("consent_at") @db.Timestamptz(6)
-  consentRevokedAt     DateTime?               @map("consent_revoked_at") @db.Timestamptz(6)
-  retentionUntil       DateTime?               @map("retention_until") @db.Timestamptz(6) // PDPA
-  lastVisitAt          DateTime?               @map("last_visit_at") @db.Timestamptz(6)
-  notes                String?
-  metadata             Json?                                                     // birthday discount given? VIP perks?
-  deletedAt            DateTime?               @map("deleted_at") @db.Timestamptz(6)
-  createdAt            DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id               String             @id @default(uuid()) @db.Uuid
+  orgId            String             @map("org_id") @db.Uuid
+  branchId         String             @map("branch_id") @db.Uuid
+  memberCode       String?            @unique @map("member_code") // PL-2569-NNNN
+  type             PlaylandMemberType
+  name             String
+  nickname         String?
+  phone            String?
+  email            String?
+  dateOfBirth      DateTime?          @map("date_of_birth") @db.Date
+  gender           String? // "M" | "F" | "O"
+  photoR2Path      String?            @map("photo_r2_path") // R2 key
+  photoUrl         String?            @map("photo_url") // signed URL cache
+  faceId           String?            @map("face_id") // ACS device face_id
+  externalLineId   String?            @map("external_line_id")
+  registeredById   String?            @map("registered_by_id") @db.Uuid // staff user
+  consentAt        DateTime?          @map("consent_at") @db.Timestamptz(6)
+  consentRevokedAt DateTime?          @map("consent_revoked_at") @db.Timestamptz(6)
+  retentionUntil   DateTime?          @map("retention_until") @db.Timestamptz(6) // PDPA
+  lastVisitAt      DateTime?          @map("last_visit_at") @db.Timestamptz(6)
+  notes            String?
+  metadata         Json? // birthday discount given? VIP perks?
+  deletedAt        DateTime?          @map("deleted_at") @db.Timestamptz(6)
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  branch               PlaylandBranch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  familyMemberships    PlaylandFamilyMember[]
-  sessions             PlaylandSession[]
-  wristbands           PlaylandWristband[]
-  bookings             PlaylandBooking[]
-  waivers              PlaylandWaiver[]
-  loyalty              PlaylandLoyalty?
-  faceSync             PlaylandFaceSync[]
-  faceEvents           PlaylandFaceEvent[]
+  branch            PlaylandBranch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  familyMemberships PlaylandFamilyMember[]
+  sessions          PlaylandSession[]
+  wristbands        PlaylandWristband[]
+  bookings          PlaylandBooking[]
+  waivers           PlaylandWaiver[]
+  loyalty           PlaylandLoyalty?
+  faceSync          PlaylandFaceSync[]
+  faceEvents        PlaylandFaceEvent[]
 
   @@index([orgId, branchId])
   @@index([branchId, type])
@@ -3463,24 +3603,24 @@ model PlaylandMember {
 
 // ---------- 6. Packages ----------
 model PlaylandPackage {
-  id                String                 @id @default(uuid()) @db.Uuid
-  orgId             String                 @map("org_id") @db.Uuid
-  branchId          String?                @map("branch_id") @db.Uuid             // null = all branches
-  type              PlaylandPackageType
-  name              String
-  description       String?
-  minutes           Int?                                                          // null for DAY_PASS
-  price             Int                                                           // satang (฿*100)
-  perMinuteRate     Int?                   @map("per_minute_rate")               // satang/นาที for PER_MINUTE
-  memberTypesAllowed Json?                 @map("member_types_allowed")          // ["KID", "VIP"] or null=all
-  active            Boolean                @default(true)
-  sortOrder         Int                    @default(0) @map("sort_order")
-  createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                 String              @id @default(uuid()) @db.Uuid
+  orgId              String              @map("org_id") @db.Uuid
+  branchId           String?             @map("branch_id") @db.Uuid // null = all branches
+  type               PlaylandPackageType
+  name               String
+  description        String?
+  minutes            Int? // null for DAY_PASS
+  price              Int // satang (฿*100)
+  perMinuteRate      Int?                @map("per_minute_rate") // satang/นาที for PER_MINUTE
+  memberTypesAllowed Json?               @map("member_types_allowed") // ["KID", "VIP"] or null=all
+  active             Boolean             @default(true)
+  sortOrder          Int                 @default(0) @map("sort_order")
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  branch            PlaylandBranch?        @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  sessions          PlaylandSession[]
-  bookings          PlaylandBooking[]
+  branch   PlaylandBranch?   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  sessions PlaylandSession[]
+  bookings PlaylandBooking[]
 
   @@index([orgId, branchId])
   @@index([branchId, active, sortOrder])
@@ -3490,39 +3630,39 @@ model PlaylandPackage {
 
 // ---------- 7. Sessions (เซสชั่นเล่น) ----------
 model PlaylandSession {
-  id                  String                 @id @default(uuid()) @db.Uuid
-  orgId               String                 @map("org_id") @db.Uuid
-  branchId            String                 @map("branch_id") @db.Uuid
-  memberId            String                 @map("member_id") @db.Uuid
-  packageId           String?                @map("package_id") @db.Uuid
-  bookingId           String?                @map("booking_id") @db.Uuid
-  packageMinutes      Int                    @map("package_minutes")            // 0 = day pass
-  packagePriceCents   Int                    @map("package_price_cents")
-  minutesUsed         Int                    @default(0) @map("minutes_used")
-  totalPausedSeconds  Int                    @default(0) @map("total_paused_seconds")
-  status              PlaylandSessionStatus  @default(ACTIVE)
-  checkInAt           DateTime               @default(now()) @map("check_in_at") @db.Timestamptz(6)
-  pausedAt            DateTime?              @map("paused_at") @db.Timestamptz(6)
-  resumedAt           DateTime?              @map("resumed_at") @db.Timestamptz(6)
-  checkOutAt          DateTime?              @map("check_out_at") @db.Timestamptz(6)
-  expiresAt           DateTime?              @map("expires_at") @db.Timestamptz(6)
-  reentryDeadlineAt   DateTime?              @map("reentry_deadline_at") @db.Timestamptz(6)
-  extendedCount       Int                    @default(0) @map("extended_count")
-  cashierUserId       String?                @map("cashier_user_id") @db.Uuid
-  closedByUserId      String?                @map("closed_by_user_id") @db.Uuid
-  notes               String?
-  metadata            Json?
-  createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                 String                @id @default(uuid()) @db.Uuid
+  orgId              String                @map("org_id") @db.Uuid
+  branchId           String                @map("branch_id") @db.Uuid
+  memberId           String                @map("member_id") @db.Uuid
+  packageId          String?               @map("package_id") @db.Uuid
+  bookingId          String?               @map("booking_id") @db.Uuid
+  packageMinutes     Int                   @map("package_minutes") // 0 = day pass
+  packagePriceCents  Int                   @map("package_price_cents")
+  minutesUsed        Int                   @default(0) @map("minutes_used")
+  totalPausedSeconds Int                   @default(0) @map("total_paused_seconds")
+  status             PlaylandSessionStatus @default(ACTIVE)
+  checkInAt          DateTime              @default(now()) @map("check_in_at") @db.Timestamptz(6)
+  pausedAt           DateTime?             @map("paused_at") @db.Timestamptz(6)
+  resumedAt          DateTime?             @map("resumed_at") @db.Timestamptz(6)
+  checkOutAt         DateTime?             @map("check_out_at") @db.Timestamptz(6)
+  expiresAt          DateTime?             @map("expires_at") @db.Timestamptz(6)
+  reentryDeadlineAt  DateTime?             @map("reentry_deadline_at") @db.Timestamptz(6)
+  extendedCount      Int                   @default(0) @map("extended_count")
+  cashierUserId      String?               @map("cashier_user_id") @db.Uuid
+  closedByUserId     String?               @map("closed_by_user_id") @db.Uuid
+  notes              String?
+  metadata           Json?
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  branch              PlaylandBranch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  member              PlaylandMember         @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  package             PlaylandPackage?       @relation(fields: [packageId], references: [id])
-  booking             PlaylandBooking?       @relation(fields: [bookingId], references: [id])
-  faceEvents          PlaylandFaceEvent[]
-  alerts              PlaylandAlert[]
-  sales               PlaylandSale[]
-  wristbands          PlaylandWristband[]
+  branch     PlaylandBranch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  member     PlaylandMember      @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  package    PlaylandPackage?    @relation(fields: [packageId], references: [id])
+  booking    PlaylandBooking?    @relation(fields: [bookingId], references: [id])
+  faceEvents PlaylandFaceEvent[]
+  alerts     PlaylandAlert[]
+  sales      PlaylandSale[]
+  wristbands PlaylandWristband[]
 
   @@index([orgId, branchId])
   @@index([branchId, status])
@@ -3534,26 +3674,26 @@ model PlaylandSession {
 
 // ---------- 8. Face Events (log จาก ACS device · idempotent via webhookId) ----------
 model PlaylandFaceEvent {
-  id              String                  @id @default(uuid()) @db.Uuid
-  orgId           String                  @map("org_id") @db.Uuid
-  branchId        String                  @map("branch_id") @db.Uuid
-  deviceId        String                  @map("device_id") @db.Uuid
-  sessionId       String?                 @map("session_id") @db.Uuid
-  memberId        String?                 @map("member_id") @db.Uuid
-  faceId          String?                 @map("face_id")
-  type            PlaylandFaceEventType
-  direction       PlaylandFaceDirection   @default(UNKNOWN)
-  confidence      Int?                                                  // 0-100
-  snapshotR2Path  String?                 @map("snapshot_r2_path")
-  rawPayload      Json?                   @map("raw_payload")
-  webhookId       String                  @unique @map("webhook_id")    // idempotency
-  eventAt         DateTime                @map("event_at") @db.Timestamptz(6)
-  receivedAt      DateTime                @default(now()) @map("received_at") @db.Timestamptz(6)
+  id             String                @id @default(uuid()) @db.Uuid
+  orgId          String                @map("org_id") @db.Uuid
+  branchId       String                @map("branch_id") @db.Uuid
+  deviceId       String                @map("device_id") @db.Uuid
+  sessionId      String?               @map("session_id") @db.Uuid
+  memberId       String?               @map("member_id") @db.Uuid
+  faceId         String?               @map("face_id")
+  type           PlaylandFaceEventType
+  direction      PlaylandFaceDirection @default(UNKNOWN)
+  confidence     Int? // 0-100
+  snapshotR2Path String?               @map("snapshot_r2_path")
+  rawPayload     Json?                 @map("raw_payload")
+  webhookId      String                @unique @map("webhook_id") // idempotency
+  eventAt        DateTime              @map("event_at") @db.Timestamptz(6)
+  receivedAt     DateTime              @default(now()) @map("received_at") @db.Timestamptz(6)
 
-  branch          PlaylandBranch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  device          PlaylandDevice          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  session         PlaylandSession?        @relation(fields: [sessionId], references: [id])
-  member          PlaylandMember?         @relation(fields: [memberId], references: [id])
+  branch  PlaylandBranch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  device  PlaylandDevice   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  session PlaylandSession? @relation(fields: [sessionId], references: [id])
+  member  PlaylandMember?  @relation(fields: [memberId], references: [id])
 
   @@index([orgId, branchId])
   @@index([branchId, eventAt])
@@ -3565,38 +3705,38 @@ model PlaylandFaceEvent {
 
 // ---------- 9. Bookings (จองล่วงหน้า) ----------
 model PlaylandBooking {
-  id                 String                  @id @default(uuid()) @db.Uuid
-  orgId              String                  @map("org_id") @db.Uuid
-  branchId           String                  @map("branch_id") @db.Uuid
-  memberId           String?                 @map("member_id") @db.Uuid
-  packageId          String                  @map("package_id") @db.Uuid
-  bookingCode        String                  @unique @map("booking_code")    // PB-2569-NNNN
-  customerName       String                  @map("customer_name")
-  customerPhone      String                  @map("customer_phone")
-  customerEmail      String?                 @map("customer_email")
-  partySize          Int                     @default(1) @map("party_size")
-  slotStart          DateTime                @map("slot_start") @db.Timestamptz(6)
-  slotEnd            DateTime                @map("slot_end") @db.Timestamptz(6)
-  amountCents        Int                     @map("amount_cents")
-  paymentMethod      PlaylandPaymentMethod?  @map("payment_method")
-  paymentRef         String?                 @map("payment_ref")            // Stripe session_id
-  paymentStatus      String                  @default("pending") @map("payment_status")
-  qrCodeUrl          String?                 @map("qr_code_url")
-  status             PlaylandBookingStatus   @default(PENDING)
-  expiresAt          DateTime?               @map("expires_at") @db.Timestamptz(6)
-  confirmedByUserId  String?                 @map("confirmed_by_user_id") @db.Uuid
-  confirmedAt        DateTime?               @map("confirmed_at") @db.Timestamptz(6)
-  cancelledAt        DateTime?               @map("cancelled_at") @db.Timestamptz(6)
-  cancelReason       String?                 @map("cancel_reason")
-  notes              String?
-  metadata           Json?
-  createdAt          DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                String                 @id @default(uuid()) @db.Uuid
+  orgId             String                 @map("org_id") @db.Uuid
+  branchId          String                 @map("branch_id") @db.Uuid
+  memberId          String?                @map("member_id") @db.Uuid
+  packageId         String                 @map("package_id") @db.Uuid
+  bookingCode       String                 @unique @map("booking_code") // PB-2569-NNNN
+  customerName      String                 @map("customer_name")
+  customerPhone     String                 @map("customer_phone")
+  customerEmail     String?                @map("customer_email")
+  partySize         Int                    @default(1) @map("party_size")
+  slotStart         DateTime               @map("slot_start") @db.Timestamptz(6)
+  slotEnd           DateTime               @map("slot_end") @db.Timestamptz(6)
+  amountCents       Int                    @map("amount_cents")
+  paymentMethod     PlaylandPaymentMethod? @map("payment_method")
+  paymentRef        String?                @map("payment_ref") // Stripe session_id
+  paymentStatus     String                 @default("pending") @map("payment_status")
+  qrCodeUrl         String?                @map("qr_code_url")
+  status            PlaylandBookingStatus  @default(PENDING)
+  expiresAt         DateTime?              @map("expires_at") @db.Timestamptz(6)
+  confirmedByUserId String?                @map("confirmed_by_user_id") @db.Uuid
+  confirmedAt       DateTime?              @map("confirmed_at") @db.Timestamptz(6)
+  cancelledAt       DateTime?              @map("cancelled_at") @db.Timestamptz(6)
+  cancelReason      String?                @map("cancel_reason")
+  notes             String?
+  metadata          Json?
+  createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  branch             PlaylandBranch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  member             PlaylandMember?         @relation(fields: [memberId], references: [id])
-  package            PlaylandPackage         @relation(fields: [packageId], references: [id])
-  sessions           PlaylandSession[]
+  branch   PlaylandBranch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  member   PlaylandMember?   @relation(fields: [memberId], references: [id])
+  package  PlaylandPackage   @relation(fields: [packageId], references: [id])
+  sessions PlaylandSession[]
 
   @@index([orgId, branchId])
   @@index([branchId, slotStart])
@@ -3608,26 +3748,26 @@ model PlaylandBooking {
 
 // ---------- 10. Products (POS) ----------
 model PlaylandProduct {
-  id            String              @id @default(uuid()) @db.Uuid
-  orgId         String              @map("org_id") @db.Uuid
-  branchId      String              @map("branch_id") @db.Uuid
-  sku           String?
-  barcode       String?
-  category      String?
-  name          String
-  description   String?
-  priceCents    Int                 @map("price_cents")
-  costCents     Int?                @map("cost_cents")
-  stock         Int                 @default(0)
-  reorderLevel  Int                 @default(0) @map("reorder_level")
-  imageR2Path   String?             @map("image_r2_path")
-  active        Boolean             @default(true)
-  sortOrder     Int                 @default(0) @map("sort_order")
-  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  branchId     String   @map("branch_id") @db.Uuid
+  sku          String?
+  barcode      String?
+  category     String?
+  name         String
+  description  String?
+  priceCents   Int      @map("price_cents")
+  costCents    Int?     @map("cost_cents")
+  stock        Int      @default(0)
+  reorderLevel Int      @default(0) @map("reorder_level")
+  imageR2Path  String?  @map("image_r2_path")
+  active       Boolean  @default(true)
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  branch        PlaylandBranch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  saleLines     PlaylandSaleLine[]
+  branch    PlaylandBranch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  saleLines PlaylandSaleLine[]
 
   @@unique([branchId, barcode])
   @@index([orgId, branchId])
@@ -3638,28 +3778,28 @@ model PlaylandProduct {
 
 // ---------- 11. Sales (POS transactions) ----------
 model PlaylandSale {
-  id              String                 @id @default(uuid()) @db.Uuid
-  orgId           String                 @map("org_id") @db.Uuid
-  branchId        String                 @map("branch_id") @db.Uuid
-  shiftId         String?                @map("shift_id") @db.Uuid
-  sessionId       String?                @map("session_id") @db.Uuid           // null = walk-in sale
-  saleCode        String                 @unique @map("sale_code")             // S-2569-NNNN
-  totalCents      Int                    @map("total_cents")
-  discountCents   Int                    @default(0) @map("discount_cents")
-  promoId         String?                @map("promo_id") @db.Uuid
-  paymentMethod   PlaylandPaymentMethod
-  paymentRef      String?                @map("payment_ref")
-  cashierUserId   String                 @map("cashier_user_id") @db.Uuid
-  soldAt          DateTime               @default(now()) @map("sold_at") @db.Timestamptz(6)
-  voidedAt        DateTime?              @map("voided_at") @db.Timestamptz(6)
-  voidedByUserId  String?                @map("voided_by_user_id") @db.Uuid
-  voidReason      String?                @map("void_reason")
+  id             String                @id @default(uuid()) @db.Uuid
+  orgId          String                @map("org_id") @db.Uuid
+  branchId       String                @map("branch_id") @db.Uuid
+  shiftId        String?               @map("shift_id") @db.Uuid
+  sessionId      String?               @map("session_id") @db.Uuid // null = walk-in sale
+  saleCode       String                @unique @map("sale_code") // S-2569-NNNN
+  totalCents     Int                   @map("total_cents")
+  discountCents  Int                   @default(0) @map("discount_cents")
+  promoId        String?               @map("promo_id") @db.Uuid
+  paymentMethod  PlaylandPaymentMethod
+  paymentRef     String?               @map("payment_ref")
+  cashierUserId  String                @map("cashier_user_id") @db.Uuid
+  soldAt         DateTime              @default(now()) @map("sold_at") @db.Timestamptz(6)
+  voidedAt       DateTime?             @map("voided_at") @db.Timestamptz(6)
+  voidedByUserId String?               @map("voided_by_user_id") @db.Uuid
+  voidReason     String?               @map("void_reason")
 
-  branch          PlaylandBranch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  shift           PlaylandShift?         @relation(fields: [shiftId], references: [id])
-  session         PlaylandSession?       @relation(fields: [sessionId], references: [id])
-  promo           PlaylandPromo?         @relation(fields: [promoId], references: [id])
-  lines           PlaylandSaleLine[]
+  branch  PlaylandBranch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  shift   PlaylandShift?     @relation(fields: [shiftId], references: [id])
+  session PlaylandSession?   @relation(fields: [sessionId], references: [id])
+  promo   PlaylandPromo?     @relation(fields: [promoId], references: [id])
+  lines   PlaylandSaleLine[]
 
   @@index([orgId, branchId])
   @@index([branchId, soldAt])
@@ -3671,18 +3811,18 @@ model PlaylandSale {
 
 // ---------- 11b. Sale Line Items ----------
 model PlaylandSaleLine {
-  id            String           @id @default(uuid()) @db.Uuid
-  orgId         String           @map("org_id") @db.Uuid
-  saleId        String           @map("sale_id") @db.Uuid
-  productId     String           @map("product_id") @db.Uuid
-  productName   String           @map("product_name")            // snapshot
-  quantity      Int
-  unitCents     Int              @map("unit_cents")
-  lineCents     Int              @map("line_cents")
-  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  saleId      String   @map("sale_id") @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  productName String   @map("product_name") // snapshot
+  quantity    Int
+  unitCents   Int      @map("unit_cents")
+  lineCents   Int      @map("line_cents")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  sale          PlaylandSale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  product       PlaylandProduct  @relation(fields: [productId], references: [id])
+  sale    PlaylandSale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product PlaylandProduct @relation(fields: [productId], references: [id])
 
   @@index([saleId])
   @@index([productId])
@@ -3692,64 +3832,64 @@ model PlaylandSaleLine {
 
 // ---------- 12. Promos ----------
 model PlaylandPromo {
-  id              String              @id @default(uuid()) @db.Uuid
-  orgId           String              @map("org_id") @db.Uuid
-  branchId        String?             @map("branch_id") @db.Uuid               // null = all branches
+  id              String            @id @default(uuid()) @db.Uuid
+  orgId           String            @map("org_id") @db.Uuid
+  branchId        String?           @map("branch_id") @db.Uuid // null = all branches
   type            PlaylandPromoType
-  code            String?                                                      // for COUPON
+  code            String? // for COUPON
   name            String
   description     String?
-  discountPercent Int?                @map("discount_percent")                 // 0-100
-  discountCents   Int?                @map("discount_cents")                   // fixed amount
-  conditions      Json?                                                        // {minSpend, daysOfWeek, packageIds, etc.}
-  active          Boolean             @default(true)
-  startsAt        DateTime?           @map("starts_at") @db.Timestamptz(6)
-  endsAt          DateTime?           @map("ends_at") @db.Timestamptz(6)
-  maxUses         Int?                @map("max_uses")
-  usesCount       Int                 @default(0) @map("uses_count")
-  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  discountPercent Int?              @map("discount_percent") // 0-100
+  discountCents   Int?              @map("discount_cents") // fixed amount
+  conditions      Json? // {minSpend, daysOfWeek, packageIds, etc.}
+  active          Boolean           @default(true)
+  startsAt        DateTime?         @map("starts_at") @db.Timestamptz(6)
+  endsAt          DateTime?         @map("ends_at") @db.Timestamptz(6)
+  maxUses         Int?              @map("max_uses")
+  usesCount       Int               @default(0) @map("uses_count")
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  branch          PlaylandBranch?     @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  sales           PlaylandSale[]
+  branch PlaylandBranch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  sales  PlaylandSale[]
 
+  @@unique([code, orgId])
   @@index([orgId])
   @@index([type, active])
-  @@unique([code, orgId])
   @@map("promos")
   @@schema("playland")
 }
 
 // ---------- 13. Loyalty (per-member points wallet) ----------
 model PlaylandLoyalty {
-  id              String                  @id @default(uuid()) @db.Uuid
-  orgId           String                  @map("org_id") @db.Uuid
-  memberId        String                  @unique @map("member_id") @db.Uuid
-  points          Int                     @default(0)
-  lifetimePoints  Int                     @default(0) @map("lifetime_points")
-  lastEarnedAt    DateTime?               @map("last_earned_at") @db.Timestamptz(6)
-  expiresAt       DateTime?               @map("expires_at") @db.Timestamptz(6)
-  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id             String    @id @default(uuid()) @db.Uuid
+  orgId          String    @map("org_id") @db.Uuid
+  memberId       String    @unique @map("member_id") @db.Uuid
+  points         Int       @default(0)
+  lifetimePoints Int       @default(0) @map("lifetime_points")
+  lastEarnedAt   DateTime? @map("last_earned_at") @db.Timestamptz(6)
+  expiresAt      DateTime? @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  member          PlaylandMember          @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  ledger          PlaylandLoyaltyLedger[]
+  member PlaylandMember          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  ledger PlaylandLoyaltyLedger[]
 
   @@map("loyalty")
   @@schema("playland")
 }
 
 model PlaylandLoyaltyLedger {
-  id            String            @id @default(uuid()) @db.Uuid
-  orgId         String            @map("org_id") @db.Uuid
-  loyaltyId     String            @map("loyalty_id") @db.Uuid
-  delta         Int                                                  // + earn, - redeem
-  reason        String                                                // "session", "birthday", "redeem", etc.
-  refType       String?           @map("ref_type")                   // "session" | "sale" | "manual"
-  refId         String?           @map("ref_id") @db.Uuid
-  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  loyaltyId String   @map("loyalty_id") @db.Uuid
+  delta     Int // + earn, - redeem
+  reason    String // "session", "birthday", "redeem", etc.
+  refType   String?  @map("ref_type") // "session" | "sale" | "manual"
+  refId     String?  @map("ref_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  loyalty       PlaylandLoyalty   @relation(fields: [loyaltyId], references: [id], onDelete: Cascade)
+  loyalty PlaylandLoyalty @relation(fields: [loyaltyId], references: [id], onDelete: Cascade)
 
   @@index([loyaltyId, createdAt])
   @@map("loyalty_ledger")
@@ -3758,20 +3898,20 @@ model PlaylandLoyaltyLedger {
 
 // ---------- 14. Waivers (ใบยินยอม) ----------
 model PlaylandWaiver {
-  id              String              @id @default(uuid()) @db.Uuid
-  orgId           String              @map("org_id") @db.Uuid
-  memberId        String              @map("member_id") @db.Uuid
-  version         String              @default("v1")
-  signedAt        DateTime            @default(now()) @map("signed_at") @db.Timestamptz(6)
-  signatureR2Path String?             @map("signature_r2_path")        // PDF or PNG
-  signatureType   String              @default("tablet") @map("signature_type") // "tablet" | "paper" | "checkbox"
-  signedByName    String              @map("signed_by_name")
-  signedByPhone   String?             @map("signed_by_phone")
-  scannedR2Path   String?             @map("scanned_r2_path")          // if paper, scan
+  id              String    @id @default(uuid()) @db.Uuid
+  orgId           String    @map("org_id") @db.Uuid
+  memberId        String    @map("member_id") @db.Uuid
+  version         String    @default("v1")
+  signedAt        DateTime  @default(now()) @map("signed_at") @db.Timestamptz(6)
+  signatureR2Path String?   @map("signature_r2_path") // PDF or PNG
+  signatureType   String    @default("tablet") @map("signature_type") // "tablet" | "paper" | "checkbox"
+  signedByName    String    @map("signed_by_name")
+  signedByPhone   String?   @map("signed_by_phone")
+  scannedR2Path   String?   @map("scanned_r2_path") // if paper, scan
   metadata        Json?
-  revokedAt       DateTime?           @map("revoked_at") @db.Timestamptz(6)
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(6)
 
-  member          PlaylandMember      @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  member PlaylandMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@index([memberId, signedAt])
@@ -3781,23 +3921,23 @@ model PlaylandWaiver {
 
 // ---------- 15. Alerts ----------
 model PlaylandAlert {
-  id              String                  @id @default(uuid()) @db.Uuid
-  orgId           String                  @map("org_id") @db.Uuid
-  branchId        String                  @map("branch_id") @db.Uuid
-  sessionId       String?                 @map("session_id") @db.Uuid
-  type            PlaylandAlertType
-  severity        PlaylandAlertSeverity   @default(WARNING)
-  title           String
-  message         String?
-  metadata        Json?
-  resolvedAt      DateTime?               @map("resolved_at") @db.Timestamptz(6)
-  resolvedByUserId String?                @map("resolved_by_user_id") @db.Uuid
-  acknowledgedAt  DateTime?               @map("acknowledged_at") @db.Timestamptz(6)
-  acknowledgedByUserId String?            @map("acknowledged_by_user_id") @db.Uuid
-  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                   String                @id @default(uuid()) @db.Uuid
+  orgId                String                @map("org_id") @db.Uuid
+  branchId             String                @map("branch_id") @db.Uuid
+  sessionId            String?               @map("session_id") @db.Uuid
+  type                 PlaylandAlertType
+  severity             PlaylandAlertSeverity @default(WARNING)
+  title                String
+  message              String?
+  metadata             Json?
+  resolvedAt           DateTime?             @map("resolved_at") @db.Timestamptz(6)
+  resolvedByUserId     String?               @map("resolved_by_user_id") @db.Uuid
+  acknowledgedAt       DateTime?             @map("acknowledged_at") @db.Timestamptz(6)
+  acknowledgedByUserId String?               @map("acknowledged_by_user_id") @db.Uuid
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  branch          PlaylandBranch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  session         PlaylandSession?        @relation(fields: [sessionId], references: [id])
+  branch  PlaylandBranch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  session PlaylandSession? @relation(fields: [sessionId], references: [id])
 
   @@index([orgId, branchId])
   @@index([branchId, resolvedAt])
@@ -3808,26 +3948,26 @@ model PlaylandAlert {
 
 // ---------- 16. Shifts (per-cashier per-branch) ----------
 model PlaylandShift {
-  id              String              @id @default(uuid()) @db.Uuid
-  orgId           String              @map("org_id") @db.Uuid
-  branchId        String              @map("branch_id") @db.Uuid
-  cashierUserId   String              @map("cashier_user_id") @db.Uuid
-  shiftCode       String              @unique @map("shift_code")              // SH-YYMMDD-NN
-  startedAt       DateTime            @default(now()) @map("started_at") @db.Timestamptz(6)
-  endedAt         DateTime?           @map("ended_at") @db.Timestamptz(6)
-  openingCashCents Int                @default(0) @map("opening_cash_cents")
-  closingCashCents Int?               @map("closing_cash_cents")
-  expectedCashCents Int?              @map("expected_cash_cents")
-  varianceCents   Int?                @map("variance_cents")                  // closing - expected
-  totalSalesCents Int                 @default(0) @map("total_sales_cents")
-  totalSessionsCents Int              @default(0) @map("total_sessions_cents")
-  status          PlaylandShiftStatus @default(OPEN)
-  notes           String?
-  closedByUserId  String?             @map("closed_by_user_id") @db.Uuid
-  isDayClose      Boolean             @default(false) @map("is_day_close")    // mark as day-end close
+  id                 String              @id @default(uuid()) @db.Uuid
+  orgId              String              @map("org_id") @db.Uuid
+  branchId           String              @map("branch_id") @db.Uuid
+  cashierUserId      String              @map("cashier_user_id") @db.Uuid
+  shiftCode          String              @unique @map("shift_code") // SH-YYMMDD-NN
+  startedAt          DateTime            @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt            DateTime?           @map("ended_at") @db.Timestamptz(6)
+  openingCashCents   Int                 @default(0) @map("opening_cash_cents")
+  closingCashCents   Int?                @map("closing_cash_cents")
+  expectedCashCents  Int?                @map("expected_cash_cents")
+  varianceCents      Int?                @map("variance_cents") // closing - expected
+  totalSalesCents    Int                 @default(0) @map("total_sales_cents")
+  totalSessionsCents Int                 @default(0) @map("total_sessions_cents")
+  status             PlaylandShiftStatus @default(OPEN)
+  notes              String?
+  closedByUserId     String?             @map("closed_by_user_id") @db.Uuid
+  isDayClose         Boolean             @default(false) @map("is_day_close") // mark as day-end close
 
-  branch          PlaylandBranch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  sales           PlaylandSale[]
+  branch PlaylandBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  sales  PlaylandSale[]
 
   @@index([orgId, branchId])
   @@index([branchId, startedAt])
@@ -3838,27 +3978,27 @@ model PlaylandShift {
 
 // ---------- 17. Daily Reports (per-branch per-day rollup) ----------
 model PlaylandDailyReport {
-  id                  String              @id @default(uuid()) @db.Uuid
-  orgId               String              @map("org_id") @db.Uuid
-  branchId            String              @map("branch_id") @db.Uuid
-  reportDate          DateTime            @map("report_date") @db.Date
-  entryRevenueCents   Int                 @default(0) @map("entry_revenue_cents")
-  productRevenueCents Int                 @default(0) @map("product_revenue_cents")
-  totalRevenueCents   Int                 @default(0) @map("total_revenue_cents")
-  memberCount         Int                 @default(0) @map("member_count")
-  sessionsCompleted   Int                 @default(0) @map("sessions_completed")
-  sessionsExpired     Int                 @default(0) @map("sessions_expired")
-  sessionsForfeited   Int                 @default(0) @map("sessions_forfeited")
-  productsSold        Int                 @default(0) @map("products_sold")
-  alertsCount         Int                 @default(0) @map("alerts_count")
-  breakdown           Json?                                                       // per-package, per-product, per-hour breakdown
-  cashScannedIn       Int                 @default(0) @map("cash_scanned_in")    // anti-fraud: face scan count
-  cashScannedOut      Int                 @default(0) @map("cash_scanned_out")
-  fraudVariance       Int                 @default(0) @map("fraud_variance")     // scan in/out vs paid count
-  submittedAt         DateTime?           @map("submitted_at") @db.Timestamptz(6)
-  submittedByUserId   String?             @map("submitted_by_user_id") @db.Uuid
+  id                  String    @id @default(uuid()) @db.Uuid
+  orgId               String    @map("org_id") @db.Uuid
+  branchId            String    @map("branch_id") @db.Uuid
+  reportDate          DateTime  @map("report_date") @db.Date
+  entryRevenueCents   Int       @default(0) @map("entry_revenue_cents")
+  productRevenueCents Int       @default(0) @map("product_revenue_cents")
+  totalRevenueCents   Int       @default(0) @map("total_revenue_cents")
+  memberCount         Int       @default(0) @map("member_count")
+  sessionsCompleted   Int       @default(0) @map("sessions_completed")
+  sessionsExpired     Int       @default(0) @map("sessions_expired")
+  sessionsForfeited   Int       @default(0) @map("sessions_forfeited")
+  productsSold        Int       @default(0) @map("products_sold")
+  alertsCount         Int       @default(0) @map("alerts_count")
+  breakdown           Json? // per-package, per-product, per-hour breakdown
+  cashScannedIn       Int       @default(0) @map("cash_scanned_in") // anti-fraud: face scan count
+  cashScannedOut      Int       @default(0) @map("cash_scanned_out")
+  fraudVariance       Int       @default(0) @map("fraud_variance") // scan in/out vs paid count
+  submittedAt         DateTime? @map("submitted_at") @db.Timestamptz(6)
+  submittedByUserId   String?   @map("submitted_by_user_id") @db.Uuid
 
-  branch              PlaylandBranch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branch PlaylandBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@unique([branchId, reportDate])
   @@index([orgId, reportDate])
@@ -3868,20 +4008,20 @@ model PlaylandDailyReport {
 
 // ---------- 18. Face Sync (Version C — local cache on device) ----------
 model PlaylandFaceSync {
-  id              String                  @id @default(uuid()) @db.Uuid
-  orgId           String                  @map("org_id") @db.Uuid
-  deviceId        String                  @map("device_id") @db.Uuid
-  memberId        String                  @map("member_id") @db.Uuid
-  status          PlaylandFaceSyncStatus  @default(PENDING)
-  attempts        Int                     @default(0)
-  lastAttemptAt   DateTime?               @map("last_attempt_at") @db.Timestamptz(6)
-  syncedAt        DateTime?               @map("synced_at") @db.Timestamptz(6)
-  errorMessage    String?                 @map("error_message")
-  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id            String                 @id @default(uuid()) @db.Uuid
+  orgId         String                 @map("org_id") @db.Uuid
+  deviceId      String                 @map("device_id") @db.Uuid
+  memberId      String                 @map("member_id") @db.Uuid
+  status        PlaylandFaceSyncStatus @default(PENDING)
+  attempts      Int                    @default(0)
+  lastAttemptAt DateTime?              @map("last_attempt_at") @db.Timestamptz(6)
+  syncedAt      DateTime?              @map("synced_at") @db.Timestamptz(6)
+  errorMessage  String?                @map("error_message")
+  createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  device          PlaylandDevice          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  member          PlaylandMember          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  device PlaylandDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  member PlaylandMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   @@unique([deviceId, memberId])
   @@index([orgId])
@@ -3892,21 +4032,21 @@ model PlaylandFaceSync {
 
 // ---------- 19. Audit Log (separate from Pool's AuditLog to keep playland-scoped) ----------
 model PlaylandAuditLog {
-  id              String      @id @default(uuid()) @db.Uuid
-  orgId           String      @map("org_id") @db.Uuid
-  branchId        String?     @map("branch_id") @db.Uuid
-  actorUserId     String?     @map("actor_user_id") @db.Uuid
-  actorRole       String?     @map("actor_role")
-  action          String                                                  // "session.checkin", "member.delete", "sale.void", "shift.close"
-  entityType      String      @map("entity_type")
-  entityId        String?     @map("entity_id") @db.Uuid
-  before          Json?
-  after           Json?
-  ip              String?
-  userAgent       String?     @map("user_agent")
-  metadata        Json?
-  category        String      @default("general")                         // "money" | "device" | "general" — different retention
-  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  branchId    String?  @map("branch_id") @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  actorRole   String?  @map("actor_role")
+  action      String // "session.checkin", "member.delete", "sale.void", "shift.close"
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id") @db.Uuid
+  before      Json?
+  after       Json?
+  ip          String?
+  userAgent   String?  @map("user_agent")
+  metadata    Json?
+  category    String   @default("general") // "money" | "device" | "general" — different retention
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([orgId, branchId])
   @@index([entityType, entityId])
@@ -3922,35 +4062,35 @@ model PlaylandAuditLog {
 // scan #2 at gate activates session → scan #3+ picker (ออก / ขายของ)
 // =============================================================
 enum PlaylandWristbandStatus {
-  ISSUED      // bound to member · waiting for first gate scan
-  ACTIVE      // entered through gate at least once
-  RETURNED    // checked out · returned to cashier
-  LOST        // marked lost · prevented from re-use
+  ISSUED // bound to member · waiting for first gate scan
+  ACTIVE // entered through gate at least once
+  RETURNED // checked out · returned to cashier
+  LOST // marked lost · prevented from re-use
 
   @@schema("playland")
 }
 
 model PlaylandWristband {
-  id              String                   @id @default(uuid()) @db.Uuid
-  orgId           String                   @map("org_id") @db.Uuid
-  branchId        String                   @map("branch_id") @db.Uuid
-  code            String                   @unique
-  memberId        String?                  @map("member_id") @db.Uuid
-  sessionId       String?                  @map("session_id") @db.Uuid
-  status          PlaylandWristbandStatus  @default(ISSUED)
-  issuedAt        DateTime                 @default(now()) @map("issued_at") @db.Timestamptz(6)
-  issuedByUserId  String                   @map("issued_by_user_id") @db.Uuid
-  boundAt         DateTime?                @map("bound_at") @db.Timestamptz(6)
-  activatedAt     DateTime?                @map("activated_at") @db.Timestamptz(6)
-  returnedAt      DateTime?                @map("returned_at") @db.Timestamptz(6)
-  lastScanAt      DateTime?                @map("last_scan_at") @db.Timestamptz(6)
-  notes           String?
-  createdAt       DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id             String                  @id @default(uuid()) @db.Uuid
+  orgId          String                  @map("org_id") @db.Uuid
+  branchId       String                  @map("branch_id") @db.Uuid
+  code           String                  @unique
+  memberId       String?                 @map("member_id") @db.Uuid
+  sessionId      String?                 @map("session_id") @db.Uuid
+  status         PlaylandWristbandStatus @default(ISSUED)
+  issuedAt       DateTime                @default(now()) @map("issued_at") @db.Timestamptz(6)
+  issuedByUserId String                  @map("issued_by_user_id") @db.Uuid
+  boundAt        DateTime?               @map("bound_at") @db.Timestamptz(6)
+  activatedAt    DateTime?               @map("activated_at") @db.Timestamptz(6)
+  returnedAt     DateTime?               @map("returned_at") @db.Timestamptz(6)
+  lastScanAt     DateTime?               @map("last_scan_at") @db.Timestamptz(6)
+  notes          String?
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  member          PlaylandMember?          @relation(fields: [memberId], references: [id])
-  session         PlaylandSession?         @relation(fields: [sessionId], references: [id])
-  scans           PlaylandWristbandScan[]
+  member  PlaylandMember?         @relation(fields: [memberId], references: [id])
+  session PlaylandSession?        @relation(fields: [sessionId], references: [id])
+  scans   PlaylandWristbandScan[]
 
   @@index([orgId, branchId])
   @@index([memberId])
@@ -3960,16 +4100,16 @@ model PlaylandWristband {
 }
 
 model PlaylandWristbandScan {
-  id              String              @id @default(uuid()) @db.Uuid
-  orgId           String              @map("org_id") @db.Uuid
-  wristbandId     String              @map("wristband_id") @db.Uuid
-  scannedByUserId String?             @map("scanned_by_user_id") @db.Uuid
-  scanType        String                                              // BIND / GATE_IN / GATE_OUT / POS_CHARGE / EXIT / LOOKUP
-  outcome         String                                              // ok / blocked / error / picker_shown
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  wristbandId     String   @map("wristband_id") @db.Uuid
+  scannedByUserId String?  @map("scanned_by_user_id") @db.Uuid
+  scanType        String // BIND / GATE_IN / GATE_OUT / POS_CHARGE / EXIT / LOOKUP
+  outcome         String // ok / blocked / error / picker_shown
   metadata        Json?
-  scannedAt       DateTime            @default(now()) @map("scanned_at") @db.Timestamptz(6)
+  scannedAt       DateTime @default(now()) @map("scanned_at") @db.Timestamptz(6)
 
-  wristband       PlaylandWristband   @relation(fields: [wristbandId], references: [id], onDelete: Cascade)
+  wristband PlaylandWristband @relation(fields: [wristbandId], references: [id], onDelete: Cascade)
 
   @@index([wristbandId, scannedAt])
   @@map("wristband_scans")

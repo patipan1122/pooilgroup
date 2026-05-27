@@ -5,8 +5,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
-import { Card, CardContent } from "@/components/chairops/ui/card";
-import { Badge } from "@/components/chairops/ui/badge";
+import { Card, CardBody } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { thaiDateTime, thaiRelative } from "@/lib/chairops/utils/format";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { ChairopsTicketStatus } from "@/lib/generated/prisma/enums";
@@ -20,13 +20,13 @@ const STATUS_LABEL: Record<ChairopsTicketStatus, string> = {
   CANCELLED: "ยกเลิก",
 };
 
-const STATUS_VARIANT: Record<ChairopsTicketStatus, "default" | "secondary" | "success" | "warning" | "danger"> = {
+const STATUS_TONE: Record<ChairopsTicketStatus, "brand" | "neutral" | "success" | "warning" | "danger"> = {
   OPEN: "danger",
   ASSIGNED: "warning",
   IN_PROGRESS: "warning",
-  WAITING_PARTS: "secondary",
+  WAITING_PARTS: "neutral",
   DONE: "success",
-  CANCELLED: "secondary",
+  CANCELLED: "neutral",
 };
 
 type Search = {
@@ -124,7 +124,7 @@ export default async function DamageListPage({
 
       {!isTechnician && (
         <Card>
-          <CardContent className="p-4">
+          <CardBody className="p-4">
             <form className="flex flex-wrap items-end gap-3 text-sm" method="GET">
               <div>
                 <label className="block text-xs font-medium text-muted-foreground">สาขา</label>
@@ -214,7 +214,7 @@ export default async function DamageListPage({
                 ล้างฟิลเตอร์
               </Link>
             </form>
-          </CardContent>
+          </CardBody>
         </Card>
       )}
 
@@ -256,7 +256,7 @@ export default async function DamageListPage({
                         {t.ticketCode}
                       </Link>
                       {t.priority === "URGENT" && (
-                        <Badge variant="danger" className="ml-2">
+                        <Badge tone="danger" className="ml-2">
                           ด่วน
                         </Badge>
                       )}
@@ -272,7 +272,7 @@ export default async function DamageListPage({
                       </div>
                     </td>
                     <td className="px-3 py-2">
-                      <Badge variant={STATUS_VARIANT[t.status]}>
+                      <Badge tone={STATUS_TONE[t.status]}>
                         {STATUS_LABEL[t.status]}
                       </Badge>
                     </td>

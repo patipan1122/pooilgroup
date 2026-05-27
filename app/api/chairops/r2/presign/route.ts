@@ -61,8 +61,11 @@ export async function POST(request: NextRequest) {
   }
 
   // Branch scoping — verify the user is allowed to upload to this branch.
+  // W0: slug is per-org unique now · use compound key with session.user.orgId.
   const branch = await prisma.chairopsBranch.findUnique({
-    where: { slug: branchSlug },
+    where: {
+      orgId_slug: { orgId: session.user.orgId, slug: branchSlug },
+    },
     select: { id: true, slug: true },
   });
   if (!branch) {
@@ -89,8 +92,13 @@ export async function POST(request: NextRequest) {
       break;
   }
 
-  const { url, publicUrl } = await presignUpload(key, contentType);
-  return NextResponse.json({ url, publicUrl, key });
+  // W0: namespace key by orgId so multi-tenant uploads cannot collide and
+  // a public URL leak from org A cannot reveal org B's storage layout.
+  // See [[chairops-w0-orgid-storage-namespace]].
+  const orgScopedKey = `orgs/${session.user.orgId}/${key}`;
+
+  const { url, publicUrl } = await presignUpload(orgScopedKey, contentType);
+  return NextResponse.json({ url, publicUrl, key: orgScopedKey });
 }
 
 function sanitizeExt(ext?: string): string | null {

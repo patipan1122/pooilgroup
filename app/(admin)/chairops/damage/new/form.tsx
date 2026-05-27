@@ -6,10 +6,10 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Card, CardContent } from "@/components/chairops/ui/card";
-import { Button } from "@/components/chairops/ui/button";
-import { Input } from "@/components/chairops/ui/input";
-import { Badge } from "@/components/chairops/ui/badge";
+import { Card, CardBody } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Camera, Loader2, X, AlertTriangle } from "lucide-react";
 import { createDamageTicket, presignDamageUpload } from "../actions";
 import { DAMAGE_CATEGORIES } from "./constants";
@@ -129,7 +129,7 @@ export function DamageNewForm({ chairs }: { chairs: Chair[] }) {
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Card>
-        <CardContent className="space-y-3 p-5">
+        <CardBody className="space-y-3 p-5">
           <label className="text-sm font-semibold">เลือกเครื่อง (ถ้าระบุได้)</label>
           {chairs.length === 0 ? (
             <p className="text-xs text-muted-foreground">
@@ -169,7 +169,7 @@ export function DamageNewForm({ chairs }: { chairs: Chair[] }) {
                       >
                         <span>{c.chairCode}</span>
                         {c.generation && (
-                          <Badge variant="outline">{c.generation}</Badge>
+                          <Badge tone="neutral">{c.generation}</Badge>
                         )}
                       </button>
                     </li>
@@ -178,11 +178,11 @@ export function DamageNewForm({ chairs }: { chairs: Chair[] }) {
               </div>
             </>
           )}
-        </CardContent>
+        </CardBody>
       </Card>
 
       <Card>
-        <CardContent className="space-y-3 p-5">
+        <CardBody className="space-y-3 p-5">
           <label className="text-sm font-semibold">ประเภทอาการ</label>
           <div className="grid grid-cols-2 gap-2">
             {DAMAGE_CATEGORIES.map((cat) => (
@@ -201,11 +201,11 @@ export function DamageNewForm({ chairs }: { chairs: Chair[] }) {
               </button>
             ))}
           </div>
-        </CardContent>
+        </CardBody>
       </Card>
 
       <Card>
-        <CardContent className="space-y-2 p-5">
+        <CardBody className="space-y-2 p-5">
           <label className="text-sm font-semibold">อธิบายอาการ</label>
           <textarea
             value={description}
@@ -216,11 +216,11 @@ export function DamageNewForm({ chairs }: { chairs: Chair[] }) {
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
           <p className="text-xs text-muted-foreground">อย่างน้อย 5 ตัวอักษร</p>
-        </CardContent>
+        </CardBody>
       </Card>
 
       <Card>
-        <CardContent className="space-y-3 p-5">
+        <CardBody className="space-y-3 p-5">
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">รูปประกอบ ({photos.length}/5)</div>
             <span className="text-xs text-muted-foreground">ทางเลือก แต่ช่วยช่างมาก</span>
@@ -277,11 +277,11 @@ export function DamageNewForm({ chairs }: { chairs: Chair[] }) {
             className="hidden"
             onChange={onAddPhoto}
           />
-        </CardContent>
+        </CardBody>
       </Card>
 
       <Card>
-        <CardContent className="space-y-3 p-5">
+        <CardBody className="space-y-3 p-5">
           <div className="text-sm font-semibold">ระดับความเร่งด่วน</div>
           <div className="grid grid-cols-2 gap-2">
             <button
@@ -309,7 +309,7 @@ export function DamageNewForm({ chairs }: { chairs: Chair[] }) {
               <AlertTriangle className="mr-1 inline h-4 w-4" /> ด่วน
             </button>
           </div>
-        </CardContent>
+        </CardBody>
       </Card>
 
       <Button

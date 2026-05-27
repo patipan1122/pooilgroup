@@ -19,7 +19,7 @@ export function MaidShell({
 }) {
   return (
     <div className="min-h-screen bg-muted/30 pb-[calc(72px+env(safe-area-inset-bottom))]">
-      <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
+      <header className="sticky top-0 z-30 border-b border-border bg-background">
         <div className="flex h-12 items-center gap-2 px-4">
           <span className="text-base font-bold tracking-tight">ChairOps</span>
           <span className="ml-auto text-xs text-muted-foreground">{displayName}</span>

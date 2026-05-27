@@ -80,20 +80,21 @@ export async function GET(req: NextRequest) {
         );
 
         // Stream in chunks of 500 rows
+        type BatchRow = {
+          id: string;
+          branchId: string;
+          chairCode: string | null;
+          bizDate: Date;
+          onlineTotal: { toString(): string };
+          cashTotal: { toString(): string };
+          coinInsertCount: number;
+          totalCash: { toString(): string };
+          grossTotal: { toString(): string };
+        };
         const pageSize = 500;
         let cursor: string | undefined = undefined;
         while (true) {
-          const batch: {
-            id: string;
-            branchId: string;
-            chairCode: string | null;
-            bizDate: Date;
-            online: number;
-            cash: number;
-            coin: number;
-            totalCash: number;
-            totalRevenue: number;
-          }[] = await prisma.chairopsPosDaily.findMany({
+          const batch: BatchRow[] = await prisma.chairopsPosDaily.findMany({
             where: { bizDate: { gte: from, lte: to } },
             orderBy: [{ bizDate: "asc" }, { id: "asc" }],
             take: pageSize,
@@ -103,11 +104,11 @@ export async function GET(req: NextRequest) {
               branchId: true,
               chairCode: true,
               bizDate: true,
-              online: true,
-              cash: true,
-              coin: true,
+              onlineTotal: true,
+              cashTotal: true,
+              coinInsertCount: true,
               totalCash: true,
-              totalRevenue: true,
+              grossTotal: true,
             },
           });
           if (batch.length === 0) break;
@@ -120,11 +121,11 @@ export async function GET(req: NextRequest) {
                   b?.name ?? p.branchId,
                   b?.mallGroup ?? "",
                   p.chairCode ?? "(branch total)",
-                  p.online,
-                  p.cash,
-                  p.coin,
-                  p.totalCash,
-                  p.totalRevenue,
+                  p.onlineTotal.toString(),
+                  p.cashTotal.toString(),
+                  p.coinInsertCount,
+                  p.totalCash.toString(),
+                  p.grossTotal.toString(),
                 ])
               )
             );
@@ -149,7 +150,7 @@ export async function GET(req: NextRequest) {
   const [posDaily, collections, writeOffs] = await Promise.all([
     prisma.chairopsPosDaily.findMany({
       where: { bizDate: { gte: from, lte: to } },
-      select: { branchId: true, bizDate: true, totalRevenue: true },
+      select: { branchId: true, bizDate: true, grossTotal: true },
     }),
     prisma.chairopsCashCollection.findMany({
       where: { collectedAt: { gte: from, lte: to } },
@@ -171,7 +172,8 @@ export async function GET(req: NextRequest) {
     if (!matrix.has(k)) matrix.set(k, { pos: 0, dep: 0, wo: 0 });
     return matrix.get(k)!;
   };
-  for (const p of posDaily) ensure(keyFor(p.branchId, p.bizDate)).pos += p.totalRevenue;
+  // grossTotal is Decimal — coerce to number for summation
+  for (const p of posDaily) ensure(keyFor(p.branchId, p.bizDate)).pos += Number(p.grossTotal);
   for (const c of collections) ensure(keyFor(c.branchId, c.collectedAt)).dep += c.depositedAmount;
   for (const w of writeOffs) ensure(keyFor(w.branchId, w.makerAt)).wo += w.amount;
 

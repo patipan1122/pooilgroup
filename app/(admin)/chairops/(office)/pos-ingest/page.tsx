@@ -17,7 +17,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
-import { Card } from "@/components/chairops/ui/card";
+import { Card } from "@/components/ui/card";
 import { StatusPill } from "@/components/ui/status-pill";
 import {
   DiffBucketPills,

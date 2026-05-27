@@ -40,9 +40,9 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/chairops/ui/card";
-import { Button } from "@/components/chairops/ui/button";
-import { Input } from "@/components/chairops/ui/input";
+import { Card, CardBody } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils/cn";
 import { compressImage } from "@/lib/chairops/utils/image-compress";
@@ -348,7 +348,7 @@ export function CollectNewForm({ avg7d, chairCodes }: Props) {
 
       {/* Chair code typeahead (optional) */}
       <Card>
-        <CardContent className="space-y-2 p-4">
+        <CardBody className="space-y-2 p-4">
           <label
             htmlFor={chairId}
             className="text-sm font-semibold text-zinc-800"
@@ -382,12 +382,12 @@ export function CollectNewForm({ avg7d, chairCodes }: Props) {
           <p className="text-xs text-zinc-500">
             ไม่จำเป็น · ถ้าไม่ทราบให้เว้นว่าง
           </p>
-        </CardContent>
+        </CardBody>
       </Card>
 
       {/* Money fields */}
       <Card>
-        <CardContent className="space-y-4 p-4">
+        <CardBody className="space-y-4 p-4">
           <div className="space-y-2">
             <label
               htmlFor={countedId}
@@ -459,12 +459,12 @@ export function CollectNewForm({ avg7d, chairCodes }: Props) {
               )}
             </div>
           )}
-        </CardContent>
+        </CardBody>
       </Card>
 
       {/* Photo capture */}
       <Card>
-        <CardContent className="space-y-3 p-4">
+        <CardBody className="space-y-3 p-4">
           <div className="text-sm font-semibold text-zinc-800">
             รูปหลักฐาน (ต้องแนบ)
           </div>
@@ -523,12 +523,12 @@ export function CollectNewForm({ avg7d, chairCodes }: Props) {
           <p className="text-xs text-zinc-500">
             ระบบจะย่อรูปให้อัตโนมัติเพื่อประหยัดอินเทอร์เน็ต
           </p>
-        </CardContent>
+        </CardBody>
       </Card>
 
       {/* Notes */}
       <Card>
-        <CardContent className="space-y-2 p-4">
+        <CardBody className="space-y-2 p-4">
           <label
             htmlFor={notesId}
             className="text-sm font-semibold text-zinc-800"
@@ -544,7 +544,7 @@ export function CollectNewForm({ avg7d, chairCodes }: Props) {
             placeholder="เช่น เก็บเหรียญแยกไว้, ลูกค้าจ่ายไม่ครบ ..."
             className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           />
-        </CardContent>
+        </CardBody>
       </Card>
 
       <Button

@@ -1,6 +1,6 @@
 // Status badge for branch rows · color-coded by drift/collection state
 // No 'use client' · purely presentational
-import { Badge } from "@/components/chairops/ui/badge";
+import { Badge } from "@/components/ui/badge";
 
 export type BranchStatus = "ok" | "watch" | "shortage" | "surplus" | "missed" | "inactive";
 
@@ -13,17 +13,17 @@ const STATUS_LABEL: Record<BranchStatus, string> = {
   inactive: "ปิดสาขา",
 };
 
-const STATUS_VARIANT: Record<BranchStatus, "success" | "warning" | "danger" | "secondary"> = {
+const STATUS_TONE: Record<BranchStatus, "success" | "warning" | "danger" | "neutral"> = {
   ok: "success",
   watch: "warning",
   shortage: "danger",
   surplus: "warning",
   missed: "danger",
-  inactive: "secondary",
+  inactive: "neutral",
 };
 
 export function StatusBadge({ status }: { status: BranchStatus }) {
-  return <Badge variant={STATUS_VARIANT[status]}>{STATUS_LABEL[status]}</Badge>;
+  return <Badge tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</Badge>;
 }
 
 /**

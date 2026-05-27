@@ -2,9 +2,9 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
-import { Card } from "@/components/chairops/ui/card";
-import { Badge } from "@/components/chairops/ui/badge";
-import { Button } from "@/components/chairops/ui/button";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { baht } from "@/lib/chairops/utils/format";
 import { Prisma } from "@/lib/generated/prisma/client";
 
@@ -164,9 +164,9 @@ export default async function PartsListPage({
                       </td>
                       <td className="px-3 py-2">
                         {low ? (
-                          <Badge variant="danger">ต่ำกว่าจุดสั่งซื้อ</Badge>
+                          <Badge tone="danger">ต่ำกว่าจุดสั่งซื้อ</Badge>
                         ) : (
-                          <Badge variant="success">พอ</Badge>
+                          <Badge tone="success">พอ</Badge>
                         )}
                       </td>
                     </tr>

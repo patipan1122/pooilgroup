@@ -3,7 +3,7 @@
 // Manual refresh of drift snapshots · CEO triggers from dashboard
 // Per memory [[ceo-prefers-manual-ai-triggers]] — manual triggers, no auto-run
 import { useTransition } from "react";
-import { Button } from "@/components/chairops/ui/button";
+import { Button } from "@/components/ui/button";
 import { refreshDrifts } from "../actions";
 import { toast } from "sonner";
 

@@ -35,6 +35,7 @@ export async function createAccount(formData: FormData): Promise<ActionResult<{ 
 
   const account = await prisma.chairopsBankAccount.create({
     data: {
+      orgId: session.user.orgId,
       bankName: parsed.data.bankName,
       accountNo: parsed.data.accountNo,
       accountName: parsed.data.accountName,
@@ -80,7 +81,9 @@ export async function updateAccount(formData: FormData): Promise<ActionResult> {
   if (!parsed.success)
     return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
 
-  const old = await prisma.chairopsBankAccount.findUnique({ where: { id: parsed.data.id } });
+  const old = await prisma.chairopsBankAccount.findFirst({
+    where: { id: parsed.data.id, orgId: session.user.orgId },
+  });
   if (!old) return { ok: false, error: "ไม่พบบัญชี" };
 
   const updated = await prisma.chairopsBankAccount.update({
@@ -113,7 +116,9 @@ export async function deactivateAccount(id: string): Promise<ActionResult> {
   const parsed = zUUID().safeParse(id);
   if (!parsed.success) return { ok: false, error: "ID ไม่ถูกต้อง" };
 
-  const old = await prisma.chairopsBankAccount.findUnique({ where: { id: parsed.data } });
+  const old = await prisma.chairopsBankAccount.findFirst({
+    where: { id: parsed.data, orgId: session.user.orgId },
+  });
   if (!old) return { ok: false, error: "ไม่พบบัญชี" };
 
   const updated = await prisma.chairopsBankAccount.update({

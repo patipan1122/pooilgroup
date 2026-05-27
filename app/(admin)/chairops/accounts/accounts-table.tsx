@@ -3,9 +3,9 @@
 // Inline-editable table of bank accounts
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Badge } from "@/components/chairops/ui/badge";
-import { Button } from "@/components/chairops/ui/button";
-import { Input } from "@/components/chairops/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { deactivateAccount, updateAccount } from "./actions";
 
 interface Item {
@@ -127,7 +127,7 @@ export function AccountsTable({
                 <td className="py-2">{a.accountName}</td>
                 <td className="py-2 text-xs">{a.branchName ?? "ทุกสาขา"}</td>
                 <td className="py-2">
-                  <Badge variant={a.isActive ? "success" : "secondary"}>
+                  <Badge tone={a.isActive ? "success" : "neutral"}>
                     {a.isActive ? "ใช้งาน" : "ปิด"}
                   </Badge>
                 </td>

@@ -68,6 +68,7 @@ export async function createCleanlinessReport(
   const created = await prisma.$transaction(async (tx) => {
     const row = await tx.chairopsCleanlinessReport.create({
       data: {
+        orgId: session.user.orgId,
         branchId,
         byMaidId: session.user.id,
         checklist: parsed.data.checklist,
@@ -119,8 +120,8 @@ export async function presignCleanlinessUpload(args: {
   if (args.index < 0 || args.index > 4) {
     return { ok: false, error: "ดัชนีรูปไม่ถูกต้อง" };
   }
-  const branch = await prisma.chairopsBranch.findUniqueOrThrow({
-    where: { id: session.user.primaryBranchId },
+  const branch = await prisma.chairopsBranch.findFirstOrThrow({
+    where: { id: session.user.primaryBranchId, orgId: session.user.orgId },
     select: { slug: true },
   });
   const ext = args.contentType.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";

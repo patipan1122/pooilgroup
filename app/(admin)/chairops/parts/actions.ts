@@ -40,13 +40,18 @@ export async function createPart(formData: FormData): Promise<ActionResult<{ id:
     return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
 
   // Unique check
-  const dup = await prisma.chairopsSparePart.findUnique({ where: { partCode: parsed.data.partCode } });
+  const dup = await prisma.chairopsSparePart.findUnique({
+    where: {
+      orgId_partCode: { orgId: session.user.orgId, partCode: parsed.data.partCode },
+    },
+  });
   if (dup) return { ok: false, error: `รหัสอะไหล่ ${parsed.data.partCode} มีอยู่แล้ว` };
 
   // Wave-0 fix: create part + seed movement + audit atomic
   const part = await prisma.$transaction(async (tx) => {
     const row = await tx.chairopsSparePart.create({
       data: {
+        orgId: session.user.orgId,
         partCode: parsed.data.partCode,
         name: parsed.data.name,
         category: parsed.data.category || null,
@@ -61,6 +66,7 @@ export async function createPart(formData: FormData): Promise<ActionResult<{ id:
     if (row.stockOnHand > 0) {
       await tx.chairopsSparePartMovement.create({
         data: {
+          orgId: session.user.orgId,
           partId: row.id,
           delta: row.stockOnHand,
           reason: "initial-stock",
@@ -113,7 +119,9 @@ export async function updatePart(formData: FormData): Promise<ActionResult> {
   if (!parsed.success)
     return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
 
-  const old = await prisma.chairopsSparePart.findUnique({ where: { id: parsed.data.id } });
+  const old = await prisma.chairopsSparePart.findFirst({
+    where: { id: parsed.data.id, orgId: session.user.orgId },
+  });
   if (!old) return { ok: false, error: "ไม่พบอะไหล่" };
 
   // Wave-0 fix: update + audit atomic
@@ -167,7 +175,9 @@ export async function adjustStock(formData: FormData): Promise<ActionResult> {
   if (!parsed.success)
     return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
 
-  const part = await prisma.chairopsSparePart.findUnique({ where: { id: parsed.data.partId } });
+  const part = await prisma.chairopsSparePart.findFirst({
+    where: { id: parsed.data.partId, orgId: session.user.orgId },
+  });
   if (!part) return { ok: false, error: "ไม่พบอะไหล่" };
 
   const newStock = part.stockOnHand + parsed.data.delta;
@@ -183,6 +193,7 @@ export async function adjustStock(formData: FormData): Promise<ActionResult> {
     });
     await tx.chairopsSparePartMovement.create({
       data: {
+        orgId: session.user.orgId,
         partId: part.id,
         delta: parsed.data.delta,
         reason: parsed.data.reason,

@@ -325,7 +325,7 @@ function DetailMeta({
       </section>
 
       <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-soft">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">
+        <p className="text-[10px] font-bold tracking-[0.02em] text-zinc-500">
           ข้อมูลระบบ
         </p>
         <dl className="mt-3 space-y-2 text-sm">
@@ -350,7 +350,7 @@ function DetailMeta({
 
       {primaryBranch && (
         <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-soft">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">
+          <p className="text-[10px] font-bold tracking-[0.02em] text-zinc-500">
             สาขาประจำ
           </p>
           <div className="mt-2">

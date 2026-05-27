@@ -1,7 +1,7 @@
 // Bank accounts master · OFFICE+ · CRUD via inline forms
 import { requireRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/chairops/ui/card";
+import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { AccountsTable } from "./accounts-table";
 import { NewAccountForm } from "./new-account-form";
 
@@ -47,9 +47,9 @@ export default async function AccountsPage() {
             <CardHeader>
               <CardTitle className="text-base">รายการบัญชี</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardBody>
               <AccountsTable items={items} branches={branches} />
-            </CardContent>
+            </CardBody>
           </Card>
         </div>
 
@@ -57,9 +57,9 @@ export default async function AccountsPage() {
           <CardHeader>
             <CardTitle className="text-base">เพิ่มบัญชีใหม่</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardBody>
             <NewAccountForm branches={branches} />
-          </CardContent>
+          </CardBody>
         </Card>
       </div>
     </div>

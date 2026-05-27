@@ -183,7 +183,7 @@ export function WriteOffSelectionShell({ rows }: WriteOffSelectionShellProps) {
                         compact
                         className="justify-end"
                       />
-                      <div className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                      <div className="mt-0.5 text-[10px] font-medium tracking-[0.02em] text-zinc-500">
                         {r.requiredRole === "CEO"
                           ? "≥500 · CEO เท่านั้น"
                           : "<500 · MGR ได้"}

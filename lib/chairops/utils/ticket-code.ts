@@ -16,17 +16,20 @@ export function formatTicketCode(year: number, seq: number): string {
 }
 
 /**
- * Find the next available ticket code for the current พ.ศ.
- * Race-safe: looks at the highest existing CH-{year}-NNNN and adds 1.
+ * Find the next available ticket code for the current พ.ศ. scoped to the given org.
+ * Race-safe: looks at the highest existing CH-{year}-NNNN for the org and adds 1.
  * Callers should still wrap creation in a unique-violation retry loop
  * because two concurrent calls can pick the same number.
+ *
+ * W0: ticketCode unique is now per (orgId, ticketCode) compound — sequence
+ * is org-scoped so each tenant starts its own series.
  */
-export async function nextTicketCode(): Promise<string> {
+export async function nextTicketCode(orgId: string): Promise<string> {
   const year = buddhistYear();
   const prefix = `CH-${year}-`;
 
   const last = await prisma.chairopsDamageTicket.findFirst({
-    where: { ticketCode: { startsWith: prefix } },
+    where: { orgId, ticketCode: { startsWith: prefix } },
     orderBy: { ticketCode: "desc" },
     select: { ticketCode: true },
   });
@@ -54,7 +57,8 @@ export async function createTicketWithCode<T>(
   select?: Prisma.ChairopsDamageTicketSelect,
   client: Pick<Prisma.TransactionClient, "chairopsDamageTicket"> | typeof prisma = prisma,
 ): Promise<T> {
-  let code = await nextTicketCode();
+  // W0: org-scoped sequence — orgId required on data (schema enforces).
+  let code = await nextTicketCode(data.orgId);
   const maxAttempts = client === prisma ? 4 : 1;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {

@@ -2,7 +2,7 @@
 // Loads chair list (filtered to maid's branch) and passes it to the client form.
 import { requireRole, requireExactRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
-import { Card, CardContent } from "@/components/chairops/ui/card";
+import { Card, CardBody } from "@/components/ui/card";
 import { CircleAlert } from "lucide-react";
 import { DamageNewForm } from "./form";
 
@@ -13,12 +13,12 @@ export default async function DamageNewPage() {
   if (!session.user.primaryBranchId) {
     return (
       <Card className="border-warning/40 bg-warning/5">
-        <CardContent className="space-y-2 p-5 text-sm">
+        <CardBody className="space-y-2 p-5 text-sm">
           <div className="flex items-center gap-2 font-semibold">
             <CircleAlert className="h-5 w-5 text-warning" /> ยังไม่ได้ผูกสาขา
           </div>
           <p className="text-muted-foreground">ติดต่อออฟฟิศก่อนเริ่มแจ้งซ่อม</p>
-        </CardContent>
+        </CardBody>
       </Card>
     );
   }

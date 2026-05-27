@@ -40,11 +40,12 @@ export async function getExecHomeKpis(): Promise<ExecHomeKpis> {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
+  // W0: chairopsPosDaily.totalRevenue → grossTotal (BA-2 rename · now Decimal(12,2))
   const [rows, posAgg, depositAgg, criticalAlertCount] = await Promise.all([
     getDashboardRows(),
     prisma.chairopsPosDaily.aggregate({
       where: { bizDate: { gte: todayStart } },
-      _sum: { totalRevenue: true },
+      _sum: { grossTotal: true },
     }),
     prisma.chairopsCashCollection.aggregate({
       where: { collectedAt: { gte: todayStart } },
@@ -71,9 +72,14 @@ export async function getExecHomeKpis(): Promise<ExecHomeKpis> {
   // but re-sort defensively in case upstream changes.
   const branches = [...rows].sort((a, b) => b.driftAmount - a.driftAmount);
 
+  // grossTotal aggregate is Prisma.Decimal | null · convert for UI consumption.
+  const todayPosRevenue = posAgg._sum?.grossTotal
+    ? Number(posAgg._sum.grossTotal)
+    : 0;
+
   return {
-    todayPosRevenue: posAgg._sum.totalRevenue ?? 0,
-    todayDepositTotal: depositAgg._sum.depositedAmount ?? 0,
+    todayPosRevenue,
+    todayDepositTotal: depositAgg._sum?.depositedAmount ?? 0,
     cumulativeDriftTotal,
     shortageBranchCount,
     criticalOpenAlertCount: criticalAlertCount,

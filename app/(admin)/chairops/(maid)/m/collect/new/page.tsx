@@ -7,7 +7,7 @@
 
 import { requireExactRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
-import { Card, CardContent } from "@/components/chairops/ui/card";
+import { Card, CardBody } from "@/components/ui/card";
 import { CircleAlert } from "lucide-react";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
@@ -21,13 +21,13 @@ export default async function MaidCollectNewPage() {
   if (!branchId) {
     return (
       <Card className="border-amber-200 bg-amber-50">
-        <CardContent className="space-y-2 p-5 text-sm">
+        <CardBody className="space-y-2 p-5 text-sm">
           <div className="flex items-center gap-2 font-semibold text-amber-800">
             <CircleAlert className="h-5 w-5" />
             ยังไม่ได้ผูกสาขา
           </div>
           <p className="text-amber-700">ติดต่อออฟฟิศก่อนเริ่มบันทึก</p>
-        </CardContent>
+        </CardBody>
       </Card>
     );
   }

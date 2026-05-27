@@ -4,8 +4,8 @@
 // Server actions invoked with useTransition · toast feedback
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/chairops/ui/card";
-import { Button } from "@/components/chairops/ui/button";
+import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { ChairopsTicketStatus, ChairopsUserRole } from "@/lib/generated/prisma/enums";
 import { assignTicket, updateStatus, useParts, closeTicket } from "./actions";
 
@@ -92,7 +92,7 @@ export function TicketActions({
           <CardHeader>
             <CardTitle className="text-base">ผู้รับผิดชอบ</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardBody className="space-y-2">
             <select
               value={assignee}
               onChange={(e) => setAssignee(e.target.value)}
@@ -114,7 +114,7 @@ export function TicketActions({
             >
               {isPending ? "กำลังบันทึก..." : "มอบหมาย"}
             </Button>
-          </CardContent>
+          </CardBody>
         </Card>
       )}
 
@@ -123,12 +123,12 @@ export function TicketActions({
           <CardHeader>
             <CardTitle className="text-base">เปลี่ยนสถานะ</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardBody className="space-y-2">
             {NEXT_STATUS[status].map((opt) => (
               <Button
                 key={opt.value}
                 type="button"
-                variant={opt.value === "DONE" ? "success" : opt.value === "CANCELLED" ? "destructive" : "outline"}
+                variant={opt.value === "DONE" ? "primary" : opt.value === "CANCELLED" ? "danger" : "outline"}
                 disabled={isPending}
                 onClick={() =>
                   run(
@@ -141,7 +141,7 @@ export function TicketActions({
                 {opt.label}
               </Button>
             ))}
-          </CardContent>
+          </CardBody>
         </Card>
       )}
 
@@ -150,7 +150,7 @@ export function TicketActions({
           <CardHeader>
             <CardTitle className="text-base">ใช้อะไหล่</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardBody className="space-y-2">
             {partRows.map((row, i) => (
               <div key={i} className="flex gap-2">
                 <select
@@ -211,7 +211,7 @@ export function TicketActions({
                 บันทึก
               </Button>
             </div>
-          </CardContent>
+          </CardBody>
         </Card>
       )}
 
@@ -220,7 +220,7 @@ export function TicketActions({
           <CardHeader>
             <CardTitle className="text-base">ปิดงาน</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardBody className="space-y-2">
             <textarea
               value={closeNotes}
               onChange={(e) => setCloseNotes(e.target.value)}
@@ -231,14 +231,14 @@ export function TicketActions({
             />
             <Button
               type="button"
-              variant="success"
+              variant="primary"
               disabled={isPending}
               onClick={() => run(() => closeTicket(code, closeNotes), "ปิดงานเรียบร้อย")}
               className="w-full"
             >
               {isPending ? "กำลังปิด..." : "ปิดงาน (Done)"}
             </Button>
-          </CardContent>
+          </CardBody>
         </Card>
       )}
     </>

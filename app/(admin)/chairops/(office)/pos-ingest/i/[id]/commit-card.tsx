@@ -73,8 +73,9 @@ export function CommitCard({
         toast.error(res.error);
         return;
       }
-      toast.success("commit สำเร็จ · กลับหน้ารายการ");
-      router.push(`/chairops/pos-ingest?committed=${importId}`);
+      toast.success(`บันทึก ${appliedRowCount.toLocaleString("th-TH")} รายการสำเร็จ`);
+      // SPEC §2.6 — commit success returns user to exec home, not list view
+      router.push(`/chairops?committed=${importId}`);
     });
   }
 

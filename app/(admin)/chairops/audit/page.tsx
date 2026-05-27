@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
-import { Card } from "@/components/chairops/ui/card";
+import { Card } from "@/components/ui/card";
 import { thaiDateTime } from "@/lib/chairops/utils/format";
 import { Prisma } from "@/lib/generated/prisma/client";
 

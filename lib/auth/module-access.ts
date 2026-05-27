@@ -10,13 +10,21 @@ import { redirect } from "next/navigation";
 import { adminClient } from "@/lib/db/server";
 import type { DbUser } from "./session";
 import type { ModuleSlug } from "@/lib/modules";
-import { isModuleDisabled } from "@/lib/modules";
+import { MODULES, isModuleDisabled } from "@/lib/modules";
 // Single source of truth for admin-tier role membership lives in role-guards.
 // Re-exported here so existing import sites (`@/lib/auth/module-access`) keep
 // working — see feedback rule on module isolation / single source of truth.
 import { isAdminTier } from "./role-guards";
 
 export { isAdminTier };
+
+// Single source of truth for the canonical module slug list.
+// Derived from MODULES registry so a new module added to `lib/modules.ts`
+// is automatically visible to admin tier + accepted in the row filter
+// below — no more "admin can't see new module" drift (BIGFEATURE §2.1).
+const MODULE_SLUGS = new Set<ModuleSlug>(
+  Object.keys(MODULES) as ModuleSlug[],
+);
 
 /**
  * Returns the set of modules the user can access. Admin tier sees all
@@ -27,7 +35,7 @@ export async function loadUserModules(
   user: DbUser,
 ): Promise<Set<ModuleSlug>> {
   if (isAdminTier(user.role)) {
-    return new Set<ModuleSlug>(["cashhub", "fuelos", "docuflow", "recruit", "repairs"]);
+    return new Set<ModuleSlug>(MODULE_SLUGS);
   }
 
   const admin = adminClient();
@@ -40,13 +48,7 @@ export async function loadUserModules(
 
   const modules = new Set<ModuleSlug>();
   for (const row of (data ?? []) as Array<{ module_name: string }>) {
-    if (
-      row.module_name === "cashhub" ||
-      row.module_name === "fuelos" ||
-      row.module_name === "docuflow" ||
-      row.module_name === "recruit" ||
-      row.module_name === "repairs"
-    ) {
+    if (MODULE_SLUGS.has(row.module_name as ModuleSlug)) {
       modules.add(row.module_name as ModuleSlug);
     }
   }

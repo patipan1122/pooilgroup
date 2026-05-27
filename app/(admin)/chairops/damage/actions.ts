@@ -54,8 +54,8 @@ export async function createDamageTicket(
 
   // Verify chair belongs to maid's branch (defense in depth)
   if (parsed.data.chairId) {
-    const chair = await prisma.chairopsChair.findUnique({
-      where: { id: parsed.data.chairId },
+    const chair = await prisma.chairopsChair.findFirst({
+      where: { id: parsed.data.chairId, orgId: session.user.orgId },
       select: { branchId: true },
     });
     if (!chair || chair.branchId !== branchId) {
@@ -73,6 +73,7 @@ export async function createDamageTicket(
         const created = await prisma.$transaction(async (tx) => {
           const row = await createTicketWithCode<{ id: string; ticketCode: string }>(
             {
+              orgId: session.user.orgId,
               branchId,
               chairId: parsed.data.chairId || null,
               reportedById: session.user.id,
@@ -145,8 +146,8 @@ export async function presignDamageUpload(args: {
   if (args.index < 0 || args.index > 4) {
     return { ok: false, error: "ดัชนีรูปไม่ถูกต้อง" };
   }
-  const branch = await prisma.chairopsBranch.findUniqueOrThrow({
-    where: { id: session.user.primaryBranchId },
+  const branch = await prisma.chairopsBranch.findFirstOrThrow({
+    where: { id: session.user.primaryBranchId, orgId: session.user.orgId },
     select: { slug: true },
   });
   // draftId stands in for ticketCode in the key; safe to use because we sanitize.
@@ -166,7 +167,11 @@ export async function listMyBranchChairs(): Promise<
     return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
   }
   const chairs = await prisma.chairopsChair.findMany({
-    where: { branchId: session.user.primaryBranchId, isActive: true },
+    where: {
+      branchId: session.user.primaryBranchId,
+      orgId: session.user.orgId,
+      isActive: true,
+    },
     orderBy: { chairCode: "asc" },
     select: { id: true, chairCode: true, isOnline: true },
   });

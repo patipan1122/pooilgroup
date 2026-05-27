@@ -2,8 +2,8 @@
 
 import { useRef, useTransition } from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/chairops/ui/button";
-import { Input } from "@/components/chairops/ui/input";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { createAccount } from "./actions";
 
 export function NewAccountForm({ branches }: { branches: { id: string; name: string }[] }) {

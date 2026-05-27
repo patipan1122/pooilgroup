@@ -3,7 +3,7 @@
 export default function WriteOffsLoading() {
   return (
     <div className="chairops-scope min-h-screen bg-muted/40">
-      <header className="sticky top-0 z-30 h-14 border-b border-border bg-background/95">
+      <header className="sticky top-0 z-30 h-14 border-b border-border bg-background">
         <div className="mx-auto flex h-14 max-w-screen-2xl items-center gap-3 px-4 sm:px-6">
           <div className="h-4 w-48 animate-pulse rounded bg-zinc-200" />
         </div>

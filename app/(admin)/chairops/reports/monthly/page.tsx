@@ -34,7 +34,7 @@ export default async function MonthlyReport() {
     }),
     prisma.chairopsPosDaily.findMany({
       where: { bizDate: { gte: since } },
-      select: { branchId: true, bizDate: true, totalRevenue: true },
+      select: { branchId: true, bizDate: true, grossTotal: true },
     }),
     prisma.chairopsCashCollection.findMany({
       where: { collectedAt: { gte: since } },
@@ -63,7 +63,8 @@ export default async function MonthlyReport() {
     if (!inner.has(mk)) inner.set(mk, { pos: 0, dep: 0, wo: 0 });
     return inner.get(mk)!;
   };
-  for (const p of posDaily) ensure(p.branchId, monthKey(p.bizDate)).pos += p.totalRevenue;
+  // grossTotal is Decimal — coerce to number for summation
+  for (const p of posDaily) ensure(p.branchId, monthKey(p.bizDate)).pos += Number(p.grossTotal);
   for (const c of collections) ensure(c.branchId, monthKey(c.collectedAt)).dep += c.depositedAmount;
   for (const w of writeOffs) ensure(w.branchId, monthKey(w.makerAt)).wo += w.amount;
 

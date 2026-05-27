@@ -6,8 +6,8 @@
 
 import { requireExactRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
-import { Card, CardContent } from "@/components/chairops/ui/card";
-import { Button } from "@/components/chairops/ui/button";
+import { Card, CardBody } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { LogOut, MapPin, User } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ export default async function MaidProfilePage() {
       </header>
 
       <Card>
-        <CardContent className="space-y-3 p-4 text-sm">
+        <CardBody className="space-y-3 p-4 text-sm">
           <div className="flex items-start gap-3">
             <User
               className="mt-0.5 h-5 w-5 shrink-0 text-zinc-400"
@@ -54,7 +54,7 @@ export default async function MaidProfilePage() {
               </div>
             </div>
           </div>
-        </CardContent>
+        </CardBody>
       </Card>
 
       <form action="/logout" method="POST">

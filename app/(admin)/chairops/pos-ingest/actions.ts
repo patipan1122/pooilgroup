@@ -33,6 +33,11 @@ import { sha256Hex } from "@/lib/chairops/utils/hash";
 import { canEditPastDay } from "@/lib/chairops/auth/role-guards";
 import { recomputeAllDrifts } from "@/lib/chairops/reconcile/drift-engine";
 import { evaluateAndEmitAlerts } from "@/lib/chairops/reconcile/alerts";
+import {
+  parseStarThingXlsx,
+  aggregateToBranchDaily,
+  type AggregatedDailyRow,
+} from "@/lib/chairops/pos-ingest/starthing-xlsx";
 
 // ----- Types ----------------------------------------------------------------
 
@@ -75,6 +80,20 @@ export interface DiffSummary {
   manualBranchId: string | null;
   pastDayWarning: boolean;
   selfCommitWarning: { uploader: string } | null;
+  // StarThing XLSX additions (SPEC §2.5) — null when CSV path used
+  starThing?: {
+    /** Per-(branch × bizDate) aggregated rows for ChairopsBranchDailyRevenue */
+    aggregatedRows: AggregatedDailyRow[];
+    /** storeName values that didn't exact-match any ChairopsBranch.name */
+    unknownBranches: string[];
+    /** storeName → branchId for matched branches */
+    knownBranchEntries: Array<[string, string]>;
+    /** sheet headers — surface schema drift to CEO (DEVIL hidden-complexity #1) */
+    columnSet: string[];
+    unknownColumns: string[];
+    sheetName: string;
+    dateRange: { from: string; to: string } | null;
+  };
 }
 
 // ----- CSV parsing ----------------------------------------------------------
@@ -342,9 +361,13 @@ export async function previewImport(formData: FormData): Promise<{ ok: true; imp
 
   const buf = Buffer.from(await file.arrayBuffer());
   const fileHash = sha256Hex(buf);
+  const orgId = session.user.orgId;
 
   // Dedup by hash — if same file already imported AND committed, surface that.
-  const existingByHash = await prisma.chairopsPosImport.findUnique({ where: { fileHash } });
+  // Per BA-2 schema: unique constraint is (orgId, fileHash) not (fileHash).
+  const existingByHash = await prisma.chairopsPosImport.findUnique({
+    where: { orgId_fileHash: { orgId, fileHash } },
+  });
   if (existingByHash) {
     if (existingByHash.committed) {
       return {
@@ -357,11 +380,27 @@ export async function previewImport(formData: FormData): Promise<{ ok: true; imp
   }
 
   // Parse — branch on file kind. CSV uses minimal in-house parser · XLSX uses SheetJS.
+  // XLSX path ALSO runs the dedicated StarThing parser (SPEC §2.5) to compute
+  // per-(branch × date) aggregates for ChairopsBranchDailyRevenue.
   const kind = detectFileKind(file.name, buf);
   let grid: string[][];
+  let starThingAggregated: AggregatedDailyRow[] = [];
+  let starThingMeta: NonNullable<DiffSummary["starThing"]> | undefined;
   try {
     if (kind === "xlsx") {
       grid = parseXlsxToGrid(buf);
+      // Run StarThing-aware parse in parallel (independent of grid path)
+      const stResult = parseStarThingXlsx(buf);
+      starThingAggregated = aggregateToBranchDaily(stResult.parsedRows);
+      starThingMeta = {
+        aggregatedRows: starThingAggregated,
+        unknownBranches: [], // filled after we load branches below
+        knownBranchEntries: [],
+        columnSet: stResult.columnSet,
+        unknownColumns: stResult.unknownColumns,
+        sheetName: stResult.sheetName,
+        dateRange: stResult.dateRange,
+      };
     } else if (kind === "csv") {
       grid = parseCsv(buf.toString("utf-8"));
     } else {
@@ -382,9 +421,9 @@ export async function previewImport(formData: FormData): Promise<{ ok: true; imp
     }
   }
 
-  // Load branch map
+  // Load branch map — scoped to this org (BA-2 multi-tenant guard)
   const branches = await prisma.chairopsBranch.findMany({
-    where: { isActive: true },
+    where: { orgId, isActive: true },
     select: { id: true, name: true, tabName: true, slug: true },
   });
   const byTab = new Map<string, { id: string; name: string }>();
@@ -395,6 +434,24 @@ export async function previewImport(formData: FormData): Promise<{ ok: true; imp
     byTab.set(b.slug, { id: b.id, name: b.name });
     byLoose.set(loosenShopName(b.tabName), { id: b.id, name: b.name });
     byLoose.set(loosenShopName(b.name), { id: b.id, name: b.name });
+  }
+
+  // SPEC §2.5 — StarThing branch resolution: exact-match `ChairopsBranch.name`,
+  // surface unknowns to UI (no auto-create per `[[pool-csv-import-must-diff-before-write]]`).
+  if (starThingMeta) {
+    const knownEntries: Array<[string, string]> = [];
+    const unknown: string[] = [];
+    const branchByName = new Map(branches.map((b) => [b.name, b.id]));
+    const uniqueStores = Array.from(
+      new Set(starThingMeta.aggregatedRows.map((r) => r.storeName)),
+    );
+    for (const s of uniqueStores) {
+      const id = branchByName.get(s);
+      if (id) knownEntries.push([s, id]);
+      else unknown.push(s);
+    }
+    starThingMeta.knownBranchEntries = knownEntries;
+    starThingMeta.unknownBranches = unknown;
   }
 
   let manualBranchName: string | null = null;
@@ -445,6 +502,9 @@ export async function previewImport(formData: FormData): Promise<{ ok: true; imp
     }
   }
 
+  // DiffRow keeps the legacy snake-case keys (online/cash/coin/totalRevenue) because
+  // downstream UI components (diff-table.tsx) consume that shape. The DB column names
+  // changed to onlineTotal/cashTotal/coinInsertCount/grossTotal (BA-2 rename) — coerce here.
   const existingMap = new Map<Key, { online: number; cash: number; coin: number; totalRevenue: number; bizDate: string }>();
   if (candidateKeys.length > 0) {
     // Query by-branch grouped to keep IN sizes manageable; for MVP single fetch is OK
@@ -452,18 +512,27 @@ export async function previewImport(formData: FormData): Promise<{ ok: true; imp
     const dates = [...new Set(candidateKeys.map((k) => k.bizDate))].map((s) => new Date(s + "T00:00:00.000Z"));
     const existing = await prisma.chairopsPosDaily.findMany({
       where: {
+        orgId,
         branchId: { in: branchIds },
         bizDate: { in: dates },
       },
-      select: { branchId: true, chairCode: true, bizDate: true, online: true, cash: true, coin: true, totalRevenue: true },
+      select: {
+        branchId: true,
+        chairCode: true,
+        bizDate: true,
+        onlineTotal: true,
+        cashTotal: true,
+        coinInsertCount: true,
+        grossTotal: true,
+      },
     });
     for (const e of existing) {
       const dateStr = e.bizDate.toISOString().slice(0, 10);
       existingMap.set(keyOf(e.branchId, e.chairCode, dateStr), {
-        online: e.online,
-        cash: e.cash,
-        coin: e.coin,
-        totalRevenue: e.totalRevenue,
+        online: Number(e.onlineTotal),
+        cash: Number(e.cashTotal),
+        coin: e.coinInsertCount,
+        totalRevenue: Number(e.grossTotal),
         bizDate: dateStr,
       });
     }
@@ -526,10 +595,12 @@ export async function previewImport(formData: FormData): Promise<{ ok: true; imp
     manualBranchId,
     pastDayWarning,
     selfCommitWarning,
+    ...(starThingMeta ? { starThing: starThingMeta } : {}),
   };
 
   const imp = await prisma.chairopsPosImport.create({
     data: {
+      orgId,
       filename: file.name,
       uploadedById: session.user.id,
       fileHash,
@@ -576,6 +647,7 @@ export async function commitImport(importId: string): Promise<{ ok: true } | { o
 
   // Apply rows in a transaction
   const toApply = diff.rows.filter((r) => r.status === "new" || r.status === "changed");
+  const orgId = imp.orgId;
 
   await prisma.$transaction(async (tx) => {
     for (const r of toApply) {
@@ -585,18 +657,21 @@ export async function commitImport(importId: string): Promise<{ ok: true } | { o
       // flaky across versions, so we do findFirst → update/create explicitly.
       const existing = await tx.chairopsPosDaily.findFirst({
         where: {
+          orgId,
           branchId: r.branchId,
           chairCode: r.chairCode ?? null,
           bizDate,
         },
         select: { id: true },
       });
+      // BA-2 column rename: online→onlineTotal · cash→cashTotal ·
+      // coin→coinInsertCount · totalRevenue→grossTotal · totalCash stays.
       const data = {
-        online: r.online,
-        cash: r.cash,
-        coin: r.coin,
+        onlineTotal: r.online,
+        cashTotal: r.cash,
+        coinInsertCount: r.coin,
         totalCash: r.totalCash,
-        totalRevenue: r.totalRevenue,
+        grossTotal: r.totalRevenue,
         rawSource: "csv-upload",
         importId: imp.id,
       } as const;
@@ -605,6 +680,7 @@ export async function commitImport(importId: string): Promise<{ ok: true } | { o
         : await tx.chairopsPosDaily.create({
             data: {
               ...data,
+              orgId,
               branchId: r.branchId,
               chairCode: r.chairCode,
               bizDate,
@@ -613,6 +689,7 @@ export async function commitImport(importId: string): Promise<{ ok: true } | { o
           });
       await tx.chairopsAuditLog.create({
         data: {
+          orgId,
           userId: session.user.id,
           action: r.status === "new" ? "pos_daily.create" : "pos_daily.update",
           entity: "PosDaily",
@@ -630,6 +707,42 @@ export async function commitImport(importId: string): Promise<{ ok: true } | { o
         },
       });
     }
+    // SPEC §2.5 — write per-branch-per-day aggregates from StarThing XLSX
+    // (CSV path = empty starThing block · skipped). Idempotent upsert on
+    // unique (orgId, branchId, bizDate).
+    if (diff.starThing) {
+      const knownByName = new Map(diff.starThing.knownBranchEntries);
+      for (const agg of diff.starThing.aggregatedRows) {
+        const branchId = knownByName.get(agg.storeName);
+        if (!branchId) continue; // skip unknown branches — CEO resolves later
+        const bizDate = new Date(`${agg.bizDate}T00:00:00.000Z`);
+        const existingDaily = await tx.chairopsBranchDailyRevenue.findFirst({
+          where: { orgId, branchId, bizDate },
+          select: { id: true },
+        });
+        const dailyData = {
+          cashTotal: agg.cashTotal,
+          onlineTotal: agg.onlineTotal,
+          otherTotal: agg.otherTotal,
+          grossTotal: agg.grossTotal,
+          paymentCount: agg.paymentCount,
+          coinInsertCount: agg.coinInsertCount,
+          roundCount: agg.roundCount,
+          sourceImportId: imp.id,
+        };
+        if (existingDaily) {
+          await tx.chairopsBranchDailyRevenue.update({
+            where: { id: existingDaily.id },
+            data: dailyData,
+          });
+        } else {
+          await tx.chairopsBranchDailyRevenue.create({
+            data: { ...dailyData, orgId, branchId, bizDate },
+          });
+        }
+      }
+    }
+
     await tx.chairopsPosImport.update({
       where: { id: imp.id },
       data: { committed: true, committedAt: new Date() },

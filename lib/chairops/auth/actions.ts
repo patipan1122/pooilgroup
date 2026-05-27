@@ -106,9 +106,13 @@ export async function approveAccessRequest(
   // TODO[claude-design]: dedicated ChairopsAccessRequest table (Wave 2).
   // For now we just create the user + audit · denial logs stay as historical
   // trail of "this person tried 4 times then admin approved".
+  // W0: ChairopsUser.orgId now required · inherit from the approving admin's
+  // own org. Cross-org user-creation is not a real flow today (admins manage
+  // their own tenant). See [[chairops-audit-2026-05-25]].
   const created = await prisma.$transaction(async (tx) => {
     const row = await tx.chairopsUser.create({
       data: {
+        orgId: session.user.orgId,
         authUserId: parsed.data.authUserId,
         email: parsed.data.email,
         displayName: parsed.data.displayName,

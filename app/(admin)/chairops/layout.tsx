@@ -10,6 +10,7 @@
 // `lib/chairops/auth/session.ts`. This layout only blocks users who have no
 // business in the module at all.
 
+import "@/components/chairops/redesign/tokens.css";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { userHasModuleAccess, isAdminTier } from "@/lib/auth/module-access";
@@ -28,5 +29,5 @@ export default async function ChairOpsLayout({
     const ok = await userHasModuleAccess(session.user, "chairops");
     if (!ok) redirect("/403");
   }
-  return <>{children}</>;
+  return <div className="co-scope">{children}</div>;
 }

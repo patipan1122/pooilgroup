@@ -1,7 +1,7 @@
 // Create new spare part — OFFICE+
 import Link from "next/link";
 import { requireRole } from "@/lib/chairops/auth/session";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/chairops/ui/card";
+import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { NewPartForm } from "./new-part-form";
 
 export default async function NewPartPage() {
@@ -20,9 +20,9 @@ export default async function NewPartPage() {
         <CardHeader>
           <CardTitle className="text-base">ข้อมูลอะไหล่</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardBody>
           <NewPartForm />
-        </CardContent>
+        </CardBody>
       </Card>
     </div>
   );

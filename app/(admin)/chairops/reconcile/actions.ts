@@ -84,13 +84,20 @@ export async function requestWriteOff(formData: FormData) {
     );
   }
   const { branchId, amount, reason } = parsed.data;
-  const branch = await prisma.chairopsBranch.findUnique({ where: { id: branchId }, select: { id: true, name: true } });
+  // W0: pull orgId from the branch so both write-off + alert + audit stamp
+  // the correct tenant. session.user.orgId would work too but reading from
+  // the branch row guards against a stale session pointing at the wrong org.
+  const branch = await prisma.chairopsBranch.findUnique({
+    where: { id: branchId },
+    select: { id: true, name: true, orgId: true },
+  });
   if (!branch) redirect(`/reconcile?error=${encodeURIComponent("ไม่พบสาขา")}`);
 
   // Wave-0 fix: write-off + alert + audit atomic in one tx
   const wo = await prisma.$transaction(async (tx) => {
     const row = await tx.chairopsWriteOff.create({
       data: {
+        orgId: branch!.orgId,
         branchId,
         amount,
         reason,
@@ -102,6 +109,7 @@ export async function requestWriteOff(formData: FormData) {
     // Emit alert so CEO/manager sees it in the queue
     await tx.chairopsAlert.create({
       data: {
+        orgId: branch!.orgId,
         branchId,
         kind: ChairopsAlertKind.WRITE_OFF_REQUESTED,
         level: amount >= 500 ? ChairopsAlertLevel.WARN : ChairopsAlertLevel.INFO,

@@ -5,9 +5,9 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Card, CardContent } from "@/components/chairops/ui/card";
-import { Button } from "@/components/chairops/ui/button";
-import { Badge } from "@/components/chairops/ui/badge";
+import { Card, CardBody } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Camera, CheckCircle2, Loader2, X } from "lucide-react";
 import { createCleanlinessReport, presignCleanlinessUpload } from "../actions";
 import { CHECKLIST_ITEMS, type ChecklistKey } from "../constants";
@@ -40,10 +40,10 @@ export function CleanlinessNewForm() {
   const previewGrade = offCount === 0 ? "PASS" : offCount <= 2 ? "WARN" : "FAIL";
   const gradeStyle =
     previewGrade === "PASS"
-      ? { variant: "success" as const, label: "ผ่าน" }
+      ? { tone: "success" as const, label: "ผ่าน" }
       : previewGrade === "WARN"
-        ? { variant: "warning" as const, label: "เฝ้าดู" }
-        : { variant: "danger" as const, label: "ไม่ผ่าน" };
+        ? { tone: "warning" as const, label: "เฝ้าดู" }
+        : { tone: "danger" as const, label: "ไม่ผ่าน" };
 
   async function onAddPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -123,10 +123,10 @@ export function CleanlinessNewForm() {
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Card>
-        <CardContent className="space-y-3 p-5">
+        <CardBody className="space-y-3 p-5">
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">รายการตรวจ</div>
-            <Badge variant={gradeStyle.variant}>เกรดปัจจุบัน: {gradeStyle.label}</Badge>
+            <Badge tone={gradeStyle.tone}>เกรดปัจจุบัน: {gradeStyle.label}</Badge>
           </div>
           <ul className="divide-y divide-border">
             {CHECKLIST_ITEMS.map((item) => {
@@ -153,11 +153,11 @@ export function CleanlinessNewForm() {
               );
             })}
           </ul>
-        </CardContent>
+        </CardBody>
       </Card>
 
       <Card>
-        <CardContent className="space-y-3 p-5">
+        <CardBody className="space-y-3 p-5">
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">
               รูปประกอบ ({photos.length}/5)
@@ -221,11 +221,11 @@ export function CleanlinessNewForm() {
             className="hidden"
             onChange={onAddPhoto}
           />
-        </CardContent>
+        </CardBody>
       </Card>
 
       <Card>
-        <CardContent className="space-y-2 p-5">
+        <CardBody className="space-y-2 p-5">
           <label className="text-sm font-semibold">หมายเหตุ (ถ้ามี)</label>
           <textarea
             value={notes}
@@ -235,7 +235,7 @@ export function CleanlinessNewForm() {
             placeholder="อธิบายปัญหาหรือสภาพเพิ่มเติม"
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
-        </CardContent>
+        </CardBody>
       </Card>
 
       <Button

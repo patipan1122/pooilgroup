@@ -27,7 +27,7 @@ export default function WriteOffsError({
 
   return (
     <div className="chairops-scope mx-auto flex min-h-[60vh] max-w-xl flex-col items-center justify-center gap-4 px-6 text-center">
-      <div className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-rose-700">
+      <div className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold tracking-[0.02em] text-rose-700">
         เกิดข้อผิดพลาด
       </div>
       <h1 className="text-2xl font-bold text-zinc-900">

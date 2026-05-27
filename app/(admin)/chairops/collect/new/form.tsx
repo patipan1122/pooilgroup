@@ -13,9 +13,9 @@
 import { useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Card, CardContent } from "@/components/chairops/ui/card";
-import { Button } from "@/components/chairops/ui/button";
-import { Input } from "@/components/chairops/ui/input";
+import { Card, CardBody } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Camera, CheckCircle2, Loader2 } from "lucide-react";
 import {
   createCashCollection,
@@ -173,7 +173,7 @@ export function CollectNewForm({ avg7d }: Props) {
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Card>
-        <CardContent className="space-y-4 p-5">
+        <CardBody className="space-y-4 p-5">
           <div className="space-y-2">
             <label htmlFor={countedId} className="text-sm font-semibold">
               ยอดที่นับได้ (บาท)
@@ -233,11 +233,11 @@ export function CollectNewForm({ avg7d }: Props) {
               )}
             </div>
           )}
-        </CardContent>
+        </CardBody>
       </Card>
 
       <Card>
-        <CardContent className="space-y-3 p-5">
+        <CardBody className="space-y-3 p-5">
           <div className="text-sm font-semibold">รูปหลักฐาน (ต้องแนบ)</div>
 
           {photoPreview ? (
@@ -288,11 +288,11 @@ export function CollectNewForm({ avg7d }: Props) {
             className="hidden"
             onChange={onPickPhoto}
           />
-        </CardContent>
+        </CardBody>
       </Card>
 
       <Card>
-        <CardContent className="space-y-2 p-5">
+        <CardBody className="space-y-2 p-5">
           <label htmlFor={notesId} className="text-sm font-semibold">
             หมายเหตุ (ถ้ามี)
           </label>
@@ -305,7 +305,7 @@ export function CollectNewForm({ avg7d }: Props) {
             placeholder="เช่น เก็บไว้ส่วนตัวเล็กน้อย, ...."
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
-        </CardContent>
+        </CardBody>
       </Card>
 
       <Button

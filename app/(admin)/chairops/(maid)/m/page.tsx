@@ -8,9 +8,9 @@ import { requireExactRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
 import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
 import { ChairopsKpiTile } from "@/components/chairops/_kit";
-import { Card, CardContent } from "@/components/chairops/ui/card";
-import { Badge } from "@/components/chairops/ui/badge";
-import { Button } from "@/components/chairops/ui/button";
+import { Card, CardBody } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { baht, thaiDateTime, thaiRelative } from "@/lib/chairops/utils/format";
 import {
   AlertTriangle,
@@ -29,7 +29,7 @@ export default async function MaidHomePage() {
   if (!session.user.primaryBranchId) {
     return (
       <Card className="border-amber-200 bg-amber-50">
-        <CardContent className="space-y-2 p-5 text-sm">
+        <CardBody className="space-y-2 p-5 text-sm">
           <div className="flex items-center gap-2 font-semibold text-amber-800">
             <CircleAlert className="h-5 w-5" />
             ยังไม่ได้ผูกสาขา
@@ -37,7 +37,7 @@ export default async function MaidHomePage() {
           <p className="text-amber-700">
             บัญชีของคุณยังไม่ได้กำหนดสาขา · กรุณาติดต่อออฟฟิศก่อนเริ่มใช้งาน
           </p>
-        </CardContent>
+        </CardBody>
       </Card>
     );
   }
@@ -74,16 +74,16 @@ export default async function MaidHomePage() {
         ? "warning"
         : "neutral";
 
-  const driftLabel: { variant: "danger" | "warning" | "success"; text: string } =
+  const driftLabel: { tone: "danger" | "warning" | "success"; text: string } =
     drift.status === "shortage"
-      ? { variant: "danger", text: "เงินขาด" }
+      ? { tone: "danger", text: "เงินขาด" }
       : drift.status === "missed"
-        ? { variant: "warning", text: "เก็บล่าช้า" }
+        ? { tone: "warning", text: "เก็บล่าช้า" }
         : drift.status === "surplus"
-          ? { variant: "warning", text: "เงินเกิน" }
+          ? { tone: "warning", text: "เงินเกิน" }
           : drift.status === "watch"
-            ? { variant: "warning", text: "เฝ้าดู" }
-            : { variant: "success", text: "ปกติ" };
+            ? { tone: "warning", text: "เฝ้าดู" }
+            : { tone: "success", text: "ปกติ" };
 
   const driftDirection: "up" | "down" | "flat" =
     drift.driftAmount > 0 ? "up" : drift.driftAmount < 0 ? "down" : "flat";
@@ -101,7 +101,7 @@ export default async function MaidHomePage() {
       {/* Drift status badge row */}
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-zinc-600">สรุปวันนี้</span>
-        <Badge variant={driftLabel.variant}>{driftLabel.text}</Badge>
+        <Badge tone={driftLabel.tone}>{driftLabel.text}</Badge>
       </div>
 
       {/* KPI tiles (2x2 on 360px) */}
@@ -164,9 +164,9 @@ export default async function MaidHomePage() {
         </h2>
         {recent.length === 0 ? (
           <Card>
-            <CardContent className="p-5 text-center text-sm text-zinc-500">
+            <CardBody className="p-5 text-center text-sm text-zinc-500">
               ยังไม่มีรายการ · กดปุ่มข้างบนเพื่อเริ่มบันทึก
-            </CardContent>
+            </CardBody>
           </Card>
         ) : (
           <ul className="space-y-2">
@@ -183,7 +183,7 @@ export default async function MaidHomePage() {
                     className="block"
                   >
                     <Card className="transition-colors active:bg-zinc-100">
-                      <CardContent className="flex items-center justify-between gap-3 p-4">
+                      <CardBody className="flex items-center justify-between gap-3 p-4">
                         <div className="min-w-0">
                           <div className="text-xs text-zinc-500">
                             {thaiDateTime(r.collectedAt)}
@@ -198,11 +198,11 @@ export default async function MaidHomePage() {
                           )}
                         </div>
                         {isLocked && (
-                          <Badge variant="secondary" className="gap-1">
+                          <Badge tone="neutral" className="gap-1">
                             <Lock className="h-3 w-3" aria-hidden /> ล็อค
                           </Badge>
                         )}
-                      </CardContent>
+                      </CardBody>
                     </Card>
                   </Link>
                 </li>

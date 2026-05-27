@@ -3,8 +3,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/chairops/ui/card";
-import { Badge } from "@/components/chairops/ui/badge";
+import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { baht, thaiDateTime } from "@/lib/chairops/utils/format";
 import { PartEditForm } from "./part-edit-form";
 import { AdjustStockForm } from "./adjust-stock-form";
@@ -47,7 +47,7 @@ export default async function PartDetail({
         <h1 className="font-mono text-2xl font-bold tracking-tight">
           {part.partCode}
           {low && (
-            <Badge variant="danger" className="ml-3 align-middle">
+            <Badge tone="danger" className="ml-3 align-middle">
               สต็อกต่ำ
             </Badge>
           )}
@@ -60,7 +60,7 @@ export default async function PartDetail({
           <CardHeader>
             <CardTitle className="text-base">คงเหลือ</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardBody>
             <div className="text-3xl font-bold">
               {part.stockOnHand.toLocaleString("en-US")}
               <span className="ml-1 text-base font-normal text-muted-foreground">
@@ -70,29 +70,29 @@ export default async function PartDetail({
             <div className="text-xs text-muted-foreground">
               จุดสั่งซื้อ {part.reorderLevel.toLocaleString("en-US")} {part.unit}
             </div>
-          </CardContent>
+          </CardBody>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle className="text-base">ราคา/หน่วย</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardBody>
             <div className="text-3xl font-bold">
               {part.unitPrice != null ? baht(part.unitPrice) : "—"}
             </div>
-          </CardContent>
+          </CardBody>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle className="text-base">มูลค่ารวม</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardBody>
             <div className="text-3xl font-bold">
               {part.unitPrice != null
                 ? baht(part.unitPrice * part.stockOnHand)
                 : "—"}
             </div>
-          </CardContent>
+          </CardBody>
         </Card>
       </div>
 
@@ -101,7 +101,7 @@ export default async function PartDetail({
           <CardHeader>
             <CardTitle className="text-base">แก้ไขข้อมูล</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardBody>
             <PartEditForm
               id={part.id}
               name={part.name}
@@ -111,16 +111,16 @@ export default async function PartDetail({
               reorderLevel={part.reorderLevel}
               notes={part.notes}
             />
-          </CardContent>
+          </CardBody>
         </Card>
 
         <Card>
           <CardHeader>
             <CardTitle className="text-base">ปรับสต็อก</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardBody>
             <AdjustStockForm partId={part.id} currentStock={part.stockOnHand} />
-          </CardContent>
+          </CardBody>
         </Card>
       </div>
 
@@ -128,7 +128,7 @@ export default async function PartDetail({
         <CardHeader>
           <CardTitle className="text-base">ประวัติการเคลื่อนไหว ({movements.length})</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardBody>
           {movements.length === 0 ? (
             <p className="text-sm text-muted-foreground">ยังไม่มีการเคลื่อนไหว</p>
           ) : (
@@ -181,7 +181,7 @@ export default async function PartDetail({
               </table>
             </div>
           )}
-        </CardContent>
+        </CardBody>
       </Card>
     </div>
   );

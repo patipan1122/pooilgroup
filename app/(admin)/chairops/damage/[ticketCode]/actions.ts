@@ -33,7 +33,9 @@ export async function assignTicket(
   const session = await requireRole("MANAGER");
 
   const ticket = await prisma.chairopsDamageTicket.findUnique({
-    where: { ticketCode: parsed.data.code },
+    where: {
+      orgId_ticketCode: { orgId: session.user.orgId, ticketCode: parsed.data.code },
+    },
   });
   if (!ticket) return { ok: false, error: "ไม่พบตั๋วซ่อม" };
 
@@ -42,7 +44,9 @@ export async function assignTicket(
     return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงตั๋วของสาขานี้" };
   }
 
-  const tech = await prisma.chairopsUser.findUnique({ where: { id: parsed.data.technicianId } });
+  const tech = await prisma.chairopsUser.findFirst({
+    where: { id: parsed.data.technicianId, orgId: session.user.orgId },
+  });
   if (!tech || !tech.isActive)
     return { ok: false, error: "ไม่พบช่างหรือบัญชีถูกปิดใช้งาน" };
   if (tech.role !== "TECHNICIAN" && tech.role !== "MANAGER")
@@ -53,7 +57,7 @@ export async function assignTicket(
     ticket.status === "OPEN" ? ChairopsTicketStatus.ASSIGNED : ticket.status;
 
   const updated = await prisma.chairopsDamageTicket.update({
-    where: { ticketCode: parsed.data.code },
+    where: { id: ticket.id },
     data: { assignedToId: parsed.data.technicianId, status: newStatus },
   });
 
@@ -99,7 +103,9 @@ export async function updateStatus(
     return { ok: false, error: "แม่บ้านไม่มีสิทธิ์ทำรายการนี้" };
   }
   const ticket = await prisma.chairopsDamageTicket.findUnique({
-    where: { ticketCode: parsed.data.code },
+    where: {
+      orgId_ticketCode: { orgId: session.user.orgId, ticketCode: parsed.data.code },
+    },
   });
   if (!ticket) return { ok: false, error: "ไม่พบตั๋วซ่อม" };
 
@@ -131,7 +137,7 @@ export async function updateStatus(
   if (parsed.data.newStatus === "DONE") data.closedAt = new Date();
 
   const updated = await prisma.chairopsDamageTicket.update({
-    where: { ticketCode: parsed.data.code },
+    where: { id: ticket.id },
     data,
   });
 
@@ -176,7 +182,9 @@ export async function useParts(
   }
 
   const ticket = await prisma.chairopsDamageTicket.findUnique({
-    where: { ticketCode: parsed.data.code },
+    where: {
+      orgId_ticketCode: { orgId: session.user.orgId, ticketCode: parsed.data.code },
+    },
   });
   if (!ticket) return { ok: false, error: "ไม่พบตั๋วซ่อม" };
 
@@ -202,7 +210,9 @@ export async function useParts(
   try {
     await prisma.$transaction(async (tx) => {
       for (const it of parsed.data.items) {
-        const part = await tx.chairopsSparePart.findUnique({ where: { id: it.partId } });
+        const part = await tx.chairopsSparePart.findFirst({
+          where: { id: it.partId, orgId: session.user.orgId },
+        });
         if (!part) throw new Error(`ไม่พบอะไหล่ ${it.partId}`);
         if (part.stockOnHand < it.qty)
           throw new Error(`อะไหล่ "${part.name}" สต็อกไม่พอ (เหลือ ${part.stockOnHand})`);
@@ -214,6 +224,7 @@ export async function useParts(
 
         await tx.chairopsSparePartMovement.create({
           data: {
+            orgId: session.user.orgId,
             partId: it.partId,
             branchId: ticket.branchId,
             delta: -it.qty,
@@ -261,7 +272,9 @@ export async function closeTicket(
     return { ok: false, error: "แม่บ้านไม่มีสิทธิ์ทำรายการนี้" };
   }
   const ticket = await prisma.chairopsDamageTicket.findUnique({
-    where: { ticketCode: parsed.data.code },
+    where: {
+      orgId_ticketCode: { orgId: session.user.orgId, ticketCode: parsed.data.code },
+    },
   });
   if (!ticket) return { ok: false, error: "ไม่พบตั๋วซ่อม" };
 
@@ -285,7 +298,7 @@ export async function closeTicket(
 
   const old = { status: ticket.status, notes: ticket.notes, closedAt: ticket.closedAt };
   const updated = await prisma.chairopsDamageTicket.update({
-    where: { ticketCode: parsed.data.code },
+    where: { id: ticket.id },
     data: {
       status: "DONE",
       closedAt: new Date(),

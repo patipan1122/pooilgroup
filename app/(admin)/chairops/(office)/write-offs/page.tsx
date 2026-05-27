@@ -235,7 +235,7 @@ export default async function WriteOffsPage({
   const sidebar = (
     <div className="flex flex-col gap-5 p-4">
       <header>
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+        <p className="text-[11px] font-semibold tracking-[0.02em] text-zinc-500">
           สถานะ
         </p>
         <ul className="mt-2 flex flex-col gap-1">
@@ -277,7 +277,7 @@ export default async function WriteOffsPage({
       </header>
 
       <section>
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+        <p className="text-[11px] font-semibold tracking-[0.02em] text-zinc-500">
           ช่วงยอด
         </p>
         <ul className="mt-2 flex flex-wrap gap-1.5">
@@ -332,7 +332,7 @@ export default async function WriteOffsPage({
 
   return (
     <div className="chairops-scope min-h-screen bg-muted/40">
-      <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
+      <header className="sticky top-0 z-30 border-b border-border bg-background">
         <div className="mx-auto flex h-14 max-w-screen-2xl items-center gap-3 px-4 sm:px-6">
           <Link
             href="/chairops/dashboard"
@@ -439,7 +439,7 @@ export default async function WriteOffsPage({
 
         {/* Drift impact — what this write-off resolves */}
         <section className="rounded-xl border border-rose-200 bg-rose-50/60 p-3">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+          <p className="mb-2 text-[11px] font-semibold tracking-[0.02em] text-rose-700">
             จำนวนที่จะตัด (ลบจาก drift)
           </p>
           <ShortageDriftCell
@@ -460,7 +460,7 @@ export default async function WriteOffsPage({
 
         {/* Audit chain */}
         <section className="rounded-xl border border-zinc-200 bg-white p-3">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+          <p className="mb-2 text-[11px] font-semibold tracking-[0.02em] text-zinc-500">
             ห่วงโซ่ผู้สร้าง · ผู้อนุมัติ
           </p>
           <MakerCheckerBadge
@@ -481,7 +481,7 @@ export default async function WriteOffsPage({
 
         {/* Reason + notes */}
         <section className="rounded-xl border border-zinc-200 bg-white p-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+          <p className="text-[11px] font-semibold tracking-[0.02em] text-zinc-500">
             เหตุผลจากผู้ขอ
           </p>
           <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-zinc-800">
@@ -489,7 +489,7 @@ export default async function WriteOffsPage({
           </p>
           {w.notes && (
             <>
-              <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+              <p className="mt-3 text-[11px] font-semibold tracking-[0.02em] text-zinc-500">
                 หมายเหตุผู้อนุมัติ
               </p>
               <p className="mt-1 italic text-sm text-zinc-700">
@@ -542,7 +542,7 @@ export default async function WriteOffsPage({
               <input type="hidden" name="writeOffId" value={w.id} />
               <label
                 htmlFor={`reject-reason-${w.id}`}
-                className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500"
+                className="text-[11px] font-semibold tracking-[0.02em] text-zinc-500"
               >
                 เหตุผลปฏิเสธ
               </label>

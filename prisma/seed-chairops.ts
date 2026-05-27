@@ -1,9 +1,16 @@
 // Seed 30 branches from CEO's Google Sheet tab names
 // Source: WebFetch 2026-05-21 · 1 tab = 1 branch (CEO confirmed)
 // Multi-floor pairs are SEPARATE branches per CEO rule.
+//
+// W0: every chairops table now requires orgId. Seed targets the default
+// Pooilgroup org (matches prisma/seed.ts POOILGROUP_ORG_ID). If we ever
+// onboard a second tenant, parameterize via env or CLI arg.
 
 import { prisma } from "@/lib/prisma";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
+
+const POOILGROUP_ORG_ID =
+  process.env.CHAIROPS_SEED_ORG_ID ?? "00000000-0000-0000-0000-000000000001";
 
 interface SeedBranch {
   slug: string;
@@ -68,7 +75,7 @@ async function main() {
   // Branches
   for (const b of BRANCHES) {
     await prisma.chairopsBranch.upsert({
-      where: { slug: b.slug },
+      where: { orgId_slug: { orgId: POOILGROUP_ORG_ID, slug: b.slug } },
       update: {
         name: b.name,
         tabName: b.tabName,
@@ -78,16 +85,19 @@ async function main() {
         mallGroup: b.mallGroup,
         floor: b.floor,
       },
-      create: { ...b, isActive: true },
+      create: { ...b, orgId: POOILGROUP_ORG_ID, isActive: true },
     });
   }
   console.log(`✅ Upserted ${BRANCHES.length} branches`);
 
   // Seed CEO + Admin (auth links will be added when they login)
   await prisma.chairopsUser.upsert({
-    where: { email: "patipan@jpsyncgroup.com" },
+    where: {
+      orgId_email: { orgId: POOILGROUP_ORG_ID, email: "patipan@jpsyncgroup.com" },
+    },
     update: {},
     create: {
+      orgId: POOILGROUP_ORG_ID,
       email: "patipan@jpsyncgroup.com",
       displayName: "Pattipan (CEO)",
       role: ChairopsUserRole.CEO,
@@ -95,13 +105,20 @@ async function main() {
   });
 
   // Seed chair codes at robinsonกาญ (only branch confirmed in source data)
-  const kan = await prisma.chairopsBranch.findUnique({ where: { slug: "robinson-kanchanaburi" } });
+  const kan = await prisma.chairopsBranch.findUnique({
+    where: {
+      orgId_slug: { orgId: POOILGROUP_ORG_ID, slug: "robinson-kanchanaburi" },
+    },
+  });
   if (kan) {
     for (const code of KNOWN_CHAIR_CODES_AT_ROBINSON_KAN) {
       await prisma.chairopsChair.upsert({
-        where: { chairCode: code },
+        where: {
+          orgId_chairCode: { orgId: POOILGROUP_ORG_ID, chairCode: code },
+        },
         update: { branchId: kan.id },
         create: {
+          orgId: POOILGROUP_ORG_ID,
           chairCode: code,
           branchId: kan.id,
           generation: code.startsWith("G0310") ? "G0310" :
@@ -128,20 +145,25 @@ async function main() {
   ];
   for (const p of PARTS) {
     await prisma.chairopsSparePart.upsert({
-      where: { partCode: p.partCode },
+      where: {
+        orgId_partCode: { orgId: POOILGROUP_ORG_ID, partCode: p.partCode },
+      },
       update: {},
-      create: { ...p, stockOnHand: 0, reorderLevel: 2 },
+      create: { ...p, orgId: POOILGROUP_ORG_ID, stockOnHand: 0, reorderLevel: 2 },
     });
   }
   console.log(`✅ Seeded ${PARTS.length} spare parts`);
 
   // Seed drift rows for each branch (start zeros)
-  const allBranches = await prisma.chairopsBranch.findMany();
+  const allBranches = await prisma.chairopsBranch.findMany({
+    where: { orgId: POOILGROUP_ORG_ID },
+  });
   for (const b of allBranches) {
     await prisma.chairopsDrift.upsert({
-      where: { branchId: b.id },
+      where: { orgId_branchId: { orgId: POOILGROUP_ORG_ID, branchId: b.id } },
       update: {},
       create: {
+        orgId: POOILGROUP_ORG_ID,
         branchId: b.id,
         posTotal: 0,
         depositTotal: 0,

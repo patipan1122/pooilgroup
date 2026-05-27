@@ -1,8 +1,8 @@
 // Reports hub · monthly P&L · daily CSV export · cleanliness audit summary
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/chairops/ui/card";
-import { Button } from "@/components/chairops/ui/button";
+import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
@@ -56,16 +56,16 @@ export default async function ReportsHub() {
           <CardHeader>
             <CardTitle className="text-base">รายงานรายเดือน</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3">
+          <CardBody className="flex flex-col gap-3">
             <p className="text-sm text-muted-foreground">
               เปรียบเทียบ POS · ฝาก · drift · write-offs ต่อสาขาต่อเดือน
             </p>
             <Link href="/chairops/reports/monthly">
-              <Button variant="default" size="sm" className="w-full">
+              <Button variant="primary" size="sm" className="w-full">
                 เปิดรายงานรายเดือน →
               </Button>
             </Link>
-          </CardContent>
+          </CardBody>
         </Card>
 
         {/* CSV export card */}
@@ -73,7 +73,7 @@ export default async function ReportsHub() {
           <CardHeader>
             <CardTitle className="text-base">Export CSV</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3">
+          <CardBody className="flex flex-col gap-3">
             <p className="text-sm text-muted-foreground">
               ดาวน์โหลด POS รายวัน หรือ สรุปรายเดือน เป็นไฟล์ .csv
             </p>
@@ -113,11 +113,11 @@ export default async function ReportsHub() {
                   <option value="monthly">สรุปรายเดือนต่อสาขา</option>
                 </select>
               </label>
-              <Button type="submit" variant="default" size="sm">
+              <Button type="submit" variant="primary" size="sm">
                 ดาวน์โหลด CSV
               </Button>
             </form>
-          </CardContent>
+          </CardBody>
         </Card>
 
         {/* Cleanliness audit card */}
@@ -125,7 +125,7 @@ export default async function ReportsHub() {
           <CardHeader>
             <CardTitle className="text-base">ความสะอาด · 30 วัน</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3">
+          <CardBody className="flex flex-col gap-3">
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="rounded-md bg-success/10 p-2">
                 <div className="text-xl font-bold text-[hsl(142,76%,28%)]">{passCount}</div>
@@ -158,7 +158,7 @@ export default async function ReportsHub() {
                 </ul>
               </div>
             ) : null}
-          </CardContent>
+          </CardBody>
         </Card>
       </div>
     </div>

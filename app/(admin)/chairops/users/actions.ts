@@ -63,9 +63,9 @@ export async function createUser(formData: FormData): Promise<ActionResult<{ id:
     };
   }
 
-  // Dup check
+  // Dup check (within same org · email is per-org unique)
   const existing = await prisma.chairopsUser.findFirst({
-    where: { email: parsed.data.email },
+    where: { orgId: session.user.orgId, email: parsed.data.email },
   });
   if (existing) return { ok: false, error: `อีเมล ${parsed.data.email} ถูกใช้แล้ว` };
 
@@ -74,8 +74,8 @@ export async function createUser(formData: FormData): Promise<ActionResult<{ id:
     return { ok: false, error: "แม่บ้านต้องมีสาขาประจำ" };
   }
   if (parsed.data.primaryBranchId) {
-    const branch = await prisma.chairopsBranch.findUnique({
-      where: { id: parsed.data.primaryBranchId },
+    const branch = await prisma.chairopsBranch.findFirst({
+      where: { id: parsed.data.primaryBranchId, orgId: session.user.orgId },
     });
     if (!branch) return { ok: false, error: "ไม่พบสาขาที่เลือก" };
   }
@@ -104,6 +104,7 @@ export async function createUser(formData: FormData): Promise<ActionResult<{ id:
     const user = await prisma.$transaction(async (tx) => {
       const row = await tx.chairopsUser.create({
         data: {
+          orgId: session.user.orgId,
           authUserId: authData.user.id,
           email: parsed.data.email,
           displayName: parsed.data.displayName,
@@ -161,7 +162,9 @@ export async function updateUserRole(
   if (!parsed.success)
     return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
 
-  const target = await prisma.chairopsUser.findUnique({ where: { id: parsed.data.userId } });
+  const target = await prisma.chairopsUser.findFirst({
+    where: { id: parsed.data.userId, orgId: session.user.orgId },
+  });
   if (!target) return { ok: false, error: "ไม่พบผู้ใช้" };
 
   // GUARD 1: cannot assign a role at/above your own
@@ -230,7 +233,9 @@ export async function assignBranch(
   if (!parsed.success)
     return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
 
-  const target = await prisma.chairopsUser.findUnique({ where: { id: parsed.data.userId } });
+  const target = await prisma.chairopsUser.findFirst({
+    where: { id: parsed.data.userId, orgId: session.user.orgId },
+  });
   if (!target) return { ok: false, error: "ไม่พบผู้ใช้" };
 
   // GUARD: cannot manage users above your rank
@@ -239,8 +244,8 @@ export async function assignBranch(
   }
 
   if (parsed.data.branchId) {
-    const branch = await prisma.chairopsBranch.findUnique({
-      where: { id: parsed.data.branchId },
+    const branch = await prisma.chairopsBranch.findFirst({
+      where: { id: parsed.data.branchId, orgId: session.user.orgId },
     });
     if (!branch) return { ok: false, error: "ไม่พบสาขา" };
   }
@@ -287,7 +292,9 @@ export async function updateDisplayName(formData: FormData): Promise<ActionResul
   if (!parsed.success)
     return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
 
-  const target = await prisma.chairopsUser.findUnique({ where: { id: parsed.data.userId } });
+  const target = await prisma.chairopsUser.findFirst({
+    where: { id: parsed.data.userId, orgId: session.user.orgId },
+  });
   if (!target) return { ok: false, error: "ไม่พบผู้ใช้" };
 
   // self-edit allowed for displayName; otherwise rank check
@@ -328,7 +335,9 @@ export async function deactivateUser(userId: string): Promise<ActionResult> {
   const parsed = zUUID().safeParse(userId);
   if (!parsed.success) return { ok: false, error: "userId ไม่ถูกต้อง" };
 
-  const target = await prisma.chairopsUser.findUnique({ where: { id: parsed.data } });
+  const target = await prisma.chairopsUser.findFirst({
+    where: { id: parsed.data, orgId: session.user.orgId },
+  });
   if (!target) return { ok: false, error: "ไม่พบผู้ใช้" };
 
   // GUARD: cannot deactivate yourself or higher-rank users
@@ -378,7 +387,9 @@ export async function reactivateUser(userId: string): Promise<ActionResult> {
   const parsed = zUUID().safeParse(userId);
   if (!parsed.success) return { ok: false, error: "userId ไม่ถูกต้อง" };
 
-  const target = await prisma.chairopsUser.findUnique({ where: { id: parsed.data } });
+  const target = await prisma.chairopsUser.findFirst({
+    where: { id: parsed.data, orgId: session.user.orgId },
+  });
   if (!target) return { ok: false, error: "ไม่พบผู้ใช้" };
 
   // Same guard as deactivate (use original target rank — currently inactive)

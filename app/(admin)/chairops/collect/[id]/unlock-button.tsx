@@ -5,7 +5,7 @@
 import { useTransition } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/chairops/ui/button";
+import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Unlock, Loader2 } from "lucide-react";
 import { requestUnlock } from "../actions";
@@ -33,7 +33,7 @@ export function UnlockButton({ id }: { id: string }) {
   return (
     <ConfirmDialog
       trigger={
-        <Button disabled={pending} variant="warning" size="lg" className="w-full">
+        <Button disabled={pending} variant="primary" size="lg" className="w-full">
           {pending ? (
             <>
               <Loader2 className="mr-2 h-5 w-5 animate-spin" /> กำลังปลดล็อก...
