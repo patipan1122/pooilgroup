@@ -11,9 +11,11 @@ import { ChairopsKpiTile } from "@/components/chairops/_kit";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { baht, thaiDateTime, thaiRelative } from "@/lib/chairops/utils/format";
+import { baht, thaiDateTime, thaiRelative, ageDays } from "@/lib/chairops/utils/format";
 import {
   AlertTriangle,
+  CalendarClock,
+  CalendarDays,
   CircleAlert,
   History,
   Lock,
@@ -43,7 +45,12 @@ export default async function MaidHomePage() {
   }
 
   const branchId = session.user.primaryBranchId;
-  const [branch, drift, recent] = await Promise.all([
+  // Month boundary (Asia/Bangkok approximated via local clock — matches other
+  // ChairOps day-bucket queries; precise TZ alignment is a Wave-1 concern).
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const [branch, drift, recent, monthAgg] = await Promise.all([
     prisma.chairopsBranch.findUniqueOrThrow({
       where: { id: branchId },
       select: { name: true, slug: true },
@@ -63,7 +70,31 @@ export default async function MaidHomePage() {
         unlockedAt: true,
       },
     }),
+    prisma.chairopsCashCollection.aggregate({
+      where: {
+        branchId,
+        maidId: session.user.id,
+        collectedAt: { gte: monthStart },
+      },
+      _sum: { depositedAmount: true },
+      _count: true,
+    }),
   ]);
+
+  // "ไม่ได้เก็บมา X วัน" — gap between last collection and now
+  const daysSinceLast =
+    drift.lastCollectionAt != null ? ageDays(drift.lastCollectionAt) : null;
+  const gapTone: "neutral" | "warning" | "danger" =
+    daysSinceLast == null
+      ? "neutral"
+      : daysSinceLast >= 3
+        ? "danger"
+        : daysSinceLast >= 1
+          ? "warning"
+          : "neutral";
+
+  const monthDeposit = Number(monthAgg._sum.depositedAmount ?? 0);
+  const monthCount = monthAgg._count;
 
   const driftTone: "neutral" | "warning" | "danger" =
     drift.status === "shortage"
@@ -135,14 +166,33 @@ export default async function MaidHomePage() {
         />
       </div>
 
-      {/* Last submitted hint */}
-      <div className="rounded-lg border border-zinc-200 bg-white p-3 text-xs text-zinc-600">
-        เก็บล่าสุด:{" "}
-        <span className="font-medium text-zinc-900">
-          {drift.lastCollectionAt
-            ? thaiRelative(drift.lastCollectionAt)
-            : "ยังไม่เคย"}
-        </span>
+      {/* Gap + monthly running — gives maid + office shared mental model
+          ("how many days since I last collected · how much this month") */}
+      <div className="grid grid-cols-2 gap-3">
+        <ChairopsKpiTile
+          label="ไม่ได้เก็บมา"
+          value={
+            daysSinceLast == null
+              ? "—"
+              : daysSinceLast === 0
+                ? "วันนี้"
+                : `${daysSinceLast} วัน`
+          }
+          tone={gapTone}
+          delta={
+            drift.lastCollectionAt
+              ? `เก็บล่าสุด ${thaiRelative(drift.lastCollectionAt)}`
+              : "ยังไม่เคยเก็บ"
+          }
+          icon={<CalendarClock className="size-4" aria-hidden />}
+        />
+        <ChairopsKpiTile
+          label="เก็บเดือนนี้"
+          value={baht(monthDeposit)}
+          tone="neutral"
+          delta={`${monthCount} ครั้ง`}
+          icon={<CalendarDays className="size-4" aria-hidden />}
+        />
       </div>
 
       {/* Primary CTA · sticky-feel via h-14 mt-2 mb-4 */}
