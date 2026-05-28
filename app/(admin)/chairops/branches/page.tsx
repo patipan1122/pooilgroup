@@ -71,9 +71,11 @@ function statusLabel(s: WorkspaceStatus): string {
 }
 
 function driftClass(n: number): string {
-  if (n < -1000) return "crit";
-  if (n < -100) return "warn";
-  if (n > 0) return "ok";
+  // Engine convention: positive = shortage (bad). Mirror the dashboard's
+  // critical-branches-table thresholds so coloring is consistent across screens.
+  if (n > 1000) return "crit";
+  if (n > 100) return "warn";
+  if (n < 0) return "ok"; // surplus
   return "muted";
 }
 

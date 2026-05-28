@@ -750,8 +750,8 @@ export async function commitImport(importId: string): Promise<{ ok: true } | { o
   });
 
   // Recompute drift + emit alerts (outside the tx so we don't block on slow work)
-  await recomputeAllDrifts();
-  await evaluateAndEmitAlerts();
+  await recomputeAllDrifts(orgId);
+  await evaluateAndEmitAlerts(orgId);
 
   await writeAudit({
     userId: session.user.id,

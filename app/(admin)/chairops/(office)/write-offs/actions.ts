@@ -105,7 +105,7 @@ export async function bulkApproveWriteOffsAction(formData: FormData) {
   for (const branchId of branchIds) {
     await recomputeDriftForBranch(branchId);
   }
-  await evaluateAndEmitAlerts();
+  await evaluateAndEmitAlerts(session.user.orgId);
 
   revalidatePath("/chairops/write-offs");
   redirect(`/chairops/write-offs?approved=${eligible.length}`);

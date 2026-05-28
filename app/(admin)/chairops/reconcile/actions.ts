@@ -191,7 +191,7 @@ export async function approveWriteOff(formData: FormData) {
   // adjust the deposit total automatically (CEO discretion in v0.2). Still
   // recompute + re-evaluate alerts so the dashboard refreshes.
   await recomputeDriftForBranch(wo.branchId);
-  await evaluateAndEmitAlerts();
+  await evaluateAndEmitAlerts(session.user.orgId);
 
   revalidatePath("/chairops/write-offs");
   revalidatePath(`/chairops/reconcile/${wo.branchId}`);

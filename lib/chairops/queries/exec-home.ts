@@ -95,7 +95,7 @@ export const getExecHomeKpis = cache(async function getExecHomeKpis(
     pos30Agg,
     posPrior30Agg,
   ] = await Promise.all([
-    getDashboardRows(),
+    getDashboardRows(orgId),
     // Today's POS gross (cash + online) for the org.
     prisma.chairopsPosDaily.aggregate({
       where: { orgId, bizDate: { gte: today } },
@@ -242,7 +242,7 @@ export const getCriticalBranches = cache(async function getCriticalBranches(
   opts: { take?: number } = {},
 ): Promise<CriticalBranchRow[]> {
   const take = opts.take ?? 8;
-  const rows = await getDashboardRows();
+  const rows = await getDashboardRows(orgId);
   const active = rows.filter((r) => r.isActive);
 
   // Sort: shortage first (drift desc), then by days-since-collection desc.
@@ -358,7 +358,7 @@ export const getMissedMaidsToday = cache(async function getMissedMaidsToday(
   opts: { take?: number } = {},
 ): Promise<MissedMaidRow[]> {
   const take = opts.take ?? 5;
-  const rows = await getDashboardRows();
+  const rows = await getDashboardRows(orgId);
   const active = rows.filter((r) => r.isActive);
   const today = startOfToday();
 
