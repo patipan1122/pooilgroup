@@ -466,9 +466,10 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"],
       },
       {
-        href: "/chairops/collect",
-        label: "รอบเก็บเงิน (แม่บ้าน)",
+        href: "/chairops/collections",
+        label: "ประวัติเก็บเงิน",
         icon: ClipboardCheck,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
       },
       {
         href: "/chairops/pos-ingest",

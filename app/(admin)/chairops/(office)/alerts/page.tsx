@@ -386,50 +386,33 @@ export default async function AlertsPage({
   const rows = alerts.map((a) => buildRowData(a, ackerMap, baseQuery));
 
   return (
-    <div className="chairops-scope min-h-screen bg-muted/40">
-      {/* Lightweight header — full OfficeShell ships in W1 · this fallback keeps
-          /chairops/alerts navigable in the meantime. */}
-      <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-screen-2xl items-center gap-3 px-4 sm:px-6">
-          <Link href="/chairops/dashboard" className="text-sm font-bold text-foreground">
-            ChairOps · ออฟฟิศ
-          </Link>
-          <span className="text-zinc-300">/</span>
-          <span className="text-sm font-semibold text-foreground">Alerts</span>
-          <span className="ml-auto text-xs text-muted-foreground">
-            {session.user.displayName} · {session.user.role}
-          </span>
+    <MasterDetailShell sidebar={sidebar} meta={meta}>
+      <div className="mb-4 flex items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
+            ศูนย์ Alert
+          </h1>
+          <p className="mt-1 text-sm text-zinc-600">
+            เลือกหลายรายการเพื่อ <strong>รับทราบ</strong> หรือ <strong>ปิด</strong>{" "}
+            พร้อมกัน · LINE notify ปรับช่องได้ในแถบขวา
+          </p>
         </div>
-      </header>
+      </div>
 
-      <MasterDetailShell sidebar={sidebar} meta={meta}>
-        <div className="mb-4 flex items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
-              ศูนย์ Alert
-            </h1>
-            <p className="mt-1 text-sm text-zinc-600">
-              เลือกหลายรายการเพื่อ <strong>รับทราบ</strong> หรือ <strong>ปิด</strong>{" "}
-              พร้อมกัน · LINE notify ปรับช่องได้ในแถบขวา
-            </p>
-          </div>
+      {/* flash banners */}
+      {sp.error && (
+        <div className="mb-3 rounded-md border border-rose-300 bg-rose-50 px-4 py-2 text-sm text-rose-800">
+          {sp.error}
         </div>
+      )}
+      {(sp.acked || sp.resolved) && (
+        <div className="mb-3 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+          {sp.resolved ? `ปิด alert แล้ว · ${sp.resolved}` : `รับทราบ alert แล้ว · ${sp.acked}`}
+        </div>
+      )}
 
-        {/* flash banners */}
-        {sp.error && (
-          <div className="mb-3 rounded-md border border-rose-300 bg-rose-50 px-4 py-2 text-sm text-rose-800">
-            {sp.error}
-          </div>
-        )}
-        {(sp.acked || sp.resolved) && (
-          <div className="mb-3 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
-            {sp.resolved ? `ปิด alert แล้ว · ${sp.resolved}` : `รับทราบ alert แล้ว · ${sp.acked}`}
-          </div>
-        )}
-
-        <AlertSelectionShell rows={rows} />
-      </MasterDetailShell>
-    </div>
+      <AlertSelectionShell rows={rows} />
+    </MasterDetailShell>
   );
 
   // ---------- helpers (local closures) ----------------------------------------
