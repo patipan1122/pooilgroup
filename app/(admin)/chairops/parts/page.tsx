@@ -1,45 +1,66 @@
-// Spare parts list — OFFICE+ can manage
+// Spare parts — split-view workspace (master list left · detail/add right).
+// CEO feedback: "หน้าเพิ่มอะไหล่ + หน้ารายการ เอามารวมดูแบบซ้ายขวาได้".
+// URL state `?selected=` drives the right pane (Server Component friendly):
+//   - selected=new        → add form (reuses NewPartForm + createPart action)
+//   - selected=<partId>   → that part's detail (reuses edit / adjust forms)
+//   - (none)              → empty state
 import Link from "next/link";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { baht } from "@/lib/chairops/utils/format";
 import { Prisma } from "@/lib/generated/prisma/client";
+import { PartDetailPane } from "./part-detail-pane";
+import { PartAddPane } from "./part-add-pane";
 
-export default async function PartsListPage({
+export default async function PartsWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; category?: string; low?: string }>;
+  searchParams: Promise<{ q?: string; selected?: string }>;
 }) {
-  await requireRole("OFFICE");
+  const session = await requireRole("OFFICE");
+  const orgId = session.user.orgId;
   const sp = await searchParams;
+  const q = sp.q?.trim() || undefined;
+  const selected = sp.selected?.trim() || undefined;
 
-  const w: Prisma.ChairopsSparePartWhereInput = {};
-  if (sp.q) {
+  // orgId on EVERY query (cross-org leak was P0 this session).
+  const w: Prisma.ChairopsSparePartWhereInput = { orgId };
+  if (q) {
     w.OR = [
-      { partCode: { contains: sp.q, mode: "insensitive" } },
-      { name: { contains: sp.q, mode: "insensitive" } },
+      { partCode: { contains: q, mode: "insensitive" } },
+      { name: { contains: q, mode: "insensitive" } },
     ];
   }
-  if (sp.category) w.category = sp.category;
 
-  let parts = await prisma.chairopsSparePart.findMany({
+  const parts = await prisma.chairopsSparePart.findMany({
     where: w,
     orderBy: [{ category: "asc" }, { name: "asc" }],
     take: 500,
   });
 
-  if (sp.low === "1") {
-    parts = parts.filter((p) => p.stockOnHand <= p.reorderLevel);
-  }
-
-  const categories = Array.from(
-    new Set(parts.map((p) => p.category).filter((c): c is string => !!c))
-  );
-
   const lowCount = parts.filter((p) => p.stockOnHand <= p.reorderLevel).length;
+
+  // Build the right pane based on `?selected=`.
+  let rightPane: React.ReactNode;
+  if (selected === "new") {
+    rightPane = <PartAddPane />;
+  } else if (selected) {
+    rightPane = <PartDetailPane partId={selected} orgId={orgId} />;
+  } else {
+    rightPane = (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-center">
+        <div className="text-4xl">🔧</div>
+        <p className="text-sm text-muted-foreground">
+          เลือกอะไหล่จากซ้าย หรือ กดเพิ่มใหม่
+        </p>
+        <Link href="/chairops/parts?selected=new">
+          <Button variant="outline">＋ เพิ่มอะไหล่ใหม่</Button>
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -55,128 +76,96 @@ export default async function PartsListPage({
             )}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Link href="/chairops/parts/new">
-            <Button>+ เพิ่มอะไหล่</Button>
-          </Link>
-        </div>
       </div>
 
-      <Card>
-        <div className="p-4">
-          <form className="flex flex-wrap items-end gap-3 text-sm" method="GET">
-            <div className="flex-1 min-w-[200px]">
-              <label className="block text-xs font-medium text-muted-foreground">ค้นหา</label>
+      {/* Roomy 2-pane: list needs partCode + name + stock columns, so a 360px
+          rail is more legible than MasterDetailShell's 260px sidebar. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
+        {/* LEFT — searchable master list */}
+        <div className="rounded-lg border border-border bg-card">
+          <div className="sticky top-14 z-10 space-y-2 rounded-t-lg border-b border-border bg-card p-3 sm:top-16">
+            <Link href="/chairops/parts?selected=new" className="block">
+              <Button className="w-full">＋ เพิ่มอะไหล่ใหม่</Button>
+            </Link>
+            <form method="GET" className="flex gap-2">
+              {/* keep current selection while searching */}
+              {selected && (
+                <input type="hidden" name="selected" value={selected} />
+              )}
               <input
                 type="search"
                 name="q"
-                defaultValue={sp.q ?? ""}
-                placeholder="รหัส / ชื่อ"
-                className="h-9 w-full rounded-md border border-border bg-background px-2"
+                defaultValue={q ?? ""}
+                placeholder="ค้นหา รหัส / ชื่อ"
+                className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
               />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground">หมวด</label>
-              <select
-                name="category"
-                defaultValue={sp.category ?? ""}
-                className="h-9 rounded-md border border-border bg-background px-2"
+              <button
+                type="submit"
+                className="h-9 shrink-0 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
               >
-                <option value="">ทั้งหมด</option>
-                {categories.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <label className="flex items-center gap-1.5 text-sm">
-              <input
-                type="checkbox"
-                name="low"
-                value="1"
-                defaultChecked={sp.low === "1"}
-              />
-              เฉพาะสต็อกต่ำ
-            </label>
-            <button
-              type="submit"
-              className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              ค้นหา
-            </button>
-            <Link
-              href="/chairops/parts"
-              className="h-9 rounded-md border border-border px-4 text-sm font-medium leading-9 hover:bg-muted"
-            >
-              ล้าง
-            </Link>
-          </form>
-        </div>
-      </Card>
+                ค้นหา
+              </button>
+            </form>
+          </div>
 
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="sticky top-14 z-10 bg-muted/50 sm:top-16">
-              <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="px-3 py-2 font-medium">รหัส</th>
-                <th className="px-3 py-2 font-medium">ชื่อ</th>
-                <th className="px-3 py-2 font-medium">หมวด</th>
-                <th className="px-3 py-2 text-right font-medium">คงเหลือ</th>
-                <th className="px-3 py-2 text-right font-medium">จุดสั่งซื้อ</th>
-                <th className="px-3 py-2 text-right font-medium">ราคา/หน่วย</th>
-                <th className="px-3 py-2 font-medium">สถานะ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {parts.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-3 py-12 text-center text-muted-foreground">
-                    ไม่มีอะไหล่
-                  </td>
-                </tr>
-              ) : (
-                parts.map((p) => {
-                  const low = p.stockOnHand <= p.reorderLevel;
-                  return (
-                    <tr key={p.id} className="border-t border-border hover:bg-muted/50">
-                      <td className="px-3 py-2 font-mono text-xs">
-                        <Link
-                          href={`/chairops/parts/${p.id}`}
-                          className="text-primary hover:underline"
-                        >
+          <ul className="max-h-[calc(100dvh-16rem)] divide-y divide-border overflow-y-auto">
+            {parts.length === 0 ? (
+              <li className="px-3 py-12 text-center text-sm text-muted-foreground">
+                {q ? "ไม่พบอะไหล่ที่ค้นหา" : "ยังไม่มีอะไหล่"}
+              </li>
+            ) : (
+              parts.map((p) => {
+                const low = p.stockOnHand <= p.reorderLevel;
+                const active = selected === p.id;
+                return (
+                  <li key={p.id}>
+                    <Link
+                      href={`/chairops/parts?selected=${p.id}${
+                        q ? `&q=${encodeURIComponent(q)}` : ""
+                      }`}
+                      aria-current={active ? "true" : undefined}
+                      className={
+                        "flex items-center justify-between gap-2 px-3 py-2.5 text-sm transition-colors hover:bg-muted/50 " +
+                        (active ? "bg-muted" : "")
+                      }
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{p.name}</div>
+                        <div className="truncate font-mono text-xs text-muted-foreground">
                           {p.partCode}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2">{p.name}</td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground">
-                        {p.category ?? "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right font-medium">
-                        {p.stockOnHand.toLocaleString("en-US")} {p.unit}
-                      </td>
-                      <td className="px-3 py-2 text-right text-muted-foreground">
-                        {p.reorderLevel.toLocaleString("en-US")}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {p.unitPrice != null ? baht(p.unitPrice) : "—"}
-                      </td>
-                      <td className="px-3 py-2">
+                          {p.category ? ` · ${p.category}` : ""}
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="text-sm font-semibold">
+                          {p.stockOnHand.toLocaleString("en-US")}{" "}
+                          <span className="text-xs font-normal text-muted-foreground">
+                            {p.unit}
+                          </span>
+                        </div>
                         {low ? (
-                          <Badge tone="danger">ต่ำกว่าจุดสั่งซื้อ</Badge>
+                          <Badge tone="danger" className="mt-0.5 text-[10px]">
+                            ต่ำ
+                          </Badge>
                         ) : (
-                          <Badge tone="success">พอ</Badge>
+                          <div className="text-xs text-muted-foreground">
+                            {p.unitPrice != null ? baht(p.unitPrice) : "—"}
+                          </div>
                         )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })
+            )}
+          </ul>
         </div>
-      </Card>
+
+        {/* RIGHT — detail / add / empty */}
+        <div className="min-w-0 rounded-lg border border-border bg-card p-4 sm:p-6">
+          {rightPane}
+        </div>
+      </div>
     </div>
   );
 }

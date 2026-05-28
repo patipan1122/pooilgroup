@@ -18,7 +18,8 @@ export function NewPartForm() {
           const r = await createPart(fd);
           if (r.ok) {
             toast.success("เพิ่มอะไหล่เรียบร้อย");
-            router.push(`/chairops/parts/${r.data!.id}`);
+            // Stay in the split-view · open the new part in the right pane.
+            router.push(`/chairops/parts?selected=${r.data!.id}`);
           } else {
             toast.error(r.error);
           }
