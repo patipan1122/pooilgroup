@@ -69,7 +69,7 @@ export default async function ClawfleetDashboardPage() {
                   <div>
                     <div className="font-medium text-zinc-900">{s.sessionCode}</div>
                     <div className="text-xs text-zinc-500">
-                      {s.group.name} · {s.group.branch.name}
+                      {s.group?.name ?? "—"} · {s.group?.branch.name ?? "—"}
                     </div>
                   </div>
                   <div className="text-right">

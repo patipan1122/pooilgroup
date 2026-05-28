@@ -460,6 +460,8 @@ export async function closeSession(input: unknown): Promise<Result<{ status: str
   });
   if (!cf) return fail("ไม่พบ session");
   if (cf.status !== "OPEN") return fail("Session ไม่อยู่ใน OPEN");
+  // Legacy close flow is group-scoped (branch-level v2 sessions close elsewhere).
+  if (!cf.group) return fail("Session นี้ไม่มีกลุ่ม · ปิดผ่านระบบ v2");
   await assertCanAccessBranch(cf.group.branchId);
 
   // G7 check: must have all active machines collected

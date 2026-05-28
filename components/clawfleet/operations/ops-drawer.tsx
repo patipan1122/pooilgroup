@@ -60,7 +60,7 @@ type DrawerSession = {
     id: string;
     name: string;
     branch: { id: string; name: string; code: string };
-  };
+  } | null;
   openedBy: { name: string | null } | null;
   events: Array<{
     id: string;
@@ -244,10 +244,10 @@ export function OpsDrawer({
               <span className="font-mono text-xs text-zinc-400">{session.sessionCode}</span>
             </div>
             <h2 className="mt-2 truncate text-lg font-semibold text-zinc-900">
-              {session.group.name}
+              {session.group?.name ?? "—"}
             </h2>
             <p className="truncate text-xs text-zinc-500">
-              {session.group.branch.name} · เปิดโดย {session.openedBy?.name ?? "—"}
+              {session.group?.branch.name ?? "—"} · เปิดโดย {session.openedBy?.name ?? "—"}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">

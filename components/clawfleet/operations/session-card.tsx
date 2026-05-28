@@ -44,7 +44,7 @@ export type SessionCardRow = {
     id: string;
     name: string;
     branch: { id: string; name: string; code: string };
-  };
+  } | null;
   openedBy: { name: string | null } | null;
   _count: { events: number };
 };
@@ -95,13 +95,13 @@ export function SessionCard({ session: s, focused = false }: Props) {
 
       <div className="mt-3">
         <div className="truncate text-sm font-semibold text-zinc-900">
-          {s.group.name}
+          {s.group?.name ?? "—"}
         </div>
         <div className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500">
           <MapPin className="h-3 w-3 shrink-0" />
-          <span className="truncate">{s.group.branch.name}</span>
+          <span className="truncate">{s.group?.branch.name ?? "—"}</span>
           <span className="text-zinc-300">·</span>
-          <span className="font-mono">{s.group.branch.code}</span>
+          <span className="font-mono">{s.group?.branch.code ?? "—"}</span>
         </div>
       </div>
 

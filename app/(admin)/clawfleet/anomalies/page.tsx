@@ -37,7 +37,7 @@ export default async function AnomaliesPage() {
                       </span>
                     </div>
                     <div className="mt-1 text-sm font-medium text-zinc-900">
-                      {s.group.name} · {s.group.branch.name}
+                      {s.group?.name ?? "—"} · {s.group?.branch.name ?? "—"}
                     </div>
                     <div className="text-xs text-zinc-500">
                       เก็บโดย {s.openedBy.name} · {s._count.events} รายการ

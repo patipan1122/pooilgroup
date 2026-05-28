@@ -167,8 +167,8 @@ export async function SessionsTable({
         ),
         group: (
           <div>
-            <div className="text-sm text-zinc-900">{s.group.name}</div>
-            <div className="text-[11px] text-zinc-500">{s.group.branch.name}</div>
+            <div className="text-sm text-zinc-900">{s.group?.name ?? "—"}</div>
+            <div className="text-[11px] text-zinc-500">{s.group?.branch.name ?? "—"}</div>
           </div>
         ),
         staff: (

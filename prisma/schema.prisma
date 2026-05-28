@@ -110,6 +110,7 @@ model Organization {
   cfCollectionSessions    CfCollectionSession[]
   cfCollectionEvents      CfCollectionEvent[]
   cfStockMovements        CfStockMovement[]
+  cfDeliveries            CfDelivery[]
 
   @@map("organizations")
   @@schema("public")
@@ -249,6 +250,7 @@ model User {
   cfSessionsReviewed       CfCollectionSession[]        @relation("CfSessionReviewer")
   cfEventsCollected        CfCollectionEvent[]          @relation("CfEventCollector")
   cfStockMovementsCreated  CfStockMovement[]            @relation("CfStockCreator")
+  cfDeliveriesCreated      CfDelivery[]                 @relation("CfDeliveryCreator")
 
   @@unique([orgId, employeeCode])
   @@index([orgId, isActive])
@@ -324,6 +326,8 @@ model Branch {
   cfMachines       CfMachine[]
   cfMachineGroups  CfMachineGroup[]
   cfStockMovements CfStockMovement[]
+  cfSessions       CfCollectionSession[]
+  cfDeliveries     CfDelivery[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -2513,6 +2517,15 @@ enum CfSessionStatus {
   @@schema("public")
 }
 
+enum CfDeliveryStatus {
+  SCHEDULED
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+
+  @@schema("public")
+}
+
 enum CfProductCategory {
   PLUSH // ตุ๊กตา
   TOY // ของเล่น
@@ -2677,17 +2690,25 @@ model CfExchangerLoadout {
 model CfCollectionSession {
   id                String          @id @default(uuid()) @db.Uuid
   orgId             String          @map("org_id") @db.Uuid
-  groupId           String          @map("group_id") @db.Uuid
+  groupId           String?         @map("group_id") @db.Uuid
+  branchId          String?         @map("branch_id") @db.Uuid
   sessionCode       String          @map("session_code") // CFS-2569-NNNNNN · unique per org (not global)
   openedAt          DateTime        @default(now()) @map("opened_at") @db.Timestamptz(6)
   openedById        String          @map("opened_by_id") @db.Uuid
   closedAt          DateTime?       @map("closed_at") @db.Timestamptz(6)
   closedById        String?         @map("closed_by_id") @db.Uuid
   status            CfSessionStatus @default(OPEN)
-  // cross-check result (filled by trigger ที่ status = CLOSED)
+  // group cross-check result (filled by trigger ที่ status = CLOSED · legacy group model)
   exchangerCoinsOut Int?            @map("exchanger_coins_out")
   clawCoinsIn       Int?            @map("claw_coins_in")
   coinVarianceBps   Int?            @map("coin_variance_bps")
+  // v2 branch cross-check snapshot (filled app-layer at close · cash + prize)
+  expectedCashCents Int?            @map("expected_cash_cents")
+  actualCashCents   Int?            @map("actual_cash_cents")
+  cashVarianceBps   Int?            @map("cash_variance_bps")
+  prizeMeterOut     Int?            @map("prize_meter_out")
+  prizeCountedOut   Int?            @map("prize_counted_out")
+  prizeVariance     Int?            @map("prize_variance")
   totalCashCents    Int             @default(0) @map("total_cash_cents")
   anomalyFlags      String[]        @default([]) @map("anomaly_flags")
   reviewerId        String?         @map("reviewer_id") @db.Uuid
@@ -2697,7 +2718,8 @@ model CfCollectionSession {
   updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org      Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  group    CfMachineGroup      @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  group    CfMachineGroup?     @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  branch   Branch?             @relation(fields: [branchId], references: [id], onDelete: Restrict)
   openedBy User                @relation("CfSessionOpener", fields: [openedById], references: [id], onDelete: Restrict)
   closedBy User?               @relation("CfSessionCloser", fields: [closedById], references: [id], onDelete: SetNull)
   reviewer User?               @relation("CfSessionReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
@@ -2705,6 +2727,7 @@ model CfCollectionSession {
 
   @@unique([orgId, sessionCode])
   @@index([orgId, groupId, openedAt(sort: Desc)])
+  @@index([orgId, branchId, openedAt(sort: Desc)])
   @@index([orgId, status])
   @@map("cf_collection_sessions")
   @@schema("public")
@@ -2733,8 +2756,9 @@ model CfCollectionEvent {
   refillQty           Int?        @map("refill_qty")
   // EXCHANGER only (nullable for CLAW)
   promoCoinsDispensed Int?        @map("promo_coins_dispensed") // เหรียญที่แจกจาก promo (รวมใน meter แล้ว · บันทึกแยกเพื่อ G6)
-  // photos (R2 URLs)
+  // photos (R2 URLs) · 5 per machine in v2 (coin meter · prize meter · prize before · prize after · cash)
   photoMeterBeforeUrl String?     @map("photo_meter_before_url")
+  photoPrizeMeterUrl  String?     @map("photo_prize_meter_url")
   photoCashUrl        String?     @map("photo_cash_url")
   photoMeterAfterUrl  String?     @map("photo_meter_after_url")
   photoStockUrl       String?     @map("photo_stock_url")
@@ -2790,6 +2814,33 @@ model CfStockMovement {
   @@index([orgId, type, occurredAt(sort: Desc)])
   @@index([machineId, occurredAt(sort: Desc)])
   @@map("cf_stock_movements")
+  @@schema("public")
+}
+
+// =============================================================
+// CF.9 — cf_deliveries (v2 · central-warehouse shipments to a branch)
+// =============================================================
+model CfDelivery {
+  id           String           @id @default(uuid()) @db.Uuid
+  orgId        String           @map("org_id") @db.Uuid
+  branchId     String           @map("branch_id") @db.Uuid
+  status       CfDeliveryStatus @default(SCHEDULED)
+  fromLocation String           @default("คลังกลาง บางนา") @map("from_location")
+  eta          DateTime?        @db.Timestamptz(6)
+  itemsCount   Int              @default(0) @map("items_count")
+  unitsCount   Int              @default(0) @map("units_count")
+  note         String?
+  createdById  String           @map("created_by_id") @db.Uuid
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch    Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  createdBy User         @relation("CfDeliveryCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([orgId, branchId, eta(sort: Desc)])
+  @@index([orgId, status])
+  @@map("cf_deliveries")
   @@schema("public")
 }
 

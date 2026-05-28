@@ -94,8 +94,8 @@ export default async function SessionsListPage({
                     </Link>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="font-medium text-zinc-900">{s.group.branch.name}</div>
-                    <div className="text-xs text-zinc-500">{s.group.name}</div>
+                    <div className="font-medium text-zinc-900">{s.group?.branch.name ?? "—"}</div>
+                    <div className="text-xs text-zinc-500">{s.group?.name ?? "—"}</div>
                   </td>
                   <td className="px-4 py-3 text-zinc-700">{s.openedBy.name}</td>
                   <td className="px-4 py-3 text-xs text-zinc-500">

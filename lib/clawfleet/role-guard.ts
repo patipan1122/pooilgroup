@@ -126,11 +126,16 @@ export async function assertCanReviewSession(sessionId: string): Promise<Session
   if (!isCfBranchManager(session.user.role)) redirect("/403");
   const cfSession = await prisma.cfCollectionSession.findFirst({
     where: { id: sessionId, orgId: session.user.org_id },
-    select: { group: { select: { branchId: true } } },
+    select: { branchId: true, group: { select: { branchId: true } } },
   });
   if (!cfSession) redirect("/404");
+  // Resolve the session's branch: v2 branch-level sessions carry branchId directly;
+  // legacy group sessions resolve it via their group. If NEITHER is set we cannot
+  // verify branch ownership → deny (never silently pass an unscoped session).
+  const sessionBranchId = cfSession.branchId ?? cfSession.group?.branchId;
+  if (!sessionBranchId) redirect("/403");
   const ub = await prisma.userBranch.findFirst({
-    where: { userId: session.user.id, branchId: cfSession.group.branchId },
+    where: { userId: session.user.id, branchId: sessionBranchId },
     select: { id: true },
   });
   if (!ub) redirect("/403");

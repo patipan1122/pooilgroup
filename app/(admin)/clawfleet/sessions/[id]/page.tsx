@@ -21,7 +21,7 @@ export default async function SessionDetailPage({
   const machinesCollected = new Map(
     session.events.filter((e) => e.eventType === "COLLECTION").map((e) => [e.machineId, e]),
   );
-  const allMachines = session.group.machines;
+  const allMachines = session.group?.machines ?? [];
   const collectedCount = machinesCollected.size;
   const totalCount = allMachines.length;
   const isOpen = session.status === "OPEN";
@@ -40,9 +40,9 @@ export default async function SessionDetailPage({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="font-mono text-xs text-zinc-500">{session.sessionCode}</div>
-            <h1 className="text-xl font-bold text-zinc-900">{session.group.name}</h1>
+            <h1 className="text-xl font-bold text-zinc-900">{session.group?.name ?? "—"}</h1>
             <p className="text-sm text-zinc-500">
-              {session.group.branch.name} · เปิดโดย {session.openedBy.name}
+              {session.group?.branch.name ?? "—"} · เปิดโดย {session.openedBy.name}
             </p>
           </div>
           <div className="text-right">

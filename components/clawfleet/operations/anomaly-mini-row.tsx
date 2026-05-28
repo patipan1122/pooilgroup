@@ -16,7 +16,7 @@ type AnomalyRow = {
   group: {
     name: string;
     branch: { name: string; code: string };
-  };
+  } | null;
   openedBy: { name: string | null } | null;
 };
 
@@ -127,7 +127,7 @@ export function AnomalyMiniRow({ anomalies, activeAnomaly }: Props) {
                       {a.sessionCode}
                     </span>
                     <span className="truncate text-xs text-zinc-500">
-                      {a.group.branch.name} · {a.group.name}
+                      {a.group?.branch.name ?? "—"} · {a.group?.name ?? "—"}
                     </span>
                   </div>
                   <div className="truncate text-xs text-zinc-600">

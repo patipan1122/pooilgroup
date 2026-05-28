@@ -20,6 +20,9 @@ export default async function CollectPage({
   if (cf.status !== "OPEN") {
     redirect(`/clawfleet/sessions/${id}`);
   }
+  // Legacy collect flow is group-scoped only. Branch-level v2 sessions (group=null)
+  // never reach this page; if they somehow do, there is no group machine list to collect.
+  if (!cf.group) notFound();
   const machine = cf.group.machines.find((m) => m.code === machineCode);
   if (!machine) notFound();
   // duplicate guard: already collected in this session?

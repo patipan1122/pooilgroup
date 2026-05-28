@@ -67,7 +67,7 @@ export default async function OperationsPage({ searchParams }: PageProps) {
 
   // Branch filter (client-side · simpler than re-running query)
   const sessions = branchFilter
-    ? allSessions.filter((s) => s.group.branch.id === branchFilter)
+    ? allSessions.filter((s) => s.group?.branch.id === branchFilter)
     : allSessions;
 
   const anomalies = branchFilter
@@ -91,7 +91,9 @@ export default async function OperationsPage({ searchParams }: PageProps) {
   // Per-branch session counts (for filter rail badges)
   const sessionsByBranch = new Map<string, number>();
   for (const s of allSessions) {
-    sessionsByBranch.set(s.group.branch.id, (sessionsByBranch.get(s.group.branch.id) ?? 0) + 1);
+    const branchId = s.group?.branch.id;
+    if (!branchId) continue;
+    sessionsByBranch.set(branchId, (sessionsByBranch.get(branchId) ?? 0) + 1);
   }
 
   // Drawer payload — fetch session detail if focus/anomaly param present
@@ -120,7 +122,7 @@ export default async function OperationsPage({ searchParams }: PageProps) {
 
   const openSessionsByGroup: Record<string, string> = {};
   for (const s of allSessions) {
-    if (s.status === "OPEN") {
+    if (s.status === "OPEN" && s.group) {
       openSessionsByGroup[s.group.id] = s.id;
     }
   }
