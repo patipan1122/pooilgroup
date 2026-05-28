@@ -53,3 +53,15 @@ export {
   type ChairCodeChipProps,
   type ChairStatus,
 } from "./chair-code-chip";
+
+export {
+  Sparkbar,
+  type SparkbarProps,
+  type SparkbarTone,
+} from "./sparkbar";
+
+export {
+  StatusDot,
+  type StatusDotProps,
+  type StatusDotTone,
+} from "./status-dot";

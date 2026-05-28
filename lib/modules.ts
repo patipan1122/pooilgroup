@@ -460,10 +460,10 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"],
       },
       {
-        href: "/chairops/dashboard/all-branches",
-        label: "สาขาทั้งหมด",
+        href: "/chairops/branches",
+        label: "สาขา",
         icon: Building2,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"],
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
       },
       {
         href: "/chairops/collections",

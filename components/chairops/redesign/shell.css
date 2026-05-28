@@ -1,0 +1,273 @@
+/* ChairOps app shell — sidebar + topbar + content layout
+ *
+ * Ported from mockup `_design-reference/chairops-mockup-2026-05-28/css/shell.css`
+ * SCOPED to .co-scope to prevent leaking to other Pool modules.
+ *
+ * Token references (var(--*)) all resolve against .co-scope from tokens.css.
+ */
+
+.co-scope .co-app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-rows: 100vh;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* ───── Sidebar ───── */
+.co-scope .co-sidebar {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-2);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  position: relative;
+}
+
+.co-scope .co-side-brand {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 14px 12px;
+}
+.co-scope .co-side-logo {
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  background: var(--accent); color: white;
+  border-radius: 7px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.co-scope .co-side-brand-text { display: flex; flex-direction: column; min-width: 0; }
+.co-scope .co-side-brand-name { font-weight: 600; font-size: 13.5px; letter-spacing: -0.01em; }
+.co-scope .co-side-brand-org { font-size: 11px; color: var(--text-3); }
+
+.co-scope .co-side-search {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0 10px 10px;
+  padding: 6px 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--text-3);
+}
+.co-scope .co-side-search input {
+  flex: 1; min-width: 0;
+  background: transparent; border: none; outline: none;
+  font-size: 12.5px; color: var(--text);
+}
+.co-scope .co-side-search input::placeholder { color: var(--text-muted); }
+.co-scope .co-side-search .kbd { margin-left: auto; }
+
+.co-scope .co-side-nav { flex: 1; overflow-y: auto; padding: 4px 8px 12px; }
+.co-scope .co-side-section { margin-top: 10px; }
+.co-scope .co-side-section:first-child { margin-top: 0; }
+.co-scope .co-side-title {
+  padding: 4px 10px 4px;
+  font-size: 10.5px; font-weight: 500;
+  color: var(--text-muted);
+  /* mockup uses uppercase here for short EN keys like "GENERAL", "OPS".
+   * Thai section titles must NOT use this class — see fixes.css override. */
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+
+.co-scope .co-side-item {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%;
+  padding: 5px 10px;
+  border: none; background: transparent;
+  color: var(--text-2); font-size: 12.5px; font-weight: 500;
+  border-radius: var(--r-sm);
+  cursor: pointer; text-align: left;
+  transition: background 0.06s, color 0.06s;
+}
+.co-scope .co-side-item:hover { background: var(--surface-hover); color: var(--text); }
+.co-scope .co-side-item[data-active] {
+  background: var(--surface); color: var(--text);
+  box-shadow: var(--shadow-xs), inset 0 0 0 1px var(--border);
+}
+.co-scope .co-side-item[data-active] svg { color: var(--accent); }
+.co-scope .co-side-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.co-scope .co-side-badge {
+  font-size: 10.5px; font-weight: 600; line-height: 1;
+  padding: 2px 5px;
+  background: var(--crit-soft); color: var(--crit);
+  border-radius: 10px;
+  font-family: var(--font-mono);
+}
+
+.co-scope .co-side-user {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.co-scope .co-avatar {
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent-text);
+  border-radius: 999px;
+  font-size: 11.5px; font-weight: 600;
+  border: 1px solid var(--accent-soft-border);
+}
+
+/* ───── Main column ───── */
+.co-scope .co-main {
+  display: flex; flex-direction: column;
+  min-width: 0; overflow: hidden;
+  background: var(--bg);
+}
+
+.co-scope .co-topbar {
+  display: flex; align-items: center;
+  height: 44px;
+  padding: 0 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+.co-scope .co-topbar-left { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.co-scope .co-topbar-right { display: flex; align-items: center; gap: 6px; }
+.co-scope .co-screen-title { font-size: 13.5px; font-weight: 600; letter-spacing: -0.005em; }
+
+.co-scope .co-topbar-search {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  min-width: 220px;
+}
+.co-scope .co-topbar-search input {
+  flex: 1; min-width: 0;
+  background: transparent; border: none; outline: none;
+  font-size: 12.5px; color: var(--text);
+}
+
+.co-scope .co-bell-dot {
+  position: absolute; transform: translate(6px, -4px);
+  width: 6px; height: 6px;
+  background: var(--crit); border-radius: 999px;
+  border: 1.5px solid var(--surface);
+}
+
+/* ───── Breadcrumb ───── */
+.co-scope .co-breadcrumb {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 12.5px; color: var(--text-3);
+}
+.co-scope .co-breadcrumb a { color: var(--text-3); text-decoration: none; }
+.co-scope .co-breadcrumb a:hover { color: var(--text); }
+.co-scope .co-breadcrumb .current { color: var(--text); font-weight: 500; }
+
+/* ───── Content scroll area ───── */
+.co-scope .co-content {
+  flex: 1; overflow-y: auto;
+  scroll-behavior: smooth;
+}
+.co-scope .co-content-padded { padding: 20px 24px; }
+
+/* Page header inside content */
+.co-scope .co-page-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 16px; margin-bottom: 18px;
+}
+.co-scope .co-page-title { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
+.co-scope .co-page-sub { color: var(--text-3); font-size: 13px; margin-top: 4px; }
+
+/* ───── KPI ───── */
+.co-scope .co-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.co-scope .co-kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 12px 14px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+  position: relative;
+}
+.co-scope .co-kpi[data-intent="crit"] {
+  border-color: var(--crit-border);
+  background: linear-gradient(180deg, var(--crit-soft) 0%, var(--surface) 60%);
+}
+.co-scope .co-kpi[data-intent="warn"] {
+  border-color: var(--warn-border);
+  background: linear-gradient(180deg, var(--warn-soft) 0%, var(--surface) 60%);
+}
+.co-scope .co-kpi[data-intent="ok"] {
+  border-color: var(--ok-border);
+  background: linear-gradient(180deg, var(--ok-soft) 0%, var(--surface) 60%);
+}
+.co-scope .co-kpi-head { display: flex; align-items: center; justify-content: space-between; }
+/* KPI label: mockup uses uppercase (short EN keys e.g. "POS TODAY").
+ * For Thai labels do NOT add this class — render value + label in normal case. */
+.co-scope .co-kpi-label {
+  font-size: 11.5px; font-weight: 500; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.co-scope .co-kpi-icon { color: var(--text-3); }
+.co-scope .co-kpi-value {
+  font-size: 24px; font-weight: 600; letter-spacing: -0.02em;
+  line-height: 1.05; display: flex; align-items: baseline; gap: 4px;
+}
+.co-scope .co-kpi[data-intent="crit"] .co-kpi-value { color: var(--crit); }
+.co-scope .co-kpi[data-intent="warn"] .co-kpi-value { color: var(--warn); }
+.co-scope .co-kpi[data-intent="ok"] .co-kpi-value { color: var(--ok); }
+.co-scope .co-kpi-unit { font-size: 12px; font-weight: 500; color: var(--text-3); }
+.co-scope .co-kpi-sub { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--text-3); }
+
+.co-scope .co-trend {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-weight: 500; font-family: var(--font-mono); font-size: 11px;
+}
+.co-scope .co-trend.up { color: var(--ok); }
+.co-scope .co-trend.down { color: var(--crit); }
+.co-scope .co-trend.flat { color: var(--text-3); }
+
+/* Section title */
+.co-scope .co-section-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 24px 0 10px;
+}
+.co-scope .co-section-title { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+.co-scope .co-section-sub { font-size: 12px; color: var(--text-3); }
+.co-scope .co-section-link {
+  color: var(--accent-text); text-decoration: none;
+  font-size: 12.5px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.co-scope .co-section-link:hover { color: var(--accent); }
+
+/* Card grids */
+.co-scope .co-grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+.co-scope .co-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+
+/* Toolbar above tables */
+.co-scope .co-toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  border-bottom: none;
+}
+.co-scope .co-toolbar + .co-card-body,
+.co-scope .co-toolbar + table {
+  border-top-left-radius: 0; border-top-right-radius: 0;
+}
+.co-scope .co-toolbar .grow { flex: 1; }
+
+/* Empty state */
+.co-scope .co-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 36px 24px;
+  color: var(--text-3); text-align: center;
+}
+.co-scope .co-empty-icon {
+  width: 40px; height: 40px;
+  display: grid; place-items: center;
+  background: var(--surface-2); border: 1px dashed var(--border-strong);
+  border-radius: 999px; margin-bottom: 10px;
+  color: var(--text-muted);
+}
+.co-scope .co-empty-title { font-weight: 500; color: var(--text-2); font-size: 13px; margin-bottom: 2px; }
+.co-scope .co-empty-sub { font-size: 12px; color: var(--text-3); max-width: 320px; }

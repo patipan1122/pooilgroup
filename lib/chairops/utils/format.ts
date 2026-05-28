@@ -1,7 +1,15 @@
 import { format } from "date-fns";
+import { th } from "date-fns/locale";
 import { toZonedTime } from "date-fns-tz";
 
 export const TZ = process.env.APP_TIMEZONE || "Asia/Bangkok";
+
+/** Long Thai date with weekday — e.g. "วันพุธ 27 พ.ค. 2026" (mockup header). */
+export function thaiDateLong(d: Date | string): string {
+  const date = typeof d === "string" ? new Date(d) : d;
+  const zoned = toZonedTime(date, TZ);
+  return `วัน${format(zoned, "EEEE d MMM yyyy", { locale: th })}`;
+}
 
 export function baht(n: number | null | undefined, withSign = false): string {
   if (n == null) return "—";

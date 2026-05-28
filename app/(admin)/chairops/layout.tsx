@@ -10,7 +10,12 @@
 // `lib/chairops/auth/session.ts`. This layout only blocks users who have no
 // business in the module at all.
 
+// Redesign CSS — order matters: tokens (vars + atoms) → shell (layout) → fixes (overrides win).
+// All selectors are scoped under .co-scope (see wrapper div below) to avoid bleed.
 import "@/components/chairops/redesign/tokens.css";
+import "@/components/chairops/redesign/shell.css";
+import "@/components/chairops/redesign/fixes.css";
+import "@/components/chairops/redesign/reconcile-v2.css";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { userHasModuleAccess, isAdminTier } from "@/lib/auth/module-access";

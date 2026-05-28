@@ -1,111 +1,196 @@
-// Exec Home · ChairOps (W1 · claude-design Phase 2)
-// Spec: /tmp/claude-design_chairops_plan.md §W1
-// Audit ref: docs/AUDIT_chairops_2026-05-25.md §3 row "/chairops (executive home)"
+// Exec Dashboard · ChairOps (mockup-100% rebuild · bigfeature 2026-05-28)
+// Spec: /tmp/chairops-bigfeature/MOCKUP_SPEC.md §B Dashboard + GOAL_LOCK.md
+// Mockup: _design-reference/chairops-mockup-2026-05-28/jsx/screens/dashboard.jsx
 //
-// CEO 10-min morning scan layout:
-//   • 5 KPI tiles (2x3 on sm · 5-col strip on md+ per OWN Phase 3 critique)
-//   • Branches leaderboard (worst-shortage first · click → reconcile detail)
-//   • Recent critical alerts inline (top 5 · link to /alerts for the rest)
+// Layout (matches mockup exactly):
+//   • Page head — breadcrumb + title + date chip + Export + อัพ POS
+//   • Attention strip — red banner (conditional: only if critical/missed/drift)
+//   • 5 KPI tile strip (auto-fit minmax(180px,1fr))
+//   • 2-col grid — LEFT (2/3) critical branches table · RIGHT (1/3) missed maids + alerts
+//   • System status footer — cron labels + POS imports today + events today
 //
-// Defense-in-depth: (office)/layout.tsx already gates OFFICE+ · we re-call
-// requireRole here so streamed nested renders never trust shell state.
+// Defense-in-depth: (office)/layout.tsx already gates OFFICE+ entitlement & role.
+// We re-call requireRole here so streamed nested renders never trust shell state.
+// Module entitlement enforced by layout — not re-checked here per task brief.
 
 import Link from "next/link";
 import { requireRole } from "@/lib/chairops/auth/session";
-import { prisma } from "@/lib/prisma";
-import { ChairopsKpiTile } from "@/components/chairops/_kit";
-import { StatusPill } from "@/components/ui/status-pill";
-import { baht, thaiRelative } from "@/lib/chairops/utils/format";
-import { getExecHomeKpis } from "@/lib/chairops/queries/exec-home";
 import {
-  ChairopsAlertLevel,
-  ChairopsAlertStatus,
-} from "@/lib/generated/prisma/enums";
+  ChairopsKpiTile,
+  StatusDot,
+} from "@/components/chairops/_kit";
+import {
+  baht,
+  thaiDate,
+  thaiDateLong,
+  thaiRelative,
+} from "@/lib/chairops/utils/format";
+import {
+  getExecHomeKpis,
+  getCriticalBranches,
+  getMissedMaidsToday,
+  getRecentAlerts,
+  getSystemStatus,
+  MAID_CUTOFF_HOUR,
+} from "@/lib/chairops/queries/exec-home";
+import { ChairopsAlertLevel } from "@/lib/generated/prisma/enums";
 import {
   AlertTriangle,
+  ArrowRight,
   Banknote,
-  Bell,
-  Building2,
+  Calendar,
   Coins,
-  RefreshCcw,
+  Download,
+  Info,
+  TrendingUp,
+  Upload,
+  Users,
 } from "lucide-react";
-import { BranchesLeaderboard } from "./_components/branches-leaderboard";
+import { CriticalBranchesTable } from "./_components/critical-branches-table";
+import { MissedMaidsCard } from "./_components/missed-maids-card";
 
 export const dynamic = "force-dynamic";
 
-const ALERT_LEVEL_TONE: Record<
+const ALERT_SEV_STYLE: Record<
   ChairopsAlertLevel,
-  "danger" | "warning" | "neutral"
+  { box: string; icon: typeof AlertTriangle }
 > = {
-  CRITICAL: "danger",
-  WARN: "warning",
-  INFO: "neutral",
+  CRITICAL: { box: "bg-rose-50 text-rose-600", icon: AlertTriangle },
+  WARN: { box: "bg-amber-50 text-amber-600", icon: AlertTriangle },
+  INFO: { box: "bg-blue-50 text-blue-600", icon: Info },
 };
 
-export default async function ExecHomePage() {
+function pctLabel(pct: number | null): {
+  text: string;
+  dir: "up" | "down" | "flat";
+} {
+  if (pct == null) return { text: "—", dir: "flat" };
+  const dir = pct > 0.5 ? "up" : pct < -0.5 ? "down" : "flat";
+  const sign = pct > 0 ? "+" : "";
+  return { text: `${sign}${pct.toFixed(1)}%`, dir };
+}
+
+function cutoffCountdownLabel(): string {
+  const now = new Date();
+  const cutoff = new Date();
+  cutoff.setHours(MAID_CUTOFF_HOUR, 0, 0, 0);
+  const diffMs = cutoff.getTime() - now.getTime();
+  if (diffMs <= 0) return "เลยเวลาแล้ว";
+  const totalMin = Math.floor(diffMs / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `เหลือ ${h} ชม. ${m} นาที`;
+}
+
+export default async function ExecDashboardPage() {
   const session = await requireRole("OFFICE");
-  const kpis = await getExecHomeKpis();
+  const orgId = session.user.orgId;
 
-  // Recent critical/warn alerts — cheap read · 5 rows for at-a-glance triage.
-  // Full alerts UI lives at /chairops/alerts (W4).
-  const recentAlerts = await prisma.chairopsAlert.findMany({
-    where: {
-      status: {
-        in: [ChairopsAlertStatus.OPEN, ChairopsAlertStatus.ACK],
-      },
-    },
-    orderBy: [{ level: "desc" }, { createdAt: "desc" }],
-    take: 5,
-    include: { branch: { select: { name: true, slug: true, id: true } } },
-  });
+  const [kpis, criticalBranches, missedMaids, recentAlerts, systemStatus] =
+    await Promise.all([
+      getExecHomeKpis(orgId),
+      getCriticalBranches(orgId, { take: 8 }),
+      getMissedMaidsToday(orgId, { take: 5 }),
+      getRecentAlerts(orgId, { take: 5 }),
+      getSystemStatus(orgId),
+    ]);
 
-  // Leaderboard top 10 worst-shortage. Full branch list lives in (office)/reconcile.
-  const leaderboardRows = kpis.branches
-    .filter((r) => r.isActive)
-    .slice(0, 10);
+  const posDelta = pctLabel(kpis.posDeltaPct);
+  const profitDelta = pctLabel(kpis.profit30dDeltaPct);
+  const driftTone = kpis.cumulativeDriftTotal > 0 ? "danger" : "success";
 
-  const driftTone =
-    kpis.cumulativeDriftTotal > 0 ? "danger" : "success";
-  const shortageTone =
-    kpis.shortageBranchCount > 0 ? "danger" : "success";
-  const alertTone =
-    kpis.criticalOpenAlertCount > 0 ? "danger" : "success";
+  // Attention strip only renders when there's actually something to flag.
+  const showAttention =
+    kpis.shortageBranchCount > 0 ||
+    kpis.missedMaidCount > 0 ||
+    kpis.cumulativeDriftTotal > 0;
+
+  const driftSigned =
+    kpis.cumulativeDriftTotal > 0
+      ? `+${kpis.cumulativeDriftTotal.toLocaleString("en-US")} ฿`
+      : "0 ฿";
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* page header */}
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+    <div className="flex flex-col gap-4">
+      {/* page head */}
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-semibold text-zinc-500">
-            สวัสดี · {session.user.displayName}
-          </p>
-          <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-foreground">
-            สรุปภาพรวม ChairOps
+          <nav className="mb-1 flex items-center gap-1 text-xs text-zinc-500">
+            <span>ChairOps</span>
+            <span aria-hidden="true">›</span>
+            <span className="font-medium text-zinc-700">Dashboard</span>
+          </nav>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
+            สวัสดี · เช้านี้มีอะไรต้องดู
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {kpis.activeBranchCount.toLocaleString("th-TH")} สาขาทำการ ·
-            อัพเดทล่าสุด {thaiRelative(kpis.computedAt)}
+          <p className="mt-1 text-sm text-zinc-500">
+            {thaiDateLong(kpis.computedAt)} ·{" "}
+            {kpis.activeBranchCount.toLocaleString("th-TH")} สาขาทำการ · อัพเดท{" "}
+            {thaiRelative(kpis.computedAt)}
           </p>
         </div>
-        <Link
-          href="/chairops"
-          className="inline-flex h-9 items-center gap-1.5 self-start rounded-md border border-border bg-background px-3 text-xs font-semibold text-foreground hover:bg-muted sm:self-auto"
-        >
-          <RefreshCcw className="size-3.5" aria-hidden="true" />
-          รีเฟรช
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700">
+            <Calendar className="size-3" aria-hidden="true" />
+            {thaiDate(kpis.computedAt, "d MMM")}
+          </span>
+          <Link
+            href="/chairops/reports"
+            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+          >
+            <Download className="size-3" aria-hidden="true" />
+            Export
+          </Link>
+          <Link
+            href="/chairops/pos-ingest/new"
+            className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700"
+          >
+            <Upload className="size-3" aria-hidden="true" />
+            อัพ POS
+          </Link>
+        </div>
       </header>
 
-      {/* KPI strip — 2x3 on mobile · 5-col strip on md+ per OWN Phase 3 */}
+      {/* attention strip (conditional) */}
+      {showAttention && (
+        <Link
+          href="/chairops/alerts"
+          className="flex items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-[13px] transition-colors hover:bg-rose-100/70"
+        >
+          <span className="grid size-6 shrink-0 place-items-center rounded-full border border-rose-200 bg-white text-rose-600">
+            <AlertTriangle className="size-3.5" aria-hidden="true" />
+          </span>
+          <span className="flex-1">
+            <span className="font-semibold text-zinc-900">
+              {kpis.shortageBranchCount} สาขาวิกฤต ·{" "}
+              {kpis.missedMaidCount} แม่บ้านยังไม่ส่งยอด
+            </span>
+            <span className="text-zinc-500">
+              {" "}
+              · drift รวมวันนี้ {driftSigned}
+            </span>
+          </span>
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700">
+            ดู alerts ทั้งหมด <ArrowRight className="size-3" aria-hidden="true" />
+          </span>
+        </Link>
+      )}
+
+      {/* KPI strip — auto-fit minmax(180px, 1fr) */}
       <section
-        className="grid grid-cols-2 gap-3 sm:grid-cols-2 md:grid-cols-5 md:gap-4"
+        className="grid gap-3"
+        style={{
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+        }}
         aria-label="ตัวชี้วัดวันนี้"
       >
         <ChairopsKpiTile
-          label="ยอดขาย POS วันนี้"
+          label="POS วันนี้"
           value={baht(kpis.todayPosRevenue)}
           tone="info"
           icon={<Banknote className="size-4" aria-hidden="true" />}
+          delta={`${posDelta.text} vs. 7 วันก่อน`}
+          deltaDirection={posDelta.dir}
           href="/chairops/pos-ingest"
         />
         <ChairopsKpiTile
@@ -113,119 +198,132 @@ export default async function ExecHomePage() {
           value={baht(kpis.todayDepositTotal)}
           tone="neutral"
           icon={<Coins className="size-4" aria-hidden="true" />}
+          delta={`${kpis.depositedBranchCount}/${kpis.activeBranchCount} สาขาส่งแล้ว`}
           href="/chairops/reconcile"
         />
         <ChairopsKpiTile
-          label="ยอดขาดสุทธิ"
-          value={
-            kpis.cumulativeDriftTotal > 0
-              ? `-${kpis.cumulativeDriftTotal.toLocaleString("th-TH")}`
-              : baht(0)
-          }
-          unit={kpis.cumulativeDriftTotal > 0 ? "บาท" : undefined}
+          label="DRIFT รวม"
+          value={driftSigned}
           tone={driftTone}
           icon={<AlertTriangle className="size-4" aria-hidden="true" />}
+          delta={`POS − ฝาก · ${kpis.shortageBranchDays} วันสาขา-วัน`}
           href="/chairops/reconcile"
         />
         <ChairopsKpiTile
-          label="สาขามี shortage"
-          value={kpis.shortageBranchCount}
-          unit="สาขา"
-          tone={shortageTone}
-          icon={<Building2 className="size-4" aria-hidden="true" />}
+          label="แม่บ้านยังไม่ส่ง"
+          value={kpis.missedMaidCount}
+          unit="คน"
+          tone="warning"
+          icon={<Users className="size-4" aria-hidden="true" />}
+          delta={`ตัด cut-off ${MAID_CUTOFF_HOUR}:00 · ${cutoffCountdownLabel()}`}
           href="/chairops/reconcile"
         />
         <ChairopsKpiTile
-          label="Alerts P0 ค้าง"
-          value={kpis.criticalOpenAlertCount}
-          unit="รายการ"
-          tone={alertTone}
-          icon={<Bell className="size-4" aria-hidden="true" />}
-          href="/chairops/alerts?level=CRITICAL"
+          label="กำไร 30 วัน"
+          value={baht(kpis.profit30d)}
+          tone="success"
+          icon={<TrendingUp className="size-4" aria-hidden="true" />}
+          delta={`${profitDelta.text} หลังหักต้นทุนสาขา`}
+          deltaDirection={profitDelta.dir}
+          href="/chairops/reports"
         />
       </section>
 
-      {/* Branches leaderboard */}
-      <section>
-        <div className="mb-3 flex items-end justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-foreground sm:text-lg">
-              สาขาที่ต้องเข้าดูก่อน
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              10 อันดับขาดสะสมมากสุด · คลิกแถวเพื่อเปิด timeline
-            </p>
-          </div>
-          <Link
-            href="/chairops/reconcile"
-            className="text-sm font-medium text-primary hover:underline"
-          >
-            ดูทั้งหมด →
-          </Link>
+      {/* main 2-col grid */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        {/* LEFT 2/3 */}
+        <div className="lg:col-span-2">
+          <CriticalBranchesTable rows={criticalBranches} />
         </div>
-        <BranchesLeaderboard rows={leaderboardRows} />
-      </section>
 
-      {/* Recent alerts */}
-      <section className="rounded-2xl border border-border bg-background p-4 shadow-sm sm:p-5">
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-foreground sm:text-lg">
-              แจ้งเตือนล่าสุด
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              เปิด/รับทราบอยู่ · เรียงตามความรุนแรง
-            </p>
-          </div>
-          <Link
-            href="/chairops/alerts"
-            className="text-sm font-medium text-primary hover:underline"
-          >
-            ดูทั้งหมด →
-          </Link>
-        </div>
-        {recentAlerts.length === 0 ? (
-          <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            ไม่มี alert ค้าง · ทุกสาขาราบรื่น
-          </div>
-        ) : (
-          <ul className="divide-y divide-border">
-            {recentAlerts.map((a) => (
-              <li key={a.id} className="flex items-start gap-3 py-3">
-                <StatusPill
-                  tone={ALERT_LEVEL_TONE[a.level]}
-                  size="xs"
-                  dot
-                  className="mt-0.5 shrink-0"
-                >
-                  {a.level}
-                </StatusPill>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {a.title}
-                    </p>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {thaiRelative(a.createdAt)}
-                    </span>
-                  </div>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {a.message}
-                  </p>
-                  {a.branch && (
-                    <Link
-                      href={`/chairops/reconcile/${a.branch.id}`}
-                      className="text-xs font-medium text-primary hover:underline"
-                    >
-                      {a.branch.name} →
-                    </Link>
-                  )}
+        {/* RIGHT 1/3 */}
+        <div className="flex flex-col gap-4">
+          <MissedMaidsCard rows={missedMaids} />
+
+          {/* recent alerts */}
+          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+            <div className="flex items-start justify-between gap-3 px-4 pb-2.5 pt-3">
+              <div>
+                <div className="text-sm font-semibold text-zinc-900">
+                  Alerts ล่าสุด
                 </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+                <div className="mt-0.5 text-xs text-zinc-500">
+                  เรียงตามความรุนแรง
+                </div>
+              </div>
+              <Link
+                href="/chairops/alerts"
+                className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline"
+              >
+                ทั้งหมด <ArrowRight className="size-3" aria-hidden="true" />
+              </Link>
+            </div>
+            {recentAlerts.length === 0 ? (
+              <div className="px-4 py-6 text-center text-sm text-emerald-600">
+                ไม่มี alert ค้าง · ทุกสาขาราบรื่น ✓
+              </div>
+            ) : (
+              <div className="py-1">
+                {recentAlerts.map((a) => {
+                  const sev = ALERT_SEV_STYLE[a.level];
+                  const SevIcon = sev.icon;
+                  return (
+                    <div
+                      key={a.id}
+                      className="flex items-start gap-2.5 border-b border-zinc-100 px-4 py-2.5 last:border-b-0"
+                    >
+                      <span
+                        className={`grid size-[22px] shrink-0 place-items-center rounded-full ${sev.box}`}
+                        aria-hidden="true"
+                      >
+                        <SevIcon className="size-3" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[12.5px] font-medium leading-snug text-zinc-900">
+                          {a.title}
+                        </div>
+                        <div className="truncate text-[11.5px] text-zinc-500">
+                          {a.branch ? `${a.branch.name} · ` : ""}
+                          {a.message}
+                        </div>
+                      </div>
+                      <span className="shrink-0 text-[11px] tabular-nums text-zinc-400">
+                        {thaiRelative(a.createdAt)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* system status footer */}
+      <footer className="mt-2 flex flex-col gap-2 border-t border-zinc-100 pt-3 text-[11.5px] text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="inline-flex items-center gap-1">
+            <StatusDot tone="ok" /> Cron drift · 22:00
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <StatusDot tone="ok" /> Cron SOP · 22:30
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <StatusDot tone="ok" /> CEO digest · 01:00
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <StatusDot tone={systemStatus.lastPosImportAt ? "ok" : "neutral"} />
+            POS import ·{" "}
+            {systemStatus.lastPosImportAt
+              ? thaiDate(systemStatus.lastPosImportAt, "HH:mm")
+              : "ยังไม่มี"}
+          </span>
+        </div>
+        <span>
+          ChairOps · {systemStatus.posImportsToday} ไฟล์ POS วันนี้ ·{" "}
+          {systemStatus.eventsToday} events วันนี้
+        </span>
+      </footer>
     </div>
   );
 }

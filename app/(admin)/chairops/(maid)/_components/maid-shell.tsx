@@ -1,9 +1,10 @@
 // MaidShell · single-page mobile shell for maid PWA.
-// IA §4.4 nav order: หน้าหลัก · ความสะอาด · แจ้งซ่อม · บัญชี (logout MOVED to
-// /profile per UX mis-tap fix — was last item ออก in legacy MaidShell).
+// Bottom-nav matches CEO mockup Rich Menu (lineapp.jsx <RichMenu>): 4 action
+// tabs เก็บเงิน · เช็คคลีน · แจ้งซ่อม · เบิกของ. Home is reached via the brand
+// link in the header; profile/logout via the avatar button (top-right).
 //
 // Constraints (Android Go):
-//   - h-14 (56px) bottom-nav · each cell ≥ 44pt
+//   - h-16 (64px) bottom-nav · each cell ≥ 44pt
 //   - NO backdrop-blur (Chrome <80 unsupported · use solid bg instead)
 //   - safe-area-inset-bottom respected
 //   - text-xs labels Thai-only
@@ -12,7 +13,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Sparkles, Wrench, UserCircle2 } from "lucide-react";
+import { Sparkles, UserCircle2, Wallet, Wrench, Package } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
@@ -25,10 +26,15 @@ interface NavItem {
 }
 
 const NAV: ReadonlyArray<NavItem> = [
-  { href: "/chairops/m", label: "หน้าหลัก", icon: Home, match: "/chairops/m" },
   {
-    href: "/chairops/m/cleanliness",
-    label: "ความสะอาด",
+    href: "/chairops/m/collect/new",
+    label: "เก็บเงิน",
+    icon: Wallet,
+    match: "/chairops/m/collect",
+  },
+  {
+    href: "/chairops/m/cleanliness/new",
+    label: "เช็คคลีน",
     icon: Sparkles,
     match: "/chairops/m/cleanliness",
   },
@@ -39,20 +45,14 @@ const NAV: ReadonlyArray<NavItem> = [
     match: "/chairops/m/damage",
   },
   {
-    href: "/chairops/m/profile",
-    label: "บัญชี",
-    icon: UserCircle2,
-    match: "/chairops/m/profile",
+    href: "/chairops/m/parts/new",
+    label: "เบิกของ",
+    icon: Package,
+    match: "/chairops/m/parts",
   },
 ];
 
 function isActive(pathname: string, item: NavItem): boolean {
-  // Home matches exact /chairops/m and /chairops/m/collect/*
-  if (item.match === "/chairops/m") {
-    return (
-      pathname === "/chairops/m" || pathname.startsWith("/chairops/m/collect")
-    );
-  }
   return pathname.startsWith(item.match);
 }
 
@@ -68,16 +68,27 @@ export function MaidShell({
   return (
     <div className="min-h-screen bg-zinc-50 pb-[calc(64px+env(safe-area-inset-bottom))]">
       <header
-        className="sticky top-0 z-30 border-b border-zinc-200 bg-white"
-        // No backdrop-blur per W6 spec — solid white is safer on old Chrome
+        className="sticky top-0 z-30 border-b border-emerald-700 bg-emerald-600 text-white"
+        // Green ChairOps banner per mockup · no backdrop-blur (old Chrome safe)
       >
         <div className="flex h-14 items-center gap-2 px-4">
-          <span className="text-base font-bold tracking-tight text-zinc-900">
+          <Link
+            href="/chairops/m"
+            className="text-base font-bold tracking-tight text-white"
+            aria-label="หน้าหลัก ChairOps"
+          >
             ChairOps
-          </span>
-          <span className="ml-auto truncate text-xs font-medium text-zinc-500">
+          </Link>
+          <span className="ml-auto truncate text-xs font-medium text-emerald-50">
             {displayName}
           </span>
+          <Link
+            href="/chairops/m/profile"
+            aria-label="บัญชีของฉัน"
+            className="grid size-9 shrink-0 place-items-center rounded-full bg-emerald-500/40 text-white active:bg-emerald-500/60"
+          >
+            <UserCircle2 className="size-6" aria-hidden />
+          </Link>
         </div>
       </header>
 
