@@ -1,10 +1,31 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-28 (รอบ 60 · 3-module quality pass)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-28 (รอบ 62 · ChairOps mobile + LINE OA/LIFF)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
-## 🆕 Update (2026-05-28 · รอบ 61 — ChairOps redesign /bigfeature + /bigsolvebug · CEO mockup 100%)
+## 🆕 Update (2026-05-28 · รอบ 62 — ChairOps maid MOBILE + LINE OA/LIFF · /goal + /auditbigteam → build)
+
+**CEO trigger:** `/goal "ทำทุกอย่างให้จบ · ใช้ /auditbigteam · session นี้ทำเฉพาะเก้าอี้นวด · mobile UX/UI ทั้งหมดให้สวยมืออาชีพใช้ได้จริง · ทำ LINE OA + LIFF app เชื่อมเลย"` (autonomous).
+
+**Phase 1 — `/auditbigteam` focused (6 personas: UX·STAFF·SEC·SRE·BA·DEVIL):** → `docs/AUDIT_chairops_mobile_liff_2026-05-28.md`. Key finding: maid PWA already ~80% built; real gaps = damage mobile form (stub), full-screen success confirmations, LINE OA Messaging API (only EOL Notify existed). DEVIL cut: no inbound conversation processor (maids tap menu, don't chat) + ship outbound behind dev-fallback.
+
+**Phase 2 — build (tsc clean · `next build` green · 4 new routes compiled):**
+- **Damage mobile form** `m/damage/new` (chair chips · urgency · category · photos) + `m/damage` open-tickets landing — replaced the redirect stub
+- **SuccessScreen** primitive (`_kit/success-screen.tsx`) → damage/cleanliness/parts full-screen confirm + ref code; collect debug line removed
+- **LINE Messaging adapter** `lib/chairops/line/messaging.ts` (backoff+timeout+dev-fallback, falls back to Notify until tokens land); `sop-check` migrated
+- **Lean webhook** `api/chairops/line/webhook` (HMAC verify · logs JOIN/FOLLOW → groupId capture)
+- **EOD reminder cron** `api/chairops/cron/eod-reminder` (17:00 ICT · vercel.json `0 10 * * *`)
+- **Rich Menu script** `scripts/chairops-richmenu.mjs` (4 LIFF deep-links)
+- **LIFF entry** `app/liff/chairops` + `line-login` `redirectTo` + `LiffBootstrap` `?next`
+
+**⚠️ Deploy/commit state:** NOT committed, NOT deployed. Activation HW_BLOCKED on CEO LINE OA setup (business verify · 2 tokens · LIFF id · invite OA to 5 groups → read groupId from webhook log → `LINE_GROUP_*` · Rich Menu image · Supabase redirect allowlist for `/chairops/m/*`). Tracked files at IDE-revert risk — recommend commit to lock. Memory `[[chairops-mobile-line-liff-shipped-2026-05-28]]`.
+
+**Next:** CEO confirm → commit + (optional) `vercel --prod` · then CEO completes LINE OA setup to activate Rich Menu/push.
+
+---
+
+## Update (2026-05-28 · รอบ 61 — ChairOps redesign /bigfeature + /bigsolvebug · CEO mockup 100%)
 
 **CEO trigger:** dropped a complete ChairOps HTML/CSS/JSX mockup (`~/เก้าอี้นวด`) + "ทำให้เหมือน 100% · ฟีเจอร์ไหนไม่มีก็ทำ · ใช้ /bigfeature /bigsolvebug /auditbigteam ตามลำดับ"
 
