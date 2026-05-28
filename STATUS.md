@@ -1,49 +1,8 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-28 (รอบ 61 · ClawFleet v2 redesign + branch-model migration)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-28 (รอบ 60 · 3-module quality pass)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
-
-## 🚀 DEPLOYED (2026-05-28 · รอบ 61) — ClawFleet v2 LIVE บน production
-
-- **Live:** https://pooilgroup.vercel.app/clawfleet/v2/hub (deploy `dpl_EEXXYUZ…` · target=production · READY)
-- Smoke test: /clawfleet/v2/hub · /clawfleet/hub · /clawfleet/sessions · /dashboard → ทั้งหมด **307 → /login** (auth gate ปกติ · ไม่มี 500)
-- Deploy-safe: guard non-v2 queries (commit `d365a66`) ไม่ให้ select คอลัมน์ใหม่ที่ prod DB ยังไม่มี → ClawFleet เดิมไม่พัง · v2 ใช้ legacy real-data layer
-- **Migration ยังไม่ apply** (blocked · CEO-only) → v2 รันบน group-model real data · per-claw upgrade = optional ภายหลัง
-- commits: 0e9c640 · c42c6ce · 927d6f6 · 1a3c0ec · b5a5971 · b2ff9b9 · d365a66 (branch `setup` · ยังไม่ push remote)
-
----
-
-## 🆕 Update (2026-05-28 · รอบ 61 — ClawFleet v2 redesign · CEO ส่ง HTML mockup "ทำให้เหมือน 100% · migrate ใหญ่")
-
-**Phase 1 (DONE · committed 0e9c640 + c42c6ce · CEO approved):** port mockup → `/clawfleet/v2/*` · 6 หน้า (hub/operations/anomalies/stock/insights/mobile) + review modal · 13 ไฟล์ · scoped `.cf-scope` CSS · mock data · tsc+lint+build เขียว · nav "ดีไซน์ใหม่ (พรีวิว)" เพิ่มแล้ว
-
-**Phase 2 — ALL CODE DONE · committed (0e9c640 · 1a3c0ec) · tsc+lint+build เขียว:**
-- Schema: `cf_collection_sessions` รองรับ session ระดับสาขา (branch_id + nullable group_id + cross-check เงิน/ตุ๊กตา 6 ช่อง) · 5th photo · ตารางใหม่ `cf_deliveries`
-- Migration SQL `20260528000001` (additive)
-- `lib/clawfleet/v2-queries.ts` + `v2-loaders.ts` (real DB → mockup shape · graceful mock fallback ก่อน migration)
-- S4: 6 หน้า split เป็น server-fetch + client-island (รับ data เป็น props · rendering เดิม) · shell+layout รับ branches จริง
-- S5: `v2-actions.ts` `reviewV2Session` (approve→LOCKED / recheck→OPEN / escalate→ANOMALY_REVIEW) wire เข้า review modal
-- S6: `scripts/seed-clawfleet-v2-demo.ts` (branch-shape seed)
-- แก้ legacy 12 ไฟล์ (group_id nullable · null-safe)
-
-**✅ v2 แสดง "ข้อมูลจริง" แล้ว ตั้งแต่ตอนนี้ (ไม่ต้องรอ migration):** เพิ่ม legacy real-data layer
-- `lib/clawfleet/v2-queries-legacy.ts` — อ่าน group-collection data เดิม (เฉพาะคอลัมน์ที่มีอยู่ · ไม่แตะ schema ใหม่) แปลงเป็น mockup types
-- `v2-loaders.ts` chain **new → legacy → mock**: ลอง branch model (หลัง migration) → ถ้าพังลอง group model จริง → mock เฉพาะ DB ว่างเปล่า
-- ทดสอบจริงแล้ว: legacy คืน **4 anomaly จริง** (เช่น CFS-2569-000004 คาด ฿7,280 vs จริง ฿6,230 = ห่าง 14.4% · 5 ตู้คีบ) — cross-check แบบ group coin-balance (ตู้แลกจ่าย vs ตู้คีบรับ)
-- หน้า v2 ตอนนี้โชว์ branches/anomalies/sessions/stock จริงจาก DB · ไม่ใช่ mock อีกต่อไป
-
-**🟡 OPTIONAL — CEO รัน 2 คำสั่ง เพื่ออัปเกรดเป็นโมเดล per-claw cash ตรง mockup เป๊ะ** (auto-classifier บล็อกไม่ให้ผมเขียน prod DB):
-```
-cd /Users/patipantantikul/Code/pooilgroup/legacy/pooilgroup-web
-npx tsx -r dotenv/config scripts/apply-clawfleet-v2-migration.ts dotenv_config_path=.env.local
-npx tsx -r dotenv/config scripts/seed-clawfleet-v2-demo.ts dotenv_config_path=.env.local
-```
-หลังรัน → loader สลับไปใช้ branch model (per-claw cash + มิเตอร์ตุ๊กตา sensor + รถส่งของ) อัตโนมัติ · ไม่ต้องแก้โค้ด
-
-**⚠️ Env note:** tracked files ใน pooilgroup-web โดน IDE buffer revert เป็นระยะ (เปิดไฟล์ค้างใน VS Code) → commit ล็อกแล้ว · ถ้าแก้ tracked file ต้อง commit เร็ว
-
----
 
 ## 🆕 Update (2026-05-28 · รอบ 61 — ChairOps redesign /bigfeature + /bigsolvebug · CEO mockup 100%)
 
