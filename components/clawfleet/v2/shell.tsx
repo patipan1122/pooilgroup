@@ -5,8 +5,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
-import { Sidebar, TopBar } from "@/components/clawfleet/v2/chrome";
-import { BRANCHES } from "@/lib/clawfleet/v2-data";
+import { Sidebar, TopBar, type BranchSummary } from "@/components/clawfleet/v2/chrome";
 
 const PAGE_LABELS: Record<string, string> = {
   hub: "Hub",
@@ -36,7 +35,13 @@ const NAV_TO_SEG: Record<string, string> = Object.fromEntries(
   Object.entries(SEG_TO_NAV).map(([seg, nav]) => [nav, seg]),
 );
 
-export function V2Shell({ children }: { children: React.ReactNode }) {
+export function V2Shell({
+  children,
+  branches,
+}: {
+  children: React.ReactNode;
+  branches: BranchSummary[];
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const params = useSearchParams();
@@ -71,7 +76,7 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
           branch={branch}
           onBranchChange={onBranchChange}
           page={pageLabel}
-          branches={BRANCHES}
+          branches={branches}
         />
         <main className="cf-content">{children}</main>
       </div>

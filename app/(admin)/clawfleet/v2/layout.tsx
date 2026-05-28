@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { V2Shell } from "@/components/clawfleet/v2/shell";
+import { loadBranches } from "@/lib/clawfleet/v2-loaders";
 import "./clawfleet-redesign.css";
 
 export const dynamic = "force-dynamic";
@@ -16,9 +17,10 @@ export const dynamic = "force-dynamic";
  *   3. renders the SPA shell (Sidebar + TopBar) once · pages render content only.
  */
 export default async function ClawfleetV2Layout({ children }: { children: ReactNode }) {
+  const branches = await loadBranches();
   return (
     <div className="cf-scope">
-      <V2Shell>{children}</V2Shell>
+      <V2Shell branches={branches}>{children}</V2Shell>
     </div>
   );
 }
