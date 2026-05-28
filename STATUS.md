@@ -19,9 +19,9 @@
 - **Rich Menu script** `scripts/chairops-richmenu.mjs` (4 LIFF deep-links)
 - **LIFF entry** `app/liff/chairops` + `line-login` `redirectTo` + `LiffBootstrap` `?next`
 
-**⚠️ Deploy/commit state:** NOT committed, NOT deployed. Activation HW_BLOCKED on CEO LINE OA setup (business verify · 2 tokens · LIFF id · invite OA to 5 groups → read groupId from webhook log → `LINE_GROUP_*` · Rich Menu image · Supabase redirect allowlist for `/chairops/m/*`). Tracked files at IDE-revert risk — recommend commit to lock. Memory `[[chairops-mobile-line-liff-shipped-2026-05-28]]`.
+**✅ Deploy/commit state:** COMMITTED (`088914d` + STATUS `06aa4e9`) on `claude/chairops-overlap-fix` (pushed) + **DEPLOYED to prod** → https://pooilgroup.vercel.app. Smoke: liff/chairops 200 · maid 307 (auth-gated) · webhook `{ok,note:"no-secret"}` (dormant) · eod-cron 401 (secret guard). Branch contained all of prod `setup` — no regression. LINE features dormant behind dev-fallback until OA setup. Activation HW_BLOCKED on CEO: business verify · 2 tokens · LIFF id · invite OA to 5 groups → read groupId from webhook log → `LINE_GROUP_*` · Rich Menu image (`scripts/chairops-richmenu.mjs`) · Supabase redirect allowlist for `/chairops/m/*`. Memory `[[chairops-mobile-line-liff-shipped-2026-05-28]]`.
 
-**Next:** CEO confirm → commit + (optional) `vercel --prod` · then CEO completes LINE OA setup to activate Rich Menu/push.
+**Next:** CEO visual-QA the maid mobile pages (need a MAID account) · then complete LINE OA setup to activate Rich Menu + push notifications.
 
 ---
 
