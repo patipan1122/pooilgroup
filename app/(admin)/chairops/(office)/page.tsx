@@ -33,6 +33,11 @@ import {
   getSystemStatus,
   MAID_CUTOFF_HOUR,
 } from "@/lib/chairops/queries/exec-home";
+import {
+  getBranchPL,
+  rangeDayCount,
+} from "@/lib/chairops/queries/dashboard-pl";
+import { rankOf } from "@/lib/chairops/auth/role-guards";
 import { ChairopsAlertLevel } from "@/lib/generated/prisma/enums";
 import {
   AlertTriangle,
@@ -48,6 +53,12 @@ import {
 } from "lucide-react";
 import { CriticalBranchesTable } from "./_components/critical-branches-table";
 import { MissedMaidsCard } from "./_components/missed-maids-card";
+import { DateRangeFilter, type RangePreset } from "./_components/date-range-filter";
+import {
+  AllBranchesPLTable,
+  sortBranchPL,
+  type PLSort,
+} from "./_components/all-branches-pl-table";
 
 export const dynamic = "force-dynamic";
 
@@ -82,18 +93,171 @@ function cutoffCountdownLabel(): string {
   return `เหลือ ${h} ชม. ${m} นาที`;
 }
 
-export default async function ExecDashboardPage() {
+// ----------------------------------------------------------------
+// Date-range resolution (Asia/Bangkok). The page reads ?from/?to/?preset and
+// resolves them to local-midnight Date objects + display strings. Default =
+// month-to-date (1st of current month → today).
+// ----------------------------------------------------------------
+const BKK_OFFSET_MS = 7 * 60 * 60 * 1000; // UTC+7, no DST in Thailand
+
+/** Current Bangkok wall-clock date, as a Date pinned to local midnight here. */
+function bangkokToday(): Date {
+  const nowBkk = new Date(Date.now() + BKK_OFFSET_MS);
+  const d = new Date(nowBkk.getUTCFullYear(), nowBkk.getUTCMonth(), nowBkk.getUTCDate());
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function ymd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Parse YYYY-MM-DD → local-midnight Date, or null if malformed. */
+function parseYmd(s: string | undefined): Date | null {
+  if (!s) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  d.setHours(0, 0, 0, 0);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
+interface ResolvedRange {
+  from: Date;
+  to: Date;
+  fromStr: string;
+  toStr: string;
+  activePreset: RangePreset | null;
+}
+
+function resolveRange(sp: {
+  from?: string;
+  to?: string;
+  preset?: string;
+}): ResolvedRange {
+  const today = bangkokToday();
+
+  // Presets win over explicit from/to.
+  if (sp.preset === "today") {
+    return {
+      from: today,
+      to: today,
+      fromStr: ymd(today),
+      toStr: ymd(today),
+      activePreset: "today",
+    };
+  }
+  if (sp.preset === "7d") {
+    const start = new Date(today);
+    start.setDate(start.getDate() - 6); // inclusive 7-day window
+    return {
+      from: start,
+      to: today,
+      fromStr: ymd(start),
+      toStr: ymd(today),
+      activePreset: "7d",
+    };
+  }
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  if (sp.preset === "mtd" || (!sp.from && !sp.to)) {
+    return {
+      from: monthStart,
+      to: today,
+      fromStr: ymd(monthStart),
+      toStr: ymd(today),
+      activePreset: "mtd",
+    };
+  }
+
+  // Explicit from/to · fall back to MTD bounds when one side is missing/bad.
+  let from = parseYmd(sp.from) ?? monthStart;
+  let to = parseYmd(sp.to) ?? today;
+  if (from.getTime() > to.getTime()) {
+    [from, to] = [to, from]; // swap if reversed
+  }
+
+  // Detect whether explicit range happens to equal a known preset (for chips).
+  let active: RangePreset | null = null;
+  const sevenStart = new Date(today);
+  sevenStart.setDate(sevenStart.getDate() - 6);
+  if (from.getTime() === today.getTime() && to.getTime() === today.getTime()) {
+    active = "today";
+  } else if (
+    from.getTime() === sevenStart.getTime() &&
+    to.getTime() === today.getTime()
+  ) {
+    active = "7d";
+  } else if (
+    from.getTime() === monthStart.getTime() &&
+    to.getTime() === today.getTime()
+  ) {
+    active = "mtd";
+  }
+
+  return { from, to, fromStr: ymd(from), toStr: ymd(to), activePreset: active };
+}
+
+const PL_SORTS: PLSort[] = [
+  "profit",
+  "profit_desc",
+  "revenue",
+  "drift",
+  "deposit",
+  "name",
+];
+
+export default async function ExecDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const session = await requireRole("OFFICE");
   const orgId = session.user.orgId;
 
-  const [kpis, criticalBranches, missedMaids, recentAlerts, systemStatus] =
+  const sp = await searchParams;
+  const first = (v: string | string[] | undefined): string | undefined =>
+    Array.isArray(v) ? v[0] : v;
+  const range = resolveRange({
+    from: first(sp.from),
+    to: first(sp.to),
+    preset: first(sp.preset),
+  });
+
+  // Admin-tier (CEO/ADMIN) sees cost + profit columns · managers do not.
+  // Reuses the rank ladder from role-guards (MANAGER=3 · CEO=4 · ADMIN=5).
+  const showCost = rankOf(session.user.role) >= rankOf("CEO");
+
+  const sortParam = first(sp.sort);
+  let plSort: PLSort =
+    sortParam && PL_SORTS.includes(sortParam as PLSort)
+      ? (sortParam as PLSort)
+      : "profit"; // default: worst profit first (CEO watches losses)
+  // Managers can't sort by profit (no cost data) → fall back to revenue.
+  if (!showCost && (plSort === "profit" || plSort === "profit_desc")) {
+    plSort = "revenue";
+  }
+
+  const dayCount = rangeDayCount(range.from, range.to);
+  const rangeLabel =
+    range.fromStr === range.toStr
+      ? thaiDate(range.from, "d MMM yyyy")
+      : `${thaiDate(range.from, "d MMM")} – ${thaiDate(range.to, "d MMM yyyy")} (${dayCount} วัน)`;
+
+  const [kpis, criticalBranches, missedMaids, recentAlerts, systemStatus, pl] =
     await Promise.all([
       getExecHomeKpis(orgId),
       getCriticalBranches(orgId, { take: 8 }),
       getMissedMaidsToday(orgId, { take: 5 }),
       getRecentAlerts(orgId, { take: 5 }),
       getSystemStatus(orgId),
+      getBranchPL({ orgId, from: range.from, to: range.to }),
     ]);
+
+  const plRows = sortBranchPL(pl.rows, plSort);
 
   const posDelta = pctLabel(kpis.posDeltaPct);
   const profitDelta = pctLabel(kpis.profit30dDeltaPct);
@@ -218,16 +382,46 @@ export default async function ExecDashboardPage() {
           delta={`ตัด cut-off ${MAID_CUTOFF_HOUR}:00 · ${cutoffCountdownLabel()}`}
           href="/chairops/reconcile"
         />
-        <ChairopsKpiTile
-          label="กำไร 30 วัน"
-          value={baht(kpis.profit30d)}
-          tone="success"
-          icon={<TrendingUp className="size-4" aria-hidden="true" />}
-          delta={`${profitDelta.text} หลังหักต้นทุนสาขา`}
-          deltaDirection={profitDelta.dir}
-          href="/chairops/reports"
-        />
+        {showCost ? (
+          <ChairopsKpiTile
+            label="กำไร/ขาดทุน (ช่วงที่เลือก)"
+            value={baht(pl.totals.net)}
+            tone={pl.totals.net < 0 ? "danger" : "success"}
+            icon={<TrendingUp className="size-4" aria-hidden="true" />}
+            delta={`รายได้ ${baht(pl.totals.revenue)} − ต้นทุน ${baht(pl.totals.cost)}`}
+            deltaDirection={pl.totals.net < 0 ? "down" : "up"}
+            href="#all-branches"
+          />
+        ) : (
+          <ChairopsKpiTile
+            label="กำไร 30 วัน"
+            value={baht(kpis.profit30d)}
+            tone="success"
+            icon={<TrendingUp className="size-4" aria-hidden="true" />}
+            delta={`${profitDelta.text} หลังหักต้นทุนสาขา`}
+            deltaDirection={profitDelta.dir}
+            href="/chairops/reports"
+          />
+        )}
       </section>
+
+      {/* date-range filter (CEO ask · drives the all-branches P&L table) */}
+      <DateRangeFilter
+        from={range.fromStr}
+        to={range.toStr}
+        activePreset={range.activePreset}
+      />
+
+      {/* all-branches P&L table — full-width "ดูทุกสาขาพร้อมกัน" */}
+      <AllBranchesPLTable
+        rows={plRows}
+        dayCount={pl.dayCount}
+        totals={pl.totals}
+        showCost={showCost}
+        sort={plSort}
+        search={{ from: range.fromStr, to: range.toStr }}
+        rangeLabel={rangeLabel}
+      />
 
       {/* main 2-col grid */}
       <div className="grid gap-4 lg:grid-cols-3">

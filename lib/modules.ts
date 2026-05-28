@@ -453,10 +453,12 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     status: "active",
     basePath: "/chairops",
     nav: [
+      // ── ภาพรวม ──────────────────────────────────────────────
       {
         href: "/chairops/dashboard",
         label: "ภาพรวม",
         icon: LayoutDashboard,
+        section: "ภาพรวม",
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"],
       },
       {
@@ -465,6 +467,20 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: Building2,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
       },
+      // ── ปฏิบัติงาน ──────────────────────────────────────────
+      {
+        href: "/chairops/pos-ingest",
+        label: "อัปโหลด POS",
+        icon: Upload,
+        section: "ปฏิบัติงาน",
+        roles: ["super_admin", "org_admin", "admin", "area_manager"],
+      },
+      {
+        href: "/chairops/reconcile",
+        label: "ตรวจยอด (Reconcile)",
+        icon: GitCompare,
+        roles: ["super_admin", "org_admin", "admin", "area_manager"],
+      },
       {
         href: "/chairops/collections",
         label: "ประวัติเก็บเงิน",
@@ -472,28 +488,10 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
       },
       {
-        href: "/chairops/pos-ingest",
-        label: "อัปโหลด POS",
-        icon: Upload,
-        roles: ["super_admin", "org_admin", "admin", "area_manager"],
-      },
-      {
-        href: "/chairops/reconcile",
-        label: "Reconcile",
-        icon: GitCompare,
-        roles: ["super_admin", "org_admin", "admin", "area_manager"],
-      },
-      {
         href: "/chairops/alerts",
-        label: "Alerts",
+        label: "แจ้งเตือน",
         icon: AlertCircle,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
-      },
-      {
-        href: "/chairops/write-offs",
-        label: "Write-off",
-        icon: ShieldX,
-        roles: ["super_admin", "org_admin", "admin"],
       },
       {
         href: "/chairops/cleanliness",
@@ -511,6 +509,14 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: PackageSearch,
         roles: ["super_admin", "org_admin", "admin", "area_manager"],
       },
+      // ── การเงิน ─────────────────────────────────────────────
+      {
+        href: "/chairops/write-offs",
+        label: "ตัดเงินขาด",
+        icon: ShieldX,
+        section: "การเงิน",
+        roles: ["super_admin", "org_admin", "admin"],
+      },
       {
         href: "/chairops/accounts",
         label: "บัญชีธนาคาร",
@@ -523,10 +529,12 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: ScrollText,
         roles: ["super_admin", "org_admin", "admin", "area_manager"],
       },
+      // ── จัดการ ──────────────────────────────────────────────
       {
         href: "/chairops/users",
         label: "ผู้ใช้ ChairOps",
         icon: UsersIcon,
+        section: "จัดการ",
         adminOnly: true,
       },
       {

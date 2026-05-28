@@ -1,29 +1,9 @@
-// Create new spare part — OFFICE+
-import Link from "next/link";
+// Back-compat: the add form now lives in the split-view right pane.
+// Old bookmarks / links to /chairops/parts/new redirect into the workspace.
+import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/chairops/auth/session";
-import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
-import { NewPartForm } from "./new-part-form";
 
-export default async function NewPartPage() {
+export default async function NewPartRedirect() {
   await requireRole("OFFICE");
-
-  return (
-    <div className="mx-auto max-w-2xl space-y-4">
-      <div>
-        <Link href="/chairops/parts" className="text-sm text-muted-foreground hover:underline">
-          ← กลับรายการอะไหล่
-        </Link>
-        <h1 className="text-2xl font-bold tracking-tight">เพิ่มอะไหล่ใหม่</h1>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">ข้อมูลอะไหล่</CardTitle>
-        </CardHeader>
-        <CardBody>
-          <NewPartForm />
-        </CardBody>
-      </Card>
-    </div>
-  );
+  redirect("/chairops/parts?selected=new");
 }
