@@ -32,7 +32,7 @@ export default async function SetupWizardPage() {
     <div className="p-3 sm:p-6 lg:p-10 max-w-4xl mx-auto pb-24">
       <BackButton label="กลับ" fallbackHref="/home" />
       <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           ✨ SETUP WIZARD
         </p>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1">
@@ -45,7 +45,7 @@ export default async function SetupWizardPage() {
 
       <Section
         number="01"
-        label="WIZARD"
+        label="ตัวช่วยตั้งค่า"
         title="กรอกข้อมูลครั้งเดียว"
         className="mb-6"
       >
@@ -61,7 +61,7 @@ export default async function SetupWizardPage() {
 
       <Section
         number="02"
-        label="QA · TEST USERS"
+        label="QA · ผู้ใช้ทดสอบ"
         title="สร้างบัญชีทดสอบทุก role"
         description="ใช้ทดสอบ flow แต่ละบทบาท (เจ้าของ/ผจก./พนักงาน/บัญชี) — สร้างได้ทีเดียว ทุกสาขา"
         className="mb-6"
@@ -76,7 +76,7 @@ export default async function SetupWizardPage() {
         </Card>
       </Section>
 
-      <Section number="03" label="HELP" title="ช่วยเหลือ">
+      <Section number="03" label="ช่วยเหลือ" title="ช่วยเหลือ">
         <Card>
           <CardBody className="space-y-2 text-sm text-zinc-700">
             <p>
@@ -86,7 +86,7 @@ export default async function SetupWizardPage() {
               <li>เลือกบริษัท (Pooil Oil หรือ JP Sync) จาก dropdown</li>
               <li>วาง CSV ของสาขา 1 บรรทัด/สาขา</li>
               <li>(ออปชัน) เพิ่มชื่อ/เบอร์ ผจก. — ระบบจะสร้าง invite link ให้</li>
-              <li>กด "สร้างทั้งหมด"</li>
+              <li>กด &ldquo;สร้างทั้งหมด&rdquo;</li>
               <li>หลังจากนั้น มา section 02 — กดปุ่มสร้างบัญชีทดสอบทุก role เพื่อ login เทสได้ทันที</li>
             </ol>
             <p className="text-zinc-500 text-xs mt-3">

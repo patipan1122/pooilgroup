@@ -47,7 +47,7 @@ export function SignerRiskSummary({ analysis }: SignerRiskSummaryProps) {
             <div className="flex items-center gap-3">
               <span className="text-lg">{dot}</span>
               <div>
-                <p className="text-xs uppercase tracking-[0.16em] text-zinc-500 font-bold">
+                <p className="text-xs tracking-[0.02em] text-zinc-500 font-bold">
                   สรุปจาก AI · ก่อนเซ็น
                 </p>
                 <p className="text-sm font-medium text-zinc-900 mt-0.5">
@@ -81,7 +81,7 @@ export function SignerRiskSummary({ analysis }: SignerRiskSummaryProps) {
 
             {analysis.watchOuts && analysis.watchOuts.length > 0 && (
               <div>
-                <p className="text-xs uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2">
+                <p className="text-xs tracking-[0.02em] text-zinc-500 font-bold mb-2">
                   ⚠️ จุดที่ควรระวัง
                 </p>
                 <ol className="space-y-1.5 pl-1">
@@ -111,7 +111,7 @@ export function SignerRiskSummary({ analysis }: SignerRiskSummaryProps) {
                         key={key}
                         className="rounded-lg bg-zinc-50 border border-zinc-200 p-2.5"
                       >
-                        <p className="text-[10px] uppercase tracking-wide text-zinc-500 font-medium">
+                        <p className="text-xs font-bold text-zinc-500">
                           {key}
                         </p>
                         <p className="text-xs font-medium text-zinc-900 mt-0.5 break-words">

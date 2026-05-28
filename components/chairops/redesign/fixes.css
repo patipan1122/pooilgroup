@@ -1,0 +1,181 @@
+/* ChairOps layout fixes — Thai text wrapping, density, overflow
+ *
+ * Ported from mockup `_design-reference/chairops-mockup-2026-05-28/css/fixes.css`
+ * SCOPED to .co-scope. Loaded LAST (after tokens.css + shell.css) so these
+ * win on specificity ties.
+ */
+
+/* Sidebar brand */
+.co-scope .co-side-brand-name { white-space: nowrap; }
+.co-scope .co-side-brand-org { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.co-scope .co-side-search input { min-width: 0; }
+.co-scope .co-side-item { white-space: nowrap; }
+.co-scope .co-side-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.co-scope .co-side-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Page head */
+.co-scope .co-page-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.co-scope .co-breadcrumb { white-space: nowrap; flex-wrap: nowrap; overflow: hidden; }
+.co-scope .co-page-head { flex-wrap: wrap; }
+.co-scope .co-page-head > div:last-child { flex-shrink: 0; }
+.co-scope .co-page-head .btn { white-space: nowrap; }
+
+/* Topbar */
+.co-scope .co-topbar { flex-shrink: 0; }
+.co-scope .co-screen-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.co-scope .co-topbar .btn { white-space: nowrap; }
+
+/* KPI */
+.co-scope .co-kpi-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.co-scope .co-kpi-value { white-space: nowrap; }
+.co-scope .co-kpi-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.co-scope .co-kpi-sub > * { flex-shrink: 0; }
+
+/* Attention strip */
+.co-scope .co-attention .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.co-scope .co-attention .btn { flex-shrink: 0; white-space: nowrap; }
+
+/* Section/card heads */
+.co-scope .co-card-head { flex-wrap: nowrap; }
+.co-scope .co-card-head > div:first-child { min-width: 0; flex: 1; }
+.co-scope .co-card-title,
+.co-scope .co-card-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.co-scope .co-section-link { white-space: nowrap; }
+
+/* Table */
+.co-scope .tbl tbody td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.co-scope .tbl tbody td:nth-child(2) { max-width: 0; }  /* let branch name take available */
+.co-scope .co-cell-branch > span:first-child { max-width: 240px; }
+
+/* Branches row */
+.co-scope .co-br-row-sub { white-space: nowrap; overflow: hidden; }
+.co-scope .co-br-row-sub > span { flex-shrink: 0; }
+.co-scope .co-br-row-r { white-space: nowrap; }
+
+/* Detail meta */
+.co-scope .co-br-detail-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.co-scope .co-br-detail-meta > span { flex-shrink: 0; }
+.co-scope .co-br-detail-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.co-scope .co-br-tabs { flex-wrap: nowrap; }
+.co-scope .co-br-tab { flex-shrink: 0; }
+
+/* Stat strip — 3 cols × 2 rows for better breathing room */
+.co-scope .co-br-stats { grid-template-columns: repeat(3, 1fr); }
+.co-scope .co-stat-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.co-scope .co-stat-value { white-space: nowrap; }
+
+/* Cost rows */
+.co-scope .co-cost-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Missed row */
+.co-scope .co-missed-row .grow > div:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.co-scope .co-missed-row .grow > div:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Alert row */
+.co-scope .co-alert-row .grow { min-width: 0; }
+.co-scope .co-alert-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.co-scope .co-alert-row .text-3 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Buttons everywhere should not wrap */
+.co-scope .btn { white-space: nowrap; }
+.co-scope .chip { white-space: nowrap; }
+.co-scope .tag { white-space: nowrap; }
+
+/* Phone — fix notch overlapping status time */
+.co-scope .co-phone-status {
+  height: 36px;
+  padding: 10px 22px 6px;
+}
+.co-scope .co-phone-notch {
+  width: 100px; height: 22px;
+  border-radius: 0 0 14px 14px;
+  z-index: 2;
+}
+.co-scope .co-phone-status > .mono,
+.co-scope .co-phone-status > .row {
+  position: relative; z-index: 3;
+}
+.co-scope .co-phone-status > .mono { margin-right: 60px; }  /* push left of notch */
+.co-scope .co-phone-status > .row { margin-left: 60px; }
+
+/* Mini greeting — make sure 2 text lines stack cleanly */
+.co-scope .co-mini-greeting > div:last-child {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.co-scope .co-mini-greeting > div:last-child > div {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Maid task: avoid wrap */
+.co-scope .co-maid-task .grow > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Branches list group head visibility */
+.co-scope .co-br-list-head { flex-shrink: 0; }
+
+/* Branches: keep stat columns from getting too narrow when window is small */
+@media (max-width: 1280px) {
+  .co-scope .co-branches { grid-template-columns: 180px 340px 1fr; }
+  .co-scope .co-br-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Reconcile / generic table inside scroll */
+.co-scope .co-content { contain: layout; }
+
+/* When detail narrow, allow some wrap */
+.co-scope .co-br-detail-head { padding-bottom: 0; }
+
+/* Make POS Import drop area not too tall */
+.co-scope .co-pos-grid { grid-template-columns: 360px 1fr; }
+
+/* Damage kanban col body min-height */
+.co-scope .co-damage-col-body { min-height: 240px; }
+
+/* Better page-head wrapping */
+.co-scope .co-page-head > div:first-child { flex: 1; min-width: 0; }
+
+/* Card head when sub is long */
+.co-scope .co-card-sub { font-size: 11px; }
+
+/* Section heads should not wrap */
+.co-scope .co-br-section-head { flex-wrap: nowrap; }
+.co-scope .co-br-section-head > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.co-scope .co-br-section-head > span:last-child,
+.co-scope .co-br-section-head > a { flex-shrink: 0; }
+
+/* Cost rows: more width for Thai labels (final width wins over base) */
+.co-scope .co-cost-row { grid-template-columns: 160px 1fr 84px; }
+
+/* Branches detail body: limit max width so chart isn't crazy wide */
+.co-scope .co-br-detail-body > * { max-width: 100%; }
+
+/* Cashflow chart x labels: ensure visible */
+.co-scope .co-br-section svg { display: block; }
+
+/* Stat strip on wide screens: 6 cols. Narrow: 3 cols. */
+@media (min-width: 1600px) {
+  .co-scope .co-br-stats { grid-template-columns: repeat(6, 1fr); }
+}
+
+/* Tweaks panel: don't overlap content too much */
+.co-scope .tp-panel { font-family: var(--font-sans); }
+
+/* Segmented control buttons should not wrap */
+.co-scope .co-segmented-lg button { white-space: nowrap; }
+.co-scope .co-segmented button { white-space: nowrap; }
+.co-scope .co-line-controls { white-space: nowrap; }
+
+/* ─────────────────────────────────────────────────────────────
+ * Thai-safe guard [[section-component-eyebrow-rootcause]]
+ * The mockup applies uppercase + letter-spacing to .co-side-title,
+ * .co-kpi-label, .co-section-title etc. for short EN keys. Thai text
+ * MUST NOT be uppercased/over-tracked (it mangles glyphs + spacing).
+ * Add `.co-th` to any of those elements when the content is Thai.
+ * ───────────────────────────────────────────────────────────── */
+.co-scope .co-side-title.co-th,
+.co-scope .co-kpi-label.co-th,
+.co-scope .tag.co-th,
+.co-scope .tbl thead th.co-th {
+  text-transform: none;
+  letter-spacing: normal;
+}

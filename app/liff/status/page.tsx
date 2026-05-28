@@ -29,7 +29,7 @@ export default async function LiffStatusPage() {
   const { data: reports } = await admin
     .from("daily_reports")
     .select(
-      "id, branch_id, total_sales, status, submitted_at, approved_at, shift, report_date, branches(code, name, business_type)",
+      "id, branch_id, total_sales, status, submitted_at, approved_at, shift, report_date, rejected_reason, branches(code, name, business_type)",
     )
     .eq("submitted_by_id", session.user.id)
     .order("submitted_at", { ascending: false })
@@ -73,6 +73,8 @@ export default async function LiffStatusPage() {
           const Icon = status === "approved" ? CheckCircle2 : status === "rejected" ? XCircle : Clock;
           const iconColor = status === "approved" ? "text-green-600" : status === "rejected" ? "text-red-600" : "text-amber-600";
 
+          const rejectedReason = (r as { rejected_reason?: string | null })
+            .rejected_reason;
           return (
             <div
               key={r.id}
@@ -100,6 +102,28 @@ export default async function LiffStatusPage() {
                   </Badge>
                 </div>
               </div>
+              {/* แสดงเหตุผล reject + ปุ่มแก้และส่งใหม่ · CEO 2026-05-20 */}
+              {status === "rejected" && (
+                <div className="mt-2 px-3 py-2 bg-red-50 border border-red-100 rounded-xl">
+                  {rejectedReason && (
+                    <>
+                      <div className="text-xs font-bold text-red-700">
+                        เหตุผลที่ไม่อนุมัติ
+                      </div>
+                      <div className="text-sm text-red-900 mt-0.5">
+                        {rejectedReason}
+                      </div>
+                    </>
+                  )}
+                  <Link
+                    href={`/liff/report/${r.branch_id}?date=${r.report_date}&shift=${r.shift}`}
+                    className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-red-700 hover:text-red-900 underline"
+                  >
+                    📝 แก้และส่งใหม่
+                    <ArrowRight className="size-3.5" />
+                  </Link>
+                </div>
+              )}
             </div>
           );
         })}

@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth/company-context";
 import { loadNavCounts } from "@/lib/nav/counts";
 import { loadUserModules } from "@/lib/auth/module-access";
+import { isModuleDisabled, type ModuleSlug } from "@/lib/modules";
 
 const ROLE_LABEL: Record<string, string> = {
   super_admin: "Super Admin",
@@ -72,7 +73,9 @@ export default async function AdminLayout({
         companies={companies}
         currentCompanyId={currentCompanyId}
         navCounts={navCounts}
-        userModules={Array.from(userModules)}
+        userModules={Array.from(userModules).filter(
+          (slug) => !isModuleDisabled(slug as ModuleSlug),
+        )}
       >
         {children}
       </AdminShell>

@@ -1,0 +1,535 @@
+/* =================================================================
+   Pooil App · Public Repair Form · 1:1 port of form-styles.css
+   Scoped under .rf-root.
+   ================================================================= */
+
+.rf-root {
+  font-family: "IBM Plex Sans Thai", "IBM Plex Sans", -apple-system, system-ui, sans-serif;
+  color: #0B1220;
+  background: #F4F6FA;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+.rf-root .num,
+.rf-root .tabular {
+  font-family: "IBM Plex Sans", "Inter", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ===== HERO ===== */
+.rf-root .rf-hero {
+  background: linear-gradient(135deg, #1E4FCC 0%, #0B2766 100%);
+  color: white;
+  padding: 32px 24px 28px;
+  text-align: center;
+  border-radius: 24px;
+}
+.rf-root .rf-hero-mark {
+  width: 40px; height: 40px;
+  margin: 0 auto 10px;
+  background: rgba(255, 255, 255, 0.18);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+}
+.rf-root .rf-hero h1 {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin: 0 0 4px;
+  line-height: 1.25;
+}
+.rf-root .rf-hero .sub {
+  font-size: 13.5px;
+  opacity: 0.85;
+  line-height: 1.4;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+/* ===== LAYOUT ===== */
+.rf-root .rf-wrap {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 20px 16px 32px;
+}
+.rf-root .rf-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 900px) {
+  .rf-root .rf-wrap { max-width: 1080px; padding: 12px 24px 48px; }
+  .rf-root .rf-grid {
+    grid-template-columns: 1fr 320px;
+    gap: 24px;
+    align-items: start;
+  }
+}
+
+/* ===== SECTIONS ===== */
+.rf-root .rf-section {
+  background: white;
+  border-radius: 16px;
+  padding: 18px 20px;
+  border: 1px solid #E5EAF2;
+  margin-bottom: 12px;
+}
+.rf-root .rf-section-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.rf-root .rf-section-num {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: #EFF4FF;
+  color: #1740A3;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 13px;
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  flex-shrink: 0;
+}
+.rf-root .rf-section-num.done {
+  background: #ECFDF5;
+  color: #047857;
+}
+.rf-root .rf-section-title {
+  font-size: 15.5px;
+  font-weight: 600;
+  color: #0B1220;
+  white-space: nowrap;
+}
+.rf-root .rf-section-sub {
+  font-size: 12.5px;
+  color: #6B7280;
+  margin-left: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 600px) {
+  .rf-root .rf-section-sub { display: none; }
+}
+
+/* ===== LABEL ===== */
+.rf-root .rf-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rf-root .rf-label .req { color: #DC2626; }
+.rf-root .rf-label .opt { font-weight: 500; color: #9CA3AF; }
+
+/* ===== INPUTS ===== */
+.rf-root .rf-input,
+.rf-root .rf-select,
+.rf-root .rf-textarea {
+  width: 100%;
+  padding: 11px 14px;
+  background: white;
+  border: 1.5px solid #E5EAF2;
+  border-radius: 11px;
+  font-family: inherit;
+  font-size: 14.5px;
+  color: #0B1220;
+  outline: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.rf-root .rf-input:focus,
+.rf-root .rf-select:focus,
+.rf-root .rf-textarea:focus {
+  border-color: #5B8DEF;
+  box-shadow: 0 0 0 4px rgba(91, 141, 239, 0.15);
+}
+.rf-root .rf-input::placeholder,
+.rf-root .rf-textarea::placeholder { color: #9CA3AF; }
+.rf-root .rf-textarea {
+  min-height: 92px;
+  resize: vertical;
+  line-height: 1.5;
+}
+.rf-root .rf-help {
+  font-size: 11.5px;
+  color: #6B7280;
+  margin-top: 5px;
+  line-height: 1.4;
+}
+
+.rf-root .rf-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 600px) {
+  .rf-root .rf-row.two { grid-template-columns: 1fr 1fr; }
+}
+
+/* ===== COMPANY TABS ===== */
+.rf-root .rf-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rf-root .rf-pill {
+  flex: 1;
+  min-width: 90px;
+  padding: 12px 14px;
+  background: white;
+  border: 1.5px solid #E5EAF2;
+  border-radius: 11px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.rf-root .rf-pill.is-selected {
+  border-color: #1E4FCC;
+  background: #EFF4FF;
+  color: #1740A3;
+  font-weight: 600;
+}
+
+/* ===== CATEGORY GRID ===== */
+.rf-root .rf-cat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+@media (min-width: 600px) {
+  .rf-root .rf-cat-grid { grid-template-columns: repeat(4, 1fr); }
+}
+.rf-root .rf-cat {
+  background: white;
+  border: 1.5px solid #E5EAF2;
+  border-radius: 12px;
+  padding: 14px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #0B1220;
+  font-weight: 500;
+  text-align: center;
+  line-height: 1.3;
+  cursor: pointer;
+  min-height: 86px;
+}
+.rf-root .rf-cat.is-selected {
+  border-color: #1E4FCC;
+  background: #EFF4FF;
+  color: #1740A3;
+}
+.rf-root .rf-cat-emoji { font-size: 24px; }
+
+/* ===== PRIORITY ===== */
+.rf-root .rf-prio-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.rf-root .rf-prio {
+  padding: 14px 10px;
+  border-radius: 12px;
+  border: 1.5px solid #E5EAF2;
+  background: white;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #475569;
+}
+.rf-root .rf-prio .sub { font-size: 10.5px; font-weight: 500; color: #94A3B8; }
+.rf-root .rf-prio.urgent.is-selected { background: #FEF2F2; border-color: #EF4444; color: #DC2626; }
+.rf-root .rf-prio.urgent.is-selected .sub { color: #DC2626; opacity: 0.75; }
+.rf-root .rf-prio.normal.is-selected { background: #EFF6FF; border-color: #3B82F6; color: #1D4ED8; }
+.rf-root .rf-prio.normal.is-selected .sub { color: #1D4ED8; opacity: 0.75; }
+.rf-root .rf-prio.low.is-selected    { background: #F1F5F9; border-color: #94A3B8; color: #475569; }
+.rf-root .rf-prio.low.is-selected .sub { color: #475569; opacity: 0.75; }
+
+/* ===== PHOTOS ===== */
+.rf-root .rf-photo-cta {
+  width: 100%;
+  padding: 16px;
+  background: #0B1220;
+  color: white;
+  border: 0;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.rf-root .rf-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+@media (min-width: 600px) {
+  .rf-root .rf-photo-grid { grid-template-columns: repeat(6, 1fr); }
+}
+.rf-root .rf-photo-tile {
+  aspect-ratio: 1;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #E0E7F4, #C7D2E5);
+  display: grid;
+  place-items: center;
+  color: #94A3B8;
+  position: relative;
+  overflow: hidden;
+}
+.rf-root .rf-photo-tile.add {
+  background: rgba(11, 18, 32, 0.04);
+  border: 2px dashed rgba(11, 18, 32, 0.15);
+  color: #6B7280;
+  cursor: pointer;
+}
+.rf-root .rf-photo-tile.add:hover {
+  background: white;
+  border-color: #5B8DEF;
+  color: #1E4FCC;
+}
+.rf-root .rf-photo-remove {
+  position: absolute;
+  top: 5px; right: 5px;
+  width: 22px; height: 22px;
+  background: rgba(11, 18, 32, 0.6);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: white;
+  cursor: pointer;
+  border: 0;
+}
+
+/* ===== PREVIEW SIDEBAR ===== */
+.rf-root .rf-preview {
+  position: sticky;
+  top: 24px;
+  background: white;
+  border-radius: 16px;
+  padding: 18px 20px;
+  border: 1px solid #E5EAF2;
+  display: none;
+}
+@media (min-width: 900px) {
+  .rf-root .rf-preview { display: block; }
+}
+.rf-root .rf-preview h3 {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #6B7280;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 10px;
+}
+.rf-root .rf-preview-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: #0B1220;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  margin-bottom: 12px;
+}
+.rf-root .rf-preview-row {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  padding: 7px 0;
+  font-size: 12.5px;
+  border-bottom: 1px dashed #F1F5F9;
+}
+.rf-root .rf-preview-row:last-child { border-bottom: 0; }
+.rf-root .rf-preview-row .l { color: #94A3B8; }
+.rf-root .rf-preview-row .v { color: #0B1220; font-weight: 500; }
+.rf-root .rf-preview .none {
+  color: #94A3B8;
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* ===== SUBMIT ===== */
+.rf-root .rf-submit {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+}
+.rf-root .rf-btn {
+  flex: 1;
+  padding: 15px 18px;
+  border-radius: 13px;
+  font-family: inherit;
+  font-size: 15.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1.5px solid #E5EAF2;
+  background: white;
+  color: #0B1220;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.rf-root .rf-btn.primary {
+  background: #1E4FCC;
+  color: white;
+  border-color: #1740A3;
+}
+.rf-root .rf-btn.primary:hover { background: #1740A3; }
+.rf-root .rf-btn.primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ===== SUCCESS ===== */
+.rf-root .rf-success {
+  max-width: 560px;
+  margin: 40px auto;
+  padding: 0 16px;
+}
+.rf-root .rf-success-card {
+  background: white;
+  border: 1px solid #E5EAF2;
+  border-radius: 20px;
+  padding: 36px 28px;
+  text-align: center;
+}
+.rf-root .rf-success .check {
+  width: 64px; height: 64px;
+  background: #ECFDF5;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 16px;
+  color: #047857;
+}
+.rf-root .rf-success h2 {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin: 0 0 6px;
+}
+.rf-root .rf-success .ticket-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #EFF4FF;
+  color: #1740A3;
+  padding: 6px 14px;
+  border-radius: 99px;
+  font-family: "IBM Plex Sans", system-ui;
+  font-weight: 600;
+  font-size: 14px;
+  margin-top: 10px;
+}
+.rf-root .rf-success .desc {
+  color: #6B7280;
+  font-size: 13.5px;
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+.rf-root .rf-success-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 22px;
+}
+@media (min-width: 600px) {
+  .rf-root .rf-success-actions { grid-template-columns: 1fr 1fr; }
+}
+
+/* ===== PROGRESS BAR (mobile) ===== */
+.rf-root .rf-progress-bar {
+  position: sticky;
+  bottom: 0;
+  left: 0; right: 0;
+  background: rgba(255, 255, 255, 0.95);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid #E5EAF2;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 -16px -32px;
+  z-index: 30;
+}
+@media (min-width: 900px) {
+  .rf-root .rf-progress-bar { display: none; }
+}
+.rf-root .rf-progress-fill {
+  flex: 1;
+  height: 6px;
+  background: #E5EAF2;
+  border-radius: 99px;
+  overflow: hidden;
+}
+.rf-root .rf-progress-fill > div {
+  height: 100%;
+  background: #1E4FCC;
+  border-radius: 99px;
+  transition: width 0.2s;
+}
+.rf-root .rf-progress-pct {
+  font-family: "IBM Plex Sans", system-ui;
+  font-weight: 600;
+  font-size: 13px;
+  color: #1740A3;
+  min-width: 36px;
+  text-align: right;
+}
+
+/* ===== TRACKING (public) ===== */
+.rf-root .rf-track-pipeline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rf-root .rf-track-pipeline > div { flex: 1; min-width: 0; }
+.rf-root .rf-track-bar {
+  height: 8px;
+  border-radius: 99px;
+  background: #E5EAF2;
+}
+.rf-root .rf-track-bar.is-active { background: #1E4FCC; }
+.rf-root .rf-track-label {
+  margin-top: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-align: center;
+  color: #94A3B8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rf-root .rf-track-label.is-current { color: #1740A3; }
+.rf-root .rf-track-label.is-past { color: #334155; }

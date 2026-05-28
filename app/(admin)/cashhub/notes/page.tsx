@@ -9,6 +9,8 @@ import { adminClient } from "@/lib/db/server";
 import { Card, CardBody } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { BackButton } from "@/components/ui/back-button";
@@ -18,17 +20,6 @@ import { NotesGrouped, type NoteListRow } from "./notes-grouped";
 
 export const dynamic = "force-dynamic";
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
-
-interface NoteRow {
-  id: string;
-  branch_id: string;
-  report_date: string;
-  shift: string;
-  notes: string;
-  status: string;
-  total_sales: number | string;
-  branches: { code?: string; name?: string; business_type?: string } | null;
-}
 
 export default async function NotesInboxPage({
   searchParams,
@@ -105,14 +96,10 @@ export default async function NotesInboxPage({
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-4xl mx-auto pb-24">
       <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
-      <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
-          <MessageSquare className="size-4" /> NOTES INBOX
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1">
-          โน้ตจาก <span className="accent">Staff</span>
-        </h1>
-        <p className="text-zinc-600 mt-1 text-sm">
+      <header className="mt-3 mb-6 flex flex-col gap-2">
+        <SectionPill num="00" label="Notes inbox · โน้ตจาก Staff" />
+        <TwoToneTitle first="โน้ตจาก" accent="Staff" size={32} />
+        <p className="text-[var(--ch-text-2)] mt-1 text-sm">
           {rows.length} ข้อความใน {days} วัน · ใช้ดูปัญหา/ความเห็นจากหน้างาน
         </p>
       </header>
@@ -133,7 +120,7 @@ export default async function NotesInboxPage({
         ))}
       </div>
 
-      <Section number="01" label="MESSAGES" title="โน้ตล่าสุด">
+      <Section number="01" label="โน้ต" title="โน้ตล่าสุด">
         {rows.length === 0 ? (
           <Card>
             <CardBody>

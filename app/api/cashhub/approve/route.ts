@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { requireSession } from "@/lib/auth/session";
+import { zUUID } from "@/lib/zod-helpers";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { getRequestMeta } from "@/lib/audit/request-meta";
 import { canApproveBranch } from "@/lib/auth/permissions";
 import { editTelegramMessage } from "@/lib/telegram/send";
 import {
@@ -15,13 +17,16 @@ import { formatInTimeZone } from "date-fns-tz";
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
 const ApproveSchema = z.object({
-  reportId: z.string().uuid(),
+  reportId: zUUID(),
   action: z.enum(["approve", "reject"]),
   reason: z.string().max(500).optional(),
 });
 
 export async function POST(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard({ executive: true });
+  if (gate.error) return gate.error;
+  const session = gate.session;
+  const meta = getRequestMeta(req);
 
   let body: unknown;
   try {
@@ -77,9 +82,29 @@ export async function POST(req: NextRequest) {
       resourceType: "daily_report",
       resourceId: reportId,
       diff: { new: { attempted: action } },
+      ...meta,
     });
     return NextResponse.json(
       { error: "ไม่มีสิทธิ์อนุมัติสาขานี้" },
+      { status: 403 },
+    );
+  }
+
+  // Segregation of Duties — ผู้กรอกรายงานห้ามอนุมัติเอง (Finance audit · 2026-05-20)
+  // applies only to "approve". "reject" allowed because owner may need to reject
+  // own staff's report via Approval Inline.
+  if (action === "approve" && report.submitted_by_id === session.user.id) {
+    await audit({
+      orgId: report.org_id,
+      userId: session.user.id,
+      action: "PERMISSION_DENIED",
+      resourceType: "daily_report",
+      resourceId: reportId,
+      diff: { new: { attempted: "self_approve", reason: "SoD violation" } },
+      ...meta,
+    });
+    return NextResponse.json(
+      { error: "คุณกรอกรายงานนี้เอง · ต้องให้คนอื่นอนุมัติ (Segregation of Duties)" },
       { status: 403 },
     );
   }
@@ -98,14 +123,26 @@ export async function POST(req: NextRequest) {
           updated_at: new Date().toISOString(),
         };
 
-  const { error } = await admin
+  // Race guard: ใส่ .eq("status", report.status) ให้ row ที่ status ตรงกับตอน read เท่านั้นที่ถูก update
+  // ถ้า admin 2 คนกดอนุมัติพร้อมกัน → คนที่สอง update affects 0 rows → return 409
+  // ป้องกัน audit log บอกผิดคน (เทียบกับ approve-bulk ที่ทำถูกอยู่แล้ว)
+  const { data: updated, error } = await admin
     .from("daily_reports")
     .update(updates)
-    .eq("id", reportId);
+    .eq("id", reportId)
+    .eq("status", report.status)
+    .select("id");
 
   if (error) {
     console.error("[POST /cashhub/approve]", error);
     return NextResponse.json({ error: "อัปเดตไม่ได้ ลองใหม่" }, { status: 500 });
+  }
+
+  if (!updated || updated.length === 0) {
+    return NextResponse.json(
+      { error: "รายงานนี้เพิ่งถูกดำเนินการโดยผู้ใช้คนอื่น โปรดรีเฟรช" },
+      { status: 409 },
+    );
   }
 
   await audit({
@@ -118,6 +155,7 @@ export async function POST(req: NextRequest) {
       old: { status: report.status },
       new: { status: action === "approve" ? "approved" : "rejected", reason },
     },
+    ...meta,
   });
 
   // ---- Notify Staff (in-app) so they see approval/rejection ----

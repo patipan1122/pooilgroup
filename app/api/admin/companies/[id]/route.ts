@@ -63,7 +63,8 @@ export async function PATCH(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (admin.from as any)("companies")
     .update(updates)
-    .eq("id", id);
+    .eq("id", id)
+    .eq("org_id", session.user.org_id);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

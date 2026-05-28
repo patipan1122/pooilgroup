@@ -3,6 +3,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { adminClient } from "@/lib/db/server";
+import { runWithMonitor } from "@/lib/cron/runner";
 import { sendTelegramMessage } from "@/lib/telegram/send";
 import { buildMorningBrief } from "@/lib/telegram/messages";
 import { getBaseUrl } from "@/lib/utils/base-url";
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return run();
+  return runWithMonitor("morning-brief", () => run(), { req });
 }
 
 export async function POST(req: NextRequest) {
@@ -42,25 +43,39 @@ async function run() {
     .eq("is_active", true);
   if (!orgs) return NextResponse.json({ ok: true, sent: 0 });
 
-  let sent = 0;
-  for (const org of orgs) {
-    // All reads through the canonical loader.
-    const branches = await loadBranches(org.id, { activeOnly: true });
-    const branchById = indexBranches(branches);
+  // Process orgs in parallel — was sequential; for 2+ orgs this halves wall
+  // time. Each org's `sent` count is summed at the end.
+  const orgResults = await Promise.all(orgs.map(processOrg));
+  const sent = orgResults.reduce((s, n) => s + n, 0);
+  return NextResponse.json({ ok: true, sent });
 
-    const yReports = await loadReports(org.id, {
-      dateFrom: yesterday,
-      dateTo: yesterday,
-      statuses: ["approved"],
-    });
-    const dReports = await loadReports(org.id, {
-      dateFrom: dayBefore,
-      dateTo: dayBefore,
-      statuses: ["approved"],
-    });
-    const pendingRows = await loadReports(org.id, {
-      statuses: ["submitted"],
-    });
+  async function processOrg(org: { id: string; name: string }) {
+    let sent = 0;
+    // Parallel reads — branches + 3 report slices were serial. Now all fan
+    // out together; pendingRows uses count-only because we only need .length.
+    const [branches, yReports, dReports, pendingCount] = await Promise.all([
+      loadBranches(org.id, { activeOnly: true }),
+      loadReports(org.id, {
+        dateFrom: yesterday,
+        dateTo: yesterday,
+        statuses: ["approved"],
+      }),
+      loadReports(org.id, {
+        dateFrom: dayBefore,
+        dateTo: dayBefore,
+        statuses: ["approved"],
+      }),
+      // count-only — was loading every pending row just to call .length
+      (async () => {
+        const { count } = await admin
+          .from("daily_reports")
+          .select("id", { count: "exact", head: true })
+          .eq("org_id", org.id)
+          .eq("status", "submitted");
+        return count ?? 0;
+      })(),
+    ]);
+    const branchById = indexBranches(branches);
 
     const yTotal = yReports.reduce(
       (s, r) => s + Number(r.total_sales || 0),
@@ -97,7 +112,7 @@ async function run() {
       yesterdayTotal: yTotal,
       vsPrevDayPct: vsPrev,
       topBranches,
-      pendingCount: (pendingRows ?? []).length,
+      pendingCount,
       alertLines,
       webBaseUrl: getBaseUrl(),
     });
@@ -197,23 +212,27 @@ async function run() {
       // Continue — original morning brief still ships.
     }
 
-    // Send to org admins with linked Telegram
+    // Send to org admins with linked Telegram — parallel within an org
+    // (avoid one slow chat blocking the rest). Each org still runs in
+    // parallel with other orgs above.
     const { data: admins } = await admin
       .from("users")
       .select("telegram_chat_id, name")
       .eq("org_id", org.id)
       .in("role", ["super_admin", "org_admin", "admin"])
       .eq("is_active", true);
-    for (const a of admins ?? []) {
-      if (a.telegram_chat_id) {
-        const r = await sendTelegramMessage({
-          chatId: a.telegram_chat_id as string,
-          text: message,
-          parseMode: "HTML",
-        });
-        if (r) sent += 1;
-      }
-    }
+    const sendResults = await Promise.all(
+      (admins ?? [])
+        .filter((a) => a.telegram_chat_id)
+        .map((a) =>
+          sendTelegramMessage({
+            chatId: a.telegram_chat_id as string,
+            text: message,
+            parseMode: "HTML",
+          }),
+        ),
+    );
+    sent += sendResults.filter(Boolean).length;
+    return sent;
   }
-  return NextResponse.json({ ok: true, sent });
 }

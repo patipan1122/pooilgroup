@@ -1,18 +1,23 @@
 // DocuFlow — Upload page (admin tier only)
 // ────────────────────────────────────────────────────────────────────
-// Server component shell. Loads companies/branches/users for the
-// ownership picker, then renders the client UploadForm.
+// Redesign 2026-05-21 — matches DesktopUpload canvas:
+//   hero dropzone (visual) · AI auto-fill banner · structured form right.
 // ────────────────────────────────────────────────────────────────────
 
+import { Sparkles, FileText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
-import { Section } from "@/components/ui/section";
-import { Card, CardBody } from "@/components/ui/card";
-import { BackButton } from "@/components/ui/back-button";
-import { thaiDateLong } from "@/lib/utils/format";
 import { BUSINESS_TYPE_LIST } from "@/constants/business-types";
 import { UploadForm } from "@/components/docuflow/upload-form";
+import {
+  DfButton,
+  DfCard,
+  DfEyebrow,
+  DfPageHeader,
+  DfPill,
+} from "@/components/docuflow/df-ui";
+import { DfTopBanner } from "@/components/docuflow/df-top-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +41,7 @@ export default async function DocumentUploadPage() {
         businessType: true,
         companyId: true,
       },
-      orderBy: { name: "asc" },
+      orderBy: { code: "asc" },
     }),
     prisma.user.findMany({
       where: { orgId, isActive: true },
@@ -52,37 +57,308 @@ export default async function DocumentUploadPage() {
   }));
 
   return (
-    <div className="p-3 sm:p-6 lg:p-10 max-w-3xl mx-auto pb-24">
-      <header className="mb-6 animate-fade-up">
-        <BackButton fallbackHref="/docuflow/documents" />
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold mt-3">
-          📄 DocuFlow · {thaiDateLong(new Date())}
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display mt-3 leading-[0.95]">
-          อัปโหลด <span className="text-gradient-blue">เอกสารใหม่</span>
-        </h1>
-        <p className="text-zinc-600 mt-1.5 text-sm">
-          เลือกไฟล์ ติดแท็ก กำหนดวันหมดอายุ — ระบบเก็บไว้ใน R2
-        </p>
-      </header>
+    <div
+      style={{
+        padding: "28px clamp(16px, 4vw, 40px)",
+        paddingBottom: 96,
+        maxWidth: 1400,
+        margin: "0 auto",
+      }}
+    >
+      <DfTopBanner breadcrumbs={[{ label: "หน้าหลัก", href: "/docuflow" }, { label: "อัปโหลด" }]} />
 
-      <Section
-        number="01"
-        label="UPLOAD"
-        title="ข้อมูลเอกสาร"
-        className="animate-fade-up delay-100"
+      <DfPageHeader
+        eyebrow={<DfEyebrow>อัปโหลดเอกสาร</DfEyebrow>}
+        title={
+          <>
+            ลากไฟล์มาวาง{" "}
+            <span style={{ color: "var(--df-muted)" }}>—</span>{" "}
+            ที่เหลือ AI จัดการให้
+          </>
+        }
+        description="รองรับ PDF · รูป · DOCX · ZIP · อัปโหลดได้สูงสุด 50 ไฟล์/ครั้ง"
+      />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1.1fr) minmax(0, 1fr)",
+          gap: 22,
+        }}
+        className="df-grid-2col"
       >
-        <Card>
-          <CardBody className="p-5 sm:p-6">
+        <div className="df-fade-up df-fade-up-100">
+          {/* NOTE: dropzone hero is rendered inside UploadForm (canvas-style,
+              fully functional drag-drop + click-to-select). Previous duplicate
+              visual block was confusing — single zone now. */}
+
+          {/* Upload queue preview — canvas DesktopUpload */}
+          <DfCard padding={20}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 12,
+              }}
+            >
+              <DfEyebrow>คำลังอัปโหลด · 3 ไฟล์</DfEyebrow>
+              <span style={{ fontSize: 12, color: "var(--df-muted)" }}>
+                2 ไฟล์ AI วิเคราะห์เสร็จแล้ว
+              </span>
+            </div>
+            {[
+              {
+                name: "ใบอนุญาตถัง-KKN002-2569.pdf",
+                size: "2.4 MB",
+                status: "done",
+                aiFound: [
+                  "ใบอนุญาตประกอบกิจการถัง",
+                  "หมดอายุ 21 ธ.ค. 70",
+                  "Pooil Oil · KKN-002",
+                ],
+              },
+              {
+                name: "ใบเสร็จต่ออายุ.jpg",
+                size: "812 KB",
+                status: "done",
+                aiFound: [
+                  "ใบเสร็จ",
+                  "ค่าธรรมเนียม ฿12,000",
+                  "21 ธ.ค. 69",
+                ],
+              },
+              {
+                name: "ตรวจสภาพ-รายงาน.pdf",
+                size: "4.1 MB",
+                status: "uploading",
+                progress: 64,
+              },
+            ].map((f, i) => (
+              <div
+                key={i}
+                style={{
+                  marginTop: 8,
+                  padding: 12,
+                  borderRadius: 12,
+                  border: "1px solid var(--df-line)",
+                  background: "var(--df-surface)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 9,
+                      background: "var(--df-bg-warm)",
+                      color: "var(--df-ink-2)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <FileText size={17} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        fontSize: 13,
+                        marginBottom: 4,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {f.name}
+                    </div>
+                    {f.status === "uploading" ? (
+                      <>
+                        <div className="df-bar" style={{ marginBottom: 4 }}>
+                          <i style={{ width: `${f.progress}%` }} />
+                        </div>
+                        <div
+                          style={{ fontSize: 11, color: "var(--df-muted)" }}
+                        >
+                          {f.size} · กำลังอัปโหลด {f.progress}%
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 11, color: "var(--df-muted)" }}>
+                        {f.size} ·{" "}
+                        <span
+                          style={{
+                            color: "var(--df-success)",
+                            fontWeight: 600,
+                          }}
+                        >
+                          อัปโหลดสำเร็จ
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  {f.status === "done" && (
+                    <DfPill tone="success" small>
+                      <Sparkles size={11} /> AI พร้อม
+                    </DfPill>
+                  )}
+                </div>
+                {f.aiFound && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 6,
+                      marginTop: 10,
+                      paddingLeft: 48,
+                    }}
+                  >
+                    {f.aiFound.map((t, j) => (
+                      <DfPill key={j} tone="brand" small>
+                        <Sparkles size={10} /> {t}
+                      </DfPill>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            <p
+              style={{
+                fontSize: 11,
+                color: "var(--df-muted)",
+                marginTop: 12,
+                marginBottom: 0,
+                textAlign: "center",
+                fontStyle: "italic",
+              }}
+            >
+              ตัวอย่างคิวอัปโหลด — เริ่มอัปโหลดจริงจะเห็นข้อมูลของคุณตรงนี้
+            </p>
+          </DfCard>
+
+          <DfCard padding={20} warm style={{ marginTop: 14 }}>
+            <DfEyebrow>วิธีใช้</DfEyebrow>
+            <ol
+              style={{
+                margin: "10px 0 0",
+                paddingLeft: 18,
+                fontSize: 13,
+                color: "var(--df-ink-2)",
+                lineHeight: 1.7,
+              }}
+            >
+              <li>เลือกไฟล์ (PDF · รูป · DOCX · ZIP)</li>
+              <li>กรอกข้อมูลที่จำเป็นในแบบฟอร์ม</li>
+              <li>กด <b>&quot;อัปโหลด&quot;</b> · ระบบจะส่ง notification ถึงผู้รับผิดชอบ</li>
+              <li>หากกรอกวันหมดอายุ — ระบบจะเตือนล่วงหน้า 90/30/7 วัน</li>
+            </ol>
+            <div style={{ marginTop: 14 }}>
+              <DfPill tone="brand" small>
+                <Sparkles size={11} /> รองรับการอัปโหลดหลายไฟล์พร้อมกัน
+              </DfPill>
+            </div>
+          </DfCard>
+
+          <DfCard padding={20} style={{ marginTop: 14 }}>
+            <DfEyebrow>เคล็ดลับ</DfEyebrow>
+            <div
+              style={{
+                marginTop: 10,
+                fontSize: 13,
+                color: "var(--df-ink-2)",
+                lineHeight: 1.6,
+              }}
+            >
+              อยากตั้งค่ารายละเอียดเอง — เช่น กำหนดประเภทเอกสาร, มอบหมายผู้รับผิดชอบ, ใส่ tag — ใช้แบบฟอร์มข้าง ๆ
+            </div>
+            <DfButton
+              href="/docuflow/documents/upload/template"
+              variant="ghost"
+              size="sm"
+              style={{ marginTop: 12 }}
+            >
+              <FileText size={13} />
+              ใช้ template สำเร็จรูป
+            </DfButton>
+          </DfCard>
+        </div>
+
+        <div className="df-fade-up df-fade-up-200">
+          <DfCard padding={24}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 18,
+              }}
+            >
+              <div>
+                <DfEyebrow>กรอกข้อมูล</DfEyebrow>
+                <h2
+                  className="df-serif"
+                  style={{ fontSize: 20, marginTop: 6, marginBottom: 0 }}
+                >
+                  ข้อมูลเอกสาร
+                </h2>
+              </div>
+              <DfPill tone="brand" small>
+                <Sparkles size={11} /> AI auto-fill
+              </DfPill>
+            </div>
+
+            <div
+              style={{
+                padding: "12px 14px",
+                background: "var(--df-brand-soft)",
+                borderRadius: 10,
+                marginBottom: 18,
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 10,
+              }}
+            >
+              <Sparkles size={16} style={{ color: "var(--df-brand)" }} />
+              <div style={{ flex: 1, fontSize: 12 }}>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    color: "var(--df-brand-deep)",
+                    marginBottom: 2,
+                  }}
+                >
+                  AI ช่วยอ่านชื่อเอกสาร + วันหมดอายุ
+                </div>
+                <div style={{ color: "var(--df-ink-2)" }}>
+                  หลังอัปโหลดเสร็จ — กดปุ่ม <b>&quot;AI วิเคราะห์&quot;</b>{" "}
+                  ในหน้าเอกสารเพื่อให้ระบบเติม metadata ให้
+                </div>
+              </div>
+            </div>
+
             <UploadForm
               companies={companies}
               branches={branches}
               users={users}
               businessTypes={businessTypes}
             />
-          </CardBody>
-        </Card>
-      </Section>
+          </DfCard>
+        </div>
+      </div>
+
+      <style>{`
+        @media (max-width: 980px) {
+          .df-grid-2col { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
     </div>
   );
 }

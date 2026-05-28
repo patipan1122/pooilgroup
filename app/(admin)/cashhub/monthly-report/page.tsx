@@ -1,8 +1,6 @@
 // Monthly PDF Report — print-optimized HTML (เลือก "Save as PDF" จาก browser)
 // 4 หน้าตามสเปค: Executive · Branch Ranking · By Type · Compliance
 
-import Link from "next/link";
-import {} from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireAdminTier } from "@/lib/auth/role-guards";
 import { PrintButton } from "./print-button";
@@ -118,11 +116,20 @@ export default async function MonthlyReportPage({
       : null;
 
   // Per branch
+  // expected = วันที่คาดว่าจะกรอก ในเดือนนี้
+  //   daily cadence  → daysInMonth (ทุกวัน)
+  //   weekly cadence → Math.ceil(daysInMonth / 7) (รอบเก็บ kiosk/นวด)
+  // CEO 2026-05-20: PDF เคยนับ kiosk เป็นรายวัน → compliance ขึ้น "ขาด 25/30" ทุกเดือน → fix
   const byBranch = new Map<
     string,
-    { code: string; name: string; province: string | null; region: string | null; type: string; total: number; daysFilled: Set<string> }
+    { code: string; name: string; province: string | null; region: string | null; type: string; total: number; daysFilled: Set<string>; expected: number }
   >();
   for (const b of branches) {
+    const cfg = BUSINESS_TYPES[b.business_type as string];
+    const expected =
+      cfg?.reportingCadence === "weekly"
+        ? Math.ceil(daysInMonth / 7)
+        : daysInMonth;
     byBranch.set(b.id as string, {
       code: b.code as string,
       name: b.name as string,
@@ -131,6 +138,7 @@ export default async function MonthlyReportPage({
       type: b.business_type as string,
       total: 0,
       daysFilled: new Set(),
+      expected,
     });
   }
   for (const r of monthRows) {
@@ -161,8 +169,9 @@ export default async function MonthlyReportPage({
   const complianceRows = ranked.map((b) => ({
     code: b.code,
     name: b.name,
+    expected: b.expected,
     daysFilled: b.daysFilled.size,
-    daysMissed: Math.max(0, daysInMonth - b.daysFilled.size),
+    daysMissed: Math.max(0, b.expected - b.daysFilled.size),
   }));
   complianceRows.sort((a, b) => b.daysMissed - a.daysMissed);
 
@@ -208,7 +217,7 @@ export default async function MonthlyReportPage({
           <section className="pg">
             <div className="flex items-baseline justify-between">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-brand-600)] font-bold">
+                <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
                   EXECUTIVE SUMMARY
                 </p>
                 <h1 className="text-4xl font-extrabold font-display mt-1 text-zinc-900">
@@ -227,7 +236,7 @@ export default async function MonthlyReportPage({
             </div>
 
             <div className="mt-8">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold mb-3">
+              <p className="text-xs font-bold text-zinc-500 mb-3">
                 ยอดเดือนที่ผ่านมา
               </p>
               <table className="w-full text-sm">
@@ -263,7 +272,7 @@ export default async function MonthlyReportPage({
 
           {/* PAGE 2 — RANKING */}
           <section className="pg">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-brand-600)] font-bold">
+            <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
               BRANCH RANKING
             </p>
             <h2 className="text-3xl font-extrabold font-display mt-1">
@@ -271,7 +280,7 @@ export default async function MonthlyReportPage({
             </h2>
             <table className="w-full text-sm mt-6">
               <thead>
-                <tr className="border-b-2 border-zinc-200 text-[10px] uppercase tracking-widest text-zinc-400">
+                <tr className="border-b-2 border-zinc-200 text-xs font-bold text-zinc-500">
                   <th className="text-left p-2 w-10">#</th>
                   <th className="text-left p-2">รหัส / ชื่อ</th>
                   <th className="text-left p-2">จังหวัด</th>
@@ -296,7 +305,7 @@ export default async function MonthlyReportPage({
                       {formatBahtCompact(b.total)}
                     </td>
                     <td className="p-2 text-right tabular-num text-zinc-500">
-                      {b.daysFilled.size}/{daysInMonth}
+                      {b.daysFilled.size}/{b.expected}
                     </td>
                   </tr>
                 ))}
@@ -306,7 +315,7 @@ export default async function MonthlyReportPage({
 
           {/* PAGE 3 — BY TYPE */}
           <section className="pg">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-brand-600)] font-bold">
+            <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
               BY BUSINESS TYPE
             </p>
             <h2 className="text-3xl font-extrabold font-display mt-1">
@@ -314,7 +323,7 @@ export default async function MonthlyReportPage({
             </h2>
             <table className="w-full text-sm mt-6">
               <thead>
-                <tr className="border-b-2 border-zinc-200 text-[10px] uppercase tracking-widest text-zinc-400">
+                <tr className="border-b-2 border-zinc-200 text-xs font-bold text-zinc-500">
                   <th className="text-left p-2"></th>
                   <th className="text-left p-2">ประเภท</th>
                   <th className="text-right p-2">สาขา</th>
@@ -349,18 +358,18 @@ export default async function MonthlyReportPage({
 
           {/* PAGE 4 — COMPLIANCE */}
           <section>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-brand-600)] font-bold">
+            <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
               REPORT COMPLIANCE
             </p>
             <h2 className="text-3xl font-extrabold font-display mt-1">
               สาขาที่กรอก <span className="accent">ครบ / ไม่ครบ</span>
             </h2>
             <p className="text-sm text-zinc-500 mt-2">
-              รวม {daysInMonth} วันในเดือน · เรียงตามวันที่ขาดจากมากไปน้อย
+              เปรียบเทียบกับ cadence ของแต่ละธุรกิจ (รายวัน {daysInMonth} วัน · kiosk รายสัปดาห์ {Math.ceil(daysInMonth / 7)} รอบ) · เรียงตามที่ขาดมาก
             </p>
             <table className="w-full text-sm mt-6">
               <thead>
-                <tr className="border-b-2 border-zinc-200 text-[10px] uppercase tracking-widest text-zinc-400">
+                <tr className="border-b-2 border-zinc-200 text-xs font-bold text-zinc-500">
                   <th className="text-left p-2">สาขา</th>
                   <th className="text-right p-2">กรอก</th>
                   <th className="text-right p-2">ขาด</th>
@@ -369,7 +378,7 @@ export default async function MonthlyReportPage({
               </thead>
               <tbody>
                 {complianceRows.map((r) => {
-                  const pct = (r.daysFilled / daysInMonth) * 100;
+                  const pct = r.expected > 0 ? (r.daysFilled / r.expected) * 100 : 0;
                   return (
                     <tr key={r.code} className="border-b border-zinc-100">
                       <td className="p-2">
@@ -379,7 +388,7 @@ export default async function MonthlyReportPage({
                         </span>
                       </td>
                       <td className="p-2 text-right tabular-num">
-                        {r.daysFilled}
+                        {r.daysFilled}/{r.expected}
                       </td>
                       <td
                         className={`p-2 text-right tabular-num font-bold ${
@@ -409,7 +418,7 @@ export default async function MonthlyReportPage({
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="border-2 border-zinc-200 rounded-2xl p-4">
-      <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+      <p className="text-xs font-bold text-zinc-500">
         {label}
       </p>
       <div className="text-3xl font-extrabold tabular-num font-display mt-1">

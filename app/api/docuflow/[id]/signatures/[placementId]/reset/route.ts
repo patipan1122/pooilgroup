@@ -11,6 +11,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { requireAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
@@ -22,7 +23,7 @@ type RouteContext = {
   params: Promise<{ id: string; placementId: string }>;
 };
 
-const IdSchema = z.string().uuid();
+const IdSchema = zUUID();
 
 export async function POST(_req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();

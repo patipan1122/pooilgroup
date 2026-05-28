@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
@@ -132,7 +133,7 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
         </CardHeader>
         <CardBody className="space-y-4">
           <div className="rounded-xl bg-[var(--color-brand-50)] border-2 border-[var(--color-brand-200)] p-4">
-            <p className="text-xs text-[var(--color-brand-700)] font-semibold uppercase tracking-widest mb-2">
+            <p className="text-xs text-[var(--color-brand-700)] font-semibold mb-2">
               Invite Link · หมดอายุ 48 ชม.
             </p>
             <div className="flex items-center gap-2">
@@ -159,11 +160,11 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
             <Button variant="outline" onClick={reset} fullWidth>
               เชิญคนถัดไป
             </Button>
-            <a href="/users" className="contents">
+            <Link href="/users" className="contents">
               <Button variant="ghost" fullWidth>
                 เสร็จสิ้น
               </Button>
-            </a>
+            </Link>
           </div>
         </CardBody>
       </Card>
@@ -182,7 +183,7 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
         <CardBody className="space-y-4">
           <div className="rounded-xl bg-[var(--color-brand-50)] border-2 border-[var(--color-brand-200)] p-4 space-y-3">
             <div>
-              <p className="text-xs text-[var(--color-brand-700)] font-semibold uppercase tracking-widest mb-1">
+              <p className="text-xs text-[var(--color-brand-700)] font-semibold mb-1">
                 อีเมล
               </p>
               <div className="flex items-center gap-2">
@@ -195,7 +196,7 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
               </div>
             </div>
             <div>
-              <p className="text-xs text-[var(--color-brand-700)] font-semibold uppercase tracking-widest mb-1">
+              <p className="text-xs text-[var(--color-brand-700)] font-semibold mb-1">
                 รหัสผ่าน
               </p>
               <div className="flex items-center gap-2">
@@ -217,11 +218,11 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
             <Button variant="outline" onClick={reset} fullWidth>
               สร้างคนถัดไป
             </Button>
-            <a href="/users" className="contents">
+            <Link href="/users" className="contents">
               <Button variant="ghost" fullWidth>
                 เสร็จสิ้น
               </Button>
-            </a>
+            </Link>
           </div>
         </CardBody>
       </Card>

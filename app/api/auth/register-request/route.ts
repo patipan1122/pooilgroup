@@ -7,12 +7,14 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { sendNotificationToMany, getOrgAdminIds } from "@/lib/notifications/send";
 import { sendToAdminChat, htmlEscape } from "@/lib/telegram/send";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
 import { ROLE_LABEL_LONG } from "@/lib/constants/roles";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 const POOILGROUP_ORG_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -25,7 +27,7 @@ const Schema = z.object({
     .min(2, "กรุณากรอกรหัสพนักงาน")
     .max(50)
     .regex(/^[A-Za-z0-9-]+$/, "รหัสพนักงานใช้ได้เฉพาะตัวอักษร ตัวเลข และขีด"),
-  branchId: z.string().uuid().nullable().optional(),
+  branchId: zUUID().nullable().optional(),
   requestedRole: z.enum([
     "staff",
     "branch_manager",
@@ -39,6 +41,25 @@ const Schema = z.object({
 const ROLE_LABEL = ROLE_LABEL_LONG;
 
 export async function POST(req: NextRequest) {
+  // BUG-016: IP-based rate limit (กัน spam bot)
+  // 5 register requests / IP / day
+  // TODO Phase 2: เพิ่ม Cloudflare Turnstile หรือ hCaptcha (ENV: TURNSTILE_SECRET)
+  const ip = getClientIp(req);
+  const rl = await checkRateLimit({
+    bucket: `register:ip:${ip}`,
+    max: 5,
+    windowSec: 24 * 60 * 60,
+  });
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: "ส่งคำขอจาก IP นี้บ่อยเกินไป — รอวันถัดไป" },
+      {
+        status: 429,
+        headers: { "Retry-After": String(rl.retryAfterSec) },
+      },
+    );
+  }
+
   let body: unknown;
   try {
     body = await req.json();
@@ -57,13 +78,9 @@ export async function POST(req: NextRequest) {
   const data = parsed.data;
   const admin = adminClient();
 
-  const ipAddress =
-    req.headers.get("cf-connecting-ip") ||
-    req.headers.get("x-real-ip") ||
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    null;
+  const ipAddress = ip === "unknown" ? null : ip;
 
-  // Rate limit: 3 requests per phone in last 7 days
+  // Rate limit: 3 requests per phone in last 7 days (existing per-phone limit)
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { count: recentCount } = await admin
     .from("register_requests")

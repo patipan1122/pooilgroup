@@ -104,7 +104,7 @@ export default async function AuditLogPage({
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
-  let q = admin
+  const baseQuery = admin
     .from("audit_logs")
     .select(
       "id, action, resource_type, resource_id, diff, ip_address, user_agent, created_at, user_id, users(name, role)",
@@ -114,13 +114,18 @@ export default async function AuditLogPage({
     .order("created_at", { ascending: false })
     .range(from, to);
 
+  // Build conditional filters as a list of transformers — keeps query builder pure.
+  const filters: Array<(b: typeof baseQuery) => typeof baseQuery> = [];
   if (range !== "all") {
     const days = range === "today" ? 1 : range === "7d" ? 7 : 30;
+    // Server Component — Date.now() OK (single execution per request)
+    // eslint-disable-next-line react-hooks/purity
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-    q = q.gte("created_at", since);
+    filters.push((b) => b.gte("created_at", since));
   }
-  if (actionFilter !== "all") q = q.eq("action", actionFilter);
-  if (userFilter !== "all") q = q.eq("user_id", userFilter);
+  if (actionFilter !== "all") filters.push((b) => b.eq("action", actionFilter));
+  if (userFilter !== "all") filters.push((b) => b.eq("user_id", userFilter));
+  const q = filters.reduce((acc, f) => f(acc), baseQuery);
 
   // Run audit query + users dropdown in parallel
   const [{ data, count }, usersRes] = await Promise.all([
@@ -158,7 +163,7 @@ export default async function AuditLogPage({
 
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-6xl mx-auto pb-24">
       <div className="mb-12 animate-slide-up-soft">
-        <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-700)] font-bold">
           AUDIT · COMPLIANCE
         </p>
         <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-5 leading-[0.95]">

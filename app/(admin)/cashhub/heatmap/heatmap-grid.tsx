@@ -130,9 +130,9 @@ export function HeatmapGrid({
           (no separate cards/tables per group · header วันแถวเดียวด้านบน) */}
       <div className="rounded-2xl border-2 border-zinc-200 bg-white overflow-x-auto">
         <table className="text-xs min-w-full">
-          <thead className="bg-zinc-50/50 sticky top-0 z-10">
+          <thead className="bg-zinc-50 sticky top-14 sm:top-16 z-20">
             <tr className="border-b border-zinc-100">
-              <th className="text-left p-2 sticky left-0 bg-zinc-50 z-20 whitespace-nowrap">
+              <th className="text-left p-2 sticky left-0 bg-zinc-50 z-30 whitespace-nowrap">
                 สาขา
               </th>
               {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((d) => (
@@ -156,10 +156,10 @@ export function HeatmapGrid({
               return (
                 <Fragment key={type}>
                   {/* Biz-type group header row — full-width clickable */}
-                  <tr className="bg-zinc-50/40 border-y-2 border-zinc-100">
+                  <tr className="bg-zinc-50 border-y-2 border-zinc-100">
                     <td
                       colSpan={daysInMonth + 1}
-                      className="sticky left-0 bg-zinc-50/40 p-0"
+                      className="sticky left-0 bg-zinc-50 p-0 z-10"
                     >
                       <button
                         type="button"
@@ -190,8 +190,8 @@ export function HeatmapGrid({
                     list.map((b) => {
                       const m = matrix[b.id] ?? {};
                       return (
-                        <tr key={b.id} className="border-b border-zinc-50">
-                          <td className="p-2 sticky left-0 bg-white whitespace-nowrap font-medium">
+                        <tr key={b.id} className="border-b border-zinc-50 bg-white hover:bg-zinc-50 group/heatrow">
+                          <td className="p-2 sticky left-0 bg-white group-hover/heatrow:bg-zinc-50 whitespace-nowrap font-medium z-10 transition-colors">
                             <Link
                               href={`/cashhub/branches/${b.id}`}
                               className="inline-flex items-center gap-1.5 hover:text-[var(--color-brand-700)]"

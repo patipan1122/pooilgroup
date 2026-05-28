@@ -1,24 +1,39 @@
 // DocuFlow — Expiry Dashboard
 // ────────────────────────────────────────────────────────────────────
-// 4 buckets visually distinct: expired / critical / urgent / watch.
-// Filter by company / branch / business type.
-// Spec: ดีเทลv1/DOCUFLOW.md §6
+// Redesign 2026-05-21 — matches DesktopRenewal + DesktopCalendar canvas:
+//   stat strip + bucket cards (4 tones) + side calendar visualization.
+// Data layer unchanged.
 // ────────────────────────────────────────────────────────────────────
 
 import Link from "next/link";
-import { Clock, AlertCircle, AlertTriangle, Calendar } from "lucide-react";
+import {
+  Clock,
+  AlertCircle,
+  AlertTriangle,
+  Calendar,
+  ChevronRight,
+  Wallet,
+  ArrowLeft,
+  Bell,
+  Download,
+} from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { loadRenewals } from "@/lib/docuflow/data";
 import type { ExpiryStatus } from "@/lib/docuflow/expiry";
 import { prisma } from "@/lib/prisma";
 import { BUSINESS_TYPES } from "@/constants/business-types";
-import { Section } from "@/components/ui/section";
-import { Card, CardBody } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
-import { ExpiryBadge } from "@/components/docuflow/expiry-badge";
 import { DocumentFilters } from "@/components/docuflow/document-filters";
 import { thaiDateLong } from "@/lib/utils/format";
+import {
+  DfButton,
+  DfCard,
+  DfEyebrow,
+  DfPageHeader,
+  DfPill,
+  DfStatCard,
+} from "@/components/docuflow/df-ui";
+import { DfTopBanner } from "@/components/docuflow/df-top-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +48,7 @@ interface BucketDef {
   label: string;
   description: string;
   Icon: typeof Clock;
-  cardClass: string;
-  countClass: string;
+  tone: "danger" | "warn" | "outline" | "success";
 }
 
 const BUCKETS: BucketDef[] = [
@@ -43,32 +57,28 @@ const BUCKETS: BucketDef[] = [
     label: "หมดแล้ว",
     description: "เอกสารหมดอายุแล้ว — ต้องต่อด่วน",
     Icon: AlertCircle,
-    cardClass: "border-rose-200 bg-rose-50/40",
-    countClass: "text-rose-700",
+    tone: "danger",
   },
   {
     status: "critical",
     label: "วิกฤต ≤ 7 วัน",
     description: "หมดในสัปดาห์หน้า",
     Icon: AlertTriangle,
-    cardClass: "border-rose-200 bg-rose-50/30",
-    countClass: "text-rose-700",
+    tone: "danger",
   },
   {
     status: "urgent",
     label: "เร่งด่วน ≤ 30 วัน",
     description: "หมดภายในเดือน — เริ่มดำเนินการ",
     Icon: Clock,
-    cardClass: "border-amber-200 bg-amber-50/40",
-    countClass: "text-amber-700",
+    tone: "warn",
   },
   {
     status: "watch",
     label: "เฝ้าระวัง ≤ 90 วัน",
     description: "เริ่มเตรียมต่ออายุ",
     Icon: Calendar,
-    cardClass: "border-zinc-200 bg-zinc-50/60",
-    countClass: "text-zinc-700",
+    tone: "outline",
   },
 ];
 
@@ -106,8 +116,6 @@ export default async function ExpiryDashboardPage({
     }),
   ]);
 
-  // Lookup ownership rows for each renewal to apply filters.
-  // Fetch all ownership for the doc ids touched (one query, indexed).
   const docIds = renewals.map((r) => r.documentId);
   const ownerships = docIds.length
     ? await prisma.documentOwnership.findMany({
@@ -145,7 +153,6 @@ export default async function ExpiryDashboardPage({
     return true;
   });
 
-  // Group by status
   const grouped: Record<ExpiryStatus, typeof filtered> = {
     expired: [],
     critical: [],
@@ -155,22 +162,24 @@ export default async function ExpiryDashboardPage({
   };
   for (const r of filtered) grouped[r.expiryStatus].push(r);
 
-  const totalUrgent =
-    grouped.expired.length + grouped.critical.length + grouped.urgent.length;
+  const expired = grouped.expired.length;
+  const critical = grouped.critical.length;
+  const urgent = grouped.urgent.length;
+  const watch = grouped.watch.length;
+  const totalUrgent = expired + critical;
+  const within30 = expired + critical + urgent;
 
-  // Build company / business-type chips
   const companyChips = companies.map((c) => ({ value: c.id, label: c.name }));
   const branchChips = branches
     .filter((b) => !filterCompany || b.companyId === filterCompany)
     .slice(0, 30)
     .map((b) => ({ value: b.id, label: `${b.code} · ${b.name}` }));
-  const typeChips = Array.from(
-    new Set(branches.map((b) => b.businessType)),
-  ).map((t) => {
-    const cfg = BUSINESS_TYPES[t];
-    return { value: t, label: cfg ? `${cfg.emoji} ${cfg.label}` : t };
-  });
-
+  const typeChips = Array.from(new Set(branches.map((b) => b.businessType))).map(
+    (t) => {
+      const cfg = BUSINESS_TYPES[t];
+      return { value: t, label: cfg ? `${cfg.emoji} ${cfg.label}` : t };
+    },
+  );
   const preserveFor = (key: string) => {
     const p: Record<string, string> = {};
     if (filterCompany && key !== "company") p.company = filterCompany;
@@ -179,38 +188,380 @@ export default async function ExpiryDashboardPage({
     return p;
   };
 
-  return (
-    <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
-      <header className="mb-6 animate-fade-up">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
-          📄 DocuFlow · {thaiDateLong(new Date())}
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
-          ใกล้ <span className="text-gradient-blue">หมดอายุ</span>
-        </h1>
-        <p className="text-zinc-600 mt-1.5 text-sm">
-          {filtered.length} เอกสารกำลังใกล้หมด
-          {totalUrgent > 0 && (
-            <>
-              {" · "}
-              <span className="font-bold text-rose-700">
-                ต้องดำเนินการด่วน {totalUrgent}
-              </span>
-            </>
-          )}
-        </p>
-      </header>
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = now.getDate();
+  const eventsByDay = new Map<number, typeof filtered>();
+  for (const r of filtered) {
+    const d = new Date(r.expiryDate);
+    if (d.getFullYear() === year && d.getMonth() === month) {
+      const day = d.getDate();
+      const list = eventsByDay.get(day) ?? [];
+      list.push(r);
+      eventsByDay.set(day, list);
+    }
+  }
+  const weekDays = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
+  const monthName = now.toLocaleDateString("th-TH", {
+    month: "long",
+    year: "numeric",
+  });
 
-      <Section
-        number="01"
-        label="FILTER"
-        title="กรอง"
-        className="mb-6 animate-fade-up delay-100"
+  return (
+    <div
+      style={{
+        padding: "28px clamp(16px, 4vw, 40px)",
+        paddingBottom: 96,
+        maxWidth: 1500,
+        margin: "0 auto",
+      }}
+    >
+      <DfTopBanner breadcrumbs={[{ label: "หน้าหลัก", href: "/docuflow" }, { label: "ใกล้หมดอายุ" }]} />
+
+      <DfPageHeader
+        eyebrow={<DfEyebrow>ใกล้หมดอายุ · ปฏิทินต่ออายุ</DfEyebrow>}
+        title={
+          <>
+            <span style={{ color: "var(--df-muted)" }}>{monthName}</span>
+            {totalUrgent > 0 && (
+              <>
+                <br />
+                <span style={{ color: "var(--df-danger)" }}>{totalUrgent}</span>{" "}
+                เอกสารต้องต่ออายุด่วน
+              </>
+            )}
+          </>
+        }
+        description={`${filtered.length.toLocaleString("th-TH")} เอกสารใกล้หมดอายุ`}
+        actions={
+          <>
+            <DfButton variant="ghost">
+              <Download size={14} />
+              Export ปฏิทิน
+            </DfButton>
+            <DfButton variant="brand" href="/docuflow/calendar">
+              <Bell size={14} />
+              เปิดปฏิทินเต็ม
+            </DfButton>
+          </>
+        }
+      />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+          gap: 12,
+          marginBottom: 22,
+        }}
+        className="df-fade-up df-fade-up-100"
       >
-        <Card>
-          <CardBody className="space-y-4">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2">
+        <DfStatCard
+          label="วันนี้"
+          value={eventsByDay.get(today)?.length ?? 0}
+          tone={(eventsByDay.get(today)?.length ?? 0) > 0 ? "danger" : "ink"}
+          icon={<Clock size={17} />}
+        />
+        <DfStatCard
+          label="หมดแล้ว"
+          value={expired}
+          tone={expired > 0 ? "danger" : "ink"}
+          icon={<AlertCircle size={17} />}
+        />
+        <DfStatCard
+          label="≤ 30 วัน"
+          value={within30}
+          tone={within30 > 0 ? "warn" : "ink"}
+          icon={<Clock size={17} />}
+        />
+        <DfStatCard
+          label="≤ 90 วัน"
+          value={watch}
+          tone="brand"
+          icon={<Calendar size={17} />}
+        />
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 320px)",
+          gap: 20,
+        }}
+        className="df-grid-2col"
+      >
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: 16 }}
+          className="df-fade-up df-fade-up-200"
+        >
+          {filtered.length === 0 ? (
+            <DfCard padding={36} style={{ textAlign: "center" }}>
+              <DfEyebrow>ไม่มีเอกสารใกล้หมด</DfEyebrow>
+              <h3
+                className="df-serif"
+                style={{ fontSize: 22, marginTop: 12, marginBottom: 8 }}
+              >
+                ทุกเอกสารยังเหลืออายุเกิน 90 วัน
+              </h3>
+              <p
+                style={{
+                  color: "var(--df-muted)",
+                  fontSize: 13,
+                  marginTop: 0,
+                  marginBottom: 16,
+                }}
+              >
+                เยี่ยม! ระบบจะแจ้งเตือนเมื่อมีเอกสารใกล้หมดอายุ
+              </p>
+              <DfButton href="/docuflow/browse" variant="ghost">
+                ดูเอกสารทั้งหมด <ChevronRight size={13} />
+              </DfButton>
+            </DfCard>
+          ) : (
+            BUCKETS.map((b) => {
+              const list = grouped[b.status];
+              if (list.length === 0) return null;
+              const Icon = b.Icon;
+              const toneBg: Record<typeof b.tone, string> = {
+                danger: "var(--df-danger-soft)",
+                warn: "var(--df-warn-soft)",
+                outline: "var(--df-bg-warm)",
+                success: "var(--df-success-soft)",
+              };
+              const toneFg: Record<typeof b.tone, string> = {
+                danger: "var(--df-danger)",
+                warn: "var(--df-warn)",
+                outline: "var(--df-muted)",
+                success: "var(--df-success)",
+              };
+              return (
+                <DfCard key={b.status} padding={0}>
+                  <div
+                    style={{
+                      padding: "16px 20px",
+                      borderBottom: "1px solid var(--df-line)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <span
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: 10,
+                          background: toneBg[b.tone],
+                          color: toneFg[b.tone],
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Icon size={20} />
+                      </span>
+                      <div>
+                        <h3
+                          className="df-serif"
+                          style={{ fontSize: 18, margin: 0 }}
+                        >
+                          {b.label}
+                        </h3>
+                        <p
+                          style={{
+                            fontSize: 12,
+                            color: "var(--df-muted)",
+                            margin: 0,
+                            marginTop: 2,
+                          }}
+                        >
+                          {b.description}
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      className="df-tnum df-serif"
+                      style={{ fontSize: 28, fontWeight: 600, color: toneFg[b.tone] }}
+                    >
+                      {list.length}
+                    </span>
+                  </div>
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                    {list.map((r) => {
+                      const label =
+                        r.daysUntilExpiry < 0
+                          ? `หมดแล้ว ${Math.abs(r.daysUntilExpiry)} วัน`
+                          : r.daysUntilExpiry === 0
+                            ? "หมดวันนี้"
+                            : `อีก ${r.daysUntilExpiry} วัน`;
+                      return (
+                        <li
+                          key={r.id}
+                          style={{
+                            padding: "12px 20px",
+                            display: "grid",
+                            gridTemplateColumns: "1fr auto auto",
+                            gap: 12,
+                            alignItems: "center",
+                            borderBottom: "1px solid var(--df-line-soft)",
+                          }}
+                        >
+                          <Link
+                            href={`/docuflow/documents/${r.document.id}`}
+                            style={{
+                              minWidth: 0,
+                              textDecoration: "none",
+                              color: "inherit",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontWeight: 600,
+                                fontSize: 14,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {r.document.name}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "var(--df-muted)",
+                                marginTop: 2,
+                              }}
+                            >
+                              หมด {thaiDateLong(r.expiryDate)}
+                            </div>
+                          </Link>
+                          <DfPill tone={b.tone} small>
+                            {label}
+                          </DfPill>
+                          <DfButton
+                            href={`/docuflow/documents/${r.document.id}`}
+                            variant="brand"
+                            size="sm"
+                          >
+                            ต่ออายุ
+                          </DfButton>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </DfCard>
+              );
+            })
+          )}
+        </div>
+
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: 16 }}
+          className="df-fade-up df-fade-up-300"
+        >
+          <DfCard padding={18}>
+            <DfEyebrow>ปฏิทิน · เดือนนี้</DfEyebrow>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(7, 1fr)",
+                marginTop: 12,
+                marginBottom: 6,
+              }}
+            >
+              {weekDays.map((d) => (
+                <div
+                  key={d}
+                  style={{
+                    textAlign: "center",
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: "var(--df-muted)",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  {d}
+                </div>
+              ))}
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(7, 1fr)",
+                gap: 2,
+              }}
+            >
+              {Array.from({ length: firstDow }).map((_, i) => (
+                <div key={`empty-${i}`} style={{ aspectRatio: 1 }} />
+              ))}
+              {Array.from({ length: daysInMonth }).map((_, i) => {
+                const day = i + 1;
+                const isToday = day === today;
+                const evs = eventsByDay.get(day) ?? [];
+                const evCount = Math.min(evs.length, 3);
+                const tone = evs.some(
+                  (r) =>
+                    r.expiryStatus === "expired" ||
+                    r.expiryStatus === "critical",
+                )
+                  ? "var(--df-danger)"
+                  : evs.some((r) => r.expiryStatus === "urgent")
+                    ? "var(--df-warn)"
+                    : "var(--df-brand)";
+                return (
+                  <div
+                    key={day}
+                    style={{
+                      aspectRatio: 1,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: isToday ? "var(--df-accent)" : "transparent",
+                      color: isToday ? "#fff" : "var(--df-ink)",
+                      borderRadius: 8,
+                      fontSize: 12,
+                      fontWeight: isToday ? 700 : 500,
+                    }}
+                    className="df-tnum"
+                  >
+                    {day}
+                    {evCount > 0 && (
+                      <div style={{ display: "flex", gap: 2, marginTop: 2 }}>
+                        {Array.from({ length: evCount }).map((_, k) => (
+                          <div
+                            key={k}
+                            style={{
+                              width: 4,
+                              height: 4,
+                              borderRadius: 99,
+                              background: isToday ? "#fff" : tone,
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </DfCard>
+
+          <DfCard padding={18}>
+            <DfEyebrow>ตัวกรอง</DfEyebrow>
+            <div style={{ marginTop: 12 }}>
+              <p
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "var(--df-muted)",
+                  marginBottom: 6,
+                }}
+              >
                 บริษัท
               </p>
               <DocumentFilters
@@ -220,8 +571,15 @@ export default async function ExpiryDashboardPage({
                 preserve={preserveFor("company")}
               />
             </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2">
+            <div style={{ marginTop: 12 }}>
+              <p
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "var(--df-muted)",
+                  marginBottom: 6,
+                }}
+              >
                 ประเภทธุรกิจ
               </p>
               <DocumentFilters
@@ -231,8 +589,15 @@ export default async function ExpiryDashboardPage({
                 preserve={preserveFor("type")}
               />
             </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2">
+            <div style={{ marginTop: 12 }}>
+              <p
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "var(--df-muted)",
+                  marginBottom: 6,
+                }}
+              >
                 สาขา {filterCompany && "(ในบริษัทที่เลือก)"}
               </p>
               <DocumentFilters
@@ -242,89 +607,41 @@ export default async function ExpiryDashboardPage({
                 preserve={preserveFor("branch")}
               />
             </div>
-          </CardBody>
-        </Card>
-      </Section>
+          </DfCard>
 
-      <Section
-        number="02"
-        label="BUCKETS"
-        title="แบ่งตามความเร่งด่วน"
-        className="animate-fade-up delay-200"
-      >
-        {filtered.length === 0 ? (
-          <Card>
-            <CardBody>
-              <EmptyState
-                icon={<Clock className="size-6" />}
-                title="ไม่มีเอกสารใกล้หมดอายุ"
-                description="ทุกเอกสารยังเหลืออายุเกิน 90 วัน — เยี่ยม!"
-              />
-            </CardBody>
-          </Card>
-        ) : (
-          <div className="space-y-5">
-            {BUCKETS.map((b) => {
-              const list = grouped[b.status];
-              if (list.length === 0) return null;
-              return (
-                <Card key={b.status} className={b.cardClass}>
-                  <CardBody>
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div className="flex items-start gap-2.5">
-                        <b.Icon className={`size-5 mt-0.5 ${b.countClass}`} />
-                        <div>
-                          <h3 className="font-bold tracking-tight font-display text-zinc-900">
-                            {b.label}
-                          </h3>
-                          <p className="text-xs text-zinc-600 mt-0.5">
-                            {b.description}
-                          </p>
-                        </div>
-                      </div>
-                      <span
-                        className={`text-2xl font-extrabold tabular-nums ${b.countClass}`}
-                      >
-                        {list.length}
-                      </span>
-                    </div>
-                    <ul className="divide-y divide-zinc-100 bg-white rounded-xl border border-zinc-100">
-                      {list.map((r) => (
-                        <li
-                          key={r.id}
-                          className="px-4 py-3 flex items-center gap-3 hover:bg-zinc-50/60 transition-colors"
-                        >
-                          <ExpiryBadge
-                            status={r.expiryStatus}
-                            days={r.daysUntilExpiry}
-                          />
-                          <Link
-                            href={`/docuflow/documents/${r.document.id}`}
-                            className="flex-1 min-w-0 group"
-                          >
-                            <p className="font-medium text-zinc-900 truncate group-hover:text-[var(--color-brand-700)] transition-colors">
-                              {r.document.name}
-                            </p>
-                            <p className="text-xs text-zinc-500 mt-0.5">
-                              หมด {thaiDateLong(r.expiryDate)}
-                            </p>
-                          </Link>
-                          <Link
-                            href={`/docuflow/documents/${r.document.id}`}
-                            className="inline-flex items-center justify-center gap-1.5 font-medium transition-all duration-150 bg-[var(--color-brand-600)] text-white hover:bg-[var(--color-brand-700)] h-9 px-3 text-sm rounded-lg shrink-0"
-                          >
-                            ต่ออายุ
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardBody>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-      </Section>
+          {within30 > 0 && (
+            <DfCard
+              padding={16}
+              style={{
+                background: "linear-gradient(135deg, #0E1B2C 0%, #1B47B5 100%)",
+                border: "none",
+                color: "#FFF6E5",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <Wallet size={20} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>
+                    เอกสารต่ออายุ 30 วันข้างหน้า
+                  </div>
+                  <div
+                    className="df-tnum df-serif"
+                    style={{ fontSize: 22, fontWeight: 600 }}
+                  >
+                    {within30} ฉบับ
+                  </div>
+                </div>
+              </div>
+            </DfCard>
+          )}
+        </div>
+      </div>
+
+      <style>{`
+        @media (max-width: 1100px) {
+          .df-grid-2col { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
     </div>
   );
 }

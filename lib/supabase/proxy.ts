@@ -19,6 +19,9 @@ const CSP = [
 ].join("; ");
 
 const ALLOWED_ORIGINS = [
+  "https://pooilgroup.com",
+  "https://www.pooilgroup.com",
+  "https://pooilgroup.vercel.app",
   "https://poolgroup.com",
   "https://www.poolgroup.com",
   "https://liff.line.me",
@@ -36,7 +39,9 @@ function applySecurityHeaders(headers: Headers) {
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   headers.set(
     "Permissions-Policy",
-    "camera=(), microphone=(), geolocation=(self), payment=()",
+    // camera=(self) lets our origin call getUserMedia (Playland face register).
+    // Mic/payment stay blocked (we don't need them). Geo stays for CashHub.
+    "camera=(self), microphone=(), geolocation=(self), payment=()",
   );
   headers.set("X-XSS-Protection", "0");
 }

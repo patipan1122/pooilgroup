@@ -47,6 +47,9 @@ export interface CanonicalReport {
   credit: number;
   shortage: number;
   qty1: number | null;
+  qty1_unit: string | null;
+  qty2: number | null;
+  qty2_unit: string | null;
   notes: string | null;
   submitted_at: string | null;
   approved_at: string | null;
@@ -138,7 +141,7 @@ export async function loadReports(
   let q = admin
     .from("daily_reports")
     .select(
-      "id, org_id, branch_id, report_date, shift, status, total_sales, cash, transfer, card, credit, shortage, qty1, notes, submitted_at, approved_at",
+      "id, org_id, branch_id, report_date, shift, status, total_sales, cash, transfer, card, credit, shortage, qty1, qty1_unit, qty2, qty2_unit, notes, submitted_at, approved_at",
     )
     .eq("org_id", orgId);
 
@@ -154,7 +157,9 @@ export async function loadReports(
       .order("report_date", { ascending: false })
       .order("submitted_at", { ascending: false });
   }
-  if (limit) q = q.limit(limit);
+  // safety cap — unbounded scan kill switch (memory: ultraview-รอบ46)
+  const safeLimit = limit ?? 5000;
+  q = q.limit(safeLimit);
 
   const { data } = await q;
   return (data ?? []) as CanonicalReport[];

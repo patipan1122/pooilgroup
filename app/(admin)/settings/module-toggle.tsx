@@ -87,7 +87,7 @@ export function ModuleToggleList({ status: initial }: Props) {
                 onClick={() => toggle(m.slug, !isActive)}
                 disabled={updating}
                 className={cn(
-                  "relative inline-flex shrink-0 h-7 w-12 rounded-full transition-colors",
+                  "relative inline-flex shrink-0 h-9 w-16 rounded-full transition-colors",
                   isActive
                     ? "bg-[var(--color-brand-600)]"
                     : "bg-zinc-300",
@@ -97,8 +97,8 @@ export function ModuleToggleList({ status: initial }: Props) {
               >
                 <span
                   className={cn(
-                    "inline-block size-5 rounded-full bg-white shadow transition-transform absolute top-1",
-                    isActive ? "translate-x-6" : "translate-x-1",
+                    "inline-block size-7 rounded-full bg-white shadow transition-transform absolute top-1",
+                    isActive ? "translate-x-8" : "translate-x-1",
                   )}
                 />
               </button>

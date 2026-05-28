@@ -4,6 +4,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
@@ -16,7 +17,7 @@ const PatchSchema = z.object({
   phone: z.string().max(50).nullable().optional(),
   lat: z.number().min(-90).max(90).nullable().optional(),
   lng: z.number().min(-180).max(180).nullable().optional(),
-  managerId: z.string().uuid().nullable().optional(),
+  managerId: zUUID().nullable().optional(),
   lineGroupId: z.string().max(120).nullable().optional(),
   reportDeadline: z
     .string()
@@ -65,8 +66,25 @@ export async function PATCH(
   if (parsed.data.phone !== undefined) updates.phone = parsed.data.phone;
   if (parsed.data.lat !== undefined) updates.lat = parsed.data.lat;
   if (parsed.data.lng !== undefined) updates.lng = parsed.data.lng;
-  if (parsed.data.managerId !== undefined)
+  if (parsed.data.managerId !== undefined) {
+    // Validate manager belongs to same org + is_active before assigning
+    if (parsed.data.managerId) {
+      const { data: mgr } = await admin
+        .from("users")
+        .select("id")
+        .eq("id", parsed.data.managerId)
+        .eq("org_id", session.user.org_id)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (!mgr) {
+        return NextResponse.json(
+          { error: "ผู้จัดการที่เลือกไม่อยู่ในบริษัท หรือถูกปิดบัญชีแล้ว" },
+          { status: 400 },
+        );
+      }
+    }
     updates.manager_id = parsed.data.managerId;
+  }
   if (parsed.data.lineGroupId !== undefined)
     updates.line_group_id = parsed.data.lineGroupId;
   if (parsed.data.reportDeadline !== undefined)

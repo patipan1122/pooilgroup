@@ -1,20 +1,39 @@
 import { type NextRequest } from "next/server";
-import { requireSession } from "@/lib/auth/session";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { can } from "@/lib/auth/permissions";
 
+// CSV injection guard — Excel/Sheets evaluate any cell starting with
+// `= + - @ \t \r` as a formula. A branch named `=cmd|'...'` or a note
+// starting with `+` could exfil data or trigger external requests when
+// the file is opened. Prefix with `'` (de-facto Excel "literal" marker)
+// and still quote per RFC 4180 rules.
+const FORMULA_TRIGGERS = /^[=+\-@\t\r]/;
 function escapeCsv(v: unknown): string {
   if (v === null || v === undefined) return "";
-  const s = String(v);
+  let s = String(v);
+  if (FORMULA_TRIGGERS.test(s)) {
+    s = "'" + s;
+  }
   if (s.includes(",") || s.includes('"') || s.includes("\n")) {
     return `"${s.replace(/"/g, '""')}"`;
   }
   return s;
 }
 
+// Strip anything that could break the Content-Disposition header.
+// Was: raw `${fromDate}` / `${toDate}` could carry quotes, semicolons,
+// or newlines (header injection) since the from/to params weren't checked.
+function safeFilenamePart(s: string | null | undefined, fallback: string): string {
+  if (!s) return fallback;
+  return s.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32) || fallback;
+}
+
 export async function GET(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
   if (!can(session.user, "cashhub.export")) {
     return new Response("Forbidden", { status: 403 });
   }
@@ -87,7 +106,7 @@ export async function GET(req: NextRequest) {
   });
 
   const csv = "﻿" + [headers.map(escapeCsv).join(","), ...rows].join("\n");
-  const filename = `cashhub_${fromDate ?? "all"}_${toDate ?? "now"}.csv`;
+  const filename = `cashhub_${safeFilenamePart(fromDate, "all")}_${safeFilenamePart(toDate, "now")}.csv`;
 
   await audit({
     orgId: session.user.org_id,

@@ -30,9 +30,12 @@ export function QuickApproveBar({
 }: Props) {
   const [dismissed, setDismissed] = useState(false);
 
-  // sessionStorage check (mount only) — re-show on next session
+  // sessionStorage hydrate (mount only) — re-show on next session
+  // Pattern: setState in mount-effect เป็นวิธีมาตรฐานสำหรับ SSR hydration
+  // (sessionStorage เข้าถึงไม่ได้ระหว่าง SSR → ต้องอ่านหลัง mount)
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDismissed(sessionStorage.getItem(SS_KEY) === "1");
   }, []);
 
@@ -47,7 +50,7 @@ export function QuickApproveBar({
   if (dismissed || total === 0) return null;
 
   return (
-    <div className="sticky top-14 z-30 bg-gradient-to-r from-[var(--color-brand-700)] to-[var(--color-brand-500)] text-white shadow-md">
+    <div className="sticky top-14 sm:top-16 z-30 bg-gradient-to-r from-[var(--color-brand-700)] to-[var(--color-brand-500)] text-white shadow-md">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 flex items-center gap-3">
         <CheckCircle2 className="size-4 sm:size-5 shrink-0" />
 

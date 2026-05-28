@@ -4,7 +4,7 @@
 
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { FileText, RefreshCw, UserCircle2 } from "lucide-react";
+import { FileText, RefreshCw, UserCircle2, ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireAdminTier } from "@/lib/auth/role-guards";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,11 @@ import { Section } from "@/components/ui/section";
 import { thaiDateLong } from "@/lib/utils/format";
 import { prisma } from "@/lib/prisma";
 import { classifyExpiry, type ExpiryStatus } from "@/lib/vehicles/data";
+import {
+  DfEyebrow,
+  DfPill,
+  DfSection,
+} from "@/components/docuflow/df-ui";
 import {
   PERSON_DOC_TYPES,
   PERSON_DOC_TYPE_LABEL,
@@ -164,46 +169,116 @@ export default async function PersonDocDetailPage({
   );
 
   return (
-    <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
-      <div className="mb-4">
-        <BackButton fallbackHref="/docuflow/persons" />
-      </div>
+    <div
+      style={{
+        padding: "20px clamp(12px, 3vw, 32px)",
+        paddingBottom: 96,
+        maxWidth: 1200,
+        margin: "0 auto",
+      }}
+    >
+      <Link
+        href="/docuflow/persons"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 13,
+          color: "var(--df-muted)",
+          textDecoration: "none",
+          marginBottom: 12,
+        }}
+      >
+        <ArrowLeft size={14} />
+        กลับเอกสารบุคคล
+      </Link>
 
-      <header className="mb-6 animate-fade-up">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
-          📄 DocuFlow · เอกสารบุคคล · {thaiDateLong(new Date())}
-        </p>
-        <div className="mt-3 flex items-center gap-4 flex-wrap">
-          <div className="size-14 rounded-full bg-[var(--color-brand-50)] border-2 border-[var(--color-brand-100)] flex items-center justify-center text-[var(--color-brand-700)] shrink-0">
-            <UserCircle2 className="size-8" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display">
-              {user.name}
-            </h1>
-            <p className="text-zinc-600 mt-1 text-sm flex flex-wrap gap-x-3 gap-y-1">
-              <span>{ROLE_LABEL[user.role] ?? user.role}</span>
-              {user.employeeCode && <span>· รหัสพนักงาน {user.employeeCode}</span>}
-              {user.phone && <span>· {user.phone}</span>}
-            </p>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 16,
+          marginBottom: 22,
+          flexWrap: "wrap",
+        }}
+        className="df-fade-up"
+      >
+        <div
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: 999,
+            background: "var(--df-brand-soft)",
+            color: "var(--df-brand)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            border: "2px solid var(--df-surface)",
+          }}
+        >
+          <UserCircle2 size={32} />
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <DfEyebrow>เอกสารบุคคล · {thaiDateLong(new Date())}</DfEyebrow>
+          <h1
+            className="df-serif"
+            style={{
+              fontSize: "clamp(20px, 3vw, 26px)",
+              marginTop: 6,
+              marginBottom: 0,
+            }}
+          >
+            {user.name}
+          </h1>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 8,
+              marginTop: 8,
+            }}
+          >
+            <DfPill tone="brand" small>
+              {ROLE_LABEL[user.role] ?? user.role}
+            </DfPill>
+            {user.employeeCode && (
+              <DfPill tone="outline" small>
+                รหัสพนักงาน {user.employeeCode}
+              </DfPill>
+            )}
+            {user.phone && (
+              <DfPill tone="outline" small>
+                {user.phone}
+              </DfPill>
+            )}
           </div>
         </div>
-      </header>
+      </div>
 
-      <Section number="01" label="DOCUMENTS" title="เอกสารหลัก 4 ประเภท">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <DfSection
+        number="01"
+        label="เอกสารหลัก 4 ประเภท"
+        className="df-fade-up df-fade-up-100"
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+            gap: 14,
+          }}
+        >
           {slots.map((slot) => (
             <DocSlotCard key={slot.type} slot={slot} userId={user.id} />
           ))}
         </div>
-      </Section>
+      </DfSection>
 
       {otherDocs.length > 0 && (
-        <Section
+        <DfSection
           number="02"
-          label="OTHER"
-          title="เอกสารเพิ่มเติม"
-          className="mt-8"
+          label="เอกสารเพิ่มเติม"
+          className="df-fade-up df-fade-up-200"
         >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {otherDocs.map((d) => {
@@ -244,7 +319,7 @@ export default async function PersonDocDetailPage({
               );
             })}
           </div>
-        </Section>
+        </DfSection>
       )}
     </div>
   );

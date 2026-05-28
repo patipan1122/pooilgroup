@@ -1,15 +1,20 @@
 // DocuFlow · Register new vehicle — admin tier only
 // Server shell loads companies + branches; client form handles input
 
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireAdminTier } from "@/lib/auth/role-guards";
-import { Section } from "@/components/ui/section";
-import { BackButton } from "@/components/ui/back-button";
 import { thaiDateLong } from "@/lib/utils/format";
 import { loadBranches } from "@/lib/cashhub/data";
 import { prisma } from "@/lib/prisma";
 import { VEHICLE_TYPES } from "@/lib/vehicles/data";
 import { NewVehicleForm } from "./new-vehicle-form";
+import {
+  DfCard,
+  DfEyebrow,
+  DfPageHeader,
+} from "@/components/docuflow/df-ui";
 
 export const dynamic = "force-dynamic";
 
@@ -42,30 +47,50 @@ export default async function NewVehiclePage() {
   );
 
   return (
-    <div className="p-3 sm:p-6 lg:p-10 max-w-3xl mx-auto pb-24">
-      <div className="mb-4">
-        <BackButton fallbackHref="/docuflow/vehicles" />
-      </div>
+    <div
+      style={{
+        padding: "28px clamp(16px, 4vw, 40px)",
+        paddingBottom: 96,
+        maxWidth: 900,
+        margin: "0 auto",
+      }}
+    >
+      <Link
+        href="/docuflow/vehicles"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 13,
+          color: "var(--df-muted)",
+          textDecoration: "none",
+          marginBottom: 12,
+        }}
+      >
+        <ArrowLeft size={14} />
+        กลับกองรถ
+      </Link>
 
-      <header className="mb-6 animate-fade-up">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
-          📄 DocuFlow · ทะเบียนรถ · {thaiDateLong(new Date())}
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
-          เพิ่ม <span className="text-gradient-blue">รถใหม่</span>
-        </h1>
-        <p className="text-zinc-600 mt-1.5 text-sm">
-          ลงทะเบียนรถ · เอกสาร 4 ประเภทจะเพิ่มภายหลังจากหน้ารายละเอียด
-        </p>
-      </header>
+      <DfPageHeader
+        eyebrow={<DfEyebrow>ทะเบียนรถ · {thaiDateLong(new Date())}</DfEyebrow>}
+        title={
+          <>
+            เพิ่ม <span style={{ color: "var(--df-brand)" }}>รถใหม่</span>
+          </>
+        }
+        description="ลงทะเบียนรถ · เอกสาร 4 ประเภทจะเพิ่มภายหลังจากหน้ารายละเอียด"
+      />
 
-      <Section number="01" label="REGISTER" title="ข้อมูลรถ">
-        <NewVehicleForm
-          companies={companies}
-          branches={branchOptions}
-          vehicleTypes={vehicleTypeOptions}
-        />
-      </Section>
+      <DfCard padding={24} className="df-fade-up df-fade-up-100">
+        <DfEyebrow>ข้อมูลรถ</DfEyebrow>
+        <div style={{ marginTop: 14 }}>
+          <NewVehicleForm
+            companies={companies}
+            branches={branchOptions}
+            vehicleTypes={vehicleTypeOptions}
+          />
+        </div>
+      </DfCard>
     </div>
   );
 }

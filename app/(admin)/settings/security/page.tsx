@@ -63,7 +63,7 @@ export default async function SecuritySettingsPage() {
       <BackButton label="กลับไปตั้งค่าระบบ" fallbackHref="/settings" />
 
       <div className="mt-4 mb-10 animate-slide-up-soft">
-        <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-700)] font-bold">
           ตั้งค่าระบบ · ความปลอดภัย
         </p>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.02em] font-display mt-3 leading-tight">
@@ -76,7 +76,7 @@ export default async function SecuritySettingsPage() {
 
       <Section
         number="01"
-        label="SECURITY"
+        label="ความปลอดภัย"
         title="Session + Password Policy"
         description="มีผลกับผู้ใช้ใหม่ทุกคน · ผู้ใช้เก่าจะถูกบังคับเปลี่ยนเมื่อ Login ครั้งถัดไป"
       >

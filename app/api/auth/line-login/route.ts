@@ -1,6 +1,10 @@
 // Verify LINE id_token from LIFF and sign user into Supabase using existing email/phone link.
 // If LINE userId matches a user.line_user_id row → mint a session via service role.
 // If not matched, return needs-link signal so the LIFF page asks user to log in via web first.
+//
+// Security (P0 hardening — was vulnerable to LINE userId spoofing):
+//   ❌ ก่อนหน้านี้: รับ lineUserId จาก client ตรง ๆ → ใครรู้ LINE ID ก็ login เป็นใครก็ได้
+//   ✅ ตอนนี้: รับ idToken (JWT จาก LIFF) → verify ผ่าน LINE Verify API ก่อน
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
@@ -9,9 +13,34 @@ import { audit } from "@/lib/audit/log";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
 
 const Schema = z.object({
-  lineUserId: z.string().min(5).max(60),
+  idToken: z.string().min(20).max(4096),
   displayName: z.string().max(120).optional(),
 });
+
+// Verify LINE id_token via official endpoint
+// Returns the verified payload { sub, name, ... } or null if invalid
+async function verifyLineIdToken(
+  idToken: string,
+): Promise<{ sub: string; name?: string } | null> {
+  const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+  if (!liffId) return null;
+  // LIFF ID format: "{channelId}-{liffAppId}" — LINE verify expects channelId
+  const channelId = liffId.split("-")[0];
+  if (!channelId) return null;
+  try {
+    const r = await fetch("https://api.line.me/oauth2/v2.1/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ id_token: idToken, client_id: channelId }),
+    });
+    if (!r.ok) return null;
+    const j = (await r.json()) as { sub?: string; name?: string };
+    if (!j.sub) return null;
+    return { sub: j.sub, name: j.name };
+  } catch {
+    return null;
+  }
+}
 
 export async function POST(req: NextRequest) {
   let body: unknown;
@@ -24,7 +53,17 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "ข้อมูล LINE ไม่ครบ" }, { status: 400 });
   }
-  const { lineUserId, displayName } = parsed.data;
+  const { idToken, displayName } = parsed.data;
+
+  // Verify token via LINE — only proceed if signature is valid + sub returned
+  const verified = await verifyLineIdToken(idToken);
+  if (!verified) {
+    return NextResponse.json(
+      { error: "LINE token ไม่ถูกต้อง" },
+      { status: 401 },
+    );
+  }
+  const lineUserId = verified.sub;
   const admin = adminClient();
 
   const { data: user } = await admin
@@ -99,13 +138,25 @@ export async function POST(req: NextRequest) {
       resourceId: user.id,
       diff: { new: { via: "line_liff" } },
     });
-    return NextResponse.json({
+    // Don't return the Supabase action_link in the JSON response — anything
+    // that can read the response (XSS, browser extension, leaked log) becomes
+    // that user. Stash the link in a short-lived httpOnly cookie and have the
+    // client navigate to a server route that consumes it via 302.
+    const response = NextResponse.json({
       matched: true,
       needsLink: false,
       ready: true,
-      magicLink: link,
+      completeUrl: "/api/auth/line-complete",
       user: { id: user.id, name: user.name, role: user.role },
     });
+    response.cookies.set("ll_pending", link, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      path: "/api/auth/line-complete",
+      maxAge: 60, // single-use, expires fast
+    });
+    return response;
   } catch (err) {
     console.error("[line-login]", err);
     return NextResponse.json({ error: "ติดต่อ auth ไม่ได้" }, { status: 500 });

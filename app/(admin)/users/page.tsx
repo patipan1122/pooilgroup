@@ -146,6 +146,8 @@ export default async function UsersPage() {
 
   // Compute stats — must match the matchesFilter logic in users-by-business.tsx
   // exactly, otherwise clicking a stat card produces a different count than the card shows.
+  // Server Component — Date.now() OK (single execution per request)
+  // eslint-disable-next-line react-hooks/purity
   const now = Date.now();
   const week = 7 * 24 * 60 * 60 * 1000;
   const stats = {
@@ -242,7 +244,7 @@ export default async function UsersPage() {
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-6xl mx-auto pb-24">
         <header className="mb-12 flex items-end justify-between flex-wrap gap-4 animate-fade-up">
           <div>
-            <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">
+            <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-700)] font-bold">
               จัดการระบบ
               <span className="text-zinc-400 mx-2">·</span>
               <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
@@ -278,6 +280,8 @@ export default async function UsersPage() {
                 </span>
               )}
             </Link>
+            {/* Download link to API endpoint — Link component ใช้ download ตรง ๆ ไม่ได้ */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a
               href="/api/admin/users/export"
               className="inline-flex items-center gap-2 px-3 h-11 rounded-xl border-2 border-zinc-200 bg-white text-zinc-800 font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm"
@@ -315,7 +319,7 @@ export default async function UsersPage() {
         {allUsers.length <= 1 && branches.length === 0 ? (
           <Section
             number="01"
-            label="GETTING STARTED"
+            label="เริ่มต้น"
             title="ยังไม่มีสาขา · ยังไม่มีผู้ใช้"
             description="ก่อนเชิญผู้ใช้ ต้องสร้างสาขาก่อน — สร้างสาขาแรกและเชิญผู้จัดการสาขาในขั้นเดียว"
             className="animate-fade-up delay-100"

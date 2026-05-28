@@ -486,7 +486,7 @@ export function SignaturePlacementEditor({
 
       {/* Placement-type toolbar */}
       <div className="rounded-xl border border-zinc-200 bg-white p-2 flex items-center gap-1 flex-wrap">
-        <span className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold pl-2 pr-3">
+        <span className="text-xs font-bold text-zinc-500 pl-2 pr-3">
           เพิ่มจุด
         </span>
         {TYPE_OPTIONS.map((t) => {
@@ -632,13 +632,13 @@ export function SignaturePlacementEditor({
 
         {/* Side panel */}
         <div className="space-y-4">
-          <Section number="01" label="SELECTED" title="จุดที่เลือก">
+          <Section number="01" label="ที่เลือก" title="จุดที่เลือก">
             {selected ? (
               <Card>
                 <CardBody className="space-y-4">
                   {/* Type chooser */}
                   <div>
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-1.5">
+                    <p className="text-xs font-bold text-zinc-500 mb-1.5">
                       ประเภทจุด
                     </p>
                     <div className="grid grid-cols-2 gap-1.5">
@@ -690,7 +690,7 @@ export function SignaturePlacementEditor({
                   )}
                   {selected.placementType === "text" && (
                     <div>
-                      <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-1.5">
+                      <p className="text-xs font-bold text-zinc-500 mb-1.5">
                         ข้อความที่จะ stamp
                       </p>
                       <input
@@ -716,7 +716,7 @@ export function SignaturePlacementEditor({
                     selected.placementType === "name") && (
                     <>
                       <div>
-                        <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-1.5">
+                        <p className="text-xs font-bold text-zinc-500 mb-1.5">
                           บทบาทผู้เซ็น
                         </p>
                         <div className="grid grid-cols-2 gap-1.5">
@@ -744,7 +744,7 @@ export function SignaturePlacementEditor({
                       </div>
 
                       <div>
-                        <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-1.5">
+                        <p className="text-xs font-bold text-zinc-500 mb-1.5">
                           ผู้เซ็น (ในระบบ)
                         </p>
                         <select
@@ -771,7 +771,7 @@ export function SignaturePlacementEditor({
                       </div>
 
                       <div>
-                        <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-1.5">
+                        <p className="text-xs font-bold text-zinc-500 mb-1.5">
                           ชื่อผู้เซ็น (ถ้าไม่อยู่ในระบบ)
                         </p>
                         <input
@@ -790,7 +790,7 @@ export function SignaturePlacementEditor({
                   )}
 
                   <div>
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-1.5">
+                    <p className="text-xs font-bold text-zinc-500 mb-1.5">
                       คำอธิบาย (เห็นบนกล่อง)
                     </p>
                     <input
@@ -859,7 +859,7 @@ export function SignaturePlacementEditor({
 
           <Section
             number="02"
-            label="LIST"
+            label="รายการ"
             title={`ทุกจุด (${placements.length})`}
           >
             <Card>

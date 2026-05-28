@@ -4,11 +4,14 @@
 import Link from "next/link";
 import {Sofa, Gamepad2 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
+import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { formatBahtCompact, bkkDate } from "@/lib/utils/format";
 import { subDays } from "date-fns";
@@ -20,6 +23,7 @@ const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
 export default async function KioskPage() {
   const session = await requireSession();
+  requireExecutiveRole(session.user.role);
   const admin = adminClient();
   const today = formatInTimeZone(new Date(), TZ, "yyyy-MM-dd");
   const last30 = formatInTimeZone(subDays(new Date(), 29), TZ, "yyyy-MM-dd");
@@ -67,14 +71,10 @@ export default async function KioskPage() {
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
-      <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
-          <Sofa className="size-4" /> KIOSK
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1">
-          ตู้ + <span className="accent">เก้าอี้นวด</span>
-        </h1>
-        <p className="text-zinc-600 mt-1 text-sm">
+      <header className="mt-3 mb-6 flex flex-col gap-2">
+        <SectionPill num="00" label="Kiosk · รอบเก็บ" />
+        <TwoToneTitle first="ตู้คีบ +" accent="เก้าอี้นวด" size={32} />
+        <p className="text-[var(--ch-text-2)] mt-1 text-sm">
           เก็บเงินรายสัปดาห์ — ไม่ใช่รายวัน · กรอกตอน Manager ไปเก็บเงินจริง
         </p>
       </header>
@@ -85,7 +85,15 @@ export default async function KioskPage() {
             <EmptyState
               icon={<Sofa className="size-6" />}
               title="ยังไม่มี kiosk"
-              description="เพิ่มสาขาประเภท เก้าอี้นวด หรือ ตู้คีบ ก่อน"
+              description="เพิ่มสาขาประเภท เก้าอี้นวด หรือ ตู้คีบ ก่อน · ไปตั้งค่าสาขาได้ที่หน้าตั้งค่า"
+              action={
+                <Link
+                  href="/cashhub/settings"
+                  className="inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50 active:bg-zinc-100 h-9 px-4 text-sm rounded-xl"
+                >
+                  ไปตั้งค่า Kiosk
+                </Link>
+              }
             />
           </CardBody>
         </Card>
@@ -190,7 +198,7 @@ export default async function KioskPage() {
         </div>
       )}
 
-      <Section number="01" label="HISTORY" title="รอบล่าสุด" className="mt-8">
+      <Section number="01" label="ประวัติ" title="รอบล่าสุด" className="mt-8">
         <Card>
           <CardBody className="!p-0">
             <ul className="divide-y divide-zinc-100">
@@ -246,7 +254,7 @@ function Stat({
 }) {
   return (
     <div className="p-4">
-      <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+      <p className="text-xs font-bold text-zinc-500">
         {label}
       </p>
       <div className="text-xl font-extrabold tabular-num font-display mt-0.5">

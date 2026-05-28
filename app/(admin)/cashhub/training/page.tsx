@@ -3,11 +3,14 @@
 import Link from "next/link";
 import {GraduationCap } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
+import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { formatBaht, bkkDate } from "@/lib/utils/format";
 import {
   startOfMonth,
@@ -22,6 +25,7 @@ const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
 export default async function TrainingPage() {
   const session = await requireSession();
+  requireExecutiveRole(session.user.role);
   const admin = adminClient();
   const now = new Date();
   const monthStart = formatInTimeZone(startOfMonth(now), TZ, "yyyy-MM-dd");
@@ -72,14 +76,10 @@ export default async function TrainingPage() {
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
-      <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
-          <GraduationCap className="size-4" /> TRAINING
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1">
-          ศูนย์ <span className="accent">ฝึกอบรม</span>
-        </h1>
-        <p className="text-zinc-600 mt-1 text-sm">
+      <header className="mt-3 mb-6 flex flex-col gap-2">
+        <SectionPill num="00" label="Training Center · ศูนย์อบรม" />
+        <TwoToneTitle first="ศูนย์" accent="ฝึกอบรม" size={32} />
+        <p className="text-[var(--ch-text-2)] mt-1 text-sm">
           กรอกรายเดือน — รวมจำนวนครั้งที่จัดอบรม + รายได้
         </p>
       </header>
@@ -162,7 +162,7 @@ export default async function TrainingPage() {
 
                   {trend.length > 1 && (
                     <div>
-                      <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-2">
+                      <p className="text-xs font-bold text-zinc-500 mb-2">
                         แนวโน้ม 6 เดือน
                       </p>
                       <div className="flex items-end gap-1.5 h-16">
@@ -199,7 +199,7 @@ export default async function TrainingPage() {
 
       <Section
         number="01"
-        label="HISTORY"
+        label="ประวัติ"
         title="ประวัติเดือนที่ผ่านมา"
         className="mt-8"
       >
@@ -258,7 +258,7 @@ export default async function TrainingPage() {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl bg-zinc-50 border border-zinc-100 p-3">
-      <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+      <p className="text-xs font-bold text-zinc-500">
         {label}
       </p>
       <div className="text-lg font-extrabold tabular-num font-display mt-0.5">

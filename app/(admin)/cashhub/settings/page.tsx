@@ -1,5 +1,7 @@
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { CashHubConfigForm } from "./cashhub-config";
 
 export const dynamic = "force-dynamic";
@@ -34,16 +36,12 @@ export default async function CashHubSettingsPage() {
       />
 
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-3xl mx-auto pb-24">
-        <div className="mb-12 animate-slide-up-soft">
-          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">
-            CashHub
-          </p>
-          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-5 leading-[0.95]">
-            ตั้งค่า <span className="text-gradient-blue">CashHub</span>
-          </h1>
-          <p className="text-base sm:text-lg text-zinc-600 mt-5 max-w-xl leading-relaxed">
+        <div className="mb-10 animate-slide-up-soft flex flex-col gap-2">
+          <SectionPill num="00" label="CashHub · ตั้งค่า" />
+          <TwoToneTitle first="ตั้งค่า" accent="CashHub" size={40} />
+          <p className="text-base text-[var(--ch-text-2)] mt-2 max-w-xl leading-relaxed">
             ค่าเริ่มต้นที่ใช้กับ{" "}
-            <strong className="font-bold text-zinc-900 tabular-num">
+            <strong className="font-bold text-[var(--ch-navy)] ch-tnum">
               {branchCount ?? 0}
             </strong>{" "}
             สาขา · แต่ละสาขา override ได้ที่หน้าสาขาตัวเอง

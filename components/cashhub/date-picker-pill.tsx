@@ -68,7 +68,7 @@ export function DatePickerPill({ branchId, currentDate, available }: Props) {
           role="listbox"
           className="absolute right-0 mt-1.5 w-64 max-h-80 overflow-y-auto rounded-xl border-2 border-zinc-200 bg-white shadow-xl z-20"
         >
-          <div className="px-3 py-2 border-b border-zinc-100 text-[11px] font-bold text-zinc-500 uppercase tracking-wider">
+          <div className="px-3 py-2 border-b border-zinc-100 text-xs font-bold text-zinc-500">
             เลือกวันที่กรอก
           </div>
           <ul className="py-1">

@@ -1,29 +1,30 @@
 // /docuflow/documents/[id]/signatures — Admin signature placement editor
 // ────────────────────────────────────────────────────────────────────
-// Admin tier only. Loads:
-//   - the document (canonical loader)
-//   - existing placements
-//   - org users (signer picker)
-//   - a fresh 1h signed download URL for the PDF (consumed by react-pdf)
-//
-// All heavy UI lives in <SignaturePlacementEditor /> ("use client").
+// Redesign 2026-05-21 — matches DesktopSigning canvas (header chrome).
+// Admin tier only. Heavy UI lives in <SignaturePlacementEditor /> (client).
 // ────────────────────────────────────────────────────────────────────
 
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
+import { ArrowLeft, PenSquare, History, Lock } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireAdminTier } from "@/lib/auth/role-guards";
 import { loadDocumentById } from "@/lib/docuflow/data";
 import { getSignedDownloadUrl } from "@/lib/docuflow/r2";
 import { prisma } from "@/lib/prisma";
-import { BackButton } from "@/components/ui/back-button";
 import {
   SignaturePlacementEditor,
   type PlacementVm,
   type UserOption,
   type SignerRole,
 } from "@/components/docuflow/signature-placement-editor";
-import { thaiDateLong } from "@/lib/utils/format";
+import {
+  DfButton,
+  DfEyebrow,
+  DfPageHeader,
+  DfPill,
+} from "@/components/docuflow/df-ui";
 
 export const dynamic = "force-dynamic";
 
@@ -39,16 +40,12 @@ export default async function SignaturePlacementPage({
 
   const doc = await loadDocumentById(orgId, id);
   if (!doc || !doc.isActive) notFound();
-  if (doc.mimeType && doc.mimeType !== "application/pdf") {
-    // Only PDFs supported for the placement editor.
-    notFound();
-  }
+  if (doc.mimeType && doc.mimeType !== "application/pdf") notFound();
 
-  // Fresh 1h signed URL for react-pdf to fetch
   const pdfUrl = await getSignedDownloadUrl(doc.fileKey).catch(() => null);
   if (!pdfUrl) notFound();
 
-  const [rawPlacements, users] = await Promise.all([
+  const [rawPlacements, users, totalPending] = await Promise.all([
     prisma.documentSignaturePlacement.findMany({
       where: { orgId, documentId: id },
       orderBy: [{ pageNumber: "asc" }, { ordering: "asc" }],
@@ -60,6 +57,13 @@ export default async function SignaturePlacementPage({
       where: { orgId, isActive: true },
       select: { id: true, name: true, role: true },
       orderBy: { name: "asc" },
+    }),
+    prisma.documentSignaturePlacement.count({
+      where: {
+        document: { orgId, isActive: true },
+        signerUserId: session.user.id,
+        signedAt: null,
+      },
     }),
   ]);
 
@@ -94,27 +98,64 @@ export default async function SignaturePlacementPage({
     role: u.role,
   }));
 
-  // Origin for share links — derive from the request so dev/prod just work
   const h = await headers();
   const proto = h.get("x-forwarded-proto") || "http";
   const host = h.get("host") || "localhost:3100";
   const origin = `${proto}://${host}`;
 
+  const totalPlacements = placements.length;
+  const signedPlacements = placements.filter((p) => p.signedAt).length;
+
   return (
-    <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
-      <header className="mb-6 animate-fade-up">
-        <BackButton fallbackHref={`/docuflow/documents/${id}`} />
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold mt-3">
-          📄 DocuFlow · ตั้งจุดเซ็น · {thaiDateLong(new Date())}
-        </p>
-        <h1 className="mt-3 text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display leading-[0.95] line-clamp-2">
-          {doc.name}
-        </h1>
-        <p className="mt-2 text-sm text-zinc-600 max-w-2xl">
-          ลากกล่องลายเซ็นมาวางตรงจุดที่ต้องการ ระบุผู้เซ็นแต่ละจุด
-          แล้วส่งลิงก์ให้ผู้เซ็นออนไลน์ผ่านมือถือหรือคอมพิวเตอร์
-        </p>
-      </header>
+    <div
+      style={{
+        padding: "20px clamp(12px, 3vw, 32px)",
+        paddingBottom: 96,
+        maxWidth: 1500,
+        margin: "0 auto",
+      }}
+    >
+      <Link
+        href={`/docuflow/documents/${id}`}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 13,
+          color: "var(--df-muted)",
+          textDecoration: "none",
+          marginBottom: 12,
+        }}
+      >
+        <ArrowLeft size={14} />
+        กลับเอกสาร
+      </Link>
+
+      <DfPageHeader
+        eyebrow={<DfEyebrow>ลายเซ็น · ผู้บริหาร</DfEyebrow>}
+        title={doc.name}
+        description="ลากกล่องลายเซ็นไปวางจุดที่ต้องการ — ระบบจะส่งลิงก์ให้ผู้รับเซ็นออนไลน์ทาง LINE หรืออีเมล"
+        actions={
+          <>
+            {totalPending > 0 && (
+              <DfPill tone="accent">
+                <PenSquare size={12} /> {totalPending} ฉบับรอฉันเซ็น
+              </DfPill>
+            )}
+            {totalPlacements > 0 && (
+              <DfPill
+                tone={signedPlacements === totalPlacements ? "success" : "warn"}
+              >
+                เซ็นแล้ว {signedPlacements}/{totalPlacements}
+              </DfPill>
+            )}
+            <DfButton variant="ghost">
+              <History size={14} />
+              ประวัติ
+            </DfButton>
+          </>
+        }
+      />
 
       <SignaturePlacementEditor
         documentId={doc.id}
@@ -124,6 +165,20 @@ export default async function SignaturePlacementPage({
         users={userOptions}
         origin={origin}
       />
+
+      <div
+        style={{
+          marginTop: 18,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 6,
+          fontSize: 11,
+          color: "var(--df-muted)",
+        }}
+      >
+        <Lock size={11} /> ยืนยันด้วย OTP · บันทึก timestamp + IP อัตโนมัติ
+      </div>
     </div>
   );
 }

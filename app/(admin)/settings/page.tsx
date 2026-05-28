@@ -34,10 +34,12 @@ export default async function SettingsPage() {
 
   const settings = (org?.settings as Record<string, unknown>) ?? {};
 
-  // Default modules — if no rows yet, treat all as active
-  // FuelOS + DocuFlow soft-removed · re-add when those modules ship
+  // Default modules — if no rows yet, treat all as active.
+  // Spread DB rows on top so admin-controlled toggles override defaults.
   const moduleStatus = {
     cashhub: true,
+    docuflow: true,
+    fuelos: true,
     ...(Object.fromEntries(
       (modules ?? []).map((m) => [m.module_name, m.is_active]),
     ) as Record<string, boolean>),
@@ -56,7 +58,7 @@ export default async function SettingsPage() {
 
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-3xl mx-auto pb-24">
       <div className="mb-12 animate-slide-up-soft">
-        <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-700)] font-bold">
           องค์กร
         </p>
         <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-5 leading-[0.95]">

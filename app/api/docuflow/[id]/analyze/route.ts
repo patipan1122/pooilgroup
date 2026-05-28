@@ -10,6 +10,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier, isExecutiveRole } from "@/lib/auth/role-guards";
 import { audit } from "@/lib/audit/log";
@@ -24,7 +25,7 @@ export const maxDuration = 60;
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-const IdSchema = z.string().uuid();
+const IdSchema = zUUID();
 
 const PostBodySchema = z
   .object({

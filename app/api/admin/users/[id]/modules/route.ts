@@ -9,8 +9,10 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { canManageUser } from "@/lib/auth/role-guards";
+import type { DbUser } from "@/lib/auth/session";
 
-const ModuleSchema = z.enum(["cashhub", "fuelos", "docuflow"]);
+const ModuleSchema = z.enum(["cashhub", "fuelos", "docuflow", "recruit", "repairs"]);
 
 const PutSchema = z.object({
   modules: z.array(ModuleSchema),
@@ -50,6 +52,9 @@ export async function PUT(
 
   if (!target) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (!canManageUser(session.user.role, target.role as DbUser["role"])) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
   const orgId = session.user.org_id;

@@ -140,7 +140,7 @@ export function RiskAnalysisPanel({ documentId, canAnalyze, documentName }: Prop
   return (
     <Section
       number="05"
-      label="AI ANALYSIS"
+      label="วิเคราะห์ AI"
       title="น่ากลัวไหม? — AI ช่วยอ่านเอกสาร"
       description="Claude อ่านเนื้อหาและสรุปจุดที่ควรระวังก่อนเซ็น"
       action={action}
@@ -324,7 +324,7 @@ function AnalysisResult({
         {/* Watch-outs */}
         {analysis.watchOuts.length > 0 && (
           <div>
-            <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2">
+            <p className="text-xs font-bold text-zinc-500 mb-2">
               ⚠️ จุดที่ควรระวัง
             </p>
             <ul className="space-y-2">
@@ -346,7 +346,7 @@ function AnalysisResult({
         {/* Normal points */}
         {analysis.normalPoints.length > 0 && (
           <div>
-            <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2">
+            <p className="text-xs font-bold text-zinc-500 mb-2">
               ✅ ปกติดี
             </p>
             <ul className="space-y-1.5">
@@ -365,7 +365,7 @@ function AnalysisResult({
 
         {/* Footer — bottom-line */}
         <div className="rounded-xl border-2 border-[var(--color-brand-100)] bg-[var(--color-brand-50)] px-4 py-3">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-[var(--color-brand-700)] font-bold">
+          <p className="text-xs font-bold text-[var(--color-brand-700)]">
             สรุป
           </p>
           <p className="text-sm text-zinc-900 font-medium mt-1 leading-relaxed">
@@ -431,7 +431,7 @@ function MetaRow({
     <div className="flex items-start gap-2.5">
       <span className="text-base leading-none mt-0.5">{emoji}</span>
       <div className="min-w-0">
-        <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500 font-bold">
+        <p className="text-xs font-bold text-zinc-500">
           {label}
         </p>
         <p className="text-sm text-zinc-900 font-medium mt-0.5 break-words">

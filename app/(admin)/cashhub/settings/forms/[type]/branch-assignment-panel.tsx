@@ -130,6 +130,17 @@ export function BranchAssignmentPanel({
     });
   }
 
+  // Map template id → label "v2" / "v3 (มีคาร์แคร์)" สำหรับโชว์ใน badge
+  // ต้องเรียก hook ก่อน early return เสมอ (rules-of-hooks)
+  const templateLabelById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of allTemplates) {
+      const label = t.name ? `v${t.version} · ${t.name}` : `v${t.version}`;
+      m.set(t.id, label);
+    }
+    return m;
+  }, [allTemplates]);
+
   if (branches.length === 0) {
     return (
       <div className="rounded-2xl border-2 border-dashed border-zinc-200 bg-zinc-50/40 p-6 text-center">
@@ -143,16 +154,6 @@ export function BranchAssignmentPanel({
       </div>
     );
   }
-
-  // Map template id → label "v2" / "v3 (มีคาร์แคร์)" สำหรับโชว์ใน badge
-  const templateLabelById = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const t of allTemplates) {
-      const label = t.name ? `v${t.version} · ${t.name}` : `v${t.version}`;
-      m.set(t.id, label);
-    }
-    return m;
-  }, [allTemplates]);
 
   return (
     <div className="rounded-2xl border-2 border-zinc-200 bg-white overflow-hidden">
@@ -254,7 +255,7 @@ export function BranchAssignmentPanel({
                 </div>
                 {isOnOtherTpl && !isOn && otherTplLabel && (
                   <span
-                    className="text-[10px] uppercase tracking-wider font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md shrink-0"
+                    className="text-xs font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md shrink-0"
                     title={`สาขานี้ตอนนี้ใช้ ${otherTplLabel} · ติ๊กที่นี่จะย้ายมา`}
                   >
                     ตอนนี้ใช้ {otherTplLabel}
@@ -262,7 +263,7 @@ export function BranchAssignmentPanel({
                 )}
                 {isOnDefault && !isOn && (
                   <span
-                    className="text-[10px] uppercase tracking-wider font-bold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded-md shrink-0"
+                    className="text-xs font-bold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded-md shrink-0"
                     title="ใช้ v1 default · ติ๊กที่นี่จะย้ายมา"
                   >
                     ใช้ v1 default

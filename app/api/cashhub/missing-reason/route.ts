@@ -3,20 +3,23 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { requireSession } from "@/lib/auth/session";
+import { zUUID } from "@/lib/zod-helpers";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 import { isAdmin } from "@/lib/auth/permissions";
 import { audit } from "@/lib/audit/log";
 
 const Schema = z.object({
-  branchId: z.string().uuid(),
+  branchId: zUUID(),
   reportDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   reasonType: z.enum(["sick", "holiday", "system", "waiting", "other"]),
   reasonText: z.string().max(500).optional(),
 });
 
 export async function POST(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
   if (!isAdmin(session.user) && session.user.role !== "branch_manager") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -40,6 +43,23 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
   if (!branch) {
     return NextResponse.json({ error: "ไม่พบสาขา" }, { status: 404 });
+  }
+
+  // branch_manager may only post reasons for branches they're assigned to.
+  // Admin tier (super_admin/org_admin/admin) keeps org-wide reach.
+  if (session.user.role === "branch_manager") {
+    const { count } = await admin
+      .from("user_branches")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", session.user.id)
+      .eq("branch_id", branchId)
+      .eq("is_active", true);
+    if (!count || count < 1) {
+      return NextResponse.json(
+        { error: "ไม่มีสิทธิ์บันทึกเหตุผลของสาขานี้" },
+        { status: 403 },
+      );
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

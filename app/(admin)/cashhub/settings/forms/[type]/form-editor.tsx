@@ -15,12 +15,8 @@ import {
   Trash2,
   Pencil,
   Star,
-  Copy,
 } from "lucide-react";
 import { BackButton } from "@/components/ui/back-button";
-import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils/cn";
@@ -41,6 +37,8 @@ import type {
 } from "@/lib/cashhub/form-templates-types";
 import { generateCustomFieldKey } from "@/lib/cashhub/form-templates-types";
 import { BranchAssignmentPanel } from "./branch-assignment-panel";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 
 interface BranchOption {
   id: string;
@@ -319,7 +317,7 @@ export function FormEditor({
   // Group preview fields — built-in (with overrides) + custom fields appended
   const previewFields = useMemo(() => {
     const builtIn = defaults.fields
-      .map((f) => effectiveField(f, overrides[f.key], isLocked(f.key)))
+      .map((f) => effectiveField(f, overrides[f.key], lockedSet.has(f.key)))
       .filter((f): f is FieldConfig => f !== null);
     const customSorted = [...customFields].sort(
       (a, b) => a.sortOrder - b.sortOrder,
@@ -362,22 +360,19 @@ export function FormEditor({
           <BackButton label="กลับ" fallbackHref="/cashhub/settings/forms" />
         </div>
 
-        <div className="flex items-center gap-3 mb-5">
-          <div className="size-11 rounded-xl bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] flex items-center justify-center text-xl shrink-0">
+        {/* Hero — matches design forms.jsx:42-63 (56×56 icon + SectionPill + Title + actions) */}
+        <div className="flex items-center gap-4 mb-5">
+          <div className="size-14 shrink-0 rounded-2xl bg-[var(--ch-brand-50)] border border-[var(--ch-brand-100)] flex items-center justify-center text-2xl">
             {emoji}
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-brand-700)] font-bold">
-              ฟอร์มกรอกยอด
-            </p>
-            <h1 className="text-xl sm:text-2xl font-extrabold tracking-[-0.02em] font-display leading-tight">
-              {label}
-            </h1>
-            <p className="text-xs text-zinc-500 mt-0.5">
+          <div className="min-w-0 flex-1 flex flex-col gap-1">
+            <SectionPill num="📋" label="Form Builder" />
+            <TwoToneTitle first="ฟอร์ม" accent={label} size={32} />
+            <p className="text-xs text-[var(--ch-text-2)] mt-0.5">
               {branchCount} สาขาทั้งหมด · เวอร์ชั่นนี้ใช้กับ{" "}
-              <strong className="text-zinc-700 tabular-num">
+              <strong className="text-[var(--ch-navy)] ch-tnum">
                 {activeTemplate.is_default
-                  ? `default (${branchCount - templates.filter((t) => !t.is_default).reduce(() => 0, 0)} สาขา)`
+                  ? `ค่าเริ่มต้น (${branchCount} สาขา)`
                   : `${activeTemplateBranchCount} สาขา`}
               </strong>
             </p>
@@ -475,7 +470,7 @@ export function FormEditor({
           {/* Editor column */}
           <div className="space-y-2">
             <div className="flex items-center justify-between mb-0.5 px-0.5">
-              <h2 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+              <h2 className="text-xs font-bold text-zinc-500">
                 ตั้งค่าช่อง ({defaults.fields.length} ช่อง)
               </h2>
             </div>
@@ -641,7 +636,7 @@ export function FormEditor({
             {/* Custom fields section — admin can add new fields beyond built-in spec */}
             <div className="mt-6 pt-4 border-t-2 border-dashed border-zinc-200">
               <div className="flex items-center justify-between mb-2 px-0.5">
-                <h2 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                <h2 className="text-xs font-bold text-zinc-500">
                   ฟิลด์ที่เพิ่มเอง ({customFields.length})
                 </h2>
                 <Button
@@ -656,7 +651,7 @@ export function FormEditor({
               </div>
               {customFields.length === 0 ? (
                 <p className="text-[12px] text-zinc-500 px-3 py-6 rounded-xl border border-dashed border-zinc-200 text-center">
-                  ยังไม่มีช่องที่เพิ่มเอง · กด "เพิ่มช่องใหม่" เพื่อเพิ่ม
+                  ยังไม่มีช่องที่เพิ่มเอง · กด &ldquo;เพิ่มช่องใหม่&rdquo; เพื่อเพิ่ม
                   payment channel ใหม่ (เช่น PromptPay, e-wallet) ฟิลด์นี้จะถูก
                   save เข้า extra_fields ของ daily_reports
                 </p>
@@ -682,7 +677,7 @@ export function FormEditor({
           <div>
             <div className="lg:sticky lg:top-4">
               <div className="flex items-center justify-between mb-2 px-0.5">
-                <h2 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                <h2 className="text-xs font-bold text-zinc-500">
                   พนักงานจะเห็นแบบนี้
                 </h2>
                 <Badge tone="brand" className="!text-[10px]">
@@ -887,7 +882,7 @@ function CompactField({
 }) {
   return (
     <label className="block">
-      <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">
+      <span className="text-xs font-bold text-zinc-500">
         {label}
       </span>
       <input

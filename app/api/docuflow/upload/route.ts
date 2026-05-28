@@ -9,11 +9,13 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { buildDocumentKey, getUploadUrl } from "@/lib/docuflow/r2";
+import { validateDocumentMime } from "@/lib/docuflow/mime-validate";
 
 export const dynamic = "force-dynamic";
 
@@ -28,9 +30,9 @@ const OWNERSHIP_LEVELS = [
 const OwnershipSchema = z
   .object({
     level: z.enum(OWNERSHIP_LEVELS),
-    companyId: z.string().uuid().nullish(),
-    branchId: z.string().uuid().nullish(),
-    personId: z.string().uuid().nullish(),
+    companyId: zUUID().nullish(),
+    branchId: zUUID().nullish(),
+    personId: zUUID().nullish(),
     businessType: z.string().min(1).nullish(),
   })
   .refine(
@@ -56,19 +58,28 @@ const RenewalSchema = z.object({
   expiryDate: z.string().min(1), // ISO date "yyyy-MM-dd" or full ISO
   renewalPeriodYears: z.number().int().min(1).max(50).optional(),
   alertDays: z.array(z.number().int().min(0).max(365)).optional(),
-  responsibleUserId: z.string().uuid().optional(),
+  responsibleUserId: zUUID().optional(),
   notes: z.string().max(2000).optional(),
 });
 
 const UploadSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().max(2000).optional(),
+  /** Canonical doc type key from canonical-docs.ts (e.g. "fuel_station:ใบอนุญาตสถานีบริการน้ำมัน")
+      — set when admin uses smart-upload template; null for free-form uploads. */
+  documentType: z.string().max(255).optional(),
   filename: z.string().min(1).max(255),
   mimeType: z.string().min(1).max(255),
   fileSize: z.number().int().positive().max(500 * 1024 * 1024), // 500 MB
-  ownership: OwnershipSchema,
+  /** Multi-select ownership: doc can span บริษัท + ธุรกิจ + สาขา + บุคคล + กลุ่ม พร้อมกัน.
+      Legacy single `ownership` still accepted for back-compat. */
+  ownerships: z.array(OwnershipSchema).min(1).optional(),
+  ownership: OwnershipSchema.optional(),
   tags: z.array(z.string().min(1).max(64)).default([]),
   renewal: RenewalSchema.optional(),
+}).refine((v) => v.ownerships !== undefined || v.ownership !== undefined, {
+  message: "ต้องระบุ ownership หรือ ownerships อย่างน้อยหนึ่ง",
+  path: ["ownerships"],
 });
 
 export async function POST(req: NextRequest) {
@@ -111,13 +122,30 @@ export async function POST(req: NextRequest) {
   const {
     name,
     description,
+    documentType,
     filename,
     mimeType,
     fileSize,
-    ownership,
+    ownerships: ownershipsInput,
+    ownership: legacyOwnership,
     tags,
     renewal,
   } = parsed.data;
+
+  // MIME / extension whitelist (B9 fix). Presigned flow can't sniff bytes
+  // here — the file hasn't been uploaded yet — so we rely on the declared
+  // MIME + filename extension. The browser still has to PUT with the same
+  // Content-Type that was signed, so a malicious client can't lie cheaply.
+  const mimeCheck = validateDocumentMime({ filename, mimeType });
+  if (!mimeCheck.ok) {
+    return NextResponse.json(
+      { error: mimeCheck.reason || "ประเภทไฟล์ไม่อนุญาต" },
+      { status: 415 },
+    );
+  }
+
+  // Normalize: array form is canonical, legacy single → wrap in array
+  const ownershipRows = ownershipsInput ?? (legacyOwnership ? [legacyOwnership] : []);
   const orgId = session.user.org_id;
 
   // Build the doc id up front so we can compute the R2 key before insert.
@@ -136,6 +164,7 @@ export async function POST(req: NextRequest) {
           orgId,
           name,
           description: description ?? null,
+          documentType: documentType ?? null,
           fileKey,
           filePublicUrl: publicUrl,
           mimeType,
@@ -145,16 +174,19 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      await tx.documentOwnership.create({
-        data: {
+      // Multi-select ownership: write one row per (level, scope) the admin
+      // picked. A single doc can belong to บริษัท + ธุรกิจ + สาขา + บุคคล
+      // simultaneously — this matches reality (e.g. ใบผ่อนผัน applies at all).
+      await tx.documentOwnership.createMany({
+        data: ownershipRows.map((o) => ({
           orgId,
           documentId,
-          level: ownership.level,
-          companyId: ownership.companyId ?? null,
-          branchId: ownership.branchId ?? null,
-          personId: ownership.personId ?? null,
-          businessType: ownership.businessType ?? null,
-        },
+          level: o.level,
+          companyId: o.companyId ?? null,
+          branchId: o.branchId ?? null,
+          personId: o.personId ?? null,
+          businessType: o.businessType ?? null,
+        })),
       });
 
       if (dedupedTags.length > 0) {
@@ -205,7 +237,8 @@ export async function POST(req: NextRequest) {
     diff: {
       new: {
         name,
-        ownership: ownership.level,
+        ownerships: ownershipRows.map((o) => o.level),
+        ownershipCount: ownershipRows.length,
         tags: dedupedTags,
         hasRenewal: Boolean(renewal),
       },
@@ -218,4 +251,37 @@ export async function POST(req: NextRequest) {
     fileKey,
     publicUrl,
   });
+}
+
+// DELETE /api/docuflow/upload?id=<docId>
+// Orphan cleanup — called by the client when the browser → R2 PUT fails so
+// we don't leave a stub document row pointing at a file that never existed.
+export async function DELETE(req: NextRequest) {
+  const session = await requireSession();
+  if (!isAdminTier(session.user.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const url = new URL(req.url);
+  const id = url.searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ error: "missing id" }, { status: 400 });
+  }
+
+  try {
+    // Only delete docs owned by this org AND uploaded by this user within
+    // the last 10 min — safeguards against stray DELETE calls.
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const result = await prisma.document.deleteMany({
+      where: {
+        id,
+        orgId: session.user.org_id,
+        uploadedById: session.user.id,
+        uploadedAt: { gte: tenMinAgo },
+      },
+    });
+    return NextResponse.json({ deleted: result.count });
+  } catch (err) {
+    console.error("[DELETE /api/docuflow/upload]", err);
+    return NextResponse.json({ error: "cleanup failed" }, { status: 500 });
+  }
 }

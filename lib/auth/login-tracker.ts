@@ -4,7 +4,6 @@
 
 import { adminClient } from "../db/server";
 import { audit } from "../audit/log";
-import type { SupabaseClient } from "@supabase/supabase-js";
 
 const MAX_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;

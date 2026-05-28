@@ -5,6 +5,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier, isExecutiveRole } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
@@ -16,7 +17,7 @@ export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-const IdSchema = z.string().uuid();
+const IdSchema = zUUID();
 
 /* ============================================================
    GET — single document + fresh signed download URL
@@ -55,7 +56,7 @@ const RenewalPatchSchema = z.object({
   expiryDate: z.string().min(1).optional(),
   renewalPeriodYears: z.number().int().min(1).max(50).nullable().optional(),
   alertDays: z.array(z.number().int().min(0).max(365)).optional(),
-  responsibleUserId: z.string().uuid().nullable().optional(),
+  responsibleUserId: zUUID().nullable().optional(),
   status: z
     .enum(["pending", "in_progress", "renewed", "overdue"])
     .optional(),

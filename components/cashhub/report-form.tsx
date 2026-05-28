@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { ReconcileIndicator } from "./reconcile-indicator";
 import { ShortageModal, type ShortageInfo } from "./shortage-modal";
 import { DatePickerPill } from "./date-picker-pill";
+import { SlipCamera } from "./slip-camera";
 import { reconcile } from "@/lib/cashhub/reconcile";
 import { formatBaht } from "@/lib/utils/format";
 import type {
@@ -28,6 +29,8 @@ interface Props {
   reportDate: string; // YYYY-MM-DD
   deadlineHHmm?: string;
   previousReference?: { totalSales: number; qty1: number };
+  /** Rolling 7-day median baseline for spike alert. Falls back to previousReference if undefined. */
+  spikeBaseline?: { totalSales: number; sampleDays: number };
   streak?: { current: number; lastDate: string | null } | null;
   // Anti-Stupidity Rule 2 — pre-computed list of last N days with status.
   // Approved dates appear locked in the dropdown so staff can't pick them.
@@ -75,77 +78,102 @@ export function ReportForm({
   reportDate,
   deadlineHHmm = "21:00",
   previousReference,
+  spikeBaseline,
   streak,
   availableDates,
 }: Props) {
   const router = useRouter();
   const [shift, setShift] = useState<string>(config.shifts[0] || "all");
-  const [now, setNow] = useState<Date>(() => new Date());
-
-  // Tick the clock every 30s for the deadline countdown
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(id);
-  }, []);
-
-  const deadline = useMemo(() => {
-    const [h, m] = deadlineHHmm.split(":").map((x) => parseInt(x, 10));
-    const d = new Date();
-    d.setHours(h ?? 21, m ?? 0, 0, 0);
-    return d;
-  }, [deadlineHHmm]);
-
-  const remainingMs = deadline.getTime() - now.getTime();
-  const isPastDeadline = remainingMs <= 0;
-  const remainingHours = Math.max(0, Math.floor(remainingMs / (1000 * 60 * 60)));
-  const remainingMinutes = Math.max(
-    0,
-    Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60)),
-  );
   const [values, setValues] = useState<FormValues>(() =>
     Object.fromEntries(config.fields.map((f) => [f.key, ""])),
   );
   const [submitting, setSubmitting] = useState(false);
   const [shortageInfo, setShortageInfo] = useState<ShortageInfo | null>(null);
   const [shortageModalOpen, setShortageModalOpen] = useState(false);
+  // OCR slip URL — เก็บเข้า extraFields ตอน submit (CEO 2026-05-20 D-020 follow-up)
+  const [slipUrl, setSlipUrl] = useState<string | null>(null);
   // Anti-Stupidity Rule 3 — spike alert state.
   // When totalSales > previousReference × 1.5, ask once for confirmation
   // (does not block — user can confirm, but pause makes them check the figure).
   const [spikeConfirmed, setSpikeConfirmed] = useState(false);
   const [spikeModalOpen, setSpikeModalOpen] = useState(false);
 
-  // Draft storage key per branch+date+shift
+  // Draft storage — server-side primary, localStorage offline-fallback.
+  // 2026-05-20: ย้ายจาก localStorage-only เข้า DB (Branch Manager audit)
+  // เพื่อกัน data loss เมื่อพนักงานเปลี่ยนเครื่อง/เครื่องสาธารณะ.
   const draftKey = `cashhub:draft:${branchId}:${reportDate}:${shift}`;
+  const draftQuery = `branchId=${encodeURIComponent(branchId)}&date=${encodeURIComponent(reportDate)}&shift=${encodeURIComponent(shift)}`;
 
-  // Load draft on mount and shift change
+  // Load draft on mount and shift change — server first, localStorage fallback
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const saved = localStorage.getItem(draftKey);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as FormValues;
-        setValues((cur) => ({ ...cur, ...parsed }));
-      } catch {
-        /* ignore */
-      }
-    } else {
-      // reset to empty when switching shifts
-      setValues(Object.fromEntries(config.fields.map((f) => [f.key, ""])));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftKey]);
+    let cancelled = false;
 
-  // Save draft (debounced)
+    (async () => {
+      try {
+        const res = await fetch(`/api/cashhub/drafts?${draftQuery}`, {
+          method: "GET",
+        });
+        if (!cancelled && res.ok) {
+          const json = (await res.json()) as { values: FormValues | null };
+          /* eslint-disable react-hooks/set-state-in-effect */
+          if (json.values) {
+            setValues((cur) => ({ ...cur, ...json.values }));
+            return;
+          }
+          /* eslint-enable react-hooks/set-state-in-effect */
+        }
+      } catch {
+        // fall through to localStorage
+      }
+
+      // Fallback / offline path
+      const saved = localStorage.getItem(draftKey);
+      /* eslint-disable react-hooks/set-state-in-effect */
+      if (!cancelled && saved) {
+        try {
+          const parsed = JSON.parse(saved) as FormValues;
+          setValues((cur) => ({ ...cur, ...parsed }));
+        } catch {
+          /* ignore */
+        }
+      } else if (!cancelled) {
+        // reset to empty when switching shifts
+        setValues(Object.fromEntries(config.fields.map((f) => [f.key, ""])));
+      }
+      /* eslint-enable react-hooks/set-state-in-effect */
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey, draftQuery]);
+
+  // Save draft (debounced) — write to both localStorage (offline) + server
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handle = setTimeout(() => {
       const hasContent = Object.values(values).some((v) => v !== "");
-      if (hasContent) {
-        localStorage.setItem(draftKey, JSON.stringify(values));
-      }
-    }, 500);
+      if (!hasContent) return;
+      // localStorage fast + offline
+      localStorage.setItem(draftKey, JSON.stringify(values));
+      // server sync (fire and forget — error is OK, localStorage still has it)
+      void fetch("/api/cashhub/drafts", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branchId,
+          date: reportDate,
+          shift,
+          values,
+        }),
+      }).catch(() => {
+        /* swallow — offline mode covered by localStorage */
+      });
+    }, 1000);
     return () => clearTimeout(handle);
-  }, [values, draftKey]);
+  }, [values, draftKey, branchId, reportDate, shift]);
 
   // Aggregate numeric values for reconcile
   const numeric = useMemo(() => {
@@ -196,12 +224,18 @@ export function ReportForm({
     }
   }
 
-  // Spike detection (CASHHUB Rule 3) — uses yesterday's reference if present.
-  // Threshold ×1.5 matches the spec; we only fire once unless user re-edits.
+  // Spike detection (CASHHUB Rule 3) — prefer rolling 7-day median baseline
+  // (Branch Manager audit · 2026-05-20) เพราะ "เมื่อวาน × 1.5" false-positive
+  // ทุกจันทร์ (เสาร์-อาทิตย์ยอดต่ำ). Fall back ไปใช้ previousReference ถ้า
+  // sample data ยังน้อยเกิน (เช่นสาขาเปิดใหม่). Threshold ×1.5 ตาม spec เดิม.
+  const spikeBaselineValue =
+    spikeBaseline && spikeBaseline.totalSales > 0
+      ? spikeBaseline.totalSales
+      : previousReference && previousReference.totalSales > 0
+        ? previousReference.totalSales
+        : 0;
   const spikeRatio =
-    previousReference && previousReference.totalSales > 0
-      ? numeric.totalSales / previousReference.totalSales
-      : 0;
+    spikeBaselineValue > 0 ? numeric.totalSales / spikeBaselineValue : 0;
   const isSpiking = spikeRatio >= 1.5;
 
   async function handleSubmit() {
@@ -236,6 +270,10 @@ export function ReportForm({
           extraFields[f.key] = raw;
         }
       }
+    }
+    // Attach OCR slip URL if uploaded (Accountant audit · photo evidence)
+    if (slipUrl) {
+      extraFields.slip_url = slipUrl;
     }
 
     const payload = {
@@ -277,8 +315,13 @@ export function ReportForm({
         return;
       }
 
-      // Clear draft
+      // Clear draft (both layers)
       localStorage.removeItem(draftKey);
+      void fetch(`/api/cashhub/drafts?${draftQuery}`, {
+        method: "DELETE",
+      }).catch(() => {
+        /* server cleanup best-effort */
+      });
       toast.success("ส่งรายงานเรียบร้อย", {
         description: "รอผู้จัดการอนุมัติ",
       });
@@ -352,16 +395,7 @@ export function ReportForm({
             ) : (
               <Badge tone="brand">{reportDate}</Badge>
             )}
-            <div
-              className={cn(
-                "text-[11px] mt-0.5 tabular-num font-semibold",
-                isPastDeadline ? "text-red-700" : "text-zinc-500",
-              )}
-            >
-              {isPastDeadline
-                ? `⏰ เลย Deadline ${deadlineHHmm} แล้ว`
-                : `⏰ เหลือ ${remainingHours}:${String(remainingMinutes).padStart(2, "0")} ก่อน ${deadlineHHmm}`}
-            </div>
+            <DeadlineCountdown deadlineHHmm={deadlineHHmm} />
           </div>
         </div>
         {streak && streak.current >= 1 && (
@@ -503,6 +537,16 @@ export function ReportForm({
                   />
                 </Field>
               ))}
+              {/* OCR slip → auto-fill transfer · only show if "transfer" field exists */}
+              {groupedFields.received!.some((f) => f.key === "transfer") && (
+                <SlipCamera
+                  currentSlipUrl={slipUrl}
+                  onSlipUploaded={(url) => setSlipUrl(url || null)}
+                  onAmountDetected={(amt) =>
+                    update("transfer", String(amt))
+                  }
+                />
+              )}
             </CardBody>
           </Card>
         )}
@@ -589,15 +633,22 @@ export function ReportForm({
         {/* Anti-Stupidity Rule 3 — spike alert (sales × ≥1.5 of yesterday) */}
         {spikeModalOpen && (
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="spike-modal-title"
+            tabIndex={-1}
             className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4"
             onClick={() => setSpikeModalOpen(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setSpikeModalOpen(false);
+            }}
           >
             <div
               className="w-full sm:max-w-md bg-white rounded-2xl shadow-2xl p-6"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="text-3xl mb-3">🚨</div>
-              <h3 className="text-lg font-bold text-zinc-900 font-display">
+              <div className="text-3xl mb-3" aria-hidden>🚨</div>
+              <h3 id="spike-modal-title" className="text-lg font-bold text-zinc-900 font-display">
                 ยอดวันนี้สูงกว่าปกติมาก
               </h3>
               <p className="text-sm text-zinc-700 mt-2 leading-relaxed">
@@ -605,16 +656,28 @@ export function ReportForm({
                 <strong className="tabular-num">
                   ฿{Math.round(numeric.totalSales).toLocaleString("th-TH")}
                 </strong>{" "}
-                — สูงกว่าเมื่อวาน{" "}
-                <strong className="text-zinc-500 tabular-num">
-                  {previousReference
-                    ? `฿${Math.round(previousReference.totalSales).toLocaleString("th-TH")}`
-                    : "—"}
-                </strong>{" "}
+                — สูงกว่า{" "}
+                {spikeBaseline ? (
+                  <>
+                    ค่ามัธยฐาน {spikeBaseline.sampleDays} วัน{" "}
+                    <strong className="text-zinc-500 tabular-num">
+                      ฿{Math.round(spikeBaseline.totalSales).toLocaleString("th-TH")}
+                    </strong>
+                  </>
+                ) : (
+                  <>
+                    เมื่อวาน{" "}
+                    <strong className="text-zinc-500 tabular-num">
+                      {previousReference
+                        ? `฿${Math.round(previousReference.totalSales).toLocaleString("th-TH")}`
+                        : "—"}
+                    </strong>
+                  </>
+                )}{" "}
                 ถึง <strong>{spikeRatio.toFixed(1)} เท่า</strong>
               </p>
               <p className="text-xs text-zinc-500 mt-3">
-                ตรวจตัวเลขอีกครั้งก่อนกด "ยืนยันถูกต้อง" — ระบบจะ flag ให้ผู้จัดการรู้ตอน
+                ตรวจตัวเลขอีกครั้งก่อนกด &ldquo;ยืนยันถูกต้อง&rdquo; — ระบบจะ flag ให้ผู้จัดการรู้ตอน
                 approve เพื่อลด error
               </p>
               <div className="mt-5 flex gap-2">
@@ -712,6 +775,48 @@ export function ReportForm({
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Isolated countdown chip — owns the 30s setInterval that would otherwise
+ * re-render the entire 800-line ReportForm (incl. controlled inputs).
+ * Was: every keystroke could collide with a clock tick mid-typing.
+ */
+function DeadlineCountdown({ deadlineHHmm }: { deadlineHHmm: string }) {
+  const [now, setNow] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const deadline = useMemo(() => {
+    const [h, m] = deadlineHHmm.split(":").map((x) => parseInt(x, 10));
+    const d = new Date();
+    d.setHours(h ?? 21, m ?? 0, 0, 0);
+    return d;
+  }, [deadlineHHmm]);
+
+  const remainingMs = deadline.getTime() - now.getTime();
+  const isPastDeadline = remainingMs <= 0;
+  const remainingHours = Math.max(0, Math.floor(remainingMs / (1000 * 60 * 60)));
+  const remainingMinutes = Math.max(
+    0,
+    Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60)),
+  );
+
+  return (
+    <div
+      className={cn(
+        "text-[11px] mt-0.5 tabular-num font-semibold",
+        isPastDeadline ? "text-red-700" : "text-zinc-500",
+      )}
+    >
+      {isPastDeadline
+        ? `⏰ เลย Deadline ${deadlineHHmm} แล้ว`
+        : `⏰ เหลือ ${remainingHours}:${String(remainingMinutes).padStart(2, "0")} ก่อน ${deadlineHHmm}`}
     </div>
   );
 }

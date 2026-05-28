@@ -405,7 +405,7 @@ audit เต็มสตรีม + scheduled jobs
 □ Audit ครบทุก sensitive action (เพิ่ม USER_EDIT, BRANCH_*, SETTINGS_*, etc.)
 □ Audit filter UI (user/action/date range/module)
 □ Audit Excel export
-□ Audit retention 1 year (cron)
+□ Audit retention **5+ ปี · NO auto-delete cron** (กฎหมายไทย พ.ร.บ.การบัญชี 2543 §14 · สรรพากรแนะนำ 10 ปี · ห้ามสร้าง cron ที่ลบ audit_logs)
 □ /api/cron/* setup (Vercel Cron)
    - 07:00 morning-brief
    - 18:00 evening-check

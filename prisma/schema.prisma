@@ -10,6 +10,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  schemas  = ["public", "chairops", "playland"]
 }
 
 // =============================================================
@@ -27,41 +28,91 @@ model Organization {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  users            User[]
-  companies        Company[]
-  branches         Branch[]
-  branchRentals    BranchRental[]
-  reportTemplates  ReportTemplate[]
-  dailyReports     DailyReport[]
-  cashShortages    CashShortage[]
-  auditLogs        AuditLog[]
-  userBranches     UserBranch[]
-  notifications    Notification[]
-  userSessions     UserSession[]
-  registerRequests RegisterRequest[]
-  orgModules       OrgModule[]
-  branchGroups     BranchGroup[]
-  holidays         Holiday[]
-  telegramSubs     TelegramSubscription[]
-  telegramGroups   TelegramGroup[]
-  telegramTokens   TelegramPairingToken[]
-  branchTargets    BranchTarget[]
-  branchHealthScores BranchHealthScore[]
-  branchStreaks    BranchStreak[]
-  missingReports   MissingReportReason[]
-  documents        Document[]
-  documentOwnerships DocumentOwnership[]
-  documentTags     DocumentTag[]
-  documentRenewals DocumentRenewal[]
-  documentSharedBranches DocumentSharedBranch[]
-  vehicles         Vehicle[]
-  vehicleDocuments VehicleDocument[]
-  personDocuments  PersonDocument[]
-  signaturePlacements DocumentSignaturePlacement[]
-  documentAnalyses DocumentAnalysis[]
-  aiSearchCache    AiSearchCache[]
+  users                   User[]
+  companies               Company[]
+  branches                Branch[]
+  branchRentals           BranchRental[]
+  reportTemplates         ReportTemplate[]
+  dailyReports            DailyReport[]
+  reportDrafts            ReportDraft[]
+  bugReports              BugReport[]
+  cashShortages           CashShortage[]
+  auditLogs               AuditLog[]
+  userBranches            UserBranch[]
+  notifications           Notification[]
+  userSessions            UserSession[]
+  registerRequests        RegisterRequest[]
+  orgModules              OrgModule[]
+  branchGroups            BranchGroup[]
+  holidays                Holiday[]
+  telegramSubs            TelegramSubscription[]
+  telegramGroups          TelegramGroup[]
+  telegramTokens          TelegramPairingToken[]
+  branchTargets           BranchTarget[]
+  branchHealthScores      BranchHealthScore[]
+  branchStreaks           BranchStreak[]
+  missingReports          MissingReportReason[]
+  documents               Document[]
+  documentOwnerships      DocumentOwnership[]
+  documentTags            DocumentTag[]
+  documentRenewals        DocumentRenewal[]
+  documentSharedBranches  DocumentSharedBranch[]
+  vehicles                Vehicle[]
+  vehicleDocuments        VehicleDocument[]
+  personDocuments         PersonDocument[]
+  signaturePlacements     DocumentSignaturePlacement[]
+  documentAnalyses        DocumentAnalysis[]
+  aiSearchCache           AiSearchCache[]
+  // FuelOS Sprint 6
+  depotPrices             DepotPrice[]
+  zoneMargins             ZoneMargin[]
+  contacts                Contact[]
+  customerEntities        CustomerEntity[]
+  deliveryLocations       DeliveryLocation[]
+  customerQuotes          CustomerQuote[]
+  priceAlertLogs          PriceAlertLog[]
+  lineResponseLogs        LineResponseLog[]
+  fuelOrders              FuelOrder[]
+  trucks                  Truck[]
+  driverProfiles          DriverProfile[]
+  driverLocations         DriverLocation[]
+  payments                Payment[]
+  flashSales              FlashSale[]
+  creditDocuments         CreditDocument[]
+  chequeTrackings         ChequeTracking[]
+  // Recruit module
+  recruitPostings         RecruitJobPosting[]
+  recruitApplicants       RecruitApplicant[]
+  recruitApplications     RecruitApplication[]
+  recruitApplicationNotes RecruitApplicationNote[]
+  recruitBlacklist        RecruitBlacklist[]
+  recruitInterviews       RecruitInterview[]
+  recruitMessages         RecruitMessage[]
+  recruitRules            RecruitScreeningRule[]
+  recruitFormTemplates    RecruitFormTemplate[]
+  recruitInboxChannels    RecruitInboxChannel[]
+  recruitReferrals        RecruitReferral[]
+  recruitErasureRequests  RecruitErasureRequest[]
+  // Repair module
+  repairCategories        RepairCategory[]
+  repairTickets           RepairTicket[]
+  repairTechnicians       RepairTechnician[]
+  repairPhotos            RepairPhoto[]
+  repairParts             RepairPart[]
+  repairTimelineEvents    RepairTimelineEvent[]
+  repairVendorTokens      RepairVendorToken[]
+  // ClawFleet module
+  cfMachines              CfMachine[]
+  cfMachineGroups         CfMachineGroup[]
+  cfProducts              CfProduct[]
+  cfMachineLoadouts       CfMachineLoadout[]
+  cfExchangerLoadouts     CfExchangerLoadout[]
+  cfCollectionSessions    CfCollectionSession[]
+  cfCollectionEvents      CfCollectionEvent[]
+  cfStockMovements        CfStockMovement[]
 
   @@map("organizations")
+  @@schema("public")
 }
 
 // =============================================================
@@ -70,115 +121,163 @@ model Organization {
 // Branches attach to a company; users belong to org and may span companies
 // =============================================================
 model Company {
-  id        String   @id @default(uuid()) @db.Uuid
-  orgId     String   @map("org_id") @db.Uuid
-  code      String // POOIL | JPSYNC
-  name      String // "Pooil Oil" | "JP Sync Group"
-  taxId     String?  @map("tax_id") // เลขผู้เสียภาษี
-  address   String?
-  phone     String?
-  logoUrl   String?  @map("logo_url")
-  brandColor String? @map("brand_color") // optional override per company
-  settings  Json     @default("{}")
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  code       String // POOIL | JPSYNC
+  name       String // "Pooil Oil" | "JP Sync Group"
+  taxId      String?  @map("tax_id") // เลขผู้เสียภาษี
+  address    String?
+  phone      String?
+  logoUrl    String?  @map("logo_url")
+  brandColor String?  @map("brand_color") // optional override per company
+  settings   Json     @default("{}")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org      Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  branches Branch[]
-  vehicles Vehicle[]
+  org             Organization        @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  branches        Branch[]
+  vehicles        Vehicle[]
+  recruitPostings RecruitJobPosting[]
+  repairTickets   RepairTicket[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
   @@map("companies")
+  @@schema("public")
 }
 
 // =============================================================
 // 2. users — auth + RBAC
 // =============================================================
 enum UserRole {
-  super_admin    // Owner — strategic + financial + identity
-  admin          // Operational admin — runs day-to-day
-  area_manager   // Manages multiple branches in a region/business
+  super_admin // Owner — strategic + financial + identity
+  admin // Operational admin — runs day-to-day
+  area_manager // Manages multiple branches in a region/business
   branch_manager // 1-2 per branch
-  staff          // Submits reports / works on branch
-  driver         // FuelOS Phase 2
-  viewer         // Read-only (accountant / HR)
-  org_admin      // [deprecated alias — kept for back-compat, will migrate to admin]
+  staff // Submits reports / works on branch
+  driver // FuelOS Phase 2
+  viewer // Read-only (accountant / HR)
+  org_admin // [deprecated alias — kept for back-compat, will migrate to admin]
+
+  @@schema("public")
 }
 
 model User {
-  id                 String    @id @default(uuid()) @db.Uuid
-  orgId              String    @map("org_id") @db.Uuid
-  employeeCode       String?   @map("employee_code") // referenced from Humansoft HR app
-  email              String?   @unique
-  name               String
-  phone              String?
-  passwordHash       String?   @map("password_hash")
-  role               UserRole
-  lineUserId         String?   @unique @map("line_user_id")
-  telegramUserId     String?   @map("telegram_user_id")
-  telegramChatId     String?   @map("telegram_chat_id")
-  mustChangePassword Boolean   @default(true) @map("must_change_password")
-  isActive           Boolean   @default(true) @map("is_active")
-  lastLoginAt        DateTime? @map("last_login_at") @db.Timestamptz(6)
-  failedLoginCount   Int       @default(0) @map("failed_login_count")
-  lockedUntil        DateTime? @map("locked_until") @db.Timestamptz(6)
-  invitedBy          String?   @map("invited_by") @db.Uuid
-  inviteToken        String?   @unique @map("invite_token")
-  inviteExpiresAt    DateTime? @map("invite_expires_at") @db.Timestamptz(6)
-  inviteUsedAt       DateTime? @map("invite_used_at") @db.Timestamptz(6)
+  id                  String    @id @default(uuid()) @db.Uuid
+  orgId               String    @map("org_id") @db.Uuid
+  employeeCode        String?   @map("employee_code") // referenced from Humansoft HR app
+  email               String?   @unique
+  name                String
+  phone               String?
+  passwordHash        String?   @map("password_hash")
+  role                UserRole
+  lineUserId          String?   @unique @map("line_user_id")
+  telegramUserId      String?   @map("telegram_user_id")
+  telegramChatId      String?   @map("telegram_chat_id")
+  mustChangePassword  Boolean   @default(true) @map("must_change_password")
+  isActive            Boolean   @default(true) @map("is_active")
+  lastLoginAt         DateTime? @map("last_login_at") @db.Timestamptz(6)
+  failedLoginCount    Int       @default(0) @map("failed_login_count")
+  lockedUntil         DateTime? @map("locked_until") @db.Timestamptz(6)
+  invitedBy           String?   @map("invited_by") @db.Uuid
+  inviteToken         String?   @unique @map("invite_token")
+  inviteExpiresAt     DateTime? @map("invite_expires_at") @db.Timestamptz(6)
+  inviteUsedAt        DateTime? @map("invite_used_at") @db.Timestamptz(6)
   // Optional auto-expiry for non-permanent users (auditors, contractors,
   // temp staff). When set + `now() > tempAccessExpiresAt`, the access-review
   // cron deactivates the account. NULL = permanent until manual deactivation.
   // Spec: ดีเทลv1/CORE_SYSTEM.md §2.6 Temporary Access.
   tempAccessExpiresAt DateTime? @map("temp_access_expires_at") @db.Timestamptz(6)
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org                 Organization           @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  userBranches        UserBranch[]
-  managedBranches     Branch[]               @relation("BranchManager")
-  submittedReports    DailyReport[]          @relation("ReportSubmitter")
-  approvedReports     DailyReport[]          @relation("ReportApprover")
-  unlockedReports     DailyReport[]          @relation("ReportUnlocker")
-  shortagesAttributed CashShortage[]         @relation("ShortagePerson")
-  auditLogs           AuditLog[]
-  notifications       Notification[]
-  sessions            UserSession[]
-  reviewedRequests    RegisterRequest[]      @relation("RegisterReviewer")
-  telegramSubs        TelegramSubscription[]
-  telegramTokens      TelegramPairingToken[]
-  uploadedDocuments   Document[]            @relation("DocumentUploader")
-  responsibleRenewals DocumentRenewal[]     @relation("RenewalResponsible")
-  personDocuments     PersonDocument[]
-  signaturePlacements DocumentSignaturePlacement[] @relation("SignaturePlacementSigner")
+  org                      Organization                 @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  userBranches             UserBranch[]
+  managedBranches          Branch[]                     @relation("BranchManager")
+  submittedReports         DailyReport[]                @relation("ReportSubmitter")
+  approvedReports          DailyReport[]                @relation("ReportApprover")
+  reportDrafts             ReportDraft[]
+  reportedBugs             BugReport[]                  @relation("BugReporter")
+  acknowledgedBugs         BugReport[]                  @relation("BugAcknowledger")
+  unlockedReports          DailyReport[]                @relation("ReportUnlocker")
+  shortagesAttributed      CashShortage[]               @relation("ShortagePerson")
+  auditLogs                AuditLog[]
+  notifications            Notification[]
+  sessions                 UserSession[]
+  reviewedRequests         RegisterRequest[]            @relation("RegisterReviewer")
+  telegramSubs             TelegramSubscription[]
+  telegramTokens           TelegramPairingToken[]
+  uploadedDocuments        Document[]                   @relation("DocumentUploader")
+  responsibleRenewals      DocumentRenewal[]            @relation("RenewalResponsible")
+  personDocuments          PersonDocument[]
+  signaturePlacements      DocumentSignaturePlacement[] @relation("SignaturePlacementSigner")
+  // FuelOS Sprint 6
+  depotPricesEntered       DepotPrice[]                 @relation("DepotPriceEntered")
+  assignedContacts         Contact[]                    @relation("ContactSales")
+  quotesAsSales            CustomerQuote[]              @relation("QuoteSales")
+  priceAlertsSent          PriceAlertLog[]              @relation("PriceAlertSales")
+  lineResponsesAsSales     LineResponseLog[]            @relation("LineResponseSales")
+  fuelOrdersAsSales        FuelOrder[]                  @relation("FuelOrderSales")
+  driverProfile            DriverProfile?
+  paymentsCreated          Payment[]                    @relation("PaymentCreatedBy")
+  flashSalesCreated        FlashSale[]                  @relation("FlashSaleCreatedBy")
+  // Recruit module
+  recruitPostingsCreated   RecruitJobPosting[]          @relation("RecruitPostingCreator")
+  recruitNotesAuthored     RecruitApplicationNote[]     @relation("RecruitNoteAuthor")
+  recruitBlacklistAdded    RecruitBlacklist[]           @relation("RecruitBlacklistAdder")
+  recruitBlacklistRemoved  RecruitBlacklist[]           @relation("RecruitBlacklistRemover")
+  recruitInterviewsCreated RecruitInterview[]           @relation("RecruitInterviewCreator")
+  recruitMessagesSent      RecruitMessage[]             @relation("RecruitMessageSender")
+  recruitRulesCreated      RecruitScreeningRule[]       @relation("RecruitRuleCreator")
+  recruitFormTemplates     RecruitFormTemplate[]        @relation("RecruitFormTemplateCreator")
+  recruitInboxChannels     RecruitInboxChannel[]        @relation("RecruitInboxChannelCreator")
+  recruitReferralsAsRef    RecruitReferral[]            @relation("RecruitReferrerUser")
+  recruitErasureDecided    RecruitErasureRequest[]      @relation("RecruitErasureDecider")
+  // Repair module
+  repairTicketsReported    RepairTicket[]               @relation("RepairTicketReporter")
+  repairTicketsResolved    RepairTicket[]               @relation("RepairTicketResolver")
+  repairTicketsClosed      RepairTicket[]               @relation("RepairTicketCloser")
+  repairTechnicianLink     RepairTechnician?
+  repairTimelineEvents     RepairTimelineEvent[]        @relation("RepairTimelineActor")
+  repairPhotosUploaded     RepairPhoto[]                @relation("RepairPhotoUploader")
+  repairPartsAdded         RepairPart[]                 @relation("RepairPartAddedBy")
+  repairPartsOrdered       RepairPart[]                 @relation("RepairPartOrderedBy")
+  // ClawFleet module
+  cfSessionsOpened         CfCollectionSession[]        @relation("CfSessionOpener")
+  cfSessionsClosed         CfCollectionSession[]        @relation("CfSessionCloser")
+  cfSessionsReviewed       CfCollectionSession[]        @relation("CfSessionReviewer")
+  cfEventsCollected        CfCollectionEvent[]          @relation("CfEventCollector")
+  cfStockMovementsCreated  CfStockMovement[]            @relation("CfStockCreator")
 
   @@unique([orgId, employeeCode])
   @@index([orgId, isActive])
   @@index([orgId, role])
   @@index([lineUserId])
   @@map("users")
+  @@schema("public")
 }
 
 // =============================================================
 // 3. branches — 30+ สาขา / 7 business types
 // =============================================================
 enum BusinessType {
-  fuel_station       // ปั๊มน้ำมัน
-  lpg_station        // ปั๊มแก๊ส (เติมรถ)
-  lpg_retail         // ร้านค้าแก๊ส (ขายถัง)
-  bottling_plant     // โรงบรรจุก๊าซ
-  hotel              // โรงแรม
-  convenience_store  // 7-Eleven
-  ev_station         // EV Station
-  cafe               // Café Amazon
-  cafe_punthai       // ร้านกาแฟพันธุ์ไทย
-  massage_chair      // เก้าอี้นวด (kiosk)
-  claw_machine       // ตู้คีบ (kiosk)
-  training_center    // ศูนย์ฝึกอบรม
-  transport          // FuelOS Phase 2
-  gas_fleet          // FuelOS Phase 2
+  fuel_station // ปั๊มน้ำมัน
+  lpg_station // ปั๊มแก๊ส (เติมรถ)
+  lpg_retail // ร้านค้าแก๊ส (ขายถัง)
+  bottling_plant // โรงบรรจุก๊าซ
+  hotel // โรงแรม
+  convenience_store // 7-Eleven
+  ev_station // EV Station
+  cafe // Café Amazon
+  cafe_punthai // ร้านกาแฟพันธุ์ไทย
+  massage_chair // เก้าอี้นวด (kiosk)
+  claw_machine // ตู้คีบ (kiosk)
+  training_center // ศูนย์ฝึกอบรม
+  transport // FuelOS Phase 2
+  gas_fleet // FuelOS Phase 2
+
+  @@schema("public")
 }
 
 model Branch {
@@ -203,22 +302,28 @@ model Branch {
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org             Organization          @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  company         Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  parentBranch    Branch?               @relation("SubTenants", fields: [parentBranchId], references: [id], onDelete: SetNull)
-  subTenants      Branch[]              @relation("SubTenants")
-  manager         User?                 @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
-  userBranches    UserBranch[]
-  dailyReports    DailyReport[]
-  cashShortages   CashShortage[]
-  targets         BranchTarget[]
-  healthScores    BranchHealthScore[]
-  streak          BranchStreak?
-  missingReports  MissingReportReason[]
-  rentalsAsHost   BranchRental[]        @relation("RentalHost")
-  rentalsAsTenant BranchRental[]        @relation("RentalTenant")
-  vehicles        Vehicle[]
-  sharedDocuments DocumentSharedBranch[]
+  org              Organization           @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  company          Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  parentBranch     Branch?                @relation("SubTenants", fields: [parentBranchId], references: [id], onDelete: SetNull)
+  subTenants       Branch[]               @relation("SubTenants")
+  manager          User?                  @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
+  userBranches     UserBranch[]
+  dailyReports     DailyReport[]
+  reportDrafts     ReportDraft[]
+  cashShortages    CashShortage[]
+  targets          BranchTarget[]
+  healthScores     BranchHealthScore[]
+  streak           BranchStreak?
+  missingReports   MissingReportReason[]
+  rentalsAsHost    BranchRental[]         @relation("RentalHost")
+  rentalsAsTenant  BranchRental[]         @relation("RentalTenant")
+  vehicles         Vehicle[]
+  sharedDocuments  DocumentSharedBranch[]
+  repairTickets    RepairTicket[]
+  // ClawFleet
+  cfMachines       CfMachine[]
+  cfMachineGroups  CfMachineGroup[]
+  cfStockMovements CfStockMovement[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -226,6 +331,7 @@ model Branch {
   @@index([companyId, isActive])
   @@index([parentBranchId])
   @@map("branches")
+  @@schema("public")
 }
 
 // =============================================================
@@ -233,26 +339,28 @@ model Branch {
 // Pump (host) ↔ Tenant (7-11 / Café / external shop) — fixed / % / mixed
 // =============================================================
 enum RentalType {
-  fixed_monthly  // ค่าเช่ารายเดือนตายตัว
-  percentage     // % ของยอดขายผู้เช่า
-  mixed          // ทั้ง fixed + %
+  fixed_monthly // ค่าเช่ารายเดือนตายตัว
+  percentage // % ของยอดขายผู้เช่า
+  mixed // ทั้ง fixed + %
+
+  @@schema("public")
 }
 
 model BranchRental {
-  id              String     @id @default(uuid()) @db.Uuid
-  orgId           String     @map("org_id") @db.Uuid
-  hostBranchId    String     @map("host_branch_id") @db.Uuid // ปั๊ม
-  tenantBranchId  String?    @map("tenant_branch_id") @db.Uuid // ถ้าเป็นร้านในเครือ
-  tenantName      String     @map("tenant_name") // ชื่อร้าน (อาจเป็นภายนอก)
-  rentalType      RentalType @map("rental_type")
-  fixedAmount     Decimal?   @map("fixed_amount") @db.Decimal(15, 2) // ฿/เดือน
-  percentageRate  Decimal?   @map("percentage_rate") @db.Decimal(6, 4) // 0.05 = 5%
-  startDate       DateTime   @map("start_date") @db.Date
-  endDate         DateTime?  @map("end_date") @db.Date
-  notes           String?
-  isActive        Boolean    @default(true) @map("is_active")
-  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id             String     @id @default(uuid()) @db.Uuid
+  orgId          String     @map("org_id") @db.Uuid
+  hostBranchId   String     @map("host_branch_id") @db.Uuid // ปั๊ม
+  tenantBranchId String?    @map("tenant_branch_id") @db.Uuid // ถ้าเป็นร้านในเครือ
+  tenantName     String     @map("tenant_name") // ชื่อร้าน (อาจเป็นภายนอก)
+  rentalType     RentalType @map("rental_type")
+  fixedAmount    Decimal?   @map("fixed_amount") @db.Decimal(15, 2) // ฿/เดือน
+  percentageRate Decimal?   @map("percentage_rate") @db.Decimal(6, 4) // 0.05 = 5%
+  startDate      DateTime   @map("start_date") @db.Date
+  endDate        DateTime?  @map("end_date") @db.Date
+  notes          String?
+  isActive       Boolean    @default(true) @map("is_active")
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org          Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   hostBranch   Branch       @relation("RentalHost", fields: [hostBranchId], references: [id], onDelete: Cascade)
@@ -262,6 +370,7 @@ model BranchRental {
   @@index([hostBranchId, isActive])
   @@index([tenantBranchId])
   @@map("branch_rentals")
+  @@schema("public")
 }
 
 // =============================================================
@@ -283,6 +392,7 @@ model UserBranch {
   @@index([orgId])
   @@index([branchId, isActive])
   @@map("user_branches")
+  @@schema("public")
 }
 
 // =============================================================
@@ -304,6 +414,7 @@ model ReportTemplate {
 
   @@index([orgId])
   @@map("report_templates")
+  @@schema("public")
 }
 
 // =============================================================
@@ -314,6 +425,8 @@ enum ReportStatus {
   submitted
   approved
   rejected
+
+  @@schema("public")
 }
 
 enum Shift {
@@ -321,6 +434,8 @@ enum Shift {
   midday
   evening
   all
+
+  @@schema("public")
 }
 
 model DailyReport {
@@ -387,6 +502,77 @@ model DailyReport {
   @@index([branchId, reportDate])
   @@index([branchId, shift, reportDate])
   @@map("daily_reports")
+  @@schema("public")
+}
+
+// =============================================================
+// 6b. report_drafts — autosave in-progress form (server-side, replaces localStorage)
+// 2026-05-20 (Branch Manager audit): localStorage หายเมื่อเปลี่ยนเครื่อง
+// → ย้ายเข้า DB · auto-delete หลัง submit สำเร็จ
+// Unique per (user, branch, date, shift) — 1 draft ต่อบริบทเดียว
+// =============================================================
+model ReportDraft {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  reportDate DateTime @map("report_date") @db.Date
+  shift      String   @default("all")
+  formValues Json     @map("form_values")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, branchId, reportDate, shift])
+  @@index([orgId, userId])
+  @@index([branchId, reportDate])
+  @@map("report_drafts")
+  @@schema("public")
+}
+
+// =============================================================
+// 6c. bug_reports — in-app bug report (button hidden under AI floating)
+// 2026-05-20: CEO requested · พนักงานคนไหนเจอ bug บนหน้าไหน
+// → กดปุ่มแจ้ง + แนบ screenshot · admin ดูที่ /bugs · Claude session ใหม่
+// อ่านได้เพื่อ batch-fix
+// =============================================================
+enum BugStatus {
+  new
+  acked
+  fixed
+  closed
+
+  @@schema("public")
+}
+
+model BugReport {
+  id               String    @id @default(uuid()) @db.Uuid
+  orgId            String    @map("org_id") @db.Uuid
+  reporterId       String    @map("reporter_id") @db.Uuid
+  url              String // window.location.pathname + search ตอน report
+  description      String    @db.Text
+  screenshotKey    String?   @map("screenshot_key") // R2 object key (null = no screenshot)
+  userAgent        String?   @map("user_agent")
+  status           BugStatus @default(new)
+  adminNote        String?   @map("admin_note") @db.Text
+  acknowledgedById String?   @map("acknowledged_by_id") @db.Uuid
+  acknowledgedAt   DateTime? @map("acknowledged_at") @db.Timestamptz(6)
+  fixedAt          DateTime? @map("fixed_at") @db.Timestamptz(6)
+  fixedCommitSha   String?   @map("fixed_commit_sha")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org            Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  reporter       User         @relation("BugReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  acknowledgedBy User?        @relation("BugAcknowledger", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+
+  @@index([orgId, status, createdAt])
+  @@index([reporterId, createdAt])
+  @@map("bug_reports")
+  @@schema("public")
 }
 
 // =============================================================
@@ -414,10 +600,15 @@ model CashShortage {
   @@index([personId, reportDate])
   @@index([branchId, reportDate])
   @@map("cash_shortages")
+  @@schema("public")
 }
 
 // =============================================================
 // 8. audit_logs — sensitive action trail
+// -------------------------------------------------------------
+// RETENTION POLICY: เก็บไม่น้อยกว่า 5 ปี (กฎหมายไทย พ.ร.บ.การบัญชี 2543 §14 ·
+// สรรพากรแนะนำ 10 ปี). ห้ามสร้าง cron/job ลบ row ใน audit_logs เด็ดขาด.
+// ถ้าตารางใหญ่ → archive ไป cold storage แทน · อย่าลบ.
 // =============================================================
 model AuditLog {
   id           String   @id @default(uuid()) @db.Uuid
@@ -440,6 +631,7 @@ model AuditLog {
   @@index([userId, createdAt])
   @@index([action, createdAt])
   @@map("audit_logs")
+  @@schema("public")
 }
 
 // =============================================================
@@ -464,7 +656,10 @@ model Notification {
 
   @@index([userId, isRead, createdAt])
   @@index([orgId, createdAt])
+  // Ultraview audit 2026-05-21 — org-wide unread count + admin firehose
+  @@index([orgId, isRead, createdAt])
   @@map("notifications")
+  @@schema("public")
 }
 
 // =============================================================
@@ -488,6 +683,7 @@ model UserSession {
   @@index([userId, loginAt])
   @@index([orgId, loginAt])
   @@map("user_sessions")
+  @@schema("public")
 }
 
 // =============================================================
@@ -515,6 +711,7 @@ model RegisterRequest {
 
   @@index([orgId, status, createdAt])
   @@map("register_requests")
+  @@schema("public")
 }
 
 // =============================================================
@@ -531,7 +728,10 @@ model OrgModule {
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, moduleName])
+  // Ultraview audit 2026-05-21 — module-switcher lookup per org
+  @@index([orgId, isActive])
   @@map("org_modules")
+  @@schema("public")
 }
 
 // =============================================================
@@ -553,6 +753,7 @@ model UserModule {
   @@index([userId, isActive])
   @@index([orgId, moduleName, isActive])
   @@map("user_modules")
+  @@schema("public")
 }
 
 // =============================================================
@@ -572,6 +773,7 @@ model BranchGroup {
 
   @@index([orgId, groupType])
   @@map("branch_groups")
+  @@schema("public")
 }
 
 model BranchGroupMember {
@@ -584,6 +786,7 @@ model BranchGroupMember {
   @@unique([groupId, branchId])
   @@index([branchId])
   @@map("branch_group_members")
+  @@schema("public")
 }
 
 // =============================================================
@@ -602,6 +805,7 @@ model Holiday {
 
   @@unique([orgId, date])
   @@map("holidays")
+  @@schema("public")
 }
 
 // =============================================================
@@ -623,6 +827,7 @@ model TelegramSubscription {
   @@unique([userId, botName])
   @@index([orgId, botName, isActive])
   @@map("telegram_subscriptions")
+  @@schema("public")
 }
 
 // =============================================================
@@ -643,6 +848,7 @@ model TelegramGroup {
 
   @@index([orgId, module, isActive])
   @@map("telegram_groups")
+  @@schema("public")
 }
 
 // =============================================================
@@ -664,21 +870,22 @@ model TelegramPairingToken {
   @@index([token])
   @@index([userId, usedAt])
   @@map("telegram_pairing_tokens")
+  @@schema("public")
 }
 
 // =============================================================
 // 18. branch_targets — monthly sales target per branch
 // =============================================================
 model BranchTarget {
-  id         String   @id @default(uuid()) @db.Uuid
-  orgId      String   @map("org_id") @db.Uuid
-  branchId   String   @map("branch_id") @db.Uuid
-  year       Int
-  month      Int // 1-12
-  amount     Decimal  @db.Decimal(15, 2)
-  source     String   @default("manual") // manual | derived_prev_year | derived_avg_3m
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  year      Int
+  month     Int // 1-12
+  amount    Decimal  @db.Decimal(15, 2)
+  source    String   @default("manual") // manual | derived_prev_year | derived_avg_3m
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   branch Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -686,6 +893,7 @@ model BranchTarget {
   @@unique([branchId, year, month])
   @@index([orgId, year, month])
   @@map("branch_targets")
+  @@schema("public")
 }
 
 // =============================================================
@@ -708,39 +916,41 @@ model BranchHealthScore {
   @@index([orgId, computedFor])
   @@index([branchId, computedFor])
   @@map("branch_health_scores")
+  @@schema("public")
 }
 
 // =============================================================
 // 20. branch_streaks — current/longest fill streak (gamification)
 // =============================================================
 model BranchStreak {
-  id              String    @id @default(uuid()) @db.Uuid
-  orgId           String    @map("org_id") @db.Uuid
-  branchId        String    @unique @map("branch_id") @db.Uuid
-  currentStreak   Int       @default(0) @map("current_streak")
-  longestStreak   Int       @default(0) @map("longest_streak")
-  lastReportDate  DateTime? @map("last_report_date") @db.Date
-  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id             String    @id @default(uuid()) @db.Uuid
+  orgId          String    @map("org_id") @db.Uuid
+  branchId       String    @unique @map("branch_id") @db.Uuid
+  currentStreak  Int       @default(0) @map("current_streak")
+  longestStreak  Int       @default(0) @map("longest_streak")
+  lastReportDate DateTime? @map("last_report_date") @db.Date
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   branch Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@map("branch_streaks")
+  @@schema("public")
 }
 
 // =============================================================
 // 21. missing_report_reasons — why a day was not filled
 // =============================================================
 model MissingReportReason {
-  id          String   @id @default(uuid()) @db.Uuid
-  orgId       String   @map("org_id") @db.Uuid
-  branchId    String   @map("branch_id") @db.Uuid
-  reportDate  DateTime @map("report_date") @db.Date
-  reasonType  String   @map("reason_type") // sick | holiday | system | waiting | other
-  reasonText  String?  @map("reason_text")
-  reportedBy  String?  @map("reported_by") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  reportDate DateTime @map("report_date") @db.Date
+  reasonType String   @map("reason_type") // sick | holiday | system | waiting | other
+  reasonText String?  @map("reason_text")
+  reportedBy String?  @map("reported_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   branch Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -748,6 +958,7 @@ model MissingReportReason {
   @@unique([branchId, reportDate])
   @@index([orgId, reportDate])
   @@map("missing_report_reasons")
+  @@schema("public")
 }
 
 // =============================================================
@@ -755,34 +966,39 @@ model MissingReportReason {
 // Spec: ดีเทลv1/DOCUFLOW.md · ~1,100 docs across group/company/biz/branch/person
 // =============================================================
 model Document {
-  id              String   @id @default(uuid()) @db.Uuid
-  orgId           String   @map("org_id") @db.Uuid
-  name            String
-  description     String?
-  fileKey         String   @map("file_key") // R2 object key
-  filePublicUrl   String?  @map("file_public_url")
-  mimeType        String?  @map("mime_type")
-  fileSize        Int?     @map("file_size") // bytes
-  uploadedById    String?  @map("uploaded_by_id") @db.Uuid
-  uploadedAt      DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
-  isActive        Boolean  @default(true) @map("is_active")
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  name          String
+  description   String?
+  /// Canonical document type — links Document to lib/docuflow/canonical-docs.ts (e.g. "ใบอนุญาตสถานีบริการน้ำมัน").
+  /// Nullable for back-compat; new uploads via smart wizard set this. Phase-2 IA recommendation 2026-05-10.
+  documentType  String?  @map("document_type")
+  fileKey       String   @map("file_key") // R2 object key
+  filePublicUrl String?  @map("file_public_url")
+  mimeType      String?  @map("mime_type")
+  fileSize      Int?     @map("file_size") // bytes
+  uploadedById  String?  @map("uploaded_by_id") @db.Uuid
+  uploadedAt    DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org            Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  uploadedBy     User?                  @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
-  ownership      DocumentOwnership[]
-  tags           DocumentTag[]
-  renewals       DocumentRenewal[]
-  sharedBranches DocumentSharedBranch[]
-  vehicleDocs    VehicleDocument[]
-  personDocs     PersonDocument[]
+  org                 Organization                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  uploadedBy          User?                        @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  ownership           DocumentOwnership[]
+  tags                DocumentTag[]
+  renewals            DocumentRenewal[]
+  sharedBranches      DocumentSharedBranch[]
+  vehicleDocs         VehicleDocument[]
+  personDocs          PersonDocument[]
   signaturePlacements DocumentSignaturePlacement[]
-  analyses       DocumentAnalysis[]
+  analyses            DocumentAnalysis[]
 
   @@index([orgId, isActive])
   @@index([orgId, uploadedAt])
+  @@index([orgId, documentType])
   @@map("documents")
+  @@schema("public")
 }
 
 // =============================================================
@@ -806,6 +1022,7 @@ model DocumentOwnership {
   @@index([documentId])
   @@index([branchId])
   @@map("document_ownership")
+  @@schema("public")
 }
 
 // =============================================================
@@ -824,25 +1041,26 @@ model DocumentTag {
   @@unique([documentId, tag])
   @@index([orgId, tag])
   @@map("document_tags")
+  @@schema("public")
 }
 
 // =============================================================
 // 25. document_renewals — expiry tracking + renewal workflow
 // =============================================================
 model DocumentRenewal {
-  id                  String    @id @default(uuid()) @db.Uuid
-  orgId               String    @map("org_id") @db.Uuid
-  documentId          String    @map("document_id") @db.Uuid
-  expiryDate          DateTime  @map("expiry_date") @db.Date
-  renewalPeriodYears  Int?      @map("renewal_period_years")
-  alertDays           Int[]     @default([90, 30, 7]) @map("alert_days")
-  responsibleUserId   String?   @map("responsible_user_id") @db.Uuid
-  status              String    @default("pending") // pending | in_progress | renewed | overdue
-  lastRenewedDate     DateTime? @map("last_renewed_date") @db.Date
-  nextRenewalDate     DateTime? @map("next_renewal_date") @db.Date
-  notes               String?
-  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                 String    @id @default(uuid()) @db.Uuid
+  orgId              String    @map("org_id") @db.Uuid
+  documentId         String    @map("document_id") @db.Uuid
+  expiryDate         DateTime  @map("expiry_date") @db.Date
+  renewalPeriodYears Int?      @map("renewal_period_years")
+  alertDays          Int[]     @default([90, 30, 7]) @map("alert_days")
+  responsibleUserId  String?   @map("responsible_user_id") @db.Uuid
+  status             String    @default("pending") // pending | in_progress | renewed | overdue
+  lastRenewedDate    DateTime? @map("last_renewed_date") @db.Date
+  nextRenewalDate    DateTime? @map("next_renewal_date") @db.Date
+  notes              String?
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org             Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   document        Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
@@ -851,6 +1069,7 @@ model DocumentRenewal {
   @@index([orgId, expiryDate])
   @@index([orgId, status])
   @@map("document_renewals")
+  @@schema("public")
 }
 
 // =============================================================
@@ -871,6 +1090,7 @@ model DocumentSharedBranch {
   @@index([orgId])
   @@index([branchId])
   @@map("document_shared_branches")
+  @@schema("public")
 }
 
 // =============================================================
@@ -893,11 +1113,13 @@ model Vehicle {
   company   Company?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
   branch    Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
   documents VehicleDocument[]
+  truck     Truck?
 
   @@unique([orgId, licensePlate])
   @@index([orgId, isActive])
   @@index([branchId])
   @@map("vehicles")
+  @@schema("public")
 }
 
 // =============================================================
@@ -919,6 +1141,7 @@ model VehicleDocument {
   @@unique([vehicleId, docType, documentId])
   @@index([orgId, expiryDate])
   @@map("vehicle_documents")
+  @@schema("public")
 }
 
 // =============================================================
@@ -940,6 +1163,7 @@ model PersonDocument {
   @@unique([userId, docType, documentId])
   @@index([orgId, expiryDate])
   @@map("person_documents")
+  @@schema("public")
 }
 
 // =============================================================
@@ -949,27 +1173,27 @@ model PersonDocument {
 // pdf-lib embeds the image at the position into a signed PDF stored at signedFileKey.
 // =============================================================
 model DocumentSignaturePlacement {
-  id              String    @id @default(uuid()) @db.Uuid
-  orgId           String    @map("org_id") @db.Uuid
-  documentId      String    @map("document_id") @db.Uuid
-  pageNumber      Int       @map("page_number") // 1-indexed
-  xRatio          Float     @map("x_ratio") // 0-1 (left edge / page width)
-  yRatio          Float     @map("y_ratio") // 0-1 (top edge / page height; PDF origin top-left in our normalization)
-  widthRatio      Float     @map("width_ratio") // 0-1
-  heightRatio     Float     @map("height_ratio") // 0-1
+  id             String    @id @default(uuid()) @db.Uuid
+  orgId          String    @map("org_id") @db.Uuid
+  documentId     String    @map("document_id") @db.Uuid
+  pageNumber     Int       @map("page_number") // 1-indexed
+  xRatio         Float     @map("x_ratio") // 0-1 (left edge / page width)
+  yRatio         Float     @map("y_ratio") // 0-1 (top edge / page height; PDF origin top-left in our normalization)
+  widthRatio     Float     @map("width_ratio") // 0-1
+  heightRatio    Float     @map("height_ratio") // 0-1
   // Placement type: signature box (draw) | date (auto today) | name (auto signer) | text (literal)
-  placementType   String    @default("signature") @map("placement_type")
-  autoFillValue   String?   @map("auto_fill_value") // for text type: literal value
-  signerRole      String    @map("signer_role") // owner | employee | counterparty | other
-  signerUserId    String?   @map("signer_user_id") @db.Uuid
-  signerName      String?   @map("signer_name") // free-form fallback when no userId
-  label           String?   // optional caption (e.g. "เจ้าของเซ็น")
-  ordering        Int       @default(0) // visual order on the page
-  signedAt        DateTime? @map("signed_at") @db.Timestamptz(6)
-  signedImageKey  String?   @map("signed_image_key") // R2 key for the signature PNG
-  signedFileKey   String?   @map("signed_file_key") // R2 key for the embedded signed PDF (if generated)
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  placementType  String    @default("signature") @map("placement_type")
+  autoFillValue  String?   @map("auto_fill_value") // for text type: literal value
+  signerRole     String    @map("signer_role") // owner | employee | counterparty | other
+  signerUserId   String?   @map("signer_user_id") @db.Uuid
+  signerName     String?   @map("signer_name") // free-form fallback when no userId
+  label          String? // optional caption (e.g. "เจ้าของเซ็น")
+  ordering       Int       @default(0) // visual order on the page
+  signedAt       DateTime? @map("signed_at") @db.Timestamptz(6)
+  signedImageKey String?   @map("signed_image_key") // R2 key for the signature PNG
+  signedFileKey  String?   @map("signed_file_key") // R2 key for the embedded signed PDF (if generated)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   document   Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
@@ -978,6 +1202,7 @@ model DocumentSignaturePlacement {
   @@index([orgId, documentId])
   @@index([signerUserId])
   @@map("document_signature_placements")
+  @@schema("public")
 }
 
 // =============================================================
@@ -986,19 +1211,19 @@ model DocumentSignaturePlacement {
 // a cache key — if the file is replaced (renew), a fresh analysis runs.
 // =============================================================
 model DocumentAnalysis {
-  id              String   @id @default(uuid()) @db.Uuid
-  orgId           String   @map("org_id") @db.Uuid
-  documentId      String   @map("document_id") @db.Uuid
-  fileKey         String   @map("file_key") // doc fileKey at time of analysis
-  analysisType    String   @map("analysis_type") // risk | summary | metadata
-  riskLevel       String?  @map("risk_level") // green | yellow | red
-  summaryText     String?  @map("summary_text") @db.Text
-  watchOutPoints  Json?    @map("watch_out_points") // string[]
-  normalPoints    Json?    @map("normal_points") // string[]
-  metadataJson    Json?    @map("metadata_json") // structured fields (e.g. premium amount, terms)
-  modelUsed       String?  @map("model_used") // claude-haiku-4-5
-  tokensUsed      Int?     @map("tokens_used")
-  analyzedAt      DateTime @default(now()) @map("analyzed_at") @db.Timestamptz(6)
+  id             String   @id @default(uuid()) @db.Uuid
+  orgId          String   @map("org_id") @db.Uuid
+  documentId     String   @map("document_id") @db.Uuid
+  fileKey        String   @map("file_key") // doc fileKey at time of analysis
+  analysisType   String   @map("analysis_type") // risk | summary | metadata
+  riskLevel      String?  @map("risk_level") // green | yellow | red
+  summaryText    String?  @map("summary_text") @db.Text
+  watchOutPoints Json?    @map("watch_out_points") // string[]
+  normalPoints   Json?    @map("normal_points") // string[]
+  metadataJson   Json?    @map("metadata_json") // structured fields (e.g. premium amount, terms)
+  modelUsed      String?  @map("model_used") // claude-haiku-4-5
+  tokensUsed     Int?     @map("tokens_used")
+  analyzedAt     DateTime @default(now()) @map("analyzed_at") @db.Timestamptz(6)
 
   org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   document Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
@@ -1006,24 +1231,2887 @@ model DocumentAnalysis {
   @@unique([documentId, fileKey, analysisType])
   @@index([orgId])
   @@map("document_analyses")
+  @@schema("public")
 }
 
 // =============================================================
 // 32. ai_search_cache — capability G query result cache (1h TTL)
 // =============================================================
 model AiSearchCache {
-  id          String   @id @default(uuid()) @db.Uuid
-  orgId       String   @map("org_id") @db.Uuid
-  queryHash   String   @map("query_hash") // SHA-256 of normalized query
-  query       String   @db.Text
-  resultJson  Json     @map("result_json")
-  hitCount    Int      @default(0) @map("hit_count")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  expiresAt   DateTime @map("expires_at") @db.Timestamptz(6)
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  queryHash  String   @map("query_hash") // SHA-256 of normalized query
+  query      String   @db.Text
+  resultJson Json     @map("result_json")
+  hitCount   Int      @default(0) @map("hit_count")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(6)
 
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, queryHash])
   @@index([orgId, expiresAt])
   @@map("ai_search_cache")
+  @@schema("public")
+}
+
+// =============================================================
+// 49-53. RECRUIT MODULE — "รับสมัครพนักงาน"
+// Spec: docs/RECRUIT_PLAN.md + docs/RECRUIT_DESIGN_PLAN.md
+// CEO decisions (2026-05-20):
+//   - Multi-company = soft tag (no strict isolation between Pooil/JPSync)
+//   - AI = manual trigger only (no auto-score)
+//   - National ID NOT collected at apply time
+//   - Form: HR full control (CRUD field schema)
+// =============================================================
+
+enum RecruitPostingStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  ARCHIVED
+
+  @@schema("public")
+}
+
+enum RecruitApplicationStatus {
+  NEW
+  SCREENING
+  INTERVIEW
+  OFFERED
+  HIRED
+  REJECTED
+  WITHDRAWN
+
+  @@schema("public")
+}
+
+enum RecruitCompanyScope {
+  POOIL
+  JPSYNC
+  BOTH
+
+  @@schema("public")
+}
+
+// 49. recruit_job_postings — ประกาศรับสมัคร
+model RecruitJobPosting {
+  id          String               @id @default(uuid()) @db.Uuid
+  orgId       String               @map("org_id") @db.Uuid
+  companyId   String?              @map("company_id") @db.Uuid // optional · CEO said "use together"
+  title       String
+  description String?
+  slug        String               @unique // public link path
+  status      RecruitPostingStatus @default(DRAFT)
+  // fieldSchema = { version: 1, sections: [{ title, fields: [...] }] }
+  fieldSchema Json                 @default("{\"version\":1,\"sections\":[]}") @map("field_schema")
+  // settings = { closingDateAutoClose, notifyTemplates, ... }
+  settings    Json                 @default("{}")
+  opensAt     DateTime?            @map("opens_at") @db.Timestamptz(6)
+  closesAt    DateTime?            @map("closes_at") @db.Timestamptz(6)
+  createdById String               @map("created_by_id") @db.Uuid
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org          Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company      Company?             @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  createdBy    User                 @relation("RecruitPostingCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  applications RecruitApplication[]
+  referrals    RecruitReferral[]
+
+  @@index([orgId, status])
+  @@index([slug])
+  @@map("recruit_job_postings")
+  @@schema("public")
+}
+
+// 50. recruit_applicants — ผู้สมัคร (normalized · dedup by phone)
+model RecruitApplicant {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  fullName     String   @map("full_name")
+  phone        String // primary identifier · CEO Q5: no national ID at apply
+  email        String?
+  lineId       String?  @map("line_id") // LINE basic ID (legacy · user-supplied)
+  lineUserId   String?  @map("line_user_id") // LINE userId from webhook (per-channel · opaque)
+  facebookPsid String?  @map("facebook_psid") // FB Page-scoped Sender ID
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org             Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  applications    RecruitApplication[]
+  referrals       RecruitReferral[]
+  erasureRequests RecruitErasureRequest[]
+
+  @@index([orgId, phone])
+  @@index([orgId, lineUserId])
+  @@index([orgId, facebookPsid])
+  @@map("recruit_applicants")
+  @@schema("public")
+}
+
+// 51. recruit_applications — ใบสมัคร (1 ใบต่อ posting × applicant submission)
+model RecruitApplication {
+  id               String                   @id @default(uuid()) @db.Uuid
+  orgId            String                   @map("org_id") @db.Uuid
+  postingId        String                   @map("posting_id") @db.Uuid
+  applicantId      String                   @map("applicant_id") @db.Uuid
+  refId            String                   @unique @map("ref_id") // human-readable e.g. "APP-2026-001234"
+  answers          Json                     @default("{}")
+  files            Json                     @default("[]") // [{key, name, size, mime, uploadedAt}]
+  status           RecruitApplicationStatus @default(NEW)
+  aiScore          Int?                     @map("ai_score") // 0-100 · null = not yet evaluated
+  aiSummary        String?                  @map("ai_summary")
+  aiStrengths      Json?                    @map("ai_strengths") // ["...", "...", "..."]
+  aiRisks          Json?                    @map("ai_risks")
+  aiEvaluatedAt    DateTime?                @map("ai_evaluated_at") @db.Timestamptz(6)
+  flaggedBlacklist Boolean                  @default(false) @map("flagged_blacklist")
+  blacklistReason  String?                  @map("blacklist_reason")
+  starRating       Int?                     @map("star_rating") // 1-5 from HR
+  tags             String[]                 @default([])
+  source           String? // utm_source from public link
+  draft            Boolean                  @default(false) // draft saved by applicant
+  submittedAt      DateTime?                @map("submitted_at") @db.Timestamptz(6)
+  schemaVersion    Int                      @default(1) @map("schema_version") // snapshot of posting.fieldSchema version
+  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org        Organization             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  posting    RecruitJobPosting        @relation(fields: [postingId], references: [id], onDelete: Cascade)
+  applicant  RecruitApplicant         @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  notes      RecruitApplicationNote[]
+  interviews RecruitInterview[]
+  messages   RecruitMessage[]
+
+  @@index([orgId, status])
+  @@index([postingId, status])
+  @@index([applicantId])
+  @@index([orgId, submittedAt(sort: Desc)])
+  // Ultraview audit 2026-05-21 — inbox query path (org × draft × status × submittedAt)
+  @@index([orgId, draft, status, submittedAt(sort: Desc)])
+  @@map("recruit_applications")
+  @@schema("public")
+}
+
+// 52. recruit_application_notes — HR internal notes
+model RecruitApplicationNote {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  applicationId String   @map("application_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  body          String
+  rating        Int? // 1-5
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org         Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  application RecruitApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  user        User               @relation("RecruitNoteAuthor", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+  @@map("recruit_application_notes")
+  @@schema("public")
+}
+
+// 53. recruit_blacklist — blacklist (phone-based · ไม่ใช้ national ID)
+model RecruitBlacklist {
+  id           String              @id @default(uuid()) @db.Uuid
+  orgId        String              @map("org_id") @db.Uuid
+  phone        String?
+  fullName     String              @map("full_name")
+  reason       String
+  companyScope RecruitCompanyScope @default(BOTH) @map("company_scope")
+  addedById    String              @map("added_by_id") @db.Uuid
+  addedAt      DateTime            @default(now()) @map("added_at") @db.Timestamptz(6)
+  expiresAt    DateTime            @map("expires_at") @db.Timestamptz(6)
+  removedAt    DateTime?           @map("removed_at") @db.Timestamptz(6)
+  removedById  String?             @map("removed_by_id") @db.Uuid
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  addedBy   User         @relation("RecruitBlacklistAdder", fields: [addedById], references: [id], onDelete: Restrict)
+  removedBy User?        @relation("RecruitBlacklistRemover", fields: [removedById], references: [id], onDelete: SetNull)
+
+  @@index([orgId, phone])
+  @@index([orgId, expiresAt])
+  @@map("recruit_blacklist")
+  @@schema("public")
+}
+
+// =============================================================
+// RECRUIT v2 — Phase B-full per design canvas (2026-05-21)
+// =============================================================
+
+enum RecruitInterviewKind {
+  ONSITE
+  PHONE
+  VIDEO
+
+  @@schema("public")
+}
+
+enum RecruitInterviewStatus {
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+
+  @@schema("public")
+}
+
+model RecruitInterview {
+  id            String                 @id @default(uuid()) @db.Uuid
+  orgId         String                 @map("org_id") @db.Uuid
+  applicationId String                 @map("application_id") @db.Uuid
+  scheduledAt   DateTime               @map("scheduled_at") @db.Timestamptz(6)
+  durationMin   Int                    @default(60) @map("duration_min")
+  kind          RecruitInterviewKind   @default(ONSITE)
+  location      String?
+  status        RecruitInterviewStatus @default(SCHEDULED)
+  notes         String?
+  scorecard     Json?
+  createdById   String                 @map("created_by_id") @db.Uuid
+  createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org         Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  application RecruitApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  createdBy   User               @relation("RecruitInterviewCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([orgId, scheduledAt])
+  @@index([applicationId, scheduledAt])
+  @@index([orgId, status])
+  @@map("recruit_interviews")
+  @@schema("public")
+}
+
+enum RecruitMessageChannel {
+  LINE
+  SMS
+  EMAIL
+  INAPP
+  FACEBOOK
+
+  @@schema("public")
+}
+
+enum RecruitMessageDirection {
+  OUT
+  IN
+
+  @@schema("public")
+}
+
+enum RecruitMessageStatus {
+  DRAFT
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+
+  @@schema("public")
+}
+
+model RecruitMessage {
+  id                String                  @id @default(uuid()) @db.Uuid
+  orgId             String                  @map("org_id") @db.Uuid
+  applicationId     String                  @map("application_id") @db.Uuid
+  channel           RecruitMessageChannel
+  direction         RecruitMessageDirection
+  body              String
+  status            RecruitMessageStatus    @default(QUEUED)
+  externalId        String?                 @map("external_id") // provider-side message ID
+  // Inbox channel routing (2026-05-23)
+  channelInstanceId String?                 @map("channel_instance_id") @db.Uuid // FK → recruit_inbox_channels.id (null for INAPP/EMAIL legacy)
+  senderExternalId  String?                 @map("sender_external_id") // LINE userId / FB PSID for inbound · used for re-matching
+  replyToken        String?                 @map("reply_token") // LINE 1-min reply token (preferred over push)
+  attachments       Json? // image/file/sticker payload for IN messages
+  errorMessage      String?                 @map("error_message")
+  createdById       String?                 @map("created_by_id") @db.Uuid
+  createdAt         DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  sentAt            DateTime?               @map("sent_at") @db.Timestamptz(6)
+
+  org             Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  application     RecruitApplication   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  createdBy       User?                @relation("RecruitMessageSender", fields: [createdById], references: [id], onDelete: SetNull)
+  channelInstance RecruitInboxChannel? @relation(fields: [channelInstanceId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([applicationId, createdAt(sort: Desc)])
+  @@index([orgId, status])
+  @@map("recruit_messages")
+  @@schema("public")
+}
+
+model RecruitScreeningRule {
+  id          String    @id @default(uuid()) @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  name        String
+  enabled     Boolean   @default(true)
+  condition   Json
+  action      Json
+  firesCount  Int       @default(0) @map("fires_count")
+  lastFiredAt DateTime? @map("last_fired_at") @db.Timestamptz(6)
+  createdById String    @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdBy User         @relation("RecruitRuleCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([orgId, enabled])
+  @@map("recruit_screening_rules")
+  @@schema("public")
+}
+
+enum RecruitInboxChannelType {
+  LINE
+  FACEBOOK
+
+  @@schema("public")
+}
+
+// External chat sources (LINE OA · FB Page) that feed into /recruit/messages
+// One org may connect MULTIPLE accounts of each type (e.g. 2 LINE OAs +
+// 3 FB pages). Inbox merges all inbound messages and labels them by source.
+//
+// CEO 2026-05-23: "คนสมัครทักมาใน line oa แล้วมาโผล่ในนี้เลย" + multi-account
+//
+// Token storage note: accessToken is stored encrypted (envelope key in
+// env LINE_ENCRYPTION_KEY / FB_ENCRYPTION_KEY). Webhook signature verified
+// using the channel's webhookSecret on every inbound POST.
+model RecruitInboxChannel {
+  id             String                  @id @default(uuid()) @db.Uuid
+  orgId          String                  @map("org_id") @db.Uuid
+  type           RecruitInboxChannelType
+  displayName    String                  @map("display_name") // "Pooil HR LINE", "Pooil ราชบุรี FB"
+  externalId     String?                 @map("external_id") // LINE Channel ID · FB Page ID
+  accessTokenEnc String?                 @map("access_token_enc") // encrypted long-lived token
+  webhookSecret  String?                 @map("webhook_secret") // for signature verification
+  status         String                  @default("setup") // setup | active | error | disabled
+  lastEventAt    DateTime?               @map("last_event_at") @db.Timestamptz(6)
+  metadata       Json? // misc per-channel info (page URL etc.)
+  createdById    String                  @map("created_by_id") @db.Uuid
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdBy User             @relation("RecruitInboxChannelCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  messages  RecruitMessage[]
+
+  @@index([orgId, type])
+  @@map("recruit_inbox_channels")
+  @@schema("public")
+}
+
+// Reusable form templates per-org so HR can save common form layouts
+// (e.g. "พนักงานปั๊ม v2", "แม่บ้านโรงแรม") and reuse them when creating
+// new postings instead of rebuilding fields from scratch.
+model RecruitFormTemplate {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  name        String
+  description String?
+  schema      Json
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdBy User         @relation("RecruitFormTemplateCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([orgId, createdAt])
+  @@map("recruit_form_templates")
+  @@schema("public")
+}
+
+enum RecruitReferralStatus {
+  PENDING
+  CLICKED
+  APPLIED
+  SCREENED
+  HIRED
+  PAID
+  EXPIRED
+
+  @@schema("public")
+}
+
+model RecruitReferral {
+  id          String                @id @default(uuid()) @db.Uuid
+  orgId       String                @map("org_id") @db.Uuid
+  referrerId  String                @map("referrer_id") @db.Uuid
+  code        String                @unique
+  postingId   String?               @map("posting_id") @db.Uuid
+  applicantId String?               @map("applicant_id") @db.Uuid
+  status      RecruitReferralStatus @default(PENDING)
+  bountyBaht  Decimal?              @map("bounty_baht") @db.Decimal(10, 2)
+  clickedAt   DateTime?             @map("clicked_at") @db.Timestamptz(6)
+  appliedAt   DateTime?             @map("applied_at") @db.Timestamptz(6)
+  hiredAt     DateTime?             @map("hired_at") @db.Timestamptz(6)
+  paidAt      DateTime?             @map("paid_at") @db.Timestamptz(6)
+  notes       String?
+  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org       Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  referrer  User               @relation("RecruitReferrerUser", fields: [referrerId], references: [id], onDelete: Restrict)
+  posting   RecruitJobPosting? @relation(fields: [postingId], references: [id], onDelete: SetNull)
+  applicant RecruitApplicant?  @relation(fields: [applicantId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, status])
+  @@index([referrerId, status])
+  @@map("recruit_referrals")
+  @@schema("public")
+}
+
+enum RecruitErasureStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+
+  @@schema("public")
+}
+
+model RecruitErasureRequest {
+  id           String               @id @default(uuid()) @db.Uuid
+  orgId        String               @map("org_id") @db.Uuid
+  applicantId  String               @map("applicant_id") @db.Uuid
+  refId        String               @map("ref_id")
+  reason       String?
+  status       RecruitErasureStatus @default(PENDING)
+  requestedAt  DateTime             @default(now()) @map("requested_at") @db.Timestamptz(6)
+  decidedAt    DateTime?            @map("decided_at") @db.Timestamptz(6)
+  decidedById  String?              @map("decided_by_id") @db.Uuid
+  decisionNote String?              @map("decision_note")
+
+  org       Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  applicant RecruitApplicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  decidedBy User?            @relation("RecruitErasureDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([orgId, status])
+  @@index([applicantId])
+  @@map("recruit_erasure_requests")
+  @@schema("public")
+}
+
+// =============================================================
+// REPAIR MODULE — ระบบแจ้งซ่อม
+// 7 tables · ใครก็แจ้งได้ · admin assign + dispatch · tech see own jobs ·
+// purchasing sees parts queue · timeline + photos · tracking via code+phone.
+// =============================================================
+
+enum RepairTicketStatus {
+  NEW
+  ACK
+  IN_PROGRESS
+  WAITING_PARTS
+  RESOLVED
+  CLOSED
+  CANCELLED
+
+  @@schema("public")
+}
+
+enum RepairUrgency {
+  URGENT
+  NORMAL
+  LOW
+
+  @@schema("public")
+}
+
+enum RepairReportSource {
+  GUIDED
+  FREEFORM
+  INTERNAL
+
+  @@schema("public")
+}
+
+enum RepairPhotoPhase {
+  BEFORE
+  DURING
+  AFTER
+  PART
+  RECEIPT
+
+  @@schema("public")
+}
+
+enum RepairTechnicianKind {
+  INTERNAL
+  VENDOR
+
+  @@schema("public")
+}
+
+enum RepairPartStatus {
+  NEEDED
+  ORDERED
+  DELIVERED
+  INSTALLED
+  CANCELLED
+
+  @@schema("public")
+}
+
+enum RepairEventKind {
+  CREATED
+  STATUS_CHANGE
+  ASSIGN
+  UNASSIGN
+  COMMENT
+  PART_ADDED
+  PART_UPDATED
+  PHOTO_ADDED
+  REOPEN
+  CLOSE
+  ETA_SET
+
+  @@schema("public")
+}
+
+model RepairCategory {
+  id             String        @id @default(uuid()) @db.Uuid
+  orgId          String        @map("org_id") @db.Uuid
+  slug           String
+  label          String
+  emoji          String?
+  defaultUrgency RepairUrgency @default(NORMAL) @map("default_urgency")
+  sortOrder      Int           @default(0) @map("sort_order")
+  isActive       Boolean       @default(true) @map("is_active")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org     Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  tickets RepairTicket[]
+
+  @@unique([orgId, slug])
+  @@index([orgId, isActive, sortOrder])
+  @@map("repair_categories")
+  @@schema("public")
+}
+
+model RepairTechnician {
+  id          String               @id @default(uuid()) @db.Uuid
+  orgId       String               @map("org_id") @db.Uuid
+  kind        RepairTechnicianKind
+  userId      String?              @unique @map("user_id") @db.Uuid
+  name        String
+  phone       String?
+  lineId      String?              @map("line_id")
+  specialties String[]             @default([])
+  isActive    Boolean              @default(true) @map("is_active")
+  notes       String?
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org          Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user         User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  tickets      RepairTicket[]
+  vendorTokens RepairVendorToken[]
+
+  @@index([orgId, kind, isActive])
+  @@index([orgId, phone])
+  @@map("repair_technicians")
+  @@schema("public")
+}
+
+model RepairTicket {
+  id             String             @id @default(uuid()) @db.Uuid
+  orgId          String             @map("org_id") @db.Uuid
+  companyId      String?            @map("company_id") @db.Uuid
+  branchId       String?            @map("branch_id") @db.Uuid
+  categoryId     String?            @map("category_id") @db.Uuid
+  ticketCode     String             @unique @map("ticket_code")
+  title          String
+  description    String             @default("")
+  customerImpact String?            @map("customer_impact")
+  status         RepairTicketStatus @default(NEW)
+  urgency        RepairUrgency      @default(NORMAL)
+  source         RepairReportSource @default(FREEFORM)
+  reporterName   String             @map("reporter_name")
+  reporterPhone  String             @map("reporter_phone")
+  reporterEmail  String?            @map("reporter_email")
+  reporterUserId String?            @map("reporter_user_id") @db.Uuid
+  assignedTechId String?            @map("assigned_tech_id") @db.Uuid
+  assignedAt     DateTime?          @map("assigned_at") @db.Timestamptz(6)
+  responseDueAt  DateTime?          @map("response_due_at") @db.Timestamptz(6)
+  resolveDueAt   DateTime?          @map("resolve_due_at") @db.Timestamptz(6)
+  etaAt          DateTime?          @map("eta_at") @db.Timestamptz(6)
+  acknowledgedAt DateTime?          @map("acknowledged_at") @db.Timestamptz(6)
+  startedAt      DateTime?          @map("started_at") @db.Timestamptz(6)
+  resolvedAt     DateTime?          @map("resolved_at") @db.Timestamptz(6)
+  resolvedById   String?            @map("resolved_by_id") @db.Uuid
+  closedAt       DateTime?          @map("closed_at") @db.Timestamptz(6)
+  closedById     String?            @map("closed_by_id") @db.Uuid
+  cancelledAt    DateTime?          @map("cancelled_at") @db.Timestamptz(6)
+  partsCostCents Int                @default(0) @map("parts_cost_cents")
+  laborCostCents Int                @default(0) @map("labor_cost_cents")
+  ipAddress      String?            @map("ip_address")
+  metadata       Json               @default("{}")
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org          Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company      Company?              @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  branch       Branch?               @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  category     RepairCategory?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  reporterUser User?                 @relation("RepairTicketReporter", fields: [reporterUserId], references: [id], onDelete: SetNull)
+  assignedTech RepairTechnician?     @relation(fields: [assignedTechId], references: [id], onDelete: SetNull)
+  resolvedBy   User?                 @relation("RepairTicketResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  closedBy     User?                 @relation("RepairTicketCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  photos       RepairPhoto[]
+  parts        RepairPart[]
+  events       RepairTimelineEvent[]
+
+  @@index([orgId, status, urgency, createdAt(sort: Desc)])
+  @@index([orgId, branchId, status])
+  @@index([orgId, assignedTechId, status])
+  @@index([orgId, categoryId])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([reporterPhone])
+  @@map("repair_tickets")
+  @@schema("public")
+}
+
+model RepairPhoto {
+  id             String           @id @default(uuid()) @db.Uuid
+  orgId          String           @map("org_id") @db.Uuid
+  ticketId       String           @map("ticket_id") @db.Uuid
+  phase          RepairPhotoPhase
+  r2Key          String           @map("r2_key")
+  r2PublicUrl    String           @map("r2_public_url")
+  contentType    String           @default("image/webp") @map("content_type")
+  sizeBytes      Int              @default(0) @map("size_bytes")
+  width          Int?
+  height         Int?
+  caption        String?
+  uploadedById   String?          @map("uploaded_by_id") @db.Uuid
+  uploadedByName String?          @map("uploaded_by_name")
+  expiresAt      DateTime?        @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  ticket     RepairTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  uploadedBy User?        @relation("RepairPhotoUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, phase, createdAt])
+  @@index([orgId, expiresAt])
+  @@map("repair_photos")
+  @@schema("public")
+}
+
+model RepairPart {
+  id             String           @id @default(uuid()) @db.Uuid
+  orgId          String           @map("org_id") @db.Uuid
+  ticketId       String           @map("ticket_id") @db.Uuid
+  name           String
+  spec           String?
+  quantity       Int              @default(1)
+  unit           String           @default("ชิ้น")
+  unitPriceCents Int              @default(0) @map("unit_price_cents")
+  status         RepairPartStatus @default(NEEDED)
+  supplier       String?
+  receiptR2Key   String?          @map("receipt_r2_key")
+  notes          String?
+  addedById      String           @map("added_by_id") @db.Uuid
+  orderedAt      DateTime?        @map("ordered_at") @db.Timestamptz(6)
+  orderedById    String?          @map("ordered_by_id") @db.Uuid
+  deliveredAt    DateTime?        @map("delivered_at") @db.Timestamptz(6)
+  installedAt    DateTime?        @map("installed_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  ticket    RepairTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  addedBy   User         @relation("RepairPartAddedBy", fields: [addedById], references: [id], onDelete: Restrict)
+  orderedBy User?        @relation("RepairPartOrderedBy", fields: [orderedById], references: [id], onDelete: SetNull)
+
+  @@index([orgId, status])
+  @@index([ticketId])
+  @@index([orgId, name])
+  @@map("repair_parts")
+  @@schema("public")
+}
+
+model RepairTimelineEvent {
+  id          String          @id @default(uuid()) @db.Uuid
+  orgId       String          @map("org_id") @db.Uuid
+  ticketId    String          @map("ticket_id") @db.Uuid
+  kind        RepairEventKind
+  actorUserId String?         @map("actor_user_id") @db.Uuid
+  actorName   String          @map("actor_name")
+  payload     Json            @default("{}")
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  ticket RepairTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actor  User?        @relation("RepairTimelineActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, createdAt])
+  @@index([orgId, createdAt])
+  @@map("repair_timeline_events")
+  @@schema("public")
+}
+
+model RepairVendorToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  orgId        String    @map("org_id") @db.Uuid
+  technicianId String    @map("technician_id") @db.Uuid
+  token        String    @unique
+  issuedAt     DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
+  lastUsedAt   DateTime? @map("last_used_at") @db.Timestamptz(6)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(6)
+  usageCount   Int       @default(0) @map("usage_count")
+
+  org        Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  technician RepairTechnician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, technicianId])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("repair_vendor_tokens")
+  @@schema("public")
+}
+
+// =============================================================
+// FUELOS QUARANTINE — module rebuild pending (รอบ 46 audit)
+// These 16 models have zero app/lib/component references.
+// Kept in schema to preserve DB tables in prod.
+// DO NOT add new code that imports these — coordinate with CEO first.
+// Audit date: 2026-05-21
+// =============================================================
+
+// =============================================================
+// ============================================================
+// FUELOS — Sprint 6 schema (kicked off 2026-05-11)
+// Spec: ดีเทลv1/FUELOS.md §2 (Price Engine), §3/§14 (CRM Multi-Entity),
+//       §5 (Sales Workspace), §7 (Dispatch), §11 (Flash Sale), §12 (DB Schema)
+// Plan: web/FUELOS_PLAN.md
+// ============================================================
+// =============================================================
+
+// =============================================================
+// 33. depot_prices — ราคาคลังต่อวัน (PTT/Shell/Dao Evo) — FUELOS §2.4 / §12
+// หัวหน้ากรอกทุกเช้า; เซลล์เห็นพร้อมกัน
+// =============================================================
+model DepotPrice {
+  id          String    @id @default(uuid()) @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  date        DateTime  @db.Date
+  depotName   String    @map("depot_name") // PTT | Shell | DaoEvo
+  productType String    @map("product_type") // B7 | B10 | 91 | 95
+  depotPrice  Decimal   @map("depot_price") @db.Decimal(10, 4) // ฿/L (4dp)
+  validUntil  String    @map("valid_until") // HH:mm e.g. "17:00"
+  enteredById String?   @map("entered_by_id") @db.Uuid
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  enteredBy User?        @relation("DepotPriceEntered", fields: [enteredById], references: [id], onDelete: SetNull)
+
+  @@unique([orgId, date, depotName, productType])
+  @@index([orgId, date])
+  @@map("depot_prices")
+  @@schema("public")
+}
+
+// =============================================================
+// 34. zone_margins — Zone × product margin (admin config) — FUELOS §2.4
+// =============================================================
+model ZoneMargin {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  zoneName    String   @map("zone_name") // KKN, Udon, Korat, ...
+  productType String   @map("product_type") // B7 | B10 | 91 | 95
+  baseMargin  Decimal  @map("base_margin") @db.Decimal(10, 4) // ฿/L
+  minMargin   Decimal  @map("min_margin") @db.Decimal(10, 4) // ฿/L
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+
+  @@unique([orgId, zoneName, productType])
+  @@index([orgId, isActive])
+  @@map("zone_margins")
+  @@schema("public")
+}
+
+// =============================================================
+// 35. contacts — คนที่คุยด้วย (Multi-Entity layer 1) — FUELOS §14.1 / §14.6
+// Group credit limit aggregates across entities under this contact
+// =============================================================
+model Contact {
+  id               String   @id @default(uuid()) @db.Uuid
+  orgId            String   @map("org_id") @db.Uuid
+  name             String
+  nickname         String?
+  phone            String?
+  phone2           String?
+  lineUserId       String?  @map("line_user_id")
+  assignedSalesId  String?  @map("assigned_sales_id") @db.Uuid
+  creditGroupLimit Decimal? @map("credit_group_limit") @db.Decimal(15, 2)
+  creditGroupUsed  Decimal  @default(0) @map("credit_group_used") @db.Decimal(15, 2)
+  notes            String?
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org           Organization      @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  assignedSales User?             @relation("ContactSales", fields: [assignedSalesId], references: [id], onDelete: SetNull)
+  entities      CustomerEntity[]
+  quotes        CustomerQuote[]
+  priceAlerts   PriceAlertLog[]
+  lineResponses LineResponseLog[]
+
+  @@unique([orgId, lineUserId])
+  @@index([orgId, isActive])
+  @@index([assignedSalesId])
+  @@map("contacts")
+  @@schema("public")
+}
+
+// =============================================================
+// 36. customer_entities — นิติบุคคล/บุคคลธรรมดา (Multi-Entity layer 2)
+// Spec: FUELOS §14.1 / §14.6 — invoice ออกในนาม Entity, credit ราย Entity
+// =============================================================
+model CustomerEntity {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  contactId     String   @map("contact_id") @db.Uuid
+  entityType    String   @map("entity_type") // company | partnership | individual
+  legalName     String   @map("legal_name")
+  taxId         String?  @map("tax_id")
+  address       String?
+  creditLimit   Decimal? @map("credit_limit") @db.Decimal(15, 2)
+  creditUsed    Decimal  @default(0) @map("credit_used") @db.Decimal(15, 2)
+  paymentTerms  Int?     @map("payment_terms") // days; null = COD
+  paymentMethod String?  @map("payment_method") // transfer | cash | cheque | mixed
+  docStatus     String   @default("incomplete") @map("doc_status") // complete | incomplete | expired
+  creditScore   Int?     @map("credit_score") // 0-100, AI-computed (Sprint 6.4+)
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org             Organization       @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  contact         Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  locations       DeliveryLocation[]
+  fuelOrders      FuelOrder[]
+  payments        Payment[]
+  creditDocuments CreditDocument[]
+  chequeTrackings ChequeTracking[]
+
+  @@index([orgId, isActive])
+  @@index([contactId])
+  @@map("customer_entities")
+  @@schema("public")
+}
+
+// =============================================================
+// 37. delivery_locations — จุดส่งน้ำมัน (Multi-Entity layer 3) — FUELOS §14.1
+// =============================================================
+model DeliveryLocation {
+  id             String   @id @default(uuid()) @db.Uuid
+  orgId          String   @map("org_id") @db.Uuid
+  entityId       String   @map("entity_id") @db.Uuid
+  name           String
+  address        String?
+  lat            Decimal? @db.Decimal(10, 7)
+  lng            Decimal? @db.Decimal(10, 7)
+  zone           String? // KKN, Udon, ...
+  province       String?
+  preferredDepot String?  @map("preferred_depot") // PTT | Shell | DaoEvo | null
+  maxTruckLiters Int?     @map("max_truck_liters")
+  deliveryWindow String?  @map("delivery_window") // morning | afternoon | anytime
+  contactName    String?  @map("contact_name")
+  contactPhone   String?  @map("contact_phone")
+  // Distance cache to each depot (km) — recomputed when lat/lng changes
+  distPttKm      Decimal? @map("dist_ptt_km") @db.Decimal(6, 1)
+  distShellKm    Decimal? @map("dist_shell_km") @db.Decimal(6, 1)
+  distDaoKm      Decimal? @map("dist_dao_km") @db.Decimal(6, 1)
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org        Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  entity     CustomerEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  fuelOrders FuelOrder[]
+
+  @@index([orgId, isActive])
+  @@index([entityId])
+  @@index([orgId, zone])
+  @@map("delivery_locations")
+  @@schema("public")
+}
+
+// =============================================================
+// 38. customer_quotes — เสนอราคา + Win/Loss + Competitor capture
+// FUELOS §3.3 / §5.2 / §12 — capture lost-to in same step (Lean: 1-click)
+// =============================================================
+model CustomerQuote {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  contactId       String   @map("contact_id") @db.Uuid
+  salesId         String   @map("sales_id") @db.Uuid
+  productType     String   @map("product_type") // B7 | B10 | 91 | 95
+  quoteDate       DateTime @map("quote_date") @db.Date
+  depotPrice      Decimal  @map("depot_price") @db.Decimal(10, 4)
+  zoneMargin      Decimal  @map("zone_margin") @db.Decimal(10, 4)
+  salesMargin     Decimal  @map("sales_margin") @db.Decimal(10, 4) // +N สตาง
+  finalPrice      Decimal  @map("final_price") @db.Decimal(10, 4)
+  status          String   @default("pending") // pending | won | lost | declined | no_response
+  lostTo          String?  @map("lost_to") // competitor name
+  competitorPrice Decimal? @map("competitor_price") @db.Decimal(10, 4)
+  resultOrderId   String?  @map("result_order_id") @db.Uuid
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  contact Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  sales   User         @relation("QuoteSales", fields: [salesId], references: [id], onDelete: Restrict)
+
+  @@index([orgId, quoteDate])
+  @@index([contactId, quoteDate])
+  @@index([salesId, quoteDate])
+  @@index([orgId, status])
+  @@map("customer_quotes")
+  @@schema("public")
+}
+
+// =============================================================
+// 39. price_alert_log — บันทึกว่าแจ้งราคาให้ใครแล้ววันนี้ — FUELOS §12
+// ป้องกัน "ลืมแจ้ง" + วัด conversion ของการแจ้งราคา
+// =============================================================
+model PriceAlertLog {
+  id          String    @id @default(uuid()) @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  contactId   String    @map("contact_id") @db.Uuid
+  salesId     String    @map("sales_id") @db.Uuid
+  alertDate   DateTime  @map("alert_date") @db.Date
+  priceSent   Decimal   @map("price_sent") @db.Decimal(10, 4)
+  productType String    @map("product_type")
+  sentAt      DateTime  @default(now()) @map("sent_at") @db.Timestamptz(6)
+  result      String    @default("pending") // pending | ordered | declined | no_response
+  resolvedAt  DateTime? @map("resolved_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  contact Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  sales   User         @relation("PriceAlertSales", fields: [salesId], references: [id], onDelete: Restrict)
+
+  @@unique([contactId, alertDate, productType])
+  @@index([orgId, alertDate])
+  @@index([salesId, alertDate])
+  @@map("price_alert_log")
+  @@schema("public")
+}
+
+// =============================================================
+// 40. line_response_log — Response Time tracking — FUELOS §6 / §12
+// KPI: เวลาเฉลี่ยตอบลูกค้าใน LINE group (target ≤30 นาที)
+// =============================================================
+model LineResponseLog {
+  id              String    @id @default(uuid()) @db.Uuid
+  orgId           String    @map("org_id") @db.Uuid
+  contactId       String    @map("contact_id") @db.Uuid
+  salesId         String?   @map("sales_id") @db.Uuid
+  lineGroupId     String?   @map("line_group_id")
+  customerSentAt  DateTime  @map("customer_sent_at") @db.Timestamptz(6)
+  salesRepliedAt  DateTime? @map("sales_replied_at") @db.Timestamptz(6)
+  responseMinutes Int?      @map("response_minutes") // computed at reply time
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  contact Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  sales   User?        @relation("LineResponseSales", fields: [salesId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, customerSentAt])
+  @@index([salesId, customerSentAt])
+  @@index([contactId, customerSentAt])
+  @@map("line_response_log")
+  @@schema("public")
+}
+
+// =============================================================
+// 41. fuel_orders — ออเดอร์น้ำมันจริง — FUELOS §12
+// Note: kept distinct name from any future generic `Order` to avoid collision
+// =============================================================
+model FuelOrder {
+  id                    String    @id @default(uuid()) @db.Uuid
+  orgId                 String    @map("org_id") @db.Uuid
+  orderNumber           String    @unique @map("order_number")
+  entityId              String    @map("entity_id") @db.Uuid
+  locationId            String    @map("location_id") @db.Uuid
+  salesId               String    @map("sales_id") @db.Uuid
+  productType           String    @map("product_type")
+  qtyOrdered            Decimal   @map("qty_ordered") @db.Decimal(12, 3)
+  qtyDelivered          Decimal?  @map("qty_delivered") @db.Decimal(12, 3)
+  pricePerLiter         Decimal   @map("price_per_liter") @db.Decimal(10, 4)
+  depotCost             Decimal   @map("depot_cost") @db.Decimal(10, 4)
+  transportCostPerLiter Decimal   @default(0) @map("transport_cost_per_liter") @db.Decimal(10, 4)
+  // marginPerLiter + totalAmount + totalProfit are GENERATED columns added in SQL migration
+  // (Prisma cannot express GENERATED columns yet; modeled as nullable read-only here)
+  marginPerLiter        Decimal?  @map("margin_per_liter") @db.Decimal(10, 4)
+  totalAmount           Decimal?  @map("total_amount") @db.Decimal(15, 2)
+  totalProfit           Decimal?  @map("total_profit") @db.Decimal(15, 2)
+  truckId               String?   @map("truck_id") @db.Uuid
+  driverId              String?   @map("driver_id") @db.Uuid // FK -> users (driver)
+  depot                 String?
+  status                String    @default("pending") // pending | scheduled | dispatched | delivered | cancelled
+  scheduledDate         DateTime? @map("scheduled_date") @db.Date
+  deliveredAt           DateTime? @map("delivered_at") @db.Timestamptz(6)
+  deliveryPhotoKey      String?   @map("delivery_photo_key")
+  deliveryLat           Decimal?  @map("delivery_lat") @db.Decimal(10, 7)
+  deliveryLng           Decimal?  @map("delivery_lng") @db.Decimal(10, 7)
+  source                String    @default("manual") // quote | flash_sale | manual | line_bot
+  sourceQuoteId         String?   @map("source_quote_id") @db.Uuid
+  notes                 String?
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org             Organization     @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  entity          CustomerEntity   @relation(fields: [entityId], references: [id], onDelete: Restrict)
+  location        DeliveryLocation @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  sales           User             @relation("FuelOrderSales", fields: [salesId], references: [id], onDelete: Restrict)
+  truck           Truck?           @relation(fields: [truckId], references: [id], onDelete: SetNull)
+  driverLocations DriverLocation[]
+
+  @@index([orgId, scheduledDate])
+  @@index([orgId, status])
+  @@index([entityId, scheduledDate])
+  @@index([salesId, scheduledDate])
+  @@index([truckId, scheduledDate])
+  @@map("fuel_orders")
+  @@schema("public")
+}
+
+// =============================================================
+// 42. trucks — ทะเบียน + capacity — FUELOS §12
+// Reuses Vehicle (DocuFlow scope) for documents. Truck = FuelOS-specific fields.
+// =============================================================
+model Truck {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  vehicleId       String   @unique @map("vehicle_id") @db.Uuid // 1-1 with Vehicle
+  capacityLiters  Int      @map("capacity_liters")
+  homeDepot       String?  @map("home_depot") // PTT | Shell | DaoEvo
+  status          String   @default("idle") // idle | loaded | dispatched | maintenance
+  currentDriverId String?  @map("current_driver_id") @db.Uuid
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org        Organization    @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  vehicle    Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  fuelOrders FuelOrder[]
+  drivers    DriverProfile[] @relation("DriverCurrentTruck")
+
+  @@index([orgId, isActive])
+  @@index([orgId, status])
+  @@map("trucks")
+  @@schema("public")
+}
+
+// =============================================================
+// 43. driver_profiles — satellite for User.role=driver — FUELOS §12
+// Adds FCM token + current truck assignment without forking User identity
+// =============================================================
+model DriverProfile {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  userId          String   @unique @map("user_id") @db.Uuid // 1-1 with User
+  androidFcmToken String?  @map("android_fcm_token")
+  currentTruckId  String?  @map("current_truck_id") @db.Uuid
+  status          String   @default("offline") // offline | available | on_route | break
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org          Organization     @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentTruck Truck?           @relation("DriverCurrentTruck", fields: [currentTruckId], references: [id], onDelete: SetNull)
+  locations    DriverLocation[]
+
+  @@index([orgId, status])
+  @@map("driver_profiles")
+  @@schema("public")
+}
+
+// =============================================================
+// 44. driver_locations — GPS track per order — FUELOS §12
+// Phase 1: Android phone GPS via Driver PWA. Phase 2: hardware GPS.
+// =============================================================
+model DriverLocation {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  driverId   String   @map("driver_id") @db.Uuid
+  orderId    String?  @map("order_id") @db.Uuid
+  lat        Decimal  @db.Decimal(10, 7)
+  lng        Decimal  @db.Decimal(10, 7)
+  speedKmh   Decimal? @map("speed_kmh") @db.Decimal(5, 1)
+  recordedAt DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+
+  org    Organization  @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  driver DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  order  FuelOrder?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([driverId, recordedAt])
+  @@index([orderId, recordedAt])
+  @@map("driver_locations")
+  @@schema("public")
+}
+
+// =============================================================
+// 45. payments — รับชำระ — FUELOS §12 / §14.4
+// =============================================================
+model Payment {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  entityId    String   @map("entity_id") @db.Uuid
+  amount      Decimal  @db.Decimal(15, 2)
+  method      String // transfer | cash | cheque
+  paymentDate DateTime @map("payment_date") @db.Date
+  reference   String? // bank ref, slip number
+  notes       String?
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org       Organization     @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  entity    CustomerEntity   @relation(fields: [entityId], references: [id], onDelete: Restrict)
+  createdBy User?            @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  cheques   ChequeTracking[]
+
+  @@index([orgId, paymentDate])
+  @@index([entityId, paymentDate])
+  @@map("payments")
+  @@schema("public")
+}
+
+// =============================================================
+// 46. flash_sales — Broadcast offer — FUELOS §11
+// =============================================================
+model FlashSale {
+  id               String   @id @default(uuid()) @db.Uuid
+  orgId            String   @map("org_id") @db.Uuid
+  productType      String   @map("product_type")
+  qtyAvailable     Decimal  @map("qty_available") @db.Decimal(12, 3)
+  qtySold          Decimal  @default(0) @map("qty_sold") @db.Decimal(12, 3)
+  discountPerLiter Decimal  @map("discount_per_liter") @db.Decimal(10, 4)
+  zoneFilter       String[] @default([]) @map("zone_filter")
+  expiresAt        DateTime @map("expires_at") @db.Timestamptz(6)
+  status           String   @default("active") // active | sold_out | expired | cancelled
+  createdById      String?  @map("created_by_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  createdBy User?        @relation("FlashSaleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([orgId, status])
+  @@index([orgId, expiresAt])
+  @@map("flash_sales")
+  @@schema("public")
+}
+
+// =============================================================
+// 47. credit_documents — link CustomerEntity ↔ DocuFlow Document — FUELOS §14.2
+// (e.g. สัญญาซื้อขายน้ำมัน, หนังสือรับรองบริษัท, สำเนาบัตร, statement, หลักประกัน)
+// =============================================================
+model CreditDocument {
+  id         String    @id @default(uuid()) @db.Uuid
+  orgId      String    @map("org_id") @db.Uuid
+  entityId   String    @map("entity_id") @db.Uuid
+  documentId String?   @map("document_id") @db.Uuid // FK -> documents (DocuFlow); null = required but not yet uploaded
+  docType    String    @map("doc_type") // contract | cert | id | statement | collateral
+  expiryDate DateTime? @map("expiry_date") @db.Date
+  status     String    @default("pending") // valid | expired | missing | pending
+  uploadedAt DateTime? @map("uploaded_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org    Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  entity CustomerEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@unique([entityId, docType])
+  @@index([orgId, status])
+  @@index([orgId, expiryDate])
+  @@map("credit_documents")
+  @@schema("public")
+}
+
+// =============================================================
+// 48. cheque_tracking — เช็คที่รับชำระ + วันขึ้นเงิน + bounce flag — FUELOS §14.4
+// =============================================================
+model ChequeTracking {
+  id            String    @id @default(uuid()) @db.Uuid
+  orgId         String    @map("org_id") @db.Uuid
+  entityId      String    @map("entity_id") @db.Uuid
+  paymentId     String?   @map("payment_id") @db.Uuid
+  chequeNumber  String    @map("cheque_number")
+  bank          String
+  amount        Decimal   @db.Decimal(15, 2)
+  dueDate       DateTime  @map("due_date") @db.Date
+  status        String    @default("pending") // pending | cleared | bounced
+  clearedAt     DateTime? @map("cleared_at") @db.Timestamptz(6)
+  bouncedReason String?   @map("bounced_reason")
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org     Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  entity  CustomerEntity @relation(fields: [entityId], references: [id], onDelete: Restrict)
+  payment Payment?       @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, dueDate])
+  @@index([orgId, status])
+  @@index([entityId, dueDate])
+  @@map("cheque_tracking")
+  @@schema("public")
+}
+
+// =============================================================
+// CLAWFLEET — ระบบบริหารตู้คีบ + ตู้แลกเหรียญ
+// Spec: docs/CLAWFLEET_PLAN.md (v2 · 2026-05-21)
+// 9 tables · token-exchange group cross-check · multi-branch
+// =============================================================
+
+enum CfMachineKind {
+  CLAW
+  EXCHANGER
+
+  @@schema("public")
+}
+
+enum CfEventType {
+  INITIAL // กรอกครั้งเดียวตอนตั้งตู้ใหม่
+  COLLECTION // รอบเก็บปกติ
+  VOID // soft delete event
+
+  @@schema("public")
+}
+
+enum CfStockMoveType {
+  RECEIVE // รับสินค้าเข้าคลัง
+  LOAD_TO_MACHINE // เติมเข้าตู้
+  COUNT_SNAPSHOT // นับสต๊อกวันนี้
+  ADJUST // ปรับมือ (require approve)
+
+  @@schema("public")
+}
+
+enum CfSessionStatus {
+  OPEN
+  CLOSED
+  ANOMALY_REVIEW
+  LOCKED
+
+  @@schema("public")
+}
+
+enum CfProductCategory {
+  PLUSH // ตุ๊กตา
+  TOY // ของเล่น
+  UTILITY // ของใช้
+  MYSTERY_BOX // กล่องสุ่ม
+  MODEL // โมเดล
+  KEYCHAIN // พวงกุญแจ
+  SNACK // ขนม
+  OTHER
+
+  @@schema("public")
+}
+
+// =============================================================
+// CF.1 — cf_machines (ทุกตู้: CLAW + EXCHANGER)
+// =============================================================
+model CfMachine {
+  id               String        @id @default(uuid()) @db.Uuid
+  orgId            String        @map("org_id") @db.Uuid
+  branchId         String        @map("branch_id") @db.Uuid
+  groupId          String?       @map("group_id") @db.Uuid
+  code             String // "CW-001" หรือ "EX-01"
+  nickname         String?
+  kind             CfMachineKind
+  qrToken          String        @unique @map("qr_token") // สำหรับ scan ก่อนกรอก
+  serial           String?
+  // mirror (updated via AFTER INSERT trigger on cf_collection_events)
+  lastCoinMeter    Int           @default(0) @map("last_coin_meter")
+  lastDollMeter    Int           @default(0) @map("last_doll_meter")
+  lastDollStock    Int           @default(0) @map("last_doll_stock")
+  lastEventAt      DateTime?     @map("last_event_at") @db.Timestamptz(6)
+  // initial values (กรอกตอนสร้างตู้ · ใช้ตอน INITIAL event)
+  initialCoinMeter Int           @default(0) @map("initial_coin_meter")
+  initialDollMeter Int           @default(0) @map("initial_doll_meter")
+  installedAt      DateTime?     @map("installed_at") @db.Date
+  retiredAt        DateTime?     @map("retired_at") @db.Timestamptz(6)
+  isActive         Boolean       @default(true) @map("is_active")
+  notes            String?
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org               Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch            Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  group             CfMachineGroup?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  loadouts          CfMachineLoadout[]
+  exchangerLoadouts CfExchangerLoadout[]
+  events            CfCollectionEvent[]
+  exchangerOfGroup  CfMachineGroup?      @relation("CfGroupExchanger")
+  stockMovements    CfStockMovement[]
+
+  @@unique([orgId, code])
+  @@index([orgId, branchId, kind, isActive])
+  @@index([orgId, groupId])
+  @@map("cf_machines")
+  @@schema("public")
+}
+
+// =============================================================
+// CF.2 — cf_machine_groups (1 EX + N CLAW)
+// =============================================================
+model CfMachineGroup {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  branchId     String   @map("branch_id") @db.Uuid
+  name         String // "โซน A ชุมพวง"
+  exchangerId  String?  @unique @map("exchanger_id") @db.Uuid // 1 group = 1 ตู้แลก
+  toleranceBps Int      @default(500) @map("tolerance_bps") // 500 = 5%
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch    Branch                @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  exchanger CfMachine?            @relation("CfGroupExchanger", fields: [exchangerId], references: [id], onDelete: SetNull)
+  machines  CfMachine[]
+  sessions  CfCollectionSession[]
+
+  @@index([orgId, branchId, isActive])
+  @@map("cf_machine_groups")
+  @@schema("public")
+}
+
+// =============================================================
+// CF.3 — cf_products (สินค้าในตู้)
+// =============================================================
+model CfProduct {
+  id                String            @id @default(uuid()) @db.Uuid
+  orgId             String            @map("org_id") @db.Uuid
+  sku               String
+  name              String
+  category          CfProductCategory @default(PLUSH)
+  defaultPriceCoins Int               @default(1) @map("default_price_coins") // ค่าเล่นเริ่มต้น (จำนวนเหรียญ/ครั้ง)
+  unitCostCents     Int               @default(0) @map("unit_cost_cents") // ราคาทุน
+  imageUrl          String?           @map("image_url")
+  isActive          Boolean           @default(true) @map("is_active")
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org            Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  loadouts       CfMachineLoadout[]
+  stockMovements CfStockMovement[]
+
+  @@unique([orgId, sku])
+  @@index([orgId, category, isActive])
+  @@map("cf_products")
+  @@schema("public")
+}
+
+// =============================================================
+// CF.4 — cf_machine_loadouts (CLAW: สินค้า + ราคา/ครั้ง ใน effective period)
+// =============================================================
+model CfMachineLoadout {
+  id                String    @id @default(uuid()) @db.Uuid
+  orgId             String    @map("org_id") @db.Uuid
+  machineId         String    @map("machine_id") @db.Uuid
+  productId         String    @map("product_id") @db.Uuid
+  pricePerPlayCoins Int       @default(1) @map("price_per_play_coins") // ค่าเล่น (เหรียญ/ครั้ง · ปกติ 1 เหรียญ = 10฿)
+  effectiveFrom     DateTime  @default(now()) @map("effective_from") @db.Timestamptz(6)
+  effectiveTo       DateTime? @map("effective_to") @db.Timestamptz(6)
+  setById           String?   @map("set_by_id") @db.Uuid
+  notes             String?
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  machine CfMachine    @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  product CfProduct    @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([orgId, machineId, effectiveTo])
+  @@index([orgId, productId])
+  @@map("cf_machine_loadouts")
+  @@schema("public")
+}
+
+// =============================================================
+// CF.5 — cf_exchanger_loadouts (EXCHANGER: rate + promo tiers)
+// =============================================================
+model CfExchangerLoadout {
+  id              String    @id @default(uuid()) @db.Uuid
+  orgId           String    @map("org_id") @db.Uuid
+  machineId       String    @map("machine_id") @db.Uuid
+  // base rate: ฿1 → กี่เหรียญ (default 1.0)
+  baseCoinPerBaht Decimal   @default(1.0) @map("base_coin_per_baht") @db.Decimal(8, 4)
+  // promo tiers JSON [{thb:100, coins:11}, {thb:500, coins:60}]
+  promoTiers      Json      @default("[]") @map("promo_tiers")
+  effectiveFrom   DateTime  @default(now()) @map("effective_from") @db.Timestamptz(6)
+  effectiveTo     DateTime? @map("effective_to") @db.Timestamptz(6)
+  setById         String?   @map("set_by_id") @db.Uuid
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  machine CfMachine    @relation(fields: [machineId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, machineId, effectiveTo])
+  @@map("cf_exchanger_loadouts")
+  @@schema("public")
+}
+
+// =============================================================
+// CF.6 — cf_collection_sessions (รอบเก็บกลุ่ม · cross-check ที่นี่)
+// =============================================================
+model CfCollectionSession {
+  id                String          @id @default(uuid()) @db.Uuid
+  orgId             String          @map("org_id") @db.Uuid
+  groupId           String          @map("group_id") @db.Uuid
+  sessionCode       String          @map("session_code") // CFS-2569-NNNNNN · unique per org (not global)
+  openedAt          DateTime        @default(now()) @map("opened_at") @db.Timestamptz(6)
+  openedById        String          @map("opened_by_id") @db.Uuid
+  closedAt          DateTime?       @map("closed_at") @db.Timestamptz(6)
+  closedById        String?         @map("closed_by_id") @db.Uuid
+  status            CfSessionStatus @default(OPEN)
+  // cross-check result (filled by trigger ที่ status = CLOSED)
+  exchangerCoinsOut Int?            @map("exchanger_coins_out")
+  clawCoinsIn       Int?            @map("claw_coins_in")
+  coinVarianceBps   Int?            @map("coin_variance_bps")
+  totalCashCents    Int             @default(0) @map("total_cash_cents")
+  anomalyFlags      String[]        @default([]) @map("anomaly_flags")
+  reviewerId        String?         @map("reviewer_id") @db.Uuid
+  reviewedAt        DateTime?       @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote        String?         @map("review_note")
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org      Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  group    CfMachineGroup      @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  openedBy User                @relation("CfSessionOpener", fields: [openedById], references: [id], onDelete: Restrict)
+  closedBy User?               @relation("CfSessionCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  reviewer User?               @relation("CfSessionReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  events   CfCollectionEvent[]
+
+  @@unique([orgId, sessionCode])
+  @@index([orgId, groupId, openedAt(sort: Desc)])
+  @@index([orgId, status])
+  @@map("cf_collection_sessions")
+  @@schema("public")
+}
+
+// =============================================================
+// CF.7 — cf_collection_events (รายตู้ใน session)
+// =============================================================
+model CfCollectionEvent {
+  id                  String      @id @default(uuid()) @db.Uuid
+  orgId               String      @map("org_id") @db.Uuid
+  sessionId           String?     @map("session_id") @db.Uuid // null สำหรับ INITIAL/VOID
+  machineId           String      @map("machine_id") @db.Uuid
+  eventType           CfEventType @default(COLLECTION) @map("event_type")
+  collectedAt         DateTime    @map("collected_at") @db.Timestamptz(6)
+  collectedById       String      @map("collected_by_id") @db.Uuid
+  // ทุก kind
+  coinMeterBefore     Int         @map("coin_meter_before")
+  coinMeterAfter      Int         @map("coin_meter_after")
+  cashCountedCents    Int         @map("cash_counted_cents")
+  // CLAW only (nullable for EXCHANGER)
+  dollMeterBefore     Int?        @map("doll_meter_before")
+  dollMeterAfter      Int?        @map("doll_meter_after")
+  stockBefore         Int?        @map("stock_before")
+  stockAfter          Int?        @map("stock_after")
+  refillQty           Int?        @map("refill_qty")
+  // EXCHANGER only (nullable for CLAW)
+  promoCoinsDispensed Int?        @map("promo_coins_dispensed") // เหรียญที่แจกจาก promo (รวมใน meter แล้ว · บันทึกแยกเพื่อ G6)
+  // photos (R2 URLs)
+  photoMeterBeforeUrl String?     @map("photo_meter_before_url")
+  photoCashUrl        String?     @map("photo_cash_url")
+  photoMeterAfterUrl  String?     @map("photo_meter_after_url")
+  photoStockUrl       String?     @map("photo_stock_url")
+  photosPurgedAt      DateTime?   @map("photos_purged_at") @db.Timestamptz(6)
+  // anomaly flags ราย event (เก็บแยกจาก session-level)
+  anomalyFlags        String[]    @default([]) @map("anomaly_flags")
+  notes               String?
+  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org         Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  session     CfCollectionSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  machine     CfMachine            @relation(fields: [machineId], references: [id], onDelete: Restrict)
+  collectedBy User                 @relation("CfEventCollector", fields: [collectedById], references: [id], onDelete: Restrict)
+
+  @@index([orgId, machineId, collectedAt(sort: Desc)])
+  @@index([sessionId])
+  @@index([orgId, eventType, collectedAt(sort: Desc)])
+  @@map("cf_collection_events")
+  @@schema("public")
+}
+
+// =============================================================
+// CF.8 — cf_stock_movements (รับเข้า + เติมเข้าตู้ + นับ + ปรับ)
+// =============================================================
+model CfStockMovement {
+  id            String          @id @default(uuid()) @db.Uuid
+  orgId         String          @map("org_id") @db.Uuid
+  branchId      String          @map("branch_id") @db.Uuid
+  type          CfStockMoveType
+  productId     String          @map("product_id") @db.Uuid
+  machineId     String?         @map("machine_id") @db.Uuid // null สำหรับ RECEIVE / COUNT
+  qty           Int // +/− signed (RECEIVE=+, LOAD_TO_MACHINE=-, COUNT=actual, ADJUST=delta)
+  refTable      String?         @map("ref_table") // 'cf_collection_events' for LOAD
+  refId         String?         @map("ref_id") @db.Uuid
+  unitCostCents Int             @default(0) @map("unit_cost_cents") // snapshot ราคาทุนตอน RECEIVE
+  receiptR2Key  String?         @map("receipt_r2_key") // ใบเสร็จ
+  expectedQty   Int?            @map("expected_qty") // ที่ระบบคาด (สำหรับ COUNT_SNAPSHOT compare)
+  varianceQty   Int?            @map("variance_qty") // expected - actual (สำหรับ COUNT)
+  reason        String?
+  occurredAt    DateTime        @map("occurred_at") @db.Timestamptz(6)
+  createdById   String          @map("created_by_id") @db.Uuid
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch    Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  product   CfProduct    @relation(fields: [productId], references: [id], onDelete: Restrict)
+  machine   CfMachine?   @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  createdBy User         @relation("CfStockCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([orgId, branchId, occurredAt(sort: Desc)])
+  @@index([orgId, productId, occurredAt(sort: Desc)])
+  @@index([orgId, type, occurredAt(sort: Desc)])
+  @@index([machineId, occurredAt(sort: Desc)])
+  @@map("cf_stock_movements")
+  @@schema("public")
+}
+
+// =============================================================
+// ChairOps — massage-chair management for 30 branches
+// Lives in `chairops` schema (multi-schema · separate from public)
+// Source: /Users/patipantantikul/Code/chairops/prisma/schema.prisma
+// Renamed: User→ChairopsUser · Branch→ChairopsBranch · AuditLog→ChairopsAuditLog
+//          UserRole→ChairopsUserRole (Pool already has UserRole)
+// =============================================================
+
+enum ChairopsUserRole {
+  ADMIN
+  CEO
+  MANAGER
+  OFFICE
+  MAID
+  TECHNICIAN
+
+  @@schema("chairops")
+}
+
+enum ChairopsAlertLevel {
+  INFO
+  WARN
+  CRITICAL
+
+  @@schema("chairops")
+}
+
+enum ChairopsAlertStatus {
+  OPEN
+  ACK
+  RESOLVED
+  IGNORED
+
+  @@schema("chairops")
+}
+
+enum ChairopsAlertKind {
+  SHORTAGE
+  MISSED_COLLECTION
+  POS_NOT_INGESTED
+  CHAIR_OFFLINE
+  CLEANLINESS_FAIL
+  REPAIR_OVERDUE
+  WRITE_OFF_REQUESTED
+
+  @@schema("chairops")
+}
+
+enum ChairopsTicketStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  WAITING_PARTS
+  DONE
+  CANCELLED
+
+  @@schema("chairops")
+}
+
+enum ChairopsCleanlinessGrade {
+  PASS
+  WARN
+  FAIL
+
+  @@schema("chairops")
+}
+
+model ChairopsBranch {
+  id          String    @id @default(uuid())
+  orgId       String
+  slug        String
+  name        String
+  tabName     String
+  parenNumber Int?
+  city        String?
+  region      String?
+  mallGroup   String?
+  floor       String?
+  isActive    Boolean   @default(true)
+  openedAt    DateTime?
+  closedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Cost fields (admin-tier visibility only · per SPEC §2.11 Owner pre-commit #1)
+  monthlyRent     Decimal? @db.Decimal(12, 2)
+  monthlyUtility  Decimal? @db.Decimal(12, 2)
+  monthlyStaff    Decimal? @db.Decimal(12, 2)
+  monthlyOther    Decimal? @db.Decimal(12, 2)
+  securityDeposit Decimal? @db.Decimal(12, 2)
+
+  // Drift refactor (SPEC §2.3) — anchors per-branch reconcile window
+  lastReconcileClosedAt DateTime?
+
+  // Alert routing (Owner pre-commit #2 · SPEC §2.11)
+  secondaryAlertUserId String?
+  secondaryAlertUser   ChairopsUser? @relation("chairops_secondary_alert", fields: [secondaryAlertUserId], references: [id])
+
+  chairs             ChairopsChair[]
+  maidAssignments    ChairopsMaidAssignment[]
+  posDaily           ChairopsPosDaily[]
+  cashCollections    ChairopsCashCollection[]
+  drifts             ChairopsDrift[]
+  alerts             ChairopsAlert[]
+  damageTickets      ChairopsDamageTicket[]
+  cleanlinessReports ChairopsCleanlinessReport[]
+  dailyRevenue       ChairopsBranchDailyRevenue[]
+
+  @@unique([orgId, slug])
+  @@unique([orgId, tabName])
+  @@index([orgId])
+  @@schema("chairops")
+}
+
+model ChairopsUser {
+  id              String           @id @default(uuid())
+  orgId           String
+  // Links to Supabase auth.users.id — same id space as Pool's users
+  authUserId      String?
+  email           String?
+  phone           String?
+  lineUserId      String?
+  displayName     String
+  role            ChairopsUserRole
+  isActive        Boolean          @default(true)
+  primaryBranchId String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  maidAssignments        ChairopsMaidAssignment[]
+  cashCollections        ChairopsCashCollection[]
+  posDailyEntries        ChairopsPosDaily[]
+  damageReported         ChairopsDamageTicket[]      @relation("chairops_damage_reported_by")
+  damageAssigned         ChairopsDamageTicket[]      @relation("chairops_damage_assigned_to")
+  cleanlinessByMaid      ChairopsCleanlinessReport[] @relation("chairops_cleanliness_by_maid")
+  cleanlinessByAuditor   ChairopsCleanlinessReport[] @relation("chairops_cleanliness_by_auditor")
+  auditLogs              ChairopsAuditLog[]
+  alertsAcked            ChairopsAlert[]             @relation("chairops_alerts_acked_by")
+  writeOffsByMaker       ChairopsWriteOff[]          @relation("chairops_writeoffs_maker")
+  writeOffsByApprover    ChairopsWriteOff[]          @relation("chairops_writeoffs_approver")
+  branchesSecondaryAlert ChairopsBranch[]            @relation("chairops_secondary_alert")
+
+  @@unique([orgId, authUserId])
+  @@unique([orgId, email])
+  @@unique([orgId, phone])
+  @@unique([orgId, lineUserId])
+  @@index([orgId])
+  @@index([role])
+  @@index([primaryBranchId])
+  @@schema("chairops")
+}
+
+model ChairopsMaidAssignment {
+  id        String    @id @default(uuid())
+  orgId     String
+  userId    String
+  branchId  String
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  isActive  Boolean   @default(true)
+
+  user   ChairopsUser   @relation(fields: [userId], references: [id])
+  branch ChairopsBranch @relation(fields: [branchId], references: [id])
+
+  @@index([orgId])
+  @@index([branchId, isActive])
+  @@index([userId, isActive])
+  @@schema("chairops")
+}
+
+model ChairopsChair {
+  id            String    @id @default(uuid())
+  orgId         String
+  chairCode     String
+  branchId      String
+  generation    String?
+  pricePerCycle Int?
+  isOnline      Boolean   @default(true)
+  isActive      Boolean   @default(true)
+  installedAt   DateTime?
+  retiredAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  branch        ChairopsBranch         @relation(fields: [branchId], references: [id])
+  damageTickets ChairopsDamageTicket[]
+
+  @@unique([orgId, chairCode])
+  @@index([orgId])
+  @@index([branchId])
+  @@index([generation])
+  @@schema("chairops")
+}
+
+model ChairopsPosImport {
+  id           String    @id @default(uuid())
+  orgId        String
+  filename     String
+  uploadedById String
+  uploadedAt   DateTime  @default(now())
+  fileHash     String
+  rowCount     Int
+  diffSummary  Json
+  committed    Boolean   @default(false)
+  committedAt  DateTime?
+  notes        String?
+
+  dailyRevenue ChairopsBranchDailyRevenue[]
+
+  @@unique([orgId, fileHash])
+  @@index([orgId])
+  @@index([uploadedAt])
+  @@schema("chairops")
+}
+
+model ChairopsPosDaily {
+  id              String   @id @default(uuid())
+  orgId           String
+  branchId        String
+  chairCode       String?
+  bizDate         DateTime @db.Date
+  onlineTotal     Decimal  @default(0) @db.Decimal(12, 2)
+  cashTotal       Decimal  @default(0) @db.Decimal(12, 2)
+  coinInsertCount Int      @default(0)
+  totalCash       Decimal  @default(0) @db.Decimal(12, 2)
+  grossTotal      Decimal  @default(0) @db.Decimal(12, 2)
+  rawSource       String?
+  importId        String?
+  enteredById     String
+  enteredAt       DateTime @default(now())
+  notes           String?
+
+  branch ChairopsBranch @relation(fields: [branchId], references: [id])
+  user   ChairopsUser   @relation(fields: [enteredById], references: [id])
+
+  @@unique([orgId, branchId, chairCode, bizDate])
+  @@index([orgId])
+  @@index([branchId, bizDate])
+  @@index([bizDate])
+  @@schema("chairops")
+}
+
+model ChairopsCashCollection {
+  id               String    @id @default(uuid())
+  orgId            String
+  branchId         String
+  maidId           String
+  collectedAt      DateTime  @default(now())
+  countedAmount    Int
+  depositedAmount  Int
+  evidencePhotoUrl String
+  slipPhotoUrl     String?
+  imageHash        String
+  notes            String?
+  lockedAt         DateTime?
+  unlockedById     String?
+  unlockedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  branch ChairopsBranch @relation(fields: [branchId], references: [id])
+  maid   ChairopsUser   @relation(fields: [maidId], references: [id])
+
+  @@unique([orgId, imageHash])
+  @@index([orgId])
+  @@index([branchId, collectedAt])
+  @@index([maidId, collectedAt])
+  @@schema("chairops")
+}
+
+model ChairopsDrift {
+  id                      String    @id @default(uuid())
+  orgId                   String
+  branchId                String
+  posTotal                Int
+  depositTotal            Int
+  driftAmount             Int
+  driftSince              DateTime?
+  lastPosDate             DateTime? @db.Date
+  lastCollectionAt        DateTime?
+  daysSinceLastCollection Int       @default(0)
+  lastComputedAt          DateTime  @default(now())
+
+  branch ChairopsBranch @relation(fields: [branchId], references: [id])
+
+  @@unique([orgId, branchId])
+  @@index([orgId])
+  @@schema("chairops")
+}
+
+model ChairopsAlert {
+  id          String              @id @default(uuid())
+  orgId       String
+  branchId    String?
+  kind        ChairopsAlertKind
+  level       ChairopsAlertLevel
+  status      ChairopsAlertStatus @default(OPEN)
+  title       String
+  message     String
+  contextJson Json?
+  ackedById   String?
+  ackedAt     DateTime?
+  resolvedAt  DateTime?
+  createdAt   DateTime            @default(now())
+
+  branch  ChairopsBranch? @relation(fields: [branchId], references: [id])
+  ackedBy ChairopsUser?   @relation("chairops_alerts_acked_by", fields: [ackedById], references: [id])
+
+  @@index([orgId])
+  @@index([status, level])
+  @@index([branchId, status])
+  @@index([createdAt])
+  @@schema("chairops")
+}
+
+model ChairopsWriteOff {
+  id         String    @id @default(uuid())
+  orgId      String
+  branchId   String
+  amount     Int
+  reason     String
+  makerId    String
+  makerAt    DateTime  @default(now())
+  approverId String?
+  approverAt DateTime?
+  status     String    @default("PENDING")
+  notes      String?
+
+  maker    ChairopsUser  @relation("chairops_writeoffs_maker", fields: [makerId], references: [id])
+  approver ChairopsUser? @relation("chairops_writeoffs_approver", fields: [approverId], references: [id])
+
+  @@index([orgId])
+  @@index([branchId, status])
+  @@schema("chairops")
+}
+
+model ChairopsDamageTicket {
+  id           String               @id @default(uuid())
+  orgId        String
+  ticketCode   String
+  branchId     String
+  chairId      String?
+  reportedById String
+  assignedToId String?
+  priority     String               @default("NORMAL")
+  category     String
+  description  String
+  photoUrls    String[]
+  status       ChairopsTicketStatus @default(OPEN)
+  openedAt     DateTime             @default(now())
+  closedAt     DateTime?
+  notes        String?
+
+  branch     ChairopsBranch @relation(fields: [branchId], references: [id])
+  chair      ChairopsChair? @relation(fields: [chairId], references: [id])
+  reportedBy ChairopsUser   @relation("chairops_damage_reported_by", fields: [reportedById], references: [id])
+  assignedTo ChairopsUser?  @relation("chairops_damage_assigned_to", fields: [assignedToId], references: [id])
+
+  @@unique([orgId, ticketCode])
+  @@index([orgId])
+  @@index([branchId, status])
+  @@index([assignedToId, status])
+  @@index([priority, status])
+  @@schema("chairops")
+}
+
+model ChairopsSparePart {
+  id           String   @id @default(uuid())
+  orgId        String
+  partCode     String
+  name         String
+  category     String?
+  unit         String   @default("ชิ้น")
+  unitPrice    Int?
+  stockOnHand  Int      @default(0)
+  reorderLevel Int      @default(0)
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  movements ChairopsSparePartMovement[]
+
+  @@unique([orgId, partCode])
+  @@index([orgId])
+  @@schema("chairops")
+}
+
+model ChairopsSparePartMovement {
+  id          String   @id @default(uuid())
+  orgId       String
+  partId      String
+  branchId    String?
+  delta       Int
+  reason      String
+  refTicketId String?
+  byUserId    String
+  at          DateTime @default(now())
+
+  part ChairopsSparePart @relation(fields: [partId], references: [id])
+
+  @@index([orgId])
+  @@index([partId, at])
+  @@schema("chairops")
+}
+
+model ChairopsCleanlinessReport {
+  id          String                   @id @default(uuid())
+  orgId       String
+  branchId    String
+  byMaidId    String
+  auditedById String?
+  auditedAt   DateTime?
+  reportedAt  DateTime                 @default(now())
+  checklist   Json
+  photoUrls   String[]
+  grade       ChairopsCleanlinessGrade @default(PASS)
+  notes       String?
+
+  branch  ChairopsBranch @relation(fields: [branchId], references: [id])
+  maid    ChairopsUser   @relation("chairops_cleanliness_by_maid", fields: [byMaidId], references: [id])
+  auditor ChairopsUser?  @relation("chairops_cleanliness_by_auditor", fields: [auditedById], references: [id])
+
+  @@index([orgId])
+  @@index([branchId, reportedAt])
+  @@schema("chairops")
+}
+
+model ChairopsAuditLog {
+  id        String   @id @default(uuid())
+  orgId     String
+  userId    String?
+  action    String
+  entity    String
+  entityId  String
+  oldValue  Json?
+  newValue  Json?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user ChairopsUser? @relation(fields: [userId], references: [id])
+
+  @@index([orgId])
+  @@index([entity, entityId])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@schema("chairops")
+}
+
+model ChairopsBankAccount {
+  id          String   @id @default(uuid())
+  orgId       String
+  bankName    String
+  accountNo   String
+  accountName String
+  branchId    String?
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([orgId])
+  @@schema("chairops")
+}
+
+// =============================================================
+// ChairOps Wave 0 additions (per BIGFEATURE_chairops_SPEC §2.2)
+// =============================================================
+
+// Per-branch-per-day aggregate (computed from XLSX import)
+// See [[chairops-upload-flow-simple-2026-05-27]]
+model ChairopsBranchDailyRevenue {
+  id              String   @id @default(cuid())
+  orgId           String
+  branchId        String
+  bizDate         DateTime @db.Date
+  cashTotal       Decimal  @db.Decimal(12, 2)
+  onlineTotal     Decimal  @db.Decimal(12, 2)
+  otherTotal      Decimal  @default(0) @db.Decimal(12, 2)
+  grossTotal      Decimal  @db.Decimal(12, 2)
+  paymentCount    Int      @default(0)
+  coinInsertCount Int      @default(0)
+  roundCount      Int      @default(0)
+  sourceImportId  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  branch       ChairopsBranch     @relation(fields: [branchId], references: [id])
+  sourceImport ChairopsPosImport? @relation(fields: [sourceImportId], references: [id])
+
+  @@unique([orgId, branchId, bizDate])
+  @@index([orgId])
+  @@index([branchId, bizDate])
+  @@map("chairops_branch_daily_revenue")
+  @@schema("chairops")
+}
+
+// Required by `lib/chairops/auth/session.ts:79-100` denial path (SPEC §2.4)
+// Loose FK to Pool users — just store the id (cross-schema).
+model ChairopsAccessRequest {
+  id         String    @id @default(cuid())
+  orgId      String
+  poolUserId String
+  email      String
+  name       String?
+  reason     String?
+  status     String    @default("PENDING") // PENDING / APPROVED / DENIED
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([orgId])
+  @@index([status])
+  @@map("chairops_access_request")
+  @@schema("chairops")
+}
+
+// =============================================================
+// PLAYLAND — สวนสนุก / โซนเครื่องเล่นเด็ก · ACS-F606 face gate (Version C)
+// 18 tables · all in `playland` schema · all org-scoped via RLS
+// Spec: /Users/patipantantikul/Code/pooilgroup/legacy/pooilgroup-web/docs/WORKSHOP_playland.md
+// Decisions: ~/.claude/projects/-Users-patipantantikul-Code-buildlygo/memory/playland-workshop-decisions.md
+// =============================================================
+
+enum PlaylandMemberType {
+  KID
+  PARENT
+  STAFF
+  CLEANER
+  VIP
+  BABYSITTER
+  GUEST
+
+  @@schema("playland")
+}
+
+enum PlaylandPackageType {
+  FIXED // 30น/60฿
+  PER_MINUTE // 2฿/นาที
+  DAY_PASS // 250฿ ไม่จำกัด
+
+  @@schema("playland")
+}
+
+enum PlaylandSessionStatus {
+  ACTIVE
+  PAUSED // ออกชั่วคราว · 15 นาที grace
+  COMPLETED // ออกถาวร
+  EXPIRED // หมดเวลา · ยังไม่ออก
+  FORFEITED // re-entry เกิน 15 นาที
+  CANCELLED
+
+  @@schema("playland")
+}
+
+enum PlaylandBookingStatus {
+  PENDING
+  PAID
+  CHECKED_IN
+  CANCELLED
+  EXPIRED // ไม่จ่ายเงิน > 30 นาที
+  NO_SHOW
+
+  @@schema("playland")
+}
+
+enum PlaylandFaceEventType {
+  RECOGNIZED
+  UNRECOGNIZED // หน้าไม่อยู่ในระบบ
+  TAILGATE // คนแอบเข้าตาม
+  STRANGER // unregister พยายามเข้า
+  DOOR_OPEN // manual override
+  DEVICE_HEARTBEAT
+  ERROR
+
+  @@schema("playland")
+}
+
+enum PlaylandFaceDirection {
+  IN
+  OUT
+  UNKNOWN
+
+  @@schema("playland")
+}
+
+enum PlaylandAlertType {
+  TIME_WARNING // เหลือ 10 นาที
+  TIME_EXPIRED // หมดเวลา
+  STRANGER
+  TAILGATE
+  MISMATCH // pairing ไม่ตรง
+  REENTRY_EXPIRED // ขาดสิทธิ์เพราะกลับมาเกิน 15 นาที
+  DEVICE_OFFLINE
+  MANUAL
+
+  @@schema("playland")
+}
+
+enum PlaylandAlertSeverity {
+  INFO
+  WARNING
+  DANGER
+
+  @@schema("playland")
+}
+
+enum PlaylandPaymentMethod {
+  CASH
+  STRIPE
+  PROMPTPAY
+  KBANK
+  SCB
+  TRUEMONEY
+  LINEPAY
+  CHARGE_TO_MEMBER // ใส่บิลรอจ่ายตอนออก
+  COMPLIMENTARY
+
+  @@schema("playland")
+}
+
+enum PlaylandPromoType {
+  COUPON
+  LOYALTY_POINTS
+  BIRTHDAY
+  WEEKDAY
+  HAPPY_HOUR
+  PACKAGE_DISCOUNT
+
+  @@schema("playland")
+}
+
+enum PlaylandShiftStatus {
+  OPEN
+  CLOSED
+
+  @@schema("playland")
+}
+
+enum PlaylandDeviceStatus {
+  ONLINE
+  OFFLINE
+  ERROR
+  PAIRING
+  DISABLED
+
+  @@schema("playland")
+}
+
+enum PlaylandFaceSyncStatus {
+  PENDING // จะ push ครั้งถัดไป
+  SYNCING // กำลังส่ง
+  SYNCED // สำเร็จแล้ว
+  FAILED // error · retry
+  DELETE_PENDING
+  DELETED
+
+  @@schema("playland")
+}
+
+// ---------- 1. Branches ----------
+model PlaylandBranch {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  companyId    String?  @map("company_id") @db.Uuid
+  slug         String   @unique
+  name         String
+  address      String?
+  phone        String?
+  email        String?
+  openingHours Json?    @map("opening_hours") // { mon: { open: "10:00", close: "21:00" }, ... }
+  settings     Json? // { parentFee: 50, exitRequiresStaff: true, maxAgeAlone: 12, ... }
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  devices      PlaylandDevice[]
+  members      PlaylandMember[]
+  packages     PlaylandPackage[]
+  products     PlaylandProduct[]
+  sessions     PlaylandSession[]
+  bookings     PlaylandBooking[]
+  sales        PlaylandSale[]
+  shifts       PlaylandShift[]
+  promos       PlaylandPromo[]
+  alerts       PlaylandAlert[]
+  faceEvents   PlaylandFaceEvent[]
+  familyGroups PlaylandFamilyGroup[]
+  dailyReports PlaylandDailyReport[]
+
+  @@index([orgId])
+  @@map("branches")
+  @@schema("playland")
+}
+
+// ---------- 2. ACS Devices (per branch) ----------
+model PlaylandDevice {
+  id              String               @id @default(uuid()) @db.Uuid
+  orgId           String               @map("org_id") @db.Uuid
+  branchId        String               @map("branch_id") @db.Uuid
+  vendor          String               @default("acs-auto")
+  model           String               @default("ACS-F606")
+  deviceId        String               @unique @map("device_id")
+  deviceName      String               @map("device_name")
+  baseUrl         String?              @map("base_url") // for our → device calls (TCP/HTTP push)
+  protocol        String               @default("http") // "http" | "tcp"
+  modelVersion    String               @default("C") // "B" online-only | "C" mixed
+  secretEncrypted String?              @map("secret_encrypted")
+  webhookSecret   String?              @map("webhook_secret") // shared in URL query · since no HMAC support
+  status          PlaylandDeviceStatus @default(PAIRING)
+  lastSeenAt      DateTime?            @map("last_seen_at") @db.Timestamptz(6)
+  lastEventAt     DateTime?            @map("last_event_at") @db.Timestamptz(6)
+  firmwareVersion String?              @map("firmware_version")
+  notes           String?
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch     PlaylandBranch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  faceEvents PlaylandFaceEvent[]
+  faceSync   PlaylandFaceSync[]
+
+  @@index([orgId, branchId])
+  @@map("devices")
+  @@schema("playland")
+}
+
+// ---------- 3. Family Group (พ่อ+แม่+ลูกๆ) ----------
+model PlaylandFamilyGroup {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  branchId     String   @map("branch_id") @db.Uuid
+  displayName  String   @map("display_name") // "ครอบครัวคุณสมศักดิ์"
+  primaryPhone String?  @map("primary_phone")
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch  PlaylandBranch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  members PlaylandFamilyMember[]
+
+  @@index([orgId, branchId])
+  @@map("family_groups")
+  @@schema("playland")
+}
+
+// ---------- 4. Family group join (many-to-many between members) ----------
+model PlaylandFamilyMember {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  familyGroupId String   @map("family_group_id") @db.Uuid
+  memberId      String   @map("member_id") @db.Uuid
+  role          String   @default("relative") // "primary_guardian" | "guardian" | "child" | "relative"
+  canPickUp     Boolean  @default(true) @map("can_pick_up")
+  addedAt       DateTime @default(now()) @map("added_at") @db.Timestamptz(6)
+
+  familyGroup PlaylandFamilyGroup @relation(fields: [familyGroupId], references: [id], onDelete: Cascade)
+  member      PlaylandMember      @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([familyGroupId, memberId])
+  @@index([orgId])
+  @@index([memberId])
+  @@map("family_members")
+  @@schema("playland")
+}
+
+// ---------- 5. Members (เด็ก/ผู้ปกครอง/พนักงาน/แม่บ้าน/VIP/babysitter/guest) ----------
+model PlaylandMember {
+  id               String             @id @default(uuid()) @db.Uuid
+  orgId            String             @map("org_id") @db.Uuid
+  branchId         String             @map("branch_id") @db.Uuid
+  memberCode       String?            @unique @map("member_code") // PL-2569-NNNN
+  type             PlaylandMemberType
+  name             String
+  nickname         String?
+  phone            String?
+  email            String?
+  dateOfBirth      DateTime?          @map("date_of_birth") @db.Date
+  gender           String? // "M" | "F" | "O"
+  photoR2Path      String?            @map("photo_r2_path") // R2 key
+  photoUrl         String?            @map("photo_url") // signed URL cache
+  faceId           String?            @map("face_id") // ACS device face_id
+  externalLineId   String?            @map("external_line_id")
+  registeredById   String?            @map("registered_by_id") @db.Uuid // staff user
+  consentAt        DateTime?          @map("consent_at") @db.Timestamptz(6)
+  consentRevokedAt DateTime?          @map("consent_revoked_at") @db.Timestamptz(6)
+  retentionUntil   DateTime?          @map("retention_until") @db.Timestamptz(6) // PDPA
+  lastVisitAt      DateTime?          @map("last_visit_at") @db.Timestamptz(6)
+  notes            String?
+  metadata         Json? // birthday discount given? VIP perks?
+  deletedAt        DateTime?          @map("deleted_at") @db.Timestamptz(6)
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch            PlaylandBranch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  familyMemberships PlaylandFamilyMember[]
+  sessions          PlaylandSession[]
+  wristbands        PlaylandWristband[]
+  bookings          PlaylandBooking[]
+  waivers           PlaylandWaiver[]
+  loyalty           PlaylandLoyalty?
+  faceSync          PlaylandFaceSync[]
+  faceEvents        PlaylandFaceEvent[]
+
+  @@index([orgId, branchId])
+  @@index([branchId, type])
+  @@index([faceId])
+  @@index([phone])
+  @@map("members")
+  @@schema("playland")
+}
+
+// ---------- 6. Packages ----------
+model PlaylandPackage {
+  id                 String              @id @default(uuid()) @db.Uuid
+  orgId              String              @map("org_id") @db.Uuid
+  branchId           String?             @map("branch_id") @db.Uuid // null = all branches
+  type               PlaylandPackageType
+  name               String
+  description        String?
+  minutes            Int? // null for DAY_PASS
+  price              Int // satang (฿*100)
+  perMinuteRate      Int?                @map("per_minute_rate") // satang/นาที for PER_MINUTE
+  memberTypesAllowed Json?               @map("member_types_allowed") // ["KID", "VIP"] or null=all
+  active             Boolean             @default(true)
+  sortOrder          Int                 @default(0) @map("sort_order")
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch   PlaylandBranch?   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  sessions PlaylandSession[]
+  bookings PlaylandBooking[]
+
+  @@index([orgId, branchId])
+  @@index([branchId, active, sortOrder])
+  @@map("packages")
+  @@schema("playland")
+}
+
+// ---------- 7. Sessions (เซสชั่นเล่น) ----------
+model PlaylandSession {
+  id                 String                @id @default(uuid()) @db.Uuid
+  orgId              String                @map("org_id") @db.Uuid
+  branchId           String                @map("branch_id") @db.Uuid
+  memberId           String                @map("member_id") @db.Uuid
+  packageId          String?               @map("package_id") @db.Uuid
+  bookingId          String?               @map("booking_id") @db.Uuid
+  packageMinutes     Int                   @map("package_minutes") // 0 = day pass
+  packagePriceCents  Int                   @map("package_price_cents")
+  minutesUsed        Int                   @default(0) @map("minutes_used")
+  totalPausedSeconds Int                   @default(0) @map("total_paused_seconds")
+  status             PlaylandSessionStatus @default(ACTIVE)
+  checkInAt          DateTime              @default(now()) @map("check_in_at") @db.Timestamptz(6)
+  pausedAt           DateTime?             @map("paused_at") @db.Timestamptz(6)
+  resumedAt          DateTime?             @map("resumed_at") @db.Timestamptz(6)
+  checkOutAt         DateTime?             @map("check_out_at") @db.Timestamptz(6)
+  expiresAt          DateTime?             @map("expires_at") @db.Timestamptz(6)
+  reentryDeadlineAt  DateTime?             @map("reentry_deadline_at") @db.Timestamptz(6)
+  extendedCount      Int                   @default(0) @map("extended_count")
+  cashierUserId      String?               @map("cashier_user_id") @db.Uuid
+  closedByUserId     String?               @map("closed_by_user_id") @db.Uuid
+  notes              String?
+  metadata           Json?
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch     PlaylandBranch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  member     PlaylandMember      @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  package    PlaylandPackage?    @relation(fields: [packageId], references: [id])
+  booking    PlaylandBooking?    @relation(fields: [bookingId], references: [id])
+  faceEvents PlaylandFaceEvent[]
+  alerts     PlaylandAlert[]
+  sales      PlaylandSale[]
+  wristbands PlaylandWristband[]
+
+  @@index([orgId, branchId])
+  @@index([branchId, status])
+  @@index([memberId, checkInAt])
+  @@index([expiresAt])
+  @@map("sessions")
+  @@schema("playland")
+}
+
+// ---------- 8. Face Events (log จาก ACS device · idempotent via webhookId) ----------
+model PlaylandFaceEvent {
+  id             String                @id @default(uuid()) @db.Uuid
+  orgId          String                @map("org_id") @db.Uuid
+  branchId       String                @map("branch_id") @db.Uuid
+  deviceId       String                @map("device_id") @db.Uuid
+  sessionId      String?               @map("session_id") @db.Uuid
+  memberId       String?               @map("member_id") @db.Uuid
+  faceId         String?               @map("face_id")
+  type           PlaylandFaceEventType
+  direction      PlaylandFaceDirection @default(UNKNOWN)
+  confidence     Int? // 0-100
+  snapshotR2Path String?               @map("snapshot_r2_path")
+  rawPayload     Json?                 @map("raw_payload")
+  webhookId      String                @unique @map("webhook_id") // idempotency
+  eventAt        DateTime              @map("event_at") @db.Timestamptz(6)
+  receivedAt     DateTime              @default(now()) @map("received_at") @db.Timestamptz(6)
+
+  branch  PlaylandBranch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  device  PlaylandDevice   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  session PlaylandSession? @relation(fields: [sessionId], references: [id])
+  member  PlaylandMember?  @relation(fields: [memberId], references: [id])
+
+  @@index([orgId, branchId])
+  @@index([branchId, eventAt])
+  @@index([memberId, eventAt])
+  @@index([type, eventAt])
+  @@map("face_events")
+  @@schema("playland")
+}
+
+// ---------- 9. Bookings (จองล่วงหน้า) ----------
+model PlaylandBooking {
+  id                String                 @id @default(uuid()) @db.Uuid
+  orgId             String                 @map("org_id") @db.Uuid
+  branchId          String                 @map("branch_id") @db.Uuid
+  memberId          String?                @map("member_id") @db.Uuid
+  packageId         String                 @map("package_id") @db.Uuid
+  bookingCode       String                 @unique @map("booking_code") // PB-2569-NNNN
+  customerName      String                 @map("customer_name")
+  customerPhone     String                 @map("customer_phone")
+  customerEmail     String?                @map("customer_email")
+  partySize         Int                    @default(1) @map("party_size")
+  slotStart         DateTime               @map("slot_start") @db.Timestamptz(6)
+  slotEnd           DateTime               @map("slot_end") @db.Timestamptz(6)
+  amountCents       Int                    @map("amount_cents")
+  paymentMethod     PlaylandPaymentMethod? @map("payment_method")
+  paymentRef        String?                @map("payment_ref") // Stripe session_id
+  paymentStatus     String                 @default("pending") @map("payment_status")
+  qrCodeUrl         String?                @map("qr_code_url")
+  status            PlaylandBookingStatus  @default(PENDING)
+  expiresAt         DateTime?              @map("expires_at") @db.Timestamptz(6)
+  confirmedByUserId String?                @map("confirmed_by_user_id") @db.Uuid
+  confirmedAt       DateTime?              @map("confirmed_at") @db.Timestamptz(6)
+  cancelledAt       DateTime?              @map("cancelled_at") @db.Timestamptz(6)
+  cancelReason      String?                @map("cancel_reason")
+  notes             String?
+  metadata          Json?
+  createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch   PlaylandBranch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  member   PlaylandMember?   @relation(fields: [memberId], references: [id])
+  package  PlaylandPackage   @relation(fields: [packageId], references: [id])
+  sessions PlaylandSession[]
+
+  @@index([orgId, branchId])
+  @@index([branchId, slotStart])
+  @@index([status, expiresAt])
+  @@index([customerPhone])
+  @@map("bookings")
+  @@schema("playland")
+}
+
+// ---------- 10. Products (POS) ----------
+model PlaylandProduct {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  branchId     String   @map("branch_id") @db.Uuid
+  sku          String?
+  barcode      String?
+  category     String?
+  name         String
+  description  String?
+  priceCents   Int      @map("price_cents")
+  costCents    Int?     @map("cost_cents")
+  stock        Int      @default(0)
+  reorderLevel Int      @default(0) @map("reorder_level")
+  imageR2Path  String?  @map("image_r2_path")
+  active       Boolean  @default(true)
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch    PlaylandBranch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  saleLines PlaylandSaleLine[]
+
+  @@unique([branchId, barcode])
+  @@index([orgId, branchId])
+  @@index([branchId, active, sortOrder])
+  @@map("products")
+  @@schema("playland")
+}
+
+// ---------- 11. Sales (POS transactions) ----------
+model PlaylandSale {
+  id             String                @id @default(uuid()) @db.Uuid
+  orgId          String                @map("org_id") @db.Uuid
+  branchId       String                @map("branch_id") @db.Uuid
+  shiftId        String?               @map("shift_id") @db.Uuid
+  sessionId      String?               @map("session_id") @db.Uuid // null = walk-in sale
+  saleCode       String                @unique @map("sale_code") // S-2569-NNNN
+  totalCents     Int                   @map("total_cents")
+  discountCents  Int                   @default(0) @map("discount_cents")
+  promoId        String?               @map("promo_id") @db.Uuid
+  paymentMethod  PlaylandPaymentMethod
+  paymentRef     String?               @map("payment_ref")
+  cashierUserId  String                @map("cashier_user_id") @db.Uuid
+  soldAt         DateTime              @default(now()) @map("sold_at") @db.Timestamptz(6)
+  voidedAt       DateTime?             @map("voided_at") @db.Timestamptz(6)
+  voidedByUserId String?               @map("voided_by_user_id") @db.Uuid
+  voidReason     String?               @map("void_reason")
+
+  branch  PlaylandBranch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  shift   PlaylandShift?     @relation(fields: [shiftId], references: [id])
+  session PlaylandSession?   @relation(fields: [sessionId], references: [id])
+  promo   PlaylandPromo?     @relation(fields: [promoId], references: [id])
+  lines   PlaylandSaleLine[]
+
+  @@index([orgId, branchId])
+  @@index([branchId, soldAt])
+  @@index([shiftId])
+  @@index([sessionId])
+  @@map("sales")
+  @@schema("playland")
+}
+
+// ---------- 11b. Sale Line Items ----------
+model PlaylandSaleLine {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  saleId      String   @map("sale_id") @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  productName String   @map("product_name") // snapshot
+  quantity    Int
+  unitCents   Int      @map("unit_cents")
+  lineCents   Int      @map("line_cents")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  sale    PlaylandSale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product PlaylandProduct @relation(fields: [productId], references: [id])
+
+  @@index([saleId])
+  @@index([productId])
+  @@map("sale_lines")
+  @@schema("playland")
+}
+
+// ---------- 12. Promos ----------
+model PlaylandPromo {
+  id              String            @id @default(uuid()) @db.Uuid
+  orgId           String            @map("org_id") @db.Uuid
+  branchId        String?           @map("branch_id") @db.Uuid // null = all branches
+  type            PlaylandPromoType
+  code            String? // for COUPON
+  name            String
+  description     String?
+  discountPercent Int?              @map("discount_percent") // 0-100
+  discountCents   Int?              @map("discount_cents") // fixed amount
+  conditions      Json? // {minSpend, daysOfWeek, packageIds, etc.}
+  active          Boolean           @default(true)
+  startsAt        DateTime?         @map("starts_at") @db.Timestamptz(6)
+  endsAt          DateTime?         @map("ends_at") @db.Timestamptz(6)
+  maxUses         Int?              @map("max_uses")
+  usesCount       Int               @default(0) @map("uses_count")
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch PlaylandBranch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  sales  PlaylandSale[]
+
+  @@unique([code, orgId])
+  @@index([orgId])
+  @@index([type, active])
+  @@map("promos")
+  @@schema("playland")
+}
+
+// ---------- 13. Loyalty (per-member points wallet) ----------
+model PlaylandLoyalty {
+  id             String    @id @default(uuid()) @db.Uuid
+  orgId          String    @map("org_id") @db.Uuid
+  memberId       String    @unique @map("member_id") @db.Uuid
+  points         Int       @default(0)
+  lifetimePoints Int       @default(0) @map("lifetime_points")
+  lastEarnedAt   DateTime? @map("last_earned_at") @db.Timestamptz(6)
+  expiresAt      DateTime? @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  member PlaylandMember          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  ledger PlaylandLoyaltyLedger[]
+
+  @@map("loyalty")
+  @@schema("playland")
+}
+
+model PlaylandLoyaltyLedger {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  loyaltyId String   @map("loyalty_id") @db.Uuid
+  delta     Int // + earn, - redeem
+  reason    String // "session", "birthday", "redeem", etc.
+  refType   String?  @map("ref_type") // "session" | "sale" | "manual"
+  refId     String?  @map("ref_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  loyalty PlaylandLoyalty @relation(fields: [loyaltyId], references: [id], onDelete: Cascade)
+
+  @@index([loyaltyId, createdAt])
+  @@map("loyalty_ledger")
+  @@schema("playland")
+}
+
+// ---------- 14. Waivers (ใบยินยอม) ----------
+model PlaylandWaiver {
+  id              String    @id @default(uuid()) @db.Uuid
+  orgId           String    @map("org_id") @db.Uuid
+  memberId        String    @map("member_id") @db.Uuid
+  version         String    @default("v1")
+  signedAt        DateTime  @default(now()) @map("signed_at") @db.Timestamptz(6)
+  signatureR2Path String?   @map("signature_r2_path") // PDF or PNG
+  signatureType   String    @default("tablet") @map("signature_type") // "tablet" | "paper" | "checkbox"
+  signedByName    String    @map("signed_by_name")
+  signedByPhone   String?   @map("signed_by_phone")
+  scannedR2Path   String?   @map("scanned_r2_path") // if paper, scan
+  metadata        Json?
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  member PlaylandMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([memberId, signedAt])
+  @@map("waivers")
+  @@schema("playland")
+}
+
+// ---------- 15. Alerts ----------
+model PlaylandAlert {
+  id                   String                @id @default(uuid()) @db.Uuid
+  orgId                String                @map("org_id") @db.Uuid
+  branchId             String                @map("branch_id") @db.Uuid
+  sessionId            String?               @map("session_id") @db.Uuid
+  type                 PlaylandAlertType
+  severity             PlaylandAlertSeverity @default(WARNING)
+  title                String
+  message              String?
+  metadata             Json?
+  resolvedAt           DateTime?             @map("resolved_at") @db.Timestamptz(6)
+  resolvedByUserId     String?               @map("resolved_by_user_id") @db.Uuid
+  acknowledgedAt       DateTime?             @map("acknowledged_at") @db.Timestamptz(6)
+  acknowledgedByUserId String?               @map("acknowledged_by_user_id") @db.Uuid
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  branch  PlaylandBranch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  session PlaylandSession? @relation(fields: [sessionId], references: [id])
+
+  @@index([orgId, branchId])
+  @@index([branchId, resolvedAt])
+  @@index([type, createdAt])
+  @@map("alerts")
+  @@schema("playland")
+}
+
+// ---------- 16. Shifts (per-cashier per-branch) ----------
+model PlaylandShift {
+  id                 String              @id @default(uuid()) @db.Uuid
+  orgId              String              @map("org_id") @db.Uuid
+  branchId           String              @map("branch_id") @db.Uuid
+  cashierUserId      String              @map("cashier_user_id") @db.Uuid
+  shiftCode          String              @unique @map("shift_code") // SH-YYMMDD-NN
+  startedAt          DateTime            @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt            DateTime?           @map("ended_at") @db.Timestamptz(6)
+  openingCashCents   Int                 @default(0) @map("opening_cash_cents")
+  closingCashCents   Int?                @map("closing_cash_cents")
+  expectedCashCents  Int?                @map("expected_cash_cents")
+  varianceCents      Int?                @map("variance_cents") // closing - expected
+  totalSalesCents    Int                 @default(0) @map("total_sales_cents")
+  totalSessionsCents Int                 @default(0) @map("total_sessions_cents")
+  status             PlaylandShiftStatus @default(OPEN)
+  notes              String?
+  closedByUserId     String?             @map("closed_by_user_id") @db.Uuid
+  isDayClose         Boolean             @default(false) @map("is_day_close") // mark as day-end close
+
+  branch PlaylandBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  sales  PlaylandSale[]
+
+  @@index([orgId, branchId])
+  @@index([branchId, startedAt])
+  @@index([cashierUserId, startedAt])
+  @@map("shifts")
+  @@schema("playland")
+}
+
+// ---------- 17. Daily Reports (per-branch per-day rollup) ----------
+model PlaylandDailyReport {
+  id                  String    @id @default(uuid()) @db.Uuid
+  orgId               String    @map("org_id") @db.Uuid
+  branchId            String    @map("branch_id") @db.Uuid
+  reportDate          DateTime  @map("report_date") @db.Date
+  entryRevenueCents   Int       @default(0) @map("entry_revenue_cents")
+  productRevenueCents Int       @default(0) @map("product_revenue_cents")
+  totalRevenueCents   Int       @default(0) @map("total_revenue_cents")
+  memberCount         Int       @default(0) @map("member_count")
+  sessionsCompleted   Int       @default(0) @map("sessions_completed")
+  sessionsExpired     Int       @default(0) @map("sessions_expired")
+  sessionsForfeited   Int       @default(0) @map("sessions_forfeited")
+  productsSold        Int       @default(0) @map("products_sold")
+  alertsCount         Int       @default(0) @map("alerts_count")
+  breakdown           Json? // per-package, per-product, per-hour breakdown
+  cashScannedIn       Int       @default(0) @map("cash_scanned_in") // anti-fraud: face scan count
+  cashScannedOut      Int       @default(0) @map("cash_scanned_out")
+  fraudVariance       Int       @default(0) @map("fraud_variance") // scan in/out vs paid count
+  submittedAt         DateTime? @map("submitted_at") @db.Timestamptz(6)
+  submittedByUserId   String?   @map("submitted_by_user_id") @db.Uuid
+
+  branch PlaylandBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, reportDate])
+  @@index([orgId, reportDate])
+  @@map("daily_reports")
+  @@schema("playland")
+}
+
+// ---------- 18. Face Sync (Version C — local cache on device) ----------
+model PlaylandFaceSync {
+  id            String                 @id @default(uuid()) @db.Uuid
+  orgId         String                 @map("org_id") @db.Uuid
+  deviceId      String                 @map("device_id") @db.Uuid
+  memberId      String                 @map("member_id") @db.Uuid
+  status        PlaylandFaceSyncStatus @default(PENDING)
+  attempts      Int                    @default(0)
+  lastAttemptAt DateTime?              @map("last_attempt_at") @db.Timestamptz(6)
+  syncedAt      DateTime?              @map("synced_at") @db.Timestamptz(6)
+  errorMessage  String?                @map("error_message")
+  createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  device PlaylandDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  member PlaylandMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, memberId])
+  @@index([orgId])
+  @@index([status, lastAttemptAt])
+  @@map("face_sync")
+  @@schema("playland")
+}
+
+// ---------- 19. Audit Log (separate from Pool's AuditLog to keep playland-scoped) ----------
+model PlaylandAuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  branchId    String?  @map("branch_id") @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  actorRole   String?  @map("actor_role")
+  action      String // "session.checkin", "member.delete", "sale.void", "shift.close"
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id") @db.Uuid
+  before      Json?
+  after       Json?
+  ip          String?
+  userAgent   String?  @map("user_agent")
+  metadata    Json?
+  category    String   @default("general") // "money" | "device" | "general" — different retention
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([orgId, branchId])
+  @@index([entityType, entityId])
+  @@index([actorUserId, createdAt])
+  @@index([category, createdAt])
+  @@map("audit_logs")
+  @@schema("playland")
+}
+
+// =============================================================
+// PLAYLAND · Wristband (Harborland-style · /bigfeature W1 · 2026-05-26)
+// CEO 2026-05-26: paid kid → cashier issues QR wristband → scan #1 bind →
+// scan #2 at gate activates session → scan #3+ picker (ออก / ขายของ)
+// =============================================================
+enum PlaylandWristbandStatus {
+  ISSUED // bound to member · waiting for first gate scan
+  ACTIVE // entered through gate at least once
+  RETURNED // checked out · returned to cashier
+  LOST // marked lost · prevented from re-use
+
+  @@schema("playland")
+}
+
+model PlaylandWristband {
+  id             String                  @id @default(uuid()) @db.Uuid
+  orgId          String                  @map("org_id") @db.Uuid
+  branchId       String                  @map("branch_id") @db.Uuid
+  code           String                  @unique
+  memberId       String?                 @map("member_id") @db.Uuid
+  sessionId      String?                 @map("session_id") @db.Uuid
+  status         PlaylandWristbandStatus @default(ISSUED)
+  issuedAt       DateTime                @default(now()) @map("issued_at") @db.Timestamptz(6)
+  issuedByUserId String                  @map("issued_by_user_id") @db.Uuid
+  boundAt        DateTime?               @map("bound_at") @db.Timestamptz(6)
+  activatedAt    DateTime?               @map("activated_at") @db.Timestamptz(6)
+  returnedAt     DateTime?               @map("returned_at") @db.Timestamptz(6)
+  lastScanAt     DateTime?               @map("last_scan_at") @db.Timestamptz(6)
+  notes          String?
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  member  PlaylandMember?         @relation(fields: [memberId], references: [id])
+  session PlaylandSession?        @relation(fields: [sessionId], references: [id])
+  scans   PlaylandWristbandScan[]
+
+  @@index([orgId, branchId])
+  @@index([memberId])
+  @@index([status])
+  @@map("wristbands")
+  @@schema("playland")
+}
+
+model PlaylandWristbandScan {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  wristbandId     String   @map("wristband_id") @db.Uuid
+  scannedByUserId String?  @map("scanned_by_user_id") @db.Uuid
+  scanType        String // BIND / GATE_IN / GATE_OUT / POS_CHARGE / EXIT / LOOKUP
+  outcome         String // ok / blocked / error / picker_shown
+  metadata        Json?
+  scannedAt       DateTime @default(now()) @map("scanned_at") @db.Timestamptz(6)
+
+  wristband PlaylandWristband @relation(fields: [wristbandId], references: [id], onDelete: Cascade)
+
+  @@index([wristbandId, scannedAt])
+  @@map("wristband_scans")
+  @@schema("playland")
 }

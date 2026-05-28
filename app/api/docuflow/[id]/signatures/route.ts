@@ -19,6 +19,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import {
   requireAdminTier,
@@ -31,7 +32,7 @@ export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-const IdSchema = z.string().uuid();
+const IdSchema = zUUID();
 
 const SignerRoleSchema = z.enum([
   "owner",
@@ -53,14 +54,14 @@ const CreateSchema = z.object({
   placementType: PlacementTypeSchema.optional(),
   autoFillValue: z.string().max(500).nullable().optional(),
   signerRole: SignerRoleSchema,
-  signerUserId: z.string().uuid().nullable().optional(),
+  signerUserId: zUUID().nullable().optional(),
   signerName: z.string().max(120).nullable().optional(),
   label: z.string().max(120).nullable().optional(),
   ordering: z.number().int().min(0).max(9999).optional(),
 });
 
 const UpdateOneSchema = z.object({
-  id: z.string().uuid(),
+  id: zUUID(),
   pageNumber: z.number().int().min(1).max(2000).optional(),
   xRatio: RatioSchema.optional(),
   yRatio: RatioSchema.optional(),
@@ -69,7 +70,7 @@ const UpdateOneSchema = z.object({
   placementType: PlacementTypeSchema.optional(),
   autoFillValue: z.string().max(500).nullable().optional(),
   signerRole: SignerRoleSchema.optional(),
-  signerUserId: z.string().uuid().nullable().optional(),
+  signerUserId: zUUID().nullable().optional(),
   signerName: z.string().max(120).nullable().optional(),
   label: z.string().max(120).nullable().optional(),
   ordering: z.number().int().min(0).max(9999).optional(),

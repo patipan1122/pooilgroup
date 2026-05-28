@@ -4,7 +4,6 @@ import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import {
   Bell,
-  Check,
   Info,
   AlertTriangle,
   CircleAlert,
@@ -60,11 +59,35 @@ export function NotificationBell() {
     }
   }
 
-  // Initial load + 60s poll
+  // Initial load + 60s poll, but pause while the tab is hidden (saves
+  // background fetches when user has admin tab in another window).
   useEffect(() => {
     void load();
-    const t = setInterval(() => void load(), 60_000);
-    return () => clearInterval(t);
+    let timer: ReturnType<typeof setInterval> | null = null;
+    function start() {
+      if (timer) return;
+      timer = setInterval(() => void load(), 60_000);
+    }
+    function stop() {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    }
+    function onVisibility() {
+      if (document.visibilityState === "visible") {
+        void load();
+        start();
+      } else {
+        stop();
+      }
+    }
+    if (document.visibilityState === "visible") start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   // Reload on open (force refresh)

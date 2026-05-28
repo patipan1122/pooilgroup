@@ -8,6 +8,8 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { isAdmin } from "@/lib/auth/permissions";
 import { redirect } from "next/navigation";
 import { formatBaht, bkkDate } from "@/lib/utils/format";
@@ -76,14 +78,10 @@ export default async function RentalsPage() {
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
-      <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
-          <Home className="size-4" /> RENTALS
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display mt-1">
-          สัญญา <span className="accent">ค่าเช่า</span>
-        </h1>
-        <p className="text-zinc-600 mt-1 text-sm">
+      <header className="mt-3 mb-6 flex flex-col gap-2">
+        <SectionPill num="00" label="Rentals · สัญญาเช่า" />
+        <TwoToneTitle first="สัญญา" accent="ค่าเช่า" size={32} />
+        <p className="text-[var(--ch-text-2)] mt-1 text-sm">
           {active.length} สัญญายังใช้งาน · {expired.length} สิ้นสุดแล้ว
         </p>
       </header>
@@ -103,7 +101,7 @@ export default async function RentalsPage() {
         </Card>
       )}
 
-      <Section number="01" label="ACTIVE" title="สัญญาที่ใช้งานอยู่">
+      <Section number="01" label="ใช้งานอยู่" title="สัญญาที่ใช้งานอยู่">
         {active.length === 0 ? (
           <Card>
             <CardBody>
@@ -130,7 +128,7 @@ export default async function RentalsPage() {
       {expired.length > 0 && (
         <Section
           number="02"
-          label="EXPIRED"
+          label="สิ้นสุดแล้ว"
           title="สัญญาที่สิ้นสุดแล้ว"
           className="mt-8"
         >

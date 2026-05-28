@@ -5,13 +5,14 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 
 const Schema = z.object({
-  branchIds: z.array(z.string().uuid()).min(1).max(500),
-  templateId: z.string().uuid().nullable(),
+  branchIds: z.array(zUUID()).min(1).max(500),
+  templateId: zUUID().nullable(),
 });
 
 export async function POST(req: NextRequest) {

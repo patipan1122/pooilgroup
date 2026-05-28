@@ -121,13 +121,13 @@ export function ComparisonRow({
       {/* Mobile: ฉบับเก่า → ฉบับใหม่ stacked with mini-labels.
           Desktop: separate columns with arrow between. */}
       <div className="flex items-center gap-2 sm:hidden">
-        <span className="text-[11px] uppercase tracking-[0.16em] text-zinc-400 font-bold w-14 shrink-0">
+        <span className="text-xs font-bold text-zinc-400 w-14 shrink-0">
           ฉบับเก่า
         </span>
         <span className="text-sm text-zinc-500 tabular-nums">{oldText}</span>
       </div>
       <div className="flex items-center gap-2 sm:hidden">
-        <span className="text-[11px] uppercase tracking-[0.16em] text-zinc-400 font-bold w-14 shrink-0">
+        <span className="text-xs font-bold text-zinc-400 w-14 shrink-0">
           ฉบับใหม่
         </span>
         <span className="text-sm font-medium text-zinc-900 tabular-nums">

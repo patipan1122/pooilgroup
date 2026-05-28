@@ -37,12 +37,14 @@ interface ReviewItem {
   detail: string;
 }
 
+import { runWithMonitor } from "@/lib/cron/runner";
+
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization");
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return run();
+  return runWithMonitor("access-review", () => run(), { req });
 }
 
 export async function POST(req: NextRequest) {

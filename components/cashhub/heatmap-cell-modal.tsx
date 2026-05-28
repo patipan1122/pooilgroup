@@ -88,14 +88,18 @@ export function HeatmapCellModal({
   const [showRejectInput, setShowRejectInput] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
 
+  // Re-fetch + reset state เมื่อ modal เปิด/cell เปลี่ยน
+  // setState ทั้ง batch เป็น initialization sync ไม่ใช่ cascading
   useEffect(() => {
     if (!open) return;
+    /* eslint-disable react-hooks/set-state-in-effect */
     setLoading(true);
     setError(null);
     setReport(null);
     setBranch(null);
     setShowRejectInput(false);
     setRejectReason("");
+    /* eslint-enable react-hooks/set-state-in-effect */
 
     fetch(`/api/cashhub/reports/by-date?branchId=${branchId}&date=${date}`)
       .then(async (r) => {
@@ -202,7 +206,7 @@ export function HeatmapCellModal({
             <>
               <div className="rounded-2xl border-2 border-zinc-200 bg-white p-4">
                 <div className="flex items-baseline justify-between mb-3">
-                  <span className="text-xs uppercase tracking-widest text-zinc-500 font-bold">
+                  <span className="text-xs font-semibold text-zinc-500">
                     ยอดขาย
                     {report.shiftCount > 1 && (
                       <span className="ml-1.5 text-[var(--color-brand-700)] font-semibold">
@@ -241,7 +245,7 @@ export function HeatmapCellModal({
 
               {report.notes && (
                 <div className="rounded-xl bg-amber-50 border border-amber-200 p-3">
-                  <p className="text-xs uppercase tracking-widest text-amber-700 font-bold mb-1">
+                  <p className="text-xs font-bold text-amber-700 mb-1">
                     โน้ต
                   </p>
                   <p className="text-sm text-amber-900">{report.notes}</p>
@@ -250,7 +254,7 @@ export function HeatmapCellModal({
 
               {report.rejected_reason && (
                 <div className="rounded-xl bg-red-50 border border-red-200 p-3">
-                  <p className="text-xs uppercase tracking-widest text-red-700 font-bold mb-1">
+                  <p className="text-xs font-bold text-red-700 mb-1">
                     เหตุผลที่ไม่อนุมัติ
                   </p>
                   <p className="text-sm text-red-900">

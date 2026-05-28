@@ -457,7 +457,11 @@ export function Donut({
   const total = segments.reduce((s, x) => s + x.value, 0) || 1;
   const r = (size - thickness) / 2;
   const c = 2 * Math.PI * r;
-  let offset = 0;
+  // Pre-compute offsets via prefix-sum (immutable) — Compiler-safe
+  const offsets = segments.reduce<number[]>(
+    (acc, s) => [...acc, (acc[acc.length - 1] ?? 0) + (c * s.value) / total],
+    [0],
+  );
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       <circle
@@ -468,10 +472,9 @@ export function Donut({
         strokeWidth={thickness}
         fill="none"
       />
-      {segments.map((s) => {
-        const pct = s.value / total;
-        const len = c * pct;
-        const node = (
+      {segments.map((s, i) => {
+        const len = (c * s.value) / total;
+        return (
           <circle
             key={s.label}
             cx={size / 2}
@@ -481,13 +484,11 @@ export function Donut({
             strokeWidth={thickness}
             fill="none"
             strokeDasharray={`${len} ${c - len}`}
-            strokeDashoffset={-offset}
+            strokeDashoffset={-(offsets[i] ?? 0)}
             transform={`rotate(-90 ${size / 2} ${size / 2})`}
             strokeLinecap="butt"
           />
         );
-        offset += len;
-        return node;
       })}
     </svg>
   );

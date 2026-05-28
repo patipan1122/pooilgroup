@@ -3,13 +3,18 @@
 
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { FileText, RefreshCw } from "lucide-react";
+import { FileText, RefreshCw, ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole, isAdminTier } from "@/lib/auth/role-guards";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BackButton } from "@/components/ui/back-button";
 import { Section } from "@/components/ui/section";
+import {
+  DfEyebrow,
+  DfPill,
+  DfSection,
+} from "@/components/docuflow/df-ui";
 import {
   loadVehicles,
   loadVehicleDocuments,
@@ -116,43 +121,123 @@ export default async function VehicleDetailPage({
   );
 
   return (
-    <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
-      <div className="mb-4">
-        <BackButton fallbackHref="/docuflow/vehicles" />
+    <div
+      style={{
+        padding: "20px clamp(12px, 3vw, 32px)",
+        paddingBottom: 96,
+        maxWidth: 1200,
+        margin: "0 auto",
+      }}
+    >
+      <Link
+        href="/docuflow/vehicles"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 13,
+          color: "var(--df-muted)",
+          textDecoration: "none",
+          marginBottom: 12,
+        }}
+      >
+        <ArrowLeft size={14} />
+        กลับกองรถ
+      </Link>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 16,
+          marginBottom: 22,
+          flexWrap: "wrap",
+        }}
+        className="df-fade-up"
+      >
+        <div
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: 14,
+            background: "var(--df-brand-soft)",
+            color: "var(--df-brand)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 28,
+            flexShrink: 0,
+          }}
+        >
+          {typeCfg.emoji}
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <DfEyebrow>ทะเบียนรถ · {thaiDateLong(new Date())}</DfEyebrow>
+          <h1
+            className="df-serif df-tnum"
+            style={{
+              fontSize: "clamp(26px, 3.8vw, 36px)",
+              lineHeight: 1.1,
+              margin: 0,
+              marginTop: 6,
+              fontWeight: 500,
+              letterSpacing: "-0.01em",
+            }}
+          >
+            {vehicle.license_plate}
+          </h1>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 8,
+              marginTop: 8,
+              fontSize: 13,
+              color: "var(--df-muted)",
+            }}
+          >
+            <DfPill tone="brand" small>
+              {typeCfg.label}
+            </DfPill>
+            {company && (
+              <DfPill tone="outline" small>
+                {company.name}
+              </DfPill>
+            )}
+            {branch && (
+              <DfPill tone="outline" small>
+                {branch.code} · {branch.name}
+              </DfPill>
+            )}
+          </div>
+          {vehicle.notes && (
+            <p
+              style={{
+                marginTop: 10,
+                marginBottom: 0,
+                fontSize: 13,
+                color: "var(--df-muted)",
+                maxWidth: "60ch",
+              }}
+            >
+              {vehicle.notes}
+            </p>
+          )}
+        </div>
       </div>
 
-      <header className="mb-6 animate-fade-up">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
-          📄 DocuFlow · ทะเบียนรถ · {thaiDateLong(new Date())}
-        </p>
-        <div className="mt-3 flex items-center gap-4 flex-wrap">
-          <div className="size-14 rounded-2xl bg-[var(--color-brand-50)] border-2 border-[var(--color-brand-100)] flex items-center justify-center text-3xl shrink-0">
-            {typeCfg.emoji}
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display tabular-nums">
-              {vehicle.license_plate}
-            </h1>
-            <p className="text-zinc-600 mt-1 text-sm flex flex-wrap gap-x-3 gap-y-1">
-              <span>{typeCfg.label}</span>
-              {company && <span>· {company.name}</span>}
-              {branch && (
-                <span>
-                  · {branch.code} · {branch.name}
-                </span>
-              )}
-            </p>
-          </div>
-        </div>
-        {vehicle.notes && (
-          <p className="mt-3 text-sm text-zinc-600 max-w-3xl">
-            {vehicle.notes}
-          </p>
-        )}
-      </header>
-
-      <Section number="01" label="DOCUMENTS" title="เอกสารหลัก 4 ประเภท">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <DfSection
+        number="01"
+        label="เอกสารหลัก 4 ประเภท"
+        className="df-fade-up df-fade-up-100"
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+            gap: 14,
+          }}
+        >
           {slots.map((slot) => (
             <DocSlotCard
               key={slot.type}
@@ -162,16 +247,21 @@ export default async function VehicleDetailPage({
             />
           ))}
         </div>
-      </Section>
+      </DfSection>
 
       {otherDocs.length > 0 && (
-        <Section
+        <DfSection
           number="02"
-          label="OTHER"
-          title="เอกสารเพิ่มเติม"
-          className="mt-8"
+          label="เอกสารเพิ่มเติม"
+          className="df-fade-up df-fade-up-200"
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+              gap: 14,
+            }}
+          >
             {otherDocs.map((d) => (
               <DocSlotCard
                 key={d.id}
@@ -189,7 +279,7 @@ export default async function VehicleDetailPage({
               />
             ))}
           </div>
-        </Section>
+        </DfSection>
       )}
     </div>
   );

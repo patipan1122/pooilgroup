@@ -60,6 +60,20 @@ export async function getLiffProfile(): Promise<LiffProfile | null> {
   }
 }
 
+// Get LINE id_token (JWT signed by LINE) for server-side verification.
+// Server MUST verify this token via LINE's verify endpoint before trusting
+// the userId — never trust profile.userId alone (Agent3 P0 finding).
+export async function getLiffIdToken(): Promise<string | null> {
+  const liff = await getLiff();
+  if (!liff) return null;
+  if (!liff.isLoggedIn()) return null;
+  try {
+    return liff.getIDToken();
+  } catch {
+    return null;
+  }
+}
+
 export async function liffClose(): Promise<void> {
   const liff = await getLiff();
   if (!liff) return;

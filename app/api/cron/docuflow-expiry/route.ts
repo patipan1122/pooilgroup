@@ -23,6 +23,8 @@ interface OrgExpiryDigest {
   watch: RenewalWithDocument[];
 }
 
+import { runWithMonitor } from "@/lib/cron/runner";
+
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization");
   if (
@@ -31,7 +33,7 @@ export async function GET(req: NextRequest) {
   ) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return run();
+  return runWithMonitor("docuflow-expiry", () => run(), { req });
 }
 
 export async function POST(req: NextRequest) {

@@ -1,27 +1,39 @@
-// Full calendar heatmap (per branch × per day) — quick visual fill audit
-// feedback_popup_first_drilldown.md — กดเซลล์ = popup
-// feedback_filter_pattern_biztype_first.md — แถวสาขา grouped
+// Heatmap V2 — 3-tab page: matrix / bank reconcile / timeline.
+// Server-fetches all 3 data sources in parallel, hands off to client tabs.
 
-import { CalendarDays } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
-import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
-import { Section } from "@/components/ui/section";
-import { Badge } from "@/components/ui/badge";
-import { startOfMonth, getDate, getDaysInMonth } from "date-fns";
+import { startOfMonth, getDate, getDaysInMonth, subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
-import { BackButton } from "@/components/ui/back-button";
 import { hasCrossBranchAccess } from "@/lib/auth/branch-access";
 import { can } from "@/lib/auth/permissions";
-import { HeatmapGrid } from "./heatmap-grid";
+import { loadReconcile } from "@/lib/cashhub/bank-reconcile";
+import { HeatmapV2View } from "@/components/cashhub/redesign/heatmap-v2";
+import { bkkMonthLabel } from "@/lib/cashhub/aggregator";
+import type { TimelineEntry } from "@/components/cashhub/redesign/timeline-tab";
 
 export const dynamic = "force-dynamic";
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
+interface TimelineRow {
+  id: string;
+  report_date: string;
+  total_sales: number;
+  status: string;
+  submitted_at: string | null;
+  approved_at: string | null;
+  submitted_by_id: string | null;
+  branches:
+    | { code: string; name: string }
+    | { code: string; name: string }[]
+    | null;
+}
+
 export default async function HeatmapPage() {
   const session = await requireSession();
   requireExecutiveRole(session.user.role);
+
   const admin = adminClient();
   const now = new Date();
   const today = formatInTimeZone(now, TZ, "yyyy-MM-dd");
@@ -29,8 +41,9 @@ export default async function HeatmapPage() {
   const monthYm = monthStart.slice(0, 7);
   const daysInMonth = getDaysInMonth(now);
   const daysElapsed = getDate(now);
+  const reconcileFrom = formatInTimeZone(subDays(now, 2), TZ, "yyyy-MM-dd");
 
-  const [branchesQ, reportsQ] = await Promise.all([
+  const [branchesQ, reportsQ, reconcile, timelineQ] = await Promise.all([
     admin
       .from("branches")
       .select("id, code, name, business_type")
@@ -43,12 +56,26 @@ export default async function HeatmapPage() {
       .eq("org_id", session.user.org_id)
       .gte("report_date", monthStart)
       .lte("report_date", today),
+    loadReconcile(session.user.org_id, {
+      from: reconcileFrom,
+      to: today,
+    }),
+    admin
+      .from("daily_reports")
+      .select(
+        "id, report_date, total_sales, status, submitted_at, approved_at, submitted_by_id, branches!inner(code, name)",
+      )
+      .eq("org_id", session.user.org_id)
+      .gte("report_date", reconcileFrom)
+      .lte("report_date", today)
+      .order("submitted_at", { ascending: false, nullsFirst: false })
+      .limit(40),
   ]);
 
   const branches = branchesQ.data ?? [];
   const reports = reportsQ.data ?? [];
 
-  // Build matrix (plain object — passes server→client cleanly)
+  // Build matrix
   const matrix: Record<string, Record<number, string>> = {};
   for (const r of reports) {
     const day = parseInt(r.report_date.slice(8, 10), 10);
@@ -65,57 +92,59 @@ export default async function HeatmapPage() {
     matrix[r.branch_id] = m;
   }
 
+  // Hydrate timeline entries (resolve staff names from a 2nd users query —
+  // Pool's existing pattern, see lib/cashhub/bank-reconcile.ts)
+  const timelineRaw = (timelineQ.data ?? []) as unknown as TimelineRow[];
+  const submitterIds = Array.from(
+    new Set(
+      timelineRaw.map((r) => r.submitted_by_id).filter((v): v is string => !!v),
+    ),
+  );
+  const submitterMap = new Map<string, string>();
+  if (submitterIds.length > 0) {
+    const { data } = await admin
+      .from("users")
+      .select("id, name")
+      .in("id", submitterIds);
+    for (const u of data ?? []) submitterMap.set(u.id, u.name);
+  }
+
+  const timeline: TimelineEntry[] = timelineRaw
+    .filter((r) => r.status === "approved" || r.status === "submitted" || r.status === "rejected")
+    .map((r) => {
+      const branch = Array.isArray(r.branches) ? r.branches[0] : r.branches;
+      return {
+        id: r.id,
+        date: r.report_date,
+        branchCode: branch?.code ?? "—",
+        branchName: branch?.name ?? "—",
+        amount: Number(r.total_sales || 0),
+        status: r.status as "approved" | "submitted" | "rejected",
+        submittedAt: r.submitted_at,
+        staffName: r.submitted_by_id
+          ? submitterMap.get(r.submitted_by_id) ?? null
+          : null,
+      };
+    });
+
   const todayDay = getDate(now);
   const canFill = hasCrossBranchAccess(session.user.role);
   const canApprove = can(session.user, "cashhub.approve");
 
   return (
-    <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
-      <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
-      <header className="mt-3 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold flex items-center gap-2">
-          <CalendarDays className="size-4" /> HEATMAP
-        </p>
-        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[1]">
-          ปฏิทิน <span className="text-gradient-blue">สาขา × วัน</span>
-        </h1>
-        <p className="text-zinc-600 mt-1 text-sm">
-          กดเซลล์เพื่อดูรายงาน · กดที่ชื่อสาขาเพื่อดูประวัติเต็ม
-        </p>
-      </header>
-
-      <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500 mb-3">
-        <Badge tone="success">✅ อนุมัติ</Badge>
-        <Badge tone="warning">⏳ รออนุมัติ</Badge>
-        <Badge tone="danger">🔴 ปฏิเสธ / ❌ ไม่กรอก</Badge>
-        <span className="text-[11px]">
-          เดือนนี้ {daysElapsed}/{daysInMonth} วัน · {reports.length} รายงาน
-        </span>
-      </div>
-
-      <Section
-        number="01"
-        label="MATRIX"
-        title={`${branches.length} สาขา × ${daysInMonth} วัน`}
-      >
-        <Card>
-          <CardHeader>
-            <CardTitle>ตารางกรอกครบ</CardTitle>
-            <Badge tone="brand">{reports.length} รายงาน</Badge>
-          </CardHeader>
-          <CardBody>
-            <HeatmapGrid
-              branches={branches}
-              matrix={matrix}
-              daysInMonth={daysInMonth}
-              todayDay={todayDay}
-              monthYm={monthYm}
-              canFill={canFill}
-              canApprove={canApprove}
-            />
-          </CardBody>
-        </Card>
-      </Section>
-    </div>
+    <HeatmapV2View
+      branches={branches}
+      matrix={matrix}
+      daysInMonth={daysInMonth}
+      todayDay={todayDay}
+      monthYm={monthYm}
+      monthLabelTh={bkkMonthLabel()}
+      daysElapsed={daysElapsed}
+      reportsTotalMonth={reports.length}
+      canFill={canFill}
+      canApprove={canApprove}
+      reconcile={reconcile}
+      timeline={timeline}
+    />
   );
 }

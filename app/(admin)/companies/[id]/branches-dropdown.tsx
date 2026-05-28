@@ -101,7 +101,7 @@ export function CompanyBranchesDropdown({ companyId, groups }: Props) {
               <Link
                 href={`/branches/new?company=${companyId}&type=${g.type}`}
                 onClick={(e) => e.stopPropagation()}
-                className="inline-flex items-center gap-1 px-2 h-7 rounded-md bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] text-[var(--color-brand-700)] text-[11px] font-bold hover:bg-[var(--color-brand-100)] transition-colors shrink-0"
+                className="inline-flex items-center gap-1 px-2.5 h-8 rounded-md bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] text-[var(--color-brand-700)] text-[11px] font-bold hover:bg-[var(--color-brand-100)] transition-colors shrink-0"
                 title={`เพิ่มสาขาประเภท ${g.label}`}
               >
                 <Plus className="size-3" />
@@ -148,7 +148,7 @@ export function CompanyBranchesDropdown({ companyId, groups }: Props) {
                       </Link>
                       <Link
                         href={`/branches/${b.id}/edit`}
-                        className="inline-flex items-center gap-1 px-2 h-7 rounded-md border border-zinc-200 bg-white text-zinc-700 text-[11px] font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 hover:text-[var(--color-brand-800)] transition-colors shrink-0"
+                        className="inline-flex items-center gap-1 px-2.5 h-8 rounded-md border border-zinc-200 bg-white text-zinc-700 text-[11px] font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 hover:text-[var(--color-brand-800)] transition-colors shrink-0"
                         title="แก้ไขข้อมูลสาขา"
                       >
                         <Edit3 className="size-3" />

@@ -6,6 +6,8 @@ import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
+import { canManageUser } from "@/lib/auth/role-guards";
+import type { DbUser } from "@/lib/auth/session";
 
 function makeToken(): string {
   const bytes = new Uint8Array(24);
@@ -23,12 +25,15 @@ export async function POST(
 
   const { data: target } = await admin
     .from("users")
-    .select("id, org_id, is_active, invite_used_at")
+    .select("id, org_id, role, is_active, invite_used_at")
     .eq("id", id)
     .eq("org_id", session.user.org_id)
     .maybeSingle();
 
   if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!canManageUser(session.user.role, target.role as DbUser["role"])) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
   if (target.is_active || target.invite_used_at) {
     return NextResponse.json(
       { error: "ผู้ใช้นี้ activate แล้ว ใช้ Reset Password แทน" },
@@ -46,7 +51,8 @@ export async function POST(
       invite_expires_at: expiresAt,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("org_id", session.user.org_id);
 
   await audit({
     orgId: session.user.org_id,

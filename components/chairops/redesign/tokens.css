@@ -1,0 +1,450 @@
+/* ChairOps design tokens — Retool/Airbase-inspired, Thai-friendly
+ *
+ * SCOPED to .co-scope to prevent leaking to other Pool modules.
+ * Mirrors mockup `_design-reference/chairops-mockup-2026-05-28/css/tokens.css`
+ * but ALL declarations live under `.co-scope { ... }`.
+ *
+ * Applied via <div class="co-scope"> in app/(admin)/chairops/layout.tsx.
+ *
+ * Naming: every CSS var keeps its `--*` form. The mockup uses bare names
+ * (--bg, --accent, ...) — we keep them identical so .co-* selectors port
+ * 1:1 from the mockup. They are SCOPED, not global.
+ */
+
+/* ─────────────────────────────────────────────────────────────
+ * Light mode (default)
+ * ───────────────────────────────────────────────────────────── */
+.co-scope {
+  /* Surfaces — neutral, calm */
+  --bg: #fafaf9;
+  --bg-sunken: #f5f5f4;
+  --surface: #ffffff;
+  --surface-2: #fafaf9;
+  --surface-hover: #f5f5f4;
+
+  /* Borders */
+  --border: #e7e5e4;
+  --border-strong: #d6d3d1;
+  --border-subtle: #efedeb;
+
+  /* Text */
+  --text: #1c1917;
+  --text-2: #44403c;
+  --text-3: #78716c;
+  --text-muted: #a8a29e;
+  --text-inverse: #fafaf9;
+
+  /* Accent — Indigo (default) */
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-soft: #eef2ff;
+  --accent-soft-border: #c7d2fe;
+  --accent-text: #3730a3;
+
+  /* Status — used sparingly */
+  --ok: #15803d;
+  --ok-soft: #f0fdf4;
+  --ok-border: #bbf7d0;
+  --warn: #b45309;
+  --warn-soft: #fffbeb;
+  --warn-border: #fde68a;
+  --crit: #b91c1c;
+  --crit-soft: #fef2f2;
+  --crit-border: #fecaca;
+  --info: #1d4ed8;
+  --info-soft: #eff6ff;
+  --info-border: #bfdbfe;
+
+  /* Density (default = balanced) */
+  --row-h: 36px;
+  --row-h-compact: 32px;
+  --row-h-spacious: 44px;
+  --pad-x: 16px;
+  --pad-y: 12px;
+
+  /* Spacing scale */
+  --co-space-1: 4px;
+  --co-space-2: 8px;
+  --co-space-3: 12px;
+  --co-space-4: 16px;
+  --co-space-5: 20px;
+  --co-space-6: 24px;
+  --co-space-7: 32px;
+  --co-space-8: 40px;
+
+  /* Radii (mockup uses --r-*; we mirror + alias --co-radius-*) */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+  --co-radius-xs: 4px;
+  --co-radius-sm: 6px;
+  --co-radius-md: 8px;
+  --co-radius-lg: 10px;
+  --co-radius-xl: 14px;
+
+  /* Shadows (mockup uses --shadow-*; alias --co-shadow-*) */
+  --shadow-xs: 0 1px 0 rgba(28, 25, 23, 0.04);
+  --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.06), 0 1px 1px rgba(28, 25, 23, 0.04);
+  --shadow-md: 0 4px 12px rgba(28, 25, 23, 0.08), 0 1px 2px rgba(28, 25, 23, 0.04);
+  --shadow-lg: 0 12px 32px rgba(28, 25, 23, 0.12), 0 2px 6px rgba(28, 25, 23, 0.06);
+  --co-shadow-xs: var(--shadow-xs);
+  --co-shadow-sm: var(--shadow-sm);
+  --co-shadow-md: var(--shadow-md);
+  --co-shadow-lg: var(--shadow-lg);
+
+  /* Typography
+   * IBM Plex Sans Thai + IBM Plex Mono are loaded once in app/layout.tsx via
+   * next/font/google (vars --font-thai · --font-plex-mono). We reference those
+   * loaded vars first so we reuse the existing download — literal family names
+   * are fallbacks only. No Google Fonts @import needed (avoids double-load/FOUT). */
+  --font-sans: var(--font-thai), "IBM Plex Sans Thai", "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: var(--font-plex-mono), "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --co-font-base: var(--font-sans);
+  --co-font-mono: var(--font-mono);
+  --co-font-size-xs: 11px;
+  --co-font-size-sm: 12.5px;
+  --co-font-size-base: 13.5px;
+  --co-font-size-lg: 14px;
+  --co-font-size-xl: 18px;
+  --co-font-size-2xl: 20px;
+  --co-font-size-3xl: 24px;
+  --co-font-size-4xl: 36px;
+
+  /* Z-index scale (mockup uses --z-*; alias --co-z-*) */
+  --z-nav: 30;
+  --z-panel: 40;
+  --z-overlay: 50;
+  --z-toast: 60;
+  --co-z-nav: 30;
+  --co-z-panel: 40;
+  --co-z-overlay: 50;
+  --co-z-toast: 60;
+
+  /* Sidebar */
+  --sidebar-w: 224px;
+  --sidebar-w-collapsed: 56px;
+
+  /* ─────────────────────────────────────────────────────
+   * ChairOps-specific tokens (from Wave 0 W0.8 · preserved)
+   * ───────────────────────────────────────────────────── */
+  /* Brand — reuse Pool */
+  --co-brand: var(--color-brand-500, #2563eb);
+  --co-brand-50: var(--color-brand-50, #eff6ff);
+
+  /* Status grid cell tones (30 branch × 4 task) */
+  --co-cell-ok: #dcfce7;
+  --co-cell-pending: #fef3c7;
+  --co-cell-late: #fed7aa;
+  --co-cell-missing: #fee2e2;
+
+  /* LINE OA brand (for LIFF Mini App banner) */
+  --co-line-green: #06c755;
+
+  /* Base typography applied via .co-scope element */
+  font-family: var(--font-sans);
+  font-size: var(--co-font-size-base);
+  line-height: 1.45;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv11", "ss01";
+  text-rendering: optimizeLegibility;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Dark mode — selector matches scope OR any ancestor with theme
+ * ───────────────────────────────────────────────────────────── */
+.co-scope[data-theme="dark"],
+[data-theme="dark"] .co-scope {
+  --bg: #0c0a09;
+  --bg-sunken: #000;
+  --surface: #1c1917;
+  --surface-2: #181614;
+  --surface-hover: #292524;
+  --border: #292524;
+  --border-strong: #44403c;
+  --border-subtle: #211e1c;
+  --text: #fafaf9;
+  --text-2: #d6d3d1;
+  --text-3: #a8a29e;
+  --text-muted: #78716c;
+  --text-inverse: #1c1917;
+  --accent: #818cf8;
+  --accent-hover: #a5b4fc;
+  --accent-soft: #1e1b4b;
+  --accent-soft-border: #312e81;
+  --accent-text: #c7d2fe;
+  --ok: #4ade80;
+  --ok-soft: #052e16;
+  --ok-border: #14532d;
+  --warn: #fbbf24;
+  --warn-soft: #2a1c00;
+  --warn-border: #78350f;
+  --crit: #f87171;
+  --crit-soft: #2a0606;
+  --crit-border: #7f1d1d;
+  --info: #60a5fa;
+  --info-soft: #0c1a36;
+  --info-border: #1e3a8a;
+  --shadow-xs: 0 1px 0 rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
+  --co-shadow-xs: var(--shadow-xs);
+  --co-shadow-sm: var(--shadow-sm);
+  --co-shadow-md: var(--shadow-md);
+  --co-shadow-lg: var(--shadow-lg);
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Accent swaps — scope OR ancestor
+ * ───────────────────────────────────────────────────────────── */
+.co-scope[data-accent="slate"],
+[data-accent="slate"] .co-scope {
+  --accent: #334155;
+  --accent-hover: #1e293b;
+  --accent-soft: #f1f5f9;
+  --accent-soft-border: #cbd5e1;
+  --accent-text: #1e293b;
+}
+.co-scope[data-accent="emerald"],
+[data-accent="emerald"] .co-scope {
+  --accent: #059669;
+  --accent-hover: #047857;
+  --accent-soft: #ecfdf5;
+  --accent-soft-border: #a7f3d0;
+  --accent-text: #065f46;
+}
+.co-scope[data-accent="violet"],
+[data-accent="violet"] .co-scope {
+  --accent: #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-soft: #f5f3ff;
+  --accent-soft-border: #ddd6fe;
+  --accent-text: #5b21b6;
+}
+/* Indigo is default — explicit selector for switching back */
+.co-scope[data-accent="indigo"],
+[data-accent="indigo"] .co-scope {
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-soft: #eef2ff;
+  --accent-soft-border: #c7d2fe;
+  --accent-text: #3730a3;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Density swaps
+ * ───────────────────────────────────────────────────────────── */
+.co-scope[data-density="compact"],
+[data-density="compact"] .co-scope {
+  --row-h: 30px;
+  --pad-x: 12px;
+  --pad-y: 8px;
+}
+.co-scope[data-density="balanced"],
+[data-density="balanced"] .co-scope {
+  --row-h: 36px;
+  --pad-x: 16px;
+  --pad-y: 12px;
+}
+.co-scope[data-density="spacious"],
+[data-density="spacious"] .co-scope {
+  --row-h: 44px;
+  --pad-x: 20px;
+  --pad-y: 16px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Scoped base + utilities (everything prefixed under .co-scope)
+ * ───────────────────────────────────────────────────────────── */
+
+/* Scrollbar (scoped) */
+.co-scope *::-webkit-scrollbar { width: 10px; height: 10px; }
+.co-scope *::-webkit-scrollbar-track { background: transparent; }
+.co-scope *::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; border: 2px solid var(--bg); }
+.co-scope *::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+/* Form inheritance */
+.co-scope button { font-family: inherit; }
+.co-scope input,
+.co-scope textarea,
+.co-scope select { font-family: inherit; font-size: inherit; color: inherit; }
+
+/* Util classes */
+.co-scope .mono { font-family: var(--font-mono); font-feature-settings: "tnum"; letter-spacing: -0.01em; }
+.co-scope .tabular { font-variant-numeric: tabular-nums; }
+.co-scope .text-2 { color: var(--text-2); }
+.co-scope .text-3 { color: var(--text-3); }
+.co-scope .text-muted { color: var(--text-muted); }
+.co-scope .divider { height: 1px; background: var(--border); margin: 12px 0; }
+.co-scope .divider-v { width: 1px; background: var(--border); align-self: stretch; }
+
+/* Typography size util classes (scoped) */
+.co-scope .co-text-xs   { font-size: var(--co-font-size-xs); }
+.co-scope .co-text-sm   { font-size: var(--co-font-size-sm); }
+.co-scope .co-text-base { font-size: var(--co-font-size-base); }
+.co-scope .co-text-lg   { font-size: var(--co-font-size-lg); }
+.co-scope .co-text-xl   { font-size: var(--co-font-size-xl); }
+.co-scope .co-text-2xl  { font-size: var(--co-font-size-2xl); }
+.co-scope .co-text-3xl  { font-size: var(--co-font-size-3xl); }
+.co-scope .co-text-4xl  { font-size: var(--co-font-size-4xl); }
+
+/* Focus */
+.co-scope :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: var(--r-sm);
+}
+
+/* SVG icons defaults */
+.co-scope svg {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Common atoms (scoped) — kbd · dot · btn · card · chip · tag · input · tbl · spark
+ * ───────────────────────────────────────────────────────────── */
+.co-scope .kbd {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 4px;
+  font-family: var(--font-mono); font-size: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text-3);
+}
+.co-scope .dot { width: 6px; height: 6px; border-radius: 999px; display: inline-block; }
+.co-scope .dot-ok { background: var(--ok); }
+.co-scope .dot-warn { background: var(--warn); }
+.co-scope .dot-crit { background: var(--crit); }
+.co-scope .dot-idle { background: var(--text-muted); }
+
+/* Buttons */
+.co-scope .btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 10px; font-size: 13px; line-height: 1; font-weight: 500;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  cursor: pointer; user-select: none;
+  transition: background 0.08s, border-color 0.08s, color 0.08s;
+  white-space: nowrap;
+}
+.co-scope .btn:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+.co-scope .btn:active { transform: translateY(0.5px); }
+.co-scope .btn-primary {
+  background: var(--accent); color: white; border-color: transparent;
+  box-shadow: var(--shadow-xs);
+}
+.co-scope .btn-primary:hover { background: var(--accent-hover); border-color: transparent; }
+.co-scope .btn-ghost { background: transparent; border-color: transparent; color: var(--text-2); }
+.co-scope .btn-ghost:hover { background: var(--surface-hover); border-color: transparent; color: var(--text); }
+.co-scope .btn-sm { padding: 4px 8px; font-size: 12px; }
+.co-scope .btn-icon { padding: 6px; }
+.co-scope .btn-danger { color: var(--crit); }
+.co-scope .btn-danger:hover { background: var(--crit-soft); border-color: var(--crit-border); color: var(--crit); }
+
+/* Card */
+.co-scope .card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+/* Pill / chip */
+.co-scope .chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; font-size: 11.5px; font-weight: 500;
+  border-radius: 999px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text-2);
+  white-space: nowrap;
+}
+.co-scope .chip-ok { background: var(--ok-soft); border-color: var(--ok-border); color: var(--ok); }
+.co-scope .chip-warn { background: var(--warn-soft); border-color: var(--warn-border); color: var(--warn); }
+.co-scope .chip-crit { background: var(--crit-soft); border-color: var(--crit-border); color: var(--crit); }
+.co-scope .chip-info { background: var(--info-soft); border-color: var(--info-border); color: var(--info); }
+.co-scope .chip-accent { background: var(--accent-soft); border-color: var(--accent-soft-border); color: var(--accent-text); }
+
+/* Tag (square chip)
+ * IMPORTANT [[section-component-eyebrow-rootcause]]: mockup applies uppercase
+ * here for short EN codes (e.g. "OK", "MALL"). Thai labels must NOT use this
+ * class — keep uppercase + letter-spacing scoped to .tag only. */
+.co-scope .tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 6px; font-size: 11px; font-weight: 500;
+  border-radius: var(--r-xs); border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text-2);
+  font-family: var(--font-mono);
+  text-transform: uppercase; letter-spacing: 0.02em;
+}
+
+/* Input */
+.co-scope .input {
+  display: block; width: 100%;
+  padding: 6px 10px; font-size: 13px; line-height: 1.4;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  transition: border-color 0.08s, box-shadow 0.08s;
+}
+.co-scope .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.co-scope .input::placeholder { color: var(--text-muted); }
+
+/* Table
+ * NOTE [[sticky-bg-inherit-anti-pattern]]: thead bg uses SOLID var(--surface-2),
+ * NEVER inherit/translucent. Do not change this without a token. */
+.co-scope .tbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.co-scope .tbl thead th {
+  position: sticky; top: 0; z-index: 1;
+  text-align: left; font-weight: 500; font-size: 11.5px;
+  color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 8px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.co-scope .tbl tbody td {
+  padding: 0 12px; height: var(--row-h);
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+.co-scope .tbl tbody tr { cursor: default; }
+.co-scope .tbl tbody tr.clickable { cursor: pointer; }
+.co-scope .tbl tbody tr.clickable:hover { background: var(--surface-hover); }
+.co-scope .tbl tbody tr.selected { background: var(--accent-soft); }
+.co-scope .tbl .num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* Sparkline bar */
+.co-scope .spark { display: inline-flex; align-items: flex-end; gap: 1.5px; height: 14px; }
+.co-scope .spark > i { display: block; width: 3px; background: var(--text-muted); border-radius: 1px; }
+
+/* Helpers */
+.co-scope .row { display: flex; align-items: center; }
+.co-scope .col { display: flex; flex-direction: column; }
+.co-scope .gap-1 { gap: 4px; }
+.co-scope .gap-2 { gap: 8px; }
+.co-scope .gap-3 { gap: 12px; }
+.co-scope .gap-4 { gap: 16px; }
+.co-scope .gap-6 { gap: 24px; }
+.co-scope .grow { flex: 1 1 auto; min-width: 0; }
+.co-scope .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ─────────────────────────────────────────────────────────────
+ * Preserved ChairOps Wave 0 palette (must not regress)
+ * ───────────────────────────────────────────────────────────── */
+
+/* ChairopsAlertStatus palette (4 tones) */
+.co-scope .co-status-OPEN     { background: #fee2e2; color: #991b1b; }
+.co-scope .co-status-ACK      { background: #fef3c7; color: #92400e; }
+.co-scope .co-status-RESOLVED { background: #dcfce7; color: #166534; }
+.co-scope .co-status-IGNORED  { background: #f3f4f6; color: #4b5563; }
+
+/* ChairopsBillStatus palette (5 tones · for Wave 2) */
+.co-scope .co-bill-RECEIVED  { background: #dbeafe; color: #1e40af; }
+.co-scope .co-bill-APPROVED  { background: #fef3c7; color: #92400e; }
+.co-scope .co-bill-PAID      { background: #dcfce7; color: #166534; }
+.co-scope .co-bill-DISPUTED  { background: #fee2e2; color: #991b1b; }
+.co-scope .co-bill-OVERDUE   { background: #fecaca; color: #7f1d1d; font-weight: 600; }
+
+/* ChairopsPeriodStatus palette (3 tones · for Wave 2) */
+.co-scope .co-period-OPEN         { background: #dcfce7; color: #166534; }
+.co-scope .co-period-SOFT_CLOSED  { background: #fef3c7; color: #92400e; }
+.co-scope .co-period-HARD_CLOSED  { background: #f3f4f6; color: #1f2937; }

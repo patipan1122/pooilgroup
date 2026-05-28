@@ -11,6 +11,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import {
   requireExecutiveRole,
@@ -23,9 +24,9 @@ export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-const IdSchema = z.string().uuid();
+const IdSchema = zUUID();
 const PostSchema = z.object({
-  branchIds: z.array(z.string().uuid()).min(1).max(200),
+  branchIds: z.array(zUUID()).min(1).max(200),
 });
 
 /* ============================================================

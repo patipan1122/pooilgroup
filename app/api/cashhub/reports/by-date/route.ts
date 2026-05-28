@@ -5,13 +5,15 @@
 // Returns: { data: { report } | null, branch: { code, name, business_type } }
 
 import { NextResponse, type NextRequest } from "next/server";
-import { requireSession } from "@/lib/auth/session";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 import { can } from "@/lib/auth/permissions";
 import { canFillForBranch } from "@/lib/auth/branch-access";
 
 export async function GET(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
   if (!can(session.user, "cashhub.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -54,7 +56,7 @@ export async function GET(req: NextRequest) {
     admin
       .from("daily_reports")
       .select(
-        "id, branch_id, report_date, shift, status, total_sales, qty1, qty1_unit, qty2, qty2_unit, cash, transfer, card, credit, shortage, rental_income, training_sessions, notes, submitted_at, approved_at, approved_by, rejected_reason, shortage_info, extra_fields",
+        "id, branch_id, report_date, shift, status, total_sales, qty1, qty1_unit, qty2, qty2_unit, cash, transfer, card, credit, shortage, rental_income, training_sessions, notes, submitted_at, approved_at, rejected_reason",
       )
       .eq("org_id", session.user.org_id)
       .eq("branch_id", branchId)

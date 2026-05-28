@@ -3,7 +3,7 @@
 // Server component · sort by expiring desc
 
 import Link from "next/link";
-import { UserCircle2 } from "lucide-react";
+import { UserCircle2, ArrowLeft, Users, AlertTriangle, FileText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireAdminTier } from "@/lib/auth/role-guards";
 import { Section } from "@/components/ui/section";
@@ -13,6 +13,15 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { thaiDateLong } from "@/lib/utils/format";
 import { prisma } from "@/lib/prisma";
 import { classifyExpiry, type ExpiryStatus } from "@/lib/vehicles/data";
+import {
+  DfCard,
+  DfEyebrow,
+  DfPageHeader,
+  DfPill,
+  DfSection,
+  DfStatCard,
+} from "@/components/docuflow/df-ui";
+import { DfTopBanner } from "@/components/docuflow/df-top-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -157,108 +166,224 @@ export default async function DocuFlowPersonsPage() {
   const totalWithDocs = rows.filter((r) => r.docCount > 0).length;
 
   return (
-    <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
-      <header className="mb-6 animate-fade-up">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
-          📄 DocuFlow · เอกสารบุคคล · {thaiDateLong(new Date())}
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
-          เอกสาร <span className="text-gradient-blue">บุคคล</span>
-        </h1>
-        <p className="text-zinc-600 mt-1.5 text-sm">
-          {rows.length} คน · มีเอกสาร {totalWithDocs} คน
-          {totalExpiring > 0 && (
-            <>
-              {" · "}
-              <span className="font-bold text-rose-700">
-                เอกสารใกล้หมดอายุ {totalExpiring} ฉบับ
-              </span>
-            </>
-          )}
-        </p>
-      </header>
+    <div
+      style={{
+        padding: "28px clamp(16px, 4vw, 40px)",
+        paddingBottom: 96,
+        maxWidth: 1500,
+        margin: "0 auto",
+      }}
+    >
+      <DfTopBanner breadcrumbs={[{ label: "หน้าหลัก", href: "/docuflow" }, { label: "เอกสารบุคคล" }]} />
 
-      <Section
+      <DfPageHeader
+        eyebrow={<DfEyebrow>เอกสารบุคคล · พนักงาน + คนขับ</DfEyebrow>}
+        title={
+          <>
+            <span style={{ color: "var(--df-brand)" }}>{rows.length}</span> คน
+            {totalExpiring > 0 && (
+              <>
+                <br />
+                <span style={{ color: "var(--df-danger)" }}>
+                  {totalExpiring} ฉบับใกล้หมดอายุ
+                </span>
+              </>
+            )}
+          </>
+        }
+        description={`${thaiDateLong(new Date())} · ใบขับขี่ · ใบรับรองสุขภาพ · บัตร ปชช.`}
+      />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+          gap: 12,
+          marginBottom: 22,
+        }}
+        className="df-fade-up df-fade-up-100"
+      >
+        <DfStatCard
+          label="พนักงานทั้งหมด"
+          value={rows.length}
+          tone="ink"
+          icon={<Users size={17} />}
+        />
+        <DfStatCard
+          label="มีเอกสาร"
+          value={totalWithDocs}
+          tone="success"
+          icon={<FileText size={17} />}
+        />
+        <DfStatCard
+          label="ใกล้หมดอายุ"
+          value={totalExpiring}
+          tone={totalExpiring > 0 ? "warn" : "ink"}
+          icon={<AlertTriangle size={17} />}
+        />
+        <DfStatCard
+          label="ยังไม่มีเอกสาร"
+          value={Math.max(0, rows.length - totalWithDocs)}
+          tone={rows.length - totalWithDocs > 0 ? "danger" : "ink"}
+          icon={<UserCircle2 size={17} />}
+        />
+      </div>
+
+      <DfSection
         number="01"
-        label="STAFF + DRIVERS"
-        title="พนักงาน + คนขับ"
-        description="เรียงตามจำนวนเอกสารใกล้หมดอายุ — ผู้ที่ต้องดูแลก่อนอยู่บนสุด"
+        label="พนักงาน + คนขับ"
+        description="เรียงตามจำนวนเอกสารใกล้หมดอายุ"
+        className="df-fade-up df-fade-up-200"
       >
         {rows.length === 0 ? (
-          <Card>
-            <CardBody>
-              <EmptyState
-                icon={<UserCircle2 className="size-6" />}
-                title="ยังไม่มีพนักงาน"
-                description="เพิ่มพนักงานในเมนู ‘ผู้ใช้งาน’ ก่อน แล้วกลับมาที่นี่"
-              />
-            </CardBody>
-          </Card>
+          <DfCard padding={36} style={{ textAlign: "center" }}>
+            <UserCircle2
+              size={32}
+              style={{ color: "var(--df-muted)", margin: "0 auto 12px" }}
+            />
+            <h3
+              className="df-serif"
+              style={{ fontSize: 18, marginTop: 0, marginBottom: 8 }}
+            >
+              ยังไม่มีพนักงาน
+            </h3>
+            <p style={{ fontSize: 13, color: "var(--df-muted)" }}>
+              เพิ่มพนักงานในเมนู &lsquo;ผู้ใช้งาน&rsquo; ก่อน แล้วกลับมาที่นี่
+            </p>
+          </DfCard>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+              gap: 14,
+            }}
+          >
             {rows.map((r) => (
               <PersonRow key={r.userId} row={r} />
             ))}
           </div>
         )}
-      </Section>
+      </DfSection>
     </div>
   );
 }
 
 function PersonRow({ row }: { row: PersonRowVm }) {
   const badge = WORST_BADGE[row.worstStatus];
+  const tone =
+    badge.tone === "danger"
+      ? "danger"
+      : badge.tone === "warning"
+        ? "warn"
+        : badge.tone === "success"
+          ? "success"
+          : badge.tone === "info"
+            ? "brand"
+            : "outline";
   return (
     <Link
       href={`/docuflow/persons/${row.userId}`}
-      className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-500)] rounded-2xl"
+      className="df-card"
+      style={{
+        padding: 16,
+        textDecoration: "none",
+        color: "inherit",
+        display: "block",
+      }}
     >
-      <Card className="hover-lift transition-all">
-        <CardBody className="space-y-2.5">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="size-11 shrink-0 rounded-full bg-[var(--color-brand-50)] border-2 border-[var(--color-brand-100)] flex items-center justify-center text-[var(--color-brand-700)]">
-                <UserCircle2 className="size-6" />
-              </div>
-              <div className="min-w-0">
-                <p className="font-bold text-zinc-900 tracking-tight truncate">
-                  {row.name}
-                </p>
-                <p className="text-xs text-zinc-500 mt-0.5">{row.roleLabel}</p>
-              </div>
-            </div>
-            <Badge tone={badge.tone}>{badge.label}</Badge>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 12,
+          marginBottom: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+          <div
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 999,
+              background: "var(--df-brand-soft)",
+              color: "var(--df-brand)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: "2px solid var(--df-surface)",
+              flexShrink: 0,
+            }}
+          >
+            <UserCircle2 size={22} />
           </div>
-
-          {/* Completion bar */}
-          <div>
-            <div className="flex items-center justify-between gap-2 text-xs text-zinc-500 mb-1">
-              <span>ความครบของเอกสาร</span>
-              <span className="font-semibold text-zinc-700 tabular-nums">
-                {row.completionPct}% · {row.docCount} ฉบับ
-              </span>
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: 14,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {row.name}
             </div>
-            <div className="h-1.5 rounded-full bg-zinc-100 overflow-hidden">
-              <div
-                className={
-                  row.completionPct >= 75
-                    ? "h-full bg-green-500 transition-all"
-                    : row.completionPct >= 50
-                      ? "h-full bg-amber-500 transition-all"
-                      : "h-full bg-rose-500 transition-all"
-                }
-                style={{ width: `${row.completionPct}%` }}
-              />
+            <div style={{ fontSize: 11, color: "var(--df-muted)", marginTop: 2 }}>
+              {row.roleLabel}
             </div>
           </div>
+        </div>
+        <DfPill tone={tone} small>
+          {badge.label}
+        </DfPill>
+      </div>
 
-          {row.expiringCount > 0 && (
-            <p className="text-xs font-semibold text-rose-700">
-              ⚠️ ใกล้หมดอายุ {row.expiringCount} ฉบับ
-            </p>
-          )}
-        </CardBody>
-      </Card>
+      <div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontSize: 11,
+            color: "var(--df-muted)",
+            marginBottom: 4,
+          }}
+        >
+          <span>ความครบของเอกสาร</span>
+          <span className="df-tnum" style={{ fontWeight: 600, color: "var(--df-ink-2)" }}>
+            {row.completionPct}% · {row.docCount} ฉบับ
+          </span>
+        </div>
+        <div className="df-bar" style={{ height: 6 }}>
+          <i
+            style={{
+              width: `${row.completionPct}%`,
+              background:
+                row.completionPct >= 75
+                  ? "var(--df-success)"
+                  : row.completionPct >= 50
+                    ? "var(--df-warn)"
+                    : "var(--df-danger)",
+            }}
+          />
+        </div>
+      </div>
+
+      {row.expiringCount > 0 && (
+        <p
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: "var(--df-danger)",
+            marginTop: 10,
+            marginBottom: 0,
+          }}
+        >
+          ⚠️ ใกล้หมดอายุ {row.expiringCount} ฉบับ
+        </p>
+      )}
     </Link>
   );
 }

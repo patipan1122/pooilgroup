@@ -82,7 +82,7 @@ export default async function CompaniesPage() {
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-6xl mx-auto pb-24">
         {/* Hero */}
         <header className="mb-12 sm:mb-14 animate-slide-up-soft">
-          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] font-bold text-[var(--color-brand-700)]">
+          <p className="text-xs uppercase tracking-[0.18em] font-bold text-[var(--color-brand-700)]">
             จัดการระบบ
             <span className="text-zinc-400 mx-2">·</span>
             <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
@@ -120,7 +120,7 @@ export default async function CompaniesPage() {
 
         <Section
           number="01"
-          label="LIST"
+          label="รายการ"
           title="ทุกบริษัท"
           description="คลิกเพื่อดูรายละเอียดและรายการสาขา"
           className="animate-fade-up delay-100"
@@ -186,7 +186,7 @@ export default async function CompaniesPage() {
 
                       {/* Branch count BIG */}
                       <div className="mt-6 pb-5 border-b border-zinc-100">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 font-bold mb-1">
+                        <p className="text-xs font-bold text-zinc-500 mb-1">
                           สาขาทั้งหมด
                         </p>
                         <p className="font-num-mega text-5xl sm:text-6xl">

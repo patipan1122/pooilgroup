@@ -110,7 +110,7 @@ export default async function BranchesPage() {
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-7xl mx-auto pb-24">
         <header className="mb-10 flex items-end justify-between flex-wrap gap-4 animate-fade-up">
           <div>
-            <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">
+            <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-700)] font-bold">
               จัดการระบบ
               <span className="text-zinc-400 mx-2">·</span>
               <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
@@ -142,6 +142,8 @@ export default async function BranchesPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Download link to API endpoint — Link component ใช้ download ตรง ๆ ไม่ได้ */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a
               href="/api/admin/branches/export"
               className="inline-flex items-center gap-2 px-3 h-11 rounded-xl border-2 border-zinc-200 bg-white text-zinc-800 font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm"

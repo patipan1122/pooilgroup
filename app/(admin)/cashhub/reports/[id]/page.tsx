@@ -9,6 +9,7 @@ import { adminClient } from "@/lib/db/server";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
 import {
   formatBaht,
   formatBahtCompact,
@@ -234,10 +235,8 @@ export default async function ReportDetailPage({
 
       {/* Header */}
       <header className="mt-3 mb-5">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
-          📋 REPORT DETAIL
-        </p>
-        <div className="flex items-start gap-3 mt-1">
+        <SectionPill num="📋" label="Report detail" />
+        <div className="flex items-start gap-3 mt-2">
           <div className="text-2xl sm:text-3xl shrink-0">{cfg?.emoji ?? "📋"}</div>
           <div className="min-w-0 flex-1">
             <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight font-display">
@@ -258,7 +257,7 @@ export default async function ReportDetailPage({
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* LEFT — Numbers */}
         <div className="lg:col-span-3 space-y-4">
-          <Section number="01" label="NUMBERS" title="ตัวเลข">
+          <Section number="01" label="ตัวเลข" title="ตัวเลข">
             <Card>
               <CardBody className="space-y-2.5">
                 <Row
@@ -396,7 +395,7 @@ export default async function ReportDetailPage({
 
         {/* RIGHT — Smart Context Panel */}
         <div className="lg:col-span-2 space-y-4">
-          <Section number="02" label="AUTO CHECK" title="ตรวจอัตโนมัติ">
+          <Section number="02" label="ตรวจอัตโนมัติ" title="ตรวจอัตโนมัติ">
             <Card>
               <CardHeader>
                 <CardTitle>{ac.summary}</CardTitle>
@@ -440,12 +439,12 @@ export default async function ReportDetailPage({
             </Card>
           </Section>
 
-          <Section number="03" label="CONTEXT" title="ภาพรอบ ๆ">
+          <Section number="03" label="บริบท" title="ภาพรอบ ๆ">
             <Card>
               <CardBody className="space-y-3.5">
                 {avg30 > 0 && (
                   <div>
-                    <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+                    <p className="text-xs font-bold text-zinc-500">
                       เฉลี่ย 30 วัน
                     </p>
                     <div className="flex items-baseline justify-between">
@@ -468,7 +467,7 @@ export default async function ReportDetailPage({
                 )}
 
                 <div>
-                  <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
+                  <p className="text-xs font-bold text-zinc-500 mb-1">
                     7 วันล่าสุด
                   </p>
                   <Sparkline data={days7} width={300} height={36} className="w-full" />
@@ -476,7 +475,7 @@ export default async function ReportDetailPage({
 
                 {target > 0 && (
                   <div>
-                    <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+                    <p className="text-xs font-bold text-zinc-500">
                       เป้าเดือนนี้
                     </p>
                     <div className="flex items-baseline justify-between mb-1.5">
@@ -500,7 +499,7 @@ export default async function ReportDetailPage({
 
                 {otherShifts.length > 0 && (
                   <div>
-                    <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
+                    <p className="text-xs font-bold text-zinc-500 mb-1">
                       กะอื่นวันเดียวกัน
                     </p>
                     <ul className="space-y-1 text-xs">

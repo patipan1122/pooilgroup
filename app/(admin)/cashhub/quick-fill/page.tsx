@@ -15,6 +15,8 @@ import {
 import { Section } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SectionPill } from "@/components/cashhub/redesign/section-pill";
+import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { thaiDateLong, bkkToday } from "@/lib/utils/format";
 import { BackButton } from "@/components/ui/back-button";
@@ -112,15 +114,9 @@ export default async function QuickFillPage({
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-5xl mx-auto pb-24">
         <BackButton label="กลับไปหน้าหลัก" fallbackHref="/home" />
 
-        <header className="mt-4 mb-12 animate-slide-up-soft">
-          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-[var(--color-brand-700)] font-bold">
-            CASHHUB · QUICK FILL
-            <span className="text-zinc-400 mx-2">·</span>
-            <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
-          </p>
-          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-5 leading-[0.95]">
-            กรอก <span className="text-gradient-blue">ทุกสาขา</span>
-          </h1>
+        <header className="mt-4 mb-12 animate-slide-up-soft flex flex-col gap-2">
+          <SectionPill num="00" label={`Quick fill · ${thaiDateLong(new Date())}`} />
+          <TwoToneTitle first="กรอก" accent="ทุกสาขา" size={40} />
           <p className="text-base sm:text-lg text-zinc-600 mt-5 max-w-2xl leading-relaxed">
             {isCross ? (
               <>
@@ -159,7 +155,7 @@ export default async function QuickFillPage({
             {/* Filter bar */}
             <Section
               number="01"
-              label="FILTER"
+              label="ตัวกรอง"
               title="เลือกขอบเขต"
               description="กรองเลือกบริษัท/ประเภทธุรกิจ · ค้นหาด้วยรหัส/ชื่อ/จังหวัด"
               className="mb-8 animate-fade-up delay-100"
@@ -182,7 +178,7 @@ export default async function QuickFillPage({
                 <div className="flex flex-wrap gap-3 items-end">
                   {isCross && companies.length > 0 && (
                     <div>
-                      <label className="block text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
+                      <label className="block text-xs font-bold text-zinc-500 mb-1">
                         บริษัท
                       </label>
                       <select
@@ -200,7 +196,7 @@ export default async function QuickFillPage({
                     </div>
                   )}
                   <div>
-                    <label className="block text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
+                    <label className="block text-xs font-bold text-zinc-500 mb-1">
                       ประเภทธุรกิจ
                     </label>
                     <select
@@ -237,7 +233,7 @@ export default async function QuickFillPage({
             {/* Branches grouped */}
             <Section
               number="02"
-              label="BRANCHES"
+              label="สาขา"
               title={`${filtered.length} สาขา · เรียงตามประเภท`}
               description="กดสาขาเพื่อกรอกรายงานวันนี้"
               className="animate-fade-up delay-200"

@@ -81,6 +81,8 @@ export async function StaffHome({
   }
 
   // 3. Recent submissions (last 7 days, my own submissions)
+  // Server Component — Date.now() OK (single execution per request)
+  // eslint-disable-next-line react-hooks/purity
   const sinceDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10);
@@ -113,7 +115,7 @@ export async function StaffHome({
       <div className="relative p-4 sm:p-8 lg:p-12 max-w-3xl mx-auto pb-24">
         {/* Hero */}
         <header className="mb-12 sm:mb-14 animate-slide-up-soft">
-          <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] font-bold text-[var(--color-brand-700)]">
+          <p className="text-xs uppercase tracking-[0.18em] font-bold text-[var(--color-brand-700)]">
             <span className="brand-gradient-text">Pooilgroup</span>
             <span className="text-zinc-400 mx-2">·</span>
             <span className="text-zinc-500">{thaiDateLong(new Date())}</span>

@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getLiffProfile } from "@/lib/line/liff-client";
+import { getLiffProfile, getLiffIdToken } from "@/lib/line/liff-client";
 
 export function LiffBootstrap({
   haveSession,
@@ -27,19 +27,28 @@ export function LiffBootstrap({
         setPhase("skip");
         return;
       }
+      const idToken = await getLiffIdToken();
+      if (cancelled) return;
+      if (!idToken) {
+        // ไม่มี id_token — fail close (server-side verify ต้องใช้ token)
+        setPhase("skip");
+        return;
+      }
       setPhase("linking");
       try {
         const res = await fetch("/api/auth/line-login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            lineUserId: profile.userId,
+            idToken,
             displayName: profile.displayName,
           }),
         });
         const json = await res.json();
-        if (!cancelled && json.ready && json.magicLink) {
-          window.location.href = json.magicLink as string;
+        if (!cancelled && json.ready && json.completeUrl) {
+          // Navigate to the server route; the Supabase action_link is held
+          // in an httpOnly cookie set by line-login (never seen by JS).
+          window.location.href = json.completeUrl as string;
           return;
         }
         if (!cancelled && json.needsLink) {

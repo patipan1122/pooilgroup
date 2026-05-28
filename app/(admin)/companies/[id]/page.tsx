@@ -108,7 +108,7 @@ export default async function CompanyDetailPage({ params }: Props) {
               {c.code.slice(0, 2)}
             </div>
             <div>
-              <p className="text-[11px] sm:text-xs uppercase tracking-[0.22em] font-bold text-[var(--color-brand-700)]">
+              <p className="text-xs uppercase tracking-[0.18em] font-bold text-[var(--color-brand-700)]">
                 COMPANY · {c.code}
               </p>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-[-0.04em] font-display mt-3 text-zinc-900 leading-[0.95]">
@@ -141,7 +141,7 @@ export default async function CompanyDetailPage({ params }: Props) {
         {/* Contact info */}
         <Section
           number="01"
-          label="CONTACT"
+          label="ติดต่อ"
           title="ข้อมูลติดต่อ"
           className="mb-12 animate-fade-up delay-100"
         >
@@ -169,7 +169,7 @@ export default async function CompanyDetailPage({ params }: Props) {
             add/edit/view from here directly. */}
         <Section
           number="02"
-          label="BRANCHES"
+          label="สาขา"
           title={`${active.length} สาขาใต้ ${c.name}`}
           description="กดประเภทธุรกิจเพื่อย่อ/ขยาย · แอดมินกดเพิ่ม/แก้ได้จากตรงนี้เลย"
           className="animate-fade-up delay-200"
@@ -235,7 +235,7 @@ function InfoRow({
 }) {
   return (
     <div className={fullSpan ? "sm:col-span-3" : ""}>
-      <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 font-bold flex items-center gap-1.5 mb-1">
+      <p className="text-xs font-bold text-zinc-500 flex items-center gap-1.5 mb-1">
         <span className="text-zinc-400">{icon}</span>
         {label}
       </p>

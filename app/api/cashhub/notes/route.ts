@@ -2,7 +2,7 @@
 // GET /api/cashhub/notes — recent notes (30 days, including unread tracking from settings)
 
 import { NextResponse, type NextRequest } from "next/server";
-import { requireSession } from "@/lib/auth/session";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
@@ -12,7 +12,9 @@ const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
   const admin = adminClient();
   const { searchParams } = new URL(req.url);
   const days = parseInt(searchParams.get("days") || "30", 10);

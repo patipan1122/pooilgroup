@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
@@ -20,6 +20,7 @@ import {
   Bell,
   Lock,
   HardDrive,
+  Bot,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { browserClient } from "@/lib/db/client";
@@ -35,10 +36,32 @@ import {
 import { NotificationBell } from "./notification-bell";
 import { QuickApproveBar } from "./quick-approve-bar";
 import { CompanySwitcher } from "./company-switcher";
+
+// Lazy-mount AiChat: the floating launcher button below is plain HTML, so
+// every admin route renders without paying for the 15-25 KB AiChat bundle.
+// The chat module is only fetched after the user first clicks the button.
 const AiChat = dynamic(
   () => import("@/components/cashhub/ai-chat").then((m) => ({ default: m.AiChat })),
   { ssr: false },
 );
+
+function AiChatLauncher() {
+  const [mounted, setMounted] = useState(false);
+  if (mounted) {
+    return <AiChat defaultOpen />;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setMounted(true)}
+      className="fixed bottom-4 right-4 z-30 size-11 rounded-xl shadow-blue flex items-center justify-center transition-transform hover:scale-105 bg-[var(--color-brand-600)] text-white"
+      aria-label="ถาม AI"
+      title="ถาม AI Assistant"
+    >
+      <Bot className="size-5" />
+    </button>
+  );
+}
 
 /** Sidebar nav-counts surfaced as red badges next to specific menu items.
     Loaded server-side in app/(admin)/layout.tsx via loadNavCounts(orgId). */
@@ -93,7 +116,7 @@ const ZERO_COUNTS: NavCountsClient = {
   pendingCashReports: 0,
 };
 
-const ALL_MODULES = ["cashhub", "fuelos", "docuflow"];
+const ALL_MODULES = ["cashhub", "fuelos", "docuflow", "recruit"];
 
 export function AdminShell({
   user,
@@ -141,7 +164,10 @@ export function AdminShell({
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-zinc-50">
+    <div
+      className="min-h-screen flex flex-col bg-zinc-50"
+      data-module={activeModuleSlug ?? "home"}
+    >
       {/* Top Navbar */}
       <header className="sticky top-0 z-40 h-14 sm:h-16 bg-white border-b-2 border-zinc-200 flex items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-3 min-w-0">
@@ -213,7 +239,7 @@ export function AdminShell({
                         </div>
                       </Link>
                       <div className="h-px bg-zinc-100 my-1.5" />
-                      <p className="px-3 text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
+                      <p className="px-3 text-xs font-bold text-zinc-500 mb-1">
                         เปลี่ยนโปรแกรม
                       </p>
                       {visibleModules.map((m) => {
@@ -245,7 +271,7 @@ export function AdminShell({
                               <Check className="size-4 text-[var(--color-brand-600)]" />
                             )}
                             {isComingSoon && (
-                              <span className="text-[10px] uppercase tracking-wider font-bold text-zinc-400">
+                              <span className="text-xs uppercase tracking-wide font-bold text-zinc-400">
                                 Soon
                               </span>
                             )}
@@ -419,8 +445,8 @@ export function AdminShell({
 
       {/* Global floating AI Assistant — available to every signed-in user
           (admins for analysis, branch managers for how-to + their own data).
-          The chat sends current pathname so it can answer page-specific questions. */}
-      <AiChat />
+          Lazy-mounted on first click via AiChatLauncher. */}
+      <AiChatLauncher />
     </div>
   );
 }
@@ -468,22 +494,30 @@ function SidebarBody({
           informational label, not a clickable switcher. */}
       {activeModule && moduleNav.length > 0 && (
         <div className="px-3 mb-3">
-          <p className="px-3 py-1 mb-1 text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">
+          <p className="px-3 py-1 mb-1 text-xs font-bold text-zinc-500">
             {activeModule.emoji}{" "}
             <span className="text-[var(--color-brand-700)]">
               {activeModule.name}
             </span>
           </p>
           <div className="space-y-0.5">
-            {moduleNav.map((it) => (
-              <SidebarLink
-                key={it.href}
-                href={it.href}
-                icon={it.icon}
-                label={it.label}
-                pathname={pathname}
-                onNavigate={onNavigate}
-              />
+            {moduleNav.map((it, i) => (
+              <Fragment key={it.href}>
+                {it.section && (
+                  <p
+                    className={`px-3 ${i === 0 ? "pt-0.5" : "pt-3"} pb-1 text-[10px] font-semibold text-zinc-400 tracking-wide uppercase`}
+                  >
+                    {it.section}
+                  </p>
+                )}
+                <SidebarLink
+                  href={it.href}
+                  icon={it.icon}
+                  label={it.label}
+                  pathname={pathname}
+                  onNavigate={onNavigate}
+                />
+              </Fragment>
             ))}
           </div>
         </div>
@@ -597,7 +631,7 @@ function SidebarSection({
             !open && "-rotate-90",
           )}
         />
-        <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">
+        <span className="text-xs font-bold text-zinc-500">
           {title}
         </span>
       </button>

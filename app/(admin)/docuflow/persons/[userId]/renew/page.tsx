@@ -1,14 +1,21 @@
 // /docuflow/persons/[userId]/renew?type=<docType> — renew a person document
-// Admin tier only. Shows current doc info + new file/expiry form.
+// Admin tier only. Canvas-aligned chrome.
 
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { PERSON_DOC_TYPE_LABEL } from "../../types";
-import { BackButton } from "@/components/ui/back-button";
 import { RenewDocForm } from "@/components/docuflow/renew-doc-form";
 import { thaiDateLong } from "@/lib/utils/format";
+import {
+  DfCard,
+  DfEyebrow,
+  DfPageHeader,
+  DfPill,
+} from "@/components/docuflow/df-ui";
 
 export const dynamic = "force-dynamic";
 
@@ -64,36 +71,69 @@ export default async function PersonDocRenewPage({
     : null;
 
   return (
-    <div className="p-3 sm:p-6 lg:p-10 max-w-3xl mx-auto pb-24">
-      <BackButton />
-      <header className="mb-6 mt-4 animate-fade-up">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
-          📄 DocuFlow · ต่ออายุเอกสารบุคคล
-        </p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95]">
-          ต่ออายุ{" "}
-          <span className="text-gradient-blue">{docTypeCfg.label}</span>
-        </h1>
-        <p className="text-zinc-600 mt-2 text-sm">
-          {person.name}{" "}
-          {person.employeeCode && (
-            <span className="text-zinc-500">· {person.employeeCode}</span>
-          )}{" "}
-          · {person.role}
-        </p>
-      </header>
+    <div
+      style={{
+        padding: "28px clamp(16px, 4vw, 40px)",
+        paddingBottom: 96,
+        maxWidth: 900,
+        margin: "0 auto",
+      }}
+    >
+      <Link
+        href={`/docuflow/persons/${userId}`}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 13,
+          color: "var(--df-muted)",
+          textDecoration: "none",
+          marginBottom: 12,
+        }}
+      >
+        <ArrowLeft size={14} />
+        กลับเอกสารบุคคล
+      </Link>
 
-      <RenewDocForm
-        entityType="person"
-        entityId={userId}
-        docType={docType}
-        docTypeLabel={docTypeCfg.label}
-        oldDocumentId={currentLink?.document.id ?? null}
-        oldDocumentName={currentLink?.document.name ?? null}
-        oldExpiryDate={oldExpiryFormatted}
-        defaultName={`${docTypeCfg.label} - ${person.name}`}
-        redirectTo={`/docuflow/persons/${userId}`}
+      <DfPageHeader
+        eyebrow={<DfEyebrow>ต่ออายุเอกสารบุคคล</DfEyebrow>}
+        title={
+          <>
+            ต่ออายุ{" "}
+            <span style={{ color: "var(--df-brand)" }}>{docTypeCfg.label}</span>
+          </>
+        }
+        description={
+          <>
+            {person.name}
+            {person.employeeCode && (
+              <>
+                {" "}<span style={{ color: "var(--df-muted)" }}>· {person.employeeCode}</span>
+              </>
+            )}{" "}
+            · {person.role}
+            {oldExpiryFormatted && (
+              <>
+                {" "}· <DfPill tone="warn" small>หมดอายุเดิม {oldExpiryFormatted}</DfPill>
+              </>
+            )}
+          </>
+        }
       />
+
+      <DfCard padding={24} className="df-fade-up df-fade-up-100">
+        <RenewDocForm
+          entityType="person"
+          entityId={userId}
+          docType={docType}
+          docTypeLabel={docTypeCfg.label}
+          oldDocumentId={currentLink?.document.id ?? null}
+          oldDocumentName={currentLink?.document.name ?? null}
+          oldExpiryDate={oldExpiryFormatted}
+          defaultName={`${docTypeCfg.label} - ${person.name}`}
+          redirectTo={`/docuflow/persons/${userId}`}
+        />
+      </DfCard>
     </div>
   );
 }

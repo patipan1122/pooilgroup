@@ -4,6 +4,7 @@
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import {
   isAdminTier,
@@ -15,8 +16,8 @@ import { audit } from "@/lib/audit/log";
 const CreateVehicleSchema = z.object({
   licensePlate: z.string().min(1).max(32),
   vehicleType: z.string().min(1).max(64),
-  companyId: z.string().uuid().nullable().optional(),
-  branchId: z.string().uuid().nullable().optional(),
+  companyId: zUUID().nullable().optional(),
+  branchId: zUUID().nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   isActive: z.boolean().optional(),
 });
@@ -88,8 +89,8 @@ export async function POST(req: Request) {
 
 const ListSchema = z.object({
   activeOnly: z.enum(["true", "false"]).optional(),
-  companyId: z.string().uuid().optional(),
-  branchId: z.string().uuid().optional(),
+  companyId: zUUID().optional(),
+  branchId: zUUID().optional(),
   vehicleType: z.string().optional(),
   search: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(500).default(100),

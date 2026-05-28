@@ -5,8 +5,10 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { requireSession } from "@/lib/auth/session";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { isAdmin } from "@/lib/auth/permissions";
+import { checkAiBudget, recordAiUsage } from "@/lib/ai/cost-cap";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { buildAiContext, contextToText } from "@/lib/cashhub/ai-context";
 import {
   findPageGuide,
@@ -44,9 +46,48 @@ B) **แนะนำวิธีใช้งาน** — บอกว่าฟ�
 7. ถ้าไม่แน่ใจว่าเป็นคำถามแบบไหน (ข้อมูลหรือวิธีใช้) ให้ถามกลับ 1 ประโยคสั้นๆ เพื่อ clarify`;
 
 export async function POST(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
   if (!isAdmin(session.user) && session.user.role !== "branch_manager") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Rate limit: 20 calls / 5 min per user (DevOps audit 2026-05-20)
+  // budget guard ที่ตามมาเป็น $-cap · rate limit เป็น req-count guard
+  const rl = await checkRateLimit({
+    bucket: `cashhub-ai:${session.user.id}`,
+    max: 20,
+    windowSec: 300,
+  });
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: `ส่งคำถามถี่เกินไป · ลองใหม่อีก ${rl.retryAfterSec} วินาที` },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
+    );
+  }
+  // IP-level cap กัน automation/scraper
+  const ip = getClientIp(req);
+  const rlIp = await checkRateLimit({
+    bucket: `cashhub-ai-ip:${ip}`,
+    max: 60,
+    windowSec: 300,
+  });
+  if (rlIp.limited) {
+    return NextResponse.json(
+      { error: "ระบบกำลังคึกคัก · ลองใหม่อีกสักครู่" },
+      { status: 429 },
+    );
+  }
+
+  // BUG-017: AI budget check before calling provider
+  const budget = await checkAiBudget({
+    userId: session.user.id,
+    orgId: session.user.org_id,
+    endpoint: "cashhub.ai",
+  });
+  if (!budget.allowed) {
+    return NextResponse.json({ error: budget.reason }, { status: 429 });
   }
 
   const hasGemini = !!process.env.GEMINI_API_KEY;
@@ -94,9 +135,26 @@ export async function POST(req: NextRequest) {
   try {
     if (hasGemini) {
       const answer = await askGemini(fullContext, question, history);
+      // Track usage (Gemini ฟรี — cost = 0 แต่ track count สำหรับ rate cap)
+      await recordAiUsage({
+        userId: session.user.id,
+        orgId: session.user.org_id,
+        endpoint: "cashhub.ai",
+        provider: "gemini-flash",
+        inputTokens: question.length / 4, // rough estimate
+        outputTokens: answer.length / 4,
+      });
       return NextResponse.json({ answer, provider: "gemini" });
     }
     const answer = await askClaude(fullContext, question, history);
+    await recordAiUsage({
+      userId: session.user.id,
+      orgId: session.user.org_id,
+      endpoint: "cashhub.ai",
+      provider: "claude-haiku",
+      inputTokens: question.length / 4,
+      outputTokens: answer.length / 4,
+    });
     return NextResponse.json({ answer, provider: "claude" });
   } catch (err: unknown) {
     console.error("[ai chat]", err);
@@ -116,9 +174,17 @@ async function askGemini(
   const { GoogleGenAI } = await import("@google/genai");
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
-  // Convert history to Gemini contents format
+  // Conversation order: [prior history..., current question]. Same fix
+  // as the Claude branch — appending history after the question confused
+  // the model about which turn to answer.
   const contents: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> =
     [];
+  for (const h of history.slice(-6)) {
+    contents.push({
+      role: h.role === "user" ? "user" : "model",
+      parts: [{ text: h.content }],
+    });
+  }
   contents.push({
     role: "user",
     parts: [
@@ -127,12 +193,6 @@ async function askGemini(
       },
     ],
   });
-  for (const h of history.slice(-6)) {
-    contents.push({
-      role: h.role === "user" ? "user" : "model",
-      parts: [{ text: h.content }],
-    });
-  }
 
   const result = await ai.models.generateContent({
     model: "gemini-2.5-flash",
@@ -159,14 +219,17 @@ async function askClaude(
   const Anthropic = (await import("@anthropic-ai/sdk")).default;
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
+  // Conversation order must be: [prior history..., current question]. The
+  // previous code pushed the current question first then appended history
+  // after, which confused the model about which turn to answer.
   const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
+  for (const h of history.slice(-6)) {
+    messages.push({ role: h.role, content: h.content });
+  }
   messages.push({
     role: "user",
     content: `Context (ข้อมูลล่าสุดของ Pooilgroup):\n${contextText}\n\n---\n\nคำถาม: ${question}`,
   });
-  for (const h of history.slice(-6)) {
-    messages.push({ role: h.role, content: h.content });
-  }
 
   const result = await client.messages.create({
     model: "claude-haiku-4-5-20251001",

@@ -1,9 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
+import { canAssignRole } from "@/lib/auth/role-guards";
 
 const InviteSchema = z.object({
   name: z.string().min(1).max(100),
@@ -17,7 +19,7 @@ const InviteSchema = z.object({
     "driver",
     "viewer",
   ]),
-  branchIds: z.array(z.string().uuid()).optional(),
+  branchIds: z.array(zUUID()).optional(),
   // When provided + email also provided → admin sets password directly:
   // creates the auth user immediately, marks must_change_password so the
   // invitee is forced to change it on first login. Skips invite-link flow.
@@ -49,6 +51,16 @@ export async function POST(req: NextRequest) {
   }
 
   const data = parsed.data;
+
+  // Privilege-escalation guard: caller can only invite users at a role rank
+  // strictly below their own (super_admin can grant peer-level super_admin).
+  if (!canAssignRole(session.user.role, data.role)) {
+    return NextResponse.json(
+      { error: "ไม่มีสิทธิ์เชิญผู้ใช้ระดับนี้" },
+      { status: 403 },
+    );
+  }
+
   const admin = adminClient();
   const orgId = session.user.org_id;
   const now = new Date().toISOString();

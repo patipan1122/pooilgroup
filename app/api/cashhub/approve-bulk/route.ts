@@ -3,17 +3,22 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { requireSession } from "@/lib/auth/session";
+import { zUUID } from "@/lib/zod-helpers";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { getRequestMeta } from "@/lib/audit/request-meta";
 import { canApproveBranch } from "@/lib/auth/permissions";
 
 const Schema = z.object({
-  reportIds: z.array(z.string().uuid()).min(1).max(50),
+  reportIds: z.array(zUUID()).min(1).max(50),
 });
 
 export async function POST(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard({ executive: true });
+  if (gate.error) return gate.error;
+  const session = gate.session;
+  const meta = getRequestMeta(req);
 
   let body: unknown;
   try {
@@ -31,9 +36,10 @@ export async function POST(req: NextRequest) {
   const admin = adminClient();
 
   // Pull reports + check org match
+  // submitted_by_id needed for SoD enforcement below
   const { data: reports } = await admin
     .from("daily_reports")
-    .select("id, org_id, branch_id, status")
+    .select("id, org_id, branch_id, status, submitted_by_id")
     .in("id", reportIds)
     .eq("org_id", session.user.org_id);
 
@@ -52,6 +58,7 @@ export async function POST(req: NextRequest) {
   let skipped = 0;
   const now = new Date().toISOString();
 
+  let skippedSelfApprove = 0;
   const eligible = reports.filter((r) => {
     if (r.status === "approved") {
       skipped += 1;
@@ -59,6 +66,12 @@ export async function POST(req: NextRequest) {
     }
     if (!canApproveBranch(session.user, r.branch_id, userBranchIds)) {
       skipped += 1;
+      return false;
+    }
+    // Segregation of Duties — ผู้กรอกห้ามอนุมัติเอง (Finance audit · 2026-05-20)
+    if (r.submitted_by_id === session.user.id) {
+      skipped += 1;
+      skippedSelfApprove += 1;
       return false;
     }
     return true;
@@ -69,6 +82,8 @@ export async function POST(req: NextRequest) {
   let approved = 0;
 
   if (eligibleIds.length > 0) {
+    // Atomic: ใส่ .eq("status", "submitted") ใน UPDATE เพื่อกัน race
+    // ถ้ามีคนอื่น approve ระหว่างนั้น row จะ filter ออกเอง (returned id ลดลง)
     const { data: updated, error } = await admin
       .from("daily_reports")
       .update({
@@ -78,23 +93,32 @@ export async function POST(req: NextRequest) {
         updated_at: now,
       })
       .in("id", eligibleIds)
+      .eq("status", "submitted")
       .select("id");
 
     if (error) {
       errors.push(error.message);
     } else {
-      approved = updated?.length ?? 0;
+      const updatedIds = new Set((updated ?? []).map((r) => r.id as string));
+      approved = updatedIds.size;
+      // Track what we lost to race (eligible but not actually updated)
+      const raceSkipped = eligible.filter((r) => !updatedIds.has(r.id as string));
+      skipped += raceSkipped.length;
+      // Audit only reports we actually approved
       await Promise.all(
-        eligible.map((r) =>
-          audit({
-            orgId: r.org_id,
-            userId: session.user.id,
-            action: "APPROVE_REPORT",
-            resourceType: "daily_report",
-            resourceId: r.id,
-            diff: { old: { status: r.status }, new: { status: "approved", bulk: true } },
-          }),
-        ),
+        eligible
+          .filter((r) => updatedIds.has(r.id as string))
+          .map((r) =>
+            audit({
+              orgId: r.org_id,
+              userId: session.user.id,
+              action: "APPROVE_REPORT",
+              resourceType: "daily_report",
+              resourceId: r.id,
+              diff: { old: { status: r.status }, new: { status: "approved", bulk: true } },
+              ...meta,
+            }),
+          ),
       );
     }
   }
@@ -103,6 +127,7 @@ export async function POST(req: NextRequest) {
     success: true,
     approved,
     skipped,
+    skippedSelfApprove,
     errors: errors.slice(0, 5),
   });
 }

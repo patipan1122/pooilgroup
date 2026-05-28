@@ -6,6 +6,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { canManageUser } from "@/lib/auth/role-guards";
+import type { DbUser } from "@/lib/auth/session";
 
 export async function POST(
   _req: NextRequest,
@@ -17,12 +19,15 @@ export async function POST(
 
   const { data: target } = await admin
     .from("users")
-    .select("id, org_id, is_active")
+    .select("id, org_id, role, is_active")
     .eq("id", id)
     .eq("org_id", session.user.org_id)
     .maybeSingle();
 
   if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!canManageUser(session.user.role, target.role as DbUser["role"])) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
   if (target.is_active) {
     return NextResponse.json(
       { error: "บัญชีนี้ใช้งานอยู่แล้ว" },
@@ -38,7 +43,8 @@ export async function POST(
       locked_until: null,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("org_id", session.user.org_id);
 
   await audit({
     orgId: session.user.org_id,

@@ -7,7 +7,7 @@
 // instantly and round-trips cleanly.
 
 import { type NextRequest } from "next/server";
-import { requireSession } from "@/lib/auth/session";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { can } from "@/lib/auth/permissions";
@@ -32,7 +32,9 @@ interface ShortageRow {
 }
 
 export async function GET(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
   if (!can(session.user, "cashhub.export")) {
     return new Response("Forbidden", { status: 403 });
   }

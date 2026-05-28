@@ -84,7 +84,7 @@ export function CompanySwitcher({ companies, currentCompanyId }: Props) {
           )}
         </div>
         <div className="text-left hidden sm:block min-w-0">
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold leading-none">
+          <div className="text-xs font-bold text-zinc-500 leading-none">
             บริษัท
           </div>
           <div className="text-sm font-bold leading-tight truncate max-w-[140px]">
@@ -96,7 +96,7 @@ export function CompanySwitcher({ companies, currentCompanyId }: Props) {
 
       {open && (
         <div className="absolute left-0 top-full mt-2 w-64 bg-white rounded-2xl border-2 border-zinc-200 shadow-pop p-1.5 z-30">
-          <p className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+          <p className="px-3 pt-2 pb-1 text-xs font-bold text-zinc-500">
             เลือกบริษัทที่จะดู
           </p>
           <button

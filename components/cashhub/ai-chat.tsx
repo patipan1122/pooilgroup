@@ -5,8 +5,9 @@
 
 import { useState, useRef, useEffect, useTransition } from "react";
 import { usePathname } from "next/navigation";
-import { Bot, Send, X, Sparkles } from "lucide-react";
+import { Bot, Send, X, Sparkles, Bug } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
+import { BugReportModal } from "@/components/bug-report-modal";
 
 interface Msg {
   role: "user" | "assistant";
@@ -27,8 +28,15 @@ const HOWTO_SUGGESTIONS = [
   "ดูเฉพาะบริษัทเดียวทำยังไง?",
 ];
 
-export function AiChat() {
-  const [open, setOpen] = useState(false);
+interface AiChatProps {
+  /** When true, mount the chat sheet open immediately (used by launcher to
+   *  skip the extra click after lazy-import). Default: false. */
+  defaultOpen?: boolean;
+}
+
+export function AiChat({ defaultOpen = false }: AiChatProps = {}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const [bugOpen, setBugOpen] = useState(false);
   const [input, setInput] = useState("");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [pending, startTransition] = useTransition();
@@ -45,6 +53,8 @@ export function AiChat() {
     const text = (question ?? input).trim();
     if (!text || pending) return;
     setInput("");
+    // Event handler (button click) — not render path; Date.now() เป็น OK
+    // eslint-disable-next-line react-hooks/purity
     const userMsg: Msg = { role: "user", content: text, ts: Date.now() };
     setMsgs((cur) => [...cur, userMsg]);
 
@@ -120,7 +130,7 @@ export function AiChat() {
                   <Sparkles className="size-4" />
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase tracking-widest text-[var(--color-brand-600)] font-bold">
+                  <p className="text-xs uppercase tracking-wide text-[var(--color-brand-600)] font-bold">
                     AI ASSISTANT
                   </p>
                   <p className="text-base font-extrabold font-display leading-tight">
@@ -148,7 +158,7 @@ export function AiChat() {
                   <p className="mb-3">
                     👋 สวัสดี ถามได้ทั้ง <strong className="text-zinc-900">วิเคราะห์ตัวเลข</strong> และ <strong className="text-zinc-900">วิธีใช้งาน</strong>
                   </p>
-                  <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1.5">
+                  <p className="text-xs font-bold text-zinc-500 mb-1.5">
                     📊 วิเคราะห์ข้อมูล
                   </p>
                   <div className="space-y-1.5 mb-3">
@@ -163,10 +173,10 @@ export function AiChat() {
                       </button>
                     ))}
                   </div>
-                  <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1.5">
+                  <p className="text-xs font-bold text-zinc-500 mb-1.5">
                     🧭 วิธีใช้งาน
                   </p>
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 mb-3">
                     {HOWTO_SUGGESTIONS.map((s) => (
                       <button
                         key={s}
@@ -178,6 +188,20 @@ export function AiChat() {
                       </button>
                     ))}
                   </div>
+                  <p className="text-xs font-bold text-zinc-500 mb-1.5">
+                    🐛 เจอปัญหา?
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      setBugOpen(true);
+                    }}
+                    className="flex items-center gap-2 w-full text-left px-3 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 border-2 border-amber-200 text-amber-900 text-xs sm:text-sm font-medium transition-colors"
+                  >
+                    <Bug className="size-4" />
+                    <span>แจ้งบัคหน้านี้</span>
+                  </button>
                 </div>
               ) : (
                 msgs.map((m, i) => (
@@ -244,6 +268,9 @@ export function AiChat() {
           </div>
         </>
       )}
+
+      {/* Bug Report Modal — rendered at top level so it overlays the AI sheet */}
+      <BugReportModal open={bugOpen} onClose={() => setBugOpen(false)} />
     </>
   );
 }

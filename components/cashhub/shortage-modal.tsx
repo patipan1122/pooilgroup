@@ -45,14 +45,17 @@ export function ShortageModal({
   const [note, setNote] = useState<string>("");
   const [loading, setLoading] = useState(false);
 
+  // Initialize form state from `initial` prop เมื่อ modal เปิดใหม่
   useEffect(() => {
     if (!open) return;
+    /* eslint-disable react-hooks/set-state-in-effect */
     setPersonId(initial?.personId ?? "");
     setNote(initial?.note ?? "");
     setMode(initial?.isIdentified === false ? "unknown" : "identified");
 
     let cancelled = false;
     setLoading(true);
+    /* eslint-enable react-hooks/set-state-in-effect */
     fetch(`/api/admin/branches?branchId=${branchId}&onlyMembers=1`)
       .then((r) => r.json())
       .then((j) => {

@@ -144,6 +144,13 @@ const PERSONALITIES = [
 ];
 
 export async function POST() {
+  // D-020 ปิด endpoint นี้ใน production · กัน CEO เผลอกดแล้วข้อมูลปลอมปนของจริง
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "ไม่อนุญาตใน production · feature นี้ใช้ได้เฉพาะ dev/local" },
+      { status: 403 },
+    );
+  }
   const session = await requireRole("super_admin", "org_admin");
   const admin = adminClient();
   const orgId = session.user.org_id;

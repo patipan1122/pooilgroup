@@ -5,20 +5,23 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { requireSession } from "@/lib/auth/session";
+import { zUUID } from "@/lib/zod-helpers";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 import { isAdmin } from "@/lib/auth/permissions";
 import { audit } from "@/lib/audit/log";
 
 const PutSchema = z.object({
-  branchId: z.string().uuid(),
+  branchId: zUUID(),
   year: z.number().int().min(2020).max(2100),
   month: z.number().int().min(1).max(12),
   amount: z.number().min(0),
 });
 
 export async function PUT(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
   if (!isAdmin(session.user)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

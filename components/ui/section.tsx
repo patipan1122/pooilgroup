@@ -31,7 +31,7 @@ export function Section({
       {/* Section header */}
       <div className="flex items-end justify-between gap-3 flex-wrap mb-4">
         <div>
-          <p className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
+          <p className="flex items-center gap-2 text-sm font-semibold text-zinc-700">
             {number && (
               <span className="inline-flex items-center justify-center min-w-[28px] h-6 px-1.5 rounded-md bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] text-[10px] tabular-num">
                 {number}

@@ -3,18 +3,27 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { getRequestMeta } from "@/lib/audit/request-meta";
 import { sendNotification } from "@/lib/notifications/send";
 
 const Schema = z.object({
-  reportId: z.string().uuid(),
+  reportId: zUUID(),
   reason: z.string().min(5).max(500),
 });
 
 export async function POST(req: NextRequest) {
+  // Two-layer guard: module entitlement (anyone with CashHub) + super_admin role
+  // (only super_admin can unlock approved reports — CASHHUB §4 Rule 4).
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
   const session = await requireRole("super_admin");
+  void gate;
+  const meta = getRequestMeta(req);
   let body: unknown;
   try {
     body = await req.json();
@@ -30,7 +39,9 @@ export async function POST(req: NextRequest) {
 
   const { data: report } = await admin
     .from("daily_reports")
-    .select("id, org_id, branch_id, status, submitted_by_id, branches(code)")
+    .select(
+      "id, org_id, branch_id, status, submitted_by_id, approved_by_id, approved_at, branches(code)",
+    )
     .eq("id", reportId)
     .eq("org_id", session.user.org_id)
     .maybeSingle();
@@ -42,8 +53,43 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // SoD enforcement (CEO 2026-05-20 "อนุมัติเองบ่อยไป")
+  // super_admin ห้าม unlock report ที่ตัวเองเป็นทั้งคนกรอกหรือคนอนุมัติ
+  // ต้องให้ super_admin คนอื่นเป็นคนปลดล็อก
+  const isSelfApprover = report.approved_by_id === session.user.id;
+  const isSelfSubmitter = report.submitted_by_id === session.user.id;
+  if (isSelfApprover || isSelfSubmitter) {
+    await audit({
+      orgId: report.org_id,
+      userId: session.user.id,
+      action: "PERMISSION_DENIED",
+      resourceType: "daily_report",
+      resourceId: reportId,
+      diff: {
+        new: {
+          attempted: "self_unlock",
+          reason: "SoD violation",
+          isSelfApprover,
+          isSelfSubmitter,
+        },
+      },
+      ...meta,
+    });
+    return NextResponse.json(
+      {
+        error:
+          "คุณเป็นผู้กรอกหรืออนุมัติรายงานนี้เอง · ต้องให้ Super Admin คนอื่นเป็นคนปลดล็อก (Segregation of Duties)",
+      },
+      { status: 403 },
+    );
+  }
+
   const now = new Date().toISOString();
-  await admin
+  // Atomic guard: only flip from approved → submitted. If another admin
+  // already unlocked between our read and write, this returns 0 rows and
+  // we report a friendly conflict instead of silently clobbering their
+  // unlock_by_id/at (which would lose audit trail).
+  const { data: updated, error: updateError } = await admin
     .from("daily_reports")
     .update({
       status: "submitted",
@@ -54,15 +100,44 @@ export async function POST(req: NextRequest) {
       unlock_at: now,
       updated_at: now,
     })
-    .eq("id", reportId);
+    .eq("id", reportId)
+    .eq("status", "approved")
+    .select("id");
 
+  if (updateError) {
+    console.error("[POST /cashhub/unlock]", updateError);
+    return NextResponse.json(
+      { error: "ปลดล็อกไม่สำเร็จ ลองใหม่อีกครั้ง" },
+      { status: 500 },
+    );
+  }
+  if (!updated || updated.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          "รายงานนี้ถูก unlock โดยคนอื่นไปแล้ว หรือสถานะเปลี่ยน · รีเฟรชหน้าและลองใหม่",
+      },
+      { status: 409 },
+    );
+  }
+
+  // Snapshot the original approver before unlock blew them away (Finance audit · 2026-05-20)
+  // Without this, "ใครอนุมัติยอดเดิม" จะหายไปจาก current row state.
   await audit({
     orgId: report.org_id,
     userId: session.user.id,
     action: "UNLOCK_REPORT",
     resourceType: "daily_report",
     resourceId: reportId,
-    diff: { old: { status: "approved" }, new: { status: "submitted", reason } },
+    diff: {
+      old: {
+        status: "approved",
+        approved_by_id: report.approved_by_id,
+        approved_at: report.approved_at,
+      },
+      new: { status: "submitted", reason },
+    },
+    ...meta,
   });
 
   const branchRel = Array.isArray(report.branches)

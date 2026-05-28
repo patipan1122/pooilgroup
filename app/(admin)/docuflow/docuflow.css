@@ -1,0 +1,447 @@
+/* ============================================================
+ * DocuFlow — Canvas-aligned design tokens (2026-05-21 redesign)
+ * Scoped to `.df-root` so palette/typography don't leak to other modules.
+ * Source of truth: design canvas (DocuFlow Redesign.html, 21 artboards).
+ * ============================================================ */
+
+/* ============================================================
+ * Tailwind token REMAP — inside .df-root, the global Tailwind
+ * --color-brand-* / --color-zinc-* (oklch palette) are overridden
+ * to the DocuFlow warm-cream palette. This lets legacy DocuFlow
+ * components (SearchInterface, DocumentCard, RenewalHistorySection,
+ * etc.) inherit canvas colors WITHOUT rewriting their internals.
+ * ============================================================ */
+.df-root {
+  --color-brand-50: #E6ECFA;
+  --color-brand-100: #D5DEF5;
+  --color-brand-200: #B5C5EB;
+  --color-brand-300: #8FA5DE;
+  --color-brand-400: #5A7CC6;
+  --color-brand-500: #1B47B5;
+  --color-brand-600: #1B47B5;
+  --color-brand-700: #0E2D7A;
+  --color-brand-800: #0E2D7A;
+  --color-brand-900: #0E1B2C;
+  --color-brand-vivid: #1B47B5;
+
+  --color-leaf-50: #DCEFE2;
+  --color-leaf-500: #1F7A4D;
+  --color-leaf-600: #176239;
+  --color-leaf-700: #0F4A2C;
+}
+
+.df-root {
+  /* Surfaces */
+  --df-bg: #F4EEE2;
+  --df-bg-warm: #EFE6D2;
+  --df-surface: #FFFFFF;
+  --df-surface-soft: #FAF6EE;
+
+  /* Ink */
+  --df-ink: #0E1B2C;
+  --df-ink-2: #1F2D44;
+  --df-muted: #6B7488;
+  --df-muted-2: #9AA1B2;
+
+  /* Lines */
+  --df-line: #E4DCCB;
+  --df-line-soft: #EFE7D6;
+
+  /* Brand & accent */
+  --df-brand: #1B47B5;
+  --df-brand-deep: #0E2D7A;
+  --df-brand-soft: #E6ECFA;
+  --df-accent: #C46A3D;
+  --df-accent-soft: #F4E2D3;
+
+  /* Semantic */
+  --df-success: #1F7A4D;
+  --df-success-soft: #DCEFE2;
+  --df-warn: #B5811E;
+  --df-warn-soft: #F8EBC9;
+  --df-danger: #B23A2F;
+  --df-danger-soft: #F6DDD7;
+
+  /* Radii */
+  --df-r-sm: 8px;
+  --df-r: 12px;
+  --df-r-lg: 18px;
+  --df-r-xl: 24px;
+
+  /* Shadows */
+  --df-shadow-1: 0 1px 2px rgba(14, 27, 44, 0.04), 0 1px 1px rgba(14, 27, 44, 0.03);
+  --df-shadow-2: 0 6px 24px -8px rgba(14, 27, 44, 0.12), 0 2px 6px rgba(14, 27, 44, 0.05);
+  --df-shadow-3: 0 20px 50px -20px rgba(14, 27, 44, 0.25);
+  --df-shadow-blue: 0 8px 20px -6px rgba(27, 71, 181, 0.45);
+  --df-shadow-accent: 0 8px 24px -8px rgba(178, 58, 47, 0.4);
+
+  background: var(--df-bg);
+  color: var(--df-ink);
+  min-height: 100vh;
+}
+
+/* ============= Eyebrow / labels =============
+ * Per [[section-component-eyebrow-rootcause]]: never apply `uppercase` or
+ * `letter-spacing > 0.05em` in a base primitive — it mangles Thai labels
+ * (Thai has no case, but tracking ≥0.06em splits glyph clusters and hurts
+ * readability). Latin children that want SCREAMING look can opt in via
+ * `.df-eyebrow.df-eyebrow-latin` or pass uppercase text directly.
+ * ────────────────────────────────────────── */
+.df-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--df-muted);
+}
+.df-eyebrow-latin {
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+/* ============= Display (Thai serif) ============= */
+.df-serif {
+  font-family: "IBM Plex Serif Thai", "Noto Serif Thai", Georgia, serif;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* ============= Cards ============= */
+.df-card {
+  background: var(--df-surface);
+  border: 1px solid var(--df-line);
+  border-radius: var(--df-r-lg);
+}
+.df-card-warm {
+  background: var(--df-surface-soft);
+  border-color: var(--df-line-soft);
+}
+.df-divider {
+  border-top: 1px solid var(--df-line);
+}
+
+/* ============= Pills / chips ============= */
+.df-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--df-bg-warm);
+  color: var(--df-ink-2);
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.df-pill-sm { padding: 2px 8px; font-size: 11px; }
+.df-pill-danger { background: var(--df-danger-soft); color: var(--df-danger); }
+.df-pill-warn { background: var(--df-warn-soft); color: var(--df-warn); }
+.df-pill-success { background: var(--df-success-soft); color: var(--df-success); }
+.df-pill-brand { background: var(--df-brand-soft); color: var(--df-brand); }
+.df-pill-accent { background: var(--df-accent-soft); color: var(--df-accent); }
+.df-pill-outline { background: transparent; border: 1px solid var(--df-line); color: var(--df-muted); }
+.df-pill-ink { background: var(--df-ink); color: #FFF6E5; }
+
+/* ============= Buttons ============= */
+.df-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: transparent;
+  color: var(--df-ink);
+  transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+  font-family: inherit;
+  text-decoration: none;
+  line-height: 1.2;
+}
+.df-btn:hover { transform: translateY(-1px); }
+.df-btn:focus-visible {
+  outline: 2px solid var(--df-brand);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .df-btn,
+  .df-fade-up { transition: none !important; animation: none !important; }
+  .df-btn:hover { transform: none; }
+}
+.df-btn-primary { background: var(--df-ink); color: #FFF6E5; }
+.df-btn-primary:hover { background: var(--df-ink-2); }
+.df-btn-brand { background: var(--df-brand); color: #fff; }
+.df-btn-brand:hover { background: var(--df-brand-deep); box-shadow: var(--df-shadow-blue); }
+.df-btn-ghost {
+  background: var(--df-surface);
+  border-color: var(--df-line);
+}
+.df-btn-ghost:hover { background: var(--df-surface-soft); }
+.df-btn-danger { background: var(--df-danger-soft); color: var(--df-danger); }
+.df-btn-danger:hover { background: var(--df-danger); color: #fff; }
+.df-btn-sm { padding: 6px 12px; font-size: 13px; }
+.df-btn-lg { padding: 14px 22px; font-size: 15px; }
+.df-btn-icon { padding: 8px; border-radius: 10px; }
+
+/* ============= Input ============= */
+.df-input {
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--df-line);
+  background: var(--df-surface);
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--df-ink);
+  outline: none;
+}
+.df-input:focus {
+  border-color: var(--df-brand);
+  box-shadow: 0 0 0 3px var(--df-brand-soft);
+}
+.df-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--df-ink-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.df-label .df-req { color: var(--df-danger); }
+.df-hint { font-size: 12px; color: var(--df-muted); margin-top: 6px; }
+
+/* ============= Segmented ============= */
+.df-seg {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--df-bg-warm);
+  border: 1px solid var(--df-line);
+}
+.df-seg > button,
+.df-seg > a {
+  border: none;
+  background: transparent;
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--df-muted);
+  cursor: pointer;
+  font-family: inherit;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.df-seg > .df-on,
+.df-seg > button.df-on,
+.df-seg > a.df-on {
+  background: var(--df-surface);
+  color: var(--df-ink);
+  box-shadow: var(--df-shadow-1);
+}
+
+/* ============= Doc icon (3 sizes) ============= */
+.df-docico {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--df-bg-warm);
+  color: var(--df-ink-2);
+  flex-shrink: 0;
+}
+.df-docico-lg {
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+}
+.df-docico-sm {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+}
+
+/* ============= Avatar ============= */
+.df-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--df-accent-soft);
+  color: var(--df-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+  border: 1.5px solid #fff;
+}
+.df-avatar-sm { width: 24px; height: 24px; font-size: 10px; }
+.df-avatar-lg { width: 44px; height: 44px; font-size: 15px; }
+
+/* ============= Progress bar ============= */
+.df-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--df-bg-warm);
+  overflow: hidden;
+  position: relative;
+}
+.df-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--df-brand);
+}
+
+/* ============= Tabular nums ============= */
+.df-tnum { font-feature-settings: "tnum" 1, "lnum" 1; font-variant-numeric: tabular-nums; }
+
+/* ============= Top breadcrumb bar ============= */
+.df-topbar {
+  background: var(--df-surface);
+  border-bottom: 1px solid var(--df-line);
+}
+
+/* ============= Module banner (mimics canvas left sidebar header) ============= */
+.df-banner {
+  background: linear-gradient(135deg, #0E1B2C 0%, #1A2A42 100%);
+  color: #FFF6E5;
+  border-radius: var(--df-r-lg);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ============= Link ============= */
+.df-link {
+  color: var(--df-brand);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+.df-link:hover { text-decoration: underline; }
+
+/* ============= Brand mark (PG square) ============= */
+.df-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #0E1B2C, #1B47B5);
+  color: #F4EEE2;
+  font-family: "IBM Plex Serif Thai", Georgia, serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* ============= Stat tone helpers ============= */
+.df-tone-danger { color: var(--df-danger); }
+.df-tone-warn { color: var(--df-warn); }
+.df-tone-success { color: var(--df-success); }
+.df-tone-brand { color: var(--df-brand); }
+.df-tone-accent { color: var(--df-accent); }
+.df-tone-muted { color: var(--df-muted); }
+.df-tone-ink { color: var(--df-ink); }
+
+/* ============= Mobile bottom nav ============= */
+.df-bottomnav {
+  position: sticky;
+  bottom: 0;
+  background: rgba(255, 251, 244, 0.94);
+  backdrop-filter: saturate(140%) blur(12px);
+  -webkit-backdrop-filter: saturate(140%) blur(12px);
+  border-top: 1px solid var(--df-line-soft);
+  z-index: 5;
+}
+
+/* ============= Anti-overlap (sticky thead) ============= */
+.df-sticky-head {
+  background: var(--df-surface-soft);
+}
+
+/* ============= Animations ============= */
+@keyframes df-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.df-fade-up {
+  animation: df-fade-up 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.df-fade-up-100 { animation-delay: 0.08s; }
+.df-fade-up-200 { animation-delay: 0.16s; }
+.df-fade-up-300 { animation-delay: 0.24s; }
+
+/* ============= Helper text scale (Thai-friendly) ============= */
+.df-text-xs { font-size: 11px; line-height: 1.4; }
+.df-text-sm { font-size: 13px; line-height: 1.5; }
+.df-text { font-size: 14px; line-height: 1.6; }
+.df-text-lg { font-size: 17px; line-height: 1.5; }
+
+/* ============================================================
+ * AdminShell — dark navy theme overrides for DocuFlow routes
+ * ----------------------------------------------------------------
+ * The shared AdminShell renders OUTSIDE `.df-root` (sidebar + top
+ * navbar wrap `<main>` which contains df-root). When the user is in
+ * a docuflow route, AdminShell sets `data-module="docuflow"` on its
+ * outer div. We override the sidebar + topbar palette here so the
+ * chrome matches the DocuFlow Redesign canvas (dark navy sidebar +
+ * warm cream content area).
+ * ============================================================ */
+[data-module="docuflow"] {
+  background: var(--df-bg, #F4EEE2);
+}
+
+[data-module="docuflow"] > header {
+  background: #FAF6EE;
+  border-bottom-color: #E4DCCB;
+}
+
+[data-module="docuflow"] > .flex-1 > aside {
+  background: linear-gradient(180deg, #0E1B2C 0%, #16243C 100%);
+  border-right-color: rgba(255, 255, 255, 0.06);
+  color: #FFF6E5;
+}
+
+[data-module="docuflow"] > .flex-1 > aside a,
+[data-module="docuflow"] > .flex-1 > aside button {
+  color: #C8D2E2;
+}
+
+[data-module="docuflow"] > .flex-1 > aside a:hover,
+[data-module="docuflow"] > .flex-1 > aside button:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #FFF6E5;
+}
+
+/* Active sidebar link — brand blue strip */
+[data-module="docuflow"] > .flex-1 > aside a.bg-\[var\(--color-brand-50\)\] {
+  background: rgba(27, 71, 181, 0.18) !important;
+  border-color: rgba(27, 71, 181, 0.4) !important;
+  color: #FFF6E5 !important;
+}
+
+/* Section headers / labels inside docuflow sidebar */
+[data-module="docuflow"] > .flex-1 > aside .text-zinc-500,
+[data-module="docuflow"] > .flex-1 > aside .text-\[10px\] {
+  color: #8595B0 !important;
+}
+[data-module="docuflow"] > .flex-1 > aside .text-zinc-400 {
+  color: #6B7A95 !important;
+}
+[data-module="docuflow"] > .flex-1 > aside .text-zinc-600 {
+  color: #C8D2E2 !important;
+}
+
+/* Sidebar divider line */
+[data-module="docuflow"] > .flex-1 > aside .border-zinc-100,
+[data-module="docuflow"] > .flex-1 > aside .border-t-2 {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}

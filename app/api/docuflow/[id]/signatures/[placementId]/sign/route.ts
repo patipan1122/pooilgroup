@@ -13,11 +13,12 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
-import { putObject } from "@/lib/r2/upload";
+import { deleteObject, putObject } from "@/lib/r2/upload";
 import { embedSignatures } from "@/lib/docuflow/signature";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ type RouteContext = {
   params: Promise<{ id: string; placementId: string }>;
 };
 
-const IdSchema = z.string().uuid();
+const IdSchema = zUUID();
 
 const BodySchema = z.object({
   // PNG data URL: "data:image/png;base64,iVBOR..."
@@ -149,29 +150,38 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     );
   }
 
-  // Save placement
-  await prisma.documentSignaturePlacement.update({
-    where: { id: placementId },
-    data: {
-      signedAt: new Date(ts),
-      signedImageKey: key,
-    },
-  });
-
-  await audit({
-    orgId,
-    userId: session.user.id,
-    action: "DOCUFLOW_SIGNATURE_SIGNED",
-    resourceType: "document_signature_placement",
-    resourceId: placementId,
-    diff: {
-      new: {
-        documentId,
-        signedAt: new Date(ts).toISOString(),
+  // B24 fix: wrap DB write so R2 PNG doesn't orphan if Prisma throws
+  try {
+    await prisma.documentSignaturePlacement.update({
+      where: { id: placementId },
+      data: {
+        signedAt: new Date(ts),
         signedImageKey: key,
       },
-    },
-  });
+    });
+
+    await audit({
+      orgId,
+      userId: session.user.id,
+      action: "DOCUFLOW_SIGNATURE_SIGNED",
+      resourceType: "document_signature_placement",
+      resourceId: placementId,
+      diff: {
+        new: {
+          documentId,
+          signedAt: new Date(ts).toISOString(),
+          signedImageKey: key,
+        },
+      },
+    });
+  } catch (err) {
+    console.error("[sign POST] DB update failed — rolling back R2 PNG", err);
+    await deleteObject(key);
+    return NextResponse.json(
+      { error: "บันทึกลายเซ็นไม่สำเร็จ ลองใหม่" },
+      { status: 500 },
+    );
+  }
 
   // If every placement is signed, build the final signed PDF.
   const remaining = await prisma.documentSignaturePlacement.count({

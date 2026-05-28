@@ -226,9 +226,11 @@ export function UsersByBusiness({
 }: Props) {
   const router = useRouter();
   const [viewMode, setViewMode] = useState<"card" | "table">("card");
+  // localStorage hydrate (mount only) — SSR-safe pattern
   useEffect(() => {
     if (typeof window === "undefined") return;
     const saved = localStorage.getItem("admin-users-view-mode");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (saved === "card" || saved === "table") setViewMode(saved);
   }, []);
   useEffect(() => {
@@ -900,7 +902,7 @@ function StatsSummary({
             hoverClass,
           )}
         >
-          <p className="text-[10px] uppercase tracking-wider text-zinc-600 font-bold leading-tight">
+          <p className="text-xs font-bold text-zinc-600 leading-tight">
             {it.label}
           </p>
           <p className="text-2xl font-extrabold tabular-num font-display tracking-tight mt-0.5">
@@ -1092,7 +1094,7 @@ function NotificationBox({
     <div className="rounded-xl border-2 border-amber-300 bg-amber-50/40 overflow-hidden">
       <div className="px-4 py-2 border-b border-amber-200 bg-amber-100/40 flex items-center gap-2">
         <Bell className="size-3.5 text-amber-700" />
-        <span className="text-[11px] uppercase tracking-wider font-bold text-amber-900">
+        <span className="text-xs font-bold text-amber-900">
           เกี่ยวกับผู้ใช้งาน
         </span>
         <span className="ml-auto text-[10px] tabular-num font-bold text-amber-700 bg-amber-200/50 px-1.5 py-0.5 rounded-full">
@@ -1517,7 +1519,7 @@ function RoleBadgeWithPreview({ role, className }: { role: string; className: st
               {roleLabel(role)}
             </p>
           </div>
-          <p className="text-[10px] uppercase tracking-wider font-bold text-[var(--color-leaf-700)] mb-1">
+          <p className="text-xs font-bold text-[var(--color-leaf-700)] mb-1">
             ทำได้
           </p>
           <ul className="space-y-0.5 text-[11px] text-zinc-700 mb-2">
@@ -1528,7 +1530,7 @@ function RoleBadgeWithPreview({ role, className }: { role: string; className: st
               </li>
             ))}
           </ul>
-          <p className="text-[10px] uppercase tracking-wider font-bold text-red-700 mb-1">
+          <p className="text-xs font-bold text-red-700 mb-1">
             ทำไม่ได้
           </p>
           <ul className="space-y-0.5 text-[11px] text-zinc-700">

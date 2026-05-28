@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Mail, Lock, User, Phone } from "lucide-react";
+import { Mail, Lock, User, Phone, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
@@ -21,6 +21,7 @@ export function SignupForm({ isFirstUser }: Props) {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPwd, setConfirmPwd] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function validate(): string | null {
@@ -139,12 +140,28 @@ export function SignupForm({ isFirstUser }: Props) {
       <Field label="รหัสผ่าน" required htmlFor="password" hint="อย่างน้อย 8 ตัว">
         <Input
           id="password"
-          type="password"
+          type={showPassword ? "text" : "password"}
           autoComplete="new-password"
           placeholder="••••••••"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           prefixSlot={<Lock className="size-4" />}
+          suffixSlot={
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="p-1 -m-1 rounded hover:bg-zinc-100 text-zinc-500 hover:text-zinc-700 transition-colors"
+              aria-label={showPassword ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"}
+              aria-pressed={showPassword}
+              tabIndex={-1}
+            >
+              {showPassword ? (
+                <EyeOff className="size-4" />
+              ) : (
+                <Eye className="size-4" />
+              )}
+            </button>
+          }
           disabled={pending}
           required
           minLength={8}
@@ -154,7 +171,7 @@ export function SignupForm({ isFirstUser }: Props) {
       <Field label="ยืนยันรหัสผ่าน" required htmlFor="confirm-password">
         <Input
           id="confirm-password"
-          type="password"
+          type={showPassword ? "text" : "password"}
           autoComplete="new-password"
           placeholder="••••••••"
           value={confirmPwd}

@@ -1,13 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { requireSession } from "@/lib/auth/session";
+import { zUUID } from "@/lib/zod-helpers";
+import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 import { reconcile } from "@/lib/cashhub/reconcile";
 import { getBusinessType } from "@/constants/business-types";
 import { audit } from "@/lib/audit/log";
+import { getRequestMeta } from "@/lib/audit/request-meta";
 import { withDbDefaults } from "@/lib/db/insert";
 import { can } from "@/lib/auth/permissions";
 import { sendTelegramMessage, sendToAdminChat } from "@/lib/telegram/send";
+import { sendNotification } from "@/lib/notifications/send";
 import {
   approvalKeyboard,
   buildApprovalMessage,
@@ -20,7 +23,7 @@ import { formatInTimeZone } from "date-fns-tz";
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
 const ReportSchema = z.object({
-  branchId: z.string().uuid(),
+  branchId: zUUID(),
   reportDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   shift: z.enum(["morning", "midday", "evening", "all"]),
   totalSales: z.number().min(0),
@@ -38,7 +41,7 @@ const ReportSchema = z.object({
   notes: z.string().max(500).nullable().optional(),
   shortageInfo: z
     .object({
-      personId: z.string().uuid().nullable(),
+      personId: zUUID().nullable(),
       personName: z.string().nullable(),
       isIdentified: z.boolean(),
       note: z.string().nullable(),
@@ -53,7 +56,10 @@ const ReportSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
+  const meta = getRequestMeta(req);
   if (!can(session.user, "cashhub.create")) {
     return NextResponse.json({ error: "ไม่มีสิทธิ์กรอกรายงาน" }, { status: 403 });
   }
@@ -121,6 +127,24 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // D-020: ถ้ามี shortage > 0 ต้องระบุชื่อพนักงาน · HR จะเอาไปหักเงินเดือนภายนอก
+  // Client (shortage-modal.tsx) บังคับ identify อยู่แล้ว · server enforce ซ้ำ
+  // กัน POST ตรงด้วย shortageInfo=null
+  if (data.shortage > 0) {
+    if (
+      !data.shortageInfo ||
+      !data.shortageInfo.isIdentified ||
+      !data.shortageInfo.personName
+    ) {
+      return NextResponse.json(
+        {
+          error: "เงินขาดต้องระบุชื่อพนักงานที่รับผิดชอบ (สำหรับฝ่ายบุคคล)",
+        },
+        { status: 422 },
+      );
+    }
+  }
+
   // Insert with idempotent UNIQUE(branch_id, report_date, shift)
   const insertPayload = withDbDefaults({
     org_id: branch.org_id,
@@ -154,18 +178,120 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     if (error.code === "23505") {
-      // Idempotency: race between two near-simultaneous submits, OR a client
-      // retry after the network dropped after the write committed. Look up the
-      // existing row — if same submitter, treat as success (idempotent retry).
-      // Different submitter = real conflict.
+      // Idempotency / resubmit branch:
+      // 1. Same submitter + rejected → RESUBMIT: UPDATE row with new values, audit RESUBMIT_REPORT
+      // 2. Same submitter + submitted/approved/draft → idempotent return (network retry)
+      // 3. Different submitter → real conflict 409
       const { data: existing } = await admin
         .from("daily_reports")
-        .select("id, status, submitted_by_id, submitted_at, total_sales")
+        .select(
+          "id, status, submitted_by_id, submitted_at, total_sales, cash, transfer, card, credit, shortage, rejected_reason",
+        )
         .eq("branch_id", data.branchId)
         .eq("report_date", data.reportDate)
         .eq("shift", data.shift)
         .maybeSingle();
+
       if (existing && existing.submitted_by_id === session.user.id) {
+        // Resubmit path — staff fixes rejected report (CEO 2026-05-20)
+        if (existing.status === "rejected") {
+          const now = new Date().toISOString();
+          const { data: updated, error: updErr } = await admin
+            .from("daily_reports")
+            .update({
+              status: "submitted",
+              total_sales: data.totalSales,
+              qty1: data.qty1 ?? null,
+              qty1_unit: data.qty1Unit ?? null,
+              qty2: data.qty2 ?? null,
+              qty2_unit: data.qty2Unit ?? null,
+              cash: data.cash,
+              transfer: data.transfer,
+              card: data.card,
+              credit: data.credit,
+              shortage: data.shortage,
+              rental_income: data.rentalIncome ?? 0,
+              training_sessions: data.trainingSessions ?? null,
+              notes: data.notes ?? null,
+              extra_fields: data.extraFields ?? {},
+              rejected_reason: null,
+              submitted_at: now,
+              updated_at: now,
+              // clear previous approval so flow re-enters approval queue
+              approved_by_id: null,
+              approved_at: null,
+            })
+            .eq("id", existing.id)
+            .eq("status", "rejected")
+            .select("id")
+            .single();
+
+          if (updErr || !updated) {
+            console.error("[POST /cashhub/reports] resubmit failed", updErr);
+            return NextResponse.json(
+              { error: "ส่งใหม่ไม่สำเร็จ ลองอีกครั้ง" },
+              { status: 500 },
+            );
+          }
+
+          // Update shortage row (delete old + insert new for simplicity)
+          await admin
+            .from("cash_shortages")
+            .delete()
+            .eq("report_id", existing.id);
+          if (data.shortage > 0) {
+            const info = data.shortageInfo;
+            await admin.from("cash_shortages").insert({
+              id: crypto.randomUUID(),
+              org_id: branch.org_id,
+              report_id: existing.id,
+              branch_id: branch.id,
+              report_date: data.reportDate,
+              amount: data.shortage,
+              person_id: info?.personId ?? null,
+              person_name: info?.personName ?? null,
+              is_identified: info?.isIdentified ?? false,
+              note: info?.note ?? null,
+            });
+          }
+
+          await audit({
+            orgId: branch.org_id,
+            userId: session.user.id,
+            action: "RESUBMIT_REPORT",
+            resourceType: "daily_report",
+            resourceId: existing.id,
+            diff: {
+              old: {
+                status: "rejected",
+                total_sales: existing.total_sales,
+                cash: existing.cash,
+                transfer: existing.transfer,
+                card: existing.card,
+                credit: existing.credit,
+                shortage: existing.shortage,
+                rejected_reason: existing.rejected_reason,
+              },
+              new: {
+                status: "submitted",
+                total_sales: data.totalSales,
+                cash: data.cash,
+                transfer: data.transfer,
+                card: data.card,
+                credit: data.credit,
+                shortage: data.shortage,
+              },
+            },
+            ...meta,
+          });
+
+          return NextResponse.json(
+            { ok: true, resubmitted: true, reportId: existing.id },
+            { status: 200 },
+          );
+        }
+
+        // Idempotent network retry
         return NextResponse.json(
           { ok: true, idempotent: true, report: existing },
           { status: 200 },
@@ -197,15 +323,50 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Audit log
+  // Audit log (financial snapshot for accountant audit trail)
   await audit({
     orgId: branch.org_id,
     userId: session.user.id,
     action: "CREATE_REPORT",
     resourceType: "daily_report",
     resourceId: created.id,
-    diff: { new: { totalSales: data.totalSales, shift: data.shift } },
+    diff: {
+      new: {
+        totalSales: data.totalSales,
+        cash: data.cash,
+        transfer: data.transfer,
+        card: data.card,
+        credit: data.credit,
+        shortage: data.shortage,
+        shift: data.shift,
+        reportDate: data.reportDate,
+      },
+    },
+    ...meta,
   });
+
+  // In-app notification → branch manager (กัน Telegram bot ล่ม)
+  // ถ้าไม่มี manager_id จะ skip · Telegram ยังส่งเป็น fallback
+  if (branch.manager_id && branch.manager_id !== session.user.id) {
+    try {
+      const { data: branchInfo } = await admin
+        .from("branches")
+        .select("code, name")
+        .eq("id", branch.id)
+        .maybeSingle();
+      await sendNotification({
+        orgId: branch.org_id,
+        userId: branch.manager_id,
+        type: "info",
+        module: "cashhub",
+        title: `📋 รายงานใหม่รอ approve · ${branchInfo?.code ?? ""}`,
+        body: `${session.user.name} ส่งรายงาน ${data.reportDate} · ยอด ${data.totalSales.toLocaleString()} ฿`,
+        link: `/cashhub/reports/${created.id}`,
+      });
+    } catch (err) {
+      console.error("[reports] failed to notify branch manager", err);
+    }
+  }
 
   // ---- Send Telegram approval card ----
   // Run auto-check to enrich the message
@@ -316,7 +477,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const session = await requireSession();
+  const gate = await cashHubApiGuard();
+  if (gate.error) return gate.error;
+  const session = gate.session;
   if (!can(session.user, "cashhub.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

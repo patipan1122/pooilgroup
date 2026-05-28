@@ -102,7 +102,7 @@ export function DashboardView({
     <div className="p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto pb-24">
       {/* Header */}
       <header className="mb-6 sm:mb-8 animate-fade-up">
-        <p className="text-[11px] sm:text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
+        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-brand-600)] font-bold">
           💰 CashHub · {today}
         </p>
         <h1 className="text-3xl sm:text-5xl lg:text-7xl font-extrabold tracking-[-0.04em] font-display mt-4 leading-[0.95] text-zinc-900">
@@ -119,7 +119,7 @@ export function DashboardView({
           ============================================================ */}
       <Section
         number="00"
-        label="EXECUTIVE OVERVIEW"
+        label="ภาพรวมผู้บริหาร"
         title="สรุปยอดขาย ทุกประเภทธุรกิจ"
         description="กดที่แถวเพื่อขยายดูสาขา · ปุ่มมุมขวาบนสำหรับขยายทั้งหมด · สลับรายเดือน/รายวัน · เลื่อนซ้ายขวาดูช่วงเก่า"
         className="mb-8 animate-fade-up"
@@ -144,10 +144,12 @@ export function DashboardView({
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <Button onClick={generateTestData} loading={pending} size="lg" fullWidth>
-                <Sparkles className="size-4" />
-                สร้างข้อมูลตัวอย่าง
-              </Button>
+              {process.env.NODE_ENV !== "production" && (
+                <Button onClick={generateTestData} loading={pending} size="lg" fullWidth>
+                  <Sparkles className="size-4" />
+                  สร้างข้อมูลตัวอย่าง (DEV)
+                </Button>
+              )}
               <Link href="/liff/report" className="block">
                 <Button variant="outline" size="lg" fullWidth>
                   <ScrollText className="size-4" />
@@ -168,7 +170,7 @@ export function DashboardView({
       {/* ===== Section 01 — Hero stat ===== */}
       <Section
         number="01"
-        label="THIS MONTH"
+        label="เดือนนี้"
         title="ยอดสะสมเดือนนี้"
         className="mb-6 animate-fade-up delay-100"
       >
@@ -190,7 +192,7 @@ export function DashboardView({
           <CardBody className="relative text-white p-5 sm:p-8">
             <div className="flex flex-col gap-5">
               <div>
-                <p className="text-[10px] sm:text-xs uppercase tracking-widest text-white/70 font-bold mb-1.5">
+                <p className="text-xs font-bold text-white/70 mb-1.5">
                   ยอดสะสม (อนุมัติ + รออนุมัติ)
                 </p>
                 <div className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tabular-num font-display tracking-tight">
@@ -255,7 +257,7 @@ export function DashboardView({
               {(fc.forecastEom > 0 || data.targetTotal > 0) && (
                 <div className="rounded-2xl bg-white/10 backdrop-blur border border-white/15 p-3 sm:p-4 flex flex-col sm:flex-row gap-3 sm:gap-6">
                   <div className="flex-1 min-w-0">
-                    <p className="text-[10px] uppercase tracking-widest text-white/70 font-bold mb-1">
+                    <p className="text-xs font-bold text-white/70 mb-1">
                       🎯 คาดการณ์สิ้นเดือน
                     </p>
                     <div className="text-2xl sm:text-3xl font-extrabold tabular-num font-display">
@@ -268,7 +270,7 @@ export function DashboardView({
                   </div>
                   {data.targetTotal > 0 && (
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] uppercase tracking-widest text-white/70 font-bold mb-1">
+                      <p className="text-xs font-bold text-white/70 mb-1">
                         เป้า {formatBahtCompact(data.targetTotal)}
                       </p>
                       <div className="text-2xl sm:text-3xl font-extrabold tabular-num font-display">
@@ -299,7 +301,7 @@ export function DashboardView({
         <>
           <Section
             number="02"
-            label="ATTENTION"
+            label="ต้องดูแล"
             title="ต้องดูแลวันนี้"
             description="สาขาขาดส่ง · ยอดผิดปกติ · เครดิตค้างสูง · เงินขาด"
             className="mb-6 animate-fade-up delay-150"
@@ -353,7 +355,7 @@ export function DashboardView({
       {/* ===== Section 03 — By business type ===== */}
       <Section
         number={data.alerts.length > 0 ? "03" : "02"}
-        label="BY BUSINESS"
+        label="ตามประเภทธุรกิจ"
         title="แยกตามประเภทธุรกิจ"
         description="กดเข้าดูรายชื่อสาขาในกลุ่มนี้"
         className="mb-6 animate-fade-up delay-200"
@@ -428,7 +430,7 @@ export function DashboardView({
            ผู้บริหารดูสัดส่วน · operational queue → /cashhub/reports */}
       <Section
         number={data.alerts.length > 0 ? "04" : "03"}
-        label="MONEY FLOW"
+        label="กระแสเงิน"
         title="ช่องทางรับเงิน"
         className="mb-6 animate-fade-up delay-250"
       >
@@ -569,7 +571,7 @@ export function DashboardView({
       {/* ===== Section 05 — Leaderboard + Calendar ===== */}
       <Section
         number={data.alerts.length > 0 ? "05" : "04"}
-        label="RANKINGS"
+        label="อันดับ"
         title="ตารางอันดับ · ปฏิทินกรอกครบ"
         action={
           <Link href="/cashhub/leaderboard">
@@ -701,7 +703,7 @@ export function DashboardView({
       {/* ===== Section 06 — Pattern (day-of-week × type) ===== */}
       <Section
         number={data.alerts.length > 0 ? "06" : "05"}
-        label="PATTERN"
+        label="แพตเทิร์น"
         title="ยอดเฉลี่ยรายวัน × ประเภทธุรกิจ"
         description="ดู 30 วันล่าสุด · กดที่แถวเพื่อดูแยกตามสาขา · ใช้วางแผน Promotion ตามวันที่ยอดต่ำ"
         className="mb-6 animate-fade-up delay-350"
@@ -735,7 +737,7 @@ function HeroStat({
 }) {
   return (
     <div className="bg-white/10 backdrop-blur rounded-xl px-3 py-2.5 border border-white/15">
-      <div className="flex items-center gap-1.5 text-white/75 text-[10px] uppercase tracking-widest font-bold mb-0.5">
+      <div className="flex items-center gap-1.5 text-white/75 text-xs font-bold mb-0.5">
         {icon}
         <span>{label}</span>
       </div>
