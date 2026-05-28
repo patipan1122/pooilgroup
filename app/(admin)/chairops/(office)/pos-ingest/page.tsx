@@ -100,12 +100,20 @@ export default async function PosIngestListPage({
             (ใหม่/เหมือนเดิม/เปลี่ยน/ผิด) ก่อน commit เสมอ
           </p>
         </div>
-        <Link
-          href="/chairops/pos-ingest/new"
-          className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[var(--color-brand-600)] px-5 text-base font-medium text-white shadow-soft transition-all duration-150 hover:bg-[var(--color-brand-700)] active:bg-[var(--color-brand-800)]"
-        >
-          + อัปโหลด POS CSV
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/chairops/pos-ingest/upload"
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[var(--color-brand-600)] px-5 text-base font-medium text-white shadow-soft transition-all duration-150 hover:bg-[var(--color-brand-700)] active:bg-[var(--color-brand-800)]"
+          >
+            + อัปโหลดเงินสด + เหรียญ (มีเวลา)
+          </Link>
+          <Link
+            href="/chairops/pos-ingest/new"
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-border bg-background px-5 text-base font-medium text-foreground transition-all duration-150 hover:bg-muted"
+          >
+            + อัปโหลดยอดรวมรายวัน
+          </Link>
+        </div>
       </div>
 
       {/* ── Flash messages ───────────────────────────────────────────── */}

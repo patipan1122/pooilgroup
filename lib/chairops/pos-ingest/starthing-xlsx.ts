@@ -115,7 +115,7 @@ export interface DiffBucket {
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB hard cap
+export const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB hard cap
 const PREFERRED_SHEET_NAME = "ข้อมูลรายได้ (ตามกรอบเวลา)";
 
 /** Canonical column keys → array of Thai header aliases as observed in StarThing exports. */
@@ -177,7 +177,7 @@ function buildHeaderIndex(rawHeader: string[]): {
 }
 
 /** Parse "550.0000" / "550" / 550 / null → number (NaN if unparseable). */
-function parseNumber(v: unknown): number {
+export function parseNumber(v: unknown): number {
   if (v == null) return 0;
   if (typeof v === "number") return Number.isFinite(v) ? Math.round(v * 100) / 100 : NaN;
   if (typeof v === "string") {
@@ -240,13 +240,13 @@ function parseDateLike(v: unknown): string | null {
   return null;
 }
 
-function toStr(v: unknown): string {
+export function toStr(v: unknown): string {
   if (v == null) return "";
   if (typeof v === "string") return v.trim();
   return String(v).trim();
 }
 
-function toOptStr(v: unknown): string | null {
+export function toOptStr(v: unknown): string | null {
   const s = toStr(v);
   return s === "" ? null : s;
 }
