@@ -6,13 +6,13 @@
 //   - photo proof (≥1) via existing presignCleanlinessUpload → R2
 //   - submit → existing createCleanlinessReport action
 import { useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Camera, Check, CheckCircle2, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
+import { SuccessScreen } from "@/components/chairops/_kit/success-screen";
 import {
   createCleanlinessReport,
   presignCleanlinessUpload,
@@ -49,9 +49,11 @@ function foldToServerChecklist(
 }
 
 export function MaidCleanlinessForm() {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [uploading, setUploading] = useState(false);
+  const [done, setDone] = useState<{ passCount: number; total: number } | null>(
+    null,
+  );
 
   const [checks, setChecks] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {};
@@ -138,10 +140,22 @@ export function MaidCleanlinessForm() {
         toast.error(res.error);
         return;
       }
-      toast.success(`ส่ง checklist แล้ว · ${passCount}/${MAID_CLEAN_ITEMS.length} ผ่าน`);
-      router.push("/chairops/m");
-      router.refresh();
+      setDone({ passCount, total: MAID_CLEAN_ITEMS.length });
     });
+  }
+
+  if (done) {
+    return (
+      <SuccessScreen
+        title="ส่ง checklist เรียบร้อย"
+        subtitle={`${done.passCount}/${done.total} ข้อผ่าน${
+          done.passCount < done.total ? " · ออฟฟิศจะตามข้อที่ค้าง" : ""
+        }`}
+        thumbnails={photos.map((p) => p.preview)}
+        primaryHref="/chairops/m"
+        primaryLabel="กลับหน้าหลัก"
+      />
+    );
   }
 
   return (

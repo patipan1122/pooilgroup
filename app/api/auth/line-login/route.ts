@@ -15,7 +15,16 @@ import { getRequestBaseUrl } from "@/lib/utils/base-url";
 const Schema = z.object({
   idToken: z.string().min(20).max(4096),
   displayName: z.string().max(120).optional(),
+  // Optional post-login landing path (e.g. "/chairops/m/collect/new" for the
+  // ChairOps Rich Menu deep-link). Must be a same-origin relative path.
+  redirectTo: z.string().max(512).optional(),
 });
+
+// Only allow same-origin relative paths — never an absolute URL or "//host".
+function safeRelPath(p: string | undefined): string {
+  if (!p || !p.startsWith("/") || p.startsWith("//")) return "/liff/status";
+  return p;
+}
 
 // Verify LINE id_token via official endpoint
 // Returns the verified payload { sub, name, ... } or null if invalid
@@ -53,7 +62,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "ข้อมูล LINE ไม่ครบ" }, { status: 400 });
   }
-  const { idToken, displayName } = parsed.data;
+  const { idToken, displayName, redirectTo } = parsed.data;
 
   // Verify token via LINE — only proceed if signature is valid + sub returned
   const verified = await verifyLineIdToken(idToken);
@@ -111,7 +120,9 @@ export async function POST(req: NextRequest) {
         email: user.email,
         // Pin redirect to the same origin the LIFF page is running on
         // (Supabase otherwise uses the dashboard "Site URL" which can drift).
-        redirect_to: `${getRequestBaseUrl(req)}/liff/status`,
+        // redirectTo lets module deep-links (e.g. ChairOps Rich Menu) land on
+        // their own screen instead of the generic /liff/status.
+        redirect_to: `${getRequestBaseUrl(req)}${safeRelPath(redirectTo)}`,
       }),
     });
     if (!res.ok) {

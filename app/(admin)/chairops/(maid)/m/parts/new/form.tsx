@@ -8,12 +8,12 @@
 // Idempotency key generated client-side, regenerated on error so legit retries
 // aren't dedup'd against a failed attempt.
 import { useId, useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Check, Loader2, Minus, Package, Plus, Search } from "lucide-react";
+import { SuccessScreen } from "@/components/chairops/_kit/success-screen";
 import { requestPartFromMaid } from "@/lib/chairops/parts/actions";
 import { newIdempotencyKey } from "@/lib/chairops/utils/idempotency";
 
@@ -25,12 +25,14 @@ interface PartOption {
 }
 
 export function MaidPartsForm({ parts }: { parts: ReadonlyArray<PartOption> }) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
 
   const [query, setQuery] = useState("");
   const [qty, setQty] = useState(1);
   const [reason, setReason] = useState("");
+  const [done, setDone] = useState<{ name: string; qty: number; unit: string } | null>(
+    null,
+  );
   const idempotencyKeyRef = useRef<string>(newIdempotencyKey());
 
   const listId = useId();
@@ -77,10 +79,22 @@ export function MaidPartsForm({ parts }: { parts: ReadonlyArray<PartOption> }) {
         toast.error(res.error);
         return;
       }
-      toast.success("ส่งคำขอเบิกแล้ว · รอออฟฟิศอนุมัติ");
-      router.push("/chairops/m");
-      router.refresh();
+      setDone({ name: selected.name, qty, unit: selected.unit });
     });
+  }
+
+  if (done) {
+    return (
+      <SuccessScreen
+        title="ส่งคำขอเบิกแล้ว"
+        subtitle="รอออฟฟิศอนุมัติ"
+        refLabel="รายการที่เบิก"
+        refCode={`${done.qty} ${done.unit}`}
+        meta={done.name}
+        primaryHref="/chairops/m"
+        primaryLabel="กลับหน้าหลัก"
+      />
+    );
   }
 
   return (

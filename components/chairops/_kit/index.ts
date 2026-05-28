@@ -65,3 +65,5 @@ export {
   type StatusDotProps,
   type StatusDotTone,
 } from "./status-dot";
+
+export { SuccessScreen, type SuccessScreenProps } from "./success-screen";

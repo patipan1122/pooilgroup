@@ -7,7 +7,7 @@
 // alert on failure. Daily cron → default idempotency (one success per day) OK.
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendLineNotify } from "@/lib/chairops/line/notify";
+import { notifyChannel } from "@/lib/chairops/line/messaging";
 import { ChairopsAlertKind, ChairopsAlertLevel, ChairopsAlertStatus } from "@/lib/generated/prisma/enums";
 import { requireCronSecret } from "@/lib/chairops/auth/cron-secret";
 import { DRIFT_DEFAULTS } from "@/lib/chairops/reconcile/drift-engine";
@@ -72,7 +72,7 @@ async function sopCheckHandler(): Promise<NextResponse> {
       });
       emitted++;
       didEmit = true;
-      await sendLineNotify(
+      await notifyChannel(
         "ops",
         `⚠️ ${alert.title}\n${alert.message}`
       );

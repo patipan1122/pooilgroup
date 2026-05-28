@@ -18,7 +18,23 @@ export function LiffBootstrap({
   );
 
   useEffect(() => {
-    if (haveSession) return; // user already logged in via web
+    // Optional deep-link target — ChairOps Rich Menu opens the LIFF with
+    // ?next=/chairops/m/<screen>. Read from the URL (not useSearchParams, to
+    // avoid a CSR-bailout/Suspense requirement on every /liff page).
+    const rawNext =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("next")
+        : null;
+    const next =
+      rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//")
+        ? rawNext
+        : null;
+
+    if (haveSession) {
+      // Already authenticated (e.g. opened a second time) → go straight in.
+      if (next) window.location.replace(next);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       const profile = await getLiffProfile();
@@ -42,6 +58,7 @@ export function LiffBootstrap({
           body: JSON.stringify({
             idToken,
             displayName: profile.displayName,
+            redirectTo: next ?? undefined,
           }),
         });
         const json = await res.json();

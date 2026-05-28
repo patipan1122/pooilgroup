@@ -562,11 +562,6 @@ export function CollectNewForm({ avg7d, chairCodes }: Props) {
         )}
       </Button>
 
-      {/* Debug / aux info (hidden in prod via opacity, useful for QA) */}
-      <p className="text-center font-mono text-[10px] text-zinc-400">
-        key: {idempotencyKeyRef.current.slice(0, 8)}…
-      </p>
-
       <Dialog
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
