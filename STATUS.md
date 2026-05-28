@@ -8,18 +8,24 @@
 
 **Phase 1 (DONE · committed 0e9c640 + c42c6ce · CEO approved):** port mockup → `/clawfleet/v2/*` · 6 หน้า (hub/operations/anomalies/stock/insights/mobile) + review modal · 13 ไฟล์ · scoped `.cf-scope` CSS · mock data · tsc+lint+build เขียว · nav "ดีไซน์ใหม่ (พรีวิว)" เพิ่มแล้ว
 
-**Phase 2 foundation (DONE · committed · build เขียว):** migrate ตาม mockup model
+**Phase 2 — ALL CODE DONE · committed (0e9c640 · 1a3c0ec) · tsc+lint+build เขียว:**
 - Schema: `cf_collection_sessions` รองรับ session ระดับสาขา (branch_id + nullable group_id + cross-check เงิน/ตุ๊กตา 6 ช่อง) · 5th photo · ตารางใหม่ `cf_deliveries`
-- Migration SQL `20260528000001_clawfleet_v2_branch_model.sql` (additive) · **ยังไม่ apply ลง DB**
-- `lib/clawfleet/v2-queries.ts` (DB จริง → mockup shape) พร้อม
-- แก้ legacy 12 ไฟล์ (group_id เป็น nullable · null-safe)
+- Migration SQL `20260528000001` (additive)
+- `lib/clawfleet/v2-queries.ts` + `v2-loaders.ts` (real DB → mockup shape · graceful mock fallback ก่อน migration)
+- S4: 6 หน้า split เป็น server-fetch + client-island (รับ data เป็น props · rendering เดิม) · shell+layout รับ branches จริง
+- S5: `v2-actions.ts` `reviewV2Session` (approve→LOCKED / recheck→OPEN / escalate→ANOMALY_REVIEW) wire เข้า review modal
+- S6: `scripts/seed-clawfleet-v2-demo.ts` (branch-shape seed)
+- แก้ legacy 12 ไฟล์ (group_id nullable · null-safe)
 
-**🔴 BLOCKER:** apply migration ลง prod Supabase ถูก auto-classifier บล็อก (กัน prod DB write + กัน self-grant permission) — **CEO ต้องรันเองในเทอร์มินัล:**
+**🔴 เหลือแค่ 2 คำสั่งที่ CEO ต้องรันเอง** (auto-classifier บล็อกไม่ให้ผมเขียน prod DB):
 ```
-cd /Users/patipantantikul/Code/pooilgroup/legacy/pooilgroup-web && npx tsx -r dotenv/config scripts/apply-clawfleet-v2-migration.ts dotenv_config_path=.env.local
+cd /Users/patipantantikul/Code/pooilgroup/legacy/pooilgroup-web
+# 1) apply migration
+npx tsx -r dotenv/config scripts/apply-clawfleet-v2-migration.ts dotenv_config_path=.env.local
+# 2) seed branch-shape demo data
+npx tsx -r dotenv/config scripts/seed-clawfleet-v2-demo.ts dotenv_config_path=.env.local
 ```
-
-**เหลือหลัง migration apply (S4-S7):** wire 6 หน้าเข้า v2-queries · ปุ่มอนุมัติ→DB · reseed demo รูปแบบสาขา · verify
+หลังรัน 2 คำสั่ง → หน้า v2 จะ flip เป็น**ข้อมูลจริง**อัตโนมัติ (ก่อนหน้านั้น fallback เป็น mock · หน้าไม่พัง) → เหลือ S7 smoke test
 
 **⚠️ Env note:** tracked files ใน pooilgroup-web โดน IDE buffer revert เป็นระยะ (เปิดไฟล์ค้างใน VS Code) → commit ล็อกแล้ว · ถ้าแก้ tracked file ต้อง commit เร็ว
 
