@@ -3,13 +3,15 @@
 // Universal scanner input · USB barcode scanner sends keystrokes + Enter
 // Mobile: paste / type · also accepts QR via future camera (TODO[bigfeature] W2)
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { lookupWristband, activateWristband, exitWristband, type WristbandLookup } from "@/lib/playland/wristband";
+import { lookupWristband, activateWristband, exitWristband, getActiveWristbandsForCache, syncOfflineScans, type WristbandLookup } from "@/lib/playland/wristband";
 import { listPackages } from "@/lib/playland/queries";
 import { thb } from "@/lib/playland/format";
-import { ScanLine, AlertCircle, CheckCircle2, LogOut, ShoppingBasket, X } from "lucide-react";
+import { cacheWristbands, lookupCached, enqueueScan, getQueue, clearQueue, queueCount } from "@/lib/playland/offline-db";
+import { ScanLine, AlertCircle, CheckCircle2, LogOut, ShoppingBasket, X, ShieldAlert, Wifi, WifiOff } from "lucide-react";
 import Link from "next/link";
+import { GateOverrideModal } from "./gate-override-modal";
 
 export function WristbandScanInput({ branchId, packages }: { branchId: string; packages: Array<{ id: string; name: string; price: number; minutes: number | null; type: string }> }) {
   const router = useRouter();
@@ -19,13 +21,60 @@ export function WristbandScanInput({ branchId, packages }: { branchId: string; p
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [selectedPkg, setSelectedPkg] = useState<string>(packages[0]?.id ?? "");
   const [pay, setPay] = useState<"CASH" | "PROMPTPAY" | "STRIPE" | "CHARGE_TO_MEMBER">("CASH");
+  const [showOverride, setShowOverride] = useState(false);
+  const [online, setOnline] = useState(true);
+  const [pendingSync, setPendingSync] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { inputRef.current?.focus(); }, [lookup]);
 
+  // Refresh the offline whitelist cache (called on mount + on reconnect)
+  const refreshCache = useCallback(async () => {
+    const res = await getActiveWristbandsForCache(branchId);
+    if (res.ok) {
+      await cacheWristbands(res.data.map((w) => ({ ...w, cachedAt: Date.now() })));
+    }
+  }, [branchId]);
+
+  // Flush any scans queued while offline
+  const flushQueue = useCallback(async () => {
+    const queue = await getQueue();
+    if (queue.length === 0) { setPendingSync(0); return; }
+    const res = await syncOfflineScans({ branchId, scans: queue.map((q) => ({ code: q.code, scannedAt: q.scannedAt, outcome: q.outcome })) });
+    if (res.ok) { await clearQueue(); setPendingSync(0); router.refresh(); }
+  }, [branchId, router]);
+
+  // Online/offline tracking + initial cache warm-up
+  useEffect(() => {
+    setOnline(navigator.onLine);
+    queueCount().then(setPendingSync);
+    if (navigator.onLine) { refreshCache(); flushQueue(); }
+    const goOnline = () => { setOnline(true); refreshCache(); flushQueue(); };
+    const goOffline = () => setOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => { window.removeEventListener("online", goOnline); window.removeEventListener("offline", goOffline); };
+  }, [refreshCache, flushQueue]);
+
+  // Offline path · validate against cached whitelist + queue the scan
+  async function doScanOffline(raw: string) {
+    const cached = await lookupCached(raw);
+    const open = !!cached && (cached.status === "ACTIVE" || cached.status === "ISSUED") && cached.branchId === branchId;
+    await enqueueScan({ code: raw.trim().toUpperCase(), branchId, scannedAt: Date.now(), outcome: open ? "open" : "deny" });
+    setPendingSync(await queueCount());
+    setCode("");
+    inputRef.current?.focus();
+    if (open) {
+      setMsg({ kind: "ok", text: `(offline) เปิดประตู · ${cached?.memberName ?? raw.trim().toUpperCase()} · จะ sync เมื่อเน็ตกลับ` });
+    } else {
+      setMsg({ kind: "err", text: `(offline) ไม่พบใน cache · ${raw.trim().toUpperCase()} · ตรวจที่เคาน์เตอร์` });
+    }
+  }
+
   function doScan() {
     if (!code.trim()) return;
     setMsg(null);
+    if (!navigator.onLine) { void doScanOffline(code); return; }
     start(async () => {
       const res = await lookupWristband(code);
       if (!res.ok) { setMsg({ kind: "err", text: res.error }); setCode(""); inputRef.current?.focus(); return; }
@@ -69,6 +118,22 @@ export function WristbandScanInput({ branchId, packages }: { branchId: string; p
         </div>
       )}
 
+      {/* Connection status · offline-first indicator */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+        {online ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--pl-ok-ink)" }}>
+            <Wifi size={13} /> ออนไลน์
+          </span>
+        ) : (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--pl-danger-ink)", fontWeight: 600 }}>
+            <WifiOff size={13} /> ออฟไลน์ · ใช้ cache · จะ sync เมื่อเน็ตกลับ
+          </span>
+        )}
+        {pendingSync > 0 && (
+          <span className="pl-chip pl-chip-warn" style={{ fontSize: 11 }}>{pendingSync} รอ sync</span>
+        )}
+      </div>
+
       {/* Scan input · always visible · auto-focus */}
       <div className="pl-card">
         <label className="pl-label"><ScanLine size={11} style={{ display: "inline", marginRight: 4 }} /> สแกน QR หรือพิมพ์ code</label>
@@ -87,10 +152,26 @@ export function WristbandScanInput({ branchId, packages }: { branchId: string; p
             <ScanLine size={14} /> สแกน
           </button>
         </div>
-        <div style={{ fontSize: 11, color: "var(--pl-text-muted)", marginTop: 6 }}>
-          ใช้กับ USB scanner ได้ทันที (ส่ง Enter อัตโนมัติ) · มือถือพิมพ์เองหรือ paste
+        <div style={{ fontSize: 11, color: "var(--pl-text-muted)", marginTop: 6, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span>ใช้กับ USB scanner ได้ทันที (ส่ง Enter อัตโนมัติ) · มือถือพิมพ์เองหรือ paste</span>
+          <button
+            type="button"
+            className="pl-btn pl-btn-ghost pl-btn-sm"
+            onClick={() => setShowOverride(true)}
+            style={{ color: "var(--pl-danger-ink)", whiteSpace: "nowrap" }}
+          >
+            <ShieldAlert size={12} /> เปิดประตูเอง
+          </button>
         </div>
       </div>
+
+      {showOverride && (
+        <GateOverrideModal
+          branchId={branchId}
+          wristbandCode={lookup?.wristband.code}
+          onClose={() => setShowOverride(false)}
+        />
+      )}
 
       {/* Lookup result · action picker per state */}
       {lookup && (

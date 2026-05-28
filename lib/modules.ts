@@ -56,6 +56,7 @@ import {
   Activity,
   ScanLine,
   QrCode,
+  ShieldAlert,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
@@ -627,11 +628,17 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       },
 
       {
+        href: "/playland/overrides",
+        label: "เปิดประตูเอง",
+        icon: ShieldAlert,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+        section: "Back-office",
+      },
+      {
         href: "/playland/reports",
         label: "รายงาน",
         icon: BarChart3,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
-        section: "Back-office",
       },
       { href: "/playland/audit",   label: "Audit Log",   icon: History,  adminOnly: true },
       { href: "/playland/settings",label: "ตั้งค่า",     icon: Settings, adminOnly: true },

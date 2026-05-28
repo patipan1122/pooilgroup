@@ -2,9 +2,9 @@
 // Renders identical tab nav so cashier feels they're in one section
 
 import Link from "next/link";
-import { BarChart3, Clock, History } from "lucide-react";
+import { BarChart3, Clock, History, ShieldAlert } from "lucide-react";
 
-type ActiveTab = "reports" | "shifts" | "audit";
+type ActiveTab = "reports" | "shifts" | "audit" | "overrides";
 
 export function BackOfficeTabs({ active }: { active: ActiveTab }) {
   return (
@@ -14,6 +14,9 @@ export function BackOfficeTabs({ active }: { active: ActiveTab }) {
       </Link>
       <Link href="/playland/shifts" className={`pl-tab${active === "shifts" ? " is-active" : ""}`}>
         <Clock size={14} /> กะ · ปิดวัน
+      </Link>
+      <Link href="/playland/overrides" className={`pl-tab${active === "overrides" ? " is-active" : ""}`}>
+        <ShieldAlert size={14} /> เปิดประตูเอง
       </Link>
       <Link href="/playland/audit" className={`pl-tab${active === "audit" ? " is-active" : ""}`}>
         <History size={14} /> Audit Log

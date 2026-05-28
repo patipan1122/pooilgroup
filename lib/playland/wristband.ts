@@ -313,6 +313,60 @@ export async function exitWristband(code: string): Promise<ActionResult> {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// OFFLINE · cache active wristbands for a branch + bulk-sync queued scans
+// (per [[playland-offline-first-decision]]) · cashier tablet works when net drops
+// ────────────────────────────────────────────────────────────────────────────
+export async function getActiveWristbandsForCache(branchId: string): Promise<ActionResult<Array<{
+  code: string; status: string; branchId: string; memberName: string | null;
+}>>> {
+  const session = await requireSession();
+  if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
+  if (!(await verifyBranchOrg(branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
+
+  // Only ISSUED + ACTIVE are scannable · RETURNED/LOST excluded (=deny anyway)
+  const rows = await prisma.playlandWristband.findMany({
+    where: { orgId: session.user.org_id, branchId, status: { in: ["ISSUED", "ACTIVE"] } },
+    select: { code: true, status: true, branchId: true, member: { select: { name: true } } },
+    take: 2000,
+  });
+  return {
+    ok: true,
+    data: rows.map((r) => ({ code: r.code, status: r.status, branchId: r.branchId, memberName: r.member?.name ?? null })),
+  };
+}
+
+export async function syncOfflineScans(input: {
+  branchId: string;
+  scans: Array<{ code: string; scannedAt: number; outcome: string }>;
+}): Promise<ActionResult<{ synced: number }>> {
+  const session = await requireSession();
+  if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
+  if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
+  if (input.scans.length === 0) return { ok: true, data: { synced: 0 } };
+
+  let synced = 0;
+  for (const s of input.scans.slice(0, 500)) {
+    const w = await prisma.playlandWristband.findFirst({
+      where: { code: s.code.trim().toUpperCase(), orgId: session.user.org_id },
+      select: { id: true },
+    });
+    if (!w) continue;
+    await prisma.playlandWristbandScan.create({
+      data: {
+        orgId: session.user.org_id,
+        wristbandId: w.id,
+        scannedByUserId: session.user.id,
+        scanType: "GATE_IN",
+        outcome: `offline_${s.outcome}`,
+        metadata: { source: "offline_sync", scannedAt: new Date(s.scannedAt).toISOString() },
+      },
+    });
+    synced++;
+  }
+  return { ok: true, data: { synced } };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // LOST · cashier marks wristband as lost · prevents re-use
 // ────────────────────────────────────────────────────────────────────────────
 export async function markWristbandLost(code: string, notes?: string): Promise<ActionResult> {
