@@ -4,6 +4,16 @@
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
+## 🚀 DEPLOYED (2026-05-28 · รอบ 61) — ClawFleet v2 LIVE บน production
+
+- **Live:** https://pooilgroup.vercel.app/clawfleet/v2/hub (deploy `dpl_EEXXYUZ…` · target=production · READY)
+- Smoke test: /clawfleet/v2/hub · /clawfleet/hub · /clawfleet/sessions · /dashboard → ทั้งหมด **307 → /login** (auth gate ปกติ · ไม่มี 500)
+- Deploy-safe: guard non-v2 queries (commit `d365a66`) ไม่ให้ select คอลัมน์ใหม่ที่ prod DB ยังไม่มี → ClawFleet เดิมไม่พัง · v2 ใช้ legacy real-data layer
+- **Migration ยังไม่ apply** (blocked · CEO-only) → v2 รันบน group-model real data · per-claw upgrade = optional ภายหลัง
+- commits: 0e9c640 · c42c6ce · 927d6f6 · 1a3c0ec · b5a5971 · b2ff9b9 · d365a66 (branch `setup` · ยังไม่ push remote)
+
+---
+
 ## 🆕 Update (2026-05-28 · รอบ 61 — ClawFleet v2 redesign · CEO ส่ง HTML mockup "ทำให้เหมือน 100% · migrate ใหญ่")
 
 **Phase 1 (DONE · committed 0e9c640 + c42c6ce · CEO approved):** port mockup → `/clawfleet/v2/*` · 6 หน้า (hub/operations/anomalies/stock/insights/mobile) + review modal · 13 ไฟล์ · scoped `.cf-scope` CSS · mock data · tsc+lint+build เขียว · nav "ดีไซน์ใหม่ (พรีวิว)" เพิ่มแล้ว
