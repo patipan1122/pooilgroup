@@ -275,9 +275,9 @@ export function DashboardV1View({
         </div>
 
         {/* ─── Pool extensions divider ─── */}
-        <div className="my-10 flex items-center gap-3 text-[11px] uppercase tracking-wider font-semibold text-[var(--ch-text-3)]">
+        <div className="my-10 flex items-center gap-3 text-[11px] font-semibold text-[var(--ch-text-3)]">
           <span className="h-px flex-1 bg-[var(--ch-border)]" />
-          <Filter className="size-3" />
+          <Filter className="size-3" aria-hidden="true" />
           <span>Pool extras · ไม่อยู่ใน Design canvas</span>
           <span className="h-px flex-1 bg-[var(--ch-border)]" />
         </div>
@@ -288,8 +288,8 @@ export function DashboardV1View({
         {(fc.forecastEom > 0 || data.targetTotal > 0) && (
           <div className="mb-6 ch-card-v2 bg-[var(--ch-bg-2)] p-4 sm:p-5 flex flex-col sm:flex-row gap-4">
             <div className="flex-1 min-w-0">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ch-text-3)] flex items-center gap-1.5">
-                <Target className="size-3" />
+              <div className="text-[12px] font-semibold text-[var(--ch-text-3)] flex items-center gap-1.5">
+                <Target className="size-3" aria-hidden="true" />
                 คาดการณ์สิ้นเดือน
               </div>
               <div className="ch-tnum font-display font-extrabold text-[var(--ch-navy)] mt-1 text-2xl sm:text-3xl">
@@ -301,7 +301,7 @@ export function DashboardV1View({
             </div>
             {data.targetTotal > 0 && (
               <div className="flex-1 min-w-0">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ch-text-3)]">
+                <div className="text-[12px] font-semibold text-[var(--ch-text-3)]">
                   เป้า {formatBahtCompact(data.targetTotal)}
                 </div>
                 <div className="ch-tnum font-display font-extrabold text-[var(--ch-navy)] mt-1 text-2xl sm:text-3xl">

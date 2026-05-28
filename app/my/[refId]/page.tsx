@@ -1,18 +1,32 @@
 // Public candidate tracking page — /my/<refId>
 // Applicant uses the ref ID they received in confirmation email to track status.
-// No auth · no OTP · ref ID is the key (random 6-digit suffix · unguessable enough for MVP).
+// No auth · no OTP · ref ID is the key (random 8-char base32 suffix · ~40 bits entropy).
 // Per Recruit Redesign canvas screen 06B (MyApplicationDetail).
+//
+// SECURITY (quality pass 2026-05-28):
+//  - validate refId format BEFORE DB hit so bots scanning random paths get a
+//    cheap notFound() instead of round-tripping Prisma
+//  - keep noindex (root layout sets robots: noindex) so search engines don't
+//    cache applicant data even if URL leaks
 
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import {
   STATUS_LABELS,
   type ApplicationStatus,
 } from "@/lib/recruit/types";
+import { isValidApplicationRefId } from "@/lib/recruit/slug";
 import { Phone, MessageCircle, CalendarCheck, Mail, StickyNote, CheckCircle2, XCircle, Building } from "lucide-react";
 import { ErasureForm } from "./erasure-form";
 
 export const dynamic = "force-dynamic";
+
+// Always block search engines · this page contains personal applicant data.
+export const metadata: Metadata = {
+  title: "สถานะใบสมัคร",
+  robots: { index: false, follow: false, googleBot: { index: false, follow: false } },
+};
 
 const FLOW_STATUSES: ApplicationStatus[] = [
   "NEW",
@@ -105,6 +119,9 @@ export default async function MyApplicationPage({
   params: Promise<{ refId: string }>;
 }) {
   const { refId } = await params;
+
+  // Cheap format check before DB hit · blocks scanners + garbage paths.
+  if (!isValidApplicationRefId(refId)) return notFound();
 
   const app = await prisma.recruitApplication.findUnique({
     where: { refId },

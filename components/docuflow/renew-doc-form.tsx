@@ -115,7 +115,7 @@ export function RenewDocForm({
       <CardBody>
         {oldDocumentName && (
           <div className="mb-6 rounded-lg bg-zinc-50 border border-zinc-200 p-4">
-            <p className="text-xs text-zinc-500 uppercase tracking-wide font-bold">
+            <p className="text-xs text-zinc-500 tracking-[0.02em] font-bold">
               เอกสารเดิม
             </p>
             <p className="text-sm font-medium text-zinc-900 mt-1">

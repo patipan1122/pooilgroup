@@ -295,9 +295,12 @@ export function PublicFormRenderer({
             onChange={(e) => setFullName(e.target.value)}
             disabled={disabled}
             placeholder="เช่น สมชาย ใจดี"
+            autoComplete="name"
+            inputMode="text"
             className="w-full h-12 px-3.5 rounded-xl border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-400)] text-base"
             maxLength={120}
             required
+            aria-required="true"
           />
         </Field>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -451,15 +454,24 @@ function FieldInput({
   disabled,
 }: FieldInputProps) {
   const id = `f-${field.id}`;
+  const errorId = `${id}-error`;
+  const helpId = `${id}-help`;
   return (
     <div id={id}>
       <label className="block">
         <span className="text-sm font-medium text-zinc-800">
           {field.label}
-          {field.required && <span className="text-red-500 ml-0.5">*</span>}
+          {field.required && (
+            <>
+              <span className="text-red-500 ml-0.5" aria-hidden>
+                *
+              </span>
+              <span className="sr-only">(จำเป็นต้องกรอก)</span>
+            </>
+          )}
         </span>
         {field.helpText && (
-          <span className="block text-xs text-zinc-500 mt-0.5">
+          <span id={helpId} className="block text-xs text-zinc-500 mt-0.5">
             {field.helpText}
           </span>
         )}
@@ -475,10 +487,38 @@ function FieldInput({
           />
         </div>
       )}
-      <div className="mt-1.5">{renderInput(field, value, onChange, files, onUpload, onRemoveFile, disabled)}</div>
-      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      <div className="mt-1.5">
+        {renderInput(
+          field,
+          value,
+          onChange,
+          files,
+          onUpload,
+          onRemoveFile,
+          disabled,
+          {
+            ariaInvalid: !!error,
+            ariaDescribedBy:
+              [error ? errorId : null, field.helpText ? helpId : null]
+                .filter(Boolean)
+                .join(" ") || undefined,
+            ariaRequired: !!field.required,
+          },
+        )}
+      </div>
+      {error && (
+        <p id={errorId} role="alert" className="text-xs text-red-600 mt-1">
+          {error}
+        </p>
+      )}
     </div>
   );
+}
+
+interface InputA11y {
+  ariaInvalid?: boolean;
+  ariaDescribedBy?: string;
+  ariaRequired?: boolean;
 }
 
 function renderInput(
@@ -489,23 +529,37 @@ function renderInput(
   onUpload: (file: File) => void,
   onRemoveFile: (key: string) => void,
   disabled?: boolean,
+  a11y?: InputA11y,
 ) {
   const base =
-    "w-full px-3.5 rounded-xl border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-400)] text-base disabled:bg-zinc-50";
+    "w-full px-3.5 rounded-xl border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-400)] text-base disabled:bg-zinc-50 aria-[invalid=true]:border-red-400 aria-[invalid=true]:focus:ring-red-300";
+  // Shared props for any native input/textarea/select element so screen
+  // readers + autofill behave correctly.
+  const sharedA11y = {
+    "aria-invalid": a11y?.ariaInvalid || undefined,
+    "aria-describedby": a11y?.ariaDescribedBy,
+    "aria-required": a11y?.ariaRequired || undefined,
+  } as const;
 
   switch (field.type) {
-    case "short_text":
+    case "short_text": {
+      const isEmail = field.format === "email";
+      const isPhone = field.format === "phone";
       return (
         <input
-          type={field.format === "email" ? "email" : field.format === "phone" ? "tel" : "text"}
+          type={isEmail ? "email" : isPhone ? "tel" : "text"}
           value={(value as string) ?? ""}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           maxLength={field.maxLength ?? 200}
           placeholder={field.placeholder}
+          autoComplete={isEmail ? "email" : isPhone ? "tel" : undefined}
+          inputMode={isEmail ? "email" : isPhone ? "tel" : undefined}
           className={`${base} h-12`}
+          {...sharedA11y}
         />
       );
+    }
     case "long_text":
       return (
         <textarea
@@ -516,6 +570,7 @@ function renderInput(
           placeholder={field.placeholder}
           rows={4}
           className={`${base} py-3`}
+          {...sharedA11y}
         />
       );
     case "yes_no":
@@ -545,6 +600,7 @@ function renderInput(
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           className={`${base} h-12`}
+          {...sharedA11y}
         >
           <option value="">— เลือก —</option>
           {field.options?.map((o) => (
@@ -617,6 +673,7 @@ function renderInput(
     }
     case "range": {
       const v = typeof value === "number" ? value : (field.min ?? 0);
+      const label = field.unit ? `${v} ${field.unit}` : String(v);
       return (
         <div className="space-y-1">
           <input
@@ -628,10 +685,11 @@ function renderInput(
             onChange={(e) => onChange(Number(e.target.value))}
             disabled={disabled}
             className="w-full accent-[var(--color-brand-600)]"
+            aria-valuetext={label}
+            {...sharedA11y}
           />
-          <p className="text-xs text-zinc-600 tabular-num text-center">
-            {v}
-            {field.unit ? ` ${field.unit}` : ""}
+          <p className="text-xs text-zinc-600 tabular-num text-center" aria-live="polite">
+            {label}
           </p>
         </div>
       );
@@ -648,7 +706,9 @@ function renderInput(
           max={field.max}
           step={field.step ?? 1}
           disabled={disabled}
+          inputMode="numeric"
           className={`${base} h-12`}
+          {...sharedA11y}
         />
       );
     case "date":
@@ -659,6 +719,7 @@ function renderInput(
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           className={`${base} h-12`}
+          {...sharedA11y}
         />
       );
     case "file": {

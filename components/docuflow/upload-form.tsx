@@ -393,8 +393,13 @@ export function UploadForm({
         >
           <input
             type="file"
-            className="hidden"
+            className="sr-only"
             accept="application/pdf,image/*,.docx,.doc"
+            aria-label={
+              file
+                ? `เลือกไฟล์อื่นแทน ${file.name}`
+                : "เลือกไฟล์เอกสาร (PDF · รูป · DOCX สูงสุด 500 MB)"
+            }
             onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
             disabled={busy}
           />

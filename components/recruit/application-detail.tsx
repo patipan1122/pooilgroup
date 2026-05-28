@@ -10,6 +10,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
+import { requireSession } from "@/lib/auth/session";
 import {
   APPLICATION_STATUSES,
   STATUS_LABELS,
@@ -33,8 +34,14 @@ interface Props {
 }
 
 export async function ApplicationDetail({ applicationId, canWrite }: Props) {
-  const app = await prisma.recruitApplication.findUnique({
-    where: { id: applicationId },
+  // SECURITY (quality pass 2026-05-28): defense in depth — even though callers
+  // (applications/[id]/page.tsx + applications-inbox.tsx) already filter by
+  // orgId, scope the inner findUnique to {id, orgId} so we cannot be misused
+  // by a future caller that passes an arbitrary id without pre-checking.
+  // (`requireSession` is React-cache wrapped · no extra round trip.)
+  const session = await requireSession();
+  const app = await prisma.recruitApplication.findFirst({
+    where: { id: applicationId, orgId: session.user.org_id },
     include: {
       applicant: true,
       posting: { select: { id: true, title: true, fieldSchema: true, description: true } },

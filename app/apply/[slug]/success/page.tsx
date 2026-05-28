@@ -1,5 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { CheckCircle2, ArrowRight } from "lucide-react";
+
+export const metadata: Metadata = {
+  title: "ส่งใบสมัครเรียบร้อย",
+  robots: { index: false, follow: false },
+};
 
 export default async function SuccessPage({
   searchParams,
