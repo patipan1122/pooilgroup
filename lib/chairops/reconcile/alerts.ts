@@ -10,8 +10,11 @@ import { baht } from "@/lib/chairops/utils/format";
 
 type AlertClient = Pick<Prisma.TransactionClient, "chairopsAlert"> | typeof prisma;
 
-export async function evaluateAndEmitAlerts() {
-  const snapshots = await recomputeAllDrifts();
+// orgId: when called from an authenticated mutation, pass the session org so
+// drift recompute + alert emission are scoped to that tenant (no cross-org
+// write leak). Omit ONLY from the cron route, which processes every org.
+export async function evaluateAndEmitAlerts(orgId?: string) {
+  const snapshots = await recomputeAllDrifts(orgId);
   const emitted: { branchId: string; kind: ChairopsAlertKind }[] = [];
   const orgCache = new Map<string, string>();
 

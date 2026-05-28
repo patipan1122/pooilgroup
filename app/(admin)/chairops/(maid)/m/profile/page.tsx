@@ -7,8 +7,8 @@
 import { requireExactRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
 import { Card, CardBody } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { LogOut, MapPin, User } from "lucide-react";
+import { MapPin, User } from "lucide-react";
+import { MaidLogoutButton } from "./logout-button";
 
 export const dynamic = "force-dynamic";
 
@@ -57,16 +57,7 @@ export default async function MaidProfilePage() {
         </CardBody>
       </Card>
 
-      <form action="/logout" method="POST">
-        <Button
-          type="submit"
-          variant="outline"
-          className="h-14 w-full text-base font-semibold text-rose-700 ring-rose-200 hover:bg-rose-50"
-        >
-          <LogOut className="mr-2 h-5 w-5" aria-hidden />
-          ออกจากระบบ
-        </Button>
-      </form>
+      <MaidLogoutButton />
 
       <p className="text-center text-xs text-zinc-400">
         ChairOps · เวอร์ชันแม่บ้าน
