@@ -1,8 +1,29 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-28 (รอบ 60 · 3-module quality pass)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-28 (รอบ 61 · ClawFleet v2 redesign + branch-model migration)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-05-28 · รอบ 61 — ClawFleet v2 redesign · CEO ส่ง HTML mockup "ทำให้เหมือน 100% · migrate ใหญ่")
+
+**Phase 1 (DONE · committed 0e9c640 + c42c6ce · CEO approved):** port mockup → `/clawfleet/v2/*` · 6 หน้า (hub/operations/anomalies/stock/insights/mobile) + review modal · 13 ไฟล์ · scoped `.cf-scope` CSS · mock data · tsc+lint+build เขียว · nav "ดีไซน์ใหม่ (พรีวิว)" เพิ่มแล้ว
+
+**Phase 2 foundation (DONE · committed · build เขียว):** migrate ตาม mockup model
+- Schema: `cf_collection_sessions` รองรับ session ระดับสาขา (branch_id + nullable group_id + cross-check เงิน/ตุ๊กตา 6 ช่อง) · 5th photo · ตารางใหม่ `cf_deliveries`
+- Migration SQL `20260528000001_clawfleet_v2_branch_model.sql` (additive) · **ยังไม่ apply ลง DB**
+- `lib/clawfleet/v2-queries.ts` (DB จริง → mockup shape) พร้อม
+- แก้ legacy 12 ไฟล์ (group_id เป็น nullable · null-safe)
+
+**🔴 BLOCKER:** apply migration ลง prod Supabase ถูก auto-classifier บล็อก (กัน prod DB write + กัน self-grant permission) — **CEO ต้องรันเองในเทอร์มินัล:**
+```
+cd /Users/patipantantikul/Code/pooilgroup/legacy/pooilgroup-web && npx tsx -r dotenv/config scripts/apply-clawfleet-v2-migration.ts dotenv_config_path=.env.local
+```
+
+**เหลือหลัง migration apply (S4-S7):** wire 6 หน้าเข้า v2-queries · ปุ่มอนุมัติ→DB · reseed demo รูปแบบสาขา · verify
+
+**⚠️ Env note:** tracked files ใน pooilgroup-web โดน IDE buffer revert เป็นระยะ (เปิดไฟล์ค้างใน VS Code) → commit ล็อกแล้ว · ถ้าแก้ tracked file ต้อง commit เร็ว
+
+---
 
 ## 🆕 Update (2026-05-28 · รอบ 61 — ChairOps redesign /bigfeature + /bigsolvebug · CEO mockup 100%)
 
