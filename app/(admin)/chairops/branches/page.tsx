@@ -155,6 +155,7 @@ export default async function BranchesWorkspacePage({
   const sortBy = (first("sort") as WorkspaceSort) || "priority";
   const query = (first("q") || "").trim();
   const tab = (first("tab") as TabKey) || "overview";
+  const group = (first("group") as "status" | "mall" | "none") || "status";
 
   const { rows, counts, mallCounts } = await getBranchesWorkspace({
     orgId,
@@ -178,25 +179,31 @@ export default async function BranchesWorkspacePage({
     ? await getBranchDetail({ orgId, branchId: selectedId })
     : null;
 
-  // Group rows by status (mockup default grouping).
-  const groups: { key: string; label: string; items: BranchRowVM[] }[] = [
-    {
-      key: "critical",
-      label: "วิกฤต · ต้องดูทันที",
-      items: visible.filter((r) => r.status === "critical"),
-    },
-    {
-      key: "missed",
-      label: "ยังไม่ส่งวันนี้",
-      items: visible.filter((r) => r.status === "missed"),
-    },
-    {
-      key: "warn",
-      label: "เฝ้าระวัง",
-      items: visible.filter((r) => r.status === "warn"),
-    },
-    { key: "ok", label: "ปกติ", items: visible.filter((r) => r.status === "ok") },
-  ].filter((g) => g.items.length);
+  // Group rows by the active "จัดกลุ่ม" mode (status · mall · none).
+  let groups: { key: string; label: string; items: BranchRowVM[] }[];
+  if (group === "none") {
+    groups = [{ key: "all", label: "ทุกสาขา", items: visible }];
+  } else if (group === "mall") {
+    const byMall = new Map<string, { label: string; items: BranchRowVM[] }>();
+    for (const r of visible) {
+      const g = byMall.get(r.mallKey) ?? { label: r.mallLabel, items: [] };
+      g.items.push(r);
+      byMall.set(r.mallKey, g);
+    }
+    groups = [...byMall.entries()].map(([key, g]) => ({
+      key,
+      label: g.label,
+      items: g.items,
+    }));
+  } else {
+    groups = [
+      { key: "critical", label: "วิกฤต · ต้องดูทันที", items: visible.filter((r) => r.status === "critical") },
+      { key: "missed", label: "ยังไม่ส่งวันนี้", items: visible.filter((r) => r.status === "missed") },
+      { key: "warn", label: "เฝ้าระวัง", items: visible.filter((r) => r.status === "warn") },
+      { key: "ok", label: "ปกติ", items: visible.filter((r) => r.status === "ok") },
+    ];
+  }
+  groups = groups.filter((g) => g.items.length);
 
   const baseParams = {
     view: view !== "all" ? view : undefined,
@@ -205,6 +212,7 @@ export default async function BranchesWorkspacePage({
     q: query || undefined,
     branch: selectedId,
     tab: tab !== "overview" ? tab : undefined,
+    group: group !== "status" ? group : undefined,
   };
 
   return (
@@ -273,11 +281,24 @@ export default async function BranchesWorkspacePage({
         <div className="co-br-rail-section">
           <div className="co-br-rail-title">จัดกลุ่ม</div>
           <div className="co-segmented">
-            <Link data-active href={hrefWith(baseParams, {})}>
+            <Link
+              data-active={group === "status" || undefined}
+              href={hrefWith(baseParams, { group: undefined, branch: undefined })}
+            >
               สถานะ
             </Link>
-            <Link href={hrefWith(baseParams, { mall: mall })}>ห้าง</Link>
-            <Link href={hrefWith(baseParams, {})}>ปิด</Link>
+            <Link
+              data-active={group === "mall" || undefined}
+              href={hrefWith(baseParams, { group: "mall", branch: undefined })}
+            >
+              ห้าง
+            </Link>
+            <Link
+              data-active={group === "none" || undefined}
+              href={hrefWith(baseParams, { group: "none", branch: undefined })}
+            >
+              ปิด
+            </Link>
           </div>
         </div>
       </aside>
@@ -507,13 +528,11 @@ async function BranchDetail({
         <nav className="co-br-tabs" aria-label="แท็บรายละเอียดสาขา">
           {TABS.map((t) => {
             const count =
-              t.key === "timeline"
-                ? 42
-                : t.key === "chairs"
-                  ? b.chairs
-                  : t.key === "damage"
-                    ? b.openDamageCount
-                    : null;
+              t.key === "chairs"
+                ? b.chairs
+                : t.key === "damage"
+                  ? b.openDamageCount
+                  : null;
             return (
               <Link
                 key={t.key}
