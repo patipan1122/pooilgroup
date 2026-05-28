@@ -423,6 +423,12 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff", "viewer"],
       },
       {
+        href: "/clawfleet/v2/hub",
+        label: "ดีไซน์ใหม่ (พรีวิว)",
+        icon: Sparkles,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff", "viewer"],
+      },
+      {
         href: "/clawfleet/operations",
         label: "ปฏิบัติการ",
         icon: Activity,
