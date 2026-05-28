@@ -2900,6 +2900,8 @@ model ChairopsBranch {
   damageTickets      ChairopsDamageTicket[]
   cleanlinessReports ChairopsCleanlinessReport[]
   dailyRevenue       ChairopsBranchDailyRevenue[]
+  cashEvents         ChairopsPosCashEvent[]
+  coinEvents         ChairopsPosCoinEvent[]
 
   @@unique([orgId, slug])
   @@unique([orgId, tabName])
@@ -3001,6 +3003,8 @@ model ChairopsPosImport {
   notes        String?
 
   dailyRevenue ChairopsBranchDailyRevenue[]
+  cashEvents   ChairopsPosCashEvent[]
+  coinEvents   ChairopsPosCoinEvent[]
 
   @@unique([orgId, fileHash])
   @@index([orgId])
@@ -3285,6 +3289,61 @@ model ChairopsBranchDailyRevenue {
   @@index([orgId])
   @@index([branchId, bizDate])
   @@map("chairops_branch_daily_revenue")
+  @@schema("chairops")
+}
+
+// =============================================================
+// Timestamped POS event ingestion (Plan B) — per-second cash/coin events
+// from StarThing portal. Unlocks per-maid-collection noon-window reconcile.
+// Row-level dedup via rowHash unique index (CEO #1 requirement: re-uploading
+// overlapping date ranges must NOT double-count). See `[[chairops-pos-events]]`.
+// =============================================================
+
+model ChairopsPosCashEvent {
+  id             String   @id @default(cuid())
+  orgId          String
+  branchId       String? // resolved from storeName; null if unmatched
+  chairDeviceId  String // รหัสอุปกรณ์
+  chairNumber    String? // หมายเลขเครื่องจักร
+  storeName      String // raw, for re-resolve/audit
+  eventAt        DateTime @db.Timestamptz(6) // เวลา
+  cashAdded      Decimal  @db.Decimal(12, 2) // การเพิ่มเงินสด
+  cashMeter      Decimal  @db.Decimal(12, 2) // เงินสดทั้งหมด (cumulative)
+  rowHash        String // sha256(device|eventAtISO|cashAdded|cashMeter)
+  sourceImportId String?
+  createdAt      DateTime @default(now())
+
+  branch       ChairopsBranch?    @relation(fields: [branchId], references: [id])
+  sourceImport ChairopsPosImport? @relation(fields: [sourceImportId], references: [id])
+
+  @@unique([orgId, rowHash])
+  @@index([orgId, branchId, eventAt])
+  @@index([orgId, eventAt])
+  @@map("chairops_pos_cash_event")
+  @@schema("chairops")
+}
+
+model ChairopsPosCoinEvent {
+  id             String   @id @default(cuid())
+  orgId          String
+  branchId       String? // resolved from storeName; null if unmatched
+  chairDeviceId  String // รหัสอุปกรณ์
+  chairNumber    String? // หมายเลขเครื่องจักร
+  storeName      String // raw, for re-resolve/audit
+  eventAt        DateTime @db.Timestamptz(6) // เวลา
+  coinAdded      Int // การเพิ่มเหรียญ
+  coinMeter      Int // จำนวนเหรียญทั้งหมด (cumulative)
+  rowHash        String // sha256(device|eventAtISO|coinAdded|coinMeter)
+  sourceImportId String?
+  createdAt      DateTime @default(now())
+
+  branch       ChairopsBranch?    @relation(fields: [branchId], references: [id])
+  sourceImport ChairopsPosImport? @relation(fields: [sourceImportId], references: [id])
+
+  @@unique([orgId, rowHash])
+  @@index([orgId, branchId, eventAt])
+  @@index([orgId, eventAt])
+  @@map("chairops_pos_coin_event")
   @@schema("chairops")
 }
 
