@@ -4,7 +4,33 @@
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
-## 🆕 Update (2026-05-28 · รอบ 60 — 3-module quality pass · CEO "/increase quality ทุกโปรแกรม 3 agent ตัวละโมดูล")
+## 🆕 Update (2026-05-28 · รอบ 61 — ChairOps redesign /bigfeature + /bigsolvebug · CEO mockup 100%)
+
+**CEO trigger:** dropped a complete ChairOps HTML/CSS/JSX mockup (`~/เก้าอี้นวด`) + "ทำให้เหมือน 100% · ฟีเจอร์ไหนไม่มีก็ทำ · ใช้ /bigfeature /bigsolvebug /auditbigteam ตามลำดับ"
+
+**/bigfeature (run #1) — 5 parallel build agents · merged PR #7 (`3ffa11b` on setup):**
+- Dashboard exec home (5-KPI + critical-branches + missed-maids + alerts + 7D cashflow)
+- NEW `/chairops/branches` 3-pane workspace (filter rail + list + 7-tab detail) · all-branches redirects here
+- Reconcile 3-view rebuild (Ledger / Timeline / Periods) + sidebar + CSV export
+- Maid LINE Mini App home + cleanliness/new + parts/new
+- Design tokens ported scoped `.co-scope` + sparkbar/status-dot kit
+- Mockup spec: `/tmp/chairops-bigfeature/MOCKUP_SPEC.md` (1213 LOC)
+
+**/bigsolvebug — 3 parallel code-audit agents · merged PR #9 (into setup):**
+- **3 cross-org data leaks FIXED** (getDashboardRows · recomputeAllDrifts · evaluateAndEmitAlerts had no orgId filter → exec dashboard + Recompute + alerts crossed tenants)
+- P1 inverted drift tone (shortage was green) + P0 dead maid logout (→/logout 404) FIXED
+- Drift sign convention verified correct end-to-end
+- Report: `docs/BUGSOLVE_chairops_redesign_2026-05-28.md`
+
+**🛡 Verify:** tsc clean · next build 77/77 · dev-smoke all routes 307. Authenticated render NOT browser-tested — needs CEO visual QA.
+
+**⚠️ Deploy state:** redesign + bugsolve BOTH merged to `setup` (prod branch). `vercel --prod` BLOCKED by classifier (needs explicit CEO "deploy" for this task). Bonus: validated StarThing 3-report exports (cash/coin event logs timestamped + daily summary) → sum=daily 100% · unblocks noon-window reconcile (next backend feature). Memory `[[chairops-redesign-2026-05-28]]` · `[[chairops-starthing-3reports-validated-2026-05-28]]`.
+
+**Next:** CEO "deploy" → vercel --prod + curl verify · then /auditbigteam (sign-off) · then build timestamped-reconcile backend.
+
+---
+
+## Update (2026-05-28 · รอบ 60 — 3-module quality pass · CEO "/increase quality ทุกโปรแกรม 3 agent ตัวละโมดูล")
 
 **CEO trigger:** "ใช้ /increase quality skill ทุกโปรแกรม ส่ง agent ไป หัวหน้า agent 3 ตัว ทำตัวละ 1 โปรแกรม · Document · Hr · Cashhub"
 
