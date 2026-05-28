@@ -1,7 +1,14 @@
 // Public application page — no auth required
 // /apply/[slug]
 // Uses adminClient() to bypass RLS for read (validates slug + status=OPEN)
+//
+// SEO (quality pass 2026-05-28):
+//  - per-posting <title> + description + OpenGraph so LINE/Facebook share
+//    cards render the job title (not the bare site title)
+//  - keep robots noindex inherited from root layout (recruit is internal —
+//    HR shares the link manually; we don't want Google indexing PII surfaces)
 
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import {
@@ -12,6 +19,49 @@ import {
 import { ApplyClient } from "./apply-client";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  // Lightweight metadata-only fetch (no schema/answer columns).
+  const posting = await prisma.recruitJobPosting.findUnique({
+    where: { slug },
+    select: {
+      title: true,
+      description: true,
+      status: true,
+      company: { select: { name: true } },
+      org: { select: { name: true } },
+    },
+  });
+  if (!posting) {
+    return { title: "ไม่พบประกาศ", robots: { index: false, follow: false } };
+  }
+  const companyName = posting.company?.name ?? posting.org.name;
+  const title = `สมัครงาน · ${posting.title} · ${companyName}`;
+  const description =
+    posting.description?.replace(/\s+/g, " ").slice(0, 160) ??
+    `ส่งใบสมัครตำแหน่ง ${posting.title} กับ ${companyName} · ไม่ต้องล็อกอิน · PDPA ปลอดภัย`;
+  return {
+    title,
+    description,
+    robots: { index: false, follow: false },
+    openGraph: {
+      title,
+      description,
+      type: "website",
+      siteName: companyName,
+    },
+    twitter: {
+      card: "summary",
+      title,
+      description,
+    },
+  };
+}
 
 export default async function ApplyPage({
   params,

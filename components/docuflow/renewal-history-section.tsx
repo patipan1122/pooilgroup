@@ -668,7 +668,7 @@ function RenewalAdviceBanner({
     <div
       className={`mb-3 mt-1 rounded-lg border px-3 py-2.5 ${toneClasses[tone]}`}
     >
-      <p className="text-xs uppercase tracking-[0.14em] font-bold opacity-70 mb-1">
+      <p className="text-xs tracking-[0.02em] font-bold opacity-70 mb-1">
         💡 AI สรุปการเปลี่ยนแปลง
       </p>
       <p className="text-sm leading-relaxed">

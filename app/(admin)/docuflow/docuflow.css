@@ -80,13 +80,23 @@
   min-height: 100vh;
 }
 
-/* ============= Eyebrow / labels ============= */
+/* ============= Eyebrow / labels =============
+ * Per [[section-component-eyebrow-rootcause]]: never apply `uppercase` or
+ * `letter-spacing > 0.05em` in a base primitive — it mangles Thai labels
+ * (Thai has no case, but tracking ≥0.06em splits glyph clusters and hurts
+ * readability). Latin children that want SCREAMING look can opt in via
+ * `.df-eyebrow.df-eyebrow-latin` or pass uppercase text directly.
+ * ────────────────────────────────────────── */
 .df-eyebrow {
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   color: var(--df-muted);
+}
+.df-eyebrow-latin {
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
 }
 
 /* ============= Display (Thai serif) ============= */
@@ -153,6 +163,15 @@
   line-height: 1.2;
 }
 .df-btn:hover { transform: translateY(-1px); }
+.df-btn:focus-visible {
+  outline: 2px solid var(--df-brand);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .df-btn,
+  .df-fade-up { transition: none !important; animation: none !important; }
+  .df-btn:hover { transform: none; }
+}
 .df-btn-primary { background: var(--df-ink); color: #FFF6E5; }
 .df-btn-primary:hover { background: var(--df-ink-2); }
 .df-btn-brand { background: var(--df-brand); color: #fff; }

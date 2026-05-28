@@ -12,19 +12,39 @@ export function RecruitChatFab() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fabRef = useRef<HTMLButtonElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  // Keyboard shortcut: Cmd+/
+  // Move focus into the dialog when opened; return focus to the FAB on close.
+  // a11y (quality pass 2026-05-28): screen-reader users need focus inside the
+  // dialog · keyboard users need focus returned to the trigger.
+  useEffect(() => {
+    if (open) {
+      const t = window.setTimeout(() => textareaRef.current?.focus(), 50);
+      return () => window.clearTimeout(t);
+    } else {
+      // Slight delay so the close animation doesn't strip the focus ring before
+      // it's visible on return.
+      const t = window.setTimeout(() => fabRef.current?.focus(), 50);
+      return () => window.clearTimeout(t);
+    }
+  }, [open]);
+
+  // Keyboard shortcut: Cmd+/  (toggle) · Escape (close)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "/") {
         e.preventDefault();
         setOpen((v) => !v);
       }
-      if (e.key === "Escape" && open) setOpen(false);
+      if (e.key === "Escape" && open) {
+        e.preventDefault();
+        setOpen(false);
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -61,10 +81,13 @@ export function RecruitChatFab() {
     <>
       {/* FAB */}
       <button
+        ref={fabRef}
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-40 size-14 rounded-full bg-[var(--color-brand-600)] text-white shadow-xl hover:bg-[var(--color-brand-700)] hover:scale-105 transition-all flex items-center justify-center group"
+        className="fixed bottom-6 right-6 z-40 size-14 rounded-full bg-[var(--color-brand-600)] text-white shadow-xl hover:bg-[var(--color-brand-700)] hover:scale-105 transition-all flex items-center justify-center group focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--color-brand-600)]"
         aria-label="เปิดผู้ช่วย AI"
+        aria-expanded={open}
+        aria-controls="recruit-chat-dialog"
         title="ผู้ช่วย AI (⌘/)"
       >
         <Bot className="size-7" />
@@ -75,8 +98,13 @@ export function RecruitChatFab() {
         <div
           className="fixed inset-0 z-50 flex items-end justify-end p-0 sm:p-6 sm:items-end sm:justify-end"
           onClick={() => setOpen(false)}
+          aria-hidden="true"
         >
           <div
+            id="recruit-chat-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="recruit-chat-title"
             className="bg-white w-full sm:w-[400px] h-[88vh] sm:h-[600px] sm:rounded-3xl shadow-2xl flex flex-col border border-zinc-200"
             onClick={(e) => e.stopPropagation()}
           >
@@ -87,21 +115,29 @@ export function RecruitChatFab() {
                   <Bot className="size-5" />
                 </div>
                 <div>
-                  <p className="font-bold text-zinc-900 text-sm">ผู้ช่วย AI</p>
+                  <p id="recruit-chat-title" className="font-bold text-zinc-900 text-sm">
+                    ผู้ช่วย AI
+                  </p>
                   <p className="text-[11px] text-zinc-500">ช่วยร่าง JD · เปรียบเทียบคน · สรุปข้อมูล</p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setOpen(false)}
-                className="size-8 rounded-lg hover:bg-zinc-100 flex items-center justify-center"
-                aria-label="ปิด"
+                className="size-8 rounded-lg hover:bg-zinc-100 flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-500)]"
+                aria-label="ปิดผู้ช่วย AI"
               >
                 <X className="size-4" />
               </button>
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div
+              className="flex-1 overflow-y-auto p-4 space-y-3"
+              role="log"
+              aria-live="polite"
+              aria-atomic="false"
+            >
               {messages.length === 0 && !loading && (
                 <div className="text-sm text-zinc-500 space-y-3">
                   <p>สวัสดีครับ ผมช่วยอะไรได้บ้าง?</p>
@@ -152,6 +188,7 @@ export function RecruitChatFab() {
             <div className="border-t border-zinc-100 p-3">
               <div className="flex items-end gap-2">
                 <textarea
+                  ref={textareaRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -161,17 +198,19 @@ export function RecruitChatFab() {
                     }
                   }}
                   placeholder="พิมพ์คำถาม... (Enter ส่ง · Shift+Enter ขึ้นบรรทัด)"
+                  aria-label="พิมพ์คำถามถึงผู้ช่วย AI"
                   className="flex-1 resize-none rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)] max-h-24"
                   rows={1}
                   disabled={loading}
                 />
                 <button
+                  type="button"
                   onClick={() => void send()}
                   disabled={loading || !input.trim()}
-                  className="size-10 rounded-xl bg-[var(--color-brand-600)] text-white flex items-center justify-center disabled:opacity-40 hover:bg-[var(--color-brand-700)]"
-                  aria-label="ส่ง"
+                  className="size-10 rounded-xl bg-[var(--color-brand-600)] text-white flex items-center justify-center disabled:opacity-40 hover:bg-[var(--color-brand-700)] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-[var(--color-brand-500)]"
+                  aria-label="ส่งคำถาม"
                 >
-                  <Send className="size-4" />
+                  <Send className="size-4" aria-hidden />
                 </button>
               </div>
               <p className="text-[10px] text-zinc-400 mt-1.5 text-center">

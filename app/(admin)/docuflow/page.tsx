@@ -400,15 +400,35 @@ export default async function DocuFlowOverviewPage() {
                   วันนี้ต้องทำอะไรบ้าง
                 </h2>
               </div>
-              <div className="df-seg">
-                <button className="df-on">
+              {/* Segmented filter — only "วันนี้" is wired today. We keep
+                  the segmented look for visual parity with the canvas spec
+                  but mark unimplemented options as disabled so screen readers
+                  + keyboard users know they're not actionable. */}
+              <div className="df-seg" role="group" aria-label="ช่วงเวลา">
+                <button type="button" className="df-on" aria-current="true">
                   วันนี้{" "}
                   <span style={{ marginLeft: 4, color: "var(--df-accent)" }}>
                     {taskRows.length}
                   </span>
                 </button>
-                <button>สัปดาห์นี้</button>
-                <button>ทั้งหมด</button>
+                <button
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  title="กำลังพัฒนา"
+                  style={{ opacity: 0.45, cursor: "not-allowed" }}
+                >
+                  สัปดาห์นี้
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  title="กำลังพัฒนา"
+                  style={{ opacity: 0.45, cursor: "not-allowed" }}
+                >
+                  ทั้งหมด
+                </button>
               </div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

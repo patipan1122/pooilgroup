@@ -4,7 +4,7 @@
 // MLMc2DZd7q-5cmIzvrh5hw (variant V2).
 // Tabs: ตารางกรอกครบ · กระทบยอดแบงก์ · ไทม์ไลน์รายงาน
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, type KeyboardEvent } from "react";
 import {
   CalendarDays,
   Banknote,
@@ -78,6 +78,14 @@ export function HeatmapV2View({
   timeline,
 }: Props) {
   const [tab, setTab] = useState<Tab>("reconcile");
+  // Refs to each tab button so arrow-key navigation can focus the right one.
+  // Required for ARIA tabs pattern (WAI-ARIA APG) — keyboard users expect
+  // Left/Right (or Home/End) to move between tabs without leaving the tablist.
+  const tabRefs = useRef<Record<Tab, HTMLButtonElement | null>>({
+    heatmap: null,
+    reconcile: null,
+    timeline: null,
+  });
 
   const tabs: { id: Tab; label: string; Icon: typeof CalendarDays; count: string; badge?: boolean }[] = [
     {
@@ -118,7 +126,7 @@ export function HeatmapV2View({
           <div className="flex-1" />
           <div className="ch-card-v2 bg-white p-3 sm:p-4 flex gap-4 sm:gap-6 text-xs">
             <div>
-              <div className="text-[10px] uppercase tracking-wider font-semibold text-[var(--ch-text-3)]">
+              <div className="text-[11px] font-semibold text-[var(--ch-text-3)]">
                 เงินเข้าวันนี้
               </div>
               <div className="ch-tnum text-lg sm:text-xl font-bold text-[var(--ch-ok)] mt-0.5">
@@ -127,7 +135,7 @@ export function HeatmapV2View({
             </div>
             <div className="w-px bg-[var(--ch-border)]" />
             <div>
-              <div className="text-[10px] uppercase tracking-wider font-semibold text-[var(--ch-text-3)]">
+              <div className="text-[11px] font-semibold text-[var(--ch-text-3)]">
                 จับคู่แล้ว
               </div>
               <div className="ch-tnum text-lg sm:text-xl font-bold text-[var(--ch-navy)] mt-0.5">
@@ -140,7 +148,7 @@ export function HeatmapV2View({
             </div>
             <div className="w-px bg-[var(--ch-border)]" />
             <div>
-              <div className="text-[10px] uppercase tracking-wider font-semibold text-[var(--ch-text-3)]">
+              <div className="text-[11px] font-semibold text-[var(--ch-text-3)]">
                 ผิดปกติ
               </div>
               <div className="ch-tnum text-lg sm:text-xl font-bold text-[var(--ch-danger)] mt-0.5">
@@ -150,22 +158,53 @@ export function HeatmapV2View({
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="mt-5 flex gap-1 border-b border-[var(--ch-border)] overflow-x-auto ch-no-scroll">
-          {tabs.map((t) => {
+        {/* Tabs — WAI-ARIA tablist pattern (Left/Right/Home/End nav) */}
+        <div
+          role="tablist"
+          aria-label="มุมมอง Heatmap"
+          className="mt-5 flex gap-1 border-b border-[var(--ch-border)] overflow-x-auto ch-no-scroll"
+        >
+          {tabs.map((t, idx) => {
             const active = tab === t.id;
             const { Icon } = t;
+            const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+              // Arrow keys move focus + activate next tab (automatic activation
+              // is OK here — switching tabs is cheap, no destructive side effect).
+              if (
+                e.key !== "ArrowRight" &&
+                e.key !== "ArrowLeft" &&
+                e.key !== "Home" &&
+                e.key !== "End"
+              )
+                return;
+              e.preventDefault();
+              let nextIdx = idx;
+              if (e.key === "ArrowRight") nextIdx = (idx + 1) % tabs.length;
+              else if (e.key === "ArrowLeft")
+                nextIdx = (idx - 1 + tabs.length) % tabs.length;
+              else if (e.key === "Home") nextIdx = 0;
+              else if (e.key === "End") nextIdx = tabs.length - 1;
+              const nextId = tabs[nextIdx]!.id;
+              setTab(nextId);
+              tabRefs.current[nextId]?.focus();
+            };
             return (
               <button
                 key={t.id}
+                ref={(el) => {
+                  tabRefs.current[t.id] = el;
+                }}
                 type="button"
+                role="tab"
+                id={`heatmap-tab-${t.id}`}
+                aria-selected={active}
+                aria-controls={`heatmap-tabpanel-${t.id}`}
+                tabIndex={active ? 0 : -1}
                 onClick={() => setTab(t.id)}
-                className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-colors whitespace-nowrap -mb-px"
+                onKeyDown={onKeyDown}
+                className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-colors whitespace-nowrap -mb-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ch-brand)] focus-visible:ring-offset-1 rounded-sm"
                 style={{
                   color: active ? "var(--ch-brand)" : "var(--ch-text-2)",
-                  borderBottom: active
-                    ? "2px solid var(--ch-brand)"
-                    : "2px solid transparent",
                   background: "transparent",
                   border: "none",
                   borderBottomWidth: 2,
@@ -176,7 +215,7 @@ export function HeatmapV2View({
                   cursor: "pointer",
                 }}
               >
-                <Icon className="size-3.5" />
+                <Icon className="size-3.5" aria-hidden="true" />
                 {t.label}
                 <span
                   className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
@@ -184,6 +223,7 @@ export function HeatmapV2View({
                     background: t.badge ? "var(--ch-danger)" : "var(--ch-bg-3)",
                     color: t.badge ? "white" : "var(--ch-text-3)",
                   }}
+                  aria-hidden="true"
                 >
                   {t.count}
                 </span>
@@ -194,7 +234,12 @@ export function HeatmapV2View({
 
         {/* Body */}
         {tab === "heatmap" && (
-          <div className="mt-5">
+          <div
+            id="heatmap-tabpanel-heatmap"
+            role="tabpanel"
+            aria-labelledby="heatmap-tab-heatmap"
+            className="mt-5"
+          >
             <HeatmapStatStrip
               branches={branches}
               matrix={matrix}
@@ -226,9 +271,23 @@ export function HeatmapV2View({
           </div>
         )}
         {tab === "reconcile" && (
-          <ReconcileTab rows={reconcile.rows} summary={reconcile.summary} />
+          <div
+            id="heatmap-tabpanel-reconcile"
+            role="tabpanel"
+            aria-labelledby="heatmap-tab-reconcile"
+          >
+            <ReconcileTab rows={reconcile.rows} summary={reconcile.summary} />
+          </div>
         )}
-        {tab === "timeline" && <TimelineTab entries={timeline} />}
+        {tab === "timeline" && (
+          <div
+            id="heatmap-tabpanel-timeline"
+            role="tabpanel"
+            aria-labelledby="heatmap-tab-timeline"
+          >
+            <TimelineTab entries={timeline} />
+          </div>
+        )}
       </div>
     </div>
   );

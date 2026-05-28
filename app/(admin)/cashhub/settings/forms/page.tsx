@@ -80,7 +80,7 @@ export default async function FormsListPage() {
           <div className="flex-1" />
           <div className="ch-card-v2 bg-white p-3 flex gap-5 text-xs">
             <div>
-              <div className="text-[10px] uppercase tracking-wider font-semibold text-[var(--ch-text-3)]">
+              <div className="text-[11px] font-semibold text-[var(--ch-text-3)]">
                 ประเภทธุรกิจ
               </div>
               <div className="ch-tnum text-xl font-bold text-[var(--ch-navy)] mt-0.5">
@@ -89,7 +89,7 @@ export default async function FormsListPage() {
             </div>
             <div className="w-px bg-[var(--ch-border)]" />
             <div>
-              <div className="text-[10px] uppercase tracking-wider font-semibold text-[var(--ch-text-3)]">
+              <div className="text-[11px] font-semibold text-[var(--ch-text-3)]">
                 ปรับแล้ว
               </div>
               <div className="ch-tnum text-xl font-bold text-[var(--ch-brand)] mt-0.5">
@@ -98,7 +98,7 @@ export default async function FormsListPage() {
             </div>
             <div className="w-px bg-[var(--ch-border)]" />
             <div>
-              <div className="text-[10px] uppercase tracking-wider font-semibold text-[var(--ch-text-3)]">
+              <div className="text-[11px] font-semibold text-[var(--ch-text-3)]">
                 สาขาทั้งหมด
               </div>
               <div className="ch-tnum text-xl font-bold text-[var(--ch-navy)] mt-0.5">

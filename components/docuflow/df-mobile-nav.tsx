@@ -93,10 +93,15 @@ export function DfMobileBottomNav({ badgeRenew = 0 }: { badgeRenew?: number }) {
             </Link>
           );
         }
+        const accessibleLabel = showBadge
+          ? `${n.label} · ${badgeRenew} ฉบับใกล้หมดอายุ`
+          : n.label;
         return (
           <Link
             key={n.id}
             href={n.href}
+            aria-label={accessibleLabel}
+            aria-current={active ? "page" : undefined}
             style={{
               display: "flex",
               flexDirection: "column",
@@ -111,6 +116,7 @@ export function DfMobileBottomNav({ badgeRenew = 0 }: { badgeRenew?: number }) {
             <Icon
               size={20}
               strokeWidth={active ? 2.2 : 1.6}
+              aria-hidden="true"
             />
             <span
               style={{
@@ -122,6 +128,7 @@ export function DfMobileBottomNav({ badgeRenew = 0 }: { badgeRenew?: number }) {
             </span>
             {showBadge && (
               <span
+                aria-hidden="true"
                 style={{
                   position: "absolute",
                   top: -2,

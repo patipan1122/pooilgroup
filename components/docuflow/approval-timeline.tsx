@@ -174,8 +174,7 @@ export function ApprovalTimeline({
               fontSize: 11,
               fontWeight: 700,
               color: "var(--df-muted)",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
+              letterSpacing: "0.02em",
               marginBottom: 10,
             }}
           >
@@ -307,8 +306,7 @@ export function ApprovalTimeline({
               fontSize: 11,
               fontWeight: 700,
               color: "var(--df-muted)",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
+              letterSpacing: "0.02em",
               marginBottom: 10,
             }}
           >
@@ -402,8 +400,7 @@ export function ApprovalTimeline({
               fontSize: 11,
               fontWeight: 700,
               color: "var(--df-muted)",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
+              letterSpacing: "0.02em",
               marginBottom: 10,
             }}
           >

@@ -142,6 +142,13 @@ export function ViewerTabs({
               <iframe
                 src={downloadUrl}
                 title={docName}
+                // Defense-in-depth: the PDF lives on R2's signed-URL
+                // domain (different origin), but we still sandbox to deny
+                // top-level navigation, popups, and form posts. Allow
+                // same-origin so the browser's built-in PDF viewer can
+                // fetch its own assets.
+                sandbox="allow-same-origin allow-scripts"
+                referrerPolicy="no-referrer"
                 style={{
                   width: "100%",
                   height: 640,

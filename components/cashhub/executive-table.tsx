@@ -271,7 +271,7 @@ export function ExecutiveTable({ data }: Props) {
       {/* Filter bar — left: period toggle · right: expand/collapse all */}
       <div className="flex items-center justify-between flex-wrap gap-3 px-4 sm:px-5 py-3 border-b-2 border-zinc-100 bg-zinc-50/40">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[11px] uppercase tracking-[0.18em] text-zinc-600 font-bold">
+          <span className="text-xs text-zinc-600 font-bold">
             ดูแบบ
           </span>
           <PeriodToggle current={data.period} onChange={setPeriod} />
@@ -366,12 +366,12 @@ export function ExecutiveTable({ data }: Props) {
               <th
                 className="px-2 py-3 font-bold text-center text-zinc-500 sticky top-14 sm:top-16 z-20 bg-white min-w-[80px]"
               >
-                <span className="text-[11px] uppercase tracking-wider">เทรนด์</span>
+                <span className="text-xs">เทรนด์</span>
               </th>
               <th
                 className="px-2 py-3 font-bold text-center text-zinc-500 sticky top-14 sm:top-16 z-20 bg-white min-w-[100px]"
               >
-                <span className="text-[11px] uppercase tracking-wider">สถานะ</span>
+                <span className="text-xs">สถานะ</span>
               </th>
             </tr>
           </thead>
@@ -575,12 +575,16 @@ const BusinessTypeRow = memo(function BusinessTypeRow({
     <>
       <tr
         className={cn(
-          "border-b border-zinc-100 transition-colors cursor-pointer group/row",
+          "border-b border-zinc-100 transition-colors cursor-pointer group/row focus-within:ring-2 focus-within:ring-[var(--color-brand-400)] focus-within:ring-inset",
           rowIdx % 2 === 1 && !isExpanded && "bg-zinc-50/40",
           isExpanded
             ? "bg-[var(--color-brand-50)]/40"
             : "hover:bg-[var(--color-brand-50)]/30",
         )}
+        // Keyboard accessibility: use a hidden focusable wrapper inside the
+        // first cell (see <button> below) so screen-reader users get a real
+        // expand control with role/aria-expanded. The row-level onClick stays
+        // for mouse users who click anywhere on the row.
         onClick={handleToggle}
       >
         <td
@@ -595,13 +599,25 @@ const BusinessTypeRow = memo(function BusinessTypeRow({
           style={{ borderRight: "1px solid var(--color-border)" }}
         >
           <div className="flex items-center gap-2 min-w-0">
-            <ChevronDown
-              className={cn(
-                "size-4 text-zinc-400 transition-transform shrink-0",
-                isExpanded ? "rotate-0" : "-rotate-90",
-              )}
-            />
-            <span className="text-base shrink-0">{cfg?.emoji ?? "📋"}</span>
+            <button
+              type="button"
+              aria-expanded={isExpanded}
+              aria-label={`${isExpanded ? "หุบ" : "ขยาย"} ${cfg?.label ?? row.businessType} (${row.branchCount} สาขา)`}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleToggle();
+              }}
+              className="inline-flex items-center justify-center size-5 -m-0.5 rounded text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-500)] shrink-0"
+            >
+              <ChevronDown
+                aria-hidden="true"
+                className={cn(
+                  "size-4 transition-transform",
+                  isExpanded ? "rotate-0" : "-rotate-90",
+                )}
+              />
+            </button>
+            <span className="text-base shrink-0" aria-hidden="true">{cfg?.emoji ?? "📋"}</span>
             <div className="min-w-0">
               <div className="font-semibold text-zinc-900 truncate">
                 {cfg?.label ?? row.businessType}
@@ -820,7 +836,7 @@ const BusinessTypeRow = memo(function BusinessTypeRow({
           <tr
             key={b.id}
             className={cn(
-              "border-b border-zinc-100 bg-[var(--color-brand-50)]/20 hover:bg-[var(--color-brand-50)]/40 transition-colors group/branchrow",
+              "border-b border-zinc-100 bg-[var(--color-brand-50)]/20 hover:bg-[var(--color-brand-50)]/40 transition-colors group/branchrow focus-within:ring-2 focus-within:ring-[var(--color-brand-400)] focus-within:ring-inset",
               bIdx === row.branches.length - 1 &&
                 "border-b-2 border-[var(--color-brand-200)]",
             )}
@@ -835,11 +851,22 @@ const BusinessTypeRow = memo(function BusinessTypeRow({
               style={{ borderRight: "1px solid var(--color-border)" }}
             >
               <div className="flex items-center gap-2 min-w-0 pl-7">
-                <span className="text-zinc-300 text-sm">└</span>
+                <span className="text-zinc-300 text-sm" aria-hidden="true">└</span>
                 <div className="min-w-0">
-                  <div className="text-xs font-medium text-zinc-700 truncate tabular-num">
+                  {/* Real focusable control for keyboard users — visually
+                      identical to a text label but Enter/Space activates
+                      the same navigation that mouse click does. */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onNavigateBranch(b.id);
+                    }}
+                    className="text-left text-xs font-medium text-zinc-700 truncate tabular-num hover:text-[var(--color-brand-700)] focus-visible:outline-none focus-visible:underline rounded-sm"
+                    aria-label={`เปิดสาขา ${b.code} ${b.name}`}
+                  >
                     {b.code}
-                  </div>
+                  </button>
                   <div className="text-[10px] text-zinc-400 truncate">
                     {b.name}
                   </div>

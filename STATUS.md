@@ -1,8 +1,83 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-27 (รอบ 58 · ChairOps /bigfeature Wave 0 ship)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-28 (รอบ 60 · 3-module quality pass)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-05-28 · รอบ 60 — 3-module quality pass · CEO "/increase quality ทุกโปรแกรม 3 agent ตัวละโมดูล")
+
+**CEO trigger:** "ใช้ /increase quality skill ทุกโปรแกรม ส่ง agent ไป หัวหน้า agent 3 ตัว ทำตัวละ 1 โปรแกรม · Document · Hr · Cashhub"
+
+**3 lead agents · parallel · 1 module each · comprehensive 5-dim audit (best-practices · a11y · perf · CWV · seo)**
+
+| Agent | Module | Files | P0 | P1 | P2 backlog | Highlight |
+|---|---|---|---|---|---|---|
+| 1 | DocuFlow | 8 | 0 | 9 | 14 | iframe sandbox · disabled button trap · 7 Thai eyebrow uppercase · mobile nav badge ARIA |
+| 2 | Recruit (HR) | 7 | **3** | 4 | 12 | refId 20bit→40bit · ApplicationDetail org self-scope · chat-fab ARIA dialog · OG/Twitter metadata |
+| 3 | CashHub | 6 | 0 | 8 | 11 | Heatmap V2 WAI-ARIA tablist · Executive table expand/sub-row keyboard nav · Hero KPI eyebrow root-cause · 15+ Thai labels |
+| **Total** | **3 modules** | **21** | **3** | **21** | **37** | |
+
+**🛡 Verify**
+- ✅ `npx tsc --noEmit` — clean (0 errors across all 3 module scopes)
+- ✅ `npx eslint <module scope>` — no new errors/warnings · identical to baseline
+- ✅ ไม่แตะ reconcile formula · ไม่แตะ shortage flow · ไม่แตะ LPG/EV unit logic · ไม่แตะ webhook crypto
+- ✅ ไม่แตะ shared `components/ui/*` primitives (DocuFlow agent fixed at module-local `.df-eyebrow` instead)
+- ⚠️ ไม่ commit · ไม่ deploy · ทุกการเปลี่ยนแปลงอยู่ใน working tree
+
+**🚨 Behavioral changes (CEO ต้อง QA ก่อน commit/deploy):**
+1. **Recruit refId** — ใหม่: 8-char base32 (ไม่มี I/L/O/U/0/1) · เก่า: 6-digit numeric ยังใช้ได้ (lenient validator)
+2. **Recruit /apply/[slug] share previews** — ตอนนี้ LINE/FB share ขึ้น "สมัครงาน · ตำแหน่ง · บริษัท" แทนชื่อเว็บเฉยๆ (OG metadata)
+3. **CashHub Heatmap V2 tabs** — Tab key ไม่ cycle ระหว่าง tabs อีกแล้ว · ใช้ Arrow Left/Right แทน (WAI-ARIA APG standard · CEO ลองสัก 30 วิ ถ้าไม่ชอบบอก revert tabIndex)
+4. **CashHub Executive table** — expand chevron + branch sub-row navigate ด้วย keyboard ได้แล้ว · mouse คลิกได้ตามเดิม
+5. **DocuFlow dashboard** — ปุ่ม "สัปดาห์นี้/ทั้งหมด" ที่กดไม่ได้ ตอนนี้ disabled + กระจาย opacity (CEO ตัดสินใจว่า implement filter หรือลบออก — P2)
+6. **DocuFlow PDF viewer** — iframe ใส่ sandbox (defense-in-depth · ไม่ควรกระทบ PDF preview)
+7. **Thai eyebrow labels** — ในทั้ง 3 modules · ตอนนี้ไม่ uppercase ไม่ stretch (ตรงตาม [[section-component-eyebrow-rootcause]] ที่ตั้งไว้รอบ 47)
+
+**📚 Memory ที่ save (รอบนี้)**
+- `[[refid-as-bearer-token-pattern]]` — public /track-my-X URLs MUST use crypto.randomBytes ≥40-bit + format-validate before DB
+- `[[wai-aria-tablist-pattern]]` — required pattern for tab strip UIs (roving tabIndex + Arrow keys + role=tablist)
+- `[[quality-pass-3module-2026-05-28]]` — รอบ 60 summary · agent stats · P0/P1/P2 split
+
+**⚠️ Pending items (CEO ต้องตัดสิน)**
+- DocuFlow ยังอยู่ใน `MODULES_DISABLED=fuelos,docuflow` — fixes ใน DocuFlow เป็น forward-looking · ถ้า CEO อยากเปิดใช้ DocuFlow บอก drop จาก env
+- Recruit migration `20260526000002` ยัง pending CEO confirm (per [[bugsolve-recruit-2026-05-26]])
+- 37 P2 รายการ — ส่วนใหญ่เป็น polish · pre-existing lint warnings · perf nice-to-have · CEO เลือก batch ไว้ later
+
+---
+
+## 🆕 Update (2026-05-27 · รอบ 59 — ClawFleet demo seed · CEO "ใส่ข้อมูลจำลองให้เห็นภาพ")
+
+**CEO trigger:** หลังสรุปฟีเจอร์ ClawFleet → "ใส่ข้อมูลจำลองลงไปให้เห็นภาพและเข้าฟีเจอร์"
+
+**Created** `scripts/seed-clawfleet-demo.ts` (~440 LOC · idempotent · `[DEMO]` tag for cleanup)
+
+**Seed contents (PROD DB now):**
+- 3 claw_machine branches (1 existing + 2 new: ปิ่นเกล้า + ตลาดบางใหญ่)
+- 20 machines (4 EX + 16 CLAW) across 4 groups
+- Active loadouts: EX rate 1฿=1coin + 3 promo tiers · CLAW each assigned product+price
+- 28 historical sessions: **20 CLOSED · 4 ANOMALY_REVIEW · 4 OPEN** (in-progress today)
+- 140 collection events (16 INITIAL + 124 session events)
+- 32 stock movements (RECEIVE + LOAD_TO_MACHINE)
+
+**Cross-check trigger verified:** auto-classified 4 sessions as ANOMALY_REVIEW (15% variance · exceeded 5% tolerance) — HEART of the system working correctly.
+
+**Visit:**
+- https://pooilgroup.vercel.app/clawfleet/hub (or local http://localhost:3100)
+- /operations · /insights · /setup
+
+**Cleanup (one-shot · per script header):**
+```sql
+DELETE FROM cf_collection_events WHERE notes LIKE '[DEMO]%';
+DELETE FROM cf_collection_sessions WHERE review_note LIKE '[DEMO]%';
+DELETE FROM cf_stock_movements WHERE reason LIKE '[DEMO]%';
+DELETE FROM cf_machine_loadouts WHERE notes LIKE '[DEMO]%';
+DELETE FROM cf_exchanger_loadouts WHERE notes LIKE '[DEMO]%';
+DELETE FROM cf_machine_groups WHERE name LIKE '[DEMO]%';
+DELETE FROM cf_machines WHERE code LIKE 'DM-%';
+DELETE FROM branches WHERE code LIKE 'DM-BR-%';
+```
+
+---
 
 ## 🆕 Update (2026-05-27 · รอบ 58 — ChairOps `/bigfeature` Wave 0 ship · 12-persona roundtable + 6 parallel build agents)
 

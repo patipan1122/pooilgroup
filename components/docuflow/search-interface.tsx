@@ -170,7 +170,11 @@ export function SearchInterface({ examples }: Props) {
           <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-zinc-400">
             <Search className="size-5" />
           </div>
+          <label htmlFor="docuflow-ai-search-input" className="sr-only">
+            ถามคำถามภาษาคนเกี่ยวกับเอกสาร
+          </label>
           <input
+            id="docuflow-ai-search-input"
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -178,10 +182,15 @@ export function SearchInterface({ examples }: Props) {
             maxLength={500}
             className="w-full h-14 pl-12 pr-4 text-base rounded-2xl border border-zinc-200 bg-white focus:border-[var(--color-brand-600)] focus:ring-2 focus:ring-[var(--color-brand-100)] outline-none transition placeholder:text-zinc-400"
             disabled={loading}
+            aria-describedby="docuflow-ai-search-counter"
           />
         </div>
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-zinc-500">
+          <p
+            id="docuflow-ai-search-counter"
+            className="text-xs text-zinc-500"
+            aria-live="polite"
+          >
             {query.length}/500 ตัวอักษร
           </p>
           <Button
@@ -249,8 +258,11 @@ export function SearchInterface({ examples }: Props) {
 
       {/* Error */}
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 flex items-start gap-3">
-          <AlertCircle className="size-5 text-red-600 shrink-0 mt-0.5" />
+        <div
+          role="alert"
+          className="rounded-xl border border-red-200 bg-red-50 p-4 flex items-start gap-3"
+        >
+          <AlertCircle className="size-5 text-red-600 shrink-0 mt-0.5" aria-hidden="true" />
           <div className="flex-1">
             <p className="text-sm font-medium text-red-900">เกิดข้อผิดพลาด</p>
             <p className="text-sm text-red-700 mt-0.5">{error}</p>
@@ -260,9 +272,13 @@ export function SearchInterface({ examples }: Props) {
 
       {/* Loading skeleton */}
       {loading && (
-        <div className="rounded-2xl border border-zinc-200 bg-white p-5 animate-pulse">
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded-2xl border border-zinc-200 bg-white p-5 animate-pulse"
+        >
           <div className="flex items-center gap-2 mb-3">
-            <Loader2 className="size-4 animate-spin text-[var(--color-brand-600)]" />
+            <Loader2 className="size-4 animate-spin text-[var(--color-brand-600)]" aria-hidden="true" />
             <p className="text-sm text-zinc-600">AI กำลังค้นและประมวลผล...</p>
           </div>
           <div className="space-y-2">
@@ -280,7 +296,7 @@ export function SearchInterface({ examples }: Props) {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Sparkles className="size-4 text-[var(--color-brand-700)]" />
-                <p className="text-xs uppercase tracking-[0.16em] font-bold text-[var(--color-brand-700)]">
+                <p className="text-xs tracking-[0.02em] font-bold text-[var(--color-brand-700)]">
                   คำตอบ
                 </p>
               </div>

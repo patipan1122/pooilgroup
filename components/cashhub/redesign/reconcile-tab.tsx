@@ -116,25 +116,27 @@ export function ReconcileTab({ rows, summary }: Props) {
         {/* Table */}
         <div className="overflow-x-auto">
           <table className="ch-table-v2 w-full text-sm">
-            <thead className="sticky top-14 sm:top-16 z-20">
+            {/* Sticky thead — solid bg (per [[sticky-bg-inherit-anti-pattern]])
+                so cells don't bleed-through during scroll. */}
+            <thead className="sticky top-14 sm:top-16 z-20 bg-[var(--ch-bg-2)]">
               <tr>
-                <th className="text-left px-3 py-2.5 text-[10.5px] font-semibold tracking-wider uppercase text-[var(--ch-text-3)]">
+                <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-[var(--ch-text-3)]">
                   วัน · สาขา
                 </th>
-                <th className="text-right px-3 py-2.5 text-[10.5px] font-semibold tracking-wider uppercase text-[var(--ch-text-3)]">
+                <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-[var(--ch-text-3)]">
                   ยอดในระบบ
                 </th>
-                <th className="text-center px-2 py-2.5 text-[10.5px] font-semibold tracking-wider uppercase text-[var(--ch-text-3)] w-8" />
-                <th className="text-right px-3 py-2.5 text-[10.5px] font-semibold tracking-wider uppercase text-[var(--ch-text-3)]">
+                <th className="text-center px-2 py-2.5 text-[11px] font-semibold text-[var(--ch-text-3)] w-8" />
+                <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-[var(--ch-text-3)]">
                   เงินเข้าจริง
                 </th>
-                <th className="text-right px-3 py-2.5 text-[10.5px] font-semibold tracking-wider uppercase text-[var(--ch-text-3)]">
+                <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-[var(--ch-text-3)]">
                   ต่าง
                 </th>
-                <th className="text-center px-3 py-2.5 text-[10.5px] font-semibold tracking-wider uppercase text-[var(--ch-text-3)]">
+                <th className="text-center px-3 py-2.5 text-[11px] font-semibold text-[var(--ch-text-3)]">
                   สถานะ
                 </th>
-                <th className="text-right px-3 py-2.5 text-[10.5px] font-semibold tracking-wider uppercase text-[var(--ch-text-3)]">
+                <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-[var(--ch-text-3)]">
                   ทำต่อ
                 </th>
               </tr>
@@ -273,7 +275,7 @@ export function ReconcileTab({ rows, summary }: Props) {
         </div>
 
         <div className="ch-card-v2 bg-white p-4">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ch-text-3)]">
+          <div className="text-[12px] font-semibold text-[var(--ch-text-3)]">
             สรุปวันนี้
           </div>
           <div className="mt-2 space-y-1.5 text-sm">
