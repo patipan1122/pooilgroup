@@ -9,7 +9,7 @@ import { writeAudit } from "@/lib/chairops/audit/log";
 
 export async function refreshDrifts() {
   const session = await requireRole("MANAGER");
-  const result = await evaluateAndEmitAlerts();
+  const result = await evaluateAndEmitAlerts(session.user.orgId);
   await writeAudit({
     userId: session.user.id,
     action: "dashboard.refresh_drifts",

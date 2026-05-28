@@ -33,7 +33,7 @@ export default async function ReconcileOrgPage({
   const sp = await searchParams;
 
   if (sp.recompute === "1") {
-    await recomputeAllDrifts();
+    await recomputeAllDrifts(orgId);
     redirect("/chairops/reconcile");
   }
 

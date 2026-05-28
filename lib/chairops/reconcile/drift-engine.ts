@@ -368,9 +368,14 @@ export async function recomputeDriftForBranch(
     : recomputeDriftForBranch_legacy(branchId);
 }
 
-export async function recomputeAllDrifts(): Promise<BranchDriftSnapshot[]> {
+export async function recomputeAllDrifts(
+  orgId?: string,
+): Promise<BranchDriftSnapshot[]> {
+  // Scope to one org when provided — every caller runs inside an org-scoped
+  // session, so an unscoped recompute would silently touch other tenants'
+  // branches (cross-org write leak). Pool multi-tenant rule.
   const branches = await prisma.chairopsBranch.findMany({
-    where: { isActive: true },
+    where: { isActive: true, ...(orgId ? { orgId } : {}) },
     select: { id: true },
   });
   const results: BranchDriftSnapshot[] = [];
@@ -380,8 +385,13 @@ export async function recomputeAllDrifts(): Promise<BranchDriftSnapshot[]> {
   return results;
 }
 
-export async function getDashboardRows() {
+export async function getDashboardRows(orgId?: string) {
+  // SECURITY: must scope to the caller's org — ChairopsDrift has no RLS at this
+  // layer, so an unscoped findMany leaks every tenant's drift rows into the
+  // exec dashboard KPIs/leaderboard. orgId is optional only for back-compat
+  // with internal cron callers; UI callers ALWAYS pass it.
   const drifts = await prisma.chairopsDrift.findMany({
+    where: orgId ? { orgId } : undefined,
     include: { branch: true },
   });
   return drifts
