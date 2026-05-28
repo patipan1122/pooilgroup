@@ -70,8 +70,11 @@ export function UploadMultiClient() {
         toast.error(res.error ?? "บันทึกไม่สำเร็จ");
         return;
       }
+      const coverage = res.coverageThrough
+        ? ` · ข้อมูลล่าสุดถึงวันที่ ${res.coverageThrough} แล้ว`
+        : "";
       toast.success(
-        `บันทึกแล้ว · เงินสด ${res.cashInserted} รายการใหม่ (ข้ามซ้ำ ${res.cashSkipped}) · เหรียญ ${res.coinInserted} ใหม่ (ข้ามซ้ำ ${res.coinSkipped})`,
+        `บันทึกแล้ว · เงินสด ${res.cashInserted} รายการใหม่ (ข้ามซ้ำ ${res.cashSkipped}) · เหรียญ ${res.coinInserted} ใหม่ (ข้ามซ้ำ ${res.coinSkipped})${coverage}`,
       );
       setPreview(null);
       form.reset();

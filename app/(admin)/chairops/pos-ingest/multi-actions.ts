@@ -113,6 +113,9 @@ export interface MultiCommitResult {
   cashSkipped: number;
   coinInserted: number;
   coinSkipped: number;
+  /** Latest bizDate (YYYY-MM-DD) now covered across the uploaded files — so the
+   * operator knows "data is now up to date X" (CEO ask 2026-05-28). */
+  coverageThrough: string | null;
   error?: string;
 }
 
@@ -132,6 +135,7 @@ export async function commitMultiImport(
     cashSkipped: 0,
     coinInserted: 0,
     coinSkipped: 0,
+    coverageThrough: null,
   };
 
   try {
@@ -144,6 +148,13 @@ export async function commitMultiImport(
 
       const parsed = kind === "cash" ? parseCashEvents(file.buf) : parseCoinEvents(file.buf);
       const diff = await computeEventDiff(prisma, orgId, parsed.parsedRows, kind, parsed.errors.length);
+
+      // Track the latest date this upload covers (max across files).
+      if (diff.summary.dateRange?.to) {
+        if (!result.coverageThrough || diff.summary.dateRange.to > result.coverageThrough) {
+          result.coverageThrough = diff.summary.dateRange.to;
+        }
+      }
 
       // One import row per event file (fileHash dedup · unique per org).
       const fileHash = sha256(file.buf);
