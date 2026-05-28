@@ -1,105 +1,105 @@
-// ClawFleet v2 — server data loaders with graceful fallback.
+// ClawFleet v2 — server data loaders with 3-tier real-data preference.
 //
-// Each loader tries the real DB query (lib/clawfleet/v2-queries.ts). If that
-// throws (e.g. the branch-model migration 20260528000001 is not yet applied, so
-// the new columns/table don't exist) OR returns empty, it falls back to the
-// mock showcase data (lib/clawfleet/v2-data.ts). This keeps the v2 pages working
-// as a design preview before the migration lands, then flips to real data
-// automatically afterwards once seeded.
+// Resolution order per loader:
+//   1. NEW branch model (lib/clawfleet/v2-queries.ts · per-claw cash) — works once
+//      migration 20260528000001 + branch-shape seed are applied.
+//   2. LEGACY group model (lib/clawfleet/v2-queries-legacy.ts) — reads the EXISTING
+//      group-collection data (real anomalies/sessions/stock) using only columns that
+//      exist pre-migration. This is what renders REAL data today.
+//   3. MOCK showcase (lib/clawfleet/v2-data.ts) — only if the DB has no data at all.
 //
-// TODO[v2-wire-db]: once migration is applied + branch-shape demo seeded and
-// verified in prod, the mock fallback can be removed.
+// So the v2 pages show real data now (group model), and automatically upgrade to
+// the per-claw cash model after the migration lands — no code change needed.
+//
+// TODO[v2-wire-db]: once migration applied + verified in prod, the legacy + mock
+// tiers can be dropped.
 
 import * as Q from "./v2-queries";
+import * as L from "./v2-queries-legacy";
 import {
-  BRANCHES,
-  ANOMALIES,
-  ACTIVE_SESSIONS,
-  CLOSED_TODAY,
-  BRANCH_STOCK,
-  DELIVERIES,
-  TODAY,
-  TREND_7D,
-  BRANCH_PERF,
-  INSIGHTS_ROWS,
-  type Branch,
-  type Anomaly,
-  type ActiveSession,
-  type ClosedSession,
-  type StockEntry,
-  type Delivery,
-  type TodaySummary,
-  type TrendDay,
-  type BranchPerf,
-  type InsightRow,
+  BRANCHES, ANOMALIES, ACTIVE_SESSIONS, CLOSED_TODAY, BRANCH_STOCK, DELIVERIES,
+  TODAY, TREND_7D, BRANCH_PERF, INSIGHTS_ROWS,
+  type Branch, type Anomaly, type ActiveSession, type ClosedSession,
+  type StockEntry, type Delivery, type TodaySummary, type TrendDay,
+  type BranchPerf, type InsightRow,
 } from "./v2-data";
 
 const inScope = (filter: string | undefined, branchId: string) =>
   !filter || filter === "all" || branchId === filter;
 
-export async function loadBranches(): Promise<Branch[]> {
-  try {
-    const rows = await Q.getV2Branches();
-    return rows.length ? rows : BRANCHES;
-  } catch {
-    return BRANCHES;
+/** try a sequence of async producers, return the first non-empty (by `len`), else the last. */
+async function firstNonEmpty<T>(
+  producers: Array<() => Promise<T>>,
+  len: (v: T) => number,
+  fallback: T,
+): Promise<T> {
+  let last: T = fallback;
+  for (const p of producers) {
+    try {
+      const v = await p();
+      if (len(v) > 0) return v;
+      last = v;
+    } catch {
+      /* try next tier */
+    }
   }
+  return last;
+}
+
+export async function loadBranches(): Promise<Branch[]> {
+  return firstNonEmpty<Branch[]>(
+    [() => Q.getV2Branches()],
+    (v) => v.length,
+    BRANCHES,
+  );
 }
 
 export async function loadAnomalies(filter?: string): Promise<Anomaly[]> {
-  try {
-    const rows = await Q.listV2Anomalies(filter);
-    return rows.length ? rows : ANOMALIES.filter((a) => inScope(filter, a.branchId));
-  } catch {
-    return ANOMALIES.filter((a) => inScope(filter, a.branchId));
-  }
+  return firstNonEmpty<Anomaly[]>(
+    [() => Q.listV2Anomalies(filter), () => L.legacyAnomalies(filter)],
+    (v) => v.length,
+    ANOMALIES.filter((a) => inScope(filter, a.branchId)),
+  );
 }
 
 export async function loadHubData(filter?: string): Promise<{
-  today: TodaySummary;
-  trend7d: TrendDay[];
-  branchPerf: BranchPerf[];
-  activeSessions: ActiveSession[];
-  closedToday: ClosedSession[];
+  today: TodaySummary; trend7d: TrendDay[]; branchPerf: BranchPerf[];
+  activeSessions: ActiveSession[]; closedToday: ClosedSession[];
 }> {
-  const mock = () => ({
-    today: TODAY,
-    trend7d: TREND_7D,
+  const mock = {
+    today: TODAY, trend7d: TREND_7D,
     branchPerf: BRANCH_PERF.filter((b) => inScope(filter, b.id)),
     activeSessions: ACTIVE_SESSIONS.filter((s) => inScope(filter, s.branchId)),
     closedToday: CLOSED_TODAY.filter((c) => inScope(filter, c.branchId)),
-  });
-  try {
-    const real = await Q.getV2HubData(filter);
-    // if DB has no closed/active sessions yet, show the mock showcase instead of empty
-    if (real.closedToday.length === 0 && real.activeSessions.length === 0) return mock();
-    return real;
-  } catch {
-    return mock();
-  }
+  };
+  // "has data" = any session activity (closed or open)
+  const hasData = (d: { closedToday: unknown[]; activeSessions: unknown[]; branchPerf: BranchPerf[] }) =>
+    d.closedToday.length + d.activeSessions.length + d.branchPerf.reduce((a, b) => a + b.sessions, 0);
+  return firstNonEmpty(
+    [() => Q.getV2HubData(filter), () => L.legacyHubData(filter)],
+    hasData,
+    mock,
+  );
 }
 
 export async function loadInsights(filter?: string, days = 7): Promise<InsightRow[]> {
-  try {
-    const rows = await Q.getV2Insights(filter, days);
-    return rows.length ? rows : INSIGHTS_ROWS.filter((r) => inScope(filter, r.branchId));
-  } catch {
-    return INSIGHTS_ROWS.filter((r) => inScope(filter, r.branchId));
-  }
+  return firstNonEmpty<InsightRow[]>(
+    [() => Q.getV2Insights(filter, days), () => L.legacyInsights(filter, days)],
+    (v) => v.length,
+    INSIGHTS_ROWS.filter((r) => inScope(filter, r.branchId)),
+  );
 }
 
 export async function loadBranchStock(branchId: string): Promise<{
-  stock: StockEntry[];
-  deliveries: Delivery[];
+  stock: StockEntry[]; deliveries: Delivery[];
 }> {
-  const mock = () => ({
+  const mock = {
     stock: BRANCH_STOCK[branchId] ?? [],
     deliveries: DELIVERIES.filter((d) => d.branchId === branchId),
-  });
-  try {
-    const real = await Q.getV2BranchStock(branchId);
-    return real.stock.length ? real : mock();
-  } catch {
-    return mock();
-  }
+  };
+  return firstNonEmpty(
+    [() => Q.getV2BranchStock(branchId), () => L.legacyBranchStock(branchId)],
+    (v) => v.stock.length,
+    mock,
+  );
 }

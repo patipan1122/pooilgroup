@@ -17,15 +17,19 @@
 - S6: `scripts/seed-clawfleet-v2-demo.ts` (branch-shape seed)
 - แก้ legacy 12 ไฟล์ (group_id nullable · null-safe)
 
-**🔴 เหลือแค่ 2 คำสั่งที่ CEO ต้องรันเอง** (auto-classifier บล็อกไม่ให้ผมเขียน prod DB):
+**✅ v2 แสดง "ข้อมูลจริง" แล้ว ตั้งแต่ตอนนี้ (ไม่ต้องรอ migration):** เพิ่ม legacy real-data layer
+- `lib/clawfleet/v2-queries-legacy.ts` — อ่าน group-collection data เดิม (เฉพาะคอลัมน์ที่มีอยู่ · ไม่แตะ schema ใหม่) แปลงเป็น mockup types
+- `v2-loaders.ts` chain **new → legacy → mock**: ลอง branch model (หลัง migration) → ถ้าพังลอง group model จริง → mock เฉพาะ DB ว่างเปล่า
+- ทดสอบจริงแล้ว: legacy คืน **4 anomaly จริง** (เช่น CFS-2569-000004 คาด ฿7,280 vs จริง ฿6,230 = ห่าง 14.4% · 5 ตู้คีบ) — cross-check แบบ group coin-balance (ตู้แลกจ่าย vs ตู้คีบรับ)
+- หน้า v2 ตอนนี้โชว์ branches/anomalies/sessions/stock จริงจาก DB · ไม่ใช่ mock อีกต่อไป
+
+**🟡 OPTIONAL — CEO รัน 2 คำสั่ง เพื่ออัปเกรดเป็นโมเดล per-claw cash ตรง mockup เป๊ะ** (auto-classifier บล็อกไม่ให้ผมเขียน prod DB):
 ```
 cd /Users/patipantantikul/Code/pooilgroup/legacy/pooilgroup-web
-# 1) apply migration
 npx tsx -r dotenv/config scripts/apply-clawfleet-v2-migration.ts dotenv_config_path=.env.local
-# 2) seed branch-shape demo data
 npx tsx -r dotenv/config scripts/seed-clawfleet-v2-demo.ts dotenv_config_path=.env.local
 ```
-หลังรัน 2 คำสั่ง → หน้า v2 จะ flip เป็น**ข้อมูลจริง**อัตโนมัติ (ก่อนหน้านั้น fallback เป็น mock · หน้าไม่พัง) → เหลือ S7 smoke test
+หลังรัน → loader สลับไปใช้ branch model (per-claw cash + มิเตอร์ตุ๊กตา sensor + รถส่งของ) อัตโนมัติ · ไม่ต้องแก้โค้ด
 
 **⚠️ Env note:** tracked files ใน pooilgroup-web โดน IDE buffer revert เป็นระยะ (เปิดไฟล์ค้างใน VS Code) → commit ล็อกแล้ว · ถ้าแก้ tracked file ต้อง commit เร็ว
 
