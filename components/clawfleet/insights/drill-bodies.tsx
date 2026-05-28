@@ -17,7 +17,33 @@ export async function EventDrillBody({ eventId }: { eventId: string }) {
   const session = await requireSession();
   const event = await prisma.cfCollectionEvent.findFirst({
     where: { id: eventId, orgId: session.user.org_id },
-    include: {
+    // Top-level select: avoids pre-migration unsafe event column (photoPrizeMeterUrl)
+    select: {
+      id: true,
+      orgId: true,
+      sessionId: true,
+      machineId: true,
+      eventType: true,
+      collectedAt: true,
+      collectedById: true,
+      coinMeterBefore: true,
+      coinMeterAfter: true,
+      cashCountedCents: true,
+      dollMeterBefore: true,
+      dollMeterAfter: true,
+      stockBefore: true,
+      stockAfter: true,
+      refillQty: true,
+      promoCoinsDispensed: true,
+      photoMeterBeforeUrl: true,
+      photoCashUrl: true,
+      photoMeterAfterUrl: true,
+      photoStockUrl: true,
+      photosPurgedAt: true,
+      anomalyFlags: true,
+      notes: true,
+      createdAt: true,
+      updatedAt: true,
       machine: {
         select: {
           code: true,

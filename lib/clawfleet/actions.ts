@@ -92,6 +92,8 @@ export async function createMachine(input: unknown): Promise<Result<{ id: string
         refillQty: data.kind === "CLAW" ? 0 : null,
         notes: "เริ่มต้นตู้",
       },
+      // Minimal RETURNING — avoids pre-migration unsafe column (photoPrizeMeterUrl)
+      select: { id: true },
     });
     revalidatePath("/clawfleet/machines");
     return ok({ id: m.id });
@@ -290,6 +292,8 @@ export async function startSession(input: unknown): Promise<Result<{ id: string;
         openedById: session.user.id,
         status: "OPEN",
       },
+      // Minimal RETURNING — avoids pre-migration unsafe session columns
+      select: { id: true, sessionCode: true },
     });
     revalidatePath("/clawfleet/sessions");
     return ok({ id: s.id, code: s.sessionCode });
@@ -324,7 +328,12 @@ export async function submitEvent(input: unknown): Promise<Result<{ id: string }
   // verify session OPEN
   const cfSession = await prisma.cfCollectionSession.findFirst({
     where: { id: data.sessionId, orgId: session.user.org_id, status: "OPEN" },
-    include: { group: { select: { id: true, branchId: true } } },
+    // Top-level select: avoids pre-migration unsafe session columns
+    select: {
+      id: true,
+      groupId: true,
+      group: { select: { id: true, branchId: true } },
+    },
   });
   if (!cfSession) return fail("Session ไม่อยู่ใน OPEN");
   if (machine.groupId && machine.groupId !== cfSession.groupId)
@@ -406,6 +415,8 @@ export async function submitEvent(input: unknown): Promise<Result<{ id: string }
           anomalyFlags: derived.flags,
           notes: data.notes,
         },
+        // Minimal RETURNING — avoids pre-migration unsafe column (photoPrizeMeterUrl)
+        select: { id: true },
       });
 
       // LOAD_TO_MACHINE if CLAW + refill > 0
@@ -448,7 +459,10 @@ export async function closeSession(input: unknown): Promise<Result<{ status: str
 
   const cf = await prisma.cfCollectionSession.findFirst({
     where: { id: data.sessionId, orgId: session.user.org_id },
-    include: {
+    // Top-level select: avoids pre-migration unsafe session columns
+    select: {
+      id: true,
+      status: true,
       group: {
         select: {
           branchId: true,
@@ -484,6 +498,8 @@ export async function closeSession(input: unknown): Promise<Result<{ status: str
         closedById: session.user.id,
         reviewNote: data.reviewNote,
       },
+      // Minimal RETURNING — avoids pre-migration unsafe session columns
+      select: { id: true },
     });
     const refetched = await prisma.cfCollectionSession.findUniqueOrThrow({
       where: { id: data.sessionId },
@@ -512,6 +528,8 @@ export async function reviewSession(input: unknown): Promise<Result> {
       reviewedAt: new Date(),
       reviewNote: data.reviewNote,
     },
+    // Minimal RETURNING — avoids pre-migration unsafe session columns
+    select: { id: true },
   });
   revalidatePath(`/clawfleet/sessions/${data.sessionId}`);
   revalidatePath("/clawfleet/anomalies");
