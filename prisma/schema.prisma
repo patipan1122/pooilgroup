@@ -4225,3 +4225,192 @@ model PlaylandWristbandScan {
   @@map("wristband_scans")
   @@schema("playland")
 }
+enum InboxPlatform {
+  LINE
+  FACEBOOK
+
+  @@schema("public")
+}
+
+enum InboxDirection {
+  IN
+  OUT
+
+  @@schema("public")
+}
+
+enum InboxConversationStatus {
+  OPEN
+  SNOOZED
+  CLOSED
+
+  @@schema("public")
+}
+
+model InboxChannel {
+  id             String        @id @default(uuid()) @db.Uuid
+  orgId          String        @map("org_id") @db.Uuid
+  platform       InboxPlatform
+  displayName    String        @map("display_name") // "เก้าอี้นวด LINE", "Pooil FB"
+  businessTag    String?       @map("business_tag") // groups channels by business: "chairops" | "pooil" | ...
+  externalId     String?       @map("external_id") // LINE Channel ID / FB Page ID
+  accessTokenEnc String?       @map("access_token_enc") // encrypted long-lived token
+  webhookSecret  String?       @map("webhook_secret") // encrypted provider signing secret
+  botEnabled     Boolean       @default(false) @map("bot_enabled") // auto-reply ON only for chairops
+  status         String        @default("setup") // setup | active | error | disabled
+  lastEventAt    DateTime?     @map("last_event_at") @db.Timestamptz(6)
+  metadata       Json?
+  createdById    String?       @map("created_by_id") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  conversations InboxConversation[]
+  messages      InboxMessage[]
+
+  @@index([orgId, platform])
+  @@index([orgId, businessTag])
+  @@map("inbox_channels")
+  @@schema("public")
+}
+
+model InboxConversation {
+  id             String                  @id @default(uuid()) @db.Uuid
+  orgId          String                  @map("org_id") @db.Uuid
+  channelId      String                  @map("channel_id") @db.Uuid
+  platform       InboxPlatform
+  externalUserId String                  @map("external_user_id") // LINE userId / FB PSID
+  displayName    String?                 @map("display_name")
+  status         InboxConversationStatus @default(OPEN)
+  topicTag       String?                 @map("topic_tag") // bot-classified: scan_fail|money_lost|buy|feedback|strong|other
+  isLead         Boolean                 @default(false) @map("is_lead")
+  isUrgent       Boolean                 @default(false) @map("is_urgent")
+  needsHuman     Boolean                 @default(false) @map("needs_human") // escalated / bot couldn't answer
+  contactPhone   String?                 @map("contact_phone")
+  contactNote    String?                 @map("contact_note")
+  assignedToId   String?                 @map("assigned_to_id") @db.Uuid
+  lastMessageAt  DateTime                @default(now()) @map("last_message_at") @db.Timestamptz(6)
+  lastInboundAt  DateTime?               @map("last_inbound_at") @db.Timestamptz(6)
+  unreadCount    Int                     @default(0) @map("unread_count")
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  channel  InboxChannel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  messages InboxMessage[]
+
+  @@unique([channelId, externalUserId])
+  @@index([orgId, status, lastMessageAt(sort: Desc)])
+  @@index([orgId, lastMessageAt(sort: Desc)])
+  @@map("inbox_conversations")
+  @@schema("public")
+}
+
+model InboxMessage {
+  id             String         @id @default(uuid()) @db.Uuid
+  orgId          String         @map("org_id") @db.Uuid
+  conversationId String         @map("conversation_id") @db.Uuid
+  channelId      String         @map("channel_id") @db.Uuid
+  platform       InboxPlatform
+  direction      InboxDirection
+  body           String
+  sentByBot      Boolean        @default(false) @map("sent_by_bot")
+  externalId     String?        @map("external_id") // provider-side message ID (idempotency)
+  attachments    Json?
+  errorMessage   String?        @map("error_message")
+  createdById    String?        @map("created_by_id") @db.Uuid
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  conversation InboxConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  channel      InboxChannel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt(sort: Asc)])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@map("inbox_messages")
+  @@schema("public")
+}
+
+// Bot knowledge — FAQ pairs (deterministic, free matching · checked before AI)
+model InboxBotFaq {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  businessTag String   @map("business_tag") // "chairops"
+  intent      String? // optional canonical intent name
+  keywords    String // comma/space separated terms used for matching
+  answer      String
+  enabled     Boolean  @default(true)
+  priority    Int      @default(0) // higher = checked first
+  hits        Int      @default(0) // times matched
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([orgId, businessTag, enabled])
+  @@map("inbox_bot_faqs")
+  @@schema("public")
+}
+
+// Bot knowledge — free-text business facts (price, hours, branches) used as AI context
+model InboxBotKnowledge {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  businessTag String   @map("business_tag")
+  title       String
+  content     String
+  enabled     Boolean  @default(true)
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([orgId, businessTag, enabled])
+  @@map("inbox_bot_knowledge")
+  @@schema("public")
+}
+
+// Per-business bot configuration (tone, contact phone, on/off, daily summary)
+model InboxBotSettings {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  businessTag  String   @map("business_tag")
+  botEnabled   Boolean  @default(true) @map("bot_enabled")
+  tone         String   @default("สุภาพ สั้น เป็นกันเอง")
+  botName      String?  @map("bot_name")
+  contactPhone String?  @map("contact_phone") // used by scan_fail / money_lost flows
+  fallbackText String   @default("ขออภัยค่ะ เดี๋ยวทีมงานติดต่อกลับโดยเร็วที่สุดนะคะ") @map("fallback_text")
+  escalateText String?  @map("escalate_text")
+  dailySummary Boolean  @default(true) @map("daily_summary")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([orgId, businessTag])
+  @@map("inbox_bot_settings")
+  @@schema("public")
+}
+
+// Training queue — questions the bot couldn't answer (admin fills the answer)
+model InboxBotUnanswered {
+  id             String   @id @default(uuid()) @db.Uuid
+  orgId          String   @map("org_id") @db.Uuid
+  businessTag    String   @map("business_tag")
+  conversationId String?  @map("conversation_id") @db.Uuid
+  question       String
+  resolved       Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([orgId, businessTag, resolved])
+  @@map("inbox_bot_unanswered")
+  @@schema("public")
+}
+
+// Cached daily summary per business (one AI call/day · cheap)
+model InboxDailySummary {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  businessTag String   @map("business_tag")
+  summaryDate DateTime @map("summary_date") @db.Date
+  stats       Json
+  aiText      String?  @map("ai_text")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([orgId, businessTag, summaryDate])
+  @@map("inbox_daily_summaries")
+  @@schema("public")
+}
