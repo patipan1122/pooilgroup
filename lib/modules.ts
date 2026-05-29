@@ -444,7 +444,7 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       {
         href: "/clawfleet/v2/stock",
         label: "สต๊อก",
-        icon: Package,
+        icon: PackageOpen,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
       },
       {
@@ -456,7 +456,7 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       {
         href: "/clawfleet/v2/team",
         label: "ทีม & สาขา",
-        icon: Users,
+        icon: UsersIcon,
         roles: ["super_admin", "org_admin", "admin", "area_manager"],
       },
       {
