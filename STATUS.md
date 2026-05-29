@@ -21,7 +21,14 @@
 
 **✅ Deploy/commit state:** COMMITTED (`088914d` + STATUS `06aa4e9`) on `claude/chairops-overlap-fix` (pushed) + **DEPLOYED to prod** → https://pooilgroup.vercel.app. Smoke: liff/chairops 200 · maid 307 (auth-gated) · webhook `{ok,note:"no-secret"}` (dormant) · eod-cron 401 (secret guard). Branch contained all of prod `setup` — no regression. LINE features dormant behind dev-fallback until OA setup. Activation HW_BLOCKED on CEO: business verify · 2 tokens · LIFF id · invite OA to 5 groups → read groupId from webhook log → `LINE_GROUP_*` · Rich Menu image (`scripts/chairops-richmenu.mjs`) · Supabase redirect allowlist for `/chairops/m/*`. Memory `[[chairops-mobile-line-liff-shipped-2026-05-28]]`.
 
-**Next:** CEO visual-QA the maid mobile pages (need a MAID account) · then complete LINE OA setup to activate Rich Menu + push notifications.
+**🟢 UPDATE 2026-05-29 — LINE OA fully ACTIVATED + maid-login shipped (live on prod):**
+- LINE OA "นวดน้าหลังบ้าน" · Messaging channel 2010225716 (webhook+push) · LINE Login channel 2010225739 (LIFF `2010225739-rJTaWMkx`)
+- env namespaced **`CHAIROPS_LINE_*`** (token/secret) + `NEXT_PUBLIC_LIFF_ID` set in **pooilgroup** Vercel project (commit `0d31796` · so future modules don't collide). ⚠️ CEO first put them in the wrong `buildlygo` project — Pool ≠ Buildly Go, 2 separate Vercel projects.
+- webhook live + **signature-verified** (401 unsigned / 200 signed) · **Rich Menu live** (4 buttons · image via `scripts/gen-richmenu-image.mjs` Playwright · `richmenu-bb6012a4…`)
+- **maid LIFF auto-login shipped** (`49cd761`): `/api/auth/line-login` falls back to `ChairopsUser.lineUserId`; unbound maid sees their LINE ID on the Mini App; admin binds at `/chairops/users/[id]` → "ผูก LINE (Mini App)" (`bindLineUserId`, ADMIN-gated)
+- prod git branch `setup` carries all of this (pushed `b0a5c02..49cd761`).
+
+**Next:** CEO end-to-end test (create test maid → open Mini App → copy LINE ID → bind → login → submit) · optional: invite OA to LINE groups → read groupId from Vercel webhook JOIN log → set `CHAIROPS_LINE_GROUP_*` for push alerts. Memory `[[chairops-mobile-line-liff-shipped-2026-05-28]]`.
 
 ---
 
