@@ -13,6 +13,76 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
 import { verifyInvite } from "@/lib/chairops/line/invite";
+import { randomUUID } from "node:crypto";
+import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
+
+type ResolvedUser = {
+  id: string;
+  orgId: string;
+  email: string | null;
+  name: string;
+  role: string;
+};
+
+// ChairOps self-register: every maid already has LINE, so the first time they
+// open the Mini App + LINE-login we auto-create a branchless MAID (name from
+// LINE). They land on /chairops/m → "ยังไม่ได้กำหนดสาขา · ติดต่อออฟฟิศ"; the
+// office just assigns a branch to activate them. No form, no email, no LINE-ID
+// copy. Single-org pilot: org derived from any active branch (multi-org later
+// = per-OA→org map). Branchless = harmless until an admin approves via branch.
+async function selfRegisterChairopsMaid(
+  admin: ReturnType<typeof adminClient>,
+  lineUserId: string,
+  name: string | null,
+): Promise<ResolvedUser | null> {
+  const branch = await prisma.chairopsBranch.findFirst({
+    where: { isActive: true },
+    select: { orgId: true },
+  });
+  if (!branch) return null;
+  const orgId = branch.orgId;
+  const displayName = (name ?? "").trim().slice(0, 100) || "พนักงานใหม่";
+
+  const existing = await prisma.chairopsUser.findFirst({
+    where: { orgId, lineUserId },
+    select: { id: true, orgId: true, email: true, displayName: true, role: true },
+  });
+  if (existing) {
+    return { id: existing.id, orgId: existing.orgId, email: existing.email, name: existing.displayName, role: existing.role };
+  }
+
+  const email = `maid-${randomUUID().slice(0, 8)}@chairops.local`;
+  const { data: authData, error } = await admin.auth.admin.createUser({
+    email,
+    password: `Ch${randomUUID().replace(/-/g, "").slice(0, 16)}`,
+    email_confirm: true,
+  });
+  if (error || !authData?.user) return null;
+  try {
+    const row = await prisma.chairopsUser.create({
+      data: {
+        orgId,
+        authUserId: authData.user.id,
+        email,
+        displayName,
+        role: ChairopsUserRole.MAID,
+        lineUserId,
+        primaryBranchId: null,
+        isActive: true,
+      },
+      select: { id: true, orgId: true, email: true, displayName: true, role: true },
+    });
+    return { id: row.id, orgId: row.orgId, email: row.email, name: row.displayName, role: row.role };
+  } catch {
+    // Race on @@unique([orgId, lineUserId]) — roll back auth user + reuse row.
+    await admin.auth.admin.deleteUser(authData.user.id).catch(() => {});
+    const again = await prisma.chairopsUser.findFirst({
+      where: { orgId, lineUserId },
+      select: { id: true, orgId: true, email: true, displayName: true, role: true },
+    });
+    return again ? { id: again.id, orgId: again.orgId, email: again.email, name: again.displayName, role: again.role } : null;
+  }
+}
 
 const Schema = z.object({
   idToken: z.string().min(20).max(4096),
@@ -164,6 +234,17 @@ export async function POST(req: NextRequest) {
         };
       }
     }
+  }
+
+  // ChairOps context (deep-link into /chairops/*) + still unbound → self-register
+  // a branchless MAID from the verified LINE identity. Office assigns a branch
+  // to activate. (Recruit/generic LIFF has no /chairops next → not triggered.)
+  if (!resolved && (redirectTo ?? "").startsWith("/chairops")) {
+    resolved = await selfRegisterChairopsMaid(
+      admin,
+      lineUserId,
+      verified.name ?? displayName ?? null,
+    );
   }
 
   if (!resolved) {

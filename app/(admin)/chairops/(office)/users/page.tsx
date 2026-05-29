@@ -166,16 +166,16 @@ export default async function UsersListPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Link href="/chairops/users?role=MAID&branch=__none__&status=active">
+              <Button variant="outline" size="sm">
+                <Inbox className="size-4" aria-hidden="true" />
+                แม่บ้านรอกำหนดสาขา
+              </Button>
+            </Link>
             <Link href="/chairops/users/pending">
               <Button variant="outline" size="sm">
                 <Inbox className="size-4" aria-hidden="true" />
                 คำขอเข้าใช้ ({pendingDenials.length})
-              </Button>
-            </Link>
-            <Link href="/chairops/users/invite">
-              <Button variant="outline" size="sm">
-                <UserPlus className="size-4" aria-hidden="true" />
-                เชิญแม่บ้าน (LINE)
               </Button>
             </Link>
             <Link href="/chairops/users/new">
