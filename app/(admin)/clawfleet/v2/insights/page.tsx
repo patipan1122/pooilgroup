@@ -15,9 +15,11 @@ export const dynamic = "force-dynamic";
 export default async function InsightsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ branch?: string }>;
+  searchParams: Promise<{ branch?: string; days?: string }>;
 }) {
-  const branch = (await searchParams).branch ?? "all";
-  const [rows, branches] = await Promise.all([loadInsights(branch), loadBranches()]);
-  return <InsightsClient branch={branch} rows={rows} branches={branches} />;
+  const sp = await searchParams;
+  const branch = sp.branch ?? "all";
+  const days = [7, 30, 90].includes(Number(sp.days)) ? Number(sp.days) : 7;
+  const [rows, branches] = await Promise.all([loadInsights(branch, days), loadBranches()]);
+  return <InsightsClient branch={branch} rows={rows} branches={branches} days={days} />;
 }

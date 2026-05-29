@@ -330,3 +330,50 @@ export async function closeBranchSession(input: unknown): Promise<ResultOf<{ sta
     return { ok: false, error: `ปิดรอบไม่สำเร็จ: ${(e as Error).message}` };
   }
 }
+
+// =============================================================
+// Stock — request a shipment from central warehouse (cf_deliveries)
+// =============================================================
+export async function createDelivery(input: {
+  branchId: string;
+  itemsCount: number;
+  unitsCount: number;
+  note?: string;
+}): Promise<ResultOf<{ id: string }>> {
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+  const branchId = String(input?.branchId ?? "");
+  const itemsCount = Math.max(0, Math.floor(Number(input?.itemsCount) || 0));
+  const unitsCount = Math.max(1, Math.floor(Number(input?.unitsCount) || 0));
+  if (!branchId) return { ok: false, error: "ไม่ระบุสาขา" };
+
+  const allowed = await userBranchIds(session);
+  if (allowed !== "ALL" && !allowed.includes(branchId)) {
+    return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
+  }
+  const branch = await prisma.branch.findFirst({
+    where: { id: branchId, orgId, businessType: "claw_machine" },
+    select: { id: true },
+  });
+  if (!branch) return { ok: false, error: "ไม่พบสาขาตู้คีบ" };
+
+  try {
+    const d = await prisma.cfDelivery.create({
+      data: {
+        orgId,
+        branchId,
+        status: "SCHEDULED",
+        itemsCount,
+        unitsCount,
+        note: input?.note ? String(input.note).slice(0, 500) : null,
+        createdById: session.user.id,
+      },
+      select: { id: true },
+    });
+    revalidatePath("/clawfleet/v2/stock");
+    revalidatePath("/clawfleet/v2/hub");
+    return { ok: true, data: { id: d.id } };
+  } catch (e) {
+    return { ok: false, error: `สั่งของไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
