@@ -1,7 +1,7 @@
 // LINE Messaging API webhook — unified inbox.
-// Verifies HMAC against the channel's encrypted Channel Secret, persists every
-// inbound message into the inbox, then runs the AI bot if this channel has it
-// enabled (only ChairOps channels for now).
+// Verifies HMAC against the channel's encrypted Channel Secret, then returns
+// 200 IMMEDIATELY and does ingest + bot reply in `after()` — LINE requires a
+// fast 200 or it retries/auto-disables the webhook (audit P0-1).
 //
 // Setup (per channel):
 //  1. LINE Developers Console → Messaging API channel.
@@ -10,11 +10,11 @@
 //  3. Paste this route's URL into LINE "Webhook URL", enable "Use webhook",
 //     and DISABLE LINE auto-reply (so our bot is the only responder).
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { decryptToken, verifyLineSignature } from "@/lib/inbox/crypto";
 import { ingestInboundMessage } from "@/lib/inbox/ingest";
-import { runBot } from "@/lib/inbox/bot/engine";
+import { runBot, handleNonTextInbound } from "@/lib/inbox/bot/engine";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -58,10 +58,9 @@ export async function POST(
 
   const channelSecret = decryptToken(channel.webhookSecret);
   if (!channelSecret) {
-    await prisma.inboxChannel.update({
-      where: { id: channel.id },
-      data: { lastEventAt: new Date(), status: "setup" },
-    });
+    await prisma.inboxChannel
+      .update({ where: { id: channel.id }, data: { lastEventAt: new Date(), status: "setup" } })
+      .catch(() => {});
     return NextResponse.json({ ok: true, warning: "channel secret not set" });
   }
 
@@ -76,88 +75,98 @@ export async function POST(
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
 
-  await prisma.inboxChannel.update({
-    where: { id: channel.id },
-    data: {
-      lastEventAt: new Date(),
-      status: channel.status === "setup" ? "active" : channel.status,
-    },
-  });
-
   const accessToken = decryptToken(channel.accessTokenEnc);
+  const ch = {
+    id: channel.id,
+    orgId: channel.orgId,
+    platform: "LINE" as const,
+    businessTag: channel.businessTag,
+    createdById: channel.createdById,
+  };
+  const wasSetup = channel.status === "setup";
+  const botEnabled = channel.botEnabled;
 
-  for (const ev of body.events ?? []) {
-    if (ev.type !== "message") continue;
-    const userId = ev.source?.userId;
-    if (!userId) continue;
-
-    let bodyText: string;
-    let attachments: unknown = null;
-    const isText = ev.message?.type === "text" && !!ev.message.text;
-    if (isText) {
-      bodyText = ev.message!.text!;
-    } else if (ev.message?.type === "image") {
-      bodyText = "[รูปภาพ]";
-      attachments = { type: "image", messageId: ev.message.id };
-    } else if (ev.message?.type === "sticker") {
-      bodyText = "[สติกเกอร์]";
-      attachments = { type: "sticker", stickerId: ev.message.stickerId };
-    } else if (ev.message?.type) {
-      bodyText = `[${ev.message.type}]`;
-      attachments = { type: ev.message.type };
-    } else {
-      continue;
-    }
-
-    let senderDisplayName: string | null = null;
-    if (accessToken) {
-      try {
-        const profResp = await fetch(`https://api.line.me/v2/bot/profile/${userId}`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-          signal: AbortSignal.timeout(2000),
-        });
-        if (profResp.ok) {
-          const prof = (await profResp.json()) as { displayName?: string };
-          senderDisplayName = prof.displayName ?? null;
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-
+  // Return 200 NOW; process events after the response (LINE wants a fast 200).
+  after(async () => {
     try {
-      const res = await ingestInboundMessage({
-        channelId: channel.id,
-        orgId: channel.orgId,
-        platform: "LINE",
-        senderExternalId: userId,
-        senderDisplayName,
-        body: bodyText,
-        attachments,
-        externalId: ev.message?.id ?? null,
-      });
+      await prisma.inboxChannel
+        .update({
+          where: { id: ch.id },
+          data: { lastEventAt: new Date(), status: wasSetup ? "active" : undefined },
+        })
+        .catch(() => {});
 
-      // Auto-reply only on fresh text messages when the bot is enabled.
-      if (!res.duplicate && isText && channel.botEnabled) {
-        await runBot({
-          channel: {
-            id: channel.id,
-            orgId: channel.orgId,
+      for (const ev of body.events ?? []) {
+        if (ev.type !== "message") continue;
+        const userId = ev.source?.userId;
+        if (!userId) continue;
+
+        let bodyText: string;
+        let attachments: unknown = null;
+        const isText = ev.message?.type === "text" && !!ev.message.text;
+        if (isText) {
+          bodyText = ev.message!.text!;
+        } else if (ev.message?.type === "image") {
+          bodyText = "[รูปภาพ]";
+          attachments = { type: "image", messageId: ev.message.id };
+        } else if (ev.message?.type === "sticker") {
+          bodyText = "[สติกเกอร์]";
+          attachments = { type: "sticker", stickerId: ev.message.stickerId };
+        } else if (ev.message?.type) {
+          bodyText = `[${ev.message.type}]`;
+          attachments = { type: ev.message.type };
+        } else {
+          continue;
+        }
+
+        let senderDisplayName: string | null = null;
+        if (accessToken) {
+          try {
+            const profResp = await fetch(`https://api.line.me/v2/bot/profile/${userId}`, {
+              headers: { Authorization: `Bearer ${accessToken}` },
+              signal: AbortSignal.timeout(2000),
+            });
+            if (profResp.ok) {
+              const prof = (await profResp.json()) as { displayName?: string };
+              senderDisplayName = prof.displayName ?? null;
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+
+        try {
+          const res = await ingestInboundMessage({
+            channelId: ch.id,
+            orgId: ch.orgId,
             platform: "LINE",
-            businessTag: channel.businessTag,
-            createdById: channel.createdById,
-          },
-          conversationId: res.conversationId,
-          externalUserId: userId,
-          text: bodyText,
-          accessToken,
-          replyToken: ev.replyToken ?? null,
-        });
+            senderExternalId: userId,
+            senderDisplayName,
+            body: bodyText,
+            attachments,
+            externalId: ev.message?.id ?? null,
+          });
+
+          if (!res.duplicate && botEnabled) {
+            const botInput = {
+              channel: ch,
+              conversationId: res.conversationId,
+              externalUserId: userId,
+              text: bodyText,
+              accessToken,
+              replyToken: ev.replyToken ?? null,
+            };
+            if (isText) await runBot(botInput);
+            else await handleNonTextInbound({ ...botInput, nonText: true });
+          }
+        } catch (e) {
+          console.error("[webhook:inbox:LINE] process failed", e);
+        }
       }
     } catch (e) {
-      console.error("[webhook:inbox:LINE] ingest failed", e);
+      console.error("[webhook:inbox:LINE] after() failed", e);
     }
-  }
+  });
 
   return NextResponse.json({ ok: true });
 }

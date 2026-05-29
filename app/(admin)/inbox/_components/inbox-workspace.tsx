@@ -35,6 +35,8 @@ interface ActiveFilters {
   channel: string;
   biz: string;
   human: boolean;
+  urgent: boolean;
+  lead: boolean;
   q: string;
 }
 
@@ -91,6 +93,8 @@ export function InboxWorkspace({
     !!activeFilters.channel ||
     !!activeFilters.biz ||
     activeFilters.human ||
+    activeFilters.urgent ||
+    activeFilters.lead ||
     !!activeFilters.q;
 
   return (
@@ -154,16 +158,16 @@ export function InboxWorkspace({
               label="ด่วน"
               count={counts.urgent}
               tone="orange"
-              href={buildHref({ status: null })}
-              passive
+              active={activeFilters.urgent}
+              href={buildHref({ urgent: activeFilters.urgent ? null : "1" })}
             />
             <CountRow
               icon={<Sparkles className="size-4" />}
               label="สนใจซื้อ (ลีด)"
               count={counts.leads}
               tone="purple"
-              href={buildHref({ status: null })}
-              passive
+              active={activeFilters.lead}
+              href={buildHref({ lead: activeFilters.lead ? null : "1" })}
             />
             <CountRow
               icon={<Inbox className="size-4" />}

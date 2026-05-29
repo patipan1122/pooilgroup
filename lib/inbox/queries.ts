@@ -24,6 +24,8 @@ export interface ConversationFilter {
   channelId?: string;
   businessTag?: string;
   needsHuman?: boolean;
+  isUrgent?: boolean;
+  isLead?: boolean;
   q?: string;
   limit?: number;
 }
@@ -38,6 +40,8 @@ export async function listConversations(
       ...(opts.status ? { status: opts.status } : {}),
       ...(opts.channelId ? { channelId: opts.channelId } : {}),
       ...(opts.needsHuman ? { needsHuman: true } : {}),
+      ...(opts.isUrgent ? { isUrgent: true } : {}),
+      ...(opts.isLead ? { isLead: true } : {}),
       ...(opts.businessTag ? { channel: { businessTag: opts.businessTag } } : {}),
       ...(opts.q
         ? {

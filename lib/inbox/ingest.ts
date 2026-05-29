@@ -1,6 +1,8 @@
 // Inbound message ingestion for the unified inbox.
 // Finds/creates one conversation per (channel, external user) and appends the
 // message. Idempotent on (channelId, externalId) so LINE/FB retries don't dupe.
+// Race-safe: concurrent provider retries (made likely by async webhook) catch
+// the unique-violation (P2002) instead of 500-ing / double-inserting (audit P0-2/3).
 //
 // NOT coupled to any module's domain model — works for any business tag.
 
@@ -26,6 +28,12 @@ export interface InboxIngestResult {
   duplicate?: boolean;
 }
 
+function isUniqueViolation(e: unknown): boolean {
+  return (
+    typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002"
+  );
+}
+
 export async function ingestInboundMessage(
   p: InboxIngestParams,
 ): Promise<InboxIngestResult> {
@@ -48,34 +56,49 @@ export async function ingestInboundMessage(
   const now = new Date();
   const displayName = p.senderDisplayName?.trim() || null;
 
-  let isNewConversation = false;
-  let convo = await prisma.inboxConversation.findUnique({
-    where: {
-      channelId_externalUserId: {
-        channelId: p.channelId,
-        externalUserId: p.senderExternalId,
-      },
-    },
-    select: { id: true, displayName: true, status: true },
-  });
-
-  if (!convo) {
-    isNewConversation = true;
-    convo = await prisma.inboxConversation.create({
-      data: {
-        orgId: p.orgId,
-        channelId: p.channelId,
-        platform: p.platform,
-        externalUserId: p.senderExternalId,
-        displayName,
-        status: "OPEN",
-        lastMessageAt: now,
-        lastInboundAt: now,
-        unreadCount: 1,
+  const findConvo = () =>
+    prisma.inboxConversation.findUnique({
+      where: {
+        channelId_externalUserId: {
+          channelId: p.channelId,
+          externalUserId: p.senderExternalId,
+        },
       },
       select: { id: true, displayName: true, status: true },
     });
-  } else {
+
+  let isNewConversation = false;
+  let convo = await findConvo();
+
+  if (!convo) {
+    try {
+      convo = await prisma.inboxConversation.create({
+        data: {
+          orgId: p.orgId,
+          channelId: p.channelId,
+          platform: p.platform,
+          externalUserId: p.senderExternalId,
+          displayName,
+          status: "OPEN",
+          lastMessageAt: now,
+          lastInboundAt: now,
+          unreadCount: 1,
+        },
+        select: { id: true, displayName: true, status: true },
+      });
+      isNewConversation = true;
+    } catch (e) {
+      // Race: a concurrent first-message won the insert. Re-fetch + fall through to update.
+      if (isUniqueViolation(e)) {
+        convo = await findConvo();
+        if (!convo) throw e;
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  if (!isNewConversation) {
     await prisma.inboxConversation.update({
       where: { id: convo.id },
       data: {
@@ -88,21 +111,39 @@ export async function ingestInboundMessage(
     });
   }
 
-  const msg = await prisma.inboxMessage.create({
-    data: {
-      orgId: p.orgId,
-      conversationId: convo.id,
-      channelId: p.channelId,
-      platform: p.platform,
-      direction: "IN",
-      body: p.body,
-      externalId: p.externalId ?? null,
-      attachments: (p.attachments as object) ?? undefined,
-    },
-    select: { id: true },
-  });
-
-  return { conversationId: convo.id, messageId: msg.id, isNewConversation };
+  try {
+    const msg = await prisma.inboxMessage.create({
+      data: {
+        orgId: p.orgId,
+        conversationId: convo.id,
+        channelId: p.channelId,
+        platform: p.platform,
+        direction: "IN",
+        body: p.body,
+        externalId: p.externalId ?? null,
+        attachments: (p.attachments as object) ?? undefined,
+      },
+      select: { id: true },
+    });
+    return { conversationId: convo.id, messageId: msg.id, isNewConversation };
+  } catch (e) {
+    // Concurrent retry inserted the same (channelId, externalId) first → treat as duplicate.
+    if (isUniqueViolation(e) && p.externalId) {
+      const ex = await prisma.inboxMessage.findFirst({
+        where: { channelId: p.channelId, externalId: p.externalId, direction: "IN" },
+        select: { id: true, conversationId: true },
+      });
+      if (ex) {
+        return {
+          conversationId: ex.conversationId,
+          messageId: ex.id,
+          isNewConversation: false,
+          duplicate: true,
+        };
+      }
+    }
+    throw e;
+  }
 }
 
 /** Persist an outbound message (bot or human) after it was sent to the provider. */

@@ -1,10 +1,10 @@
 // Bot orchestration — runs on every inbound customer message for a channel
 // whose bot is enabled. Hybrid strategy:
 //   1. classify topic (free) + tag the conversation so humans can triage
-//   2. FAQ match (free) — admin-authored answers win
-//   3. deterministic template for the 5 known ChairOps topics
-//   4. AI (Haiku) only for unclassified messages, with knowledge context
-//   5. anything sensitive / unanswerable → escalate (needsHuman + log)
+//   2. urgent/complaint → deterministic escalation template (FAQ can't hijack)
+//   3. FAQ match (free) for non-urgent topics
+//   4. template for the known topics · AI (Gemini) only for "other"
+//   5. anything sensitive / unanswerable → escalate: needsHuman + LINE alert + log
 
 import { prisma } from "@/lib/prisma";
 import { classify, type InboxTopic } from "./classify";
@@ -13,6 +13,7 @@ import { getBotSettings, type BotSettings } from "./settings";
 import { aiAnswer } from "./ai";
 import { recordOutboundMessage } from "../ingest";
 import { sendLineMessage, sendFacebookMessage } from "../send";
+import { topicLabel } from "../business";
 
 export interface RunBotInput {
   channel: {
@@ -28,16 +29,16 @@ export interface RunBotInput {
   /** decrypted access token for outbound; null = cannot reply */
   accessToken: string | null;
   replyToken?: string | null;
+  /** true when the inbound was a non-text message (image/sticker/etc.) */
+  nonText?: boolean;
 }
 
-function template(topic: InboxTopic, s: BotSettings): string {
+function template(topic: InboxTopic, s: BotSettings, isComplaint: boolean): string {
   const callLine = s.contactPhone
     ? `โทรหาทีมงานที่เบอร์ ${s.contactPhone}`
     : "โทรแจ้งทีมงานของเรา";
   switch (topic) {
     case "money_lost":
-      // SOP (CEO 2026-05-29): ask coin/note → branch+province → machine number
-      // (top-left of screen, e.g. G0310416) → photo of acceptor → call.
       return (
         `ขออภัยมากๆ เลยนะคะ 🙏 รบกวนช่วยแจ้งข้อมูลนิดนึงนะคะ เดี๋ยวทีมงานช่วยให้เร็วที่สุดเลยค่ะ\n` +
         `1) เครื่อง “กินเหรียญ” หรือ “กินแบงค์” แล้วไม่ทำงานคะ?\n` +
@@ -60,7 +61,9 @@ function template(topic: InboxTopic, s: BotSettings): string {
     case "buy":
       return `ขอบคุณที่สนใจค่ะ 😊 รบกวนฝากชื่อและเบอร์ติดต่อไว้นะคะ เดี๋ยวทีมงานติดต่อกลับไปให้รายละเอียดเพิ่มเติมค่ะ`;
     case "feedback":
-      return `ขอบคุณสำหรับคำติชมนะคะ 🙏 เรารับไว้ปรับปรุงและดูแลให้ดีขึ้นแน่นอนค่ะ`;
+      return isComplaint
+        ? `ขออภัยจริงๆ นะคะ 🙏 รบกวนเล่าเพิ่มได้ไหมคะว่าติดปัญหาเรื่องอะไร (สาขา/เลขเครื่องถ้ามี) เดี๋ยวทีมงานรีบดูแลให้ค่ะ`
+        : `ขอบคุณสำหรับคำติชมนะคะ 🙏 เรารับไว้ปรับปรุงและดูแลให้ดีขึ้นแน่นอนค่ะ`;
     default:
       return s.fallbackText;
   }
@@ -102,6 +105,29 @@ async function sendByPlatform(
     : sendFacebookMessage(input);
 }
 
+// Push an urgent alert to the team's LINE (env INBOX_ALERT_TARGET = LINE
+// userId/groupId) using the channel's own access token. Best-effort — never
+// throws. Only LINE channels can push a LINE alert.
+async function notifyUrgent(
+  channel: RunBotInput["channel"],
+  accessToken: string | null,
+  topic: InboxTopic,
+  customerText: string,
+): Promise<void> {
+  const target = process.env.INBOX_ALERT_TARGET;
+  if (!target || !accessToken || channel.platform !== "LINE") return;
+  const snippet = customerText.length > 120 ? customerText.slice(0, 120) + "…" : customerText;
+  const body =
+    `🔴 เคสด่วน (${topicLabel(topic)}) มีลูกค้าทักเข้ามา\n` +
+    `“${snippet}”\n` +
+    `→ เปิดดู/ตอบที่ระบบกล่องข้อความ (/inbox) นะคะ`;
+  try {
+    await sendLineMessage({ body, recipientExternalId: target, accessToken });
+  } catch {
+    /* best-effort */
+  }
+}
+
 export async function runBot(opts: RunBotInput): Promise<void> {
   const { channel, conversationId, text } = opts;
   const businessTag = channel.businessTag ?? "";
@@ -109,6 +135,7 @@ export async function runBot(opts: RunBotInput): Promise<void> {
   const cls = classify(text);
 
   // Always tag the conversation so humans can triage even when the bot is off.
+  // isUrgent/isLead latch true (cleared when staff closes the conversation).
   await prisma.inboxConversation
     .update({
       where: { id: conversationId },
@@ -120,21 +147,27 @@ export async function runBot(opts: RunBotInput): Promise<void> {
     })
     .catch(() => {});
 
-  // Bot disabled (per-business) or no token → leave for a human.
+  // Bot disabled (per-business) or no token → leave for a human (but still alert).
   if (!settings.botEnabled || !opts.accessToken) {
-    if (cls.needsHuman) await markNeedsHuman(conversationId);
+    if (cls.needsHuman) {
+      await markNeedsHuman(conversationId);
+      await notifyUrgent(channel, opts.accessToken, cls.topic, text);
+    }
     return;
   }
 
   let answer: string | null = null;
-  let escalate = cls.needsHuman; // sensitive topics escalate regardless of answer
+  let escalate = cls.needsHuman; // sensitive topics + complaints escalate regardless
 
-  const faq = await matchFaq(channel.orgId, businessTag, text);
+  // Urgent topics + complaints go straight to the escalation template — a
+  // generic FAQ keyword must NOT hijack a "เงินหาย"/"สแกนไม่ได้" reply (audit P0/P1).
+  const allowFaq = !cls.isUrgent && !cls.isComplaint;
+  const faq = allowFaq ? await matchFaq(channel.orgId, businessTag, text) : null;
   if (faq) {
     answer = faq.answer;
     await bumpFaqHit(faq.id);
   } else if (cls.topic !== "other") {
-    answer = template(cls.topic, settings);
+    answer = template(cls.topic, settings, cls.isComplaint);
   } else {
     const knowledge = await loadKnowledge(channel.orgId, businessTag);
     const ai = await aiAnswer({
@@ -172,5 +205,40 @@ export async function runBot(opts: RunBotInput): Promise<void> {
     error: sendResult.ok ? null : sendResult.error ?? "send failed",
   });
 
-  if (escalate) await markNeedsHuman(conversationId);
+  if (escalate) {
+    await markNeedsHuman(conversationId);
+    await notifyUrgent(channel, opts.accessToken, cls.topic, text);
+  }
+}
+
+// Called by the webhook for NON-text inbound (image/sticker/etc.). Customers
+// often send a photo of the broken machine — don't leave them in dead air.
+export async function handleNonTextInbound(opts: RunBotInput): Promise<void> {
+  const { channel, conversationId } = opts;
+  await markNeedsHuman(conversationId); // a human should look at the media
+  await prisma.inboxConversation
+    .update({ where: { id: conversationId }, data: { needsHuman: true } })
+    .catch(() => {});
+  const settings = await getBotSettings(channel.orgId, channel.businessTag ?? "");
+  if (!settings.botEnabled || !opts.accessToken) return;
+  const ack =
+    `ได้รับข้อความ/รูปแล้วนะคะ 🙏 เดี๋ยวทีมงานรีบดูแลให้ค่ะ ` +
+    (settings.contactPhone ? `หากเร่งด่วนโทร ${settings.contactPhone} ได้เลยค่ะ` : ``);
+  const res = await sendByPlatform(channel.platform, {
+    body: ack,
+    recipientExternalId: opts.externalUserId,
+    accessToken: opts.accessToken,
+    replyToken: opts.replyToken,
+  });
+  await recordOutboundMessage({
+    orgId: channel.orgId,
+    conversationId,
+    channelId: channel.id,
+    platform: channel.platform,
+    body: ack,
+    sentByBot: true,
+    externalId: res.externalId ?? null,
+    error: res.ok ? null : res.error ?? "send failed",
+  });
+  await notifyUrgent(channel, opts.accessToken, "other", "[ลูกค้าส่งรูป/ไฟล์]");
 }

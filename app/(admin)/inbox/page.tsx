@@ -20,6 +20,8 @@ interface SearchParams {
   channel?: string;
   biz?: string;
   human?: string;
+  urgent?: string;
+  lead?: string;
   q?: string;
 }
 
@@ -46,6 +48,8 @@ export default async function InboxPage({
     channelId: params.channel || undefined,
     businessTag: params.biz || undefined,
     needsHuman: params.human === "1" ? true : undefined,
+    isUrgent: params.urgent === "1" ? true : undefined,
+    isLead: params.lead === "1" ? true : undefined,
     q: params.q?.trim() || undefined,
   };
 
@@ -77,6 +81,8 @@ export default async function InboxPage({
         channel: params.channel ?? "",
         biz: params.biz ?? "",
         human: params.human === "1",
+        urgent: params.urgent === "1",
+        lead: params.lead === "1",
         q: params.q ?? "",
       }}
     />

@@ -58,9 +58,12 @@ export async function sendReply(conversationId: string, text: string) {
 
   if (!res.ok) throw new Error(res.error || "ส่งข้อความไม่สำเร็จ");
 
+  // Mark read, but KEEP needsHuman — a holding reply ("รอแป๊บนะคะ") must not drop
+  // an unresolved urgent case out of the queue. needsHuman/isUrgent clear only
+  // when staff CLOSES the conversation (audit P1).
   await prisma.inboxConversation.update({
     where: { id: conversationId },
-    data: { needsHuman: false, unreadCount: 0 },
+    data: { unreadCount: 0 },
   });
   revalidatePath("/inbox");
   return { ok: true };
@@ -83,7 +86,11 @@ export async function setConversationStatus(
   const { convo } = await loadOwnedConversation(conversationId);
   await prisma.inboxConversation.update({
     where: { id: convo.id },
-    data: { status },
+    // Closing a case resolves it: clear the triage flags so it leaves the queues.
+    data:
+      status === "CLOSED"
+        ? { status, needsHuman: false, isUrgent: false }
+        : { status },
   });
   revalidatePath("/inbox");
   return { ok: true };
