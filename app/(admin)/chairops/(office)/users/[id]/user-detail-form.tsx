@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
 import {
   assignBranch,
+  bindLineUserId,
   deactivateUser,
   reactivateUser,
   updateDisplayName,
@@ -48,6 +49,7 @@ interface Props {
     role: ChairopsUserRole;
     primaryBranchId: string | null;
     isActive: boolean;
+    lineUserId: string | null;
   };
   canManage: boolean;
   assignableRoles: ChairopsUserRole[];
@@ -214,6 +216,44 @@ export function UserDetailForm({
             บันทึก
           </Button>
         </div>
+      </Section>
+
+      {/* 3.5 LINE Mini App binding */}
+      <Section
+        title="ผูก LINE (Mini App)"
+        hint="ให้พนักงานเปิด Mini App จาก Rich Menu → หน้าจอจะโชว์ LINE ID ของเขา → เอามาวางที่นี่ แล้วเขาจะล็อกอินเข้า Mini App อัตโนมัติ (เว้นว่าง = ยกเลิกผูก)"
+      >
+        <form
+          action={(fd) =>
+            startTransition(async () => {
+              const r = await bindLineUserId(fd);
+              if (r.ok) toast.success("ผูก LINE แล้ว");
+              else toast.error(r.error ?? "ทำงานไม่สำเร็จ");
+            })
+          }
+          className="flex flex-wrap items-end gap-2"
+        >
+          <input type="hidden" name="userId" value={target.id} />
+          <div className="min-w-[200px] flex-1">
+            <Input
+              name="lineUserId"
+              defaultValue={target.lineUserId ?? ""}
+              placeholder="Uxxxxxxxxxxxx…"
+              disabled={!canManage || isPending}
+              maxLength={40}
+              className="font-mono"
+            />
+          </div>
+          <Button
+            type="submit"
+            variant="primary"
+            size="md"
+            disabled={!canManage || isPending}
+            loading={isPending}
+          >
+            บันทึก
+          </Button>
+        </form>
       </Section>
 
       {/* 4. status */}

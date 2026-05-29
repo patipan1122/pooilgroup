@@ -9,6 +9,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { adminClient } from "@/lib/db/server";
+import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
 
@@ -75,15 +76,49 @@ export async function POST(req: NextRequest) {
   const lineUserId = verified.sub;
   const admin = adminClient();
 
-  const { data: user } = await admin
+  // Resolve the LINE user against TWO identity stores:
+  //   1) Pool `users.line_user_id` — office staff / managers (have a Pool row)
+  //   2) ChairOps `ChairopsUser.lineUserId` — maids/techs (auth-only, no Pool row)
+  // Both ultimately log into the same Supabase auth user (by email), so the
+  // magic-link flow below is identical for either source.
+  type Resolved = { id: string; orgId: string; email: string | null; name: string; role: string };
+  let resolved: Resolved | null = null;
+
+  const { data: poolUser } = await admin
     .from("users")
     .select("id, org_id, email, name, role, is_active")
     .eq("line_user_id", lineUserId)
     .eq("is_active", true)
     .maybeSingle();
-  if (!user) {
+  if (poolUser) {
+    resolved = {
+      id: poolUser.id,
+      orgId: poolUser.org_id,
+      email: poolUser.email,
+      name: poolUser.name,
+      role: poolUser.role,
+    };
+  } else {
+    const maid = await prisma.chairopsUser.findFirst({
+      where: { lineUserId, isActive: true },
+      select: { id: true, orgId: true, email: true, displayName: true, role: true },
+    });
+    if (maid) {
+      resolved = {
+        id: maid.id,
+        orgId: maid.orgId,
+        email: maid.email,
+        name: maid.displayName,
+        role: maid.role,
+      };
+    }
+  }
+
+  if (!resolved) {
+    // Unbound — surface the verified LINE id so the LIFF page can show it for
+    // the office to bind (admin-only · see /chairops/users/[id]).
     return NextResponse.json(
-      { matched: false, needsLink: true, hint: displayName ?? null },
+      { matched: false, needsLink: true, hint: displayName ?? null, lineUserId },
       { status: 200 },
     );
   }
@@ -91,7 +126,7 @@ export async function POST(req: NextRequest) {
   // Generate magic link via Supabase admin (so the LIFF page can open it once)
   // We hit Supabase REST through the admin client. If the user has no email,
   // skip — branch_manager can fall back to /login from the LIFF.
-  if (!user.email) {
+  if (!resolved.email) {
     return NextResponse.json({
       matched: true,
       needsLink: false,
@@ -117,7 +152,7 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         type: "magiclink",
-        email: user.email,
+        email: resolved.email,
         // Pin redirect to the same origin the LIFF page is running on
         // (Supabase otherwise uses the dashboard "Site URL" which can drift).
         // redirectTo lets module deep-links (e.g. ChairOps Rich Menu) land on
@@ -142,11 +177,11 @@ export async function POST(req: NextRequest) {
       );
     }
     await audit({
-      orgId: user.org_id,
-      userId: user.id,
+      orgId: resolved.orgId,
+      userId: resolved.id,
       action: "LOGIN",
       resourceType: "line_login",
-      resourceId: user.id,
+      resourceId: resolved.id,
       diff: { new: { via: "line_liff" } },
     });
     // Don't return the Supabase action_link in the JSON response — anything
@@ -158,7 +193,7 @@ export async function POST(req: NextRequest) {
       needsLink: false,
       ready: true,
       completeUrl: "/api/auth/line-complete",
-      user: { id: user.id, name: user.name, role: user.role },
+      user: { id: resolved.id, name: resolved.name, role: resolved.role },
     });
     response.cookies.set("ll_pending", link, {
       httpOnly: true,

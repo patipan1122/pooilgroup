@@ -13,9 +13,13 @@ export function LiffBootstrap({
   haveSession: boolean;
 }) {
   const router = useRouter();
-  const [phase, setPhase] = useState<"idle" | "linking" | "linked" | "skip">(
-    "idle",
-  );
+  const [phase, setPhase] = useState<
+    "idle" | "linking" | "linked" | "skip" | "needslink"
+  >("idle");
+  const [linkInfo, setLinkInfo] = useState<{
+    lineUserId: string;
+    displayName: string;
+  } | null>(null);
 
   useEffect(() => {
     // Optional deep-link target — ChairOps Rich Menu opens the LIFF with
@@ -69,8 +73,18 @@ export function LiffBootstrap({
           return;
         }
         if (!cancelled && json.needsLink) {
-          // First-time LINE — fall back to web login. Keep the LIFF page visible.
-          setPhase("skip");
+          // Unbound LINE user. In a module deep-link context (next set, e.g.
+          // ChairOps Rich Menu) show their verified LINE ID so the office can
+          // bind it. Otherwise (generic LIFF) fall back to web login silently.
+          if (next && json.lineUserId) {
+            setLinkInfo({
+              lineUserId: json.lineUserId as string,
+              displayName: profile.displayName,
+            });
+            setPhase("needslink");
+          } else {
+            setPhase("skip");
+          }
           return;
         }
         setPhase("linked");
@@ -89,6 +103,42 @@ export function LiffBootstrap({
         <div className="text-center">
           <div className="size-12 border-4 border-[var(--color-brand-200)] border-t-[var(--color-brand-600)] rounded-full animate-spin mx-auto mb-3" />
           <p className="text-sm text-zinc-500">กำลังตรวจสอบบัญชี LINE...</p>
+        </div>
+      </div>
+    );
+  }
+  if (phase === "needslink" && linkInfo) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-white p-6">
+        <div className="w-full max-w-sm space-y-5 text-center">
+          <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-amber-100 text-3xl">
+            🔑
+          </div>
+          <div className="space-y-1">
+            <h1 className="text-lg font-bold text-zinc-900">บัญชียังไม่เปิดใช้งาน</h1>
+            <p className="text-sm text-zinc-500">
+              แจ้ง LINE ID ด้านล่างให้ออฟฟิศ เพื่อเปิดใช้งานให้คุณ
+            </p>
+          </div>
+          <div className="space-y-1 rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-left">
+            <div className="text-xs text-zinc-500">ชื่อ LINE</div>
+            <div className="text-sm font-medium text-zinc-800">
+              {linkInfo.displayName}
+            </div>
+            <div className="mt-2 text-xs text-zinc-500">LINE ID (ส่งให้ออฟฟิศ)</div>
+            <div className="select-all break-all font-mono text-sm text-zinc-900">
+              {linkInfo.lineUserId}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard?.writeText(linkInfo.lineUserId);
+            }}
+            className="h-12 w-full rounded-md bg-emerald-600 text-base font-semibold text-white active:bg-emerald-700"
+          >
+            คัดลอก LINE ID
+          </button>
         </div>
       </div>
     );

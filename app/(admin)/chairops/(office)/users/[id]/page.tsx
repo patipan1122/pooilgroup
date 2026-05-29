@@ -174,6 +174,7 @@ export default async function UserDetailPage({
             role: target.role,
             primaryBranchId: target.primaryBranchId,
             isActive: target.isActive,
+            lineUserId: target.lineUserId,
           }}
           canManage={canManage}
           assignableRoles={assignableRoles}
@@ -390,6 +391,8 @@ const ACTION_LABEL: Record<string, { label: string; tone: "info" | "warning" | "
   "user.update_display_name": { label: "แก้ชื่อ", tone: "neutral" },
   "user.deactivate": { label: "ปิดบัญชี", tone: "danger" },
   "user.reactivate": { label: "เปิดบัญชี", tone: "success" },
+  "user.bind_line": { label: "ผูก LINE", tone: "success" },
+  "user.unbind_line": { label: "ยกเลิกผูก LINE", tone: "neutral" },
   "user.access_approve": { label: "อนุมัติเข้าใช้", tone: "success" },
   "user.access_reject": { label: "ปฏิเสธคำขอ", tone: "danger" },
 };

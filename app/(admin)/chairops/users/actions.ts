@@ -425,3 +425,70 @@ export async function reactivateUser(userId: string): Promise<ActionResult> {
   revalidatePath("/chairops/users");
   return { ok: true };
 }
+
+// Bind a verified LINE userId to a ChairOps user so they can auto-login via the
+// LIFF Mini App (see /api/auth/line-login ChairopsUser fallback). ADMIN-only
+// (SEC D-CO-M7: never let the client self-claim a LINE identity). Pass empty
+// string to UNBIND. The LINE id is the maid's verified `sub` — they read it off
+// the "บัญชียังไม่เปิดใช้งาน" screen and give it to the office.
+const lineBindSchema = z.object({
+  userId: zUUID(),
+  lineUserId: z
+    .string()
+    .trim()
+    .regex(/^U[0-9a-f]{32}$/i, "LINE ID ต้องขึ้นต้นด้วย U ตามด้วย 32 ตัวอักษร")
+    .or(z.literal("")),
+});
+
+export async function bindLineUserId(formData: FormData): Promise<ActionResult> {
+  const session = await requireRole("ADMIN");
+
+  const parsed = lineBindSchema.safeParse({
+    userId: formData.get("userId"),
+    lineUserId: formData.get("lineUserId"),
+  });
+  if (!parsed.success)
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+
+  const target = await prisma.chairopsUser.findFirst({
+    where: { id: parsed.data.userId, orgId: session.user.orgId },
+  });
+  if (!target) return { ok: false, error: "ไม่พบผู้ใช้" };
+  if (!canManageUser(session.user, target)) {
+    return { ok: false, error: `คุณไม่มีสิทธิ์แก้ไขผู้ใช้ระดับ ${target.role}` };
+  }
+
+  const nextLineId = parsed.data.lineUserId === "" ? null : parsed.data.lineUserId;
+
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.chairopsUser.update({
+        where: { id: target.id },
+        data: { lineUserId: nextLineId },
+      });
+      await writeAudit(
+        {
+          userId: session.user.id,
+          action: nextLineId ? "user.bind_line" : "user.unbind_line",
+          entity: "User",
+          entityId: row.id,
+          oldValue: { lineUserId: target.lineUserId },
+          newValue: { lineUserId: row.lineUserId },
+          metadata: { targetEmail: target.email },
+        },
+        tx,
+      );
+      return row;
+    });
+    revalidatePath(`/chairops/users/${updated.id}`);
+    revalidatePath("/chairops/users");
+    return { ok: true };
+  } catch (e) {
+    // @@unique([orgId, lineUserId]) — this LINE id already bound elsewhere.
+    const isUniq =
+      typeof e === "object" && e !== null && "code" in e &&
+      (e as { code: unknown }).code === "P2002";
+    if (isUniq) return { ok: false, error: "LINE ID นี้ถูกผูกกับผู้ใช้อื่นแล้ว" };
+    return { ok: false, error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" };
+  }
+}
