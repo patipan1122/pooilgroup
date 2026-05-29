@@ -1,14 +1,14 @@
 // ChairOps LINE OA outbound — Messaging API (replaces EOL LINE Notify).
 //
 // One adapter for all ChairOps outbound (AUDIT D-CO-M4). Resolves the 5 legacy
-// role-channels to 5 LINE group IDs in env (LINE_GROUP_*). During the OA
+// role-channels to 5 LINE group IDs in env (CHAIROPS_LINE_GROUP_*). During the OA
 // transition it falls back to the legacy `sendLineNotify` so alerts keep
 // working until the CEO finishes business verification + supplies the
 // Messaging token. NEVER throws — returns {ok:false} so crons stay green.
 //
 // Activation (CEO, see scripts/chairops-richmenu.mjs + AUDIT §5):
-//   LINE_CHANNEL_ACCESS_TOKEN  — Messaging API push auth
-//   LINE_GROUP_FINANCE/REPAIR/OPS/BRANCH/CEO — group IDs (read from webhook
+//   CHAIROPS_LINE_CHANNEL_ACCESS_TOKEN  — Messaging API push auth
+//   CHAIROPS_LINE_GROUP_FINANCE/REPAIR/OPS/BRANCH/CEO — group IDs (read from webhook
 //                                              `join` event after inviting OA)
 
 import { sendLineNotify } from "./notify";
@@ -18,11 +18,11 @@ const PUSH_URL = "https://api.line.me/v2/bot/message/push";
 export type ChairopsLineChannel = "finance" | "repair" | "ops" | "branch" | "ceo";
 
 const GROUP_ENV: Record<ChairopsLineChannel, string> = {
-  finance: "LINE_GROUP_FINANCE",
-  repair: "LINE_GROUP_REPAIR",
-  ops: "LINE_GROUP_OPS",
-  branch: "LINE_GROUP_BRANCH",
-  ceo: "LINE_GROUP_CEO",
+  finance: "CHAIROPS_LINE_GROUP_FINANCE",
+  repair: "CHAIROPS_LINE_GROUP_REPAIR",
+  ops: "CHAIROPS_LINE_GROUP_OPS",
+  branch: "CHAIROPS_LINE_GROUP_BRANCH",
+  ceo: "CHAIROPS_LINE_GROUP_CEO",
 };
 
 export interface LineSendResult {
@@ -39,7 +39,7 @@ function sleep(ms: number): Promise<void> {
 // Retries 429/5xx with bounded backoff; honours Retry-After (capped 3s) so a
 // serverless invocation never blocks past the request budget.
 async function pushRaw(to: string, text: string): Promise<LineSendResult> {
-  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const token = process.env.CHAIROPS_LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) return { ok: false, error: "no-token" };
 
   const body = JSON.stringify({
@@ -97,7 +97,7 @@ export async function notifyChannel(
   text: string,
 ): Promise<LineSendResult> {
   const groupId = process.env[GROUP_ENV[channel]];
-  if (process.env.LINE_CHANNEL_ACCESS_TOKEN && groupId) {
+  if (process.env.CHAIROPS_LINE_CHANNEL_ACCESS_TOKEN && groupId) {
     const r = await pushRaw(groupId, text);
     if (r.ok) return r;
   }

@@ -28,7 +28,7 @@ interface LineEvent {
 
 export async function POST(req: NextRequest) {
   const raw = await req.text();
-  const secret = process.env.LINE_CHANNEL_SECRET;
+  const secret = process.env.CHAIROPS_LINE_CHANNEL_SECRET;
   const signature = req.headers.get("x-line-signature") ?? "";
 
   if (secret) {
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     // No secret configured yet — cannot verify. Don't process; ack so LINE's
     // "Verify" button still goes green during setup.
     console.warn(
-      "[chairops-line webhook] LINE_CHANNEL_SECRET not set — event ignored (cannot verify)",
+      "[chairops-line webhook] CHAIROPS_LINE_CHANNEL_SECRET not set — event ignored (cannot verify)",
     );
     return NextResponse.json({ ok: true, note: "no-secret" });
   }
