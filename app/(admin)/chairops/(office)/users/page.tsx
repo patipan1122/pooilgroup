@@ -201,7 +201,7 @@ export default async function UsersListPage({
           {statusFilter && <input type="hidden" name="status" value={statusFilter} />}
         </form>
 
-        <div className="overflow-x-auto rounded-2xl border-2 border-zinc-200 bg-white shadow-soft">
+        <div className="max-h-[70vh] overflow-auto rounded-2xl border-2 border-zinc-200 bg-white shadow-soft">
           <table className="w-full min-w-[820px] text-sm">
             <thead
               className={stickyTheadClass(

@@ -147,8 +147,9 @@ export default async function PosIngestListPage({
 
       {/* ── Imports table ────────────────────────────────────────────── */}
       <Card className="overflow-hidden">
+        <div className="max-h-[70vh] overflow-auto">
         <table className="w-full text-sm">
-          <thead className="sticky top-14 z-20 bg-muted text-xs uppercase text-muted-foreground sm:top-16">
+          <thead className="sticky top-0 z-20 bg-muted text-xs uppercase text-muted-foreground">
             <tr className="bg-muted text-left [&>th]:bg-muted">
               <th className="px-3 py-2 font-medium">เวลาอัปโหลด</th>
               <th className="px-3 py-2 font-medium">ชื่อไฟล์</th>
@@ -230,6 +231,7 @@ export default async function PosIngestListPage({
             })}
           </tbody>
         </table>
+        </div>
       </Card>
 
       <p className="mt-4 text-xs text-muted-foreground">

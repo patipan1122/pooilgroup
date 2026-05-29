@@ -219,9 +219,9 @@ export default async function DamageListPage({
       )}
 
       <Card>
-        <div className="overflow-x-auto">
+        <div className="max-h-[70vh] overflow-auto">
           <table className="w-full text-sm">
-            <thead className="sticky top-14 z-10 sm:top-16">
+            <thead className="sticky top-0 z-10">
               <tr className="bg-muted text-left text-xs uppercase tracking-wide text-muted-foreground [&>th]:bg-muted">
                 <th className="px-3 py-2 font-medium">รหัส</th>
                 <th className="px-3 py-2 font-medium">สาขา</th>

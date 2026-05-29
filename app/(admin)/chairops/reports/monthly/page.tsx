@@ -84,9 +84,9 @@ export default async function MonthlyReport() {
       </div>
 
       <div className="rounded-xl border border-border bg-background shadow-sm">
-        <div className="overflow-x-auto">
+        <div className="max-h-[70vh] overflow-auto">
           <table className="w-full min-w-[900px] border-collapse text-xs sm:text-sm">
-            <thead className="sticky top-14 z-20 bg-background sm:top-16">
+            <thead className="sticky top-0 z-20 bg-background">
               <tr className="border-b border-border bg-muted/60">
                 <th className="sticky left-0 z-10 min-w-[160px] bg-muted/80 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   สาขา

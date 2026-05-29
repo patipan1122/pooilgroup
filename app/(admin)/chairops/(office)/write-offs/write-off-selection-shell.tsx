@@ -94,9 +94,9 @@ export function WriteOffSelectionShell({ rows }: WriteOffSelectionShellProps) {
 
   return (
     <>
-      <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white">
+      <div className="max-h-[70vh] overflow-auto rounded-xl border border-zinc-200 bg-white">
         <table className="min-w-[1080px] w-full text-sm">
-          <thead className="sticky top-14 z-20 border-b border-zinc-200 bg-zinc-50 text-xs font-semibold text-zinc-700">
+          <thead className="sticky top-0 z-20 border-b border-zinc-200 bg-zinc-50 text-xs font-semibold text-zinc-700">
             <tr className="bg-zinc-50 text-left [&>th]:bg-zinc-50">
               <th className="w-10 px-3 py-2.5">
                 <input

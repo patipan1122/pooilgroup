@@ -94,7 +94,7 @@ export function MasterDetailShell({
  */
 export function stickyTheadClass(extra?: string): string {
   return cn(
-    "sticky top-14 z-20 bg-background sm:top-16",
+    "sticky top-0 z-20 bg-background",
     "border-b border-border",
     extra,
   );
