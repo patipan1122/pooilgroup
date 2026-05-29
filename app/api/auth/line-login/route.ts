@@ -288,9 +288,13 @@ export async function POST(req: NextRequest) {
         email: resolved.email,
         // Pin redirect to the same origin the LIFF page is running on
         // (Supabase otherwise uses the dashboard "Site URL" which can drift).
-        // redirectTo lets module deep-links (e.g. ChairOps Rich Menu) land on
-        // their own screen instead of the generic /liff/status.
-        redirect_to: `${getRequestBaseUrl(req)}${safeRelPath(redirectTo)}`,
+        // Route through /auth/liff-complete: it captures the session from the
+        // magic-link URL fragment (writes cookies) then forwards to `next`.
+        // Landing directly on the destination loses the session (no browser
+        // Supabase client there → fragment ignored → 404/bounce).
+        redirect_to: `${getRequestBaseUrl(req)}/auth/liff-complete?next=${encodeURIComponent(
+          safeRelPath(redirectTo),
+        )}`,
       }),
     });
     if (!res.ok) {
