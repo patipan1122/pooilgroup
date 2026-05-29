@@ -91,7 +91,7 @@ export function DiffTable({
       <div className="overflow-x-auto rounded-lg border border-border bg-background">
         <table className="w-full min-w-[1100px] text-sm">
           <thead className="sticky top-14 z-20 bg-muted text-xs uppercase text-muted-foreground sm:top-16">
-            <tr className="text-left">
+            <tr className="bg-muted text-left [&>th]:bg-muted">
               <th className="w-12 px-2 py-2 font-medium">#</th>
               <th className="px-2 py-2 font-medium">สถานะ</th>
               <th className="px-2 py-2 font-medium">วันที่</th>

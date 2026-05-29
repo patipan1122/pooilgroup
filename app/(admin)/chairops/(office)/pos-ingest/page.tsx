@@ -149,7 +149,7 @@ export default async function PosIngestListPage({
       <Card className="overflow-hidden">
         <table className="w-full text-sm">
           <thead className="sticky top-14 z-20 bg-muted text-xs uppercase text-muted-foreground sm:top-16">
-            <tr className="text-left">
+            <tr className="bg-muted text-left [&>th]:bg-muted">
               <th className="px-3 py-2 font-medium">เวลาอัปโหลด</th>
               <th className="px-3 py-2 font-medium">ชื่อไฟล์</th>
               <th className="px-3 py-2 font-medium">Maker / Checker</th>

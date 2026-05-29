@@ -208,7 +208,7 @@ export default async function UsersListPage({
                 "bg-zinc-50 text-xs font-semibold text-zinc-600",
               )}
             >
-              <tr className="text-left">
+              <tr className="bg-zinc-50 text-left [&>th]:bg-zinc-50">
                 <th className="px-3 py-3 font-semibold">ชื่อ · อีเมล</th>
                 <th className="px-3 py-3 font-semibold">สิทธิ์</th>
                 <th className="px-3 py-3 font-semibold">สาขาประจำ</th>

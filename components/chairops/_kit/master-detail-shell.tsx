@@ -87,6 +87,10 @@ export function MasterDetailShell({
  * Helper for sticky table headers inside the main pane.
  * Use as: <thead className={stickyTheadClass()}>
  * Solid bg per [[sticky-bg-inherit-anti-pattern]] · NEVER /20 /30 /40 translucent.
+ * IMPORTANT: also put the bg on the header <tr> CELLS, e.g.
+ *   <tr className="bg-zinc-50 [&>th]:bg-zinc-50">
+ * Chrome drops <thead>/<tr> bg during position:sticky, so the <th> must paint
+ * itself or rows bleed through (the "ตัวหนังสือบังกัน" overlap bug, 2026-05-29).
  */
 export function stickyTheadClass(extra?: string): string {
   return cn(
