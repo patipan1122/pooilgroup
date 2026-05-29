@@ -14,7 +14,9 @@
 
 **✅ Deploy:** `vercel --prod` READY on **pooilgroup** project → https://pooilgroup.vercel.app · pushed `49cd761..6708aab` to `setup` (prod source carries fix · no regression). curl /chairops + /chairops/reconcile → 307. **CEO action:** hard-refresh (Cmd+Shift+R) to clear CSS cache, then confirm header no longer overlaps. Memories `[[sticky-thead-pattern]]` + `[[sticky-bg-inherit-anti-pattern]]` corrected.
 
-**Follow-ups (not blocking):** migrate remaining ~9 sticky tables off viewport-sticky · extract `<StickyTable>` primitive · Playwright visual smoke test.
+**🆕 Hardening pass DEPLOYED (`b5b20ab`) — CEO "ทำต่อ ตรวจไม่ให้เกิดซ้ำ":** deeper analysis found the offset `top-14/16` was actually CORRECT (Pool admin shell renders the h-14 topbar via `(office)/layout.tsx` `min-h-[calc(100vh-3.5rem)]`) — the ONLY real defect was the transparent thead bg, NOT the offset. So no container-scroll churn needed. Fixed at source across ALL 8 remaining sticky tables (collections · pos-ingest · diff-table · damage · audit · write-offs · alerts · users) by painting the header `[&>th]` cells; damage+audit `bg-muted/50`→opaque. Global `fixes.css` backstop now uses `--surface-2` token + documents itself as the module-wide guarantee. `stickyTheadClass` helper documents the cell-bg rule. tsc+build clean · pushed `aeb1dcf..b5b20ab` to setup · 6 routes 307. **Overlap is now structurally impossible in ChairOps.**
+
+**Follow-ups (optional · not blocking):** extract a shared `<StickyTable>` primitive · Playwright visual smoke test for sticky headers.
 
 ---
 
