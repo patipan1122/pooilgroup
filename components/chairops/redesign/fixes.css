@@ -185,8 +185,13 @@
  * the sticky header. Tailwind sets bg on <thead>, which several engines drop
  * during position:sticky; forcing the background onto each <th> is reliable.
  * Applies to every ChairOps table (all are wrapped in .co-scope). */
+.co-scope thead.sticky th,
+.co-scope thead.sticky tr {
+  /* SOLID + !important — beats any translucent Tailwind bg (bg-muted/50, etc.)
+   * so the row behind can NEVER show through (the actual "ตัวหนังสือบังกัน"). */
+  background-color: #ffffff !important;
+}
 .co-scope thead.sticky th {
-  background: var(--surface-2, #fafaf9);
   box-shadow: inset 0 -1px 0 var(--border, #e7e5e4);
 }
 /* Body cells: never collapse below a legible line-box for 2-line Thai cells

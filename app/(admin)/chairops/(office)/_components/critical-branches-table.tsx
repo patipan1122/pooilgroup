@@ -92,10 +92,10 @@ export function CriticalBranchesTable({ rows }: { rows: CriticalBranchRow[] }) {
           ไม่มีสาขาที่ต้องดู · ทุกสาขาราบรื่น
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="max-h-[60vh] overflow-auto">
           <table className="w-full min-w-[680px] border-collapse text-sm">
-            <thead className="sticky top-14 z-20 bg-zinc-50 sm:top-16">
-              <tr className="border-y border-zinc-200 text-left text-xs text-zinc-500">
+            <thead className="sticky top-0 z-20">
+              <tr className="border-y border-zinc-200 bg-zinc-50 text-left text-xs text-zinc-500 [&>th]:bg-zinc-50">
                 <th className="w-6 px-2 py-2" />
                 <th className="px-3 py-2 font-medium">สาขา</th>
                 <th className="px-3 py-2 text-right font-medium">POS วันนี้</th>
