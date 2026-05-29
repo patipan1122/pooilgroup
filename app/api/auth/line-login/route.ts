@@ -12,6 +12,7 @@ import { adminClient } from "@/lib/db/server";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
+import { verifyInvite } from "@/lib/chairops/line/invite";
 
 const Schema = z.object({
   idToken: z.string().min(20).max(4096),
@@ -19,6 +20,9 @@ const Schema = z.object({
   // Optional post-login landing path (e.g. "/chairops/m/collect/new" for the
   // ChairOps Rich Menu deep-link). Must be a same-origin relative path.
   redirectTo: z.string().max(512).optional(),
+  // Optional signed maid-invite token (admin onboarding link) — binds this
+  // verified LINE id to the ChairopsUser in the token.
+  invite: z.string().max(512).optional(),
 });
 
 // Only allow same-origin relative paths — never an absolute URL or "//host".
@@ -63,7 +67,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "ข้อมูล LINE ไม่ครบ" }, { status: 400 });
   }
-  const { idToken, displayName, redirectTo } = parsed.data;
+  const { idToken, displayName, redirectTo, invite } = parsed.data;
 
   // Verify token via LINE — only proceed if signature is valid + sub returned
   const verified = await verifyLineIdToken(idToken);
@@ -84,33 +88,81 @@ export async function POST(req: NextRequest) {
   type Resolved = { id: string; orgId: string; email: string | null; name: string; role: string };
   let resolved: Resolved | null = null;
 
-  const { data: poolUser } = await admin
-    .from("users")
-    .select("id, org_id, email, name, role, is_active")
-    .eq("line_user_id", lineUserId)
-    .eq("is_active", true)
-    .maybeSingle();
-  if (poolUser) {
-    resolved = {
-      id: poolUser.id,
-      orgId: poolUser.org_id,
-      email: poolUser.email,
-      name: poolUser.name,
-      role: poolUser.role,
-    };
-  } else {
+  // 0) Invite path — a signed admin onboarding link. Binds this verified LINE
+  //    id to the ChairopsUser named in the token (first tap wins; a different
+  //    LINE id can't hijack an already-bound maid).
+  if (invite) {
+    const targetId = verifyInvite(invite);
+    if (!targetId) {
+      return NextResponse.json(
+        { error: "ลิงก์เชิญหมดอายุหรือไม่ถูกต้อง" },
+        { status: 400 },
+      );
+    }
     const maid = await prisma.chairopsUser.findFirst({
-      where: { lineUserId, isActive: true },
-      select: { id: true, orgId: true, email: true, displayName: true, role: true },
+      where: { id: targetId, isActive: true },
+      select: { id: true, orgId: true, email: true, displayName: true, role: true, lineUserId: true },
     });
-    if (maid) {
+    if (!maid) {
+      return NextResponse.json({ error: "ไม่พบบัญชีในลิงก์เชิญ" }, { status: 404 });
+    }
+    if (maid.lineUserId && maid.lineUserId !== lineUserId) {
+      return NextResponse.json(
+        { error: "ลิงก์นี้ถูกใช้ผูกกับ LINE อื่นไปแล้ว" },
+        { status: 409 },
+      );
+    }
+    if (!maid.lineUserId) {
+      try {
+        await prisma.chairopsUser.update({
+          where: { id: maid.id },
+          data: { lineUserId },
+        });
+      } catch {
+        return NextResponse.json(
+          { error: "LINE นี้ถูกผูกกับบัญชีอื่นแล้ว" },
+          { status: 409 },
+        );
+      }
+    }
+    resolved = {
+      id: maid.id,
+      orgId: maid.orgId,
+      email: maid.email,
+      name: maid.displayName,
+      role: maid.role,
+    };
+  }
+
+  if (!resolved) {
+    const { data: poolUser } = await admin
+      .from("users")
+      .select("id, org_id, email, name, role, is_active")
+      .eq("line_user_id", lineUserId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (poolUser) {
       resolved = {
-        id: maid.id,
-        orgId: maid.orgId,
-        email: maid.email,
-        name: maid.displayName,
-        role: maid.role,
+        id: poolUser.id,
+        orgId: poolUser.org_id,
+        email: poolUser.email,
+        name: poolUser.name,
+        role: poolUser.role,
       };
+    } else {
+      const maid = await prisma.chairopsUser.findFirst({
+        where: { lineUserId, isActive: true },
+        select: { id: true, orgId: true, email: true, displayName: true, role: true },
+      });
+      if (maid) {
+        resolved = {
+          id: maid.id,
+          orgId: maid.orgId,
+          email: maid.email,
+          name: maid.displayName,
+          role: maid.role,
+        };
+      }
     }
   }
 

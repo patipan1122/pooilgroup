@@ -172,6 +172,12 @@ export default async function UsersListPage({
                 คำขอเข้าใช้ ({pendingDenials.length})
               </Button>
             </Link>
+            <Link href="/chairops/users/invite">
+              <Button variant="outline" size="sm">
+                <UserPlus className="size-4" aria-hidden="true" />
+                เชิญแม่บ้าน (LINE)
+              </Button>
+            </Link>
             <Link href="/chairops/users/new">
               <Button variant="primary" size="sm">
                 <UserPlus className="size-4" aria-hidden="true" />

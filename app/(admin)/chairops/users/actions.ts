@@ -16,6 +16,8 @@ import { writeAudit } from "@/lib/chairops/audit/log";
 import { canAssignRole, canManageUser } from "@/lib/chairops/auth/role-guards";
 import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
+import { randomUUID } from "node:crypto";
+import { signInvite } from "@/lib/chairops/line/invite";
 
 export type ActionResult<T = void> =
   | { ok: true; data?: T }
@@ -490,5 +492,95 @@ export async function bindLineUserId(formData: FormData): Promise<ActionResult> 
       (e as { code: unknown }).code === "P2002";
     if (isUniq) return { ok: false, error: "LINE ID นี้ถูกผูกกับผู้ใช้อื่นแล้ว" };
     return { ok: false, error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" };
+  }
+}
+
+// One-tap maid onboarding: create a MAID (name + branch · auto-email, no real
+// email needed — login rides LINE id_token) and return a signed invite link.
+// The maid taps the link → LINE login → /api/auth/line-login `invite` path
+// binds their verified LINE id to this user + logs them in. ADMIN-only.
+const inviteSchema = z.object({
+  displayName: z.string().trim().min(1, "ต้องระบุชื่อ").max(100),
+  primaryBranchId: z.string().min(1, "ต้องเลือกสาขา"),
+});
+
+export async function createMaidInvite(
+  formData: FormData,
+): Promise<ActionResult<{ link: string; userId: string }>> {
+  const session = await requireRole("ADMIN");
+  const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+  if (!liffId) return { ok: false, error: "ยังไม่ได้ตั้งค่า LIFF (NEXT_PUBLIC_LIFF_ID)" };
+
+  const parsed = inviteSchema.safeParse({
+    displayName: formData.get("displayName"),
+    primaryBranchId: formData.get("primaryBranchId"),
+  });
+  if (!parsed.success)
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+
+  if (!canAssignRole(session.user, ChairopsUserRole.MAID)) {
+    return { ok: false, error: "คุณไม่มีสิทธิ์สร้างแม่บ้าน" };
+  }
+
+  const branch = await prisma.chairopsBranch.findFirst({
+    where: { id: parsed.data.primaryBranchId, orgId: session.user.orgId },
+  });
+  if (!branch) return { ok: false, error: "ไม่พบสาขาที่เลือก" };
+
+  // Placeholder email — maids never check it; the magic-link is consumed via
+  // httpOnly cookie nav, not delivered. Must be a valid format for Supabase.
+  const email = `maid-${randomUUID().slice(0, 8)}@chairops.local`;
+  const supabase = adminClient();
+  const tempPassword = `Ch${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    email,
+    password: tempPassword,
+    email_confirm: true,
+  });
+  if (authError || !authData?.user) {
+    return { ok: false, error: `สร้างบัญชี auth ไม่สำเร็จ: ${authError?.message ?? "unknown"}` };
+  }
+
+  try {
+    const user = await prisma.$transaction(async (tx) => {
+      const row = await tx.chairopsUser.create({
+        data: {
+          orgId: session.user.orgId,
+          authUserId: authData.user.id,
+          email,
+          displayName: parsed.data.displayName,
+          role: ChairopsUserRole.MAID,
+          primaryBranchId: parsed.data.primaryBranchId,
+          isActive: true,
+        },
+      });
+      await writeAudit(
+        {
+          userId: session.user.id,
+          action: "user.create_invite",
+          entity: "User",
+          entityId: row.id,
+          newValue: {
+            displayName: row.displayName,
+            role: "MAID",
+            primaryBranchId: row.primaryBranchId,
+            via: "line_invite",
+          },
+        },
+        tx,
+      );
+      return row;
+    });
+
+    const token = signInvite(user.id);
+    const link = `https://liff.line.me/${liffId}/chairops?invite=${encodeURIComponent(
+      token,
+    )}&next=${encodeURIComponent("/chairops/m")}`;
+    revalidatePath("/chairops/users");
+    return { ok: true, data: { link, userId: user.id } };
+  } catch (e) {
+    // Roll back the auth user if the profile write fails.
+    await supabase.auth.admin.deleteUser(authData.user.id);
+    return { ok: false, error: `บันทึกไม่สำเร็จ: ${e instanceof Error ? e.message : "unknown"}` };
   }
 }

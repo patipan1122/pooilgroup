@@ -33,6 +33,11 @@ export function LiffBootstrap({
       rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//")
         ? rawNext
         : null;
+    // Optional signed maid-invite token (admin onboarding link).
+    const invite =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("invite")
+        : null;
 
     if (haveSession) {
       // Already authenticated (e.g. opened a second time) → go straight in.
@@ -63,6 +68,7 @@ export function LiffBootstrap({
             idToken,
             displayName: profile.displayName,
             redirectTo: next ?? undefined,
+            invite: invite ?? undefined,
           }),
         });
         const json = await res.json();
