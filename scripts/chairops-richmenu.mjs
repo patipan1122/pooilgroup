@@ -22,11 +22,11 @@
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 
-const TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+const TOKEN = process.env.CHAIROPS_LINE_CHANNEL_ACCESS_TOKEN;
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID;
 const imagePath = process.argv[2];
 
-if (!TOKEN) fail("Missing env LINE_CHANNEL_ACCESS_TOKEN");
+if (!TOKEN) fail("Missing env CHAIROPS_LINE_CHANNEL_ACCESS_TOKEN");
 if (!LIFF_ID) fail("Missing env NEXT_PUBLIC_LIFF_ID");
 if (!imagePath) fail("Usage: node scripts/chairops-richmenu.mjs <menu-image-2500x1686.png>");
 
