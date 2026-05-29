@@ -14,12 +14,13 @@ export function LiffBootstrap({
 }) {
   const router = useRouter();
   const [phase, setPhase] = useState<
-    "idle" | "linking" | "linked" | "skip" | "needslink"
+    "idle" | "linking" | "linked" | "skip" | "needslink" | "failed"
   >("idle");
   const [linkInfo, setLinkInfo] = useState<{
     lineUserId: string;
     displayName: string;
   } | null>(null);
+  const [errMsg, setErrMsg] = useState<string>("");
 
   useEffect(() => {
     // Optional deep-link target — ChairOps Rich Menu opens the LIFF with
@@ -44,19 +45,30 @@ export function LiffBootstrap({
       if (next) window.location.replace(next);
       return;
     }
+    // In a ChairOps deep-link (next set) surface failures so we can debug,
+    // instead of a silent stuck spinner. Generic LIFF keeps the quiet skip.
+    const failOrSkip = (msg: string) => {
+      if (cancelled) return;
+      if (next) {
+        setErrMsg(msg);
+        setPhase("failed");
+      } else {
+        setPhase("skip");
+      }
+    };
+
     let cancelled = false;
     void (async () => {
       const profile = await getLiffProfile();
       if (cancelled) return;
       if (!profile) {
-        setPhase("skip");
+        failOrSkip("ไม่ได้ข้อมูลโปรไฟล์ LINE (LIFF อาจ init ไม่ได้ / ไม่ได้เปิดใน LINE)");
         return;
       }
       const idToken = await getLiffIdToken();
       if (cancelled) return;
       if (!idToken) {
-        // ไม่มี id_token — fail close (server-side verify ต้องใช้ token)
-        setPhase("skip");
+        failOrSkip("ไม่ได้ id_token จาก LIFF (ตรวจ scope openid)");
         return;
       }
       setPhase("linking");
@@ -71,7 +83,7 @@ export function LiffBootstrap({
             invite: invite ?? undefined,
           }),
         });
-        const json = await res.json();
+        const json = await res.json().catch(() => ({}));
         if (!cancelled && json.ready && json.completeUrl) {
           // Navigate to the server route; the Supabase action_link is held
           // in an httpOnly cookie set by line-login (never seen by JS).
@@ -93,9 +105,13 @@ export function LiffBootstrap({
           }
           return;
         }
-        setPhase("linked");
-      } catch {
-        setPhase("skip");
+        if (!res.ok) {
+          failOrSkip(`เข้าระบบไม่สำเร็จ (HTTP ${res.status}): ${json.error ?? ""}`);
+          return;
+        }
+        failOrSkip(`ตอบกลับไม่คาดคิด: ${JSON.stringify(json).slice(0, 180)}`);
+      } catch (e) {
+        failOrSkip(`ข้อผิดพลาด: ${e instanceof Error ? e.message : "unknown"}`);
       }
     })();
     return () => {
@@ -144,6 +160,30 @@ export function LiffBootstrap({
             className="h-12 w-full rounded-md bg-emerald-600 text-base font-semibold text-white active:bg-emerald-700"
           >
             คัดลอก LINE ID
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (phase === "failed") {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-white p-6">
+        <div className="w-full max-w-sm space-y-4 text-center">
+          <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-rose-100 text-2xl">
+            ⚠️
+          </div>
+          <p className="text-base font-semibold text-zinc-800">
+            เข้าสู่ระบบไม่สำเร็จ
+          </p>
+          <p className="select-all break-words rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-left font-mono text-xs text-zinc-700">
+            {errMsg}
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="h-11 w-full rounded-md bg-emerald-600 text-sm font-semibold text-white active:bg-emerald-700"
+          >
+            ลองใหม่
           </button>
         </div>
       </div>
