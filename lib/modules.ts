@@ -57,10 +57,12 @@ import {
   ScanLine,
   QrCode,
   ShieldAlert,
+  MessagesSquare,
+  Bot,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
-export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland";
+export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland" | "inbox";
 export type ModuleStatus = "active" | "coming_soon" | "beta";
 
 export interface NavItem {
@@ -430,6 +432,12 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff", "viewer"],
       },
       {
+        href: "/liff/clawfleet",
+        label: "กรอกงาน (พนักงาน)",
+        icon: ClipboardCheck,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
+      },
+      {
         href: "/clawfleet/operations",
         label: "ปฏิบัติการ",
         icon: Activity,
@@ -650,6 +658,34 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       },
       { href: "/playland/audit",   label: "Audit Log",   icon: History,  adminOnly: true },
       { href: "/playland/settings",label: "ตั้งค่า",     icon: Settings, adminOnly: true },
+    ],
+  },
+
+  inbox: {
+    slug: "inbox",
+    name: "กล่องข้อความรวม",
+    tagline: "รวมแชท LINE + Facebook ทุกเพจ · บอทตอบอัตโนมัติ",
+    description:
+      "รวมข้อความลูกค้าจากทุก LINE OA + Facebook Page มาไว้ที่เดียว · บอท AI ตอบอัตโนมัติ (เปิดเฉพาะเก้าอี้นวด) · สรุปรายวัน",
+    emoji: "💬",
+    Icon: MessagesSquare,
+    status: "active",
+    basePath: "/inbox",
+    nav: [
+      { href: "/inbox", label: "กล่องข้อความ", icon: MessagesSquare, section: "แชท" },
+      {
+        href: "/inbox/bot",
+        label: "ตั้งค่าบอท",
+        icon: Bot,
+        roles: ["super_admin", "org_admin", "admin"],
+        section: "จัดการ",
+      },
+      {
+        href: "/inbox/settings/channels",
+        label: "เชื่อมช่องทาง",
+        icon: Settings,
+        adminOnly: true,
+      },
     ],
   },
 };
