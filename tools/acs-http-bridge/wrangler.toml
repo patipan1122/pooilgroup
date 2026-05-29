@@ -1,0 +1,24 @@
+# Cloudflare Workers config for the ACS HTTP→HTTPS bridge.
+# Deploy with:  npx wrangler deploy
+# Tail logs:    npx wrangler tail
+#
+# After first deploy, replace the placeholder zone_name / pattern below with the
+# real custom domain you attach (workers.dev forces HTTPS — won't work for
+# F606's HTTP-only firmware).
+
+name = "acs-http-bridge"
+main = "worker.js"
+compatibility_date = "2024-12-01"
+
+# Default workers.dev URL is created automatically: acs-http-bridge.<account>.workers.dev
+# Use this for smoke-testing the bridge from a normal browser/curl ONLY.
+# Real ACS device must use a custom-domain route with "Always Use HTTPS" DISABLED.
+workers_dev = true
+
+# Uncomment + edit when you attach a custom domain on Cloudflare:
+# [[routes]]
+# pattern = "acs.YOUR-DOMAIN.com/*"
+# zone_name = "YOUR-DOMAIN.com"
+
+[observability]
+enabled = true
