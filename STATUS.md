@@ -1,10 +1,24 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-28 (รอบ 62 · ChairOps mobile + LINE OA/LIFF)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-29 (รอบ 64 · ChairOps sticky-header overlap fix DEPLOYED)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
-## 🆕 Update (2026-05-28 · รอบ 62 — ChairOps maid MOBILE + LINE OA/LIFF · /goal + /auditbigteam → build)
+## 🆕 Update (2026-05-29 · รอบ 64 — ChairOps sticky-header text overlap FIXED + DEPLOYED)
+
+**CEO:** "ตัวหนังสือบังกัน ตรวจทั้งเว็บ · บอกไปหลายรอบแล้ว · วิเคราะห์เกิดจากอะไร" (reported 3×).
+
+**Root cause (2 defects compounding):** dashboard `สาขาที่ต้องดูก่อน` + all-branches P&L tables used viewport-sticky `<thead top-14 sm:top-16 bg-zinc-50>`. (1) Chrome drops `<thead>`/`<tr>` bg during `position:sticky` → header transparent, rows bleed through. (2) `top-14/16` anchors to viewport → when a 2nd bar stacks under topbar, header freezes over a mid-table row. The house `[[sticky-thead-pattern]]` recipe itself was the bug. Earlier CSS-only attempt (PR #13) never merged → CEO kept seeing it on prod.
+
+**Fix (`6065864` → cherry-picked `6708aab`):** both tables → container-scroll `max-h overflow-auto` + `thead sticky top-0` (immune to viewport offset) + bg moved onto `[&>th]` cells. Global backstop in `fixes.css`: `.co-scope thead.sticky th,tr { background:#fff !important }` (covers the other ~9 ChairOps sticky tables). Post-mortem: `docs/postmortems/chairops-sticky-overlap-2026-05-29.md`.
+
+**✅ Deploy:** `vercel --prod` READY on **pooilgroup** project → https://pooilgroup.vercel.app · pushed `49cd761..6708aab` to `setup` (prod source carries fix · no regression). curl /chairops + /chairops/reconcile → 307. **CEO action:** hard-refresh (Cmd+Shift+R) to clear CSS cache, then confirm header no longer overlaps. Memories `[[sticky-thead-pattern]]` + `[[sticky-bg-inherit-anti-pattern]]` corrected.
+
+**Follow-ups (not blocking):** migrate remaining ~9 sticky tables off viewport-sticky · extract `<StickyTable>` primitive · Playwright visual smoke test.
+
+---
+
+## Update (2026-05-28 · รอบ 62 — ChairOps maid MOBILE + LINE OA/LIFF · /goal + /auditbigteam → build)
 
 **CEO trigger:** `/goal "ทำทุกอย่างให้จบ · ใช้ /auditbigteam · session นี้ทำเฉพาะเก้าอี้นวด · mobile UX/UI ทั้งหมดให้สวยมืออาชีพใช้ได้จริง · ทำ LINE OA + LIFF app เชื่อมเลย"` (autonomous).
 
