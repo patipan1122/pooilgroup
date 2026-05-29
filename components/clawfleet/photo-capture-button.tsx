@@ -23,7 +23,7 @@ export function PhotoCaptureButton({
   orgId: string;
   machineCode: string;
   eventScopeId: string;
-  phase: "meter_before" | "cash" | "meter_after" | "stock";
+  phase: "meter_before" | "cash" | "meter_after" | "stock" | "prize_meter" | "stock_after";
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
