@@ -168,6 +168,50 @@ export const ReviewSessionSchema = z.object({
 });
 export type ReviewSessionInput = z.infer<typeof ReviewSessionSchema>;
 
+// =============================================================
+// v2 — Branch-based collection (1 พนง = 1 สาขา = N ตู้คีบ · ไม่มีตู้แลก)
+// 5 รูป/ตู้: มิเตอร์เหรียญ · มิเตอร์ตุ๊กตา · ตุ๊กตาก่อนเติม · ตุ๊กตาหลังเติม · เงินสด
+// =============================================================
+
+// เปิดรอบเก็บระดับสาขา
+export const StartBranchSessionSchema = z.object({
+  branchId: zUUID(),
+});
+export type StartBranchSessionInput = z.infer<typeof StartBranchSessionSchema>;
+
+// กรอกข้อมูล 1 ตู้ใน branch session
+// มิเตอร์ "ก่อน" ดึงจากระบบ (machine.lastCoinMeter / lastDollMeter / lastDollStock)
+// พนักงานกรอกแค่ "วันนี้" + เงิน + นับตุ๊กตา + 5 รูป
+export const SubmitBranchEventSchema = z
+  .object({
+    sessionId: zUUID(),
+    machineId: zUUID(),
+    qrToken: z.string().min(1).optional(), // optional ใน branch flow (พนง.อยู่สาขาตัวเองแล้ว)
+    coinMeterAfter: z.number().int().min(0), // มิเตอร์เหรียญวันนี้
+    dollMeterAfter: z.number().int().min(0), // มิเตอร์ตุ๊กตาวันนี้ (sensor)
+    cashCountedCents: z.number().int().min(0), // เงินในถาด (นับจริง)
+    stockBefore: z.number().int().min(0), // ตุ๊กตาในตู้ ก่อนเติม (นับจริง)
+    refillQty: z.number().int().min(0).default(0), // เติมจากคลังสาขา
+    stockAfter: z.number().int().min(0), // ตุ๊กตาในตู้ หลังเติม (นับจริง)
+    refillProductId: zUUID().optional(), // SKU ที่เติม (ตัดสต๊อกสาขา)
+    // 5 รูป (R2 URLs)
+    photoCoinMeterUrl: z.string().url(), // → photoMeterAfterUrl
+    photoPrizeMeterUrl: z.string().url(), // → photoPrizeMeterUrl
+    photoStockBeforeUrl: z.string().url(), // → photoStockUrl
+    photoStockAfterUrl: z.string().url(), // → photoMeterBeforeUrl (reused slot)
+    photoCashUrl: z.string().url(), // → photoCashUrl
+    notes: z.string().max(1000).optional(),
+  })
+  .strict();
+export type SubmitBranchEventInput = z.infer<typeof SubmitBranchEventSchema>;
+
+// ปิดรอบ branch → 2-way cross-check (เงิน + ตุ๊กตา) app-layer
+export const CloseBranchSessionSchema = z.object({
+  sessionId: zUUID(),
+  reviewNote: z.string().max(1000).optional(),
+});
+export type CloseBranchSessionInput = z.infer<typeof CloseBranchSessionSchema>;
+
 // Stock receive
 export const StockReceiveSchema = z.object({
   branchId: zUUID(),

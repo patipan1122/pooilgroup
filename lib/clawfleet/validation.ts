@@ -170,6 +170,107 @@ export function validatePhotos(
 }
 
 /**
+ * v2 branch flow — validate all 5 photos are present (CLAW only model).
+ * มิเตอร์เหรียญ · มิเตอร์ตุ๊กตา · ตุ๊กตาก่อนเติม · ตุ๊กตาหลังเติม · เงินสด
+ */
+export function validateBranchPhotos(photos: {
+  photoCoinMeterUrl?: string | null;
+  photoPrizeMeterUrl?: string | null;
+  photoStockBeforeUrl?: string | null;
+  photoStockAfterUrl?: string | null;
+  photoCashUrl?: string | null;
+}): { ok: true } | { ok: false; reason: string } {
+  if (!photos.photoCoinMeterUrl) return { ok: false, reason: "ขาดรูปมิเตอร์เหรียญ" };
+  if (!photos.photoPrizeMeterUrl) return { ok: false, reason: "ขาดรูปมิเตอร์ตุ๊กตา" };
+  if (!photos.photoStockBeforeUrl) return { ok: false, reason: "ขาดรูปตุ๊กตาก่อนเติม" };
+  if (!photos.photoStockAfterUrl) return { ok: false, reason: "ขาดรูปตุ๊กตาหลังเติม" };
+  if (!photos.photoCashUrl) return { ok: false, reason: "ขาดรูปเงินสด" };
+  return { ok: true };
+}
+
+export type BranchEventForClose = {
+  coinMeterBefore: number;
+  coinMeterAfter: number;
+  cashCountedCents: number;
+  dollMeterBefore: number;
+  dollMeterAfter: number;
+  stockBefore: number;
+  stockAfter: number;
+  refillQty: number;
+  cashPerCoinCents: number; // ราคา/ครั้ง · default 1000 (฿10)
+};
+
+export type BranchCrossCheck = {
+  expectedCashCents: number;
+  actualCashCents: number;
+  cashVarianceCents: number;
+  cashVarianceBps: number; // (actual-expected)/expected · ลบ = ขาด
+  prizeMeterOut: number; // sensor บอกแจกออกรวม
+  prizeCountedOut: number; // นับจริง (ก่อน+เติม−หลัง) รวม
+  prizeVariance: number; // meterOut − countedOut · บวก = ตุ๊กตาหาย
+  status: "CLOSED" | "ANOMALY_REVIEW";
+  flags: AnomalyFlag[];
+};
+
+/**
+ * 2-way cross-check at branch session close.
+ *  - เงิน: Σ(มิเตอร์เหรียญขึ้น × ราคา/ครั้ง) เทียบ Σ เงินในถาด
+ *  - ตุ๊กตา: Σ(มิเตอร์ตุ๊กตาขึ้น) เทียบ Σ(ก่อน+เติม−หลัง)
+ * flag เป็น ANOMALY_REVIEW ถ้าเงินขาดเกิน tolerance หรือตุ๊กตาหายเกินเกณฑ์.
+ */
+export function deriveBranchCrossCheck(
+  events: BranchEventForClose[],
+  toleranceBps: number = DEFAULTS.GROUP_TOLERANCE_BPS,
+): BranchCrossCheck {
+  let expectedCashCents = 0;
+  let actualCashCents = 0;
+  let prizeMeterOut = 0;
+  let prizeCountedOut = 0;
+  for (const e of events) {
+    const coinsDelta = Math.max(0, e.coinMeterAfter - e.coinMeterBefore);
+    expectedCashCents += coinsDelta * e.cashPerCoinCents;
+    actualCashCents += e.cashCountedCents;
+    prizeMeterOut += Math.max(0, e.dollMeterAfter - e.dollMeterBefore);
+    prizeCountedOut += e.stockBefore + e.refillQty - e.stockAfter;
+  }
+  const cashVarianceCents = actualCashCents - expectedCashCents;
+  const cashVarianceBps =
+    expectedCashCents > 0 ? Math.round((cashVarianceCents / expectedCashCents) * 10000) : 0;
+  const prizeVariance = prizeMeterOut - prizeCountedOut;
+
+  const flags: AnomalyFlag[] = [];
+  // เงินขาดเกิน tolerance
+  if (cashVarianceCents < 0 && Math.abs(cashVarianceBps) > toleranceBps) {
+    flags.push(
+      Math.abs(cashVarianceCents) > DEFAULTS.CASH_VARIANCE_WARN_CENTS
+        ? ANOMALY_FLAGS.M3_CASH_SHORT_MAJOR
+        : ANOMALY_FLAGS.M2_CASH_SHORT_MINOR,
+    );
+  } else if (cashVarianceCents > DEFAULTS.CASH_VARIANCE_WARN_CENTS) {
+    flags.push(ANOMALY_FLAGS.M4_CASH_OVER);
+  }
+  // ตุ๊กตาหาย (meter > counted) เกินเกณฑ์
+  if (Math.abs(prizeVariance) > DEFAULTS.DOLL_VARIANCE_ACCEPTABLE) {
+    flags.push(ANOMALY_FLAGS.P3_DOLL_VARIANCE_MAJOR);
+  } else if (Math.abs(prizeVariance) > 0) {
+    flags.push(ANOMALY_FLAGS.P2_DOLL_VARIANCE_MINOR);
+  }
+  const status: "CLOSED" | "ANOMALY_REVIEW" = flags.length > 0 ? "ANOMALY_REVIEW" : "CLOSED";
+
+  return {
+    expectedCashCents,
+    actualCashCents,
+    cashVarianceCents,
+    cashVarianceBps,
+    prizeMeterOut,
+    prizeCountedOut,
+    prizeVariance,
+    status,
+    flags,
+  };
+}
+
+/**
  * Display helpers — Thai labels for severity light
  */
 export function severityLight(cashVarianceCents: number): "ok" | "warn" | "danger" {
