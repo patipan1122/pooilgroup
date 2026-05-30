@@ -8,10 +8,17 @@ export interface InboxBusiness {
   botCapable: boolean;
 }
 
+// Add a new row when CEO onboards a new vertical — channels reference
+// these tags at create time.  Only chairops is bot-capable for now;
+// other verticals reply by humans until the CEO turns the bot on.
 export const INBOX_BUSINESSES: InboxBusiness[] = [
   { tag: "chairops", label: "เก้าอี้นวด", botCapable: true },
-  { tag: "pooil", label: "Pooil / ปั๊ม", botCapable: false },
-  { tag: "playland", label: "Playland", botCapable: false },
+  { tag: "pooil", label: "Pooil / น้ำมัน / แก๊ส", botCapable: false },
+  { tag: "owl_cha", label: "Owl Cha / ชา / เครื่องดื่ม", botCapable: false },
+  { tag: "fnb", label: "ร้านอาหาร / Café", botCapable: false },
+  { tag: "hotel", label: "โรงแรม / ที่พัก", botCapable: false },
+  { tag: "playland", label: "Playland / เกม / บันเทิง", botCapable: false },
+  { tag: "personal", label: "ส่วนตัว / แฟนเพจ", botCapable: false },
   { tag: "other", label: "อื่นๆ", botCapable: false },
 ];
 
