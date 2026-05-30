@@ -183,3 +183,99 @@ export async function deleteChannel(id: string) {
   revalidatePath("/inbox/settings/channels");
   return { ok: true };
 }
+
+/**
+ * Bulk-import Facebook Pages from the OAuth flow.  Each entry already has
+ * the page access token encrypted (by the callback).  For each page we:
+ *   - upsert an InboxChannel (idempotent on org × externalId)
+ *   - subscribe the page to the app's webhook so messages route to us
+ *
+ * Returns counts so the picker UI can toast a summary.
+ */
+export async function bulkCreateFacebookChannels(input: {
+  pages: Array<{
+    id: string; // FB Page ID — stored as externalId
+    name: string;
+    accessTokenEnc: string; // already encrypted by the OAuth callback
+    businessTag: string;
+  }>;
+}): Promise<{ created: number; updated: number; subscribed: number; errors: string[] }> {
+  const session = await requireInboxAdmin();
+  const errors: string[] = [];
+  let created = 0;
+  let updated = 0;
+  let subscribed = 0;
+
+  // Dynamic import keeps the heavy fetch logic out of unrelated bundles.
+  const { subscribePageWebhook } = await import("./facebook-oauth");
+
+  for (const p of input.pages) {
+    if (!p.id || !p.name || !p.accessTokenEnc) continue;
+    try {
+      const existing = await prisma.inboxChannel.findFirst({
+        where: {
+          orgId: session.user.org_id,
+          platform: "FACEBOOK",
+          externalId: p.id,
+        },
+        select: { id: true, metadata: true },
+      });
+      if (existing) {
+        await prisma.inboxChannel.update({
+          where: { id: existing.id },
+          data: {
+            displayName: p.name,
+            businessTag: p.businessTag,
+            accessTokenEnc: p.accessTokenEnc,
+            status: "active",
+          },
+        });
+        updated++;
+      } else {
+        // Per-channel verifyToken is only used for the legacy per-channel
+        // route; the new app-level webhook uses FACEBOOK_APP_SECRET for
+        // signature verification.  Still mint one for the metadata blob.
+        const verifyToken = crypto.randomBytes(24).toString("hex");
+        await prisma.inboxChannel.create({
+          data: {
+            orgId: session.user.org_id,
+            platform: "FACEBOOK",
+            displayName: p.name,
+            businessTag: p.businessTag,
+            externalId: p.id,
+            accessTokenEnc: p.accessTokenEnc,
+            // No per-page webhook secret — app-level webhook verifies with
+            // FACEBOOK_APP_SECRET instead.
+            webhookSecret: null,
+            botEnabled: false,
+            status: "active",
+            metadata: { verifyTokenEnc: encryptToken(verifyToken) },
+            createdById: session.user.id,
+          },
+        });
+        created++;
+      }
+
+      // Subscribe the page so its events flow to the app webhook.  Best
+      // effort — failure here just means CEO needs to retry; the channel
+      // already exists so the next attempt is cheap.
+      try {
+        const plainToken = decryptToken(p.accessTokenEnc);
+        if (plainToken) {
+          await subscribePageWebhook({
+            pageId: p.id,
+            pageAccessToken: plainToken,
+          });
+          subscribed++;
+        }
+      } catch (e) {
+        errors.push(`${p.name}: subscribe failed — ${(e as Error).message}`);
+      }
+    } catch (e) {
+      errors.push(`${p.name}: ${(e as Error).message}`);
+    }
+  }
+
+  revalidatePath("/inbox/settings/channels");
+  return { created, updated, subscribed, errors };
+}

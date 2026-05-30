@@ -14,10 +14,15 @@ import { MessageCircle, ShieldCheck, AlertTriangle } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
-export default async function InboxChannelsSettingsPage() {
+export default async function InboxChannelsSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ fb_error?: string }>;
+}) {
   const session = await requireSession();
   if (!isAdminTier(session.user.role)) redirect("/403");
 
+  const params = await searchParams;
   const channels = await listChannels();
 
   return (
@@ -28,6 +33,12 @@ export default async function InboxChannelsSettingsPage() {
         title="เชื่อม LINE OA / Facebook Page"
         description="ลูกค้าทักมาทาง LINE หรือ FB → มาโผล่รวมกันใน /inbox · รองรับหลายบัญชี · เปิดบอทตอบอัตโนมัติได้ (เฉพาะธุรกิจที่รองรับ)"
       >
+        {params.fb_error && (
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            <p className="font-bold">เชื่อม Facebook ไม่สำเร็จ</p>
+            <p className="text-xs">{params.fb_error}</p>
+          </div>
+        )}
         {/* Status banner */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
           <div className="rounded-2xl bg-gradient-to-br from-[var(--color-brand-50)] to-white border border-[var(--color-brand-200)] p-4 flex items-start gap-3">

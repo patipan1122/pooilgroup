@@ -238,14 +238,26 @@ export function ChannelsManager({
           ช่องทางที่เชื่อม{" "}
           <span className="text-zinc-400 tabular-nums font-normal">({channels.length})</span>
         </p>
-        <button
-          type="button"
-          onClick={() => setShowAdd(!showAdd)}
-          className="inline-flex items-center gap-1.5 text-sm font-bold text-white bg-[var(--color-brand-600)] px-3 h-10 rounded-xl hover:bg-[var(--color-brand-700)]"
-        >
-          <Plus className="size-4" />
-          เพิ่มช่องทาง
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Kicks off FB OAuth → returns to /facebook-import picker.
+              Plain anchor (full-page nav) because the OAuth dialog can't
+              load inside a partial fetch. */}
+          <a
+            href="/api/inbox/facebook-oauth/start"
+            className="inline-flex items-center gap-1.5 text-sm font-bold text-white bg-[#1877F2] px-3 h-10 rounded-xl hover:bg-[#0e5fc0]"
+          >
+            <Globe className="size-4" />
+            เชื่อม Facebook (หลายเพจ)
+          </a>
+          <button
+            type="button"
+            onClick={() => setShowAdd(!showAdd)}
+            className="inline-flex items-center gap-1.5 text-sm font-bold text-white bg-[var(--color-brand-600)] px-3 h-10 rounded-xl hover:bg-[var(--color-brand-700)]"
+          >
+            <Plus className="size-4" />
+            เพิ่มทีละช่อง
+          </button>
+        </div>
       </div>
 
       {/* Add form */}
