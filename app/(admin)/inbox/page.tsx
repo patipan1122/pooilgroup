@@ -72,6 +72,7 @@ export default async function InboxPage({
 
   return (
     <InboxWorkspace
+      orgId={orgId}
       conversations={conversations}
       counts={counts}
       channels={channelOptions}

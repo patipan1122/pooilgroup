@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
+import { useInboxRealtime } from "@/lib/inbox/use-inbox-realtime";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Section } from "@/components/ui/section";
@@ -41,6 +42,7 @@ interface ActiveFilters {
 }
 
 interface Props {
+  orgId: string;
   conversations: ConversationListItem[];
   counts: InboxCounts;
   channels: ChannelOption[];
@@ -49,6 +51,7 @@ interface Props {
 }
 
 export function InboxWorkspace({
+  orgId,
   conversations,
   counts,
   channels,
@@ -87,23 +90,10 @@ export function InboxWorkspace({
     [router, buildHref],
   );
 
-  // Lightweight near-realtime: poll for new messages every 4s while the tab
-  // is in the foreground.  router.refresh() re-runs the Server Component
-  // load, so new conversations / messages appear without a full reload.
-  // Skips when the tab is hidden (saves DB load + bandwidth).
-  useEffect(() => {
-    let cancelled = false;
-    const tick = () => {
-      if (cancelled) return;
-      if (typeof document !== "undefined" && document.hidden) return;
-      router.refresh();
-    };
-    const id = window.setInterval(tick, 4000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [router]);
+  // Real-time updates via Supabase broadcast — ingest.ts fires an event on
+  // every inbound/outbound message and we re-fetch the Server Component on
+  // the next tick.  Zero idle DB load · only fetches when something changed.
+  useInboxRealtime({ orgId, conversationId: selected?.id ?? null });
 
   const hasAnyChannel = channels.length > 0;
   const hasAnyFilter =

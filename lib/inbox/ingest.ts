@@ -7,6 +7,7 @@
 // NOT coupled to any module's domain model — works for any business tag.
 
 import { prisma } from "@/lib/prisma";
+import { broadcastInboxChange } from "./realtime-server";
 
 export interface InboxIngestParams {
   channelId: string;
@@ -125,6 +126,9 @@ export async function ingestInboundMessage(
       },
       select: { id: true },
     });
+    // Fire-and-forget broadcast so admins viewing /inbox see the new message
+    // appear without polling.  Failures here are logged but don't block ingest.
+    void broadcastInboxChange({ orgId: p.orgId, conversationId: convo.id });
     return { conversationId: convo.id, messageId: msg.id, isNewConversation };
   } catch (e) {
     // Concurrent retry inserted the same (channelId, externalId) first → treat as duplicate.
@@ -179,6 +183,12 @@ export async function recordOutboundMessage(opts: {
   await prisma.inboxConversation.update({
     where: { id: opts.conversationId },
     data: { lastMessageAt: new Date() },
+  });
+  // Same broadcast as the inbound path so the staff member who hit Send sees
+  // their bubble + the bot's auto-reply land in /inbox immediately.
+  void broadcastInboxChange({
+    orgId: opts.orgId,
+    conversationId: opts.conversationId,
   });
   return msg.id;
 }
