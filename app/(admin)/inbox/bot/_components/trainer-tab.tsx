@@ -16,13 +16,13 @@ import {
   MessageSquareText,
   PlayCircle,
   Loader2,
-  AlertTriangle,
   RotateCcw,
 } from "lucide-react";
 import {
   trainerChat,
   previewBotReply,
   type TrainerTurn,
+  type PreviewTurn,
 } from "@/lib/inbox/bot/trainer-actions";
 import {
   createFaq,
@@ -450,137 +450,365 @@ const PATH_LABEL: Record<string, { label: string; tone: string }> = {
   },
   ai: { label: "AI Gemini", tone: "bg-purple-50 text-purple-800 border-purple-200" },
   escalate: { label: "ส่งต่อพนักงาน", tone: "bg-red-50 text-red-800 border-red-200" },
+  non_text: { label: "รับรูป", tone: "bg-amber-50 text-amber-800 border-amber-200" },
 };
 
-function PreviewPane({ businessTag }: { businessTag: string }) {
-  const [text, setText] = useState("");
-  const [busy, startBusy] = useTransition();
-  const [result, setResult] = useState<{
-    path: string;
-    topic: string;
-    isUrgent: boolean;
-    isLead: boolean;
-    isComplaint: boolean;
-    reply: string;
+interface PreviewBubble {
+  id: string;
+  role: "customer" | "bot";
+  text?: string;
+  imageDataUrl?: string;  // customer-attached image (base64 preview, never uploaded)
+  imageUrl?: string;      // bot flow image (already-public R2 URL)
+  meta?: {
+    path?: string;
     matchedFaqKeywords?: string;
-    hasFlowImage: boolean;
-  } | null>(null);
+    isUrgent?: boolean;
+    isLead?: boolean;
+    isComplaint?: boolean;
+    topic?: string;
+  };
+}
 
-  function run() {
-    const value = text.trim();
-    if (!value) return;
+const PREVIEW_STORAGE_KEY = (tag: string) => `inbox-preview-history:${tag}`;
+
+function PreviewPane({ businessTag }: { businessTag: string }) {
+  const [bubbles, setBubbles] = useState<PreviewBubble[]>([]);
+  const [hydrated, setHydrated] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [busy, startBusy] = useTransition();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Hydrate from localStorage so the simulated conversation survives page
+  // refreshes — useful while CEO iterates on FAQ entries.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PREVIEW_STORAGE_KEY(businessTag));
+      if (raw) {
+        const parsed = JSON.parse(raw) as PreviewBubble[];
+        if (Array.isArray(parsed)) setBubbles(parsed);
+      }
+    } catch {
+      /* ignore */
+    }
+    setHydrated(true);
+  }, [businessTag]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(
+        PREVIEW_STORAGE_KEY(businessTag),
+        JSON.stringify(bubbles),
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [bubbles, businessTag, hydrated]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [bubbles.length, busy]);
+
+  function reset() {
+    if (bubbles.length > 0 && !confirm("ล้างบทสนทนาทดลอง?")) return;
+    setBubbles([]);
+    try {
+      localStorage.removeItem(PREVIEW_STORAGE_KEY(businessTag));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Translate UI bubbles → server PreviewTurn[] for context.
+  function toHistory(list: PreviewBubble[]): PreviewTurn[] {
+    return list.map((b) => ({
+      role: b.role,
+      text: b.text,
+      isImage: !!(b.imageDataUrl || b.imageUrl) && !b.text,
+    }));
+  }
+
+  function sendText() {
+    const value = draft.trim();
+    if (!value || busy) return;
+    const userBubble: PreviewBubble = {
+      id: crypto.randomUUID(),
+      role: "customer",
+      text: value,
+    };
+    const nextHistory = toHistory(bubbles);
+    setBubbles((prev) => [...prev, userBubble]);
+    setDraft("");
     startBusy(async () => {
       try {
-        const r = await previewBotReply({ text: value, businessTag });
-        setResult({
-          path: r.path,
-          topic: r.topic,
-          isUrgent: r.isUrgent,
-          isLead: r.isLead,
-          isComplaint: r.isComplaint,
-          reply: r.reply,
-          matchedFaqKeywords: r.matchedFaqKeywords,
-          hasFlowImage: r.hasFlowImage,
+        const r = await previewBotReply({
+          text: value,
+          history: nextHistory,
+          businessTag,
+        });
+        setBubbles((prev) => {
+          const additions: PreviewBubble[] = [
+            {
+              id: crypto.randomUUID(),
+              role: "bot",
+              text: r.reply,
+              meta: {
+                path: r.path,
+                matchedFaqKeywords: r.matchedFaqKeywords,
+                isUrgent: r.isUrgent,
+                isLead: r.isLead,
+                isComplaint: r.isComplaint,
+                topic: r.topic,
+              },
+            },
+          ];
+          if (r.flowImageUrl) {
+            additions.push({
+              id: crypto.randomUUID(),
+              role: "bot",
+              imageUrl: r.flowImageUrl,
+            });
+          }
+          return [...prev, ...additions];
         });
       } catch (e) {
         toast.error((e as Error).message || "พรีวิวไม่สำเร็จ");
+        setBubbles((prev) => prev.slice(0, -1));
       }
     });
   }
 
-  const pathInfo = result ? PATH_LABEL[result.path] : null;
+  function onPickImage(file: File | undefined) {
+    if (!file || busy) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("ไฟล์ใหญ่เกิน 5 MB");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result);
+      const userBubble: PreviewBubble = {
+        id: crypto.randomUUID(),
+        role: "customer",
+        imageDataUrl: dataUrl,
+      };
+      const nextHistory = toHistory(bubbles);
+      setBubbles((prev) => [...prev, userBubble]);
+      startBusy(async () => {
+        try {
+          const r = await previewBotReply({
+            isImage: true,
+            history: nextHistory,
+            businessTag,
+          });
+          setBubbles((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              role: "bot",
+              text: r.reply,
+              meta: { path: r.path, topic: r.topic },
+            },
+          ]);
+        } catch (e) {
+          toast.error((e as Error).message || "พรีวิวไม่สำเร็จ");
+          setBubbles((prev) => prev.slice(0, -1));
+        }
+      });
+    };
+    reader.readAsDataURL(file);
+  }
 
   return (
-    <div>
-      <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3">
-        <PlayCircle className="size-4 text-[var(--color-brand-600)]" />
-        <p className="text-sm font-bold text-zinc-900">ทดลองบอทตอบ</p>
-      </div>
-      <div className="space-y-3 p-4">
-        <p className="text-[11px] text-zinc-500">
-          พิมพ์ข้อความที่ลูกค้าจะส่ง · ไม่ส่งจริง · แสดงว่าบอทจะใช้ทางไหนตอบ
-        </p>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={3}
-          placeholder="เช่น &quot;หยอดเงินแล้วเครื่องไม่ทำงาน&quot;"
-          className="w-full resize-none rounded-xl border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)]"
-        />
-        <button
-          type="button"
-          onClick={run}
-          disabled={busy || !text.trim()}
-          className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-zinc-50 text-sm font-bold text-zinc-800 hover:bg-zinc-100 disabled:opacity-40"
-        >
-          {busy ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <PlayCircle className="size-4" />
-          )}
-          ดูว่าบอทจะตอบยังไง
-        </button>
-
-        {result && pathInfo && (
-          <div className="space-y-2 pt-1">
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-              <span
-                className={`inline-flex items-center rounded-full border px-2 py-0.5 font-bold ${pathInfo.tone}`}
-              >
-                {pathInfo.label}
-              </span>
-              <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-zinc-700">
-                topic: {result.topic}
-              </span>
-              {result.isUrgent && (
-                <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 font-bold text-orange-800">
-                  ด่วน
-                </span>
-              )}
-              {result.isLead && (
-                <span className="rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 font-bold text-purple-800">
-                  สนใจซื้อ
-                </span>
-              )}
-              {result.isComplaint && (
-                <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-bold text-red-800">
-                  ร้องเรียน
-                </span>
-              )}
-              {result.hasFlowImage && (
-                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-bold text-emerald-800">
-                  + รูปประกอบ
-                </span>
-              )}
-            </div>
-            {result.matchedFaqKeywords && (
-              <p className="text-[11px] text-zinc-500">
-                คำหลักที่ตรง: <span className="text-zinc-800">{result.matchedFaqKeywords}</span>
-              </p>
-            )}
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
-              <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-zinc-500">
-                บอทจะตอบ
-              </p>
-              <p className="whitespace-pre-wrap text-sm text-zinc-900">
-                {result.reply}
-              </p>
-            </div>
-          </div>
+    <div className="flex h-[640px] flex-col">
+      {/* Phone-frame header */}
+      <div className="flex items-center gap-2 border-b border-zinc-200 bg-gradient-to-b from-zinc-100 to-zinc-50 px-4 py-3">
+        <div className="flex size-8 items-center justify-center rounded-full bg-emerald-500 text-xs font-bold text-white">
+          น
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold text-zinc-900">
+            นวดน้า (ทดลอง)
+          </p>
+          <p className="text-[10px] text-zinc-500">
+            หน้าจอลูกค้าจำลอง · ไม่ส่งจริง
+          </p>
+        </div>
+        {bubbles.length > 0 && (
+          <button
+            type="button"
+            onClick={reset}
+            className="inline-flex h-7 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] font-bold text-zinc-600 hover:bg-zinc-50"
+            title="ล้างบทสนทนาทดลอง"
+          >
+            <RotateCcw className="size-3.5" />
+            ล้าง
+          </button>
         )}
+      </div>
 
-        {!result && !busy && (
-          <div className="rounded-xl border border-dashed border-zinc-200 p-3 text-[11px] text-zinc-500">
-            <p className="flex items-start gap-2">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-              <span>
-                FAQ → Template → AI ตามลำดับ · ถ้าผลออกมาไม่ตรงใจ ไปปรับที่แท็บ
-                "คลังคำตอบ" / "ข้อมูลร้าน" หรือคุยกับ Claude ทางซ้ายให้ช่วย
-              </span>
+      {/* Chat scroller — LINE/iMessage-ish */}
+      <div
+        ref={scrollRef}
+        className="flex-1 space-y-2 overflow-y-auto bg-[#7e9bb6] bg-opacity-10 p-3"
+        style={{
+          backgroundImage:
+            "linear-gradient(180deg, rgba(126,155,182,0.10) 0%, rgba(126,155,182,0.04) 100%)",
+        }}
+      >
+        {bubbles.length === 0 && (
+          <div className="flex h-full flex-col items-center justify-center px-4 text-center">
+            <PlayCircle className="size-7 text-zinc-300" />
+            <p className="mt-2 text-xs font-bold text-zinc-600">
+              ลองทักเหมือนเป็นลูกค้า
+            </p>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              พิมพ์ข้อความหรือแนบรูป → เห็นบอทตอบทันทีพร้อมรูปประกอบ
+              (ไม่ส่งจริง · ไม่นับใน /inbox)
             </p>
           </div>
         )}
+        {bubbles.map((b) => (
+          <PreviewBubbleView key={b.id} bubble={b} />
+        ))}
+        {busy && (
+          <div className="flex items-center gap-2 pl-2 text-[11px] text-zinc-500">
+            <Loader2 className="size-3.5 animate-spin" />
+            บอทกำลังพิมพ์...
+          </div>
+        )}
       </div>
+
+      {/* Composer */}
+      <div className="border-t border-zinc-200 bg-white p-2">
+        <div className="flex items-end gap-2">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={busy}
+            aria-label="แนบรูป"
+            className="inline-flex size-10 shrink-0 items-center justify-center rounded-full border border-zinc-200 text-zinc-600 hover:bg-zinc-50 disabled:opacity-40"
+          >
+            +
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            hidden
+            onChange={(e) => {
+              onPickImage(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                e.preventDefault();
+                sendText();
+              }
+            }}
+            rows={1}
+            placeholder="พิมพ์เหมือนเป็นลูกค้า..."
+            className="min-h-10 flex-1 resize-none rounded-2xl border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)]"
+          />
+          <button
+            type="button"
+            onClick={sendText}
+            disabled={busy || !draft.trim()}
+            className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-brand-600)] text-white hover:bg-[var(--color-brand-700)] disabled:opacity-40"
+            aria-label="ส่ง"
+          >
+            <Send className="size-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PreviewBubbleView({ bubble }: { bubble: PreviewBubble }) {
+  const isCustomer = bubble.role === "customer";
+  const pathInfo = bubble.meta?.path ? PATH_LABEL[bubble.meta.path] : null;
+  return (
+    <div className={`flex flex-col gap-1 ${isCustomer ? "items-end" : "items-start"}`}>
+      {bubble.imageUrl && (
+        <a
+          href={bubble.imageUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block max-w-[70%] overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={bubble.imageUrl}
+            alt="รูปจากบอท"
+            className="block max-h-56 w-full object-cover"
+            loading="lazy"
+          />
+        </a>
+      )}
+      {bubble.imageDataUrl && (
+        <div className="block max-w-[70%] overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={bubble.imageDataUrl}
+            alt="รูปจากลูกค้า (ทดลอง)"
+            className="block max-h-56 w-full object-cover"
+          />
+        </div>
+      )}
+      {bubble.text && (
+        <div
+          className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm shadow-sm ${
+            isCustomer
+              ? "rounded-br-md bg-[#06c755] text-white"
+              : "rounded-bl-md border border-zinc-200 bg-white text-zinc-900"
+          }`}
+        >
+          {bubble.text}
+        </div>
+      )}
+      {!isCustomer && pathInfo && (
+        <div className="flex flex-wrap items-center gap-1 pl-1 text-[10px]">
+          <span
+            className={`inline-flex items-center rounded-full border px-1.5 py-0.5 font-bold ${pathInfo.tone}`}
+          >
+            {pathInfo.label}
+          </span>
+          {bubble.meta?.topic && bubble.meta.topic !== "other" && (
+            <span className="rounded-full border border-zinc-200 bg-white px-1.5 py-0.5 text-zinc-600">
+              {bubble.meta.topic}
+            </span>
+          )}
+          {bubble.meta?.isUrgent && (
+            <span className="rounded-full border border-orange-200 bg-orange-50 px-1.5 py-0.5 font-bold text-orange-800">
+              ด่วน
+            </span>
+          )}
+          {bubble.meta?.isLead && (
+            <span className="rounded-full border border-purple-200 bg-purple-50 px-1.5 py-0.5 font-bold text-purple-800">
+              สนใจซื้อ
+            </span>
+          )}
+          {bubble.meta?.isComplaint && (
+            <span className="rounded-full border border-red-200 bg-red-50 px-1.5 py-0.5 font-bold text-red-800">
+              ร้องเรียน
+            </span>
+          )}
+          {bubble.meta?.matchedFaqKeywords && (
+            <span className="rounded-full border border-zinc-200 bg-white px-1.5 py-0.5 text-zinc-500">
+              keyword: {bubble.meta.matchedFaqKeywords.slice(0, 24)}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

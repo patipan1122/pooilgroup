@@ -191,26 +191,59 @@ export async function trainerChat(input: {
  * message — without actually sending anything.  Returns the predicted
  * reply text plus which path it would take (template / faq / ai).
  */
+export interface PreviewTurn {
+  role: "customer" | "bot";
+  /** Text body; empty when this turn is an image-only message */
+  text?: string;
+  /** Marks the customer turn as an image (we don't ship the actual bytes) */
+  isImage?: boolean;
+}
+
 export async function previewBotReply(input: {
-  text: string;
+  /** Latest customer text — required unless isImage is true */
+  text?: string;
+  /** Set true when the customer just "sent" a photo (simulates non-text path) */
+  isImage?: boolean;
+  /** Prior turns of the simulated conversation, oldest → newest */
+  history?: PreviewTurn[];
   businessTag?: string;
 }): Promise<{
   ok: true;
-  path: "faq" | "template" | "ai" | "escalate";
+  path: "faq" | "template" | "ai" | "escalate" | "non_text";
   topic: string;
   isUrgent: boolean;
   isLead: boolean;
   isComplaint: boolean;
   reply: string;
   matchedFaqKeywords?: string;
-  hasFlowImage: boolean;
+  /** Public R2 URL of the bot's flow image, if any — UI renders it as a separate bubble */
+  flowImageUrl?: string;
 }> {
   const session = await requireAdmin();
   const businessTag = input.businessTag?.trim() || DEFAULT_TAG;
+  const settings = await getBotSettings(session.user.org_id, businessTag);
+
+  // Image-only customer message → simulate handleNonTextInbound: ack + escalate
+  if (input.isImage) {
+    const ack =
+      `ได้รับข้อความ/รูปแล้วนะคะ 🙏 เดี๋ยวทีมงานรีบดูแลให้ค่ะ ` +
+      (settings.contactPhone
+        ? `หากเร่งด่วนโทร ${settings.contactPhone} ได้เลยค่ะ`
+        : ``);
+    return {
+      ok: true,
+      path: "non_text",
+      topic: "other",
+      isUrgent: false,
+      isLead: false,
+      isComplaint: false,
+      reply: ack,
+    };
+  }
+
   const text = (input.text ?? "").trim();
   if (!text) throw new Error("พิมพ์ข้อความลูกค้าก่อนทดลอง");
 
-  const settings = await getBotSettings(session.user.org_id, businessTag);
   const cls = classify(text);
 
   const allowFaq = !cls.isUrgent && !cls.isComplaint;
@@ -281,7 +314,10 @@ export async function previewBotReply(input: {
     path = "template";
     reply = renderTemplate(cls.topic);
   } else {
-    // AI fallback — call Gemini without history (preview is a fresh prompt).
+    // AI fallback — feed the simulated conversation history to Gemini so a
+    // single bare reply ("G0310416") is understood in the context of the
+    // prior money_lost turn.  Translate preview turns into the IN/OUT shape
+    // the AI module expects.
     const knowledgeRows = await prisma.inboxBotKnowledge.findMany({
       where: { orgId: session.user.org_id, businessTag, enabled: true },
       select: { title: true, content: true },
@@ -294,12 +330,21 @@ export async function previewBotReply(input: {
             .map((r) => `## ${r.title}\n${r.content}`)
             .join("\n\n");
 
+    const aiHistory = (input.history ?? [])
+      .map((t) => ({
+        direction: (t.role === "customer" ? "IN" : "OUT") as "IN" | "OUT",
+        body: t.isImage ? "[รูปภาพ]" : t.text ?? "",
+        sentByBot: t.role === "bot",
+      }))
+      .concat([{ direction: "IN", body: text, sentByBot: false }]);
+
     const ai = await aiAnswer({
       text,
       knowledge: knowledgeStr,
       tone: settings.tone,
       botName: settings.botName,
       orgId: session.user.org_id,
+      history: aiHistory,
     });
     if (ai.answer) {
       path = "ai";
@@ -309,7 +354,8 @@ export async function previewBotReply(input: {
     }
   }
 
-  const flowImage = settings.flowImages[cls.topic as keyof typeof settings.flowImages];
+  const flowImageUrl =
+    settings.flowImages[cls.topic as keyof typeof settings.flowImages];
   return {
     ok: true,
     path,
@@ -319,6 +365,6 @@ export async function previewBotReply(input: {
     isComplaint: cls.isComplaint,
     reply,
     matchedFaqKeywords,
-    hasFlowImage: !!flowImage,
+    flowImageUrl,
   };
 }
