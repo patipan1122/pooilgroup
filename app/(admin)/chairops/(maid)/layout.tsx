@@ -10,7 +10,10 @@
 // MAID role gate enforced here; per-page guards still call requireExactRole.
 
 import type { Metadata, Viewport } from "next";
-import { requireExactRole } from "@/lib/chairops/auth/session";
+import { redirect } from "next/navigation";
+import {
+  requireAuth,
+} from "@/lib/chairops/auth/session";
 import { MaidShell } from "./_components/maid-shell";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +35,14 @@ export default async function MaidRouteGroupLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await requireExactRole("MAID");
+  const session = await requireAuth();
+  // 2026-05-30: Rich Menu URIs always land here even when the caller is an
+  // admin/office user (the URI is global per LINE OA, not per user). Hard-
+  // 403 was unfriendly — bounce non-maid roles to the office branch picker
+  // so CEO can pick a branch + impersonate from the same tap.
+  if (session.user.role !== "MAID") {
+    redirect("/chairops/branch-collect");
+  }
   return (
     <div className="chairops-scope">
       <MaidShell displayName={session.user.displayName}>{children}</MaidShell>

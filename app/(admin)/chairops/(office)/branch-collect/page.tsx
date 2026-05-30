@@ -25,7 +25,9 @@ import { PlayAsMaidButton } from "../users/play-as-maid-button";
 export const dynamic = "force-dynamic";
 
 export default async function BranchCollectPage() {
-  await requireRole("ADMIN");
+  // OFFICE+ matches the (office) layout gate · CEO (rank 4) + MANAGER (3) +
+  // OFFICE (2) all qualify. MAID (1) is blocked at the layout level above.
+  await requireRole("OFFICE");
 
   const branches = await prisma.chairopsBranch.findMany({
     where: { isActive: true },
