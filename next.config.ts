@@ -24,6 +24,38 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+
+  // Security headers — 2026-05-30 /increase quality on inbox surfaced
+  // that no HSTS / clickjacking / mime-sniff / referrer guard was set.
+  // Inbox handles encrypted FB+LINE channel tokens, OAuth callbacks, and
+  // webhooks — high-value targets.  These headers apply project-wide;
+  // low blast radius because they only ADD response headers, never
+  // change behavior or block requests.
+  //
+  // CSP is intentionally NOT set here yet — adding a strict Content-
+  // Security-Policy without first running in report-only mode would
+  // break Sentry beacons, Vercel preview helpers, and embedded analytics.
+  // Tracked as a separate quality follow-up.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=()",
+          },
+        ],
+      },
+    ];
+  },
 };
 
 // Sentry v10 + Next 16 (Turbopack):
