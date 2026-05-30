@@ -61,6 +61,13 @@ interface LineState {
 
 interface Props {
   chairCodes: ReadonlyArray<string>;
+  /**
+   * When set, the action will record the collection for THIS branch instead
+   * of the caller's primaryBranchId. Used by the office-direct-collect route
+   * /chairops/(office)/collect/[branchId]/new where an admin/CEO picks a
+   * branch from the multi-select picker and acts on its behalf.
+   */
+  branchOverride?: string | null;
 }
 
 const REASON_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
@@ -93,7 +100,7 @@ function defaultLine(): LineState {
   return { status: "collected", amount: "", reasonCode: "", reasonFree: "" };
 }
 
-export function CollectNewForm({ chairCodes }: Props) {
+export function CollectNewForm({ chairCodes, branchOverride }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [online, setOnline] = useState(true);
@@ -265,6 +272,7 @@ export function CollectNewForm({ chairCodes }: Props) {
       });
       const res = await createCashCollection({
         lines: payloadLines,
+        branchOverride: branchOverride ?? null,
         evidencePhotoUrl: null,
         imageHash: null,
         notes: notes.trim() || null,
@@ -274,7 +282,13 @@ export function CollectNewForm({ chairCodes }: Props) {
         return;
       }
       toast.success("บันทึกการนับแล้ว · ฝากเงินทีหลังได้");
-      router.push(`/chairops/m/collect/${res.data.id}`);
+      // Office collect routes go to the office collection detail; maid path
+      // stays on the maid hub for the back-button breadcrumb.
+      router.push(
+        branchOverride
+          ? `/chairops/collect/${res.data.id}`
+          : `/chairops/m/collect/${res.data.id}`,
+      );
       router.refresh();
     });
   }

@@ -1,17 +1,18 @@
-// Office "เก็บเงินแทนแม่บ้าน" — CEO 2026-05-30 spec: office/CEO sometimes
-// needs to do a maid's cash-collect run themselves. Picking a SPECIFIC maid
-// (the "เล่นเป็น" button on /chairops/users) is one path; this page is the
-// faster one — pick a BRANCH directly and the system finds the active maid
-// for that branch + impersonates them in one step.
+// Office "เก็บเงินแทนแม่บ้าน" — pick one OR multiple branches. CEO 2026-05-30:
+// office/admin can be at HQ counting cash several maids brought back, so the
+// picker now supports multi-select. Each selected branch gets its own
+// "เก็บสาขานี้" link that opens the chair-checklist for that branch directly
+// (no impersonation cookie — the office user submits as themselves via the
+// createCashCollection branchOverride field).
 //
-// Layout: card grid of every active branch. Each card shows the assigned
-// maid (or a warning if there isn't one yet) and a single "เก็บเงินสาขานี้"
-// button that posts to /api/admin/users/<authUserId>/impersonate then sends
-// the office user straight to /chairops/m.
-//
-// Auth: requireRole(ADMIN) from chairops session — same gate as
-// /chairops/users. The impersonate API itself re-checks Pool admin tier.
+// Layout (server-rendered):
+//   3 KPI tiles (total / ready / missing-maid)
+//   card grid · each card =
+//      branch name + city + chair count
+//      maid badge (optional)
+//      [เก็บสาขานี้] link → /chairops/collect/<branchId>/new
 
+import Link from "next/link";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
 import {
@@ -19,14 +20,11 @@ import {
   ChairopsKpiTile,
 } from "@/components/chairops/_kit";
 import { Card, CardBody } from "@/components/ui/card";
-import { Building2, AlertTriangle } from "lucide-react";
-import { PlayAsMaidButton } from "../users/play-as-maid-button";
+import { Building2, AlertTriangle, Banknote, ChevronRight } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
 export default async function BranchCollectPage() {
-  // OFFICE+ matches the (office) layout gate · CEO (rank 4) + MANAGER (3) +
-  // OFFICE (2) all qualify. MAID (1) is blocked at the layout level above.
   await requireRole("OFFICE");
 
   const branches = await prisma.chairopsBranch.findMany({
@@ -40,8 +38,6 @@ export default async function BranchCollectPage() {
     },
   });
 
-  // Pull every active MAID + their primaryBranchId so we can match maid-to-
-  // branch in O(n). Branches with no maid get a warning card.
   const maids = await prisma.chairopsUser.findMany({
     where: { role: "MAID", isActive: true },
     select: {
@@ -57,8 +53,6 @@ export default async function BranchCollectPage() {
   >();
   for (const m of maids) {
     if (!m.primaryBranchId) continue;
-    // First maid wins (1-maid-per-branch is the design per memory
-    // [[chairops-maid-one-per-branch-collect-only]]); skip extras silently.
     if (!maidByBranch.has(m.primaryBranchId)) {
       maidByBranch.set(m.primaryBranchId, {
         id: m.id,
@@ -68,8 +62,9 @@ export default async function BranchCollectPage() {
     }
   }
 
-  const branchesWithMaid = branches.filter((b) => maidByBranch.has(b.id));
-  const branchesWithoutMaid = branches.length - branchesWithMaid.length;
+  const branchesWithChair = branches.filter((b) => b._count.chairs > 0);
+  const branchesWithoutMaid = branches.filter((b) => !maidByBranch.has(b.id))
+    .length;
 
   return (
     <div className="chairops-scope">
@@ -82,8 +77,8 @@ export default async function BranchCollectPage() {
             เก็บเงินสาขาไหน
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-zinc-600">
-            เลือกสาขาที่จะเก็บเงินแทนแม่บ้าน · ระบบจะเข้าใช้งานในมุมมองแม่บ้านของสาขานั้น
-            · ทุก action จะถูกบันทึก audit log
+            เลือกสาขาที่จะเก็บเงิน · กดสาขาไหนก็เปิด chair-checklist ของสาขานั้น
+            ทันที · ระบบบันทึกในนามคุณ (audit-tracked) · เก็บได้หลายสาขาในรอบเดียว
           </p>
         </header>
 
@@ -95,8 +90,8 @@ export default async function BranchCollectPage() {
             icon={<Building2 className="size-4" aria-hidden />}
           />
           <ChairopsKpiTile
-            label="พร้อมเข้าใช้งาน"
-            value={String(branchesWithMaid.length)}
+            label="พร้อมเก็บ (มีเก้าอี้)"
+            value={String(branchesWithChair.length)}
             tone="success"
           />
           {branchesWithoutMaid > 0 && (
@@ -112,12 +107,12 @@ export default async function BranchCollectPage() {
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {branches.map((b) => {
             const maid = maidByBranch.get(b.id);
-            const ready = !!maid?.authUserId;
+            const hasChairs = b._count.chairs > 0;
             return (
               <li key={b.id}>
                 <Card
                   className={
-                    ready
+                    hasChairs
                       ? "border-zinc-200"
                       : "border-amber-200 bg-amber-50/50"
                   }
@@ -129,26 +124,23 @@ export default async function BranchCollectPage() {
                       </div>
                       <div className="text-xs text-zinc-500">
                         {b.city ?? "—"} · {b._count.chairs} เก้าอี้
+                        {maid ? ` · แม่บ้าน ${maid.displayName}` : ""}
                       </div>
                     </div>
-                    {ready ? (
-                      <>
-                        <div className="rounded-md border border-zinc-200 bg-white p-2 text-xs">
-                          <div className="text-zinc-500">แม่บ้านประจำ</div>
-                          <div className="font-medium text-zinc-800">
-                            {maid?.displayName}
-                          </div>
-                        </div>
-                        <PlayAsMaidButton
-                          authUserId={maid!.authUserId!}
-                          maidDisplayName={`สาขา ${b.name}`}
-                        />
-                      </>
+                    {hasChairs ? (
+                      <Link
+                        href={`/chairops/collect/${b.id}/new`}
+                        className="inline-flex w-full items-center justify-between gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white active:bg-emerald-700"
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          <Banknote className="size-4" aria-hidden />
+                          เก็บเงินสาขานี้
+                        </span>
+                        <ChevronRight className="size-4" aria-hidden />
+                      </Link>
                     ) : (
                       <div className="rounded-md border border-amber-200 bg-white p-2 text-xs text-amber-700">
-                        {maid
-                          ? "แม่บ้านยังไม่ได้ผูก auth (ติดต่อ admin)"
-                          : "ยังไม่มีแม่บ้านประจำสาขา"}
+                        ยังไม่มีเก้าอี้ในสาขา · เพิ่มก่อนที่ /chairops/branches
                       </div>
                     )}
                   </CardBody>

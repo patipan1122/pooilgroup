@@ -43,6 +43,12 @@ const chairLineInput = z.object({
 
 const cashCollectionInput = z.object({
   lines: z.array(chairLineInput).min(1, { message: "ต้องมีอย่างน้อย 1 เก้าอี้" }),
+  // Office/admin override: when omitted, branchId is auto-resolved from
+  // session.user.primaryBranchId (the maid's branch). When provided AND the
+  // caller is OFFICE+ (rank ≥ 2), the action uses this branch instead — lets
+  // office/admin collect on any branch they're physically at, no
+  // impersonation required.
+  branchOverride: z.string().uuid().optional().nullable(),
   evidencePhotoUrl: z.string().url().optional().nullable(),
   imageHash: z
     .string()
@@ -62,7 +68,13 @@ export type ActionResult<T = unknown> =
 export async function createCashCollection(
   raw: CashCollectionInput,
 ): Promise<ActionResult<{ id: string }>> {
-  const session = await requireExactRole("MAID");
+  // Authn: MAID OR any OFFICE+ chairops role (CEO/admin/manager/office).
+  // Office+ resolve the branch from the branchOverride field (action runs as
+  // themselves — maidId in the row points to the office user's chairopsUser
+  // id for audit, not a maid).
+  const authSession = await requireAuth();
+  const isOfficeTier = authSession.user.role !== "MAID" && authSession.user.role !== "TECHNICIAN";
+
   const parsed = cashCollectionInput.safeParse(raw);
   if (!parsed.success) {
     return {
@@ -72,10 +84,25 @@ export async function createCashCollection(
   }
   const data = parsed.data;
 
-  const branchId = session.user.primaryBranchId;
-  if (!branchId) {
-    return { ok: false, error: "บัญชีของคุณยังไม่ได้กำหนดสาขา · ติดต่อออฟฟิศ" };
+  let branchId: string;
+  if (isOfficeTier) {
+    if (!data.branchOverride) {
+      return {
+        ok: false,
+        error: "บัญชี office/admin ต้องระบุสาขาที่จะเก็บ (branchOverride)",
+      };
+    }
+    branchId = data.branchOverride;
+  } else {
+    if (!authSession.user.primaryBranchId) {
+      return { ok: false, error: "บัญชีของคุณยังไม่ได้กำหนดสาขา · ติดต่อออฟฟิศ" };
+    }
+    branchId = authSession.user.primaryBranchId;
+    if (data.branchOverride && data.branchOverride !== branchId) {
+      return { ok: false, error: "MAID ส่งของสาขาตัวเองเท่านั้น" };
+    }
   }
+  const session = authSession;
 
   // Validate every line + rule-check status/amount/reason combinations.
   const seenCodes = new Set<string>();
