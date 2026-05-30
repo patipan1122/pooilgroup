@@ -93,6 +93,12 @@ export async function listConversations(
   }));
 }
 
+export interface MessageAttachment {
+  type: string;
+  url?: string;
+  contentType?: string;
+}
+
 export interface ConversationDetail {
   id: string;
   channelId: string;
@@ -113,6 +119,7 @@ export interface ConversationDetail {
     body: string;
     sentByBot: boolean;
     createdAt: string;
+    attachment: MessageAttachment | null;
   }[];
 }
 
@@ -143,6 +150,7 @@ export async function getConversationWithMessages(
           body: true,
           sentByBot: true,
           createdAt: true,
+          attachments: true,
         },
       },
     },
@@ -168,8 +176,24 @@ export async function getConversationWithMessages(
       body: m.body,
       sentByBot: m.sentByBot,
       createdAt: m.createdAt.toISOString(),
+      attachment: pickImageAttachment(m.attachments),
     })),
   };
+}
+
+// Normalize the JSON attachments column down to a single image (the case the
+// UI knows how to render).  Returns null for stickers / unknown types.
+function pickImageAttachment(raw: unknown): MessageAttachment | null {
+  if (!raw || typeof raw !== "object") return null;
+  const a = raw as Record<string, unknown>;
+  if (a.type === "image" && typeof a.url === "string") {
+    return {
+      type: "image",
+      url: a.url,
+      contentType: typeof a.contentType === "string" ? a.contentType : undefined,
+    };
+  }
+  return null;
 }
 
 export interface InboxCounts {

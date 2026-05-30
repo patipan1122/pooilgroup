@@ -4377,6 +4377,7 @@ model InboxBotSettings {
   fallbackText String   @default("ขออภัยค่ะ เดี๋ยวทีมงานติดต่อกลับโดยเร็วที่สุดนะคะ") @map("fallback_text")
   escalateText String?  @map("escalate_text")
   dailySummary Boolean  @default(true) @map("daily_summary")
+  flowImages   Json     @default("{}") @map("flow_images") // { money_lost?: url, scan_fail?: url, strong?: url, buy?: url, feedback?: url, intro?: url }
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 

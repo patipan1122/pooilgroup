@@ -198,20 +198,47 @@ export function ConversationDetailPane({ conversation }: Props) {
           ) : (
             conversation.messages.map((m) => {
               const isOut = m.direction === "OUT";
+              const hasImage = m.attachment?.type === "image" && !!m.attachment.url;
+              // Suppress the body bubble when it's just the "[รูปภาพ]"
+              // placeholder we wrote alongside an image upload.
+              const placeholderBodies = new Set(["[รูปภาพ]", "[image]", "[Image]"]);
+              const showBody = !!m.body && !(hasImage && placeholderBodies.has(m.body));
               return (
                 <div
                   key={m.id}
                   className={`flex flex-col gap-1 ${isOut ? "items-end" : "items-start"}`}
                 >
-                  <div
-                    className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm ${
-                      isOut
-                        ? "rounded-br-md bg-[var(--color-brand-600)] text-white"
-                        : "rounded-bl-md border border-zinc-200 bg-white text-zinc-900"
-                    }`}
-                  >
-                    {m.body}
-                  </div>
+                  {hasImage && (
+                    <a
+                      href={m.attachment!.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`block max-w-[60%] overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:shadow-md ${
+                        isOut
+                          ? "rounded-br-md border-[var(--color-brand-200)]"
+                          : "rounded-bl-md border-zinc-200"
+                      }`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={m.attachment!.url}
+                        alt={isOut ? "รูปภาพจากเรา" : "รูปภาพจากลูกค้า"}
+                        className="block max-h-72 w-full object-cover"
+                        loading="lazy"
+                      />
+                    </a>
+                  )}
+                  {showBody && (
+                    <div
+                      className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm ${
+                        isOut
+                          ? "rounded-br-md bg-[var(--color-brand-600)] text-white"
+                          : "rounded-bl-md border border-zinc-200 bg-white text-zinc-900"
+                      }`}
+                    >
+                      {m.body}
+                    </div>
+                  )}
                   <div className="flex items-center gap-1.5 text-[10px] text-zinc-400">
                     {m.sentByBot && (
                       <span className="rounded bg-zinc-200 px-1.5 py-0.5 font-bold text-zinc-600">

@@ -29,6 +29,9 @@ export default async function InboxBotPage() {
     listUnanswered(BUSINESS_TAG),
   ]);
 
+  // flowImages lives on the same row as the rest of settings but the form
+  // component only knows about the text fields — split here.
+  const { flowImages, ...settingsForm } = settings;
   return (
     <div className="p-5 sm:p-8 max-w-[1600px] mx-auto">
       <Section
@@ -41,7 +44,8 @@ export default async function InboxBotPage() {
           businessTag={BUSINESS_TAG}
           initialFaqs={faqs}
           initialKnowledge={knowledge}
-          initialSettings={settings}
+          initialSettings={settingsForm}
+          initialFlowImages={flowImages}
           initialUnanswered={unanswered.map((u) => ({
             id: u.id,
             question: u.question,

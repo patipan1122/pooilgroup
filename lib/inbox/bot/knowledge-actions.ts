@@ -7,6 +7,13 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
+import {
+  FLOW_IMAGE_TOPICS,
+  pickFlowImages,
+  type FlowImageTopic,
+  type FlowImages,
+} from "./settings";
+import { uploadBotAssetImage, validateImageBuffer } from "../storage";
 
 const DEFAULT_TAG = "chairops";
 
@@ -163,7 +170,98 @@ export async function getBotSettingsForm(businessTag = DEFAULT_TAG) {
     fallbackText: s?.fallbackText ?? "ขออภัยค่ะ เดี๋ยวทีมงานติดต่อกลับโดยเร็วที่สุดนะคะ",
     escalateText: s?.escalateText ?? "",
     dailySummary: s?.dailySummary ?? true,
+    flowImages: s ? pickFlowImages(s.flowImages) : ({} as FlowImages),
   };
+}
+
+// ---------- Flow images (per-topic bot template images) ----------
+
+function isFlowTopic(t: string): t is FlowImageTopic {
+  return (FLOW_IMAGE_TOPICS as readonly string[]).includes(t);
+}
+
+// Decode a "data:image/...;base64,..." URL into a buffer + content-type.
+// We use base64 over the server-action boundary because Next 15 server
+// actions don't support File transparently and the images are small (≤5 MB).
+function decodeDataUrl(dataUrl: string): { buffer: Buffer; contentType: string } {
+  const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
+  if (!m) throw new Error("รูปแบบไฟล์ไม่ถูกต้อง (ต้องเป็น base64 data URL)");
+  const contentType = m[1];
+  const buffer = Buffer.from(m[2], "base64");
+  return { buffer, contentType };
+}
+
+export async function uploadBotFlowImage(input: {
+  topic: string;
+  dataUrl: string;
+  businessTag?: string;
+}) {
+  const session = await requireAdmin();
+  if (!isFlowTopic(input.topic)) throw new Error("หัวข้อไม่ถูกต้อง");
+  const businessTag = input.businessTag?.trim() || DEFAULT_TAG;
+
+  const { buffer, contentType } = decodeDataUrl(input.dataUrl);
+  const valid = validateImageBuffer(buffer);
+  if (!valid.ok) throw new Error(valid.reason);
+
+  const up = await uploadBotAssetImage({
+    orgId: session.user.org_id,
+    businessTag,
+    topic: input.topic,
+    buffer,
+    contentType,
+  });
+
+  // Merge into the existing flowImages JSON.  Upsert handles "settings row
+  // doesn't exist yet" by writing one with defaults + this image.
+  const existing = await prisma.inboxBotSettings.findUnique({
+    where: { orgId_businessTag: { orgId: session.user.org_id, businessTag } },
+    select: { flowImages: true },
+  });
+  const merged: FlowImages = {
+    ...pickFlowImages(existing?.flowImages),
+    [input.topic]: up.url,
+  };
+  await prisma.inboxBotSettings.upsert({
+    where: { orgId_businessTag: { orgId: session.user.org_id, businessTag } },
+    create: {
+      orgId: session.user.org_id,
+      businessTag,
+      flowImages: merged as object,
+    },
+    update: { flowImages: merged as object },
+  });
+  revalidate();
+  return { ok: true, url: up.url };
+}
+
+export async function removeBotFlowImage(input: {
+  topic: string;
+  businessTag?: string;
+}) {
+  const session = await requireAdmin();
+  if (!isFlowTopic(input.topic)) throw new Error("หัวข้อไม่ถูกต้อง");
+  const businessTag = input.businessTag?.trim() || DEFAULT_TAG;
+
+  const existing = await prisma.inboxBotSettings.findUnique({
+    where: { orgId_businessTag: { orgId: session.user.org_id, businessTag } },
+    select: { flowImages: true },
+  });
+  const cur = pickFlowImages(existing?.flowImages);
+  const merged: FlowImages = { ...cur };
+  delete merged[input.topic as FlowImageTopic];
+
+  await prisma.inboxBotSettings.upsert({
+    where: { orgId_businessTag: { orgId: session.user.org_id, businessTag } },
+    create: {
+      orgId: session.user.org_id,
+      businessTag,
+      flowImages: merged as object,
+    },
+    update: { flowImages: merged as object },
+  });
+  revalidate();
+  return { ok: true };
 }
 
 export async function saveBotSettings(input: {

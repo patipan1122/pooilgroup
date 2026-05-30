@@ -4,18 +4,26 @@
 // tabpanel + roving tabIndex + Arrow/Home/End) per the Pool tab convention.
 
 import { useRef, useState } from "react";
-import { MessageSquareText, BookOpen, Settings2, HelpCircle } from "lucide-react";
+import {
+  MessageSquareText,
+  BookOpen,
+  Settings2,
+  HelpCircle,
+  Image as ImageIcon,
+} from "lucide-react";
 import { FaqManager, type Faq } from "./faq-manager";
 import { KnowledgeManager, type Knowledge } from "./knowledge-manager";
 import { BotSettingsForm, type BotSettings } from "./bot-settings-form";
 import { UnansweredQueue, type Unanswered } from "./unanswered-queue";
+import { FlowImagesManager, type FlowImages } from "./flow-images-manager";
 
-type TabKey = "faq" | "knowledge" | "settings" | "unanswered";
+type TabKey = "faq" | "knowledge" | "settings" | "flowImages" | "unanswered";
 
 const TABS: { key: TabKey; label: string; icon: typeof MessageSquareText }[] = [
   { key: "faq", label: "คลังคำตอบ", icon: MessageSquareText },
   { key: "knowledge", label: "ข้อมูลร้าน", icon: BookOpen },
   { key: "settings", label: "ตั้งค่าบอท", icon: Settings2 },
+  { key: "flowImages", label: "รูปประกอบบอท", icon: ImageIcon },
   { key: "unanswered", label: "ตอบไม่ได้", icon: HelpCircle },
 ];
 
@@ -24,12 +32,14 @@ export function BotTrainer({
   initialFaqs,
   initialKnowledge,
   initialSettings,
+  initialFlowImages,
   initialUnanswered,
 }: {
   businessTag: string;
   initialFaqs: Faq[];
   initialKnowledge: Knowledge[];
   initialSettings: BotSettings;
+  initialFlowImages: FlowImages;
   initialUnanswered: Unanswered[];
 }) {
   const [active, setActive] = useState<TabKey>("faq");
@@ -120,6 +130,19 @@ export function BotTrainer({
       >
         {active === "settings" && (
           <BotSettingsForm businessTag={businessTag} initialSettings={initialSettings} />
+        )}
+      </div>
+      <div
+        role="tabpanel"
+        id="bot-panel-flowImages"
+        aria-labelledby="bot-tab-flowImages"
+        hidden={active !== "flowImages"}
+      >
+        {active === "flowImages" && (
+          <FlowImagesManager
+            businessTag={businessTag}
+            initialImages={initialFlowImages}
+          />
         )}
       </div>
       <div

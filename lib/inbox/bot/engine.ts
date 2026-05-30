@@ -12,8 +12,14 @@ import { matchFaq, bumpFaqHit } from "./match";
 import { getBotSettings, type BotSettings } from "./settings";
 import { aiAnswer } from "./ai";
 import { recordOutboundMessage } from "../ingest";
-import { sendLineMessage, sendFacebookMessage } from "../send";
+import {
+  sendLineMessage,
+  sendFacebookMessage,
+  sendLineImage,
+  sendFacebookImage,
+} from "../send";
 import { topicLabel } from "../business";
+import type { FlowImageTopic } from "./settings";
 
 export interface RunBotInput {
   channel: {
@@ -103,6 +109,50 @@ async function sendByPlatform(
   return platform === "LINE"
     ? sendLineMessage(input)
     : sendFacebookMessage(input);
+}
+
+// Map a classified topic to the bot-settings image slot (if any).  Returns
+// undefined for "other" / when CEO hasn't uploaded an image for that flow.
+function flowImageForTopic(
+  topic: InboxTopic,
+  flowImages: BotSettings["flowImages"],
+): string | undefined {
+  if (topic === "other") return undefined;
+  return flowImages[topic as FlowImageTopic];
+}
+
+// Send + record an optional bot template image after the main text reply.
+// Best-effort: failure is logged but doesn't escalate or block the parent flow.
+async function sendBotImage(opts: {
+  channel: RunBotInput["channel"];
+  conversationId: string;
+  externalUserId: string;
+  accessToken: string;
+  imageUrl: string;
+}): Promise<void> {
+  const sendInput = {
+    imageUrl: opts.imageUrl,
+    recipientExternalId: opts.externalUserId,
+    accessToken: opts.accessToken,
+    // The replyToken is already consumed by the text reply above; image goes
+    // out via push.  LINE allows multiple sequential pushes within quota.
+    replyToken: null,
+  };
+  const res =
+    opts.channel.platform === "LINE"
+      ? await sendLineImage(sendInput)
+      : await sendFacebookImage(sendInput);
+  await recordOutboundMessage({
+    orgId: opts.channel.orgId,
+    conversationId: opts.conversationId,
+    channelId: opts.channel.id,
+    platform: opts.channel.platform,
+    body: "[รูปประกอบ]",
+    sentByBot: true,
+    attachments: { type: "image", url: opts.imageUrl },
+    externalId: res.externalId ?? null,
+    error: res.ok ? null : res.error ?? "send image failed",
+  });
 }
 
 // Push an urgent alert to the team's LINE (env INBOX_ALERT_TARGET = LINE
@@ -204,6 +254,26 @@ export async function runBot(opts: RunBotInput): Promise<void> {
     externalId: sendResult.externalId ?? null,
     error: sendResult.ok ? null : sendResult.error ?? "send failed",
   });
+
+  // Optional: follow the text reply with a CEO-uploaded flow image (e.g., a
+  // diagram of the coin slot for money_lost).  Only if the text actually went
+  // through — no point sending an image to a broken delivery.
+  if (sendResult.ok) {
+    const imageUrl = flowImageForTopic(cls.topic, settings.flowImages);
+    if (imageUrl) {
+      try {
+        await sendBotImage({
+          channel,
+          conversationId,
+          externalUserId: opts.externalUserId,
+          accessToken: opts.accessToken,
+          imageUrl,
+        });
+      } catch (e) {
+        console.error("[inbox:bot] flow image send failed", e);
+      }
+    }
+  }
 
   if (escalate) {
     await markNeedsHuman(conversationId);

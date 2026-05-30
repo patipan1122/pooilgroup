@@ -12,6 +12,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { decryptToken, verifyFacebookSignature } from "@/lib/inbox/crypto";
 import { ingestInboundMessage } from "@/lib/inbox/ingest";
+import { rehostFacebookImage } from "@/lib/inbox/inbound-media";
 import { runBot, handleNonTextInbound } from "@/lib/inbox/bot/engine";
 
 export const dynamic = "force-dynamic";
@@ -145,6 +146,32 @@ export async function POST(
               attachments,
               externalId: m.message.mid ?? null,
             });
+
+            // FB image rehost: their CDN URL is short-lived; pull it now and
+            // park it on R2 so the admin can still see the photo days later.
+            const fbAttachment = m.message.attachments?.[0];
+            if (
+              !res.duplicate &&
+              fbAttachment?.type === "image" &&
+              fbAttachment.payload?.url
+            ) {
+              const att = await rehostFacebookImage({
+                orgId: ch.orgId,
+                conversationId: res.conversationId,
+                sourceUrl: fbAttachment.payload.url,
+                providerMessageId: m.message.mid ?? undefined,
+              });
+              if (att) {
+                await prisma.inboxMessage
+                  .update({
+                    where: { id: res.messageId },
+                    data: { attachments: att as object },
+                  })
+                  .catch((e) =>
+                    console.error("[webhook:inbox:FB] patch attachment failed", e),
+                  );
+              }
+            }
 
             if (!res.duplicate && botEnabled && accessToken) {
               const botInput = {

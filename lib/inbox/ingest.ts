@@ -157,6 +157,8 @@ export async function recordOutboundMessage(opts: {
   createdById?: string | null;
   externalId?: string | null;
   error?: string | null;
+  /** e.g. { type: "image", url: "https://..." } — stored as-is on the row */
+  attachments?: unknown;
 }) {
   const msg = await prisma.inboxMessage.create({
     data: {
@@ -170,6 +172,7 @@ export async function recordOutboundMessage(opts: {
       createdById: opts.createdById ?? null,
       externalId: opts.externalId ?? null,
       errorMessage: opts.error ?? null,
+      attachments: (opts.attachments as object) ?? undefined,
     },
     select: { id: true },
   });

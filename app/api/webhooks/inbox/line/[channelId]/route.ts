@@ -14,6 +14,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { decryptToken, verifyLineSignature } from "@/lib/inbox/crypto";
 import { ingestInboundMessage } from "@/lib/inbox/ingest";
+import { rehostLineImage } from "@/lib/inbox/inbound-media";
 import { runBot, handleNonTextInbound } from "@/lib/inbox/bot/engine";
 
 export const dynamic = "force-dynamic";
@@ -146,6 +147,33 @@ export async function POST(
             attachments,
             externalId: ev.message?.id ?? null,
           });
+
+          // Rehost LINE image: download once via the bot access token, store
+          // on R2, and patch the message row with the public URL.  Skips when
+          // the message was a duplicate retry (we already have it).
+          if (
+            !res.duplicate &&
+            ev.message?.type === "image" &&
+            ev.message.id &&
+            accessToken
+          ) {
+            const att = await rehostLineImage({
+              orgId: ch.orgId,
+              conversationId: res.conversationId,
+              messageId: ev.message.id,
+              channelAccessToken: accessToken,
+            });
+            if (att) {
+              await prisma.inboxMessage
+                .update({
+                  where: { id: res.messageId },
+                  data: { attachments: att as object },
+                })
+                .catch((e) =>
+                  console.error("[webhook:inbox:LINE] patch attachment failed", e),
+                );
+            }
+          }
 
           if (!res.duplicate && botEnabled) {
             const botInput = {
