@@ -13,12 +13,19 @@
  *   - `getBranch` is a lookup over the `branches` prop (mirrors mockup helper).
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Ic, Pill } from "@/components/clawfleet/v2/chrome";
+import { createDelivery } from "@/lib/clawfleet/v2-actions";
 import type { Branch } from "@/lib/clawfleet/v2-data";
 import type { BranchStock } from "./page";
 
 const EMPTY_STOCK: BranchStock = { stock: [], deliveries: [] };
+
+/** suggested reorder units for a SKU — a week of usage, min 20 */
+function suggestUnits(velocity: number): number {
+  return Math.max(20, Math.ceil(velocity * 7));
+}
 
 export function StockClient({
   branches,
@@ -30,6 +37,9 @@ export function StockClient({
   stockByBranch: Record<string, BranchStock>;
 }) {
   const [activeBranch, setActiveBranch] = useState<string>(initialBranchId);
+  const [pending, startTransition] = useTransition();
+  const [toast, setToast] = useState<string | null>(null);
+  const router = useRouter();
 
   const branchMap = useMemo(() => new Map(branches.map((b) => [b.id, b])), [branches]);
   const getBranch = (id: string): Branch => branchMap.get(id) ?? ({ id, name: id, code: id } as Branch);
@@ -40,6 +50,36 @@ export function StockClient({
   const totalWarehouse = stock.reduce((s, x) => s + x.warehouse, 0);
   const totalInMachines = stock.reduce((s, x) => s + x.inMachines, 0);
 
+  function flash(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2600);
+  }
+
+  function order(itemsCount: number, unitsCount: number, label: string) {
+    startTransition(async () => {
+      const r = await createDelivery({ branchId: activeBranch, itemsCount, unitsCount, note: label });
+      flash(r.ok ? `สั่งของแล้ว · ${label}` : r.error);
+      if (r.ok) router.refresh();
+    });
+  }
+
+  function exportCsv() {
+    const header = ["SKU", "ชื่อ", "คลังสาขา", "ในตู้", "รวม", "ใช้ต่อวัน", "ต้นทุน"];
+    const rows = stock.map((s) => [
+      s.sku, s.name, s.warehouse, s.inMachines, s.warehouse + s.inMachines, s.velocity, s.cost,
+    ]);
+    const csv = [header, ...rows]
+      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `clawfleet-stock-${branchInfo.code}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="cf-page">
       <div className="cf-page-head">
@@ -49,11 +89,22 @@ export function StockClient({
           <div className="cf-page-sub">คลังสาขา + ในตู้ · เติมจากคลังกลาง บางนา</div>
         </div>
         <div className="cf-page-actions">
-          <button type="button" className="cf-btn cf-btn-ghost">
+          <button type="button" className="cf-btn cf-btn-ghost" onClick={exportCsv}>
             <Ic name="download" size={14} /> รายงาน
           </button>
-          <button type="button" className="cf-btn cf-btn-primary">
-            <Ic name="plus" size={14} /> สั่งจากคลังกลาง
+          <button
+            type="button"
+            className="cf-btn cf-btn-primary"
+            disabled={pending || lows.length === 0}
+            onClick={() =>
+              order(
+                lows.length,
+                lows.reduce((sum, s) => sum + suggestUnits(s.velocity), 0),
+                `เติม ${lows.length} SKU ใกล้หมด`,
+              )
+            }
+          >
+            <Ic name="plus" size={14} /> {pending ? "กำลังสั่ง..." : "สั่งจากคลังกลาง"}
           </button>
         </div>
       </div>
@@ -177,21 +228,26 @@ export function StockClient({
               </div>
               <div className="cf-dim">{s.lastDelivery}</div>
               <div className="cf-stock-row-cta">
-                {isLow && (
-                  <button type="button" className="cf-btn cf-btn-primary cf-btn-sm">
-                    สั่งเติม
-                  </button>
-                )}
-                {!isLow && (
-                  <button type="button" className="cf-btn cf-btn-ghost cf-btn-sm">
-                    ดู
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className={`cf-btn cf-btn-sm ${isLow ? "cf-btn-primary" : "cf-btn-ghost"}`}
+                  disabled={pending}
+                  onClick={() => order(1, suggestUnits(s.velocity), `เติม ${s.name}`)}
+                >
+                  สั่งเติม
+                </button>
               </div>
             </div>
           );
         })}
       </div>
+
+      {toast && (
+        <div className="cf-toast cf-toast-approve">
+          <span className="cf-toast-icon">✓</span>
+          <span>{toast}</span>
+        </div>
+      )}
     </div>
   );
 }

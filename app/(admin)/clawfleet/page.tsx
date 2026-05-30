@@ -5,9 +5,11 @@ export const dynamic = "force-dynamic";
 
 export default async function ClawfleetIndexPage() {
   const session = await requireSession();
-  // Staff (filler) → ไปหน้ารอบเก็บ · ผู้บริหาร/หัวหน้า → dashboard
+  // v2 redesign is now the production experience.
+  // Staff (filler) → หน้าเก็บเงิน · ผู้บริหาร/หัวหน้า → hub
+  // (v1 routes /clawfleet/dashboard, /sessions, /machines ฯลฯ ยังเข้าผ่าน URL ตรงได้)
   if (session.user.role === "staff") {
-    redirect("/clawfleet/sessions");
+    redirect("/clawfleet/v2/collect");
   }
-  redirect("/clawfleet/dashboard");
+  redirect("/clawfleet/v2/hub");
 }

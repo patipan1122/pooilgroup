@@ -3,7 +3,13 @@
 
 import { putObject } from "@/lib/r2/upload";
 
-export type PhotoPhase = "meter_before" | "cash" | "meter_after" | "stock";
+export type PhotoPhase =
+  | "meter_before"
+  | "cash"
+  | "meter_after"
+  | "stock"
+  | "prize_meter"
+  | "stock_after";
 
 export function photoKey(opts: {
   orgId: string;

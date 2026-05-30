@@ -159,8 +159,18 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       },
 
       // Shared — เงินขาด/โน้ต ผู้จัดการสาขาเห็นได้ (auto-scoped to own branches)
-      { href: "/cashhub/shortages", label: "เงินขาด", icon: AlertCircle },
-      { href: "/cashhub/notes", label: "โน้ตจาก Staff", icon: ScrollText },
+      {
+        href: "/cashhub/shortages",
+        label: "เงินขาด",
+        icon: AlertCircle,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/cashhub/notes",
+        label: "โน้ตจาก Staff",
+        icon: ScrollText,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+      },
       {
         href: "/cashhub/missing",
         label: "ขาดส่งรายงาน",
@@ -420,37 +430,55 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     basePath: "/clawfleet",
     nav: [
       {
-        href: "/clawfleet/hub",
+        href: "/clawfleet/v2/hub",
         label: "หน้าแรก",
         icon: Home,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff", "viewer"],
       },
       {
-        href: "/clawfleet/v2/hub",
-        label: "ดีไซน์ใหม่ (พรีวิว)",
-        icon: Sparkles,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff", "viewer"],
+        href: "/clawfleet/v2/collect",
+        label: "เก็บเงิน",
+        icon: ClipboardList,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
       },
       {
         href: "/liff/clawfleet",
-        label: "กรอกงาน (พนักงาน)",
+        label: "กรอกงาน (LIFF)",
         icon: ClipboardCheck,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
       },
       {
-        href: "/clawfleet/operations",
+        href: "/clawfleet/v2/operations",
         label: "ปฏิบัติการ",
         icon: Activity,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
       },
       {
-        href: "/clawfleet/insights",
+        href: "/clawfleet/v2/anomalies",
+        label: "Anomaly",
+        icon: AlertTriangle,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/clawfleet/v2/stock",
+        label: "สต๊อก",
+        icon: PackageOpen,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
+      },
+      {
+        href: "/clawfleet/v2/insights",
         label: "ข้อมูล",
         icon: BarChart3,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"],
       },
       {
-        href: "/clawfleet/setup",
+        href: "/clawfleet/v2/team",
+        label: "ทีม & สาขา",
+        icon: UsersIcon,
+        roles: ["super_admin", "org_admin", "admin", "area_manager"],
+      },
+      {
+        href: "/clawfleet/v2/settings",
         label: "ตั้งค่า",
         icon: Settings,
         adminOnly: true,
@@ -512,11 +540,13 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         href: "/chairops/cleanliness",
         label: "ความสะอาด",
         icon: CheckSquare,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
       },
       {
         href: "/chairops/damage",
         label: "ของเสีย",
         icon: Wrench,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
       },
       {
         href: "/chairops/parts",
@@ -621,15 +651,23 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     basePath: "/playland",
     nav: [
       // Sections render as visual group headers in the sidebar (admin-shell.tsx)
-      { href: "/playland",         label: "Cockpit",        icon: Activity, section: "Cockpit" },
-      { href: "/playland/monitor", label: "Monitor (TV)",   icon: Tv },
-      { href: "/playland/scan",    label: "สแกน wristband", icon: ScanLine },
+      // Roles: ops staff + managers can run the front of house (matches /shifts + /stock-count pattern)
+      { href: "/playland",         label: "Cockpit",        icon: Activity, section: "Cockpit",
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
+      { href: "/playland/monitor", label: "Monitor (TV)",   icon: Tv,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
+      { href: "/playland/scan",    label: "สแกน wristband", icon: ScanLine,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
 
-      { href: "/playland/members",     label: "สมาชิก",       icon: ScanFace,       section: "ลูกค้า" },
-      { href: "/playland/wristbands",  label: "สายรัดข้อมือ",  icon: QrCode },
-      { href: "/playland/bookings",    label: "จองล่วงหน้า",  icon: CalendarClock },
+      { href: "/playland/members",     label: "สมาชิก",       icon: ScanFace,       section: "ลูกค้า",
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
+      { href: "/playland/wristbands",  label: "สายรัดข้อมือ",  icon: QrCode,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
+      { href: "/playland/bookings",    label: "จองล่วงหน้า",  icon: CalendarClock,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
 
-      { href: "/playland/pos",     label: "POS · ขายของ",   icon: ShoppingBasket, section: "หน้าร้าน" },
+      { href: "/playland/pos",     label: "POS · ขายของ",   icon: ShoppingBasket, section: "หน้าร้าน",
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
       {
         href: "/playland/shifts",
         label: "กะ · ปิดวัน",

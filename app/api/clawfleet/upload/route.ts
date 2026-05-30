@@ -8,7 +8,14 @@ import { uploadEventPhoto, validateImageBuffer } from "@/lib/clawfleet/photo";
 
 export const runtime = "nodejs";
 
-const PHASES = ["meter_before", "cash", "meter_after", "stock"] as const;
+const PHASES = [
+  "meter_before",
+  "cash",
+  "meter_after",
+  "stock",
+  "prize_meter",
+  "stock_after",
+] as const;
 type Phase = (typeof PHASES)[number];
 
 export async function POST(req: NextRequest) {

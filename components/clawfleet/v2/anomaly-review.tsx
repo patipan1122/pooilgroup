@@ -94,7 +94,10 @@ export function AnomalyReview({ anomaly, onClose, onNext, onDecision }: AnomalyR
           </div>
         </div>
         <div className="cf-rev-actions">
-          <button className="cf-btn cf-btn-ghost cf-btn-sm">
+          <button
+            className="cf-btn cf-btn-ghost cf-btn-sm"
+            onClick={() => window.print()}
+          >
             <Ic name="download" size={14} /> ส่งออก PDF
           </button>
           <button className="cf-btn cf-btn-ghost cf-btn-sm" onClick={onNext}>

@@ -271,7 +271,11 @@ export function HubClient({
               {hub.branchPerf.map((b) => {
                 const info = getBranch(b.id);
                 return (
-                  <button key={b.id} className="cf-branch-row" onClick={() => {}}>
+                  <button
+                    key={b.id}
+                    className="cf-branch-row"
+                    onClick={() => router.push(`/clawfleet/v2/hub?branch=${b.id}`)}
+                  >
                     <div className="cf-branch-left">
                       <div className={`cf-branch-flag cf-branch-flag-${info.tone}`}>
                         {info.avatar}

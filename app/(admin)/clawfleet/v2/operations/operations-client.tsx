@@ -16,6 +16,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Avatar, Ic, Pill, fmtTHB } from "@/components/clawfleet/v2/chrome";
 import { AnomalyReview } from "@/components/clawfleet/v2/anomaly-review";
 import { reviewV2Session } from "@/lib/clawfleet/v2-actions";
@@ -98,6 +99,7 @@ export function OperationsClient({
   const [filter, setFilter] = useState<FilterId>("all");
   const [reviewing, setReviewing] = useState<Anomaly | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const router = useRouter();
 
   const sessions: OpsSession[] = [
     ...activeSessions.map(
@@ -127,6 +129,26 @@ export function OperationsClient({
   ];
 
   const filtered = sessions.filter((s) => filter === "all" || s.status === filter);
+
+  function exportCsv() {
+    const header = ["รอบ", "สาขา", "พนักงาน", "สถานะ", "ความคืบหน้า", "รายได้/ขาด"];
+    const rows = filtered.map((s) => {
+      const info = getBranch(s.branchId);
+      const money =
+        s.status === "review" ? `ขาด ${s.gap ?? 0}` : s.status === "closed" ? `${s.revenue ?? 0}` : "";
+      return [s.id, info.name, s.staff, s.status, `${s.done}/${s.machines}`, money];
+    });
+    const csv = [header, ...rows]
+      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `clawfleet-operations-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const stats = {
     all: sessions.length,
@@ -184,10 +206,10 @@ export function OperationsClient({
           </div>
         </div>
         <div className="cf-page-actions">
-          <button className="cf-btn cf-btn-ghost">
+          <button className="cf-btn cf-btn-ghost" onClick={exportCsv}>
             <Ic name="download" size={14} /> CSV
           </button>
-          <button className="cf-btn cf-btn-primary">
+          <button className="cf-btn cf-btn-primary" onClick={() => router.push("/clawfleet/v2/collect")}>
             <Ic name="plus" size={14} /> เริ่มรอบใหม่
           </button>
         </div>
