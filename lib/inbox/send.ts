@@ -35,6 +35,79 @@ const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 const FB_GRAPH_BASE = "https://graph.facebook.com/v19.0";
 
+type LineMessage =
+  | { type: "text"; text: string }
+  | { type: "image"; originalContentUrl: string; previewImageUrl: string };
+
+/**
+ * Send text + optional image as ONE LINE Reply/Push call (up to 5 messages
+ * per call per the LINE API).  Delivered atomically — the customer sees
+ * both bubbles together with a single notification, instead of "text
+ * arrived" then a second ping "image arrived".
+ *
+ * Used by the bot when a flow template has an attached image so the reply
+ * lands as one unit.  Falls back to plain text when imageUrl is omitted.
+ */
+export async function sendLineTextPlusImage(input: {
+  body: string;
+  imageUrl?: string;
+  recipientExternalId: string;
+  accessToken: string;
+  replyToken?: string | null;
+}): Promise<InboxSendResult> {
+  const messages: LineMessage[] = [
+    { type: "text", text: input.body.slice(0, 5000) },
+  ];
+  if (input.imageUrl) {
+    messages.push({
+      type: "image",
+      originalContentUrl: input.imageUrl,
+      previewImageUrl: input.imageUrl,
+    });
+  }
+
+  if (input.replyToken) {
+    try {
+      const resp = await fetch(LINE_REPLY_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          Authorization: `Bearer ${input.accessToken}`,
+        },
+        body: JSON.stringify({ replyToken: input.replyToken, messages }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (resp.ok) return { ok: true };
+      const txt = await resp.text().catch(() => "");
+      // Stale reply token (1 min) → fall through to push.
+      if (resp.status !== 400 && resp.status !== 410) {
+        return { ok: false, error: `LINE Reply combo ${resp.status}: ${txt.slice(0, 200)}` };
+      }
+    } catch (e) {
+      return { ok: false, error: `LINE Reply combo: ${(e as Error).message}` };
+    }
+  }
+
+  try {
+    const resp = await fetch(LINE_PUSH_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${input.accessToken}`,
+      },
+      body: JSON.stringify({ to: input.recipientExternalId, messages }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => "");
+      return { ok: false, error: `LINE Push combo ${resp.status}: ${txt.slice(0, 200)}` };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: `LINE Push combo: ${(e as Error).message}` };
+  }
+}
+
 /** Send an image via LINE.  Mirrors text helper: reply first, push on miss. */
 export async function sendLineImage(
   input: InboxImageSendInput,

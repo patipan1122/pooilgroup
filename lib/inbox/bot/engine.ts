@@ -17,6 +17,7 @@ import {
   sendFacebookMessage,
   sendLineImage,
   sendFacebookImage,
+  sendLineTextPlusImage,
 } from "../send";
 import { topicLabel } from "../business";
 import type { FlowImageTopic } from "./settings";
@@ -237,12 +238,32 @@ export async function runBot(opts: RunBotInput): Promise<void> {
     }
   }
 
-  const sendResult = await sendByPlatform(channel.platform, {
-    body: answer,
-    recipientExternalId: opts.externalUserId,
-    accessToken: opts.accessToken,
-    replyToken: opts.replyToken,
-  });
+  // Look up the CEO-uploaded flow image for this topic (if any) — we want
+  // text + image delivered together so the customer gets a single LINE
+  // notification with both bubbles, not two separate pings.
+  const imageUrl = flowImageForTopic(cls.topic, settings.flowImages);
+
+  let sendResult: { ok: boolean; externalId?: string; error?: string };
+  if (channel.platform === "LINE") {
+    // LINE Reply/Push API accepts up to 5 messages per call — atomic
+    // delivery, single notification.  Goes through this combined path
+    // regardless of whether imageUrl is set (text-only when omitted).
+    sendResult = await sendLineTextPlusImage({
+      body: answer,
+      imageUrl,
+      recipientExternalId: opts.externalUserId,
+      accessToken: opts.accessToken,
+      replyToken: opts.replyToken,
+    });
+  } else {
+    // FB Messenger sends one piece per API call — text first, image after.
+    sendResult = await sendByPlatform(channel.platform, {
+      body: answer,
+      recipientExternalId: opts.externalUserId,
+      accessToken: opts.accessToken,
+      replyToken: opts.replyToken,
+    });
+  }
 
   await recordOutboundMessage({
     orgId: channel.orgId,
@@ -255,12 +276,23 @@ export async function runBot(opts: RunBotInput): Promise<void> {
     error: sendResult.ok ? null : sendResult.error ?? "send failed",
   });
 
-  // Optional: follow the text reply with a CEO-uploaded flow image (e.g., a
-  // diagram of the coin slot for money_lost).  Only if the text actually went
-  // through — no point sending an image to a broken delivery.
-  if (sendResult.ok) {
-    const imageUrl = flowImageForTopic(cls.topic, settings.flowImages);
-    if (imageUrl) {
+  // Image accounting:
+  //  - LINE: the image already went out in the same call above; just record
+  //    an OUT row with the attachment so /inbox shows the picture next to the
+  //    text bubble.
+  //  - FB  : the text just landed; fire a second call to deliver the image.
+  if (sendResult.ok && imageUrl) {
+    if (channel.platform === "LINE") {
+      await recordOutboundMessage({
+        orgId: channel.orgId,
+        conversationId,
+        channelId: channel.id,
+        platform: channel.platform,
+        body: "[รูปประกอบ]",
+        sentByBot: true,
+        attachments: { type: "image", url: imageUrl },
+      });
+    } else {
       try {
         await sendBotImage({
           channel,
@@ -270,7 +302,7 @@ export async function runBot(opts: RunBotInput): Promise<void> {
           imageUrl,
         });
       } catch (e) {
-        console.error("[inbox:bot] flow image send failed", e);
+        console.error("[inbox:bot] FB flow image send failed", e);
       }
     }
   }
