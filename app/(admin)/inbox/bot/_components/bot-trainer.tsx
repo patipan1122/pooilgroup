@@ -10,16 +10,25 @@ import {
   Settings2,
   HelpCircle,
   Image as ImageIcon,
+  Sparkles,
 } from "lucide-react";
 import { FaqManager, type Faq } from "./faq-manager";
 import { KnowledgeManager, type Knowledge } from "./knowledge-manager";
 import { BotSettingsForm, type BotSettings } from "./bot-settings-form";
 import { UnansweredQueue, type Unanswered } from "./unanswered-queue";
 import { FlowImagesManager, type FlowImages } from "./flow-images-manager";
+import { TrainerTab } from "./trainer-tab";
 
-type TabKey = "faq" | "knowledge" | "settings" | "flowImages" | "unanswered";
+type TabKey =
+  | "trainer"
+  | "faq"
+  | "knowledge"
+  | "settings"
+  | "flowImages"
+  | "unanswered";
 
 const TABS: { key: TabKey; label: string; icon: typeof MessageSquareText }[] = [
+  { key: "trainer", label: "เทรนกับ Claude", icon: Sparkles },
   { key: "faq", label: "คลังคำตอบ", icon: MessageSquareText },
   { key: "knowledge", label: "ข้อมูลร้าน", icon: BookOpen },
   { key: "settings", label: "ตั้งค่าบอท", icon: Settings2 },
@@ -42,7 +51,7 @@ export function BotTrainer({
   initialFlowImages: FlowImages;
   initialUnanswered: Unanswered[];
 }) {
-  const [active, setActive] = useState<TabKey>("faq");
+  const [active, setActive] = useState<TabKey>("trainer");
   const [unansweredCount, setUnansweredCount] = useState(initialUnanswered.length);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -102,6 +111,14 @@ export function BotTrainer({
       </div>
 
       {/* Panels */}
+      <div
+        role="tabpanel"
+        id="bot-panel-trainer"
+        aria-labelledby="bot-tab-trainer"
+        hidden={active !== "trainer"}
+      >
+        {active === "trainer" && <TrainerTab businessTag={businessTag} />}
+      </div>
       <div
         role="tabpanel"
         id="bot-panel-faq"
