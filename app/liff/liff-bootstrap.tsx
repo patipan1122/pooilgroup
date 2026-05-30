@@ -5,7 +5,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getLiffProfile, getLiffIdToken } from "@/lib/line/liff-client";
+import {
+  getLiffProfile,
+  getLiffIdToken,
+  getLiffInitError,
+} from "@/lib/line/liff-client";
 
 export function LiffBootstrap({
   haveSession,
@@ -62,13 +66,23 @@ export function LiffBootstrap({
       const profile = await getLiffProfile();
       if (cancelled) return;
       if (!profile) {
-        failOrSkip("ไม่ได้ข้อมูลโปรไฟล์ LINE (LIFF อาจ init ไม่ได้ / ไม่ได้เปิดใน LINE)");
+        const initErr = getLiffInitError();
+        failOrSkip(
+          initErr
+            ? `LIFF init error → ${initErr}`
+            : "ไม่ได้ข้อมูลโปรไฟล์ LINE (อาจไม่ได้เปิดใน LINE / ยังไม่ได้กด login)",
+        );
         return;
       }
       const idToken = await getLiffIdToken();
       if (cancelled) return;
       if (!idToken) {
-        failOrSkip("ไม่ได้ id_token จาก LIFF (ตรวจ scope openid)");
+        const initErr = getLiffInitError();
+        failOrSkip(
+          initErr
+            ? `LIFF token error → ${initErr}`
+            : "ไม่ได้ id_token จาก LIFF (ตรวจ scope openid)",
+        );
         return;
       }
       setPhase("linking");

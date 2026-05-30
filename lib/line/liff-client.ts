@@ -7,11 +7,19 @@
 import type { Liff } from "@line/liff";
 
 let liffPromise: Promise<Liff | null> | null = null;
+let lastLiffError: string | null = null;
+
+export function getLiffInitError(): string | null {
+  return lastLiffError;
+}
 
 export async function getLiff(): Promise<Liff | null> {
   if (typeof window === "undefined") return null;
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
-  if (!liffId) return null;
+  if (!liffId) {
+    lastLiffError = "env NEXT_PUBLIC_LIFF_ID not set on this deploy";
+    return null;
+  }
   if (liffPromise) return liffPromise;
 
   liffPromise = (async () => {
@@ -19,8 +27,16 @@ export async function getLiff(): Promise<Liff | null> {
       const mod = await import("@line/liff");
       const liff = (mod.default ?? mod) as Liff;
       await liff.init({ liffId, withLoginOnExternalBrowser: false });
+      lastLiffError = null;
       return liff;
     } catch (err) {
+      const msg =
+        err instanceof Error
+          ? `${err.name}: ${err.message}`
+          : typeof err === "object" && err !== null
+            ? JSON.stringify(err).slice(0, 240)
+            : String(err);
+      lastLiffError = `liff.init failed: ${msg} (liffId=${liffId})`;
       console.warn("[liff] init failed", err);
       liffPromise = null;
       return null;
