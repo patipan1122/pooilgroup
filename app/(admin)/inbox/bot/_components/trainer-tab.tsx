@@ -17,6 +17,7 @@ import {
   PlayCircle,
   Loader2,
   AlertTriangle,
+  RotateCcw,
 } from "lucide-react";
 import {
   trainerChat,
@@ -103,11 +104,41 @@ const HINTS = [
   "ลูกค้าถามที่ตั้งสาขา — บอกว่ามีสาขาในห้างไหนบ้าง (ใส่ข้อมูลให้)",
 ];
 
+// localStorage key — separate per business so chairops history doesn't
+// bleed into other org's training sessions.
+const STORAGE_KEY = (tag: string) => `inbox-trainer-history:${tag}`;
+
 export function TrainerTab({ businessTag }: { businessTag: string }) {
   const [history, setHistory] = useState<TrainerTurn[]>([]);
+  const [hydrated, setHydrated] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, startSend] = useTransition();
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Hydrate from localStorage so a page refresh doesn't lose context.  Done
+  // after mount so SSR doesn't render the stored value (would break hydration).
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY(businessTag));
+      if (raw) {
+        const parsed = JSON.parse(raw) as TrainerTurn[];
+        if (Array.isArray(parsed)) setHistory(parsed);
+      }
+    } catch {
+      /* corrupt JSON — ignore */
+    }
+    setHydrated(true);
+  }, [businessTag]);
+
+  // Persist on every change so a refresh halfway through still has context.
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(STORAGE_KEY(businessTag), JSON.stringify(history));
+    } catch {
+      /* quota / disabled — ignore */
+    }
+  }, [history, businessTag, hydrated]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -115,6 +146,18 @@ export function TrainerTab({ businessTag }: { businessTag: string }) {
       behavior: "smooth",
     });
   }, [history.length, sending]);
+
+  function resetConversation() {
+    if (history.length > 0 && !confirm("เริ่มสนทนาใหม่? บทสนทนาเก่าจะหายไป")) {
+      return;
+    }
+    setHistory([]);
+    try {
+      localStorage.removeItem(STORAGE_KEY(businessTag));
+    } catch {
+      /* ignore */
+    }
+  }
 
   function send(messageText?: string) {
     const userText = (messageText ?? draft).trim();
@@ -148,8 +191,19 @@ export function TrainerTab({ businessTag }: { businessTag: string }) {
           <Sparkles className="size-4 text-[var(--color-brand-600)]" />
           <p className="text-sm font-bold text-zinc-900">เทรนกับ Claude</p>
           <span className="ml-auto text-[11px] text-zinc-500">
-            Claude Sonnet 4.6 · เล่าสถานการณ์เป็นภาษาไทยปกติ
+            Claude Sonnet 4.6 · จำสนทนาได้ ~40 turn · บันทึกอัตโนมัติ
           </span>
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={resetConversation}
+              className="ml-2 inline-flex h-7 items-center gap-1 rounded-lg border border-zinc-200 px-2.5 text-[11px] font-bold text-zinc-600 hover:bg-zinc-50"
+              title="เริ่มสนทนาใหม่"
+            >
+              <RotateCcw className="size-3.5" />
+              เริ่มใหม่
+            </button>
+          )}
         </div>
 
         {history.length === 0 ? (
@@ -157,8 +211,13 @@ export function TrainerTab({ businessTag }: { businessTag: string }) {
             <p className="text-sm text-zinc-600">
               เล่าให้ Claude ฟังว่า <strong>ลูกค้าทักแบบไหน</strong>{" "}
               และ <strong>อยากให้บอทตอบแบบไหน</strong>{" "}
-              Claude จะแนะนำให้ว่าควรเป็น FAQ / ข้อมูลร้าน / หรือปรับ AI
+              Claude จะแนะนำว่าควรเป็น FAQ / ข้อมูลร้าน / หรือปรับ AI
               พร้อมร่างคำตอบให้ · กด "เพิ่มเลย" ก็ขึ้นระบบทันที
+            </p>
+            <p className="text-xs text-zinc-500">
+              💡 คุยกับ Claude ต่อเนื่องได้เลย — สอบถามเพิ่ม / แก้ร่าง /
+              เล่าเคสใหม่ในห้องเดียวกัน Claude จำสิ่งที่เราคุยมาก่อนได้ ·
+              บทสนทนาบันทึกไว้ในเบราว์เซอร์อัตโนมัติ (ปิดแล้วเปิดใหม่ก็ยังอยู่)
             </p>
             <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-400">
               ลองพิมพ์

@@ -86,8 +86,14 @@ function trainerSystemPrompt(opts: {
     `**ข้อมูลร้านปัจจุบัน:**`,
     knowledgeList,
     ``,
+    `**บทสนทนาเป็นแบบยาว / iterative:**`,
+    `- CEO จะคุยกับคุณต่อเนื่อง · ขอแก้ร่าง · ขอเพิ่มเคสใหม่ · ขออธิบายเพิ่ม`,
+    `- คุณจำทุก turn ใน session นี้ได้ · อ้างถึงสิ่งที่คุยมาก่อนหน้าได้`,
+    `- ถ้า CEO ขอ "ปรับให้นุ่มกว่านี้" / "ใส่ emoji มากกว่านี้" / "สั้นกว่านี้" → ร่างใหม่ทับของเดิม (อย่าเสนอ FAQ ใหม่ ให้แก้ของเดิมแทน)`,
+    `- ถ้า CEO เปลี่ยนเรื่อง / เล่าเคสใหม่ → เริ่มร่างใหม่`,
+    ``,
     `**วิธีตอบ:**`,
-    `1. ถามทำความเข้าใจสถานการณ์ก่อนถ้ายังไม่ชัด (แค่ 1-2 คำถามพอ)`,
+    `1. ถามทำความเข้าใจสถานการณ์ก่อนถ้ายังไม่ชัด (แค่ 1-2 คำถามพอ · ไม่ถามวนซ้ำ)`,
     `2. แนะนำว่าควรเป็น FAQ / ข้อมูลร้าน · บอกเหตุผลสั้นๆ`,
     `3. ร่าง 1 ทางเลือกที่ดีที่สุดให้ · ใช้ fenced code block แบบนี้:`,
     ``,
@@ -155,8 +161,11 @@ export async function trainerChat(input: {
   const Anthropic = AnthropicMod.default;
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  // Trim history to last 16 turns so we don't blow context on long sessions.
-  const trimmed = input.history.slice(-16);
+  // Trim to last 40 turns — Claude Sonnet 4.6's 200K context easily fits
+  // this many user↔model turns plus the system prompt and FAQ list.  The
+  // CEO wants long iterative training sessions ("คุยยาว ๆ ได้") so we
+  // bias toward more memory rather than less.
+  const trimmed = input.history.slice(-40);
 
   const resp = await client.messages.create({
     model: TRAINER_MODEL,
