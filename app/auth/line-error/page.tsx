@@ -14,6 +14,13 @@ const REASON_TH: Record<string, string> = {
   "no-id-token": "LINE ไม่ส่ง id_token กลับมา",
   "login-api": "/api/auth/line-login ตอบ error",
   "login-fetch": "ติดต่อ /api/auth/line-login ไม่ได้",
+  "ll-pending-missing":
+    "magic-link cookie ไม่ถึง browser (iOS webview drop หรือ forwarding bug)",
+  "ll-pending-bad-host":
+    "magic-link ชี้ไปโดเมนที่ไม่ใช่ Supabase (suspect data tampering)",
+  "ll-pending-malformed": "magic-link cookie อ่านไม่ได้ (พังตอน encode)",
+  "liff-complete":
+    "เซต Supabase session ไม่สำเร็จ (อาจเป็น cookie partitioning ใน iOS webview)",
   unexpected: "ตอบกลับไม่คาดคิดจาก server",
 };
 

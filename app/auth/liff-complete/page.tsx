@@ -17,6 +17,7 @@ function safeNext(): string {
 
 export default function LiffCompletePage() {
   const [failed, setFailed] = useState(false);
+  const [errMsg, setErrMsg] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
@@ -29,18 +30,42 @@ export default function LiffCompletePage() {
       const hp = new URLSearchParams(hash);
       const access_token = hp.get("access_token");
       const refresh_token = hp.get("refresh_token");
+      const supaError = hp.get("error");
+      const supaErrorDesc = hp.get("error_description");
       try {
+        if (supaError) {
+          throw new Error(`supabase: ${supaError} / ${supaErrorDesc ?? ""}`);
+        }
         if (access_token && refresh_token) {
           const { error } = await sb.auth.setSession({ access_token, refresh_token });
-          if (error) throw error;
+          if (error) throw new Error(`setSession: ${error.message}`);
+          // Verify cookie actually persisted (iOS webview sometimes drops it).
+          const { data: verify } = await sb.auth.getSession();
+          if (!verify.session) {
+            throw new Error(
+              "session-not-persisted (setSession returned ok but cookie did not stick — iOS webview cookie partitioning)",
+            );
+          }
         } else {
           // No fragment (PKCE code or already captured) — let the client detect.
           const { data } = await sb.auth.getSession();
-          if (!data.session) throw new Error("no-session");
+          if (!data.session) {
+            throw new Error(
+              `no-fragment (hash="${hash.slice(0, 80)}" url="${window.location.href.slice(0, 120)}")`,
+            );
+          }
         }
         if (!cancelled) window.location.replace(next);
-      } catch {
-        if (!cancelled) setFailed(true);
+      } catch (e) {
+        if (cancelled) return;
+        const msg = e instanceof Error ? e.message : "unknown";
+        setErrMsg(msg);
+        // Surface to /auth/line-error so the error is visible + retry button
+        // routes back through /auth/line-start (skipping the LIFF SDK init).
+        const u = new URL("/auth/line-error", window.location.href);
+        u.searchParams.set("reason", "liff-complete");
+        u.searchParams.set("detail", msg.slice(0, 280));
+        window.location.replace(u.toString());
       }
     })();
     return () => {
