@@ -127,3 +127,125 @@ export async function addChairsToBranch(
     },
   };
 }
+
+// Auto-sync chairs from POS history. CEO 2026-05-30: chair-per-branch data
+// already lives in ChairopsPosDaily (one row per branch × chair × day from
+// the StarThing XLSX import — see memory chairops-starthing-xlsx-schema-2026-
+// 05-27). Backfilling ChairopsChair from those distinct (branchId, chairCode)
+// pairs lets the collect picker render checkboxes without the admin manually
+// typing every code. Safe to re-run: only INSERTs codes that don't exist on
+// the target branch.
+export async function syncChairsFromPos(): Promise<
+  ActionResult<{
+    branchesScanned: number;
+    chairsInserted: number;
+    chairsAlreadyExisting: number;
+  }>
+> {
+  const session = await requireRole("OFFICE");
+
+  // Pull all distinct (branchId, chairCode) pairs from POS daily history.
+  // groupBy is the cheapest way; we filter chairCode null/empty server-side.
+  const rows = await prisma.chairopsPosDaily.groupBy({
+    by: ["branchId", "chairCode"],
+    where: {
+      orgId: session.user.orgId,
+      chairCode: { not: null },
+    },
+    _count: { _all: true },
+  });
+
+  // Per-branch set of codes from POS.
+  const posByBranch = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const code = r.chairCode?.trim();
+    if (!code) continue;
+    if (!posByBranch.has(r.branchId)) posByBranch.set(r.branchId, new Set());
+    posByBranch.get(r.branchId)!.add(code);
+  }
+  if (posByBranch.size === 0) {
+    return {
+      ok: false,
+      error: "ไม่พบข้อมูล POS · upload XLSX จาก StarThing ก่อนที่ /chairops/pos-ingest",
+    };
+  }
+
+  // Existing chairs (one query, in-memory join on branch).
+  const existing = await prisma.chairopsChair.findMany({
+    where: {
+      orgId: session.user.orgId,
+      branchId: { in: Array.from(posByBranch.keys()) },
+    },
+    select: { branchId: true, chairCode: true },
+  });
+  const existingByBranch = new Map<string, Set<string>>();
+  for (const e of existing) {
+    if (!existingByBranch.has(e.branchId)) existingByBranch.set(e.branchId, new Set());
+    existingByBranch.get(e.branchId)!.add(e.chairCode);
+  }
+
+  // Build createMany payload — every code in POS that isn't already in Chair.
+  type NewRow = { orgId: string; branchId: string; chairCode: string; isActive: boolean };
+  const toCreate: NewRow[] = [];
+  let alreadyCount = 0;
+  for (const [branchId, codes] of posByBranch) {
+    const have = existingByBranch.get(branchId) ?? new Set();
+    for (const code of codes) {
+      if (have.has(code)) {
+        alreadyCount += 1;
+        continue;
+      }
+      toCreate.push({
+        orgId: session.user.orgId,
+        branchId,
+        chairCode: code,
+        isActive: true,
+      });
+    }
+  }
+
+  if (toCreate.length === 0) {
+    return {
+      ok: true,
+      data: {
+        branchesScanned: posByBranch.size,
+        chairsInserted: 0,
+        chairsAlreadyExisting: alreadyCount,
+      },
+    };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.chairopsChair.createMany({
+      data: toCreate,
+      skipDuplicates: true, // belt-and-suspenders against the @@unique([orgId, chairCode])
+    });
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "chairs.sync_from_pos",
+        entity: "Chair",
+        entityId: null,
+        newValue: {
+          branchesScanned: posByBranch.size,
+          inserted: toCreate.length,
+          alreadyExisting: alreadyCount,
+        },
+        metadata: { route: "/chairops/branch-collect" },
+      },
+      tx,
+    );
+  });
+
+  revalidatePath("/chairops/branches");
+  revalidatePath("/chairops/branch-collect");
+
+  return {
+    ok: true,
+    data: {
+      branchesScanned: posByBranch.size,
+      chairsInserted: toCreate.length,
+      chairsAlreadyExisting: alreadyCount,
+    },
+  };
+}

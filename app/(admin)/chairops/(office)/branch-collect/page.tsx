@@ -21,6 +21,7 @@ import {
 } from "@/components/chairops/_kit";
 import { Card, CardBody } from "@/components/ui/card";
 import { Building2, AlertTriangle, Banknote, ChevronRight } from "lucide-react";
+import { SyncChairsFromPosButton } from "./sync-button";
 
 export const dynamic = "force-dynamic";
 
@@ -69,17 +70,21 @@ export default async function BranchCollectPage() {
   return (
     <div className="chairops-scope">
       <MasterDetailShell sidebar={null} noMeta>
-        <header className="mb-5">
-          <p className="text-xs font-semibold text-zinc-500">
-            ออฟฟิศ · เก็บเงินแทน
-          </p>
-          <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-zinc-900">
-            เก็บเงินสาขาไหน
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-600">
-            เลือกสาขาที่จะเก็บเงิน · กดสาขาไหนก็เปิด chair-checklist ของสาขานั้น
-            ทันที · ระบบบันทึกในนามคุณ (audit-tracked) · เก็บได้หลายสาขาในรอบเดียว
-          </p>
+        <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold text-zinc-500">
+              ออฟฟิศ · เก็บเงินแทน
+            </p>
+            <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-zinc-900">
+              เก็บเงินสาขาไหน
+            </h1>
+            <p className="mt-1 max-w-2xl text-sm text-zinc-600">
+              เลือกสาขาที่จะเก็บเงิน · กดสาขาไหนก็เปิด chair-checklist
+              ของสาขานั้น · ระบบบันทึกในนามคุณ (audit-tracked) · เก็บได้หลายสาขา
+              ในรอบเดียว
+            </p>
+          </div>
+          <SyncChairsFromPosButton />
         </header>
 
         <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
