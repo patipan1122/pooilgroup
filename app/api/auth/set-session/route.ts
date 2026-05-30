@@ -14,9 +14,12 @@ import { serverClient } from "@/lib/db/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Be permissive — Supabase JWTs vary in length (refresh tokens can be ~32
+// chars; access tokens with custom claims can exceed 4KB). Just need
+// non-empty strings; setSession() does the real validation downstream.
 const Schema = z.object({
-  access_token: z.string().min(20).max(8192),
-  refresh_token: z.string().min(20).max(8192),
+  access_token: z.string().min(1).max(16384),
+  refresh_token: z.string().min(1).max(16384),
 });
 
 export async function POST(req: NextRequest) {
@@ -28,7 +31,19 @@ export async function POST(req: NextRequest) {
   }
   const parsed = Schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "invalid-tokens" }, { status: 400 });
+    const issues = parsed.error.issues
+      .map((i) => `${i.path.join(".")}: ${i.message}`)
+      .join("; ");
+    const b = body as { access_token?: unknown; refresh_token?: unknown } | null;
+    const dbg = `aT=${typeof b?.access_token} aL=${
+      typeof b?.access_token === "string" ? b.access_token.length : 0
+    } rT=${typeof b?.refresh_token} rL=${
+      typeof b?.refresh_token === "string" ? b.refresh_token.length : 0
+    }`;
+    return NextResponse.json(
+      { error: `invalid-tokens: ${issues} [${dbg}]` },
+      { status: 400 },
+    );
   }
 
   const sb = await serverClient();
