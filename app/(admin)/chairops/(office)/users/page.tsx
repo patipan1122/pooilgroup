@@ -167,6 +167,12 @@ export default async function UsersListPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Link href="/chairops/branch-collect">
+              <Button variant="outline" size="sm">
+                <Inbox className="size-4" aria-hidden="true" />
+                เก็บเงินแทน · เลือกสาขา
+              </Button>
+            </Link>
             <Link href="/chairops/users?role=MAID&branch=__none__&status=active">
               <Button variant="outline" size="sm">
                 <Inbox className="size-4" aria-hidden="true" />
