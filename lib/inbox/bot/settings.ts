@@ -64,10 +64,24 @@ export async function getBotSettings(
   orgId: string,
   businessTag: string,
 ): Promise<BotSettings> {
+  // Explicit select omits `flowImages` so this runs even when the column
+  // hasn't been added to prod yet (migration 20260530000000 might not be
+  // applied at deploy time — see audit-log lessons).  flowImages is then
+  // fetched via raw SQL with a try/catch so missing column is a no-op.
   const s = await prisma.inboxBotSettings.findUnique({
     where: { orgId_businessTag: { orgId, businessTag } },
+    select: {
+      botEnabled: true,
+      tone: true,
+      botName: true,
+      contactPhone: true,
+      fallbackText: true,
+      escalateText: true,
+      dailySummary: true,
+    },
   });
   if (!s) return { ...DEFAULT_BOT_SETTINGS };
+  const flowImages = await loadFlowImagesSafe(orgId, businessTag);
   return {
     botEnabled: s.botEnabled,
     tone: s.tone,
@@ -76,6 +90,27 @@ export async function getBotSettings(
     fallbackText: s.fallbackText,
     escalateText: s.escalateText,
     dailySummary: s.dailySummary,
-    flowImages: pickFlowImages(s.flowImages),
+    flowImages,
   };
+}
+
+/**
+ * Read flow_images via raw SQL.  Returns {} when the column is missing
+ * (pre-migration) — letting the bot keep replying text even before the
+ * image feature's DDL has been applied.
+ */
+export async function loadFlowImagesSafe(
+  orgId: string,
+  businessTag: string,
+): Promise<FlowImages> {
+  try {
+    const rows = await prisma.$queryRaw<{ flow_images: unknown }[]>`
+      SELECT flow_images FROM public.inbox_bot_settings
+      WHERE org_id = ${orgId}::uuid AND business_tag = ${businessTag}
+      LIMIT 1
+    `;
+    return pickFlowImages(rows[0]?.flow_images);
+  } catch {
+    return {};
+  }
 }

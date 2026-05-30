@@ -9,6 +9,7 @@ import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import {
   FLOW_IMAGE_TOPICS,
+  loadFlowImagesSafe,
   pickFlowImages,
   type FlowImageTopic,
   type FlowImages,
@@ -159,9 +160,21 @@ export async function deleteKnowledge(id: string) {
 // ---------- Settings ----------
 export async function getBotSettingsForm(businessTag = DEFAULT_TAG) {
   const session = await requireAdmin();
+  // Explicit select so this page renders even before the flow_images column
+  // exists (CEO may visit /inbox/bot before running migration 20260530000000).
   const s = await prisma.inboxBotSettings.findUnique({
     where: { orgId_businessTag: { orgId: session.user.org_id, businessTag } },
+    select: {
+      botEnabled: true,
+      tone: true,
+      botName: true,
+      contactPhone: true,
+      fallbackText: true,
+      escalateText: true,
+      dailySummary: true,
+    },
   });
+  const flowImages = await loadFlowImagesSafe(session.user.org_id, businessTag);
   return {
     botEnabled: s?.botEnabled ?? true,
     tone: s?.tone ?? "สุภาพ สั้น เป็นกันเอง",
@@ -170,7 +183,7 @@ export async function getBotSettingsForm(businessTag = DEFAULT_TAG) {
     fallbackText: s?.fallbackText ?? "ขออภัยค่ะ เดี๋ยวทีมงานติดต่อกลับโดยเร็วที่สุดนะคะ",
     escalateText: s?.escalateText ?? "",
     dailySummary: s?.dailySummary ?? true,
-    flowImages: s ? pickFlowImages(s.flowImages) : ({} as FlowImages),
+    flowImages,
   };
 }
 
