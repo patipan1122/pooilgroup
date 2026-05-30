@@ -86,3 +86,100 @@ export async function GET(req: NextRequest) {
     maids: result,
   });
 }
+
+// POST = backfill Pool plumbing for every MAID that is missing it. Idempotent.
+// Used to retroactively fix maids that self-registered before
+// ensurePoolMembership shipped — saves CEO a retest cycle.
+export async function POST(req: NextRequest) {
+  const key = req.headers.get("x-debug-key");
+  if (!key || key !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const maids = await prisma.chairopsUser.findMany({
+    where: { role: "MAID", isActive: true },
+    select: {
+      id: true,
+      email: true,
+      displayName: true,
+      authUserId: true,
+      orgId: true,
+    },
+  });
+
+  const admin = adminClient();
+  const fixed: Array<{ id: string; action: string; error?: string }> = [];
+  for (const m of maids) {
+    if (!m.authUserId || !m.email) {
+      fixed.push({ id: m.id, action: "skipped (no authUserId/email)" });
+      continue;
+    }
+    // Pool users
+    const { data: existingPool } = await admin
+      .from("users")
+      .select("id, is_active")
+      .eq("id", m.authUserId)
+      .maybeSingle();
+    if (!existingPool) {
+      const { error: insErr } = await admin.from("users").insert({
+        id: m.authUserId,
+        org_id: m.orgId,
+        email: m.email,
+        name: m.displayName,
+        role: "staff",
+        is_active: true,
+      });
+      if (insErr) {
+        fixed.push({
+          id: m.id,
+          action: "users insert FAILED",
+          error: insErr.message,
+        });
+        continue;
+      }
+      fixed.push({ id: m.id, action: "users inserted" });
+    } else if (!(existingPool as { is_active: boolean }).is_active) {
+      await admin
+        .from("users")
+        .update({ is_active: true })
+        .eq("id", m.authUserId);
+      fixed.push({ id: m.id, action: "users reactivated" });
+    }
+    // user_modules
+    const { data: existingMod } = await admin
+      .from("user_modules")
+      .select("id, is_active")
+      .eq("org_id", m.orgId)
+      .eq("user_id", m.authUserId)
+      .eq("module_name", "chairops")
+      .maybeSingle();
+    if (!existingMod) {
+      const { error: insErr } = await admin.from("user_modules").insert({
+        org_id: m.orgId,
+        user_id: m.authUserId,
+        module_name: "chairops",
+        is_active: true,
+      });
+      if (insErr) {
+        fixed.push({
+          id: m.id,
+          action: "user_modules insert FAILED",
+          error: insErr.message,
+        });
+        continue;
+      }
+      fixed.push({ id: m.id, action: "user_modules inserted" });
+    } else if (!existingMod.is_active) {
+      await admin
+        .from("user_modules")
+        .update({ is_active: true })
+        .eq("id", existingMod.id);
+      fixed.push({ id: m.id, action: "user_modules reactivated" });
+    }
+  }
+
+  return NextResponse.json({
+    total: maids.length,
+    operations: fixed,
+  });
+}
