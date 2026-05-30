@@ -301,15 +301,28 @@ export async function POST(req: NextRequest) {
       const errText = await res.text().catch(() => "");
       console.error("[line-login] magiclink", res.status, errText);
       return NextResponse.json(
-        { error: "สร้างลิงก์ login ไม่ได้" },
+        {
+          error: `magiclink ${res.status}: ${errText.slice(0, 180)}`,
+        },
         { status: 502 },
       );
     }
-    const j = (await res.json()) as { properties?: { action_link?: string } };
+    const j = (await res.json()) as {
+      properties?: { action_link?: string };
+      [k: string]: unknown;
+    };
     const link = j.properties?.action_link;
     if (!link) {
+      console.error("[line-login] missing action_link", JSON.stringify(j));
+      // Surface Supabase response keys so the error page can show what was
+      // returned instead of the action_link (helps catch redirect_to allowlist
+      // mismatch, user-not-confirmed, etc).
+      const keys = Object.keys(j).join(",");
+      const propsKeys = j.properties ? Object.keys(j.properties).join(",") : "—";
       return NextResponse.json(
-        { error: "ลิงก์ login หาย" },
+        {
+          error: `ลิงก์ login หาย: keys=[${keys}] props=[${propsKeys}] email=${resolved.email}`,
+        },
         { status: 502 },
       );
     }
