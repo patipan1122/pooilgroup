@@ -36,6 +36,13 @@ export function evidenceKey(branchSlug: string, collectionId: string, ext = "jpg
   return `cash/${yyyy}/${mm}/${branchSlug}/${collectionId}.${ext}`;
 }
 
+export function slipKey(branchSlug: string, collectionId: string, ext = "jpg") {
+  const now = new Date();
+  const yyyy = now.getUTCFullYear();
+  const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
+  return `cash-slip/${yyyy}/${mm}/${branchSlug}/${collectionId}.${ext}`;
+}
+
 export function cleanlinessKey(branchSlug: string, reportId: string, n: number, ext = "jpg") {
   const now = new Date();
   const yyyy = now.getUTCFullYear();

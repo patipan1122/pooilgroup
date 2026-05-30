@@ -1,6 +1,11 @@
 "use client";
 
-// Maid cash-collection form · client.
+// Maid cash-collection STEP 1 form · client.
+//
+// 2026-05-30 split: Step 1 only captures the cash count + evidence photo.
+// depositedAmount=0 + slipPhotoUrl=null are written on create; the maid
+// returns later (after going to the bank) to finish Step 2 at
+// /chairops/m/collect/[id]/deposit which calls recordDeposit().
 //
 // W6 spec (claude-design Phase 2):
 //   - 360x640 layout · h-14 inputs · text-2xl tabular-nums for money
@@ -11,14 +16,11 @@
 //   - offline tolerance: navigator.onLine → save draft, show banner
 //   - Thai error messages
 //
-// Action contract (existing — kept compatible):
+// Action contract:
 //   presignEvidenceUpload({contentType, draftId}) → {url, publicUrl, key}
-//   createCashCollection({countedAmount, depositedAmount, evidencePhotoUrl,
-//                         imageHash, notes}) → {ok, data:{id}} | {ok:false, error}
-//
-// TODO[claude-design]: server action does NOT yet accept idempotencyKey
-// (planned Wave 2 column add). For now we store key in IndexedDB + audit
-// metadata; server-side de-dup happens via imageHash @@unique guard.
+//   createCashCollection({countedAmount, depositedAmount: 0,
+//                         evidencePhotoUrl, imageHash, notes})
+//     → {ok, data:{id}} | {ok:false, error}
 
 import {
   type ChangeEvent,
@@ -54,6 +56,7 @@ import {
 } from "@/app/(admin)/chairops/collect/actions";
 
 interface Props {
+  /** Reserved for future avg-count deviation guard (currently unused — was for deposit avg). */
   avg7d: number | null;
   chairCodes: ReadonlyArray<string>;
 }
@@ -83,14 +86,13 @@ interface PhotoState {
   compressed: boolean;
 }
 
-export function CollectNewForm({ avg7d, chairCodes }: Props) {
+export function CollectNewForm({ avg7d: _avg7d, chairCodes }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [uploading, setUploading] = useState(false);
   const [online, setOnline] = useState(true);
   const [chairCode, setChairCode] = useState("");
   const [counted, setCounted] = useState("");
-  const [deposited, setDeposited] = useState("");
   const [notes, setNotes] = useState("");
   const [photo, setPhoto] = useState<PhotoState | null>(null);
   const idempotencyKeyRef = useRef<string>(newIdempotencyKey());
@@ -100,7 +102,6 @@ export function CollectNewForm({ avg7d, chairCodes }: Props) {
 
   const chairId = useId();
   const countedId = useId();
-  const depositedId = useId();
   const notesId = useId();
   const chairListId = useId();
 
@@ -118,9 +119,6 @@ export function CollectNewForm({ avg7d, chairCodes }: Props) {
   }, []);
 
   const countedNum = Number(counted.replace(/,/g, "")) || 0;
-  const depositedNum = Number(deposited.replace(/,/g, "")) || 0;
-  const diff = countedNum - depositedNum;
-  const absDiff = Math.abs(diff);
 
   const photoSizeKb = useMemo(
     () => (photo ? Math.round(photo.outputBytes / 1024) : 0),
@@ -176,7 +174,6 @@ export function CollectNewForm({ avg7d, chairCodes }: Props) {
           payload: {
             chairCode,
             counted,
-            deposited,
             notes,
           },
           photoBlob: blob,
@@ -219,27 +216,14 @@ export function CollectNewForm({ avg7d, chairCodes }: Props) {
 
   function validateBeforeSubmit(): string | null {
     if (countedNum <= 0) return "กรอกยอดที่นับได้ (มากกว่า 0)";
-    if (depositedNum <= 0) return "กรอกยอดที่ฝาก (มากกว่า 0)";
     if (!photo) return "แนบรูปหลักฐานก่อนบันทึก";
     return null;
   }
 
+  // Step 1 has no deposit-vs-count delta to warn on. Step 2 (deposit form) will
+  // surface the count-vs-deposit gap and the 7-day deviation guard.
   function buildConfirms(): string[] {
-    const out: string[] = [];
-    if (absDiff > 100) {
-      out.push(
-        `ผลต่างระหว่างยอดที่นับ (${countedNum.toLocaleString()}) กับยอดฝาก (${depositedNum.toLocaleString()}) อยู่ที่ ${absDiff.toLocaleString()} บาท`,
-      );
-    }
-    if (avg7d && avg7d > 0) {
-      const dev = Math.abs(depositedNum - avg7d) / avg7d;
-      if (dev > 0.5) {
-        out.push(
-          `ยอดฝากครั้งนี้ (${depositedNum.toLocaleString()}) ห่างจากเฉลี่ย 7 วัน (${avg7d.toLocaleString()}) ประมาณ ${Math.round(dev * 100)}%`,
-        );
-      }
-    }
-    return out;
+    return [];
   }
 
   async function persistDraft(error?: string) {
@@ -249,7 +233,6 @@ export function CollectNewForm({ avg7d, chairCodes }: Props) {
       payload: {
         chairCode,
         counted,
-        deposited,
         notes,
         photoUrl: photo?.publicUrl,
         photoHash: photo?.hash,
@@ -276,10 +259,14 @@ export function CollectNewForm({ avg7d, chairCodes }: Props) {
     startTransition(async () => {
       // Save draft BEFORE attempt — survives network drop mid-action
       await persistDraft();
+      // Step 1: write the count + evidence photo. depositedAmount=0 and
+      // slipPhotoUrl=null mark this row as "pending deposit" — it shows up on
+      // the maid home's pending list with a "ฝากเงิน" CTA that opens Step 2.
       const res = await createCashCollection({
         countedAmount: countedNum,
-        depositedAmount: depositedNum,
+        depositedAmount: 0,
         evidencePhotoUrl: evidenceUrl,
+        slipPhotoUrl: null,
         imageHash,
         notes: buildNotesPayload(),
       });
@@ -409,56 +396,9 @@ export function CollectNewForm({ avg7d, chairCodes }: Props) {
               aria-describedby={`${countedId}-hint`}
             />
             <p id={`${countedId}-hint`} className="text-xs text-zinc-500">
-              เงินสด+เหรียญที่นับได้จริง
+              เงินสด+เหรียญที่นับได้จริง · ยอดฝากแยกอีกขั้น (หลังไปธนาคาร)
             </p>
           </div>
-
-          <div className="space-y-2">
-            <label
-              htmlFor={depositedId}
-              className="text-sm font-semibold text-zinc-800"
-            >
-              ยอดที่ฝากธนาคาร (บาท)
-            </label>
-            <Input
-              id={depositedId}
-              type="tel"
-              inputMode="numeric"
-              autoComplete="off"
-              placeholder="0"
-              value={deposited}
-              onChange={(e) =>
-                setDeposited(e.target.value.replace(/[^0-9]/g, ""))
-              }
-              className="h-14 text-right text-2xl font-semibold tabular-nums"
-              aria-describedby={`${depositedId}-hint`}
-            />
-            <p id={`${depositedId}-hint`} className="text-xs text-zinc-500">
-              ยอดที่ฝากเข้าบัญชี
-              {avg7d ? ` · เฉลี่ย 7 วัน ${avg7d.toLocaleString()} ฿` : ""}
-            </p>
-          </div>
-
-          {countedNum > 0 && depositedNum > 0 && (
-            <div
-              className={cn(
-                "rounded-md border p-3 text-sm",
-                absDiff > 100
-                  ? "border-amber-300 bg-amber-50 text-amber-800"
-                  : "border-zinc-200 bg-zinc-50 text-zinc-700",
-              )}
-              aria-live="polite"
-            >
-              ผลต่าง:{" "}
-              <span className="font-semibold tabular-nums">
-                {diff >= 0 ? "+" : ""}
-                {diff.toLocaleString()} ฿
-              </span>
-              {absDiff > 100 && (
-                <span className="ml-2 font-medium">⚠ ต่างมากกว่า 100฿</span>
-              )}
-            </div>
-          )}
         </CardBody>
       </Card>
 
@@ -507,7 +447,7 @@ export function CollectNewForm({ avg7d, chairCodes }: Props) {
                 </>
               ) : (
                 <>
-                  <Camera className="mr-2 h-5 w-5" /> ถ่ายรูปเงิน/สลิป
+                  <Camera className="mr-2 h-5 w-5" /> ถ่ายรูปเงินที่นับได้
                 </>
               )}
             </Button>
@@ -558,9 +498,12 @@ export function CollectNewForm({ avg7d, chairCodes }: Props) {
             <Loader2 className="mr-2 h-5 w-5 animate-spin" /> กำลังบันทึก...
           </>
         ) : (
-          "ยืนยันบันทึก"
+          "บันทึกการนับ · ฝากเงินทีหลังได้"
         )}
       </Button>
+      <p className="text-center text-xs text-zinc-500">
+        Step 1 จาก 2 · หลังบันทึกจะมีปุ่ม &ldquo;ฝากเงิน&rdquo; ในรายการให้กดตอนไปธนาคาร
+      </p>
 
       <Dialog
         open={confirmOpen}

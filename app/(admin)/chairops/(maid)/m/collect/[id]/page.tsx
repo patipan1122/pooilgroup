@@ -16,7 +16,7 @@ import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { baht, thaiDateTime } from "@/lib/chairops/utils/format";
-import { ChevronLeft, Lock, Unlock } from "lucide-react";
+import { ChevronLeft, Landmark, Lock, Unlock } from "lucide-react";
 import { UnlockButton } from "@/app/(admin)/chairops/collect/[id]/unlock-button";
 import { PhotoLightbox } from "./photo-lightbox";
 
@@ -50,6 +50,7 @@ export default async function MaidCollectDetailPage({ params }: Props) {
     0,
     Math.ceil((lockUntil.getTime() - now.getTime()) / 60_000),
   );
+  const isPendingDeposit = !row.slipPhotoUrl;
   const diff = row.countedAmount - row.depositedAmount;
   const canUnlock = canUnlockCollection(session.user);
 
@@ -67,7 +68,16 @@ export default async function MaidCollectDetailPage({ params }: Props) {
         <p className="text-sm text-zinc-500">{thaiDateTime(row.collectedAt)}</p>
       </header>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {isPendingDeposit ? (
+          <Badge tone="warning" className="gap-1">
+            <Landmark className="h-3 w-3" aria-hidden /> ยังไม่ฝาก
+          </Badge>
+        ) : (
+          <Badge tone="success" className="gap-1">
+            <Landmark className="h-3 w-3" aria-hidden /> ฝากแล้ว
+          </Badge>
+        )}
         {isLocked ? (
           <Badge tone="neutral" className="gap-1">
             <Lock className="h-3 w-3" aria-hidden /> ล็อค · แก้ไขไม่ได้
@@ -83,6 +93,24 @@ export default async function MaidCollectDetailPage({ params }: Props) {
         )}
       </div>
 
+      {isPendingDeposit && (
+        <Card className="border-emerald-200 bg-emerald-50">
+          <CardBody className="space-y-3 p-4">
+            <div className="text-sm font-semibold text-emerald-800">
+              ยอดนับ {baht(row.countedAmount)} · พร้อมฝาก
+            </div>
+            <p className="text-xs text-emerald-700">
+              ไปธนาคารแล้วกลับมากดปุ่มนี้ · แนบสลิป + กรอกยอดที่ฝากจริง
+            </p>
+            <Link href={`/chairops/m/collect/${row.id}/deposit`} className="block">
+              <Button className="h-14 w-full text-base font-semibold">
+                <Landmark className="mr-2 h-5 w-5" /> ฝากเงินตอนนี้
+              </Button>
+            </Link>
+          </CardBody>
+        </Card>
+      )}
+
       <Card>
         <CardBody className="space-y-3 p-4 text-sm">
           <div className="grid grid-cols-2 gap-3">
@@ -94,25 +122,32 @@ export default async function MaidCollectDetailPage({ params }: Props) {
             </div>
             <div>
               <div className="text-xs text-zinc-500">ยอดฝาก</div>
-              <div className="text-lg font-semibold tabular-nums text-zinc-900">
-                {baht(row.depositedAmount)}
-              </div>
-            </div>
-            <div className="col-span-2 border-t border-zinc-200 pt-3">
-              <div className="text-xs text-zinc-500">ผลต่าง</div>
               <div
                 className={
-                  "text-xl font-bold tabular-nums " +
-                  (diff > 0
-                    ? "text-amber-700"
-                    : diff < 0
-                      ? "text-emerald-700"
-                      : "text-zinc-900")
+                  "text-lg font-semibold tabular-nums " +
+                  (isPendingDeposit ? "text-zinc-400" : "text-zinc-900")
                 }
               >
-                {baht(diff, true)}
+                {isPendingDeposit ? "— ยังไม่ฝาก" : baht(row.depositedAmount)}
               </div>
             </div>
+            {!isPendingDeposit && (
+              <div className="col-span-2 border-t border-zinc-200 pt-3">
+                <div className="text-xs text-zinc-500">ผลต่าง</div>
+                <div
+                  className={
+                    "text-xl font-bold tabular-nums " +
+                    (diff > 0
+                      ? "text-amber-700"
+                      : diff < 0
+                        ? "text-emerald-700"
+                        : "text-zinc-900")
+                  }
+                >
+                  {baht(diff, true)}
+                </div>
+              </div>
+            )}
           </div>
           <div className="border-t border-zinc-200 pt-3 text-xs text-zinc-500">
             <div>

@@ -20,6 +20,7 @@ import {
   ChevronRight,
   CircleAlert,
   Clock,
+  Landmark,
   Package,
   Sparkles,
   Wallet,
@@ -65,36 +66,65 @@ export default async function MaidHomePage() {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-  const [branch, drift, chairCount, monthAgg, todayCleanliness, openDamage] =
-    await Promise.all([
-      prisma.chairopsBranch.findUniqueOrThrow({
-        where: { id: branchId },
-        select: { name: true },
-      }),
-      recomputeDriftForBranch(branchId),
-      prisma.chairopsChair.count({
-        where: { branchId, orgId: session.user.orgId, isActive: true },
-      }),
-      prisma.chairopsCashCollection.aggregate({
-        where: {
-          branchId,
-          maidId: session.user.id,
-          collectedAt: { gte: monthStart },
-        },
-        _sum: { depositedAmount: true },
-        _count: true,
-      }),
-      prisma.chairopsCleanlinessReport.count({
-        where: { branchId, byMaidId: session.user.id, reportedAt: { gte: dayStart } },
-      }),
-      prisma.chairopsDamageTicket.count({
-        where: {
-          branchId,
-          orgId: session.user.orgId,
-          status: { in: ["OPEN", "ASSIGNED", "IN_PROGRESS", "WAITING_PARTS"] },
-        },
-      }),
-    ]);
+  const [
+    branch,
+    drift,
+    chairCount,
+    monthAgg,
+    todayCleanliness,
+    openDamage,
+    pendingDeposits,
+  ] = await Promise.all([
+    prisma.chairopsBranch.findUniqueOrThrow({
+      where: { id: branchId },
+      select: { name: true },
+    }),
+    recomputeDriftForBranch(branchId),
+    prisma.chairopsChair.count({
+      where: { branchId, orgId: session.user.orgId, isActive: true },
+    }),
+    prisma.chairopsCashCollection.aggregate({
+      where: {
+        branchId,
+        maidId: session.user.id,
+        collectedAt: { gte: monthStart },
+      },
+      _sum: { depositedAmount: true },
+      _count: true,
+    }),
+    prisma.chairopsCleanlinessReport.count({
+      where: { branchId, byMaidId: session.user.id, reportedAt: { gte: dayStart } },
+    }),
+    prisma.chairopsDamageTicket.count({
+      where: {
+        branchId,
+        orgId: session.user.orgId,
+        status: { in: ["OPEN", "ASSIGNED", "IN_PROGRESS", "WAITING_PARTS"] },
+      },
+    }),
+    // Step-1-only rows: counted but not yet deposited. Source of the
+    // "เงินค้าง รอฝาก" KPI + the pending-deposit section below.
+    prisma.chairopsCashCollection.findMany({
+      where: {
+        branchId,
+        maidId: session.user.id,
+        slipPhotoUrl: null,
+      },
+      orderBy: { collectedAt: "desc" },
+      take: 10,
+      select: {
+        id: true,
+        countedAmount: true,
+        collectedAt: true,
+        notes: true,
+      },
+    }),
+  ]);
+
+  const pendingTotal = pendingDeposits.reduce(
+    (sum, p) => sum + p.countedAmount,
+    0,
+  );
 
   const daysSinceLast =
     drift.lastCollectionAt != null ? ageDays(drift.lastCollectionAt) : null;
@@ -195,7 +225,7 @@ export default async function MaidHomePage() {
         </CardBody>
       </Card>
 
-      {/* 2-KPI block (already-shipped tiles): gap + monthly running */}
+      {/* KPI row: gap + monthly running + pending-deposit */}
       <div className="grid grid-cols-2 gap-3">
         <ChairopsKpiTile
           label="ไม่ได้เก็บมา"
@@ -221,7 +251,62 @@ export default async function MaidHomePage() {
           delta={`${monthCount} ครั้ง`}
           icon={<CalendarDays className="size-4" aria-hidden />}
         />
+        <div className="col-span-2">
+          <ChairopsKpiTile
+            label="เงินค้าง รอฝาก"
+            value={baht(pendingTotal)}
+            tone={pendingDeposits.length > 0 ? "warning" : "neutral"}
+            delta={
+              pendingDeposits.length > 0
+                ? `${pendingDeposits.length} รายการรอฝาก`
+                : "ฝากครบทุกรายการ"
+            }
+            icon={<Landmark className="size-4" aria-hidden />}
+          />
+        </div>
       </div>
+
+      {/* Pending-deposit list — Step 2 entry points for each unfinished count.
+          Hidden when nothing pending so the home stays clean. */}
+      {pendingDeposits.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-700">
+            <Landmark className="size-4 text-amber-600" aria-hidden />
+            เงินค้าง รอฝาก ({pendingDeposits.length})
+          </h2>
+          <ul className="space-y-2">
+            {pendingDeposits.map((p) => (
+              <li key={p.id}>
+                <Link
+                  href={`/chairops/m/collect/${p.id}/deposit`}
+                  className="block"
+                >
+                  <Card className="border-amber-200 bg-amber-50/40 transition-colors active:bg-amber-100">
+                    <CardBody className="flex items-center gap-3 p-4">
+                      <div className="min-w-0 grow">
+                        <div className="text-base font-bold tabular-nums text-zinc-900">
+                          {baht(p.countedAmount)}
+                        </div>
+                        <div className="text-xs text-zinc-500">
+                          นับเมื่อ {thaiRelative(p.collectedAt)}
+                          {p.notes ? ` · ${p.notes.slice(0, 40)}` : ""}
+                        </div>
+                      </div>
+                      <Badge tone="warning" className="shrink-0">
+                        ฝากเงิน
+                      </Badge>
+                      <ChevronRight
+                        className="size-5 shrink-0 text-zinc-400"
+                        aria-hidden
+                      />
+                    </CardBody>
+                  </Card>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* 4 task cards (mockup .co-mini-tasks) */}
       <section className="space-y-2">

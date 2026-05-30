@@ -12,7 +12,7 @@ import { requireRole, requireAuth, requireExactRole } from "@/lib/chairops/auth/
 import { canUnlockCollection } from "@/lib/chairops/auth/role-guards";
 import { writeAudit } from "@/lib/chairops/audit/log";
 import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
-import { presignUpload, evidenceKey } from "@/lib/chairops/storage/r2";
+import { presignUpload, evidenceKey, slipKey } from "@/lib/chairops/storage/r2";
 import { zBaht, zUUID } from "@/lib/chairops/schemas/zod-helpers";
 import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
 import { rateLimit, LIMITS } from "@/lib/chairops/utils/rate-limit";
@@ -177,6 +177,137 @@ export async function requestUnlock(id: string): Promise<ActionResult> {
   revalidatePath(`/chairops/collect/${updated.id}`);
   revalidatePath("/chairops/collect");
   return { ok: true, data: undefined };
+}
+
+// Step 2 — maid actually goes to bank, deposits, comes back to attach slip.
+// Updates an existing row that was created in step 1 with countedAmount only
+// (depositedAmount=0, slipPhotoUrl=null). Allowed even after the 30-min edit
+// lock because depositing is a separate event from the original count.
+const recordDepositInput = z.object({
+  collectionId: z.string().uuid(),
+  depositedAmount: zBaht(),
+  slipPhotoUrl: z.string().url({ message: "ต้องแนบรูปสลิป" }),
+  slipImageHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/i, { message: "ลายนิ้วมือสลิปไม่ถูกต้อง" }),
+});
+
+export type RecordDepositInput = z.infer<typeof recordDepositInput>;
+
+export async function recordDeposit(
+  raw: RecordDepositInput,
+): Promise<ActionResult<{ id: string }>> {
+  const session = await requireExactRole("MAID");
+  const parsed = recordDepositInput.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง",
+    };
+  }
+  const data = parsed.data;
+
+  if (data.depositedAmount <= 0) {
+    return { ok: false, error: "ยอดที่ฝากต้องมากกว่า 0" };
+  }
+  if (!isAllowedPhotoUrl(data.slipPhotoUrl)) {
+    return { ok: false, error: "รูปสลิปไม่ถูกต้อง · ต้องอัปโหลดผ่านระบบ" };
+  }
+
+  const existing = await prisma.chairopsCashCollection.findFirst({
+    where: { id: data.collectionId, orgId: session.user.orgId },
+    select: {
+      id: true,
+      branchId: true,
+      maidId: true,
+      slipPhotoUrl: true,
+      countedAmount: true,
+      depositedAmount: true,
+    },
+  });
+  if (!existing) return { ok: false, error: "ไม่พบรายการ" };
+  if (existing.maidId !== session.user.id) {
+    return { ok: false, error: "ไม่ใช่รายการของคุณ" };
+  }
+  if (existing.slipPhotoUrl) {
+    return { ok: false, error: "รายการนี้ฝากเงินไปแล้ว" };
+  }
+
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.chairopsCashCollection.update({
+        where: { id: data.collectionId },
+        data: {
+          depositedAmount: data.depositedAmount,
+          slipPhotoUrl: data.slipPhotoUrl,
+        },
+      });
+      await writeAudit(
+        {
+          userId: session.user.id,
+          action: "cash_collection.deposit",
+          entity: "CashCollection",
+          entityId: row.id,
+          oldValue: {
+            depositedAmount: existing.depositedAmount,
+            slipPhotoUrl: existing.slipPhotoUrl,
+          },
+          newValue: {
+            depositedAmount: data.depositedAmount,
+            slipPhotoUrl: data.slipPhotoUrl,
+          },
+          metadata: { route: "/chairops/m/collect/[id]/deposit" },
+        },
+        tx,
+      );
+      return row;
+    });
+
+    // Drift uses depositedAmount — now that this row is actually deposited,
+    // recompute so any prior shortage clears.
+    await recomputeDriftForBranch(existing.branchId);
+
+    revalidatePath(`/chairops/m/collect/${updated.id}`);
+    revalidatePath("/chairops/m");
+    return { ok: true, data: { id: updated.id } };
+  } catch {
+    return { ok: false, error: "บันทึกการฝากไม่สำเร็จ · ลองอีกครั้ง" };
+  }
+}
+
+/**
+ * Step 2 slip-photo presign. Mirrors presignEvidenceUpload but uses the
+ * slipKey/ prefix so we don't collide with the step-1 count photo.
+ */
+export async function presignSlipUpload(args: {
+  contentType: string;
+  collectionId: string;
+}): Promise<ActionResult<{ url: string; publicUrl: string; key: string }>> {
+  const session = await requireExactRole("MAID");
+
+  if (!session.user.primaryBranchId) {
+    return { ok: false, error: "บัญชีของคุณยังไม่ได้กำหนดสาขา" };
+  }
+  const idParsed = zUUID().safeParse(args.collectionId);
+  if (!idParsed.success) return { ok: false, error: "collectionId ไม่ถูกต้อง" };
+
+  const ct = args.contentType;
+  if (!/^image\/(jpeg|jpg|png|webp|heic)$/i.test(ct)) {
+    return { ok: false, error: "ต้องเป็นไฟล์รูปภาพเท่านั้น" };
+  }
+
+  const collection = await prisma.chairopsCashCollection.findFirst({
+    where: { id: idParsed.data, orgId: session.user.orgId },
+    select: { maidId: true, branch: { select: { slug: true } } },
+  });
+  if (!collection || collection.maidId !== session.user.id) {
+    return { ok: false, error: "ไม่พบรายการ" };
+  }
+
+  const ext = ct.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
+  const key = slipKey(collection.branch.slug, idParsed.data, ext);
+  const { url, publicUrl } = await presignUpload(key, ct);
+  return { ok: true, data: { url, publicUrl, key } };
 }
 
 /**
