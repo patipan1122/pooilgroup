@@ -37,15 +37,27 @@ export default function LiffCompletePage() {
           throw new Error(`supabase: ${supaError} / ${supaErrorDesc ?? ""}`);
         }
         if (access_token && refresh_token) {
-          const { error } = await sb.auth.setSession({ access_token, refresh_token });
-          if (error) throw new Error(`setSession: ${error.message}`);
-          // Verify cookie actually persisted (iOS webview sometimes drops it).
-          const { data: verify } = await sb.auth.getSession();
-          if (!verify.session) {
+          // iOS LINE WKWebView drops cookies written via document.cookie
+          // (which is what sb.auth.setSession does in the browser). POST
+          // tokens to a server route that calls setSession server-side and
+          // writes cookies via Set-Cookie response header — iOS always
+          // honors those. We also call client setSession AFTER so the
+          // in-memory client has the session for any client-side queries.
+          const r = await fetch("/api/auth/set-session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ access_token, refresh_token }),
+          });
+          if (!r.ok) {
+            const j = await r.json().catch(() => ({}));
             throw new Error(
-              "session-not-persisted (setSession returned ok but cookie did not stick — iOS webview cookie partitioning)",
+              `server set-session ${r.status}: ${j?.error ?? "unknown"}`,
             );
           }
+          // Best-effort client-side sync — failures are non-fatal because the
+          // server already wrote the cookies.
+          await sb.auth.setSession({ access_token, refresh_token }).catch(() => {});
         } else {
           // No fragment (PKCE code or already captured) — let the client detect.
           const { data } = await sb.auth.getSession();
