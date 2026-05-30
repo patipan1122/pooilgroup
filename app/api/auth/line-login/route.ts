@@ -308,15 +308,15 @@ export async function POST(req: NextRequest) {
       );
     }
     const j = (await res.json()) as {
+      action_link?: string;
       properties?: { action_link?: string };
       [k: string]: unknown;
     };
-    const link = j.properties?.action_link;
+    // Newer Supabase puts action_link at the top level; older nested under
+    // properties. Accept either so we don't break when GoTrue is upgraded.
+    const link = j.action_link ?? j.properties?.action_link;
     if (!link) {
       console.error("[line-login] missing action_link", JSON.stringify(j));
-      // Surface Supabase response keys so the error page can show what was
-      // returned instead of the action_link (helps catch redirect_to allowlist
-      // mismatch, user-not-confirmed, etc).
       const keys = Object.keys(j).join(",");
       const propsKeys = j.properties ? Object.keys(j.properties).join(",") : "—";
       return NextResponse.json(
