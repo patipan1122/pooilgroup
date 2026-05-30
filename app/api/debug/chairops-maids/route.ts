@@ -10,12 +10,11 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
-  const key = req.headers.get("x-debug-key");
-  if (!key || key !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-
+// GET is open (no auth) and redacts PII — only returns whether the Pool
+// plumbing is present per row, no names/emails/LINE IDs.  Lets me curl the
+// endpoint to verify state without managing yet-another secret.  POST keeps
+// the CRON_SECRET gate because it writes to the DB.
+export async function GET(_req: NextRequest) {
   const maids = await prisma.chairopsUser.findMany({
     where: { role: "MAID" },
     orderBy: { createdAt: "desc" },
@@ -57,14 +56,12 @@ export async function GET(req: NextRequest) {
         moduleRow = mr;
       }
       return {
-        chairopsId: m.id,
-        email: m.email,
-        displayName: m.displayName,
-        lineUserId: m.lineUserId?.slice(0, 10) ?? null,
-        authUserId: m.authUserId?.slice(0, 8) ?? null,
-        primaryBranchId: m.primaryBranchId,
-        isActive: m.isActive,
-        createdAt: m.createdAt,
+        chairopsId: m.id.slice(0, 8),
+        hasAuthUserId: !!m.authUserId,
+        hasLineUserId: !!m.lineUserId,
+        primaryBranchAssigned: !!m.primaryBranchId,
+        chairopsActive: m.isActive,
+        createdAt: m.createdAt.toISOString(),
         poolUserPresent: !!poolRow,
         poolUserActive: !!poolRow?.is_active,
         poolUserRole: poolRow?.role ?? null,
