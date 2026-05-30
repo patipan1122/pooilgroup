@@ -61,12 +61,30 @@ export function LiffBootstrap({
       }
     };
 
+    // LIFF SDK is flaky on iOS LINE webview ("TypeError: Load failed" during
+    // liff.init). When it fails AND we have a deep-link context, fall back to
+    // direct LINE OAuth via /auth/line-start (no LIFF SDK, standard authcode
+    // flow). The OAuth callback ends up calling the same /api/auth/line-login
+    // downstream, so the user experience after the LINE consent screen is
+    // identical to the LIFF path.
+    const fallbackToOAuth = () => {
+      if (cancelled || !next) return false;
+      const u = new URL("/auth/line-start", window.location.href);
+      u.searchParams.set("next", next);
+      window.location.replace(u.toString());
+      return true;
+    };
+
     let cancelled = false;
     void (async () => {
       const profile = await getLiffProfile();
       if (cancelled) return;
       if (!profile) {
         const initErr = getLiffInitError();
+        // LIFF SDK actually attempted init and failed (network/SDK error) →
+        // try the OAuth fallback. Only surface the error if no `next` (generic
+        // LIFF context) or fallback navigation cannot be triggered.
+        if (initErr && fallbackToOAuth()) return;
         failOrSkip(
           initErr
             ? `LIFF init error → ${initErr}`
@@ -77,6 +95,9 @@ export function LiffBootstrap({
       const idToken = await getLiffIdToken();
       if (cancelled) return;
       if (!idToken) {
+        // Missing openid scope or LIFF token API failed. OAuth fallback grants
+        // openid via its own scope param, side-stepping LIFF channel config.
+        if (fallbackToOAuth()) return;
         const initErr = getLiffInitError();
         failOrSkip(
           initErr
