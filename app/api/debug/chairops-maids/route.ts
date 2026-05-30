@@ -6,6 +6,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { adminClient } from "@/lib/db/server";
 import { prisma } from "@/lib/prisma";
+import { UserRole } from "@/lib/generated/prisma/enums";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -104,74 +105,69 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  const admin = adminClient();
   const fixed: Array<{ id: string; action: string; error?: string }> = [];
   for (const m of maids) {
     if (!m.authUserId || !m.email) {
       fixed.push({ id: m.id, action: "skipped (no authUserId/email)" });
       continue;
     }
-    // Pool users
-    const { data: existingPool } = await admin
-      .from("users")
-      .select("id, is_active")
-      .eq("id", m.authUserId)
-      .maybeSingle();
-    if (!existingPool) {
-      const { error: insErr } = await admin.from("users").insert({
-        id: m.authUserId,
-        org_id: m.orgId,
-        email: m.email,
-        name: m.displayName,
-        role: "staff",
-        is_active: true,
+    try {
+      const existingPool = await prisma.user.findUnique({
+        where: { id: m.authUserId },
+        select: { id: true, isActive: true },
       });
-      if (insErr) {
-        fixed.push({
-          id: m.id,
-          action: "users insert FAILED",
-          error: insErr.message,
+      if (!existingPool) {
+        await prisma.user.create({
+          data: {
+            id: m.authUserId,
+            orgId: m.orgId,
+            email: m.email,
+            name: m.displayName,
+            role: UserRole.staff,
+            isActive: true,
+          },
         });
-        continue;
+        fixed.push({ id: m.id, action: "users inserted (prisma)" });
+      } else if (!existingPool.isActive) {
+        await prisma.user.update({
+          where: { id: m.authUserId },
+          data: { isActive: true },
+        });
+        fixed.push({ id: m.id, action: "users reactivated (prisma)" });
       }
-      fixed.push({ id: m.id, action: "users inserted" });
-    } else if (!(existingPool as { is_active: boolean }).is_active) {
-      await admin
-        .from("users")
-        .update({ is_active: true })
-        .eq("id", m.authUserId);
-      fixed.push({ id: m.id, action: "users reactivated" });
-    }
-    // user_modules
-    const { data: existingMod } = await admin
-      .from("user_modules")
-      .select("id, is_active")
-      .eq("org_id", m.orgId)
-      .eq("user_id", m.authUserId)
-      .eq("module_name", "chairops")
-      .maybeSingle();
-    if (!existingMod) {
-      const { error: insErr } = await admin.from("user_modules").insert({
-        org_id: m.orgId,
-        user_id: m.authUserId,
-        module_name: "chairops",
-        is_active: true,
+      const existingMod = await prisma.userModule.findUnique({
+        where: {
+          orgId_userId_moduleName: {
+            orgId: m.orgId,
+            userId: m.authUserId,
+            moduleName: "chairops",
+          },
+        },
+        select: { id: true, isActive: true },
       });
-      if (insErr) {
-        fixed.push({
-          id: m.id,
-          action: "user_modules insert FAILED",
-          error: insErr.message,
+      if (!existingMod) {
+        await prisma.userModule.create({
+          data: {
+            orgId: m.orgId,
+            userId: m.authUserId,
+            moduleName: "chairops",
+            isActive: true,
+          },
         });
-        continue;
+        fixed.push({ id: m.id, action: "user_modules inserted (prisma)" });
+      } else if (!existingMod.isActive) {
+        await prisma.userModule.update({
+          where: { id: existingMod.id },
+          data: { isActive: true },
+        });
+        fixed.push({ id: m.id, action: "user_modules reactivated (prisma)" });
       }
-      fixed.push({ id: m.id, action: "user_modules inserted" });
-    } else if (!existingMod.is_active) {
-      await admin
-        .from("user_modules")
-        .update({ is_active: true })
-        .eq("id", existingMod.id);
-      fixed.push({ id: m.id, action: "user_modules reactivated" });
+    } catch (e) {
+      fixed.push({
+        id: m.id,
+        action: "FAILED",
+        error: e instanceof Error ? e.message.slice(0, 200) : "unknown",
+      });
     }
   }
 

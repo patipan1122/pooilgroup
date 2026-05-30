@@ -14,7 +14,7 @@ import { audit } from "@/lib/audit/log";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
 import { verifyInvite } from "@/lib/chairops/line/invite";
 import { randomUUID } from "node:crypto";
-import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
+import { ChairopsUserRole, UserRole } from "@/lib/generated/prisma/enums";
 
 type ResolvedUser = {
   id: string;
@@ -33,77 +33,71 @@ type ResolvedUser = {
 // that resolves a maid from the ChairopsUser table (new self-register +
 // existing-maid-via-lineUserId + invite).
 async function ensurePoolMembership(
-  admin: ReturnType<typeof adminClient>,
+  _admin: ReturnType<typeof adminClient>,
   authUserId: string,
   orgId: string,
   email: string,
   displayName: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  // Pool users — INSERT only (never overwrite an office-staff row already in
-  // this table, which would clobber their real role). Also re-activate if a
-  // prior soft-delete left is_active=false (getSession() filters on it).
-  const { data: existingPool, error: selErr } = await admin
-    .from("users")
-    .select("id, is_active")
-    .eq("id", authUserId)
-    .maybeSingle();
-  if (selErr) {
-    return { ok: false, error: `users select: ${selErr.message}` };
-  }
-  if (!existingPool) {
-    const { error: insErr } = await admin.from("users").insert({
-      id: authUserId,
-      org_id: orgId,
-      email,
-      name: displayName,
-      role: "staff",
-      is_active: true,
+  // Use PRISMA for these writes (not the Supabase admin REST client) because
+  // the Pool `users` table has `updatedAt @updatedAt` with no DB-level default
+  // — supabase.from().insert() does not auto-populate that column, so every
+  // attempted INSERT was failing with a NOT NULL constraint silently swallowed
+  // somewhere in the JS client. Prisma sets @updatedAt on every create/update
+  // so this just works.
+  try {
+    const existingPool = await prisma.user.findUnique({
+      where: { id: authUserId },
+      select: { id: true, isActive: true },
     });
-    if (insErr) {
-      console.error("[ensurePoolMembership] users insert", insErr);
-      return { ok: false, error: `users insert: ${insErr.message}` };
+    if (!existingPool) {
+      await prisma.user.create({
+        data: {
+          id: authUserId,
+          orgId,
+          email,
+          name: displayName,
+          role: UserRole.staff,
+          isActive: true,
+        },
+      });
+    } else if (!existingPool.isActive) {
+      await prisma.user.update({
+        where: { id: authUserId },
+        data: { isActive: true },
+      });
     }
-  } else if (!(existingPool as { is_active: boolean }).is_active) {
-    const { error: updErr } = await admin
-      .from("users")
-      .update({ is_active: true })
-      .eq("id", authUserId);
-    if (updErr) {
-      return { ok: false, error: `users reactivate: ${updErr.message}` };
-    }
-  }
-  // user_modules — grant chairops; re-activate if soft-deleted.
-  const { data: existingMod, error: modSelErr } = await admin
-    .from("user_modules")
-    .select("id, is_active")
-    .eq("org_id", orgId)
-    .eq("user_id", authUserId)
-    .eq("module_name", "chairops")
-    .maybeSingle();
-  if (modSelErr) {
-    return { ok: false, error: `user_modules select: ${modSelErr.message}` };
-  }
-  if (!existingMod) {
-    const { error: insErr } = await admin.from("user_modules").insert({
-      org_id: orgId,
-      user_id: authUserId,
-      module_name: "chairops",
-      is_active: true,
+    const existingMod = await prisma.userModule.findUnique({
+      where: {
+        orgId_userId_moduleName: {
+          orgId,
+          userId: authUserId,
+          moduleName: "chairops",
+        },
+      },
+      select: { id: true, isActive: true },
     });
-    if (insErr) {
-      console.error("[ensurePoolMembership] user_modules insert", insErr);
-      return { ok: false, error: `user_modules insert: ${insErr.message}` };
+    if (!existingMod) {
+      await prisma.userModule.create({
+        data: {
+          orgId,
+          userId: authUserId,
+          moduleName: "chairops",
+          isActive: true,
+        },
+      });
+    } else if (!existingMod.isActive) {
+      await prisma.userModule.update({
+        where: { id: existingMod.id },
+        data: { isActive: true },
+      });
     }
-  } else if (!existingMod.is_active) {
-    const { error: updErr } = await admin
-      .from("user_modules")
-      .update({ is_active: true })
-      .eq("id", existingMod.id);
-    if (updErr) {
-      return { ok: false, error: `user_modules reactivate: ${updErr.message}` };
-    }
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "unknown";
+    console.error("[ensurePoolMembership] prisma write failed", e);
+    return { ok: false, error: msg.slice(0, 280) };
   }
-  return { ok: true };
 }
 
 // ChairOps self-register: every maid already has LINE, so the first time they
