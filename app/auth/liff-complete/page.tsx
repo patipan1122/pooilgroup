@@ -37,27 +37,32 @@ export default function LiffCompletePage() {
           throw new Error(`supabase: ${supaError} / ${supaErrorDesc ?? ""}`);
         }
         if (access_token && refresh_token) {
-          // iOS LINE WKWebView drops cookies written via document.cookie
-          // (which is what sb.auth.setSession does in the browser). POST
-          // tokens to a server route that calls setSession server-side and
-          // writes cookies via Set-Cookie response header — iOS always
-          // honors those. We also call client setSession AFTER so the
-          // in-memory client has the session for any client-side queries.
-          const r = await fetch("/api/auth/set-session", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ access_token, refresh_token }),
-          });
+          // POST tokens to server which writes the Supabase session cookies
+          // via Set-Cookie response header (iOS webview-safe — document.cookie
+          // partitioning would otherwise drop them). Skip the client-side
+          // setSession entirely: it can hang on iOS LINE WKWebView when it
+          // tries to read its own cookies back, and we don't actually need a
+          // client-side session here (next page load reads cookies SSR).
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 8000);
+          let r: Response;
+          try {
+            r = await fetch("/api/auth/set-session", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ access_token, refresh_token }),
+              signal: ctrl.signal,
+            });
+          } finally {
+            clearTimeout(timer);
+          }
           if (!r.ok) {
             const j = await r.json().catch(() => ({}));
             throw new Error(
               `server set-session ${r.status}: ${j?.error ?? "unknown"}`,
             );
           }
-          // Best-effort client-side sync — failures are non-fatal because the
-          // server already wrote the cookies.
-          await sb.auth.setSession({ access_token, refresh_token }).catch(() => {});
         } else {
           // No fragment (PKCE code or already captured) — let the client detect.
           const { data } = await sb.auth.getSession();

@@ -38,14 +38,18 @@ async function ensurePoolMembership(
   orgId: string,
   email: string,
   displayName: string,
-): Promise<void> {
+): Promise<{ ok: true } | { ok: false; error: string }> {
   // Pool users — INSERT only (never overwrite an office-staff row already in
-  // this table, which would clobber their real role).
-  const { data: existingPool } = await admin
+  // this table, which would clobber their real role). Also re-activate if a
+  // prior soft-delete left is_active=false (getSession() filters on it).
+  const { data: existingPool, error: selErr } = await admin
     .from("users")
-    .select("id")
+    .select("id, is_active")
     .eq("id", authUserId)
     .maybeSingle();
+  if (selErr) {
+    return { ok: false, error: `users select: ${selErr.message}` };
+  }
   if (!existingPool) {
     const { error: insErr } = await admin.from("users").insert({
       id: authUserId,
@@ -55,16 +59,30 @@ async function ensurePoolMembership(
       role: "staff",
       is_active: true,
     });
-    if (insErr) console.error("[ensurePoolMembership] users insert", insErr);
+    if (insErr) {
+      console.error("[ensurePoolMembership] users insert", insErr);
+      return { ok: false, error: `users insert: ${insErr.message}` };
+    }
+  } else if (!(existingPool as { is_active: boolean }).is_active) {
+    const { error: updErr } = await admin
+      .from("users")
+      .update({ is_active: true })
+      .eq("id", authUserId);
+    if (updErr) {
+      return { ok: false, error: `users reactivate: ${updErr.message}` };
+    }
   }
   // user_modules — grant chairops; re-activate if soft-deleted.
-  const { data: existingMod } = await admin
+  const { data: existingMod, error: modSelErr } = await admin
     .from("user_modules")
     .select("id, is_active")
     .eq("org_id", orgId)
     .eq("user_id", authUserId)
     .eq("module_name", "chairops")
     .maybeSingle();
+  if (modSelErr) {
+    return { ok: false, error: `user_modules select: ${modSelErr.message}` };
+  }
   if (!existingMod) {
     const { error: insErr } = await admin.from("user_modules").insert({
       org_id: orgId,
@@ -72,13 +90,20 @@ async function ensurePoolMembership(
       module_name: "chairops",
       is_active: true,
     });
-    if (insErr) console.error("[ensurePoolMembership] user_modules insert", insErr);
+    if (insErr) {
+      console.error("[ensurePoolMembership] user_modules insert", insErr);
+      return { ok: false, error: `user_modules insert: ${insErr.message}` };
+    }
   } else if (!existingMod.is_active) {
-    await admin
+    const { error: updErr } = await admin
       .from("user_modules")
       .update({ is_active: true })
       .eq("id", existingMod.id);
+    if (updErr) {
+      return { ok: false, error: `user_modules reactivate: ${updErr.message}` };
+    }
   }
+  return { ok: true };
 }
 
 // ChairOps self-register: every maid already has LINE, so the first time they
@@ -106,15 +131,17 @@ async function selfRegisterChairopsMaid(
   });
   if (existing) {
     // Existing row from an earlier failed test — heal the Pool plumbing in
-    // case the original session never inserted it.
+    // case the original session never inserted it. Throw if Pool insert
+    // fails so the outer handler can return 502 with a specific reason.
     if (existing.authUserId && existing.email) {
-      await ensurePoolMembership(
+      const r = await ensurePoolMembership(
         admin,
         existing.authUserId,
         existing.orgId,
         existing.email,
         existing.displayName,
       );
+      if (!r.ok) throw new Error(`pool-membership: ${r.error}`);
     }
     return { id: existing.id, orgId: existing.orgId, email: existing.email, name: existing.displayName, role: existing.role };
   }
@@ -129,7 +156,17 @@ async function selfRegisterChairopsMaid(
   // Insert Pool plumbing BEFORE ChairopsUser. If we crash mid-way the auth
   // user gets cleaned up below; if Pool rows are missing the layout will
   // bounce the maid to /login on first visit.
-  await ensurePoolMembership(admin, authData.user.id, orgId, email, displayName);
+  const poolRes = await ensurePoolMembership(
+    admin,
+    authData.user.id,
+    orgId,
+    email,
+    displayName,
+  );
+  if (!poolRes.ok) {
+    await admin.auth.admin.deleteUser(authData.user.id).catch(() => {});
+    throw new Error(`pool-membership: ${poolRes.error}`);
+  }
   try {
     const row = await prisma.chairopsUser.create({
       data: {
@@ -268,13 +305,19 @@ export async function POST(req: NextRequest) {
       }
     }
     if (maid.authUserId && maid.email) {
-      await ensurePoolMembership(
+      const r = await ensurePoolMembership(
         admin,
         maid.authUserId,
         maid.orgId,
         maid.email,
         maid.displayName,
       );
+      if (!r.ok) {
+        return NextResponse.json(
+          { error: `pool-membership(invite): ${r.error}` },
+          { status: 502 },
+        );
+      }
     }
     resolved = {
       id: maid.id,
@@ -308,15 +351,21 @@ export async function POST(req: NextRequest) {
       if (maid) {
         // Backfill Pool plumbing for maids self-registered before the
         // ensurePoolMembership fix shipped — otherwise their Pool layout
-        // still bounces them to /login.
+        // still bounces them to /login. Fail loud if it errors.
         if (maid.authUserId && maid.email) {
-          await ensurePoolMembership(
+          const r = await ensurePoolMembership(
             admin,
             maid.authUserId,
             maid.orgId,
             maid.email,
             maid.displayName,
           );
+          if (!r.ok) {
+            return NextResponse.json(
+              { error: `pool-membership(maid-resolve): ${r.error}` },
+              { status: 502 },
+            );
+          }
         }
         resolved = {
           id: maid.id,
