@@ -96,12 +96,27 @@ export async function GET(req: NextRequest) {
   }
 
   let loginJson: LoginResult;
+  // line-login sets a short-lived httpOnly cookie `ll_pending` (path-scoped
+  // to /api/auth/line-complete) holding the Supabase magic link. Because we
+  // call line-login via server-side fetch, that Set-Cookie header is captured
+  // on the INTERNAL response and never reaches the user's browser. We must
+  // forward it explicitly on the redirect we return; otherwise line-complete
+  // sees no cookie and bounces to /liff/status (the symptom CEO hit).
+  let forwardSetCookies: string[] = [];
   try {
     const loginRes = await fetch(`${baseUrl}/api/auth/line-login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idToken, redirectTo: cookieNext }),
     });
+    type HeadersWithGetSetCookie = Headers & { getSetCookie?: () => string[] };
+    const h = loginRes.headers as HeadersWithGetSetCookie;
+    if (typeof h.getSetCookie === "function") {
+      forwardSetCookies = h.getSetCookie();
+    } else {
+      const raw = loginRes.headers.get("set-cookie");
+      if (raw) forwardSetCookies = [raw];
+    }
     loginJson = (await loginRes.json()) as LoginResult;
     if (!loginRes.ok) {
       return fail("login-api", `${loginRes.status}: ${loginJson?.error ?? ""}`);
@@ -111,7 +126,13 @@ export async function GET(req: NextRequest) {
   }
 
   if (loginJson.ready && loginJson.completeUrl) {
-    const res = NextResponse.redirect(loginJson.completeUrl);
+    const target = loginJson.completeUrl.startsWith("http")
+      ? loginJson.completeUrl
+      : `${baseUrl}${loginJson.completeUrl}`;
+    const res = NextResponse.redirect(target);
+    for (const sc of forwardSetCookies) {
+      res.headers.append("Set-Cookie", sc);
+    }
     clearOauthCookies(res);
     return res;
   }
