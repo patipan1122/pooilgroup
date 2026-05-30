@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Section } from "@/components/ui/section";
@@ -86,6 +86,24 @@ export function InboxWorkspace({
     },
     [router, buildHref],
   );
+
+  // Lightweight near-realtime: poll for new messages every 4s while the tab
+  // is in the foreground.  router.refresh() re-runs the Server Component
+  // load, so new conversations / messages appear without a full reload.
+  // Skips when the tab is hidden (saves DB load + bandwidth).
+  useEffect(() => {
+    let cancelled = false;
+    const tick = () => {
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.hidden) return;
+      router.refresh();
+    };
+    const id = window.setInterval(tick, 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [router]);
 
   const hasAnyChannel = channels.length > 0;
   const hasAnyFilter =

@@ -1,6 +1,7 @@
-// /inbox/bot — No-code bot training for the massage-chair business (chairops).
-// The CEO trains the AI chatbot here: FAQ pairs, store knowledge, bot settings,
-// and a queue of questions the bot couldn't answer (one-click "teach the bot").
+// /inbox/bot — No-code bot training, per business.  Pick the vertical
+// via ?biz= (chairops · pooil · owl_cha · fnb · hotel · playland · other).
+// Each business has its own FAQ list, knowledge entries, bot settings,
+// and unanswered-question queue (org × businessTag scoped).
 
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
@@ -11,22 +12,35 @@ import {
   getBotSettingsForm,
   listUnanswered,
 } from "@/lib/inbox/bot/knowledge-actions";
+import { INBOX_BUSINESSES, businessLabel } from "@/lib/inbox/business";
 import { Section } from "@/components/ui/section";
 import { BotTrainer } from "./_components/bot-trainer";
+import { BusinessSelector } from "./_components/business-selector";
 
 export const dynamic = "force-dynamic";
 
-const BUSINESS_TAG = "chairops";
+const BOT_CAPABLE_TAGS = INBOX_BUSINESSES.filter((b) => b.botCapable).map(
+  (b) => b.tag,
+);
 
-export default async function InboxBotPage() {
+export default async function InboxBotPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ biz?: string }>;
+}) {
   const session = await requireSession();
   if (!isAdminTier(session.user.role)) redirect("/403");
 
+  const params = await searchParams;
+  const businessTag = BOT_CAPABLE_TAGS.includes(params.biz ?? "")
+    ? params.biz!
+    : "chairops";
+
   const [faqs, knowledge, settings, unanswered] = await Promise.all([
-    listFaqs(BUSINESS_TAG),
-    listKnowledge(BUSINESS_TAG),
-    getBotSettingsForm(BUSINESS_TAG),
-    listUnanswered(BUSINESS_TAG),
+    listFaqs(businessTag),
+    listKnowledge(businessTag),
+    getBotSettingsForm(businessTag),
+    listUnanswered(businessTag),
   ]);
 
   // flowImages lives on the same row as the rest of settings but the form
@@ -37,11 +51,13 @@ export default async function InboxBotPage() {
       <Section
         number="IB.2"
         label="ฝึกบอทตอบลูกค้า"
-        title="สอนบอทเก้าอี้นวด"
-        description="ตั้งคำตอบสำเร็จรูป + ข้อมูลร้าน เพื่อให้บอทตอบลูกค้าแทนคุณได้ทันที · ไม่ต้องเขียนโค้ด"
+        title={`สอนบอท ${businessLabel(businessTag)}`}
+        description="ตั้งคำตอบสำเร็จรูป + ข้อมูลร้าน เพื่อให้บอทตอบลูกค้าแทนคุณได้ทันที · ไม่ต้องเขียนโค้ด · เลือกธุรกิจที่จะฝึกได้จากด้านบน"
+        action={<BusinessSelector active={businessTag} />}
       >
         <BotTrainer
-          businessTag={BUSINESS_TAG}
+          key={businessTag}
+          businessTag={businessTag}
           initialFaqs={faqs}
           initialKnowledge={knowledge}
           initialSettings={settingsForm}

@@ -254,7 +254,11 @@ export async function runBot(opts: RunBotInput): Promise<void> {
   if (faq) {
     answer = faq.answer;
     await bumpFaqHit(faq.id);
-  } else if (cls.topic !== "other") {
+  } else if (cls.topic !== "other" && businessTag === "chairops") {
+    // Topic templates (money_lost / scan_fail / strong / buy / feedback)
+    // are written for the massage-chair business.  For other verticals
+    // (Owl Cha, hotel, fnb, ...) skip straight to AI fallback — Gemini
+    // uses that business's own knowledge to reply.
     answer = template(cls.topic, settings, cls.isComplaint);
   } else {
     const [knowledge, history] = await Promise.all([
