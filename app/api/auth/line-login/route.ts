@@ -24,6 +24,63 @@ type ResolvedUser = {
   role: string;
 };
 
+// Pool auth chain (app/(admin)/chairops/layout.tsx → requireSession → getSession)
+// requires a row in `public.users` for the auth user, AND chairops module
+// access via `user_modules` (since staff role is below admin tier). Self-
+// registered maids only ever had a ChairopsUser row → they passed line-login
+// + magic-link successfully but bounced to /login at the Pool layout. This
+// helper backfills both rows idempotently and is called from every code path
+// that resolves a maid from the ChairopsUser table (new self-register +
+// existing-maid-via-lineUserId + invite).
+async function ensurePoolMembership(
+  admin: ReturnType<typeof adminClient>,
+  authUserId: string,
+  orgId: string,
+  email: string,
+  displayName: string,
+): Promise<void> {
+  // Pool users — INSERT only (never overwrite an office-staff row already in
+  // this table, which would clobber their real role).
+  const { data: existingPool } = await admin
+    .from("users")
+    .select("id")
+    .eq("id", authUserId)
+    .maybeSingle();
+  if (!existingPool) {
+    const { error: insErr } = await admin.from("users").insert({
+      id: authUserId,
+      org_id: orgId,
+      email,
+      name: displayName,
+      role: "staff",
+      is_active: true,
+    });
+    if (insErr) console.error("[ensurePoolMembership] users insert", insErr);
+  }
+  // user_modules — grant chairops; re-activate if soft-deleted.
+  const { data: existingMod } = await admin
+    .from("user_modules")
+    .select("id, is_active")
+    .eq("org_id", orgId)
+    .eq("user_id", authUserId)
+    .eq("module_name", "chairops")
+    .maybeSingle();
+  if (!existingMod) {
+    const { error: insErr } = await admin.from("user_modules").insert({
+      org_id: orgId,
+      user_id: authUserId,
+      module_name: "chairops",
+      is_active: true,
+    });
+    if (insErr) console.error("[ensurePoolMembership] user_modules insert", insErr);
+  } else if (!existingMod.is_active) {
+    await admin
+      .from("user_modules")
+      .update({ is_active: true })
+      .eq("id", existingMod.id);
+  }
+}
+
 // ChairOps self-register: every maid already has LINE, so the first time they
 // open the Mini App + LINE-login we auto-create a branchless MAID (name from
 // LINE). They land on /chairops/m → "ยังไม่ได้กำหนดสาขา · ติดต่อออฟฟิศ"; the
@@ -45,9 +102,20 @@ async function selfRegisterChairopsMaid(
 
   const existing = await prisma.chairopsUser.findFirst({
     where: { orgId, lineUserId },
-    select: { id: true, orgId: true, email: true, displayName: true, role: true },
+    select: { id: true, orgId: true, email: true, displayName: true, role: true, authUserId: true },
   });
   if (existing) {
+    // Existing row from an earlier failed test — heal the Pool plumbing in
+    // case the original session never inserted it.
+    if (existing.authUserId && existing.email) {
+      await ensurePoolMembership(
+        admin,
+        existing.authUserId,
+        existing.orgId,
+        existing.email,
+        existing.displayName,
+      );
+    }
     return { id: existing.id, orgId: existing.orgId, email: existing.email, name: existing.displayName, role: existing.role };
   }
 
@@ -58,6 +126,10 @@ async function selfRegisterChairopsMaid(
     email_confirm: true,
   });
   if (error || !authData?.user) return null;
+  // Insert Pool plumbing BEFORE ChairopsUser. If we crash mid-way the auth
+  // user gets cleaned up below; if Pool rows are missing the layout will
+  // bounce the maid to /login on first visit.
+  await ensurePoolMembership(admin, authData.user.id, orgId, email, displayName);
   try {
     const row = await prisma.chairopsUser.create({
       data: {
@@ -171,7 +243,7 @@ export async function POST(req: NextRequest) {
     }
     const maid = await prisma.chairopsUser.findFirst({
       where: { id: targetId, isActive: true },
-      select: { id: true, orgId: true, email: true, displayName: true, role: true, lineUserId: true },
+      select: { id: true, orgId: true, email: true, displayName: true, role: true, lineUserId: true, authUserId: true },
     });
     if (!maid) {
       return NextResponse.json({ error: "ไม่พบบัญชีในลิงก์เชิญ" }, { status: 404 });
@@ -194,6 +266,15 @@ export async function POST(req: NextRequest) {
           { status: 409 },
         );
       }
+    }
+    if (maid.authUserId && maid.email) {
+      await ensurePoolMembership(
+        admin,
+        maid.authUserId,
+        maid.orgId,
+        maid.email,
+        maid.displayName,
+      );
     }
     resolved = {
       id: maid.id,
@@ -222,9 +303,21 @@ export async function POST(req: NextRequest) {
     } else {
       const maid = await prisma.chairopsUser.findFirst({
         where: { lineUserId, isActive: true },
-        select: { id: true, orgId: true, email: true, displayName: true, role: true },
+        select: { id: true, orgId: true, email: true, displayName: true, role: true, authUserId: true },
       });
       if (maid) {
+        // Backfill Pool plumbing for maids self-registered before the
+        // ensurePoolMembership fix shipped — otherwise their Pool layout
+        // still bounces them to /login.
+        if (maid.authUserId && maid.email) {
+          await ensurePoolMembership(
+            admin,
+            maid.authUserId,
+            maid.orgId,
+            maid.email,
+            maid.displayName,
+          );
+        }
         resolved = {
           id: maid.id,
           orgId: maid.orgId,
