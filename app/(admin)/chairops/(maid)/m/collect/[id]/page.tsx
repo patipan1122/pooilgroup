@@ -35,6 +35,15 @@ export default async function MaidCollectDetailPage({ params }: Props) {
     include: {
       branch: { select: { name: true } },
       maid: { select: { displayName: true } },
+      deposit: {
+        select: {
+          id: true,
+          depositedAt: true,
+          depositedAmount: true,
+          bankFee: true,
+          slipPhotoUrl: true,
+        },
+      },
     },
   });
   if (!row) notFound();
@@ -50,9 +59,23 @@ export default async function MaidCollectDetailPage({ params }: Props) {
     0,
     Math.ceil((lockUntil.getTime() - now.getTime()) / 60_000),
   );
-  const isPendingDeposit = !row.slipPhotoUrl;
-  const diff = row.countedAmount - row.depositedAmount;
+  const isPendingDeposit = row.depositId === null;
   const canUnlock = canUnlockCollection(session.user);
+
+  // chair_breakdown JSON shape — defensive parsing because legacy rows may
+  // have null or arbitrary shapes.
+  type ChairLine = {
+    chairCode: string;
+    status: "collected" | "broken" | "empty" | "skipped";
+    amount: number;
+    reason?: string | null;
+    photoUrl?: string | null;
+  };
+  const lines: ChairLine[] = Array.isArray(
+    (row.chairBreakdown as { lines?: unknown } | null)?.lines,
+  )
+    ? ((row.chairBreakdown as { lines: ChairLine[] }).lines ?? [])
+    : [];
 
   return (
     <div className="space-y-4">
@@ -97,16 +120,32 @@ export default async function MaidCollectDetailPage({ params }: Props) {
         <Card className="border-emerald-200 bg-emerald-50">
           <CardBody className="space-y-3 p-4">
             <div className="text-sm font-semibold text-emerald-800">
-              ยอดนับ {baht(row.countedAmount)} · พร้อมฝาก
+              ยอดนับ {baht(row.countedAmount)} · ยังไม่ฝาก
             </div>
             <p className="text-xs text-emerald-700">
-              ไปธนาคารแล้วกลับมากดปุ่มนี้ · แนบสลิป + กรอกยอดที่ฝากจริง
+              ฝากเงินก้อนรวมหลายรอบได้ที่หน้า &ldquo;เลือกรอบฝาก&rdquo; (ประหยัดค่าธรรมเนียม)
             </p>
-            <Link href={`/chairops/m/collect/${row.id}/deposit`} className="block">
+            <Link href="/chairops/m/deposit" className="block">
               <Button className="h-14 w-full text-base font-semibold">
-                <Landmark className="mr-2 h-5 w-5" /> ฝากเงินตอนนี้
+                <Landmark className="mr-2 h-5 w-5" /> ไปฝากเงินก้อน
               </Button>
             </Link>
+          </CardBody>
+        </Card>
+      )}
+
+      {!isPendingDeposit && row.deposit && (
+        <Card className="border-emerald-200 bg-emerald-50">
+          <CardBody className="space-y-1 p-4 text-sm text-emerald-800">
+            <div className="font-semibold">
+              ฝากแล้ว · {baht(row.deposit.depositedAmount)}
+            </div>
+            <div className="text-xs text-emerald-700">
+              {thaiDateTime(row.deposit.depositedAt)}
+              {row.deposit.bankFee > 0
+                ? ` · ค่าธรรมเนียม ${baht(row.deposit.bankFee)}`
+                : ""}
+            </div>
           </CardBody>
         </Card>
       )}
@@ -115,39 +154,17 @@ export default async function MaidCollectDetailPage({ params }: Props) {
         <CardBody className="space-y-3 p-4 text-sm">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="text-xs text-zinc-500">ยอดที่นับ</div>
+              <div className="text-xs text-zinc-500">ยอดที่นับรวม</div>
               <div className="text-lg font-semibold tabular-nums text-zinc-900">
                 {baht(row.countedAmount)}
               </div>
             </div>
             <div>
-              <div className="text-xs text-zinc-500">ยอดฝาก</div>
-              <div
-                className={
-                  "text-lg font-semibold tabular-nums " +
-                  (isPendingDeposit ? "text-zinc-400" : "text-zinc-900")
-                }
-              >
-                {isPendingDeposit ? "— ยังไม่ฝาก" : baht(row.depositedAmount)}
+              <div className="text-xs text-zinc-500">จำนวนเก้าอี้</div>
+              <div className="text-lg font-semibold tabular-nums text-zinc-900">
+                {lines.length === 0 ? "—" : `${lines.length} ตัว`}
               </div>
             </div>
-            {!isPendingDeposit && (
-              <div className="col-span-2 border-t border-zinc-200 pt-3">
-                <div className="text-xs text-zinc-500">ผลต่าง</div>
-                <div
-                  className={
-                    "text-xl font-bold tabular-nums " +
-                    (diff > 0
-                      ? "text-amber-700"
-                      : diff < 0
-                        ? "text-emerald-700"
-                        : "text-zinc-900")
-                  }
-                >
-                  {baht(diff, true)}
-                </div>
-              </div>
-            )}
           </div>
           <div className="border-t border-zinc-200 pt-3 text-xs text-zinc-500">
             <div>
@@ -176,23 +193,88 @@ export default async function MaidCollectDetailPage({ params }: Props) {
         </CardBody>
       </Card>
 
-      <Card>
-        <CardBody className="space-y-2 p-4">
-          <div className="text-sm font-semibold text-zinc-800">รูปหลักฐาน</div>
-          <PhotoLightbox
-            url={row.evidencePhotoUrl}
-            alt="หลักฐานเงินสด/สลิป"
-          />
-          {row.slipPhotoUrl && (
-            <>
-              <div className="pt-2 text-sm font-semibold text-zinc-800">
-                สลิปธนาคาร
-              </div>
-              <PhotoLightbox url={row.slipPhotoUrl} alt="สลิปธนาคาร" />
-            </>
-          )}
-        </CardBody>
-      </Card>
+      {/* Per-chair breakdown — populated for rows written with the new
+          chair-checklist form. Legacy rows fall through with lines.length=0
+          and we just hide this card. */}
+      {lines.length > 0 && (
+        <Card>
+          <CardBody className="space-y-3 p-4">
+            <div className="text-sm font-semibold text-zinc-800">
+              รายเก้าอี้ ({lines.length} ตัว)
+            </div>
+            <ul className="space-y-2">
+              {lines.map((line) => {
+                const isProblem = line.status !== "collected";
+                return (
+                  <li
+                    key={line.chairCode}
+                    className={
+                      "rounded-lg border p-3 " +
+                      (isProblem
+                        ? "border-amber-200 bg-amber-50/50"
+                        : "border-zinc-200")
+                    }
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="grid h-9 min-w-[56px] place-items-center rounded-md bg-zinc-100 px-2 font-mono text-xs font-semibold text-zinc-900">
+                        {line.chairCode}
+                      </span>
+                      <div className="min-w-0 grow">
+                        {isProblem ? (
+                          <div className="text-sm font-medium text-amber-700">
+                            ⚠ {line.reason ?? line.status}
+                          </div>
+                        ) : (
+                          <div className="text-base font-semibold tabular-nums text-zinc-900">
+                            {baht(line.amount)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {isProblem && line.photoUrl && (
+                      <div className="mt-2">
+                        <PhotoLightbox
+                          url={line.photoUrl}
+                          alt={`รูปเก้าอี้ ${line.chairCode}`}
+                        />
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Legacy rollup photo — only shown when present (new flow may submit
+          without). Slip photo lives on ChairopsCashDeposit now, but legacy
+          rows kept their slip on the collection itself. */}
+      {(row.evidencePhotoUrl || row.slipPhotoUrl) && (
+        <Card>
+          <CardBody className="space-y-2 p-4">
+            {row.evidencePhotoUrl && (
+              <>
+                <div className="text-sm font-semibold text-zinc-800">
+                  รูปหลักฐาน
+                </div>
+                <PhotoLightbox
+                  url={row.evidencePhotoUrl}
+                  alt="หลักฐานเงินสด"
+                />
+              </>
+            )}
+            {row.slipPhotoUrl && (
+              <>
+                <div className="pt-2 text-sm font-semibold text-zinc-800">
+                  สลิปธนาคาร (legacy)
+                </div>
+                <PhotoLightbox url={row.slipPhotoUrl} alt="สลิปธนาคาร" />
+              </>
+            )}
+          </CardBody>
+        </Card>
+      )}
 
       {isLocked && (
         <Card className="border-zinc-200">

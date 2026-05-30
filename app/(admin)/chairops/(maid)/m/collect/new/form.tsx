@@ -1,26 +1,17 @@
 "use client";
 
-// Maid cash-collection STEP 1 form · client.
+// Maid cash-collection STEP 1 form · chair-checklist edition (2026-05-30).
 //
-// 2026-05-30 split: Step 1 only captures the cash count + evidence photo.
-// depositedAmount=0 + slipPhotoUrl=null are written on create; the maid
-// returns later (after going to the bank) to finish Step 2 at
-// /chairops/m/collect/[id]/deposit which calls recordDeposit().
+// CEO spec:
+// - หน้านี้ต้องแสดงเก้าอี้ทุกตัวของสาขาให้ครบ (no typing chairCode by hand).
+// - maid กรอกยอดต่อเก้าอี้.
+// - เก้าอี้ตัวไหนเก็บไม่ได้ → กดไอคอนเล็กๆ ข้างเก้าอี้ → ระบุเหตุผล + ถ่ายรูป 1 ใบ.
+// - ไม่มีรูปเงินรวม (CEO บอกไม่จำเป็น).
+// - เก็บได้อย่างน้อย 1 ตัวจึงจะ submit ได้.
 //
-// W6 spec (claude-design Phase 2):
-//   - 360x640 layout · h-14 inputs · text-2xl tabular-nums for money
-//   - chair_code typeahead (datalist)
-//   - amount: inputMode=decimal numeric keypad
-//   - photo upload: client-side compress to <500 KB before R2 PUT
-//   - idempotency key: nanoid · saved to IndexedDB outbox · passed to action
-//   - offline tolerance: navigator.onLine → save draft, show banner
-//   - Thai error messages
-//
-// Action contract:
-//   presignEvidenceUpload({contentType, draftId}) → {url, publicUrl, key}
-//   createCashCollection({countedAmount, depositedAmount: 0,
-//                         evidencePhotoUrl, imageHash, notes})
-//     → {ok, data:{id}} | {ok:false, error}
+// Submits to createCashCollection({lines, evidencePhotoUrl?, imageHash?, notes?})
+// which writes the per-chair JSON into chair_breakdown and sums countedAmount
+// server-side. Deposit happens later via the batch /m/deposit page.
 
 import {
   type ChangeEvent,
@@ -35,38 +26,51 @@ import {
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
+  AlertTriangle,
   Camera,
   CheckCircle2,
   Loader2,
-  Search,
   Wifi,
   WifiOff,
+  X,
 } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils/cn";
 import { compressImage } from "@/lib/chairops/utils/image-compress";
-import { MaidOutbox, isOnline } from "@/lib/chairops/utils/maid-outbox";
-import { newIdempotencyKey } from "@/lib/chairops/utils/idempotency";
+import { isOnline } from "@/lib/chairops/utils/maid-outbox";
 import {
   createCashCollection,
-  presignEvidenceUpload,
+  presignChairPhoto,
 } from "@/app/(admin)/chairops/collect/actions";
 
+type LineStatus = "collected" | "broken" | "empty" | "skipped";
+
+interface LineState {
+  status: LineStatus;
+  amount: string;
+  reasonCode: string;
+  reasonFree: string;
+  photoUrl?: string;
+  photoHash?: string;
+  photoPreviewUrl?: string;
+  photoSizeKb?: number;
+  uploading?: boolean;
+}
+
 interface Props {
-  /** Reserved for future avg-count deviation guard (currently unused — was for deposit avg). */
-  avg7d: number | null;
   chairCodes: ReadonlyArray<string>;
 }
 
-async function sha256Hex(buf: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", buf);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+const REASON_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "", label: "เลือกเหตุผล …" },
+  { value: "machine_broken", label: "เครื่องเสีย" },
+  { value: "stuck", label: "ตู้ค้าง · เปิดไม่ได้" },
+  { value: "no_customer", label: "ไม่มีลูกค้าใช้" },
+  { value: "closed", label: "ปิดสาขาวันนี้" },
+  { value: "other", label: "อื่น ๆ (พิมพ์ระบุ)" },
+];
 
 function newUuid(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -78,34 +82,31 @@ function newUuid(): string {
   });
 }
 
-interface PhotoState {
-  publicUrl: string;
-  hash: string;
-  previewUrl: string;
-  outputBytes: number;
-  compressed: boolean;
+async function sha256Hex(buf: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", buf);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
-export function CollectNewForm({ avg7d: _avg7d, chairCodes }: Props) {
+function defaultLine(): LineState {
+  return { status: "collected", amount: "", reasonCode: "", reasonFree: "" };
+}
+
+export function CollectNewForm({ chairCodes }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [uploading, setUploading] = useState(false);
   const [online, setOnline] = useState(true);
-  const [chairCode, setChairCode] = useState("");
-  const [counted, setCounted] = useState("");
   const [notes, setNotes] = useState("");
-  const [photo, setPhoto] = useState<PhotoState | null>(null);
-  const idempotencyKeyRef = useRef<string>(newIdempotencyKey());
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmWarnings, setConfirmWarnings] = useState<string[]>([]);
+  const draftIdRef = useRef<string>(newUuid());
+  const [lines, setLines] = useState<Record<string, LineState>>(() => {
+    const init: Record<string, LineState> = {};
+    for (const code of chairCodes) init[code] = defaultLine();
+    return init;
+  });
 
-  const chairId = useId();
-  const countedId = useId();
   const notesId = useId();
-  const chairListId = useId();
 
-  // Online/offline detection — only runs after mount to avoid SSR mismatch
   useEffect(() => {
     setOnline(isOnline());
     const onOnline = () => setOnline(true);
@@ -118,70 +119,78 @@ export function CollectNewForm({ avg7d: _avg7d, chairCodes }: Props) {
     };
   }, []);
 
-  const countedNum = Number(counted.replace(/,/g, "")) || 0;
+  const totals = useMemo(() => {
+    let countedSum = 0;
+    let collected = 0;
+    let problem = 0;
+    for (const code of chairCodes) {
+      const l = lines[code];
+      if (!l) continue;
+      if (l.status === "collected") {
+        collected += 1;
+        const n = Number(l.amount.replace(/,/g, "")) || 0;
+        countedSum += n;
+      } else {
+        problem += 1;
+      }
+    }
+    return { countedSum, collected, problem };
+  }, [chairCodes, lines]);
 
-  const photoSizeKb = useMemo(
-    () => (photo ? Math.round(photo.outputBytes / 1024) : 0),
-    [photo],
-  );
+  function patchLine(code: string, patch: Partial<LineState>) {
+    setLines((prev) => ({ ...prev, [code]: { ...prev[code], ...patch } }));
+  }
 
-  async function onPickPhoto(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  function toggleProblem(code: string) {
+    const current = lines[code];
+    if (!current) return;
+    if (current.status === "collected") {
+      patchLine(code, {
+        status: "broken",
+        amount: "",
+        reasonCode: "machine_broken",
+      });
+    } else {
+      patchLine(code, {
+        status: "collected",
+        reasonCode: "",
+        reasonFree: "",
+        photoUrl: undefined,
+        photoHash: undefined,
+        photoPreviewUrl: undefined,
+        photoSizeKb: undefined,
+      });
+    }
+  }
 
+  async function onPickChairPhoto(code: string, file: File) {
     if (!/^image\//.test(file.type)) {
       toast.error("ต้องเป็นไฟล์รูปภาพ");
       return;
     }
     if (file.size > 12 * 1024 * 1024) {
-      toast.error("รูปใหญ่เกินไป · กรุณาถ่ายรูปใหม่");
+      toast.error("รูปใหญ่เกินไป · ถ่ายใหม่");
       return;
     }
-
-    setUploading(true);
+    patchLine(code, { uploading: true });
     try {
-      // 1. Compress (target <500 KB)
       const compressed = await compressImage(file);
       const blob = compressed.blob;
-
-      // 2. Hash compressed bytes (server dedup uses this exact hash)
       const buf = await blob.arrayBuffer();
       const hash = await sha256Hex(buf);
-      if (!/^[a-f0-9]{64}$/i.test(hash)) {
-        toast.error("รูปเบลอเกินไป · ลองถ่ายใหม่");
-        return;
-      }
-
-      const draftId = newUuid();
-
-      // 3. Presign R2 URL
-      const presign = await presignEvidenceUpload({
+      const presign = await presignChairPhoto({
         contentType: compressed.compressed ? "image/jpeg" : file.type,
-        draftId,
+        draftId: draftIdRef.current,
+        chairCode: code,
       });
       if (!presign.ok) {
         toast.error(presign.error);
         return;
       }
-
-      // 4. Direct PUT to R2
       if (!isOnline()) {
-        toast.error("ออฟไลน์ · จะส่งเมื่อเชื่อมต่ออินเทอร์เน็ตอีกครั้ง");
-        // Save draft so user doesn't lose the form
-        await MaidOutbox.put({
-          key: idempotencyKeyRef.current,
-          route: "/chairops/m/collect/new",
-          payload: {
-            chairCode,
-            counted,
-            notes,
-          },
-          photoBlob: blob,
-          savedAt: new Date().toISOString(),
-        });
+        toast.error("ออฟไลน์ · เชื่อมต่อก่อนแล้วลองอีกครั้ง");
         return;
       }
-
       const putRes = await fetch(presign.data.url, {
         method: "PUT",
         body: blob,
@@ -190,97 +199,81 @@ export function CollectNewForm({ avg7d: _avg7d, chairCodes }: Props) {
         },
       });
       if (!putRes.ok) {
-        toast.error("อัปโหลดรูปไม่สำเร็จ · ลองอีกครั้ง");
+        toast.error("อัปโหลดรูปไม่สำเร็จ");
         return;
       }
-
-      const previewUrl = URL.createObjectURL(blob);
-      setPhoto({
-        publicUrl: presign.data.publicUrl,
-        hash,
-        previewUrl,
-        outputBytes: blob.size,
-        compressed: compressed.compressed,
+      patchLine(code, {
+        photoUrl: presign.data.publicUrl,
+        photoHash: hash,
+        photoPreviewUrl: URL.createObjectURL(blob),
+        photoSizeKb: Math.round(blob.size / 1024),
       });
-      toast.success(
-        compressed.compressed
-          ? `อัปโหลดแล้ว (${Math.round(blob.size / 1024)} KB)`
-          : "อัปโหลดแล้ว",
-      );
+      toast.success(`รูป ${code} แนบแล้ว`);
     } catch {
-      toast.error("เกิดข้อผิดพลาด · ลองอีกครั้ง");
+      toast.error("เกิดข้อผิดพลาด");
     } finally {
-      setUploading(false);
+      patchLine(code, { uploading: false });
     }
   }
 
   function validateBeforeSubmit(): string | null {
-    if (countedNum <= 0) return "กรอกยอดที่นับได้ (มากกว่า 0)";
-    if (!photo) return "แนบรูปหลักฐานก่อนบันทึก";
+    if (chairCodes.length === 0) {
+      return "สาขานี้ยังไม่มีเก้าอี้ในระบบ · ติดต่อออฟฟิศ";
+    }
+    if (totals.collected === 0) {
+      return "ต้องเก็บอย่างน้อย 1 เก้าอี้ (หรือทุกตัวมีปัญหา?)";
+    }
+    for (const code of chairCodes) {
+      const l = lines[code];
+      if (!l) return `เก้าอี้ ${code} ไม่มีข้อมูล`;
+      if (l.status === "collected") {
+        const n = Number(l.amount.replace(/,/g, "")) || 0;
+        if (n <= 0) return `${code} · กรอกยอดที่เก็บได้`;
+      } else {
+        if (!l.reasonCode) return `${code} · เลือกเหตุผล`;
+        if (l.reasonCode === "other" && !l.reasonFree.trim()) {
+          return `${code} · พิมพ์เหตุผลเพิ่ม`;
+        }
+      }
+    }
     return null;
   }
 
-  // Step 1 has no deposit-vs-count delta to warn on. Step 2 (deposit form) will
-  // surface the count-vs-deposit gap and the 7-day deviation guard.
-  function buildConfirms(): string[] {
-    return [];
-  }
-
-  async function persistDraft(error?: string) {
-    await MaidOutbox.put({
-      key: idempotencyKeyRef.current,
-      route: "/chairops/m/collect/new",
-      payload: {
-        chairCode,
-        counted,
-        notes,
-        photoUrl: photo?.publicUrl,
-        photoHash: photo?.hash,
-      },
-      savedAt: new Date().toISOString(),
-      lastError: error,
-    });
-  }
-
-  function buildNotesPayload(): string | null {
-    const trimmedNotes = notes.trim();
-    const trimmedChair = chairCode.trim();
-    if (!trimmedNotes && !trimmedChair) return null;
-    const prefix = trimmedChair ? `[${trimmedChair}] ` : "";
-    const combined = `${prefix}${trimmedNotes}`.trim();
-    return combined.length > 0 ? combined : null;
-  }
-
   function submitNow() {
-    if (!photo) return; // narrowed for TS
-    const evidenceUrl = photo.publicUrl;
-    const imageHash = photo.hash;
-
     startTransition(async () => {
-      // Save draft BEFORE attempt — survives network drop mid-action
-      await persistDraft();
-      // Step 1: write the count + evidence photo. depositedAmount=0 and
-      // slipPhotoUrl=null mark this row as "pending deposit" — it shows up on
-      // the maid home's pending list with a "ฝากเงิน" CTA that opens Step 2.
+      const payloadLines = chairCodes.map((code) => {
+        const l = lines[code]!;
+        const amountNum =
+          l.status === "collected"
+            ? Number(l.amount.replace(/,/g, "")) || 0
+            : 0;
+        const reasonText =
+          l.status === "collected"
+            ? null
+            : l.reasonCode === "other"
+              ? l.reasonFree.trim() || null
+              : (REASON_OPTIONS.find((r) => r.value === l.reasonCode)?.label ??
+                l.reasonCode);
+        return {
+          chairCode: code,
+          status: l.status,
+          amount: amountNum,
+          reason: reasonText,
+          photoUrl: l.photoUrl ?? null,
+          photoHash: l.photoHash ?? null,
+        };
+      });
       const res = await createCashCollection({
-        countedAmount: countedNum,
-        depositedAmount: 0,
-        evidencePhotoUrl: evidenceUrl,
-        slipPhotoUrl: null,
-        imageHash,
-        notes: buildNotesPayload(),
+        lines: payloadLines,
+        evidencePhotoUrl: null,
+        imageHash: null,
+        notes: notes.trim() || null,
       });
       if (!res.ok) {
-        await persistDraft(res.error);
-        // Regenerate idempotency key on error so a legit retry isn't dedup'd
-        // (server still dedups by imageHash @@unique on identical photos).
-        idempotencyKeyRef.current = newIdempotencyKey();
         toast.error(res.error);
         return;
       }
-      // Success — clear outbox + send user to detail
-      await MaidOutbox.delete(idempotencyKeyRef.current);
-      toast.success("บันทึกแล้ว");
+      toast.success("บันทึกการนับแล้ว · ฝากเงินทีหลังได้");
       router.push(`/chairops/m/collect/${res.data.id}`);
       router.refresh();
     });
@@ -293,25 +286,10 @@ export function CollectNewForm({ avg7d: _avg7d, chairCodes }: Props) {
       toast.error(err);
       return;
     }
-
     if (!isOnline()) {
-      void persistDraft();
-      toast.error("ออฟไลน์ · บันทึกไว้แล้ว · จะส่งเมื่อเชื่อมต่ออีกครั้ง");
+      toast.error("ออฟไลน์ · เชื่อมต่อก่อนแล้วลองอีกครั้ง");
       return;
     }
-
-    const warnings = buildConfirms();
-    if (warnings.length > 0) {
-      setConfirmWarnings(warnings);
-      setConfirmOpen(true);
-      return;
-    }
-
-    submitNow();
-  }
-
-  function onConfirmDeviation() {
-    setConfirmOpen(false);
     submitNow();
   }
 
@@ -324,7 +302,7 @@ export function CollectNewForm({ avg7d: _avg7d, chairCodes }: Props) {
           className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-medium text-amber-800"
         >
           <WifiOff className="h-5 w-5 shrink-0" aria-hidden />
-          ออฟไลน์ · จะส่งเมื่อเชื่อมต่อ
+          ออฟไลน์ · เชื่อมต่อก่อนกดบันทึก
         </div>
       )}
       {online && (
@@ -333,147 +311,152 @@ export function CollectNewForm({ avg7d: _avg7d, chairCodes }: Props) {
         </div>
       )}
 
-      {/* Chair code typeahead (optional) */}
-      <Card>
-        <CardBody className="space-y-2 p-4">
-          <label
-            htmlFor={chairId}
-            className="text-sm font-semibold text-zinc-800"
-          >
-            รหัสเก้าอี้ (ถ้าระบุได้)
-          </label>
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
-              aria-hidden
-            />
-            <Input
-              id={chairId}
-              type="text"
-              list={chairListId}
-              autoComplete="off"
-              autoCapitalize="characters"
-              placeholder="เช่น CH-001"
-              value={chairCode}
-              onChange={(e) =>
-                setChairCode(e.target.value.toUpperCase().slice(0, 20))
-              }
-              className="h-12 pl-9 text-base"
-            />
-            <datalist id={chairListId}>
-              {chairCodes.map((c) => (
-                <option key={c} value={c} />
-              ))}
-            </datalist>
-          </div>
-          <p className="text-xs text-zinc-500">
-            ไม่จำเป็น · ถ้าไม่ทราบให้เว้นว่าง
-          </p>
-        </CardBody>
-      </Card>
-
-      {/* Money fields */}
-      <Card>
-        <CardBody className="space-y-4 p-4">
-          <div className="space-y-2">
-            <label
-              htmlFor={countedId}
-              className="text-sm font-semibold text-zinc-800"
-            >
-              ยอดที่นับได้ (บาท)
-            </label>
-            <Input
-              id={countedId}
-              type="tel"
-              inputMode="numeric"
-              autoComplete="off"
-              placeholder="0"
-              value={counted}
-              onChange={(e) =>
-                setCounted(e.target.value.replace(/[^0-9]/g, ""))
-              }
-              className="h-14 text-right text-2xl font-semibold tabular-nums"
-              aria-describedby={`${countedId}-hint`}
-            />
-            <p id={`${countedId}-hint`} className="text-xs text-zinc-500">
-              เงินสด+เหรียญที่นับได้จริง · ยอดฝากแยกอีกขั้น (หลังไปธนาคาร)
-            </p>
-          </div>
-        </CardBody>
-      </Card>
-
-      {/* Photo capture */}
-      <Card>
-        <CardBody className="space-y-3 p-4">
-          <div className="text-sm font-semibold text-zinc-800">
-            รูปหลักฐาน (ต้องแนบ)
-          </div>
-
-          {photo ? (
-            <div className="space-y-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={photo.previewUrl}
-                alt="หลักฐาน"
-                className="max-h-72 w-full rounded-md object-contain"
-              />
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="flex items-center gap-1 font-medium text-emerald-700">
-                  <CheckCircle2 className="h-4 w-4" /> อัปโหลดเรียบร้อย
-                </span>
-                <span className="font-mono text-zinc-500">{photoSizeKb} KB</span>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading || pending}
-                className="h-12 w-full"
-              >
-                ถ่ายใหม่
-              </Button>
+      {chairCodes.length === 0 && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardBody className="space-y-1 p-4 text-sm">
+            <div className="flex items-center gap-2 font-semibold text-amber-800">
+              <AlertTriangle className="h-4 w-4" /> ยังไม่มีเก้าอี้ในสาขา
             </div>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading || pending}
-              className="h-14 w-full text-base"
-            >
-              {uploading ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" /> กำลังอัปโหลด...
-                </>
-              ) : (
-                <>
-                  <Camera className="mr-2 h-5 w-5" /> ถ่ายรูปเงินที่นับได้
-                </>
-              )}
-            </Button>
-          )}
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={onPickPhoto}
-          />
-          <p className="text-xs text-zinc-500">
-            ระบบจะย่อรูปให้อัตโนมัติเพื่อประหยัดอินเทอร์เน็ต
-          </p>
-        </CardBody>
-      </Card>
+            <p className="text-amber-700">
+              กรุณาแจ้งออฟฟิศให้ลงทะเบียนรหัสเก้าอี้ในระบบก่อน
+            </p>
+          </CardBody>
+        </Card>
+      )}
 
-      {/* Notes */}
+      {/* Totals summary — sticks at the top for quick visual feedback. */}
+      {chairCodes.length > 0 && (
+        <Card className="border-emerald-200 bg-emerald-50/60">
+          <CardBody className="flex items-center justify-between gap-3 p-4">
+            <div>
+              <div className="text-xs text-emerald-700">รวมยอดที่กรอก</div>
+              <div className="text-2xl font-bold tabular-nums text-emerald-900">
+                {totals.countedSum.toLocaleString()} ฿
+              </div>
+            </div>
+            <div className="text-right text-xs text-emerald-800">
+              <div>เก็บได้ {totals.collected} ตัว</div>
+              {totals.problem > 0 && (
+                <div className="text-amber-700">มีปัญหา {totals.problem} ตัว</div>
+              )}
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Chair list — one row per chair. Order = chairCode asc (server sorted). */}
+      <ul className="space-y-2">
+        {chairCodes.map((code) => {
+          const l = lines[code] ?? defaultLine();
+          const isProblem = l.status !== "collected";
+          return (
+            <li key={code}>
+              <Card
+                className={cn(
+                  "transition-colors",
+                  isProblem
+                    ? "border-amber-300 bg-amber-50/40"
+                    : "border-zinc-200",
+                )}
+              >
+                <CardBody className="space-y-2 p-3">
+                  <div className="flex items-center gap-2">
+                    <span className="grid h-10 min-w-[64px] place-items-center rounded-md bg-zinc-100 px-2 font-mono text-sm font-semibold text-zinc-900">
+                      {code}
+                    </span>
+                    {isProblem ? (
+                      <div className="grow text-sm font-medium text-amber-700">
+                        ⚠ เก็บไม่ได้
+                      </div>
+                    ) : (
+                      <Input
+                        type="tel"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        placeholder="0"
+                        value={l.amount}
+                        onChange={(e) =>
+                          patchLine(code, {
+                            amount: e.target.value.replace(/[^0-9]/g, ""),
+                          })
+                        }
+                        className="h-10 grow text-right text-lg font-semibold tabular-nums"
+                        aria-label={`ยอดที่เก็บได้จาก ${code}`}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => toggleProblem(code)}
+                      className={cn(
+                        "grid size-10 shrink-0 place-items-center rounded-md border transition-colors",
+                        isProblem
+                          ? "border-zinc-300 bg-white text-zinc-600 active:bg-zinc-100"
+                          : "border-amber-300 bg-amber-50 text-amber-700 active:bg-amber-100",
+                      )}
+                      aria-label={
+                        isProblem
+                          ? `ยกเลิก ขัดข้อง ${code}`
+                          : `ระบุว่า ${code} ขัดข้อง`
+                      }
+                    >
+                      {isProblem ? (
+                        <X className="size-5" aria-hidden />
+                      ) : (
+                        <AlertTriangle className="size-5" aria-hidden />
+                      )}
+                    </button>
+                  </div>
+                  {isProblem && (
+                    <div className="space-y-2 rounded-md border border-amber-200 bg-white p-2">
+                      <select
+                        value={l.reasonCode}
+                        onChange={(e) =>
+                          patchLine(code, { reasonCode: e.target.value })
+                        }
+                        className="h-10 w-full rounded-md border border-zinc-200 bg-white px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                        aria-label={`เหตุผล ${code}`}
+                      >
+                        {REASON_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      {l.reasonCode === "other" && (
+                        <Input
+                          type="text"
+                          placeholder="ระบุเหตุผล …"
+                          value={l.reasonFree}
+                          onChange={(e) =>
+                            patchLine(code, { reasonFree: e.target.value })
+                          }
+                          className="h-10"
+                          maxLength={200}
+                          aria-label={`พิมพ์เหตุผลของ ${code}`}
+                        />
+                      )}
+                      <ChairPhotoButton
+                        code={code}
+                        state={l}
+                        onPick={(file) => void onPickChairPhoto(code, file)}
+                        disabled={pending}
+                      />
+                    </div>
+                  )}
+                </CardBody>
+              </Card>
+            </li>
+          );
+        })}
+      </ul>
+
       <Card>
         <CardBody className="space-y-2 p-4">
           <label
             htmlFor={notesId}
             className="text-sm font-semibold text-zinc-800"
           >
-            หมายเหตุ (ถ้ามี)
+            หมายเหตุรอบนี้ (ถ้ามี)
           </label>
           <textarea
             id={notesId}
@@ -481,7 +464,7 @@ export function CollectNewForm({ avg7d: _avg7d, chairCodes }: Props) {
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
             maxLength={500}
-            placeholder="เช่น เก็บเหรียญแยกไว้, ลูกค้าจ่ายไม่ครบ ..."
+            placeholder="เช่น แลกเงินก่อนฝาก, มีเหรียญแยก, ..."
             className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           />
         </CardBody>
@@ -491,7 +474,7 @@ export function CollectNewForm({ avg7d: _avg7d, chairCodes }: Props) {
         type="submit"
         size="xl"
         className="h-14 w-full text-base font-semibold"
-        disabled={pending || uploading || !photo}
+        disabled={pending || chairCodes.length === 0}
       >
         {pending ? (
           <>
@@ -502,42 +485,83 @@ export function CollectNewForm({ avg7d: _avg7d, chairCodes }: Props) {
         )}
       </Button>
       <p className="text-center text-xs text-zinc-500">
-        Step 1 จาก 2 · หลังบันทึกจะมีปุ่ม &ldquo;ฝากเงิน&rdquo; ในรายการให้กดตอนไปธนาคาร
+        Step 1 จาก 2 · ฝากเงินก้อนใหญ่ทีหลัง (รวมรอบไหนก็ได้ที่ยังไม่ฝาก) ที่หน้าหลัก
       </p>
-
-      <Dialog
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
-        title="ยืนยันยอดผิดปกติ"
-      >
-        <div className="space-y-4">
-          <ul className="space-y-2 text-sm text-zinc-700">
-            {confirmWarnings.map((w, i) => (
-              <li key={i} className="rounded-md border border-amber-200 bg-amber-50 p-3">
-                {w}
-              </li>
-            ))}
-          </ul>
-          <p className="text-sm font-semibold text-zinc-800">
-            ยืนยันว่าจำนวนนี้ถูกต้องและต้องการบันทึกใช่หรือไม่?
-          </p>
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setConfirmOpen(false)}
-            >
-              ยกเลิก
-            </Button>
-            <Button
-              type="button"
-              onClick={onConfirmDeviation}
-            >
-              ยืนยันบันทึก
-            </Button>
-          </div>
-        </div>
-      </Dialog>
     </form>
+  );
+}
+
+function ChairPhotoButton({
+  code,
+  state,
+  onPick,
+  disabled,
+}: {
+  code: string;
+  state: LineState;
+  onPick: (file: File) => void;
+  disabled?: boolean;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  function onChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) onPick(file);
+  }
+  return (
+    <div className="space-y-2">
+      {state.photoPreviewUrl ? (
+        <div className="space-y-1">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={state.photoPreviewUrl}
+            alt={`รูป ${code}`}
+            className="max-h-44 w-full rounded-md object-contain"
+          />
+          <div className="flex items-center justify-between text-xs">
+            <span className="flex items-center gap-1 font-medium text-emerald-700">
+              <CheckCircle2 className="h-3 w-3" /> แนบแล้ว
+            </span>
+            <span className="font-mono text-zinc-500">
+              {state.photoSizeKb} KB
+            </span>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => fileRef.current?.click()}
+            disabled={disabled || state.uploading}
+            className="h-9 w-full text-xs"
+          >
+            ถ่ายใหม่
+          </Button>
+        </div>
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => fileRef.current?.click()}
+          disabled={disabled || state.uploading}
+          className="h-10 w-full text-sm"
+        >
+          {state.uploading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> กำลังอัปโหลด...
+            </>
+          ) : (
+            <>
+              <Camera className="mr-2 h-4 w-4" /> แนบรูปเก้าอี้ {code}
+            </>
+          )}
+        </Button>
+      )}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={onChange}
+      />
+    </div>
   );
 }

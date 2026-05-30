@@ -153,12 +153,27 @@ export function CollectNewForm({ avg7d }: Props) {
     }
 
     startTransition(async () => {
+      // Office shim — non-maid path posts a single synthetic "BULK" line so
+      // the new chair-breakdown action accepts the legacy office form
+      // unchanged. depositedNum is recorded in notes (deposit lives on
+      // ChairopsCashDeposit now).
+      const noteParts: string[] = [];
+      if (notes.trim()) noteParts.push(notes.trim());
+      noteParts.push(`[OFFICE legacy form · deposited=${depositedNum}]`);
       const res = await createCashCollection({
-        countedAmount: countedNum,
-        depositedAmount: depositedNum,
-        evidencePhotoUrl: photoUrl!,
-        imageHash: photoHash!,
-        notes: notes.trim() || null,
+        lines: [
+          {
+            chairCode: "BULK",
+            status: "collected",
+            amount: countedNum,
+            reason: null,
+            photoUrl: null,
+            photoHash: null,
+          },
+        ],
+        evidencePhotoUrl: photoUrl ?? null,
+        imageHash: photoHash ?? null,
+        notes: noteParts.join(" · "),
       });
       if (!res.ok) {
         toast.error(res.error);

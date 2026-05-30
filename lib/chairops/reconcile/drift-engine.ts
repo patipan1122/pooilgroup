@@ -100,29 +100,47 @@ async function recomputeDriftForBranch_legacy(
     where: { id: branchId },
   });
 
-  const [posAgg, depositAgg, lastCollection, lastPos] = await Promise.all([
-    prisma.chairopsPosDaily.aggregate({
-      where: { branchId, orgId: branch.orgId },
-      _sum: { grossTotal: true },
-    }),
-    prisma.chairopsCashCollection.aggregate({
-      where: { branchId, orgId: branch.orgId },
-      _sum: { depositedAmount: true },
-    }),
-    prisma.chairopsCashCollection.findFirst({
-      where: { branchId, orgId: branch.orgId },
-      orderBy: { collectedAt: "desc" },
-      select: { collectedAt: true },
-    }),
-    prisma.chairopsPosDaily.findFirst({
-      where: { branchId, orgId: branch.orgId },
-      orderBy: { bizDate: "desc" },
-      select: { bizDate: true },
-    }),
-  ]);
+  // 2026-05-30: deposit source switched from CashCollection.depositedAmount
+  // (per-row, deprecated) to the new ChairopsCashDeposit table (one row per
+  // bank trip, can cover N collections). Legacy collection rows that still
+  // carry a non-zero depositedAmount are folded in too — only the ones that
+  // have NEVER been linked to a CashDeposit (depositId IS NULL), because
+  // anything already linked is counted via the new table.
+  const [posAgg, newDepositAgg, legacyDepositAgg, lastCollection, lastPos] =
+    await Promise.all([
+      prisma.chairopsPosDaily.aggregate({
+        where: { branchId, orgId: branch.orgId },
+        _sum: { grossTotal: true },
+      }),
+      prisma.chairopsCashDeposit.aggregate({
+        where: { branchId, orgId: branch.orgId },
+        _sum: { depositedAmount: true },
+      }),
+      prisma.chairopsCashCollection.aggregate({
+        where: {
+          branchId,
+          orgId: branch.orgId,
+          depositId: null,
+          depositedAmount: { gt: 0 },
+        },
+        _sum: { depositedAmount: true },
+      }),
+      prisma.chairopsCashCollection.findFirst({
+        where: { branchId, orgId: branch.orgId },
+        orderBy: { collectedAt: "desc" },
+        select: { collectedAt: true },
+      }),
+      prisma.chairopsPosDaily.findFirst({
+        where: { branchId, orgId: branch.orgId },
+        orderBy: { bizDate: "desc" },
+        select: { bizDate: true },
+      }),
+    ]);
 
   const posTotal = toNum(posAgg._sum?.grossTotal);
-  const depositTotal = depositAgg._sum?.depositedAmount ?? 0;
+  const depositTotal =
+    (newDepositAgg._sum?.depositedAmount ?? 0) +
+    (legacyDepositAgg._sum?.depositedAmount ?? 0);
   const driftAmount = posTotal - depositTotal;
 
   // Determine when drift began (same logic as v0 · uses existing driftSince anchor)
@@ -192,36 +210,50 @@ async function recomputeDriftForBranch_window(
   const anchorDate = new Date(anchor);
   anchorDate.setHours(0, 0, 0, 0);
 
-  const [posAgg, depositAgg, lastCollection, lastPos] = await Promise.all([
-    // POS since the window opened · ChairopsBranchDailyRevenue is the new
-    // per-branch-per-day aggregate (BA-2 / W0 migration step 6).
-    prisma.chairopsBranchDailyRevenue.aggregate({
-      where: {
-        branchId,
-        orgId: branch.orgId,
-        bizDate: { gt: anchorDate },
-      },
-      _sum: { cashTotal: true },
-    }),
-    prisma.chairopsCashCollection.aggregate({
-      where: {
-        branchId,
-        orgId: branch.orgId,
-        collectedAt: { gt: anchor },
-      },
-      _sum: { depositedAmount: true },
-    }),
-    prisma.chairopsCashCollection.findFirst({
-      where: { branchId, orgId: branch.orgId },
-      orderBy: { collectedAt: "desc" },
-      select: { collectedAt: true },
-    }),
-    prisma.chairopsBranchDailyRevenue.findFirst({
-      where: { branchId, orgId: branch.orgId },
-      orderBy: { bizDate: "desc" },
-      select: { bizDate: true },
-    }),
-  ]);
+  const [posAgg, newDepositAgg, legacyDepositAgg, lastCollection, lastPos] =
+    await Promise.all([
+      // POS since the window opened · ChairopsBranchDailyRevenue is the new
+      // per-branch-per-day aggregate (BA-2 / W0 migration step 6).
+      prisma.chairopsBranchDailyRevenue.aggregate({
+        where: {
+          branchId,
+          orgId: branch.orgId,
+          bizDate: { gt: anchorDate },
+        },
+        _sum: { cashTotal: true },
+      }),
+      // 2026-05-30 split: deposit total = sum from new cash_deposits + any
+      // legacy CashCollection rows where the maid recorded a deposit on the
+      // row itself (depositId still null, depositedAmount > 0).
+      prisma.chairopsCashDeposit.aggregate({
+        where: {
+          branchId,
+          orgId: branch.orgId,
+          depositedAt: { gt: anchor },
+        },
+        _sum: { depositedAmount: true },
+      }),
+      prisma.chairopsCashCollection.aggregate({
+        where: {
+          branchId,
+          orgId: branch.orgId,
+          collectedAt: { gt: anchor },
+          depositId: null,
+          depositedAmount: { gt: 0 },
+        },
+        _sum: { depositedAmount: true },
+      }),
+      prisma.chairopsCashCollection.findFirst({
+        where: { branchId, orgId: branch.orgId },
+        orderBy: { collectedAt: "desc" },
+        select: { collectedAt: true },
+      }),
+      prisma.chairopsBranchDailyRevenue.findFirst({
+        where: { branchId, orgId: branch.orgId },
+        orderBy: { bizDate: "desc" },
+        select: { bizDate: true },
+      }),
+    ]);
 
   let posTotal = toNum(posAgg._sum?.cashTotal);
   // Fallback when no daily-revenue rows exist yet (W0 pre-import phase).
@@ -237,7 +269,9 @@ async function recomputeDriftForBranch_window(
     posTotal = toNum(legacyPos._sum?.cashTotal);
   }
 
-  const depositTotal = depositAgg._sum?.depositedAmount ?? 0;
+  const depositTotal =
+    (newDepositAgg._sum?.depositedAmount ?? 0) +
+    (legacyDepositAgg._sum?.depositedAmount ?? 0);
   const driftAmount = posTotal - depositTotal;
 
   // Window mode: drift "since" = window anchor (so age = age of the window

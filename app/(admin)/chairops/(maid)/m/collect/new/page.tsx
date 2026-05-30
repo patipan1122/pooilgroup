@@ -32,16 +32,10 @@ export default async function MaidCollectNewPage() {
     );
   }
 
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60_000);
-  const [branch, agg, chairs] = await Promise.all([
+  const [branch, chairs] = await Promise.all([
     prisma.chairopsBranch.findUniqueOrThrow({
       where: { id: branchId },
       select: { name: true },
-    }),
-    prisma.chairopsCashCollection.aggregate({
-      where: { branchId, collectedAt: { gte: sevenDaysAgo } },
-      _avg: { depositedAmount: true },
-      _count: true,
     }),
     prisma.chairopsChair.findMany({
       where: { branchId, isActive: true },
@@ -51,7 +45,6 @@ export default async function MaidCollectNewPage() {
     }),
   ]);
 
-  const avg7d = agg._count > 0 ? Math.round(agg._avg.depositedAmount ?? 0) : null;
   const chairCodes = chairs.map((c) => c.chairCode);
 
   return (
@@ -67,7 +60,7 @@ export default async function MaidCollectNewPage() {
         <p className="text-sm text-zinc-500">สาขา {branch.name}</p>
       </header>
 
-      <CollectNewForm avg7d={avg7d} chairCodes={chairCodes} />
+      <CollectNewForm chairCodes={chairCodes} />
     </div>
   );
 }

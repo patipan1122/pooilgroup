@@ -2946,6 +2946,7 @@ model ChairopsBranch {
   maidAssignments    ChairopsMaidAssignment[]
   posDaily           ChairopsPosDaily[]
   cashCollections    ChairopsCashCollection[]
+  cashDeposits       ChairopsCashDeposit[]
   drifts             ChairopsDrift[]
   alerts             ChairopsAlert[]
   damageTickets      ChairopsDamageTicket[]
@@ -2977,6 +2978,7 @@ model ChairopsUser {
 
   maidAssignments        ChairopsMaidAssignment[]
   cashCollections        ChairopsCashCollection[]
+  cashDeposits           ChairopsCashDeposit[]
   posDailyEntries        ChairopsPosDaily[]
   damageReported         ChairopsDamageTicket[]      @relation("chairops_damage_reported_by")
   damageAssigned         ChairopsDamageTicket[]      @relation("chairops_damage_assigned_to")
@@ -3097,11 +3099,27 @@ model ChairopsCashCollection {
   maidId           String
   collectedAt      DateTime  @default(now())
   countedAmount    Int
-  depositedAmount  Int
+  // Step-2 deposit columns kept for backward compat with rows written before
+  // the deposit-table split (2026-05-30). NEW writes leave these at 0/null
+  // and instead create a ChairopsCashDeposit row that this collection's
+  // depositId points to. Drift engine sums depositedAmount from the new
+  // table.
+  depositedAmount  Int       @default(0)
   evidencePhotoUrl String
   slipPhotoUrl     String?
   imageHash        String
   notes            String?
+  // Per-chair breakdown captured by the maid at Step 1. Shape:
+  //   { lines: [{ chairCode, status: "collected"|"broken"|"empty"|"skipped",
+  //               amount: number, reason?: string, photoUrl?: string }, ...] }
+  // countedAmount must equal SUM(line.amount). Nullable for rows written
+  // before this column existed (legacy free-text "[CH-001]" prefix in notes).
+  chairBreakdown   Json?     @map("chair_breakdown")
+  // null = pending deposit · set when maid lumps this round into a
+  // ChairopsCashDeposit. Many collections can share one depositId (batch
+  // deposit to save bank fees).
+  depositId        String?   @map("deposit_id")
+  deposit          ChairopsCashDeposit? @relation(fields: [depositId], references: [id])
   lockedAt         DateTime?
   unlockedById     String?
   unlockedAt       DateTime?
@@ -3115,6 +3133,37 @@ model ChairopsCashCollection {
   @@index([orgId])
   @@index([branchId, collectedAt])
   @@index([maidId, collectedAt])
+  @@index([branchId, depositId])
+  @@schema("chairops")
+}
+
+// Bank-deposit event — one row per actual trip to the bank, can cover N
+// collection rounds (batch deposit to save bank fees per CEO 2026-05-30).
+// depositedAmount is what landed in the bank account (≤ sum of covered
+// collections.countedAmount in most cases · bankFee separate).
+model ChairopsCashDeposit {
+  id              String   @id @default(uuid())
+  orgId           String
+  branchId        String
+  maidId          String
+  depositedAt     DateTime @default(now())
+  depositedAmount Int
+  bankFee         Int      @default(0) @map("bank_fee")
+  slipPhotoUrl    String   @map("slip_photo_url")
+  slipImageHash   String   @map("slip_image_hash")
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch      ChairopsBranch           @relation(fields: [branchId], references: [id])
+  maid        ChairopsUser             @relation(fields: [maidId], references: [id])
+  collections ChairopsCashCollection[]
+
+  @@unique([orgId, slipImageHash])
+  @@index([orgId])
+  @@index([branchId, depositedAt])
+  @@index([maidId, depositedAt])
+  @@map("cash_deposits")
   @@schema("chairops")
 }
 

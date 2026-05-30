@@ -83,11 +83,15 @@ export default async function MaidHomePage() {
     prisma.chairopsChair.count({
       where: { branchId, orgId: session.user.orgId, isActive: true },
     }),
-    prisma.chairopsCashCollection.aggregate({
+    // Month KPI now reads the new cash_deposits table (one row per bank
+    // trip). The legacy CashCollection.depositedAmount column is left at 0
+    // for new rows; the office staff may have legacy rows with non-zero
+    // values which we ignore here intentionally.
+    prisma.chairopsCashDeposit.aggregate({
       where: {
         branchId,
         maidId: session.user.id,
-        collectedAt: { gte: monthStart },
+        depositedAt: { gte: monthStart },
       },
       _sum: { depositedAmount: true },
       _count: true,
@@ -102,16 +106,18 @@ export default async function MaidHomePage() {
         status: { in: ["OPEN", "ASSIGNED", "IN_PROGRESS", "WAITING_PARTS"] },
       },
     }),
-    // Step-1-only rows: counted but not yet deposited. Source of the
-    // "เงินค้าง รอฝาก" KPI + the pending-deposit section below.
+    // Step-1-only rows: counted but no deposit yet (depositId null). Drives
+    // both the "เงินค้าง รอฝาก" KPI and the pending-deposit section. Tapping
+    // the section CTA opens /m/deposit where the maid can multi-select rounds
+    // and submit ONE bank trip (CEO 2026-05-30 batch-deposit spec).
     prisma.chairopsCashCollection.findMany({
       where: {
         branchId,
         maidId: session.user.id,
-        slipPhotoUrl: null,
+        depositId: null,
       },
-      orderBy: { collectedAt: "desc" },
-      take: 10,
+      orderBy: { collectedAt: "asc" },
+      take: 20,
       select: {
         id: true,
         countedAmount: true,
@@ -266,8 +272,10 @@ export default async function MaidHomePage() {
         </div>
       </div>
 
-      {/* Pending-deposit list — Step 2 entry points for each unfinished count.
-          Hidden when nothing pending so the home stays clean. */}
+      {/* Pending-deposit section — preview list + ONE batch CTA. The maid
+          picks which rounds to bundle on /m/deposit (saves bank fees per CEO
+          2026-05-30 spec). Each preview row is a Link to the collection
+          detail so the maid can inspect chair breakdown before depositing. */}
       {pendingDeposits.length > 0 && (
         <section className="space-y-2">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-700">
@@ -275,12 +283,9 @@ export default async function MaidHomePage() {
             เงินค้าง รอฝาก ({pendingDeposits.length})
           </h2>
           <ul className="space-y-2">
-            {pendingDeposits.map((p) => (
+            {pendingDeposits.slice(0, 5).map((p) => (
               <li key={p.id}>
-                <Link
-                  href={`/chairops/m/collect/${p.id}/deposit`}
-                  className="block"
-                >
+                <Link href={`/chairops/m/collect/${p.id}`} className="block">
                   <Card className="border-amber-200 bg-amber-50/40 transition-colors active:bg-amber-100">
                     <CardBody className="flex items-center gap-3 p-4">
                       <div className="min-w-0 grow">
@@ -292,9 +297,6 @@ export default async function MaidHomePage() {
                           {p.notes ? ` · ${p.notes.slice(0, 40)}` : ""}
                         </div>
                       </div>
-                      <Badge tone="warning" className="shrink-0">
-                        ฝากเงิน
-                      </Badge>
                       <ChevronRight
                         className="size-5 shrink-0 text-zinc-400"
                         aria-hidden
@@ -304,7 +306,34 @@ export default async function MaidHomePage() {
                 </Link>
               </li>
             ))}
+            {pendingDeposits.length > 5 && (
+              <li className="px-1 text-xs text-zinc-500">
+                + อีก {pendingDeposits.length - 5} รอบ (ดูทั้งหมดในหน้าฝากเงิน)
+              </li>
+            )}
           </ul>
+          <Link href="/chairops/m/deposit" className="block">
+            <Card className="border-emerald-300 bg-emerald-50 transition-colors active:bg-emerald-100">
+              <CardBody className="flex items-center gap-3 p-4">
+                <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-200 text-emerald-700">
+                  <Landmark className="size-5" aria-hidden />
+                </div>
+                <div className="min-w-0 grow">
+                  <div className="font-semibold text-emerald-900">
+                    ฝากเงินก้อน · เลือกรอบ
+                  </div>
+                  <div className="text-xs text-emerald-700">
+                    เลือก {pendingDeposits.length} รอบรวม {baht(pendingTotal)}{" "}
+                    · ฝากครั้งเดียวประหยัดค่าธรรมเนียม
+                  </div>
+                </div>
+                <ChevronRight
+                  className="size-5 shrink-0 text-emerald-700"
+                  aria-hidden
+                />
+              </CardBody>
+            </Card>
+          </Link>
         </section>
       )}
 
