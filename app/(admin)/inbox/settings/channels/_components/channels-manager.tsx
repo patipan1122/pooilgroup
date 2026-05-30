@@ -249,6 +249,17 @@ export function ChannelsManager({
             <Globe className="size-4" />
             เชื่อม Facebook (หลายเพจ)
           </a>
+          {/* Backup path when FB OAuth dialog blocks the redirect — CEO
+              pastes JSON from Graph API Explorer.  Same destination
+              (bulk channel import), different on-ramp. */}
+          <a
+            href="/inbox/settings/channels/facebook-paste"
+            className="inline-flex items-center gap-1.5 text-sm font-bold text-zinc-700 bg-white border border-zinc-300 px-3 h-10 rounded-xl hover:bg-zinc-50"
+            title="ใช้เมื่อ OAuth dialog ติด"
+          >
+            <Globe className="size-4" />
+            Paste JSON
+          </a>
           <button
             type="button"
             onClick={() => setShowAdd(!showAdd)}

@@ -185,6 +185,31 @@ export async function deleteChannel(id: string) {
 }
 
 /**
+ * Variant of bulkCreateFacebookChannels that takes PLAINTEXT page access
+ * tokens (pasted from Graph API Explorer JSON).  Encrypts them on the
+ * server boundary then dispatches to the same upsert+subscribe logic.
+ * Used by /inbox/settings/channels/facebook-paste when OAuth dialog is
+ * blocked (shared subdomain etc.).
+ */
+export async function bulkImportFacebookFromPlaintext(input: {
+  pages: Array<{
+    id: string;
+    name: string;
+    accessToken: string; // plaintext from /me/accounts
+    businessTag: string;
+  }>;
+}): Promise<{ created: number; updated: number; subscribed: number; errors: string[] }> {
+  await requireInboxAdmin();
+  const encrypted = input.pages.map((p) => ({
+    id: p.id,
+    name: p.name,
+    accessTokenEnc: encryptToken(p.accessToken),
+    businessTag: p.businessTag,
+  }));
+  return bulkCreateFacebookChannels({ pages: encrypted });
+}
+
+/**
  * Bulk-import Facebook Pages from the OAuth flow.  Each entry already has
  * the page access token encrypted (by the callback).  For each page we:
  *   - upsert an InboxChannel (idempotent on org × externalId)
