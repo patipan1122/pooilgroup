@@ -21,6 +21,8 @@ const REASON_TH: Record<string, string> = {
   "ll-pending-malformed": "magic-link cookie อ่านไม่ได้ (พังตอน encode)",
   "liff-complete":
     "เซต Supabase session ไม่สำเร็จ (อาจเป็น cookie partitioning ใน iOS webview)",
+  "pool-membership":
+    "ใส่ Pool users/user_modules ไม่สำเร็จ (Supabase admin INSERT พัง)",
   unexpected: "ตอบกลับไม่คาดคิดจาก server",
 };
 

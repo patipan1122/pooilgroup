@@ -63,6 +63,35 @@ export default function LiffCompletePage() {
               `server set-session ${r.status}: ${j?.error ?? "unknown"}`,
             );
           }
+          // Verify the cookie actually landed in the browser's jar AND is
+          // readable on a fresh server request. If this fails, navigating to
+          // /chairops/m would just bounce to /login with no diagnostic — catch
+          // it here so the user sees a specific iOS-cookie-drop error.
+          const who = await fetch("/api/auth/whoami", {
+            credentials: "include",
+            cache: "no-store",
+          });
+          const whoJson = (await who.json().catch(() => ({}))) as {
+            authenticated?: boolean;
+            reason?: string;
+            hasPoolUser?: boolean;
+            hasChairopsUser?: boolean;
+          };
+          if (!whoJson.authenticated) {
+            throw new Error(
+              `cookie-not-readable: setSession ok but next request had no session (${whoJson.reason ?? "unknown"})`,
+            );
+          }
+          if (!whoJson.hasPoolUser) {
+            throw new Error(
+              "missing-pool-user: session is set but no public.users row exists (ensurePoolMembership failed silently somewhere)",
+            );
+          }
+          if (!whoJson.hasChairopsUser) {
+            throw new Error(
+              "missing-chairops-user: session is set, pool user exists, but no ChairopsUser row",
+            );
+          }
         } else {
           // No fragment (PKCE code or already captured) — let the client detect.
           const { data } = await sb.auth.getSession();
