@@ -76,6 +76,30 @@ function template(topic: InboxTopic, s: BotSettings, isComplaint: boolean): stri
   }
 }
 
+// Pull the most recent N inbound + outbound messages for this conversation
+// so the AI fallback understands what was discussed earlier.  Returned in
+// chronological order (oldest → newest); the latest IN message is the one
+// the bot is responding to (ingest already persisted it before runBot).
+async function loadRecentHistory(
+  orgId: string,
+  conversationId: string,
+  limit = 12,
+): Promise<{ direction: "IN" | "OUT"; body: string; sentByBot: boolean }[]> {
+  const rows = await prisma.inboxMessage.findMany({
+    where: { orgId, conversationId },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    select: { direction: true, body: true, sentByBot: true },
+  });
+  return rows
+    .reverse()
+    .map((m) => ({
+      direction: m.direction as "IN" | "OUT",
+      body: m.body,
+      sentByBot: m.sentByBot,
+    }));
+}
+
 async function loadKnowledge(orgId: string, businessTag: string): Promise<string> {
   const rows = await prisma.inboxBotKnowledge.findMany({
     where: { orgId, businessTag, enabled: true },
@@ -220,7 +244,13 @@ export async function runBot(opts: RunBotInput): Promise<void> {
   } else if (cls.topic !== "other") {
     answer = template(cls.topic, settings, cls.isComplaint);
   } else {
-    const knowledge = await loadKnowledge(channel.orgId, businessTag);
+    const [knowledge, history] = await Promise.all([
+      loadKnowledge(channel.orgId, businessTag),
+      // 12 messages = ~6 customer↔bot turns of context.  Cheap on Gemini
+      // Flash (~$0.0003/call) and enough for "เลขเครื่อง G0310416" alone to
+      // be understood as the answer to a prior money_lost flow question.
+      loadRecentHistory(channel.orgId, conversationId, 12),
+    ]);
     const ai = await aiAnswer({
       text,
       knowledge,
@@ -228,6 +258,7 @@ export async function runBot(opts: RunBotInput): Promise<void> {
       botName: settings.botName,
       orgId: channel.orgId,
       createdById: channel.createdById,
+      history,
     });
     if (ai.answer) {
       answer = ai.answer;
