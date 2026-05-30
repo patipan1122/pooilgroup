@@ -3114,11 +3114,11 @@ model ChairopsCashCollection {
   //               amount: number, reason?: string, photoUrl?: string }, ...] }
   // countedAmount must equal SUM(line.amount). Nullable for rows written
   // before this column existed (legacy free-text "[CH-001]" prefix in notes).
-  chairBreakdown   Json?     @map("chair_breakdown")
+  chairBreakdown   Json?
   // null = pending deposit · set when maid lumps this round into a
   // ChairopsCashDeposit. Many collections can share one depositId (batch
   // deposit to save bank fees).
-  depositId        String?   @map("deposit_id")
+  depositId        String?
   deposit          ChairopsCashDeposit? @relation(fields: [depositId], references: [id])
   lockedAt         DateTime?
   unlockedById     String?
@@ -3148,12 +3148,12 @@ model ChairopsCashDeposit {
   maidId          String
   depositedAt     DateTime @default(now())
   depositedAmount Int
-  bankFee         Int      @default(0) @map("bank_fee")
-  slipPhotoUrl    String   @map("slip_photo_url")
-  slipImageHash   String   @map("slip_image_hash")
+  bankFee         Int      @default(0)
+  slipPhotoUrl    String
+  slipImageHash   String
   notes           String?
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   branch      ChairopsBranch           @relation(fields: [branchId], references: [id])
   maid        ChairopsUser             @relation(fields: [maidId], references: [id])
@@ -3163,7 +3163,6 @@ model ChairopsCashDeposit {
   @@index([orgId])
   @@index([branchId, depositedAt])
   @@index([maidId, depositedAt])
-  @@map("cash_deposits")
   @@schema("chairops")
 }
 
