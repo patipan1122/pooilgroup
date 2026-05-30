@@ -139,8 +139,17 @@ export default async function BranchCollectPage() {
                         <ChevronRight className="size-4" aria-hidden />
                       </Link>
                     ) : (
-                      <div className="rounded-md border border-amber-200 bg-white p-2 text-xs text-amber-700">
-                        ยังไม่มีเก้าอี้ในสาขา · เพิ่มก่อนที่ /chairops/branches
+                      <div className="space-y-2">
+                        <div className="rounded-md border border-amber-200 bg-white p-2 text-xs text-amber-700">
+                          ยังไม่มีเก้าอี้ในสาขา
+                        </div>
+                        <Link
+                          href={`/chairops/branches/${b.id}/chairs/add`}
+                          className="inline-flex w-full items-center justify-between gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-800 active:bg-amber-50"
+                        >
+                          + เพิ่มเก้าอี้สาขานี้
+                          <ChevronRight className="size-4" aria-hidden />
+                        </Link>
                       </div>
                     )}
                   </CardBody>
