@@ -163,6 +163,10 @@ export function ConversationDetailPane({ conversation }: Props) {
                   type="button"
                   onClick={() => changeStatus(opt.value)}
                   disabled={savingStatus}
+                  // aria-pressed conveys "this status is the active one" to
+                  // screen readers — visual style alone failed AT users
+                  // (audit CH-004).
+                  aria-pressed={active}
                   className={`h-7 rounded-full border px-3 text-xs font-bold transition-colors disabled:opacity-50 ${
                     active
                       ? "border-[var(--color-brand-600)] bg-[var(--color-brand-50)] text-[var(--color-brand-800)]"

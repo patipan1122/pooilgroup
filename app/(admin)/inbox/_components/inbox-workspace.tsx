@@ -93,7 +93,9 @@ export function InboxWorkspace({
   // Real-time updates via Supabase broadcast — ingest.ts fires an event on
   // every inbound/outbound message and we re-fetch the Server Component on
   // the next tick.  Zero idle DB load · only fetches when something changed.
-  useInboxRealtime({ orgId, conversationId: selected?.id ?? null });
+  // Note: only orgId is in the dep array; threading conversationId here used
+  // to rebuild the socket on every message click (audit RT-001).
+  useInboxRealtime({ orgId });
 
   const hasAnyChannel = channels.length > 0;
   const hasAnyFilter =

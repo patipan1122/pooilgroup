@@ -75,6 +75,30 @@ export function FlowImagesManager({
 }) {
   const [images, setImages] = useState<FlowImages>(initialImages);
 
+  // The 6 topic slots (money_lost / scan_fail / strong / buy / feedback /
+  // intro) are written specifically for the chairops vertical.  Live engine
+  // only renders the topic templates when businessTag === "chairops", so for
+  // other businesses an uploaded image would never reach the customer —
+  // show an empty-state explaining that instead (audit BOT-009).
+  if (businessTag !== "chairops") {
+    return (
+      <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-6 text-sm leading-relaxed text-zinc-700">
+        <p className="font-bold text-zinc-900">
+          รูปประกอบ flow ใช้ได้กับธุรกิจ "เก้าอี้นวด" เท่านั้น
+        </p>
+        <p className="mt-2 text-zinc-600">
+          ระบบมี flow ตายตัว 6 หัวข้อ (เงินหาย / สแกนไม่ได้ / นวดแรง / สนใจซื้อ
+          / ติชม / ทักทาย) เขียนไว้สำหรับเก้าอี้นวด ·
+          ธุรกิจอื่นใช้คลังคำตอบ (FAQ) + ข้อมูลร้าน (AI) เป็นหลักครับ
+        </p>
+        <p className="mt-2 text-xs text-zinc-500">
+          อยากแนบรูปกับคำตอบของธุรกิจนี้ → ใส่ลิงก์รูปไว้ในข้อความ FAQ หรือ
+          เนื้อหา &ldquo;ข้อมูลร้าน&rdquo; ได้ตอนนี้
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">

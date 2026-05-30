@@ -37,8 +37,16 @@ function appRoot(req: Request): string {
 }
 
 function fail(req: Request, message: string): NextResponse {
+  // Strip anything that LOOKS like an OAuth access token before bouncing back
+  // to a URL that ends up in browser history / referer / server access logs
+  // (audit FB-002).  Provider error bodies sometimes echo our request URL,
+  // and the request URL carries client_secret + code in querystring.
+  const sanitized = message
+    .replace(/EAA[A-Za-z0-9_-]{20,}/g, "[FB_TOKEN]")
+    .replace(/client_secret=[^&\s]+/gi, "client_secret=[REDACTED]")
+    .replace(/code=[A-Za-z0-9_-]{10,}/gi, "code=[REDACTED]");
   const url = new URL("/inbox/settings/channels", appRoot(req));
-  url.searchParams.set("fb_error", message.slice(0, 200));
+  url.searchParams.set("fb_error", sanitized.slice(0, 200));
   return NextResponse.redirect(url);
 }
 
@@ -72,14 +80,20 @@ export async function GET(req: Request) {
     const long = await upgradeToLongLived({ shortLivedToken: codeResp.access_token });
     userToken = long.access_token;
   } catch (e) {
-    return fail(req, (e as Error).message);
+    // Server-side log keeps the full Facebook error message for debugging;
+    // the user-facing redirect gets a generic line so the raw FB response
+    // (which may echo our request including secrets) never lands in browser
+    // history or referer headers (audit FB-002).
+    console.error("[fb-oauth] token exchange failed", (e as Error).message);
+    return fail(req, "Facebook token exchange ไม่สำเร็จ · ตรวจ Vercel logs");
   }
 
   let pages: Awaited<ReturnType<typeof listUserPages>>;
   try {
     pages = await listUserPages({ userAccessToken: userToken });
   } catch (e) {
-    return fail(req, `เรียก list pages ไม่ได้: ${(e as Error).message}`);
+    console.error("[fb-oauth] list pages failed", (e as Error).message);
+    return fail(req, "เรียก list pages ไม่สำเร็จ · ตรวจ Vercel logs");
   }
 
   if (pages.length === 0) {

@@ -14,6 +14,11 @@ export async function broadcastInboxChange(opts: {
   orgId: string;
   conversationId?: string;
 }): Promise<void> {
+  // Guard against empty/undefined orgId — without this an empty topic
+  // ("inbox:org:") would fan out to anything subscribed to the prefix
+  // (audit RT-006).  Caller bug, but cheap to belt-and-brace.
+  if (!opts.orgId) return;
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return; // Misconfigured — drop silently rather than break ingest.
@@ -33,7 +38,7 @@ export async function broadcastInboxChange(opts: {
   };
 
   try {
-    await fetch(`${url}/realtime/v1/api/broadcast`, {
+    const res = await fetch(`${url}/realtime/v1/api/broadcast`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -43,6 +48,17 @@ export async function broadcastInboxChange(opts: {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(FIVE_SECONDS),
     });
+    // Realtime returns 2xx on success; anything else means the broadcast
+    // was dropped server-side and admins won't see the live update.
+    // Logging surfaces a misconfigured URL / expired key / bad topic
+    // before CEO discovers it as "the chat is broken again" (audit RT-005).
+    if (!res.ok) {
+      console.warn(
+        "[inbox realtime] broadcast non-OK",
+        res.status,
+        await res.text().catch(() => ""),
+      );
+    }
   } catch (e) {
     // Best-effort: a failed broadcast just means the admin sees the message
     // on their next manual refresh instead of instantly.  Don't fail ingest.

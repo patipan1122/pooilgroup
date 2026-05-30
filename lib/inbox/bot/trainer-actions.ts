@@ -17,6 +17,7 @@ import { classify } from "./classify";
 import { matchFaq } from "./match";
 import { getBotSettings } from "./settings";
 import { aiAnswer } from "./ai";
+import { renderChairopsTemplate } from "./templates";
 
 const DEFAULT_TAG = "chairops";
 
@@ -251,50 +252,9 @@ export async function previewBotReply(input: {
     ? await matchFaq(session.user.org_id, businessTag, text)
     : null;
 
-  // The live engine's template() lives in engine.ts — duplicate a slim
-  // version here so preview matches without circular import.
-  const renderTemplate = (topic: typeof cls.topic) => {
-    const phone = settings.contactPhone || "ทีมงาน";
-    switch (topic) {
-      case "money_lost":
-        return (
-          `ขออภัยมากๆ เลยนะคะ 🙏 รบกวน**โทร ${phone} ทันที**นะคะ ` +
-          `ทีมงานจะกดเปิดเครื่อง/แก้ออนไลน์ให้ภายใน 30 วินาทีค่ะ\n\n` +
-          `ระหว่างเดินไปโทร ถ้าสะดวกแจ้งข้อมูลนี้ไว้ก่อนได้นะคะ (ไม่จำเป็นต้องครบ):\n` +
-          `• เครื่อง "กินเหรียญ" หรือ "กินแบงค์" คะ\n` +
-          `• สาขา + จังหวัด\n` +
-          `• เลขเครื่อง (มุมซ้ายบนของหน้าจอ เช่น G0310416)\n` +
-          `   _หาไม่เจอไม่เป็นไรค่ะ โทรเข้ามาก่อนได้เลย_`
-        );
-      case "scan_fail":
-        return (
-          `ขออภัยค่ะ 🙏 รบกวน**โทร ${phone} ทันที**นะคะ ` +
-          `ทีมงานจะช่วยเช็ค/แก้ออนไลน์ให้ภายใน 30 วินาทีค่ะ\n\n` +
-          `ถ้ามีเวลา ขอ "สาขา + เลขเครื่อง" ไว้ก่อนได้นะคะ ` +
-          `_หาเลขไม่เจอก็ไม่เป็นไรค่ะ_`
-        );
-      case "strong":
-        return (
-          `ขอโทษด้วยนะคะ 🙏 รบกวนเล่าให้ฟังนิดนึง จะได้แนะนำการปรับให้พอดีกับคุณค่ะ\n` +
-          `1) นวดแรงตรงไหนคะ (แขน / ขา / หลัง / ทั่ว ๆ)\n` +
-          `2) ระดับความเจ็บเต็ม 10 ประมาณกี่คะแนน\n` +
-          `3) คุณเป็นชาย/หญิง อายุประมาณเท่าไรคะ`
-        );
-      case "buy":
-        return (
-          `ขอบคุณที่สนใจค่ะ 😊 ขอข้อมูลสั้นๆ จะได้แนะนำให้ตรงความต้องการนะคะ\n` +
-          `1) สนใจไว้ใช้ที่บ้าน หรือเปิดร้าน/หยอดเหรียญคะ\n` +
-          `2) งบประมาณคร่าวๆ\n` +
-          `3) ฝากชื่อ + เบอร์ไว้นะคะ เดี๋ยวทีมงานโทรกลับ`
-        );
-      case "feedback":
-        return cls.isComplaint
-          ? `ขออภัยจริงๆ นะคะ 🙏 รบกวนเล่าเพิ่มได้ไหมคะว่าติดปัญหาเรื่องอะไร เดี๋ยวทีมงานรีบดูแลให้ค่ะ`
-          : `ขอบคุณสำหรับคำติชมนะคะ 🙏 เรารับไว้ปรับปรุงและดูแลให้ดีขึ้นแน่นอนค่ะ`;
-      default:
-        return settings.fallbackText;
-    }
-  };
+  // Use the SAME template renderer the live engine uses — the trainer's
+  // preview must never claim a reply that prod won't actually send
+  // (audit BOT-003).
 
   let path: "faq" | "template" | "ai" | "escalate" = "escalate";
   let reply = settings.escalateText || settings.fallbackText;
@@ -310,9 +270,12 @@ export async function previewBotReply(input: {
       select: { keywords: true },
     });
     matchedFaqKeywords = meta?.keywords;
-  } else if (cls.topic !== "other") {
+  } else if (cls.topic !== "other" && businessTag === "chairops") {
+    // Audit BOT-002: live engine gates templates by businessTag === "chairops".
+    // Preview must do the same — for non-chairops we let AI fallback render
+    // exactly the way prod will.
     path = "template";
-    reply = renderTemplate(cls.topic);
+    reply = renderChairopsTemplate(cls.topic, settings, cls.isComplaint);
   } else {
     // AI fallback — feed the simulated conversation history to Gemini so a
     // single bare reply ("G0310416") is understood in the context of the

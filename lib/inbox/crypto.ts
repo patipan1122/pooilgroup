@@ -10,6 +10,8 @@ import crypto from "node:crypto";
 const ALG = "aes-256-gcm";
 const IV_LEN = 12; // GCM standard
 
+let warnedFallback = false;
+
 function getKey(): Buffer {
   const raw = process.env.RECRUIT_CHANNEL_KEY;
   if (raw) {
@@ -24,6 +26,22 @@ function getKey(): Buffer {
   if (!fallback) {
     throw new Error(
       "inbox crypto: no key source (set RECRUIT_CHANNEL_KEY or SUPABASE_SERVICE_ROLE_KEY)",
+    );
+  }
+  // Audit CH-001: deriving the encryption key from a rotatable secret
+  // (service-role / DATABASE_URL) means rotating that secret bricks every
+  // encrypted channel token.  Warn once per process so observability is
+  // honest — don't hard-fail in prod since that would lock CEO out of an
+  // inbox that's already serving customers (43 FB channels imported).
+  if (
+    !warnedFallback &&
+    process.env.NODE_ENV === "production" &&
+    !process.env.RECRUIT_CHANNEL_KEY
+  ) {
+    warnedFallback = true;
+    console.warn(
+      "[inbox crypto] RECRUIT_CHANNEL_KEY missing in prod — using derived key fallback. " +
+        "Rotating SUPABASE_SERVICE_ROLE_KEY/DATABASE_URL will brick every encrypted token.",
     );
   }
   return crypto.createHash("sha256").update(fallback).digest();

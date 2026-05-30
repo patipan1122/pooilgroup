@@ -15,8 +15,16 @@ import {
   type FlowImages,
 } from "./settings";
 import { uploadBotAssetImage, validateImageBuffer } from "../storage";
+import { assertBotCapable } from "../business";
 
 const DEFAULT_TAG = "chairops";
+
+// Audit BOT-006: every server action that takes a businessTag from a client
+// input must validate against the registered bot-capable list before
+// writing.  Wrapping the trim+fallback dance keeps it one line at call sites.
+function resolveBizTag(input: string | undefined): string {
+  return assertBotCapable(input?.trim() || DEFAULT_TAG);
+}
 
 async function requireAdmin() {
   const session = await requireSession();
@@ -61,7 +69,7 @@ export async function createFaq(input: {
   await prisma.inboxBotFaq.create({
     data: {
       orgId: session.user.org_id,
-      businessTag: input.businessTag?.trim() || DEFAULT_TAG,
+      businessTag: resolveBizTag(input.businessTag),
       keywords: input.keywords.trim(),
       answer: input.answer.trim(),
       intent: input.intent?.trim() || null,
@@ -119,7 +127,7 @@ export async function createKnowledge(input: { businessTag?: string; title: stri
   await prisma.inboxBotKnowledge.create({
     data: {
       orgId: session.user.org_id,
-      businessTag: input.businessTag?.trim() || DEFAULT_TAG,
+      businessTag: resolveBizTag(input.businessTag),
       title: input.title.trim(),
       content: input.content.trim(),
       createdById: session.user.id,
@@ -211,7 +219,7 @@ export async function uploadBotFlowImage(input: {
 }) {
   const session = await requireAdmin();
   if (!isFlowTopic(input.topic)) throw new Error("หัวข้อไม่ถูกต้อง");
-  const businessTag = input.businessTag?.trim() || DEFAULT_TAG;
+  const businessTag = resolveBizTag(input.businessTag);
 
   const { buffer, contentType } = decodeDataUrl(input.dataUrl);
   const valid = validateImageBuffer(buffer);
@@ -254,7 +262,7 @@ export async function removeBotFlowImage(input: {
 }) {
   const session = await requireAdmin();
   if (!isFlowTopic(input.topic)) throw new Error("หัวข้อไม่ถูกต้อง");
-  const businessTag = input.businessTag?.trim() || DEFAULT_TAG;
+  const businessTag = resolveBizTag(input.businessTag);
 
   const existing = await prisma.inboxBotSettings.findUnique({
     where: { orgId_businessTag: { orgId: session.user.org_id, businessTag } },
@@ -288,7 +296,7 @@ export async function saveBotSettings(input: {
   dailySummary: boolean;
 }) {
   const session = await requireAdmin();
-  const businessTag = input.businessTag?.trim() || DEFAULT_TAG;
+  const businessTag = resolveBizTag(input.businessTag);
   const data = {
     botEnabled: input.botEnabled,
     tone: input.tone.trim() || "สุภาพ สั้น เป็นกันเอง",

@@ -225,6 +225,22 @@ export async function bulkCreateFacebookChannels(input: {
     businessTag: string;
   }>;
 }): Promise<{ created: number; updated: number; subscribed: number; errors: string[] }> {
+  // Clear the short-lived OAuth cookie once we've consumed its page list so
+  // a back-button revisit doesn't re-submit stale tokens (audit FB-003).
+  // Done at the top so it fires even if the loop below throws midway.
+  const { clearOauthCookie } = await import("./facebook-import");
+  await clearOauthCookie().catch(() => {});
+  return bulkCreateFacebookChannelsInternal(input);
+}
+
+async function bulkCreateFacebookChannelsInternal(input: {
+  pages: Array<{
+    id: string;
+    name: string;
+    accessTokenEnc: string;
+    businessTag: string;
+  }>;
+}): Promise<{ created: number; updated: number; subscribed: number; errors: string[] }> {
   const session = await requireInboxAdmin();
   const errors: string[] = [];
   let created = 0;

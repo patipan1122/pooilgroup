@@ -36,6 +36,18 @@ export function isBotCapable(tag: string | null | undefined): boolean {
   return INBOX_BUSINESSES.find((b) => b.tag === tag)?.botCapable ?? false;
 }
 
+/**
+ * Throws if `tag` isn't a registered bot-capable business.  Use at server
+ * action boundaries so a hostile client can't paste arbitrary tags into
+ * FAQ/Knowledge/Settings/FlowImage rows (audit BOT-006).
+ */
+export function assertBotCapable(tag: string | null | undefined): string {
+  if (!tag || !isBotCapable(tag)) {
+    throw new Error(`businessTag ไม่ถูกต้องหรือไม่รองรับบอท: ${tag ?? "(empty)"}`);
+  }
+  return tag;
+}
+
 /** Topic tags the bot classifies a conversation into. */
 export const INBOX_TOPICS: Record<string, string> = {
   scan_fail: "สแกนไม่ได้",

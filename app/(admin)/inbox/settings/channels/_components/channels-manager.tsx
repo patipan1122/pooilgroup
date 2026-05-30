@@ -476,6 +476,11 @@ export function ChannelsManager({
                       disabled={togglingId}
                       role="switch"
                       aria-checked={c.botEnabled}
+                      // title attr alone doesn't announce — give the switch
+                      // an explicit accessible name (audit CH-005).
+                      aria-label={`บอทตอบอัตโนมัติ · ช่อง ${c.displayName} · ${
+                        c.botEnabled ? "เปิดอยู่" : "ปิดอยู่"
+                      }`}
                       className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
                         c.botEnabled ? "bg-[var(--color-brand-600)]" : "bg-zinc-300"
                       }`}
