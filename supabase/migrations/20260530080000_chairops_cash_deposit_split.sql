@@ -5,27 +5,29 @@
 -- collection rounds into one bank trip (saves fees + bank queue time) plus a
 -- bankFee field.
 --
--- Note: this Prisma schema uses NO @@map directives, so the Postgres tables
--- are PascalCase (`"ChairopsCashCollection"`, `"ChairopsCashDeposit"`) and
--- columns are camelCase ("orgId", "branchId", etc).
+-- Schema convention: this Prisma schema uses NO @@map / @db.Uuid directives,
+-- so live Postgres uses PascalCase table names and TEXT for id columns
+-- (Prisma's @default(uuid()) generates UUIDs client-side as strings).
 
 SET search_path = chairops, public;
 
 -- 1) ChairopsCashCollection: add chairBreakdown + depositId + index
 ALTER TABLE chairops."ChairopsCashCollection"
   ADD COLUMN IF NOT EXISTS "chairBreakdown" JSONB,
-  ADD COLUMN IF NOT EXISTS "depositId" UUID,
+  ADD COLUMN IF NOT EXISTS "depositId" TEXT,
   ALTER COLUMN "depositedAmount" SET DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS "ChairopsCashCollection_branchId_depositId_idx"
   ON chairops."ChairopsCashCollection" ("branchId", "depositId");
 
--- 2) ChairopsCashDeposit: new table (one row per actual bank trip)
+-- 2) ChairopsCashDeposit: new table (one row per actual bank trip).
+-- All id-like columns are TEXT to match the rest of the chairops schema —
+-- Prisma's @default(uuid()) supplies the value at insert time from JS.
 CREATE TABLE IF NOT EXISTS chairops."ChairopsCashDeposit" (
-  "id"              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  "orgId"           UUID NOT NULL,
-  "branchId"        UUID NOT NULL,
-  "maidId"          UUID NOT NULL,
+  "id"              TEXT PRIMARY KEY,
+  "orgId"           TEXT NOT NULL,
+  "branchId"        TEXT NOT NULL,
+  "maidId"          TEXT NOT NULL,
   "depositedAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "depositedAmount" INTEGER NOT NULL,
   "bankFee"         INTEGER NOT NULL DEFAULT 0,
@@ -45,7 +47,7 @@ CREATE INDEX IF NOT EXISTS "ChairopsCashDeposit_branchId_depositedAt_idx"
 CREATE INDEX IF NOT EXISTS "ChairopsCashDeposit_maidId_depositedAt_idx"
   ON chairops."ChairopsCashDeposit" ("maidId", "depositedAt");
 
--- 3) FKs (use DO block to skip if already exists)
+-- 3) FKs (DO block · idempotent · skips when already present)
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
