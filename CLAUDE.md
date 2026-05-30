@@ -4,6 +4,11 @@
 > Last expanded: 2026-05-20 (was 1-line `@AGENTS.md` before)
 
 @AGENTS.md
+@docs/MODULE_GUIDE.md
+
+> ⚠️ **READ `docs/MODULE_GUIDE.md` FIRST** if you are starting work on any module.
+> It covers file ownership, shared-infra rules, worktree setup for parallel
+> sessions, and the audit findings (R2 prefix, schema prefix, entitlement gates).
 
 ---
 
