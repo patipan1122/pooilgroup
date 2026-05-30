@@ -1,10 +1,13 @@
 // POST /api/admin/users/[id]/impersonate
-// Super admin starts impersonating target user. Sets a signed cookie that
+// Admin starts impersonating target user. Sets a signed cookie that
 // session.ts honors to swap the surface user. Real auth session stays intact —
 // "return to self" just clears the cookie.
 //
 // Restrictions:
-// - Caller must be super_admin (real role, not impersonated).
+// - Caller must be super_admin / org_admin / admin (real role, not impersonated).
+//   2026-05-30: relaxed from super_admin-only so ChairOps office can play-as
+//   any maid (CEO wants to test maid flow or do a maid's cash-collect run
+//   themselves on the rare day a maid is off).
 // - Cannot impersonate self.
 // - Target must be in same org and active.
 
@@ -22,7 +25,7 @@ export async function POST(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  const session = await requireRealRole("super_admin");
+  const session = await requireRealRole("super_admin", "org_admin", "admin");
   const realAdminId = session.actingAs
     ? session.actingAs.realUser.id
     : session.user.id;

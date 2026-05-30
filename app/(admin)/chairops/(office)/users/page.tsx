@@ -32,6 +32,7 @@ import { thaiDate, thaiRelative } from "@/lib/chairops/utils/format";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
 import { UserPlus, Inbox } from "lucide-react";
+import { PlayAsMaidButton } from "./play-as-maid-button";
 
 // ---------- copy ----------
 
@@ -300,17 +301,28 @@ export default async function UsersListPage({
                       </div>
                     </td>
                     <td className="px-3 py-2.5 text-right">
-                      <Link
-                        href={`/chairops/users/${u.id}`}
-                        className={
-                          "rounded-md border px-2.5 py-1 text-xs font-medium " +
-                          (manageable
-                            ? "border-zinc-300 text-zinc-700 hover:bg-zinc-50"
-                            : "border-zinc-200 text-zinc-500 hover:bg-zinc-50")
-                        }
-                      >
-                        {manageable ? "แก้ไข" : "ดู"}
-                      </Link>
+                      <div className="flex items-center justify-end gap-1.5">
+                        {u.role === "MAID" &&
+                          u.isActive &&
+                          u.authUserId &&
+                          u.authUserId !== session.user.authUserId && (
+                            <PlayAsMaidButton
+                              authUserId={u.authUserId}
+                              maidDisplayName={u.displayName}
+                            />
+                          )}
+                        <Link
+                          href={`/chairops/users/${u.id}`}
+                          className={
+                            "rounded-md border px-2.5 py-1 text-xs font-medium " +
+                            (manageable
+                              ? "border-zinc-300 text-zinc-700 hover:bg-zinc-50"
+                              : "border-zinc-200 text-zinc-500 hover:bg-zinc-50")
+                          }
+                        >
+                          {manageable ? "แก้ไข" : "ดู"}
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 );
