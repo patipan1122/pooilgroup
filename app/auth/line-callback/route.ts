@@ -16,6 +16,7 @@ export const dynamic = "force-dynamic";
 type LoginResult = {
   ready?: boolean;
   completeUrl?: string;
+  actionLink?: string;
   matched?: boolean;
   needsLink?: boolean;
   lineUserId?: string;
@@ -95,28 +96,23 @@ export async function GET(req: NextRequest) {
     return fail("token-fetch", e instanceof Error ? e.message : "unknown");
   }
 
+  // Internal call to line-login. We send `x-line-internal: 1` which makes
+  // line-login return the Supabase action_link directly in JSON, so we can
+  // 303 the user STRAIGHT to Supabase without the ll_pending cookie
+  // indirection. The cookie path was iOS-LINE-webview hostile: the Set-Cookie
+  // on the internal fetch never reached the user's browser even with explicit
+  // forwarding (CEO captured "magic-link cookie not delivered to browser" via
+  // the visible diagnostic on /auth/line-error).
   let loginJson: LoginResult;
-  // line-login sets a short-lived httpOnly cookie `ll_pending` (path-scoped
-  // to /api/auth/line-complete) holding the Supabase magic link. Because we
-  // call line-login via server-side fetch, that Set-Cookie header is captured
-  // on the INTERNAL response and never reaches the user's browser. We must
-  // forward it explicitly on the redirect we return; otherwise line-complete
-  // sees no cookie and bounces to /liff/status (the symptom CEO hit).
-  let forwardSetCookies: string[] = [];
   try {
     const loginRes = await fetch(`${baseUrl}/api/auth/line-login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-line-internal": "1",
+      },
       body: JSON.stringify({ idToken, redirectTo: cookieNext }),
     });
-    type HeadersWithGetSetCookie = Headers & { getSetCookie?: () => string[] };
-    const h = loginRes.headers as HeadersWithGetSetCookie;
-    if (typeof h.getSetCookie === "function") {
-      forwardSetCookies = h.getSetCookie();
-    } else {
-      const raw = loginRes.headers.get("set-cookie");
-      if (raw) forwardSetCookies = [raw];
-    }
     loginJson = (await loginRes.json()) as LoginResult;
     if (!loginRes.ok) {
       return fail("login-api", `${loginRes.status}: ${loginJson?.error ?? ""}`);
@@ -125,14 +121,9 @@ export async function GET(req: NextRequest) {
     return fail("login-fetch", e instanceof Error ? e.message : "unknown");
   }
 
-  if (loginJson.ready && loginJson.completeUrl) {
-    const target = loginJson.completeUrl.startsWith("http")
-      ? loginJson.completeUrl
-      : `${baseUrl}${loginJson.completeUrl}`;
-    const res = NextResponse.redirect(target);
-    for (const sc of forwardSetCookies) {
-      res.headers.append("Set-Cookie", sc);
-    }
+  // Direct redirect to the Supabase magic link — no cookie hops.
+  if (loginJson.ready && loginJson.actionLink) {
+    const res = NextResponse.redirect(loginJson.actionLink, 303);
     clearOauthCookies(res);
     return res;
   }

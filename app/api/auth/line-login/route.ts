@@ -427,6 +427,23 @@ export async function POST(req: NextRequest) {
       resourceId: resolved.id,
       diff: { new: { via: "line_liff" } },
     });
+    // Server-side caller (header x-line-internal: 1 from /auth/line-callback)
+    // gets the action_link back in the JSON directly so it can redirect to
+    // Supabase without going through the cookie indirection — that cookie was
+    // being dropped by iOS LINE WKWebView when set on the internal fetch
+    // response. The link still never reaches client JS this way: only the
+    // line-callback handler reads the JSON, then 303s the user straight to
+    // Supabase. (LIFF JS path below is unchanged: cookie + completeUrl.)
+    const isInternal = req.headers.get("x-line-internal") === "1";
+    if (isInternal) {
+      return NextResponse.json({
+        matched: true,
+        needsLink: false,
+        ready: true,
+        actionLink: link,
+        user: { id: resolved.id, name: resolved.name, role: resolved.role },
+      });
+    }
     // Don't return the Supabase action_link in the JSON response — anything
     // that can read the response (XSS, browser extension, leaked log) becomes
     // that user. Stash the link in a short-lived httpOnly cookie and have the
