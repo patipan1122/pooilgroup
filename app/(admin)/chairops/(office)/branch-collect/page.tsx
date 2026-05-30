@@ -84,7 +84,15 @@ export default async function BranchCollectPage() {
               ในรอบเดียว
             </p>
           </div>
-          <SyncChairsFromPosButton />
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/chairops/branches/import-equipment"
+              className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-800 hover:bg-blue-100"
+            >
+              นำเข้าจาก StarThing XLSX
+            </Link>
+            <SyncChairsFromPosButton />
+          </div>
         </header>
 
         <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">

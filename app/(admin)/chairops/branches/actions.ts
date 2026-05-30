@@ -225,7 +225,7 @@ export async function syncChairsFromPos(): Promise<
         userId: session.user.id,
         action: "chairs.sync_from_pos",
         entity: "Chair",
-        entityId: null,
+        entityId: session.user.orgId,
         newValue: {
           branchesScanned: posByBranch.size,
           inserted: toCreate.length,
@@ -246,6 +246,258 @@ export async function syncChairsFromPos(): Promise<
       branchesScanned: posByBranch.size,
       chairsInserted: toCreate.length,
       chairsAlreadyExisting: alreadyCount,
+    },
+  };
+}
+
+// Import StarThing "Store Equipment List" XLSX — the authoritative chair→
+// branch mapping. CEO pastes a CoS signed URL on /chairops/branches/import-
+// equipment; server fetches + parses + syncs.
+//
+// XLSX shape (StarThing portal export, 4 cols):
+//   Device Code | Equipment type | Store Name | Online status
+//
+// For each store name:
+//   1. Match existing ChairopsBranch by normalized name (lowercase · strip
+//      parens/spaces).
+//   2. No match → create a new ChairopsBranch with a slug from name +
+//      tabName = name (must satisfy the unique on tabName).
+//   3. For each chair code on that store: insert into ChairopsChair if not
+//      present (idempotent).
+//
+// Skips rows with empty store name or store names matching /home|บ้าน/i
+// (chairs in storage, not yet deployed).
+const importEquipmentInput = z.object({
+  xlsxUrl: z.string().url(),
+});
+
+export async function importStarThingEquipment(
+  raw: z.infer<typeof importEquipmentInput>,
+): Promise<
+  ActionResult<{
+    storesInFile: number;
+    storesAtHome: number;
+    chairsInFile: number;
+    branchesMatched: number;
+    branchesCreated: number;
+    chairsInserted: number;
+    chairsAlreadyExisting: number;
+    perStore: Array<{
+      store: string;
+      branchName: string;
+      created: boolean;
+      chairsInserted: number;
+      chairsAlreadyExisting: number;
+    }>;
+  }>
+> {
+  const session = await requireRole("OFFICE");
+  const parsed = importEquipmentInput.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: "URL ไม่ถูกต้อง" };
+  }
+  const { xlsxUrl } = parsed.data;
+
+  // Fetch the XLSX (signed URLs · short TTL).
+  let buf: ArrayBuffer;
+  try {
+    const r = await fetch(xlsxUrl);
+    if (!r.ok) {
+      return { ok: false, error: `fetch XLSX ${r.status}` };
+    }
+    buf = await r.arrayBuffer();
+  } catch (e) {
+    return {
+      ok: false,
+      error: `fetch XLSX: ${e instanceof Error ? e.message : "unknown"}`,
+    };
+  }
+
+  // Parse via the dependency we already use elsewhere (xlsx pkg).
+  const { read, utils } = await import("xlsx");
+  const wb = read(Buffer.from(buf), { type: "buffer" });
+  const sh = wb.Sheets[wb.SheetNames[0]];
+  if (!sh) return { ok: false, error: "ไม่พบ sheet ในไฟล์" };
+  const rows = utils.sheet_to_json<unknown[]>(sh, { header: 1, defval: "" });
+  if (!Array.isArray(rows) || rows.length < 2) {
+    return { ok: false, error: "ไฟล์ว่าง / ไม่มีข้อมูล" };
+  }
+
+  // Aggregate { store → chair codes }.
+  const byStore = new Map<string, Set<string>>();
+  let storesAtHome = 0;
+  let totalChairRowsInFile = 0;
+  for (const row of rows.slice(1)) {
+    const code = String((row as unknown[])[0] ?? "").trim();
+    const store = String((row as unknown[])[2] ?? "").trim();
+    if (!code) continue;
+    totalChairRowsInFile += 1;
+    if (!store || /home|บ้าน/i.test(store)) {
+      storesAtHome += 1;
+      continue;
+    }
+    if (!byStore.has(store)) byStore.set(store, new Set());
+    byStore.get(store)!.add(code.toUpperCase());
+  }
+  if (byStore.size === 0) {
+    return { ok: false, error: "ไม่พบสาขาในไฟล์" };
+  }
+
+  // Normalize: lowercase + remove parens + remove spaces + strip Thai tone
+  // marks (ิ ี ึ ื ุ ู ่ ้ ๊ ๋ ์ ็) so "centralโคราช(ธอส)(870)" matches "centralโคราชธอส".
+  const norm = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/\(.*?\)/g, "")
+      .replace(/\s+/g, "")
+      .replace(/[่-๎ั-ฺ]/g, "");
+
+  // Pull existing branches for org.
+  const existingBranches = await prisma.chairopsBranch.findMany({
+    where: { orgId: session.user.orgId },
+    select: { id: true, name: true, slug: true, tabName: true },
+  });
+  const byNorm = new Map<string, (typeof existingBranches)[number]>();
+  for (const b of existingBranches) byNorm.set(norm(b.name), b);
+
+  // Build resolution plan.
+  type Plan = {
+    storeRaw: string;
+    branchId?: string;
+    branchName: string;
+    isNewBranch: boolean;
+    chairCodes: string[];
+  };
+  const plan: Plan[] = [];
+  for (const [store, codeSet] of byStore) {
+    const hit = byNorm.get(norm(store));
+    plan.push({
+      storeRaw: store,
+      branchId: hit?.id,
+      branchName: hit?.name ?? store,
+      isNewBranch: !hit,
+      chairCodes: Array.from(codeSet).sort(),
+    });
+  }
+
+  // Slug helper — strip non-alnum and lowercase. Already-used slug suffixed
+  // with -N to keep @@unique([orgId, slug]) happy.
+  const usedSlugs = new Set(existingBranches.map((b) => b.slug));
+  function pickSlug(seed: string): string {
+    const base =
+      seed
+        .toLowerCase()
+        .replace(/\(.*?\)/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 40) || `branch-${Date.now()}`;
+    if (!usedSlugs.has(base)) {
+      usedSlugs.add(base);
+      return base;
+    }
+    for (let i = 2; i < 100; i++) {
+      const cand = `${base}-${i}`;
+      if (!usedSlugs.has(cand)) {
+        usedSlugs.add(cand);
+        return cand;
+      }
+    }
+    return `${base}-${Date.now()}`;
+  }
+
+  // Execute plan in one tx where possible. Branch create + chair createMany
+  // per branch, with idempotent-chair logic (skip existing).
+  let branchesCreated = 0;
+  let chairsInsertedTotal = 0;
+  let chairsAlreadyExistingTotal = 0;
+  const perStore: Array<{
+    store: string;
+    branchName: string;
+    created: boolean;
+    chairsInserted: number;
+    chairsAlreadyExisting: number;
+  }> = [];
+
+  for (const p of plan) {
+    let branchId = p.branchId;
+    let created = false;
+    if (!branchId) {
+      const slug = pickSlug(p.storeRaw);
+      const tabName = p.storeRaw.slice(0, 64);
+      const fresh = await prisma.chairopsBranch.create({
+        data: {
+          orgId: session.user.orgId,
+          slug,
+          name: p.storeRaw,
+          tabName,
+          isActive: true,
+        },
+      });
+      branchId = fresh.id;
+      created = true;
+      branchesCreated += 1;
+    }
+
+    // existing chairs on this branch
+    const existing = await prisma.chairopsChair.findMany({
+      where: { orgId: session.user.orgId, branchId },
+      select: { chairCode: true },
+    });
+    const have = new Set(existing.map((e) => e.chairCode));
+    const toInsert = p.chairCodes.filter((c) => !have.has(c));
+    if (toInsert.length > 0) {
+      await prisma.chairopsChair.createMany({
+        data: toInsert.map((code) => ({
+          orgId: session.user.orgId,
+          branchId: branchId!,
+          chairCode: code,
+          isActive: true,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    chairsInsertedTotal += toInsert.length;
+    chairsAlreadyExistingTotal += have.size;
+    perStore.push({
+      store: p.storeRaw,
+      branchName: p.branchName,
+      created,
+      chairsInserted: toInsert.length,
+      chairsAlreadyExisting: have.size,
+    });
+  }
+
+  await writeAudit({
+    userId: session.user.id,
+    action: "equipment.import_starthing",
+    entity: "Chair",
+    entityId: session.user.orgId,
+    newValue: {
+      url: xlsxUrl.slice(0, 120),
+      storesInFile: byStore.size,
+      storesAtHome,
+      chairsInFile: totalChairRowsInFile,
+      branchesCreated,
+      chairsInserted: chairsInsertedTotal,
+    },
+    metadata: { route: "/chairops/branches/import-equipment" },
+  });
+
+  revalidatePath("/chairops/branches");
+  revalidatePath("/chairops/branch-collect");
+
+  return {
+    ok: true,
+    data: {
+      storesInFile: byStore.size,
+      storesAtHome,
+      chairsInFile: totalChairRowsInFile,
+      branchesMatched: plan.filter((p) => !p.isNewBranch).length,
+      branchesCreated,
+      chairsInserted: chairsInsertedTotal,
+      chairsAlreadyExisting: chairsAlreadyExistingTotal,
+      perStore,
     },
   };
 }
