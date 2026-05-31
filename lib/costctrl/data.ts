@@ -1,6 +1,6 @@
 // CostCtrl read-side data helpers — Server-Component friendly
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@/lib/generated/prisma";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import { FREE_TIER_LIMITS, pctBar, type ProviderSlug } from "./pricing";
 
 export type ProviderSummary = {

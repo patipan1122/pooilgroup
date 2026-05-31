@@ -184,6 +184,22 @@ export async function trainerChat(input: {
     .join("\n")
     .trim();
 
+  // Best-effort cost tracking — never block on metering failure
+  try {
+    const { recordAiUsage } = await import("@/lib/ai/cost-cap");
+    await recordAiUsage({
+      userId: session.user.id,
+      orgId: session.user.org_id,
+      endpoint: "inbox-bot-trainer",
+      model: TRAINER_MODEL,
+      moduleName: "inbox",
+      inputTokens: resp.usage?.input_tokens ?? 0,
+      outputTokens: resp.usage?.output_tokens ?? 0,
+    });
+  } catch (e) {
+    console.warn("[inbox trainer] cost-cap record failed", (e as Error).message);
+  }
+
   return { ok: true, reply: text };
 }
 

@@ -11,6 +11,30 @@ const anthropic = new Anthropic({
 const HAIKU_MODEL = "claude-haiku-4-5";
 const SONNET_MODEL = "claude-sonnet-4-5";
 
+/** Best-effort cost tracking — never block AI flow on metering failure */
+async function trackRecruitUsage(
+  endpoint: string,
+  model: string,
+  resp: { usage?: { input_tokens?: number; output_tokens?: number } },
+  ctx?: { orgId: string; userId?: string | null },
+) {
+  if (!ctx) return;
+  try {
+    const { recordAiUsage } = await import("@/lib/ai/cost-cap");
+    await recordAiUsage({
+      userId: ctx.userId,
+      orgId: ctx.orgId,
+      endpoint,
+      model,
+      moduleName: "recruit",
+      inputTokens: resp.usage?.input_tokens ?? 0,
+      outputTokens: resp.usage?.output_tokens ?? 0,
+    });
+  } catch (e) {
+    console.warn("[recruit ai] cost tracking failed", (e as Error).message);
+  }
+}
+
 // =============================================================
 // 1. Field Suggestor — HR กดปุ่ม → AI แนะนำ field ตามตำแหน่ง
 // =============================================================
@@ -28,6 +52,7 @@ export async function suggestFields(input: {
   companyType?: string; // "Pooil" | "JPSync"
   salaryRange?: string;
   notes?: string;
+  track?: { orgId: string; userId?: string | null };
 }): Promise<FieldSuggestion[]> {
   const prompt = `คุณคือผู้เชี่ยวชาญด้าน HR สำหรับ SME ไทย ช่วยแนะนำ field สำหรับฟอร์มรับสมัครพนักงาน
 
@@ -65,6 +90,7 @@ export async function suggestFields(input: {
     },
     { timeout: 15_000 },
   );
+  await trackRecruitUsage("recruit.suggest-fields", HAIKU_MODEL, response, input.track);
 
   const text =
     response.content[0]?.type === "text" ? response.content[0].text : "";
@@ -92,6 +118,7 @@ export async function scoreCandidate(input: {
   jobDescription?: string;
   formSchema: FormSchema;
   answers: Record<string, unknown>;
+  track?: { orgId: string; userId?: string | null };
 }): Promise<CandidateScore> {
   // Build answers in readable format (label: answer)
   const readableAnswers: string[] = [];
@@ -146,6 +173,7 @@ ${readableAnswers.join("\n")}
     },
     { timeout: 20_000 },
   );
+  await trackRecruitUsage("recruit.score-candidate", SONNET_MODEL, response, input.track);
 
   const text =
     response.content[0]?.type === "text" ? response.content[0].text : "";
@@ -183,6 +211,7 @@ export async function chatSupport(input: {
   message: string;
   context?: string; // current page context
   history?: Array<{ role: "user" | "assistant"; content: string }>;
+  track?: { orgId: string; userId?: string | null };
 }): Promise<string> {
   const systemPrompt = `คุณคือผู้ช่วย AI สำหรับ HR ของ Pooilgroup (Pooil + JPSync) ที่ดูแลโปรแกรม "รับสมัครพนักงาน"
 
@@ -212,6 +241,7 @@ ${input.context ? `\nContext ปัจจุบัน: ${input.context}` : ""}`;
     },
     { timeout: 20_000 },
   );
+  await trackRecruitUsage("recruit.chat-support", SONNET_MODEL, response, input.track);
 
   return response.content[0]?.type === "text" ? response.content[0].text : "";
 }

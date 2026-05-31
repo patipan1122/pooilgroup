@@ -104,11 +104,24 @@ export async function checkAiBudget(opts: {
   };
 }
 
+/**
+ * Record one AI call. Backwards-compatible: legacy callers pass
+ * `provider: "claude-haiku" | "gemini-flash"` (used only for cost calc).
+ * NEW callers pass:
+ *   model: full model id (e.g. "claude-sonnet-4-6") → routed through
+ *          @/lib/costctrl/pricing.computeAiCostUsd for accurate cost
+ *   moduleName: short module slug ("cashhub"|"docuflow"|"recruit"|"inbox"|...)
+ * Both new columns are nullable so old rows keep working. CostCtrl reads
+ * provider/model/module for grouping; legacy rows fall back to endpoint
+ * parsing on the read side.
+ */
 export async function recordAiUsage(opts: {
-  userId: string;
+  userId?: string | null;
   orgId: string;
   endpoint: string;
-  provider?: "claude-haiku" | "gemini-flash";
+  provider?: string;
+  model?: string;
+  moduleName?: string;
   inputTokens?: number;
   outputTokens?: number;
 }) {
@@ -116,20 +129,43 @@ export async function recordAiUsage(opts: {
     userId,
     orgId,
     endpoint,
-    provider = "claude-haiku",
+    provider,
+    model,
+    moduleName,
     inputTokens = 0,
     outputTokens = 0,
   } = opts;
-  const inKey = `${provider}-input` as keyof typeof PRICING;
-  const outKey = `${provider}-output` as keyof typeof PRICING;
-  const cost = inputTokens * (PRICING[inKey] ?? 0) + outputTokens * (PRICING[outKey] ?? 0);
+
+  let cost = 0;
+  if (model) {
+    const { computeAiCostUsd } = await import("@/lib/costctrl/pricing");
+    cost = computeAiCostUsd(model, inputTokens, outputTokens);
+  } else if (provider) {
+    const inKey = `${provider}-input` as keyof typeof PRICING;
+    const outKey = `${provider}-output` as keyof typeof PRICING;
+    cost = inputTokens * (PRICING[inKey] ?? 0) + outputTokens * (PRICING[outKey] ?? 0);
+  }
+
+  let provTag: string | undefined = provider;
+  if (model) {
+    if (model.startsWith("claude")) provTag = "anthropic";
+    else if (model.startsWith("gemini")) provTag = "gemini";
+    else if (model.startsWith("gpt")) provTag = "openai";
+  } else if (provider === "claude-haiku") provTag = "anthropic";
+  else if (provider === "gemini-flash") provTag = "gemini";
+
+  const mod = moduleName ?? endpoint.split(".")[0] ?? null;
+
   const admin = adminClient();
   await admin.from("ai_usage").insert({
     org_id: orgId,
-    user_id: userId,
+    user_id: userId ?? null,
     endpoint,
     input_tokens: inputTokens,
     output_tokens: outputTokens,
     cost_usd: cost,
+    provider: provTag ?? null,
+    model: model ?? null,
+    module: mod,
   });
 }

@@ -32,6 +32,7 @@ export async function scoreApplicationAction(applicationId: string) {
     jobDescription: app.posting.description ?? undefined,
     formSchema: schema,
     answers: (app.answers ?? {}) as Record<string, unknown>,
+    track: { orgId: session.user.org_id, userId: session.user.id },
   });
 
   await prisma.recruitApplication.update({
@@ -69,5 +70,8 @@ export async function suggestFieldsAction(input: {
   if (!canRecruitWrite(session.user.role)) {
     throw new Error("ไม่มีสิทธิ์");
   }
-  return suggestFields(input);
+  return suggestFields({
+    ...input,
+    track: { orgId: session.user.org_id, userId: session.user.id },
+  });
 }

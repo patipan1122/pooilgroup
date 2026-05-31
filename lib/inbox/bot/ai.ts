@@ -119,6 +119,9 @@ export async function aiAnswer(opts: {
           input_tokens: inTok,
           output_tokens: outTok,
           cost_usd: inTok * IN_PRICE + outTok * OUT_PRICE,
+          provider: "gemini",
+          model: MODEL,
+          module: "inbox",
         })
         .then(
           () => {},
