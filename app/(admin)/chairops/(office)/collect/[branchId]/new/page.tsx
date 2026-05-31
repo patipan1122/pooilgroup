@@ -29,12 +29,40 @@ export default async function OfficeCollectForBranchPage({ params }: Props) {
     notFound();
   }
 
-  const chairs = await prisma.chairopsChair.findMany({
-    where: { branchId: branch.id, isActive: true },
-    orderBy: { chairCode: "asc" },
-    select: { chairCode: true },
-    take: 200,
-  });
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60_000);
+  const [chairs, recentMoves] = await Promise.all([
+    prisma.chairopsChair.findMany({
+      where: { branchId: branch.id, isActive: true },
+      orderBy: { chairCode: "asc" },
+      select: { chairCode: true },
+      take: 200,
+    }),
+    prisma.chairopsChairMove.findMany({
+      where: { toBranchId: branch.id, movedAt: { gte: fourteenDaysAgo } },
+      orderBy: { movedAt: "desc" },
+      include: {
+        chair: { select: { chairCode: true } },
+        fromBranch: { select: { name: true } },
+      },
+      take: 50,
+    }),
+  ]);
+  const movedInByCode = new Map<
+    string,
+    { fromName: string | null; movedAt: string }
+  >();
+  for (const m of recentMoves) {
+    if (!m.chair) continue;
+    if (!movedInByCode.has(m.chair.chairCode)) {
+      movedInByCode.set(m.chair.chairCode, {
+        fromName: m.fromBranch?.name ?? null,
+        movedAt: m.movedAt.toISOString(),
+      });
+    }
+  }
+  const recentlyMovedIn = Array.from(movedInByCode.entries()).map(
+    ([chairCode, info]) => ({ chairCode, ...info }),
+  );
 
   if (chairs.length === 0) {
     return (
@@ -89,6 +117,7 @@ export default async function OfficeCollectForBranchPage({ params }: Props) {
       <CollectNewForm
         chairCodes={chairs.map((c) => c.chairCode)}
         branchOverride={branch.id}
+        recentlyMovedIn={recentlyMovedIn}
       />
     </div>
   );

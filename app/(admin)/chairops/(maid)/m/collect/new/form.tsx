@@ -68,6 +68,16 @@ interface Props {
    * branch from the multi-select picker and acts on its behalf.
    */
   branchOverride?: string | null;
+  /**
+   * Chairs that moved INTO this branch within the last 14 days. Surfaced as
+   * "🆕 ย้ายมาใหม่" badges so the maid isn't confused by unfamiliar codes
+   * (CEO 2026-05-31).
+   */
+  recentlyMovedIn?: ReadonlyArray<{
+    chairCode: string;
+    fromName: string | null;
+    movedAt: string;
+  }>;
 }
 
 const REASON_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
@@ -100,7 +110,21 @@ function defaultLine(): LineState {
   return { status: "collected", amount: "", reasonCode: "", reasonFree: "" };
 }
 
-export function CollectNewForm({ chairCodes, branchOverride }: Props) {
+export function CollectNewForm({
+  chairCodes,
+  branchOverride,
+  recentlyMovedIn,
+}: Props) {
+  const movedInMap = new Map(
+    (recentlyMovedIn ?? []).map((m) => [m.chairCode, m] as const),
+  );
+  function fmtMovedAt(iso: string): string {
+    const d = new Date(iso);
+    const days = Math.floor((Date.now() - d.getTime()) / 86_400_000);
+    if (days <= 0) return "วันนี้";
+    if (days === 1) return "เมื่อวาน";
+    return `${days} วันก่อน`;
+  }
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [online, setOnline] = useState(true);
@@ -363,6 +387,7 @@ export function CollectNewForm({ chairCodes, branchOverride }: Props) {
         {chairCodes.map((code) => {
           const l = lines[code] ?? defaultLine();
           const isProblem = l.status !== "collected";
+          const movedIn = movedInMap.get(code);
           return (
             <li key={code}>
               <Card
@@ -370,10 +395,23 @@ export function CollectNewForm({ chairCodes, branchOverride }: Props) {
                   "transition-colors",
                   isProblem
                     ? "border-amber-300 bg-amber-50/40"
-                    : "border-zinc-200",
+                    : movedIn
+                      ? "border-sky-300 bg-sky-50/40"
+                      : "border-zinc-200",
                 )}
               >
                 <CardBody className="space-y-2 p-3">
+                  {movedIn && (
+                    <div className="flex items-center gap-1.5 text-xs text-sky-700">
+                      <span className="rounded bg-sky-100 px-1.5 py-0.5 font-medium">
+                        🆕 ย้ายมาใหม่
+                      </span>
+                      <span>
+                        {movedIn.fromName ? `จาก ${movedIn.fromName} · ` : ""}
+                        {fmtMovedAt(movedIn.movedAt)}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2">
                     <span className="grid h-10 min-w-[64px] place-items-center rounded-md bg-zinc-100 px-2 font-mono text-sm font-semibold text-zinc-900">
                       {code}

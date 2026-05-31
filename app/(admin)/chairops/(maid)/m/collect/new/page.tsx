@@ -32,7 +32,12 @@ export default async function MaidCollectNewPage() {
     );
   }
 
-  const [branch, chairs] = await Promise.all([
+  // Chairs that moved INTO this branch within the last 14 days — surfaced
+  // as "🆕 ย้ายมาใหม่" badges so the maid knows which chairs are new arrivals
+  // and isn't confused if she doesn't recognize them. Older moves drop off.
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60_000);
+
+  const [branch, chairs, recentMoves] = await Promise.all([
     prisma.chairopsBranch.findUniqueOrThrow({
       where: { id: branchId },
       select: { name: true },
@@ -40,12 +45,42 @@ export default async function MaidCollectNewPage() {
     prisma.chairopsChair.findMany({
       where: { branchId, isActive: true },
       orderBy: { chairCode: "asc" },
-      select: { chairCode: true },
+      select: { chairCode: true, id: true },
       take: 200,
+    }),
+    prisma.chairopsChairMove.findMany({
+      where: {
+        toBranchId: branchId,
+        movedAt: { gte: fourteenDaysAgo },
+      },
+      orderBy: { movedAt: "desc" },
+      include: {
+        chair: { select: { chairCode: true } },
+        fromBranch: { select: { name: true } },
+      },
+      take: 50,
     }),
   ]);
 
   const chairCodes = chairs.map((c) => c.chairCode);
+  const movedInByCode = new Map<string, { fromName: string | null; movedAt: string }>();
+  for (const m of recentMoves) {
+    if (!m.chair) continue;
+    // Keep only the MOST RECENT move per chair (orderBy desc; first wins).
+    if (!movedInByCode.has(m.chair.chairCode)) {
+      movedInByCode.set(m.chair.chairCode, {
+        fromName: m.fromBranch?.name ?? null,
+        movedAt: m.movedAt.toISOString(),
+      });
+    }
+  }
+  const recentlyMovedIn = Array.from(movedInByCode.entries()).map(
+    ([chairCode, info]) => ({
+      chairCode,
+      fromName: info.fromName,
+      movedAt: info.movedAt,
+    }),
+  );
 
   return (
     <div className="space-y-4">
@@ -60,7 +95,10 @@ export default async function MaidCollectNewPage() {
         <p className="text-sm text-zinc-500">สาขา {branch.name}</p>
       </header>
 
-      <CollectNewForm chairCodes={chairCodes} />
+      <CollectNewForm
+        chairCodes={chairCodes}
+        recentlyMovedIn={recentlyMovedIn}
+      />
     </div>
   );
 }
