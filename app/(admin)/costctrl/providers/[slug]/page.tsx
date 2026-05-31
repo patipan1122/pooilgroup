@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getProviderBySlug, getProviderDailyCosts } from "@/lib/costctrl/data";
+import { getProviderBySlug, getProviderDailyCosts, getProviderMonthlyHistory } from "@/lib/costctrl/data";
 import { formatUsd, formatNumber, FREE_TIER_LIMITS, pctBar } from "@/lib/costctrl/pricing";
 import { SyncProviderButton } from "../../_components/sync-buttons";
 
@@ -21,13 +21,14 @@ export default async function ProviderDrillPage({
 
   const firstOfMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
 
-  const [snaps, daily] = await Promise.all([
+  const [snaps, daily, monthly] = await Promise.all([
     prisma.costSnapshot.findMany({
       where: { providerId: provider.id, periodMonth: firstOfMonth },
       orderBy: { capturedAt: "desc" },
       take: 50,
     }),
     getProviderDailyCosts(provider.id, 30),
+    getProviderMonthlyHistory(provider.id, 6),
   ]);
 
   const budgetMap = provider.budgetMonthly as Record<string, number>;
@@ -74,6 +75,32 @@ export default async function ProviderDrillPage({
                 : "warn"
           }
         />
+      </section>
+
+      {/* 6-month history */}
+      <section className="rounded-xl ring-1 ring-zinc-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-zinc-900 mb-3">ย้อนหลัง 6 เดือน</h2>
+        {monthly.length === 0 ? (
+          <p className="text-sm text-zinc-500">ยังไม่มีข้อมูล · เริ่มเก็บจากเดือนนี้</p>
+        ) : (
+          <div className="grid grid-cols-6 gap-2">
+            {monthly.map((m) => (
+              <div key={m.month} className="text-center">
+                <div className="text-[10px] text-zinc-500 mb-1">{m.month}</div>
+                <div className="h-16 bg-zinc-50 rounded flex items-end justify-center p-1">
+                  <div
+                    className="w-full bg-blue-400 rounded-sm"
+                    style={{
+                      height: `${Math.max(4, Math.round((m.costUsd / Math.max(0.01, ...monthly.map((x) => x.costUsd))) * 100))}%`,
+                    }}
+                    title={formatUsd(m.costUsd)}
+                  />
+                </div>
+                <div className="text-[11px] font-mono text-zinc-700 mt-1">{formatUsd(m.costUsd)}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* 30-day cost chart */}

@@ -1,7 +1,16 @@
 // CostCtrl read-side data helpers — Server-Component friendly
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@/lib/generated/prisma/client";
+import { Prisma } from "@/lib/generated/prisma/client";
 import { FREE_TIER_LIMITS, pctBar, type ProviderSlug } from "./pricing";
+
+export type MetricLite = {
+  metric: string;
+  unit: string;
+  value: number;
+  free?: number;
+  pct?: number;
+  tone?: "ok" | "warn" | "alarm";
+};
 
 export type ProviderSummary = {
   id: string;
@@ -11,18 +20,24 @@ export type ProviderSummary = {
   enabled: boolean;
   lastSyncAt: Date | null;
   lastSyncStatus: string | null;
-  budgetUsd: number;             // current month
-  costMtdUsd: number;            // current month cost
+  budgetUsd: number;
+  costMtdUsd: number;
   budgetPctTone: "ok" | "warn" | "alarm";
   budgetPct: number;
-  metrics: Array<{
-    metric: string;
-    unit: string;
-    value: number;
-    free?: number;               // free-tier ceiling if known
-    pct?: number;                // % of free tier
-    tone?: "ok" | "warn" | "alarm";
-  }>;
+  metrics: MetricLite[];
+  /** Highest-signal metric for display on overview card (e.g. db_size_mb for supabase). May be null when no snapshots yet. */
+  headline: MetricLite | null;
+  /** Plan / pricing note (e.g. "Hobby plan · usage API not available") */
+  planNote?: string;
+};
+
+// Which metric per provider is the most actionable "ใกล้เพดานหรือยัง" signal
+const HEADLINE_METRIC_BY_PROVIDER: Record<string, string[]> = {
+  vercel: ["bandwidth_gb", "function_invocations", "cost_usd"],
+  supabase: ["db_size_mb", "egress_gb", "mau", "cost_usd"],
+  r2: ["storage_gb", "class_a_ops", "cost_usd"],
+  anthropic: ["cost_usd"],
+  gemini: ["cost_usd"],
 };
 
 function firstOfMonth(d = new Date()): Date {
@@ -78,6 +93,24 @@ export async function listProviderSummaries(): Promise<ProviderSummary[]> {
       return { metric: s.metric, unit: s.unit, value };
     });
 
+    // Pick headline metric: first metric in the preferred list that exists in `metrics`,
+    // preferring ones with known free-tier % so the card can show a meaningful bar.
+    const preferred = HEADLINE_METRIC_BY_PROVIDER[p.slug] ?? ["cost_usd"];
+    let headline: MetricLite | null = null;
+    for (const wanted of preferred) {
+      const m = metrics.find((x) => x.metric === wanted);
+      if (m) { headline = m; break; }
+    }
+    if (!headline && metrics.length) headline = metrics[0];
+
+    // Detect plan note from any "plan" metric raw payload
+    const planRow = latest.find((s) => s.metric === "plan");
+    const planNote = (() => {
+      if (!planRow?.raw || typeof planRow.raw !== "object") return undefined;
+      const note = (planRow.raw as { note?: string }).note;
+      return typeof note === "string" ? note : undefined;
+    })();
+
     summaries.push({
       id: p.id,
       slug: p.slug,
@@ -91,6 +124,8 @@ export async function listProviderSummaries(): Promise<ProviderSummary[]> {
       budgetPct: bp,
       budgetPctTone: bt,
       metrics,
+      headline,
+      planNote,
     });
   }
   return summaries;
@@ -98,6 +133,31 @@ export async function listProviderSummaries(): Promise<ProviderSummary[]> {
 
 export async function getProviderBySlug(slug: string) {
   return prisma.costProvider.findUnique({ where: { slug } });
+}
+
+export type MonthlyPoint = { month: string; costUsd: number; topMetric?: { metric: string; unit: string; value: number } };
+
+export async function getProviderMonthlyHistory(providerId: string, months = 6): Promise<MonthlyPoint[]> {
+  // For each of the last `months` months, take the latest snapshot per metric
+  // and sum cost_usd. Returns one row per month (oldest → newest) so it can
+  // be charted directly.
+  const rows: Array<{ month: string; cost_usd: string | number; top_metric?: string; top_value?: string | number; top_unit?: string }> = await prisma.$queryRaw`
+    WITH latest_per_metric AS (
+      SELECT DISTINCT ON (period_month, metric)
+        period_month, metric, unit, value, cost_usd
+      FROM public.cost_snapshot
+      WHERE provider_id = ${providerId}::uuid
+        AND period_month >= (date_trunc('month', now()) - interval '${Prisma.raw(String(months - 1))} months')::date
+      ORDER BY period_month, metric, captured_at DESC
+    )
+    SELECT
+      to_char(period_month, 'YYYY-MM') AS month,
+      SUM(cost_usd)::text              AS cost_usd
+    FROM latest_per_metric
+    GROUP BY period_month
+    ORDER BY period_month
+  `;
+  return rows.map((r) => ({ month: r.month, costUsd: Number(r.cost_usd) }));
 }
 
 export type DailyPoint = { day: string; costUsd: number };
