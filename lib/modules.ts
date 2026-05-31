@@ -61,10 +61,13 @@ import {
   Bot,
   Banknote,
   Gauge,
+  BedDouble,
+  ImageIcon,
+  CalendarCheck,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
-export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland" | "inbox" | "costctrl";
+export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland" | "inbox" | "costctrl" | "hotelbook";
 export type ModuleStatus = "active" | "coming_soon" | "beta";
 
 export interface NavItem {
@@ -736,6 +739,54 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
   // below. Layout-level guard via requireSuperAdmin is the real wall — nav
   // visibility is just polish.
   // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // HotelBook · ระบบจองโรงแรม (Mix Hotel first tenant)
+  // BIGFEATURE 2026-05-31 รอบ 68 · public booking via web + LIFF + FB CTA
+  // ─────────────────────────────────────────────────────────────────────────
+  hotelbook: {
+    slug: "hotelbook",
+    name: "ระบบจองโรงแรม",
+    tagline: "Mix Hotel · จองผ่านเว็บ + LINE + Facebook · จัดการห้อง + ภาพ + รายการจอง",
+    description:
+      "ระบบจองโรงแรมแบบ end-to-end · public booking page สวยๆ + LINE Mini App + FB CTA · admin จัดการ ห้อง · ราคา · รูปภาพ · รายการจอง · นโยบาย",
+    emoji: "🏨",
+    Icon: BedDouble,
+    status: "active",
+    basePath: "/hotelbook",
+    nav: [
+      {
+        href: "/hotelbook",
+        label: "ภาพรวม",
+        icon: LayoutDashboard,
+        section: "โรงแรม",
+      },
+      {
+        href: "/hotelbook/bookings",
+        label: "รายการจอง",
+        icon: CalendarCheck,
+      },
+      {
+        href: "/hotelbook/rooms",
+        label: "จัดการห้อง",
+        icon: BedDouble,
+        roles: ["super_admin", "org_admin", "admin"],
+        section: "จัดการ",
+      },
+      {
+        href: "/hotelbook/images",
+        label: "อัปโหลดรูป",
+        icon: ImageIcon,
+        roles: ["super_admin", "org_admin", "admin"],
+      },
+      {
+        href: "/hotelbook/settings",
+        label: "ตั้งค่าโรงแรม",
+        icon: Settings,
+        adminOnly: true,
+      },
+    ],
+  },
+
   costctrl: {
     slug: "costctrl",
     name: "ศูนย์ควบคุมต้นทุน",

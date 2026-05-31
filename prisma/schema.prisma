@@ -4597,3 +4597,137 @@ model CostApiCredential {
   @@map("cost_api_credential")
   @@schema("public")
 }
+
+// =============================================================
+// HotelBook · ระบบจองโรงแรม (Pool ERP Module #11)
+// BIGFEATURE 2026-05-31 รอบ 68 · Mix Hotel first tenant
+// =============================================================
+model Hotel {
+  id                     String   @id @default(uuid()) @db.Uuid
+  orgId                  String   @map("org_id") @db.Uuid
+  slug                   String   @unique
+  name                   String
+  concept                String?
+  description            String?
+  reservationPhones      String[] @map("reservation_phones")
+  ownerPhone             String?  @map("owner_phone")
+  googleMapsUrl          String?  @map("google_maps_url")
+  address                String?
+  email                  String?
+  brandColor             String   @default("#7c3aed") @map("brand_color")
+  heroImageUrl           String?  @map("hero_image_url")
+  logoUrl                String?  @map("logo_url")
+  checkInTime            String?  @map("check_in_time")
+  checkOutTime           String?  @map("check_out_time")
+  is24h                  Boolean  @default(true) @map("is_24h")
+  paymentMethods         String[] @default(["cash", "transfer", "qr"]) @map("payment_methods")
+  allowsPets             Boolean  @default(false) @map("allows_pets")
+  smokingAllowed         Boolean  @default(false) @map("smoking_allowed")
+  cancellationNote       String?  @map("cancellation_note")
+  multiNightDiscountNote String?  @map("multi_night_discount_note")
+  amenities              String[] @default([])
+  nearbyPlaces           String[] @default([]) @map("nearby_places")
+  enabled                Boolean  @default(true)
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  rooms    HotelRoom[]
+  images   HotelImage[]
+  bookings HotelBooking[]
+
+  @@index([orgId])
+  @@map("hotel")
+  @@schema("public")
+}
+
+model HotelRoom {
+  id              String   @id @default(uuid()) @db.Uuid
+  hotelId         String   @map("hotel_id") @db.Uuid
+  slug            String
+  name            String
+  description     String?
+  bedDescription  String?  @map("bed_description")
+  priceThb        Decimal  @map("price_thb") @db.Decimal(10, 2)
+  totalRooms      Int      @default(1) @map("total_rooms")
+  amenities       String[] @default([])
+  sortOrder       Int      @default(0) @map("sort_order")
+  isActive        Boolean  @default(true) @map("is_active")
+  primaryImageUrl String?  @map("primary_image_url")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  hotel        Hotel              @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  images       HotelImage[]
+  bookings     HotelBooking[]
+  blockedDates HotelBlockedDate[]
+
+  @@unique([hotelId, slug])
+  @@map("hotel_room")
+  @@schema("public")
+}
+
+model HotelImage {
+  id           String   @id @default(uuid()) @db.Uuid
+  hotelId      String   @map("hotel_id") @db.Uuid
+  roomId       String?  @map("room_id") @db.Uuid
+  url          String
+  thumbnailUrl String?  @map("thumbnail_url")
+  altText      String?  @map("alt_text")
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  hotel Hotel      @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  room  HotelRoom? @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([hotelId, sortOrder])
+  @@index([roomId, sortOrder])
+  @@map("hotel_image")
+  @@schema("public")
+}
+
+model HotelBooking {
+  id             String   @id @default(uuid()) @db.Uuid
+  hotelId        String   @map("hotel_id") @db.Uuid
+  roomId         String   @map("room_id") @db.Uuid
+  code           String   @unique
+  guestName      String   @map("guest_name")
+  guestPhone     String   @map("guest_phone")
+  guestEmail     String?  @map("guest_email")
+  guestLineId    String?  @map("guest_line_id")
+  guestFbPsid    String?  @map("guest_fb_psid")
+  checkInDate    DateTime @map("check_in_date") @db.Date
+  checkOutDate   DateTime @map("check_out_date") @db.Date
+  nights         Int
+  rooms          Int      @default(1)
+  totalAmountThb Decimal  @map("total_amount_thb") @db.Decimal(10, 2)
+  paymentMethod  String?  @map("payment_method")
+  paymentSlipUrl String?  @map("payment_slip_url")
+  status         String   @default("pending")
+  source         String
+  note           String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  hotel Hotel     @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  room  HotelRoom @relation(fields: [roomId], references: [id])
+
+  @@index([hotelId, checkInDate])
+  @@index([roomId, checkInDate, checkOutDate])
+  @@map("hotel_booking")
+  @@schema("public")
+}
+
+model HotelBlockedDate {
+  id        String   @id @default(uuid()) @db.Uuid
+  roomId    String   @map("room_id") @db.Uuid
+  date      DateTime @db.Date
+  rooms     Int      @default(1)
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  room HotelRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, date])
+  @@map("hotel_blocked_date")
+  @@schema("public")
+}
