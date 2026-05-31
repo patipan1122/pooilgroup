@@ -4,7 +4,43 @@
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
-## 🆕 Update (2026-05-31 · รอบ 65 — /bigfeature CostCtrl · ศูนย์ควบคุมต้นทุน · super_admin only)
+## 🆕 Update (2026-05-31 · รอบ 66 — CostCtrl ✅ DEPLOYED to prod + 3 tokens stored)
+
+**🚀 Live URLs (super_admin / CEO only):**
+- https://pooilgroup.vercel.app/costctrl — overview
+- https://pooilgroup.vercel.app/costctrl/ai — AI tokens MTD
+- https://pooilgroup.vercel.app/costctrl/alerts — rules + budgets + creds + history
+- https://pooilgroup.vercel.app/costctrl/providers/{vercel,supabase,r2,anthropic,gemini} — drill
+
+**Pipeline executed this round:**
+1. ✅ Migration applied via Supabase Management API (5 tables · RLS · 5 providers seeded · 10 default alert rules)
+2. ✅ Pushed `chairops-liff-fix3` (3 commits ahead) → `setup` (`917278c..ce6b519`) — Vercel auto-deploy completed
+3. ✅ 3 provider tokens (Vercel/Supabase/R2) AES-256-GCM encrypted + INSERTed into `cost_api_credential` via one-off Node script (verified ciphertext lens: 210 · 182 · 210 bytes)
+4. ✅ Smoke test all routes:
+   - `/costctrl` → HTTP 307 (auth-gated · route exists)
+   - `/costctrl/ai` → HTTP 307
+   - `/costctrl/alerts` → HTTP 307
+   - `/costctrl/providers/vercel` → HTTP 307
+   - `/api/costctrl/cron/sync` → HTTP 401 (CRON_SECRET gate)
+
+**🔐 ROTATE REMINDER (do this within 24h):**
+3 token leaked in chat transcript (Anthropic conversation log). They are currently active in prod CostCtrl. CEO must rotate:
+- Vercel: https://vercel.com/account/tokens → revoke old · create new · paste at /costctrl/alerts → คีย์ API tab (label `pooil-vercel` will upsert)
+- Supabase: https://supabase.com/dashboard/account/tokens → same flow
+- Cloudflare: https://dash.cloudflare.com/profile/api-tokens → same flow
+
+**Cron will auto-run** at 02:00 ICT tonight. Or CEO can click "Sync ตอนนี้ (ทั้งหมด)" button on /costctrl to populate immediately.
+
+**Open follow-ups:**
+- DocuFlow 4 AI sites still unwrapped (~1 hr Sprint 1) — will show as `(legacy)`/`(unknown)` in /costctrl/ai until done
+- `COSTCTRL_CRYPTO_KEY` env not set in Vercel → using SUPABASE_SERVICE_ROLE_KEY fallback (works · but rotating service-role key would brick all 3 stored tokens — set `COSTCTRL_CRYPTO_KEY` to a dedicated `openssl rand -base64 32` value before that risk materializes)
+- `COSTCTRL_LINE_USER_ID` env not set → budget alerts will log warning + NOT push LINE (cron still records `cost_alert_event` rows · push only deferred)
+
+Memory: `[[costctrl-shipped-2026-05-31]]` updated.
+
+---
+
+## Update (2026-05-31 · รอบ 65 — /bigfeature CostCtrl · ศูนย์ควบคุมต้นทุน · super_admin only)
 
 **CEO:** "ทำโปรแกรมแยกมา 1 โปรแกรม · super admin คนเดียวเห็น · เห็นต้นทุน vercel r2 supabase api ai · เตือนใกล้ขีดจำกัด"
 
