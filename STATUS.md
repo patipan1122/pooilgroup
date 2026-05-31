@@ -1,10 +1,38 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-29 (รอบ 64 · ChairOps sticky-header overlap fix DEPLOYED)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-31 (รอบ 65 · /bigfeature CostCtrl Pool module #10 — built + committed + NOT deployed)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
-## 🆕 Update (2026-05-29 · รอบ 64 — ChairOps sticky-header text overlap FIXED + DEPLOYED)
+## 🆕 Update (2026-05-31 · รอบ 65 — /bigfeature CostCtrl · ศูนย์ควบคุมต้นทุน · super_admin only)
+
+**CEO:** "ทำโปรแกรมแยกมา 1 โปรแกรม · super admin คนเดียวเห็น · เห็นต้นทุน vercel r2 supabase api ai · เตือนใกล้ขีดจำกัด"
+
+**What ships in commit `1a9396f` (branch `chairops-liff-fix3`):**
+- **Pool module #10 `costctrl`** — `super_admin` only · org_admin/admin redirected to /dashboard
+- **5 DB tables** + extend `ai_usage` with provider/model/module cols (nullable backward-compat) · RLS = super_admin only via `auth.uid()+users.role` check · seeds 5 providers + 10 default rules (80% + 100% on cost_usd)
+- **4 routes**: `/costctrl` (overview · 5 cards · alerts strip) · `/costctrl/providers/[slug]` (drill · 30-day chart · sync-now) · `/costctrl/ai` (AI tokens MTD by provider × module × model) · `/costctrl/alerts` (4 tabs: rules · budgets · creds · history)
+- **1 cron** `/api/costctrl/cron/sync` at `0 19 * * *` (02:00 ICT · 1x/day Hobby-safe)
+- **AI retrofit**: wrapped `inbox/bot/ai.ts` + `inbox/bot/trainer-actions.ts` + `recruit/ai.ts` (3 fns) · DocuFlow 4 sites DEFERRED (~1 hr) — will show as `(legacy)` in /costctrl/ai until wrapped
+- **6 lib files** `lib/costctrl/*`: crypto (AES-256-GCM · COSTCTRL_CRYPTO_KEY env) · pricing · data · fetchers · sync · alerts (reuses ChairOps LINE adapter)
+
+**🛡 Verify:** `npx tsc --noEmit` clean · `npx next build` Compiled successfully · 4 costctrl routes + 1 cron route registered.
+
+**⚠️ Deploy state:** built + committed + pushed to `chairops-liff-fix3` · **NOT merged to setup · NOT migrated · NOT deployed to prod**. CEO must do (per memory `[[pool-prod-autodeploys-from-setup-branch]]`):
+1. `git checkout setup && git merge chairops-liff-fix3 && git push origin setup` (auto-triggers Vercel prod deploy) — OR cherry-pick just `1a9396f`
+2. Apply migration `supabase/migrations/20260531020000_costctrl_module.sql` to prod DB (psql · ~6 sec)
+3. (Optional) set `COSTCTRL_CRYPTO_KEY` Vercel env (`openssl rand -base64 32`) · separate blast-radius from inbox/recruit
+4. (Optional) set `COSTCTRL_LINE_USER_ID` for alert push to CEO
+
+**Manual mode default:** module ships in "AI-only" mode — Anthropic + Gemini work immediately from existing `ai_usage` table. Vercel/Supabase/R2 cards show $0 until CEO pastes API tokens at `/costctrl/alerts → คีย์ API` tab.
+
+**⚠️ Migration name collision dodged:** parallel session shipped `20260531000000_chairops_chair_move_history.sql` while I was writing. Renamed mine to `20260531020000_costctrl_module.sql` (2-hour offset) to avoid order ambiguity.
+
+**📚 Spec + memory:** `docs/BIGFEATURE_costctrl_SPEC.md` (17 sections) · memory `[[costctrl-shipped-2026-05-31]]`.
+
+---
+
+## Update (2026-05-29 · รอบ 64 — ChairOps sticky-header text overlap FIXED + DEPLOYED)
 
 **CEO:** "ตัวหนังสือบังกัน ตรวจทั้งเว็บ · บอกไปหลายรอบแล้ว · วิเคราะห์เกิดจากอะไร" (reported 3×).
 
