@@ -646,13 +646,92 @@ export async function commitImport(importId: string): Promise<{ ok: true } | { o
   }
 
   // Apply rows in a transaction
-  const toApply = diff.rows.filter((r) => r.status === "new" || r.status === "changed");
+  const toApplyUnsorted = diff.rows.filter(
+    (r) => r.status === "new" || r.status === "changed",
+  );
   const orgId = imp.orgId;
+  // 2026-05-31 — sort by bizDate ASC so chair-move detection sees branches
+  // in chronological order. Without this, a row from 2026-05-10 processed
+  // after a row from 2026-05-15 would back-date the chair's "current branch"
+  // to the older date.
+  const toApply = [...toApplyUnsorted].sort((a, b) =>
+    (a.bizDate ?? "").localeCompare(b.bizDate ?? ""),
+  );
+
+  // Preload every chair referenced by this batch — single query out of tx
+  // so the per-row chair-move logic is O(1) lookup.
+  const chairCodesInBatch = new Set<string>();
+  for (const r of toApply) {
+    if (r.chairCode) chairCodesInBatch.add(r.chairCode);
+  }
+  const preloadedChairs =
+    chairCodesInBatch.size > 0
+      ? await prisma.chairopsChair.findMany({
+          where: { orgId, chairCode: { in: Array.from(chairCodesInBatch) } },
+          select: { id: true, chairCode: true, branchId: true },
+        })
+      : [];
+  const chairMap = new Map<string, { id: string; branchId: string }>(
+    preloadedChairs.map((c) => [c.chairCode, { id: c.id, branchId: c.branchId }]),
+  );
+  let chairsCreatedFromPos = 0;
+  let chairMovesRecorded = 0;
 
   await prisma.$transaction(async (tx) => {
     for (const r of toApply) {
       if (!r.branchId || !r.bizDate) continue;
       const bizDate = new Date(r.bizDate + "T00:00:00.000Z");
+      // ── Chair-move detection (CEO 2026-05-31 spec): file is source of truth
+      //    for "this chair was at this branch on this date". If the row's
+      //    (chairCode, branchId) disagrees with our chair table, we move the
+      //    chair to the file's branch and record a ChairopsChairMove with
+      //    movedAt = bizDate. New chairs get an initial-placement move row.
+      if (r.chairCode) {
+        const existingChair = chairMap.get(r.chairCode);
+        if (!existingChair) {
+          const fresh = await tx.chairopsChair.create({
+            data: {
+              orgId,
+              branchId: r.branchId,
+              chairCode: r.chairCode,
+              isActive: true,
+            },
+          });
+          await tx.chairopsChairMove.create({
+            data: {
+              orgId,
+              chairId: fresh.id,
+              fromBranchId: null,
+              toBranchId: r.branchId,
+              movedAt: bizDate,
+              movedById: session.user.id,
+              source: "pos_ingest",
+              notes: `first placement detected from POS upload (importId=${imp.id})`,
+            },
+          });
+          chairMap.set(r.chairCode, { id: fresh.id, branchId: r.branchId });
+          chairsCreatedFromPos += 1;
+        } else if (existingChair.branchId !== r.branchId) {
+          await tx.chairopsChair.update({
+            where: { id: existingChair.id },
+            data: { branchId: r.branchId },
+          });
+          await tx.chairopsChairMove.create({
+            data: {
+              orgId,
+              chairId: existingChair.id,
+              fromBranchId: existingChair.branchId,
+              toBranchId: r.branchId,
+              movedAt: bizDate,
+              movedById: session.user.id,
+              source: "pos_ingest",
+              notes: `branch change detected on POS upload (importId=${imp.id})`,
+            },
+          });
+          chairMap.set(r.chairCode, { id: existingChair.id, branchId: r.branchId });
+          chairMovesRecorded += 1;
+        }
+      }
       // chairCode is nullable. Prisma's compound-unique upsert with null can be
       // flaky across versions, so we do findFirst → update/create explicitly.
       const existing = await tx.chairopsPosDaily.findFirst({
