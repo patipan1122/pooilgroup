@@ -37,7 +37,7 @@
 **Typecheck:** ✅ `pnpm exec tsc --noEmit` exit 0
 **Lint:** ✅ touched files clean (1 focused `eslint-disable-next-line react-hooks/purity` บน Date.now() ใน server component · ตามแบบ `reports/page.tsx` ที่มีอยู่)
 
-**ยังไม่ deploy:** waiting CEO push authorization (`setup` branch classifier-blocked) · ไม่ commit/push อัตโนมัติ
+**Deployed:** `setup 25ff515..ea00ec6` pushed @ 2026-05-31 · Vercel build 2 m · all 4 smoke routes (`/chairops/pos-ingest`, `/chairops/m`, `/chairops/collections`, `/chairops/reports/monthly`) return HTTP 307 (auth gate, no 500) · LIVE on https://pooilgroup.vercel.app
 
 ---
 
