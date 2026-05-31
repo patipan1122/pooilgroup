@@ -61,6 +61,22 @@ export function isAdminTier(role: DbUser["role"]): boolean {
   return ADMIN_TIER_ROLES.includes(role);
 }
 
+/**
+ * Strictest gate — super_admin only. Used by the CostCtrl module (CEO-only
+ * cost dashboard) where even org_admin / admin must NOT see provider tokens,
+ * monthly spend, or budget rules. Anyone below super_admin is redirected to
+ * the regular dashboard.
+ */
+export function requireSuperAdmin(role: DbUser["role"]): void {
+  if (role !== "super_admin") {
+    redirect("/dashboard");
+  }
+}
+
+export function isSuperAdmin(role: DbUser["role"]): boolean {
+  return role === "super_admin";
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Role-hierarchy helpers — prevent privilege escalation in user-management APIs.
 // Rule: a caller may only assign / modify users whose role rank is < caller's.

@@ -281,12 +281,14 @@ export async function importStarThingEquipment(
     branchesMatched: number;
     branchesCreated: number;
     chairsInserted: number;
+    chairsMoved: number;
     chairsAlreadyExisting: number;
     perStore: Array<{
       store: string;
       branchName: string;
       created: boolean;
       chairsInserted: number;
+      chairsMoved: number;
       chairsAlreadyExisting: number;
     }>;
   }>
@@ -405,16 +407,33 @@ export async function importStarThingEquipment(
     return `${base}-${Date.now()}`;
   }
 
-  // Execute plan in one tx where possible. Branch create + chair createMany
-  // per branch, with idempotent-chair logic (skip existing).
+  // ------------------------------------------------------------------------
+  // Execute plan. File is source of truth for chair → branch mapping:
+  //   - chair NOT in DB at all → CREATE (record ChairopsChairMove from=null)
+  //   - chair in DB at SAME branch  → no-op
+  //   - chair in DB at DIFFERENT branch → UPDATE branchId + record move
+  // Chairs in DB but NOT in this file are left untouched (might be at-home
+  // storage, awaiting redeploy). Operator can deactivate manually if needed.
+  // ------------------------------------------------------------------------
+
+  // Preload every chair the org owns so we can detect cross-branch moves
+  // without per-row queries.
+  const allChairs = await prisma.chairopsChair.findMany({
+    where: { orgId: session.user.orgId },
+    select: { id: true, chairCode: true, branchId: true },
+  });
+  const chairByCode = new Map(allChairs.map((c) => [c.chairCode, c]));
+
   let branchesCreated = 0;
   let chairsInsertedTotal = 0;
+  let chairsMovedTotal = 0;
   let chairsAlreadyExistingTotal = 0;
   const perStore: Array<{
     store: string;
     branchName: string;
     created: boolean;
     chairsInserted: number;
+    chairsMoved: number;
     chairsAlreadyExisting: number;
   }> = [];
 
@@ -438,33 +457,74 @@ export async function importStarThingEquipment(
       branchesCreated += 1;
     }
 
-    // existing chairs on this branch
-    const existing = await prisma.chairopsChair.findMany({
-      where: { orgId: session.user.orgId, branchId },
-      select: { chairCode: true },
-    });
-    const have = new Set(existing.map((e) => e.chairCode));
-    const toInsert = p.chairCodes.filter((c) => !have.has(c));
-    if (toInsert.length > 0) {
-      await prisma.chairopsChair.createMany({
-        data: toInsert.map((code) => ({
-          orgId: session.user.orgId,
-          branchId: branchId!,
+    let storeInserted = 0;
+    let storeMoved = 0;
+    let storeSame = 0;
+    for (const code of p.chairCodes) {
+      const existing = chairByCode.get(code);
+      if (!existing) {
+        // New chair — create + initial placement move row.
+        const newChair = await prisma.chairopsChair.create({
+          data: {
+            orgId: session.user.orgId,
+            branchId,
+            chairCode: code,
+            isActive: true,
+          },
+        });
+        await prisma.chairopsChairMove.create({
+          data: {
+            orgId: session.user.orgId,
+            chairId: newChair.id,
+            fromBranchId: null,
+            toBranchId: branchId,
+            movedById: session.user.id,
+            source: "starthing_import",
+            notes: "first placement from StarThing equipment list",
+          },
+        });
+        chairByCode.set(code, {
+          id: newChair.id,
           chairCode: code,
-          isActive: true,
-        })),
-        skipDuplicates: true,
+          branchId,
+        });
+        storeInserted += 1;
+        chairsInsertedTotal += 1;
+        continue;
+      }
+      if (existing.branchId === branchId) {
+        storeSame += 1;
+        chairsAlreadyExistingTotal += 1;
+        continue;
+      }
+      // Moved across branches.
+      await prisma.chairopsChair.update({
+        where: { id: existing.id },
+        data: { branchId },
       });
+      await prisma.chairopsChairMove.create({
+        data: {
+          orgId: session.user.orgId,
+          chairId: existing.id,
+          fromBranchId: existing.branchId,
+          toBranchId: branchId,
+          movedById: session.user.id,
+          source: "starthing_import",
+          notes: "branch change detected on StarThing re-import",
+        },
+      });
+      chairByCode.set(code, { ...existing, branchId });
+      storeMoved += 1;
+      chairsMovedTotal += 1;
     }
 
-    chairsInsertedTotal += toInsert.length;
-    chairsAlreadyExistingTotal += have.size;
     perStore.push({
       store: p.storeRaw,
       branchName: p.branchName,
       created,
-      chairsInserted: toInsert.length,
-      chairsAlreadyExisting: have.size,
+      chairsInserted: storeInserted,
+      chairsMoved: storeMoved,
+      chairsAlreadyExisting: storeSame,
     });
   }
 
@@ -480,6 +540,7 @@ export async function importStarThingEquipment(
       chairsInFile: totalChairRowsInFile,
       branchesCreated,
       chairsInserted: chairsInsertedTotal,
+      chairsMoved: chairsMovedTotal,
     },
     metadata: { route: "/chairops/branches/import-equipment" },
   });
@@ -496,6 +557,7 @@ export async function importStarThingEquipment(
       branchesMatched: plan.filter((p) => !p.isNewBranch).length,
       branchesCreated,
       chairsInserted: chairsInsertedTotal,
+      chairsMoved: chairsMovedTotal,
       chairsAlreadyExisting: chairsAlreadyExistingTotal,
       perStore,
     },

@@ -15,12 +15,14 @@ type ImportSummary = {
   branchesMatched: number;
   branchesCreated: number;
   chairsInserted: number;
+  chairsMoved: number;
   chairsAlreadyExisting: number;
   perStore: Array<{
     store: string;
     branchName: string;
     created: boolean;
     chairsInserted: number;
+    chairsMoved: number;
     chairsAlreadyExisting: number;
   }>;
 };
@@ -51,9 +53,9 @@ export function ImportEquipmentForm() {
         return;
       }
       setSummary(res.data);
-      const { chairsInserted, branchesCreated } = res.data;
+      const { chairsInserted, chairsMoved, branchesCreated } = res.data;
       toast.success(
-        `นำเข้าเรียบร้อย · เพิ่ม ${chairsInserted} เก้าอี้ · สร้าง ${branchesCreated} สาขาใหม่`,
+        `นำเข้าเรียบร้อย · เพิ่ม ${chairsInserted} เก้าอี้ · ย้าย ${chairsMoved} ตัว · สร้าง ${branchesCreated} สาขาใหม่`,
       );
       router.refresh();
     });
@@ -110,6 +112,11 @@ export function ImportEquipmentForm() {
                 value={summary.chairsInserted}
                 tone="emerald"
               />
+              <Cell
+                label="เก้าอี้ย้ายสาขา"
+                value={summary.chairsMoved}
+                tone={summary.chairsMoved > 0 ? "amber" : undefined}
+              />
             </div>
             <details className="mt-2">
               <summary className="cursor-pointer text-xs font-medium text-zinc-600">
@@ -127,7 +134,9 @@ export function ImportEquipmentForm() {
                       {s.store !== s.branchName ? ` → ${s.branchName}` : ""}
                     </span>
                     <span className="shrink-0 font-mono text-zinc-500">
-                      +{s.chairsInserted} (มี {s.chairsAlreadyExisting})
+                      +{s.chairsInserted}
+                      {s.chairsMoved > 0 ? ` · ↪${s.chairsMoved}` : ""} (มี{" "}
+                      {s.chairsAlreadyExisting})
                     </span>
                   </li>
                 ))}

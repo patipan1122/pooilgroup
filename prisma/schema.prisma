@@ -2943,6 +2943,8 @@ model ChairopsBranch {
   secondaryAlertUser   ChairopsUser? @relation("chairops_secondary_alert", fields: [secondaryAlertUserId], references: [id])
 
   chairs             ChairopsChair[]
+  chairMovesFrom     ChairopsChairMove[]          @relation("chairmove_from")
+  chairMovesTo       ChairopsChairMove[]          @relation("chairmove_to")
   maidAssignments    ChairopsMaidAssignment[]
   posDaily           ChairopsPosDaily[]
   cashCollections    ChairopsCashCollection[]
@@ -2979,6 +2981,7 @@ model ChairopsUser {
   maidAssignments        ChairopsMaidAssignment[]
   cashCollections        ChairopsCashCollection[]
   cashDeposits           ChairopsCashDeposit[]
+  chairMovesBy           ChairopsChairMove[]
   posDailyEntries        ChairopsPosDaily[]
   damageReported         ChairopsDamageTicket[]      @relation("chairops_damage_reported_by")
   damageAssigned         ChairopsDamageTicket[]      @relation("chairops_damage_assigned_to")
@@ -3034,11 +3037,43 @@ model ChairopsChair {
 
   branch        ChairopsBranch         @relation(fields: [branchId], references: [id])
   damageTickets ChairopsDamageTicket[]
+  moves         ChairopsChairMove[]
 
   @@unique([orgId, chairCode])
   @@index([orgId])
   @@index([branchId])
   @@index([generation])
+  @@schema("chairops")
+}
+
+// Chair-move history (Plan 2 per CEO 2026-05-31). One row per branch change.
+// fromBranchId is nullable (first placement when the chair was created).
+// source = "manual" | "starthing_import" | other ingest channels.
+//
+// Revenue rows (PosDaily / CashCollection / BranchDailyRevenue) already
+// snapshot branchId at event time, so historical attribution is preserved
+// regardless of moves. This table answers "where has chair G0322099 been?"
+// without scanning audit_log JSON.
+model ChairopsChairMove {
+  id           String   @id @default(uuid())
+  orgId        String
+  chairId      String
+  fromBranchId String?
+  toBranchId   String
+  movedAt      DateTime @default(now())
+  movedById    String?
+  source       String   @default("manual")
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  chair      ChairopsChair   @relation(fields: [chairId], references: [id])
+  fromBranch ChairopsBranch? @relation("chairmove_from", fields: [fromBranchId], references: [id])
+  toBranch   ChairopsBranch  @relation("chairmove_to", fields: [toBranchId], references: [id])
+  movedBy    ChairopsUser?   @relation(fields: [movedById], references: [id])
+
+  @@index([orgId])
+  @@index([chairId, movedAt])
+  @@index([toBranchId, movedAt])
   @@schema("chairops")
 }
 
@@ -3093,18 +3128,18 @@ model ChairopsPosDaily {
 }
 
 model ChairopsCashCollection {
-  id               String    @id @default(uuid())
+  id               String               @id @default(uuid())
   orgId            String
   branchId         String
   maidId           String
-  collectedAt      DateTime  @default(now())
+  collectedAt      DateTime             @default(now())
   countedAmount    Int
   // Step-2 deposit columns kept for backward compat with rows written before
   // the deposit-table split (2026-05-30). NEW writes leave these at 0/null
   // and instead create a ChairopsCashDeposit row that this collection's
   // depositId points to. Drift engine sums depositedAmount from the new
   // table.
-  depositedAmount  Int       @default(0)
+  depositedAmount  Int                  @default(0)
   evidencePhotoUrl String
   slipPhotoUrl     String?
   imageHash        String
@@ -3123,8 +3158,8 @@ model ChairopsCashCollection {
   lockedAt         DateTime?
   unlockedById     String?
   unlockedAt       DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
 
   branch ChairopsBranch @relation(fields: [branchId], references: [id])
   maid   ChairopsUser   @relation(fields: [maidId], references: [id])
@@ -4273,6 +4308,7 @@ model PlaylandWristbandScan {
   @@map("wristband_scans")
   @@schema("playland")
 }
+
 enum InboxPlatform {
   LINE
   FACEBOOK
@@ -4461,5 +4497,103 @@ model InboxDailySummary {
 
   @@unique([orgId, businessTag, summaryDate])
   @@map("inbox_daily_summaries")
+  @@schema("public")
+}
+
+// =============================================================
+// CostCtrl · ศูนย์ควบคุมต้นทุน (super_admin only)
+// BIGFEATURE 2026-05-31 · Pool ERP Module #10
+// =============================================================
+model CostProvider {
+  id             String    @id @default(uuid()) @db.Uuid
+  slug           String    @unique
+  displayName    String    @map("display_name")
+  category       String
+  enabled        Boolean   @default(true)
+  pricingNote    String?   @map("pricing_note")
+  budgetMonthly  Json      @default("{}") @map("budget_monthly")
+  lastSyncAt     DateTime? @map("last_sync_at") @db.Timestamptz(6)
+  lastSyncStatus String?   @map("last_sync_status")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  snapshots   CostSnapshot[]
+  rules       CostAlertRule[]
+  credentials CostApiCredential[]
+
+  @@map("cost_provider")
+  @@schema("public")
+}
+
+model CostSnapshot {
+  id          String   @id @default(uuid()) @db.Uuid
+  providerId  String   @map("provider_id") @db.Uuid
+  capturedAt  DateTime @default(now()) @map("captured_at") @db.Timestamptz(6)
+  periodMonth DateTime @map("period_month") @db.Date
+  metric      String
+  unit        String
+  value       Decimal  @default(0) @db.Decimal(20, 6)
+  costUsd     Decimal  @default(0) @map("cost_usd") @db.Decimal(10, 4)
+  raw         Json?
+  source      String
+
+  provider CostProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId, periodMonth, metric])
+  @@index([capturedAt])
+  @@map("cost_snapshot")
+  @@schema("public")
+}
+
+model CostAlertRule {
+  id            String   @id @default(uuid()) @db.Uuid
+  providerId    String   @map("provider_id") @db.Uuid
+  metric        String
+  thresholdPct  Decimal? @map("threshold_pct") @db.Decimal(5, 2)
+  thresholdAbs  Decimal? @map("threshold_abs") @db.Decimal(20, 6)
+  channel       String   @default("line")
+  cooldownHours Int      @default(24) @map("cooldown_hours")
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  provider CostProvider     @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  events   CostAlertEvent[]
+
+  @@map("cost_alert_rule")
+  @@schema("public")
+}
+
+model CostAlertEvent {
+  id             String    @id @default(uuid()) @db.Uuid
+  ruleId         String    @map("rule_id") @db.Uuid
+  triggeredAt    DateTime  @default(now()) @map("triggered_at") @db.Timestamptz(6)
+  observedValue  Decimal   @map("observed_value") @db.Decimal(20, 6)
+  thresholdValue Decimal   @map("threshold_value") @db.Decimal(20, 6)
+  message        String
+  notifiedAt     DateTime? @map("notified_at") @db.Timestamptz(6)
+  resolvedAt     DateTime? @map("resolved_at") @db.Timestamptz(6)
+
+  rule CostAlertRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([triggeredAt])
+  @@map("cost_alert_event")
+  @@schema("public")
+}
+
+model CostApiCredential {
+  id          String    @id @default(uuid()) @db.Uuid
+  providerId  String    @map("provider_id") @db.Uuid
+  label       String
+  scope       String?
+  ciphertext  String
+  encVersion  Int       @default(1) @map("enc_version")
+  lastUsedAt  DateTime? @map("last_used_at") @db.Timestamptz(6)
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdById String?   @map("created_by_id") @db.Uuid
+
+  provider CostProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, label])
+  @@map("cost_api_credential")
   @@schema("public")
 }

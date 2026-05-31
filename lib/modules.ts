@@ -59,10 +59,12 @@ import {
   ShieldAlert,
   MessagesSquare,
   Bot,
+  Banknote,
+  Gauge,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
-export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland" | "inbox";
+export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland" | "inbox" | "costctrl";
 export type ModuleStatus = "active" | "coming_soon" | "beta";
 
 export interface NavItem {
@@ -723,6 +725,46 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         label: "เชื่อมช่องทาง",
         icon: Settings,
         adminOnly: true,
+      },
+    ],
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // CostCtrl · super_admin (CEO) only · ศูนย์ควบคุมต้นทุน
+  // BIGFEATURE 2026-05-31 · spec at docs/BIGFEATURE_costctrl_SPEC.md
+  // Every nav item locks to role "super_admin" so nav rail hides for everyone
+  // below. Layout-level guard via requireSuperAdmin is the real wall — nav
+  // visibility is just polish.
+  // ─────────────────────────────────────────────────────────────────────────
+  costctrl: {
+    slug: "costctrl",
+    name: "ศูนย์ควบคุมต้นทุน",
+    tagline: "ดูต้นทุน Vercel + Supabase + R2 + AI tokens ที่เดียว · เตือนก่อนถึงเพดาน",
+    description:
+      "Cost Center สำหรับ CEO คนเดียว · เห็นต้นทุนทุก provider เดือนปัจจุบัน + เตือนทาง LINE เมื่อใกล้ quota/budget",
+    emoji: "💸",
+    Icon: Banknote,
+    status: "active",
+    basePath: "/costctrl",
+    nav: [
+      {
+        href: "/costctrl",
+        label: "ภาพรวมต้นทุน",
+        icon: Gauge,
+        roles: ["super_admin"],
+        section: "ต้นทุน",
+      },
+      {
+        href: "/costctrl/ai",
+        label: "AI tokens",
+        icon: Bot,
+        roles: ["super_admin"],
+      },
+      {
+        href: "/costctrl/alerts",
+        label: "เตือน + budget + คีย์",
+        icon: Bell,
+        roles: ["super_admin"],
       },
     ],
   },
