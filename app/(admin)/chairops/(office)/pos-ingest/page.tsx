@@ -25,6 +25,10 @@ import {
   type DiffBucketCounts,
 } from "@/components/chairops/_kit";
 import { thaiDateTime } from "@/lib/chairops/utils/format";
+import { UndoImportButton } from "./_components/undo-import-button";
+
+// Wave-2 B1: how recent a commit must be to still be undoable.
+const UNDO_WINDOW_MS = 60 * 60 * 1000;
 
 interface Search {
   committed?: string;
@@ -76,6 +80,11 @@ export default async function PosIngestListPage({
 
   // Aggregate bucket counts across pending imports for at-a-glance summary
   const pending = imports.filter((i) => !i.committed);
+  // Wave-2 B1: server component · capture wall-time once per request so the
+  // JSX below doesn't call Date.now() inline (purity lint). Same pattern as
+  // app/(admin)/chairops/reports/page.tsx.
+  // eslint-disable-next-line react-hooks/purity
+  const renderedAtMs = Date.now();
   const totalPending: DiffBucketCounts = pending.reduce(
     (acc, imp) => {
       const c = bucketCounts(imp.diffSummary as unknown as PersistedDiffSummary | null);
@@ -117,11 +126,37 @@ export default async function PosIngestListPage({
       </div>
 
       {/* ── Flash messages ───────────────────────────────────────────── */}
-      {params.committed && (
-        <div className="mb-4 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
-          commit สำเร็จ · drift และ alert ถูก recompute แล้ว
-        </div>
-      )}
+      {params.committed &&
+        (() => {
+          // Wave-2 B1: when redirected from commit, the param IS the importId.
+          // Show a banner with file context + the undo button (60-min window).
+          const justCommitted = imports.find((i) => i.id === params.committed);
+          if (!justCommitted) {
+            return (
+              <div className="mb-4 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+                commit สำเร็จ · drift และ alert ถูก recompute แล้ว
+              </div>
+            );
+          }
+          return (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm">
+              <div className="flex flex-col gap-0.5">
+                <div className="font-semibold text-emerald-900">
+                  commit สำเร็จ · &quot;{justCommitted.filename}&quot;
+                </div>
+                <div className="text-xs text-emerald-800">
+                  {justCommitted.rowCount.toLocaleString("th-TH")} แถว · drift + alert
+                  คำนวณใหม่แล้ว · ยกเลิกได้ภายใน 60 นาที
+                </div>
+              </div>
+              <UndoImportButton
+                importId={justCommitted.id}
+                variant="banner"
+                filename={justCommitted.filename}
+              />
+            </div>
+          );
+        })()}
       {params.error && (
         <div className="mb-4 rounded-md border border-rose-300 bg-rose-50 px-4 py-2 text-sm text-rose-800">
           {decodeURIComponent(params.error)}
@@ -219,12 +254,19 @@ export default async function PosIngestListPage({
                     </div>
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <Link
-                      href={`/chairops/pos-ingest/i/${imp.id}`}
-                      className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-900 transition-all duration-150 hover:bg-zinc-50 active:bg-zinc-100"
-                    >
-                      {imp.committed ? "ดูรายละเอียด" : "ตรวจ + commit"}
-                    </Link>
+                    <div className="flex items-center justify-end gap-2">
+                      {imp.committed &&
+                        imp.committedAt &&
+                        renderedAtMs - imp.committedAt.getTime() < UNDO_WINDOW_MS && (
+                          <UndoImportButton importId={imp.id} variant="row" />
+                        )}
+                      <Link
+                        href={`/chairops/pos-ingest/i/${imp.id}`}
+                        className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-900 transition-all duration-150 hover:bg-zinc-50 active:bg-zinc-100"
+                      >
+                        {imp.committed ? "ดูรายละเอียด" : "ตรวจ + commit"}
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               );

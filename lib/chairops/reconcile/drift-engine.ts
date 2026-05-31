@@ -114,7 +114,10 @@ async function recomputeDriftForBranch_legacy(
       }),
       prisma.chairopsCashDeposit.aggregate({
         where: { branchId, orgId: branch.orgId },
-        _sum: { depositedAmount: true },
+        // Wave-2 audit OWN P0 #1: include bankFee in deposit-side of drift
+        // so a 9,970-baht bank deposit + 30-baht fee against a 10,000 POS
+        // expected total reconciles to zero · NOT false 30-baht shortage.
+        _sum: { depositedAmount: true, bankFee: true },
       }),
       prisma.chairopsCashCollection.aggregate({
         where: {
@@ -140,6 +143,7 @@ async function recomputeDriftForBranch_legacy(
   const posTotal = toNum(posAgg._sum?.grossTotal);
   const depositTotal =
     (newDepositAgg._sum?.depositedAmount ?? 0) +
+    (newDepositAgg._sum?.bankFee ?? 0) +
     (legacyDepositAgg._sum?.depositedAmount ?? 0);
   const driftAmount = posTotal - depositTotal;
 
@@ -225,13 +229,14 @@ async function recomputeDriftForBranch_window(
       // 2026-05-30 split: deposit total = sum from new cash_deposits + any
       // legacy CashCollection rows where the maid recorded a deposit on the
       // row itself (depositId still null, depositedAmount > 0).
+      // 2026-05-31 audit P0 #1: include bankFee in deposit-side total.
       prisma.chairopsCashDeposit.aggregate({
         where: {
           branchId,
           orgId: branch.orgId,
           depositedAt: { gt: anchor },
         },
-        _sum: { depositedAmount: true },
+        _sum: { depositedAmount: true, bankFee: true },
       }),
       prisma.chairopsCashCollection.aggregate({
         where: {
@@ -271,6 +276,7 @@ async function recomputeDriftForBranch_window(
 
   const depositTotal =
     (newDepositAgg._sum?.depositedAmount ?? 0) +
+    (newDepositAgg._sum?.bankFee ?? 0) +
     (legacyDepositAgg._sum?.depositedAmount ?? 0);
   const driftAmount = posTotal - depositTotal;
 

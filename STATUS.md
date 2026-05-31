@@ -1,8 +1,56 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-31 (รอบ 65 · /bigfeature CostCtrl Pool module #10 — built + committed + NOT deployed)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-31 (รอบ 68 · ChairOps Wave-2 hotfix ship · Phase A+B · 18 files · awaiting CEO push auth)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-05-31 · รอบ 68 — ChairOps Wave-2 hotfix · Phase A + Phase B ship)
+
+**Goal:** ลุยทำทั้งหมดเลย — 6 P0 audit fixes + 4 UX/NR features → typecheck clean → ready for CEO push.
+
+**Phase A · 6 P0 audit hotfixes (all DONE, tsc green):**
+- **A1** `lib/chairops/reconcile/drift-engine.ts` — `bankFee` รวมเข้า deposit-side ของ drift · 9,970 + 30 = 10,000 vs POS 10,000 → 0 shortage (ไม่ false-alarm 30 บาท ทุกครั้งที่หักธรรมเนียมโอน)
+- **A2** `app/auth/line-start/route.ts` + `app/api/auth/set-session/route.ts` — เพิ่ม `line_set_session_ticket` HTTP-only single-use cookie + same-origin check · ป้องกัน CSRF/token replay บน /api/auth/set-session
+- **A3 · 6 office reports** อ่าน deposit จาก `ChairopsCashDeposit` (legacy `collection.depositedAmount` คอลัมน์ = 0 หลัง W2):
+  - `dashboard/[branchSlug]/page.tsx` · timeline collection
+  - `branches/page.tsx` · timeline tab (แยก "นับ" / "ฝาก" ชัด · มี state "ยังไม่ฝาก")
+  - `collections/page.tsx` · table + KPI · "รอฝาก" tone neutral แทน false danger
+  - `reports/monthly/page.tsx` · matrix ฝาก ต่อสาขา/เดือน
+  - `reports/export/route.ts` · CSV ฝาก รายเดือน
+  - (`m/collect/[id]/page.tsx` เปลี่ยน label พ่วงไปกับ B2)
+- **A4** `presignChairPhoto` ยอมรับ OFFICE-tier ด้วย `branchOverride` · เดิม MAID-only ทำให้ admin/CEO ไม่สามารถ collect แทนสาขาได้
+- **A5** `importStarThingEquipment` ห่อ per-branch upsert ใน `prisma.$transaction({maxWait:10s, timeout:60s})` · ข้อมูล chair-move เขียน atomic ต่อสาขา
+- **A6** `commitImport` outer tx timeout 5 นาที (default 5 s) · backfill หลายสัปดาห์ + chair-move inserts ไม่ silent-rollback
+
+**Phase B · 4 UX/NR features (all DONE):**
+- **B1 · Post-import notification + Undo (60-min window)** — commit เสร็จ → redirect `/chairops/pos-ingest?committed=<id>` → banner เขียว + ปุ่ม "ยกเลิก import นี้" · undoImport server action ลบ PosDaily/BranchDailyRevenue ที่ผูก importId + revert chair-move (delete chair ถ้าสร้างจาก import นี้ · revert branch ถ้ามี history เดิม) · 60 นาทีหลัง commit หมดสิทธิ์
+- **B2 · Actor label "(แทน)"** — เก็บโดย OFFICE+ tier → display name ในรายงาน/timeline ต่อท้าย "(แทน)" · เพิ่ม `role` เข้า maid select 4 surfaces + collection detail
+- **B3 · NR-1 chair-mismatch flag** — maid เจอเก้าอี้รหัสไม่ตรง XLSX ติ๊ก `reasonCode="chair_missing"` → กรอกรหัสจริงที่พบ (หรือเว้น) → server action บันทึก `status=mismatch` + `foundChairCode` + เขียน audit event `cash_collection.chair_mismatch_flagged` (office หา reconcile ได้จาก audit log)
+- **B4 · UX polish:**
+  - 5th maid bottom-nav tab "ฝาก" + red-dot count = pending deposits ของ maid คนนี้
+  - Allow all-broken submit (เดิมต้องมีเก้าอี้เก็บได้ ≥ 1 ตัว ใน validate client-side · ปลดล็อก · server ยังบังคับ ≥ 1 ต่อ)
+  - Moved-in copy เปลี่ยนจาก "🆕 ย้ายมาใหม่ จาก X" → "🆕 ย้ายเข้าสาขานี้ · เดิมอยู่ X" (maid POV)
+  - Diff direction บนหน้า collections — เพิ่ม state "รอฝาก" neutral แทน false-positive shortage
+
+**Files touched (18):** ดู `git status -s` · 1 ไฟล์ใหม่ `app/(admin)/chairops/(office)/pos-ingest/_components/undo-import-button.tsx` · 17 ไฟล์ modified
+
+**Typecheck:** ✅ `pnpm exec tsc --noEmit` exit 0
+**Lint:** ✅ touched files clean (1 focused `eslint-disable-next-line react-hooks/purity` บน Date.now() ใน server component · ตามแบบ `reports/page.tsx` ที่มีอยู่)
+
+**ยังไม่ deploy:** waiting CEO push authorization (`setup` branch classifier-blocked) · ไม่ commit/push อัตโนมัติ
+
+---
+
+## Update (2026-05-31 · รอบ 67 — `/auditbigteam` ChairOps Wave-2 post-impl audit)
+
+**Audit doc**: [`docs/AUDIT_chairops_w2_2026-05-31.md`](./docs/AUDIT_chairops_w2_2026-05-31.md) · 8 persona reports at `/tmp/audit_chairops_w2_phase1_<CODE>.md`
+
+**Sign-off**: 7 CONDITIONAL · 1 PASS (DEVIL) · 0 BLOCKED · 80% on-target
+**7 P0 fixes** (cross-persona convergence): bankFee→drift · office actorUserId · import-tx wrap · commit-tx timeout · set-session lock · 6 deprecated reads · presignChairPhoto office-tier
+**5 CEO decisions** in §6 — must answer before `/plan chairops-w2-hotfix`
+**Cost**: ~920k tokens · ~5 min · skill run #4
+
+---
 
 ## 🆕 Update (2026-05-31 · รอบ 66 — CostCtrl ✅ DEPLOYED to prod + 3 tokens stored)
 

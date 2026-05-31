@@ -34,7 +34,8 @@ export default async function MaidCollectDetailPage({ params }: Props) {
     where: { id },
     include: {
       branch: { select: { name: true } },
-      maid: { select: { displayName: true } },
+      // Wave-2 B2: include role so detail screen can mark "เก็บโดย CEO (แทน)" if office acted.
+      maid: { select: { displayName: true, role: true } },
       deposit: {
         select: {
           id: true,
@@ -172,9 +173,11 @@ export default async function MaidCollectDetailPage({ params }: Props) {
               <span className="font-medium text-zinc-800">{row.branch.name}</span>
             </div>
             <div>
-              แม่บ้าน:{" "}
+              {row.maid.role && row.maid.role !== "MAID" ? "เก็บโดย" : "แม่บ้าน"}:{" "}
               <span className="font-medium text-zinc-800">
-                {row.maid.displayName}
+                {row.maid.role && row.maid.role !== "MAID"
+                  ? `${row.maid.displayName} (แทน)`
+                  : row.maid.displayName}
               </span>
             </div>
             <div>

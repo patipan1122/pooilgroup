@@ -45,13 +45,16 @@ import {
   presignChairPhoto,
 } from "@/app/(admin)/chairops/collect/actions";
 
-type LineStatus = "collected" | "broken" | "empty" | "skipped";
+type LineStatus = "collected" | "broken" | "empty" | "skipped" | "mismatch";
 
 interface LineState {
   status: LineStatus;
   amount: string;
   reasonCode: string;
   reasonFree: string;
+  /** Filled in when reasonCode === "chair_missing" · the code maid actually
+   *  found at this slot (or empty if nothing was there). Wave-2 B3 / NR-1. */
+  foundChairCode?: string;
   photoUrl?: string;
   photoHash?: string;
   photoPreviewUrl?: string;
@@ -86,6 +89,10 @@ const REASON_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: "stuck", label: "ตู้ค้าง · เปิดไม่ได้" },
   { value: "no_customer", label: "ไม่มีลูกค้าใช้" },
   { value: "closed", label: "ปิดสาขาวันนี้" },
+  // Wave-2 B3 (NR-1): when the chairCode in the checklist isn't physically
+  // present at the branch · maid flags it + writes the real code she found
+  // (if any). Office reconciles.
+  { value: "chair_missing", label: "ไม่มีรหัสนี้ที่สาขา (พบรหัสอื่น)" },
   { value: "other", label: "อื่น ๆ (พิมพ์ระบุ)" },
 ];
 
@@ -213,6 +220,7 @@ export function CollectNewForm({
         contentType: compressed.compressed ? "image/jpeg" : file.type,
         draftId: draftIdRef.current,
         chairCode: code,
+        branchOverride: branchOverride ?? null,
       });
       if (!presign.ok) {
         toast.error(presign.error);
@@ -251,21 +259,34 @@ export function CollectNewForm({
     if (chairCodes.length === 0) {
       return "สาขานี้ยังไม่มีเก้าอี้ในระบบ · ติดต่อออฟฟิศ";
     }
-    if (totals.collected === 0) {
-      return "ต้องเก็บอย่างน้อย 1 เก้าอี้ (หรือทุกตัวมีปัญหา?)";
-    }
+    // Wave-2 B4: allow all-problem submission (every chair broken/missing).
+    // Without this, a branch with one defective chair couldn't close out a
+    // round. The server still requires at least 1 collected line, so we let
+    // the action gate that case; locally we just guard "every chair is empty
+    // by default → nothing flagged".
+    let nonDefaultLines = 0;
     for (const code of chairCodes) {
       const l = lines[code];
       if (!l) return `เก้าอี้ ${code} ไม่มีข้อมูล`;
+      if (l.status !== "collected" || l.amount !== "") nonDefaultLines += 1;
       if (l.status === "collected") {
         const n = Number(l.amount.replace(/,/g, "")) || 0;
-        if (n <= 0) return `${code} · กรอกยอดที่เก็บได้`;
+        if (n <= 0 && l.amount !== "") return `${code} · กรอกยอดที่เก็บได้`;
       } else {
         if (!l.reasonCode) return `${code} · เลือกเหตุผล`;
         if (l.reasonCode === "other" && !l.reasonFree.trim()) {
           return `${code} · พิมพ์เหตุผลเพิ่ม`;
         }
+        if (l.reasonCode === "chair_missing") {
+          const fc = (l.foundChairCode ?? "").trim();
+          if (fc && fc === code) {
+            return `${code} · รหัสที่พบเหมือนเดิม · ไม่ใช่ mismatch`;
+          }
+        }
       }
+    }
+    if (nonDefaultLines === 0) {
+      return "กรอกยอด · หรือกดธงเก็บไม่ได้ของอย่างน้อย 1 เก้าอี้";
     }
     return null;
   }
@@ -278,6 +299,10 @@ export function CollectNewForm({
           l.status === "collected"
             ? Number(l.amount.replace(/,/g, "")) || 0
             : 0;
+        // Wave-2 B3: reasonCode === "chair_missing" overrides the status to
+        // "mismatch" and pipes the actual found code through.
+        const isMismatch = l.status !== "collected" && l.reasonCode === "chair_missing";
+        const effectiveStatus: LineStatus = isMismatch ? "mismatch" : l.status;
         const reasonText =
           l.status === "collected"
             ? null
@@ -287,9 +312,12 @@ export function CollectNewForm({
                 l.reasonCode);
         return {
           chairCode: code,
-          status: l.status,
+          status: effectiveStatus,
           amount: amountNum,
           reason: reasonText,
+          foundChairCode: isMismatch
+            ? ((l.foundChairCode ?? "").trim() || null)
+            : null,
           photoUrl: l.photoUrl ?? null,
           photoHash: l.photoHash ?? null,
         };
@@ -402,12 +430,14 @@ export function CollectNewForm({
               >
                 <CardBody className="space-y-2 p-3">
                   {movedIn && (
+                    /* Wave-2 B4: copy from MAID POV — she should read it as
+                       "this chair just joined MY branch" not "moved somewhere". */
                     <div className="flex items-center gap-1.5 text-xs text-sky-700">
                       <span className="rounded bg-sky-100 px-1.5 py-0.5 font-medium">
-                        🆕 ย้ายมาใหม่
+                        🆕 ย้ายเข้าสาขานี้
                       </span>
                       <span>
-                        {movedIn.fromName ? `จาก ${movedIn.fromName} · ` : ""}
+                        {movedIn.fromName ? `เดิมอยู่ ${movedIn.fromName} · ` : ""}
                         {fmtMovedAt(movedIn.movedAt)}
                       </span>
                     </div>
@@ -486,6 +516,29 @@ export function CollectNewForm({
                           maxLength={200}
                           aria-label={`พิมพ์เหตุผลของ ${code}`}
                         />
+                      )}
+                      {l.reasonCode === "chair_missing" && (
+                        <div className="space-y-1">
+                          <Input
+                            type="text"
+                            placeholder="พบรหัสจริง (ถ้ามี) เช่น CH-2042"
+                            value={l.foundChairCode ?? ""}
+                            onChange={(e) =>
+                              patchLine(code, {
+                                foundChairCode: e.target.value
+                                  .toUpperCase()
+                                  .replace(/[^A-Z0-9_-]/g, "")
+                                  .slice(0, 40),
+                              })
+                            }
+                            className="h-10 font-mono"
+                            maxLength={40}
+                            aria-label={`รหัสจริงที่พบแทน ${code}`}
+                          />
+                          <p className="text-[11px] text-amber-700">
+                            ถ้าไม่มีเก้าอี้เลย ปล่อยว่าง · ออฟฟิศจะตามตรวจ
+                          </p>
+                        </div>
                       )}
                       <ChairPhotoButton
                         code={code}

@@ -14,6 +14,7 @@ import { redirect } from "next/navigation";
 import {
   requireAuth,
 } from "@/lib/chairops/auth/session";
+import { prisma } from "@/lib/prisma";
 import { MaidShell } from "./_components/maid-shell";
 
 export const dynamic = "force-dynamic";
@@ -43,9 +44,26 @@ export default async function MaidRouteGroupLayout({
   if (session.user.role !== "MAID") {
     redirect("/chairops/branch-collect");
   }
+  // Wave-2 B4: pending-deposit count drives the red dot on the new "ฝาก" tab.
+  // A collection is "pending" when it has no linked ChairopsCashDeposit row.
+  // Bound to maid's own collections only (not whole branch).
+  const pendingDepositCount = session.user.primaryBranchId
+    ? await prisma.chairopsCashCollection.count({
+        where: {
+          orgId: session.user.orgId,
+          maidId: session.user.id,
+          depositId: null,
+        },
+      })
+    : 0;
   return (
     <div className="chairops-scope">
-      <MaidShell displayName={session.user.displayName}>{children}</MaidShell>
+      <MaidShell
+        displayName={session.user.displayName}
+        pendingDepositCount={pendingDepositCount}
+      >
+        {children}
+      </MaidShell>
     </div>
   );
 }

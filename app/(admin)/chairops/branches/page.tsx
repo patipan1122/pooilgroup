@@ -861,11 +861,19 @@ function CashflowChart({ pos, deposit }: { pos: number[]; deposit: number[] }) {
 // ---------- Timeline tab ----------
 async function TimelineTab({ branchId, orgId }: { branchId: string; orgId: string }) {
   const [collections, posDaily] = await Promise.all([
+    // Wave-2 audit P0 #6: include linked deposit so "เก็บเงิน X" reflects
+    // the new cash_deposits row (legacy depositedAmount column = 0 for new
+    // collections). counted/deposit shown distinctly: counted = what maid
+    // counted from chairs · deposit = what landed at bank.
     prisma.chairopsCashCollection.findMany({
       where: { orgId, branchId },
       orderBy: { collectedAt: "desc" },
       take: 30,
-      include: { maid: { select: { displayName: true } } },
+      include: {
+        // Wave-2 B2: include role to label "(แทน)" when office tier collected.
+        maid: { select: { displayName: true, role: true } },
+        deposit: { select: { depositedAmount: true, bankFee: true } },
+      },
     }),
     prisma.chairopsBranchDailyRevenue.findMany({
       where: { orgId, branchId },
@@ -876,12 +884,28 @@ async function TimelineTab({ branchId, orgId }: { branchId: string; orgId: strin
 
   type Item = { at: Date; tone: string; title: string; sub: string };
   const items: Item[] = [
-    ...collections.map((c) => ({
+    ...collections.map((c) => {
+      const depositAmount = c.deposit
+        ? c.deposit.depositedAmount + c.deposit.bankFee
+        : c.depositedAmount;
+      const label = c.deposit
+        ? `เก็บเงิน ${baht(c.countedAmount)} · ฝาก ${baht(depositAmount)}`
+        : c.depositedAmount > 0
+          ? `เก็บเงิน ${baht(c.depositedAmount)} (legacy)`
+          : `นับเงิน ${baht(c.countedAmount)} · ยังไม่ฝาก`;
+      return {
       at: c.collectedAt,
       tone: "var(--accent)",
-      title: `เก็บเงิน ${baht(c.depositedAmount)}`,
-      sub: `โดย ${c.maid?.displayName ?? "—"}${c.notes ? " · " + c.notes : ""}`,
-    })),
+      title: label,
+      sub: `โดย ${
+        c.maid
+          ? c.maid.role && c.maid.role !== "MAID"
+            ? `${c.maid.displayName} (แทน)`
+            : c.maid.displayName
+          : "—"
+      }${c.notes ? " · " + c.notes : ""}`,
+      };
+    }),
     ...posDaily.map((p) => ({
       at: p.bizDate,
       tone: "var(--text-muted)",

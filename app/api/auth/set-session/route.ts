@@ -22,7 +22,38 @@ const Schema = z.object({
   refresh_token: z.string().min(1).max(16384),
 });
 
+// Same-origin check — defense in depth on top of the ticket binding below.
+// Browser fetch() to /api/auth/set-session from our own /auth/liff-complete
+// always sets a same-origin Origin header. Cross-origin attackers may forge
+// CORS pre-flight but cannot send a same-origin Origin without our cookies.
+function isSameOriginRequest(req: NextRequest): boolean {
+  const origin = req.headers.get("origin");
+  if (!origin) return true; // some webviews omit Origin · ticket below is the real guard
+  try {
+    const u = new URL(req.url);
+    return new URL(origin).host === u.host;
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(req: NextRequest) {
+  // Wave-2 audit SEC P0 #5: gate this endpoint behind an unforgeable cookie
+  // that ONLY /auth/line-start sets. An attacker who steals (access_token,
+  // refresh_token) cannot just POST here to inherit the victim's cookie —
+  // they'd also need the per-OAuth-flow ticket cookie that's never JS-readable.
+  // Single-use: cleared on successful setSession.
+  if (!isSameOriginRequest(req)) {
+    return NextResponse.json({ error: "bad-origin" }, { status: 403 });
+  }
+  const ticket = req.cookies.get("line_set_session_ticket")?.value;
+  if (!ticket || ticket.length < 32) {
+    return NextResponse.json(
+      { error: "missing-ticket · เริ่ม OAuth ใหม่ที่ /auth/line-start" },
+      { status: 403 },
+    );
+  }
+
   let body: unknown;
   try {
     body = await req.json();
@@ -57,5 +88,14 @@ export async function POST(req: NextRequest) {
       { status: 401 },
     );
   }
-  return NextResponse.json({ ok: true, userId: data.session.user.id });
+  // Clear the ticket on success — single-use semantics.
+  const res = NextResponse.json({ ok: true, userId: data.session.user.id });
+  res.cookies.set("line_set_session_ticket", "", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
+  return res;
 }

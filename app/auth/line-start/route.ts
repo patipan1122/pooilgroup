@@ -37,6 +37,11 @@ export async function GET(req: NextRequest) {
 
   const state = randomBytes(24).toString("hex");
   const nonce = randomBytes(24).toString("hex");
+  // Wave-2 audit SEC P0 #5: bind /api/auth/set-session to a server-issued
+  // unforgeable ticket so an attacker who steals a refresh_token cannot
+  // simply POST to set-session and inherit the victim's cookie. Set here at
+  // OAuth start · validated by set-session · single-use · cleared on use.
+  const setSessionTicket = randomBytes(32).toString("hex");
   const baseUrl = getRequestBaseUrl(req);
   const callbackUrl = `${baseUrl}/auth/line-callback`;
 
@@ -62,5 +67,6 @@ export async function GET(req: NextRequest) {
   res.cookies.set("line_oauth_state", state, cookieOpts);
   res.cookies.set("line_oauth_nonce", nonce, cookieOpts);
   res.cookies.set("line_oauth_next", next, cookieOpts);
+  res.cookies.set("line_set_session_ticket", setSessionTicket, cookieOpts);
   return res;
 }

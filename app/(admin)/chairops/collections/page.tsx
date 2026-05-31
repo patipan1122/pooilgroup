@@ -53,7 +53,18 @@ export default async function AdminCollectionsPage({
     ...(sp.maid ? { maidId: sp.maid } : {}),
   };
 
-  const [rows, agg, branches, maids] = await Promise.all([
+  // Wave-2 audit P0 #6: deposits now live on chairops_cash_deposit (separate
+  // table linked by depositId · legacy collection.depositedAmount = 0 for
+  // post-W2 rows). Aggregate the new table for KPIs + join via include for
+  // per-row display. ChairopsCashDeposit has branchId/maidId directly, so we
+  // mirror the same filters · timestamp lives on depositedAt.
+  const depositWhere = {
+    depositedAt: { gte: from, lt: to },
+    ...(sp.branch ? { branchId: sp.branch } : {}),
+    ...(sp.maid ? { maidId: sp.maid } : {}),
+  };
+
+  const [rows, agg, depositAgg, branches, maids] = await Promise.all([
     prisma.chairopsCashCollection.findMany({
       where,
       orderBy: { collectedAt: "desc" },
@@ -65,13 +76,19 @@ export default async function AdminCollectionsPage({
         depositedAmount: true,
         notes: true,
         branch: { select: { id: true, name: true, slug: true } },
-        maid: { select: { id: true, displayName: true } },
+        // Wave-2 B2: include role to label "(แทน)" when office tier collected.
+        maid: { select: { id: true, displayName: true, role: true } },
+        deposit: { select: { depositedAmount: true, bankFee: true } },
       },
     }),
     prisma.chairopsCashCollection.aggregate({
       where,
       _sum: { countedAmount: true, depositedAmount: true },
       _count: true,
+    }),
+    prisma.chairopsCashDeposit.aggregate({
+      where: depositWhere,
+      _sum: { depositedAmount: true, bankFee: true },
     }),
     prisma.chairopsBranch.findMany({
       where: { isActive: true },
@@ -86,7 +103,11 @@ export default async function AdminCollectionsPage({
   ]);
 
   const totalCounted = Number(agg._sum.countedAmount ?? 0);
-  const totalDeposited = Number(agg._sum.depositedAmount ?? 0);
+  const legacyDeposited = Number(agg._sum.depositedAmount ?? 0);
+  const newDeposited =
+    Number(depositAgg._sum?.depositedAmount ?? 0) +
+    Number(depositAgg._sum?.bankFee ?? 0);
+  const totalDeposited = legacyDeposited + newDeposited;
   const totalDiff = totalCounted - totalDeposited;
   const activeMaidIds = new Set(rows.map((r) => r.maid?.id).filter(Boolean));
 
@@ -229,19 +250,36 @@ export default async function AdminCollectionsPage({
               </tr>
             ) : (
               rows.map((r) => {
-                const diff = Number(r.countedAmount) - Number(r.depositedAmount);
+                // Wave-2: prefer new cash_deposit row; fallback to legacy column.
+                const rowDeposited = r.deposit
+                  ? Number(r.deposit.depositedAmount) + Number(r.deposit.bankFee)
+                  : Number(r.depositedAmount);
+                const diff = Number(r.countedAmount) - rowDeposited;
+                const notDepositedYet = !r.deposit && Number(r.depositedAmount) === 0;
                 const diffTone: "danger" | "warning" | "success" | "neutral" =
-                  diff > 0 ? "danger" : diff < 0 ? "warning" : "neutral";
-                const diffText = diff === 0 ? "ตรง" : baht(diff, true);
+                  notDepositedYet ? "neutral" : diff > 0 ? "danger" : diff < 0 ? "warning" : "neutral";
+                const diffText = notDepositedYet
+                  ? "รอฝาก"
+                  : diff === 0
+                    ? "ตรง"
+                    : baht(diff, true);
                 return (
                   <tr key={r.id} className="border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50">
                     <td className="px-3 py-2.5 whitespace-nowrap text-zinc-700">{thaiDateTime(r.collectedAt)}</td>
                     <td className="px-3 py-2.5 text-zinc-700">
                       {r.branch?.name ?? "—"}
                     </td>
-                    <td className="px-3 py-2.5 text-zinc-700">{r.maid?.displayName ?? "—"}</td>
+                    <td className="px-3 py-2.5 text-zinc-700">
+                      {r.maid
+                        ? r.maid.role && r.maid.role !== "MAID"
+                          ? `${r.maid.displayName} (แทน)`
+                          : r.maid.displayName
+                        : "—"}
+                    </td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{baht(Number(r.countedAmount))}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums font-medium">{baht(Number(r.depositedAmount))}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums font-medium">
+                      {notDepositedYet ? "—" : baht(rowDeposited)}
+                    </td>
                     <td className="px-3 py-2.5 text-right tabular-nums">
                       <Badge tone={diffTone}>{diffText}</Badge>
                     </td>

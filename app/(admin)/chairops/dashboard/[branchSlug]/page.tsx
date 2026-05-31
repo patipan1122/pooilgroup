@@ -50,10 +50,17 @@ export default async function BranchDetailPage({
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
   const [collections, posDaily, cleanlinessReports, openTickets] = await Promise.all([
+    // Wave-2 audit P0 #6: include the linked ChairopsCashDeposit so the
+    // timeline can show actual deposit amount (deposit lives on a separate
+    // table now · the legacy depositedAmount column is 0 for new rows).
     prisma.chairopsCashCollection.findMany({
       where: { branchId: branch.id, collectedAt: { gte: thirtyDaysAgo } },
       orderBy: { collectedAt: "desc" },
-      include: { maid: { select: { displayName: true } } },
+      include: {
+        // Wave-2 B2: include role so we can mark office-tier acting "(แทน)".
+        maid: { select: { displayName: true, role: true } },
+        deposit: { select: { depositedAmount: true, bankFee: true } },
+      },
       take: 100,
     }),
     prisma.chairopsPosDaily.findMany({
@@ -114,9 +121,17 @@ export default async function BranchDetailPage({
     ...collections.map<TimelineItem>((c) => ({
       kind: "collection",
       at: c.collectedAt,
-      deposit: c.depositedAmount,
+      // Wave-2: deposit lives on cash_deposits now. Show that amount when
+      // linked; fall back to legacy column for pre-W2 rows.
+      deposit: c.deposit
+        ? c.deposit.depositedAmount + c.deposit.bankFee
+        : c.depositedAmount,
       counted: c.countedAmount,
-      by: c.maid?.displayName ?? "—",
+      by: c.maid
+        ? c.maid.role && c.maid.role !== "MAID"
+          ? `${c.maid.displayName} (แทน)`
+          : c.maid.displayName
+        : "—",
       notes: c.notes,
     })),
     ...posDaily.map<TimelineItem>((p) => ({

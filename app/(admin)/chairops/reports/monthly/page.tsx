@@ -36,9 +36,18 @@ export default async function MonthlyReport() {
       where: { bizDate: { gte: since } },
       select: { branchId: true, bizDate: true, grossTotal: true },
     }),
+    // Wave-2 audit P0 #6: deposits moved to chairops_cash_deposit · include
+     // the new row so a collection's "ฝาก" reflects what landed at bank.
+     // Fall back to legacy depositedAmount column for pre-W2 rows where the
+     // separate deposit table wasn't yet wired.
     prisma.chairopsCashCollection.findMany({
       where: { collectedAt: { gte: since } },
-      select: { branchId: true, collectedAt: true, depositedAmount: true },
+      select: {
+        branchId: true,
+        collectedAt: true,
+        depositedAmount: true,
+        deposit: { select: { depositedAmount: true, bankFee: true } },
+      },
     }),
     prisma.chairopsWriteOff.findMany({
       where: { makerAt: { gte: since }, status: "APPROVED" },
@@ -65,7 +74,12 @@ export default async function MonthlyReport() {
   };
   // grossTotal is Decimal — coerce to number for summation
   for (const p of posDaily) ensure(p.branchId, monthKey(p.bizDate)).pos += Number(p.grossTotal);
-  for (const c of collections) ensure(c.branchId, monthKey(c.collectedAt)).dep += c.depositedAmount;
+  for (const c of collections) {
+    const dep = c.deposit
+      ? Number(c.deposit.depositedAmount) + Number(c.deposit.bankFee)
+      : Number(c.depositedAmount);
+    ensure(c.branchId, monthKey(c.collectedAt)).dep += dep;
+  }
   for (const w of writeOffs) ensure(w.branchId, monthKey(w.makerAt)).wo += w.amount;
 
   return (

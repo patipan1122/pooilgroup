@@ -457,66 +457,74 @@ export async function importStarThingEquipment(
       branchesCreated += 1;
     }
 
-    let storeInserted = 0;
-    let storeMoved = 0;
-    let storeSame = 0;
-    for (const code of p.chairCodes) {
-      const existing = chairByCode.get(code);
-      if (!existing) {
-        // New chair — create + initial placement move row.
-        const newChair = await prisma.chairopsChair.create({
-          data: {
-            orgId: session.user.orgId,
-            branchId,
+    // Wave-2 audit P0 #3: wrap per-branch writes in 1 tx so a crash mid-
+    // way doesn't leave orphan ChairopsChair without its initial Move row,
+    // or worse, a Move row pointing at a chair the parent insert never
+    // committed. (Cross-branch tx around ALL branches would be too long;
+    // per-branch granularity = each store atomically applied or rolled.)
+    const txResult = await prisma.$transaction(async (tx) => {
+      let storeInserted = 0;
+      let storeMoved = 0;
+      let storeSame = 0;
+      for (const code of p.chairCodes) {
+        const existing = chairByCode.get(code);
+        if (!existing) {
+          const newChair = await tx.chairopsChair.create({
+            data: {
+              orgId: session.user.orgId,
+              branchId: branchId!,
+              chairCode: code,
+              isActive: true,
+            },
+          });
+          await tx.chairopsChairMove.create({
+            data: {
+              orgId: session.user.orgId,
+              chairId: newChair.id,
+              fromBranchId: null,
+              toBranchId: branchId!,
+              movedById: session.user.id,
+              source: "starthing_import",
+              notes: "first placement from StarThing equipment list",
+            },
+          });
+          chairByCode.set(code, {
+            id: newChair.id,
             chairCode: code,
-            isActive: true,
-          },
+            branchId: branchId!,
+          });
+          storeInserted += 1;
+          continue;
+        }
+        if (existing.branchId === branchId) {
+          storeSame += 1;
+          continue;
+        }
+        await tx.chairopsChair.update({
+          where: { id: existing.id },
+          data: { branchId: branchId! },
         });
-        await prisma.chairopsChairMove.create({
+        await tx.chairopsChairMove.create({
           data: {
             orgId: session.user.orgId,
-            chairId: newChair.id,
-            fromBranchId: null,
-            toBranchId: branchId,
+            chairId: existing.id,
+            fromBranchId: existing.branchId,
+            toBranchId: branchId!,
             movedById: session.user.id,
             source: "starthing_import",
-            notes: "first placement from StarThing equipment list",
+            notes: "branch change detected on StarThing re-import",
           },
         });
-        chairByCode.set(code, {
-          id: newChair.id,
-          chairCode: code,
-          branchId,
-        });
-        storeInserted += 1;
-        chairsInsertedTotal += 1;
-        continue;
+        chairByCode.set(code, { ...existing, branchId: branchId! });
+        storeMoved += 1;
       }
-      if (existing.branchId === branchId) {
-        storeSame += 1;
-        chairsAlreadyExistingTotal += 1;
-        continue;
-      }
-      // Moved across branches.
-      await prisma.chairopsChair.update({
-        where: { id: existing.id },
-        data: { branchId },
-      });
-      await prisma.chairopsChairMove.create({
-        data: {
-          orgId: session.user.orgId,
-          chairId: existing.id,
-          fromBranchId: existing.branchId,
-          toBranchId: branchId,
-          movedById: session.user.id,
-          source: "starthing_import",
-          notes: "branch change detected on StarThing re-import",
-        },
-      });
-      chairByCode.set(code, { ...existing, branchId });
-      storeMoved += 1;
-      chairsMovedTotal += 1;
-    }
+      return { storeInserted, storeMoved, storeSame };
+    }, { maxWait: 10_000, timeout: 60_000 });
+
+    const { storeInserted, storeMoved, storeSame } = txResult;
+    chairsInsertedTotal += storeInserted;
+    chairsMovedTotal += storeMoved;
+    chairsAlreadyExistingTotal += storeSame;
 
     perStore.push({
       store: p.storeRaw,

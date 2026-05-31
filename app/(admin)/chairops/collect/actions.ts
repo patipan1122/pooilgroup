@@ -26,13 +26,29 @@ import { zBaht, zUUID } from "@/lib/chairops/schemas/zod-helpers";
 import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
 import { rateLimit, LIMITS } from "@/lib/chairops/utils/rate-limit";
 
-const CHAIR_LINE_STATUSES = ["collected", "broken", "empty", "skipped"] as const;
+// Wave-2 B3 (NR-1): "mismatch" lets a maid flag a chair-code that's not
+// physically present at her branch (real-world drift between StarThing
+// equipment file and shop floor · happens when chairs get swapped without
+// office logging the move). She captures the actual code she found instead
+// (optional · may be empty if no chair is at that spot at all) so office can
+// reconcile later. Amount = 0 by definition; reason still required.
+const CHAIR_LINE_STATUSES = [
+  "collected",
+  "broken",
+  "empty",
+  "skipped",
+  "mismatch",
+] as const;
 
 const chairLineInput = z.object({
   chairCode: z.string().min(1).max(40),
   status: z.enum(CHAIR_LINE_STATUSES),
   amount: zBaht(),
   reason: z.string().max(200).optional().nullable(),
+  /** When status === "mismatch": the chairCode the maid actually found at
+   *  this slot (or null if nothing was there). Office uses this to either
+   *  log a ChairopsChairMove OR mark the original chair as missing. */
+  foundChairCode: z.string().max(40).optional().nullable(),
   photoUrl: z.string().url().optional().nullable(),
   photoHash: z
     .string()
@@ -121,9 +137,16 @@ export async function createCashCollection(
       if (line.amount !== 0) {
         return { ok: false, error: `${code} · ไม่ได้เก็บแต่กรอกยอด > 0` };
       }
-      if (line.status === "broken" || line.status === "skipped") {
+      // Wave-2 B3: mismatch also requires a reason so office knows what to investigate.
+      if (line.status === "broken" || line.status === "skipped" || line.status === "mismatch") {
         if (!line.reason || line.reason.trim().length === 0) {
           return { ok: false, error: `${code} · ต้องระบุเหตุผล` };
+        }
+      }
+      if (line.status === "mismatch" && line.foundChairCode) {
+        const fc = line.foundChairCode.trim();
+        if (fc === code) {
+          return { ok: false, error: `${code} · รหัสที่พบเหมือนเดิม ไม่ใช่ mismatch` };
         }
       }
     }
@@ -211,6 +234,11 @@ export async function createCashCollection(
         },
       });
 
+      // Wave-2 B3 (NR-1): surface mismatches as a separate audit event so
+      // office can find them via the audit log without scanning every
+      // collection's chairBreakdown JSON.
+      const mismatches = data.lines.filter((l) => l.status === "mismatch");
+
       await writeAudit(
         {
           userId: session.user.id,
@@ -222,12 +250,34 @@ export async function createCashCollection(
             countedAmount,
             chairCount: data.lines.length,
             collectedCount,
+            mismatchCount: mismatches.length,
             notes: data.notes ?? null,
           },
           metadata: { route: "/chairops/collect/new" },
         },
         tx,
       );
+
+      if (mismatches.length > 0) {
+        await writeAudit(
+          {
+            userId: session.user.id,
+            action: "cash_collection.chair_mismatch_flagged",
+            entity: "CashCollection",
+            entityId: row.id,
+            newValue: {
+              branchId,
+              mismatches: mismatches.map((m) => ({
+                expected: m.chairCode,
+                found: m.foundChairCode ?? null,
+                reason: m.reason ?? null,
+              })),
+            },
+            metadata: { route: "/chairops/collect/new", needsReconcile: true },
+          },
+          tx,
+        );
+      }
 
       return row;
     });
@@ -253,11 +303,30 @@ export async function presignChairPhoto(args: {
   contentType: string;
   draftId: string;
   chairCode: string;
+  /** OFFICE+ uses this to presign for a branch they're acting on behalf of
+   *  (audit Wave-2 P0 #7 — was MAID-only · blocked office direct-collect). */
+  branchOverride?: string | null;
 }): Promise<ActionResult<{ url: string; publicUrl: string; key: string }>> {
-  const session = await requireExactRole("MAID");
-  if (!session.user.primaryBranchId) {
-    return { ok: false, error: "บัญชีของคุณยังไม่ได้กำหนดสาขา" };
+  const session = await requireAuth();
+  const isOfficeTier =
+    session.user.role !== "MAID" && session.user.role !== "TECHNICIAN";
+
+  let branchId: string;
+  if (isOfficeTier) {
+    if (!args.branchOverride) {
+      return { ok: false, error: "office tier ต้องระบุ branchOverride" };
+    }
+    branchId = args.branchOverride;
+  } else {
+    if (!session.user.primaryBranchId) {
+      return { ok: false, error: "บัญชีของคุณยังไม่ได้กำหนดสาขา" };
+    }
+    branchId = session.user.primaryBranchId;
+    if (args.branchOverride && args.branchOverride !== branchId) {
+      return { ok: false, error: "MAID แนบรูปของสาขาตัวเองเท่านั้น" };
+    }
   }
+
   const draft = zUUID().safeParse(args.draftId);
   if (!draft.success) return { ok: false, error: "draftId ไม่ถูกต้อง" };
   const safeChair = args.chairCode.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 40);
@@ -268,10 +337,13 @@ export async function presignChairPhoto(args: {
     return { ok: false, error: "ต้องเป็นไฟล์รูปภาพ" };
   }
 
-  const branch = await prisma.chairopsBranch.findFirstOrThrow({
-    where: { id: session.user.primaryBranchId, orgId: session.user.orgId },
+  const branch = await prisma.chairopsBranch.findFirst({
+    where: { id: branchId, orgId: session.user.orgId },
     select: { slug: true },
   });
+  if (!branch) {
+    return { ok: false, error: "ไม่พบสาขา (หรือไม่ใช่ของ org คุณ)" };
+  }
   const ext = ct.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
   const now = new Date();
   const yyyy = now.getUTCFullYear();

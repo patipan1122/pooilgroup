@@ -152,9 +152,16 @@ export async function GET(req: NextRequest) {
       where: { bizDate: { gte: from, lte: to } },
       select: { branchId: true, bizDate: true, grossTotal: true },
     }),
+    // Wave-2 audit P0 #6: deposits live on chairops_cash_deposit · include
+    // it so monthly CSV "ฝาก" column reflects what actually landed at bank.
     prisma.chairopsCashCollection.findMany({
       where: { collectedAt: { gte: from, lte: to } },
-      select: { branchId: true, collectedAt: true, depositedAmount: true },
+      select: {
+        branchId: true,
+        collectedAt: true,
+        depositedAmount: true,
+        deposit: { select: { depositedAmount: true, bankFee: true } },
+      },
     }),
     prisma.chairopsWriteOff.findMany({
       where: { makerAt: { gte: from, lte: to }, status: "APPROVED" },
@@ -174,7 +181,12 @@ export async function GET(req: NextRequest) {
   };
   // grossTotal is Decimal — coerce to number for summation
   for (const p of posDaily) ensure(keyFor(p.branchId, p.bizDate)).pos += Number(p.grossTotal);
-  for (const c of collections) ensure(keyFor(c.branchId, c.collectedAt)).dep += c.depositedAmount;
+  for (const c of collections) {
+    const dep = c.deposit
+      ? Number(c.deposit.depositedAmount) + Number(c.deposit.bankFee)
+      : Number(c.depositedAmount);
+    ensure(keyFor(c.branchId, c.collectedAt)).dep += dep;
+  }
   for (const w of writeOffs) ensure(keyFor(w.branchId, w.makerAt)).wo += w.amount;
 
   // Sort by branchName, month

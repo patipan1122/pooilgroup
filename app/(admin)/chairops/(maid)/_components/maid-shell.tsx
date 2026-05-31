@@ -13,7 +13,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Sparkles, UserCircle2, Wallet, Wrench, Package } from "lucide-react";
+import {
+  Banknote,
+  Sparkles,
+  UserCircle2,
+  Wallet,
+  Wrench,
+  Package,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
@@ -23,14 +30,26 @@ interface NavItem {
   icon: LucideIcon;
   /** Path-prefix that should mark this nav item active. */
   match: string;
+  /** When set, a red-dot badge with this count appears on the tab. */
+  badgeKey?: "pendingDeposit";
 }
 
+// Wave-2 B4 (CEO 2026-05-31): 5th tab "ฝาก" for the new 2-step collect→
+// deposit flow. Tab carries a red-dot count of collections still awaiting
+// bank deposit (collection.depositId === null).
 const NAV: ReadonlyArray<NavItem> = [
   {
     href: "/chairops/m/collect/new",
     label: "เก็บเงิน",
     icon: Wallet,
     match: "/chairops/m/collect",
+  },
+  {
+    href: "/chairops/m/deposit",
+    label: "ฝาก",
+    icon: Banknote,
+    match: "/chairops/m/deposit",
+    badgeKey: "pendingDeposit",
   },
   {
     href: "/chairops/m/cleanliness/new",
@@ -58,9 +77,11 @@ function isActive(pathname: string, item: NavItem): boolean {
 
 export function MaidShell({
   displayName,
+  pendingDepositCount = 0,
   children,
 }: {
   displayName: string;
+  pendingDepositCount?: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname() ?? "/chairops/m";
@@ -99,10 +120,12 @@ export function MaidShell({
         className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <ul className="mx-auto grid h-16 max-w-md grid-cols-4">
+        <ul className="mx-auto grid h-16 max-w-md grid-cols-5">
           {NAV.map((item) => {
             const Icon = item.icon;
             const active = isActive(pathname, item);
+            const badgeCount =
+              item.badgeKey === "pendingDeposit" ? pendingDepositCount : 0;
             return (
               <li key={item.href} className="flex">
                 <Link
@@ -110,20 +133,30 @@ export function MaidShell({
                   aria-current={active ? "page" : undefined}
                   className={cn(
                     // 44pt touch target enforced via min-h-[64px]
-                    "flex min-h-[64px] flex-1 flex-col items-center justify-center gap-0.5 px-1 py-1 text-[11px] font-medium transition-colors",
+                    "relative flex min-h-[64px] flex-1 flex-col items-center justify-center gap-0.5 px-1 py-1 text-[11px] font-medium transition-colors",
                     "active:bg-zinc-100",
                     active
                       ? "text-emerald-700"
                       : "text-zinc-500 hover:text-zinc-800",
                   )}
                 >
-                  <Icon
-                    className={cn(
-                      "h-6 w-6",
-                      active ? "text-emerald-600" : "text-zinc-500",
+                  <span className="relative inline-flex">
+                    <Icon
+                      className={cn(
+                        "h-6 w-6",
+                        active ? "text-emerald-600" : "text-zinc-500",
+                      )}
+                      aria-hidden
+                    />
+                    {badgeCount > 0 && (
+                      <span
+                        className="absolute -right-2 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-semibold leading-none text-white"
+                        aria-label={`มี ${badgeCount} รอบรอฝาก`}
+                      >
+                        {badgeCount > 9 ? "9+" : badgeCount}
+                      </span>
                     )}
-                    aria-hidden
-                  />
+                  </span>
                   <span className="leading-tight">{item.label}</span>
                 </Link>
               </li>

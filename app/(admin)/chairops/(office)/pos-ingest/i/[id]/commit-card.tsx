@@ -74,8 +74,9 @@ export function CommitCard({
         return;
       }
       toast.success(`บันทึก ${appliedRowCount.toLocaleString("th-TH")} รายการสำเร็จ`);
-      // SPEC §2.6 — commit success returns user to exec home, not list view
-      router.push(`/chairops?committed=${importId}`);
+      // Wave-2 B1: land on /pos-ingest with the import id so the page shows
+      // the post-commit undo banner (safety net · 60-min window).
+      router.push(`/chairops/pos-ingest?committed=${importId}`);
     });
   }
 
