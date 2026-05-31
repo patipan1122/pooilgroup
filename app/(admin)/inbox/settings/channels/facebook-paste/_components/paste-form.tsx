@@ -13,8 +13,13 @@ import {
   Loader2,
   Sparkles,
   ClipboardPaste,
+  KeyRound,
+  ShieldCheck,
 } from "lucide-react";
-import { bulkImportFacebookFromPlaintext } from "@/lib/inbox/channel-actions";
+import {
+  bulkImportFacebookFromPlaintext,
+  fetchFacebookPagesFromUserToken,
+} from "@/lib/inbox/channel-actions";
 import type { InboxBusiness } from "@/lib/inbox/business";
 
 interface ParsedPage {
@@ -83,6 +88,11 @@ export function PasteImportForm({
 }: {
   businesses: InboxBusiness[];
 }) {
+  const [mode, setMode] = useState<"token" | "json">("token");
+  const [userToken, setUserToken] = useState("");
+  const [tokenError, setTokenError] = useState<string | null>(null);
+  const [permanent, setPermanent] = useState(false);
+  const [fetching, startFetch] = useTransition();
   const [raw, setRaw] = useState("");
   const [pages, setPages] = useState<ParsedPage[] | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -90,6 +100,39 @@ export function PasteImportForm({
   const [bulkTag, setBulkTag] = useState<string>("");
   const [submitting, startSubmit] = useTransition();
   const router = useRouter();
+
+  // Shared: once we have a page list (from either path) populate the picker.
+  function loadPicker(valid: ParsedPage[]) {
+    setPages(valid);
+    const init: Record<string, Selection> = {};
+    for (const p of valid) {
+      init[p.id] = {
+        selected: true,
+        businessTag: guessBusiness(p.name, p.category),
+      };
+    }
+    setSel(init);
+  }
+
+  // Preferred path: paste one user token → server upgrades to long-lived +
+  // fetches pages with PERMANENT tokens.
+  function fetchByToken() {
+    setTokenError(null);
+    if (!userToken.trim()) return;
+    startFetch(async () => {
+      try {
+        const res = await fetchFacebookPagesFromUserToken({ userToken });
+        setPermanent(res.longLived);
+        loadPicker(res.pages);
+        toast.success(
+          `ดึง ${res.pages.length} เพจสำเร็จ` +
+            (res.longLived ? " · token ถาวร ✓" : ""),
+        );
+      } catch (e) {
+        setTokenError((e as Error).message || "ดึงเพจไม่สำเร็จ");
+      }
+    });
+  }
 
   function parse() {
     setParseError(null);
@@ -104,15 +147,8 @@ export function PasteImportForm({
       if (valid.length === 0) {
         throw new Error("ไม่พบเพจในรูปแบบที่ถูกต้อง");
       }
-      setPages(valid);
-      const init: Record<string, Selection> = {};
-      for (const p of valid) {
-        init[p.id] = {
-          selected: true,
-          businessTag: guessBusiness(p.name, p.category),
-        };
-      }
-      setSel(init);
+      setPermanent(false); // raw page tokens — may be short-lived
+      loadPicker(valid);
       toast.success(`อ่าน ${valid.length} เพจสำเร็จ`);
     } catch (e) {
       setParseError((e as Error).message);
@@ -181,10 +217,114 @@ export function PasteImportForm({
   if (!pages) {
     return (
       <div className="space-y-4">
+        {/* Mode switch */}
+        <div className="inline-flex rounded-xl border border-zinc-200 bg-zinc-100 p-1 text-xs font-bold">
+          <button
+            type="button"
+            onClick={() => setMode("token")}
+            className={`rounded-lg px-3 py-1.5 ${
+              mode === "token"
+                ? "bg-white text-zinc-900 shadow-sm"
+                : "text-zinc-500"
+            }`}
+          >
+            วางกุญแจหลัก · แนะนำ
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("json")}
+            className={`rounded-lg px-3 py-1.5 ${
+              mode === "json"
+                ? "bg-white text-zinc-900 shadow-sm"
+                : "text-zinc-500"
+            }`}
+          >
+            วาง JSON · ขั้นสูง
+          </button>
+        </div>
+
+        {mode === "token" && (
+          <>
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-xs leading-relaxed text-emerald-900">
+              <p className="mb-2 flex items-center gap-1.5 font-bold text-emerald-950">
+                <ShieldCheck className="size-4" />
+                วิธีนี้ token ไม่หมดอายุ (ระบบยืดเป็น 60 วัน + ดึงเพจถาวรให้เอง)
+              </p>
+              <ol className="list-decimal space-y-1 pl-5">
+                <li>
+                  เปิด{" "}
+                  <a
+                    href="https://developers.facebook.com/tools/explorer"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-800 underline"
+                  >
+                    Graph API Explorer
+                  </a>{" "}
+                  · มุมขวาบนเลือก App = <b>Pooil Inbox Connector</b>
+                </li>
+                <li>
+                  กด <b>"Generate Access Token"</b> · ติ๊กสิทธิ์{" "}
+                  <span className="font-mono text-[10px]">pages_show_list</span>,{" "}
+                  <span className="font-mono text-[10px]">pages_messaging</span>,{" "}
+                  <span className="font-mono text-[10px]">
+                    pages_manage_metadata
+                  </span>
+                  ,{" "}
+                  <span className="font-mono text-[10px]">
+                    pages_read_engagement
+                  </span>{" "}
+                  · ตอนเด้งถามเพจให้กด <b>เลือกทั้งหมด</b>
+                </li>
+                <li>
+                  copy <b>Access Token</b> (ก้อนยาวๆ ในช่องบนสุด) มาวางด้านล่าง ·
+                  ไม่ต้องพิมพ์คำสั่ง ไม่ต้อง copy JSON
+                </li>
+              </ol>
+            </div>
+
+            <textarea
+              value={userToken}
+              onChange={(e) => setUserToken(e.target.value)}
+              rows={4}
+              spellCheck={false}
+              placeholder="EAAB... (Access Token จาก Graph API Explorer)"
+              className="w-full resize-y rounded-2xl border border-zinc-300 bg-white p-3 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)]"
+            />
+
+            {tokenError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+                <p className="font-bold">ดึงเพจไม่ได้</p>
+                <p>{tokenError}</p>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={fetchByToken}
+              disabled={!userToken.trim() || fetching}
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--color-brand-600)] px-4 text-sm font-bold text-white hover:bg-[var(--color-brand-700)] disabled:opacity-40"
+            >
+              {fetching ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <KeyRound className="size-4" />
+              )}
+              ยืดอายุ + ดึงเพจ
+            </button>
+          </>
+        )}
+
+        {mode === "json" && (
+          <>
         {/* Step-by-step explainer */}
         <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-xs leading-relaxed text-zinc-700">
           <p className="mb-2 font-bold text-zinc-900">
             วิธีหา JSON (3 ขั้น · ~2 นาที):
+          </p>
+          <p className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+            ⚠️ วิธีนี้ token เพจอาจหมดอายุใน ~1 ชม. ถ้าไม่ได้ยืดอายุก่อน —
+            ถ้าไม่แน่ใจให้ใช้ "วางกุญแจหลัก" ด้านบนแทน
           </p>
           <ol className="list-decimal space-y-1 pl-5">
             <li>
@@ -249,6 +389,8 @@ export function PasteImportForm({
           <ClipboardPaste className="size-4" />
           อ่าน JSON · เลือกเพจ
         </button>
+          </>
+        )}
       </div>
     );
   }
@@ -262,6 +404,17 @@ export function PasteImportForm({
           (Owl Cha → Owl Cha · กาแฟ/ขนม → ร้านอาหาร · พีโอ → Pooil · ฯลฯ) ·
           แก้ได้ทุกแถว
         </p>
+        {permanent ? (
+          <p className="mt-1 flex items-center gap-1 font-bold text-emerald-950">
+            <ShieldCheck className="size-3.5" />
+            token ถาวร — ไม่หมดอายุ ✓
+          </p>
+        ) : (
+          <p className="mt-1 text-amber-700">
+            ⚠️ token เพจชุดนี้อาจหมดอายุใน ~1 ชม. (มาจากการวาง JSON) —
+            ถ้าอยากให้ถาวรให้กลับไปใช้ "วางกุญแจหลัก"
+          </p>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-white p-3">

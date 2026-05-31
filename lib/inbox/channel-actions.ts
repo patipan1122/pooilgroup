@@ -191,6 +191,63 @@ export async function deleteChannel(id: string) {
  * Used by /inbox/settings/channels/facebook-paste when OAuth dialog is
  * blocked (shared subdomain etc.).
  */
+/**
+ * Preferred Facebook connect path: the admin pastes ONE user access token
+ * (from Graph API Explorer). We:
+ *   1. upgrade it to a long-lived (60-day) user token, then
+ *   2. enumerate the pages via /me/accounts.
+ * Page tokens derived from a long-lived user token are PERMANENT (never
+ * expire) — that's the whole point of going through the user token instead
+ * of pasting raw page tokens, which would die in ~1h.
+ *
+ * Returns the page list (with permanent page tokens) for the picker UI to
+ * select + tag, then bulkImportFacebookFromPlaintext does the actual save.
+ */
+export async function fetchFacebookPagesFromUserToken(input: {
+  userToken: string;
+}): Promise<{
+  pages: Array<{ id: string; name: string; access_token: string; category?: string }>;
+  longLived: boolean;
+}> {
+  await requireInboxAdmin();
+  const token = input.userToken.trim();
+  if (!token) throw new Error("ยังไม่ได้วาง Access Token");
+
+  const { upgradeToLongLived, listUserPages } = await import("./facebook-oauth");
+
+  // Try to upgrade to a long-lived (60-day) user token. If the pasted token
+  // is already long-lived FB returns it fine; if it's a page token (wrong
+  // kind) the exchange fails and we fall back to using it as-is so we can
+  // still show a helpful error from listUserPages.
+  let userToken = token;
+  let longLived = false;
+  try {
+    const upgraded = await upgradeToLongLived({ shortLivedToken: token });
+    if (upgraded.access_token) {
+      userToken = upgraded.access_token;
+      longLived = true;
+    }
+  } catch {
+    // keep raw token; listUserPages will surface a clear error if invalid
+  }
+
+  const pages = await listUserPages({ userAccessToken: userToken });
+  if (pages.length === 0) {
+    throw new Error(
+      "ดึงเพจไม่ได้ — ตรวจว่า Token มาจากบัญชีที่เป็นแอดมินเพจ และให้สิทธิ์ pages_show_list ครบ",
+    );
+  }
+  return {
+    pages: pages.map((p) => ({
+      id: p.id,
+      name: p.name,
+      access_token: p.access_token,
+      category: p.category,
+    })),
+    longLived,
+  };
+}
+
 export async function bulkImportFacebookFromPlaintext(input: {
   pages: Array<{
     id: string;
