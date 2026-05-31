@@ -1,10 +1,33 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-31 (รอบ 68 · ChairOps Wave-2 hotfix ship · Phase A+B · 18 files · awaiting CEO push auth)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-31 (รอบ 69 · HotelBook live on prod · Mix Hotel แรก)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
-## 🆕 Update (2026-05-31 · รอบ 68 — ChairOps Wave-2 hotfix · Phase A + Phase B ship)
+## 🆕 Update (2026-05-31 · รอบ 69 — HotelBook ✅ LIVE on prod · Mix Hotel แรก · Pool Module #11)
+
+**CEO `/bigfeature`:** "ทำระบบโรงแรม สวยๆ · จองได้ใน LINE + FB + Web · มีรูป"
+
+**🚀 LIVE URLs (verified HTTP 200):**
+- https://pooilgroup.vercel.app/hotel/mix-hotel — public booking web (anon · ไม่ต้อง login)
+- https://pooilgroup.vercel.app/liff/hotel — LINE Mini App (3-step flow)
+- https://pooilgroup.vercel.app/hotelbook — admin (super_admin/org_admin/admin)
+
+**Pipeline executed:**
+1. ✅ Migration `20260531200000_hotelbook_module.sql` applied via Supabase Mgmt API (HTTP 201)
+2. ✅ 5 tables + RLS + RPC `hotelbook_next_code` + seed Mix Hotel + 5 rooms (verified)
+3. ✅ Code pushed `chairops-liff-fix3 → setup` (commit `5fefd8a`) · Vercel auto-deployed
+4. ✅ Smoke test 3 routes return 200/307
+
+**What works NOW:** ลูกค้าจองห้องผ่านเว็บ/LIFF → success + รหัสจอง `MX-YYMM-NNNN` · admin เห็นจองทันที + เปลี่ยน status (pending → confirmed → checked_in → completed) · upload รูปต่อห้องผ่าน /hotelbook/rooms (drag-drop → R2)
+
+**Seed (จากคำตอบ CEO Round 1-2):** Mix Hotel · 5 ห้อง (300/400/450/450/550) · เบอร์ 044-244-700 / 092-154-1234 (จอง) + 086-980-1234 (เจ้าของ) · 24ชม. · cash/transfer/QR · no pets/no smoking
+
+Memory: `[[hotelbook-shipped-2026-05-31]]`
+
+---
+
+## Update (2026-05-31 · รอบ 68 — ChairOps Wave-2 hotfix · Phase A + Phase B ship)
 
 **Goal:** ลุยทำทั้งหมดเลย — 6 P0 audit fixes + 4 UX/NR features → typecheck clean → ready for CEO push.
 
