@@ -79,6 +79,36 @@ export async function userHasModuleAccess(
 }
 
 /**
+ * Is this user an ADMIN of the given module (can manage its sub-members)?
+ *
+ * True when:
+ *   - user is global admin tier (super_admin / org_admin / admin), OR
+ *   - user has a user_modules row for this module with role='admin' + active.
+ *
+ * Use INSIDE a module to gate "invite teammate / manage members" actions,
+ * so a program admin can run their own program without being a global admin.
+ */
+export async function userIsModuleAdmin(
+  user: DbUser,
+  module: ModuleSlug,
+): Promise<boolean> {
+  if (isAdminTier(user.role)) return true;
+
+  const admin = adminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (admin.from as any)("user_modules")
+    .select("id")
+    .eq("org_id", user.org_id)
+    .eq("user_id", user.id)
+    .eq("module_name", module)
+    .eq("role", "admin")
+    .eq("is_active", true)
+    .maybeSingle();
+
+  return !!data;
+}
+
+/**
  * One-call guard for module layouts. Combines the kill switch
  * (`MODULES_DISABLED` env) with the per-user entitlement check.
  * Redirects to /dashboard if the module is globally disabled,

@@ -1,5 +1,6 @@
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
+import { MODULES } from "@/lib/modules";
 import { InviteForm } from "./invite-form";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,12 @@ export default async function NewUserPage() {
     .eq("is_active", true)
     .order("code");
 
+  // Active programs the new user can be made admin of. CostCtrl is the CEO's
+  // private cost dashboard — never offer it as a program-admin grant.
+  const programs = Object.values(MODULES)
+    .filter((m) => m.status === "active" && m.slug !== "costctrl")
+    .map((m) => ({ slug: m.slug, name: m.name, emoji: m.emoji }));
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-2xl mx-auto">
       <div className="mb-6 animate-fade-up">
@@ -29,7 +36,7 @@ export default async function NewUserPage() {
         </p>
       </div>
 
-      <InviteForm branches={branches ?? []} />
+      <InviteForm branches={branches ?? []} programs={programs} />
     </div>
   );
 }

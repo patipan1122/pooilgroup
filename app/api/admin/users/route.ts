@@ -6,6 +6,13 @@ import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
 import { canAssignRole } from "@/lib/auth/role-guards";
+import { MODULES } from "@/lib/modules";
+
+// Module slugs accepted for program grants — derived from the registry so a
+// new module in lib/modules.ts is automatically grantable (no stale enum).
+const ModuleSlugSchema = z.enum(
+  Object.keys(MODULES) as [string, ...string[]],
+);
 
 const InviteSchema = z.object({
   name: z.string().min(1).max(100),
@@ -20,6 +27,10 @@ const InviteSchema = z.object({
     "viewer",
   ]),
   branchIds: z.array(zUUID()).optional(),
+  // Programs this user is invited to ADMINISTER. Each becomes a user_modules
+  // row with role='admin'. Used for the "program admin" persona: org-role stays
+  // `viewer` (lands on /home, not a global admin) but they run these programs.
+  adminModules: z.array(ModuleSlugSchema).optional(),
   // When provided + email also provided → admin sets password directly:
   // creates the auth user immediately, marks must_change_password so the
   // invitee is forced to change it on first login. Skips invite-link flow.
@@ -30,6 +41,32 @@ function makeToken(): string {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Grant the user ADMIN access to a set of programs (user_modules role='admin').
+// Safe to call with empty/undefined — no-op. Upserts so re-invites don't dup.
+async function grantAdminModules(
+  admin: ReturnType<typeof adminClient>,
+  orgId: string,
+  userId: string,
+  grantedBy: string,
+  modules: string[] | undefined,
+): Promise<void> {
+  if (!modules || modules.length === 0) return;
+  const now = new Date().toISOString();
+  const rows = Array.from(new Set(modules)).map((module_name) => ({
+    org_id: orgId,
+    user_id: userId,
+    module_name,
+    role: "admin",
+    is_active: true,
+    granted_by: grantedBy,
+    updated_at: now,
+  }));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (admin.from as any)("user_modules").upsert(rows, {
+    onConflict: "org_id,user_id,module_name",
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -130,6 +167,14 @@ export async function POST(req: NextRequest) {
       await admin.from("user_branches").insert(rows);
     }
 
+    await grantAdminModules(
+      admin,
+      orgId,
+      userId,
+      session.user.id,
+      data.adminModules,
+    );
+
     await audit({
       orgId,
       userId: session.user.id,
@@ -142,6 +187,7 @@ export async function POST(req: NextRequest) {
           role: data.role,
           set_password_directly: true,
           must_change_password: true,
+          admin_modules: data.adminModules ?? [],
         },
       },
     });
@@ -197,13 +243,28 @@ export async function POST(req: NextRequest) {
     await admin.from("user_branches").insert(rows);
   }
 
+  await grantAdminModules(
+    admin,
+    orgId,
+    userId,
+    session.user.id,
+    data.adminModules,
+  );
+
   await audit({
     orgId,
     userId: session.user.id,
     action: "CREATE_USER",
     resourceType: "user",
     resourceId: userId,
-    diff: { new: { name: data.name, role: data.role, invited: true } },
+    diff: {
+      new: {
+        name: data.name,
+        role: data.role,
+        invited: true,
+        admin_modules: data.adminModules ?? [],
+      },
+    },
   });
 
   const inviteUrl = `${getRequestBaseUrl(req)}/invite/${token}`;

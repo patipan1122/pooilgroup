@@ -11,8 +11,11 @@ import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { canManageUser } from "@/lib/auth/role-guards";
 import type { DbUser } from "@/lib/auth/session";
+import { MODULES } from "@/lib/modules";
 
-const ModuleSchema = z.enum(["cashhub", "fuelos", "docuflow", "recruit", "repairs"]);
+// Derived from the registry so every current module is grantable — the old
+// hard-coded 5-slug enum silently blocked inbox/chairops/clawfleet/etc.
+const ModuleSchema = z.enum(Object.keys(MODULES) as [string, ...string[]]);
 
 const PutSchema = z.object({
   modules: z.array(ModuleSchema),

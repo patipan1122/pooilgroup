@@ -22,9 +22,10 @@ import { BranchPicker, type BranchOption } from "@/components/users/branch-picke
 import { cn } from "@/lib/utils/cn";
 
 const ROLES: { value: string; label: string; desc: string }[] = [
+  { value: "program_admin", label: "แอดมินโปรแกรม", desc: "ดูแลเฉพาะโปรแกรมที่เลือก · เชิญทีมในโปรแกรมเองได้ · ไม่เห็นโปรแกรมอื่น" },
   { value: "branch_manager", label: "Branch Manager", desc: "ผู้จัดการสาขา · อนุมัติรายงานสาขาตัวเอง" },
   { value: "staff", label: "Staff", desc: "พนักงาน · กรอกรายงาน" },
-  { value: "org_admin", label: "Admin", desc: "ผู้ดูแลระบบ · จัดการผู้ใช้/สาขาทั้งหมด" },
+  { value: "org_admin", label: "Admin (เห็นทุกโปรแกรม)", desc: "ผู้ดูแลระบบ · จัดการผู้ใช้/สาขาทั้งหมด" },
   { value: "viewer", label: "Viewer", desc: "ดูได้อย่างเดียว · ไม่แก้ไข" },
 ];
 
@@ -42,7 +43,13 @@ function generatePassword(): string {
   return Array.from(bytes, (b) => chars[b % chars.length]).join("");
 }
 
-export function InviteForm({ branches }: { branches: BranchOption[] }) {
+export function InviteForm({
+  branches,
+  programs,
+}: {
+  branches: BranchOption[];
+  programs: { slug: string; name: string; emoji: string }[];
+}) {
   const [pending, startTransition] = useTransition();
   const [mode, setMode] = useState<Mode>("invite");
   const [name, setName] = useState("");
@@ -52,6 +59,8 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Programs a "program_admin" will administer (slugs).
+  const [programSel, setProgramSel] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<SuccessResult | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -71,6 +80,16 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
         return;
       }
     }
+    if (role === "program_admin" && programSel.size === 0) {
+      toast.error("เลือกอย่างน้อย 1 โปรแกรมที่จะให้ดูแล");
+      return;
+    }
+
+    // "แอดมินโปรแกรม" = org-role viewer (ลงหน้า /home แต่ไม่ใช่แอดมินรวม)
+    // + ได้สิทธิ์แอดมินเฉพาะโปรแกรมที่เลือก
+    const isProgramAdmin = role === "program_admin";
+    const payloadRole = isProgramAdmin ? "viewer" : role;
+    const adminModules = isProgramAdmin ? Array.from(programSel) : undefined;
 
     startTransition(async () => {
       const res = await fetch("/api/admin/users", {
@@ -80,7 +99,8 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
           name: name.trim(),
           email: email.trim() || undefined,
           phone: phone.trim() || undefined,
-          role,
+          role: payloadRole,
+          adminModules,
           branchIds: Array.from(selected),
           password: mode === "direct" ? password : undefined,
         }),
@@ -120,6 +140,16 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
     setPhone("");
     setPassword("");
     setSelected(new Set());
+    setProgramSel(new Set());
+  }
+
+  function toggleProgram(slug: string) {
+    setProgramSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(slug)) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
   }
 
   if (result?.mode === "invite") {
@@ -394,6 +424,49 @@ export function InviteForm({ branches }: { branches: BranchOption[] }) {
           ))}
         </CardBody>
       </Card>
+
+      {role === "program_admin" && (
+        <Card className="mt-4 animate-fade-up delay-200">
+          <CardHeader>
+            <CardTitle>โปรแกรมที่ให้ดูแล</CardTitle>
+          </CardHeader>
+          <CardBody className="!pt-0">
+            <p className="text-xs text-zinc-500 mb-3">
+              ผู้ใช้นี้จะเป็น <strong>แอดมิน</strong> เฉพาะโปรแกรมที่ติ๊ก —
+              เห็นเฉพาะโปรแกรมเหล่านี้ในหน้ารวม และเชิญทีมในโปรแกรมเองได้
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {programs.map((p) => {
+                const on = programSel.has(p.slug);
+                return (
+                  <label
+                    key={p.slug}
+                    className={cn(
+                      "flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors",
+                      on
+                        ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)]"
+                        : "border-zinc-200 hover:bg-zinc-50",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => toggleProgram(p.slug)}
+                    />
+                    <span className="text-xl">{p.emoji}</span>
+                    <span className="font-semibold text-sm">{p.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+            {programSel.size > 0 && (
+              <p className="text-xs text-[var(--color-brand-700)] font-semibold mt-3">
+                เลือกแล้ว {programSel.size} โปรแกรม
+              </p>
+            )}
+          </CardBody>
+        </Card>
+      )}
 
       {(role === "branch_manager" || role === "staff") && branches.length > 0 && (
         <Card className="mt-4 animate-fade-up delay-200">

@@ -27,6 +27,7 @@ import { Section } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
 import { thaiDateLong } from "@/lib/utils/format";
 import { MODULES } from "@/lib/modules";
+import { loadUserModules } from "@/lib/auth/module-access";
 import { startOfDay } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 
@@ -77,6 +78,13 @@ export default async function HomePage() {
     session.user.role === "super_admin" ||
     session.user.role === "org_admin" ||
     session.user.role === "admin";
+  // CostCtrl = CEO-only cost dashboard → การ์ดโชว์เฉพาะ super_admin
+  const isSuperAdmin = session.user.role === "super_admin";
+
+  // Which programs to show on the hub. Admin tier → all. Program-admins
+  // (org-role viewer + user_modules grants) → only their granted programs.
+  const access = await loadUserModules(session.user);
+  const canSee = (slug: string) => access.has(slug as never);
 
   // Server Component — runs once per request; Date.now() / new Date() เป็น OK
   const todayStart = formatInTimeZone(
@@ -242,46 +250,83 @@ export default async function HomePage() {
           className="mb-14 animate-fade-up"
         >
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            <ModuleCard
-              slug="cashhub"
-              enabled={moduleEnabled.cashhub}
-              landingPath="/cashhub/dashboard"
-            />
-            <ModuleCard
-              slug="docuflow"
-              enabled={moduleEnabled.docuflow ?? true}
-              landingPath="/docuflow"
-            />
-            <ModuleCard
-              slug="recruit"
-              enabled={moduleEnabled.recruit ?? true}
-              landingPath="/recruit"
-            />
-            <ModuleCard
-              slug="repairs"
-              enabled={moduleEnabled.repairs ?? true}
-              landingPath="/repairs"
-            />
-            <ModuleCard
-              slug="clawfleet"
-              enabled={moduleEnabled.clawfleet ?? true}
-              landingPath="/clawfleet/dashboard"
-            />
-            <ModuleCard
-              slug="chairops"
-              enabled={moduleEnabled.chairops ?? true}
-              landingPath="/chairops/dashboard"
-            />
-            <ModuleCard
-              slug="playland"
-              enabled={moduleEnabled.playland ?? true}
-              landingPath="/playland"
-            />
-            <ModuleCard
-              slug="fuelos"
-              enabled={moduleEnabled.fuelos ?? true}
-              landingPath="/fuelos"
-            />
+            {canSee("cashhub") && (
+              <ModuleCard
+                slug="cashhub"
+                enabled={moduleEnabled.cashhub}
+                landingPath="/cashhub/dashboard"
+              />
+            )}
+            {canSee("docuflow") && (
+              <ModuleCard
+                slug="docuflow"
+                enabled={moduleEnabled.docuflow ?? true}
+                landingPath="/docuflow"
+              />
+            )}
+            {canSee("recruit") && (
+              <ModuleCard
+                slug="recruit"
+                enabled={moduleEnabled.recruit ?? true}
+                landingPath="/recruit"
+              />
+            )}
+            {canSee("repairs") && (
+              <ModuleCard
+                slug="repairs"
+                enabled={moduleEnabled.repairs ?? true}
+                landingPath="/repairs"
+              />
+            )}
+            {canSee("clawfleet") && (
+              <ModuleCard
+                slug="clawfleet"
+                enabled={moduleEnabled.clawfleet ?? true}
+                landingPath="/clawfleet/dashboard"
+              />
+            )}
+            {canSee("chairops") && (
+              <ModuleCard
+                slug="chairops"
+                enabled={moduleEnabled.chairops ?? true}
+                landingPath="/chairops/dashboard"
+              />
+            )}
+            {canSee("playland") && (
+              <ModuleCard
+                slug="playland"
+                enabled={moduleEnabled.playland ?? true}
+                landingPath="/playland"
+              />
+            )}
+            {canSee("inbox") && (
+              <ModuleCard
+                slug="inbox"
+                enabled={moduleEnabled.inbox ?? true}
+                landingPath="/inbox"
+              />
+            )}
+            {canSee("hotelbook") && (
+              <ModuleCard
+                slug="hotelbook"
+                enabled={moduleEnabled.hotelbook ?? true}
+                landingPath="/hotelbook"
+              />
+            )}
+            {isSuperAdmin && canSee("costctrl") && (
+              <ModuleCard
+                slug="costctrl"
+                enabled={moduleEnabled.costctrl ?? true}
+                landingPath="/costctrl"
+              />
+            )}
+            {canSee("fuelos") && (
+              <ModuleCard
+                slug="fuelos"
+                enabled={moduleEnabled.fuelos ?? true}
+                landingPath="/fuelos"
+              />
+            )}
           </div>
         </Section>
 
