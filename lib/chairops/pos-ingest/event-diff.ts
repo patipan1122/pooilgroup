@@ -268,8 +268,12 @@ export async function ingestEvents(
         chairNumber: r.chairNumber,
         storeName: r.storeName,
         eventAt: r.eventAt,
-        coinAdded: Math.round(r.amount),
-        coinMeter: Math.round(r.meter),
+        // 2026-06-01: coinAdded/coinMeter are BIGINT in schema (StarThing
+        // exports unsigned 32-bit counters · int4 overflowed at ~4.29B).
+        // Math.round still works because incoming JS Number is well under
+        // 2^53; just wrap to BigInt for Prisma's createMany input.
+        coinAdded: BigInt(Math.round(r.amount)),
+        coinMeter: BigInt(Math.round(r.meter)),
         rowHash: r.rowHash,
         sourceImportId: importId,
       }));

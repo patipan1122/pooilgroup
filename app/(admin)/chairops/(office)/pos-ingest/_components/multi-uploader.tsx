@@ -247,6 +247,10 @@ export function MultiUploader() {
         <div className="text-xs text-zinc-500">
           รับ .xlsx / .csv · สูงสุด {MAX_FILES} ไฟล์ · 10MB/ไฟล์ · ระบบจะเดาชนิด (daily / cash / coin) ให้
         </div>
+        {/* CEO 2026-06-01 explicit ask · re-upload overlap behaviour. */}
+        <div className="text-[11px] text-zinc-500">
+          อัปซ้ำได้ปลอดภัย — แถวเดิมจะถูก skip (เห็น dup ในผลตรวจ) · เฉพาะแถวใหม่จะถูกเขียน
+        </div>
         <input
           ref={inputRef}
           type="file"
