@@ -25,6 +25,7 @@ import type {
 } from "@/app/(admin)/chairops/pos-ingest/actions";
 import { DiffTable } from "./diff-table";
 import { CommitCard } from "./commit-card";
+import { UnknownBranchesCard, type UnknownBranchGroup } from "./unknown-branches-card";
 
 export default async function PosPreviewPage({
   params,
@@ -65,6 +66,35 @@ export default async function PosPreviewPage({
     (r) => (r.status === "changed" || r.status === "new") && r.isPastDay
   );
   const ceoOnlyBlocker = hasPastDayWrite && !canEditPastDay(session.user);
+
+  // CEO 2026-06-01: surface unmatched storeNames + chair samples for one-
+  // click branch creation. A row is "unmatched" when status==="error" AND
+  // it has a shopName (other error types like bad-date still get the row
+  // dropped but don't fit this UI). Group + sample at most 5 chair codes
+  // per storeName so the card stays compact.
+  const unknownGroupsMap = new Map<string, UnknownBranchGroup>();
+  for (const r of rows) {
+    if (r.status !== "error") continue;
+    const name = (r.shopName ?? "").trim();
+    if (!name) continue;
+    // Only count rows that are "unmatched branch" specifically — the
+    // existing error pipeline tags this via `errors` containing the Thai
+    // phrase the row card surfaces.
+    const isUnmatchedBranch = r.errors.some((e) => /สาขา|ระบุสาขา/.test(e));
+    if (!isUnmatchedBranch) continue;
+    let g = unknownGroupsMap.get(name);
+    if (!g) {
+      g = { storeName: name, rowCount: 0, chairCodeSamples: [] };
+      unknownGroupsMap.set(name, g);
+    }
+    g.rowCount += 1;
+    if (r.chairCode && g.chairCodeSamples.length < 5 && !g.chairCodeSamples.includes(r.chairCode)) {
+      g.chairCodeSamples.push(r.chairCode);
+    }
+  }
+  const unknownGroups = Array.from(unknownGroupsMap.values()).sort(
+    (a, b) => b.rowCount - a.rowCount,
+  );
 
   return (
     <div className="chairops-scope mx-auto max-w-screen-2xl p-4 sm:p-6">
@@ -153,6 +183,11 @@ export default async function PosPreviewPage({
           </div>
         )}
       </div>
+
+      {/* ── Unknown branches (CEO 2026-06-01) ──────────────────────── */}
+      {!imp.committed && unknownGroups.length > 0 && (
+        <UnknownBranchesCard groups={unknownGroups} />
+      )}
 
       {/* ── 4-bucket DiffTable ──────────────────────────────────────── */}
       <DiffTable counts={counts} rows={rows} />

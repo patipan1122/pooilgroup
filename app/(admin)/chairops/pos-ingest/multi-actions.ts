@@ -2,6 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { revalidatePath } from "next/cache";
 
 // Multi-file POS upload (Plan B) — accepts up to 3 StarThing files in one go:
 //   • daily  (ยอดรวม + เงินโอน)   → reuses the proven previewImport/commitImport flow
@@ -585,4 +586,98 @@ export async function runPosIngestMigration(
       error: e instanceof Error ? e.message : String(e),
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// addBranchFromStarThing — CEO 2026-06-01
+//
+// One-click branch creation from a storeName that appeared in a StarThing
+// upload but doesn't yet exist as ChairopsBranch. Used by the preview page
+// to resolve "ระบุสาขาไม่ได้" rows without leaving the import context.
+//
+// Per `[[pool-csv-import-must-diff-before-write]]` we still NEVER auto-create
+// branches as a side-effect of an upload — this is an explicit, audited,
+// CEO-confirmed action. After creating the branch the caller re-runs preview
+// (revalidatePath) and rows that match the new storeName flip from "bad" to
+// "new" naturally on the next render.
+// ---------------------------------------------------------------------------
+
+function toBranchSlug(name: string): string {
+  // Latin-letter + digit slug · keep Thai chars by URI-encoding them, then
+  // strip the percent signs · 30 char cap to stay readable.
+  const base = name
+    .trim()
+    .toLowerCase()
+    .replace(/[\s฀-๿]+/g, "-")
+    .replace(/[^a-z0-9-]+/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  if (base.length > 0) return base.slice(0, 30);
+  // Pure-Thai names → hash the name into a stable short id.
+  return (
+    "br-" +
+    Array.from(name)
+      .reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0)
+      .toString(36)
+      .replace(/[^a-z0-9]/g, "")
+      .slice(0, 8)
+  );
+}
+
+export interface AddBranchFromStarThingResult {
+  ok: boolean;
+  branch?: { id: string; name: string; slug: string };
+  error?: string;
+}
+
+export async function addBranchFromStarThing(
+  storeName: string,
+): Promise<AddBranchFromStarThingResult> {
+  const session = await requireRole("OFFICE");
+  const orgId = session.user.orgId;
+  const trimmed = storeName.trim();
+  if (!trimmed) return { ok: false, error: "storeName ว่าง" };
+  if (trimmed.length > 100)
+    return { ok: false, error: "ชื่อสาขายาวเกิน 100 ตัวอักษร" };
+
+  // Idempotent: if a branch with this exact name already exists, return it.
+  const existing = await prisma.chairopsBranch.findFirst({
+    where: { orgId, name: trimmed },
+    select: { id: true, name: true, slug: true },
+  });
+  if (existing) return { ok: true, branch: existing };
+
+  let slug = toBranchSlug(trimmed);
+  // Suffix-collide on slug if needed (org-scoped).
+  for (let i = 0; i < 20; i++) {
+    const collision = await prisma.chairopsBranch.findFirst({
+      where: { orgId, slug },
+      select: { id: true },
+    });
+    if (!collision) break;
+    slug = `${toBranchSlug(trimmed)}-${i + 2}`;
+  }
+
+  const branch = await prisma.chairopsBranch.create({
+    data: {
+      orgId,
+      slug,
+      name: trimmed,
+      tabName: trimmed,
+      isActive: true,
+    },
+    select: { id: true, name: true, slug: true },
+  });
+
+  await writeAudit({
+    userId: session.user.id,
+    action: "branch.create_from_starthing",
+    entity: "ChairopsBranch",
+    entityId: branch.id,
+    newValue: { name: branch.name, slug: branch.slug, source: "pos-ingest" },
+  });
+
+  revalidatePath("/chairops/pos-ingest");
+  revalidatePath(`/chairops/branches`);
+  return { ok: true, branch };
 }
