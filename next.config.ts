@@ -10,6 +10,18 @@ const nextConfig: NextConfig = {
       "sonner",
       "@radix-ui/react-icons",
     ],
+    // CEO 2026-06-01: ChairOps POS multi-uploader sends up to 10 StarThing
+    // XLSX files in ONE server-action invocation. Default 1 MB ceiling
+    // tripped on a 1.3 MB / 3-file batch ("An unexpected response was
+    // received from the server"). Lifting Next.js's app-layer cap to 8 MB
+    // covers realistic StarThing exports (~0.5-1 MB each × up to ~8 files).
+    // Vercel Hobby still enforces a ~4.5 MB platform-layer body ceiling,
+    // so very large batches will need either R2-presign-then-confirm OR a
+    // Pro plan. Per-file 10 MB cap (MAX_FILE_BYTES) stays as the inner
+    // guard so a single huge file can't get through here.
+    serverActions: {
+      bodySizeLimit: "8mb",
+    },
   },
   // 2026-05-22 (รอบ 50) — TEMPORARY unblock so CashHub critical fix can ship.
   // DocuFlow round 3-7 introduced a Prisma select type error at
