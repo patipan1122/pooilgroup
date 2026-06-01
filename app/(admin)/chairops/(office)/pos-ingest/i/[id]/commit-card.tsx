@@ -191,6 +191,8 @@ export function CommitCard({
             onClick={onCommit}
             disabled={submitDisabled}
             title={blockerTooltip}
+            aria-busy={isPending || undefined}
+            aria-live="polite"
           >
             {isPending
               ? `กำลัง commit... ${elapsedSec ? `${elapsedSec} วินาที` : ""}`

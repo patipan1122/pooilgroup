@@ -265,6 +265,7 @@ export function MultiUploader() {
           accept=".xlsx,.csv"
           className="hidden"
           onChange={onPick}
+          aria-label="เลือกไฟล์ StarThing XLSX"
         />
         <button
           type="button"
@@ -325,7 +326,11 @@ export function MultiUploader() {
       )}
 
       {run.state === "uploading" && (
-        <div className="inline-flex items-center gap-2 text-sm text-zinc-700">
+        <div
+          className="inline-flex items-center gap-2 text-sm text-zinc-700"
+          role="status"
+          aria-live="polite"
+        >
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
           กำลังตรวจ + เตรียม diff · กรุณารอ · เปิด tab อื่นได้
         </div>
