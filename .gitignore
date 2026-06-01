@@ -42,3 +42,9 @@ yarn-error.log*
 next-env.d.ts
 
 /lib/generated/prisma
+
+# Per-user Claude Code skill symlinks (2026-06-01)
+# Each developer clones their preferred skill repos to ~/.claude/skills/
+# and symlinks into here · NOT shared across the team.
+.claude/skills/
+.claude/settings.local.json
