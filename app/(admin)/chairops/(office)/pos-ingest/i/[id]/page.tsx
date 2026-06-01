@@ -35,6 +35,11 @@ import { ReresolveButton } from "./reresolve-button";
 // route dynamic so every request re-reads the row.
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+// 2026-06-01: server actions invoked via POST to this route share the
+// route's maxDuration. CEO daily commit (1012 rows) used the implicit
+// default and hit Vercel's 300-s hobby ceiling — bump explicitly so we
+// get the full 5 min, and so future deploys don't silently regress.
+export const maxDuration = 300;
 
 export default async function PosPreviewPage({
   params,

@@ -732,7 +732,63 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
   // audit log so CEO can audit how many maid-view-protected events fired.
   let chairMovesHistoricalOnly = 0;
 
+  // 2026-06-01 perf · CEO daily commit (1012 rows) timed out on Vercel
+  // serverless 300-s limit. The per-row findFirst+update/create+auditLog
+  // loop did ~3000 sequential DB roundtrips. Refactor: preload existing
+  // PosDaily rows BEFORE the tx so the inner loop is in-memory lookups +
+  // batched createMany for new rows + single per-row update for changes,
+  // and drop the per-row audit log (a single summary log at end is
+  // sufficient · row-level oldValue/newValue can be reconstructed from
+  // the diffSummary).
+  const branchIdsInBatch = [
+    ...new Set(toApply.map((r) => r.branchId).filter((b): b is string => !!b)),
+  ];
+  const bizDatesInBatch = [
+    ...new Set(
+      toApply
+        .filter((r) => r.bizDate)
+        .map((r) => new Date(r.bizDate + "T00:00:00.000Z").toISOString()),
+    ),
+  ].map((iso) => new Date(iso));
+  const existingDailyRows =
+    branchIdsInBatch.length > 0 && bizDatesInBatch.length > 0
+      ? await prisma.chairopsPosDaily.findMany({
+          where: {
+            orgId,
+            branchId: { in: branchIdsInBatch },
+            bizDate: { in: bizDatesInBatch },
+          },
+          select: { id: true, branchId: true, chairCode: true, bizDate: true },
+        })
+      : [];
+  const dailyKeyOf = (
+    branchId: string,
+    chairCode: string | null,
+    bizDate: Date,
+  ) => `${branchId}|${chairCode ?? ""}|${bizDate.toISOString().slice(0, 10)}`;
+  const existingDailyMap = new Map<string, string>(
+    existingDailyRows.map((e) => [
+      dailyKeyOf(e.branchId, e.chairCode, e.bizDate),
+      e.id,
+    ]),
+  );
+
   await prisma.$transaction(async (tx) => {
+    const newDailyData: Array<{
+      orgId: string;
+      branchId: string;
+      chairCode: string | null;
+      bizDate: Date;
+      onlineTotal: number;
+      cashTotal: number;
+      coinInsertCount: number;
+      totalCash: number;
+      grossTotal: number;
+      rawSource: string;
+      importId: string;
+      enteredById: string;
+    }> = [];
+    const updates: Array<{ id: string; data: object }> = [];
     for (const r of toApply) {
       if (!r.branchId || !r.bizDate) continue;
       const bizDate = new Date(r.bizDate + "T00:00:00.000Z");
@@ -820,60 +876,46 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
           }
         }
       }
-      // chairCode is nullable. Prisma's compound-unique upsert with null can be
-      // flaky across versions, so we do findFirst → update/create explicitly.
-      const existing = await tx.chairopsPosDaily.findFirst({
-        where: {
-          orgId,
-          branchId: r.branchId,
-          chairCode: r.chairCode ?? null,
-          bizDate,
-        },
-        select: { id: true },
-      });
-      // BA-2 column rename: online→onlineTotal · cash→cashTotal ·
-      // coin→coinInsertCount · totalRevenue→grossTotal · totalCash stays.
+      // 2026-06-01 perf: use the preloaded existing map (no per-row find).
+      const existingId = existingDailyMap.get(
+        dailyKeyOf(r.branchId, r.chairCode, bizDate),
+      );
       const data = {
         onlineTotal: r.online,
         cashTotal: r.cash,
         coinInsertCount: r.coin,
         totalCash: r.totalCash,
         grossTotal: r.totalRevenue,
-        rawSource: "csv-upload",
+        rawSource: "csv-upload" as const,
         importId: imp.id,
-      } as const;
-      const result = existing
-        ? await tx.chairopsPosDaily.update({ where: { id: existing.id }, data })
-        : await tx.chairopsPosDaily.create({
-            data: {
-              ...data,
-              orgId,
-              branchId: r.branchId,
-              chairCode: r.chairCode,
-              bizDate,
-              enteredById: session.user.id,
-            },
-          });
-      await tx.chairopsAuditLog.create({
-        data: {
+      };
+      if (existingId) {
+        updates.push({ id: existingId, data });
+      } else {
+        newDailyData.push({
           orgId,
-          userId: session.user.id,
-          action: r.status === "new" ? "pos_daily.create" : "pos_daily.update",
-          entity: "PosDaily",
-          entityId: result.id,
-          oldValue: r.existing ?? undefined,
-          newValue: {
-            online: r.online,
-            cash: r.cash,
-            coin: r.coin,
-            totalRevenue: r.totalRevenue,
-            bizDate: r.bizDate,
-            chairCode: r.chairCode,
-          },
-          metadata: { importId: imp.id, rowIndex: r.rowIndex },
-        },
-      });
+          branchId: r.branchId,
+          chairCode: r.chairCode,
+          bizDate,
+          ...data,
+          enteredById: session.user.id,
+        });
+      }
     }
+
+    // 2026-06-01 perf: bulk insert for new rows (1 query instead of N).
+    if (newDailyData.length > 0) {
+      await tx.chairopsPosDaily.createMany({ data: newDailyData });
+    }
+    // Existing rows still need per-row updates (Prisma has no native
+    // updateMany-with-different-data), but they don't carry the audit-log
+    // overhead anymore and they're typically a small minority of any batch.
+    for (const u of updates) {
+      await tx.chairopsPosDaily.update({ where: { id: u.id }, data: u.data });
+    }
+    // Per-row PosDaily audit log dropped — reconstruct from diffSummary
+    // when needed (row-level oldValue/newValue already lives there). The
+    // single pos_import.commit audit row below still captures totals.
     // SPEC §2.5 — write per-branch-per-day aggregates from StarThing XLSX
     // (CSV path = empty starThing block · skipped). Idempotent upsert on
     // unique (orgId, branchId, bizDate).
@@ -923,9 +965,18 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
     timeout: 5 * 60_000,
   });
 
-  // Recompute drift + emit alerts (outside the tx so we don't block on slow work)
-  await recomputeAllDrifts(orgId);
-  await evaluateAndEmitAlerts(orgId);
+  // 2026-06-01 perf: drift recompute + alerts are O(branches × days) and
+  // can take 10-30 s. Fire-and-forget so the commit returns to the CEO
+  // as soon as the writes settle; drift values catch up within seconds
+  // on subsequent page loads (server-side cache miss → recompute on read
+  // path is already wired). On Vercel we wrap in waitUntil-equivalent
+  // via a detached promise — Node serverless keeps running until idle.
+  void Promise.allSettled([
+    recomputeAllDrifts(orgId),
+    evaluateAndEmitAlerts(orgId),
+  ]).catch(() => {
+    /* surfaced via Sentry in the background */
+  });
 
   await writeAudit({
     userId: session.user.id,

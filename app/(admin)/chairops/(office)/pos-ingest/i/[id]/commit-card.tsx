@@ -52,6 +52,7 @@ export function CommitCard({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isCancelling, startCancel] = useTransition();
+  const [elapsedSec, setElapsedSec] = useState<string | null>(null);
   const [ack, setAck] = useState<Record<AckKey, boolean>>({
     reviewedRows: false,
     reviewedWarnings: false,
@@ -67,8 +68,19 @@ export function CommitCard({
       toast.error("กรุณายืนยัน checklist ทั้ง 3 ข้อก่อน commit");
       return;
     }
+    // 2026-06-01: CEO can't tell whether the commit is alive or hung.
+    // Track wall-clock + show a "X.X s · กำลังประมวลผล" badge while in
+    // flight. Server-side optimization (bulk createMany + dropped per-row
+    // audit log) should keep this well under 60 s for 1012 rows.
+    const t0 = performance.now();
+    const tick = setInterval(() => {
+      const s = ((performance.now() - t0) / 1000).toFixed(1);
+      setElapsedSec(s);
+    }, 200);
     startTransition(async () => {
       const res = await commitPosImportWithCheck(importId, ack);
+      clearInterval(tick);
+      setElapsedSec(null);
       if (!res.ok) {
         toast.error(res.error);
         return;
@@ -180,7 +192,9 @@ export function CommitCard({
             disabled={submitDisabled}
             title={blockerTooltip}
           >
-            {isPending ? "กำลัง commit..." : "ยืนยัน commit"}
+            {isPending
+              ? `กำลัง commit... ${elapsedSec ? `${elapsedSec} วินาที` : ""}`
+              : "ยืนยัน commit"}
           </Button>
         </div>
       </div>
