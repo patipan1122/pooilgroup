@@ -189,32 +189,42 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
+// CEO 2026-06-01: StarThing now toggles export language per account.
+// Keys are stored lowercased + trimmed; lookup normalizes input the same way.
+// Mirrors lib/chairops/pos-ingest/starthing-xlsx.ts COLUMN_ALIASES.
 const HEADER_ALIASES: Record<string, string> = {
   // canonical keys: date, chairCode, shopName, online, cash, coin, total
   "วันที่": "date",
   "date": "date",
+  "statistical date": "date",
   "เลขเครื่อง": "chairCode",
   "รหัสอุปกรณ์": "chairCode",
   "เครื่อง": "chairCode",
+  "device id": "chairCode",
   "ชื่อร้าน": "shopName",
   "สาขา": "shopName",
+  "store name": "shopName",
   "ออนไลน์": "online",
   "ชำระเงินออนไลน์": "online",
   "online": "online",
+  "online payment": "online",
   "แบงค์": "cash",
   "เงินสด": "cash",
   "จ่ายเงินสด": "cash",
   "cash": "cash",
+  "cash payment": "cash",
   "เหรียญ": "coin",
   "จำนวนหยอดเหรียญ": "coin",
   "coin": "coin",
+  "offline coin": "coin",
   "รวม": "total",
   "เต็มจำนวน": "total",
   "total": "total",
+  "total amount": "total",
 };
 
 function normalizeHeader(s: string): string {
-  const key = s.trim();
+  const key = s.trim().toLowerCase();
   return HEADER_ALIASES[key] ?? key;
 }
 

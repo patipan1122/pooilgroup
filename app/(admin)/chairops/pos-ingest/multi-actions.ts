@@ -273,16 +273,25 @@ export async function previewBatchSmart(
   const items: BatchPreviewItem[] = [];
 
   // Pre-detect each file's kind from headers · in parallel where possible.
-  type Pre = { name: string; buf: Buffer; kind: "daily" | "cash" | "coin" | "unknown" };
+  // Also remember the raw header row · we surface it in the error message for
+  // "unknown" files so the operator (or the next dev) can see exactly what
+  // StarThing exported instead of guessing.
+  type Pre = {
+    name: string;
+    buf: Buffer;
+    kind: "daily" | "cash" | "coin" | "unknown";
+    rawHeaders: string[];
+  };
   const pre: Pre[] = files.map((f) => {
     if (f.buf.length === 0) {
-      return { name: f.name, buf: f.buf, kind: "unknown" as const };
+      return { name: f.name, buf: f.buf, kind: "unknown" as const, rawHeaders: [] };
     }
     try {
-      const detected = detectFileType(readHeaders(f.buf).headers);
-      return { name: f.name, buf: f.buf, kind: detected };
+      const { headers } = readHeaders(f.buf);
+      const detected = detectFileType(headers);
+      return { name: f.name, buf: f.buf, kind: detected, rawHeaders: headers };
     } catch {
-      return { name: f.name, buf: f.buf, kind: "unknown" as const };
+      return { name: f.name, buf: f.buf, kind: "unknown" as const, rawHeaders: [] };
     }
   });
 
@@ -346,6 +355,13 @@ export async function previewBatchSmart(
   // Report unknown files last so the user sees the successes first.
   for (const p of pre) {
     if (p.kind !== "unknown") continue;
+    const headerPreview =
+      p.rawHeaders.length > 0
+        ? ` · headers ที่อ่าน: ${p.rawHeaders
+            .filter((h) => h && h.trim())
+            .slice(0, 12)
+            .join(", ")}`
+        : "";
     items.push({
       ok: false,
       fileName: p.name,
@@ -353,7 +369,7 @@ export async function previewBatchSmart(
       error:
         p.buf.length === 0
           ? "ไฟล์ว่างหรือใหญ่เกิน 10MB"
-          : "ไม่รู้จักชนิดไฟล์ · ต้องเป็น StarThing daily / cash / coin XLSX",
+          : `ไม่รู้จักชนิดไฟล์ · ต้องเป็น StarThing daily / cash / coin XLSX${headerPreview}`,
     });
   }
 
