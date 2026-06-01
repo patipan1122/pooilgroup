@@ -30,6 +30,7 @@ import {
 import {
   previewBatchSmart,
   commitMultiImport,
+  runPosIngestMigration,
   type BatchPreviewItem,
 } from "@/app/(admin)/chairops/pos-ingest/multi-actions";
 
@@ -464,27 +465,78 @@ function EventPreviewRow({
           )}
         </div>
       </div>
-      {bigIntWarn && (
-        <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-900">
-          <div className="font-semibold">
-            ต้องรัน migration BIGINT ก่อน commit (ตรวจที่ preview)
-          </div>
-          <div className="mt-0.5">
-            พบ {bigIntWarn.overflowRowCount.toLocaleString("en-US")} แถวที่ค่าเกิน int4 max ·
-            ตัวอย่าง {bigIntWarn.sampleValue.toLocaleString("en-US")}
-          </div>
-          <div className="mt-1 font-mono text-[10px] leading-tight text-rose-800">
-            ALTER TABLE chairops.&quot;ChairopsPosCoinEvent&quot;<br />
-            &nbsp;&nbsp;ALTER COLUMN &quot;coinAdded&quot; TYPE BIGINT USING
-            &quot;coinAdded&quot;::bigint,<br />
-            &nbsp;&nbsp;ALTER COLUMN &quot;coinMeter&quot; TYPE BIGINT USING
-            &quot;coinMeter&quot;::bigint;
-          </div>
-          <div className="mt-1 text-[11px]">
-            paste ลง Supabase SQL Editor → Run → กลับมารีโหลดหน้านี้ → commit ใหม่
-          </div>
+      {bigIntWarn && <BigIntMigrationBanner warn={bigIntWarn} />}
+    </div>
+  );
+}
+
+function BigIntMigrationBanner({
+  warn,
+}: {
+  warn: NonNullable<
+    Extract<BatchPreviewItem, { ok: true; kind: "cash" | "coin" }>["preview"]["bigIntMigrationRequired"]
+  >;
+}) {
+  const router = useRouter();
+  const [running, startRun] = useTransition();
+  const [done, setDone] = useState(false);
+
+  function onRun() {
+    startRun(async () => {
+      const r = await runPosIngestMigration("20260601_coin_event_bigint");
+      if (!r.ok) {
+        toast.error(`รัน migration ไม่สำเร็จ · ${r.error ?? "unknown"}`);
+        return;
+      }
+      toast.success("Migration BIGINT รันสำเร็จ · กดอัปโหลดใหม่ได้เลย");
+      setDone(true);
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+      <div className="font-semibold">
+        ต้องรัน migration BIGINT ก่อน commit (ตรวจที่ preview)
+      </div>
+      <div className="mt-0.5">
+        พบ {warn.overflowRowCount.toLocaleString("en-US")} แถวที่ค่าเกิน int4 max ·
+        ตัวอย่าง {warn.sampleValue.toLocaleString("en-US")}
+      </div>
+
+      {!done && (
+        <button
+          type="button"
+          onClick={onRun}
+          disabled={running}
+          className="mt-2 inline-flex h-9 items-center gap-2 rounded-md bg-rose-700 px-3 text-xs font-semibold text-white hover:bg-rose-800 disabled:opacity-60"
+        >
+          {running ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+          ) : (
+            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+          )}
+          รัน migration BIGINT เลย (1 คลิก)
+        </button>
+      )}
+      {done && (
+        <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white">
+          <CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> รันแล้ว · กดอัปโหลด 3 ไฟล์อีกครั้ง
         </div>
       )}
+
+      <details className="mt-2">
+        <summary className="cursor-pointer text-[11px] underline">
+          หรือทำมือเอง — paste SQL นี้ที่ Supabase SQL Editor
+        </summary>
+        <div className="mt-1 font-mono text-[10px] leading-tight text-rose-800">
+          ALTER TABLE chairops.&quot;ChairopsPosCoinEvent&quot;<br />
+          &nbsp;&nbsp;ALTER COLUMN &quot;coinAdded&quot; TYPE BIGINT USING
+          &quot;coinAdded&quot;::bigint,<br />
+          &nbsp;&nbsp;ALTER COLUMN &quot;coinMeter&quot; TYPE BIGINT USING
+          &quot;coinMeter&quot;::bigint;
+        </div>
+      </details>
     </div>
   );
 }

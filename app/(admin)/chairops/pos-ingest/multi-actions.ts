@@ -1,5 +1,8 @@
 "use server";
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 // Multi-file POS upload (Plan B) — accepts up to 3 StarThing files in one go:
 //   • daily  (ยอดรวม + เงินโอน)   → reuses the proven previewImport/commitImport flow
 //   • cash   (เงินสด · timestamped) → new event pipeline w/ row-level dedup
@@ -459,4 +462,83 @@ export async function getStarThingLatest(orgId: string): Promise<LatestPerType> 
       lastUploadName: coinImport?.filename ?? null,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// One-click migration runner — CEO 2026-06-01
+//
+// Mirror of scripts/apply-clawfleet-v2-migration.ts but triggered from the
+// in-page rose banner. Lets the CEO unblock the BIGINT migration without
+// leaving the browser. STRICT whitelist by filename — only migrations the
+// product has shipped can be run; no arbitrary SQL execution.
+//
+// Auth: OFFICE+ (same gate as commit). Role-tier guard matches the rest of
+// pos-ingest write actions.
+// ---------------------------------------------------------------------------
+
+const RUNNABLE_MIGRATIONS: Record<string, { description: string }> = {
+  "20260601_coin_event_bigint": {
+    description: "coin event counters Int → BigInt (4.29B overflow fix)",
+  },
+};
+
+export interface RunMigrationResult {
+  ok: boolean;
+  migrationName: string;
+  description?: string;
+  error?: string;
+}
+
+export async function runPosIngestMigration(
+  migrationName: string,
+): Promise<RunMigrationResult> {
+  await requireRole("OFFICE");
+
+  const meta = RUNNABLE_MIGRATIONS[migrationName];
+  if (!meta) {
+    return {
+      ok: false,
+      migrationName,
+      error: `migration ${migrationName} ไม่อยู่ใน whitelist · ห้ามรัน`,
+    };
+  }
+
+  let sql: string;
+  try {
+    sql = readFileSync(
+      join(process.cwd(), "prisma", "migrations", `${migrationName}.sql`),
+      "utf8",
+    );
+  } catch (e) {
+    return {
+      ok: false,
+      migrationName,
+      error: `อ่านไฟล์ migration ไม่สำเร็จ · ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    };
+  }
+
+  try {
+    // Strip line comments + split on `;` so we can call executeRawUnsafe
+    // statement-by-statement (Prisma rejects multi-statement strings).
+    const stripped = sql
+      .split("\n")
+      .filter((l) => !l.trim().startsWith("--"))
+      .join("\n");
+    const statements = stripped
+      .split(/;\s*(?:\n|$)/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    for (const stmt of statements) {
+      await prisma.$executeRawUnsafe(stmt);
+    }
+    return { ok: true, migrationName, description: meta.description };
+  } catch (e) {
+    return {
+      ok: false,
+      migrationName,
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
 }
