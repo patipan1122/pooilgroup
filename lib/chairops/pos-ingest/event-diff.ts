@@ -234,6 +234,14 @@ export interface IngestEventsResult {
  * @param kind     "cash" | "coin"
  * @param rows     classified rows (from computeEventDiff); non-"new" are ignored
  */
+// 2026-06-01 · Postgres signed int4 ceiling (we used to use Int here).
+// Surfaced because StarThing exports unsigned 32-bit counters that crossed
+// 2^31-1 (saw 4_293_916_823 in the wild). Schema is BIGINT now, but if a
+// CEO ships a Vercel build before running the prod ALTER TABLE migration,
+// Prisma rejects the row with an opaque "Value out of range for the type"
+// error. Pre-check this batch and throw a CEO-readable message instead.
+const PG_INT4_MAX = 2_147_483_647;
+
 export async function ingestEvents(
   prisma: PrismaClient,
   orgId: string,
@@ -277,8 +285,28 @@ export async function ingestEvents(
         rowHash: r.rowHash,
         sourceImportId: importId,
       }));
-      const res = await tx.chairopsPosCoinEvent.createMany({ data, skipDuplicates: true });
-      return res.count;
+      try {
+        const res = await tx.chairopsPosCoinEvent.createMany({ data, skipDuplicates: true });
+        return res.count;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // "Value out of range for the type" + "integer" is Postgres int4
+        // overflow. The schema says BigInt but the DB column is still int4
+        // — the prod ALTER TABLE has not been applied yet.
+        if (/out of range for the type/.test(msg) && /integer/.test(msg)) {
+          const overMax = toInsert
+            .map((r) => Math.max(Math.round(r.amount), Math.round(r.meter)))
+            .filter((v) => v > PG_INT4_MAX);
+          const sample = overMax.length ? ` (เช่นค่า ${overMax[0]?.toLocaleString("en-US")})` : "";
+          throw new Error(
+            `ตาราง chairops."ChairopsPosCoinEvent" ใน prod ยังเป็น Int (int4) · ` +
+              `ค่าจาก StarThing เกิน 2,147,483,647${sample} · ` +
+              `ต้องรัน migration BIGINT ก่อน (ดูไฟล์ ` +
+              `prisma/migrations/20260601_coin_event_bigint.sql) แล้วลอง commit อีกครั้ง.`,
+          );
+        }
+        throw err;
+      }
     }
   });
 
