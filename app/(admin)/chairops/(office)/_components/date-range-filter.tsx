@@ -60,7 +60,11 @@ export function DateRangeFilter({
             type="date"
             name="from"
             defaultValue={from}
-            max={to}
+            // CEO 2026-06-01: removed max={to} — the React prop is the
+            // initial value, not the live form state, so the browser
+            // refused historical ranges (StarThing backfill from April
+            // 1-10 hit "ค่าต้องเป็น 01/06/2026 หรือหลังจากนั้น"). Range
+            // sanity is validated server-side anyway.
             className="rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-sm text-zinc-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
           />
         </div>
@@ -73,7 +77,8 @@ export function DateRangeFilter({
             type="date"
             name="to"
             defaultValue={to}
-            min={from}
+            // CEO 2026-06-01: same fix as the `from` input above —
+            // min={from} blocked historical backfills.
             className="rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-sm text-zinc-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
           />
         </div>
