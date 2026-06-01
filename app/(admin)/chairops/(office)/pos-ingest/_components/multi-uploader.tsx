@@ -508,7 +508,11 @@ function BigIntMigrationBanner({
         toast.error(`รัน migration ไม่สำเร็จ · ${r.error ?? "unknown"}`);
         return;
       }
-      toast.success("Migration BIGINT รันสำเร็จ · กดอัปโหลดใหม่ได้เลย");
+      toast.success(
+        `Migration BIGINT รันสำเร็จ${
+          r.description ? ` · ${r.description}` : ""
+        } · กดอัปโหลดใหม่ได้เลย`,
+      );
       setDone(true);
       router.refresh();
     });

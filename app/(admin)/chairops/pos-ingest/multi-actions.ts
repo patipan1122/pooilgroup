@@ -533,7 +533,38 @@ export async function runPosIngestMigration(
     for (const stmt of statements) {
       await prisma.$executeRawUnsafe(stmt);
     }
-    return { ok: true, migrationName, description: meta.description };
+
+    // 2026-06-01 · verify the effect, not just "no exception thrown". For
+    // the BIGINT migration we look up coinMeter's actual column type after
+    // running the ALTER; if it didn't flip we surface that to the caller.
+    let verification: string | undefined;
+    if (migrationName === "20260601_coin_event_bigint") {
+      const rows = await prisma.$queryRaw<Array<{ data_type: string }>>`
+        SELECT data_type
+        FROM information_schema.columns
+        WHERE table_schema = 'chairops'
+          AND table_name = 'chairops_pos_coin_event'
+          AND column_name = 'coinMeter'
+        LIMIT 1
+      `;
+      const dt = (rows[0]?.data_type ?? "unknown").toLowerCase();
+      if (dt !== "bigint") {
+        return {
+          ok: false,
+          migrationName,
+          error: `ALTER ran without throwing, but coinMeter is still ${dt} (expected bigint). ` +
+            `กรุณา paste SQL ทำมือใน Supabase SQL Editor.`,
+        };
+      }
+      verification = `coinMeter is now ${dt}`;
+    }
+
+    return {
+      ok: true,
+      migrationName,
+      description:
+        meta.description + (verification ? ` · verified: ${verification}` : ""),
+    };
   } catch (e) {
     return {
       ok: false,
