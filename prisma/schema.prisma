@@ -747,8 +747,9 @@ model UserModule {
   id         String   @id @default(uuid()) @db.Uuid
   orgId      String   @map("org_id") @db.Uuid
   userId     String   @map("user_id") @db.Uuid
-  moduleName String   @map("module_name") // cashhub | fuelos | docuflow
+  moduleName String   @map("module_name") // cashhub | fuelos | docuflow | ...
   isActive   Boolean  @default(true) @map("is_active")
+  role       String   @default("member") // admin (program admin) | member · migration 20260601000000
   grantedBy  String?  @map("granted_by") @db.Uuid
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -756,6 +757,7 @@ model UserModule {
   @@unique([orgId, userId, moduleName])
   @@index([userId, isActive])
   @@index([orgId, moduleName, isActive])
+  @@index([orgId, moduleName, role, isActive])
   @@map("user_modules")
   @@schema("public")
 }

@@ -19,6 +19,10 @@ const ModuleSchema = z.enum(Object.keys(MODULES) as [string, ...string[]]);
 
 const PutSchema = z.object({
   modules: z.array(ModuleSchema),
+  // Subset of `modules` the user is the ADMIN of (program admin). Others are
+  // plain members. Written explicitly so re-saving never silently demotes a
+  // program admin to member (BUGSOLVE P1-3).
+  adminModules: z.array(ModuleSchema).optional(),
 });
 
 export async function PUT(
@@ -62,7 +66,19 @@ export async function PUT(
 
   const orgId = session.user.org_id;
   const requested = Array.from(new Set(parsed.data.modules));
+  const adminSet = new Set(parsed.data.adminModules ?? []);
   const now = new Date().toISOString();
+
+  // CostCtrl = CEO-only (super_admin) · enforce server-side (BUGSOLVE P1-2).
+  if (
+    (requested.includes("costctrl") || adminSet.has("costctrl")) &&
+    session.user.role !== "super_admin"
+  ) {
+    return NextResponse.json(
+      { error: "เฉพาะ super_admin เท่านั้นที่ให้สิทธิ์ ศูนย์ควบคุมต้นทุน ได้" },
+      { status: 403 },
+    );
+  }
 
   // Strategy: deactivate ALL existing rows for this user, then upsert the
   // requested set. Cleaner than diff-and-patch and the table is small.
@@ -78,6 +94,9 @@ export async function PUT(
       user_id: targetId,
       module_name,
       is_active: true,
+      // Write role EXPLICITLY so re-saving never silently demotes/leaves stale
+      // (BUGSOLVE P1-3). Modules in adminModules → 'admin', rest → 'member'.
+      role: adminSet.has(module_name) ? "admin" : "member",
       granted_by: session.user.id,
       updated_at: now,
     }));
@@ -100,7 +119,13 @@ export async function PUT(
     action: "UPDATE_USER_MODULES",
     resourceType: "user",
     resourceId: targetId,
-    diff: { new: { modules: requested, target_role: target.role } },
+    diff: {
+      new: {
+        modules: requested,
+        admin_modules: Array.from(adminSet),
+        target_role: target.role,
+      },
+    },
   });
 
   return NextResponse.json({ success: true, modules: requested });

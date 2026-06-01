@@ -45,14 +45,16 @@ function makeToken(): string {
 
 // Grant the user ADMIN access to a set of programs (user_modules role='admin').
 // Safe to call with empty/undefined — no-op. Upserts so re-invites don't dup.
+// Returns an error message if the grant failed (so the caller can surface it
+// instead of silently returning success with no program access — BUGSOLVE P1-1).
 async function grantAdminModules(
   admin: ReturnType<typeof adminClient>,
   orgId: string,
   userId: string,
   grantedBy: string,
   modules: string[] | undefined,
-): Promise<void> {
-  if (!modules || modules.length === 0) return;
+): Promise<string | null> {
+  if (!modules || modules.length === 0) return null;
   const now = new Date().toISOString();
   const rows = Array.from(new Set(modules)).map((module_name) => ({
     org_id: orgId,
@@ -64,9 +66,10 @@ async function grantAdminModules(
     updated_at: now,
   }));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (admin.from as any)("user_modules").upsert(rows, {
+  const { error } = await (admin.from as any)("user_modules").upsert(rows, {
     onConflict: "org_id,user_id,module_name",
   });
+  return error ? error.message : null;
 }
 
 export async function POST(req: NextRequest) {
@@ -94,6 +97,19 @@ export async function POST(req: NextRequest) {
   if (!canAssignRole(session.user.role, data.role)) {
     return NextResponse.json(
       { error: "ไม่มีสิทธิ์เชิญผู้ใช้ระดับนี้" },
+      { status: 403 },
+    );
+  }
+
+  // CostCtrl = CEO-only cost dashboard. UI already hides it, but the module
+  // enum accepts every slug — enforce server-side so only super_admin can grant
+  // it (defense-in-depth · BUGSOLVE P1-2).
+  if (
+    data.adminModules?.includes("costctrl") &&
+    session.user.role !== "super_admin"
+  ) {
+    return NextResponse.json(
+      { error: "เฉพาะ super_admin เท่านั้นที่ให้สิทธิ์ ศูนย์ควบคุมต้นทุน ได้" },
       { status: 403 },
     );
   }
@@ -167,7 +183,7 @@ export async function POST(req: NextRequest) {
       await admin.from("user_branches").insert(rows);
     }
 
-    await grantAdminModules(
+    const grantErr = await grantAdminModules(
       admin,
       orgId,
       userId,
@@ -188,6 +204,7 @@ export async function POST(req: NextRequest) {
           set_password_directly: true,
           must_change_password: true,
           admin_modules: data.adminModules ?? [],
+          module_grant_error: grantErr ?? undefined,
         },
       },
     });
@@ -199,6 +216,10 @@ export async function POST(req: NextRequest) {
       email: data.email,
       // Echo password back ONCE so admin can copy/share — server doesn't store it.
       password: directPassword,
+      // Surface a partial-failure so the UI can warn instead of silent success.
+      moduleGrantWarning: grantErr
+        ? "สร้างบัญชีสำเร็จ แต่ให้สิทธิ์โปรแกรมไม่สำเร็จ — ตั้งสิทธิ์อีกครั้งที่หน้าผู้ใช้"
+        : undefined,
     });
   }
 
@@ -243,7 +264,7 @@ export async function POST(req: NextRequest) {
     await admin.from("user_branches").insert(rows);
   }
 
-  await grantAdminModules(
+  const grantErr = await grantAdminModules(
     admin,
     orgId,
     userId,
@@ -263,6 +284,7 @@ export async function POST(req: NextRequest) {
         role: data.role,
         invited: true,
         admin_modules: data.adminModules ?? [],
+        module_grant_error: grantErr ?? undefined,
       },
     },
   });
@@ -275,5 +297,8 @@ export async function POST(req: NextRequest) {
     userId,
     inviteUrl,
     expiresAt,
+    moduleGrantWarning: grantErr
+      ? "สร้างคำเชิญสำเร็จ แต่ให้สิทธิ์โปรแกรมไม่สำเร็จ — ตั้งสิทธิ์อีกครั้งที่หน้าผู้ใช้"
+      : undefined,
   });
 }
