@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AuditMe — ตารางเวร</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html, body { background: #EEEEE6; font-family: 'IBM Plex Sans Thai','IBM Plex Sans',sans-serif; -webkit-font-smoothing: antialiased; }
+  .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-feature-settings: 'tnum'; }
+  .tnum { font-feature-settings: 'tnum'; }
+  .label { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #64748B; }
+  .scrollbar-slim::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-slim::-webkit-scrollbar-thumb { background: rgba(15,23,42,0.18); border-radius: 999px; }
+  .scrollbar-slim::-webkit-scrollbar-track { background: transparent; }
+  @keyframes pulseDot { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .5; transform: scale(1.4); } }
+  @keyframes fadeIn { from { opacity:0; transform: translateY(8px);} to { opacity:1; transform: translateY(0);} }
+  @keyframes slideRight { from { opacity:0; transform: translateX(20px);} to { opacity:1; transform: translateX(0);} }
+  @keyframes glow { 0%,100% { box-shadow: 0 0 0 0 rgba(37,99,235,0.4);} 50% { box-shadow: 0 0 0 6px rgba(37,99,235,0);} }
+  .grab { cursor: grab; }
+  .grab:active { cursor: grabbing; }
+  .dragging { opacity: 0.4; }
+  .drop-target { background: #DBEAFE !important; outline: 2px dashed #2563EB; outline-offset: -2px; }
+  .ai-pulse { animation: glow 2.4s ease-in-out infinite; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<template id="__bundler_thumbnail">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#EEEEE6"/><rect x="20" y="28" width="60" height="44" rx="6" fill="#2563EB"/><rect x="26" y="36" width="48" height="4" fill="#fff" opacity=".4"/><rect x="26" y="44" width="20" height="6" fill="#fff"/><rect x="50" y="44" width="24" height="6" fill="#fff" opacity=".5"/><rect x="26" y="54" width="14" height="6" fill="#fff" opacity=".5"/><rect x="44" y="54" width="30" height="6" fill="#fff"/></svg>
+</template>
+<body data-screen-label="Schedule" style="background-color:#C7C7B8">
+
+<div id="root"></div>
+
+<script type="text/babel" src="browser-window.jsx"></script>
+
+<script type="text/babel">
+/* ============================================================ DATA ============================================================ */
+const HOTEL = { name: "Bloom Hotel · เจริญกรุง", rooms: 24 };
+
+// Staff pool — hotel
+const STAFF = [
+  { id: "nok",  name: "พี่นก",   role: "HK Lead AM",  short: "นก", color: "#F97316", skills: ["HK"], maxDays: 22 },
+  { id: "tun",  name: "พี่ตูน",  role: "HK PM",        short: "ตูน",color: "#EAB308", skills: ["HK"], maxDays: 22 },
+  { id: "da",   name: "พี่ดา",   role: "HK Sup",       short: "ดา", color: "#84CC16", skills: ["HK","SUP"], maxDays: 22 },
+  { id: "fai",  name: "พี่ฝ้าย", role: "Housekeeper",  short: "ฝ้าย",color:"#10B981", skills: ["HK"], maxDays: 24 },
+  { id: "june", name: "น้องจูน", role: "Housekeeper",  short: "จูน",color: "#06B6D4", skills: ["HK"], maxDays: 24 },
+  { id: "tech", name: "น้องเทค", role: "Front Desk",   short: "เทค",color: "#3B82F6", skills: ["FD"], maxDays: 22 },
+  { id: "jiw",  name: "พี่จิ๋ว", role: "FD Sup",       short: "จิ๋ว",color:"#6366F1", skills: ["FD","SUP"], maxDays: 22 },
+  { id: "bas",  name: "น้องบาส", role: "Bell / Front", short: "บาส",color: "#8B5CF6", skills: ["BELL","FD"], maxDays: 24 },
+  { id: "kee",  name: "พี่กี้",  role: "Night Audit",  short: "กี้", color: "#A855F7", skills: ["FD","NIGHT"], maxDays: 20 },
+  { id: "a",    name: "น้องเอ",  role: "Security",     short: "เอ", color: "#EC4899", skills: ["SEC","NIGHT"], maxDays: 20 },
+  { id: "nung", name: "พี่หนึ่ง",role: "Maintenance",  short: "หนึ่ง",color:"#EF4444", skills: ["MNT"], maxDays: 22 },
+  { id: "bow",  name: "น้องโบว์",role: "F&B",          short: "โบว์",color:"#F59E0B", skills: ["FB"], maxDays: 22 },
+];
+
+// Positions (rows in the grid)
+const POSITIONS = [
+  { id: "fd-am",  name: "Front Desk · เช้า",   shift: "08:00–16:00", time: "AM", color:"#3B82F6", needs: 1, skill: "FD" },
+  { id: "fd-pm",  name: "Front Desk · บ่าย",   shift: "16:00–24:00", time: "PM", color:"#6366F1", needs: 1, skill: "FD" },
+  { id: "fd-nt",  name: "Night Audit",          shift: "00:00–08:00", time: "NT", color:"#A855F7", needs: 1, skill: "NIGHT" },
+  { id: "hk-led", name: "Housekeeping Lead",    shift: "07:00–15:00", time: "AM", color:"#F97316", needs: 1, skill: "SUP" },
+  { id: "hk-am",  name: "Housekeeping · เช้า", shift: "08:00–16:00", time: "AM", color:"#10B981", needs: 3, skill: "HK" },
+  { id: "hk-pm",  name: "Housekeeping · บ่าย", shift: "14:00–22:00", time: "PM", color:"#14B8A6", needs: 1, skill: "HK" },
+  { id: "bell",   name: "Bellman / Lobby",      shift: "10:00–22:00", time: "PM", color:"#8B5CF6", needs: 1, skill: "BELL" },
+  { id: "fb",     name: "Breakfast / F&B",      shift: "05:30–13:00", time: "AM", color:"#F59E0B", needs: 1, skill: "FB" },
+  { id: "mnt",    name: "Maintenance",          shift: "09:00–18:00", time: "AM", color:"#EF4444", needs: 1, skill: "MNT" },
+  { id: "sec",    name: "Security · กลางคืน",  shift: "20:00–06:00", time: "NT", color:"#EC4899", needs: 1, skill: "NIGHT" },
+];
+
+const MONTH_NAMES = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+const DAY_NAMES = ["อา","จ","อ","พ","พฤ","ศ","ส"];
+const DAYS_IN_MONTH = 31;
+const MONTH_LABEL = "พ.ค. 2569";
+// May 2026 starts on Friday (index 5)
+const FIRST_DOW = 5;
+
+const NOTES = {
+  "fai-7": "ลาป่วย", "fai-14": "ลาป่วย",
+  "tun-12": "ลาพักร้อน", "tun-13": "ลาพักร้อน",
+  "kee-22": "ลาพักร้อน",
+};
+
+/* ============================================================ INITIAL ASSIGNMENTS ============================================================ */
+function buildInitial() {
+  const a = {}; // a[posId][slot][day] = staffId|null
+  POSITIONS.forEach(p => {
+    a[p.id] = [];
+    for (let s = 0; s < p.needs; s++) {
+      a[p.id][s] = new Array(DAYS_IN_MONTH).fill(null);
+    }
+  });
+  // Fill with sensible recurring patterns; weekend off rotation
+  const setD = (pid, slot, d, sid) => { a[pid][slot][d-1] = sid; };
+  for (let d = 1; d <= DAYS_IN_MONTH; d++) {
+    const dow = (FIRST_DOW + (d-1)) % 7;
+    // Front Desk AM
+    if (dow === 0 || dow === 6) setD("fd-am",0,d, d%2 ? "bas" : "tech");
+    else setD("fd-am",0,d, "tech");
+    // Front Desk PM
+    if (dow === 1) setD("fd-pm",0,d, "jiw");
+    else setD("fd-pm",0,d, dow%2===0 ? "jiw" : "bas");
+    // Night
+    setD("fd-nt",0,d, dow===0||dow===3 ? "a" : "kee");
+    // HK Lead
+    setD("hk-led",0,d, dow===2 ? null : "da");
+    // HK AM 3 slots
+    setD("hk-am",0,d, "nok");
+    setD("hk-am",1,d, dow===6 ? null : "fai");
+    setD("hk-am",2,d, dow===0||dow===6 ? null : "june");
+    // HK PM
+    setD("hk-pm",0,d, dow===0 ? null : "tun");
+    // Bellman
+    setD("bell",0,d, "bas");
+    // F&B
+    setD("fb",0,d, dow===2 ? null : "bow");
+    // Maintenance
+    setD("mnt",0,d, dow===0 ? null : "nung");
+    // Security
+    setD("sec",0,d, dow===2 ? null : "a");
+  }
+  // Fix conflict on Bellman+FD AM weekends (bas can't be both)
+  for (let d=1; d<=DAYS_IN_MONTH; d++){
+    const dow = (FIRST_DOW + (d-1)) % 7;
+    if (dow === 0 || dow === 6) {
+      a["bell"][0][d-1] = null; // weekend bell off (intentional gap → coverage warning)
+    }
+  }
+  // Specific gaps to demonstrate problems
+  a["fd-am"][0][9] = null;     // 10 พ.ค. — gap
+  a["hk-am"][1][6] = null;     // 7 พ.ค. — fai sick
+  a["hk-am"][1][13] = null;    // 14 พ.ค. — fai sick
+  a["hk-pm"][0][11] = null;    // 12
+  a["hk-pm"][0][12] = null;    // 13 tun vacation
+  a["fd-nt"][0][21] = null;    // 22 kee vacation
+  return a;
+}
+
+/* ============================================================ ICONS ============================================================ */
+const I = {
+  search: <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="6" stroke="currentColor" strokeWidth="2"/><path d="M16 16 L21 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>,
+  bell: <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 17 V11 a7 7 0 0 1 14 0 V17 H5 z M10 20 a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round"/></svg>,
+  filter: <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M3 5 H21 L14 13 V20 L10 18 V13 L3 5 Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>,
+  ai: <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 3 V8 M12 16 V21 M3 12 H8 M16 12 H21 M5.6 5.6 L9 9 M15 15 L18.4 18.4" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"/></svg>,
+  copy: <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.8"/><path d="M16 8 V6 a2 2 0 0 0 -2 -2 H6 a2 2 0 0 0 -2 2 V14 a2 2 0 0 0 2 2 h2" stroke="currentColor" strokeWidth="1.8"/></svg>,
+  close: <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 6 L18 18 M18 6 L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>,
+  sparkle: <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 3 L13.5 9 L19 10.5 L13.5 12 L12 18 L10.5 12 L5 10.5 L10.5 9 z M19 17 L19.7 19 L21.7 19.7 L19.7 20.4 L19 22.4 L18.3 20.4 L16.3 19.7 L18.3 19 z" fill="currentColor"/></svg>,
+  warn: <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 3 L22 20 L2 20 Z M12 10 V14 M12 17 V17.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  trash: <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M5 7 H19 M9 7 V5 a1 1 0 0 1 1 -1 H14 a1 1 0 0 1 1 1 V7 M7 7 V20 a1 1 0 0 0 1 1 H16 a1 1 0 0 0 1 -1 V7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>,
+};
+
+const Logo = ({ size = 32 }) => (
+  <div className="grid place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 shadow-[0_8px_20px_-6px_rgba(37,99,235,0.45)]" style={{ width: size, height: size }}>
+    <svg width={size*0.5} height={size*0.5} viewBox="0 0 24 24" fill="none"><path d="M5 12 L10 17 L19 7" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+  </div>
+);
+
+/* ============================================================ SIDEBAR ============================================================ */
+function Sidebar({ active = "ตารางเวร" }) {
+  return (
+    <aside className="flex w-[224px] flex-none flex-col border-r border-slate-200/70 bg-white">
+      <div className="flex items-center gap-2.5 px-5 py-5">
+        <Logo size={32} />
+        <div>
+          <div className="text-[14px] font-bold tracking-tight">AuditMe</div>
+          <div className="text-[9px] uppercase tracking-[0.18em] text-slate-400">Owner Console</div>
+        </div>
+      </div>
+      <button className="mx-3 mb-4 flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-left transition hover:border-slate-300 hover:bg-white">
+        <div className="grid h-8 w-8 flex-none place-items-center rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 text-[12px] font-bold text-white">BL</div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[12px] font-semibold">{HOTEL.name}</div>
+          <div className="truncate text-[10px] text-slate-500">{HOTEL.rooms} ห้อง · เจริญกรุง</div>
+        </div>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M8 9 L12 5 L16 9 M8 15 L12 19 L16 15" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+      </button>
+      <nav className="flex-1 px-3">
+        <div className="px-2 pb-1.5 text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400">หน้าหลัก</div>
+        {[
+          { t: "ภาพรวม", icon: "M4 14 H10 V4 H4 z M14 20 H20 V10 H14 z" },
+          { t: "ของฉันวันนี้", icon: "M12 3 V5 M12 19 V21 M3 12 H5 M19 12 H21 M5.6 5.6 L7 7 M17 17 L18.4 18.4 M5.6 18.4 L7 17 M17 7 L18.4 5.6 M12 7 a5 5 0 1 0 0 10 a5 5 0 0 0 0 -10" },
+        ].map((it, i) => (
+          <button key={i} className="group mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d={it.icon} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <span className="flex-1 text-left">{it.t}</span>
+          </button>
+        ))}
+        <div className="px-2 pb-1.5 pt-4 text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400">ทำงาน</div>
+        {[
+          { t: "ตรวจส่วนกลาง", icon: "M3 11 L12 3 L21 11 V20 H14 V14 H10 V20 H3 z" },
+          { t: "ตารางเวร", n: null, icon: "M5 5 H19 V20 H5 z M5 9 H19 M9 3 V7 M15 3 V7 M9 13 H11 M13 13 H15 M9 17 H11" },
+          { t: "งานประจำ", n: 2, icon: "M5 4 H19 V20 H5 z M9 8 H15 M9 12 H15 M9 16 H13" },
+          { t: "แจ้งซ่อม", n: 1, icon: "M14 7 L19 12 L14 17 M5 12 H18", href: "Repairs.html" },
+        ].map((it, i) => {
+          const on = it.t === active;
+          const inner = (
+            <button className={`group mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition ${on ? "bg-blue-50 font-semibold text-blue-700" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"}`}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d={it.icon} stroke="currentColor" strokeWidth={on?2.2:1.7} strokeLinecap="round" strokeLinejoin="round"/></svg>
+              <span className="flex-1 text-left">{it.t}</span>
+              {it.n != null && <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold mono ${on ? "bg-blue-600 text-white" : "bg-rose-500 text-white"}`}>{it.n}</span>}
+            </button>
+          );
+          return it.href ? <a key={i} href={it.href}>{inner}</a> : <div key={i}>{inner}</div>;
+        })}
+        <div className="px-2 pb-1.5 pt-4 text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400">รายงาน</div>
+        {[
+          { t: "ค้างอนุมัติ", icon: "M5 4 H19 V20 H5 z M9 8 H15 M9 12 H15 M9 16 H13" },
+          { t: "รายงาน", icon: "M4 18 L10 12 L14 16 L20 8" },
+          { t: "คะแนนพนักงาน", icon: "M12 4 L14.5 9 L20 10 L16 14 L17 19.5 L12 17 L7 19.5 L8 14 L4 10 L9.5 9 z" },
+        ].map((it, i) => (
+          <button key={i} className="group mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d={it.icon} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <span className="flex-1 text-left">{it.t}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="mx-3 mb-4 mt-2 flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50/80 px-2.5 py-2">
+        <div className="grid h-8 w-8 flex-none place-items-center rounded-full bg-gradient-to-br from-violet-400 to-violet-600 text-[12px] font-bold text-white">ภ</div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[12px] font-semibold">คุณภัทร เจริญสุข</div>
+          <div className="truncate text-[10px] text-slate-500">เจ้าของ · Owner</div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+/* ============================================================ HELPERS ============================================================ */
+const staffById = (id) => STAFF.find(s => s.id === id);
+const isWeekend = (d) => { const dow = (FIRST_DOW + (d-1)) % 7; return dow === 0 || dow === 6; };
+const dowOf = (d) => (FIRST_DOW + (d-1)) % 7;
+
+function staffCountByDay(assign, day) {
+  // count distinct staff working on a given day (1-indexed)
+  const set = new Set();
+  Object.values(assign).forEach(slots => slots.forEach(arr => { const sid = arr[day-1]; if (sid) set.add(sid); }));
+  return set;
+}
+
+function daysWorkedByStaff(assign) {
+  const m = {};
+  STAFF.forEach(s => m[s.id] = 0);
+  Object.values(assign).forEach(slots => slots.forEach(arr => arr.forEach(sid => { if (sid) m[sid] = (m[sid]||0) + 1; })));
+  return m;
+}
+
+function findConflicts(assign) {
+  // staff assigned to >1 position on same day
+  const conflicts = [];
+  for (let d=1; d<=DAYS_IN_MONTH; d++) {
+    const map = {}; // staffId -> [posId]
+    POSITIONS.forEach(p => {
+      assign[p.id].forEach((arr, slot) => {
+        const sid = arr[d-1];
+        if (!sid) return;
+        if (!map[sid]) map[sid] = [];
+        map[sid].push({ posId: p.id, slot });
+      });
+    });
+    Object.entries(map).forEach(([sid, list]) => {
+      if (list.length > 1) conflicts.push({ day: d, staffId: sid, positions: list });
+    });
+  }
+  return conflicts;
+}
+
+function findGaps(assign) {
+  const gaps = [];
+  for (let d=1; d<=DAYS_IN_MONTH; d++) {
+    POSITIONS.forEach(p => {
+      assign[p.id].forEach((arr, slot) => {
+        if (!arr[d-1]) gaps.push({ day: d, posId: p.id, slot });
+      });
+    });
+  }
+  return gaps;
+}
+
+function coverageForDay(assign, day) {
+  let need = 0, filled = 0;
+  POSITIONS.forEach(p => {
+    assign[p.id].forEach(arr => {
+      need += 1;
+      if (arr[day-1]) filled += 1;
+    });
+  });
+  return { need, filled, pct: Math.round(filled/need*100) };
+}
+
+/* ============================================================ MAIN PAGE ============================================================ */
+function SchedulePage() {
+  const [assign, setAssign] = React.useState(buildInitial);
+  const [selected, setSelected] = React.useState(null); // {posId, slot, day}
+  const [aiOpen, setAiOpen] = React.useState(true);
+  const [filterStaff, setFilterStaff] = React.useState(null);
+  const [drag, setDrag] = React.useState(null); // {staffId, fromKey?}
+  const [dropKey, setDropKey] = React.useState(null);
+  const [view, setView] = React.useState("month"); // month | person | day
+  const [showAI, setShowAI] = React.useState(false);
+  const [aiPlan, setAiPlan] = React.useState(null);
+  const [toast, setToast] = React.useState(null);
+
+  React.useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2800);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const conflicts = React.useMemo(() => findConflicts(assign), [assign]);
+  const gaps = React.useMemo(() => findGaps(assign), [assign]);
+  const daysWorked = React.useMemo(() => daysWorkedByStaff(assign), [assign]);
+
+  // Drag and drop handlers
+  const onDragStart = (e, payload) => {
+    setDrag(payload);
+    e.dataTransfer.effectAllowed = "move";
+    try { e.dataTransfer.setData("text/plain", payload.staffId); } catch(_){}
+  };
+  const onDragOverCell = (e, key) => {
+    e.preventDefault(); e.dataTransfer.dropEffect = "move";
+    if (dropKey !== key) setDropKey(key);
+  };
+  const onDropCell = (e, posId, slot, day) => {
+    e.preventDefault();
+    if (!drag) return;
+    setAssign(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      // remove from source if present
+      if (drag.from) {
+        next[drag.from.posId][drag.from.slot][drag.from.day-1] = null;
+      }
+      next[posId][slot][day-1] = drag.staffId;
+      return next;
+    });
+    setDrag(null); setDropKey(null);
+  };
+  const onDragEnd = () => { setDrag(null); setDropKey(null); };
+  const clearCell = (posId, slot, day) => {
+    setAssign(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next[posId][slot][day-1] = null;
+      return next;
+    });
+  };
+
+  // AI auto-fill
+  const runAI = () => {
+    setShowAI(true);
+    setTimeout(() => {
+      const next = JSON.parse(JSON.stringify(assign));
+      const proposed = []; // log of changes
+      // Resolve gaps: fill with first available compatible staff who isn't double-booked
+      gaps.forEach(g => {
+        const pos = POSITIONS.find(p => p.id === g.posId);
+        const dow = dowOf(g.day);
+        // who is busy on that day
+        const busy = new Set();
+        POSITIONS.forEach(p => p.needs && next[p.id].forEach((arr) => { if (arr[g.day-1]) busy.add(arr[g.day-1]); }));
+        // who's on note (sick/vac)
+        const candidates = STAFF.filter(s =>
+          s.skills.includes(pos.skill) &&
+          !busy.has(s.id) &&
+          !NOTES[`${s.id}-${g.day}`] &&
+          (daysWorked[s.id] || 0) < s.maxDays
+        );
+        if (candidates.length) {
+          candidates.sort((a,b) => (daysWorked[a.id]||0) - (daysWorked[b.id]||0));
+          const pick = candidates[0];
+          next[g.posId][g.slot][g.day-1] = pick.id;
+          proposed.push({ day: g.day, posId: g.posId, slot: g.slot, staffId: pick.id, reason: "เติมช่องว่าง" });
+          busy.add(pick.id);
+        }
+      });
+      // Resolve conflicts: keep first, swap second
+      conflicts.forEach(c => {
+        const second = c.positions[1];
+        const pos = POSITIONS.find(p => p.id === second.posId);
+        const busy = new Set();
+        POSITIONS.forEach(p => p.needs && next[p.id].forEach((arr) => { if (arr[c.day-1]) busy.add(arr[c.day-1]); }));
+        const candidates = STAFF.filter(s => s.skills.includes(pos.skill) && !busy.has(s.id) && s.id !== c.staffId);
+        if (candidates.length) {
+          candidates.sort((a,b) => (daysWorked[a.id]||0) - (daysWorked[b.id]||0));
+          const pick = candidates[0];
+          next[second.posId][second.slot][c.day-1] = pick.id;
+          proposed.push({ day: c.day, posId: second.posId, slot: second.slot, staffId: pick.id, reason: "แก้ชนเวร" });
+        }
+      });
+      setAiPlan({ next, proposed });
+    }, 900);
+  };
+  const applyAI = () => {
+    if (!aiPlan) return;
+    setAssign(aiPlan.next);
+    setShowAI(false);
+    setToast({ kind: "ok", text: `AI จัดเสร็จ · เติม ${aiPlan.proposed.length} ช่อง` });
+    setAiPlan(null);
+  };
+
+  // Copy month forward
+  const copyPrev = () => {
+    setToast({ kind: "ok", text: "Copy เดือนก่อนแล้ว — แก้ตามวันหยุดได้เลย" });
+  };
+  const swapWeekend = () => {
+    setAssign(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      // swap fai <-> june on weekends in HK AM
+      for (let d=1; d<=DAYS_IN_MONTH; d++) {
+        if (isWeekend(d)) {
+          const a1 = next["hk-am"][1][d-1], a2 = next["hk-am"][2][d-1];
+          next["hk-am"][1][d-1] = a2; next["hk-am"][2][d-1] = a1;
+        }
+      }
+      return next;
+    });
+    setToast({ kind: "ok", text: "สลับเสาร์-อาทิตย์แล้ว" });
+  };
+
+  return (
+    <div className="flex h-full w-full text-slate-900" style={{ background: "#FAFAF7" }}>
+      <Sidebar active="ตารางเวร" />
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* TOPBAR */}
+        <header className="flex items-center gap-3 border-b border-slate-200/70 bg-white/80 px-7 py-3.5 backdrop-blur">
+          <div className="flex flex-1 items-center gap-2">
+            <span className="text-[12px] text-slate-400">หน้าหลัก</span>
+            <span className="text-slate-300">/</span>
+            <span className="text-[12px] text-slate-400">ทำงาน</span>
+            <span className="text-slate-300">/</span>
+            <span className="text-[12px] font-semibold text-slate-900">ตารางเวร</span>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-slate-500">
+            {I.search}
+            <input className="w-44 bg-transparent text-[12px] outline-none placeholder:text-slate-400" placeholder="หาพนักงาน หรือ ตำแหน่ง..." />
+          </div>
+          <button className="relative grid h-8 w-8 place-items-center rounded-full border border-slate-200 bg-white text-slate-600 hover:border-slate-300">
+            {I.bell}
+            <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-rose-500 ring-2 ring-white" />
+          </button>
+        </header>
+
+        {/* HERO */}
+        <div className="border-b border-slate-200/70 bg-[#FAFAF7] px-7 pt-5 pb-4">
+          <div className="flex items-end gap-4">
+            <div className="flex-1">
+              <div className="label">02 · จัดตารางงาน</div>
+              <div className="mt-1 flex items-baseline gap-3">
+                <h1 className="text-[28px] font-bold tracking-tight">ตารางเวร</h1>
+                <span className="mono text-[12px] text-slate-500">{HOTEL.name}</span>
+              </div>
+              <div className="mt-1 text-[13px] text-slate-500">จัดเวรพนักงาน {STAFF.length} คน × {POSITIONS.length} ตำแหน่ง · ลาก-วาง หรือให้ AI ช่วยเติม</div>
+            </div>
+            {/* Month picker */}
+            <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white p-1 shadow-[0_2px_8px_-4px_rgba(15,23,42,0.08)]">
+              <button className="grid h-8 w-8 place-items-center rounded-md text-slate-500 hover:bg-slate-50">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14 6 L8 12 L14 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </button>
+              <div className="px-2 text-center">
+                <div className="mono text-[14px] font-bold leading-none">{MONTH_LABEL}</div>
+                <div className="mono text-[9px] uppercase tracking-wider text-slate-400 mt-1">{DAYS_IN_MONTH} วัน</div>
+              </div>
+              <button className="grid h-8 w-8 place-items-center rounded-md text-slate-500 hover:bg-slate-50">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M10 6 L16 12 L10 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </button>
+            </div>
+            {/* View tabs */}
+            <div className="flex items-center gap-0.5 rounded-xl border border-slate-200 bg-white p-1">
+              {[
+                { id: "month", t: "เดือน" },
+                { id: "person", t: "รายคน" },
+                { id: "day", t: "รายวัน" },
+              ].map(v => (
+                <button key={v.id} onClick={() => setView(v.id)}
+                  className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold transition ${view===v.id ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900"}`}>
+                  {v.t}
+                </button>
+              ))}
+            </div>
+            {/* Actions */}
+            <button onClick={copyPrev} className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12.5px] font-semibold text-slate-700 hover:border-slate-300">
+              {I.copy} Copy เดือนก่อน
+            </button>
+            <button onClick={swapWeekend} className="flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] font-semibold text-amber-800 hover:border-amber-300">
+              {I.copy} Copy + สลับ
+            </button>
+            <button onClick={runAI} className="ai-pulse flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-[12.5px] font-bold text-white shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)] hover:bg-blue-700">
+              {I.ai} AI จัดให้
+            </button>
+          </div>
+          {/* Stats */}
+          <div className="mt-4 grid grid-cols-5 gap-3">
+            <StatTile label="ช่องที่ยังว่าง" value={gaps.length} suffix="ช่อง" tone={gaps.length ? "rose" : "emerald"} />
+            <StatTile label="เวรชนกัน" value={conflicts.length} suffix="เคส" tone={conflicts.length ? "amber" : "emerald"} />
+            <StatTile label="พนักงาน" value={STAFF.length} suffix="คน" tone="slate" />
+            <StatTile label="วันลา" value={Object.keys(NOTES).length} suffix="วัน" tone="violet" />
+            <StatTile label="OT รวมเดือนนี้" value={"38"} suffix="ชม." tone="blue" />
+          </div>
+        </div>
+
+        {/* MAIN */}
+        <main className="scrollbar-slim flex-1 overflow-auto px-7 py-5">
+          {view === "month" && (
+            <MonthGrid
+              assign={assign}
+              filterStaff={filterStaff}
+              setFilterStaff={setFilterStaff}
+              onSelect={setSelected}
+              dropKey={dropKey}
+              onDragStart={onDragStart}
+              onDragOverCell={onDragOverCell}
+              onDropCell={onDropCell}
+              onDragEnd={onDragEnd}
+              clearCell={clearCell}
+              gaps={gaps}
+              conflicts={conflicts}
+            />
+          )}
+          {view === "person" && (
+            <PersonView assign={assign} daysWorked={daysWorked} />
+          )}
+          {view === "day" && (
+            <DayView assign={assign} />
+          )}
+
+          {/* AI insight footer card */}
+          <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200/70 p-5 text-white" style={{ background: "radial-gradient(ellipse at top right, #1E3A8A 0%, #0F172A 70%)" }}>
+            <div className="flex items-center gap-2">
+              <span className="grid h-7 w-7 place-items-center rounded-lg bg-white/10 ring-1 ring-white/20 backdrop-blur">{I.ai}</span>
+              <div>
+                <div className="text-[12px] font-semibold">AuditMe AI · ข้อสังเกตเดือนนี้</div>
+                <div className="text-[10px] text-slate-400">วิเคราะห์จากตารางเวรและ KPI 30 วันล่าสุด</div>
+              </div>
+              <span className="mono ml-auto rounded-sm bg-emerald-500 px-2 py-0.5 text-[9.5px] font-bold tracking-wider text-white">CONF 88%</span>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-3">
+              <AICard text="พี่นกทำงาน 22 วันแล้ว — ใกล้ชน policy 22 วัน/เดือน" tone="amber"/>
+              <AICard text={`เสาร์ที่ 9, 16, 23 — Bellman ว่าง ${3} วัน, ลูกค้า check-in เฉลี่ย 14:00`} tone="rose"/>
+              <AICard text="น้องเทค + พี่จิ๋ว สลับเวรเช้า/บ่ายแล้ว trafic FD smooth ขึ้น 18%" tone="emerald"/>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      {/* RIGHT PANEL — Staff pool */}
+      {aiOpen && (
+        <StaffPool
+          staff={STAFF}
+          daysWorked={daysWorked}
+          conflicts={conflicts}
+          gaps={gaps}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          onClose={() => setAiOpen(false)}
+        />
+      )}
+      {!aiOpen && (
+        <button onClick={() => setAiOpen(true)} className="fixed bottom-5 right-5 flex items-center gap-1.5 rounded-full bg-slate-900 px-4 py-2.5 text-[12px] font-semibold text-white shadow-[0_18px_40px_-12px_rgba(15,23,42,0.5)] hover:bg-slate-800">
+          เปิดผู้ช่วย AI
+        </button>
+      )}
+
+      {/* CELL MODAL */}
+      {selected && (
+        <ShiftEditModal
+          selected={selected}
+          assign={assign}
+          onClose={() => setSelected(null)}
+          onPick={(staffId) => {
+            setAssign(prev => {
+              const next = JSON.parse(JSON.stringify(prev));
+              next[selected.posId][selected.slot][selected.day-1] = staffId;
+              return next;
+            });
+            setSelected(null);
+          }}
+          onClear={() => {
+            clearCell(selected.posId, selected.slot, selected.day);
+            setSelected(null);
+          }}
+        />
+      )}
+
+      {/* AI MODAL */}
+      {showAI && (
+        <AIModal
+          plan={aiPlan}
+          onApply={applyAI}
+          onClose={() => { setShowAI(false); setAiPlan(null); }}
+        />
+      )}
+
+      {/* TOAST */}
+      {toast && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 rounded-xl bg-slate-900 px-4 py-2.5 text-[12.5px] font-semibold text-white shadow-2xl" style={{ animation: "fadeIn .2s ease-out" }}>
+          {toast.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================ STAT TILE ============================================================ */
+function StatTile({ label, value, suffix, tone="slate" }) {
+  const palette = {
+    slate:  { bg: "bg-white", ring: "ring-slate-200", num: "text-slate-900", icon: "bg-slate-100 text-slate-700" },
+    rose:   { bg: "bg-white", ring: "ring-rose-200",  num: "text-rose-700",  icon: "bg-rose-50 text-rose-700" },
+    amber:  { bg: "bg-white", ring: "ring-amber-200", num: "text-amber-800", icon: "bg-amber-50 text-amber-700" },
+    emerald:{ bg: "bg-white", ring: "ring-emerald-200", num: "text-emerald-700", icon: "bg-emerald-50 text-emerald-700" },
+    blue:   { bg: "bg-white", ring: "ring-blue-200",  num: "text-blue-700", icon: "bg-blue-50 text-blue-700" },
+    violet: { bg: "bg-white", ring: "ring-violet-200", num: "text-violet-700", icon: "bg-violet-50 text-violet-700" },
+  }[tone];
+  return (
+    <div className={`relative overflow-hidden rounded-2xl ${palette.bg} px-4 py-3 ring-1 ${palette.ring}`}>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</div>
+      <div className="mt-1 flex items-baseline gap-1.5">
+        <span className={`mono text-[28px] font-bold leading-none ${palette.num}`}>{value}</span>
+        <span className="text-[11px] text-slate-500">{suffix}</span>
+      </div>
+    </div>
+  );
+}
+
+function AICard({ text, tone="slate" }) {
+  const dot = { amber: "bg-amber-400", rose: "bg-rose-400", emerald: "bg-emerald-400", blue: "bg-blue-400" }[tone] || "bg-slate-400";
+  return (
+    <div className="flex items-start gap-2 rounded-xl bg-white/5 px-3 py-2.5 ring-1 ring-white/10">
+      <span className={`mt-1 h-1.5 w-1.5 flex-none rounded-full ${dot}`} />
+      <p className="text-[11.5px] leading-relaxed text-slate-200">{text}</p>
+    </div>
+  );
+}
+
+/* ============================================================ MONTH GRID ============================================================ */
+function MonthGrid({ assign, filterStaff, setFilterStaff, onSelect, dropKey, onDragStart, onDragOverCell, onDropCell, onDragEnd, clearCell, gaps, conflicts }) {
+  return (
+    <div className="rounded-2xl border border-slate-200/70 bg-white shadow-[0_2px_8px_-4px_rgba(15,23,42,0.08)] overflow-hidden">
+      {/* Filter row */}
+      <div className="flex items-center gap-2 border-b border-slate-200/70 px-4 py-2.5">
+        <span className="label">FILTER</span>
+        <button onClick={() => setFilterStaff(null)} className={`rounded-md px-2 py-1 text-[11px] font-semibold ${!filterStaff ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50"}`}>ทั้งหมด</button>
+        {STAFF.slice(0,8).map(s => (
+          <button key={s.id} onClick={() => setFilterStaff(filterStaff === s.id ? null : s.id)}
+            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold ring-1 transition ${filterStaff === s.id ? "bg-blue-600 text-white ring-blue-700" : "bg-white text-slate-600 ring-slate-200 hover:ring-slate-300"}`}>
+            <span className="grid h-4 w-4 place-items-center rounded-full text-[8.5px] font-bold text-white" style={{ background: s.color }}>{s.short[0]}</span>
+            {s.name}
+          </button>
+        ))}
+        <span className="ml-auto mono text-[10px] text-slate-400">เลื่อนแนวนอนเพื่อดู →</span>
+      </div>
+
+      {/* Grid */}
+      <div className="scrollbar-slim overflow-auto">
+        <div style={{ minWidth: 1240 }}>
+          {/* header row */}
+          <div className="sticky top-0 z-10 grid border-b border-slate-200 bg-slate-50" style={{ gridTemplateColumns: `220px repeat(${DAYS_IN_MONTH}, minmax(34px, 1fr))` }}>
+            <div className="border-r border-slate-200 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">ตำแหน่ง / กะ</div>
+            {Array.from({ length: DAYS_IN_MONTH }, (_, i) => i+1).map(d => {
+              const dow = dowOf(d);
+              const we = isWeekend(d);
+              return (
+                <div key={d} className={`border-r border-slate-100 py-1.5 text-center ${we ? "bg-slate-50" : ""}`}>
+                  <div className={`mono text-[9px] font-semibold uppercase ${we ? "text-rose-500" : "text-slate-400"}`}>{DAY_NAMES[dow]}</div>
+                  <div className={`mono text-[12px] font-bold ${we ? "text-rose-600" : "text-slate-700"}`}>{d}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* coverage row */}
+          <div className="grid border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `220px repeat(${DAYS_IN_MONTH}, minmax(34px, 1fr))` }}>
+            <div className="flex items-center gap-2 border-r border-slate-200 px-3 py-2">
+              <span className="grid h-5 w-5 place-items-center rounded-md bg-slate-900 text-[10px] font-bold text-white">∑</span>
+              <span className="text-[11px] font-semibold text-slate-600">Coverage</span>
+            </div>
+            {Array.from({ length: DAYS_IN_MONTH }, (_, i) => i+1).map(d => {
+              const cov = coverageForDay(assign, d);
+              const tone = cov.pct === 100 ? "#10B981" : cov.pct >= 90 ? "#3B82F6" : cov.pct >= 75 ? "#D97706" : "#B91C1C";
+              return (
+                <div key={d} className="border-r border-slate-100 px-1 py-1.5">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <div className="h-full rounded-full" style={{ width: `${cov.pct}%`, background: tone }} />
+                  </div>
+                  <div className="mono mt-0.5 text-center text-[8.5px] font-bold tabular-nums" style={{ color: tone }}>{cov.filled}/{cov.need}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* position rows */}
+          {POSITIONS.map((p) => (
+            <div key={p.id}>
+              {p.needs > 1 && (
+                <div className="grid border-b border-slate-100 bg-slate-50/40" style={{ gridTemplateColumns: `220px 1fr` }}>
+                  <div className="border-r border-slate-200 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{p.name} · {p.needs} คน</div>
+                  <div></div>
+                </div>
+              )}
+              {Array.from({ length: p.needs }).map((_, slot) => (
+                <div key={slot} className="grid border-b border-slate-100 hover:bg-slate-50/40" style={{ gridTemplateColumns: `220px repeat(${DAYS_IN_MONTH}, minmax(34px, 1fr))` }}>
+                  {/* row label */}
+                  <div className="flex items-center gap-2 border-r border-slate-200 px-3 py-2">
+                    <span className="h-2 w-2 flex-none rounded-full" style={{ background: p.color }} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[12px] font-semibold leading-tight">{p.name}{p.needs>1 ? <span className="ml-1 text-slate-400">#{slot+1}</span> : ""}</div>
+                      <div className="mono text-[9.5px] text-slate-400">{p.shift}</div>
+                    </div>
+                    <span className="mono rounded bg-slate-100 px-1 py-0.5 text-[9px] font-bold text-slate-500">{p.time}</span>
+                  </div>
+                  {/* day cells */}
+                  {Array.from({ length: DAYS_IN_MONTH }, (_, i) => i+1).map(d => {
+                    const sid = assign[p.id][slot][d-1];
+                    const staff = sid ? staffById(sid) : null;
+                    const we = isWeekend(d);
+                    const cellKey = `${p.id}-${slot}-${d}`;
+                    const isDrop = dropKey === cellKey;
+                    const note = sid ? NOTES[`${sid}-${d}`] : null;
+                    const hasConflict = conflicts.some(c => c.day === d && c.staffId === sid);
+                    const dim = filterStaff && sid !== filterStaff;
+                    return (
+                      <div key={d}
+                        onClick={() => onSelect({ posId: p.id, slot, day: d })}
+                        onDragOver={(e) => onDragOverCell(e, cellKey)}
+                        onDrop={(e) => onDropCell(e, p.id, slot, d)}
+                        onDragLeave={() => {}}
+                        className={`relative cursor-pointer border-r border-slate-100 px-1 py-1.5 ${we ? "bg-slate-50/50" : ""} ${isDrop ? "drop-target" : ""}`}
+                      >
+                        {staff ? (
+                          <div
+                            draggable
+                            onDragStart={(e) => { e.stopPropagation(); onDragStart(e, { staffId: staff.id, from: { posId: p.id, slot, day: d }}); }}
+                            onDragEnd={onDragEnd}
+                            onClick={(e) => { e.stopPropagation(); onSelect({ posId: p.id, slot, day: d }); }}
+                            className={`grab group relative grid place-items-center rounded-md text-[10.5px] font-bold leading-none text-white ${dim ? "opacity-25" : ""} ${hasConflict ? "ring-2 ring-rose-500" : ""}`}
+                            style={{ background: staff.color, height: 26 }}
+                            title={`${staff.name} · ${p.name}`}
+                          >
+                            <span className="px-1 truncate">{staff.short}</span>
+                            {note && <span className="absolute -top-1 -right-1 grid h-3 w-3 place-items-center rounded-full bg-amber-400 text-[7px] font-bold text-amber-900">!</span>}
+                            {hasConflict && <span className="absolute -top-1 -left-1 grid h-3 w-3 place-items-center rounded-full bg-rose-600 text-[7px] font-bold text-white">×</span>}
+                          </div>
+                        ) : (
+                          <div className="grid place-items-center rounded-md border border-dashed border-rose-300 bg-rose-50/40 text-[12px] font-bold text-rose-400 hover:border-rose-400 hover:bg-rose-50" style={{ height: 26 }}>·</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* legend */}
+      <div className="flex flex-wrap items-center gap-3 border-t border-slate-200/70 px-4 py-2.5 text-[11px] text-slate-500">
+        <span className="flex items-center gap-1.5"><span className="grid h-4 w-4 place-items-center rounded-md bg-blue-500 text-[8.5px] font-bold text-white">นก</span>คลิก = แก้ไข</span>
+        <span className="flex items-center gap-1.5"><span className="h-4 w-4 rounded-md border border-dashed border-rose-300 bg-rose-50"></span>ช่องว่าง = รอเติม</span>
+        <span className="flex items-center gap-1.5"><span className="grid h-3 w-3 place-items-center rounded-full bg-amber-400 text-[7px] font-bold text-amber-900">!</span>วันลา/ป่วย</span>
+        <span className="flex items-center gap-1.5"><span className="grid h-3 w-3 place-items-center rounded-full bg-rose-600 text-[7px] font-bold text-white">×</span>ชนเวร</span>
+        <span className="ml-auto text-slate-400">ลากชื่อพนักงานวางในช่องเพื่อจัดเวร · กดเพื่อแก้</span>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================ STAFF POOL (RIGHT PANEL) ============================================================ */
+function StaffPool({ staff, daysWorked, conflicts, gaps, onDragStart, onDragEnd, onClose }) {
+  const [tab, setTab] = React.useState("staff");
+  return (
+    <aside className="flex w-[300px] flex-none flex-col border-l border-slate-200/70 bg-white" style={{ animation: "slideRight .3s ease-out" }}>
+      <div className="flex items-center gap-2 border-b border-slate-200/70 px-4 py-3">
+        <span className="grid h-6 w-6 place-items-center rounded-md bg-gradient-to-br from-blue-500 to-blue-700 text-white">{I.ai}</span>
+        <div>
+          <div className="text-[13px] font-bold tracking-tight">ผู้ช่วยจัดเวร</div>
+          <div className="text-[10px] text-slate-500">ลากชื่อไปวางในช่องที่ต้องการ</div>
+        </div>
+        <button onClick={onClose} className="ml-auto grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-slate-50 hover:text-slate-700">{I.close}</button>
+      </div>
+      <div className="flex border-b border-slate-200/70">
+        {[
+          { id: "staff", t: "พนักงาน", n: staff.length },
+          { id: "issue", t: "ปัญหา", n: conflicts.length + gaps.length },
+        ].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2.5 text-[12px] font-semibold transition ${tab===t.id ? "border-b-2 border-blue-600 text-blue-700" : "text-slate-500 hover:text-slate-900"}`}>
+            {t.t}
+            <span className={`mono rounded px-1 py-0.5 text-[9.5px] font-bold ${tab===t.id ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}>{t.n}</span>
+          </button>
+        ))}
+      </div>
+      <div className="scrollbar-slim flex-1 overflow-auto p-3">
+        {tab === "staff" && (
+          <div className="space-y-1.5">
+            {staff.map(s => {
+              const days = daysWorked[s.id] || 0;
+              const pct = Math.min(100, (days / s.maxDays) * 100);
+              const tone = pct >= 100 ? "#B91C1C" : pct >= 90 ? "#D97706" : "#1F8A5B";
+              return (
+                <div key={s.id}
+                  draggable
+                  onDragStart={(e) => onDragStart(e, { staffId: s.id })}
+                  onDragEnd={onDragEnd}
+                  className="grab flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2 hover:border-blue-300 hover:shadow-sm">
+                  <div className="grid h-9 w-9 flex-none place-items-center rounded-full text-[12px] font-bold text-white" style={{ background: s.color }}>{s.short}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-[12.5px] font-semibold">{s.name}</span>
+                      {pct >= 100 && <span className="mono rounded bg-rose-100 px-1 py-0.5 text-[8.5px] font-bold text-rose-700">เต็ม</span>}
+                    </div>
+                    <div className="truncate text-[10px] text-slate-500">{s.role}</div>
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: tone }} />
+                      </div>
+                      <span className="mono w-12 text-right text-[9.5px] font-bold tabular-nums" style={{ color: tone }}>{days}/{s.maxDays}d</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {tab === "issue" && (
+          <div className="space-y-2">
+            {gaps.length === 0 && conflicts.length === 0 && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-6 text-center">
+                <div className="text-[14px] font-bold text-emerald-800">ไม่มีปัญหา 🎉</div>
+                <div className="mt-1 text-[11px] text-emerald-700">ตารางเวรเดือนนี้ครบถ้วน ไม่มีคนซ้อน</div>
+              </div>
+            )}
+            {gaps.map((g, i) => {
+              const p = POSITIONS.find(x => x.id === g.posId);
+              return (
+                <div key={`g${i}`} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-rose-700">{I.warn}</span>
+                    <span className="mono text-[10px] font-bold uppercase tracking-wider text-rose-700">ขาด</span>
+                    <span className="mono ml-auto text-[10px] font-bold text-rose-700">{MONTH_LABEL.split(" ")[0]} {g.day}</span>
+                  </div>
+                  <div className="mt-1 text-[12px] font-semibold text-slate-900">{p.name}</div>
+                  <div className="text-[10.5px] text-slate-500">{p.shift} · ต้องการ skill: {p.skill}</div>
+                </div>
+              );
+            })}
+            {conflicts.map((c, i) => {
+              const s = staffById(c.staffId);
+              return (
+                <div key={`c${i}`} className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-amber-700">{I.warn}</span>
+                    <span className="mono text-[10px] font-bold uppercase tracking-wider text-amber-800">ชนเวร</span>
+                    <span className="mono ml-auto text-[10px] font-bold text-amber-700">{MONTH_LABEL.split(" ")[0]} {c.day}</span>
+                  </div>
+                  <div className="mt-1 text-[12px] font-semibold text-slate-900">{s.name} ถูก assign 2 ตำแหน่ง</div>
+                  <div className="text-[10.5px] text-slate-500">{c.positions.map(pp => POSITIONS.find(p=>p.id===pp.posId).name).join(" + ")}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+/* ============================================================ SHIFT EDIT MODAL ============================================================ */
+function ShiftEditModal({ selected, assign, onClose, onPick, onClear }) {
+  const p = POSITIONS.find(x => x.id === selected.posId);
+  const sid = assign[selected.posId][selected.slot][selected.day-1];
+  const current = sid ? staffById(sid) : null;
+  // who's busy on this day
+  const busy = new Set();
+  POSITIONS.forEach(po => assign[po.id].forEach(arr => { if (arr[selected.day-1]) busy.add(arr[selected.day-1]); }));
+  const eligible = STAFF.filter(s => s.skills.includes(p.skill));
+  const others = STAFF.filter(s => !s.skills.includes(p.skill));
+  return (
+    <div className="fixed inset-0 z-40 grid place-items-center bg-slate-900/40 px-6 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-[460px] overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()} style={{ animation: "fadeIn .2s ease-out" }}>
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+          <div>
+            <div className="label">แก้ไขเวร</div>
+            <div className="text-[16px] font-bold tracking-tight">{p.name}</div>
+            <div className="mono text-[10.5px] text-slate-500">{MONTH_LABEL} · วันที่ {selected.day} · {p.shift}</div>
+          </div>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-md text-slate-400 hover:bg-slate-50 hover:text-slate-700">{I.close}</button>
+        </div>
+        {current && (
+          <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50/40 px-5 py-3">
+            <div className="grid h-10 w-10 flex-none place-items-center rounded-full text-[13px] font-bold text-white" style={{ background: current.color }}>{current.short}</div>
+            <div className="flex-1">
+              <div className="text-[13px] font-semibold">{current.name}</div>
+              <div className="text-[10.5px] text-slate-500">{current.role}</div>
+            </div>
+            <button onClick={onClear} className="flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 hover:bg-rose-100">
+              {I.trash} ปลดเวร
+            </button>
+          </div>
+        )}
+        <div className="px-5 py-3">
+          <div className="label mb-2">เลือกพนักงาน · เหมาะกับตำแหน่งนี้</div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {eligible.map(s => {
+              const isBusy = busy.has(s.id) && s.id !== sid;
+              return (
+                <button key={s.id} disabled={isBusy && false} onClick={() => onPick(s.id)}
+                  className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition ${isBusy ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/30"}`}>
+                  <div className="grid h-8 w-8 flex-none place-items-center rounded-full text-[12px] font-bold text-white" style={{ background: s.color }}>{s.short}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[12px] font-semibold">{s.name}</div>
+                    <div className="truncate text-[9.5px] text-slate-500">{s.role}</div>
+                  </div>
+                  {isBusy && <span className="mono rounded bg-amber-200 px-1 py-0.5 text-[8.5px] font-bold text-amber-800">ชน</span>}
+                  {sid === s.id && <span className="mono rounded bg-blue-600 px-1 py-0.5 text-[8.5px] font-bold text-white">●</span>}
+                </button>
+              );
+            })}
+          </div>
+          {others.length > 0 && (
+            <details className="mt-3">
+              <summary className="cursor-pointer text-[11.5px] font-semibold text-slate-500 hover:text-slate-900">ดูพนักงานอื่นที่ทักษะไม่ตรง ({others.length} คน)</summary>
+              <div className="mt-2 grid grid-cols-2 gap-1.5">
+                {others.map(s => (
+                  <button key={s.id} onClick={() => onPick(s.id)} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-left opacity-60 hover:opacity-100 hover:border-slate-300">
+                    <div className="grid h-8 w-8 flex-none place-items-center rounded-full text-[12px] font-bold text-white" style={{ background: s.color }}>{s.short}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[12px] font-semibold">{s.name}</div>
+                      <div className="truncate text-[9.5px] text-slate-500">{s.role}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================ AI MODAL ============================================================ */
+function AIModal({ plan, onApply, onClose }) {
+  return (
+    <div className="fixed inset-0 z-40 grid place-items-center bg-slate-900/40 px-6 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-[560px] overflow-hidden rounded-2xl text-white shadow-2xl" onClick={(e) => e.stopPropagation()} style={{ background: "radial-gradient(ellipse at top right, #1E3A8A 0%, #0F172A 70%)", animation: "fadeIn .2s ease-out" }}>
+        <div className="flex items-center gap-2 border-b border-white/10 px-5 py-3.5">
+          <span className="grid h-7 w-7 place-items-center rounded-lg bg-white/10 ring-1 ring-white/20">{I.ai}</span>
+          <div>
+            <div className="text-[13px] font-bold">AuditMe AI · ผู้ช่วยจัดเวร</div>
+            <div className="text-[10px] text-slate-400">วิเคราะห์ skills, OT, วันลา และเสาร์-อาทิตย์</div>
+          </div>
+          {plan && <span className="mono ml-auto rounded-sm bg-emerald-500 px-2 py-0.5 text-[9.5px] font-bold tracking-wider text-white">CONF 92%</span>}
+          <button onClick={onClose} className="ml-auto grid h-7 w-7 place-items-center rounded-md text-slate-300 hover:bg-white/10">{I.close}</button>
+        </div>
+        {!plan ? (
+          <div className="px-5 py-10 text-center">
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-white/10 ring-1 ring-white/20">{I.ai}</div>
+            <div className="mt-3 text-[15px] font-bold">กำลังวิเคราะห์ตารางเวร...</div>
+            <div className="mt-1 text-[11px] text-slate-400">กำลังหาตัวเลือกที่ดีที่สุด · ใกล้เสร็จ</div>
+            <div className="mx-auto mt-4 h-1 w-48 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full w-1/2 animate-pulse rounded-full bg-gradient-to-r from-blue-400 to-blue-600"></div>
+            </div>
+          </div>
+        ) : (
+          <div className="px-5 py-4">
+            <h4 className="text-[16px] font-bold leading-snug">"AI พบ {plan.proposed.length} ช่องที่จัดได้ทันที"</h4>
+            <p className="mt-1 text-[11.5px] text-slate-300">วิเคราะห์ workload เฉลี่ยและทักษะของพนักงาน — ไม่มีใครเกิน 22 วันต่อเดือน</p>
+            <div className="scrollbar-slim mt-3 max-h-[260px] overflow-auto rounded-xl bg-black/20 ring-1 ring-white/5">
+              <table className="w-full text-[11.5px]">
+                <thead className="sticky top-0 bg-black/40 text-[9.5px] uppercase tracking-wider text-slate-400">
+                  <tr><th className="px-3 py-1.5 text-left">วัน</th><th className="px-3 py-1.5 text-left">ตำแหน่ง</th><th className="px-3 py-1.5 text-left">ใส่ใคร</th><th className="px-3 py-1.5 text-left">เหตุผล</th></tr>
+                </thead>
+                <tbody>
+                  {plan.proposed.map((p, i) => {
+                    const pos = POSITIONS.find(x => x.id === p.posId);
+                    const s = staffById(p.staffId);
+                    return (
+                      <tr key={i} className="border-t border-white/5">
+                        <td className="px-3 py-2 mono font-bold text-blue-300">{p.day}</td>
+                        <td className="px-3 py-2 text-slate-200">{pos.name}</td>
+                        <td className="px-3 py-2"><span className="inline-flex items-center gap-1.5"><span className="grid h-5 w-5 place-items-center rounded-full text-[9.5px] font-bold text-white" style={{ background: s.color }}>{s.short}</span><span className="text-white">{s.name}</span></span></td>
+                        <td className="px-3 py-2 text-emerald-300">{p.reason}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button onClick={onApply} className="flex-1 rounded-xl bg-white px-3 py-2.5 text-[12.5px] font-bold text-blue-700 hover:bg-blue-50">รับทั้งหมด ({plan.proposed.length}) →</button>
+              <button onClick={onClose} className="rounded-xl border border-white/20 px-3 py-2.5 text-[12.5px] font-medium text-white hover:bg-white/10">แก้เอง</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================ PERSON VIEW ============================================================ */
+function PersonView({ assign, daysWorked }) {
+  // For each staff, figure out which day → position
+  const personDays = {};
+  STAFF.forEach(s => personDays[s.id] = new Array(DAYS_IN_MONTH).fill(null));
+  POSITIONS.forEach(p => {
+    assign[p.id].forEach((arr) => {
+      arr.forEach((sid, idx) => {
+        if (!sid) return;
+        if (!personDays[sid][idx]) personDays[sid][idx] = p;
+      });
+    });
+  });
+  return (
+    <div className="rounded-2xl border border-slate-200/70 bg-white shadow-[0_2px_8px_-4px_rgba(15,23,42,0.08)] overflow-hidden">
+      <div className="scrollbar-slim overflow-auto">
+        <div style={{ minWidth: 1200 }}>
+          <div className="sticky top-0 z-10 grid border-b border-slate-200 bg-slate-50" style={{ gridTemplateColumns: `220px repeat(${DAYS_IN_MONTH}, minmax(34px, 1fr)) 100px` }}>
+            <div className="border-r border-slate-200 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">พนักงาน</div>
+            {Array.from({ length: DAYS_IN_MONTH }, (_, i) => i+1).map(d => (
+              <div key={d} className={`border-r border-slate-100 py-1.5 text-center ${isWeekend(d) ? "bg-slate-50" : ""}`}>
+                <div className={`mono text-[9px] uppercase ${isWeekend(d) ? "text-rose-500" : "text-slate-400"}`}>{DAY_NAMES[dowOf(d)]}</div>
+                <div className={`mono text-[12px] font-bold ${isWeekend(d) ? "text-rose-600" : "text-slate-700"}`}>{d}</div>
+              </div>
+            ))}
+            <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 text-center">สรุป</div>
+          </div>
+          {STAFF.map(s => (
+            <div key={s.id} className="grid border-b border-slate-100 hover:bg-slate-50/40" style={{ gridTemplateColumns: `220px repeat(${DAYS_IN_MONTH}, minmax(34px, 1fr)) 100px` }}>
+              <div className="flex items-center gap-2 border-r border-slate-200 px-3 py-2">
+                <div className="grid h-8 w-8 flex-none place-items-center rounded-full text-[11px] font-bold text-white" style={{ background: s.color }}>{s.short}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[12px] font-semibold leading-tight">{s.name}</div>
+                  <div className="truncate text-[10px] text-slate-500">{s.role}</div>
+                </div>
+              </div>
+              {Array.from({ length: DAYS_IN_MONTH }, (_, i) => i+1).map(d => {
+                const p = personDays[s.id][d-1];
+                const note = NOTES[`${s.id}-${d}`];
+                return (
+                  <div key={d} className={`border-r border-slate-100 px-1 py-1.5 text-center ${isWeekend(d) ? "bg-slate-50/50" : ""}`}>
+                    {p ? <div className="mx-auto h-3 rounded-sm" style={{ background: p.color, opacity: 0.85, maxWidth: 26 }} title={p.name}></div>
+                       : note ? <div className="mono text-[8.5px] font-bold text-amber-700">{note==='ลาป่วย'?'P':note==='ลาพักร้อน'?'V':'X'}</div>
+                       : <div className="text-[12px] text-slate-200">·</div>}
+                  </div>
+                );
+              })}
+              <div className="border-l border-slate-100 px-3 py-2 text-center">
+                <div className="mono text-[14px] font-bold tabular-nums">{daysWorked[s.id] || 0}</div>
+                <div className="mono text-[9px] text-slate-400">วัน</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================ DAY VIEW ============================================================ */
+function DayView({ assign }) {
+  const [day, setDay] = React.useState(15);
+  return (
+    <div className="grid grid-cols-12 gap-4">
+      <div className="col-span-12 rounded-2xl border border-slate-200/70 bg-white p-4">
+        <div className="flex items-center gap-2">
+          <div className="label">เลือกวัน</div>
+          <div className="flex flex-wrap gap-1.5">
+            {Array.from({ length: DAYS_IN_MONTH }, (_, i) => i+1).map(d => (
+              <button key={d} onClick={() => setDay(d)} className={`mono h-7 w-7 rounded-md text-[11px] font-bold ${day===d ? "bg-slate-900 text-white" : isWeekend(d) ? "bg-rose-50 text-rose-600 hover:bg-rose-100" : "bg-slate-50 text-slate-700 hover:bg-slate-100"}`}>{d}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="col-span-12 rounded-2xl border border-slate-200/70 bg-white p-5">
+        <div className="flex items-baseline gap-2">
+          <h3 className="text-[18px] font-bold tracking-tight">{MONTH_LABEL} · วันที่ {day}</h3>
+          <span className="mono text-[11px] text-slate-500">{DAY_NAMES[dowOf(day)]} · {isWeekend(day) ? "เสาร์-อาทิตย์" : "วันธรรมดา"}</span>
+        </div>
+        <div className="mt-4 space-y-2">
+          {POSITIONS.map(p => (
+            <div key={p.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+              <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
+              <div className="w-44">
+                <div className="text-[12.5px] font-semibold">{p.name}</div>
+                <div className="mono text-[10px] text-slate-400">{p.shift}</div>
+              </div>
+              <div className="flex flex-1 flex-wrap gap-1.5">
+                {assign[p.id].map((arr, slot) => {
+                  const sid = arr[day-1];
+                  const s = sid ? staffById(sid) : null;
+                  return s ? (
+                    <span key={slot} className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-semibold text-white" style={{ background: s.color }}>
+                      <span className="grid h-5 w-5 place-items-center rounded-full bg-white/30 text-[9px] font-bold">{s.short[0]}</span>
+                      {s.name}
+                    </span>
+                  ) : (
+                    <span key={slot} className="inline-flex items-center gap-1 rounded-full border border-dashed border-rose-300 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-600">+ ขาดคน</span>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================ ROOT ============================================================ */
+function App() {
+  return (
+    <div className="min-h-screen p-5">
+      <div className="mx-auto" style={{ maxWidth: 1480 }}>
+        <ChromeWindow
+          tabs={[{ title: "POOIL accounting" }, { title: "AuditMe — ตารางเวร" }]}
+          activeIndex={1}
+          url="auditme.app/workspace/schedule"
+          width="100%"
+          height="auto"
+        >
+          <div style={{ height: 920 }}>
+            <SchedulePage />
+          </div>
+        </ChromeWindow>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

@@ -1,0 +1,1178 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AuditMe — Design System v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root {
+    --bg: #EEEEE6;
+    --paper: #FAFAF7;
+    --ink: #0F172A;
+    --line: rgba(15,23,42,0.10);
+
+    /* Brand */
+    --blue-50:#EFF6FF; --blue-100:#DBEAFE; --blue-300:#93C5FD;
+    --blue-500:#3B82F6; --blue-600:#2563EB; --blue-700:#1D4ED8; --blue-900:#1E3A8A;
+
+    /* Semantic */
+    --emerald-soft:#E5F1EA; --emerald:#1F8A5B;
+    --amber-soft:#FEF1DA;   --amber:#D97706;
+    --rose-soft:#FCE5E5;    --rose:#B91C1C;
+    --violet-soft:#EEE9FE;  --violet:#7C3AED;
+
+    /* Pastel surfaces (Rich Menu v2) */
+    --p-sky:#DDEBFF; --p-mint:#DFF5E8; --p-butter:#FFF1CF;
+    --p-blush:#FFE0E1; --p-lav:#ECE7FE; --p-cream:#FAF6EC;
+  }
+  html, body {
+    background: var(--bg); color: var(--ink);
+    font-family: 'IBM Plex Sans Thai', 'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-feature-settings:'tnum'; }
+  .tnum { font-feature-settings:'tnum'; }
+  .hairline { border: 1px solid var(--line); }
+  .label {
+    font-family:'IBM Plex Mono',ui-monospace,monospace;
+    font-size:10px; font-weight:600; letter-spacing:0.18em;
+    text-transform:uppercase; color:#64748B;
+  }
+  .grid-bg {
+    background-image:
+      linear-gradient(to right, rgba(15,23,42,0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(15,23,42,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  section[id] { scroll-margin-top: 80px; }
+
+  /* Pastel utility */
+  .bg-p-sky { background: var(--p-sky); }
+  .bg-p-mint { background: var(--p-mint); }
+  .bg-p-butter { background: var(--p-butter); }
+  .bg-p-blush { background: var(--p-blush); }
+  .bg-p-lav { background: var(--p-lav); }
+  .bg-p-cream { background: var(--p-cream); }
+
+  /* Duotone illo */
+  .illo {
+    width: 56px; height: 56px; border-radius: 16px;
+    display: grid; place-items: center; position: relative;
+    color: #fff;
+  }
+  .illo::after {
+    content: ''; position: absolute; inset: 8% 8% auto auto;
+    width: 18%; aspect-ratio: 1; border-radius: 50%;
+    background: rgba(255,255,255,0.55); filter: blur(2px);
+  }
+  .illo-blue   { background: linear-gradient(155deg,#3B82F6,#1D4ED8); }
+  .illo-coral  { background: linear-gradient(155deg,#FB7185,#E11D48); }
+  .illo-emer   { background: linear-gradient(155deg,#34D399,#059669); }
+  .illo-amber  { background: linear-gradient(155deg,#FBBF24,#D97706); }
+  .illo-violet { background: linear-gradient(155deg,#A78BFA,#7C3AED); }
+  .illo-slate  { background: linear-gradient(155deg,#475569,#0F172A); }
+
+  /* Motion */
+  @keyframes float-y { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+  @keyframes pulseDot { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .5; transform: scale(1.4); } }
+  @keyframes shine { 0% { transform: translateX(-120%) skewX(-20deg); } 100% { transform: translateX(220%) skewX(-20deg); } }
+  @keyframes wiggle { 0%,100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+  @keyframes bob { 0%,100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-6px) rotate(2deg); } }
+  @keyframes sparkle { 0%,100% { opacity:.3; transform: scale(.92); } 50% { opacity:1; transform: scale(1.1); } }
+  .anim-float { animation: float-y 3.6s ease-in-out infinite; }
+  .anim-bob { animation: bob 3.2s ease-in-out infinite; transform-origin: center bottom; }
+  .anim-wiggle { animation: wiggle 2.8s ease-in-out infinite; transform-origin: center bottom; }
+  .anim-sparkle { animation: sparkle 2.2s ease-in-out infinite; }
+  .shine-host { position: relative; overflow: hidden; }
+  .shine-host::before {
+    content:''; position:absolute; inset:0; width: 35%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+    transform: translateX(-120%) skewX(-20deg);
+    animation: shine 4.5s ease-in-out infinite;
+    pointer-events: none;
+  }
+  .ring-strip {
+    background: linear-gradient(90deg,#3B82F6,#7C3AED,#F59E0B,#EF4444,#10B981,#3B82F6);
+    background-size: 200% 100%;
+    animation: shine 8s linear infinite;
+  }
+</style>
+</head>
+<body data-screen-label="Design System v2">
+
+<!-- =========================================================
+     ICON LIBRARY
+     ========================================================= -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12 L10 17 L19 7" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="13" rx="2.5" stroke="currentColor" stroke-width="2.2" fill="none"/><path d="M3 9 L21 9" stroke="currentColor" stroke-width="1.6"/><path d="M10 11 L16 13.5 L10 16 Z" fill="currentColor"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 11 L12 2 L21 2 L21 11 L12 20 Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" fill="none"/><circle cx="16.5" cy="6.5" r="1.6" fill="currentColor"/></symbol>
+    <symbol id="i-rocket" viewBox="0 0 24 24"><path d="M9 15 L4 14 L9 9 C13 5 17 4 20 4 C20 7 19 11 15 15 L10 20 L9 15 Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" fill="none"/><circle cx="14.5" cy="9.5" r="1.6" stroke="currentColor" stroke-width="2.2" fill="none"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2.2" fill="none"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2.2" fill="none"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2.2" fill="none"/><rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2.2" fill="none"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 6 C4 4.9 4.9 4 6 4 L18 4 C19.1 4 20 4.9 20 6 L20 14 C20 15.1 19.1 16 18 16 L9 16 L5 20 L5 16 C4.4 16 4 15.6 4 15 Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" fill="none"/><circle cx="9" cy="10" r="1.1" fill="currentColor"/><circle cx="12" cy="10" r="1.1" fill="currentColor"/><circle cx="15" cy="10" r="1.1" fill="currentColor"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2" stroke="currentColor" stroke-width="2.2" fill="none"/><path d="M9 4 L9 2.5 L15 2.5 L15 4" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" fill="none"/><path d="M8 10 L10 12 L13 9" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M8 15 L10 17 L13 14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></symbol>
+    <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M15 3 a4.5 4.5 0 0 0 -4.4 5.4 L3.5 15.5 a2.1 2.1 0 0 0 3 3 L13.6 11.4 A4.5 4.5 0 1 0 15 3 Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" fill="none"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3 L14.6 9 L21 9.6 L16.2 13.9 L17.6 20 L12 16.8 L6.4 20 L7.8 13.9 L3 9.6 L9.4 9 Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" fill="none"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2.5" stroke="currentColor" stroke-width="2.2" fill="none"/><path d="M8 7 L9.5 4.5 L14.5 4.5 L16 7" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" fill="none"/><circle cx="12" cy="13.5" r="3.4" stroke="currentColor" stroke-width="2.2" fill="none"/></symbol>
+    <symbol id="i-bot" viewBox="0 0 24 24"><rect x="3.5" y="7" width="17" height="12" rx="3.5" stroke="currentColor" stroke-width="2.2" fill="none"/><circle cx="9" cy="13" r="1.6" fill="currentColor"/><circle cx="15" cy="13" r="1.6" fill="currentColor"/><path d="M10 17 L14 17" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M12 3.5 L12 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 18 a8 8 0 1 1 16 0" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/><path d="M12 18 L16 10" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="18" r="1.5" fill="currentColor"/></symbol>
+    <symbol id="i-stamp" viewBox="0 0 24 24"><path d="M5 20 L19 20" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M7 17 L17 17 L17 13 C17 12 16 11 15 11 L13.5 11 L13.5 8.5 a1.5 1.5 0 0 0 -3 0 L10.5 11 L9 11 C8 11 7 12 7 13 Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" fill="none"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16 L18 16 L17 14 L17 11 C17 8 15 6 12 6 C9 6 7 8 7 11 L7 14 Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" fill="none"/><path d="M10 19 a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="2.2" fill="none"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2 L13.5 9 L20 10.5 L13.5 12 L12 19 L10.5 12 L4 10.5 L10.5 9 Z" fill="currentColor"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="2.2" fill="none"/><path d="M16 16 L21 21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="i-app" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2.6" stroke="currentColor" stroke-width="2.2" fill="none"/><path d="M10 5.2 L14 5.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="18.5" r="1" fill="currentColor"/></symbol>
+  </defs>
+</svg>
+
+<!-- =========================================================
+     HEADER
+     ========================================================= -->
+<header class="sticky top-0 z-30 border-b border-slate-200/70 bg-[#EEEEE6]/85 backdrop-blur">
+  <div class="mx-auto flex max-w-[1280px] items-center gap-6 px-8 py-3.5">
+    <div class="flex items-center gap-2.5">
+      <div class="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 shadow-[0_8px_20px_-6px_rgba(37,99,235,0.45)]">
+        <svg width="18" height="18" class="text-white"><use href="#i-check"/></svg>
+      </div>
+      <div class="leading-tight">
+        <div class="text-[14px] font-bold tracking-tight">AuditMe</div>
+        <div class="mono text-[8.5px] uppercase tracking-[0.2em] text-slate-500">Design System · v2 · พ.ค. 2569</div>
+      </div>
+    </div>
+    <nav class="flex flex-1 items-center justify-center gap-5 text-[12.5px] text-slate-600">
+      <a href="#brand" class="hover:text-slate-900">Brand</a>
+      <a href="#color" class="hover:text-slate-900">Color</a>
+      <a href="#type" class="hover:text-slate-900">Type</a>
+      <a href="#tokens" class="hover:text-slate-900">Tokens</a>
+      <a href="#components" class="hover:text-slate-900">Components</a>
+      <a href="#illustration" class="hover:text-slate-900">Illustration</a>
+      <a href="#motion" class="hover:text-slate-900">Motion</a>
+      <a href="#voice" class="hover:text-slate-900">Voice</a>
+      <a href="#surfaces" class="hover:text-slate-900">Surfaces</a>
+    </nav>
+    <span class="mono inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700 ring-1 ring-emerald-200">
+      <span class="h-1.5 w-1.5 rounded-full bg-emerald-500" style="animation: pulseDot 2s ease-in-out infinite"></span>v2 live
+    </span>
+  </div>
+</header>
+
+<main class="mx-auto max-w-[1280px] px-8 py-10">
+
+<!-- =========================================================
+     COVER
+     ========================================================= -->
+<section class="grid grid-cols-12 gap-6 pt-6 pb-12">
+  <div class="col-span-12 lg:col-span-7">
+    <div class="label">00 · Overview</div>
+    <h1 class="mt-3 text-[56px] font-bold leading-[1.04] tracking-tight" style="text-wrap: balance;">
+      Design system <br/>
+      <span class="text-blue-600">ของ AuditMe</span> — สรุปทั้งหมด v2
+    </h1>
+    <p class="mt-5 max-w-[600px] text-[15px] leading-[1.7] text-slate-600" style="text-wrap: pretty;">
+      รวมทุกอย่างที่เราใช้กันมา — ตั้งแต่ Landing, Owner Console, Inspection Hub, Compliance Report,
+      จนถึง LINE Rich Menu v2 ที่เพิ่มมา. v2 เพิ่ม pastel surface + duotone illustration + motion tokens
+      เพื่อให้ feel "friendly + เข้าถึงง่าย" ขึ้นแต่ยัง professional.
+    </p>
+    <div class="mt-7 flex flex-wrap items-center gap-2">
+      <span class="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white">SaaS · ธุรกิจบริการ</span>
+      <span class="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200">ภาษาไทยเป็นหลัก</span>
+      <span class="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200">Owner-first · Staff-friendly</span>
+      <span class="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-semibold text-blue-700 ring-1 ring-blue-200">+ Pastel · Illustration (v2)</span>
+    </div>
+  </div>
+  <div class="col-span-12 lg:col-span-5">
+    <div class="hairline rounded-2xl bg-white p-5">
+      <div class="label">Design principles</div>
+      <ol class="mt-3 space-y-3">
+        <li class="flex gap-3">
+          <span class="mono mt-0.5 grid h-6 w-6 flex-none place-items-center rounded-md bg-blue-600 text-[11px] font-bold text-white">01</span>
+          <div>
+            <div class="text-[13.5px] font-semibold">Bloomberg แต่อ่านง่าย</div>
+            <div class="text-[11.5px] text-slate-500">ตัวเลข mono · ตัวอักษร Sans · density สูงแต่ไม่กดดัน</div>
+          </div>
+        </li>
+        <li class="flex gap-3">
+          <span class="mono mt-0.5 grid h-6 w-6 flex-none place-items-center rounded-md bg-blue-600 text-[11px] font-bold text-white">02</span>
+          <div>
+            <div class="text-[13.5px] font-semibold">สีบอกความหมาย ไม่ใช่ตกแต่ง</div>
+            <div class="text-[11.5px] text-slate-500">Blue=ปฐมภูมิ · Rose=ด่วน · Emerald=ผ่าน · Amber=รอ · Violet=AI</div>
+          </div>
+        </li>
+        <li class="flex gap-3">
+          <span class="mono mt-0.5 grid h-6 w-6 flex-none place-items-center rounded-md bg-blue-600 text-[11px] font-bold text-white">03</span>
+          <div>
+            <div class="text-[13.5px] font-semibold">การ์ด = หน่วยข้อมูล</div>
+            <div class="text-[11.5px] text-slate-500">rounded-2xl, white, hairline + soft shadow ทุกหน้า</div>
+          </div>
+        </li>
+        <li class="flex gap-3">
+          <span class="mono mt-0.5 grid h-6 w-6 flex-none place-items-center rounded-md bg-blue-600 text-[11px] font-bold text-white">04</span>
+          <div>
+            <div class="text-[13.5px] font-semibold">ภาษาคนทำงาน</div>
+            <div class="text-[11.5px] text-slate-500">"พี่นก" "ห้อง 305" "9:42" — copy ตรง ไม่ใช้คำเทคนิค</div>
+          </div>
+        </li>
+        <li class="flex gap-3">
+          <span class="mono mt-0.5 grid h-6 w-6 flex-none place-items-center rounded-md bg-rose-500 text-[11px] font-bold text-white">05</span>
+          <div>
+            <div class="text-[13.5px] font-semibold">มี motion เบาๆ ให้รู้สึกมีชีวิต <span class="mono text-[9px] text-rose-600 ml-1">new</span></div>
+            <div class="text-[11.5px] text-slate-500">float, bob, sparkle, shine — เฉพาะที่ตั้งใจชี้</div>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+
+<!-- =========================================================
+     BRAND
+     ========================================================= -->
+<section id="brand" class="border-t border-slate-200/70 pt-10 pb-14">
+  <div class="grid grid-cols-12 gap-6">
+    <div class="col-span-12 lg:col-span-3">
+      <div class="label">01 · Brand</div>
+      <h2 class="mt-2 text-[28px] font-bold tracking-tight">โลโก้ & มาร์ค</h2>
+      <p class="mt-2 text-[12.5px] leading-[1.6] text-slate-500">
+        เครื่องหมาย ✓ ในกล่องน้ำเงินไล่เฉด — สื่อ "ตรวจผ่าน" ตรงๆ.
+        ใช้ 28–48px ในแอป · 56–96px ในหน้า marketing.
+      </p>
+    </div>
+    <div class="col-span-12 lg:col-span-9 grid grid-cols-4 gap-3">
+      <div class="hairline grid place-items-center rounded-2xl bg-white p-7">
+        <div class="grid h-20 w-20 place-items-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 shadow-[0_18px_40px_-12px_rgba(37,99,235,0.55)]">
+          <svg width="40" height="40" class="text-white"><use href="#i-check"/></svg>
+        </div>
+      </div>
+      <div class="hairline rounded-2xl bg-[#FAFAF7] p-7 grid place-items-center">
+        <div class="flex items-center gap-3">
+          <div class="grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-700">
+            <svg width="22" height="22" class="text-white"><use href="#i-check"/></svg>
+          </div>
+          <div class="leading-tight">
+            <div class="text-[22px] font-bold tracking-tight">AuditMe</div>
+            <div class="text-[10.5px] text-slate-500">SOP · Checklist · KPI</div>
+          </div>
+        </div>
+      </div>
+      <div class="grid place-items-center rounded-2xl p-7 text-white" style="background: radial-gradient(ellipse at top right, #1E3A8A 0%, #0F172A 70%);">
+        <div class="grid h-20 w-20 place-items-center rounded-2xl bg-white/10 ring-1 ring-white/20 backdrop-blur">
+          <svg width="36" height="36" class="text-white"><use href="#i-check"/></svg>
+        </div>
+      </div>
+      <div class="rounded-2xl p-7 grid place-items-center bg-p-butter">
+        <div class="grid h-20 w-20 place-items-center rounded-2xl bg-white shadow-lg">
+          <svg width="36" height="36" class="text-blue-600"><use href="#i-check"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- =========================================================
+     COLOR
+     ========================================================= -->
+<section id="color" class="border-t border-slate-200/70 pt-10 pb-14">
+  <div class="grid grid-cols-12 gap-6">
+    <div class="col-span-12 lg:col-span-3">
+      <div class="label">02 · Color</div>
+      <h2 class="mt-2 text-[28px] font-bold tracking-tight">พาเลทเชิงความหมาย</h2>
+      <p class="mt-2 text-[12.5px] leading-[1.6] text-slate-500">
+        4 semantic + 1 primary + neutrals slate. <br/>
+        <span class="text-blue-700 font-semibold">v2 เพิ่ม pastel surfaces 6 สี</span> สำหรับ rich menu / card background.
+      </p>
+    </div>
+    <div class="col-span-12 lg:col-span-9 space-y-7">
+
+      <!-- canvas surfaces -->
+      <div>
+        <div class="label mb-3">Canvas surfaces</div>
+        <div class="grid grid-cols-4 gap-3">
+          <div class="hairline rounded-xl overflow-hidden bg-white">
+            <div class="h-16" style="background:#EEEEE6"></div>
+            <div class="px-3 py-2 text-[11.5px]"><div class="font-semibold">App canvas</div><div class="mono text-slate-500">#EEEEE6</div></div>
+          </div>
+          <div class="hairline rounded-xl overflow-hidden bg-white">
+            <div class="h-16" style="background:#FAFAF7"></div>
+            <div class="px-3 py-2 text-[11.5px]"><div class="font-semibold">Paper</div><div class="mono text-slate-500">#FAFAF7</div></div>
+          </div>
+          <div class="hairline rounded-xl overflow-hidden bg-white">
+            <div class="h-16" style="background:#FFFFFF; border-bottom: 1px solid rgba(15,23,42,0.08);"></div>
+            <div class="px-3 py-2 text-[11.5px]"><div class="font-semibold">Card</div><div class="mono text-slate-500">#FFFFFF</div></div>
+          </div>
+          <div class="hairline rounded-xl overflow-hidden bg-white">
+            <div class="h-16" style="background: radial-gradient(ellipse at top right,#1E3A8A 0%,#0F172A 70%);"></div>
+            <div class="px-3 py-2 text-[11.5px]"><div class="font-semibold">Hero / AI dark</div><div class="mono text-slate-500">#1E3A8A → #0F172A</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- brand blue scale -->
+      <div>
+        <div class="label mb-3">Brand · Blue</div>
+        <div class="hairline overflow-hidden rounded-2xl bg-white">
+          <div class="grid grid-cols-7 text-white text-[10.5px]">
+            <div class="p-3" style="background:#EFF6FF;color:#1E40AF;"><div class="font-semibold">50</div><div class="mono opacity-80">#EFF6FF</div></div>
+            <div class="p-3" style="background:#DBEAFE;color:#1E40AF;"><div class="font-semibold">100</div><div class="mono opacity-80">#DBEAFE</div></div>
+            <div class="p-3" style="background:#93C5FD;color:#1E3A8A;"><div class="font-semibold">300</div><div class="mono opacity-80">#93C5FD</div></div>
+            <div class="p-3" style="background:#3B82F6;"><div class="font-semibold">500</div><div class="mono opacity-80">#3B82F6</div></div>
+            <div class="p-3 ring-2 ring-inset ring-white/30" style="background:#2563EB;"><div class="font-semibold">600 · Primary</div><div class="mono opacity-80">#2563EB</div></div>
+            <div class="p-3" style="background:#1D4ED8;"><div class="font-semibold">700</div><div class="mono opacity-80">#1D4ED8</div></div>
+            <div class="p-3" style="background:#1E3A8A;"><div class="font-semibold">900</div><div class="mono opacity-80">#1E3A8A</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- semantic -->
+      <div>
+        <div class="label mb-3">Semantic · บอกสถานะ</div>
+        <div class="grid grid-cols-4 gap-3">
+          <div class="hairline rounded-xl overflow-hidden bg-white">
+            <div class="flex h-16">
+              <div class="flex-1 grid place-items-center text-[11px] font-semibold" style="background:#E5F1EA;color:#14532D;">soft</div>
+              <div class="flex-1 grid place-items-center text-[11px] font-semibold text-white" style="background:#1F8A5B;">solid</div>
+            </div>
+            <div class="px-3 py-2 text-[11.5px]"><div class="font-semibold text-emerald-700">Emerald · ผ่าน / ครบ</div><div class="mono text-slate-500">E5F1EA · 1F8A5B</div></div>
+          </div>
+          <div class="hairline rounded-xl overflow-hidden bg-white">
+            <div class="flex h-16">
+              <div class="flex-1 grid place-items-center text-[11px] font-semibold" style="background:#FEF1DA;color:#7A3F00;">soft</div>
+              <div class="flex-1 grid place-items-center text-[11px] font-semibold text-white" style="background:#D97706;">solid</div>
+            </div>
+            <div class="px-3 py-2 text-[11.5px]"><div class="font-semibold text-amber-700">Amber · บางส่วน / รอ</div><div class="mono text-slate-500">FEF1DA · D97706</div></div>
+          </div>
+          <div class="hairline rounded-xl overflow-hidden bg-white">
+            <div class="flex h-16">
+              <div class="flex-1 grid place-items-center text-[11px] font-semibold" style="background:#FCE5E5;color:#7F1D1D;">soft</div>
+              <div class="flex-1 grid place-items-center text-[11px] font-semibold text-white" style="background:#B91C1C;">solid</div>
+            </div>
+            <div class="px-3 py-2 text-[11.5px]"><div class="font-semibold text-rose-700">Rose · ด่วน / ขาด</div><div class="mono text-slate-500">FCE5E5 · B91C1C</div></div>
+          </div>
+          <div class="hairline rounded-xl overflow-hidden bg-white">
+            <div class="flex h-16">
+              <div class="flex-1 grid place-items-center text-[11px] font-semibold" style="background:#EEE9FE;color:#4C1D95;">soft</div>
+              <div class="flex-1 grid place-items-center text-[11px] font-semibold text-white" style="background:#7C3AED;">solid</div>
+            </div>
+            <div class="px-3 py-2 text-[11.5px]"><div class="font-semibold text-violet-700">Violet · AI / กำลังทำ</div><div class="mono text-slate-500">EEE9FE · 7C3AED</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- pastel new -->
+      <div>
+        <div class="flex items-baseline gap-3 mb-3">
+          <div class="label">Pastel surfaces</div>
+          <span class="mono text-[9.5px] uppercase tracking-wider text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded ring-1 ring-blue-200">new in v2</span>
+          <span class="text-[11px] text-slate-500">— ใช้สำหรับ Rich Menu, friendly cards, illustration backgrounds</span>
+        </div>
+        <div class="grid grid-cols-6 gap-3">
+          <div class="rounded-xl overflow-hidden hairline">
+            <div class="h-16 bg-p-sky"></div>
+            <div class="px-3 py-2 text-[11px]"><div class="font-semibold">Sky</div><div class="mono text-slate-500">#DDEBFF</div><div class="text-[10px] text-slate-500 mt-0.5">primary · ภาพรวม</div></div>
+          </div>
+          <div class="rounded-xl overflow-hidden hairline">
+            <div class="h-16 bg-p-mint"></div>
+            <div class="px-3 py-2 text-[11px]"><div class="font-semibold">Mint</div><div class="mono text-slate-500">#DFF5E8</div><div class="text-[10px] text-slate-500 mt-0.5">ผ่าน · score</div></div>
+          </div>
+          <div class="rounded-xl overflow-hidden hairline">
+            <div class="h-16 bg-p-butter"></div>
+            <div class="px-3 py-2 text-[11px]"><div class="font-semibold">Butter</div><div class="mono text-slate-500">#FFF1CF</div><div class="text-[10px] text-slate-500 mt-0.5">ราคา · รอ</div></div>
+          </div>
+          <div class="rounded-xl overflow-hidden hairline">
+            <div class="h-16 bg-p-blush"></div>
+            <div class="px-3 py-2 text-[11px]"><div class="font-semibold">Blush</div><div class="mono text-slate-500">#FFE0E1</div><div class="text-[10px] text-slate-500 mt-0.5">ด่วน · แจ้ง</div></div>
+          </div>
+          <div class="rounded-xl overflow-hidden hairline">
+            <div class="h-16 bg-p-lav"></div>
+            <div class="px-3 py-2 text-[11px]"><div class="font-semibold">Lavender</div><div class="mono text-slate-500">#ECE7FE</div><div class="text-[10px] text-slate-500 mt-0.5">ฟีเจอร์ · AI</div></div>
+          </div>
+          <div class="rounded-xl overflow-hidden hairline">
+            <div class="h-16 bg-p-cream"></div>
+            <div class="px-3 py-2 text-[11px]"><div class="font-semibold">Cream</div><div class="mono text-slate-500">#FAF6EC</div><div class="text-[10px] text-slate-500 mt-0.5">neutral · FAQ</div></div>
+          </div>
+        </div>
+        <div class="mt-3 hairline rounded-xl bg-amber-50/40 p-3 text-[11.5px] text-amber-900 ring-1 ring-amber-100">
+          <b>กฎ:</b> pastel ใช้เป็น <i>surface</i> ของ card หรือ cell · <b>ห้ามใช้บนตัวอักษร</b> และ <b>ห้ามใช้คู่กับ semantic soft</b> ในการ์ดเดียว
+        </div>
+      </div>
+
+      <!-- slate -->
+      <div>
+        <div class="label mb-3">Neutrals · Slate</div>
+        <div class="hairline overflow-hidden rounded-2xl bg-white">
+          <div class="grid grid-cols-9 text-[10.5px]">
+            <div class="p-3" style="background:#F8FAFC;color:#0F172A;"><div class="font-semibold">50</div><div class="mono opacity-70">F8FAFC</div></div>
+            <div class="p-3" style="background:#F1F5F9;color:#0F172A;"><div class="font-semibold">100</div><div class="mono opacity-70">F1F5F9</div></div>
+            <div class="p-3" style="background:#E2E8F0;color:#0F172A;"><div class="font-semibold">200</div><div class="mono opacity-70">E2E8F0</div></div>
+            <div class="p-3" style="background:#CBD5E1;color:#0F172A;"><div class="font-semibold">300</div><div class="mono opacity-70">CBD5E1</div></div>
+            <div class="p-3 text-white" style="background:#94A3B8;"><div class="font-semibold">400</div><div class="mono opacity-80">94A3B8</div></div>
+            <div class="p-3 text-white" style="background:#64748B;"><div class="font-semibold">500</div><div class="mono opacity-80">64748B</div></div>
+            <div class="p-3 text-white" style="background:#475569;"><div class="font-semibold">600</div><div class="mono opacity-80">475569</div></div>
+            <div class="p-3 text-white" style="background:#334155;"><div class="font-semibold">700</div><div class="mono opacity-80">334155</div></div>
+            <div class="p-3 text-white" style="background:#0F172A;"><div class="font-semibold">900 · Ink</div><div class="mono opacity-80">0F172A</div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- =========================================================
+     TYPE
+     ========================================================= -->
+<section id="type" class="border-t border-slate-200/70 pt-10 pb-14">
+  <div class="grid grid-cols-12 gap-6">
+    <div class="col-span-12 lg:col-span-3">
+      <div class="label">03 · Type</div>
+      <h2 class="mt-2 text-[28px] font-bold tracking-tight">IBM Plex Trio</h2>
+      <p class="mt-2 text-[12.5px] leading-[1.6] text-slate-500">
+        Sans Thai สำหรับเนื้อหา · Sans (Latin) สำหรับ tail · Mono สำหรับตัวเลข, รหัส, label
+      </p>
+    </div>
+    <div class="col-span-12 lg:col-span-9 space-y-4">
+      <div class="hairline rounded-2xl bg-white p-6">
+        <div class="flex items-baseline justify-between">
+          <div class="label">Display · IBM Plex Sans Thai</div>
+          <div class="mono text-[11px] text-slate-500">weight 700 · tracking-tight</div>
+        </div>
+        <div class="mt-3 text-[68px] font-bold leading-[1.05] tracking-tight" style="text-wrap: balance;">
+          SOP ออนไลน์<br/>
+          <span class="text-blue-600">ที่ทุกธุรกิจบริการควรมี</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-12 gap-4">
+        <div class="hairline col-span-12 lg:col-span-7 rounded-2xl bg-white p-6">
+          <div class="label mb-4">Type scale</div>
+          <div class="space-y-3">
+            <div class="flex items-baseline justify-between border-b border-slate-100 pb-2"><span class="text-[56px] font-bold tracking-tight leading-none">Aa</span><span class="mono text-[11px] text-slate-500">Hero · 56–76 / 700</span></div>
+            <div class="flex items-baseline justify-between border-b border-slate-100 pb-2"><span class="text-[28px] font-bold tracking-tight">หัวข้อหน้า</span><span class="mono text-[11px] text-slate-500">H1 · 28 / 700</span></div>
+            <div class="flex items-baseline justify-between border-b border-slate-100 pb-2"><span class="text-[20px] font-bold tracking-tight">หัวข้อรอง</span><span class="mono text-[11px] text-slate-500">H2 · 20 / 700</span></div>
+            <div class="flex items-baseline justify-between border-b border-slate-100 pb-2"><span class="text-[18px] font-bold tracking-tight">การ์ดหัวข้อ</span><span class="mono text-[11px] text-slate-500">H3 · 18 / 700</span></div>
+            <div class="flex items-baseline justify-between border-b border-slate-100 pb-2"><span class="text-[14px] font-semibold">เมนู / ปุ่ม</span><span class="mono text-[11px] text-slate-500">UI · 14 / 600</span></div>
+            <div class="flex items-baseline justify-between border-b border-slate-100 pb-2"><span class="text-[12.5px] text-slate-700">เนื้อหาตาราง รายการ</span><span class="mono text-[11px] text-slate-500">Body · 12.5 / 400</span></div>
+            <div class="flex items-baseline justify-between border-b border-slate-100 pb-2"><span class="text-[10.5px] text-slate-500">รายละเอียด สถานะรอง</span><span class="mono text-[11px] text-slate-500">Caption · 10.5 / 400</span></div>
+            <div class="flex items-baseline justify-between"><span class="label">SECTION LABEL</span><span class="mono text-[11px] text-slate-500">Label · 10 mono / 600 · 0.18em</span></div>
+          </div>
+        </div>
+
+        <div class="hairline col-span-12 lg:col-span-5 rounded-2xl bg-white p-6">
+          <div class="label mb-4">Mono · ตัวเลขเท่านั้น</div>
+          <div class="mono text-[44px] font-bold leading-none tnum">87</div>
+          <div class="mt-1 text-[11px] text-slate-500">Health Score</div>
+          <div class="mt-4 grid grid-cols-3 gap-2 border-t border-slate-100 pt-4">
+            <div><div class="mono text-[20px] font-bold tnum">94<span class="text-[11px] font-normal text-slate-500">%</span></div><div class="mono text-[10px] uppercase tracking-wider text-slate-400">SOP</div></div>
+            <div><div class="mono text-[20px] font-bold tnum">88<span class="text-[11px] font-normal text-slate-500">%</span></div><div class="mono text-[10px] uppercase tracking-wider text-slate-400">ตรวจ</div></div>
+            <div><div class="mono text-[20px] font-bold tnum">82<span class="text-[11px] font-normal text-slate-500">%</span></div><div class="mono text-[10px] uppercase tracking-wider text-slate-400">KPI</div></div>
+          </div>
+          <div class="mt-4 flex items-center gap-3 border-t border-slate-100 pt-3 text-[11px]">
+            <span class="mono inline-flex items-center gap-1 font-bold text-emerald-600">▲ 5.2</span>
+            <span class="mono inline-flex items-center gap-1 font-bold text-rose-600">▼ 1.8</span>
+            <span class="mono inline-flex items-center gap-1 font-bold text-slate-500">— 0.0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- =========================================================
+     TOKENS — spacing, radius, shadow
+     ========================================================= -->
+<section id="tokens" class="border-t border-slate-200/70 pt-10 pb-14">
+  <div class="grid grid-cols-12 gap-6">
+    <div class="col-span-12 lg:col-span-3">
+      <div class="label">04 · Tokens</div>
+      <h2 class="mt-2 text-[28px] font-bold tracking-tight">Spacing · Radius · Shadow</h2>
+      <p class="mt-2 text-[12.5px] leading-[1.6] text-slate-500">
+        ใช้ Tailwind scale ตรงๆ · radius เน้น <span class="mono text-slate-700">2xl (16)</span> · shadow แบบ soft + colored glow
+      </p>
+    </div>
+    <div class="col-span-12 lg:col-span-9 grid grid-cols-3 gap-3">
+
+      <div class="hairline rounded-2xl bg-white p-5">
+        <div class="label mb-3">Radius</div>
+        <div class="space-y-2">
+          <div class="flex items-center gap-3"><div class="h-8 w-12 bg-slate-200" style="border-radius:4px"></div><span class="mono text-[11px]">sm · 4</span></div>
+          <div class="flex items-center gap-3"><div class="h-8 w-12 bg-slate-200" style="border-radius:8px"></div><span class="mono text-[11px]">lg · 8</span></div>
+          <div class="flex items-center gap-3"><div class="h-8 w-12 bg-slate-200" style="border-radius:12px"></div><span class="mono text-[11px]">xl · 12</span></div>
+          <div class="flex items-center gap-3"><div class="h-8 w-12 bg-slate-200" style="border-radius:16px"></div><span class="mono text-[11px]">2xl · 16 ★ default</span></div>
+          <div class="flex items-center gap-3"><div class="h-8 w-12 bg-slate-200" style="border-radius:999px"></div><span class="mono text-[11px]">full · pill</span></div>
+        </div>
+      </div>
+
+      <div class="hairline rounded-2xl bg-white p-5">
+        <div class="label mb-3">Spacing</div>
+        <div class="space-y-2 text-[11.5px]">
+          <div class="flex items-center justify-between"><span>Card padding</span><span class="mono text-slate-500">p-5 · p-6</span></div>
+          <div class="flex items-center justify-between"><span>Card gap</span><span class="mono text-slate-500">gap-3 · gap-4</span></div>
+          <div class="flex items-center justify-between"><span>Section gutter</span><span class="mono text-slate-500">px-7 · px-8</span></div>
+          <div class="flex items-center justify-between"><span>Section vertical</span><span class="mono text-slate-500">py-10 · py-14</span></div>
+          <div class="flex items-center justify-between"><span>Tile inner</span><span class="mono text-slate-500">p-4</span></div>
+          <div class="flex items-center justify-between"><span>Inline gap</span><span class="mono text-slate-500">gap-1.5 · gap-2</span></div>
+        </div>
+      </div>
+
+      <div class="hairline rounded-2xl bg-white p-5">
+        <div class="label mb-3">Shadow</div>
+        <div class="space-y-3">
+          <div class="rounded-lg bg-white p-2.5 text-[11px]" style="box-shadow: 0 1px 0 rgba(15,23,42,0.04);"><b>flat</b> · 1px ground</div>
+          <div class="rounded-lg bg-white p-2.5 text-[11px]" style="box-shadow: 0 4px 12px -4px rgba(15,23,42,0.15);"><b>card</b> · 4 / 12</div>
+          <div class="rounded-lg bg-white p-2.5 text-[11px]" style="box-shadow: 0 18px 40px -22px rgba(15,23,42,0.30);"><b>lift</b> · hover</div>
+          <div class="rounded-lg bg-blue-600 p-2.5 text-[11px] text-white" style="box-shadow: 0 8px 20px -6px rgba(37,99,235,0.5);"><b>brand glow</b> · primary CTA</div>
+        </div>
+      </div>
+
+      <!-- divider -->
+      <div class="col-span-3 mt-2 hairline rounded-2xl bg-white p-5">
+        <div class="label mb-3">Page layout · default</div>
+        <div class="rounded-lg border border-slate-200 p-3 grid-bg">
+          <div class="flex gap-1">
+            <div class="h-32 w-12 rounded bg-slate-100 grid place-items-center text-[9px] text-slate-500">sidebar<br/>224</div>
+            <div class="flex flex-1 flex-col gap-1">
+              <div class="h-5 rounded bg-slate-100 grid place-items-center text-[9px] text-slate-500">topbar 56</div>
+              <div class="grid grid-cols-4 gap-1"><div class="h-8 rounded bg-blue-100"></div><div class="h-8 rounded bg-rose-100"></div><div class="h-8 rounded bg-emerald-100"></div><div class="h-8 rounded bg-violet-100"></div></div>
+              <div class="grid grid-cols-12 gap-1"><div class="col-span-7 h-12 rounded bg-slate-100 grid place-items-center text-[9px] text-slate-500">main 7</div><div class="col-span-5 h-12 rounded bg-slate-100 grid place-items-center text-[9px] text-slate-500">aside 5</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="mt-3 grid grid-cols-2 gap-3 text-[11.5px] text-slate-600">
+          <div><b>Sidebar 224px</b> · sticky · white</div>
+          <div><b>Topbar 56px</b> · breadcrumb + search + bell + CTA</div>
+          <div><b>KPI strip 4 cols</b> · ก่อนเสมอ</div>
+          <div><b>Main 12-col grid</b> · 7+5 หรือ 8+4</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- =========================================================
+     COMPONENTS
+     ========================================================= -->
+<section id="components" class="border-t border-slate-200/70 pt-10 pb-14">
+  <div class="grid grid-cols-12 gap-6">
+    <div class="col-span-12 lg:col-span-3">
+      <div class="label">05 · Components</div>
+      <h2 class="mt-2 text-[28px] font-bold tracking-tight">ชิ้นส่วนที่ใช้ซ้ำ</h2>
+      <p class="mt-2 text-[12.5px] leading-[1.6] text-slate-500">
+        ทุก component นี้มีอยู่ในไฟล์ <span class="mono text-slate-700">dash-widgets.jsx</span> หรือใช้
+        Tailwind class ตรงๆ. v2 เพิ่ม <b>Rich Menu cell</b>, <b>Pastel hero banner</b>, <b>Character module</b>.
+      </p>
+    </div>
+
+    <div class="col-span-12 lg:col-span-9 space-y-4">
+
+      <!-- buttons -->
+      <div class="hairline rounded-2xl bg-white p-6">
+        <div class="label mb-4">Buttons</div>
+        <div class="flex flex-wrap items-center gap-3">
+          <button class="rounded-full bg-blue-600 px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)] hover:bg-blue-700">เริ่มใช้ฟรี →</button>
+          <button class="rounded-full bg-slate-900 px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-slate-800">+ สร้างใหม่</button>
+          <button class="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-[13px] font-semibold text-slate-700 hover:border-slate-300">ดู Demo</button>
+          <button class="rounded-lg bg-rose-600 px-3.5 py-2 text-[12px] font-bold text-white hover:bg-rose-700">เริ่มตรวจ ด่วน</button>
+          <button class="rounded-lg bg-slate-900 px-3.5 py-2 text-[12px] font-bold text-white">ทำต่อ →</button>
+          <button class="rounded-lg bg-white px-3.5 py-2 text-[12px] font-semibold text-slate-700 ring-1 ring-slate-200">ดูผล</button>
+          <button class="rounded-md border border-dashed border-slate-300 px-3 py-1.5 text-[11.5px] font-medium text-slate-500 hover:border-slate-400 hover:text-slate-700">+ เพิ่มเรื่องซ่อม</button>
+        </div>
+        <div class="mt-3 grid grid-cols-2 gap-3 text-[11px] text-slate-500">
+          <div><span class="mono font-bold text-slate-700">Primary:</span> blue · pill · soft glow</div>
+          <div><span class="mono font-bold text-slate-700">Critical:</span> rose · lg radius · no glow</div>
+        </div>
+      </div>
+
+      <!-- pills -->
+      <div class="hairline rounded-2xl bg-white p-6">
+        <div class="label mb-4">Pills · status</div>
+        <div class="space-y-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-700 ring-1 ring-slate-200">slate</span>
+            <span class="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700 ring-1 ring-blue-200">รอตรวจ</span>
+            <span class="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 ring-1 ring-emerald-200">✓ ผ่าน</span>
+            <span class="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700 ring-1 ring-rose-200">ขาด</span>
+            <span class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 ring-1 ring-amber-300">บางส่วน</span>
+            <span class="inline-flex items-center gap-1 rounded-md bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 ring-1 ring-violet-200">● กำลังทำ</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="inline-flex items-center gap-1 rounded-md bg-slate-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">slate</span>
+            <span class="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">primary</span>
+            <span class="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">ครบดีมาก</span>
+            <span class="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white"><span class="h-1.5 w-1.5 rounded-full bg-white" style="animation:pulseDot 1.6s ease-in-out infinite"></span>ค้าง</span>
+            <span class="inline-flex items-center gap-1 rounded-md bg-amber-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">สูง</span>
+            <span class="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">นัดเข้า</span>
+          </div>
+          <div class="text-[11px] text-slate-500">Soft = สถานะปกติในตาราง · Solid = ต้องสนใจทันที</div>
+        </div>
+      </div>
+
+      <!-- KPI / issue / gauge -->
+      <div class="grid grid-cols-12 gap-4">
+        <div class="col-span-12 lg:col-span-4">
+          <div class="hairline rounded-2xl bg-white p-5">
+            <div class="label mb-3">KPI tile</div>
+            <div class="group relative overflow-hidden rounded-2xl border border-slate-200/70 bg-white p-4">
+              <div class="flex items-center justify-between">
+                <span class="grid h-8 w-8 place-items-center rounded-md bg-blue-600 text-white">
+                  <svg width="14" height="14"><use href="#i-check"/></svg>
+                </span>
+                <span class="mono inline-flex items-center gap-0.5 text-[11.5px] font-bold text-emerald-600">▲3</span>
+              </div>
+              <div class="mt-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">ตรวจวันนี้</div>
+              <div class="mt-0.5 flex items-baseline gap-1.5">
+                <span class="mono text-[34px] font-bold leading-none">18</span>
+                <span class="text-[11px] text-slate-500">/ 22 ห้อง</span>
+              </div>
+              <div class="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 opacity-[0.04]"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-span-12 lg:col-span-4">
+          <div class="hairline rounded-2xl bg-white p-5">
+            <div class="label mb-3">Issue row</div>
+            <div class="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+              <div class="flex items-center gap-3">
+                <span class="grid h-9 w-9 flex-none place-items-center rounded-lg bg-slate-50 text-[16px] ring-1 ring-slate-100">💡</span>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-1.5">
+                    <span class="mono rounded-sm bg-rose-600 px-1.5 py-0.5 text-[9px] font-bold text-white">305</span>
+                    <span class="text-[12px] font-semibold text-slate-900 truncate">หลอดไฟข้างเตียงไม่ติด</span>
+                  </div>
+                  <div class="mt-0.5 truncate text-[10.5px] text-slate-500">พี่นก · แม่บ้าน · 9:42</div>
+                </div>
+                <span class="mono text-[9.5px] font-bold uppercase tracking-[0.14em] text-rose-600">● ด่วน</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-span-12 lg:col-span-4">
+          <div class="hairline rounded-2xl bg-white p-5">
+            <div class="label mb-3">Health gauge</div>
+            <div class="flex items-center justify-center py-2">
+              <div class="relative grid place-items-center" style="width:140px;height:140px;">
+                <svg width="140" height="140" class="-rotate-90">
+                  <defs>
+                    <linearGradient id="dsg" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stop-color="#3B82F6"/><stop offset="60%" stop-color="#2563EB"/><stop offset="100%" stop-color="#1E3A8A"/>
+                    </linearGradient>
+                  </defs>
+                  <circle cx="70" cy="70" r="58" stroke="#EEF2F7" stroke-width="14" fill="none"/>
+                  <circle cx="70" cy="70" r="58" stroke="url(#dsg)" stroke-width="14" fill="none" stroke-linecap="round" stroke-dasharray="365" stroke-dashoffset="47"/>
+                </svg>
+                <div class="absolute inset-0 grid place-items-center text-center">
+                  <div>
+                    <div class="text-[9px] uppercase tracking-[0.2em] text-slate-400">Health</div>
+                    <div class="mono text-[40px] font-bold leading-none text-blue-700">87</div>
+                    <div class="text-[10px] text-slate-500">จาก 100</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI insight -->
+      <div class="overflow-hidden rounded-2xl border border-slate-200/70 p-6 text-white" style="background: radial-gradient(ellipse at top right, #1E3A8A 0%, #0F172A 70%);">
+        <div class="label mb-4" style="color:#94A3B8">AI insight card · ใช้ทุกที่ที่ AI แนะนำ</div>
+        <div class="flex items-center gap-2">
+          <span class="grid h-7 w-7 place-items-center rounded-lg bg-white/10 ring-1 ring-white/20 backdrop-blur">
+            <svg width="14" height="14"><use href="#i-spark"/></svg>
+          </span>
+          <div>
+            <div class="text-[12px] font-semibold">AuditMe AI · คำแนะนำ</div>
+            <div class="text-[10px] text-slate-400">วิเคราะห์จาก 14 วันล่าสุด</div>
+          </div>
+          <span class="mono ml-auto rounded-sm bg-emerald-500 px-2 py-0.5 text-[9.5px] font-bold tracking-wider text-white">CONF 92%</span>
+        </div>
+        <h4 class="mt-3 text-[16px] font-bold leading-snug">"ห้องชั้น 2 มีปัญหาสะสมสูงกว่าปกติ"</h4>
+        <p class="mt-1.5 text-[11.5px] leading-relaxed text-slate-300">ใน 14 วันที่ผ่านมา ห้องชั้น 2 ถูก flag รวม 11 ครั้ง — สูงกว่าค่าเฉลี่ยร้าน 2.3 เท่า</p>
+        <div class="mt-3 flex gap-2">
+          <button class="flex-1 rounded-lg bg-white px-3 py-2 text-[11.5px] font-bold text-blue-700">รับแนวทาง →</button>
+          <button class="rounded-lg border border-white/20 px-3 py-2 text-[11.5px] font-medium text-white">ภายหลัง</button>
+        </div>
+      </div>
+
+      <!-- v2 NEW: Pastel hero banner + character -->
+      <div class="hairline rounded-2xl bg-white p-6">
+        <div class="flex items-baseline gap-3 mb-4">
+          <div class="label">Hero banner + character</div>
+          <span class="mono text-[9.5px] uppercase tracking-wider text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded ring-1 ring-blue-200">new v2</span>
+        </div>
+        <div class="relative overflow-hidden rounded-2xl p-5 text-white" style="background: linear-gradient(115deg, #F59E0B 0%, #F97316 50%, #EA580C 100%);">
+          <div class="absolute -top-10 -left-10 h-32 w-32 rounded-full blur-2xl opacity-50" style="background:#FBBF24"></div>
+          <div class="absolute -bottom-12 right-4 h-32 w-32 rounded-full blur-2xl opacity-40" style="background:#FB923C"></div>
+          <div class="relative z-10 flex items-center gap-4">
+            <div class="flex-1">
+              <div class="flex items-center gap-2 mb-1.5">
+                <div class="anim-wiggle text-yellow-200"><svg width="16"><use href="#i-spark"/></svg></div>
+                <span class="mono text-[10px] uppercase tracking-[0.2em] text-white/85 font-bold">ส่งเช้านี้</span>
+              </div>
+              <div class="text-[22px] font-bold leading-tight">สวัสดีพี่นก ☀️ วันนี้มี <span class="text-yellow-200">7 ห้อง</span> รออยู่ครับ</div>
+              <div class="mt-1 text-[12px] text-white/85">เริ่มจากห้อง <b>305</b> · เป้าวันนี้ <b>90%</b></div>
+              <div class="mt-2 flex items-center gap-2">
+                <div class="flex-1 h-1.5 rounded-full bg-white/25 overflow-hidden">
+                  <div class="h-full rounded-full bg-white" style="width:28%"></div>
+                </div>
+                <div class="mono text-[10px] font-bold">2 / 7</div>
+              </div>
+            </div>
+            <div class="anim-bob">
+              <div class="relative">
+                <div class="h-20 w-20 rounded-full bg-white/95 ring-4 ring-white/40 grid place-items-center shadow-2xl">
+                  <div class="text-[42px] leading-none">👷‍♀️</div>
+                </div>
+                <div class="anim-sparkle absolute -top-2 -right-2 text-yellow-200"><svg width="18"><use href="#i-spark"/></svg></div>
+                <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-white rounded-full px-2 py-0.5 shadow-lg">
+                  <span class="mono text-[9px] font-bold text-orange-600 tracking-wider">พี่นก</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="absolute bottom-0 left-0 right-0 h-1 ring-strip"></div>
+        </div>
+        <div class="mt-3 text-[11.5px] text-slate-500">
+          <b>ใช้สำหรับ:</b> หน้าเริ่ม mobile app, Rich Menu banner, daily greeting card · ปรับ gradient ตาม role
+        </div>
+      </div>
+
+      <!-- v2 NEW: Rich menu cell -->
+      <div class="hairline rounded-2xl bg-white p-6">
+        <div class="flex items-baseline gap-3 mb-4">
+          <div class="label">Rich menu cell</div>
+          <span class="mono text-[9.5px] uppercase tracking-wider text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded ring-1 ring-blue-200">new v2</span>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <!-- Primary cell -->
+          <div class="relative overflow-hidden rounded-xl p-4 shine-host" style="background:linear-gradient(155deg,#DBEAFE,#BFDBFE);">
+            <div class="flex items-start justify-between">
+              <div class="illo illo-blue anim-float"><svg width="56%"><use href="#i-list"/></svg></div>
+              <span class="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2 py-0.5 text-[9px] font-bold text-white">
+                <span class="h-1.5 w-1.5 rounded-full bg-white" style="animation:pulseDot 1.6s ease-in-out infinite"></span>7 ห้อง
+              </span>
+            </div>
+            <div class="mt-6">
+              <div class="text-[16px] font-bold leading-tight">งานวันนี้</div>
+              <div class="text-[11px] text-slate-500 mt-0.5">เช็คลิสต์ · ถ่ายรูปยืนยัน</div>
+            </div>
+          </div>
+          <!-- Default cell -->
+          <div class="rounded-xl p-4 bg-p-blush">
+            <div class="flex items-start justify-between">
+              <div class="illo illo-coral anim-wiggle"><svg width="56%"><use href="#i-wrench"/></svg></div>
+              <span class="rounded-full bg-rose-600 px-2 py-0.5 text-[9px] font-bold text-white">ด่วน</span>
+            </div>
+            <div class="mt-6">
+              <div class="text-[16px] font-bold leading-tight">แจ้งซ่อม</div>
+              <div class="text-[11px] text-slate-500 mt-0.5">ถ่ายรูป + ห้อง 10 วินาที</div>
+            </div>
+          </div>
+          <!-- Dark cell -->
+          <div class="rounded-xl p-4 text-white" style="background: radial-gradient(ellipse at top right, #1E3A8A 0%, #0F172A 70%);">
+            <div class="illo illo-slate" style="background: rgba(255,255,255,0.18);">
+              <svg width="56%"><use href="#i-grid"/></svg>
+            </div>
+            <div class="mt-6">
+              <div class="text-[16px] font-bold leading-tight">เปิด Dashboard</div>
+              <div class="text-[11px] text-white/70 mt-0.5">ทำงานยาวบนเดสก์ท็อป</div>
+            </div>
+          </div>
+        </div>
+        <div class="mt-3 grid grid-cols-3 gap-3 text-[11px] text-slate-500">
+          <div><b class="text-blue-700">Primary</b> · sky gradient · badge + shine sweep</div>
+          <div><b class="text-rose-700">Default</b> · pastel · icon ตรง category</div>
+          <div><b class="text-slate-700">Dark</b> · cross-platform / power user</div>
+        </div>
+      </div>
+
+      <!-- table leaderboard -->
+      <div class="hairline rounded-2xl bg-white p-6">
+        <div class="label mb-3">Leaderboard / table</div>
+        <table class="w-full">
+          <thead>
+            <tr class="text-[10px] uppercase tracking-wider text-slate-400">
+              <th class="pb-2 text-left font-semibold">#</th>
+              <th class="pb-2 text-left font-semibold">พนักงาน</th>
+              <th class="pb-2 text-right font-semibold">ตรวจ</th>
+              <th class="pb-2 text-right font-semibold">ผ่าน</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="border-t border-slate-100">
+              <td class="py-2.5"><span class="mono grid h-6 w-6 place-items-center rounded-full bg-amber-100 text-[10px] font-bold text-amber-700 ring-1 ring-amber-300">1</span></td>
+              <td class="py-2.5"><div class="flex items-center gap-2"><div class="grid h-7 w-7 place-items-center rounded-full bg-orange-400 text-[11px] font-bold text-white">นก</div><div><div class="text-[12.5px] font-semibold">พี่นก</div><div class="text-[10px] text-slate-500">แม่บ้านเช้า</div></div></div></td>
+              <td class="py-2.5 text-right text-[12px] mono font-medium">142</td>
+              <td class="py-2.5 text-right"><div class="inline-flex items-center justify-end gap-2"><div class="h-1 w-14 overflow-hidden rounded-full bg-slate-100"><div class="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-600" style="width:98%"></div></div><span class="mono w-9 text-right text-[12px] font-bold">98%</span></div></td>
+            </tr>
+            <tr class="border-t border-slate-100">
+              <td class="py-2.5"><span class="mono grid h-6 w-6 place-items-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-700">2</span></td>
+              <td class="py-2.5"><div class="flex items-center gap-2"><div class="grid h-7 w-7 place-items-center rounded-full bg-violet-400 text-[11px] font-bold text-white">เท</div><div><div class="text-[12.5px] font-semibold">น้องเทค</div><div class="text-[10px] text-slate-500">เคาน์เตอร์</div></div></div></td>
+              <td class="py-2.5 text-right text-[12px] mono font-medium">118</td>
+              <td class="py-2.5 text-right"><div class="inline-flex items-center justify-end gap-2"><div class="h-1 w-14 overflow-hidden rounded-full bg-slate-100"><div class="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-600" style="width:96%"></div></div><span class="mono w-9 text-right text-[12px] font-bold">96%</span></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- =========================================================
+     ILLUSTRATION / ICONS
+     ========================================================= -->
+<section id="illustration" class="border-t border-slate-200/70 pt-10 pb-14">
+  <div class="grid grid-cols-12 gap-6">
+    <div class="col-span-12 lg:col-span-3">
+      <div class="label">06 · Illustration</div>
+      <h2 class="mt-2 text-[28px] font-bold tracking-tight">Icons & illos</h2>
+      <p class="mt-2 text-[12.5px] leading-[1.6] text-slate-500">
+        2 ระบบคู่กัน: <b>Line icons</b> สำหรับ UI ทั่วไป · <b>Duotone illos</b> ในกล่อง gradient
+        สำหรับ marketing / rich menu / hero
+      </p>
+    </div>
+    <div class="col-span-12 lg:col-span-9 space-y-4">
+
+      <!-- duotone illos -->
+      <div class="hairline rounded-2xl bg-white p-6">
+        <div class="label mb-4">Duotone illustration · 56×56 · radius 16</div>
+        <div class="grid grid-cols-8 gap-3">
+          <div class="flex flex-col items-center gap-1.5"><div class="illo illo-blue"><svg width="56%"><use href="#i-list"/></svg></div><div class="mono text-[9.5px] text-slate-500">blue</div></div>
+          <div class="flex flex-col items-center gap-1.5"><div class="illo illo-coral"><svg width="56%"><use href="#i-wrench"/></svg></div><div class="mono text-[9.5px] text-slate-500">coral</div></div>
+          <div class="flex flex-col items-center gap-1.5"><div class="illo illo-emer"><svg width="56%"><use href="#i-star"/></svg></div><div class="mono text-[9.5px] text-slate-500">emerald</div></div>
+          <div class="flex flex-col items-center gap-1.5"><div class="illo illo-amber"><svg width="56%"><use href="#i-camera"/></svg></div><div class="mono text-[9.5px] text-slate-500">amber</div></div>
+          <div class="flex flex-col items-center gap-1.5"><div class="illo illo-violet"><svg width="56%"><use href="#i-bot"/></svg></div><div class="mono text-[9.5px] text-slate-500">violet</div></div>
+          <div class="flex flex-col items-center gap-1.5"><div class="illo illo-slate"><svg width="56%"><use href="#i-app"/></svg></div><div class="mono text-[9.5px] text-slate-500">slate</div></div>
+          <div class="flex flex-col items-center gap-1.5"><div class="illo illo-blue"><svg width="56%"><use href="#i-gauge"/></svg></div><div class="mono text-[9.5px] text-slate-500">gauge</div></div>
+          <div class="flex flex-col items-center gap-1.5"><div class="illo illo-amber"><svg width="56%"><use href="#i-tag"/></svg></div><div class="mono text-[9.5px] text-slate-500">tag</div></div>
+        </div>
+        <div class="mt-3 text-[11.5px] text-slate-500"><b>Pattern:</b> gradient 155deg, light-stop → dark-stop · halo เล็กบนมุมขวาบน · stroke icon ขาวอยู่ตรงกลาง 55–60%</div>
+      </div>
+
+      <!-- line icons -->
+      <div class="hairline rounded-2xl bg-white p-6">
+        <div class="label mb-4">Line icons · stroke 2.0–2.2 · 24×24 grid · used in UI</div>
+        <div class="grid grid-cols-10 gap-3 text-slate-700">
+          <span class="grid h-9 w-9 place-items-center rounded-lg bg-slate-50 ring-1 ring-slate-100"><svg width="18" height="18"><use href="#i-check"/></svg></span>
+          <span class="grid h-9 w-9 place-items-center rounded-lg bg-slate-50 ring-1 ring-slate-100"><svg width="18" height="18"><use href="#i-search"/></svg></span>
+          <span class="grid h-9 w-9 place-items-center rounded-lg bg-slate-50 ring-1 ring-slate-100"><svg width="18" height="18"><use href="#i-bell"/></svg></span>
+          <span class="grid h-9 w-9 place-items-center rounded-lg bg-slate-50 ring-1 ring-slate-100"><svg width="18" height="18"><use href="#i-list"/></svg></span>
+          <span class="grid h-9 w-9 place-items-center rounded-lg bg-slate-50 ring-1 ring-slate-100"><svg width="18" height="18"><use href="#i-wrench"/></svg></span>
+          <span class="grid h-9 w-9 place-items-center rounded-lg bg-slate-50 ring-1 ring-slate-100"><svg width="18" height="18"><use href="#i-camera"/></svg></span>
+          <span class="grid h-9 w-9 place-items-center rounded-lg bg-slate-50 ring-1 ring-slate-100"><svg width="18" height="18"><use href="#i-gauge"/></svg></span>
+          <span class="grid h-9 w-9 place-items-center rounded-lg bg-slate-50 ring-1 ring-slate-100"><svg width="18" height="18"><use href="#i-star"/></svg></span>
+          <span class="grid h-9 w-9 place-items-center rounded-lg bg-slate-50 ring-1 ring-slate-100"><svg width="18" height="18"><use href="#i-stamp"/></svg></span>
+          <span class="grid h-9 w-9 place-items-center rounded-lg bg-slate-50 ring-1 ring-slate-100"><svg width="18" height="18"><use href="#i-grid"/></svg></span>
+        </div>
+      </div>
+
+      <!-- emoji categories -->
+      <div class="hairline rounded-2xl bg-white p-6">
+        <div class="label mb-4">Emoji · ใช้เป็น "หมวดเรื่อง" เท่านั้น</div>
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="flex items-center gap-2 rounded-lg bg-slate-50 ring-1 ring-slate-100 px-3 py-1.5"><span class="text-[18px]">💡</span><span class="text-[12px] font-semibold">ไฟ / หลอด</span></div>
+          <div class="flex items-center gap-2 rounded-lg bg-slate-50 ring-1 ring-slate-100 px-3 py-1.5"><span class="text-[18px]">🛁</span><span class="text-[12px] font-semibold">ห้องน้ำ</span></div>
+          <div class="flex items-center gap-2 rounded-lg bg-slate-50 ring-1 ring-slate-100 px-3 py-1.5"><span class="text-[18px]">🔧</span><span class="text-[12px] font-semibold">ซ่อม</span></div>
+          <div class="flex items-center gap-2 rounded-lg bg-slate-50 ring-1 ring-slate-100 px-3 py-1.5"><span class="text-[18px]">🚻</span><span class="text-[12px] font-semibold">ส่วนกลาง</span></div>
+          <div class="flex items-center gap-2 rounded-lg bg-slate-50 ring-1 ring-slate-100 px-3 py-1.5"><span class="text-[18px]">🍴</span><span class="text-[12px] font-semibold">ครัว</span></div>
+          <div class="flex items-center gap-2 rounded-lg bg-slate-50 ring-1 ring-slate-100 px-3 py-1.5"><span class="text-[18px]">☀️</span><span class="text-[12px] font-semibold">กะเช้า</span></div>
+          <div class="flex items-center gap-2 rounded-lg bg-slate-50 ring-1 ring-slate-100 px-3 py-1.5"><span class="text-[18px]">🌙</span><span class="text-[12px] font-semibold">กะดึก</span></div>
+        </div>
+        <div class="mt-3 text-[11.5px] text-slate-500"><b>กฎ:</b> ห้ามใช้ emoji แทน UI icon (✓ ❌ ⚠️) — ใช้ stroke icons แทน เพื่อ control สี/ขนาด</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- =========================================================
+     MOTION
+     ========================================================= -->
+<section id="motion" class="border-t border-slate-200/70 pt-10 pb-14">
+  <div class="grid grid-cols-12 gap-6">
+    <div class="col-span-12 lg:col-span-3">
+      <div class="label">07 · Motion</div>
+      <h2 class="mt-2 text-[28px] font-bold tracking-tight">เคลื่อนไหวเท่าที่จำเป็น</h2>
+      <p class="mt-2 text-[12.5px] leading-[1.6] text-slate-500">
+        Idle motion ใช้เฉพาะใน hero, character, illustration. การ์ดข้อมูลปกติ <b>นิ่ง</b> เพื่อให้อ่านง่าย
+      </p>
+    </div>
+    <div class="col-span-12 lg:col-span-9 grid grid-cols-3 gap-3">
+
+      <div class="hairline rounded-2xl bg-white p-5">
+        <div class="label mb-3">float</div>
+        <div class="grid place-items-center py-6">
+          <div class="illo illo-blue anim-float"><svg width="56%"><use href="#i-rocket"/></svg></div>
+        </div>
+        <div class="mono text-[10.5px] text-slate-500"><b>float-y</b> · 3.6s · ease-in-out · -6px</div>
+        <div class="text-[11px] text-slate-500 mt-1">ใช้กับ card/illustration ลอยใน banner</div>
+      </div>
+
+      <div class="hairline rounded-2xl bg-white p-5">
+        <div class="label mb-3">bob</div>
+        <div class="grid place-items-center py-6">
+          <div class="illo illo-emer anim-bob"><svg width="56%"><use href="#i-rocket"/></svg></div>
+        </div>
+        <div class="mono text-[10.5px] text-slate-500"><b>bob</b> · 3.2s · เด้ง + เอียงเล็กน้อย</div>
+        <div class="text-[11px] text-slate-500 mt-1">character / primary CTA icon</div>
+      </div>
+
+      <div class="hairline rounded-2xl bg-white p-5">
+        <div class="label mb-3">wiggle</div>
+        <div class="grid place-items-center py-6">
+          <div class="illo illo-coral anim-wiggle"><svg width="56%"><use href="#i-bell"/></svg></div>
+        </div>
+        <div class="mono text-[10.5px] text-slate-500"><b>wiggle</b> · 2.8s · ±3°</div>
+        <div class="text-[11px] text-slate-500 mt-1">urgent icon (ซ่อม, แจ้งเตือน)</div>
+      </div>
+
+      <div class="hairline rounded-2xl bg-white p-5">
+        <div class="label mb-3">sparkle</div>
+        <div class="grid place-items-center py-6">
+          <div class="anim-sparkle text-amber-500"><svg width="40"><use href="#i-spark"/></svg></div>
+        </div>
+        <div class="mono text-[10.5px] text-slate-500"><b>sparkle</b> · 2.2s · opacity + scale</div>
+        <div class="text-[11px] text-slate-500 mt-1">ดาว, ประกาย, AI badge</div>
+      </div>
+
+      <div class="hairline rounded-2xl bg-white p-5">
+        <div class="label mb-3">shine sweep</div>
+        <div class="grid place-items-center py-6">
+          <div class="relative w-full h-12 rounded-xl shine-host bg-gradient-to-r from-blue-500 to-blue-700 grid place-items-center text-white text-[12px] font-bold">เริ่มใช้ฟรี →</div>
+        </div>
+        <div class="mono text-[10.5px] text-slate-500"><b>shine</b> · 4.5s · skewX(-20°)</div>
+        <div class="text-[11px] text-slate-500 mt-1">primary CTA, premium card</div>
+      </div>
+
+      <div class="hairline rounded-2xl bg-white p-5">
+        <div class="label mb-3">pulse dot</div>
+        <div class="grid place-items-center py-6">
+          <div class="flex items-center gap-1.5">
+            <span class="h-2.5 w-2.5 rounded-full bg-rose-500" style="animation: pulseDot 1.6s ease-in-out infinite"></span>
+            <span class="mono text-[11px] font-bold text-rose-600">LIVE · 3 ค้าง</span>
+          </div>
+        </div>
+        <div class="mono text-[10.5px] text-slate-500"><b>pulseDot</b> · 1.6s · opacity + scale</div>
+        <div class="text-[11px] text-slate-500 mt-1">urgent badge, live indicator</div>
+      </div>
+
+      <div class="hairline col-span-3 rounded-2xl bg-amber-50/40 ring-1 ring-amber-100 p-5">
+        <div class="label mb-2 text-amber-900">กฎการใช้ motion</div>
+        <ol class="space-y-1.5 text-[12px] text-amber-900">
+          <li>1. <b>ห้ามใส่ motion ในตาราง/รายการข้อมูล</b> — กระพริบจะรบกวนการอ่าน</li>
+          <li>2. <b>เลือก motion 1 ประเภทต่อ surface</b> — ห้าม float+bob+sparkle+shine พร้อมกัน</li>
+          <li>3. <b>respect prefers-reduced-motion</b> — wrap ด้วย <span class="mono text-[10.5px] text-amber-700">@media (prefers-reduced-motion: no-preference)</span></li>
+          <li>4. <b>Duration ≥ 2 วินาที</b> — ห้ามวิ่งเร็วเกินจน distract</li>
+        </ol>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- =========================================================
+     VOICE
+     ========================================================= -->
+<section id="voice" class="border-t border-slate-200/70 pt-10 pb-14">
+  <div class="grid grid-cols-12 gap-6">
+    <div class="col-span-12 lg:col-span-3">
+      <div class="label">08 · Voice</div>
+      <h2 class="mt-2 text-[28px] font-bold tracking-tight">น้ำเสียง</h2>
+      <p class="mt-2 text-[12.5px] leading-[1.6] text-slate-500">ภาษาไทยคนทำงาน — ใส่ชื่อเล่น, ใส่เวลา, ตรงไปตรงมา ไม่ใช้คำเทคนิค</p>
+    </div>
+    <div class="col-span-12 lg:col-span-9 grid grid-cols-2 gap-4">
+      <div class="hairline rounded-2xl bg-white p-5">
+        <div class="label mb-3 text-emerald-600">✓ พูดแบบนี้</div>
+        <ul class="space-y-2 text-[13px] text-slate-800">
+          <li>"ตรวจห้อง 305 ผ่าน 19/22"</li>
+          <li>"พี่นก · แม่บ้าน · 9:42"</li>
+          <li>"วันนี้ ศุกร์ที่ 25 เม.ย. — มีเรื่องด่วน 2 รายการ"</li>
+          <li>"ห้องน้ำส่วนกลาง · 5 ครั้งใน 10 วันที่ขาด"</li>
+          <li>"พร้อมยกระดับร้านของคุณแล้วใช่ไหม?"</li>
+        </ul>
+      </div>
+      <div class="hairline rounded-2xl bg-white p-5">
+        <div class="label mb-3 text-rose-600">✗ ไม่ใช่แบบนี้</div>
+        <ul class="space-y-2 text-[13px] text-slate-500 line-through decoration-rose-300">
+          <li>"Audit task #2305 completed (86.4%)"</li>
+          <li>"User: Staff_042 · Role: HK"</li>
+          <li>"Critical incident detected in subsystem"</li>
+          <li>"Compliance score deviation: -0.12σ"</li>
+          <li>"Click here to optimize your workflow"</li>
+        </ul>
+      </div>
+
+      <div class="hairline col-span-2 rounded-2xl bg-white p-6">
+        <div class="label mb-3">Microcopy patterns</div>
+        <div class="grid grid-cols-3 gap-4 text-[12px]">
+          <div>
+            <div class="font-bold text-slate-800">CTA ปุ่มหลัก</div>
+            <div class="mt-1 text-slate-600">เริ่มใช้ฟรี · บรีฟทีมเช้า · ส่งรายงาน → · เริ่มตรวจ · ทำต่อ</div>
+          </div>
+          <div>
+            <div class="font-bold text-slate-800">สถานะเวลา</div>
+            <div class="mt-1 text-slate-600">เมื่อสักครู่ · 9:42 · เมื่อวาน · ค้าง 28 นาที · เกินเวลา 1:08 ชม.</div>
+          </div>
+          <div>
+            <div class="font-bold text-slate-800">Empty / สำเร็จ</div>
+            <div class="mt-1 text-slate-600">"ทำงานทั้งหมดเสร็จในวันนี้แล้ว เจอกันพรุ่งนี้ ☀️"</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- =========================================================
+     SURFACES
+     ========================================================= -->
+<section id="surfaces" class="border-t border-slate-200/70 pt-10 pb-16">
+  <div class="grid grid-cols-12 gap-6">
+    <div class="col-span-12 lg:col-span-3">
+      <div class="label">09 · Surfaces</div>
+      <h2 class="mt-2 text-[28px] font-bold tracking-tight">ใช้ระบบนี้แล้วที่ไหนบ้าง</h2>
+      <p class="mt-2 text-[12.5px] leading-[1.6] text-slate-500">
+        ทุก artifact ที่เราออกแบบมา ใช้ design system นี้ร่วมกัน. คลิกเปิดดูได้
+      </p>
+    </div>
+    <div class="col-span-12 lg:col-span-9 grid grid-cols-2 gap-3 text-[12px]">
+      <a href="Hero Redesign.html" class="hairline group flex items-center gap-3 rounded-xl bg-white px-4 py-3 hover:border-blue-300 hover:shadow-sm">
+        <div class="grid h-9 w-9 flex-none place-items-center rounded-lg bg-blue-50 ring-1 ring-blue-100">
+          <svg width="16" height="16" class="text-blue-600"><use href="#i-rocket"/></svg>
+        </div>
+        <div class="flex-1">
+          <div class="font-semibold text-slate-900">Hero Redesign</div>
+          <div class="text-[10.5px] text-slate-500">Landing scroll · animated cards · CTAs</div>
+        </div>
+        <span class="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600">→</span>
+      </a>
+      <a href="Owner Overview.html" class="hairline group flex items-center gap-3 rounded-xl bg-white px-4 py-3 hover:border-blue-300 hover:shadow-sm">
+        <div class="grid h-9 w-9 flex-none place-items-center rounded-lg bg-emerald-50 ring-1 ring-emerald-100">
+          <svg width="16" height="16" class="text-emerald-600"><use href="#i-gauge"/></svg>
+        </div>
+        <div class="flex-1">
+          <div class="font-semibold text-slate-900">Owner Overview</div>
+          <div class="text-[10.5px] text-slate-500">Dashboard · KPI strip · health score · staff</div>
+        </div>
+        <span class="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600">→</span>
+      </a>
+      <a href="Inspection Console.html" class="hairline group flex items-center gap-3 rounded-xl bg-white px-4 py-3 hover:border-blue-300 hover:shadow-sm">
+        <div class="grid h-9 w-9 flex-none place-items-center rounded-lg bg-violet-50 ring-1 ring-violet-100">
+          <svg width="16" height="16" class="text-violet-600"><use href="#i-check"/></svg>
+        </div>
+        <div class="flex-1">
+          <div class="font-semibold text-slate-900">Inspection Console</div>
+          <div class="text-[10.5px] text-slate-500">Mobile + Desktop · checklist + bath inspector</div>
+        </div>
+        <span class="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600">→</span>
+      </a>
+      <a href="Daily Compliance Report.html" class="hairline group flex items-center gap-3 rounded-xl bg-white px-4 py-3 hover:border-blue-300 hover:shadow-sm">
+        <div class="grid h-9 w-9 flex-none place-items-center rounded-lg bg-amber-50 ring-1 ring-amber-100">
+          <svg width="16" height="16" class="text-amber-600"><use href="#i-list"/></svg>
+        </div>
+        <div class="flex-1">
+          <div class="font-semibold text-slate-900">Daily Compliance Report</div>
+          <div class="text-[10.5px] text-slate-500">Heatmap calendar · drill panel · staff feed</div>
+        </div>
+        <span class="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600">→</span>
+      </a>
+      <a href="SOP Redesign v2.html" class="hairline group flex items-center gap-3 rounded-xl bg-white px-4 py-3 hover:border-blue-300 hover:shadow-sm">
+        <div class="grid h-9 w-9 flex-none place-items-center rounded-lg bg-blue-50 ring-1 ring-blue-100">
+          <svg width="16" height="16" class="text-blue-600"><use href="#i-stamp"/></svg>
+        </div>
+        <div class="flex-1">
+          <div class="font-semibold text-slate-900">SOP Redesign v2</div>
+          <div class="text-[10.5px] text-slate-500">SOP authoring · list · create · view</div>
+        </div>
+        <span class="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600">→</span>
+      </a>
+      <a href="Repairs.html" class="hairline group flex items-center gap-3 rounded-xl bg-white px-4 py-3 hover:border-blue-300 hover:shadow-sm">
+        <div class="grid h-9 w-9 flex-none place-items-center rounded-lg bg-rose-50 ring-1 ring-rose-100">
+          <svg width="16" height="16" class="text-rose-600"><use href="#i-wrench"/></svg>
+        </div>
+        <div class="flex-1">
+          <div class="font-semibold text-slate-900">Repairs</div>
+          <div class="text-[10.5px] text-slate-500">รายการซ่อม · มอบหมาย · ปิดงาน</div>
+        </div>
+        <span class="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600">→</span>
+      </a>
+      <a href="Schedule.html" class="hairline group flex items-center gap-3 rounded-xl bg-white px-4 py-3 hover:border-blue-300 hover:shadow-sm">
+        <div class="grid h-9 w-9 flex-none place-items-center rounded-lg bg-violet-50 ring-1 ring-violet-100">
+          <svg width="16" height="16" class="text-violet-600"><use href="#i-list"/></svg>
+        </div>
+        <div class="flex-1">
+          <div class="font-semibold text-slate-900">Schedule</div>
+          <div class="text-[10.5px] text-slate-500">ตารางเวร · จัดกะ · swap</div>
+        </div>
+        <span class="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600">→</span>
+      </a>
+      <a href="LINE Rich Menu v2.html" class="hairline group flex items-center gap-3 rounded-xl bg-white px-4 py-3 ring-1 ring-blue-200 hover:border-blue-300 hover:shadow-sm">
+        <div class="grid h-9 w-9 flex-none place-items-center rounded-lg bg-p-sky ring-1 ring-blue-100">
+          <svg width="16" height="16" class="text-blue-600"><use href="#i-chat"/></svg>
+        </div>
+        <div class="flex-1">
+          <div class="flex items-center gap-2">
+            <span class="font-semibold text-slate-900">LINE Rich Menu v2</span>
+            <span class="mono text-[9px] uppercase tracking-wider text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded ring-1 ring-blue-200">new</span>
+          </div>
+          <div class="text-[10.5px] text-slate-500">3 roles · pastel + character + motion</div>
+        </div>
+        <span class="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600">→</span>
+      </a>
+      <a href="AuditMe Ad Concepts.html" class="hairline group flex items-center gap-3 rounded-xl bg-white px-4 py-3 hover:border-blue-300 hover:shadow-sm">
+        <div class="grid h-9 w-9 flex-none place-items-center rounded-lg bg-amber-50 ring-1 ring-amber-100">
+          <svg width="16" height="16" class="text-amber-600"><use href="#i-tag"/></svg>
+        </div>
+        <div class="flex-1">
+          <div class="font-semibold text-slate-900">Ad Concepts</div>
+          <div class="text-[10.5px] text-slate-500">FB / IG · pricing tag · variations</div>
+        </div>
+        <span class="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600">→</span>
+      </a>
+      <a href="Design System.html" class="hairline group flex items-center gap-3 rounded-xl bg-white px-4 py-3 hover:border-blue-300 hover:shadow-sm">
+        <div class="grid h-9 w-9 flex-none place-items-center rounded-lg bg-slate-50 ring-1 ring-slate-100">
+          <svg width="16" height="16" class="text-slate-600"><use href="#i-grid"/></svg>
+        </div>
+        <div class="flex-1">
+          <div class="font-semibold text-slate-900">Design System v1 <span class="text-slate-400">(เดิม)</span></div>
+          <div class="text-[10.5px] text-slate-500">เก็บไว้เปรียบเทียบ</div>
+        </div>
+        <span class="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600">→</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+
+<!-- =========================================================
+     FOOTER
+     ========================================================= -->
+<footer class="border-t border-slate-200/70 py-8">
+  <div class="flex items-center justify-between text-[11px] text-slate-500">
+    <div class="flex items-center gap-2">
+      <div class="grid h-6 w-6 place-items-center rounded bg-gradient-to-br from-blue-500 to-blue-700">
+        <svg width="12" height="12" class="text-white"><use href="#i-check"/></svg>
+      </div>
+      <span class="mono">AuditMe Design System · v2 · พฤษภาคม 2569</span>
+    </div>
+    <div class="mono">Owner-first · Staff-friendly · Built for ธุรกิจบริการไทย</div>
+  </div>
+</footer>
+
+</main>
+</body>
+</html>

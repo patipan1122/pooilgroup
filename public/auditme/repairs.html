@@ -1,0 +1,1165 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AuditMe — แจ้งซ่อม</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html, body { background: #EEEEE6; font-family: 'IBM Plex Sans Thai','IBM Plex Sans',sans-serif; -webkit-font-smoothing: antialiased; }
+  .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-feature-settings: 'tnum'; }
+  .tnum { font-feature-settings: 'tnum'; }
+  .label { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #64748B; }
+  .scrollbar-slim::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-slim::-webkit-scrollbar-thumb { background: rgba(15,23,42,0.18); border-radius: 999px; }
+  .scrollbar-slim::-webkit-scrollbar-track { background: transparent; }
+  @keyframes pulseDot { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .5; transform: scale(1.4); } }
+  @keyframes fadeIn { from { opacity:0; transform: translateY(8px);} to { opacity:1; transform: translateY(0);} }
+  @keyframes slideUp { from { opacity:0; transform: translateY(20px);} to { opacity:1; transform: translateY(0);} }
+  .grab { cursor: grab; }
+  .grab:active { cursor: grabbing; }
+  .ph-photo {
+    background-image:
+      linear-gradient(135deg, transparent 46%, rgba(15,23,42,0.06) 46%, rgba(15,23,42,0.06) 54%, transparent 54%),
+      linear-gradient(135deg, rgba(15,23,42,0.04), rgba(15,23,42,0.08));
+    background-size: 12px 12px, 100% 100%;
+  }
+  .urgent-pulse { animation: pulseDot 2s ease-in-out infinite; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<template id="__bundler_thumbnail">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#EEEEE6"/><circle cx="34" cy="50" r="14" fill="#2563EB"/><path d="M44 56 L66 78 L70 74 L48 52" stroke="#0F172A" stroke-width="6" stroke-linecap="round"/><circle cx="32" cy="48" r="4" fill="#fff"/></svg>
+</template>
+<body data-screen-label="Repairs" style="background-color:#C7C7B8">
+
+<div id="root"></div>
+
+<script type="text/babel" src="browser-window.jsx"></script>
+
+<script type="text/babel">
+/* ============================================================ DATA ============================================================ */
+const HOTEL = { name: "Bloom Hotel · เจริญกรุง", rooms: 24 };
+
+const TECHS = [
+  { id: "nung",    name: "พี่หนึ่ง", role: "ช่างประจำ",       short: "หนึ่ง",color: "#EF4444", skills: ["AC","ELEC","PLUMB","GEN"] },
+  { id: "joe",     name: "พี่โจ",    role: "ช่างไฟฟ้า",        short: "โจ", color: "#F97316", skills: ["ELEC","AC"] },
+  { id: "vendor1", name: "ช่างนิว AC", role: "Vendor · นิวคูล",  short: "นิว",color: "#0EA5E9", skills: ["AC"] },
+  { id: "vendor2", name: "ช่างน้อย ปท.", role: "Vendor · ประปา",  short: "น้อย",color: "#10B981", skills: ["PLUMB"] },
+  { id: "max",     name: "น้องแม็กซ์", role: "ช่างทั่วไป",        short: "แม็กซ์",color: "#8B5CF6", skills: ["GEN","ELEC"] },
+];
+
+const STATUSES = [
+  { id: "new",         t: "เปิด · ใหม่",   bg: "bg-blue-50",    text: "text-blue-700",    ring: "ring-blue-200",    bar: "#3B82F6" },
+  { id: "contacted",   t: "ติดต่อช่างแล้ว",bg: "bg-amber-50",   text: "text-amber-800",   ring: "ring-amber-200",   bar: "#F59E0B" },
+  { id: "in_progress", t: "กำลังซ่อม",     bg: "bg-violet-50",  text: "text-violet-700",  ring: "ring-violet-200",  bar: "#7C3AED" },
+  { id: "waiting",     t: "รออะไหล่",      bg: "bg-orange-50",  text: "text-orange-800",  ring: "ring-orange-200",  bar: "#EA580C" },
+  { id: "done",        t: "เสร็จแล้ว",     bg: "bg-emerald-50", text: "text-emerald-700", ring: "ring-emerald-200", bar: "#1F8A5B" },
+  { id: "cancelled",   t: "ยกเลิก",        bg: "bg-slate-100",  text: "text-slate-600",   ring: "ring-slate-200",   bar: "#94A3B8" },
+];
+
+const URGENCY = {
+  high:   { t: "ด่วนมาก",   pillBg:"bg-rose-100",   pillText:"text-rose-700",   ring:"ring-rose-300",   dot:"bg-rose-500"   },
+  medium: { t: "ปานกลาง",   pillBg:"bg-amber-100",  pillText:"text-amber-800",  ring:"ring-amber-300",  dot:"bg-amber-500"  },
+  low:    { t: "ไม่เร่งด่วน",pillBg:"bg-emerald-100",pillText:"text-emerald-700",ring:"ring-emerald-300",dot:"bg-emerald-500"},
+};
+
+const CAT = {
+  ac:    { t: "แอร์",        emoji: "❄️", color: "#0EA5E9" },
+  plumb: { t: "ประปา/สุขา",  emoji: "🚿", color: "#06B6D4" },
+  elec:  { t: "ไฟฟ้า",       emoji: "⚡", color: "#F59E0B" },
+  net:   { t: "เน็ต/IT",     emoji: "📶", color: "#8B5CF6" },
+  furn:  { t: "เฟอร์ฯ/ตกแต่ง",emoji: "🪟", color: "#10B981" },
+  appl:  { t: "เครื่องใช้",   emoji: "📺", color: "#EC4899" },
+  lock:  { t: "กลอน/คีย์การ์ด",emoji: "🔑", color: "#EAB308" },
+  gen:   { t: "อื่นๆ",        emoji: "🔧", color: "#64748B" },
+};
+
+const REPAIRS = [
+  {
+    id: "RP-2569-014", title: "แอร์ห้อง 305 ไม่เย็น · เสียงดัง",
+    cat: "ac", urgency: "high", status: "in_progress",
+    location: "ห้อง 305 · ชั้น 3", asset: "AC FCU · DAIKIN FTKZ-15",
+    description: "แขกแจ้งว่าแอร์เย็นไม่พอตั้งแต่เมื่อคืน ตอนเปิด 20°C แต่อุณหภูมิห้องอยู่ที่ ~26°C เสียงพัดลมดังกว่าปกติ — ย้ายแขกไป 308 ชั่วคราวแล้ว",
+    reportedBy: "ฟร้อนท์ · น้องเทค", reportedAt: "วันนี้ 09:42",
+    techId: "vendor1", eta: "วันนี้ 14:00",
+    cost: 1850, parts: [{ name: "Capacitor 35µF", qty: 1, price: 350 }, { name: "ค่าแรง", qty: 1, price: 1500 }],
+    guestImpact: "high", guestNote: "Booking #BK-3084 · K. Tanaka · ย้ายห้องแล้ว · comp 1 night",
+    photoBefore: 1, photoAfter: 0,
+    timeline: [
+      { at: "09:42", who: "น้องเทค", what: "แจ้งใหม่", icon: "+" },
+      { at: "09:48", who: "คุณภัทร", what: "อนุมัติ → ติดต่อช่างนิว AC", icon: "→" },
+      { at: "10:15", who: "ช่างนิว AC", what: "ตอบรับ · ETA 14:00", icon: "✓" },
+      { at: "13:55", who: "ช่างนิว AC", what: "ถึงหน้างาน", icon: "📍" },
+      { at: "14:08", who: "ช่างนิว AC", what: "ตรวจพบ Capacitor ขาด · เริ่มซ่อม", icon: "🔧" },
+    ],
+  },
+  {
+    id: "RP-2569-013", title: "ก๊อกอ่างห้องน้ำห้อง 412 รั่ว",
+    cat: "plumb", urgency: "medium", status: "waiting",
+    location: "ห้อง 412 · ชั้น 4", asset: "ก๊อกอ่าง · COTTO C-1320",
+    description: "ก๊อกหยดเป็นจังหวะ ใต้อ่างพื้นเปียก แม่บ้านวางถังรองไว้ก่อน",
+    reportedBy: "แม่บ้าน · พี่นก", reportedAt: "วันนี้ 08:15",
+    techId: "vendor2", eta: "พรุ่งนี้ 10:00",
+    cost: 680, parts: [{ name: "ลูกยาง+ไส้ก๊อก COTTO", qty: 1, price: 280 }, { name: "ค่าแรง", qty: 1, price: 400 }],
+    guestImpact: "low", guestNote: "ยังไม่มีแขก check-in",
+    photoBefore: 1, photoAfter: 0,
+    timeline: [
+      { at: "08:15", who: "พี่นก", what: "แจ้งใหม่ + รูป", icon: "+" },
+      { at: "08:30", who: "คุณภัทร", what: "ติดต่อช่างน้อย", icon: "→" },
+      { at: "09:00", who: "ช่างน้อย", what: "ขออะไหล่ลูกยาง — ETA พรุ่งนี้", icon: "⏳" },
+    ],
+  },
+  {
+    id: "RP-2569-012", title: "กลอนคีย์การ์ดห้อง 208 ปลดไม่ได้",
+    cat: "lock", urgency: "high", status: "contacted",
+    location: "ห้อง 208 · ชั้น 2", asset: "Door lock · ONITY HT24",
+    description: "คีย์การ์ดอ่านได้แต่กลอนไม่ปลด ต้องเปิดด้วย master ทุกครั้ง — แขก check-in 15:00",
+    reportedBy: "ฟร้อนท์ · พี่จิ๋ว", reportedAt: "วันนี้ 11:20",
+    techId: "nung", eta: "วันนี้ 13:30",
+    cost: 0, parts: [],
+    guestImpact: "high", guestNote: "Booking #BK-3091 · K. Smith · check-in 15:00",
+    photoBefore: 0, photoAfter: 0,
+    timeline: [
+      { at: "11:20", who: "พี่จิ๋ว", what: "แจ้งใหม่", icon: "+" },
+      { at: "11:25", who: "คุณภัทร", what: "ติดต่อพี่หนึ่ง", icon: "→" },
+      { at: "11:40", who: "พี่หนึ่ง", what: "รับงาน · ETA 13:30", icon: "✓" },
+    ],
+  },
+  {
+    id: "RP-2569-011", title: "ทีวีห้อง 110 ภาพแตก เปลี่ยนช่องไม่ได้",
+    cat: "appl", urgency: "low", status: "new",
+    location: "ห้อง 110 · ชั้น 1", asset: "TV LG 43 นิ้ว",
+    description: "รีโมทกดได้บางปุ่ม ภาพมีเส้นแตกแนวตั้ง 3 เส้น",
+    reportedBy: "แม่บ้าน · พี่ฝ้าย", reportedAt: "เมื่อวาน 17:50",
+    techId: null, eta: null,
+    cost: 0, parts: [],
+    guestImpact: "medium", guestNote: "ห้องว่าง — แขกถัดไปคืนวันที่ 12",
+    photoBefore: 1, photoAfter: 0,
+    timeline: [
+      { at: "เมื่อวาน 17:50", who: "พี่ฝ้าย", what: "แจ้งใหม่ + รูป", icon: "+" },
+    ],
+  },
+  {
+    id: "RP-2569-010", title: "ไฟทางเดินชั้น 2 ดับ 3 ดวง",
+    cat: "elec", urgency: "medium", status: "in_progress",
+    location: "ทางเดินชั้น 2 · ใกล้ห้อง 204-208", asset: "หลอด LED 12W ระเบียง",
+    description: "หลอดดับ 3 ดวง ทางเดินมืดช่วงกลางคืน เคยเปลี่ยนทั้งโซนเมื่อ 8 เดือนที่แล้ว",
+    reportedBy: "Security · น้องเอ", reportedAt: "เมื่อวาน 22:15",
+    techId: "joe", eta: "วันนี้ 16:00",
+    cost: 540, parts: [{ name: "หลอด LED 12W E27", qty: 4, price: 360 }, { name: "ค่าแรง", qty: 1, price: 180 }],
+    guestImpact: "medium", guestNote: "—",
+    photoBefore: 0, photoAfter: 0,
+    timeline: [
+      { at: "เมื่อวาน 22:15", who: "น้องเอ", what: "แจ้งใหม่", icon: "+" },
+      { at: "07:00", who: "คุณภัทร", what: "ติดต่อพี่โจ", icon: "→" },
+      { at: "10:30", who: "พี่โจ", what: "เริ่มซ่อม · ซื้อหลอดมาแล้ว", icon: "🔧" },
+    ],
+  },
+  {
+    id: "RP-2569-009", title: "โถส้วมล็อบบี้ฟลัชแล้วน้ำไหลไม่หยุด",
+    cat: "plumb", urgency: "high", status: "done",
+    location: "ห้องน้ำส่วนกลาง · ชั้น 1", asset: "Toilet COTTO · C-1391",
+    description: "วาล์วฟลัชเสีย น้ำไหลตลอด ปิดประตูห้องน้ำชั่วคราวแล้ว",
+    reportedBy: "ฟร้อนท์ · น้องบาส", reportedAt: "เมื่อวาน 14:30",
+    techId: "vendor2", eta: "เสร็จแล้ว",
+    cost: 920, parts: [{ name: "ชุดวาล์วฟลัช COTTO", qty: 1, price: 520 }, { name: "ค่าแรง", qty: 1, price: 400 }],
+    guestImpact: "low", guestNote: "ปิด 2 ชม. · ใช้ห้องน้ำชั้น 2",
+    photoBefore: 1, photoAfter: 1,
+    timeline: [
+      { at: "เมื่อวาน 14:30", who: "น้องบาส", what: "แจ้งใหม่", icon: "+" },
+      { at: "เมื่อวาน 14:45", who: "คุณภัทร", what: "ติดต่อช่างน้อย", icon: "→" },
+      { at: "เมื่อวาน 15:30", who: "ช่างน้อย", what: "ถึงหน้างาน", icon: "📍" },
+      { at: "เมื่อวาน 17:00", who: "ช่างน้อย", what: "ซ่อมเสร็จ + รูปหลัง", icon: "✓" },
+      { at: "เมื่อวาน 17:15", who: "คุณภัทร", what: "ตรวจรับงาน · ปิดเคส", icon: "🎉" },
+    ],
+  },
+  {
+    id: "RP-2569-008", title: "WiFi AP ชั้น 3 ขาดเป็นช่วง",
+    cat: "net", urgency: "medium", status: "contacted",
+    location: "ชั้น 3 · WiFi-3F-NORTH", asset: "Ubiquiti U6-LR",
+    description: "แขกบ่นเน็ตช้า ping spike ทุก 5 นาที คาดว่า AP overheat",
+    reportedBy: "ฟร้อนท์ · พี่จิ๋ว", reportedAt: "เช้านี้ 07:30",
+    techId: "max", eta: "วันนี้ 18:00",
+    cost: 0, parts: [],
+    guestImpact: "medium", guestNote: "แขกชั้น 3 รวม 6 ห้องที่อาจกระทบ",
+    photoBefore: 0, photoAfter: 0,
+    timeline: [
+      { at: "07:30", who: "พี่จิ๋ว", what: "แจ้งใหม่", icon: "+" },
+      { at: "08:00", who: "คุณภัทร", what: "ติดต่อน้องแม็กซ์", icon: "→" },
+      { at: "08:20", who: "น้องแม็กซ์", what: "รีเซ็ต AP รีโมท · ดูอีก 1 ชม.", icon: "⏳" },
+    ],
+  },
+  {
+    id: "RP-2569-007", title: "ตู้เย็นมินิบาร์ห้อง 506 ไม่เย็น",
+    cat: "appl", urgency: "low", status: "waiting",
+    location: "ห้อง 506 · ชั้น 5", asset: "Mini Bar SHARP SJ-D14T",
+    description: "ตู้เย็นทำงานแต่ไม่เย็น คาดว่า compressor",
+    reportedBy: "แม่บ้าน · น้องจูน", reportedAt: "เมื่อวาน 11:00",
+    techId: "vendor1", eta: "เปลี่ยนเครื่องใหม่ · 3 วัน",
+    cost: 4500, parts: [{ name: "Mini bar ใหม่ SHARP", qty: 1, price: 4500 }],
+    guestImpact: "low", guestNote: "ย้ายตู้เย็นจากห้อง spare",
+    photoBefore: 0, photoAfter: 0,
+    timeline: [
+      { at: "เมื่อวาน 11:00", who: "น้องจูน", what: "แจ้งใหม่", icon: "+" },
+      { at: "เมื่อวาน 14:00", who: "ช่างนิว AC", what: "ตรวจ · compressor เสีย", icon: "🔧" },
+      { at: "เช้านี้", who: "คุณภัทร", what: "อนุมัติเปลี่ยนเครื่อง", icon: "✓" },
+    ],
+  },
+  {
+    id: "RP-2569-006", title: "กระจกหน้าล็อบบี้มีรอยร้าวยาว 30cm",
+    cat: "furn", urgency: "medium", status: "contacted",
+    location: "ล็อบบี้ · ประตูทางเข้าหลัก", asset: "Tempered glass 12mm",
+    description: "เกิดจากกระเป๋าเดินทางใหญ่กระแทก รอยร้าวยาวจากบนลงล่าง",
+    reportedBy: "Bell · น้องบาส", reportedAt: "2 วันก่อน",
+    techId: null, eta: "รอใบเสนอราคา",
+    cost: 0, parts: [],
+    guestImpact: "medium", guestNote: "ดูไม่ดี · แขก check-in สังเกตได้",
+    photoBefore: 1, photoAfter: 0,
+    timeline: [
+      { at: "2 วันก่อน 16:00", who: "น้องบาส", what: "แจ้งใหม่ + รูป", icon: "+" },
+      { at: "เมื่อวาน 09:00", who: "คุณภัทร", what: "ติดต่อ vendor 3 ราย", icon: "→" },
+    ],
+  },
+  {
+    id: "RP-2569-005", title: "แอร์ล็อบบี้ตัวซ้ายไม่ทำความเย็น",
+    cat: "ac", urgency: "high", status: "done",
+    location: "ล็อบบี้ · ฝั่งซ้าย", asset: "AC ducted · DAIKIN VRV",
+    description: "เป่าลมแต่ไม่เย็น อุณหภูมิล็อบบี้พุ่ง 28°C ช่วงบ่าย",
+    reportedBy: "FB · น้องโบว์", reportedAt: "3 วันก่อน",
+    techId: "vendor1", eta: "เสร็จแล้ว",
+    cost: 3200, parts: [{ name: "เติมน้ำยา R32 1.5kg", qty: 1, price: 1800 }, { name: "ค่าแรง+ตรวจ", qty: 1, price: 1400 }],
+    guestImpact: "high", guestNote: "—",
+    photoBefore: 1, photoAfter: 1,
+    timeline: [
+      { at: "3 วันก่อน", who: "น้องโบว์", what: "แจ้งใหม่", icon: "+" },
+      { at: "3 วันก่อน", who: "คุณภัทร", what: "ติดต่อช่างนิว AC", icon: "→" },
+      { at: "2 วันก่อน", who: "ช่างนิว AC", what: "ตรวจ + เติมน้ำยา", icon: "🔧" },
+      { at: "2 วันก่อน", who: "ช่างนิว AC", what: "ปิดงาน · ทดสอบ 1 ชม.", icon: "✓" },
+    ],
+  },
+];
+
+/* ============================================================ ICONS ============================================================ */
+const I = {
+  search: <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="6" stroke="currentColor" strokeWidth="2"/><path d="M16 16 L21 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>,
+  bell: <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 17 V11 a7 7 0 0 1 14 0 V17 H5 z M10 20 a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round"/></svg>,
+  filter: <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M3 5 H21 L14 13 V20 L10 18 V13 L3 5 Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>,
+  ai: <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 3 V8 M12 16 V21 M3 12 H8 M16 12 H21 M5.6 5.6 L9 9 M15 15 L18.4 18.4" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"/></svg>,
+  close: <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 6 L18 18 M18 6 L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>,
+  plus: <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 5 V19 M5 12 H19" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/></svg>,
+  warn: <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 3 L22 20 L2 20 Z M12 10 V14 M12 17 V17.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  cam: <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M4 8 H8 L10 6 H14 L16 8 H20 V18 H4 z M12 11 a3.5 3.5 0 1 0 0 7 a3.5 3.5 0 0 0 0 -7" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>,
+  clock: <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8"/><path d="M12 7 V12 L15 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>,
+  pin: <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 21 C 7 14 5 11 5 8 a7 7 0 0 1 14 0 c0 3 -2 6 -7 13 z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><circle cx="12" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.8"/></svg>,
+  user: <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.8"/><path d="M5 20 c0 -4 3 -7 7 -7 s7 3 7 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>,
+  money: <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 6 V18 M9 9 H14 a2 2 0 0 1 0 4 H10 a2 2 0 0 0 0 4 H15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>,
+  arrow: <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M5 12 H19 M13 6 L19 12 L13 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>,
+};
+
+const Logo = ({ size = 32 }) => (
+  <div className="grid place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 shadow-[0_8px_20px_-6px_rgba(37,99,235,0.45)]" style={{ width: size, height: size }}>
+    <svg width={size*0.5} height={size*0.5} viewBox="0 0 24 24" fill="none"><path d="M5 12 L10 17 L19 7" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+  </div>
+);
+
+/* ============================================================ SIDEBAR ============================================================ */
+function Sidebar({ active = "แจ้งซ่อม", openCount = 0 }) {
+  return (
+    <aside className="flex w-[224px] flex-none flex-col border-r border-slate-200/70 bg-white">
+      <div className="flex items-center gap-2.5 px-5 py-5">
+        <Logo size={32} />
+        <div>
+          <div className="text-[14px] font-bold tracking-tight">AuditMe</div>
+          <div className="text-[9px] uppercase tracking-[0.18em] text-slate-400">Owner Console</div>
+        </div>
+      </div>
+      <button className="mx-3 mb-4 flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-left transition hover:border-slate-300 hover:bg-white">
+        <div className="grid h-8 w-8 flex-none place-items-center rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 text-[12px] font-bold text-white">BL</div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[12px] font-semibold">{HOTEL.name}</div>
+          <div className="truncate text-[10px] text-slate-500">{HOTEL.rooms} ห้อง · เจริญกรุง</div>
+        </div>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M8 9 L12 5 L16 9 M8 15 L12 19 L16 15" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+      </button>
+      <nav className="flex-1 px-3">
+        <div className="px-2 pb-1.5 text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400">หน้าหลัก</div>
+        {[
+          { t: "ภาพรวม", icon: "M4 14 H10 V4 H4 z M14 20 H20 V10 H14 z" },
+          { t: "ของฉันวันนี้", icon: "M12 3 V5 M12 19 V21 M3 12 H5 M19 12 H21 M5.6 5.6 L7 7 M17 17 L18.4 18.4 M5.6 18.4 L7 17 M17 7 L18.4 5.6 M12 7 a5 5 0 1 0 0 10 a5 5 0 0 0 0 -10" },
+        ].map((it, i) => (
+          <button key={i} className="group mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d={it.icon} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <span className="flex-1 text-left">{it.t}</span>
+          </button>
+        ))}
+        <div className="px-2 pb-1.5 pt-4 text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400">ทำงาน</div>
+        {[
+          { t: "ตรวจส่วนกลาง", icon: "M3 11 L12 3 L21 11 V20 H14 V14 H10 V20 H3 z" },
+          { t: "ตารางเวร", icon: "M5 5 H19 V20 H5 z M5 9 H19 M9 3 V7 M15 3 V7 M9 13 H11 M13 13 H15 M9 17 H11", href: "Schedule.html" },
+          { t: "งานประจำ", n: 2, icon: "M5 4 H19 V20 H5 z M9 8 H15 M9 12 H15 M9 16 H13" },
+          { t: "แจ้งซ่อม", n: openCount, icon: "M14 7 L19 12 L14 17 M5 12 H18" },
+        ].map((it, i) => {
+          const on = it.t === active;
+          const inner = (
+            <button className={`group mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition ${on ? "bg-blue-50 font-semibold text-blue-700" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"}`}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d={it.icon} stroke="currentColor" strokeWidth={on?2.2:1.7} strokeLinecap="round" strokeLinejoin="round"/></svg>
+              <span className="flex-1 text-left">{it.t}</span>
+              {it.n != null && it.n > 0 && <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold mono ${on ? "bg-blue-600 text-white" : "bg-rose-500 text-white"}`}>{it.n}</span>}
+            </button>
+          );
+          return it.href ? <a key={i} href={it.href}>{inner}</a> : <div key={i}>{inner}</div>;
+        })}
+        <div className="px-2 pb-1.5 pt-4 text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400">รายงาน</div>
+        {[
+          { t: "ค้างอนุมัติ", icon: "M5 4 H19 V20 H5 z M9 8 H15 M9 12 H15 M9 16 H13" },
+          { t: "รายงาน", icon: "M4 18 L10 12 L14 16 L20 8" },
+          { t: "คะแนนพนักงาน", icon: "M12 4 L14.5 9 L20 10 L16 14 L17 19.5 L12 17 L7 19.5 L8 14 L4 10 L9.5 9 z" },
+        ].map((it, i) => (
+          <button key={i} className="group mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d={it.icon} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <span className="flex-1 text-left">{it.t}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="mx-3 mb-4 mt-2 flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50/80 px-2.5 py-2">
+        <div className="grid h-8 w-8 flex-none place-items-center rounded-full bg-gradient-to-br from-violet-400 to-violet-600 text-[12px] font-bold text-white">ภ</div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[12px] font-semibold">คุณภัทร เจริญสุข</div>
+          <div className="truncate text-[10px] text-slate-500">เจ้าของ · Owner</div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+/* ============================================================ HELPERS ============================================================ */
+const techById = (id) => TECHS.find(t => t.id === id);
+const statusById = (id) => STATUSES.find(s => s.id === id);
+const fmtBaht = (n) => "฿" + n.toLocaleString('en-US');
+
+function Photo({ kind, label, mini=false }) {
+  // SVG placeholder photo
+  if (!kind) {
+    return (
+      <div className={`grid place-items-center rounded-lg border border-dashed border-slate-300 bg-slate-50 ${mini ? "h-12" : "h-40"}`}>
+        <div className="flex flex-col items-center gap-1 text-slate-400">
+          {I.cam}
+          <span className="mono text-[9.5px] uppercase tracking-wider">{label}</span>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className={`ph-photo relative overflow-hidden rounded-lg ring-1 ring-slate-200 ${mini ? "h-12" : "h-40"}`}>
+      <div className="absolute inset-0 grid place-items-center">
+        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500/80">photo · {label}</div>
+      </div>
+      <div className="absolute right-1.5 top-1.5 mono rounded bg-slate-900/80 px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-wider text-white">{label}</div>
+    </div>
+  );
+}
+
+/* ============================================================ MAIN ============================================================ */
+function RepairsPage() {
+  const [items, setItems] = React.useState(REPAIRS);
+  const [view, setView] = React.useState("split"); // split | kanban
+  const [statusFilter, setStatusFilter] = React.useState("all");
+  const [urgencyFilter, setUrgencyFilter] = React.useState("all");
+  const [selectedId, setSelectedId] = React.useState(REPAIRS[0].id);
+  const [showNew, setShowNew] = React.useState(false);
+  const [showAssign, setShowAssign] = React.useState(false);
+  const [toast, setToast] = React.useState(null);
+
+  React.useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2400);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const filtered = items.filter(r => {
+    if (statusFilter !== "all" && r.status !== statusFilter) return false;
+    if (urgencyFilter !== "all" && r.urgency !== urgencyFilter) return false;
+    return true;
+  });
+  const selected = items.find(r => r.id === selectedId) || filtered[0] || items[0];
+
+  const counts = {
+    all: items.length,
+    new: items.filter(r => r.status === "new").length,
+    contacted: items.filter(r => r.status === "contacted").length,
+    in_progress: items.filter(r => r.status === "in_progress").length,
+    waiting: items.filter(r => r.status === "waiting").length,
+    done: items.filter(r => r.status === "done").length,
+    cancelled: items.filter(r => r.status === "cancelled").length,
+  };
+  const urgCounts = {
+    all: items.length,
+    high: items.filter(r => r.urgency === "high").length,
+    medium: items.filter(r => r.urgency === "medium").length,
+    low: items.filter(r => r.urgency === "low").length,
+  };
+  const openCount = counts.new + counts.contacted + counts.in_progress + counts.waiting;
+  const totalCost = items.filter(r => r.status !== "cancelled").reduce((acc, r) => acc + (r.cost || 0), 0);
+
+  const moveStatus = (id, toStatus) => {
+    setItems(prev => prev.map(r => r.id === id ? {
+      ...r,
+      status: toStatus,
+      timeline: [...r.timeline, { at: "เพิ่งทำ", who: "คุณภัทร", what: `เปลี่ยนสถานะ → ${statusById(toStatus).t}`, icon: "→" }]
+    } : r));
+    const lbl = statusById(toStatus).t;
+    setToast({ text: `ย้ายไป ${lbl}` });
+  };
+
+  const assignTech = (id, techId, eta) => {
+    setItems(prev => prev.map(r => r.id === id ? {
+      ...r,
+      techId, eta: eta || r.eta || "TBD",
+      status: r.status === "new" ? "contacted" : r.status,
+      timeline: [...r.timeline, { at: "เพิ่งทำ", who: "คุณภัทร", what: `มอบหมาย ${techById(techId).name} · ETA ${eta || 'TBD'}`, icon: "→" }]
+    } : r));
+    setToast({ text: `มอบหมายให้ ${techById(techId).name}` });
+  };
+
+  return (
+    <div className="flex h-full w-full text-slate-900" style={{ background: "#FAFAF7" }}>
+      <Sidebar active="แจ้งซ่อม" openCount={openCount} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* TOPBAR */}
+        <header className="flex items-center gap-3 border-b border-slate-200/70 bg-white/80 px-7 py-3.5 backdrop-blur">
+          <div className="flex flex-1 items-center gap-2">
+            <span className="text-[12px] text-slate-400">หน้าหลัก</span>
+            <span className="text-slate-300">/</span>
+            <span className="text-[12px] text-slate-400">ทำงาน</span>
+            <span className="text-slate-300">/</span>
+            <span className="text-[12px] font-semibold text-slate-900">แจ้งซ่อม</span>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-slate-500">
+            {I.search}
+            <input className="w-44 bg-transparent text-[12px] outline-none placeholder:text-slate-400" placeholder="หาเรื่องซ่อม รหัส ห้อง..." />
+          </div>
+          <button className="relative grid h-8 w-8 place-items-center rounded-full border border-slate-200 bg-white text-slate-600 hover:border-slate-300">
+            {I.bell}
+            <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-rose-500 ring-2 ring-white" />
+          </button>
+        </header>
+
+        {/* HERO */}
+        <div className="border-b border-slate-200/70 bg-[#FAFAF7] px-7 pt-5 pb-4">
+          <div className="flex items-end gap-4">
+            <div className="flex-1">
+              <div className="label">03 · งานซ่อม</div>
+              <div className="mt-1 flex items-baseline gap-3">
+                <h1 className="text-[28px] font-bold tracking-tight">แจ้งซ่อม</h1>
+                <span className="mono text-[12px] text-slate-500">{HOTEL.name}</span>
+              </div>
+              <div className="mt-1 text-[13px] text-slate-500">ติดตามเรื่องซ่อม · มอบหมายช่าง · ดูค่าใช้จ่ายและประวัติ</div>
+            </div>
+            <div className="flex items-center gap-0.5 rounded-xl border border-slate-200 bg-white p-1">
+              {[{ id: "split", t: "List + Detail", icon: "M4 5 H10 V19 H4 z M14 5 H20 V19 H14 z" },
+                { id: "kanban", t: "Kanban", icon: "M3 4 H7 V14 H3 z M9 4 H13 V20 H9 z M15 4 H19 V10 H15 z M15 12 H19 V20 H15 z" }].map(v => (
+                <button key={v.id} onClick={() => setView(v.id)}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold transition ${view===v.id ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900"}`}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d={v.icon} stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>
+                  {v.t}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setShowNew(true)} className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-[12.5px] font-bold text-white shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)] hover:bg-blue-700">
+              {I.plus} แจ้งซ่อมใหม่
+            </button>
+          </div>
+          {/* Stats */}
+          <div className="mt-4 grid grid-cols-5 gap-3">
+            <StatTile label="เปิดอยู่" value={openCount} suffix="รายการ" tone="blue" hint={`+${counts.new} ใหม่วันนี้`} />
+            <StatTile label="ด่วนมาก" value={urgCounts.high} suffix="รายการ" tone="rose" />
+            <StatTile label="กำลังซ่อม" value={counts.in_progress} suffix="รายการ" tone="violet" />
+            <StatTile label="รออะไหล่" value={counts.waiting} suffix="รายการ" tone="amber" />
+            <StatTile label="ค่าใช้จ่ายเดือนนี้" value={fmtBaht(totalCost)} suffix="" tone="slate" mono />
+          </div>
+        </div>
+
+        {/* MAIN */}
+        <div className="flex flex-1 min-h-0 flex-col">
+          {view === "split" ? (
+            <SplitView
+              items={filtered}
+              all={items}
+              counts={counts}
+              urgCounts={urgCounts}
+              statusFilter={statusFilter}
+              setStatusFilter={setStatusFilter}
+              urgencyFilter={urgencyFilter}
+              setUrgencyFilter={setUrgencyFilter}
+              selectedId={selected?.id}
+              setSelectedId={setSelectedId}
+              selected={selected}
+              moveStatus={moveStatus}
+              onAssign={() => setShowAssign(true)}
+            />
+          ) : (
+            <KanbanView
+              items={filtered}
+              statusFilter={statusFilter}
+              setStatusFilter={setStatusFilter}
+              urgencyFilter={urgencyFilter}
+              setUrgencyFilter={setUrgencyFilter}
+              urgCounts={urgCounts}
+              moveStatus={moveStatus}
+              setSelectedId={(id) => { setSelectedId(id); setView("split"); }}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* MODALS */}
+      {showNew && <NewRepairModal onClose={() => setShowNew(false)} onSubmit={(r) => {
+        const nid = `RP-2569-${String(15 + items.length).padStart(3,'0')}`;
+        const item = {
+          id: nid, ...r,
+          status: "new", techId: null, eta: null,
+          cost: 0, parts: [],
+          photoBefore: 1, photoAfter: 0,
+          timeline: [{ at: "เพิ่งทำ", who: "คุณภัทร", what: "แจ้งใหม่ + รูป", icon: "+" }],
+        };
+        setItems(prev => [item, ...prev]);
+        setSelectedId(nid);
+        setShowNew(false);
+        setToast({ text: "แจ้งซ่อมใหม่เรียบร้อย" });
+      }} />}
+      {showAssign && selected && <AssignModal repair={selected} onClose={() => setShowAssign(false)} onAssign={(tid, eta) => {
+        assignTech(selected.id, tid, eta); setShowAssign(false);
+      }} />}
+      {toast && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 rounded-xl bg-slate-900 px-4 py-2.5 text-[12.5px] font-semibold text-white shadow-2xl" style={{ animation: "fadeIn .2s ease-out" }}>
+          {toast.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================ STAT TILE ============================================================ */
+function StatTile({ label, value, suffix, tone="slate", hint, mono }) {
+  const palette = {
+    slate:  { ring: "ring-slate-200", num: "text-slate-900" },
+    rose:   { ring: "ring-rose-200",  num: "text-rose-700" },
+    amber:  { ring: "ring-amber-200", num: "text-amber-800" },
+    emerald:{ ring: "ring-emerald-200", num: "text-emerald-700" },
+    blue:   { ring: "ring-blue-200",  num: "text-blue-700" },
+    violet: { ring: "ring-violet-200", num: "text-violet-700" },
+  }[tone];
+  return (
+    <div className={`relative overflow-hidden rounded-2xl bg-white px-4 py-3 ring-1 ${palette.ring}`}>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</div>
+      <div className="mt-1 flex items-baseline gap-1.5">
+        <span className={`mono ${mono ? "text-[20px]" : "text-[28px]"} font-bold leading-none ${palette.num}`}>{value}</span>
+        {suffix && <span className="text-[11px] text-slate-500">{suffix}</span>}
+      </div>
+      {hint && <div className="mt-1 mono text-[10px] text-emerald-600">{hint}</div>}
+    </div>
+  );
+}
+
+/* ============================================================ FILTER BAR ============================================================ */
+function FilterBar({ counts, urgCounts, statusFilter, setStatusFilter, urgencyFilter, setUrgencyFilter }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200/70 bg-white px-7 py-2.5">
+      <span className="label mr-1">STATUS</span>
+      <button onClick={() => setStatusFilter("all")} className={`rounded-lg px-2.5 py-1 text-[11.5px] font-semibold ${statusFilter==="all" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>ทั้งหมด <span className="mono ml-0.5 opacity-70">{counts.all}</span></button>
+      {STATUSES.filter(s => s.id !== "cancelled").map(s => (
+        <button key={s.id} onClick={() => setStatusFilter(statusFilter === s.id ? "all" : s.id)}
+          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11.5px] font-semibold ring-1 transition ${statusFilter===s.id ? `${s.bg} ${s.text} ${s.ring}` : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50"}`}>
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: s.bar }}></span>
+          {s.t}
+          <span className="mono opacity-70">({counts[s.id]})</span>
+        </button>
+      ))}
+      <span className="label mx-2 ml-3">URGENCY</span>
+      <button onClick={() => setUrgencyFilter("all")} className={`rounded-lg px-2.5 py-1 text-[11.5px] font-semibold ${urgencyFilter==="all" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>ทุก urgency</button>
+      {Object.entries(URGENCY).map(([k, u]) => (
+        <button key={k} onClick={() => setUrgencyFilter(urgencyFilter === k ? "all" : k)}
+          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11.5px] font-semibold ring-1 transition ${urgencyFilter===k ? `${u.pillBg} ${u.pillText} ${u.ring}` : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50"}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${u.dot}`}></span>{u.t} <span className="mono opacity-70">({urgCounts[k]})</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ============================================================ SPLIT VIEW ============================================================ */
+function SplitView({ items, counts, urgCounts, statusFilter, setStatusFilter, urgencyFilter, setUrgencyFilter, selectedId, setSelectedId, selected, moveStatus, onAssign }) {
+  return (
+    <>
+      <FilterBar counts={counts} urgCounts={urgCounts} statusFilter={statusFilter} setStatusFilter={setStatusFilter} urgencyFilter={urgencyFilter} setUrgencyFilter={setUrgencyFilter} />
+      <div className="flex flex-1 min-h-0">
+        {/* LEFT LIST */}
+        <div className="scrollbar-slim flex w-[420px] flex-none flex-col gap-1.5 overflow-auto border-r border-slate-200/70 bg-white px-3 py-3">
+          {items.length === 0 && (
+            <div className="grid place-items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center">
+              <div className="text-[14px] font-semibold text-slate-700">ไม่มีรายการในตัวกรองนี้</div>
+              <div className="mt-1 text-[11px] text-slate-500">ลองเปลี่ยน filter หรือกด "แจ้งซ่อมใหม่"</div>
+            </div>
+          )}
+          {items.map(r => (
+            <RepairCard key={r.id} r={r} active={r.id === selectedId} onClick={() => setSelectedId(r.id)} />
+          ))}
+        </div>
+        {/* RIGHT DETAIL */}
+        <div className="scrollbar-slim flex-1 overflow-auto bg-[#FAFAF7]">
+          {selected ? <DetailPanel r={selected} moveStatus={moveStatus} onAssign={onAssign} /> : <div className="grid place-items-center p-12 text-slate-400">เลือกเรื่องซ่อมทางซ้าย</div>}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ============================================================ REPAIR CARD ============================================================ */
+function RepairCard({ r, active, onClick, compact = false }) {
+  const cat = CAT[r.cat];
+  const urg = URGENCY[r.urgency];
+  const st = statusById(r.status);
+  const tech = r.techId ? techById(r.techId) : null;
+  return (
+    <button onClick={onClick}
+      className={`group relative w-full rounded-xl border bg-white px-3 py-2.5 text-left transition ${active ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-200 hover:border-slate-300 hover:shadow-sm"}`}>
+      {/* left urgency bar */}
+      <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full" style={{ background: urg.dot.replace("bg-","").startsWith("rose") ? "#E11D48" : urg.dot.replace("bg-","").startsWith("amber") ? "#F59E0B" : "#10B981" }}></span>
+      <div className="flex items-start gap-2.5 pl-2">
+        <div className="grid h-9 w-9 flex-none place-items-center rounded-lg text-[16px] ring-1 ring-slate-100" style={{ background: cat.color + "15" }}>
+          <span>{cat.emoji}</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="mono rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-600">{r.id.split("-")[2]}</span>
+            <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ring-1 ${urg.pillBg} ${urg.pillText} ${urg.ring}`}>
+              {r.urgency === "high" && <span className="urgent-pulse h-1 w-1 rounded-full bg-rose-500"></span>}
+              {urg.t}
+            </span>
+            {r.guestImpact === "high" && <span className="mono rounded bg-rose-100 px-1 py-0.5 text-[8.5px] font-bold text-rose-700 ring-1 ring-rose-200">กระทบแขก</span>}
+          </div>
+          <div className="mt-1 truncate text-[13px] font-semibold text-slate-900">{r.title}</div>
+          <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-slate-500">
+            <span className="flex items-center gap-0.5">{I.pin}{r.location}</span>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wider ring-1 ${st.bg} ${st.text} ${st.ring}`}>
+              <span className="h-1 w-1 rounded-full" style={{ background: st.bar }}></span>{st.t}
+            </span>
+            {tech && (
+              <span className="flex items-center gap-1 text-[10.5px] text-slate-600">
+                <span className="grid h-4 w-4 place-items-center rounded-full text-[8.5px] font-bold text-white" style={{ background: tech.color }}>{tech.short[0]}</span>
+                {tech.name}
+              </span>
+            )}
+            {r.eta && (
+              <span className="mono ml-auto flex items-center gap-0.5 text-[10px] font-semibold text-slate-500">{I.clock}{r.eta}</span>
+            )}
+            {!tech && r.status === "new" && <span className="mono ml-auto text-[10px] font-bold text-blue-600">รอมอบหมาย</span>}
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+/* ============================================================ DETAIL PANEL ============================================================ */
+function DetailPanel({ r, moveStatus, onAssign }) {
+  const cat = CAT[r.cat];
+  const urg = URGENCY[r.urgency];
+  const st = statusById(r.status);
+  const tech = r.techId ? techById(r.techId) : null;
+  const partsTotal = (r.parts || []).reduce((acc, p) => acc + (p.price * (p.qty || 1)), 0);
+
+  // Next status options
+  const flow = ["new","contacted","in_progress","waiting","done"];
+  const idx = flow.indexOf(r.status);
+  const nextStatus = idx >= 0 && idx < flow.length-1 ? flow[idx+1] : null;
+  return (
+    <div key={r.id} className="px-7 py-5" style={{ animation: "slideUp .25s ease-out" }}>
+      {/* HEADER */}
+      <div className="flex items-start gap-3">
+        <div className="grid h-12 w-12 flex-none place-items-center rounded-xl text-[22px] ring-1 ring-slate-200 bg-white">
+          <span>{cat.emoji}</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="mono rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold text-white">{r.id}</span>
+            <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ${urg.pillBg} ${urg.pillText} ${urg.ring}`}>
+              {r.urgency === "high" && <span className="urgent-pulse h-1.5 w-1.5 rounded-full bg-rose-500"></span>}
+              {urg.t}
+            </span>
+            <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ${st.bg} ${st.text} ${st.ring}`}>
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: st.bar }}></span>{st.t}
+            </span>
+            <span className="mono text-[10.5px] text-slate-500">{cat.t}</span>
+          </div>
+          <h2 className="mt-1.5 text-[20px] font-bold leading-tight tracking-tight" style={{ textWrap: "balance" }}>{r.title}</h2>
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-500">
+            <span className="flex items-center gap-1">{I.pin}{r.location}</span>
+            <span className="flex items-center gap-1">{I.user}{r.reportedBy} · {r.reportedAt}</span>
+            {r.asset && <span className="mono rounded bg-slate-100 px-1.5 py-0.5 text-[10.5px]">⚙ {r.asset}</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* QUICK ACTIONS */}
+      <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/70 bg-white p-3">
+        {nextStatus && (
+          <button onClick={() => moveStatus(r.id, nextStatus)} className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-blue-700">
+            ย้ายไป "{statusById(nextStatus).t}" {I.arrow}
+          </button>
+        )}
+        <button onClick={onAssign} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-700 hover:border-slate-300">
+          {tech ? "เปลี่ยนช่าง" : "มอบหมายช่าง"}
+        </button>
+        {r.status !== "done" && r.status !== "cancelled" && (
+          <button onClick={() => moveStatus(r.id, "done")} className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-bold text-emerald-700 hover:bg-emerald-100">
+            ปิดเคส (เสร็จแล้ว) ✓
+          </button>
+        )}
+        {r.status !== "cancelled" && r.status !== "done" && (
+          <button onClick={() => moveStatus(r.id, "cancelled")} className="ml-auto flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-500 hover:border-rose-200 hover:text-rose-700">
+            ยกเลิก
+          </button>
+        )}
+      </div>
+
+      {/* CONTENT GRID */}
+      <div className="mt-4 grid grid-cols-12 gap-4">
+        {/* LEFT */}
+        <div className="col-span-12 lg:col-span-7 space-y-4">
+          {/* DESCRIPTION */}
+          <div className="rounded-2xl border border-slate-200/70 bg-white p-4">
+            <div className="label mb-2">รายละเอียด</div>
+            <p className="text-[13px] leading-[1.7] text-slate-700" style={{ textWrap: "pretty" }}>{r.description}</p>
+          </div>
+
+          {/* PHOTOS */}
+          <div className="rounded-2xl border border-slate-200/70 bg-white p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="label">รูปก่อน / หลัง</div>
+              <button className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:underline">{I.cam} เพิ่มรูป</button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="mb-1.5 mono text-[10px] font-bold uppercase tracking-wider text-rose-600">BEFORE</div>
+                <Photo kind={r.photoBefore ? "ph" : null} label="ก่อน" />
+              </div>
+              <div>
+                <div className="mb-1.5 mono text-[10px] font-bold uppercase tracking-wider text-emerald-600">AFTER</div>
+                <Photo kind={r.photoAfter ? "ph" : null} label={r.photoAfter ? "หลัง" : "ยังไม่มีรูป"} />
+              </div>
+            </div>
+          </div>
+
+          {/* TIMELINE */}
+          <div className="rounded-2xl border border-slate-200/70 bg-white p-4">
+            <div className="label mb-3">ไทม์ไลน์ · การเปลี่ยนสถานะ</div>
+            <ol className="relative space-y-3 pl-6 before:absolute before:left-2 before:top-1.5 before:bottom-1.5 before:w-px before:bg-slate-200">
+              {r.timeline.map((t, i) => (
+                <li key={i} className="relative">
+                  <span className="absolute -left-[18px] top-0 grid h-4 w-4 place-items-center rounded-full bg-white text-[8.5px] font-bold ring-2 ring-slate-300">{t.icon}</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="mono text-[11px] font-bold text-slate-700">{t.at}</span>
+                    <span className="text-[11.5px] text-slate-500">·</span>
+                    <span className="text-[12px] font-semibold text-slate-800">{t.who}</span>
+                  </div>
+                  <div className="text-[12px] text-slate-600">{t.what}</div>
+                </li>
+              ))}
+            </ol>
+            <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
+              <input className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300" placeholder="พิมพ์อัพเดต..." />
+              <button className="rounded-lg bg-slate-900 px-3 py-2 text-[11.5px] font-bold text-white hover:bg-slate-800">ส่ง</button>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT */}
+        <div className="col-span-12 lg:col-span-5 space-y-4">
+          {/* TECH */}
+          <div className="rounded-2xl border border-slate-200/70 bg-white p-4">
+            <div className="label mb-2">ช่างที่มอบหมาย</div>
+            {tech ? (
+              <div className="flex items-center gap-3">
+                <div className="grid h-12 w-12 flex-none place-items-center rounded-full text-[14px] font-bold text-white" style={{ background: tech.color }}>{tech.short}</div>
+                <div className="flex-1">
+                  <div className="text-[13px] font-semibold">{tech.name}</div>
+                  <div className="text-[10.5px] text-slate-500">{tech.role}</div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {tech.skills.map(s => <span key={s} className="mono rounded bg-slate-100 px-1.5 py-0.5 text-[8.5px] font-bold text-slate-600">{s}</span>)}
+                  </div>
+                </div>
+                <button className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50" title="โทร">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 4 H9 L11 9 L8 11 a12 12 0 0 0 5 5 L15 13 L20 15 V19 a2 2 0 0 1 -2 2 a18 18 0 0 1 -16 -16 a2 2 0 0 1 2 -2" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>
+                </button>
+              </div>
+            ) : (
+              <button onClick={onAssign} className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-[12.5px] font-semibold text-slate-600 hover:border-slate-400 hover:bg-white">
+                {I.plus} มอบหมายช่างให้เรื่องนี้
+              </button>
+            )}
+            {r.eta && tech && (
+              <div className="mt-3 flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-[12px] ring-1 ring-blue-200">
+                <span className="text-blue-700">{I.clock}</span>
+                <span className="text-slate-600">ETA:</span>
+                <span className="mono font-bold text-blue-700">{r.eta}</span>
+              </div>
+            )}
+          </div>
+
+          {/* GUEST IMPACT */}
+          <div className={`rounded-2xl border p-4 ${r.guestImpact === "high" ? "border-rose-200 bg-rose-50" : r.guestImpact === "medium" ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white"}`}>
+            <div className="label mb-2">กระทบลูกค้า</div>
+            <div className="flex items-center gap-2">
+              <span className={`mono rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${r.guestImpact === "high" ? "bg-rose-600 text-white" : r.guestImpact === "medium" ? "bg-amber-500 text-white" : "bg-emerald-600 text-white"}`}>
+                {r.guestImpact === "high" ? "สูง" : r.guestImpact === "medium" ? "ปานกลาง" : "ต่ำ"}
+              </span>
+              <span className="text-[12px] font-semibold text-slate-800">{r.guestNote || "—"}</span>
+            </div>
+          </div>
+
+          {/* COST */}
+          <div className="rounded-2xl border border-slate-200/70 bg-white p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="label">ค่าใช้จ่าย / อะไหล่</div>
+              <button className="text-[11px] font-semibold text-blue-600 hover:underline">+ เพิ่ม</button>
+            </div>
+            {r.parts && r.parts.length > 0 ? (
+              <>
+                <table className="w-full text-[12px]">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-[10px] uppercase tracking-wider text-slate-400">
+                      <th className="pb-1.5 text-left font-semibold">รายการ</th>
+                      <th className="pb-1.5 text-right font-semibold">จำนวน</th>
+                      <th className="pb-1.5 text-right font-semibold">ราคา</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {r.parts.map((p, i) => (
+                      <tr key={i} className="border-b border-slate-50">
+                        <td className="py-1.5 text-slate-700">{p.name}</td>
+                        <td className="py-1.5 text-right mono text-slate-500">{p.qty}</td>
+                        <td className="py-1.5 text-right mono font-semibold">{fmtBaht(p.price)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td className="pt-2 text-[11px] font-semibold text-slate-500" colSpan="2">รวม</td>
+                      <td className="pt-2 text-right mono text-[14px] font-bold">{fmtBaht(partsTotal)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </>
+            ) : (
+              <div className="grid place-items-center rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-5 text-center">
+                <div className="text-[12px] text-slate-500">ยังไม่มีค่าใช้จ่าย</div>
+                <div className="mt-0.5 mono text-[10px] text-slate-400">บันทึกอะไหล่และค่าแรงเมื่อช่างเสร็จงาน</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================ KANBAN VIEW ============================================================ */
+function KanbanView({ items, statusFilter, setStatusFilter, urgencyFilter, setUrgencyFilter, urgCounts, moveStatus, setSelectedId }) {
+  const [drag, setDrag] = React.useState(null);
+  const [dropCol, setDropCol] = React.useState(null);
+  const cols = STATUSES.filter(s => s.id !== "cancelled");
+  const counts = {
+    new: items.filter(r => r.status === "new").length,
+    contacted: items.filter(r => r.status === "contacted").length,
+    in_progress: items.filter(r => r.status === "in_progress").length,
+    waiting: items.filter(r => r.status === "waiting").length,
+    done: items.filter(r => r.status === "done").length,
+    all: items.length,
+  };
+  return (
+    <>
+      {/* Filter bar — only urgency since status is the kanban */}
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200/70 bg-white px-7 py-2.5">
+        <span className="label mr-1">URGENCY</span>
+        <button onClick={() => setUrgencyFilter("all")} className={`rounded-lg px-2.5 py-1 text-[11.5px] font-semibold ${urgencyFilter==="all" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>ทุก urgency</button>
+        {Object.entries(URGENCY).map(([k, u]) => (
+          <button key={k} onClick={() => setUrgencyFilter(urgencyFilter === k ? "all" : k)}
+            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11.5px] font-semibold ring-1 transition ${urgencyFilter===k ? `${u.pillBg} ${u.pillText} ${u.ring}` : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50"}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${u.dot}`}></span>{u.t} <span className="mono opacity-70">({urgCounts[k]})</span>
+          </button>
+        ))}
+        <span className="ml-auto mono text-[10.5px] text-slate-400">ลากการ์ดข้ามคอลัมน์เพื่อเปลี่ยนสถานะ</span>
+      </div>
+      <div className="scrollbar-slim flex-1 overflow-auto px-7 py-5">
+        <div className="grid grid-cols-5 gap-3" style={{ minWidth: 1200 }}>
+          {cols.map(col => {
+            const colItems = items.filter(r => r.status === col.id);
+            const isDrop = dropCol === col.id;
+            return (
+              <div key={col.id}
+                onDragOver={(e) => { e.preventDefault(); setDropCol(col.id); }}
+                onDragLeave={() => setDropCol(prev => prev === col.id ? null : prev)}
+                onDrop={(e) => { e.preventDefault(); if (drag) moveStatus(drag, col.id); setDrag(null); setDropCol(null); }}
+                className={`flex flex-col rounded-2xl border bg-white transition ${isDrop ? "border-blue-400 ring-2 ring-blue-200" : "border-slate-200/70"}`}>
+                <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2.5">
+                  <span className="h-2 w-2 rounded-full" style={{ background: col.bar }}></span>
+                  <span className="text-[12.5px] font-bold tracking-tight">{col.t}</span>
+                  <span className={`mono ml-auto rounded px-1.5 py-0.5 text-[9.5px] font-bold ${col.bg} ${col.text}`}>{counts[col.id]}</span>
+                </div>
+                <div className="scrollbar-slim flex-1 space-y-1.5 overflow-auto p-2.5" style={{ maxHeight: 700 }}>
+                  {colItems.length === 0 && (
+                    <div className="grid place-items-center rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center">
+                      <div className="mono text-[10px] text-slate-400">ว่าง</div>
+                    </div>
+                  )}
+                  {colItems.map(r => (
+                    <div key={r.id}
+                      draggable
+                      onDragStart={(e) => { setDrag(r.id); e.dataTransfer.effectAllowed = "move"; }}
+                      onDragEnd={() => { setDrag(null); setDropCol(null); }}
+                      onClick={() => setSelectedId(r.id)}
+                      className={`grab ${drag === r.id ? "opacity-40" : ""}`}>
+                      <KanbanCard r={r} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function KanbanCard({ r }) {
+  const cat = CAT[r.cat];
+  const urg = URGENCY[r.urgency];
+  const tech = r.techId ? techById(r.techId) : null;
+  const accent = r.urgency === "high" ? "#E11D48" : r.urgency === "medium" ? "#F59E0B" : "#10B981";
+  return (
+    <div className="relative rounded-xl border border-slate-200 bg-white p-2.5 hover:border-slate-300 hover:shadow-sm">
+      <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full" style={{ background: accent }}></span>
+      <div className="flex items-start gap-2 pl-1.5">
+        <span className="grid h-7 w-7 flex-none place-items-center rounded-md text-[13px] ring-1 ring-slate-100" style={{ background: cat.color + "15" }}>{cat.emoji}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="mono rounded bg-slate-100 px-1 py-0.5 text-[8.5px] font-bold text-slate-600">{r.id.split("-")[2]}</span>
+            <span className={`mono rounded px-1 py-0.5 text-[8.5px] font-bold uppercase tracking-wider ${urg.pillBg} ${urg.pillText}`}>{urg.t}</span>
+            {r.guestImpact === "high" && <span className="text-[10px]">⚠️</span>}
+          </div>
+          <div className="mt-1 line-clamp-2 text-[12px] font-semibold leading-tight text-slate-900">{r.title}</div>
+          <div className="mt-1.5 mono flex items-center gap-1 text-[10px] text-slate-500">{I.pin}{r.location}</div>
+        </div>
+      </div>
+      <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-1.5">
+        {tech ? (
+          <span className="flex items-center gap-1 text-[10.5px] text-slate-700">
+            <span className="grid h-4 w-4 place-items-center rounded-full text-[8.5px] font-bold text-white" style={{ background: tech.color }}>{tech.short[0]}</span>
+            {tech.name}
+          </span>
+        ) : <span className="mono text-[10px] font-bold text-blue-600">รอมอบหมาย</span>}
+        {r.eta && <span className="mono text-[10px] font-semibold text-slate-500">{r.eta}</span>}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================ NEW MODAL ============================================================ */
+function NewRepairModal({ onClose, onSubmit }) {
+  const [title, setTitle] = React.useState("");
+  const [cat, setCat] = React.useState("ac");
+  const [urgency, setUrgency] = React.useState("medium");
+  const [location, setLocation] = React.useState("");
+  const [asset, setAsset] = React.useState("");
+  const [description, setDescription] = React.useState("");
+  const [guestImpact, setGuestImpact] = React.useState("low");
+  const submit = () => {
+    if (!title.trim() || !location.trim()) return;
+    onSubmit({
+      title: title.trim(), cat, urgency, location, asset,
+      description: description.trim(), guestImpact, guestNote: "—",
+      reportedBy: "คุณภัทร", reportedAt: "เพิ่งทำ",
+    });
+  };
+  return (
+    <div className="fixed inset-0 z-40 grid place-items-center bg-slate-900/40 px-6 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-[560px] overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()} style={{ animation: "fadeIn .2s ease-out" }}>
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+          <div>
+            <div className="label">แจ้งซ่อมใหม่</div>
+            <div className="text-[16px] font-bold tracking-tight">เปิดเคสใหม่</div>
+          </div>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-md text-slate-400 hover:bg-slate-50 hover:text-slate-700">{I.close}</button>
+        </div>
+        <div className="scrollbar-slim max-h-[70vh] overflow-auto px-5 py-4 space-y-3">
+          <Field label="หัวข้อ *">
+            <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="เช่น แอร์ห้อง 305 ไม่เย็น..." className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-blue-400"/>
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="หมวด">
+              <div className="flex flex-wrap gap-1.5">
+                {Object.entries(CAT).map(([k, c]) => (
+                  <button key={k} type="button" onClick={() => setCat(k)} className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold ring-1 ${cat===k ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-600 ring-slate-200 hover:ring-slate-300"}`}>
+                    <span>{c.emoji}</span>{c.t}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <Field label="ความรุนแรง">
+              <div className="flex gap-1.5">
+                {Object.entries(URGENCY).map(([k, u]) => (
+                  <button key={k} type="button" onClick={() => setUrgency(k)} className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-[11.5px] font-bold ring-1 ${urgency===k ? `${u.pillBg} ${u.pillText} ${u.ring}` : "bg-white text-slate-600 ring-slate-200"}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${u.dot}`}></span>{u.t}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="ห้อง / สถานที่ *">
+              <input value={location} onChange={e=>setLocation(e.target.value)} placeholder="ห้อง 305 · ชั้น 3" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-blue-400"/>
+            </Field>
+            <Field label="อุปกรณ์ / asset">
+              <input value={asset} onChange={e=>setAsset(e.target.value)} placeholder="AC FCU · DAIKIN..." className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-blue-400"/>
+            </Field>
+          </div>
+          <Field label="รายละเอียด">
+            <textarea value={description} onChange={e=>setDescription(e.target.value)} rows="3" placeholder="อะไรเสีย เกิดเมื่อไหร่ แก้ไขเบื้องต้นอะไรไปแล้วบ้าง" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-blue-400"/>
+          </Field>
+          <Field label="กระทบลูกค้า">
+            <div className="flex gap-1.5">
+              {[["low","ต่ำ"],["medium","ปานกลาง"],["high","สูง"]].map(([k,t]) => (
+                <button key={k} type="button" onClick={() => setGuestImpact(k)} className={`flex flex-1 items-center justify-center rounded-md px-2 py-1.5 text-[11.5px] font-bold ring-1 ${guestImpact===k ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-600 ring-slate-200"}`}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label="รูปก่อน">
+            <div className="grid place-items-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 hover:border-slate-400">
+              <div className="flex flex-col items-center gap-1 text-slate-400">
+                {I.cam}
+                <span className="text-[11px] font-semibold">แตะเพื่ออัพโหลด หรือลากไฟล์มาวาง</span>
+                <span className="mono text-[9.5px] text-slate-400">PNG · JPG · ≤5MB</span>
+              </div>
+            </div>
+          </Field>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3 bg-slate-50/50">
+          <button onClick={onClose} className="rounded-lg px-3 py-2 text-[12.5px] font-semibold text-slate-500 hover:text-slate-900">ยกเลิก</button>
+          <button onClick={submit} disabled={!title.trim() || !location.trim()} className="rounded-lg bg-blue-600 px-4 py-2 text-[12.5px] font-bold text-white shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)] hover:bg-blue-700 disabled:opacity-40">เปิดเคส →</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div>
+      <div className="mb-1 text-[11px] font-semibold text-slate-600">{label}</div>
+      {children}
+    </div>
+  );
+}
+
+/* ============================================================ ASSIGN MODAL ============================================================ */
+function AssignModal({ repair, onClose, onAssign }) {
+  const [tid, setTid] = React.useState(repair.techId || TECHS[0].id);
+  const [eta, setEta] = React.useState(repair.eta || "วันนี้ 16:00");
+  const cat = CAT[repair.cat];
+  const skillMap = { ac: "AC", plumb: "PLUMB", elec: "ELEC", net: "ELEC", appl: "GEN", lock: "GEN", furn: "GEN", gen: "GEN" };
+  const needSkill = skillMap[repair.cat] || "GEN";
+  const recommended = TECHS.filter(t => t.skills.includes(needSkill));
+  const others = TECHS.filter(t => !t.skills.includes(needSkill));
+  return (
+    <div className="fixed inset-0 z-40 grid place-items-center bg-slate-900/40 px-6 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-[480px] overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()} style={{ animation: "fadeIn .2s ease-out" }}>
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+          <div>
+            <div className="label">มอบหมายช่าง</div>
+            <div className="text-[16px] font-bold tracking-tight">{cat.emoji} {repair.title}</div>
+            <div className="mono text-[10.5px] text-slate-500">{repair.id} · {repair.location}</div>
+          </div>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-md text-slate-400 hover:bg-slate-50 hover:text-slate-700">{I.close}</button>
+        </div>
+        <div className="px-5 py-3 space-y-3">
+          <div>
+            <div className="label mb-2">ช่างที่เหมาะ · ทักษะ {needSkill}</div>
+            <div className="space-y-1.5">
+              {recommended.map(t => (
+                <button key={t.id} onClick={() => setTid(t.id)} className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition ${tid===t.id ? "border-blue-400 bg-blue-50 ring-2 ring-blue-100" : "border-slate-200 bg-white hover:border-slate-300"}`}>
+                  <div className="grid h-9 w-9 flex-none place-items-center rounded-full text-[12px] font-bold text-white" style={{ background: t.color }}>{t.short}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12.5px] font-semibold">{t.name}</div>
+                    <div className="text-[10.5px] text-slate-500">{t.role}</div>
+                  </div>
+                  <div className="flex flex-wrap justify-end gap-1">
+                    {t.skills.map(s => <span key={s} className={`mono rounded px-1 py-0.5 text-[8.5px] font-bold ${s===needSkill ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}>{s}</span>)}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+          <details>
+            <summary className="cursor-pointer text-[11.5px] font-semibold text-slate-500 hover:text-slate-900">ช่างอื่น ({others.length})</summary>
+            <div className="mt-2 space-y-1.5">
+              {others.map(t => (
+                <button key={t.id} onClick={() => setTid(t.id)} className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition ${tid===t.id ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white opacity-70 hover:opacity-100"}`}>
+                  <div className="grid h-8 w-8 flex-none place-items-center rounded-full text-[12px] font-bold text-white" style={{ background: t.color }}>{t.short}</div>
+                  <div className="flex-1">
+                    <div className="text-[12px] font-semibold">{t.name}</div>
+                    <div className="text-[10.5px] text-slate-500">{t.role}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </details>
+          <Field label="ETA · เวลาที่คาดว่าช่างจะมา">
+            <input value={eta} onChange={e=>setEta(e.target.value)} placeholder="วันนี้ 14:00" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-blue-400"/>
+          </Field>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3 bg-slate-50/50">
+          <button onClick={onClose} className="rounded-lg px-3 py-2 text-[12.5px] font-semibold text-slate-500 hover:text-slate-900">ยกเลิก</button>
+          <button onClick={() => onAssign(tid, eta)} className="rounded-lg bg-blue-600 px-4 py-2 text-[12.5px] font-bold text-white shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)] hover:bg-blue-700">มอบหมาย →</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================ ROOT ============================================================ */
+function App() {
+  return (
+    <div className="min-h-screen p-5">
+      <div className="mx-auto" style={{ maxWidth: 1480 }}>
+        <ChromeWindow
+          tabs={[{ title: "POOIL accounting" }, { title: "AuditMe — แจ้งซ่อม" }]}
+          activeIndex={1}
+          url="auditme.app/workspace/repairs"
+          width="100%"
+          height="auto"
+        >
+          <div style={{ height: 920 }}>
+            <RepairsPage />
+          </div>
+        </ChromeWindow>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AuditMe — SOP v2 (Linked · Training · Mobile)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html, body { margin:0; background:#C7C7B8; font-family:'IBM Plex Sans Thai','IBM Plex Sans',sans-serif; -webkit-font-smoothing:antialiased; color:#0F172A; }
+  @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+  @keyframes slideIn { from{transform:translateX(40px); opacity:0} to{transform:translateX(0); opacity:1} }
+  @keyframes linkPulse {
+    0%,100% { box-shadow:0 0 0 2px #FDE68A, 0 0 0 4px rgba(253,224,71,0); }
+    50%     { box-shadow:0 0 0 2px #FDE68A, 0 0 0 7px rgba(253,224,71,0.45); }
+  }
+  ::-webkit-scrollbar { width:8px; height:8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(15,23,42,0.18); border-radius:999px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  .tabbar { background:#0F172A; padding:14px 18px 0; }
+  .tab { display:inline-flex; align-items:center; gap:8px; padding:9px 16px; border-radius:10px 10px 0 0; font-family:'IBM Plex Sans Thai'; font-size:13px; font-weight:600; color:#94A3B8; background:transparent; border:none; cursor:pointer; margin-right:4px; position:relative; }
+  .tab.active { color:#0F172A; background:#EEEEE6; }
+  .tab-no { font-family:'IBM Plex Mono'; font-size:10px; padding:2px 6px; border-radius:5px; background:rgba(255,255,255,0.08); color:#94A3B8; letter-spacing:0.06em; }
+  .tab.active .tab-no { background:#0F172A; color:#94A3B8; }
+  .stage { background:#EEEEE6; height: calc(100vh - 56px); overflow:hidden; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<template id="__bundler_thumbnail">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#EEEEE6"/><rect x="14" y="22" width="44" height="56" rx="6" fill="#fff" stroke="#0F172A" stroke-width="3"/><rect x="62" y="30" width="26" height="48" rx="4" fill="#2563EB"/><line x1="22" y1="36" x2="50" y2="36" stroke="#2563EB" stroke-width="3"/><line x1="22" y1="48" x2="44" y2="48" stroke="#94A3B8" stroke-width="3"/><line x1="22" y1="58" x2="48" y2="58" stroke="#CBD5E1" stroke-width="3"/><circle cx="75" cy="54" r="5" fill="#fff"/></svg>
+</template>
+<body data-screen-label="SOP Redesign v2">
+
+<div id="root"></div>
+
+<script type="text/babel" src="sop-data.jsx"></script>
+<script type="text/babel" src="sop-shell.jsx"></script>
+<script type="text/babel" src="sop-extra.jsx"></script>
+
+<script type="text/babel">
+const { useState } = React;
+
+function App() {
+  const initial = (location.hash||"").replace("#","") || "linked";
+  const [tab, setTab] = useState(initial);
+  React.useEffect(()=>{ location.hash = tab; }, [tab]);
+
+  const tabs = [
+    { id:"linked",   no:"04", t:"ลิงก์ระหว่าง SOP",   sub:"กดดู SOP ที่อ้างอิงได้" },
+    { id:"training", no:"05", t:"โหมดตรวจสอบ / ฝึก",  sub:"สำหรับพนักงานใหม่" },
+    { id:"mobile",   no:"06", t:"Mobile / Tablet",    sub:"เปิดบนแท็บเล็ตหน้างาน" },
+  ];
+
+  const Screen = ({
+    linked:   window.SOPViewLinkedScreen,
+    training: window.SOPTrainingScreen,
+    mobile:   window.SOPMobileScreen,
+  })[tab];
+
+  return (
+    <>
+      <div className="tabbar">
+        <div style={{display:"flex", alignItems:"flex-end", gap:0, maxWidth:1480, margin:"0 auto"}}>
+          <div style={{display:"flex", alignItems:"center", gap:10, padding:"0 14px 12px 0"}}>
+            <div style={{width:26, height:26, borderRadius:7, background:"linear-gradient(135deg,#3B82F6,#1D4ED8)", display:"grid", placeItems:"center"}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M5 12 L10 17 L19 7" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </div>
+            <div>
+              <div style={{color:"white", fontSize:12.5, fontWeight:700, letterSpacing:"-0.01em"}}>AuditMe — SOP v2 · Extensions</div>
+              <div style={{fontFamily:"'IBM Plex Mono'", fontSize:9, color:"#64748B", letterSpacing:"0.16em", textTransform:"uppercase"}}>Cross-link · Training · Mobile</div>
+            </div>
+          </div>
+          <div style={{flex:1}}/>
+          {tabs.map(tt => (
+            <button key={tt.id} className={`tab ${tab===tt.id?"active":""}`} onClick={()=>setTab(tt.id)}>
+              <span className="tab-no">{tt.no}</span>
+              <span style={{display:"flex", flexDirection:"column", alignItems:"flex-start", lineHeight:1.15, textAlign:"left"}}>
+                <span>{tt.t}</span>
+                <span style={{fontSize:9.5, fontWeight:500, opacity:0.6, fontFamily:"'IBM Plex Mono'", letterSpacing:"0.04em"}}>{tt.sub}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="stage">
+        {Screen && <Screen/>}
+      </div>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
