@@ -66,6 +66,11 @@ export async function POST(
   }
 
   if (!verifyLineSignature(rawBody, signature, channelSecret)) {
+    // LINE reached us but signature didn't match — loud so "messages not
+    // arriving" can be diagnosed (wrong Channel Secret?) (BUGSOLVE BE-01).
+    console.error(
+      `[line-webhook] REJECTED event for channel ${channel.id}: signature mismatch (Channel Secret wrong?). Event dropped before ingest.`,
+    );
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 

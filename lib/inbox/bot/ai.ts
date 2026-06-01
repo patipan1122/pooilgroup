@@ -43,6 +43,9 @@ export async function aiAnswer(opts: {
   knowledge: string;
   tone: string;
   botName?: string | null;
+  /** Business display name — drives the persona so a hotel page doesn't answer
+   *  as a massage-chair bot (BUGSOLVE SA-04). */
+  businessName?: string | null;
   orgId: string;
   createdById?: string | null;
   /**
@@ -60,8 +63,11 @@ export async function aiAnswer(opts: {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
     const persona = opts.botName ? `คุณชื่อ "${opts.botName}" ` : "";
+    const bizPhrase = opts.businessName
+      ? `ธุรกิจ "${opts.businessName}"`
+      : "ธุรกิจนี้";
     const system = [
-      `${persona}คุณคือผู้ช่วยตอบแชทลูกค้าของธุรกิจเก้าอี้นวดหยอดเหรียญในห้าง/ที่สาธารณะ`,
+      `${persona}คุณคือผู้ช่วยตอบแชทลูกค้าของ${bizPhrase} · ตอบโดยอ้างอิงเฉพาะข้อมูลธุรกิจด้านล่าง`,
       `โทนการพูด: ${opts.tone} · ตอบเป็นภาษาไทย · สั้น กระชับ · ลงท้ายสุภาพ`,
       `ข้อมูลธุรกิจที่ใช้ตอบได้ (ห้ามแต่งข้อมูลเกินจากนี้):\n${opts.knowledge}`,
       `กติกาสำคัญ:\n` +

@@ -40,23 +40,49 @@ interface FbWebhookBody {
   entry?: FbEntry[];
 }
 
-function verifyAppSignature(rawBody: string, header: string | null): boolean {
-  if (!header || !process.env.FACEBOOK_APP_SECRET) return false;
+// Returns ok + a human reason so we can tell APART the failure modes in logs:
+// missing app secret (env not set) vs forged/mismatched signature (wrong secret).
+// Without this, a missing FACEBOOK_APP_SECRET silently 401s every event and we
+// can't tell FB-isn't-calling from we're-rejecting (BUGSOLVE BE-01/06).
+function verifyAppSignature(
+  rawBody: string,
+  header: string | null,
+): { ok: boolean; reason?: string } {
+  if (!process.env.FACEBOOK_APP_SECRET) {
+    return { ok: false, reason: "FACEBOOK_APP_SECRET not set in env" };
+  }
+  if (!header) return { ok: false, reason: "missing x-hub-signature-256 header" };
   const expected = crypto
     .createHmac("sha256", process.env.FACEBOOK_APP_SECRET)
     .update(rawBody)
     .digest("hex");
   const got = header.startsWith("sha256=") ? header.slice(7) : header;
-  if (expected.length !== got.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(got));
+  if (expected.length !== got.length) return { ok: false, reason: "signature length mismatch" };
+  const match = crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(got));
+  return match ? { ok: true } : { ok: false, reason: "signature mismatch (FACEBOOK_APP_SECRET wrong?)" };
 }
 
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const sig = req.headers.get("x-hub-signature-256");
-  if (!verifyAppSignature(rawBody, sig)) {
-    return NextResponse.json({ error: "invalid signature" }, { status: 401 });
+  const verdict = verifyAppSignature(rawBody, sig);
+  if (!verdict.ok) {
+    // FB DID call us but we're dropping it — make this loud (visible in Vercel
+    // function logs) so "zero messages" can be diagnosed (BUGSOLVE BE-01/03).
+    console.error(
+      `[fb-app-webhook] REJECTED inbound event: ${verdict.reason}. FB reached us but the event was dropped before ingest.`,
+    );
+    return NextResponse.json({ error: "invalid signature", reason: verdict.reason }, { status: 401 });
   }
+  console.log(
+    `[fb-app-webhook] accepted event · entries=${(() => {
+      try {
+        return (JSON.parse(rawBody) as FbWebhookBody).entry?.length ?? 0;
+      } catch {
+        return "?";
+      }
+    })()}`,
+  );
 
   let body: FbWebhookBody;
   try {
@@ -85,7 +111,11 @@ export async function POST(req: NextRequest) {
         },
       });
       if (!channel) {
-        console.warn("[fb-app-webhook] unknown page", pageId);
+        // FB sent us an event for a page we don't have a channel for — visible
+        // so the CEO can tell "page subscribed but not imported" apart.
+        console.warn(
+          `[fb-app-webhook] event for page ${pageId} but no matching FACEBOOK channel (not imported, or externalId mismatch)`,
+        );
         continue;
       }
 
@@ -122,8 +152,13 @@ export async function POST(req: NextRequest) {
         if (accessToken) {
           try {
             const profResp = await fetch(
-              `https://graph.facebook.com/${psid}?fields=name&access_token=${encodeURIComponent(accessToken)}`,
-              { signal: AbortSignal.timeout(2000) },
+              `https://graph.facebook.com/${psid}?fields=name`,
+              {
+                // token in Authorization header, not URL query — avoids leaking
+                // it via logs/referrer (BUGSOLVE SEC-04).
+                headers: { Authorization: `Bearer ${accessToken}` },
+                signal: AbortSignal.timeout(2000),
+              },
             );
             if (profResp.ok) {
               const prof = (await profResp.json()) as { name?: string };

@@ -36,9 +36,13 @@ export function ConversationList({
     return (
       <div className="p-8 text-center">
         <MessageSquare className="size-12 mx-auto text-zinc-300" />
-        <p className="mt-4 font-bold text-zinc-900">ไม่พบบทสนทนาตามที่กรอง</p>
-        <p className="text-xs text-zinc-500 mt-1">
-          ลองล้างตัวกรอง หรือรอข้อความใหม่เข้ามา
+        <p className="mt-4 font-bold text-zinc-900">ยังไม่มีบทสนทนา</p>
+        <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
+          ถ้าเพิ่งเชื่อมเพจ — ข้อความจะขึ้นที่นี่เมื่อมีลูกค้าทักเข้ามา
+          <br />
+          เชื่อมแล้วแต่เงียบ? เช็กที่ <strong>ตั้งค่าช่องทาง → ตรวจการเชื่อมต่อ</strong>
+          <br />
+          หรือถ้ากำลังกรองอยู่ ลองล้างตัวกรอง
         </p>
       </div>
     );

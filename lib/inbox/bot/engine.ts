@@ -19,7 +19,7 @@ import {
   sendFacebookImage,
   sendLineTextPlusImage,
 } from "../send";
-import { topicLabel } from "../business";
+import { topicLabel, INBOX_BUSINESSES } from "../business";
 import type { FlowImageTopic } from "./settings";
 import { renderChairopsTemplate as template, renderHotelTemplate, classifyHotelIntent, appendHotelCta } from "./templates";
 
@@ -175,6 +175,8 @@ async function notifyUrgent(
 export async function runBot(opts: RunBotInput): Promise<void> {
   const { channel, conversationId, text } = opts;
   const businessTag = channel.businessTag ?? "";
+  const businessName =
+    INBOX_BUSINESSES.find((b) => b.tag === businessTag)?.label ?? null;
   const settings = await getBotSettings(channel.orgId, businessTag);
   const cls = classify(text);
 
@@ -230,6 +232,7 @@ export async function runBot(opts: RunBotInput): Promise<void> {
       ]);
       const ai = await aiAnswer({
         text, knowledge, tone: settings.tone, botName: settings.botName,
+        businessName,
         orgId: channel.orgId, createdById: channel.createdById, history,
       });
       if (ai.answer) {
@@ -252,6 +255,7 @@ export async function runBot(opts: RunBotInput): Promise<void> {
       knowledge,
       tone: settings.tone,
       botName: settings.botName,
+      businessName,
       orgId: channel.orgId,
       createdById: channel.createdById,
       history,

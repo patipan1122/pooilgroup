@@ -233,11 +233,13 @@ export async function checkChannelHealth(id: string): Promise<ChannelHealth> {
         detail: "ไม่มี Page ID (External ID) — ใส่ Page ID ก่อนถึงจะตรวจ subscribe ได้",
       };
     }
+    // token in Authorization header (not URL) — avoids log/referrer leak (SEC-04)
+    const auth = { Authorization: `Bearer ${token}` };
     // 1) token valid? (page name)
-    const nameResp = await fetch(
-      `${FB}/${pageId}?fields=name&access_token=${encodeURIComponent(token)}`,
-      { signal: AbortSignal.timeout(10_000) },
-    );
+    const nameResp = await fetch(`${FB}/${pageId}?fields=name`, {
+      headers: auth,
+      signal: AbortSignal.timeout(10_000),
+    });
     if (!nameResp.ok) {
       const t = await nameResp.text().catch(() => "");
       return {
@@ -247,10 +249,10 @@ export async function checkChannelHealth(id: string): Promise<ChannelHealth> {
     }
     // 2) subscribed to our app + which fields?
     const appId = process.env.FACEBOOK_APP_ID;
-    const subResp = await fetch(
-      `${FB}/${pageId}/subscribed_apps?access_token=${encodeURIComponent(token)}`,
-      { signal: AbortSignal.timeout(10_000) },
-    );
+    const subResp = await fetch(`${FB}/${pageId}/subscribed_apps`, {
+      headers: auth,
+      signal: AbortSignal.timeout(10_000),
+    });
     if (!subResp.ok) {
       return {
         tokenValid: true,
@@ -441,14 +443,19 @@ async function bulkCreateFacebookChannelsInternal(input: {
         },
         select: { id: true, metadata: true },
       });
+      let channelId: string;
+      // string|null values only → valid Prisma JSON input (InputJsonValue).
+      let metaObj: Record<string, string | null>;
       if (existing) {
+        channelId = existing.id;
+        metaObj = (existing.metadata as Record<string, string | null>) ?? {};
         await prisma.inboxChannel.update({
           where: { id: existing.id },
           data: {
             displayName: p.name,
             businessTag: p.businessTag,
             accessTokenEnc: p.accessTokenEnc,
-            status: "active",
+            // status set AFTER subscribe below — don't claim "active" yet.
           },
         });
         updated++;
@@ -457,7 +464,8 @@ async function bulkCreateFacebookChannelsInternal(input: {
         // route; the new app-level webhook uses FACEBOOK_APP_SECRET for
         // signature verification.  Still mint one for the metadata blob.
         const verifyToken = crypto.randomBytes(24).toString("hex");
-        await prisma.inboxChannel.create({
+        metaObj = { verifyTokenEnc: encryptToken(verifyToken) };
+        const row = await prisma.inboxChannel.create({
           data: {
             orgId: session.user.org_id,
             platform: "FACEBOOK",
@@ -465,33 +473,47 @@ async function bulkCreateFacebookChannelsInternal(input: {
             businessTag: p.businessTag,
             externalId: p.id,
             accessTokenEnc: p.accessTokenEnc,
-            // No per-page webhook secret — app-level webhook verifies with
-            // FACEBOOK_APP_SECRET instead.
             webhookSecret: null,
             botEnabled: false,
-            status: "active",
-            metadata: { verifyTokenEnc: encryptToken(verifyToken) },
+            status: "setup", // promoted to "active" only if subscribe succeeds
+            metadata: metaObj,
             createdById: session.user.id,
           },
+          select: { id: true },
         });
+        channelId = row.id;
         created++;
       }
 
-      // Subscribe the page so its events flow to the app webhook.  Best
-      // effort — failure here just means CEO needs to retry; the channel
-      // already exists so the next attempt is cheap.
+      // Subscribe the page so its events flow to the app webhook. Reflect the
+      // REAL outcome in status so a failed subscribe doesn't masquerade as
+      // "active" (BUGSOLVE BE-02 — was a silent lie that hid why no messages).
+      let subErr: string | null = null;
       try {
         const plainToken = decryptToken(p.accessTokenEnc);
-        if (plainToken) {
-          await subscribePageWebhook({
-            pageId: p.id,
-            pageAccessToken: plainToken,
-          });
+        if (!plainToken) {
+          subErr = "ไม่มี access token ใช้งานได้";
+        } else {
+          await subscribePageWebhook({ pageId: p.id, pageAccessToken: plainToken });
           subscribed++;
         }
       } catch (e) {
-        errors.push(`${p.name}: subscribe failed — ${(e as Error).message}`);
+        subErr = (e as Error).message;
       }
+      if (subErr) errors.push(`${p.name}: subscribe failed — ${subErr}`);
+      await prisma.inboxChannel
+        .update({
+          where: { id: channelId },
+          data: {
+            status: subErr ? "error" : "active",
+            metadata: {
+              ...metaObj,
+              subscribeError: subErr,
+              subscribedAt: subErr ? null : new Date().toISOString(),
+            },
+          },
+        })
+        .catch(() => {});
     } catch (e) {
       errors.push(`${p.name}: ${(e as Error).message}`);
     }
