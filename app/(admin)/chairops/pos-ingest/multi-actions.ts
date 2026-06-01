@@ -216,3 +216,231 @@ export async function commitMultiImport(
 
   return result;
 }
+
+// ---------------------------------------------------------------------------
+// Smart batch — CEO 2026-06-01: ONE dropzone for ALL 3 StarThing files.
+// Server auto-detects type per file and routes accordingly:
+//   - daily  → reuses previewImport (creates a ChairopsPosImport row)
+//   - cash   → reuses event preview path (in-memory diff, no row yet)
+//   - coin   → same
+// Returns a per-file result so the UI can render each row independently.
+// ---------------------------------------------------------------------------
+
+export type BatchPreviewItem =
+  | {
+      ok: true;
+      fileName: string;
+      kind: "daily";
+      importId: string;
+    }
+  | {
+      ok: true;
+      fileName: string;
+      kind: "cash" | "coin";
+      preview: EventDiffSummary;
+    }
+  | {
+      ok: false;
+      fileName: string;
+      kind: "daily" | "cash" | "coin" | "unknown";
+      error: string;
+    };
+
+export interface BatchPreviewResult {
+  items: BatchPreviewItem[];
+}
+
+export async function previewBatchSmart(
+  formData: FormData,
+): Promise<BatchPreviewResult> {
+  // Auth only · the underlying previewImport / previewMultiImport calls each
+  // scope by their own session.user.orgId, so we don't need to thread it here.
+  await requireRole("OFFICE");
+
+  // Collect all files from the form (any field key starting with "file").
+  const files: Array<{ name: string; buf: Buffer }> = [];
+  for (const [key, val] of formData.entries()) {
+    if (!key.startsWith("file")) continue;
+    if (!(val instanceof File) || val.size === 0) continue;
+    if (val.size > MAX_BYTES) {
+      // Push as error item rather than throwing — other files still try.
+      files.push({ name: val.name, buf: Buffer.alloc(0) });
+      continue;
+    }
+    files.push({ name: val.name, buf: Buffer.from(await val.arrayBuffer()) });
+  }
+
+  const items: BatchPreviewItem[] = [];
+
+  // Pre-detect each file's kind from headers · in parallel where possible.
+  type Pre = { name: string; buf: Buffer; kind: "daily" | "cash" | "coin" | "unknown" };
+  const pre: Pre[] = files.map((f) => {
+    if (f.buf.length === 0) {
+      return { name: f.name, buf: f.buf, kind: "unknown" as const };
+    }
+    try {
+      const detected = detectFileType(readHeaders(f.buf).headers);
+      return { name: f.name, buf: f.buf, kind: detected };
+    } catch {
+      return { name: f.name, buf: f.buf, kind: "unknown" as const };
+    }
+  });
+
+  // Process cash + coin together via the proven multi-preview path so dedup
+  // diff shares the same code path the existing UI uses on commit.
+  const cashFile = pre.find((p) => p.kind === "cash");
+  const coinFile = pre.find((p) => p.kind === "coin");
+  if (cashFile || coinFile) {
+    const fd = new FormData();
+    // Buffer wrap: Node Buffer reports its underlying buffer as
+    // ArrayBufferLike (potentially SharedArrayBuffer) which Blob/File reject.
+    // Copying through a fresh Uint8Array guarantees a plain ArrayBuffer.
+    if (cashFile)
+      fd.set("cashFile", new File([new Uint8Array(cashFile.buf)], cashFile.name));
+    if (coinFile)
+      fd.set("coinFile", new File([new Uint8Array(coinFile.buf)], coinFile.name));
+    const r = await previewMultiImport(fd);
+    if (cashFile) {
+      if (r.cash) {
+        items.push({ ok: true, fileName: cashFile.name, kind: "cash", preview: r.cash });
+      } else {
+        items.push({
+          ok: false,
+          fileName: cashFile.name,
+          kind: "cash",
+          error: r.errors[0] ?? "อ่านไฟล์ cash ไม่สำเร็จ",
+        });
+      }
+    }
+    if (coinFile) {
+      if (r.coin) {
+        items.push({ ok: true, fileName: coinFile.name, kind: "coin", preview: r.coin });
+      } else {
+        items.push({
+          ok: false,
+          fileName: coinFile.name,
+          kind: "coin",
+          error: r.errors[0] ?? "อ่านไฟล์ coin ไม่สำเร็จ",
+        });
+      }
+    }
+  }
+
+  // Daily files go through previewImport one-by-one. We do them sequentially
+  // because each writes a ChairopsPosImport row and the dedup-by-hash unique
+  // index would race on identical files. Different files = no contention.
+  // Import previewImport lazily to avoid a hard cycle with actions.ts.
+  const { previewImport } = await import("./actions");
+  for (const p of pre) {
+    if (p.kind !== "daily") continue;
+    const fd = new FormData();
+    fd.set("file", new File([new Uint8Array(p.buf)], p.name));
+    const r = await previewImport(fd);
+    if (r.ok) {
+      items.push({ ok: true, fileName: p.name, kind: "daily", importId: r.importId });
+    } else {
+      items.push({ ok: false, fileName: p.name, kind: "daily", error: r.error });
+    }
+  }
+
+  // Report unknown files last so the user sees the successes first.
+  for (const p of pre) {
+    if (p.kind !== "unknown") continue;
+    items.push({
+      ok: false,
+      fileName: p.name,
+      kind: "unknown",
+      error:
+        p.buf.length === 0
+          ? "ไฟล์ว่างหรือใหญ่เกิน 10MB"
+          : "ไม่รู้จักชนิดไฟล์ · ต้องเป็น StarThing daily / cash / coin XLSX",
+    });
+  }
+
+  return { items };
+}
+
+// ---------------------------------------------------------------------------
+// Latest-data sniff for the 3 type cards on /pos-ingest landing.
+// "Latest data" = newest timestamp INSIDE the data · "Last upload" = newest
+// uploadedAt of the import row that ingested into the same bucket.
+// ---------------------------------------------------------------------------
+
+export interface LatestPerType {
+  daily: {
+    latestDate: string | null;   // YYYY-MM-DD inside data
+    lastUploadAt: Date | null;   // when an admin pushed a daily file
+    lastUploadName: string | null;
+  };
+  cash: {
+    latestEventAt: Date | null;  // newest cash event timestamp
+    lastUploadAt: Date | null;
+    lastUploadName: string | null;
+  };
+  coin: {
+    latestEventAt: Date | null;
+    lastUploadAt: Date | null;
+    lastUploadName: string | null;
+  };
+}
+
+export async function getStarThingLatest(orgId: string): Promise<LatestPerType> {
+  const [dailyRow, cashRow, coinRow, dailyImport, cashImport, coinImport] =
+    await Promise.all([
+      prisma.chairopsBranchDailyRevenue.findFirst({
+        where: { orgId },
+        orderBy: { bizDate: "desc" },
+        select: { bizDate: true },
+      }),
+      prisma.chairopsPosCashEvent.findFirst({
+        where: { orgId },
+        orderBy: { eventAt: "desc" },
+        select: { eventAt: true },
+      }),
+      prisma.chairopsPosCoinEvent.findFirst({
+        where: { orgId },
+        orderBy: { eventAt: "desc" },
+        select: { eventAt: true },
+      }),
+      // Daily uploads: import rows whose diffSummary has starThing (sources
+      // ChairopsBranchDailyRevenue · only daily-summary files produce that).
+      prisma.chairopsPosImport.findFirst({
+        where: {
+          orgId,
+          committed: true,
+          dailyRevenue: { some: {} },
+        },
+        orderBy: { uploadedAt: "desc" },
+        select: { filename: true, uploadedAt: true },
+      }),
+      // Cash uploads: kind="cash" stored in diffSummary by commitMultiImport.
+      prisma.chairopsPosImport.findFirst({
+        where: { orgId, committed: true, cashEvents: { some: {} } },
+        orderBy: { uploadedAt: "desc" },
+        select: { filename: true, uploadedAt: true },
+      }),
+      prisma.chairopsPosImport.findFirst({
+        where: { orgId, committed: true, coinEvents: { some: {} } },
+        orderBy: { uploadedAt: "desc" },
+        select: { filename: true, uploadedAt: true },
+      }),
+    ]);
+
+  return {
+    daily: {
+      latestDate: dailyRow ? dailyRow.bizDate.toISOString().slice(0, 10) : null,
+      lastUploadAt: dailyImport?.uploadedAt ?? null,
+      lastUploadName: dailyImport?.filename ?? null,
+    },
+    cash: {
+      latestEventAt: cashRow?.eventAt ?? null,
+      lastUploadAt: cashImport?.uploadedAt ?? null,
+      lastUploadName: cashImport?.filename ?? null,
+    },
+    coin: {
+      latestEventAt: coinRow?.eventAt ?? null,
+      lastUploadAt: coinImport?.uploadedAt ?? null,
+      lastUploadName: coinImport?.filename ?? null,
+    },
+  };
+}

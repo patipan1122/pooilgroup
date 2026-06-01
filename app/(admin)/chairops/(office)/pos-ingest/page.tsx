@@ -26,6 +26,9 @@ import {
 } from "@/components/chairops/_kit";
 import { thaiDateTime } from "@/lib/chairops/utils/format";
 import { UndoImportButton } from "./_components/undo-import-button";
+import { MultiUploader } from "./_components/multi-uploader";
+import { LatestDataCards } from "./_components/latest-cards";
+import { getStarThingLatest } from "@/app/(admin)/chairops/pos-ingest/multi-actions";
 
 // Wave-2 B1: how recent a commit must be to still be undoable.
 const UNDO_WINDOW_MS = 60 * 60 * 1000;
@@ -64,10 +67,13 @@ export default async function PosIngestListPage({
   const session = await requireRole("OFFICE");
   const params = await searchParams;
 
-  const imports = await prisma.chairopsPosImport.findMany({
-    orderBy: { uploadedAt: "desc" },
-    take: 50,
-  });
+  const [imports, latest] = await Promise.all([
+    prisma.chairopsPosImport.findMany({
+      orderBy: { uploadedAt: "desc" },
+      take: 50,
+    }),
+    getStarThingLatest(session.user.orgId),
+  ]);
 
   const uploaderIds = [...new Set(imports.map((i) => i.uploadedById))];
   const uploaders = uploaderIds.length
@@ -101,29 +107,23 @@ export default async function PosIngestListPage({
   return (
     <div className="chairops-scope mx-auto max-w-screen-2xl p-4 sm:p-6">
       {/* ── Header ──────────────────────────────────────────────────── */}
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">POS รายวัน</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            อัปโหลด CSV ยอดขายจาก POS · ระบบจะแสดง diff 4 กลุ่ม
-            (ใหม่/เหมือนเดิม/เปลี่ยน/ผิด) ก่อน commit เสมอ
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href="/chairops/pos-ingest/upload"
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[var(--color-brand-600)] px-5 text-base font-medium text-white shadow-soft transition-all duration-150 hover:bg-[var(--color-brand-700)] active:bg-[var(--color-brand-800)]"
-          >
-            + อัปโหลดเงินสด + เหรียญ (มีเวลา)
-          </Link>
-          <Link
-            href="/chairops/pos-ingest/new"
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-border bg-background px-5 text-base font-medium text-foreground transition-all duration-150 hover:bg-muted"
-          >
-            + อัปโหลดยอดรวมรายวัน
-          </Link>
-        </div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold tracking-tight">POS Ingest</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          อัปโหลด StarThing XLSX ได้ทั้ง 3 ชนิด (daily / cash / coin) ในช่องเดียว · ระบบเดาชนิดให้ + เตรียม diff ก่อน commit เสมอ
+        </p>
       </div>
+
+      {/* ── Latest data per type ─────────────────────────────────────── */}
+      <div className="mb-6">
+        <LatestDataCards data={latest} />
+      </div>
+
+      {/* ── Multi-file uploader ──────────────────────────────────────── */}
+      <Card className="mb-6 p-4">
+        <h2 className="mb-3 text-sm font-semibold">อัปโหลดไฟล์</h2>
+        <MultiUploader />
+      </Card>
 
       {/* ── Flash messages ───────────────────────────────────────────── */}
       {params.committed &&
