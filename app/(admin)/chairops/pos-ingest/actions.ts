@@ -896,16 +896,22 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
       await tx.chairopsChairMove.createMany({ data: plannedMovesExisting });
     }
     // Step C: per-row chair.branchId updates (no native bulk for this).
-    // Run in parallel via Promise.all to overlap latency.
+    // 2026-06-01 audit P1 (BE): unbounded Promise.all could exhaust the
+    // Supabase connection pool (default 60) on a large move batch. Chunk
+    // to 20 concurrent updates · safe ceiling, still parallel.
     if (plannedChairUpdates.length > 0) {
-      await Promise.all(
-        plannedChairUpdates.map((u) =>
-          tx.chairopsChair.update({
-            where: { id: u.chairId },
-            data: { branchId: u.newBranchId },
-          }),
-        ),
-      );
+      const CHUNK = 20;
+      for (let i = 0; i < plannedChairUpdates.length; i += CHUNK) {
+        const slice = plannedChairUpdates.slice(i, i + CHUNK);
+        await Promise.all(
+          slice.map((u) =>
+            tx.chairopsChair.update({
+              where: { id: u.chairId },
+              data: { branchId: u.newBranchId },
+            }),
+          ),
+        );
+      }
     }
 
     // ── PosDaily writes (unchanged from previous round) ───────────────
@@ -1080,15 +1086,33 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
   // 2026-06-01 perf: drift recompute + alerts are O(branches × days) and
   // can take 10-30 s. Fire-and-forget so the commit returns to the CEO
   // as soon as the writes settle; drift values catch up within seconds
-  // on subsequent page loads (server-side cache miss → recompute on read
-  // path is already wired). On Vercel we wrap in waitUntil-equivalent
-  // via a detached promise — Node serverless keeps running until idle.
+  // on subsequent page loads. 2026-06-01 audit P1 (SRE): swallowed errors
+  // here are invisible — wrap each in its own catch that logs to console
+  // and the audit log so Sentry/Logflare picks it up.
   void Promise.allSettled([
-    recomputeAllDrifts(orgId),
-    evaluateAndEmitAlerts(orgId),
-  ]).catch(() => {
-    /* surfaced via Sentry in the background */
-  });
+    recomputeAllDrifts(orgId).catch(async (err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[pos-ingest commit] drift recompute failed:", msg);
+      await writeAudit({
+        userId: session.user.id,
+        action: "pos_import.background_drift_failed",
+        entity: "PosImport",
+        entityId: imp.id,
+        metadata: { error: msg },
+      }).catch(() => {});
+    }),
+    evaluateAndEmitAlerts(orgId).catch(async (err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[pos-ingest commit] alert evaluation failed:", msg);
+      await writeAudit({
+        userId: session.user.id,
+        action: "pos_import.background_alerts_failed",
+        entity: "PosImport",
+        entityId: imp.id,
+        metadata: { error: msg },
+      }).catch(() => {});
+    }),
+  ]);
 
   await writeAudit({
     userId: session.user.id,
