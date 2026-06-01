@@ -89,6 +89,9 @@ export const ROLE_RANK: Record<DbUser["role"], number> = {
   admin: 60,
   area_manager: 40,
   branch_manager: 30,
+  // program_admin = admin of specific program(s) only; org-wide rank is low so
+  // org_admin/admin can assign it and it can never out-rank a real manager.
+  program_admin: 25,
   staff: 20,
   driver: 15,
   viewer: 10,

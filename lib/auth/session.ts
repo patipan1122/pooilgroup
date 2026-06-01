@@ -24,7 +24,8 @@ export type DbUser = {
     | "area_manager"
     | "staff"
     | "driver"
-    | "viewer";
+    | "viewer"
+    | "program_admin";
   line_user_id: string | null;
   telegram_user_id: string | null;
   telegram_chat_id: string | null;

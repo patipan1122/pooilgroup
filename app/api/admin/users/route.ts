@@ -25,6 +25,7 @@ const InviteSchema = z.object({
     "staff",
     "driver",
     "viewer",
+    "program_admin",
   ]),
   branchIds: z.array(zUUID()).optional(),
   // Programs this user is invited to ADMINISTER. Each becomes a user_modules

@@ -706,4 +706,5 @@ const ROLE_LABELS: Record<DbUser["role"], string> = {
   staff: "Staff",
   driver: "Driver",
   viewer: "Viewer",
+  program_admin: "แอดมินโปรแกรม",
 };

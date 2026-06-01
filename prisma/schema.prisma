@@ -159,6 +159,7 @@ enum UserRole {
   staff // Submits reports / works on branch
   driver // FuelOS Phase 2
   viewer // Read-only (accountant / HR)
+  program_admin // Admin of specific program(s) only — scoped via user_modules · NOT org-wide
   org_admin // [deprecated alias — kept for back-compat, will migrate to admin]
 
   @@schema("public")
@@ -3467,8 +3468,11 @@ model ChairopsPosCoinEvent {
   chairNumber    String? // หมายเลขเครื่องจักร
   storeName      String // raw, for re-resolve/audit
   eventAt        DateTime @db.Timestamptz(6) // เวลา
-  coinAdded      Int // การเพิ่มเหรียญ
-  coinMeter      Int // จำนวนเหรียญทั้งหมด (cumulative)
+  // 2026-06-01: bumped Int → BigInt · StarThing exports unsigned 32-bit
+  // counters and at least one chair already exceeded int4 max (saw value
+  // 4_293_916_823). Postgres BIGINT covers up to 9.2e18 · room to spare.
+  coinAdded      BigInt // การเพิ่มเหรียญ
+  coinMeter      BigInt // จำนวนเหรียญทั้งหมด (cumulative)
   rowHash        String // sha256(device|eventAtISO|coinAdded|coinMeter)
   sourceImportId String?
   createdAt      DateTime @default(now())

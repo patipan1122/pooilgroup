@@ -31,9 +31,11 @@ export function hasCrossBranchAccess(role: DbUser["role"]): boolean {
   );
 }
 
-/** True if this role can fill reports at all (vs read-only) */
+/** True if this role can fill reports at all (vs read-only).
+ *  program_admin is a per-program scoped role — never a CashHub report filler
+ *  (its powers come from user_modules inside its granted modules). */
 export function canFillReports(role: DbUser["role"]): boolean {
-  return role !== "driver" && role !== "viewer";
+  return role !== "driver" && role !== "viewer" && role !== "program_admin";
 }
 
 /**

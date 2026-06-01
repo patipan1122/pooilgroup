@@ -85,10 +85,11 @@ export function InviteForm({
       return;
     }
 
-    // "แอดมินโปรแกรม" = org-role viewer (ลงหน้า /home แต่ไม่ใช่แอดมินรวม)
-    // + ได้สิทธิ์แอดมินเฉพาะโปรแกรมที่เลือก
+    // "แอดมินโปรแกรม" = org-role `program_admin` จริง (ลงหน้า /home · ไม่ใช่
+    // แอดมินรวม · ไม่มี module guard ไหนถือว่าเห็นทั้งองค์กร) + สิทธิ์แอดมิน
+    // เฉพาะโปรแกรมที่เลือก. (เลิกสวมเป็น viewer — กัน cross-program leak)
     const isProgramAdmin = role === "program_admin";
-    const payloadRole = isProgramAdmin ? "viewer" : role;
+    const payloadRole = role;
     const adminModules = isProgramAdmin ? Array.from(programSel) : undefined;
 
     startTransition(async () => {

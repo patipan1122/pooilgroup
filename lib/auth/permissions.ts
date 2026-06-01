@@ -77,6 +77,10 @@ const MATRIX: Record<DbUser["role"], Record<string, boolean>> = {
     "admin.settings": false,
   },
   driver: {},
+  // program_admin = scoped admin of specific program(s) via user_modules. No
+  // Core/CashHub permissions — never org-wide. In-program powers are gated by
+  // the module itself (userIsModuleAdmin · half-feature deferred).
+  program_admin: {},
   viewer: {
     "cashhub.view": true,
     "cashhub.export": true,

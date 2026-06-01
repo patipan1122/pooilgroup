@@ -38,6 +38,7 @@ export default async function AdminLayout({
     "staff",
     "driver",
     "viewer",
+    "program_admin",
   );
 
   const isAdmin =
