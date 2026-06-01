@@ -15,7 +15,11 @@
 -- change in Postgres ≥10 (no rewrite, no lock escalation beyond a brief
 -- ACCESS EXCLUSIVE during the catalog update). Existing rows fit trivially.
 
-ALTER TABLE chairops."ChairopsPosCoinEvent"
+-- IMPORTANT · table name is snake_case via Prisma @@map. The Prisma model
+-- is ChairopsPosCoinEvent but the actual Postgres relation is
+-- chairops.chairops_pos_coin_event. Columns however keep camelCase ("coinAdded"
+-- / "coinMeter") because Prisma does not lowercase column names by default.
+ALTER TABLE chairops.chairops_pos_coin_event
   ALTER COLUMN "coinAdded" TYPE BIGINT USING "coinAdded"::bigint,
   ALTER COLUMN "coinMeter" TYPE BIGINT USING "coinMeter"::bigint;
 
@@ -23,5 +27,5 @@ ALTER TABLE chairops."ChairopsPosCoinEvent"
 -- SELECT column_name, data_type
 -- FROM information_schema.columns
 -- WHERE table_schema = 'chairops'
---   AND table_name = 'ChairopsPosCoinEvent'
+--   AND table_name = 'chairops_pos_coin_event'
 --   AND column_name IN ('coinAdded', 'coinMeter');

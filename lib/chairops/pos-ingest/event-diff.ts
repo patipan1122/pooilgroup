@@ -249,25 +249,27 @@ const PG_INT4_MAX = 2_147_483_647;
 /**
  * Probe the live Postgres column type for ChairopsPosCoinEvent.coinMeter.
  * Returns true when the column is still `integer` (int4) — i.e. the BIGINT
- * migration has not been applied yet. Cached at module scope per process so
- * a freshly-applied migration takes effect on the next cold start; preview
- * is read-mostly so eventual consistency is fine.
+ * migration has not been applied yet.
+ *
+ * Intentionally NOT cached at module scope: the previous build cached on
+ * first probe and never invalidated, which meant the rose banner kept
+ * showing for the entire process lifetime even after the CEO ran the
+ * BIGINT migration mid-session. One information_schema query per preview
+ * call is ~3 ms and idempotent — cheap enough to never cache.
  */
-let _coinMeterStillIntCached: boolean | null = null;
 async function isCoinMeterColumnStillInt(prisma: PrismaClient): Promise<boolean> {
-  if (_coinMeterStillIntCached !== null) return _coinMeterStillIntCached;
   try {
+    // Table is mapped to snake_case via Prisma @@map.
     const rows = await prisma.$queryRaw<Array<{ data_type: string }>>`
       SELECT data_type
       FROM information_schema.columns
       WHERE table_schema = 'chairops'
-        AND table_name = 'ChairopsPosCoinEvent'
+        AND table_name = 'chairops_pos_coin_event'
         AND column_name = 'coinMeter'
       LIMIT 1
     `;
     const dt = (rows[0]?.data_type ?? "").toLowerCase();
-    _coinMeterStillIntCached = dt === "integer";
-    return _coinMeterStillIntCached;
+    return dt === "integer";
   } catch {
     // If the probe fails (transient DB error, etc.), assume the migration
     // has run — the createMany call still gets the friendly catch in
@@ -357,7 +359,7 @@ export async function ingestEvents(
             .filter((v) => v > PG_INT4_MAX);
           const sample = overMax.length ? ` (เช่นค่า ${overMax[0]?.toLocaleString("en-US")})` : "";
           throw new Error(
-            `ตาราง chairops."ChairopsPosCoinEvent" ใน prod ยังเป็น Int (int4) · ` +
+            `ตาราง chairops.chairops_pos_coin_event ใน prod ยังเป็น Int (int4) · ` +
               `ค่าจาก StarThing เกิน 2,147,483,647${sample} · ` +
               `ต้องรัน migration BIGINT ก่อน (ดูไฟล์ ` +
               `prisma/migrations/20260601_coin_event_bigint.sql) แล้วลอง commit อีกครั้ง.`,

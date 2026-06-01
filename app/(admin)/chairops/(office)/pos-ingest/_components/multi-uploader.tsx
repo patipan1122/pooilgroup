@@ -530,7 +530,7 @@ function BigIntMigrationBanner({
           หรือทำมือเอง — paste SQL นี้ที่ Supabase SQL Editor
         </summary>
         <div className="mt-1 font-mono text-[10px] leading-tight text-rose-800">
-          ALTER TABLE chairops.&quot;ChairopsPosCoinEvent&quot;<br />
+          ALTER TABLE chairops.chairops_pos_coin_event<br />
           &nbsp;&nbsp;ALTER COLUMN &quot;coinAdded&quot; TYPE BIGINT USING
           &quot;coinAdded&quot;::bigint,<br />
           &nbsp;&nbsp;ALTER COLUMN &quot;coinMeter&quot; TYPE BIGINT USING
