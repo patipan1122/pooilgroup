@@ -15,8 +15,18 @@ import {
   deleteChannel,
   updateChannel,
   setChannelBotEnabled,
+  checkChannelHealth,
   type InboxPlatform,
 } from "@/lib/inbox/channel-actions";
+
+// Mirrors the (non-exported) return type of checkChannelHealth — "use server"
+// files can't export types, so we re-declare it here.
+interface ChannelHealth {
+  tokenValid: boolean;
+  detail: string;
+  subscribed?: boolean;
+  hasMessagesField?: boolean;
+}
 import { isBotCapable } from "@/lib/inbox/business";
 import {
   Plus,
@@ -91,6 +101,22 @@ export function ChannelsManager({
   const [editExternalId, setEditExternalId] = useState("");
   const [savingEdit, startEdit] = useTransition();
   const [togglingId, startToggle] = useTransition();
+  const [health, setHealth] = useState<Record<string, ChannelHealth | "loading">>({});
+
+  function checkHealth(c: Channel) {
+    setHealth((h) => ({ ...h, [c.id]: "loading" }));
+    (async () => {
+      try {
+        const res = await checkChannelHealth(c.id);
+        setHealth((h) => ({ ...h, [c.id]: res }));
+      } catch (e) {
+        setHealth((h) => ({
+          ...h,
+          [c.id]: { tokenValid: false, detail: (e as Error).message },
+        }));
+      }
+    })();
+  }
 
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
 
@@ -558,13 +584,37 @@ export function ChannelsManager({
                     />
                     <button
                       type="button"
+                      onClick={() => checkHealth(c)}
+                      disabled={health[c.id] === "loading"}
+                      className="text-[10px] text-[var(--color-brand-700)] hover:underline ml-auto inline-flex items-center gap-1 disabled:opacity-50"
+                    >
+                      <MessageCircle className="size-3" />
+                      {health[c.id] === "loading" ? "กำลังตรวจ..." : "ตรวจการเชื่อมต่อ"}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => (editingId === c.id ? setEditingId(null) : startEditing(c))}
-                      className="text-[10px] text-[var(--color-brand-700)] hover:underline ml-auto inline-flex items-center gap-1"
+                      className="text-[10px] text-[var(--color-brand-700)] hover:underline inline-flex items-center gap-1"
                     >
                       <Key className="size-3" />
                       {editingId === c.id ? "ยกเลิก" : "แก้ไข / ใส่ secret"}
                     </button>
                   </div>
+
+                  {/* Connection health result */}
+                  {health[c.id] && health[c.id] !== "loading" && (
+                    <div
+                      className={`mt-2 rounded-lg border p-2.5 text-[11px] leading-relaxed ${
+                        (health[c.id] as ChannelHealth).tokenValid &&
+                        (c.platform !== "FACEBOOK" ||
+                          (health[c.id] as ChannelHealth).hasMessagesField)
+                          ? "border-green-200 bg-green-50 text-green-800"
+                          : "border-amber-200 bg-amber-50 text-amber-900"
+                      }`}
+                    >
+                      {(health[c.id] as ChannelHealth).detail}
+                    </div>
+                  )}
 
                   {/* Inline edit form */}
                   {editingId === c.id && (

@@ -171,6 +171,129 @@ export async function setChannelBotEnabled(id: string, enabled: boolean) {
   return { ok: true };
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Connection health check — ask the provider directly why messages aren't
+// flowing. Read-only (no writes). Surfaces the exact broken link per channel:
+//   - token still valid?
+//   - (FB) is the page subscribed to OUR app + receiving the "messages" field?
+// ─────────────────────────────────────────────────────────────────────────
+// NOTE: not exported — "use server" files may only export async functions.
+// The client re-declares a matching type locally.
+interface ChannelHealth {
+  tokenValid: boolean;
+  detail: string; // human Thai summary of what's wrong / right
+  subscribed?: boolean; // FB only — page subscribed to our app
+  hasMessagesField?: boolean; // FB only — subscribed to "messages" events
+}
+
+export async function checkChannelHealth(id: string): Promise<ChannelHealth> {
+  const session = await requireInboxAdmin();
+  const c = await prisma.inboxChannel.findUnique({
+    where: { id },
+    select: {
+      orgId: true,
+      platform: true,
+      externalId: true,
+      accessTokenEnc: true,
+    },
+  });
+  if (!c) throw new Error("ไม่พบช่องทาง");
+  if (c.orgId !== session.user.org_id) throw new Error("ไม่มีสิทธิ์");
+
+  const token = decryptToken(c.accessTokenEnc);
+  if (!token) {
+    return { tokenValid: false, detail: "ยังไม่ได้ใส่ Access Token — ใส่ก่อนถึงจะรับข้อความได้" };
+  }
+
+  try {
+    if (c.platform === "LINE") {
+      const resp = await fetch("https://api.line.me/v2/bot/info", {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!resp.ok) {
+        return {
+          tokenValid: false,
+          detail: `Token ใช้ไม่ได้ (LINE ตอบ ${resp.status}) — ออก Channel Access Token ใหม่`,
+        };
+      }
+      return {
+        tokenValid: true,
+        detail:
+          "Token ใช้ได้ ✓ — ถ้ายังไม่เข้าข้อความ ตรวจ Webhook URL ใน LINE Developers Console (Messaging API → Webhook → เปิด Use webhook)",
+      };
+    }
+
+    // FACEBOOK
+    const FB = "https://graph.facebook.com/v19.0";
+    const pageId = c.externalId;
+    if (!pageId) {
+      return {
+        tokenValid: false,
+        detail: "ไม่มี Page ID (External ID) — ใส่ Page ID ก่อนถึงจะตรวจ subscribe ได้",
+      };
+    }
+    // 1) token valid? (page name)
+    const nameResp = await fetch(
+      `${FB}/${pageId}?fields=name&access_token=${encodeURIComponent(token)}`,
+      { signal: AbortSignal.timeout(10_000) },
+    );
+    if (!nameResp.ok) {
+      const t = await nameResp.text().catch(() => "");
+      return {
+        tokenValid: false,
+        detail: `Token เพจหมดอายุ/ใช้ไม่ได้ (FB ตอบ ${nameResp.status}) — เชื่อมใหม่ด้วย token ถาวร (System User). ${t.slice(0, 120)}`,
+      };
+    }
+    // 2) subscribed to our app + which fields?
+    const appId = process.env.FACEBOOK_APP_ID;
+    const subResp = await fetch(
+      `${FB}/${pageId}/subscribed_apps?access_token=${encodeURIComponent(token)}`,
+      { signal: AbortSignal.timeout(10_000) },
+    );
+    if (!subResp.ok) {
+      return {
+        tokenValid: true,
+        subscribed: false,
+        detail: "Token ใช้ได้ ✓ แต่ตรวจการ subscribe ไม่ได้ — token อาจขาดสิทธิ์ pages_manage_metadata",
+      };
+    }
+    const subJson = (await subResp.json()) as {
+      data?: Array<{ id?: string; subscribed_fields?: string[] }>;
+    };
+    const apps = subJson.data ?? [];
+    const ours = appId ? apps.find((a) => a.id === appId) : apps[0];
+    const subscribed = !!ours;
+    const hasMessages = !!ours?.subscribed_fields?.includes("messages");
+
+    if (!subscribed) {
+      return {
+        tokenValid: true,
+        subscribed: false,
+        hasMessagesField: false,
+        detail: "Token ใช้ได้ ✓ แต่เพจนี้ยังไม่ได้ subscribe เข้าแอปเรา — กด \"เชื่อม/subscribe ใหม่\" (token ตอน import น่าจะหมดอายุ)",
+      };
+    }
+    if (!hasMessages) {
+      return {
+        tokenValid: true,
+        subscribed: true,
+        hasMessagesField: false,
+        detail: "เพจ subscribe แล้ว แต่ยังไม่รับ field \"messages\" — กด subscribe ใหม่เพื่อเพิ่ม",
+      };
+    }
+    return {
+      tokenValid: true,
+      subscribed: true,
+      hasMessagesField: true,
+      detail:
+        "พร้อมรับข้อความ ✓ — ถ้าลูกค้าจริงยังไม่เข้า แปลว่าแอปยังอยู่โหมด Development (ต้องทำ App Review + เปิด Live). ข้อความจากแอดมินแอปจะเข้าได้",
+    };
+  } catch (e) {
+    return { tokenValid: false, detail: `ตรวจไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
 export async function deleteChannel(id: string) {
   const session = await requireInboxAdmin();
   const existing = await prisma.inboxChannel.findUnique({
