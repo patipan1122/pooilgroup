@@ -26,6 +26,15 @@ import type {
 import { DiffTable } from "./diff-table";
 import { CommitCard } from "./commit-card";
 import { UnknownBranchesCard, type UnknownBranchGroup } from "./unknown-branches-card";
+import { ReresolveButton } from "./reresolve-button";
+
+// CEO 2026-06-01: addBranchFromStarThing patches the import's diffSummary
+// in place, but without an explicit dynamic directive Next.js was happily
+// serving a cached HTML render — so after a CEO click + page reload the
+// amber card + bucket counters still showed the pre-patch state. Mark the
+// route dynamic so every request re-reads the row.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function PosPreviewPage({
   params,
@@ -118,14 +127,17 @@ export default async function PosPreviewPage({
             {imp.notes ? ` · "${imp.notes}"` : ""}
           </p>
         </div>
-        {imp.committed ? (
-          <StatusPill tone="success">
-            commit แล้วเมื่อ{" "}
-            {imp.committedAt ? thaiDateTime(imp.committedAt) : "—"}
-          </StatusPill>
-        ) : (
-          <StatusPill tone="warning">รอยืนยัน commit</StatusPill>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {!imp.committed && <ReresolveButton importId={imp.id} />}
+          {imp.committed ? (
+            <StatusPill tone="success">
+              commit แล้วเมื่อ{" "}
+              {imp.committedAt ? thaiDateTime(imp.committedAt) : "—"}
+            </StatusPill>
+          ) : (
+            <StatusPill tone="warning">รอยืนยัน commit</StatusPill>
+          )}
+        </div>
       </div>
 
       {/* ── Maker / Checker badge ────────────────────────────────────── */}

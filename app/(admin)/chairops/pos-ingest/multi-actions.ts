@@ -789,3 +789,148 @@ export async function addBranchFromStarThing(
   revalidatePath(`/chairops/branches`);
   return { ok: true, branch };
 }
+
+// ---------------------------------------------------------------------------
+// reresolveImportDiff — CEO 2026-06-01
+//
+// Manual "rebuild the preview against current state of ChairopsBranch" for
+// a specific import. Equivalent to scripts/reresolve-import-diff.ts but as
+// a server action so the preview page can offer a one-click recovery
+// button if the in-action patch ever lags or misses an import.
+// ---------------------------------------------------------------------------
+
+export interface ReresolveImportResult {
+  ok: boolean;
+  importId: string;
+  rowsPatched?: number;
+  newCount?: number;
+  errorCount?: number;
+  error?: string;
+}
+
+export async function reresolveImportDiff(
+  importId: string,
+): Promise<ReresolveImportResult> {
+  const session = await requireRole("OFFICE");
+  const orgId = session.user.orgId;
+
+  const imp = await prisma.chairopsPosImport.findFirst({
+    where: { id: importId, orgId },
+    select: { id: true, committed: true, diffSummary: true },
+  });
+  if (!imp) return { ok: false, importId, error: "ไม่พบ import" };
+  if (imp.committed) return { ok: false, importId, error: "import นี้ commit แล้ว · re-resolve ไม่จำเป็น" };
+
+  type PartialDiffRow = {
+    status: string;
+    shopName?: string | null;
+    branchId?: string | null;
+    branchName?: string | null;
+    errors?: string[];
+  };
+  type PartialDiff = {
+    rows?: PartialDiffRow[];
+    counts?: { new?: number; same?: number; changed?: number; error?: number };
+    starThing?: {
+      unknownBranches?: string[];
+      knownBranchEntries?: Array<[string, string]>;
+    } | null;
+  };
+
+  const diff = imp.diffSummary as unknown as PartialDiff | null;
+  if (!diff || !Array.isArray(diff.rows)) {
+    return { ok: false, importId, error: "diffSummary ว่าง · re-resolve ไม่ได้" };
+  }
+
+  const errorShopNames = new Set<string>();
+  for (const r of diff.rows) {
+    if (r.status === "error" && r.shopName) {
+      errorShopNames.add(r.shopName.trim());
+    }
+  }
+  if (errorShopNames.size === 0) {
+    return {
+      ok: true,
+      importId,
+      rowsPatched: 0,
+      newCount: diff.counts?.new ?? 0,
+      errorCount: diff.counts?.error ?? 0,
+    };
+  }
+
+  const matches = await prisma.chairopsBranch.findMany({
+    where: { orgId, name: { in: [...errorShopNames] } },
+    select: { id: true, name: true },
+  });
+  if (matches.length === 0) {
+    return {
+      ok: true,
+      importId,
+      rowsPatched: 0,
+      newCount: diff.counts?.new ?? 0,
+      errorCount: diff.counts?.error ?? 0,
+    };
+  }
+  const branchByName = new Map(matches.map((m) => [m.name, m]));
+
+  let rowsPatched = 0;
+  for (const r of diff.rows) {
+    if (r.status !== "error") continue;
+    const n = (r.shopName ?? "").trim();
+    const b = branchByName.get(n);
+    if (!b) continue;
+    r.status = "new";
+    r.branchId = b.id;
+    r.branchName = b.name;
+    if (Array.isArray(r.errors)) {
+      r.errors = r.errors.filter((e) => !/สาขา|ระบุสาขา/.test(e));
+    }
+    rowsPatched += 1;
+  }
+
+  if (rowsPatched > 0) {
+    if (diff.counts) {
+      diff.counts.error = Math.max(0, (diff.counts.error ?? 0) - rowsPatched);
+      diff.counts.new = (diff.counts.new ?? 0) + rowsPatched;
+    }
+    if (diff.starThing) {
+      const resolvedNames = new Set(branchByName.keys());
+      if (Array.isArray(diff.starThing.unknownBranches)) {
+        diff.starThing.unknownBranches = diff.starThing.unknownBranches.filter(
+          (n) => !resolvedNames.has(n),
+        );
+      }
+      const newEntries: Array<[string, string]> = [];
+      for (const [name, b] of branchByName.entries()) {
+        newEntries.push([name, b.id]);
+      }
+      if (Array.isArray(diff.starThing.knownBranchEntries)) {
+        diff.starThing.knownBranchEntries.push(...newEntries);
+      } else {
+        diff.starThing.knownBranchEntries = newEntries;
+      }
+    }
+
+    await prisma.chairopsPosImport.update({
+      where: { id: imp.id },
+      data: { diffSummary: diff as unknown as Prisma.InputJsonValue },
+    });
+
+    await writeAudit({
+      userId: session.user.id,
+      action: "pos_import.reresolve_manual",
+      entity: "ChairopsPosImport",
+      entityId: importId,
+      metadata: { rowsPatched, resolvedNames: [...branchByName.keys()] },
+    });
+  }
+
+  revalidatePath("/chairops/pos-ingest");
+  return {
+    ok: true,
+    importId,
+    rowsPatched,
+    newCount: diff.counts?.new ?? 0,
+    errorCount: diff.counts?.error ?? 0,
+  };
+}
