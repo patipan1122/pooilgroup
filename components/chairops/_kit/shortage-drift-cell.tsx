@@ -71,6 +71,22 @@ export function ShortageDriftCell({
         {formatTHB(amount)}
         <span className="ml-1 text-xs font-medium text-zinc-500">บาท</span>
       </span>
+      {/* CEO 2026-06-01: add explicit label so "−22,761" doesn't read as
+          surplus when it's actually shortage in cell-convention (cell:
+          amount<0 = shortage; drift-engine: amount>0 = shortage; consumers
+          flip the sign). The label makes the meaning unambiguous. */}
+      <span
+        className={cn(
+          "rounded px-1 py-0.5 text-[11px] font-medium",
+          isShortage
+            ? "bg-rose-50 text-rose-700"
+            : isBalanced
+              ? "bg-zinc-50 text-zinc-600"
+              : "bg-emerald-50 text-emerald-700",
+        )}
+      >
+        {isShortage ? "ค้างฝาก" : isBalanced ? "พอดี" : "ฝากเกิน"}
+      </span>
 
       {(!compact || cumulativeDays > 0) && cumulativeDays > 0 && (
         <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">

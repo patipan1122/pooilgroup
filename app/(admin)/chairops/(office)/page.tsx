@@ -366,11 +366,15 @@ export default async function ExecDashboardPage({
           href="/chairops/reconcile"
         />
         <ChairopsKpiTile
-          label="DRIFT รวม"
+          // CEO 2026-06-01: "DRIFT รวม" was ambiguous — value here only sums
+          // BRANCHES THAT ARE SHORT (drift-engine positive · "ค้างเก็บยังไม่ฝาก"),
+          // not signed-net across all branches. Labeled explicitly so the
+          // number stops looking like it contradicts the per-row drift cells.
+          label="ค้างฝากรวมทุกสาขา"
           value={driftSigned}
           tone={driftTone}
           icon={<AlertTriangle className="size-4" aria-hidden="true" />}
-          delta={`POS − ฝาก · ${kpis.shortageBranchDays} วันสาขา-วัน`}
+          delta={`POS − ฝาก · ${kpis.shortageBranchDays} วันสาขา-วัน · ${kpis.shortageBranchCount} สาขาค้าง`}
           href="/chairops/reconcile"
         />
         <ChairopsKpiTile
