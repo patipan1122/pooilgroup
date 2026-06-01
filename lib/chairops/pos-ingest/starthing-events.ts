@@ -73,20 +73,32 @@ export interface EventParseResult {
 // Column aliases
 // ---------------------------------------------------------------------------
 
+// CEO 2026-06-01: StarThing now toggles export language per account · all
+// header sniffs below normalize case + accept Thai AND English forms.
 const SHARED_ALIASES = {
   eventAt: ["เวลา", "time", "datetime"],
-  chairDeviceId: ["รหัสอุปกรณ์", "เลขเครื่อง", "เครื่อง"],
-  chairNumber: ["หมายเลขเครื่องจักร"],
-  storeName: ["ชื่อร้าน", "สาขา"],
+  chairDeviceId: ["รหัสอุปกรณ์", "เลขเครื่อง", "เครื่อง", "device id"],
+  chairNumber: ["หมายเลขเครื่องจักร", "machine number"],
+  storeName: ["ชื่อร้าน", "สาขา", "store name"],
 } as const;
 
-const CASH_AMOUNT_ALIASES = ["การเพิ่มเงินสด"] as const;
-const CASH_METER_ALIASES = ["เงินสดทั้งหมด"] as const;
-const COIN_AMOUNT_ALIASES = ["การเพิ่มเหรียญ"] as const;
-const COIN_METER_ALIASES = ["จำนวนเหรียญทั้งหมด"] as const;
+const CASH_AMOUNT_ALIASES = ["การเพิ่มเงินสด", "cash increase", "added cash"] as const;
+const CASH_METER_ALIASES = ["เงินสดทั้งหมด", "total cash"] as const;
+const COIN_AMOUNT_ALIASES = ["การเพิ่มเหรียญ", "coin increase", "added coin"] as const;
+const COIN_METER_ALIASES = ["จำนวนเหรียญทั้งหมด", "total coin"] as const;
 
 // Daily-summary discriminators (so detectFileType can tell them apart).
-const DAILY_DISCRIMINATORS = ["เต็มจำนวน", "จ่ายเงินสด"] as const;
+const DAILY_DISCRIMINATORS = [
+  "เต็มจำนวน",
+  "จ่ายเงินสด",
+  "total amount",
+  "cash payment",
+] as const;
+
+/** Lowercase + trim · headers compared case-insensitively. */
+function normalizeHeader(h: string): string {
+  return h.trim().toLowerCase();
+}
 
 // ---------------------------------------------------------------------------
 // detectFileType — header sniff
@@ -101,10 +113,13 @@ const DAILY_DISCRIMINATORS = ["เต็มจำนวน", "จ่ายเง
  * Cash/coin checked first since a malformed daily file shouldn't shadow them.
  */
 export function detectFileType(headers: string[]): FileType {
-  const set = new Set(headers.map((h) => (h ?? "").trim()).filter(Boolean));
-  if (CASH_AMOUNT_ALIASES.some((h) => set.has(h))) return "cash";
-  if (COIN_AMOUNT_ALIASES.some((h) => set.has(h))) return "coin";
-  if (DAILY_DISCRIMINATORS.some((h) => set.has(h))) return "daily";
+  const set = new Set(
+    headers.map((h) => normalizeHeader(h ?? "")).filter(Boolean),
+  );
+  const inSet = (h: string) => set.has(normalizeHeader(h));
+  if (CASH_AMOUNT_ALIASES.some(inSet)) return "cash";
+  if (COIN_AMOUNT_ALIASES.some(inSet)) return "coin";
+  if (DAILY_DISCRIMINATORS.some(inSet)) return "daily";
   return "unknown";
 }
 
@@ -213,9 +228,10 @@ function buildEventHeaderIndex(
   };
   for (const [keyRaw, aliases] of Object.entries(aliasMap)) {
     const key = keyRaw as EventField;
+    const aliasNorm = new Set(aliases.map(normalizeHeader));
     for (let i = 0; i < rawHeader.length; i++) {
       const h = (rawHeader[i] ?? "").trim();
-      if (h && aliases.includes(h) && index[key] === undefined) {
+      if (h && aliasNorm.has(normalizeHeader(h)) && index[key] === undefined) {
         index[key] = i;
       }
     }

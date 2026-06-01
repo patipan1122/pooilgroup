@@ -118,29 +118,44 @@ export interface DiffBucket {
 export const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB hard cap
 const PREFERRED_SHEET_NAME = "ข้อมูลรายได้ (ตามกรอบเวลา)";
 
-/** Canonical column keys → array of Thai header aliases as observed in StarThing exports. */
+/**
+ * Canonical column keys → header aliases as observed in StarThing exports.
+ *
+ * StarThing toggles export language per account (CEO 2026-06-01 confirmed an
+ * English-export file failed to ingest). Match is case-insensitive — see
+ * `normalizeHeader()` — so we only list each form once in its natural casing.
+ */
 const COLUMN_ALIASES: Record<keyof StarThingRow, readonly string[]> = {
-  bizDate: ["วันที่", "date"],
-  chairCode: ["รหัสอุปกรณ์", "เลขเครื่อง", "เครื่อง"],
-  deviceType: ["ประเภทอุปกรณ์"],
-  machineNo: ["หมายเลขเครื่องจักร"],
-  deviceGroup: ["การจัดกลุ่มอุปกรณ์"],
-  storeName: ["ชื่อร้าน", "สาขา"],
-  grossTotal: ["เต็มจำนวน", "รวม", "total"],
-  onlineTotal: ["ชำระเงินออนไลน์", "ออนไลน์", "online"],
-  cashTotal: ["จ่ายเงินสด", "เงินสด", "cash"],
-  changeAmount: ["จำนวนเงินที่เปลี่ยนแปลง"],
-  paymentCount: ["จำนวนการชำระเงินออนไลน์"],
-  otherTotal: ["จำนวนเงินชำระอื่น ๆ", "จำนวนเงินชำระอื่นๆ"],
-  coinInsertCount: ["จำนวนหยอดเหรียญ", "เหรียญ", "coin"],
-  onlineCoin: ["เหรียญออนไลน์"],
-  roundCount: ["จำนวนรอบที่เริ่ม"],
-  itemCount: ["จำนวนสินค้า"],
-  giftName: ["ชื่อของขวัญ"],
-  giftValue: ["ค่าของขวัญ"],
-  giftRate: ["อัตราการให้ของขวัญ"],
-  giftCoinUnit: ["ราคาต่อหน่วยของเหรียญของขวัญ"],
+  bizDate: ["วันที่", "date", "statistical date"],
+  chairCode: ["รหัสอุปกรณ์", "เลขเครื่อง", "เครื่อง", "device id"],
+  deviceType: ["ประเภทอุปกรณ์", "equipment type"],
+  machineNo: ["หมายเลขเครื่องจักร", "machine number"],
+  deviceGroup: ["การจัดกลุ่มอุปกรณ์", "device grouping"],
+  storeName: ["ชื่อร้าน", "สาขา", "store name"],
+  grossTotal: ["เต็มจำนวน", "รวม", "total", "total amount"],
+  onlineTotal: ["ชำระเงินออนไลน์", "ออนไลน์", "online", "online payment"],
+  cashTotal: ["จ่ายเงินสด", "เงินสด", "cash", "cash payment"],
+  changeAmount: ["จำนวนเงินที่เปลี่ยนแปลง", "change amount"],
+  paymentCount: ["จำนวนการชำระเงินออนไลน์", "number of online payments"],
+  otherTotal: [
+    "จำนวนเงินชำระอื่น ๆ",
+    "จำนวนเงินชำระอื่นๆ",
+    "other payment amounts",
+  ],
+  coinInsertCount: ["จำนวนหยอดเหรียญ", "เหรียญ", "coin", "offline coin"],
+  onlineCoin: ["เหรียญออนไลน์", "online coin"],
+  roundCount: ["จำนวนรอบที่เริ่ม", "number of rounds started"],
+  itemCount: ["จำนวนสินค้า", "prizes won"],
+  giftName: ["ชื่อของขวัญ", "gift name"],
+  giftValue: ["ค่าของขวัญ", "gift cost"],
+  giftRate: ["อัตราการให้ของขวัญ", "gift-giving rate", "gift giving rate"],
+  giftCoinUnit: ["ราคาต่อหน่วยของเหรียญของขวัญ", "gift coin unit price"],
 } as const;
+
+/** Lowercase + trim · matches headers regardless of casing/spacing variance. */
+function normalizeHeader(h: string): string {
+  return h.trim().toLowerCase();
+}
 
 // Columns that MUST be present for the row to be usable (enforced inline in row loop):
 //   bizDate · chairCode · storeName · cashTotal
@@ -158,12 +173,14 @@ function buildHeaderIndex(rawHeader: string[]): {
 
   for (const [keyRaw, aliases] of Object.entries(COLUMN_ALIASES)) {
     const key = keyRaw as keyof StarThingRow;
+    // Case-insensitive alias set per key · built once per call.
+    const aliasNorm = new Set(aliases.map(normalizeHeader));
     for (let i = 0; i < rawHeader.length; i++) {
-      const h = (rawHeader[i] ?? "").trim();
-      if (!h) continue;
-      if (aliases.includes(h)) {
+      const raw = (rawHeader[i] ?? "").trim();
+      if (!raw) continue;
+      if (aliasNorm.has(normalizeHeader(raw))) {
         if (index[key] === undefined) index[key] = i;
-        matchedHeaders.add(h);
+        matchedHeaders.add(raw);
       }
     }
   }
