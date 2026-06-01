@@ -450,6 +450,12 @@ function EventPreviewRow({
 }) {
   const Icon = kind === "cash" ? Banknote : Coins;
   const bigIntWarn = item.preview.bigIntMigrationRequired;
+  const { newCount, dupCount, intraDupCount, dateRange } = item.preview;
+  // Goal #2 (CEO 2026-06-01) · spell out dedup at preview time so the
+  // operator sees overlap protection working BEFORE committing. Triggered
+  // when ANY of the inbound rows matched an existing row-hash in the DB
+  // (i.e. the day-3 overlap scenario applies).
+  const hasOverlap = dupCount > 0 || intraDupCount > 0;
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between rounded-md bg-white px-3 py-2 text-sm">
@@ -458,13 +464,27 @@ function EventPreviewRow({
           <span className="truncate text-zinc-800">{item.fileName}</span>
         </div>
         <div className="flex items-center gap-3 text-xs">
-          <span className="text-emerald-700">new {item.preview.newCount}</span>
-          <span className="text-zinc-500">dup {item.preview.dupCount}</span>
-          {item.preview.dateRange && (
-            <span className="text-zinc-600">ถึง {item.preview.dateRange.to}</span>
+          <span className="text-emerald-700">new {newCount}</span>
+          <span className="text-zinc-500">dup {dupCount}</span>
+          {dateRange && (
+            <span className="text-zinc-600">ถึง {dateRange.to}</span>
           )}
         </div>
       </div>
+      {hasOverlap && (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+          <div className="font-semibold">
+            ✓ ตรวจเจอข้อมูลซ้ำ {dupCount.toLocaleString("en-US")} แถว
+            {intraDupCount > 0 ? ` (+ ${intraDupCount} แถวซ้ำในไฟล์)` : ""}
+          </div>
+          <div className="mt-0.5 leading-snug">
+            ระบบจะ skip ที่ซ้ำอัตโนมัติ · ใส่เฉพาะ{" "}
+            <span className="font-semibold">{newCount.toLocaleString("en-US")} แถวใหม่</span>{" "}
+            ที่ commit · เนื้อหาเดิมไม่เปลี่ยน · key dedup =
+            sha256(เครื่อง+เวลา+ยอด+มิเตอร์)
+          </div>
+        </div>
+      )}
       {bigIntWarn && <BigIntMigrationBanner warn={bigIntWarn} />}
     </div>
   );
