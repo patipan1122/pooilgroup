@@ -115,12 +115,37 @@ export function MultiUploader() {
     setRun({ state: "uploading" });
     cashFileRef.current = null;
     coinFileRef.current = null;
-    const fd = new FormData();
-    files.forEach((f, i) => fd.set(`file${i}`, f.file, f.file.name));
+    // CEO 2026-06-01: send one file per server-action call · in parallel.
+    // Next.js 16 ignores experimental.serverActions.bodySizeLimit at the
+    // platform layer on Vercel, so a 1.3 MB multi-file POST still throws
+    // "Body exceeded 1 MB limit" even after the config is set. Splitting
+    // keeps each request well under the 1 MB hard cap (each StarThing
+    // XLSX is ~100-700 KB) and the server still aggregates results.
     try {
-      const res = await previewBatchSmart(fd);
+      const settled = await Promise.all(
+        files.map(async (f) => {
+          const fd = new FormData();
+          fd.set("file0", f.file, f.file.name);
+          try {
+            const r = await previewBatchSmart(fd);
+            return r.items[0] ?? {
+              ok: false as const,
+              fileName: f.file.name,
+              kind: "unknown" as const,
+              error: "ไม่ได้รับผลจาก server",
+            };
+          } catch (err) {
+            return {
+              ok: false as const,
+              fileName: f.file.name,
+              kind: "unknown" as const,
+              error: err instanceof Error ? err.message : "อัปโหลดล้มเหลว",
+            };
+          }
+        }),
+      );
       // Keep raw File refs for cash/coin commit (server doesn't persist them).
-      for (const it of res.items) {
+      for (const it of settled) {
         if (it.ok && (it.kind === "cash" || it.kind === "coin")) {
           const match = files.find((f) => f.file.name === it.fileName);
           if (match) {
@@ -129,11 +154,11 @@ export function MultiUploader() {
           }
         }
       }
-      setRun({ state: "done", items: res.items });
-      const okCount = res.items.filter((i) => i.ok).length;
-      const errCount = res.items.length - okCount;
+      setRun({ state: "done", items: settled });
+      const okCount = settled.filter((i) => i.ok).length;
+      const errCount = settled.length - okCount;
       if (errCount > 0) {
-        toast.warning(`ตรวจ ${okCount}/${res.items.length} ไฟล์ผ่าน · ${errCount} ผิดพลาด`);
+        toast.warning(`ตรวจ ${okCount}/${settled.length} ไฟล์ผ่าน · ${errCount} ผิดพลาด`);
       } else {
         toast.success(`ตรวจ ${okCount} ไฟล์เรียบร้อย · พร้อม commit`);
       }
@@ -149,17 +174,49 @@ export function MultiUploader() {
       return;
     }
     startCommit(async () => {
-      const fd = new FormData();
-      if (cashFileRef.current) fd.set("cashFile", cashFileRef.current);
-      if (coinFileRef.current) fd.set("coinFile", coinFileRef.current);
-      const r = await commitMultiImport(fd);
-      if (!r.ok) {
-        toast.error(r.error ?? "commit cash/coin ล้มเหลว");
+      // Commit cash + coin in TWO separate calls (one file each) to stay
+      // under the Vercel/Next 1 MB server-action body cap. The action accepts
+      // either / both fields, so a single-file invocation is supported.
+      let cashIns = 0;
+      let coinIns = 0;
+      let coverage: string | null = null;
+      const errs: string[] = [];
+
+      if (cashFileRef.current) {
+        const fd = new FormData();
+        fd.set("cashFile", cashFileRef.current);
+        const r = await commitMultiImport(fd);
+        if (r.ok) {
+          cashIns = r.cashInserted;
+          if (r.coverageThrough) coverage = r.coverageThrough;
+        } else {
+          errs.push(`cash: ${r.error ?? "ล้มเหลว"}`);
+        }
+      }
+      if (coinFileRef.current) {
+        const fd = new FormData();
+        fd.set("coinFile", coinFileRef.current);
+        const r = await commitMultiImport(fd);
+        if (r.ok) {
+          coinIns = r.coinInserted;
+          if (
+            r.coverageThrough &&
+            (!coverage || r.coverageThrough > coverage)
+          ) {
+            coverage = r.coverageThrough;
+          }
+        } else {
+          errs.push(`coin: ${r.error ?? "ล้มเหลว"}`);
+        }
+      }
+
+      if (errs.length > 0) {
+        toast.error(errs.join(" · "));
         return;
       }
       toast.success(
-        `บันทึก cash +${r.cashInserted} · coin +${r.coinInserted}` +
-          (r.coverageThrough ? ` · ถึง ${r.coverageThrough}` : ""),
+        `บันทึก cash +${cashIns} · coin +${coinIns}` +
+          (coverage ? ` · ถึง ${coverage}` : ""),
       );
       setFiles([]);
       setRun({ state: "idle" });
