@@ -52,6 +52,13 @@ export interface EventDiffSummary {
   continuityOk: boolean;
   /** storeName values not matching any ChairopsBranch.name */
   unmatchedBranches: string[];
+  /** 2026-06-01 · coin only · set when a row carries amount or meter
+   *  exceeding signed-int4 (2_147_483_647) AND the DB column type is still
+   *  Int. CEO sees this at preview, runs the BIGINT migration, retries. */
+  bigIntMigrationRequired?: {
+    sampleValue: number;
+    overflowRowCount: number;
+  };
 }
 
 /** One row tagged with its dedup bucket + resolved branch — what ingestEvents consumes. */
@@ -210,7 +217,63 @@ export async function computeEventDiff(
     unmatchedBranches,
   };
 
+  // 2026-06-01 · coin only · pre-flag int4 overflow at preview time so the
+  // CEO sees the migration requirement BEFORE clicking commit. We probe the
+  // live column type (cheap information_schema lookup) so the warning self-
+  // suppresses once the prod ALTER TABLE has actually been applied.
+  if (kind === "coin") {
+    const overflowing = parsedRows.filter(
+      (r) =>
+        Math.round(r.amount) > PG_INT4_MAX || Math.round(r.meter) > PG_INT4_MAX,
+    );
+    if (overflowing.length > 0) {
+      const stillInt = await isCoinMeterColumnStillInt(prisma);
+      if (stillInt) {
+        const sample = Math.max(
+          Math.round(overflowing[0]!.amount),
+          Math.round(overflowing[0]!.meter),
+        );
+        summary.bigIntMigrationRequired = {
+          sampleValue: sample,
+          overflowRowCount: overflowing.length,
+        };
+      }
+    }
+  }
+
   return { summary, rows };
+}
+
+const PG_INT4_MAX = 2_147_483_647;
+
+/**
+ * Probe the live Postgres column type for ChairopsPosCoinEvent.coinMeter.
+ * Returns true when the column is still `integer` (int4) — i.e. the BIGINT
+ * migration has not been applied yet. Cached at module scope per process so
+ * a freshly-applied migration takes effect on the next cold start; preview
+ * is read-mostly so eventual consistency is fine.
+ */
+let _coinMeterStillIntCached: boolean | null = null;
+async function isCoinMeterColumnStillInt(prisma: PrismaClient): Promise<boolean> {
+  if (_coinMeterStillIntCached !== null) return _coinMeterStillIntCached;
+  try {
+    const rows = await prisma.$queryRaw<Array<{ data_type: string }>>`
+      SELECT data_type
+      FROM information_schema.columns
+      WHERE table_schema = 'chairops'
+        AND table_name = 'ChairopsPosCoinEvent'
+        AND column_name = 'coinMeter'
+      LIMIT 1
+    `;
+    const dt = (rows[0]?.data_type ?? "").toLowerCase();
+    _coinMeterStillIntCached = dt === "integer";
+    return _coinMeterStillIntCached;
+  } catch {
+    // If the probe fails (transient DB error, etc.), assume the migration
+    // has run — the createMany call still gets the friendly catch in
+    // ingestEvents as a last-line safety net.
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -234,13 +297,8 @@ export interface IngestEventsResult {
  * @param kind     "cash" | "coin"
  * @param rows     classified rows (from computeEventDiff); non-"new" are ignored
  */
-// 2026-06-01 · Postgres signed int4 ceiling (we used to use Int here).
-// Surfaced because StarThing exports unsigned 32-bit counters that crossed
-// 2^31-1 (saw 4_293_916_823 in the wild). Schema is BIGINT now, but if a
-// CEO ships a Vercel build before running the prod ALTER TABLE migration,
-// Prisma rejects the row with an opaque "Value out of range for the type"
-// error. Pre-check this batch and throw a CEO-readable message instead.
-const PG_INT4_MAX = 2_147_483_647;
+// PG_INT4_MAX is declared once above (after computeEventDiff). The friendly
+// catch below also uses it.
 
 export async function ingestEvents(
   prisma: PrismaClient,

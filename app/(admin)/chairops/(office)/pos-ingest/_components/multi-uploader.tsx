@@ -448,19 +448,43 @@ function EventPreviewRow({
   item: Extract<BatchPreviewItem, { ok: true; kind: "cash" | "coin" }>;
 }) {
   const Icon = kind === "cash" ? Banknote : Coins;
+  const bigIntWarn = item.preview.bigIntMigrationRequired;
   return (
-    <div className="flex items-center justify-between rounded-md bg-white px-3 py-2 text-sm">
-      <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 text-zinc-500" aria-hidden />
-        <span className="truncate text-zinc-800">{item.fileName}</span>
+    <div className="space-y-1">
+      <div className="flex items-center justify-between rounded-md bg-white px-3 py-2 text-sm">
+        <div className="flex items-center gap-2">
+          <Icon className="h-4 w-4 text-zinc-500" aria-hidden />
+          <span className="truncate text-zinc-800">{item.fileName}</span>
+        </div>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="text-emerald-700">new {item.preview.newCount}</span>
+          <span className="text-zinc-500">dup {item.preview.dupCount}</span>
+          {item.preview.dateRange && (
+            <span className="text-zinc-600">ถึง {item.preview.dateRange.to}</span>
+          )}
+        </div>
       </div>
-      <div className="flex items-center gap-3 text-xs">
-        <span className="text-emerald-700">new {item.preview.newCount}</span>
-        <span className="text-zinc-500">dup {item.preview.dupCount}</span>
-        {item.preview.dateRange && (
-          <span className="text-zinc-600">ถึง {item.preview.dateRange.to}</span>
-        )}
-      </div>
+      {bigIntWarn && (
+        <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+          <div className="font-semibold">
+            ต้องรัน migration BIGINT ก่อน commit (ตรวจที่ preview)
+          </div>
+          <div className="mt-0.5">
+            พบ {bigIntWarn.overflowRowCount.toLocaleString("en-US")} แถวที่ค่าเกิน int4 max ·
+            ตัวอย่าง {bigIntWarn.sampleValue.toLocaleString("en-US")}
+          </div>
+          <div className="mt-1 font-mono text-[10px] leading-tight text-rose-800">
+            ALTER TABLE chairops.&quot;ChairopsPosCoinEvent&quot;<br />
+            &nbsp;&nbsp;ALTER COLUMN &quot;coinAdded&quot; TYPE BIGINT USING
+            &quot;coinAdded&quot;::bigint,<br />
+            &nbsp;&nbsp;ALTER COLUMN &quot;coinMeter&quot; TYPE BIGINT USING
+            &quot;coinMeter&quot;::bigint;
+          </div>
+          <div className="mt-1 text-[11px]">
+            paste ลง Supabase SQL Editor → Run → กลับมารีโหลดหน้านี้ → commit ใหม่
+          </div>
+        </div>
+      )}
     </div>
   );
 }
