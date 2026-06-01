@@ -773,7 +773,142 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
     ]),
   );
 
+  // 2026-06-01 perf round 2 · CEO 1012-row commit timed out AGAIN even
+  // after the PosDaily bulk-write optimization. Bottleneck moved to the
+  // chair-move + daily-aggregate per-row queries. Pre-stage everything
+  // here (in-memory accumulators) so the transaction only fires bulk
+  // operations: createMany x2 + per-row update (only for changes).
+
+  type NewChairRecord = { orgId: string; branchId: string; chairCode: string; isActive: boolean };
+  type MoveRecord = {
+    orgId: string;
+    chairId: string;
+    fromBranchId: string | null;
+    toBranchId: string;
+    movedAt: Date;
+    movedById: string;
+    source: string;
+    notes: string;
+  };
+  type ChairBranchUpdate = { chairId: string; newBranchId: string };
+
+  // Pass 1 (outside tx): plan all chair work in memory.
+  const plannedNewChairs: NewChairRecord[] = [];
+  const seenNewChair = new Set<string>();
+  const plannedMovesNewChair: Array<{ chairCode: string; toBranchId: string; movedAt: Date }> = [];
+  const plannedMovesExisting: MoveRecord[] = [];
+  const plannedChairUpdates: ChairBranchUpdate[] = [];
+
+  for (const r of toApply) {
+    if (!r.branchId || !r.bizDate || !r.chairCode) continue;
+    const bizDate = new Date(r.bizDate + "T00:00:00.000Z");
+    const existingChair = chairMap.get(r.chairCode);
+    if (!existingChair) {
+      if (!seenNewChair.has(r.chairCode)) {
+        plannedNewChairs.push({
+          orgId,
+          branchId: r.branchId,
+          chairCode: r.chairCode,
+          isActive: true,
+        });
+        plannedMovesNewChair.push({
+          chairCode: r.chairCode,
+          toBranchId: r.branchId,
+          movedAt: bizDate,
+        });
+        seenNewChair.add(r.chairCode);
+      }
+      continue;
+    }
+    if (existingChair.branchId === r.branchId) continue;
+    const isHistorical =
+      existingChair.lastMoveAt != null && bizDate < existingChair.lastMoveAt;
+    plannedMovesExisting.push({
+      orgId,
+      chairId: existingChair.id,
+      fromBranchId: existingChair.branchId,
+      toBranchId: r.branchId,
+      movedAt: bizDate,
+      movedById: session.user.id,
+      source: isHistorical ? "pos_ingest_historical" : "pos_ingest",
+      notes: isHistorical
+        ? `historical placement from POS upload (importId=${imp.id}) · chair.branchId NOT updated (preserves maid current view)`
+        : `branch change detected on POS upload (importId=${imp.id})`,
+    });
+    if (isHistorical) {
+      chairMovesHistoricalOnly += 1;
+    } else {
+      plannedChairUpdates.push({
+        chairId: existingChair.id,
+        newBranchId: r.branchId,
+      });
+      chairMap.set(r.chairCode, {
+        id: existingChair.id,
+        branchId: r.branchId,
+        lastMoveAt: bizDate,
+      });
+      chairMovesRecorded += 1;
+    }
+  }
+  chairsCreatedFromPos = plannedNewChairs.length;
+
   await prisma.$transaction(async (tx) => {
+    // Step A: bulk-create new chairs. Re-fetch IDs via findMany since
+    // createMany doesn't return rows; one extra query but worth it.
+    if (plannedNewChairs.length > 0) {
+      await tx.chairopsChair.createMany({ data: plannedNewChairs });
+      const fresh = await tx.chairopsChair.findMany({
+        where: {
+          orgId,
+          chairCode: { in: plannedNewChairs.map((c) => c.chairCode) },
+        },
+        select: { id: true, chairCode: true, branchId: true },
+      });
+      for (const f of fresh) {
+        chairMap.set(f.chairCode, {
+          id: f.id,
+          branchId: f.branchId,
+          lastMoveAt: null,
+        });
+      }
+      // Now we can materialize the initial-placement move records.
+      const initialMoves: MoveRecord[] = [];
+      for (const p of plannedMovesNewChair) {
+        const ch = chairMap.get(p.chairCode);
+        if (!ch) continue;
+        initialMoves.push({
+          orgId,
+          chairId: ch.id,
+          fromBranchId: null,
+          toBranchId: p.toBranchId,
+          movedAt: p.movedAt,
+          movedById: session.user.id,
+          source: "pos_ingest",
+          notes: `first placement detected from POS upload (importId=${imp.id})`,
+        });
+      }
+      if (initialMoves.length > 0) {
+        await tx.chairopsChairMove.createMany({ data: initialMoves });
+      }
+    }
+    // Step B: bulk-create move records for existing-chair-moves.
+    if (plannedMovesExisting.length > 0) {
+      await tx.chairopsChairMove.createMany({ data: plannedMovesExisting });
+    }
+    // Step C: per-row chair.branchId updates (no native bulk for this).
+    // Run in parallel via Promise.all to overlap latency.
+    if (plannedChairUpdates.length > 0) {
+      await Promise.all(
+        plannedChairUpdates.map((u) =>
+          tx.chairopsChair.update({
+            where: { id: u.chairId },
+            data: { branchId: u.newBranchId },
+          }),
+        ),
+      );
+    }
+
+    // ── PosDaily writes (unchanged from previous round) ───────────────
     const newDailyData: Array<{
       orgId: string;
       branchId: string;
@@ -792,90 +927,9 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
     for (const r of toApply) {
       if (!r.branchId || !r.bizDate) continue;
       const bizDate = new Date(r.bizDate + "T00:00:00.000Z");
-      // ── Chair-move detection (CEO 2026-05-31 spec): file is source of truth
-      //    for "this chair was at this branch on this date". If the row's
-      //    (chairCode, branchId) disagrees with our chair table, we move the
-      //    chair to the file's branch and record a ChairopsChairMove with
-      //    movedAt = bizDate. New chairs get an initial-placement move row.
-      if (r.chairCode) {
-        const existingChair = chairMap.get(r.chairCode);
-        if (!existingChair) {
-          const fresh = await tx.chairopsChair.create({
-            data: {
-              orgId,
-              branchId: r.branchId,
-              chairCode: r.chairCode,
-              isActive: true,
-            },
-          });
-          await tx.chairopsChairMove.create({
-            data: {
-              orgId,
-              chairId: fresh.id,
-              fromBranchId: null,
-              toBranchId: r.branchId,
-              movedAt: bizDate,
-              movedById: session.user.id,
-              source: "pos_ingest",
-              notes: `first placement detected from POS upload (importId=${imp.id})`,
-            },
-          });
-          chairMap.set(r.chairCode, {
-            id: fresh.id,
-            branchId: r.branchId,
-            lastMoveAt: bizDate,
-          });
-          chairsCreatedFromPos += 1;
-        } else if (existingChair.branchId !== r.branchId) {
-          // 2026-06-01 · historical vs current decision.
-          // The file says (chairCode, branchId) but DB says different. The
-          // file's bizDate determines whether this is "the chair moved back
-          // then" (HISTORICAL · log only) or "the chair moved recently / is
-          // now somewhere new" (CURRENT · also flip chair.branchId).
-          //
-          // Historical = bizDate strictly older than the chair's latest
-          // known ChairopsChairMove. We trust the maid's current view —
-          // the latest move record is the source of truth for present
-          // location.
-          const isHistorical =
-            existingChair.lastMoveAt != null &&
-            bizDate < existingChair.lastMoveAt;
+      // chair-move work was planned + bulk-applied above · no per-row chair
+      // queries here anymore.
 
-          await tx.chairopsChairMove.create({
-            data: {
-              orgId,
-              chairId: existingChair.id,
-              fromBranchId: existingChair.branchId,
-              toBranchId: r.branchId,
-              movedAt: bizDate,
-              movedById: session.user.id,
-              source: isHistorical ? "pos_ingest_historical" : "pos_ingest",
-              notes: isHistorical
-                ? `historical placement from POS upload (importId=${imp.id}) · chair.branchId NOT updated (preserves maid current view)`
-                : `branch change detected on POS upload (importId=${imp.id})`,
-            },
-          });
-
-          if (isHistorical) {
-            // Keep chair.branchId where it is. The history-only ledger
-            // entry above is enough for audit + reports.
-            chairMovesHistoricalOnly += 1;
-          } else {
-            await tx.chairopsChair.update({
-              where: { id: existingChair.id },
-              data: { branchId: r.branchId },
-            });
-            chairMap.set(r.chairCode, {
-              id: existingChair.id,
-              branchId: r.branchId,
-              // Refresh the lastMoveAt in our cache so subsequent rows in
-              // this same batch behave consistently.
-              lastMoveAt: bizDate,
-            });
-            chairMovesRecorded += 1;
-          }
-        }
-      }
       // 2026-06-01 perf: use the preloaded existing map (no per-row find).
       const existingId = existingDailyMap.get(
         dailyKeyOf(r.branchId, r.chairCode, bizDate),
@@ -919,36 +973,94 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
     // SPEC §2.5 — write per-branch-per-day aggregates from StarThing XLSX
     // (CSV path = empty starThing block · skipped). Idempotent upsert on
     // unique (orgId, branchId, bizDate).
+    // 2026-06-01 perf: bulk preload + bulk createMany + parallel update
+    // for the branch-daily aggregate, matching the chair-move + PosDaily
+    // patterns. For 30 branches × ~10 days = ~300 aggregates which used
+    // to take 600 sequential queries · now ~3.
     if (diff.starThing) {
       const knownByName = new Map(diff.starThing.knownBranchEntries);
-      for (const agg of diff.starThing.aggregatedRows) {
-        const branchId = knownByName.get(agg.storeName);
-        if (!branchId) continue; // skip unknown branches — CEO resolves later
-        const bizDate = new Date(`${agg.bizDate}T00:00:00.000Z`);
-        const existingDaily = await tx.chairopsBranchDailyRevenue.findFirst({
-          where: { orgId, branchId, bizDate },
-          select: { id: true },
-        });
-        const dailyData = {
-          cashTotal: agg.cashTotal,
-          onlineTotal: agg.onlineTotal,
-          otherTotal: agg.otherTotal,
-          grossTotal: agg.grossTotal,
-          paymentCount: agg.paymentCount,
-          coinInsertCount: agg.coinInsertCount,
-          roundCount: agg.roundCount,
+      const aggRows = diff.starThing.aggregatedRows
+        .map((a) => ({
+          ...a,
+          branchId: knownByName.get(a.storeName) ?? null,
+          bizDateObj: new Date(`${a.bizDate}T00:00:00.000Z`),
+        }))
+        .filter(
+          (a): a is typeof a & { branchId: string } => a.branchId !== null,
+        );
+
+      const branchIdsAgg = [...new Set(aggRows.map((a) => a.branchId))];
+      const datesAgg = [
+        ...new Set(aggRows.map((a) => a.bizDateObj.toISOString())),
+      ].map((iso) => new Date(iso));
+      const existingAggRows =
+        branchIdsAgg.length > 0 && datesAgg.length > 0
+          ? await tx.chairopsBranchDailyRevenue.findMany({
+              where: {
+                orgId,
+                branchId: { in: branchIdsAgg },
+                bizDate: { in: datesAgg },
+              },
+              select: { id: true, branchId: true, bizDate: true },
+            })
+          : [];
+      const aggKeyOf = (branchId: string, bizDate: Date) =>
+        `${branchId}|${bizDate.toISOString().slice(0, 10)}`;
+      const existingAggMap = new Map<string, string>(
+        existingAggRows.map((e) => [aggKeyOf(e.branchId, e.bizDate), e.id]),
+      );
+
+      const aggCreates: Array<{
+        orgId: string;
+        branchId: string;
+        bizDate: Date;
+        cashTotal: number;
+        onlineTotal: number;
+        otherTotal: number;
+        grossTotal: number;
+        paymentCount: number;
+        coinInsertCount: number;
+        roundCount: number;
+        sourceImportId: string;
+      }> = [];
+      const aggUpdates: Array<{ id: string; data: object }> = [];
+      for (const a of aggRows) {
+        const data = {
+          cashTotal: a.cashTotal,
+          onlineTotal: a.onlineTotal,
+          otherTotal: a.otherTotal,
+          grossTotal: a.grossTotal,
+          paymentCount: a.paymentCount,
+          coinInsertCount: a.coinInsertCount,
+          roundCount: a.roundCount,
           sourceImportId: imp.id,
         };
-        if (existingDaily) {
-          await tx.chairopsBranchDailyRevenue.update({
-            where: { id: existingDaily.id },
-            data: dailyData,
-          });
+        const existingId = existingAggMap.get(
+          aggKeyOf(a.branchId, a.bizDateObj),
+        );
+        if (existingId) {
+          aggUpdates.push({ id: existingId, data });
         } else {
-          await tx.chairopsBranchDailyRevenue.create({
-            data: { ...dailyData, orgId, branchId, bizDate },
+          aggCreates.push({
+            orgId,
+            branchId: a.branchId,
+            bizDate: a.bizDateObj,
+            ...data,
           });
         }
+      }
+      if (aggCreates.length > 0) {
+        await tx.chairopsBranchDailyRevenue.createMany({ data: aggCreates });
+      }
+      if (aggUpdates.length > 0) {
+        await Promise.all(
+          aggUpdates.map((u) =>
+            tx.chairopsBranchDailyRevenue.update({
+              where: { id: u.id },
+              data: u.data,
+            }),
+          ),
+        );
       }
     }
 
