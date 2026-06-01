@@ -45,8 +45,19 @@ interface PersistedDiffCounts {
   error?: number;
 }
 
+interface PersistedStarThing {
+  dateRange?: { from?: string | null; to?: string | null } | null;
+}
+
 interface PersistedDiffSummary {
   counts?: PersistedDiffCounts;
+  // CEO 2026-06-01: 3 file types stored in 2 different shapes —
+  //   daily file → starThing.dateRange (lives one level deep)
+  //   cash/coin  → kind="cash"|"coin" + dateRange on root
+  // We sniff both here for the imports-table type pill + range column.
+  starThing?: PersistedStarThing | null;
+  kind?: "cash" | "coin" | null;
+  dateRange?: { from?: string | null; to?: string | null } | null;
 }
 
 function bucketCounts(summary: PersistedDiffSummary | null): DiffBucketCounts {
@@ -58,6 +69,35 @@ function bucketCounts(summary: PersistedDiffSummary | null): DiffBucketCounts {
     bad: c.error ?? 0,
   };
 }
+
+type ImportFileType = "daily" | "cash" | "coin" | "—";
+
+function fileTypeOf(summary: PersistedDiffSummary | null): ImportFileType {
+  if (!summary) return "—";
+  if (summary.kind === "cash" || summary.kind === "coin") return summary.kind;
+  if (summary.starThing || summary.counts) return "daily";
+  return "—";
+}
+
+function rangeOf(summary: PersistedDiffSummary | null): { from: string | null; to: string | null } {
+  if (!summary) return { from: null, to: null };
+  const r = summary.starThing?.dateRange ?? summary.dateRange ?? null;
+  return { from: r?.from ?? null, to: r?.to ?? null };
+}
+
+const TYPE_TONE: Record<ImportFileType, string> = {
+  daily: "bg-sky-100 text-sky-800",
+  cash: "bg-emerald-100 text-emerald-800",
+  coin: "bg-amber-100 text-amber-800",
+  "—": "bg-zinc-100 text-zinc-600",
+};
+
+const TYPE_LABEL: Record<ImportFileType, string> = {
+  daily: "POS รายวัน",
+  cash: "เงินสด event",
+  coin: "เหรียญ event",
+  "—": "ไม่ทราบ",
+};
 
 export default async function PosIngestListPage({
   searchParams,
@@ -187,7 +227,7 @@ export default async function PosIngestListPage({
           <thead className="sticky top-0 z-20 bg-muted text-xs uppercase text-muted-foreground">
             <tr className="bg-muted text-left [&>th]:bg-muted">
               <th className="px-3 py-2 font-medium">เวลาอัปโหลด</th>
-              <th className="px-3 py-2 font-medium">ชื่อไฟล์</th>
+              <th className="px-3 py-2 font-medium">ไฟล์</th>
               <th className="px-3 py-2 font-medium">Maker / Checker</th>
               <th className="px-3 py-2 text-right font-medium">แถว</th>
               <th className="px-3 py-2 font-medium">สถานะ + Diff</th>
@@ -207,9 +247,10 @@ export default async function PosIngestListPage({
               </tr>
             )}
             {imports.map((imp) => {
-              const counts = bucketCounts(
-                imp.diffSummary as unknown as PersistedDiffSummary | null
-              );
+              const summary = imp.diffSummary as unknown as PersistedDiffSummary | null;
+              const counts = bucketCounts(summary);
+              const fileType = fileTypeOf(summary);
+              const range = rangeOf(summary);
               const maker = nameMap.get(imp.uploadedById);
               // Route uses import id; filename surfaced for context only.
               return (
@@ -217,7 +258,31 @@ export default async function PosIngestListPage({
                   <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
                     {thaiDateTime(imp.uploadedAt)}
                   </td>
-                  <td className="px-3 py-2 font-medium">{imp.filename}</td>
+                  <td className="px-3 py-2">
+                    {/* Wave-2 (CEO 2026-06-01): GUID filenames are unreadable.
+                        Surface (a) file type pill — daily / cash / coin —
+                        (b) data date range, (c) actual filename in muted
+                        small text. The CEO can now identify a row from a
+                        meter away without opening preview. */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex h-5 items-center rounded px-1.5 text-[11px] font-semibold ${TYPE_TONE[fileType]}`}
+                        >
+                          {TYPE_LABEL[fileType]}
+                        </span>
+                        {(range.from || range.to) && (
+                          <span className="text-xs text-zinc-700">
+                            {range.from ?? "?"}
+                            {range.from !== range.to && range.to ? ` → ${range.to}` : ""}
+                          </span>
+                        )}
+                      </div>
+                      <span className="truncate text-[11px] text-muted-foreground" title={imp.filename}>
+                        {imp.filename}
+                      </span>
+                    </div>
+                  </td>
                   <td className="px-3 py-2">
                     <MakerCheckerBadge
                       maker={
