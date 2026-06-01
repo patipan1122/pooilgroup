@@ -17,6 +17,7 @@ import { revalidatePath } from "next/cache";
 // scopes every query + write.
 
 import { createHash } from "crypto";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/chairops/audit/log";
@@ -676,6 +677,113 @@ export async function addBranchFromStarThing(
     entityId: branch.id,
     newValue: { name: branch.name, slug: branch.slug, source: "pos-ingest" },
   });
+
+  // 2026-06-01 follow-up · CEO reported "กดเพิ่มสาขาแล้ว error ไม่หาย".
+  // Root cause: each ChairopsPosImport row holds its parse + diff snapshot
+  // in diffSummary JSON at upload time. Creating the branch fixes the
+  // ChairopsBranch table but never re-runs row resolution, so the preview
+  // still shows the old "ระบุสาขาไม่ได้" rows.
+  //
+  // Fix: walk pending (uncommitted) imports for this org whose diffSummary
+  // flags this storeName as unknown, and patch the JSON in place:
+  //   • each row with shopName === trimmed → status flips from "error" →
+  //     "new", branchId = branch.id, branchName = branch.name, the
+  //     "ระบุสาขาไม่ได้" error message gets stripped from row.errors
+  //   • counts adjust: error -= N, new += N
+  //   • starThing.knownBranchEntries gains the new entry; storeName
+  //     removed from starThing.unknownBranches
+  //   • if any row that DID parse a valid bizDate, the daily-summary
+  //     aggregate (per branch × date) gets resolved via storeName lookup
+  //     at commit time — nothing extra to do here.
+  type PartialDiffRow = {
+    status: string;
+    shopName?: string | null;
+    branchId?: string | null;
+    branchName?: string | null;
+    errors?: string[];
+  };
+  type PartialDiff = {
+    rows?: PartialDiffRow[];
+    counts?: { new?: number; same?: number; changed?: number; error?: number };
+    starThing?: {
+      unknownBranches?: string[];
+      knownBranchEntries?: Array<[string, string]>;
+    } | null;
+  };
+
+  const pendingImports = await prisma.chairopsPosImport.findMany({
+    where: { orgId, committed: false },
+    select: { id: true, diffSummary: true },
+  });
+
+  let touchedImports = 0;
+  let touchedRows = 0;
+  for (const imp of pendingImports) {
+    const diff = imp.diffSummary as unknown as PartialDiff | null;
+    if (!diff || !Array.isArray(diff.rows)) continue;
+
+    // Quick skip — only patch imports that actually flagged THIS storeName.
+    const flagsThis =
+      diff.starThing?.unknownBranches?.includes(trimmed) ??
+      diff.rows.some(
+        (r) =>
+          r.status === "error" &&
+          (r.shopName ?? "").trim() === trimmed,
+      );
+    if (!flagsThis) continue;
+
+    let rowsPatched = 0;
+    for (const r of diff.rows) {
+      if (r.status !== "error") continue;
+      if ((r.shopName ?? "").trim() !== trimmed) continue;
+      r.status = "new";
+      r.branchId = branch.id;
+      r.branchName = branch.name;
+      if (Array.isArray(r.errors)) {
+        r.errors = r.errors.filter((e) => !/สาขา|ระบุสาขา/.test(e));
+      }
+      rowsPatched += 1;
+    }
+    if (rowsPatched === 0) continue;
+
+    if (diff.counts) {
+      diff.counts.error = Math.max(0, (diff.counts.error ?? 0) - rowsPatched);
+      diff.counts.new = (diff.counts.new ?? 0) + rowsPatched;
+    }
+    if (diff.starThing) {
+      if (Array.isArray(diff.starThing.unknownBranches)) {
+        diff.starThing.unknownBranches = diff.starThing.unknownBranches.filter(
+          (n) => n !== trimmed,
+        );
+      }
+      if (Array.isArray(diff.starThing.knownBranchEntries)) {
+        diff.starThing.knownBranchEntries.push([trimmed, branch.id]);
+      } else {
+        diff.starThing.knownBranchEntries = [[trimmed, branch.id]];
+      }
+    }
+
+    await prisma.chairopsPosImport.update({
+      where: { id: imp.id },
+      data: { diffSummary: diff as unknown as Prisma.InputJsonValue },
+    });
+    touchedImports += 1;
+    touchedRows += rowsPatched;
+  }
+
+  if (touchedImports > 0) {
+    await writeAudit({
+      userId: session.user.id,
+      action: "pos_import.reresolve_after_branch_create",
+      entity: "ChairopsBranch",
+      entityId: branch.id,
+      metadata: {
+        storeName: trimmed,
+        touchedImports,
+        touchedRows,
+      },
+    });
+  }
 
   revalidatePath("/chairops/pos-ingest");
   revalidatePath(`/chairops/branches`);
