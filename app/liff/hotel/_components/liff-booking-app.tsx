@@ -55,12 +55,14 @@ export function LiffBookingApp({ hotel }: { hotel: Hotel }) {
   const [bookingCode, setBookingCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const brand = hotel.brandColor;
+  // Honor admin-set brand, fall back to AuditMe Design System v2 blue
+  const isLegacyPurple = hotel.brandColor?.toLowerCase() === "#7c3aed";
+  const brand = !hotel.brandColor || isLegacyPurple ? "#2563EB" : hotel.brandColor;
   const nights = Math.max(1, Math.round((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86400_000));
   const total = (selectedRoom?.priceThb ?? 0) * nights * rooms;
 
   return (
-    <div className="min-h-screen pb-32" style={{ background: "#FAF7F2" }}>
+    <div className="min-h-screen pb-32" style={{ background: "#EEEEE6" }}>
       {/* Hero (compact for LIFF) */}
       {step === "rooms" && (
         <header
@@ -110,14 +112,16 @@ export function LiffBookingApp({ hotel }: { hotel: Hotel }) {
       {/* Step 1: Pick room */}
       {step === "rooms" && (
         <div className="px-5 pt-5 space-y-3">
-          <p className="text-[11px] uppercase tracking-widest font-semibold text-stone-500 px-1">เลือกห้องพัก</p>
+          <p className="text-[11px] uppercase tracking-widest font-semibold text-slate-500 px-1">เลือกห้องพัก</p>
           {hotel.rooms.map((r) => {
             const img = r.primaryImageUrl ?? r.imageUrls[0];
+            // Match Design System v2 pastel surfaces (same hues as PhotoArt
+            // on the public web page so LINE users see consistent branding).
             const tier: Record<number, { from: string; to: string; icon: string }> = {
-              300: { from: "#F4D5C6", to: "#E8B595", icon: "🛏" },
-              400: { from: "#F2DDC4", to: "#D9B687", icon: "🛏" },
-              450: { from: "#DDD4E8", to: "#B5A4D2", icon: "🛏" },
-              550: { from: "#C9B7DD", to: "#8B6CB5", icon: "🏨" },
+              300: { from: "#FFF1CF", to: "#FAD79B", icon: "🛏" }, // butter
+              400: { from: "#DDEBFF", to: "#A8C9F5", icon: "🛏" }, // sky · brand
+              450: { from: "#DFF5E8", to: "#A8DDC2", icon: "🛏" }, // mint
+              550: { from: "#FFE0E1", to: "#FBA5A6", icon: "🏨" }, // blush · vip
             };
             const v = tier[r.priceThb] ?? tier[400];
             return (
@@ -127,7 +131,7 @@ export function LiffBookingApp({ hotel }: { hotel: Hotel }) {
                   setSelectedRoom(r);
                   setStep("form");
                 }}
-                className="block w-full text-left rounded-2xl bg-white ring-1 ring-stone-200/80 hover:shadow-md active:scale-[0.99] transition overflow-hidden"
+                className="block w-full text-left rounded-2xl bg-white ring-1 ring-slate-200/80 hover:shadow-md active:scale-[0.99] transition overflow-hidden"
               >
                 <div className="flex">
                   <div className="w-32 h-32 shrink-0 relative overflow-hidden">
@@ -145,13 +149,13 @@ export function LiffBookingApp({ hotel }: { hotel: Hotel }) {
                   </div>
                   <div className="flex-1 p-3.5 flex flex-col justify-between">
                     <div>
-                      <div className="font-semibold text-[15px] text-stone-900">{r.name}</div>
-                      {r.bedDescription && <div className="text-[11px] text-stone-500 mt-0.5">🛏 {r.bedDescription}</div>}
+                      <div className="font-semibold text-[15px] text-slate-900">{r.name}</div>
+                      {r.bedDescription && <div className="text-[11px] text-slate-500 mt-0.5">🛏 {r.bedDescription}</div>}
                     </div>
                     <div className="flex items-end justify-between">
                       <div>
-                        <div className="text-[10px] uppercase tracking-wide text-stone-500 font-medium">เริ่ม</div>
-                        <div className="text-xl font-bold text-stone-900 tabular-nums">฿{r.priceThb.toLocaleString()}</div>
+                        <div className="text-[10px] uppercase tracking-wide text-slate-500 font-medium">เริ่ม</div>
+                        <div className="text-xl font-bold text-slate-900 tabular-nums">฿{r.priceThb.toLocaleString()}</div>
                       </div>
                       <div className="text-xs font-semibold px-2.5 py-1.5 rounded-full text-white shadow-sm" style={{ background: brand }}>
                         จอง →
@@ -278,18 +282,18 @@ export function LiffBookingApp({ hotel }: { hotel: Hotel }) {
             </div>
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-stone-900" style={{ fontFamily: "ui-serif, Georgia, serif" }}>จองสำเร็จแล้ว</h2>
-            <p className="text-sm text-stone-600 mt-2 px-4">โรงแรมจะติดต่อกลับเพื่อยืนยันการจองค่ะ</p>
+            <h2 className="text-2xl font-bold text-slate-900">จองสำเร็จแล้ว</h2>
+            <p className="text-sm text-slate-600 mt-2 px-4">โรงแรมจะติดต่อกลับเพื่อยืนยันการจองค่ะ</p>
           </div>
-          <div className="mx-auto bg-white ring-1 ring-stone-200 rounded-2xl p-5 inline-block shadow-sm">
-            <div className="text-[11px] text-stone-500 font-medium">รหัสการจอง</div>
-            <div className="text-2xl font-mono font-bold tracking-wider text-stone-900 mt-1">{bookingCode}</div>
+          <div className="mx-auto bg-white ring-1 ring-slate-200 rounded-2xl p-5 inline-block shadow-sm">
+            <div className="text-[11px] text-slate-500 font-medium">รหัสการจอง</div>
+            <div className="text-2xl font-mono font-bold tracking-wider text-slate-900 mt-1">{bookingCode}</div>
             <button
               type="button"
               onClick={async () => {
                 try { await navigator.clipboard.writeText(bookingCode!); } catch {}
               }}
-              className="text-[11px] text-stone-500 mt-2 hover:text-stone-700"
+              className="text-[11px] text-slate-500 mt-2 hover:text-slate-700"
             >
               📋 คัดลอกรหัส
             </button>

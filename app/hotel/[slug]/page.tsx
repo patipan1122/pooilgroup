@@ -36,15 +36,19 @@ export default async function PublicHotelPage({
   const hotel = await getHotelBySlug(slug);
   if (!hotel || !hotel.enabled) notFound();
 
-  const brand = hotel.brandColor || "#7C5BC9";
+  // Design System v2 default brand = blue; honor hotel.brandColor when set in
+  // admin (Mix Hotel currently still seeded #7c3aed — treat that legacy purple
+  // as "unset" and fall through to the DS v2 blue for a clean palette swap).
+  const isLegacyPurple = hotel.brandColor?.toLowerCase() === "#7c3aed";
+  const brand = !hotel.brandColor || isLegacyPurple ? "#2563EB" : hotel.brandColor;
   const brandSoft = withOpacity(brand, 0.08);
   const brandDeep = darken(brand, 0.15);
   const minPrice = Math.min(...hotel.rooms.map((r) => Number(r.priceThb)));
 
   return (
     <main
-      className="min-h-screen text-stone-900"
-      style={{ background: "#FAF7F2", fontFamily: "var(--font-noto-thai), var(--font-sarabun), system-ui, sans-serif" }}
+      className="min-h-screen text-slate-900"
+      style={{ background: "var(--hotel-bg, #EEEEE6)" }}
     >
       {/* HERO ─────────────────────────────────────────────────────────── */}
       <header
@@ -78,7 +82,6 @@ export default async function PublicHotelPage({
           <h1
             className="text-white tracking-tight"
             style={{
-              fontFamily: "var(--font-sarabun)",
               fontWeight: 700,
               fontSize: "clamp(2.25rem, 5vw, 3.5rem)",
               lineHeight: 1.1,
@@ -99,7 +102,7 @@ export default async function PublicHotelPage({
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <a
               href="#rooms"
-              className="inline-flex items-center justify-center h-12 px-7 rounded-full bg-white text-stone-900 font-semibold shadow-xl hover:shadow-2xl active:scale-95 transition"
+              className="inline-flex items-center justify-center h-12 px-7 rounded-full bg-white text-slate-900 font-semibold shadow-xl hover:shadow-2xl active:scale-95 transition"
             >
               <span>จองห้องเลย</span>
               <span className="ml-2 px-2 py-0.5 rounded-full text-xs" style={{ background: brandSoft, color: brandDeep }}>
@@ -130,10 +133,10 @@ export default async function PublicHotelPage({
             { icon: "🕐", label: hotel.is24h ? "24 ชม." : "เปิดบริการ", sub: "ทุกวัน" },
             { icon: "💳", label: paymentLabel(hotel.paymentMethods), sub: "ชำระสะดวก" },
           ].map((h) => (
-            <div key={h.label} className="rounded-2xl bg-white ring-1 ring-stone-200/80 shadow-sm p-5 text-center">
+            <div key={h.label} className="rounded-2xl bg-white ring-1 ring-slate-200/80 shadow-sm p-5 text-center">
               <div className="text-2xl mb-1.5">{h.icon}</div>
-              <div className="text-sm font-semibold text-stone-900">{h.label}</div>
-              <div className="text-xs text-stone-500 mt-0.5">{h.sub}</div>
+              <div className="text-sm font-semibold text-slate-900">{h.label}</div>
+              <div className="text-xs text-slate-500 mt-0.5">{h.sub}</div>
             </div>
           ))}
         </div>
@@ -149,12 +152,12 @@ export default async function PublicHotelPage({
             เลือกห้องพัก
           </span>
           <h2
-            className="text-stone-900 mt-3"
-            style={{ fontFamily: "var(--font-sarabun)", fontWeight: 700, fontSize: "clamp(1.5rem, 3vw, 2rem)", lineHeight: 1.2 }}
+            className="text-slate-900 mt-3"
+            style={{ fontWeight: 700,fontSize: "clamp(1.5rem, 3vw, 2rem)", lineHeight: 1.2 }}
           >
             ห้องสะอาด · ราคาเท่ากันทุกวัน
           </h2>
-          <p className="text-stone-600 mt-1.5">ไม่มีค่าใช้จ่ายซ่อนเร้น · ไม่ต้องวางมัดจำ</p>
+          <p className="text-slate-600 mt-1.5">ไม่มีค่าใช้จ่ายซ่อนเร้น · ไม่ต้องวางมัดจำ</p>
         </div>
 
         <div className="space-y-5">
@@ -181,7 +184,7 @@ export default async function PublicHotelPage({
       </section>
 
       {/* INFO + CONTACT ─────────────────────────────────────────────── */}
-      <section className="bg-white border-t border-stone-200/60">
+      <section className="bg-white border-t border-slate-200/60">
         <div className="max-w-6xl mx-auto px-6 sm:px-10 py-14 sm:py-20 grid gap-10 sm:gap-12 lg:grid-cols-2">
           <div>
             <span
@@ -190,7 +193,7 @@ export default async function PublicHotelPage({
             >
               ข้อมูลโรงแรม
             </span>
-            <h3 className="mt-3 mb-5 text-2xl text-stone-900" style={{ fontFamily: "var(--font-sarabun)", fontWeight: 700 }}>
+            <h3 className="mt-3 mb-5 text-2xl text-slate-900" style={{ fontWeight: 700 }}>
               สิ่งที่ควรรู้ก่อนจอง
             </h3>
             <dl className="space-y-3.5 text-sm">
@@ -204,10 +207,10 @@ export default async function PublicHotelPage({
 
             {hotel.amenities.length > 0 && (
               <div className="mt-8">
-                <h4 className="text-xs font-semibold text-stone-500 mb-3">สิ่งอำนวยความสะดวก</h4>
+                <h4 className="text-xs font-semibold text-slate-500 mb-3">สิ่งอำนวยความสะดวก</h4>
                 <div className="flex flex-wrap gap-2">
                   {hotel.amenities.map((a) => (
-                    <span key={a} className="text-sm px-3 py-1.5 rounded-full bg-stone-100 ring-1 ring-stone-200/80 text-stone-700">
+                    <span key={a} className="text-sm px-3 py-1.5 rounded-full bg-slate-100 ring-1 ring-slate-200/80 text-slate-700">
                       {a}
                     </span>
                   ))}
@@ -217,8 +220,8 @@ export default async function PublicHotelPage({
 
             {hotel.nearbyPlaces.length > 0 && (
               <div className="mt-8">
-                <h4 className="text-xs font-semibold text-stone-500 mb-3">ใกล้ๆ โรงแรม</h4>
-                <ul className="text-sm text-stone-700 space-y-2">
+                <h4 className="text-xs font-semibold text-slate-500 mb-3">ใกล้ๆ โรงแรม</h4>
+                <ul className="text-sm text-slate-700 space-y-2">
                   {hotel.nearbyPlaces.map((p) => (
                     <li key={p} className="flex items-center gap-2"><span>📍</span>{p}</li>
                   ))}
@@ -234,7 +237,7 @@ export default async function PublicHotelPage({
             >
               ติดต่อโดยตรง
             </span>
-            <h3 className="mt-3 mb-5 text-2xl text-stone-900" style={{ fontFamily: "var(--font-sarabun)", fontWeight: 700 }}>
+            <h3 className="mt-3 mb-5 text-2xl text-slate-900" style={{ fontWeight: 700 }}>
               คุยกับเราโดยตรง
             </h3>
             <div className="space-y-3">
@@ -242,28 +245,28 @@ export default async function PublicHotelPage({
                 <a
                   key={p}
                   href={`tel:${p.replace(/\D/g, "")}`}
-                  className="flex items-center gap-4 rounded-2xl ring-1 ring-stone-200 p-4 hover:bg-stone-50 hover:ring-stone-300 transition"
+                  className="flex items-center gap-4 rounded-2xl ring-1 ring-slate-200 p-4 hover:bg-slate-50 hover:ring-slate-300 transition"
                 >
                   <div className="h-12 w-12 rounded-full flex items-center justify-center text-xl" style={{ background: brandSoft }}>
                     📞
                   </div>
                   <div className="flex-1">
-                    <div className="font-semibold text-stone-900">{p}</div>
-                    <div className="text-xs text-stone-500">จองห้องพัก · 24 ชม.</div>
+                    <div className="font-semibold text-slate-900">{p}</div>
+                    <div className="text-xs text-slate-500">จองห้องพัก · 24 ชม.</div>
                   </div>
                 </a>
               ))}
               {hotel.ownerPhone && (
                 <a
                   href={`tel:${hotel.ownerPhone.replace(/\D/g, "")}`}
-                  className="flex items-center gap-4 rounded-2xl ring-1 ring-stone-200 p-4 hover:bg-stone-50 hover:ring-stone-300 transition"
+                  className="flex items-center gap-4 rounded-2xl ring-1 ring-slate-200 p-4 hover:bg-slate-50 hover:ring-slate-300 transition"
                 >
                   <div className="h-12 w-12 rounded-full flex items-center justify-center text-xl" style={{ background: brandSoft }}>
                     🤝
                   </div>
                   <div className="flex-1">
-                    <div className="font-semibold text-stone-900">{hotel.ownerPhone}</div>
-                    <div className="text-xs text-stone-500">เจ้าของ · เหมา / ร้องเรียน</div>
+                    <div className="font-semibold text-slate-900">{hotel.ownerPhone}</div>
+                    <div className="text-xs text-slate-500">เจ้าของ · เหมา / ร้องเรียน</div>
                   </div>
                 </a>
               )}
@@ -272,14 +275,14 @@ export default async function PublicHotelPage({
                   href={hotel.googleMapsUrl}
                   target="_blank"
                   rel="noopener"
-                  className="flex items-center gap-4 rounded-2xl ring-1 ring-stone-200 p-4 hover:bg-stone-50 hover:ring-stone-300 transition"
+                  className="flex items-center gap-4 rounded-2xl ring-1 ring-slate-200 p-4 hover:bg-slate-50 hover:ring-slate-300 transition"
                 >
                   <div className="h-12 w-12 rounded-full flex items-center justify-center text-xl" style={{ background: brandSoft }}>
                     🗺
                   </div>
                   <div className="flex-1">
-                    <div className="font-semibold text-stone-900">เปิด Google Maps</div>
-                    <div className="text-xs text-stone-500">ดูเส้นทาง · pin location</div>
+                    <div className="font-semibold text-slate-900">เปิด Google Maps</div>
+                    <div className="text-xs text-slate-500">ดูเส้นทาง · pin location</div>
                   </div>
                 </a>
               )}
@@ -288,10 +291,10 @@ export default async function PublicHotelPage({
         </div>
       </section>
 
-      <footer className="bg-stone-50 border-t border-stone-200/60">
+      <footer className="bg-slate-50 border-t border-slate-200/60">
         <div className="max-w-6xl mx-auto px-6 sm:px-10 py-10 text-center">
-          <p className="text-stone-700 font-semibold">{hotel.name}</p>
-          <p className="text-xs text-stone-500 mt-2">© {new Date().getFullYear()} · Powered by Pooilgroup HotelBook</p>
+          <p className="text-slate-700 font-semibold">{hotel.name}</p>
+          <p className="text-xs text-slate-500 mt-2">© {new Date().getFullYear()} · Powered by Pooilgroup HotelBook</p>
         </div>
       </footer>
 
@@ -335,8 +338,8 @@ function paymentLabelDetail(methods: string[]): string {
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-3 text-sm py-1">
-      <dt className="w-28 text-stone-500 shrink-0">{label}</dt>
-      <dd className="text-stone-900 font-medium">{children}</dd>
+      <dt className="w-28 text-slate-500 shrink-0">{label}</dt>
+      <dd className="text-slate-900 font-medium">{children}</dd>
     </div>
   );
 }
@@ -360,7 +363,7 @@ function RoomCard(props: {
   const main = props.primaryImageUrl ?? props.imageUrls[0] ?? null;
   const others = props.imageUrls.filter((u) => u !== main).slice(0, 2);
   return (
-    <article className="group overflow-hidden rounded-3xl bg-white ring-1 ring-stone-200/80 shadow-sm hover:shadow-xl hover:ring-stone-300 transition-all duration-300">
+    <article className="group overflow-hidden rounded-3xl bg-white ring-1 ring-slate-200/80 shadow-sm hover:shadow-xl hover:ring-slate-300 transition-all duration-300">
       <div className="grid sm:grid-cols-5 gap-0">
         {/* image side */}
         <div className="sm:col-span-2 relative h-64 sm:h-auto sm:min-h-[260px]">
@@ -402,18 +405,18 @@ function RoomCard(props: {
         <div className="sm:col-span-3 p-6 sm:p-7 flex flex-col">
           <div className="flex-1">
             <h3
-              className="text-xl sm:text-2xl text-stone-900 leading-tight"
-              style={{ fontFamily: "var(--font-sarabun)", fontWeight: 700 }}
+              className="text-xl sm:text-2xl text-slate-900 leading-tight"
+              style={{ fontWeight: 700 }}
             >
               {props.name}
             </h3>
-            {props.bedDescription && <p className="text-sm text-stone-500 mt-1">🛏 {props.bedDescription}</p>}
-            {props.description && <p className="text-sm text-stone-600 mt-3 leading-relaxed">{props.description}</p>}
+            {props.bedDescription && <p className="text-sm text-slate-500 mt-1">🛏 {props.bedDescription}</p>}
+            {props.description && <p className="text-sm text-slate-600 mt-3 leading-relaxed">{props.description}</p>}
 
             {props.amenities.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-4">
                 {props.amenities.slice(0, 6).map((a) => (
-                  <span key={a} className="text-xs px-2.5 py-1 rounded-full bg-stone-50 ring-1 ring-stone-200/80 text-stone-700">
+                  <span key={a} className="text-xs px-2.5 py-1 rounded-full bg-slate-50 ring-1 ring-slate-200/80 text-slate-700">
                     {a}
                   </span>
                 ))}
@@ -421,11 +424,11 @@ function RoomCard(props: {
             )}
           </div>
 
-          <div className="mt-5 pt-5 border-t border-stone-100 flex items-end justify-between gap-3">
+          <div className="mt-5 pt-5 border-t border-slate-100 flex items-end justify-between gap-3">
             <div>
-              <div className="text-[11px] text-stone-500 font-medium">ราคาต่อคืน</div>
+              <div className="text-[11px] text-slate-500 font-medium">ราคาต่อคืน</div>
               <div className="flex items-baseline gap-1.5 mt-0.5">
-                <span className="text-3xl text-stone-900 tabular-nums" style={{ fontFamily: "var(--font-sarabun)", fontWeight: 700 }}>
+                <span className="mono text-3xl text-slate-900 font-semibold" style={{ fontWeight: 700 }}>
                   ฿{props.priceThb.toLocaleString()}
                 </span>
               </div>

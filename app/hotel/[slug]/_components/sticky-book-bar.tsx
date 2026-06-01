@@ -34,11 +34,11 @@ export function StickyBookBar({
         visible ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0 pointer-events-none"
       }`}
     >
-      <div className="bg-white/95 backdrop-blur-md border-b border-stone-200 shadow-sm">
+      <div className="bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm">
         <div className="max-w-6xl mx-auto px-5 sm:px-10 py-3 flex items-center gap-3">
           <div className="flex-1 min-w-0">
-            <div className="text-[11px] text-stone-500 font-medium truncate">{hotelName}</div>
-            <div className="text-sm font-semibold text-stone-900 truncate">เริ่ม ฿{minPrice.toLocaleString()}/คืน</div>
+            <div className="text-[11px] text-slate-500 font-medium truncate">{hotelName}</div>
+            <div className="text-sm font-semibold text-slate-900 truncate">เริ่ม ฿{minPrice.toLocaleString()}/คืน</div>
           </div>
           <a
             href="#rooms"

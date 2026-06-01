@@ -13,13 +13,16 @@ function tierFor(price: number, name: string): Tier {
   return "default";
 }
 
+// Palette aligned with AuditMe Design System v2 · pastel surfaces +
+// matching deep accent per tier. Brand-blue tier (sky · 400) reads as the
+// "popular pick" — same hue as global brand CTA, so the eye lands there.
 const PALETTE: Record<Tier, { from: string; to: string; accent: string; icon: "bed" | "bed-double" | "sofa" | "spa" }> = {
-  compact:  { from: "#F5E6D8", to: "#E8C9A8", accent: "#9C7A5E", icon: "bed" },
-  single:   { from: "#F0E1C8", to: "#D9B687", accent: "#8B6F4A", icon: "bed" },
-  double:   { from: "#E4DCD0", to: "#B8A48A", accent: "#6B5942", icon: "bed-double" },
-  large:    { from: "#DDD4E8", to: "#B5A4D2", accent: "#5E4B7A", icon: "sofa" },
-  vip:      { from: "#D4C5E0", to: "#8B6CB5", accent: "#3F2D5C", icon: "spa" },
-  default:  { from: "#E8E0D2", to: "#C9B898", accent: "#6B5942", icon: "bed" },
+  compact:  { from: "#FFF1CF", to: "#FAD79B", accent: "#92400E", icon: "bed" },           // butter · amber accent
+  single:   { from: "#DDEBFF", to: "#A8C9F5", accent: "#1D4ED8", icon: "bed" },           // sky · brand blue (popular ⭐)
+  double:   { from: "#DFF5E8", to: "#A8DDC2", accent: "#065F46", icon: "bed-double" },    // mint · emerald
+  large:    { from: "#ECE7FE", to: "#C4B5FD", accent: "#5B21B6", icon: "sofa" },          // lav · violet
+  vip:      { from: "#FFE0E1", to: "#FBA5A6", accent: "#9F1239", icon: "spa" },           // blush · rose (premium)
+  default:  { from: "#FAF6EC", to: "#E5DEC7", accent: "#475569", icon: "bed" },           // cream · slate
 };
 
 function BedOutline({ color }: { color: string }) {
@@ -113,12 +116,12 @@ export function PhotoArt({ name, price }: { name: string; price: number }) {
         <div className="mt-3 text-center">
           <div
             className="text-base sm:text-lg font-semibold"
-            style={{ color: p.accent, fontFamily: "var(--font-sarabun, ui-serif), serif", letterSpacing: "-0.01em" }}
+            style={{ color: p.accent, letterSpacing: "-0.01em" }}
           >
             {name}
           </div>
           <div
-            className="mt-1 text-xs sm:text-sm tabular-nums"
+            className="mono mt-1 text-xs sm:text-sm"
             style={{ color: p.accent, opacity: 0.75 }}
           >
             ฿{price.toLocaleString()}/คืน
