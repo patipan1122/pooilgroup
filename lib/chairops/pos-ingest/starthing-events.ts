@@ -82,10 +82,32 @@ const SHARED_ALIASES = {
   storeName: ["ชื่อร้าน", "สาขา", "store name"],
 } as const;
 
-const CASH_AMOUNT_ALIASES = ["การเพิ่มเงินสด", "cash increase", "added cash"] as const;
-const CASH_METER_ALIASES = ["เงินสดทั้งหมด", "total cash"] as const;
-const COIN_AMOUNT_ALIASES = ["การเพิ่มเหรียญ", "coin increase", "added coin"] as const;
-const COIN_METER_ALIASES = ["จำนวนเหรียญทั้งหมด", "total coin"] as const;
+// CEO 2026-06-01 confirmed exact English headers from real StarThing export
+// of a coin event file: "Coin increment" + "Total coin amount". Earlier
+// guesses ("coin increase" / "added coin" / "total coin") didn't match;
+// keeping them as harmless extra aliases in case StarThing varies again.
+const CASH_AMOUNT_ALIASES = [
+  "การเพิ่มเงินสด",
+  "cash increment",
+  "cash increase",
+  "added cash",
+] as const;
+const CASH_METER_ALIASES = [
+  "เงินสดทั้งหมด",
+  "total cash amount",
+  "total cash",
+] as const;
+const COIN_AMOUNT_ALIASES = [
+  "การเพิ่มเหรียญ",
+  "coin increment",
+  "coin increase",
+  "added coin",
+] as const;
+const COIN_METER_ALIASES = [
+  "จำนวนเหรียญทั้งหมด",
+  "total coin amount",
+  "total coin",
+] as const;
 
 // Daily-summary discriminators (so detectFileType can tell them apart).
 const DAILY_DISCRIMINATORS = [
