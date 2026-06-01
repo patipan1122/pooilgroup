@@ -60,11 +60,11 @@ export function LiffBookingApp({ hotel }: { hotel: Hotel }) {
   const total = (selectedRoom?.priceThb ?? 0) * nights * rooms;
 
   return (
-    <div className="min-h-screen bg-zinc-50 pb-32">
+    <div className="min-h-screen pb-32" style={{ background: "#FAF7F2" }}>
       {/* Hero (compact for LIFF) */}
       {step === "rooms" && (
         <header
-          className="relative px-5 pt-8 pb-12"
+          className="relative px-5 pt-10 pb-14"
           style={{ background: `linear-gradient(160deg, ${brand} 0%, ${brand}dd 100%)` }}
         >
           {hotel.heroImageUrl && (
@@ -77,8 +77,8 @@ export function LiffBookingApp({ hotel }: { hotel: Hotel }) {
               <span className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
               เปิด 24 ชม.
             </div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">{hotel.name}</h1>
-            {hotel.concept && <p className="text-white/85 text-sm mt-1">{hotel.concept}</p>}
+            <h1 className="text-3xl font-bold text-white tracking-tight" style={{ lineHeight: 1.1 }}>{hotel.name}</h1>
+            {hotel.concept && <p className="text-white/90 text-sm mt-2">{hotel.concept}</p>}
           </div>
         </header>
       )}
@@ -109,10 +109,17 @@ export function LiffBookingApp({ hotel }: { hotel: Hotel }) {
 
       {/* Step 1: Pick room */}
       {step === "rooms" && (
-        <div className="px-5 pt-4 space-y-3">
-          <p className="text-xs text-zinc-500 px-1">เลือกห้องที่ต้องการ</p>
+        <div className="px-5 pt-5 space-y-3">
+          <p className="text-[11px] uppercase tracking-widest font-semibold text-stone-500 px-1">เลือกห้องพัก</p>
           {hotel.rooms.map((r) => {
             const img = r.primaryImageUrl ?? r.imageUrls[0];
+            const tier: Record<number, { from: string; to: string; icon: string }> = {
+              300: { from: "#F4D5C6", to: "#E8B595", icon: "🛏" },
+              400: { from: "#F2DDC4", to: "#D9B687", icon: "🛏" },
+              450: { from: "#DDD4E8", to: "#B5A4D2", icon: "🛏" },
+              550: { from: "#C9B7DD", to: "#8B6CB5", icon: "🏨" },
+            };
+            const v = tier[r.priceThb] ?? tier[400];
             return (
               <button
                 key={r.id}
@@ -120,27 +127,33 @@ export function LiffBookingApp({ hotel }: { hotel: Hotel }) {
                   setSelectedRoom(r);
                   setStep("form");
                 }}
-                className="block w-full text-left rounded-2xl bg-white ring-1 ring-zinc-200 hover:shadow-md transition overflow-hidden"
+                className="block w-full text-left rounded-2xl bg-white ring-1 ring-stone-200/80 hover:shadow-md active:scale-[0.99] transition overflow-hidden"
               >
                 <div className="flex">
-                  <div className="w-28 h-28 bg-zinc-100 shrink-0">
+                  <div className="w-32 h-32 shrink-0 relative overflow-hidden">
                     {img ? (
                       <img src={img} alt={r.name} className="w-full h-full object-cover" />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-zinc-400">📷</div>
+                      <div
+                        className="w-full h-full flex flex-col items-center justify-center text-white"
+                        style={{ background: `linear-gradient(135deg, ${v.from} 0%, ${v.to} 100%)` }}
+                      >
+                        <div className="text-3xl opacity-90">{v.icon}</div>
+                        <div className="text-[9px] mt-1 px-1.5 py-0.5 rounded-full bg-white/20 backdrop-blur-sm">เร็วๆ นี้</div>
+                      </div>
                     )}
                   </div>
-                  <div className="flex-1 p-3 flex flex-col justify-between">
+                  <div className="flex-1 p-3.5 flex flex-col justify-between">
                     <div>
-                      <div className="font-semibold text-sm">{r.name}</div>
-                      {r.bedDescription && <div className="text-[11px] text-zinc-500">🛏 {r.bedDescription}</div>}
+                      <div className="font-semibold text-[15px] text-stone-900">{r.name}</div>
+                      {r.bedDescription && <div className="text-[11px] text-stone-500 mt-0.5">🛏 {r.bedDescription}</div>}
                     </div>
                     <div className="flex items-end justify-between">
                       <div>
-                        <div className="text-[10px] text-zinc-500">เริ่ม</div>
-                        <div className="text-lg font-bold text-zinc-900">฿{r.priceThb.toLocaleString()}</div>
+                        <div className="text-[10px] uppercase tracking-wide text-stone-500 font-medium">เริ่ม</div>
+                        <div className="text-xl font-bold text-stone-900 tabular-nums">฿{r.priceThb.toLocaleString()}</div>
                       </div>
-                      <div className="text-xs px-2 py-1 rounded-full text-white" style={{ background: brand }}>
+                      <div className="text-xs font-semibold px-2.5 py-1.5 rounded-full text-white shadow-sm" style={{ background: brand }}>
                         จอง →
                       </div>
                     </div>
