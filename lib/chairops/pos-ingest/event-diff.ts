@@ -302,15 +302,47 @@ export interface IngestEventsResult {
 // PG_INT4_MAX is declared once above (after computeEventDiff). The friendly
 // catch below also uses it.
 
+export interface IngestEventsOptions {
+  /** 2026-06-01 fallback for environments where the BIGINT migration on
+   *  chairops.chairops_pos_coin_event hasn't been applied yet. When true,
+   *  the ingest filters out any coin row whose amount OR meter exceeds the
+   *  signed-int4 ceiling (2,147,483,647) and reports the count via the
+   *  return shape. CEO can choose this from the rose banner to unblock a
+   *  commit when DDL is not available right now. */
+  skipOverflowingCoinRows?: boolean;
+}
+
 export async function ingestEvents(
   prisma: PrismaClient,
   orgId: string,
   importId: string,
   kind: EventKind,
   rows: ClassifiedEventRow[],
-): Promise<IngestEventsResult> {
-  const toInsert = rows.filter((r) => r.bucket === "new");
+  options: IngestEventsOptions = {},
+): Promise<IngestEventsResult & { overflowingSkippedCount?: number }> {
+  let toInsert = rows.filter((r) => r.bucket === "new");
   if (toInsert.length === 0) return { insertedCount: 0, skippedCount: 0 };
+
+  // Optional pre-filter: drop coin rows that won't fit in int4. Only meaningful
+  // when the migration hasn't been applied — when it HAS been applied the rows
+  // pass through unchanged.
+  let overflowingSkippedCount = 0;
+  if (kind === "coin" && options.skipOverflowingCoinRows) {
+    const before = toInsert.length;
+    toInsert = toInsert.filter(
+      (r) =>
+        Math.round(r.amount) <= PG_INT4_MAX &&
+        Math.round(r.meter) <= PG_INT4_MAX,
+    );
+    overflowingSkippedCount = before - toInsert.length;
+    if (toInsert.length === 0) {
+      return {
+        insertedCount: 0,
+        skippedCount: rows.length,
+        overflowingSkippedCount,
+      };
+    }
+  }
 
   const inserted = await prisma.$transaction(async (tx) => {
     if (kind === "cash") {
@@ -361,8 +393,7 @@ export async function ingestEvents(
           throw new Error(
             `ตาราง chairops.chairops_pos_coin_event ใน prod ยังเป็น Int (int4) · ` +
               `ค่าจาก StarThing เกิน 2,147,483,647${sample} · ` +
-              `ต้องรัน migration BIGINT ก่อน (ดูไฟล์ ` +
-              `prisma/migrations/20260601_coin_event_bigint.sql) แล้วลอง commit อีกครั้ง.`,
+              `กดปุ่ม "รัน migration BIGINT" ที่ rose banner หรือเปิด "ข้ามแถวที่เกิน int4" เพื่อ commit ส่วนที่เหลือ.`,
           );
         }
         throw err;
@@ -370,7 +401,11 @@ export async function ingestEvents(
     }
   });
 
-  return { insertedCount: inserted, skippedCount: toInsert.length - inserted };
+  return {
+    insertedCount: inserted,
+    skippedCount: toInsert.length - inserted,
+    overflowingSkippedCount: overflowingSkippedCount || undefined,
+  };
 }
 
 // ---------------------------------------------------------------------------

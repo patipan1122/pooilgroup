@@ -169,17 +169,15 @@ export function MultiUploader() {
     }
   }
 
-  function onCommitCashCoin() {
+  function onCommitCashCoin(opts?: { skipOverflowingCoinRows?: boolean }) {
     if (!cashFileRef.current && !coinFileRef.current) {
       toast.error("ไม่มีไฟล์ cash/coin ให้ commit");
       return;
     }
     startCommit(async () => {
-      // Commit cash + coin in TWO separate calls (one file each) to stay
-      // under the Vercel/Next 1 MB server-action body cap. The action accepts
-      // either / both fields, so a single-file invocation is supported.
       let cashIns = 0;
       let coinIns = 0;
+      let coinOverflowSkipped = 0;
       let coverage: string | null = null;
       const errs: string[] = [];
 
@@ -197,9 +195,13 @@ export function MultiUploader() {
       if (coinFileRef.current) {
         const fd = new FormData();
         fd.set("coinFile", coinFileRef.current);
+        if (opts?.skipOverflowingCoinRows) {
+          fd.set("skipOverflowingCoinRows", "1");
+        }
         const r = await commitMultiImport(fd);
         if (r.ok) {
           coinIns = r.coinInserted;
+          coinOverflowSkipped = r.coinOverflowingSkipped ?? 0;
           if (
             r.coverageThrough &&
             (!coverage || r.coverageThrough > coverage)
@@ -215,8 +217,12 @@ export function MultiUploader() {
         toast.error(errs.join(" · "));
         return;
       }
+      const overflowNote =
+        coinOverflowSkipped > 0
+          ? ` · ข้าม ${coinOverflowSkipped} แถวที่ค่าเกิน int4 (รอ migration)`
+          : "";
       toast.success(
-        `บันทึก cash +${cashIns} · coin +${coinIns}` +
+        `บันทึก cash +${cashIns} · coin +${coinIns}${overflowNote}` +
           (coverage ? ` · ถึง ${coverage}` : ""),
       );
       setFiles([]);
@@ -325,7 +331,16 @@ export function MultiUploader() {
         </div>
       )}
 
-      {run.state === "done" && <BatchResults items={run.items} onCommitCashCoin={onCommitCashCoin} committing={committing} />}
+      {run.state === "done" && (
+        <BatchResults
+          items={run.items}
+          onCommitCashCoin={() => onCommitCashCoin()}
+          onCommitCashCoinSkipOverflow={() =>
+            onCommitCashCoin({ skipOverflowingCoinRows: true })
+          }
+          committing={committing}
+        />
+      )}
     </div>
   );
 }
@@ -368,25 +383,41 @@ function ItemStatus({ result }: { result: BatchPreviewItem | null | undefined })
 function BatchResults({
   items,
   onCommitCashCoin,
+  onCommitCashCoinSkipOverflow,
   committing,
 }: {
   items: BatchPreviewItem[];
   onCommitCashCoin: () => void;
+  onCommitCashCoinSkipOverflow: () => void;
   committing: boolean;
 }) {
   const dailies = items.filter(
     (i): i is Extract<BatchPreviewItem, { ok: true; kind: "daily" }> =>
       i.ok && i.kind === "daily",
   );
-  const cashItem = items.find(
-    (i): i is Extract<BatchPreviewItem, { ok: true; kind: "cash" }> =>
-      i.ok && i.kind === "cash",
+  // BatchPreviewItem's cash/coin members share one union shape
+  // (kind: "cash" | "coin"), so Extract<> with a single literal collapses
+  // to never. Filter + narrow via a hand-rolled predicate instead.
+  type EventItem = {
+    ok: true;
+    fileName: string;
+    kind: "cash" | "coin";
+    preview: NonNullable<
+      Extract<BatchPreviewItem, { ok: true; preview: unknown }>["preview"]
+    >;
+  };
+  const eventItems = items.filter(
+    (i): i is EventItem => i.ok && (i.kind === "cash" || i.kind === "coin"),
   );
-  const coinItem = items.find(
-    (i): i is Extract<BatchPreviewItem, { ok: true; kind: "coin" }> =>
-      i.ok && i.kind === "coin",
-  );
+  const cashItem = eventItems.find((i) => i.kind === "cash");
+  const coinItem = eventItems.find((i) => i.kind === "coin");
   const hasCashOrCoin = Boolean(cashItem || coinItem);
+  // 2026-06-01: when the coin file flagged the BIGINT migration as
+  // required, surface a secondary "commit anyway, skip overflowing rows"
+  // path so the CEO can still get partial data into prod without DDL.
+  const coinNeedsMigration = Boolean(coinItem?.preview.bigIntMigrationRequired);
+  const coinOverflowCount =
+    coinItem?.preview.bigIntMigrationRequired?.overflowRowCount ?? 0;
 
   return (
     <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
@@ -422,19 +453,45 @@ function BatchResults({
             {cashItem && <EventPreviewRow kind="cash" item={cashItem} />}
             {coinItem && <EventPreviewRow kind="coin" item={coinItem} />}
           </div>
-          <button
-            type="button"
-            onClick={onCommitCashCoin}
-            disabled={committing}
-            className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-          >
-            {committing ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            ) : (
-              <CheckCircle2 className="h-4 w-4" aria-hidden />
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onCommitCashCoin}
+              disabled={committing}
+              className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+            >
+              {committing ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <CheckCircle2 className="h-4 w-4" aria-hidden />
+              )}
+              Commit cash + coin
+            </button>
+            {coinNeedsMigration && (
+              <button
+                type="button"
+                onClick={onCommitCashCoinSkipOverflow}
+                disabled={committing}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-amber-400 bg-amber-50 px-3 text-sm font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-60"
+                title="ใช้ตอนยังไม่มี migration · ข้ามแถว coin ที่เกิน int4 max · ที่เหลือลงปกติ"
+              >
+                {committing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" aria-hidden />
+                )}
+                Commit · ข้าม {coinOverflowCount.toLocaleString("en-US")} แถวที่เกิน
+              </button>
             )}
-            Commit cash + coin
-          </button>
+          </div>
+          {coinNeedsMigration && (
+            <p className="text-[11px] text-amber-900">
+              ทางลัด: ถ้ารัน migration ไม่สะดวก · กดปุ่ม amber เพื่อ commit
+              เฉพาะแถวที่ไม่เกิน · {coinOverflowCount.toLocaleString("en-US")}{" "}
+              แถวที่เกิน int4 จะถูกข้าม (สามารถ commit ใหม่หลังรัน migration ภายหลัง · dedup
+              จะดูแลให้ไม่ซ้ำ)
+            </p>
+          )}
         </div>
       )}
     </div>

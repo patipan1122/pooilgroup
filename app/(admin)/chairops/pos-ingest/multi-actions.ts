@@ -116,6 +116,10 @@ export interface MultiCommitResult {
   cashSkipped: number;
   coinInserted: number;
   coinSkipped: number;
+  /** 2026-06-01 · only set when the caller passed skipOverflowingCoinRows
+   *  and at least one coin row exceeded the int4 ceiling. CEO needs to see
+   *  this to know they're losing data until the migration runs. */
+  coinOverflowingSkipped?: number;
   /** Latest bizDate (YYYY-MM-DD) now covered across the uploaded files — so the
    * operator knows "data is now up to date X" (CEO ask 2026-05-28). */
   coverageThrough: string | null;
@@ -131,6 +135,9 @@ export async function commitMultiImport(
   const session = await requireRole("OFFICE");
   const orgId = session.user.orgId;
   const notes = typeof formData.get("notes") === "string" ? (formData.get("notes") as string) : null;
+  // 2026-06-01: optional flag for the "commit without migration" fallback.
+  const skipOverflowingCoinRows =
+    formData.get("skipOverflowingCoinRows") === "1";
 
   const result: MultiCommitResult = {
     ok: true,
@@ -185,13 +192,19 @@ export async function commitMultiImport(
           },
         }));
 
-      const ing = await ingestEvents(prisma, orgId, imp.id, kind, diff.rows);
+      const ing = await ingestEvents(prisma, orgId, imp.id, kind, diff.rows, {
+        skipOverflowingCoinRows,
+      });
       if (kind === "cash") {
         result.cashInserted = ing.insertedCount;
         result.cashSkipped = ing.skippedCount + diff.summary.dupCount;
       } else {
         result.coinInserted = ing.insertedCount;
         result.coinSkipped = ing.skippedCount + diff.summary.dupCount;
+        if (ing.overflowingSkippedCount) {
+          result.coinOverflowingSkipped =
+            (result.coinOverflowingSkipped ?? 0) + ing.overflowingSkippedCount;
+        }
       }
 
       await writeAudit({
