@@ -13,6 +13,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils/cn";
 import { ShortageDriftCell } from "@/components/chairops/_kit";
+import { asEngineDrift, toCellDrift } from "@/lib/chairops/types/drift";
 import { StatusPill } from "@/components/ui/status-pill";
 import { baht, thaiRelative } from "@/lib/chairops/utils/format";
 import type { getDashboardRows } from "@/lib/chairops/reconcile/drift-engine";
@@ -118,8 +119,10 @@ export function BranchesLeaderboard({ rows }: { rows: Row[] }) {
                   </td>
                   <td className="px-3 py-2.5 text-right">
                     <ShortageDriftCell
-                      // drift-engine: positive = shortage · cell convention: negative = shortage
-                      amount={-r.driftAmount}
+                      // CEO 2026-06-01 P0: use branded `EngineDrift → CellDrift`
+                      // conversion instead of inline `-r.driftAmount`. Eliminates
+                      // the class of bug where a future edit forgets the flip.
+                      amount={toCellDrift(asEngineDrift(r.driftAmount))}
                       ageHours={r.driftHours}
                       cumulativeDays={Math.floor(r.driftHours / 24)}
                       compact
