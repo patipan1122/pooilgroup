@@ -73,7 +73,24 @@ export function CommitCard({
         toast.error(res.error);
         return;
       }
-      toast.success(`บันทึก ${appliedRowCount.toLocaleString("th-TH")} รายการสำเร็จ`);
+      // 2026-06-01: surface chair-move counters so the CEO sees the
+      // maid-view-preservation guarantee in plain numbers right at commit.
+      const moveParts: string[] = [];
+      if (res.chairsCreatedFromPos > 0) {
+        moveParts.push(`สร้างเก้าอี้ใหม่ ${res.chairsCreatedFromPos}`);
+      }
+      if (res.chairMovesRecorded > 0) {
+        moveParts.push(`ย้ายเก้าอี้ ${res.chairMovesRecorded}`);
+      }
+      if (res.chairMovesHistoricalOnly > 0) {
+        moveParts.push(
+          `บันทึก history ย้อนหลัง ${res.chairMovesHistoricalOnly} (ไม่กระทบสาขาแม่บ้านปัจจุบัน)`,
+        );
+      }
+      const tail = moveParts.length > 0 ? ` · ${moveParts.join(" · ")}` : "";
+      toast.success(
+        `บันทึก ${appliedRowCount.toLocaleString("th-TH")} รายการสำเร็จ${tail}`,
+      );
       // Wave-2 B1: land on /pos-ingest with the import id so the page shows
       // the post-commit undo banner (safety net · 60-min window).
       router.push(`/chairops/pos-ingest?committed=${importId}`);

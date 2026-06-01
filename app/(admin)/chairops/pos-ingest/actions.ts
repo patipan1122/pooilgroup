@@ -633,7 +633,15 @@ export async function previewImport(formData: FormData): Promise<{ ok: true; imp
   return { ok: true, importId: imp.id };
 }
 
-export async function commitImport(importId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export interface CommitImportSuccess {
+  ok: true;
+  /** 2026-06-01 · chair-move counters surfaced for the post-commit toast so
+   *  the CEO sees the maid-view-preservation guarantee in plain numbers. */
+  chairsCreatedFromPos: number;
+  chairMovesRecorded: number;
+  chairMovesHistoricalOnly: number;
+}
+export async function commitImport(importId: string): Promise<CommitImportSuccess | { ok: false; error: string }> {
   const session = await requireRole("OFFICE");
 
   const imp = await prisma.chairopsPosImport.findUnique({ where: { id: importId } });
@@ -681,11 +689,48 @@ export async function commitImport(importId: string): Promise<{ ok: true } | { o
           select: { id: true, chairCode: true, branchId: true },
         })
       : [];
-  const chairMap = new Map<string, { id: string; branchId: string }>(
-    preloadedChairs.map((c) => [c.chairCode, { id: c.id, branchId: c.branchId }]),
+
+  // CEO 2026-06-01 fix · "อย่าไปแตะของแม่บ้านในการสลับเก้าอี้สาขาแม่บ้านน่ะ"
+  //
+  // For each existing chair we also need its most recent ChairopsChairMove.
+  // If the file's bizDate is OLDER than the latest known move, treat the
+  // disagreement as a HISTORICAL data point: we still record it in the
+  // ChairopsChairMove ledger so audit trail is correct, but we DO NOT update
+  // chair.branchId — that would yank the chair out from under the maid who
+  // is currently collecting at its real present location. The chair's
+  // "current branch" remains whatever the most recent move says.
+  const chairIdsForMoveProbe = preloadedChairs.map((c) => c.id);
+  const latestMoves =
+    chairIdsForMoveProbe.length > 0
+      ? await prisma.chairopsChairMove.groupBy({
+          by: ["chairId"],
+          where: { orgId, chairId: { in: chairIdsForMoveProbe } },
+          _max: { movedAt: true },
+        })
+      : [];
+  const lastMoveByChairId = new Map<string, Date>(
+    latestMoves
+      .map((m) => [m.chairId, m._max.movedAt])
+      .filter((p): p is [string, Date] => p[1] != null),
+  );
+
+  type ChairEntry = { id: string; branchId: string; lastMoveAt: Date | null };
+  const chairMap = new Map<string, ChairEntry>(
+    preloadedChairs.map((c) => [
+      c.chairCode,
+      {
+        id: c.id,
+        branchId: c.branchId,
+        lastMoveAt: lastMoveByChairId.get(c.id) ?? null,
+      },
+    ]),
   );
   let chairsCreatedFromPos = 0;
   let chairMovesRecorded = 0;
+  // 2026-06-01: count rows where the file disagreed with current branch but
+  // we kept chair.branchId untouched (historical mode). Stored on the import
+  // audit log so CEO can audit how many maid-view-protected events fired.
+  let chairMovesHistoricalOnly = 0;
 
   await prisma.$transaction(async (tx) => {
     for (const r of toApply) {
@@ -719,13 +764,27 @@ export async function commitImport(importId: string): Promise<{ ok: true } | { o
               notes: `first placement detected from POS upload (importId=${imp.id})`,
             },
           });
-          chairMap.set(r.chairCode, { id: fresh.id, branchId: r.branchId });
+          chairMap.set(r.chairCode, {
+            id: fresh.id,
+            branchId: r.branchId,
+            lastMoveAt: bizDate,
+          });
           chairsCreatedFromPos += 1;
         } else if (existingChair.branchId !== r.branchId) {
-          await tx.chairopsChair.update({
-            where: { id: existingChair.id },
-            data: { branchId: r.branchId },
-          });
+          // 2026-06-01 · historical vs current decision.
+          // The file says (chairCode, branchId) but DB says different. The
+          // file's bizDate determines whether this is "the chair moved back
+          // then" (HISTORICAL · log only) or "the chair moved recently / is
+          // now somewhere new" (CURRENT · also flip chair.branchId).
+          //
+          // Historical = bizDate strictly older than the chair's latest
+          // known ChairopsChairMove. We trust the maid's current view —
+          // the latest move record is the source of truth for present
+          // location.
+          const isHistorical =
+            existingChair.lastMoveAt != null &&
+            bizDate < existingChair.lastMoveAt;
+
           await tx.chairopsChairMove.create({
             data: {
               orgId,
@@ -734,12 +793,31 @@ export async function commitImport(importId: string): Promise<{ ok: true } | { o
               toBranchId: r.branchId,
               movedAt: bizDate,
               movedById: session.user.id,
-              source: "pos_ingest",
-              notes: `branch change detected on POS upload (importId=${imp.id})`,
+              source: isHistorical ? "pos_ingest_historical" : "pos_ingest",
+              notes: isHistorical
+                ? `historical placement from POS upload (importId=${imp.id}) · chair.branchId NOT updated (preserves maid current view)`
+                : `branch change detected on POS upload (importId=${imp.id})`,
             },
           });
-          chairMap.set(r.chairCode, { id: existingChair.id, branchId: r.branchId });
-          chairMovesRecorded += 1;
+
+          if (isHistorical) {
+            // Keep chair.branchId where it is. The history-only ledger
+            // entry above is enough for audit + reports.
+            chairMovesHistoricalOnly += 1;
+          } else {
+            await tx.chairopsChair.update({
+              where: { id: existingChair.id },
+              data: { branchId: r.branchId },
+            });
+            chairMap.set(r.chairCode, {
+              id: existingChair.id,
+              branchId: r.branchId,
+              // Refresh the lastMoveAt in our cache so subsequent rows in
+              // this same batch behave consistently.
+              lastMoveAt: bizDate,
+            });
+            chairMovesRecorded += 1;
+          }
         }
       }
       // chairCode is nullable. Prisma's compound-unique upsert with null can be
@@ -862,6 +940,9 @@ export async function commitImport(importId: string): Promise<{ ok: true } | { o
       counts: diff.counts,
       chairsCreatedFromPos,
       chairMovesRecorded,
+      // 2026-06-01: history-only entries (file disagreed with current chair
+      // location but we left chair.branchId alone to preserve maid view).
+      chairMovesHistoricalOnly,
     },
   });
 
@@ -869,8 +950,12 @@ export async function commitImport(importId: string): Promise<{ ok: true } | { o
   revalidatePath("/chairops/reconcile");
   revalidatePath("/chairops/alerts");
 
-  // Returning ok; caller redirects.
-  return { ok: true };
+  return {
+    ok: true,
+    chairsCreatedFromPos,
+    chairMovesRecorded,
+    chairMovesHistoricalOnly,
+  };
 }
 
 // Wave-2 B1 (CEO 2026-05-31): post-import undo window.
@@ -1045,7 +1130,7 @@ export async function undoImport(
 export async function commitPosImportWithCheck(
   importId: string,
   ack: { reviewedRows: boolean; reviewedWarnings: boolean; acceptResponsibility: boolean }
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<CommitImportSuccess | { ok: false; error: string }> {
   const session = await requireRole("OFFICE");
 
   // 1) checklist gate — UI enforces too, but server is the source of truth
@@ -1094,7 +1179,7 @@ export async function commitPosImportWithCheck(
   });
 
   revalidatePath("/chairops/pos-ingest");
-  return { ok: true };
+  return res;
 }
 
 export async function cancelImport(importId: string) {
