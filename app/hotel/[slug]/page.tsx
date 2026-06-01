@@ -7,6 +7,8 @@ import { notFound } from "next/navigation";
 import { getHotelBySlug } from "@/lib/hotelbook/data";
 import { BookingFlow } from "./_components/booking-flow";
 import { RoomGallery } from "./_components/room-gallery";
+import { PhotoArt } from "./_components/photo-art";
+import { StickyBookBar } from "./_components/sticky-book-bar";
 
 export const dynamic = "force-dynamic";
 
@@ -141,7 +143,7 @@ export default async function PublicHotelPage({
       <section id="rooms" className="max-w-6xl mx-auto px-6 sm:px-10 py-14 sm:py-20">
         <div className="mb-8 sm:mb-10">
           <span
-            className="inline-block text-[11px] font-semibold uppercase tracking-widest px-2.5 py-1 rounded-full"
+            className="inline-block text-[11px] font-semibold px-2.5 py-1 rounded-full"
             style={{ background: brandSoft, color: brandDeep }}
           >
             เลือกห้องพัก
@@ -183,7 +185,7 @@ export default async function PublicHotelPage({
         <div className="max-w-6xl mx-auto px-6 sm:px-10 py-14 sm:py-20 grid gap-10 sm:gap-12 lg:grid-cols-2">
           <div>
             <span
-              className="inline-block text-[11px] font-semibold uppercase tracking-widest px-2.5 py-1 rounded-full"
+              className="inline-block text-[11px] font-semibold px-2.5 py-1 rounded-full"
               style={{ background: brandSoft, color: brandDeep }}
             >
               ข้อมูลโรงแรม
@@ -202,7 +204,7 @@ export default async function PublicHotelPage({
 
             {hotel.amenities.length > 0 && (
               <div className="mt-8">
-                <h4 className="text-xs font-semibold uppercase tracking-widest text-stone-500 mb-3">สิ่งอำนวยความสะดวก</h4>
+                <h4 className="text-xs font-semibold text-stone-500 mb-3">สิ่งอำนวยความสะดวก</h4>
                 <div className="flex flex-wrap gap-2">
                   {hotel.amenities.map((a) => (
                     <span key={a} className="text-sm px-3 py-1.5 rounded-full bg-stone-100 ring-1 ring-stone-200/80 text-stone-700">
@@ -215,7 +217,7 @@ export default async function PublicHotelPage({
 
             {hotel.nearbyPlaces.length > 0 && (
               <div className="mt-8">
-                <h4 className="text-xs font-semibold uppercase tracking-widest text-stone-500 mb-3">ใกล้ๆ โรงแรม</h4>
+                <h4 className="text-xs font-semibold text-stone-500 mb-3">ใกล้ๆ โรงแรม</h4>
                 <ul className="text-sm text-stone-700 space-y-2">
                   {hotel.nearbyPlaces.map((p) => (
                     <li key={p} className="flex items-center gap-2"><span>📍</span>{p}</li>
@@ -227,7 +229,7 @@ export default async function PublicHotelPage({
 
           <div>
             <span
-              className="inline-block text-[11px] font-semibold uppercase tracking-widest px-2.5 py-1 rounded-full"
+              className="inline-block text-[11px] font-semibold px-2.5 py-1 rounded-full"
               style={{ background: brandSoft, color: brandDeep }}
             >
               ติดต่อโดยตรง
@@ -295,6 +297,7 @@ export default async function PublicHotelPage({
 
       <BookingFlow hotelSlug={hotel.slug} brand={brand} />
       <RoomGallery />
+      <StickyBookBar hotelName={hotel.name} minPrice={minPrice} brand={brand} brandDeep={brandDeep} />
     </main>
   );
 }
@@ -338,32 +341,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-// Beautiful empty-state placeholder — looks designed even without real photos.
-// Uses hue derived from price tier + bed icon + room name as visual art.
-function PhotoPlaceholder({ name, price, brand }: { name: string; price: number; brand: string }) {
-  // Hue based on price tier · 300 = warm coral · 400 = warm sand · 450 = soft sage · 550 = deep wine
-  const variants: Record<string, { from: string; to: string; icon: string }> = {
-    "300": { from: "#F4D5C6", to: "#E8B595", icon: "🛏" },
-    "400": { from: "#F2DDC4", to: "#D9B687", icon: "🛏" },
-    "450": { from: "#DDD4E8", to: "#B5A4D2", icon: "🛏" },
-    "550": { from: "#C9B7DD", to: "#8B6CB5", icon: "🏨" },
-  };
-  const v = variants[String(price)] ?? variants["400"];
-  return (
-    <div
-      className="relative w-full h-full overflow-hidden"
-      style={{ background: `linear-gradient(135deg, ${v.from} 0%, ${v.to} 100%)` }}
-    >
-      <div className="absolute inset-0 opacity-20" style={{ backgroundImage: "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.5) 0%, transparent 50%)" }} />
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-white">
-        <div className="text-5xl sm:text-6xl mb-2 opacity-90" style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.1))" }}>{v.icon}</div>
-        <div className="text-sm sm:text-base font-semibold tracking-wide text-center px-3" style={{ textShadow: "0 1px 2px rgba(0,0,0,0.1)" }}>{name}</div>
-        <div className="text-[10px] sm:text-[11px] text-white/80 mt-3 px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-sm">ภาพห้องจริง · เร็วๆ นี้</div>
-      </div>
-    </div>
-  );
-}
-
 function RoomCard(props: {
   roomId: string;
   hotelBrand: string;
@@ -402,7 +379,7 @@ function RoomCard(props: {
               )}
             </button>
           ) : (
-            <PhotoPlaceholder name={props.name} price={props.priceThb} brand={props.hotelBrand} />
+            <PhotoArt name={props.name} price={props.priceThb} />
           )}
           {others.length > 0 && (
             <div className="absolute top-3 right-3 flex flex-col gap-1.5">
@@ -446,7 +423,7 @@ function RoomCard(props: {
 
           <div className="mt-5 pt-5 border-t border-stone-100 flex items-end justify-between gap-3">
             <div>
-              <div className="text-[11px] uppercase tracking-wider text-stone-500 font-medium">ราคาต่อคืน</div>
+              <div className="text-[11px] text-stone-500 font-medium">ราคาต่อคืน</div>
               <div className="flex items-baseline gap-1.5 mt-0.5">
                 <span className="text-3xl text-stone-900 tabular-nums" style={{ fontFamily: "var(--font-sarabun)", fontWeight: 700 }}>
                   ฿{props.priceThb.toLocaleString()}

@@ -270,15 +270,31 @@ export function LiffBookingApp({ hotel }: { hotel: Hotel }) {
 
       {/* Step 3: Done */}
       {step === "done" && bookingCode && (
-        <div className="px-5 pt-8 text-center space-y-4">
-          <div className="text-6xl">🎉</div>
-          <h2 className="text-xl font-bold">จองสำเร็จแล้ว!</h2>
-          <div className="bg-white ring-1 ring-zinc-200 rounded-xl p-4 inline-block">
-            <div className="text-xs text-zinc-500">รหัสการจอง</div>
-            <div className="text-2xl font-mono font-bold tracking-wider">{bookingCode}</div>
+        <div className="px-5 pt-10 text-center space-y-5">
+          <div className="relative inline-flex">
+            <div className="absolute inset-0 rounded-full animate-ping opacity-30" style={{ background: brand }} />
+            <div className="relative h-20 w-20 rounded-full flex items-center justify-center text-4xl" style={{ background: `linear-gradient(135deg, ${brand} 0%, ${brand}dd 100%)` }}>
+              ✓
+            </div>
           </div>
-          <p className="text-sm text-zinc-600 px-4">โรงแรมจะติดต่อกลับเพื่อยืนยันการจองค่ะ</p>
-          <button onClick={() => { setStep("rooms"); setSelectedRoom(null); setBookingCode(null); }} className="w-full h-12 rounded-xl text-white font-semibold" style={{ background: brand }}>
+          <div>
+            <h2 className="text-2xl font-bold text-stone-900" style={{ fontFamily: "ui-serif, Georgia, serif" }}>จองสำเร็จแล้ว</h2>
+            <p className="text-sm text-stone-600 mt-2 px-4">โรงแรมจะติดต่อกลับเพื่อยืนยันการจองค่ะ</p>
+          </div>
+          <div className="mx-auto bg-white ring-1 ring-stone-200 rounded-2xl p-5 inline-block shadow-sm">
+            <div className="text-[11px] text-stone-500 font-medium">รหัสการจอง</div>
+            <div className="text-2xl font-mono font-bold tracking-wider text-stone-900 mt-1">{bookingCode}</div>
+            <button
+              type="button"
+              onClick={async () => {
+                try { await navigator.clipboard.writeText(bookingCode!); } catch {}
+              }}
+              className="text-[11px] text-stone-500 mt-2 hover:text-stone-700"
+            >
+              📋 คัดลอกรหัส
+            </button>
+          </div>
+          <button onClick={() => { setStep("rooms"); setSelectedRoom(null); setBookingCode(null); }} className="w-full h-12 rounded-xl text-white font-semibold shadow-md active:scale-95 transition" style={{ background: brand }}>
             จองห้องอื่น
           </button>
         </div>
