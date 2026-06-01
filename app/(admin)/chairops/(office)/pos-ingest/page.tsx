@@ -224,7 +224,7 @@ export default async function PosIngestListPage({
       <Card className="overflow-hidden">
         <div className="max-h-[70vh] overflow-auto">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 z-20 bg-muted text-xs uppercase text-muted-foreground">
+          <thead className="sticky top-0 z-20 bg-muted text-xs text-muted-foreground">
             <tr className="bg-muted text-left [&>th]:bg-muted">
               <th className="px-3 py-2 font-medium">เวลาอัปโหลด</th>
               <th className="px-3 py-2 font-medium">ไฟล์</th>

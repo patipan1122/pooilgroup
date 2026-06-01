@@ -130,7 +130,7 @@ function LatestCard({
       <div className="mt-0.5 text-[11px] text-zinc-500">{subtitle}</div>
 
       <div className="mt-3">
-        <div className="text-[11px] uppercase tracking-wide text-zinc-500">
+        <div className="text-[11px] font-medium text-zinc-500">
           ข้อมูลล่าสุดถึง
         </div>
         <div className="text-base font-bold tabular-nums text-zinc-900">
