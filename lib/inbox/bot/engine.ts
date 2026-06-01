@@ -21,7 +21,7 @@ import {
 } from "../send";
 import { topicLabel } from "../business";
 import type { FlowImageTopic } from "./settings";
-import { renderChairopsTemplate as template } from "./templates";
+import { renderChairopsTemplate as template, renderHotelTemplate, classifyHotelIntent, appendHotelCta } from "./templates";
 
 export interface RunBotInput {
   channel: {
@@ -211,11 +211,34 @@ export async function runBot(opts: RunBotInput): Promise<void> {
     answer = faq.answer;
     await bumpFaqHit(faq.id);
   } else if (cls.topic !== "other" && businessTag === "chairops") {
-    // Topic templates (money_lost / scan_fail / strong / buy / feedback)
-    // are written for the massage-chair business.  For other verticals
-    // (Owl Cha, hotel, fnb, ...) skip straight to AI fallback — Gemini
-    // uses that business's own knowledge to reply.
+    // chairops massage-chair topic templates (money_lost / scan_fail / etc)
     answer = template(cls.topic, settings, cls.isComplaint);
+  } else if (businessTag === "hotel") {
+    // Hotel template covers price · availability · location · check-in ·
+    // amenities · payment · greeting. Every reply ends with the booking
+    // CTA + URL so the customer can jump to the web flow immediately
+    // (CEO goal: "Facebook กดให้ไปจอง บนเว็บ"). Falls through to AI only
+    // when intent === "other" AND no FAQ matched.
+    const intent = classifyHotelIntent(text);
+    if (intent !== "other") {
+      answer = renderHotelTemplate(intent, settings, undefined);
+    } else {
+      // Run AI but suffix the CTA so customer always sees the booking URL.
+      const [knowledge, history] = await Promise.all([
+        loadKnowledge(channel.orgId, businessTag),
+        loadRecentHistory(channel.orgId, conversationId, 12),
+      ]);
+      const ai = await aiAnswer({
+        text, knowledge, tone: settings.tone, botName: settings.botName,
+        orgId: channel.orgId, createdById: channel.createdById, history,
+      });
+      if (ai.answer) {
+        answer = appendHotelCta(ai.answer, undefined);
+      } else {
+        answer = renderHotelTemplate("other", settings, undefined);
+        await logUnanswered(channel.orgId, businessTag, conversationId, text);
+      }
+    }
   } else {
     const [knowledge, history] = await Promise.all([
       loadKnowledge(channel.orgId, businessTag),
