@@ -22,6 +22,7 @@ import {
   LineNotifyToggle,
   ChairCodeChip,
 } from "@/components/chairops/_kit";
+import { asEngineDrift, toCellDrift } from "@/lib/chairops/types/drift";
 import { StatusPill } from "@/components/ui/status-pill";
 import { thaiDateTime, thaiRelative, ageHours } from "@/lib/chairops/utils/format";
 import type { Prisma } from "@/lib/generated/prisma/client";
@@ -457,7 +458,11 @@ export default async function AlertsPage({
     ackerNames: Map<string, string>,
   ) {
     const ctx = (a.contextJson ?? {}) as Record<string, unknown>;
-    const driftAmount = typeof ctx.drift === "number" ? -Math.abs(ctx.drift as number) : 0;
+    // CEO 2026-06-01 P0: branded Drift type · the alert's context.drift is
+    // engine-convention (positive = shortage); convert to cell-convention
+    // before handing to ShortageDriftCell instead of magic-`-Math.abs`.
+    const rawDrift = typeof ctx.drift === "number" ? Math.abs(ctx.drift as number) : 0;
+    const driftAmount = toCellDrift(asEngineDrift(rawDrift));
     const ageH = typeof ctx.age_hours === "number" ? (ctx.age_hours as number) : ageHours(a.createdAt);
     const ackedByName = a.ackedById ? ackerNames.get(a.ackedById) ?? a.ackedById.slice(0, 6) : null;
     const channelKey = DEFAULT_CHANNEL_PER_KIND[a.kind] ?? "ops";

@@ -31,6 +31,7 @@ import {
   PhotoProofPanel,
   ChairCodeChip,
 } from "@/components/chairops/_kit";
+import { asEngineDrift, toCellDrift } from "@/lib/chairops/types/drift";
 import { StatusPill } from "@/components/ui/status-pill";
 import {
   baht,
@@ -443,7 +444,11 @@ export default async function WriteOffsPage({
             จำนวนที่จะตัด (ลบจาก drift)
           </p>
           <ShortageDriftCell
-            amount={-Math.abs(w.amount)}
+            // CEO 2026-06-01 P0: branded Drift type · w.amount is always
+            // positive shortage; convert via engine→cell so the sign-flip
+            // is documented + uniformly applied across all 4 ShortageDriftCell
+            // consumers in the codebase.
+            amount={toCellDrift(asEngineDrift(Math.abs(w.amount)))}
             ageHours={
               status === "APPROVED" && w.approverAt
                 ? 0

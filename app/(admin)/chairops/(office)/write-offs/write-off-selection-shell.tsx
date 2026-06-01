@@ -14,6 +14,7 @@ import {
   MakerCheckerBadge,
   ShortageDriftCell,
 } from "@/components/chairops/_kit";
+import { asEngineDrift, toCellDrift } from "@/lib/chairops/types/drift";
 import { bulkApproveWriteOffsAction } from "./actions";
 
 export interface WriteOffRowVM {
@@ -179,7 +180,11 @@ export function WriteOffSelectionShell({ rows }: WriteOffSelectionShellProps) {
                     </td>
                     <td className="px-2 py-2 align-top text-right">
                       <ShortageDriftCell
-                        amount={-Math.abs(r.amount)}
+                        // CEO 2026-06-01 P0: branded Drift type · the
+                        // write-off candidate's r.amount is always-positive
+                        // shortage; convert via the engine→cell helper so
+                        // the sign-flip is documented + lint-able.
+                        amount={toCellDrift(asEngineDrift(Math.abs(r.amount)))}
                         compact
                         className="justify-end"
                       />
