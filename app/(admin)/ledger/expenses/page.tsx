@@ -13,6 +13,7 @@ import { listExpenses, getExpense, listCategories } from "../_data";
 import { ExpenseList } from "./_components/ExpenseList";
 import { ExpensePaneClient } from "./_components/ExpensePaneClient";
 import { UploadReceiptButton } from "./_components/UploadReceiptButton";
+import { ExportButton } from "./_components/ExportButton";
 import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
 
 export const dynamic = "force-dynamic";
@@ -90,11 +91,14 @@ export default async function ExpensesPage({
         subtitle={`${rows.length} รายการ`}
         scope={scope}
         right={
-          <UploadReceiptButton
-            companyId={scope.companyId}
-            branchId={scope.branchId}
-            baseParams={baseParams.toString()}
-          />
+          <>
+            <ExportButton companyId={scope.companyId} />
+            <UploadReceiptButton
+              companyId={scope.companyId}
+              branchId={scope.branchId}
+              baseParams={baseParams.toString()}
+            />
+          </>
         }
       />
 

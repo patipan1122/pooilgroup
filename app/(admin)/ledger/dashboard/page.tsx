@@ -10,7 +10,11 @@ import {
   spendByCategory,
   expenseByBranch,
   expenseByMonth,
+  listBudgets,
 } from "../_data";
+import { InsightsPanel } from "./_components/InsightsPanel";
+import { QaBox } from "./_components/QaBox";
+import { BudgetVsActual } from "./_components/BudgetVsActual";
 
 export const dynamic = "force-dynamic";
 
@@ -84,16 +88,22 @@ export default async function LedgerDashboardPage({
     period,
   };
 
-  const [summary, byCat, byBranch, byMonth] = await Promise.all([
+  const [summary, byCat, byBranch, byMonth, budgets] = await Promise.all([
     expenseSummary(filter),
     spendByCategory(filter),
     expenseByBranch({ orgId: scope.orgId, companyId: scope.companyId, period }),
     expenseByMonth(scope.orgId, scope.companyId, 6),
+    listBudgets(scope.orgId, scope.companyId, period),
   ]);
 
   const maxCat = Math.max(1, ...byCat.map((c) => c.total));
   const maxBranch = Math.max(1, ...byBranch.map((b) => b.total));
   const maxMonth = Math.max(1, ...byMonth.map((m) => m.total));
+
+  // Querystring to preserve company/branch scope on links from this page.
+  const scopeParams = new URLSearchParams();
+  if (sp.company) scopeParams.set("company", sp.company);
+  if (sp.branch) scopeParams.set("branch", sp.branch);
 
   return (
     <div className="p-4 sm:p-6">
@@ -135,7 +145,25 @@ export default async function LedgerDashboardPage({
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+      {/* AI วิเคราะห์ธุรกิจ */}
+      <div className="mt-6">
+        <InsightsPanel
+          companyId={scope.companyId}
+          branchId={scope.branchId}
+          period={period}
+        />
+      </div>
+
+      {/* Budget vs actual */}
+      <div className="mt-4">
+        <BudgetVsActual
+          budgets={budgets}
+          period={period}
+          scopeParams={scopeParams.toString()}
+        />
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* By category */}
         <div className="rounded-2xl border border-zinc-200 bg-white p-4">
           <h2 className="mb-3 text-sm font-bold text-zinc-800">
@@ -213,6 +241,15 @@ export default async function LedgerDashboardPage({
             );
           })}
         </div>
+      </div>
+
+      {/* ถาม AI (web) */}
+      <div className="mt-4">
+        <QaBox
+          companyId={scope.companyId}
+          branchId={scope.branchId}
+          period={period}
+        />
       </div>
     </div>
   );

@@ -17,6 +17,7 @@ import { rehostLineImage } from "@/lib/inbox/inbound-media";
 import { parseReceipt, AiBudgetError } from "@/lib/ledger/ai-parse";
 import { createDraftExpenseSystem } from "@/lib/ledger/actions";
 import { sha256Hex } from "@/lib/ledger/storage";
+import { answerQuestion } from "@/lib/ledger/qa";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -89,6 +90,29 @@ export async function POST(
   after(async () => {
     for (const ev of body.events ?? []) {
       if (ev.type !== "message") continue;
+
+      // --- TEXT → conversational Q&A (สรุปเดือนนี้ / หมวดไหนเยอะสุด / งบ ...) ---
+      // Numbers come from the DB (lib/ledger/qa); the LINE bot is read-only here
+      // (it never confirms/posts — GOLDEN RULE). Free keyword routing first; the
+      // LLM intent fallback inside answerQuestion is budget-guarded.
+      if (ev.message?.type === "text" && ev.message.text?.trim()) {
+        try {
+          const qa = await answerQuestion(ev.message.text, {
+            orgId: ch.orgId,
+            companyId: ch.companyId,
+            userId: null, // no Pool session on a webhook → org-only AI budget cap
+          });
+          if (ev.replyToken && accessToken) {
+            await replyText(accessToken, ev.replyToken, qa.answer).catch((e) =>
+              console.error("[ledger:line-webhook] qa reply failed", e),
+            );
+          }
+        } catch (e) {
+          console.error("[ledger:line-webhook] qa failed", e);
+        }
+        continue;
+      }
+
       if (ev.message?.type !== "image" || !ev.message.id) continue;
       if (!accessToken) {
         console.warn("[ledger:line-webhook] no access token — cannot fetch image");
@@ -211,13 +235,24 @@ async function replyConfirm(
     text = parts.join("\n");
   }
 
+  await replyText(accessToken, replyToken, text);
+}
+
+/** Best-effort plain-text LINE reply (used by the Q&A path). */
+async function replyText(
+  accessToken: string,
+  replyToken: string,
+  text: string,
+): Promise<void> {
+  // LINE caps a text message at 5000 chars; our answers are short, but guard it.
+  const safe = text.length > 4900 ? text.slice(0, 4900) + "…" : text;
   await fetch("https://api.line.me/v2/bot/message/reply", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ replyToken, messages: [{ type: "text", text }] }),
+    body: JSON.stringify({ replyToken, messages: [{ type: "text", text: safe }] }),
     signal: AbortSignal.timeout(3000),
   });
 }
