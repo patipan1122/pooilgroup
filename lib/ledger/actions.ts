@@ -84,6 +84,10 @@ export interface CreateDraftInput {
  * Create a DRAFT expense (status=draft, never posted). Runs recheck() to set
  * needs_review. Dedups by sha256 within the tenant — a repeated image returns
  * the existing draft instead of creating a duplicate.
+ *
+ * Session-bound: org scope comes from the caller's session; non-admin callers
+ * must hold the `ledger` module grant. For server-to-server ingest (LINE
+ * webhook) use createDraftExpenseSystem, which takes a trusted orgId instead.
  */
 export async function createDraftExpense(
   input: CreateDraftInput,
@@ -102,6 +106,40 @@ export async function createDraftExpense(
     return { ok: false, error: "unauthorized" };
   }
 
+  return createDraftExpenseCore(orgId, userId, input);
+}
+
+/**
+ * Session-less ingest path for system/webhook callers (e.g. the LedgerLine LINE
+ * webhook, which has no Pool session cookie). The caller MUST pass an orgId that
+ * was derived from a TRUSTED row (the ledger_line_channel record), never from
+ * user input. We still:
+ *   - verify the company belongs to that org (assertCompanyInOrg),
+ *   - force status=draft (GOLDEN RULE — never auto-post),
+ *   - dedup by sha256 within the tenant,
+ *   - write a LEDGER_EXPENSE_CREATED audit row (userId=null → "system").
+ * createdById defaults to null (system) so the draft shows as machine-ingested
+ * until an accountant confirms it in the web review pane.
+ */
+export async function createDraftExpenseSystem(
+  orgId: string,
+  input: CreateDraftInput,
+): Promise<Result<{ id: string; docCode: string; duplicate: boolean }>> {
+  if (!orgId) return { ok: false, error: "missing-org" };
+  return createDraftExpenseCore(orgId, input.createdById ?? null, input);
+}
+
+/**
+ * Shared insert core. orgId is the ALREADY-AUTHORIZED tenant scope (from a
+ * session OR a trusted channel row); this function never reads the session, so
+ * every write is bound to the org passed in. Company is re-checked against that
+ * org so a caller can't smuggle a foreign company id.
+ */
+async function createDraftExpenseCore(
+  orgId: string,
+  userId: string | null,
+  input: CreateDraftInput,
+): Promise<Result<{ id: string; docCode: string; duplicate: boolean }>> {
   if (!(await assertCompanyInOrg(orgId, input.companyId))) {
     return { ok: false, error: "ไม่พบบริษัทใน org นี้" };
   }

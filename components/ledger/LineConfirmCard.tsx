@@ -201,9 +201,9 @@ function fieldRow(label: string, value: string, conf?: number): FlexBox {
  * B) is responsible for pushing it.
  *
  * Two action modes (set `usePostback`):
- *   • URI (default) → deep-link the web review pane
- *       ยืนยัน → /ledger/expenses?confirm=<id>
- *       แก้ไข  → /ledger/expenses?edit=<id>
+ *   • URI (default) → deep-link the web review pane (single ?selected= param)
+ *       ยืนยัน → /ledger/expenses?selected=<id>
+ *       แก้ไข  → /ledger/expenses?selected=<id>
  *   • postback → act inside LINE (webhook handles `ledger:confirm:<id>` /
  *       `ledger:edit:<id>`), for when the field staff shouldn't leave the chat.
  *
@@ -233,6 +233,11 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
   // Button actions: postback (act inside LINE) or URI (open the web review pane).
   // Either way confirm is an explicit human tap that routes to the accountant
   // confirm flow — NEVER an auto-post (golden rule).
+  // URI deep-links use ?selected=<id> — the SINGLE param the expenses page reads
+  // (app/(admin)/ledger/expenses/page.tsx). Both buttons open the same review
+  // pane (where the accountant confirms/edits); ?confirm/?edit were dead params
+  // that left the user on an empty list. GOLDEN RULE intact: opening the pane is
+  // not an auto-post — the accountant still taps confirm in the pane.
   const confirmAction: FlexAction = usePostback
     ? {
         type: "postback",
@@ -240,7 +245,7 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
         data: `ledger:confirm:${expenseId}`,
         displayText: "ยืนยันใบเสร็จนี้",
       }
-    : { type: "uri", label: "ยืนยัน", uri: `${base}/ledger/expenses?confirm=${encodeURIComponent(expenseId)}` };
+    : { type: "uri", label: "ยืนยัน", uri: `${base}/ledger/expenses?selected=${encodeURIComponent(expenseId)}` };
   const editAction: FlexAction = usePostback
     ? {
         type: "postback",
@@ -248,7 +253,7 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
         data: `ledger:edit:${expenseId}`,
         displayText: "ขอแก้ไขใบเสร็จนี้",
       }
-    : { type: "uri", label: "แก้ไข", uri: `${base}/ledger/expenses?edit=${encodeURIComponent(expenseId)}` };
+    : { type: "uri", label: "แก้ไข", uri: `${base}/ledger/expenses?selected=${encodeURIComponent(expenseId)}` };
 
   const bodyContents: FlexComponent[] = [
     // Big amount line.

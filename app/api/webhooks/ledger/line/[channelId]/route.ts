@@ -15,7 +15,8 @@ import { prisma } from "@/lib/prisma";
 import { decryptToken, verifyLineSignature } from "@/lib/recruit/channel-crypto";
 import { rehostLineImage } from "@/lib/inbox/inbound-media";
 import { parseReceipt, AiBudgetError } from "@/lib/ledger/ai-parse";
-import { createDraftExpense } from "@/lib/ledger/actions";
+import { createDraftExpenseSystem } from "@/lib/ledger/actions";
+import { sha256Hex } from "@/lib/ledger/storage";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -107,10 +108,25 @@ export async function POST(
           continue;
         }
 
-        // 2. AI parse the receipt (budget-guarded inside parseReceipt).
+        // 1b. Compute sha256 of the rehosted bytes so the LINE path dedups the
+        //     same way the LIFF/web path does (a resent photo returns the
+        //     existing draft instead of creating a duplicate). Best-effort: if
+        //     the fetch fails we proceed without a hash (no dedup, never blocks).
+        let sha256: string | null = null;
+        try {
+          const imgResp = await fetch(att.url, { signal: AbortSignal.timeout(8000) });
+          if (imgResp.ok) {
+            sha256 = sha256Hex(Buffer.from(await imgResp.arrayBuffer()));
+          }
+        } catch (e) {
+          console.warn("[ledger:line-webhook] sha256 fetch failed", e);
+        }
+
+        // 2. AI parse the receipt (budget-guarded inside parseReceipt). userId is
+        //    null → org-only budget cap (no Pool session on a webhook).
         let parsed;
         try {
-          parsed = await parseReceipt(att.url, /*userId*/ "", ch.orgId);
+          parsed = await parseReceipt(att.url, /*userId*/ null, ch.orgId);
         } catch (e) {
           if (e instanceof AiBudgetError) {
             console.warn("[ledger:line-webhook] AI budget exceeded — saving image only");
@@ -120,8 +136,10 @@ export async function POST(
           parsed = null;
         }
 
-        // 3. Create a DRAFT (never auto-post). createdById null → system ingest.
-        const res = await createDraftExpense({
+        // 3. Create a DRAFT (never auto-post) via the SESSION-LESS system path.
+        //    org scope = the trusted ledger_line_channel row (ch.orgId), NOT a
+        //    user session. createdById null → shows as machine-ingested.
+        const res = await createDraftExpenseSystem(ch.orgId, {
           companyId: ch.companyId,
           source: "line",
           vendor: parsed?.vendor ?? null,
@@ -134,6 +152,7 @@ export async function POST(
           paymentMethod: parsed?.paymentMethod ?? null,
           originalUrl: att.url,
           thumbUrl: att.url,
+          sha256,
           ocrModel: parsed?.ocrModel ?? null,
           ocrConfidence: parsed?.confidence ?? null,
           items: parsed?.items ?? [],

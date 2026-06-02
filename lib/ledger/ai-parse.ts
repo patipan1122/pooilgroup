@@ -175,12 +175,15 @@ function decodeImageInput(imageUrlOrBase64: string): {
  *
  * @param imageUrlOrBase64 a base64 data URL, raw base64, OR an http(s) URL
  *                         (e.g. an R2 public URL — we fetch it server-side).
+ * @param userId           the caller's user id, OR null for system ingest
+ *                         (e.g. the LINE webhook with no session). null →
+ *                         org-only budget cap, user_id stored as null.
  * @throws AiBudgetError when the org/user is over their AI budget.
  * @throws Error on a hard Gemini/network failure (caller may escalate).
  */
 export async function parseReceipt(
   imageUrlOrBase64: string,
-  userId: string,
+  userId: string | null,
   orgId: string,
 ): Promise<ParsedReceipt> {
   // 1. Budget guard (reuse cost-cap) — same gate CashHub uses.

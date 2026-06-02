@@ -252,14 +252,23 @@ DECLARE
 BEGIN
   v_yyyymm := to_char(NOW(), 'YYYYMM');
 
-  -- Lock matching rows so concurrent inserts don't collide on the counter.
+  -- NOTE: Postgres rejects FOR UPDATE on an aggregate (COUNT) query, so we
+  -- serialize concurrent counter reads with a transaction-scoped advisory lock
+  -- keyed on (org, company, month) instead. Two inserts for the SAME company in
+  -- the SAME month queue behind this lock → no duplicate NNNN, no collision on
+  -- the unique(org, company, doc_code) constraint. The lock auto-releases at
+  -- COMMIT (the caller's create runs in the same tx). Mirrors the COUNT(*)+1
+  -- numbering of repair_next_ticket_code (which has no FOR UPDATE).
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended(p_org::text || ':' || p_company::text || ':' || v_yyyymm, 0)
+  );
+
   SELECT COUNT(*) + 1
     INTO v_count
     FROM public.ledger_expense
    WHERE org_id = p_org
      AND company_id = p_company
-     AND doc_code LIKE 'EXP-' || v_yyyymm || '-%'
-  FOR UPDATE;
+     AND doc_code LIKE 'EXP-' || v_yyyymm || '-%';
 
   v_code := 'EXP-' || v_yyyymm || '-' || LPAD(v_count::TEXT, 4, '0');
   RETURN v_code;

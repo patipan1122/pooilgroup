@@ -1,6 +1,8 @@
 // Ledger · งบประมาณ — ตั้งงบรายหมวด (+สาขา) ต่อเดือน + แสดงใช้ไป vs เพดาน.
 // Used vs cap คำนวณจากค่าใช้จ่ายที่ยืนยันแล้วในงวด (ดู _data.listBudgets).
-import { requireSession } from "@/lib/auth/session";
+// Role gate matches the nav policy in lib/modules.ts (staff/driver/viewer excluded);
+// the budget write actions (_actions.upsertBudget/deleteBudget) carry the same gate.
+import { requireRole } from "@/lib/auth/session";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
 import { listBudgets, listCategories } from "../_data";
@@ -22,7 +24,12 @@ export default async function BudgetsPage({
 }: {
   searchParams: Promise<{ company?: string; branch?: string; period?: string }>;
 }) {
-  const session = await requireSession();
+  const session = await requireRole(
+    "super_admin",
+    "org_admin",
+    "admin",
+    "area_manager",
+  );
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);
 

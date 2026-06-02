@@ -28,7 +28,7 @@ export default async function LedgerLiffPage() {
   if (!session) {
     return (
       <div className="mx-auto flex min-h-[70vh] w-full max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
-        <div className="size-12 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
+        <div className="size-12 animate-spin rounded-full border-4 border-[var(--color-brand-200)] border-t-[var(--color-brand-600)]" />
         <div className="space-y-1">
           <p className="text-base font-semibold text-zinc-800">กำลังเข้าสู่ระบบ</p>
           <p className="text-sm text-zinc-500">
@@ -78,7 +78,7 @@ export default async function LedgerLiffPage() {
         </div>
         <Link
           href="/ledger/settings"
-          className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white active:bg-blue-700"
+          className="rounded-xl bg-[var(--color-brand-600)] px-5 py-2.5 text-sm font-semibold text-white active:bg-[var(--color-brand-700)]"
         >
           ไปหน้าตั้งค่า
         </Link>

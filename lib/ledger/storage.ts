@@ -5,9 +5,11 @@
 // folder-per-month) is Phase 1.5 → stubbed below with a clear TODO.
 //
 // Key layout (org-namespaced like chairops so a public-URL leak from org A
-// cannot reveal org B's storage tree):
-//   ledger/{yyyy}/{mm}/{company}/{id}.jpg          ← original
-//   ledger/{yyyy}/{mm}/{company}/{id}-thumb.jpg     ← thumbnail
+// cannot reveal org B's storage tree). MUST match the presign route shape
+// (app/api/ledger/r2/presign) so client-presigned and server-stored originals
+// live under the same per-org tree:
+//   orgs/{orgId}/ledger/{yyyy}/{mm}/{company}/{id}.jpg        ← original
+//   orgs/{orgId}/ledger/{yyyy}/{mm}/{company}/{id}-thumb.jpg   ← thumbnail
 //
 // Dedup: caller computes sha256 of the image bytes and checks for an existing
 // ledger_expense row before creating a new draft (see actions.createDraftExpense).
@@ -39,17 +41,21 @@ function monthParts(d = new Date()): { yyyy: string; mm: string } {
   };
 }
 
-/** Build the R2 key for a receipt original. companySlug = company code or id. */
+/** Build the R2 key for a receipt original. orgId namespaces the tree (a
+ *  public-URL leak from org A can't reveal org B's receipts), companySlug =
+ *  company code or id. Shape matches app/api/ledger/r2/presign exactly. */
 export function receiptKey(
+  orgId: string,
   companySlug: string,
   expenseId: string,
   contentType?: string,
   when = new Date(),
 ): string {
   const { yyyy, mm } = monthParts(when);
+  const safeOrg = orgId.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 60);
   const safeCompany = companySlug.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 40);
   const ext = extFromContentType(contentType);
-  return `ledger/${yyyy}/${mm}/${safeCompany}/${expenseId}.${ext}`;
+  return `orgs/${safeOrg}/ledger/${yyyy}/${mm}/${safeCompany}/${expenseId}.${ext}`;
 }
 
 export function thumbKey(originalKey: string): string {
@@ -70,14 +76,15 @@ export interface StoredReceipt {
  * UI still has something to render (never blocks the build/flow).
  */
 export async function storeReceiptImage(opts: {
+  orgId: string;
   companySlug: string;
   expenseId: string;
   buffer: Buffer;
   contentType?: string;
   when?: Date;
 }): Promise<StoredReceipt> {
-  const { companySlug, expenseId, buffer, contentType, when } = opts;
-  const key = receiptKey(companySlug, expenseId, contentType, when);
+  const { orgId, companySlug, expenseId, buffer, contentType, when } = opts;
+  const key = receiptKey(orgId, companySlug, expenseId, contentType, when);
   const ct = contentType ?? "image/jpeg";
 
   const sha256 = sha256Hex(buffer);

@@ -36,11 +36,16 @@ export interface BudgetCheckResult {
 }
 
 export async function checkAiBudget(opts: {
-  userId: string;
+  /** null/empty for system-originated ingest (e.g. LINE webhook with no user
+   *  session). When null we skip the per-USER caps and enforce ORG-only. */
+  userId?: string | null;
   orgId: string;
   endpoint: string;
 }): Promise<BudgetCheckResult> {
   const { userId, orgId } = opts;
+  // Empty string is NOT a valid uuid — treat "" like null so we never run
+  // `.eq("user_id", "")` against a uuid column (Postgres throws on that).
+  const hasUser = !!userId;
   const admin = adminClient();
   const now = Date.now();
   const oneHourAgo = new Date(now - 60 * 60 * 1000).toISOString();
@@ -49,39 +54,45 @@ export async function checkAiBudget(opts: {
   startOfMonth.setUTCDate(1);
   startOfMonth.setUTCHours(0, 0, 0, 0);
 
-  // 1. Per-user hourly call cap
-  const { count: hourlyCalls } = await admin
-    .from("ai_usage")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .gte("created_at", oneHourAgo);
-  if ((hourlyCalls ?? 0) >= PER_USER_HOURLY_CALLS) {
-    return {
-      allowed: false,
-      reason: `เรียก AI เกิน ${PER_USER_HOURLY_CALLS} ครั้ง/ชม. — รอ 1 ชั่วโมง`,
-      remainingHourlyCalls: 0,
-    };
+  let hourlyCalls = 0;
+  let dailyUsd = 0;
+
+  if (hasUser) {
+    // 1. Per-user hourly call cap
+    const { count } = await admin
+      .from("ai_usage")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId!)
+      .gte("created_at", oneHourAgo);
+    hourlyCalls = count ?? 0;
+    if (hourlyCalls >= PER_USER_HOURLY_CALLS) {
+      return {
+        allowed: false,
+        reason: `เรียก AI เกิน ${PER_USER_HOURLY_CALLS} ครั้ง/ชม. — รอ 1 ชั่วโมง`,
+        remainingHourlyCalls: 0,
+      };
+    }
+
+    // 2. Per-user daily $ cap
+    const { data: dailyRows } = await admin
+      .from("ai_usage")
+      .select("cost_usd")
+      .eq("user_id", userId!)
+      .gte("created_at", oneDayAgo);
+    dailyUsd = (dailyRows ?? []).reduce(
+      (s, r) => s + Number(r.cost_usd ?? 0),
+      0,
+    );
+    if (dailyUsd >= PER_USER_DAILY_USD) {
+      return {
+        allowed: false,
+        reason: `เกิน budget ส่วนตัว $${PER_USER_DAILY_USD}/วัน — รอ 24 ชั่วโมง`,
+        remainingDailyUsd: 0,
+      };
+    }
   }
 
-  // 2. Per-user daily $ cap
-  const { data: dailyRows } = await admin
-    .from("ai_usage")
-    .select("cost_usd")
-    .eq("user_id", userId)
-    .gte("created_at", oneDayAgo);
-  const dailyUsd = (dailyRows ?? []).reduce(
-    (s, r) => s + Number(r.cost_usd ?? 0),
-    0,
-  );
-  if (dailyUsd >= PER_USER_DAILY_USD) {
-    return {
-      allowed: false,
-      reason: `เกิน budget ส่วนตัว $${PER_USER_DAILY_USD}/วัน — รอ 24 ชั่วโมง`,
-      remainingDailyUsd: 0,
-    };
-  }
-
-  // 3. Org-level monthly $ cap
+  // 3. Org-level monthly $ cap (enforced for BOTH user + system ingest)
   const { data: orgRows } = await admin
     .from("ai_usage")
     .select("cost_usd")

@@ -411,7 +411,7 @@ export function LedgerCaptureApp({
             <select
               value={companyId}
               onChange={(e) => setCompanyId(e.target.value)}
-              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-medium text-zinc-900 outline-none focus:border-blue-500"
+              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-medium text-zinc-900 outline-none focus:border-[var(--color-brand-500)]"
             >
               {companies.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -426,7 +426,7 @@ export function LedgerCaptureApp({
               value={branchId}
               onChange={(e) => setBranchId(e.target.value)}
               disabled={branches.length === 0}
-              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-medium text-zinc-900 outline-none focus:border-blue-500 disabled:bg-zinc-50 disabled:text-zinc-400"
+              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-medium text-zinc-900 outline-none focus:border-[var(--color-brand-500)] disabled:bg-zinc-50 disabled:text-zinc-400"
             >
               <option value="">— ทั้งบริษัท —</option>
               {branches.map((b) => (
@@ -441,11 +441,11 @@ export function LedgerCaptureApp({
 
       {/* Context chip on non-capture screens (so the staffer always sees the book). */}
       {!showContextPicker && activeCompany && (
-        <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+        <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-[var(--color-brand-50)] px-3 py-1 text-xs font-medium text-[var(--color-brand-700)]">
           <span aria-hidden>🏢</span>
           {activeCompany.name}
           {branchId && branches.find((b) => b.id === branchId) && (
-            <span className="text-blue-500">· {branches.find((b) => b.id === branchId)!.name}</span>
+            <span className="text-[var(--color-brand-500)]">· {branches.find((b) => b.id === branchId)!.name}</span>
           )}
         </div>
       )}
@@ -469,11 +469,11 @@ export function LedgerCaptureApp({
             type="button"
             onClick={() => fileRef.current?.click()}
             aria-label="แตะเพื่อถ่ายหรือเลือกรูปใบเสร็จ"
-            className="flex h-40 w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50 text-blue-700 transition active:scale-[0.99] active:bg-blue-100"
+            className="flex h-40 w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[var(--color-brand-300)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)] transition active:scale-[0.99] active:bg-[var(--color-brand-100)]"
           >
             <span className="text-4xl" aria-hidden>📷</span>
             <span className="text-base font-semibold">แตะเพื่อถ่าย / เลือกรูป</span>
-            <span className="text-xs text-blue-600/80">รองรับใบเสร็จ · บิล · สลิป</span>
+            <span className="text-xs text-[var(--color-brand-600)]/80">รองรับใบเสร็จ · บิล · สลิป</span>
           </button>
           <p className="px-1 text-center text-[11px] text-zinc-400">
             เคล็ดลับ: ปิด Live Photo บน iPhone เพื่อให้ AI อ่านแม่นขึ้น
@@ -488,7 +488,7 @@ export function LedgerCaptureApp({
           role="status"
           aria-live="polite"
         >
-          <div className="size-12 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
+          <div className="size-12 animate-spin rounded-full border-4 border-[var(--color-brand-200)] border-t-[var(--color-brand-600)]" />
           <p className="text-sm font-medium text-zinc-700">AI กำลังอ่านใบเสร็จ...</p>
           <p className="text-xs text-zinc-400">สักครู่ · อย่าเพิ่งปิดหน้านี้</p>
         </div>
@@ -522,7 +522,7 @@ export function LedgerCaptureApp({
                 onChange={(e) => set("total", e.target.value)}
                 placeholder="0.00"
                 aria-label="ยอดรวม"
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-lg font-bold tabular-nums outline-none focus:border-blue-500"
+                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-lg font-bold tabular-nums outline-none focus:border-[var(--color-brand-500)]"
               />
             </Field>
 
@@ -534,7 +534,7 @@ export function LedgerCaptureApp({
                   onChange={(e) => set("subtotal", e.target.value)}
                   placeholder="0.00"
                   aria-label="ยอดก่อน VAT"
-                  className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm tabular-nums outline-none focus:border-blue-500"
+                  className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm tabular-nums outline-none focus:border-[var(--color-brand-500)]"
                 />
               </Field>
               <Field label="VAT" conf={fields.confidence.vat}>
@@ -544,7 +544,7 @@ export function LedgerCaptureApp({
                   onChange={(e) => set("vat", e.target.value)}
                   placeholder="0.00"
                   aria-label="VAT"
-                  className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm tabular-nums outline-none focus:border-blue-500"
+                  className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm tabular-nums outline-none focus:border-[var(--color-brand-500)]"
                 />
               </Field>
             </div>
@@ -561,7 +561,7 @@ export function LedgerCaptureApp({
                 onChange={(e) => set("vendor", e.target.value)}
                 placeholder="ชื่อร้าน"
                 aria-label="ร้านค้า"
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-[var(--color-brand-500)]"
               />
             </Field>
 
@@ -572,7 +572,7 @@ export function LedgerCaptureApp({
                   value={fields.docDate}
                   onChange={(e) => set("docDate", e.target.value)}
                   aria-label="วันที่ในเอกสาร"
-                  className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                  className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-[var(--color-brand-500)]"
                 />
               </Field>
               <Field label="เลขภาษี 13 หลัก" conf={fields.confidence.vendor_tax_id}>
@@ -584,7 +584,7 @@ export function LedgerCaptureApp({
                   }
                   placeholder="0000000000000"
                   aria-label="เลขประจำตัวผู้เสียภาษี"
-                  className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm tabular-nums outline-none focus:border-blue-500"
+                  className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm tabular-nums outline-none focus:border-[var(--color-brand-500)]"
                 />
               </Field>
             </div>
@@ -596,7 +596,7 @@ export function LedgerCaptureApp({
                     value={fields.categoryId}
                     onChange={(e) => set("categoryId", e.target.value)}
                     aria-label="หมวดค่าใช้จ่าย"
-                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--color-brand-500)]"
                   >
                     <option value="">
                       {fields.suggestedCategory ? `AI: ${fields.suggestedCategory}` : "— เลือกหมวด —"}
@@ -613,7 +613,7 @@ export function LedgerCaptureApp({
                     onChange={(e) => set("suggestedCategory", e.target.value)}
                     placeholder="เช่น ค่าน้ำมัน/ขนส่ง"
                     aria-label="หมวด (AI แนะนำ)"
-                    className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                    className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-[var(--color-brand-500)]"
                   />
                 )}
               </Field>
@@ -622,7 +622,7 @@ export function LedgerCaptureApp({
                   value={fields.paymentMethod}
                   onChange={(e) => set("paymentMethod", e.target.value)}
                   aria-label="วิธีชำระเงิน"
-                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--color-brand-500)]"
                 >
                   {PAYMENT_METHODS.map((p) => (
                     <option key={p.value} value={p.value}>
@@ -682,7 +682,7 @@ export function LedgerCaptureApp({
           <button
             type="button"
             onClick={reset}
-            className="h-12 w-full rounded-xl bg-blue-600 text-base font-semibold text-white transition active:bg-blue-700"
+            className="h-12 w-full rounded-xl bg-[var(--color-brand-600)] text-base font-semibold text-white transition active:bg-[var(--color-brand-700)]"
           >
             ถ่ายใบเสร็จอื่น
           </button>
@@ -734,7 +734,7 @@ export function LedgerCaptureApp({
             <button
               type="button"
               onClick={onConfirm}
-              className="h-12 flex-[2] rounded-xl bg-blue-600 text-base font-semibold text-white shadow-lg transition active:bg-blue-700"
+              className="h-12 flex-[2] rounded-xl bg-[var(--color-brand-600)] text-base font-semibold text-white shadow-lg transition active:bg-[var(--color-brand-700)]"
             >
               บันทึก (ร่าง)
             </button>

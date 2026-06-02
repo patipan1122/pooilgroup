@@ -1,6 +1,8 @@
 // Ledger · Dashboard — ค่าใช้จ่ายตามหมวด / สาขา / เดือน (confirmed+locked only).
 // Real data, org+company(+branch) scoped. Basic bar visuals (no chart lib needed).
-import { requireSession } from "@/lib/auth/session";
+// Role gate matches the nav policy in lib/modules.ts (staff/driver excluded —
+// the dashboard shows org-wide P&L which front-line roles must not see).
+import { requireRole } from "@/lib/auth/session";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
 import {
@@ -54,7 +56,13 @@ export default async function LedgerDashboardPage({
 }: {
   searchParams: Promise<{ company?: string; branch?: string; period?: string }>;
 }) {
-  const session = await requireSession();
+  const session = await requireRole(
+    "super_admin",
+    "org_admin",
+    "admin",
+    "area_manager",
+    "viewer",
+  );
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);
 

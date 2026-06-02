@@ -1,8 +1,19 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-31 (รอบ 69 · HotelBook live on prod · Mix Hotel แรก)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-02 (Inbox bot: คำตอบแก้ในเว็บได้ + ห้องพัฒนาบอท · built, not pushed)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-06-02 — Inbox chatbot: คำตอบเลิก hardcode + "ห้องพัฒนาบอท" (Claude เห็นแชทจริง))
+
+**ปัญหา CEO:** เทรนบอทเก้าอี้นวดเท่าไรก็ไม่เปลี่ยน — บอทยังพูด "หากเร่งด่วน" + "ติดต่อกลับ" ที่สั่งห้าม.
+**Root cause (พิสูจน์จาก DB+code):** คำตอบเคสหลัก (money_lost/scan_fail/ลูกค้าส่งรูป) **hardcoded ใน `lib/inbox/bot/templates.ts` + `engine.ts handleNonTextInbound`** → ไม่อ่าน FAQ/knowledge เลย. "เทรนกับ Claude" เขียนแค่ FAQ/knowledge ซึ่ง Gemini อ่านเฉพาะ topic "other" → 80% ของแชทไม่เคยเปลี่ยน. CEO knowledge "ห้ามใช้หากเร่งด่วน" ถูกบันทึกจริง (ซ้ำ 2 แถว) แต่ไม่เคยถูกใช้.
+
+**แก้แล้ว (STEP 1+2 · built, tsc/lint reviewed, next build ✓ compiled · NOT pushed):**
+- STEP 1: ย้ายคำตอบ 7 สถานการณ์ออกจาก code → `inbox_bot_settings.reply_templates` JSONB (แก้ในเว็บได้) · default ใหม่ลบ "หากเร่งด่วน"/"ติดต่อกลับ" + help-first + `{phone}` placeholder · migration `20260602160000_inbox_bot_reply_templates.sql` (+ แก้ fallback_text เก่าที่มี "ติดต่อกลับ"/typo เบอร์นน).
+- STEP 2: `/inbox/bot → เทรนกับ Claude` อัปเกรดเป็น "ห้องพัฒนาบอท": (a) panel "แชทจริงที่มีปัญหา" (เคส needsHuman/urgent) กดดู transcript จริง → "ให้ Claude ช่วยแก้เคสนี้"; (b) Claude เสนอ ```template edit (ก่อน→หลัง) → CEO กด "ใช้คำตอบนี้เลย" → `saveReplyTemplate` (propose→confirm, ไม่ auto).
+- Files: settings.ts · templates.ts · engine.ts · trainer-actions.ts · knowledge-actions.ts · **chat-review-actions.ts (new)** · trainer-tab.tsx · schema.prisma · migration.
+- ⚠️ CEO ต้อง: commit→push setup + **run migration 20260602160000** ก่อน "ใช้คำตอบนี้เลย" จะทำงาน.
 
 ## 🆕 Update (2026-05-31 · รอบ 69 — HotelBook ✅ LIVE on prod · Mix Hotel แรก · Pool Module #11)
 
