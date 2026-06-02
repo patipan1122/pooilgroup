@@ -39,6 +39,7 @@ import {
 } from "@/lib/chairops/queries/dashboard-pl";
 import { rankOf } from "@/lib/chairops/auth/role-guards";
 import { ChairopsAlertLevel } from "@/lib/generated/prisma/enums";
+import { prisma } from "@/lib/prisma";
 import {
   AlertTriangle,
   ArrowRight,
@@ -138,6 +139,8 @@ function resolveRange(sp: {
   from?: string;
   to?: string;
   preset?: string;
+  /** Latest POS date across new + legacy tables · drives `latest` preset. */
+  posCoverThrough?: Date | null;
 }): ResolvedRange {
   const today = bangkokToday();
 
@@ -163,7 +166,40 @@ function resolveRange(sp: {
     };
   }
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  // CEO 2026-06-02: `latest` preset = "1st of POS-cover-through month →
+  // posCoverThrough day" so the table opens on the freshest data instead of
+  // an empty MTD when POS is days/months behind today. Also used as the
+  // implicit default when no preset/from/to is supplied AND the current month
+  // has zero POS rows (so April-only data still shows up by default).
+  if (sp.preset === "latest" && sp.posCoverThrough) {
+    const cover = sp.posCoverThrough;
+    const start = new Date(cover.getFullYear(), cover.getMonth(), 1);
+    return {
+      from: start,
+      to: cover,
+      fromStr: ymd(start),
+      toStr: ymd(cover),
+      activePreset: "latest",
+    };
+  }
+
+  // Implicit default: prefer `latest` when MTD would be empty, else MTD.
   if (sp.preset === "mtd" || (!sp.from && !sp.to)) {
+    if (
+      sp.posCoverThrough &&
+      sp.posCoverThrough.getTime() < monthStart.getTime()
+    ) {
+      const cover = sp.posCoverThrough;
+      const start = new Date(cover.getFullYear(), cover.getMonth(), 1);
+      return {
+        from: start,
+        to: cover,
+        fromStr: ymd(start),
+        toStr: ymd(cover),
+        activePreset: "latest",
+      };
+    }
     return {
       from: monthStart,
       to: today,
@@ -196,6 +232,15 @@ function resolveRange(sp: {
     to.getTime() === today.getTime()
   ) {
     active = "mtd";
+  } else if (sp.posCoverThrough) {
+    const cover = sp.posCoverThrough;
+    const coverStart = new Date(cover.getFullYear(), cover.getMonth(), 1);
+    if (
+      from.getTime() === coverStart.getTime() &&
+      to.getTime() === cover.getTime()
+    ) {
+      active = "latest";
+    }
   }
 
   return { from, to, fromStr: ymd(from), toStr: ymd(to), activePreset: active };
@@ -221,10 +266,33 @@ export default async function ExecDashboardPage({
   const sp = await searchParams;
   const first = (v: string | string[] | undefined): string | undefined =>
     Array.isArray(v) ? v[0] : v;
+  // CEO 2026-06-02: resolve `latest` preset / data-aware default by reading
+  // the max POS bizDate first. Cheap — two indexed `findFirst`s. Falls back
+  // to MTD when there is no POS data at all.
+  const [posCoverNew, posCoverLegacy] = await Promise.all([
+    prisma.chairopsBranchDailyRevenue.findFirst({
+      where: { orgId },
+      orderBy: { bizDate: "desc" },
+      select: { bizDate: true },
+    }),
+    prisma.chairopsPosDaily.findFirst({
+      where: { orgId },
+      orderBy: { bizDate: "desc" },
+      select: { bizDate: true },
+    }),
+  ]);
+  const posCoverThrough = (() => {
+    const a = posCoverNew?.bizDate ?? null;
+    const b = posCoverLegacy?.bizDate ?? null;
+    if (!a) return b;
+    if (!b) return a;
+    return a > b ? a : b;
+  })();
   const range = resolveRange({
     from: first(sp.from),
     to: first(sp.to),
     preset: first(sp.preset),
+    posCoverThrough,
   });
 
   // Admin-tier (CEO/ADMIN) sees cost + profit columns · managers do not.

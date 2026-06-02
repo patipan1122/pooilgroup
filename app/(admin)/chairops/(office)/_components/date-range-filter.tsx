@@ -11,7 +11,7 @@ import Link from "next/link";
 import { Calendar } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
-export type RangePreset = "today" | "7d" | "mtd";
+export type RangePreset = "today" | "7d" | "mtd" | "latest";
 
 function presetHref(preset: RangePreset, from: string, to: string): string {
   // Presets are resolved on the page; here we just pass an intent flag the page
@@ -34,6 +34,10 @@ const PRESETS: { key: RangePreset; label: string }[] = [
   { key: "today", label: "วันนี้" },
   { key: "7d", label: "7 วัน" },
   { key: "mtd", label: "เดือนนี้" },
+  // CEO 2026-06-02: "ตามวันล่าสุดที่อัพ POS" — pick the month of the latest
+  // POS upload so a CEO viewing the dashboard after a long pause (e.g. April
+  // data uploaded in June) actually sees their data instead of an empty MTD.
+  { key: "latest", label: "POS ล่าสุด" },
 ];
 
 export function DateRangeFilter({
