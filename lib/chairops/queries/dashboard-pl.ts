@@ -22,6 +22,7 @@
 // Decimal → Number BEFORE any math (Prisma Decimal would silently break +/−).
 
 import { prisma } from "@/lib/prisma";
+import { getDepositsInRange } from "@/lib/chairops/queries/_deposits";
 
 const PRORATE_MONTH_DAYS = 30;
 
@@ -103,7 +104,7 @@ export async function getBranchPL(args: {
   const dayCount = rangeDayCount(args.from, args.to);
   const prorateFactor = dayCount / PRORATE_MONTH_DAYS;
 
-  const [branches, revenueRows, legacyPosRows, depositRows, drifts] = await Promise.all([
+  const [branches, revenueRows, legacyPosRows, depByBranch, drifts] = await Promise.all([
     // All ACTIVE branches (empty-state friendly: 0-revenue branches still show).
     prisma.chairopsBranch.findMany({
       where: { orgId, isActive: true },
@@ -136,11 +137,13 @@ export async function getBranchPL(args: {
       where: { orgId, bizDate: { gte, lt: ltExclusive } },
       _sum: { grossTotal: true, cashTotal: true, onlineTotal: true },
     }),
-    prisma.chairopsCashCollection.groupBy({
-      by: ["branchId"],
-      where: { orgId, collectedAt: { gte, lt: ltExclusive } },
-      _sum: { depositedAmount: true },
-    }),
+    // Per-branch deposits in range, drift-engine formula (CashDeposit +
+    // bankFee + legacy CashCollection.depositedAmount where depositId IS NULL).
+    // Was reading the now-dead `CashCollection.depositedAmount` column · the
+    // ภาพรวม "ฝาก" column showed 0 even when the maid had deposited that day
+    // because the new LIFF writes amount to the CashDeposit row only.
+    // CEO 2026-06-02 P0 (see `_deposits.ts`).
+    getDepositsInRange({ orgId, since: gte, until: ltExclusive }),
     // Drift is a single cached snapshot per branch (not range-windowed) · used
     // as the standing shortage indicator, consistent with the rest of ChairOps.
     prisma.chairopsDrift.findMany({
@@ -151,9 +154,6 @@ export async function getBranchPL(args: {
 
   const revByBranch = new Map(revenueRows.map((r) => [r.branchId, r._sum]));
   const legacyByBranch = new Map(legacyPosRows.map((r) => [r.branchId, r._sum]));
-  const depByBranch = new Map(
-    depositRows.map((r) => [r.branchId, r._sum?.depositedAmount ?? 0]),
-  );
   const driftByBranch = new Map(drifts.map((d) => [d.branchId, d.driftAmount]));
 
   const rows: BranchPLRow[] = branches.map((b) => {

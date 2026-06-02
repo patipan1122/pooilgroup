@@ -10,11 +10,13 @@ export default async function AuditEntityPage({
 }: {
   params: Promise<{ entity: string; entityId: string }>;
 }) {
-  await requireRole("CEO");
+  const session = await requireRole("CEO");
   const { entity, entityId } = await params;
 
+  // SEC fix 2026-06-02 (ORCHESTRA_AUDIT SEC-02 detail viewer)
+  // กรอง orgId กันรั่วข้ามองค์กร — CEO ในองค์กร A ห้ามอ่าน audit ขององค์กร B แม้จะรู้ uuid
   const logs = await prisma.chairopsAuditLog.findMany({
-    where: { entity, entityId },
+    where: { orgId: session.user.orgId, entity, entityId },
     include: { user: { select: { displayName: true } } },
     orderBy: { createdAt: "desc" },
   });

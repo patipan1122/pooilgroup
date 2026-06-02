@@ -644,7 +644,15 @@ export interface CommitImportSuccess {
 export async function commitImport(importId: string): Promise<CommitImportSuccess | { ok: false; error: string }> {
   const session = await requireRole("OFFICE");
 
-  const imp = await prisma.chairopsPosImport.findUnique({ where: { id: importId } });
+  // CEO 2026-06-02 P0 IDOR fix · scope the import lookup to the session org so
+  // a forged importId cannot commit (or even peek at) another tenant's pending
+  // POS data. Without this, the rest of this function would happily process
+  // the foreign diffSummary against the foreign orgId and write to that org's
+  // tables — silent cross-tenant data injection.
+  const sessionOrgId = session.user.orgId;
+  const imp = await prisma.chairopsPosImport.findFirst({
+    where: { id: importId, orgId: sessionOrgId },
+  });
   if (!imp) return { ok: false, error: "ไม่พบ import นี้" };
   if (imp.committed) return { ok: false, error: "import นี้ commit ไปแล้ว" };
 
@@ -1161,7 +1169,12 @@ export async function undoImport(
 ): Promise<{ ok: true; rowsRemoved: number } | { ok: false; error: string }> {
   const session = await requireRole("OFFICE");
 
-  const imp = await prisma.chairopsPosImport.findUnique({ where: { id: importId } });
+  // CEO 2026-06-02 P0 IDOR fix · scope the import lookup to the session org
+  // so an undo can't roll back another tenant's POS data.
+  const sessionOrgId = session.user.orgId;
+  const imp = await prisma.chairopsPosImport.findFirst({
+    where: { id: importId, orgId: sessionOrgId },
+  });
   if (!imp) return { ok: false, error: "ไม่พบ import นี้" };
   if (!imp.committed || !imp.committedAt) {
     return { ok: false, error: "import นี้ยังไม่ commit · ใช้ cancel แทน" };
@@ -1328,7 +1341,12 @@ export async function commitPosImportWithCheck(
     };
   }
 
-  const imp = await prisma.chairopsPosImport.findUnique({ where: { id: importId } });
+  // CEO 2026-06-02 P0 IDOR fix · same orgId scope as commitImport. The
+  // maker/checker pre-check must not leak whether a foreign importId exists.
+  const sessionOrgId = session.user.orgId;
+  const imp = await prisma.chairopsPosImport.findFirst({
+    where: { id: importId, orgId: sessionOrgId },
+  });
   if (!imp) return { ok: false, error: "ไม่พบ import นี้" };
   if (imp.committed) return { ok: false, error: "import นี้ commit ไปแล้ว" };
 
@@ -1371,12 +1389,20 @@ export async function commitPosImportWithCheck(
 
 export async function cancelImport(importId: string) {
   const session = await requireRole("OFFICE");
-  const imp = await prisma.chairopsPosImport.findUnique({ where: { id: importId } });
+  // CEO 2026-06-02 P0 IDOR fix · scope to session org so a forged importId
+  // cannot delete another tenant's pending preview row.
+  const sessionOrgId = session.user.orgId;
+  const imp = await prisma.chairopsPosImport.findFirst({
+    where: { id: importId, orgId: sessionOrgId },
+  });
   if (!imp) redirect("/chairops/pos-ingest");
   if (imp.committed) {
     redirect(`/pos-ingest?error=${encodeURIComponent("commit แล้ว ยกเลิกไม่ได้")}`);
   }
-  await prisma.chairopsPosImport.delete({ where: { id: importId } });
+  // deleteMany w/ composite key — TOCTOU-safe.
+  await prisma.chairopsPosImport.deleteMany({
+    where: { id: importId, orgId: sessionOrgId },
+  });
   await writeAudit({
     userId: session.user.id,
     action: "pos_import.cancel",

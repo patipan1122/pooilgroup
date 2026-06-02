@@ -19,6 +19,15 @@ function fmtSigned(n: number): string {
   return sign + Math.abs(r).toLocaleString("en-US");
 }
 
+/**
+ * Positive-only formatter for the "ค้างฝากรวม" aggregate (no sign prefix).
+ * Per CEO ruling 2026-06-02, the org-row aggregate is always ≥ 0 — a single
+ * branch surplus does not pay back another branch's shortage.
+ */
+function fmtShortage(n: number): string {
+  return Math.round(n).toLocaleString("en-US");
+}
+
 function cumClass(n: number): string {
   if (n < -500) return "crit";
   if (n < -100) return "warn";
@@ -28,12 +37,17 @@ function cumClass(n: number): string {
 export function ReconcileSidebar({
   rows,
   activeBranchId,
-  orgCumDrift,
+  orgCumShortage,
   view,
 }: {
   rows: ReconcileSidebarRow[];
   activeBranchId: string | null;
-  orgCumDrift: number;
+  /**
+   * Canonical positive-only "ค้างฝากรวมทุกสาขา" aggregate (always ≥ 0).
+   * Comes from `getCumulativeShortage(orgId)` so it matches the exec home
+   * tile and the reconcile hero exactly (CEO ruling 2026-06-02 · CONF-05).
+   */
+  orgCumShortage: number;
   view: string;
 }) {
   const [q, setQ] = useState("");
@@ -84,7 +98,7 @@ export function ReconcileSidebar({
           <div className="grow" style={{ minWidth: 0 }}>
             <div className="rc-side-name">ทุกสาขารวม</div>
             <div className="text-3" style={{ fontSize: 11 }}>
-              {rows.length} สาขา · drift {fmtSigned(orgCumDrift)} ฿
+              {rows.length} สาขา · ค้างฝากรวม {fmtShortage(orgCumShortage)} ฿
             </div>
           </div>
         </Link>

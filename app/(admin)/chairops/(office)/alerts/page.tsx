@@ -91,12 +91,15 @@ type AlertRow = Prisma.ChairopsAlertGetPayload<{
 // ---------- data loader ------------------------------------------------------
 
 async function loadAlerts(params: {
+  orgId: string;
   status: ChairopsAlertStatus | "ALL_OPEN";
   branchId: string | null;
   kind: ChairopsAlertKind | null;
   level: ChairopsAlertLevel | null;
 }) {
-  const where: Prisma.ChairopsAlertWhereInput = {};
+  // CEO 2026-06-02 P0 multi-tenant sweep: every read filters by orgId so a
+  // session in tenant A can never page through tenant B's alerts.
+  const where: Prisma.ChairopsAlertWhereInput = { orgId: params.orgId };
   if (params.status === "ALL_OPEN") {
     where.status = { in: [ChairopsAlertStatus.OPEN, ChairopsAlertStatus.ACK] };
   } else {
@@ -114,7 +117,7 @@ async function loadAlerts(params: {
       include: { branch: { select: { id: true, name: true, slug: true } } },
     }),
     prisma.chairopsBranch.findMany({
-      where: { isActive: true },
+      where: { orgId: params.orgId, isActive: true },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
@@ -127,7 +130,7 @@ async function loadAlerts(params: {
   );
   const ackers = ackedByIds.length
     ? await prisma.chairopsUser.findMany({
-        where: { id: { in: ackedByIds } },
+        where: { orgId: params.orgId, id: { in: ackedByIds } },
         select: { id: true, displayName: true },
       })
     : [];
@@ -176,6 +179,7 @@ export default async function AlertsPage({
   //  per B16 since it can never fire.)
 
   const { alerts, branches, ackerMap } = await loadAlerts({
+    orgId: session.user.orgId,
     status: statusFilter,
     branchId: branchFilter,
     kind: kindFilter,
@@ -193,12 +197,18 @@ export default async function AlertsPage({
   const [openCounts, kindCounts] = await Promise.all([
     prisma.chairopsAlert.groupBy({
       by: ["level"],
-      where: { status: { in: [ChairopsAlertStatus.OPEN, ChairopsAlertStatus.ACK] } },
+      where: {
+        orgId: session.user.orgId,
+        status: { in: [ChairopsAlertStatus.OPEN, ChairopsAlertStatus.ACK] },
+      },
       _count: { _all: true },
     }),
     prisma.chairopsAlert.groupBy({
       by: ["kind"],
-      where: { status: { in: [ChairopsAlertStatus.OPEN, ChairopsAlertStatus.ACK] } },
+      where: {
+        orgId: session.user.orgId,
+        status: { in: [ChairopsAlertStatus.OPEN, ChairopsAlertStatus.ACK] },
+      },
       _count: { _all: true },
     }),
   ]);

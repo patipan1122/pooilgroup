@@ -22,12 +22,16 @@ export default async function AuditLogPage({
     page?: string;
   }>;
 }) {
-  await requireRole("CEO");
+  const session = await requireRole("CEO");
   const sp = await searchParams;
 
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
 
-  const w: Prisma.ChairopsAuditLogWhereInput = {};
+  // CEO 2026-06-02 P0 multi-tenant sweep: scope every read to the session's
+  // org so a CEO in tenant A can never see tenant B's audit history (or
+  // tenant B's users in the dropdown).
+  const orgId = session.user.orgId;
+  const w: Prisma.ChairopsAuditLogWhereInput = { orgId };
   if (sp.entity) w.entity = sp.entity;
   if (sp.entityId) w.entityId = sp.entityId;
   if (sp.userId) w.userId = sp.userId;
@@ -48,14 +52,16 @@ export default async function AuditLogPage({
       take: PAGE_SIZE,
     }),
     prisma.chairopsAuditLog.count({ where: w }),
-    // Distinct entity names for filter dropdown
+    // Distinct entity names for filter dropdown (scoped to this org so we
+    // don't surface entity strings from another tenant's history).
     prisma.chairopsAuditLog.findMany({
+      where: { orgId },
       select: { entity: true },
       distinct: ["entity"],
       orderBy: { entity: "asc" },
     }),
     prisma.chairopsUser.findMany({
-      where: { isActive: true },
+      where: { orgId, isActive: true },
       select: { id: true, displayName: true },
       orderBy: { displayName: "asc" },
       take: 200,

@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { ChairopsAlertKind, ChairopsAlertLevel, ChairopsAlertStatus } from "@/lib/generated/prisma/enums";
 import { recomputeAllDrifts, DRIFT_DEFAULTS, getOrgIdForBranch } from "./drift-engine";
-import { sendLineNotify } from "@/lib/chairops/line/notify";
+import { notifyChannel } from "@/lib/chairops/line/messaging";
 import { baht } from "@/lib/chairops/utils/format";
 
 type AlertClient = Pick<Prisma.TransactionClient, "chairopsAlert"> | typeof prisma;
@@ -54,8 +54,8 @@ export async function evaluateAndEmitAlerts(orgId?: string) {
           },
         });
         emitted.push({ branchId: s.branchId, kind: alert.kind });
-        await sendLineNotify("finance", `🔴 ${alert.title}\n${alert.message}`);
-        await sendLineNotify("ceo", `🔴 ${alert.title}\n${alert.message}`);
+        await notifyChannel("finance", `🔴 ${alert.title}\n${alert.message}`);
+        await notifyChannel("ceo", `🔴 ${alert.title}\n${alert.message}`);
       }
     }
 
@@ -82,7 +82,7 @@ export async function evaluateAndEmitAlerts(orgId?: string) {
           },
         });
         emitted.push({ branchId: s.branchId, kind: alert.kind });
-        await sendLineNotify("ops", `⚠️ ${alert.title}\n${alert.message}`);
+        await notifyChannel("ops", `⚠️ ${alert.title}\n${alert.message}`);
       }
     }
   }
@@ -90,16 +90,32 @@ export async function evaluateAndEmitAlerts(orgId?: string) {
   return { snapshots, emitted };
 }
 
-export async function ackAlert(alertId: string, userId: string, client: AlertClient = prisma) {
-  return client.chairopsAlert.update({
-    where: { id: alertId },
+// CEO 2026-06-02 P0 multi-tenant sweep: ack/resolve now require orgId so a
+// session in tenant A can't mutate an alert id that belongs to tenant B (the
+// alert id was previously the only key — any leaked/guessed id was actionable
+// across tenants). Composite `updateMany({orgId, id})` returns count=0 when
+// the id doesn't belong to the caller's org → callers can detect IDOR misses
+// without throwing.
+export async function ackAlert(
+  alertId: string,
+  userId: string,
+  orgId: string,
+  client: AlertClient = prisma,
+) {
+  return client.chairopsAlert.updateMany({
+    where: { id: alertId, orgId },
     data: { status: ChairopsAlertStatus.ACK, ackedById: userId, ackedAt: new Date() },
   });
 }
 
-export async function resolveAlert(alertId: string, userId: string, client: AlertClient = prisma) {
-  return client.chairopsAlert.update({
-    where: { id: alertId },
+export async function resolveAlert(
+  alertId: string,
+  userId: string,
+  orgId: string,
+  client: AlertClient = prisma,
+) {
+  return client.chairopsAlert.updateMany({
+    where: { id: alertId, orgId },
     data: { status: ChairopsAlertStatus.RESOLVED, ackedById: userId, resolvedAt: new Date() },
   });
 }

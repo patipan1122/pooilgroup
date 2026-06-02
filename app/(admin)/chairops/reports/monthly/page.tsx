@@ -3,6 +3,7 @@
 import { Fragment } from "react";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/chairops/auth/session";
 import { baht } from "@/lib/chairops/utils/format";
 import { cn } from "@/lib/utils/cn";
 
@@ -21,6 +22,12 @@ function monthLabel(key: string): string {
 }
 
 export default async function MonthlyReport() {
+  // CEO 2026-06-02 P0 multi-tenant sweep: this page had no auth gate at all
+  // and read every tenant's branches/POS/deposits/write-offs. Lock to MANAGER+
+  // (same gate as the export route) and scope every query to the session org.
+  const session = await requireRole("MANAGER");
+  const orgId = session.user.orgId;
+
   const since = new Date();
   since.setMonth(since.getMonth() - MONTHS_BACK + 1);
   since.setDate(1);
@@ -28,12 +35,12 @@ export default async function MonthlyReport() {
 
   const [branches, posDaily, collections, writeOffs] = await Promise.all([
     prisma.chairopsBranch.findMany({
-      where: { isActive: true },
+      where: { orgId, isActive: true },
       orderBy: { name: "asc" },
       select: { id: true, name: true, slug: true, mallGroup: true },
     }),
     prisma.chairopsPosDaily.findMany({
-      where: { bizDate: { gte: since } },
+      where: { orgId, bizDate: { gte: since } },
       select: { branchId: true, bizDate: true, grossTotal: true },
     }),
     // Wave-2 audit P0 #6: deposits moved to chairops_cash_deposit · include
@@ -41,7 +48,7 @@ export default async function MonthlyReport() {
      // Fall back to legacy depositedAmount column for pre-W2 rows where the
      // separate deposit table wasn't yet wired.
     prisma.chairopsCashCollection.findMany({
-      where: { collectedAt: { gte: since } },
+      where: { orgId, collectedAt: { gte: since } },
       select: {
         branchId: true,
         collectedAt: true,
@@ -50,7 +57,7 @@ export default async function MonthlyReport() {
       },
     }),
     prisma.chairopsWriteOff.findMany({
-      where: { makerAt: { gte: since }, status: "APPROVED" },
+      where: { orgId, makerAt: { gte: since }, status: "APPROVED" },
       select: { branchId: true, makerAt: true, amount: true },
     }),
   ]);

@@ -31,6 +31,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { resolveMall } from "@/lib/chairops/utils/mall-groups";
+import { getDepositsByDate } from "@/lib/chairops/queries/_deposits";
 
 // ----------------------------------------------------------------
 // Public types — shaped to drive the UI directly
@@ -229,24 +230,35 @@ async function buildLedger(args: {
     }
   }
 
-  // Collection events bucketed to their collectedAt day.
-  const collections = await prisma.chairopsCashCollection.findMany({
-    where: { orgId, ...branchFilter, collectedAt: { gte: since } },
-    select: {
-      collectedAt: true,
-      depositedAmount: true,
-      slipPhotoUrl: true,
-      evidencePhotoUrl: true,
-    },
-    orderBy: { collectedAt: "asc" },
-  });
-  const depByDay = new Map<string, { deposit: number; slip: string | null }>();
-  for (const c of collections) {
+  // Deposits per day — drift-engine formula (CashDeposit + bankFee + legacy
+  // CashCollection.depositedAmount where depositId IS NULL). Was reading the
+  // now-dead `CashCollection.depositedAmount` column directly, which made the
+  // ledger "ฝาก" column read 0 every day after Wave-2 even though the maid
+  // had actually deposited (CEO complaint: "sidebar −22,761 แต่ ledger 0").
+  // Slip refs are fetched separately (collection rows still carry photo
+  // pointers regardless of where the cash amount lives).
+  const [depByDayAmount, slipCollections] = await Promise.all([
+    getDepositsByDate({ orgId, branchId, since }),
+    prisma.chairopsCashCollection.findMany({
+      where: { orgId, ...branchFilter, collectedAt: { gte: since } },
+      select: {
+        collectedAt: true,
+        slipPhotoUrl: true,
+        evidencePhotoUrl: true,
+      },
+      orderBy: { collectedAt: "asc" },
+    }),
+  ]);
+  const slipByDay = new Map<string, string>();
+  for (const c of slipCollections) {
     const key = isoDay(c.collectedAt);
-    const prev = depByDay.get(key) ?? { deposit: 0, slip: null };
-    prev.deposit += c.depositedAmount;
-    prev.slip = prev.slip ?? c.slipPhotoUrl ?? c.evidencePhotoUrl ?? "slip";
-    depByDay.set(key, prev);
+    if (slipByDay.has(key)) continue;
+    const slip = c.slipPhotoUrl ?? c.evidencePhotoUrl ?? "slip";
+    slipByDay.set(key, slip);
+  }
+  const depByDay = new Map<string, { deposit: number; slip: string | null }>();
+  for (const [key, deposit] of depByDayAmount) {
+    depByDay.set(key, { deposit, slip: slipByDay.get(key) ?? "slip" });
   }
 
   // Union of all days present in either source, sorted ascending.

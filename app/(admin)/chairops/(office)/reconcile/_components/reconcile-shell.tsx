@@ -18,6 +18,7 @@ import {
   getReconcilePeriods,
   ledgerTotals,
 } from "@/lib/chairops/queries/reconcile-v2";
+import { getCumulativeShortage } from "@/lib/chairops/queries/_cumulative-shortage";
 import { ReconcileSidebar } from "./reconcile-sidebar";
 import {
   FreshnessBar,
@@ -67,9 +68,13 @@ export async function ReconcileShell({
   const safeTo = normalizeDate(to);
 
   // Sidebar + overview always load. The active tab's dataset loads on demand.
-  const [sidebar, overview, ledger, timeline, periods] = await Promise.all([
+  // cumShortage is the canonical "ค้างฝากรวม" aggregate shared with the exec
+  // home tile (CEO ruling 2026-06-02 — positive-only sum across active
+  // branches · see lib/chairops/queries/_cumulative-shortage.ts).
+  const [sidebar, overview, cumShortage, ledger, timeline, periods] = await Promise.all([
     getReconcileSidebar({ orgId }),
     getReconcileOverview({ orgId, branchId: branchId ?? undefined }),
+    getCumulativeShortage(orgId),
     view === "ledger"
       ? getReconcileLedger({
           orgId,
@@ -100,10 +105,16 @@ export async function ReconcileShell({
   })();
   const totals = view === "ledger" ? ledgerTotals(defaultedLedger) : null;
 
-  const orgCumDrift = sidebar.reduce((s, r) => s + r.cumDrift, 0);
+  // CEO 2026-06-02 (orchestra-audit CONF-05): the org-level aggregate uses
+  // the canonical "positive-only" formula (= "ค้างฝากรวม") so it matches the
+  // exec home tile exactly. Previously this used `sidebar.reduce((s,r) =>
+  // s + r.cumDrift, 0)` which is signed net — surplus branches cancelled
+  // shortage branches and the number contradicted the exec home tile.
+  // Per-row sidebar chips stay signed (a branch can still be in surplus).
+  const orgCumShortage = cumShortage.total;
   const heroLabel = isOrg
-    ? "CUMULATIVE DRIFT รวมทุกสาขา"
-    : `CUMULATIVE DRIFT · ${branchName ?? ""}`;
+    ? "ค้างฝากรวมทุกสาขา"
+    : `ค้างฝาก · ${branchName ?? ""}`;
   const recomputeHref = isOrg
     ? "/chairops/reconcile?recompute=1"
     : `${baseHref}?recompute=1`;
@@ -127,7 +138,7 @@ export async function ReconcileShell({
       <ReconcileSidebar
         rows={sidebar}
         activeBranchId={branchId}
-        orgCumDrift={orgCumDrift}
+        orgCumShortage={orgCumShortage}
         view={view}
       />
 

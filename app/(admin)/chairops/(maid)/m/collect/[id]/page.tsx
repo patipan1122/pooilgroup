@@ -30,8 +30,12 @@ export default async function MaidCollectDetailPage({ params }: Props) {
   const { id } = await params;
   const session = await requireExactRole("MAID");
 
-  const row = await prisma.chairopsCashCollection.findUnique({
-    where: { id },
+  // CEO 2026-06-02 P0 IDOR fix · scope to session org so a guessed/leaked id
+  // never renders another tenant's collection detail (which would expose
+  // branch name, maid identity, deposit slip URL).
+  const orgId = session.user.orgId;
+  const row = await prisma.chairopsCashCollection.findFirst({
+    where: { id, orgId },
     include: {
       branch: { select: { name: true } },
       // Wave-2 B2: include role so detail screen can mark "เก็บโดย CEO (แทน)" if office acted.

@@ -18,6 +18,10 @@ import { prisma } from "@/lib/prisma";
 import { ageHours, ageDays } from "@/lib/chairops/utils/format";
 import { resolveMall } from "@/lib/chairops/utils/mall-groups";
 import {
+  getDepositsByDate,
+  getDepositsByBranchAndDate,
+} from "@/lib/chairops/queries/_deposits";
+import {
   deriveStatus,
   type BranchStatus,
 } from "@/app/(admin)/chairops/dashboard/_components/status-badge";
@@ -107,7 +111,7 @@ export async function getBranchesWorkspace(args: {
 
   const since = startOfDayMinus(SERIES_DAYS);
 
-  const [branches, drifts, maidAssignments, chairCounts, collections] =
+  const [branches, drifts, maidAssignments, chairCounts, depositsByBranchAndDay] =
     await Promise.all([
       prisma.chairopsBranch.findMany({
         where: { orgId },
@@ -124,11 +128,13 @@ export async function getBranchesWorkspace(args: {
         where: { orgId, isActive: true },
         _count: { _all: true },
       }),
-      // 7-day deposit history for the sparkbar (all branches at once)
-      prisma.chairopsCashCollection.findMany({
-        where: { orgId, collectedAt: { gte: since } },
-        select: { branchId: true, depositedAmount: true, collectedAt: true },
-      }),
+      // 7-day deposit history for the sparkbar (all branches at once) — drift-
+      // engine formula so the bar reflects what actually got deposited. Was
+      // reading the now-dead `CashCollection.depositedAmount` column; every
+      // Wave-2-era collection has 0 there, so the sparkbar showed flat-empty
+      // for any branch whose maid used the new LIFF batch deposit.
+      // CEO 2026-06-02 P0 (see `_deposits.ts`).
+      getDepositsByBranchAndDate({ orgId, since }),
     ]);
 
   const driftByBranch = new Map(drifts.map((d) => [d.branchId, d]));
@@ -139,17 +145,22 @@ export async function getBranchesWorkspace(args: {
     chairCounts.map((c) => [c.branchId, c._count._all]),
   );
 
-  // Bucket deposits into per-branch 7-day arrays (index 0 = oldest day).
+  // Build a stable list of ISO day keys (oldest → newest) matching SERIES_DAYS
+  // buckets · index 0 = SERIES_DAYS-1 days ago, last index = today.
+  const dayKeys: string[] = [];
+  for (let i = SERIES_DAYS - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - i);
+    dayKeys.push(d.toISOString().slice(0, 10));
+  }
   const seriesByBranch = new Map<string, number[]>();
-  for (const c of collections) {
-    const dayIdx =
-      SERIES_DAYS -
-      1 -
-      Math.floor((Date.now() - c.collectedAt.getTime()) / 86_400_000);
-    if (dayIdx < 0 || dayIdx >= SERIES_DAYS) continue;
-    const arr = seriesByBranch.get(c.branchId) ?? new Array(SERIES_DAYS).fill(0);
-    arr[dayIdx] += c.depositedAmount;
-    seriesByBranch.set(c.branchId, arr);
+  for (const [branchId, dayMap] of depositsByBranchAndDay) {
+    const arr = new Array(SERIES_DAYS).fill(0);
+    for (let i = 0; i < dayKeys.length; i++) {
+      arr[i] = dayMap.get(dayKeys[i]) ?? 0;
+    }
+    seriesByBranch.set(branchId, arr);
   }
 
   let rows: BranchRowVM[] = branches.map((b) => {
@@ -311,7 +322,7 @@ export async function getBranchDetail(args: {
     chairs,
     openDamage,
     alerts,
-    deposits7d,
+    deposits7dByDay,
     posDaily7d,
     posLegacy7d,
   ] = await Promise.all([
@@ -338,10 +349,10 @@ export async function getBranchDetail(args: {
       orderBy: { createdAt: "desc" },
       take: 6,
     }),
-    prisma.chairopsCashCollection.findMany({
-      where: { orgId, branchId, collectedAt: { gte: since } },
-      select: { depositedAmount: true, collectedAt: true },
-    }),
+    // Drift-engine deposit formula per day for the sparkbar.
+    // Was reading the now-dead `CashCollection.depositedAmount` column
+    // directly · CEO 2026-06-02 P0 (see `_deposits.ts`).
+    getDepositsByDate({ orgId, branchId, since }),
     prisma.chairopsBranchDailyRevenue.findMany({
       where: { orgId, branchId, bizDate: { gte: since } },
       select: { cashTotal: true, bizDate: true },
@@ -370,15 +381,15 @@ export async function getBranchDetail(args: {
   });
   const mall = resolveMall(branch.mallGroup);
 
-  // 7-day series (index 0 = oldest)
-  const depSeries = new Array(SERIES_DAYS).fill(0);
-  for (const c of deposits7d) {
-    const i =
-      SERIES_DAYS -
-      1 -
-      Math.floor((Date.now() - c.collectedAt.getTime()) / 86_400_000);
-    if (i >= 0 && i < SERIES_DAYS) depSeries[i] += c.depositedAmount;
+  // 7-day series (index 0 = oldest) · keyed by ISO YMD from the helper.
+  const detailDayKeys: string[] = [];
+  for (let i = SERIES_DAYS - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - i);
+    detailDayKeys.push(d.toISOString().slice(0, 10));
   }
+  const depSeries = detailDayKeys.map((k) => deposits7dByDay.get(k) ?? 0);
   const posSeries = new Array(SERIES_DAYS).fill(0);
   // Prefer the new aggregate per-day; fall back to legacy only for days the
   // aggregate has no entry (don't double-count when both tables have a row).

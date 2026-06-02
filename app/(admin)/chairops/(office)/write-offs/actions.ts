@@ -52,8 +52,11 @@ export async function bulkApproveWriteOffsAction(formData: FormData) {
     );
   }
 
+  // CEO 2026-06-02 P0 IDOR fix · bulk approval must filter ids by the session
+  // org so the sticky bar can't be POSTed with another tenant's write-off ids.
+  const orgId = session.user.orgId;
   const rows = await prisma.chairopsWriteOff.findMany({
-    where: { id: { in: rawIds }, status: "PENDING" },
+    where: { orgId, id: { in: rawIds }, status: "PENDING" },
     select: { id: true, branchId: true, amount: true, makerId: true, status: true },
   });
 
@@ -78,14 +81,17 @@ export async function bulkApproveWriteOffsAction(formData: FormData) {
   const branchIds = new Set<string>();
   for (const wo of eligible) {
     await prisma.$transaction(async (tx) => {
-      const updated = await tx.chairopsWriteOff.update({
-        where: { id: wo.id },
+      // Composite (orgId, id) on the update — TOCTOU-safe even though the
+      // eligible[] list was already pre-filtered by orgId above.
+      const res = await tx.chairopsWriteOff.updateMany({
+        where: { id: wo.id, orgId, status: "PENDING" },
         data: {
           status: "APPROVED",
           approverId: session.user.id,
           approverAt: approvedAt,
         },
       });
+      if (res.count === 0) return;
       await writeAudit(
         {
           userId: session.user.id,
@@ -93,7 +99,7 @@ export async function bulkApproveWriteOffsAction(formData: FormData) {
           entity: "WriteOff",
           entityId: wo.id,
           oldValue: { status: "PENDING" },
-          newValue: { status: updated.status, amount: wo.amount, bulk: true },
+          newValue: { status: "APPROVED", amount: wo.amount, bulk: true },
         },
         tx,
       );

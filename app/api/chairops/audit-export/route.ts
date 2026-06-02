@@ -39,7 +39,9 @@ export async function GET(request: NextRequest) {
   const toStr = url.searchParams.get("to");
   const entity = url.searchParams.get("entity");
 
-  const where: Record<string, unknown> = {};
+  // CEO 2026-06-02 P0 multi-tenant sweep: an ADMIN in tenant A must never be
+  // able to stream tenant B's compliance audit log via this endpoint.
+  const where: Record<string, unknown> = { orgId: session.user.orgId };
   if (fromStr || toStr) {
     const range: { gte?: Date; lt?: Date } = {};
     if (fromStr) {

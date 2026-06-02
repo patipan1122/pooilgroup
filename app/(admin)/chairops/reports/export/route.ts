@@ -34,6 +34,10 @@ function fmtDate(d: Date): string {
 
 export async function GET(req: NextRequest) {
   const session = await requireRole("MANAGER");
+  // CEO 2026-06-02 P0 multi-tenant sweep: every read this route makes (branches
+  // lookup, POS daily, cash collections, write-offs) must filter by orgId so a
+  // MANAGER in tenant A can never download tenant B's revenue + drift figures.
+  const orgId = session.user.orgId;
 
   const { searchParams } = new URL(req.url);
   const defaultFrom = new Date();
@@ -46,6 +50,7 @@ export async function GET(req: NextRequest) {
   const type = (searchParams.get("type") ?? "daily") as "daily" | "monthly";
 
   const branches = await prisma.chairopsBranch.findMany({
+    where: { orgId },
     select: { id: true, name: true, slug: true, mallGroup: true },
   });
   const branchMap = new Map(branches.map((b) => [b.id, b]));
@@ -95,7 +100,7 @@ export async function GET(req: NextRequest) {
         let cursor: string | undefined = undefined;
         while (true) {
           const batch: BatchRow[] = await prisma.chairopsPosDaily.findMany({
-            where: { bizDate: { gte: from, lte: to } },
+            where: { orgId, bizDate: { gte: from, lte: to } },
             orderBy: [{ bizDate: "asc" }, { id: "asc" }],
             take: pageSize,
             ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -149,13 +154,13 @@ export async function GET(req: NextRequest) {
   // type === "monthly" — small enough to build in-memory (1 row per branch per month)
   const [posDaily, collections, writeOffs] = await Promise.all([
     prisma.chairopsPosDaily.findMany({
-      where: { bizDate: { gte: from, lte: to } },
+      where: { orgId, bizDate: { gte: from, lte: to } },
       select: { branchId: true, bizDate: true, grossTotal: true },
     }),
     // Wave-2 audit P0 #6: deposits live on chairops_cash_deposit · include
     // it so monthly CSV "ฝาก" column reflects what actually landed at bank.
     prisma.chairopsCashCollection.findMany({
-      where: { collectedAt: { gte: from, lte: to } },
+      where: { orgId, collectedAt: { gte: from, lte: to } },
       select: {
         branchId: true,
         collectedAt: true,
@@ -164,7 +169,7 @@ export async function GET(req: NextRequest) {
       },
     }),
     prisma.chairopsWriteOff.findMany({
-      where: { makerAt: { gte: from, lte: to }, status: "APPROVED" },
+      where: { orgId, makerAt: { gte: from, lte: to }, status: "APPROVED" },
       select: { branchId: true, makerAt: true, amount: true },
     }),
   ]);

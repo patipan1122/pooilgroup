@@ -14,9 +14,15 @@ export async function ackAlertAction(formData: FormData) {
   const session = await requireRole("OFFICE");
   const id = String(formData.get("alertId") ?? "");
   if (!id) redirect("/chairops/alerts?error=missing-id");
-  // Wave-0 fix: ack + audit atomic
+  // CEO 2026-06-02 P0 IDOR fix · ackAlert now requires orgId; the resulting
+  // updateMany returns count=0 when the id belongs to a different tenant so
+  // we surface a 404-style error rather than silently audit-logging nothing.
+  const orgId = session.user.orgId;
+  let touched = 0;
   await prisma.$transaction(async (tx) => {
-    await ackAlert(id, session.user.id, tx);
+    const res = await ackAlert(id, session.user.id, orgId, tx);
+    touched = res.count;
+    if (touched === 0) return;
     await writeAudit(
       {
         userId: session.user.id,
@@ -27,6 +33,7 @@ export async function ackAlertAction(formData: FormData) {
       tx,
     );
   });
+  if (touched === 0) redirect("/chairops/alerts?error=not-found");
   revalidatePath("/chairops/alerts");
   redirect("/chairops/alerts?acked=" + id);
 }
@@ -35,9 +42,13 @@ export async function resolveAlertAction(formData: FormData) {
   const session = await requireRole("OFFICE");
   const id = String(formData.get("alertId") ?? "");
   if (!id) redirect("/chairops/alerts?error=missing-id");
-  // Wave-0 fix: resolve + audit atomic
+  // CEO 2026-06-02 P0 IDOR fix · see ackAlertAction note.
+  const orgId = session.user.orgId;
+  let touched = 0;
   await prisma.$transaction(async (tx) => {
-    await resolveAlert(id, session.user.id, tx);
+    const res = await resolveAlert(id, session.user.id, orgId, tx);
+    touched = res.count;
+    if (touched === 0) return;
     await writeAudit(
       {
         userId: session.user.id,
@@ -48,6 +59,7 @@ export async function resolveAlertAction(formData: FormData) {
       tx,
     );
   });
+  if (touched === 0) redirect("/chairops/alerts?error=not-found");
   revalidatePath("/chairops/alerts");
   redirect("/chairops/alerts?resolved=" + id);
 }
@@ -59,9 +71,15 @@ export async function bulkAckAlertsAction(formData: FormData) {
   const rawIds = formData.getAll("alertIds[]").map((v) => String(v)).filter(Boolean);
   if (rawIds.length === 0) redirect("/chairops/alerts?error=no-selection");
 
+  // CEO 2026-06-02 P0 IDOR fix · ack each id with the session org · count rows
+  // actually touched so a cross-tenant id silently misses (count=0) instead
+  // of being audit-logged as a successful op.
+  const orgId = session.user.orgId;
+  let touched = 0;
   await prisma.$transaction(async (tx) => {
     for (const id of rawIds) {
-      await ackAlert(id, session.user.id, tx);
+      const res = await ackAlert(id, session.user.id, orgId, tx);
+      touched += res.count;
     }
     await writeAudit(
       {
@@ -69,13 +87,13 @@ export async function bulkAckAlertsAction(formData: FormData) {
         action: "alert.bulk_ack",
         entity: "Alert",
         entityId: rawIds[0] ?? "bulk",
-        metadata: { count: rawIds.length, ids: rawIds },
+        metadata: { count: rawIds.length, touched, ids: rawIds },
       },
       tx,
     );
   });
   revalidatePath("/chairops/alerts");
-  redirect(`/chairops/alerts?acked=bulk:${rawIds.length}`);
+  redirect(`/chairops/alerts?acked=bulk:${touched}`);
 }
 
 // Bulk resolve — same pattern, optional `reason` text.
@@ -85,9 +103,13 @@ export async function bulkResolveAlertsAction(formData: FormData) {
   const reason = String(formData.get("reason") ?? "").trim();
   if (rawIds.length === 0) redirect("/chairops/alerts?error=no-selection");
 
+  // CEO 2026-06-02 P0 IDOR fix · see bulkAckAlertsAction note.
+  const orgId = session.user.orgId;
+  let touched = 0;
   await prisma.$transaction(async (tx) => {
     for (const id of rawIds) {
-      await resolveAlert(id, session.user.id, tx);
+      const res = await resolveAlert(id, session.user.id, orgId, tx);
+      touched += res.count;
     }
     await writeAudit(
       {
@@ -95,13 +117,13 @@ export async function bulkResolveAlertsAction(formData: FormData) {
         action: "alert.bulk_resolve",
         entity: "Alert",
         entityId: rawIds[0] ?? "bulk",
-        metadata: { count: rawIds.length, ids: rawIds, reason: reason || null },
+        metadata: { count: rawIds.length, touched, ids: rawIds, reason: reason || null },
       },
       tx,
     );
   });
   revalidatePath("/chairops/alerts");
-  redirect(`/chairops/alerts?resolved=bulk:${rawIds.length}`);
+  redirect(`/chairops/alerts?resolved=bulk:${touched}`);
 }
 
 // LINE Notify per-event toggle stub.

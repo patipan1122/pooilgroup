@@ -399,7 +399,7 @@ export default async function ExecDashboardPage({
             </span>
             <span className="text-zinc-500">
               {" "}
-              · drift รวมวันนี้ {driftSigned}
+              · ค้างฝากรวม {driftSigned}
             </span>
           </span>
           <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700">

@@ -24,6 +24,8 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { getDashboardRows } from "@/lib/chairops/reconcile/drift-engine";
+import { getCumulativeShortage } from "@/lib/chairops/queries/_cumulative-shortage";
+import { getDepositsInRange } from "@/lib/chairops/queries/_deposits";
 import {
   ChairopsAlertLevel,
   ChairopsAlertStatus,
@@ -32,17 +34,47 @@ import {
 // Maid cash cut-off (mockup: "ตัด cut-off 17:00").
 export const MAID_CUTOFF_HOUR = 17;
 
-// Bangkok day boundary helper — naive local midnight (matches legacy dashboard).
-function startOfToday(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
+// ----------------------------------------------------------------
+// Bangkok day boundaries (Asia/Bangkok = UTC+7, no DST).
+//
+// CEO reads dashboard every morning before 7am BKK. Naive `new Date()
+// .setHours(0,0,0,0)` on a UTC server (Vercel default) returns UTC midnight,
+// which between BKK 00:00–07:00 sits in YESTERDAY's BKK calendar day → the
+// "วันนี้" tiles show yesterday-BKK data. Fix: compute the BKK calendar date
+// via Intl, then materialize two flavors:
+//   • `bangkokStartOfToday()`  → UTC INSTANT when BKK wall clock hit 00:00
+//     (used for timestamp columns like collectedAt / createdAt / uploadedAt).
+//   • `bangkokDateOfToday()`   → UTC midnight of the BKK calendar date
+//     (used for `@db.Date` columns like bizDate, where Prisma compares the
+//     UTC date portion of the parameter).
+// ----------------------------------------------------------------
+function bangkokYmd(d: Date): string {
+  // Returns "YYYY-MM-DD" in Asia/Bangkok regardless of server TZ.
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return fmt.format(d); // en-CA gives ISO YYYY-MM-DD
 }
 
-function startOfDaysAgo(days: number): Date {
-  const d = startOfToday();
-  d.setDate(d.getDate() - days);
-  return d;
+/** UTC instant of "today 00:00 Asia/Bangkok". Use for timestamp columns. */
+function bangkokStartOfToday(): Date {
+  const ymd = bangkokYmd(new Date());
+  return new Date(`${ymd}T00:00:00+07:00`);
+}
+
+/** UTC midnight of today's BKK calendar date. Use for `@db.Date` columns. */
+function bangkokDateOfToday(): Date {
+  const ymd = bangkokYmd(new Date());
+  return new Date(`${ymd}T00:00:00Z`);
+}
+
+/** UTC midnight of (today_BKK − n days). Use for `@db.Date` columns. */
+function bangkokDateOfDaysAgo(days: number): Date {
+  const base = bangkokDateOfToday();
+  return new Date(base.getTime() - days * 86_400_000);
 }
 
 function decToNum(d: { toNumber: () => number } | number | null | undefined): number {
@@ -80,41 +112,46 @@ export interface ExecHomeKpis {
 export const getExecHomeKpis = cache(async function getExecHomeKpis(
   orgId: string,
 ): Promise<ExecHomeKpis> {
-  const today = startOfToday();
-  const sevenDaysAgo = startOfDaysAgo(7);
-  const thirtyDaysAgo = startOfDaysAgo(30);
-  const sixtyDaysAgo = startOfDaysAgo(60);
+  // Timestamps → UTC instant of BKK 00:00 today.
+  const tsToday = bangkokStartOfToday();
+  // `@db.Date` columns → UTC midnight of BKK calendar date.
+  const dToday = bangkokDateOfToday();
+  const d7Ago = bangkokDateOfDaysAgo(7);
+  const d30Ago = bangkokDateOfDaysAgo(30);
+  const d60Ago = bangkokDateOfDaysAgo(60);
 
   const [
     rows,
+    cumShortage,
     posTodayAgg,
     posTrailing7Agg,
-    depositAgg,
-    depositedBranches,
+    depositsTodayByBranch,
     criticalAlertCount,
     pos30Agg,
     posPrior30Agg,
   ] = await Promise.all([
     getDashboardRows(orgId),
+    // Canonical "ค้างฝากรวม" — positive-only sum across active branches.
+    // Single source of truth shared with reconcile-shell hero + sidebar org row.
+    // See lib/chairops/queries/_cumulative-shortage.ts (CEO ruling 2026-06-02).
+    getCumulativeShortage(orgId),
     // Today's POS gross (cash + online) for the org.
     prisma.chairopsPosDaily.aggregate({
-      where: { orgId, bizDate: { gte: today } },
+      where: { orgId, bizDate: { gte: dToday } },
       _sum: { grossTotal: true },
     }),
     // Trailing 7 days (excluding today) → average daily.
     prisma.chairopsPosDaily.aggregate({
-      where: { orgId, bizDate: { gte: sevenDaysAgo, lt: today } },
+      where: { orgId, bizDate: { gte: d7Ago, lt: dToday } },
       _sum: { grossTotal: true },
     }),
-    prisma.chairopsCashCollection.aggregate({
-      where: { orgId, collectedAt: { gte: today } },
-      _sum: { depositedAmount: true },
-    }),
-    prisma.chairopsCashCollection.findMany({
-      where: { orgId, collectedAt: { gte: today } },
-      select: { branchId: true },
-      distinct: ["branchId"],
-    }),
+    // Per-branch deposit totals today — drift-engine formula (CashDeposit +
+    // bankFee + legacy CashCollection.depositedAmount where depositId IS NULL).
+    // Was reading the now-dead `CashCollection.depositedAmount` column (always
+    // 0 after Wave-2) which made the "ฝากแม่บ้านวันนี้" KPI + "X/30 สาขาส่ง
+    // แล้ว" count drop to 0 once the maid LIFF stopped writing it. See
+    // `_deposits.ts` for the canonical helper (CEO 2026-06-02 P0).
+    getDepositsInRange({ orgId, since: tsToday }),
     prisma.chairopsAlert.count({
       where: {
         orgId,
@@ -123,33 +160,37 @@ export const getExecHomeKpis = cache(async function getExecHomeKpis(
       },
     }),
     prisma.chairopsPosDaily.aggregate({
-      where: { orgId, bizDate: { gte: thirtyDaysAgo } },
+      where: { orgId, bizDate: { gte: d30Ago } },
       _sum: { grossTotal: true },
     }),
     prisma.chairopsPosDaily.aggregate({
-      where: { orgId, bizDate: { gte: sixtyDaysAgo, lt: thirtyDaysAgo } },
+      where: { orgId, bizDate: { gte: d60Ago, lt: d30Ago } },
       _sum: { grossTotal: true },
     }),
   ]);
 
   const activeRows = rows.filter((r) => r.isActive);
+  // "Critical" subset = positive drift AND ≥24h old (mockup gating). Aggregate
+  // KPI tile uses the canonical helper (any positive drift, no age gate) so
+  // it matches reconcile-shell hero + sidebar org row exactly.
   const shortageBranchCount = activeRows.filter(
     (r) => r.driftAmount > 0 && r.driftHours >= 24,
   ).length;
-  const cumulativeDriftTotal = activeRows.reduce(
-    (sum, r) => sum + (r.driftAmount > 0 ? r.driftAmount : 0),
-    0,
-  );
+  const cumulativeDriftTotal = cumShortage.total;
   const shortageBranchDays = activeRows.reduce(
     (sum, r) => sum + (r.driftAmount > 0 ? Math.floor(r.driftHours / 24) : 0),
     0,
   );
 
   // Missed maids = active branches that have NOT deposited today.
-  const depositedSet = new Set(depositedBranches.map((b) => b.branchId));
+  // depositsTodayByBranch only contains branches with > 0 baht today (helper
+  // omits zero entries) so `.has(branchId)` == "has deposited today".
+  const depositedSet = new Set(depositsTodayByBranch.keys());
   const missedMaidCount = activeRows.filter(
     (r) => !depositedSet.has(r.branchId),
   ).length;
+  let todayDepositTotal = 0;
+  for (const amt of depositsTodayByBranch.values()) todayDepositTotal += amt;
 
   const todayPosRevenue = decToNum(posTodayAgg._sum?.grossTotal);
   const trailing7Total = decToNum(posTrailing7Agg._sum?.grossTotal);
@@ -192,8 +233,8 @@ export const getExecHomeKpis = cache(async function getExecHomeKpis(
   return {
     todayPosRevenue,
     posDeltaPct,
-    todayDepositTotal: depositAgg._sum?.depositedAmount ?? 0,
-    depositedBranchCount: depositedBranches.length,
+    todayDepositTotal,
+    depositedBranchCount: depositedSet.size,
     cumulativeDriftTotal,
     shortageBranchDays,
     shortageBranchCount,
@@ -254,10 +295,13 @@ export const getCriticalBranches = cache(async function getCriticalBranches(
   if (top.length === 0) return [];
 
   const branchIds = top.map((r) => r.branchId);
-  const today = startOfToday();
-  const sevenDaysAgo = startOfDaysAgo(6); // 7 buckets incl. today
+  // bizDate is `@db.Date` → use UTC-midnight of BKK calendar date.
+  // collectedAt is a timestamp → use UTC instant of BKK 00:00.
+  const dToday = bangkokDateOfToday();
+  const tsToday = bangkokStartOfToday();
+  const d6Ago = bangkokDateOfDaysAgo(6); // 7 buckets incl. today
 
-  const [maids, posTodayRows, depositTodayRows, posSeriesRows] =
+  const [maids, posTodayRows, depositTodayByBranch, posSeriesRows] =
     await Promise.all([
       // 1 maid : 1 branch (primaryBranchId) per [[chairops-maid-one-per-branch-collect-only]]
       prisma.chairopsUser.findMany({
@@ -270,24 +314,22 @@ export const getCriticalBranches = cache(async function getCriticalBranches(
       }),
       prisma.chairopsPosDaily.groupBy({
         by: ["branchId"],
-        where: { orgId, branchId: { in: branchIds }, bizDate: { gte: today } },
+        where: { orgId, branchId: { in: branchIds }, bizDate: { gte: dToday } },
         _sum: { grossTotal: true },
       }),
-      prisma.chairopsCashCollection.groupBy({
-        by: ["branchId"],
-        where: {
-          orgId,
-          branchId: { in: branchIds },
-          collectedAt: { gte: today },
-        },
-        _sum: { depositedAmount: true },
-      }),
+      // Canonical drift-engine deposit formula (CashDeposit + bankFee + legacy
+      // CashCollection.depositedAmount where depositId IS NULL). Previously
+      // groupBy on `CashCollection.depositedAmount` returned 0 for every
+      // branch after Wave-2 because the maid LIFF stopped writing that
+      // column — so the dashboard table's "ฝาก" cell read ฿0 next to a real
+      // drift. See `_deposits.ts` (CEO 2026-06-02 P0).
+      getDepositsInRange({ orgId, branchIds, since: tsToday }),
       prisma.chairopsPosDaily.groupBy({
         by: ["branchId", "bizDate"],
         where: {
           orgId,
           branchId: { in: branchIds },
-          bizDate: { gte: sevenDaysAgo },
+          bizDate: { gte: d6Ago },
         },
         _sum: { grossTotal: true },
       }),
@@ -301,14 +343,14 @@ export const getCriticalBranches = cache(async function getCriticalBranches(
   const posTodayByBranch = new Map(
     posTodayRows.map((r) => [r.branchId, decToNum(r._sum?.grossTotal)]),
   );
-  const depositTodayByBranch = new Map(
-    depositTodayRows.map((r) => [r.branchId, r._sum?.depositedAmount ?? 0]),
-  );
 
-  // Build 7-day buckets (oldest → newest) keyed by ISO date.
+  // Build 7-day buckets (oldest → newest) keyed by BKK calendar date string.
+  // `bangkokDateOfDaysAgo(i)` is UTC midnight of that BKK calendar date, so
+  // `.toISOString().slice(0,10)` is the BKK YMD — matching how Prisma surfaces
+  // `bizDate` (`@db.Date`) values below.
   const dayKeys: string[] = [];
   for (let i = 6; i >= 0; i--) {
-    dayKeys.push(startOfDaysAgo(i).toISOString().slice(0, 10));
+    dayKeys.push(bangkokDateOfDaysAgo(i).toISOString().slice(0, 10));
   }
   const seriesByBranch = new Map<string, Map<string, number>>();
   for (const r of posSeriesRows) {
@@ -360,14 +402,19 @@ export const getMissedMaidsToday = cache(async function getMissedMaidsToday(
   const take = opts.take ?? 5;
   const rows = await getDashboardRows(orgId);
   const active = rows.filter((r) => r.isActive);
-  const today = startOfToday();
+  // collectedAt is a timestamp; bizDate is `@db.Date` → two flavors needed.
+  const tsToday = bangkokStartOfToday();
+  const dToday = bangkokDateOfToday();
 
-  const depositedBranches = await prisma.chairopsCashCollection.findMany({
-    where: { orgId, collectedAt: { gte: today } },
-    select: { branchId: true },
-    distinct: ["branchId"],
+  // "Deposited today?" via canonical drift-engine formula. Previously the
+  // dead `CashCollection.depositedAmount` column made every maid look
+  // "missed" once the LIFF stopped writing that column (Wave-2). See
+  // `_deposits.ts` (CEO 2026-06-02 P0).
+  const depositsTodayByBranch = await getDepositsInRange({
+    orgId,
+    since: tsToday,
   });
-  const depositedSet = new Set(depositedBranches.map((b) => b.branchId));
+  const depositedSet = new Set(depositsTodayByBranch.keys());
 
   // Missed = active + no deposit today · worst drift first.
   const missed = active
@@ -384,7 +431,7 @@ export const getMissedMaidsToday = cache(async function getMissedMaidsToday(
     }),
     prisma.chairopsPosDaily.groupBy({
       by: ["branchId"],
-      where: { orgId, branchId: { in: branchIds }, bizDate: { gte: today } },
+      where: { orgId, branchId: { in: branchIds }, bizDate: { gte: dToday } },
       _sum: { grossTotal: true },
     }),
   ]);
@@ -445,7 +492,8 @@ export interface SystemStatus {
 export const getSystemStatus = cache(async function getSystemStatus(
   orgId: string,
 ): Promise<SystemStatus> {
-  const today = startOfToday();
+  // uploadedAt + createdAt are timestamps → UTC instant of BKK 00:00.
+  const tsToday = bangkokStartOfToday();
   const [lastImport, importsToday, eventsToday] = await Promise.all([
     prisma.chairopsPosImport.findFirst({
       where: { orgId, committed: true },
@@ -453,10 +501,10 @@ export const getSystemStatus = cache(async function getSystemStatus(
       select: { uploadedAt: true },
     }),
     prisma.chairopsPosImport.count({
-      where: { orgId, uploadedAt: { gte: today } },
+      where: { orgId, uploadedAt: { gte: tsToday } },
     }),
     prisma.chairopsAuditLog.count({
-      where: { orgId, createdAt: { gte: today } },
+      where: { orgId, createdAt: { gte: tsToday } },
     }),
   ]);
   return {

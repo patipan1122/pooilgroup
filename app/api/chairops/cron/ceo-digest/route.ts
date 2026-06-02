@@ -7,7 +7,7 @@
 // alert on failure. Daily cron → default idempotency (one success per day) OK.
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendLineNotify } from "@/lib/chairops/line/notify";
+import { notifyChannel } from "@/lib/chairops/line/messaging";
 import { baht, thaiDate, TZ } from "@/lib/chairops/utils/format";
 import { ChairopsAlertKind, ChairopsAlertLevel, ChairopsAlertStatus, ChairopsTicketStatus } from "@/lib/generated/prisma/enums";
 import { requireCronSecret } from "@/lib/chairops/auth/cron-secret";
@@ -128,12 +128,12 @@ async function ceoDigestHandler(): Promise<NextResponse> {
   lines.push(`🔧 ใบซ่อมค้าง: ${openDamage} (ด่วน ${urgentDamage})`);
 
   const message = lines.join("\n");
-  const send = await sendLineNotify("ceo", message);
+  const send = await notifyChannel("ceo", message);
 
   return NextResponse.json({
     ok: true,
     sent: send.ok,
-    lineStatus: send.status ?? null,
+    lineVia: send.via ?? null,
     lineError: send.error ?? null,
     digest: {
       posTotal,

@@ -35,15 +35,24 @@ export async function disputeCollection(formData: FormData) {
     redirect(`/chairops/reconcile?error=${encodeURIComponent(parsed.error.issues[0].message)}`);
   }
   const { collectionId, reason } = parsed.data;
-  const c = await prisma.chairopsCashCollection.findUnique({ where: { id: collectionId } });
+  // CEO 2026-06-02 P0 IDOR fix · scope lookup + update to the session org so
+  // a forged collectionId from another tenant can never be disputed (and so
+  // the redirect doesn't leak a foreign branchId either).
+  const orgId = session.user.orgId;
+  const c = await prisma.chairopsCashCollection.findFirst({
+    where: { id: collectionId, orgId },
+  });
   if (!c) redirect(`/reconcile?error=${encodeURIComponent("ไม่พบรายการ")}`);
 
   // We don't have a "disputed" column in schema; we use notes + audit.
   // Wave-0 fix: note update + audit atomic
   const stampedNote = `[dispute ${new Date().toISOString()} by ${session.user.displayName}] ${reason}`;
   await prisma.$transaction(async (tx) => {
-    const updated = await tx.chairopsCashCollection.update({
-      where: { id: collectionId },
+    // updateMany w/ composite (orgId, id) — IDOR-safe even though we already
+    // re-checked above; defense-in-depth against TOCTOU between findFirst
+    // and update.
+    await tx.chairopsCashCollection.updateMany({
+      where: { id: collectionId, orgId },
       data: { notes: c!.notes ? `${c!.notes}\n${stampedNote}` : stampedNote },
     });
     await writeAudit(
@@ -53,7 +62,7 @@ export async function disputeCollection(formData: FormData) {
         entity: "CashCollection",
         entityId: collectionId,
         oldValue: { notes: c!.notes },
-        newValue: { notes: updated.notes, reason },
+        newValue: { notes: `${c!.notes ?? ""}\n${stampedNote}`, reason },
       },
       tx,
     );
@@ -84,11 +93,12 @@ export async function requestWriteOff(formData: FormData) {
     );
   }
   const { branchId, amount, reason } = parsed.data;
-  // W0: pull orgId from the branch so both write-off + alert + audit stamp
-  // the correct tenant. session.user.orgId would work too but reading from
-  // the branch row guards against a stale session pointing at the wrong org.
-  const branch = await prisma.chairopsBranch.findUnique({
-    where: { id: branchId },
+  // CEO 2026-06-02 P0 IDOR fix · branch must belong to the session org. The
+  // previous lookup keyed on id alone allowed a forged branchId from another
+  // tenant to land a PENDING write-off + alert against tenant B's branch.
+  const sessionOrgId = session.user.orgId;
+  const branch = await prisma.chairopsBranch.findFirst({
+    where: { id: branchId, orgId: sessionOrgId },
     select: { id: true, name: true, orgId: true },
   });
   if (!branch) redirect(`/reconcile?error=${encodeURIComponent("ไม่พบสาขา")}`);
@@ -144,7 +154,13 @@ export async function approveWriteOff(formData: FormData) {
   const session = await requireRole("OFFICE"); // hierarchy enforced via canWriteOff below
   const writeOffId = String(formData.get("writeOffId") ?? "");
   if (!writeOffId) redirect(`/write-offs?error=${encodeURIComponent("missing id")}`);
-  const wo = await prisma.chairopsWriteOff.findUnique({ where: { id: writeOffId } });
+  // CEO 2026-06-02 P0 IDOR fix · approving a write-off must be scoped to the
+  // session org so a forged id cannot APPROVE another tenant's pending write
+  // (which would also fool that tenant's drift engine).
+  const orgId = session.user.orgId;
+  const wo = await prisma.chairopsWriteOff.findFirst({
+    where: { id: writeOffId, orgId },
+  });
   if (!wo) redirect(`/write-offs?error=${encodeURIComponent("ไม่พบรายการ")}`);
   if (wo.status !== "PENDING") redirect(`/write-offs?error=${encodeURIComponent("รายการนี้ปิดไปแล้ว")}`);
 
@@ -160,16 +176,20 @@ export async function approveWriteOff(formData: FormData) {
     redirect(`/write-offs?error=${encodeURIComponent("ห้ามอนุมัติ write-off ที่ตัวเองขอ (maker/checker)")}`);
   }
 
-  // Wave-0 fix: approve + audit atomic
+  // Wave-0 fix: approve + audit atomic. CEO 2026-06-02 P0 IDOR fix: composite
+  // (orgId, id) on the update guards against TOCTOU as well.
+  let touched = 0;
   await prisma.$transaction(async (tx) => {
-    const updated = await tx.chairopsWriteOff.update({
-      where: { id: writeOffId },
+    const res = await tx.chairopsWriteOff.updateMany({
+      where: { id: writeOffId, orgId },
       data: {
         status: "APPROVED",
         approverId: session.user.id,
         approverAt: new Date(),
       },
     });
+    touched = res.count;
+    if (touched === 0) return;
 
     // Note: WRITE_OFF_REQUESTED alerts are resolved manually on /alerts (we don't
     // do JSON-path filtering here to keep the action lean + Prisma-version-safe).
@@ -181,11 +201,12 @@ export async function approveWriteOff(formData: FormData) {
         entity: "WriteOff",
         entityId: writeOffId,
         oldValue: { status: wo.status },
-        newValue: { status: updated.status, amount: wo.amount },
+        newValue: { status: "APPROVED", amount: wo.amount },
       },
       tx,
     );
   });
+  if (touched === 0) redirect(`/chairops/write-offs?error=${encodeURIComponent("ไม่พบรายการ")}`);
 
   // Drift is computed from POS − deposits. Write-offs are tracked but do NOT
   // adjust the deposit total automatically (CEO discretion in v0.2). Still
@@ -207,7 +228,11 @@ export async function rejectWriteOff(formData: FormData) {
   if (!writeOffId) redirect(`/write-offs?error=${encodeURIComponent("missing id")}`);
   if (reason.length < 3) redirect(`/write-offs?error=${encodeURIComponent("เหตุผลสั้นเกินไป")}`);
 
-  const wo = await prisma.chairopsWriteOff.findUnique({ where: { id: writeOffId } });
+  // CEO 2026-06-02 P0 IDOR fix · see approveWriteOff note.
+  const orgId = session.user.orgId;
+  const wo = await prisma.chairopsWriteOff.findFirst({
+    where: { id: writeOffId, orgId },
+  });
   if (!wo) redirect(`/write-offs?error=${encodeURIComponent("ไม่พบรายการ")}`);
   if (wo.status !== "PENDING") redirect(`/write-offs?error=${encodeURIComponent("ปิดไปแล้ว")}`);
   if (!canWriteOff(session.user, wo.amount)) {
@@ -218,10 +243,12 @@ export async function rejectWriteOff(formData: FormData) {
     );
   }
 
-  // Wave-0 fix: reject + audit atomic
+  // Wave-0 fix: reject + audit atomic. CEO 2026-06-02 P0 IDOR fix: composite
+  // (orgId, id) on the update.
+  let touched = 0;
   await prisma.$transaction(async (tx) => {
-    const updated = await tx.chairopsWriteOff.update({
-      where: { id: writeOffId },
+    const res = await tx.chairopsWriteOff.updateMany({
+      where: { id: writeOffId, orgId },
       data: {
         status: "REJECTED",
         approverId: session.user.id,
@@ -229,6 +256,8 @@ export async function rejectWriteOff(formData: FormData) {
         notes: reason,
       },
     });
+    touched = res.count;
+    if (touched === 0) return;
 
     await writeAudit(
       {
@@ -237,11 +266,12 @@ export async function rejectWriteOff(formData: FormData) {
         entity: "WriteOff",
         entityId: writeOffId,
         oldValue: { status: wo.status },
-        newValue: { status: updated.status, reason },
+        newValue: { status: "REJECTED", reason },
       },
       tx,
     );
   });
+  if (touched === 0) redirect(`/chairops/write-offs?error=${encodeURIComponent("ไม่พบรายการ")}`);
 
   revalidatePath("/chairops/write-offs");
   revalidatePath(`/chairops/reconcile/${wo.branchId}`);

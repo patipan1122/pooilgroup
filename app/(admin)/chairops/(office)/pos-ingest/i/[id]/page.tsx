@@ -52,11 +52,17 @@ export default async function PosPreviewPage({
   const { id } = await params;
   const sp = await searchParams;
 
-  const imp = await prisma.chairopsPosImport.findUnique({ where: { id } });
+  // CEO 2026-06-02 P0 IDOR fix · scope to session org so the preview page can
+  // never render another tenant's diffSummary (which leaks branches, chairs,
+  // and revenue per row).
+  const orgId = session.user.orgId;
+  const imp = await prisma.chairopsPosImport.findFirst({
+    where: { id, orgId },
+  });
   if (!imp) notFound();
 
-  const uploader = await prisma.chairopsUser.findUnique({
-    where: { id: imp.uploadedById },
+  const uploader = await prisma.chairopsUser.findFirst({
+    where: { id: imp.uploadedById, orgId },
     select: { id: true, displayName: true, role: true },
   });
 
