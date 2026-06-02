@@ -18,8 +18,21 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const branchId = url.searchParams.get("branchId") ?? undefined;
+  // CEO 2026-06-02: forward the screen's ?from/?to so the exported CSV
+  // matches what the user sees, not the last 365 days regardless of filter.
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const rawFrom = url.searchParams.get("from");
+  const rawTo = url.searchParams.get("to");
+  const from = rawFrom && DATE_RE.test(rawFrom) ? rawFrom : undefined;
+  const to = rawTo && DATE_RE.test(rawTo) ? rawTo : undefined;
 
-  const ledger = await getReconcileLedger({ orgId, branchId, take: 365 });
+  const ledger = await getReconcileLedger({
+    orgId,
+    branchId,
+    take: 365,
+    from,
+    to,
+  });
 
   const header = csvRow([
     "date",

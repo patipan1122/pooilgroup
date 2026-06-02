@@ -860,7 +860,7 @@ function CashflowChart({ pos, deposit }: { pos: number[]; deposit: number[] }) {
 
 // ---------- Timeline tab ----------
 async function TimelineTab({ branchId, orgId }: { branchId: string; orgId: string }) {
-  const [collections, posDaily] = await Promise.all([
+  const [collections, posDaily, posLegacy] = await Promise.all([
     // Wave-2 audit P0 #6: include linked deposit so "เก็บเงิน X" reflects
     // the new cash_deposits row (legacy depositedAmount column = 0 for new
     // collections). counted/deposit shown distinctly: counted = what maid
@@ -879,6 +879,17 @@ async function TimelineTab({ branchId, orgId }: { branchId: string; orgId: strin
       where: { orgId, branchId },
       orderBy: { bizDate: "desc" },
       take: 30,
+    }),
+    // CEO 2026-06-02 same-pattern sweep: branches with only legacy POS rows
+    // (central โคราช cluster) would render a Timeline with no "POS" markers
+    // even though the engine clearly counts their drift. Fall back so every
+    // surface tells the same story.
+    prisma.chairopsPosDaily.groupBy({
+      by: ["bizDate"],
+      where: { orgId, branchId },
+      orderBy: { bizDate: "desc" },
+      take: 30,
+      _sum: { cashTotal: true },
     }),
   ]);
 
@@ -912,6 +923,24 @@ async function TimelineTab({ branchId, orgId }: { branchId: string; orgId: strin
       title: `POS ${baht(Number(p.cashTotal))} (เงินสด)`,
       sub: "นำเข้าจากไฟล์ StarThing",
     })),
+    // Same fallback rule as branches-workspace 7-day series: only include a
+    // legacy row when the new aggregate has nothing for that bizDate; else
+    // the Timeline would show two entries for the same day.
+    ...(() => {
+      const aggDates = new Set(
+        posDaily.map((p) => p.bizDate.toISOString().slice(0, 10)),
+      );
+      return posLegacy
+        .filter(
+          (p) => !aggDates.has(p.bizDate.toISOString().slice(0, 10)),
+        )
+        .map((p) => ({
+          at: p.bizDate,
+          tone: "var(--text-muted)",
+          title: `POS ${baht(Number(p._sum.cashTotal ?? 0))} (เงินสด · legacy)`,
+          sub: "นำเข้าจาก StarThing (ไฟล์เดิม)",
+        }));
+    })(),
   ]
     .sort((a, b) => b.at.getTime() - a.at.getTime())
     .slice(0, 42);

@@ -313,6 +313,7 @@ export async function getBranchDetail(args: {
     alerts,
     deposits7d,
     posDaily7d,
+    posLegacy7d,
   ] = await Promise.all([
     prisma.chairopsDrift.findFirst({ where: { orgId, branchId } }),
     prisma.chairopsMaidAssignment.findFirst({
@@ -345,6 +346,16 @@ export async function getBranchDetail(args: {
       where: { orgId, branchId, bizDate: { gte: since } },
       select: { cashTotal: true, bizDate: true },
     }),
+    // CEO 2026-06-02 P0 same-pattern sweep: branches whose POS only ever
+    // landed in chairops_pos_daily (central โคราช etc.) MUST appear in the
+    // 7-day cash sparkbar too — else the workspace renders a flat empty
+    // sparkbar while the engine drift shows a real shortage. Same fallback
+    // shape as drift-engine + reconcile-v2 + dashboard-pl.
+    prisma.chairopsPosDaily.groupBy({
+      by: ["bizDate"],
+      where: { orgId, branchId, bizDate: { gte: since } },
+      _sum: { cashTotal: true },
+    }),
   ]);
 
   const driftAmount = drift?.driftAmount ?? 0;
@@ -369,12 +380,26 @@ export async function getBranchDetail(args: {
     if (i >= 0 && i < SERIES_DAYS) depSeries[i] += c.depositedAmount;
   }
   const posSeries = new Array(SERIES_DAYS).fill(0);
+  // Prefer the new aggregate per-day; fall back to legacy only for days the
+  // aggregate has no entry (don't double-count when both tables have a row).
+  const aggDates = new Set(
+    posDaily7d.map((p) => p.bizDate.toISOString().slice(0, 10)),
+  );
   for (const p of posDaily7d) {
     const i =
       SERIES_DAYS -
       1 -
       Math.floor((Date.now() - p.bizDate.getTime()) / 86_400_000);
     if (i >= 0 && i < SERIES_DAYS) posSeries[i] += Number(p.cashTotal);
+  }
+  for (const p of posLegacy7d) {
+    const key = p.bizDate.toISOString().slice(0, 10);
+    if (aggDates.has(key)) continue;
+    const i =
+      SERIES_DAYS -
+      1 -
+      Math.floor((Date.now() - p.bizDate.getTime()) / 86_400_000);
+    if (i >= 0 && i < SERIES_DAYS) posSeries[i] += Number(p._sum.cashTotal ?? 0);
   }
 
   const damagedChairIds = new Set(

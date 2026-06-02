@@ -107,9 +107,20 @@ export async function ReconcileShell({
   const recomputeHref = isOrg
     ? "/chairops/reconcile?recompute=1"
     : `${baseHref}?recompute=1`;
-  const exportHref = isOrg
-    ? "/chairops/reconcile/export"
-    : `/chairops/reconcile/export?branchId=${branchId}`;
+  // CEO 2026-06-02: forward the active date range so the CSV matches the
+  // visible ledger slice. Falls back to the default 30-day window if no
+  // explicit ?from/?to were set.
+  const exportQs = new URLSearchParams();
+  if (!isOrg) exportQs.set("branchId", branchId);
+  if (safeFrom) exportQs.set("from", safeFrom);
+  else if (posThrough && view === "ledger") {
+    exportQs.set("from", isoMinusDays(posThrough, 29));
+  }
+  if (safeTo) exportQs.set("to", safeTo);
+  else if (posThrough && view === "ledger") {
+    exportQs.set("to", posThrough);
+  }
+  const exportHref = `/chairops/reconcile/export${exportQs.toString() ? `?${exportQs.toString()}` : ""}`;
 
   return (
     <div className="rc-app">
