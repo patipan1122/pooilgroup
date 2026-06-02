@@ -145,6 +145,105 @@ export async function countExpenses(f: ExpenseListFilter): Promise<number> {
   return prisma.ledgerExpense.count({ where: buildWhere(f) });
 }
 
+// ---- List summary (perf) ----
+// The รายจ่าย left-pane list + home drafts list render only summary fields and
+// never read `items`. listExpenses() joins every line-item + all columns for up
+// to 300 rows → big over-fetch (N item rows joined/serialized/streamed each nav).
+// This variant selects only the columns the list UI uses and skips the items
+// join. Returned shape is still the full `Expense` (items: []) so the UI type
+// contract (ExpenseRow = Expense) is unchanged — the list never touches items.
+const EXPENSE_SUMMARY_SELECT = {
+  id: true,
+  orgId: true,
+  companyId: true,
+  branchId: true,
+  docCode: true,
+  status: true,
+  source: true,
+  vendor: true,
+  vendorTaxId: true,
+  docDate: true,
+  subtotal: true,
+  vat: true,
+  wht: true,
+  total: true,
+  categoryId: true,
+  paymentMethod: true,
+  originalUrl: true,
+  thumbUrl: true,
+  sha256: true,
+  ocrModel: true,
+  ocrConfidence: true,
+  slipRef: true,
+  needsReview: true,
+  note: true,
+  createdBy: true,
+  confirmedBy: true,
+  confirmedAt: true,
+  exportBatchId: true,
+  createdAt: true,
+  updatedAt: true,
+  category: { select: { name: true } },
+} satisfies Prisma.LedgerExpenseSelect;
+
+type ExpenseSummaryRow = Prisma.LedgerExpenseGetPayload<{
+  select: typeof EXPENSE_SUMMARY_SELECT;
+}>;
+
+function serializeExpenseSummary(row: ExpenseSummaryRow): Expense {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    companyId: row.companyId,
+    branchId: row.branchId,
+    docCode: row.docCode,
+    status: row.status as ExpenseStatus,
+    source: row.source as Expense["source"],
+    vendor: row.vendor,
+    vendorTaxId: row.vendorTaxId,
+    docDate: isoDate(row.docDate),
+    subtotal: dec(row.subtotal),
+    vat: dec(row.vat),
+    wht: dec(row.wht),
+    total: dec(row.total),
+    categoryId: row.categoryId,
+    categoryName: row.category?.name ?? null,
+    paymentMethod: row.paymentMethod,
+    originalUrl: row.originalUrl,
+    thumbUrl: row.thumbUrl,
+    sha256: row.sha256,
+    ocrModel: row.ocrModel,
+    ocrConfidence: (row.ocrConfidence as FieldConfidence | null) ?? null,
+    slipRef: row.slipRef,
+    needsReview: row.needsReview,
+    note: row.note,
+    createdBy: row.createdBy,
+    confirmedBy: row.confirmedBy,
+    confirmedAt: iso(row.confirmedAt),
+    exportBatchId: row.exportBatchId,
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+    items: [], // list UI never reads items — skipped to avoid the join
+  };
+}
+
+/**
+ * List expenses for the summary list UI (newest first). Same scoping/filtering
+ * as listExpenses() but WITHOUT the line-item join — use for the list pane /
+ * home drafts where `items` is never rendered. Use listExpenses() (full include)
+ * for the detail pane / exports that need line items.
+ */
+export async function listExpensesSummary(f: ExpenseListFilter): Promise<Expense[]> {
+  const rows = await prisma.ledgerExpense.findMany({
+    where: buildWhere(f),
+    select: EXPENSE_SUMMARY_SELECT,
+    orderBy: [{ docDate: "desc" }, { createdAt: "desc" }],
+    take: f.take ?? 100,
+    skip: f.skip ?? 0,
+  });
+  return rows.map(serializeExpenseSummary);
+}
+
 /** Single expense — org+company scoped (returns null if not in tenant). */
 export async function getExpense(opts: {
   orgId: string;

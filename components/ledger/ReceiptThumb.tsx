@@ -43,6 +43,8 @@ export function ReceiptThumb({
       <img
         src={src}
         alt={alt}
+        loading="lazy"
+        decoding="async"
         onError={() => setBroken(true)}
         className="h-auto w-full object-contain"
       />

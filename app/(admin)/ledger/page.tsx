@@ -5,7 +5,7 @@ import { Receipt, FileClock, CheckCircle2, Wallet } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { resolveScope } from "./_scope";
 import { LedgerHeader, NoCompanyState } from "./_components/LedgerHeader";
-import { expenseSummary, listExpenses, spendByCategory } from "./_data";
+import { expenseSummary, listExpensesSummary, spendByCategory } from "./_data";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +47,7 @@ export default async function LedgerHomePage({
 
   const [summary, drafts, byCategory] = await Promise.all([
     expenseSummary(filter),
-    listExpenses({ ...filter, status: "draft", take: 6 }),
+    listExpensesSummary({ ...filter, status: "draft", take: 6 }),
     spendByCategory(filter),
   ]);
 

@@ -12,6 +12,7 @@ import type { BudgetRow } from "@/components/ledger/_kit/types";
 // Re-export B's queries so pages have a single import surface.
 export {
   listExpenses,
+  listExpensesSummary,
   countExpenses,
   getExpense,
   listCategories,
@@ -168,40 +169,55 @@ export const listBudgets = cache(
       orderBy: [{ createdAt: "asc" }],
     });
 
-    const out: BudgetRow[] = [];
-    for (const b of budgets) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const where: any = {
-        orgId,
-        companyId,
-        categoryId: b.categoryId,
-        status: { in: ["confirmed", "locked"] },
+    if (budgets.length === 0) return [];
+
+    // Used-vs-cap = confirmed+locked spend per (category × branch) in the period.
+    // Compute it in ONE groupBy instead of one aggregate per budget (was N+1):
+    // - branch-specific budget → match the (category, that-branch) bucket
+    // - company-wide budget (branchId null) → sum all branch buckets for the cat
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const spendWhere: any = {
+      orgId,
+      companyId,
+      status: { in: ["confirmed", "locked"] },
+      categoryId: { in: budgets.map((b) => b.categoryId) },
+    };
+    if (/^\d{4}-\d{2}$/.test(period)) {
+      const [y, m] = period.split("-").map(Number);
+      spendWhere.docDate = {
+        gte: new Date(Date.UTC(y, m - 1, 1)),
+        lt: new Date(Date.UTC(y, m, 1)),
       };
-      if (b.branchId) where.branchId = b.branchId;
-      if (/^\d{4}-\d{2}$/.test(period)) {
-        const [y, m] = period.split("-").map(Number);
-        where.docDate = {
-          gte: new Date(Date.UTC(y, m - 1, 1)),
-          lt: new Date(Date.UTC(y, m, 1)),
-        };
-      }
-      const agg = await prisma.ledgerExpense.aggregate({
-        where,
-        _sum: { total: true },
-      });
-      out.push({
-        id: b.id,
-        categoryId: b.categoryId,
-        categoryName: b.category?.name ?? null,
-        branchId: b.branchId,
-        branchName: b.branch?.name ?? null,
-        period: b.period,
-        recurring: b.recurring,
-        amount: dec(b.amount),
-        alertPct: b.alertPct,
-        used: dec(agg._sum.total),
-      });
     }
-    return out;
+    const grouped = await prisma.ledgerExpense.groupBy({
+      by: ["categoryId", "branchId"],
+      where: spendWhere,
+      _sum: { total: true },
+    });
+
+    // Lookup: per (cat,branch) and per-cat total (company-wide budgets).
+    const byCatBranch = new Map<string, number>(); // key `${cat}|${branch}`
+    const byCat = new Map<string, number>();
+    for (const g of grouped) {
+      if (!g.categoryId) continue;
+      const amt = dec(g._sum.total);
+      byCatBranch.set(`${g.categoryId}|${g.branchId ?? ""}`, amt);
+      byCat.set(g.categoryId, (byCat.get(g.categoryId) ?? 0) + amt);
+    }
+
+    return budgets.map((b) => ({
+      id: b.id,
+      categoryId: b.categoryId,
+      categoryName: b.category?.name ?? null,
+      branchId: b.branchId,
+      branchName: b.branch?.name ?? null,
+      period: b.period,
+      recurring: b.recurring,
+      amount: dec(b.amount),
+      alertPct: b.alertPct,
+      used: b.branchId
+        ? byCatBranch.get(`${b.categoryId}|${b.branchId}`) ?? 0
+        : byCat.get(b.categoryId) ?? 0,
+    }));
   },
 );

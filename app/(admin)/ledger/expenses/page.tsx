@@ -9,7 +9,7 @@ import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
-import { listExpenses, getExpense, listCategories } from "../_data";
+import { listExpensesSummary, getExpense, listCategories } from "../_data";
 import { ExpenseList } from "./_components/ExpenseList";
 import { ExpensePaneClient } from "./_components/ExpensePaneClient";
 import { UploadReceiptButton } from "./_components/UploadReceiptButton";
@@ -54,7 +54,7 @@ export default async function ExpensesPage({
   const selected = sp.selected?.trim() || undefined;
 
   const [rows, categories] = await Promise.all([
-    listExpenses({
+    listExpensesSummary({
       orgId: scope.orgId,
       companyId: scope.companyId,
       branchId: scope.branchId,
