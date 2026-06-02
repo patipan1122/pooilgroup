@@ -9,11 +9,17 @@ import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import {
   FLOW_IMAGE_TOPICS,
+  REPLY_TEMPLATE_KEYS,
+  REPLY_TEMPLATE_LABELS,
   loadFlowImagesSafe,
+  loadReplyTemplatesSafe,
   pickFlowImages,
+  pickReplyTemplates,
   type FlowImageTopic,
   type FlowImages,
+  type ReplyTemplateKey,
 } from "./settings";
+import { DEFAULT_REPLY_TEMPLATES } from "./templates";
 import { uploadBotAssetImage, validateImageBuffer } from "../storage";
 import { assertBotCapable } from "../business";
 
@@ -188,11 +194,78 @@ export async function getBotSettingsForm(businessTag = DEFAULT_TAG) {
     tone: s?.tone ?? "สุภาพ สั้น เป็นกันเอง",
     botName: s?.botName ?? "",
     contactPhone: s?.contactPhone ?? "",
-    fallbackText: s?.fallbackText ?? "ขออภัยค่ะ เดี๋ยวทีมงานติดต่อกลับโดยเร็วที่สุดนะคะ",
+    fallbackText:
+      s?.fallbackText ??
+      "ขออภัยค่ะ เดี๋ยวทีมงานช่วยดูแลให้นะคะ สอบถามเพิ่มเติมโทรได้ที่ 084-198-1623 ค่ะ",
     escalateText: s?.escalateText ?? "",
     dailySummary: s?.dailySummary ?? true,
     flowImages,
   };
+}
+
+// ---------- Reply templates (editable canned replies for main flows) ----------
+
+export interface ReplyTemplateRow {
+  key: ReplyTemplateKey;
+  label: string;
+  text: string; // effective: CEO override else built-in default
+  isCustom: boolean; // true when CEO has overridden the default
+  defaultText: string;
+}
+
+// Effective reply templates for the bot-training UI: the override if present,
+// otherwise the built-in default — plus a flag so the UI can show "แก้แล้ว".
+export async function listReplyTemplates(
+  businessTag = DEFAULT_TAG,
+): Promise<ReplyTemplateRow[]> {
+  const session = await requireAdmin();
+  const tag = resolveBizTag(businessTag);
+  const stored = await loadReplyTemplatesSafe(session.user.org_id, tag);
+  return REPLY_TEMPLATE_KEYS.map((key) => {
+    const override = stored[key]?.trim();
+    return {
+      key,
+      label: REPLY_TEMPLATE_LABELS[key],
+      text: override || DEFAULT_REPLY_TEMPLATES[key],
+      isCustom: !!override,
+      defaultText: DEFAULT_REPLY_TEMPLATES[key],
+    };
+  });
+}
+
+// Save (or reset) one editable reply. Empty text reverts to the built-in
+// default. Merges into the reply_templates JSONB column — same upsert pattern
+// as flow images so a missing settings row is created with defaults.
+export async function saveReplyTemplate(input: {
+  businessTag?: string;
+  key: string;
+  text: string;
+}) {
+  const session = await requireAdmin();
+  const businessTag = resolveBizTag(input.businessTag);
+  if (!(REPLY_TEMPLATE_KEYS as readonly string[]).includes(input.key)) {
+    throw new Error("คีย์คำตอบไม่ถูกต้อง");
+  }
+  const existing = await prisma.inboxBotSettings.findUnique({
+    where: { orgId_businessTag: { orgId: session.user.org_id, businessTag } },
+    select: { replyTemplates: true },
+  });
+  const merged = { ...pickReplyTemplates(existing?.replyTemplates) };
+  const text = input.text.trim();
+  if (text) merged[input.key as ReplyTemplateKey] = text;
+  else delete merged[input.key as ReplyTemplateKey]; // empty → revert to default
+
+  await prisma.inboxBotSettings.upsert({
+    where: { orgId_businessTag: { orgId: session.user.org_id, businessTag } },
+    create: {
+      orgId: session.user.org_id,
+      businessTag,
+      replyTemplates: merged as object,
+    },
+    update: { replyTemplates: merged as object },
+  });
+  revalidate();
+  return { ok: true };
 }
 
 // ---------- Flow images (per-topic bot template images) ----------

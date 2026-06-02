@@ -24,6 +24,43 @@ export const FLOW_IMAGE_TOPICS: FlowImageTopic[] = [
 
 export type FlowImages = Partial<Record<FlowImageTopic, string>>;
 
+// Editable per-flow reply text.  Each key is one situation the bot answers
+// with a canned reply; the CEO can override any of them from /inbox/bot
+// (used to be hardcoded in templates.ts — un-hardcoded so training actually
+// changes what customers receive).  Use the literal "{phone}" as a placeholder
+// for the contact phone; it's filled at render time.
+export type ReplyTemplateKey =
+  | "money_lost"
+  | "scan_fail"
+  | "strong"
+  | "buy"
+  | "feedback"
+  | "feedback_complaint"
+  | "non_text_ack";
+
+export const REPLY_TEMPLATE_KEYS: ReplyTemplateKey[] = [
+  "money_lost",
+  "scan_fail",
+  "strong",
+  "buy",
+  "feedback",
+  "feedback_complaint",
+  "non_text_ack",
+];
+
+// Human-readable Thai labels for the bot-training UI + Claude trainer prompt.
+export const REPLY_TEMPLATE_LABELS: Record<ReplyTemplateKey, string> = {
+  money_lost: "เครื่องกินเงิน / หยอดแล้วไม่ทำงาน",
+  scan_fail: "สแกน / จ่าย QR ไม่ได้",
+  strong: "นวดแรง / เจ็บ",
+  buy: "สนใจซื้อ / ลงทุน",
+  feedback: "ติชม (ทั่วไป)",
+  feedback_complaint: "ติชม (ร้องเรียน / ไม่พอใจ)",
+  non_text_ack: "ลูกค้าส่งรูป / สติกเกอร์ / เสียง",
+};
+
+export type ReplyTemplates = Partial<Record<ReplyTemplateKey, string>>;
+
 export interface BotSettings {
   botEnabled: boolean;
   tone: string;
@@ -33,6 +70,7 @@ export interface BotSettings {
   escalateText: string | null;
   dailySummary: boolean;
   flowImages: FlowImages;
+  replyTemplates: ReplyTemplates;
 }
 
 export const DEFAULT_BOT_SETTINGS: BotSettings = {
@@ -40,10 +78,11 @@ export const DEFAULT_BOT_SETTINGS: BotSettings = {
   tone: "สุภาพ สั้น เป็นกันเอง",
   botName: null,
   contactPhone: null,
-  fallbackText: "ขออภัยค่ะ เดี๋ยวทีมงานติดต่อกลับโดยเร็วที่สุดนะคะ",
+  fallbackText: "ขออภัยค่ะ เดี๋ยวทีมงานช่วยดูแลให้นะคะ สอบถามเพิ่มเติมโทรได้ที่ 084-198-1623 ค่ะ",
   escalateText: null,
   dailySummary: true,
   flowImages: {},
+  replyTemplates: {},
 };
 
 // Normalize the JSONB column down to a typed record of topic → public URL.
@@ -56,6 +95,20 @@ export function pickFlowImages(raw: unknown): FlowImages {
   for (const t of FLOW_IMAGE_TOPICS) {
     const v = r[t];
     if (typeof v === "string" && /^https?:\/\//.test(v)) out[t] = v;
+  }
+  return out;
+}
+
+// Normalize the reply_templates JSONB → typed record of editable replies.
+// Drops unknown keys + non-string / blank values so the engine always falls
+// back to the built-in default for anything not explicitly overridden.
+export function pickReplyTemplates(raw: unknown): ReplyTemplates {
+  if (!raw || typeof raw !== "object") return {};
+  const r = raw as Record<string, unknown>;
+  const out: ReplyTemplates = {};
+  for (const k of REPLY_TEMPLATE_KEYS) {
+    const v = r[k];
+    if (typeof v === "string" && v.trim()) out[k] = v;
   }
   return out;
 }
@@ -81,7 +134,13 @@ export async function getBotSettings(
     },
   });
   if (!s) return { ...DEFAULT_BOT_SETTINGS };
-  const flowImages = await loadFlowImagesSafe(orgId, businessTag);
+  // flowImages + replyTemplates live in JSONB columns fetched via resilient
+  // raw SQL — each tolerates its column being absent (migration not yet run)
+  // so the bot keeps replying with built-in defaults in the meantime.
+  const [flowImages, replyTemplates] = await Promise.all([
+    loadFlowImagesSafe(orgId, businessTag),
+    loadReplyTemplatesSafe(orgId, businessTag),
+  ]);
   return {
     botEnabled: s.botEnabled,
     tone: s.tone,
@@ -91,6 +150,7 @@ export async function getBotSettings(
     escalateText: s.escalateText,
     dailySummary: s.dailySummary,
     flowImages,
+    replyTemplates,
   };
 }
 
@@ -110,6 +170,27 @@ export async function loadFlowImagesSafe(
       LIMIT 1
     `;
     return pickFlowImages(rows[0]?.flow_images);
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Read reply_templates via raw SQL.  Returns {} when the column is missing
+ * (pre-migration) so the bot keeps using built-in default replies until the
+ * 20260602160000 DDL has been applied.
+ */
+export async function loadReplyTemplatesSafe(
+  orgId: string,
+  businessTag: string,
+): Promise<ReplyTemplates> {
+  try {
+    const rows = await prisma.$queryRaw<{ reply_templates: unknown }[]>`
+      SELECT reply_templates FROM public.inbox_bot_settings
+      WHERE org_id = ${orgId}::uuid AND business_tag = ${businessTag}
+      LIMIT 1
+    `;
+    return pickReplyTemplates(rows[0]?.reply_templates);
   } catch {
     return {};
   }
