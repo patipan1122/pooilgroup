@@ -17,6 +17,7 @@ import Link from "next/link";
 import { getSession } from "@/lib/auth/session";
 import { listCompanies, listBranches, listCategories } from "@/lib/ledger/queries";
 import { LedgerCaptureApp } from "./_components/ledger-capture-app";
+import { LedgerMascot } from "@/components/ledger/Brand";
 
 export const dynamic = "force-dynamic";
 
@@ -65,9 +66,7 @@ export default async function LedgerLiffPage() {
   if (companies.length === 0) {
     return (
       <div className="mx-auto flex min-h-[70vh] w-full max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
-        <div className="grid size-14 place-items-center rounded-2xl bg-amber-100 text-2xl">
-          🏢
-        </div>
+        <LedgerMascot size={88} priority />
         <div className="space-y-1">
           <p className="text-base font-semibold text-zinc-800">
             ยังไม่ได้ตั้งค่าบริษัท

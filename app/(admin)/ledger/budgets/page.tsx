@@ -5,6 +5,7 @@
 import { requireRole } from "@/lib/auth/session";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
+import { LedgerEmptyState } from "@/components/ledger/Brand";
 import { listBudgets, listCategories } from "../_data";
 import { BudgetForm } from "./_components/BudgetForm";
 import { BudgetRowActions } from "./_components/BudgetRowActions";
@@ -67,9 +68,10 @@ export default async function BudgetsPage({
             </h2>
           </div>
           {budgets.length === 0 ? (
-            <p className="px-4 py-12 text-center text-sm text-zinc-400">
-              ยังไม่ได้ตั้งงบสำหรับงวดนี้ — ตั้งงบที่ฟอร์มด้านขวา
-            </p>
+            <LedgerEmptyState
+              title="ยังไม่ได้ตั้งงบสำหรับงวดนี้"
+              hint="ตั้งงบที่ฟอร์มด้านขวา แล้วน้องใบเสร็จจะเตือนเมื่อใกล้เพดาน"
+            />
           ) : (
             <ul className="divide-y divide-zinc-100">
               {budgets.map((b) => {

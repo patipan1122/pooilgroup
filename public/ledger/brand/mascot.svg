@@ -1,0 +1,32 @@
+<svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="น้องใบเสร็จ — มาสคอต LedgerLine">
+  <!-- PLACEHOLDER MASCOT — "น้องใบเสร็จ" a friendly receipt character.
+       Swap by dropping the real file at public/ledger/brand/mascot.svg (or mascot.png).
+       2-tone: brand blue #2563EB + warm amber accent. Lightweight, no gradients. -->
+
+  <!-- soft halo -->
+  <circle cx="48" cy="48" r="44" fill="#EFF4FF"/>
+
+  <!-- coin behind, peeking (warm accent) -->
+  <circle cx="68" cy="62" r="15" fill="#FBBF24"/>
+  <circle cx="68" cy="62" r="15" fill="none" stroke="#F59E0B" stroke-width="2"/>
+  <text x="68" y="67.5" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14" font-weight="800" fill="#92660A">฿</text>
+
+  <!-- receipt body (rounded, zig-zag bottom for that receipt feel) -->
+  <path d="M30 22
+           h28 a6 6 0 0 1 6 6
+           v36
+           l-4 3 -4 -3 -4 3 -4 -3 -4 3 -4 -3 -4 3 -4 -3 -2 1.5
+           V28 a6 6 0 0 1 6 -6 Z"
+        fill="#fff" stroke="#2563EB" stroke-width="3" stroke-linejoin="round"/>
+
+  <!-- friendly face -->
+  <circle cx="40" cy="40" r="3" fill="#2563EB"/>
+  <circle cx="52" cy="40" r="3" fill="#2563EB"/>
+  <path d="M40 48 q6 5 12 0" stroke="#2563EB" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <!-- cheeks -->
+  <circle cx="35" cy="46" r="2.4" fill="#FBBF24" opacity="0.7"/>
+  <circle cx="57" cy="46" r="2.4" fill="#FBBF24" opacity="0.7"/>
+
+  <!-- ledger lines on the slip (content hint) -->
+  <line x1="36" y1="56" x2="50" y2="56" stroke="#DBEAFE" stroke-width="3" stroke-linecap="round"/>
+</svg>

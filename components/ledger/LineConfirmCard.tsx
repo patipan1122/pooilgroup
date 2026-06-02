@@ -88,6 +88,17 @@ type FlexBox = {
   paddingAll?: string;
   cornerRadius?: string;
   backgroundColor?: string;
+  alignItems?: "flex-start" | "center" | "flex-end";
+  flex?: number;
+};
+type FlexImage = {
+  type: "image";
+  url: string;
+  size?: string;
+  aspectMode?: "cover" | "fit";
+  aspectRatio?: string;
+  flex?: number;
+  align?: "start" | "end" | "center";
 };
 type FlexAction =
   | { type: "uri"; label: string; uri: string }
@@ -100,7 +111,16 @@ type FlexButton = {
   action: FlexAction;
 };
 type FlexSeparator = { type: "separator"; margin?: string; color?: string };
-type FlexComponent = FlexText | FlexBox | FlexButton | FlexSeparator;
+type FlexComponent = FlexText | FlexBox | FlexButton | FlexSeparator | FlexImage;
+
+// Brand art lives in public/ledger/brand/ (CEO-swappable). LINE needs ABSOLUTE
+// https URLs for flex images, so we build them from the webhook's baseUrl and
+// only show the mascot/logo when we have one (relative URLs would silently fail
+// to render in LINE). SVG is fine for LINE flex `image`.
+const BRAND_PATH = {
+  mascot: "/ledger/brand/mascot.svg",
+  logo: "/ledger/brand/logo.svg",
+} as const;
 
 export interface LineFlexMessage {
   type: "flex";
@@ -229,6 +249,8 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
 
   const base = baseUrl.replace(/\/+$/, "");
   const payment = fmtPayment(paymentMethod);
+  // Absolute brand URLs (LINE flex images must be https). Only when baseUrl set.
+  const mascotUrl = base ? `${base}${BRAND_PATH.mascot}` : null;
 
   // Button actions: postback (act inside LINE) or URI (open the web review pane).
   // Either way confirm is an explicit human tap that routes to the accountant
@@ -339,19 +361,53 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
     contents: {
       type: "bubble",
       size: "kilo",
+      // Friendly header — น้องใบเสร็จ (mascot avatar) greets the staffer next to
+      // the title, Bainy-style. Mascot only renders when we have an absolute URL
+      // (baseUrl); otherwise we degrade to the clean text-only header (no broken
+      // image in LINE).
       header: {
         type: "box",
-        layout: "vertical",
+        layout: "horizontal",
         paddingAll: "16px",
+        spacing: "md",
+        alignItems: "center",
+        backgroundColor: "#EFF4FF",
         contents: [
+          ...(mascotUrl
+            ? ([
+                {
+                  type: "image",
+                  url: mascotUrl,
+                  size: "xs",
+                  aspectMode: "fit",
+                  aspectRatio: "1:1",
+                  flex: 0,
+                } as FlexImage,
+              ] as FlexComponent[])
+            : []),
           {
-            type: "text",
-            text: "บันทึกค่าใช้จ่ายแล้ว (ฉบับร่าง)",
-            size: "sm",
-            weight: "bold",
-            color: COLOR.ink,
+            type: "box",
+            layout: "vertical",
+            flex: 1,
+            spacing: "none",
+            contents: [
+              {
+                type: "text",
+                text: "บันทึกให้แล้ว — ช่วยเช็กให้หน่อยนะ",
+                size: "sm",
+                weight: "bold",
+                color: COLOR.ink,
+                wrap: true,
+              },
+              {
+                type: "text",
+                text: `ฉบับร่าง · ${docCode}`,
+                size: "xs",
+                color: COLOR.sub,
+                margin: "xs",
+              },
+            ],
           },
-          { type: "text", text: docCode, size: "xs", color: COLOR.sub, margin: "xs" },
         ],
       },
       body: {

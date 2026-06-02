@@ -5,6 +5,7 @@
 import { requireRole } from "@/lib/auth/session";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
+import { LedgerEmptyState } from "@/components/ledger/Brand";
 import {
   expenseSummary,
   spendByCategory,
@@ -170,9 +171,12 @@ export default async function LedgerDashboardPage({
             ตามหมวด (เดือนนี้)
           </h2>
           {byCat.length === 0 ? (
-            <p className="py-8 text-center text-sm text-zinc-400">
-              ยังไม่มีข้อมูล
-            </p>
+            <LedgerEmptyState
+              mascotSize={56}
+              className="py-6"
+              title="ยังไม่มีข้อมูลหมวดนี้"
+              hint="พอมีใบเสร็จที่ยืนยันแล้ว กราฟจะขึ้นที่นี่"
+            />
           ) : (
             <ul className="space-y-2.5">
               {byCat.map((c) => (
@@ -193,9 +197,12 @@ export default async function LedgerDashboardPage({
             ตามสาขา (เดือนนี้)
           </h2>
           {byBranch.length === 0 ? (
-            <p className="py-8 text-center text-sm text-zinc-400">
-              ยังไม่มีข้อมูล
-            </p>
+            <LedgerEmptyState
+              mascotSize={56}
+              className="py-6"
+              title="ยังไม่มีข้อมูลสาขา"
+              hint="พอมีใบเสร็จที่ยืนยันแล้ว ยอดแต่ละสาขาจะขึ้นที่นี่"
+            />
           ) : (
             <ul className="space-y-2.5">
               {byBranch.map((b) => (

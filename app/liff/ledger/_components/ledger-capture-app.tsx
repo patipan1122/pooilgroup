@@ -19,6 +19,7 @@
 // manual entry if AI is unavailable, so the flow never dead-ends.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { LedgerLogo, LedgerMascot } from "@/components/ledger/Brand";
 
 type Phase = "capture" | "parsing" | "review" | "saving" | "done" | "error";
 
@@ -394,12 +395,24 @@ export function LedgerCaptureApp({
   return (
     <div className="min-h-screen bg-zinc-50 px-4 pb-32 pt-5">
       <header className="mb-4">
-        <h1 className="flex items-center gap-2 text-xl font-bold text-zinc-900">
-          <span aria-hidden>📸</span> ถ่ายใบเสร็จ
-        </h1>
-        <p className="mt-0.5 text-sm text-zinc-500">
-          ถ่ายรูป · AI อ่านให้ · คุณตรวจแล้วบันทึก (ฝ่ายบัญชียืนยันทีหลัง)
-        </p>
+        <LedgerLogo height={20} className="mb-3 opacity-90" priority />
+        {/* Mascot greets on the capture hero — warm, not scary text-only. Only on
+            the capture screen so it doesn't crowd the review/done states. */}
+        {phase === "capture" ? (
+          <div className="flex items-center gap-3">
+            <LedgerMascot size={56} priority className="shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-xl font-bold text-zinc-900">ถ่ายใบเสร็จ</h1>
+              <p className="mt-0.5 text-sm text-zinc-500">
+                ถ่ายรูป · AI อ่านให้ · คุณตรวจแล้วบันทึก
+              </p>
+            </div>
+          </div>
+        ) : (
+          <h1 className="flex items-center gap-2 text-xl font-bold text-zinc-900">
+            <span aria-hidden>📸</span> ถ่ายใบเสร็จ
+          </h1>
+        )}
       </header>
 
       {/* Company / branch context — shown on the capture screen so every receipt

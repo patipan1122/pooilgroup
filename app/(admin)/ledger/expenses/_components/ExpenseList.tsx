@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
+import { LedgerEmptyState } from "@/components/ledger/Brand";
 import { Badge } from "@/components/ui/badge";
 import type { ExpenseRow, LedgerStatusValue } from "@/components/ledger/_kit/types";
 import { bulkConfirm } from "../../_actions";
@@ -208,8 +209,18 @@ export function ExpenseList({
       {/* List */}
       <ul className="max-h-[calc(100dvh-20rem)] divide-y divide-zinc-100 overflow-y-auto">
         {rows.length === 0 ? (
-          <li className="px-3 py-12 text-center text-sm text-zinc-400">
-            {q || status || categoryId ? "ไม่พบรายการตามเงื่อนไข" : "ยังไม่มีรายจ่าย"}
+          <li>
+            {q || status || categoryId ? (
+              <LedgerEmptyState
+                title="ไม่พบรายการตามเงื่อนไข"
+                hint="ลองล้างตัวกรอง หรือเปลี่ยนคำค้น"
+              />
+            ) : (
+              <LedgerEmptyState
+                title="ยังไม่มีรายจ่าย"
+                hint="ส่งรูปใบเสร็จใน LINE หรือกดอัปโหลด แล้วน้องใบเสร็จจะจดให้"
+              />
+            )}
           </li>
         ) : (
           rows.map((r) => {
