@@ -2914,6 +2914,17 @@ enum ChairopsCleanlinessGrade {
   @@schema("chairops")
 }
 
+// Where a cash-collection row came from · drives the photo-required CHECK
+// constraint on ChairopsCashCollection (MAID_MANUAL still requires
+// evidencePhotoUrl + imageHash · CSV_IMPORT / OFFICE_PROXY may omit them).
+enum CollectionSource {
+  MAID_MANUAL
+  CSV_IMPORT
+  OFFICE_PROXY
+
+  @@schema("chairops")
+}
+
 model ChairopsBranch {
   id          String    @id @default(uuid())
   orgId       String
@@ -2959,6 +2970,7 @@ model ChairopsBranch {
   dailyRevenue       ChairopsBranchDailyRevenue[]
   cashEvents         ChairopsPosCashEvent[]
   coinEvents         ChairopsPosCoinEvent[]
+  vendorBills        ChairopsVendorBill[]
 
   @@unique([orgId, slug])
   @@unique([orgId, tabName])
@@ -3143,10 +3155,16 @@ model ChairopsCashCollection {
   // depositId points to. Drift engine sums depositedAmount from the new
   // table.
   depositedAmount  Int                  @default(0)
-  evidencePhotoUrl String
+  // 2026-06-02 · MAID_MANUAL still requires evidencePhotoUrl + imageHash
+  // (enforced by DB CHECK constraint).
+  // CSV_IMPORT / OFFICE_PROXY rows may leave them NULL.
+  evidencePhotoUrl String?
   slipPhotoUrl     String?
-  imageHash        String
+  imageHash        String?
   notes            String?
+  // F1 (audit MISS-04) · provenance for CSV-imported maid rounds.
+  source           CollectionSource     @default(MAID_MANUAL)
+  importedById     String?
   // Per-chair breakdown captured by the maid at Step 1. Shape:
   //   { lines: [{ chairCode, status: "collected"|"broken"|"empty"|"skipped",
   //               amount: number, reason?: string, photoUrl?: string }, ...] }
@@ -3503,6 +3521,63 @@ model ChairopsAccessRequest {
   @@index([orgId])
   @@index([status])
   @@map("chairops_access_request")
+  @@schema("chairops")
+}
+
+// =============================================================
+// ChairOps F2 (vendor bills) · 2026-06-02 · audit MISS-01
+// User-editable category list. 11 default codes seeded per-org in migration
+// 20260602153000_chairops_csv_source_and_bills.sql.
+// =============================================================
+model ChairopsExpenseCategory {
+  id         String    @id @default(uuid()) @db.Uuid
+  orgId      String
+  code       String
+  label      String
+  sortOrder  Int       @default(0)
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  bills ChairopsVendorBill[]
+
+  @@unique([orgId, code])
+  @@index([orgId, sortOrder])
+  @@map("chairops_expense_category")
+  @@schema("chairops")
+}
+
+// One row per (branch · billing month · category).
+// "Overdue" is derived at read time: (dueDate < today AND paidAt IS NULL).
+// Anomaly detection (±20% vs prior month same branch+category) lives in app
+// logic, not in this table.
+model ChairopsVendorBill {
+  id            String    @id @default(uuid()) @db.Uuid
+  orgId         String
+  branchId      String
+  billPeriod    DateTime  @db.Date // 1st of month
+  categoryId    String    @db.Uuid
+  amount        Decimal   @db.Decimal(12, 2)
+  dueDate       DateTime  @db.Date
+  paidAt        DateTime?
+  paidAmount    Decimal?  @db.Decimal(12, 2)
+  slipPhotoUrl  String?
+  bankAccountTo String?
+  paymentTerms  String?
+  notes         String?
+  createdById   String
+  updatedById   String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  branch   ChairopsBranch          @relation(fields: [branchId], references: [id])
+  category ChairopsExpenseCategory @relation(fields: [categoryId], references: [id])
+
+  @@unique([orgId, branchId, billPeriod, categoryId])
+  @@index([orgId, dueDate])
+  @@index([branchId, billPeriod(sort: Desc)])
+  @@index([orgId, paidAt])
+  @@map("chairops_vendor_bill")
   @@schema("chairops")
 }
 
