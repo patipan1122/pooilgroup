@@ -35,6 +35,8 @@ export default async function ReconcileBranchPage({
     recompute?: string;
     error?: string;
     disputed?: string;
+    from?: string;
+    to?: string;
   }>;
 }) {
   const session = await requireRole("OFFICE");
@@ -62,6 +64,8 @@ export default async function ReconcileBranchPage({
         branchId={branchId}
         branchName={branch.name}
         view={view}
+        from={sp.from}
+        to={sp.to}
       />
 
       {/* error / success ribbons (preserve old dispute/write-off feedback) */}

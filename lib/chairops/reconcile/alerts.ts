@@ -45,7 +45,7 @@ export async function evaluateAndEmitAlerts(orgId?: string) {
             kind: ChairopsAlertKind.SHORTAGE,
             level: s.driftAmount > 5000 ? ChairopsAlertLevel.CRITICAL : ChairopsAlertLevel.WARN,
             title: `เงินขาด ${baht(s.driftAmount)} ที่ ${s.branchName}`,
-            message: `POS รวม ${baht(s.posTotal)} · ฝากรวม ${baht(s.depositTotal)} · ค้าง ${s.driftHours} ชม.`,
+            message: `POS เงินสด ${baht(s.posTotal)} · ฝากรวม ${baht(s.depositTotal)} · ค้าง ${s.driftHours} ชม.`,
             contextJson: {
               drift: s.driftAmount,
               age_hours: s.driftHours,

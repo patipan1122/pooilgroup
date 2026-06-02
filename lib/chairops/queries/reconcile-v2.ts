@@ -46,8 +46,33 @@ export interface LedgerDay {
   slip: string | null; // slip / evidence ref
   collected: boolean;
   diff: number; // deposit − expectedCash (collected days only; else 0)
-  cumDrift: number; // running Σ diff (negative = cumulative shortage)
+  /** Σ diff up to this row (only closed periods · matches engine convention). */
+  closedDrift: number;
+  /**
+   * Display drift = closedDrift − pending. Negative when there's cash that
+   * POS recorded but the maid hasn't deposited yet. Equals engine
+   * `−driftAmount` once recompute runs, so the hero/sidebar/footer all agree.
+   * CEO 2026-06-02: "ทำไม sidebar -22,761 แต่ ledger 0 — ตัวเลขโกหก"
+   * was caused by ignoring `pending` in this column.
+   */
+  cumDrift: number;
   pending: number; // cash awaiting collection (open balance)
+}
+
+export interface LedgerTotals {
+  online: number;
+  cash: number;
+  coin: number;
+  cashTotal: number;
+  totalRev: number;
+  deposit: number;
+  diff: number;
+  /** Σ pending leftover at the end of the visible window. */
+  pending: number;
+  /** Engine-side drift at end of window = -(cumDrift at last row). */
+  driftEndingEngine: number;
+  days: number;
+  daysCollected: number;
 }
 
 export interface ReconcileFreshness {
@@ -228,7 +253,7 @@ async function buildLedger(args: {
   const allDays = new Set<string>([...posByDay.keys(), ...depByDay.keys()]);
   const sortedDays = [...allDays].sort();
 
-  let cumDrift = 0;
+  let closedDrift = 0;
   let pending = 0;
   const ledger: LedgerDay[] = [];
   for (const date of sortedDays) {
@@ -247,7 +272,7 @@ async function buildLedger(args: {
       slip = dep.slip;
       // diff = what maid handed in − cash that accumulated since last collect
       diff = deposit - pending;
-      cumDrift += diff;
+      closedDrift += diff;
       pending = 0;
     }
 
@@ -262,12 +287,56 @@ async function buildLedger(args: {
       slip,
       collected,
       diff: collected ? diff : 0,
-      cumDrift,
+      closedDrift,
+      // CEO 2026-06-02: cumDrift must reflect OPEN pending too · otherwise a
+      // branch that never collects shows 0 cumDrift forever while the side
+      // panel/engine show −22,761. Negative = owed by branch (shortage).
+      cumDrift: closedDrift - pending,
       pending,
     });
   }
 
   return ledger;
+}
+
+// ----------------------------------------------------------------
+// Totals row helper · for the "ยอดรวม" footer the CEO asked for
+// 2026-06-02. Sums over WHATEVER ledger slice the caller passes in (so
+// date-range filters compose naturally).
+// ----------------------------------------------------------------
+export function ledgerTotals(rows: LedgerDay[]): LedgerTotals {
+  const t: LedgerTotals = {
+    online: 0,
+    cash: 0,
+    coin: 0,
+    cashTotal: 0,
+    totalRev: 0,
+    deposit: 0,
+    diff: 0,
+    pending: 0,
+    driftEndingEngine: 0,
+    days: rows.length,
+    daysCollected: 0,
+  };
+  for (const r of rows) {
+    t.online += r.online;
+    t.cash += r.cash;
+    t.coin += r.coin;
+    t.cashTotal += r.cashTotal;
+    t.totalRev += r.totalRev;
+    t.deposit += r.deposit ?? 0;
+    t.diff += r.diff;
+    if (r.collected) t.daysCollected += 1;
+  }
+  // Pending is taken from the row whose date is latest in the visible slice
+  // (chronologically) — the slice may be displayed newest-first, so pick by
+  // date string MAX.
+  if (rows.length) {
+    const last = rows.slice().sort((a, b) => a.date.localeCompare(b.date)).at(-1)!;
+    t.pending = last.pending;
+    t.driftEndingEngine = -last.cumDrift;
+  }
+  return t;
 }
 
 // ----------------------------------------------------------------
@@ -278,7 +347,11 @@ export async function getReconcileOverview(args: {
   branchId?: string;
 }): Promise<ReconcileOverview> {
   const { orgId, branchId } = args;
-  const ledger = await buildLedger({ orgId, branchId, days: 60 });
+  // CEO 2026-06-02: lifetime-window (365d) so the hero cumulativeDrift matches
+  // the engine-computed driftAmount that the sidebar displays. A 60-day window
+  // dropped the open pending from anything older than 60 days, drifting away
+  // from the sidebar number.
+  const ledger = await buildLedger({ orgId, branchId, days: 365 });
 
   const last = ledger[ledger.length - 1];
   const cum = last?.cumDrift ?? 0;
@@ -303,35 +376,49 @@ export async function getReconcileOverview(args: {
   const spark = ledger.slice(-30).map((d) => d.cumDrift);
 
   // Freshness — last POS upload, coverage, stale branches (≥5 days no collect).
-  const [lastImport, lastRevenue, lastCollectionAll, branches, drifts] =
-    await Promise.all([
-      prisma.chairopsPosImport.findFirst({
-        where: { orgId },
-        orderBy: { uploadedAt: "desc" },
-        select: { uploadedAt: true },
-      }),
-      prisma.chairopsBranchDailyRevenue.findFirst({
-        where: { orgId, ...(branchId ? { branchId } : {}) },
-        orderBy: { bizDate: "desc" },
-        select: { bizDate: true },
-      }),
-      prisma.chairopsCashCollection.findFirst({
-        where: { orgId, ...(branchId ? { branchId } : {}) },
-        orderBy: { collectedAt: "desc" },
-        include: {
-          maid: { select: { displayName: true } },
-          branch: { select: { name: true } },
-        },
-      }),
-      prisma.chairopsBranch.findMany({
-        where: { orgId, isActive: true },
-        select: { id: true, name: true },
-      }),
-      prisma.chairopsDrift.findMany({
-        where: { orgId },
-        select: { branchId: true, lastCollectionAt: true },
-      }),
-    ]);
+  const [
+    lastImport,
+    lastRevenue,
+    lastLegacyPos,
+    lastCollectionAll,
+    branches,
+    drifts,
+  ] = await Promise.all([
+    prisma.chairopsPosImport.findFirst({
+      where: { orgId },
+      orderBy: { uploadedAt: "desc" },
+      select: { uploadedAt: true },
+    }),
+    prisma.chairopsBranchDailyRevenue.findFirst({
+      where: { orgId, ...(branchId ? { branchId } : {}) },
+      orderBy: { bizDate: "desc" },
+      select: { bizDate: true },
+    }),
+    // CEO 2026-06-02 P0: branches whose POS only ever landed in the legacy
+    // chairops_pos_daily (e.g. central โคราช) need a fallback so freshness
+    // doesn't claim "POS ครบถึงวัน —" while ledger clearly has data.
+    prisma.chairopsPosDaily.findFirst({
+      where: { orgId, ...(branchId ? { branchId } : {}) },
+      orderBy: { bizDate: "desc" },
+      select: { bizDate: true },
+    }),
+    prisma.chairopsCashCollection.findFirst({
+      where: { orgId, ...(branchId ? { branchId } : {}) },
+      orderBy: { collectedAt: "desc" },
+      include: {
+        maid: { select: { displayName: true } },
+        branch: { select: { name: true } },
+      },
+    }),
+    prisma.chairopsBranch.findMany({
+      where: { orgId, isActive: true },
+      select: { id: true, name: true },
+    }),
+    prisma.chairopsDrift.findMany({
+      where: { orgId },
+      select: { branchId: true, lastCollectionAt: true },
+    }),
+  ]);
 
   const driftByBranch = new Map(drifts.map((d) => [d.branchId, d]));
   const now = Date.now();
@@ -345,7 +432,16 @@ export async function getReconcileOverview(args: {
     if (daysSince >= 5) staleNames.push(b.name);
   }
 
-  const posCoverThrough = lastRevenue?.bizDate ?? null;
+  // Take whichever POS source is more recent (legacy or new aggregate); empty
+  // aggregate must NOT silently hide a populated legacy table.
+  const newPosBiz = lastRevenue?.bizDate ?? null;
+  const legacyPosBiz = lastLegacyPos?.bizDate ?? null;
+  const posCoverThrough =
+    newPosBiz && legacyPosBiz
+      ? newPosBiz > legacyPosBiz
+        ? newPosBiz
+        : legacyPosBiz
+      : (newPosBiz ?? legacyPosBiz);
   const posCoverDaysAgo = posCoverThrough
     ? Math.floor((now - posCoverThrough.getTime()) / DAY_MS)
     : null;
@@ -385,16 +481,30 @@ function formatDateTime(d: Date): string {
 
 // ----------------------------------------------------------------
 // 2) LEDGER — bank-statement rows (newest first, capped)
+// CEO 2026-06-02: support `from`/`to` filter (POS-complete days only),
+// default to last-30-days ending at posCoverThrough so the page opens
+// straight on the latest uploaded data instead of an empty stretch.
 // ----------------------------------------------------------------
 export async function getReconcileLedger(args: {
   orgId: string;
   branchId?: string;
   take?: number;
+  from?: string; // "YYYY-MM-DD" inclusive
+  to?: string;   // "YYYY-MM-DD" inclusive
 }): Promise<LedgerDay[]> {
-  const { orgId, branchId } = args;
+  const { orgId, branchId, from, to } = args;
   const take = args.take ?? 200;
+  // Build a wide ledger then slice; cheap because per-branch row count is small.
   const ledger = await buildLedger({ orgId, branchId, days: 365 });
-  return ledger.slice(-take).reverse();
+  let scoped = ledger;
+  if (from || to) {
+    scoped = ledger.filter((d) => {
+      if (from && d.date < from) return false;
+      if (to && d.date > to) return false;
+      return true;
+    });
+  }
+  return scoped.slice(-take).reverse();
 }
 
 // expose intent helper for the page (keeps coloring logic in one place)

@@ -16,6 +16,7 @@ import {
   getReconcileLedger,
   getReconcileTimeline,
   getReconcilePeriods,
+  ledgerTotals,
 } from "@/lib/chairops/queries/reconcile-v2";
 import { ReconcileSidebar } from "./reconcile-sidebar";
 import {
@@ -26,6 +27,7 @@ import {
   TimelineTab,
   PeriodsTab,
 } from "./reconcile-views";
+import { LedgerDateFilter } from "./ledger-date-filter";
 
 export type ReconcileView = "ledger" | "timeline" | "periods";
 
@@ -33,29 +35,49 @@ export function normalizeView(raw: string | undefined): ReconcileView {
   return raw === "timeline" || raw === "periods" ? raw : "ledger";
 }
 
+// CEO 2026-06-02: validate ?from / ?to in "YYYY-MM-DD" form. Anything else is
+// dropped silently so a malformed URL never throws.
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function normalizeDate(raw: string | undefined): string | undefined {
+  return raw && DATE_RE.test(raw) ? raw : undefined;
+}
+
 export async function ReconcileShell({
   orgId,
   branchId,
   branchName,
   view,
+  from,
+  to,
 }: {
   orgId: string;
   /** null = org-level "ทุกสาขารวม" view */
   branchId: string | null;
   branchName: string | null;
   view: ReconcileView;
+  from?: string;
+  to?: string;
 }) {
   const isOrg = branchId === null;
   const baseHref = isOrg
     ? "/chairops/reconcile"
     : `/chairops/reconcile/${branchId}`;
 
+  const safeFrom = normalizeDate(from);
+  const safeTo = normalizeDate(to);
+
   // Sidebar + overview always load. The active tab's dataset loads on demand.
   const [sidebar, overview, ledger, timeline, periods] = await Promise.all([
     getReconcileSidebar({ orgId }),
     getReconcileOverview({ orgId, branchId: branchId ?? undefined }),
     view === "ledger"
-      ? getReconcileLedger({ orgId, branchId: branchId ?? undefined, take: 200 })
+      ? getReconcileLedger({
+          orgId,
+          branchId: branchId ?? undefined,
+          take: 365,
+          from: safeFrom,
+          to: safeTo,
+        })
       : Promise.resolve([]),
     view === "timeline"
       ? getReconcileTimeline({ orgId, branchId: branchId ?? undefined, days: 60 })
@@ -64,6 +86,19 @@ export async function ReconcileShell({
       ? getReconcilePeriods({ orgId, branchId: branchId ?? undefined })
       : Promise.resolve([]),
   ]);
+
+  // CEO 2026-06-02: default the Ledger view to "last 30 complete POS days
+  // ending at posCoverThrough" — same as how a bank statement opens on the
+  // most-recent month, not a random year-old slice. Only applies when the
+  // user hasn't supplied an explicit ?from/?to.
+  const posThrough = overview.freshness.posCoverThrough;
+  const defaultedLedger = (() => {
+    if (view !== "ledger" || safeFrom || safeTo) return ledger;
+    if (!posThrough) return ledger;
+    const cutoff = isoMinusDays(posThrough, 29); // 30-day inclusive window
+    return ledger.filter((d) => d.date >= cutoff && d.date <= posThrough);
+  })();
+  const totals = view === "ledger" ? ledgerTotals(defaultedLedger) : null;
 
   const orgCumDrift = sidebar.reduce((s, r) => s + r.cumDrift, 0);
   const heroLabel = isOrg
@@ -124,8 +159,19 @@ export async function ReconcileShell({
 
         <ReconcileTabs baseHref={baseHref} active={view} />
 
+        {view === "ledger" && (
+          <LedgerDateFilter
+            baseHref={baseHref}
+            from={safeFrom ?? null}
+            to={safeTo ?? null}
+            posCoverThrough={posThrough}
+          />
+        )}
+
         <div className="rc-body">
-          {view === "ledger" && <LedgerTab ledger={ledger} isOrg={isOrg} />}
+          {view === "ledger" && (
+            <LedgerTab ledger={defaultedLedger} totals={totals} isOrg={isOrg} />
+          )}
           {view === "timeline" && <TimelineTab series={timeline} />}
           {view === "periods" && (
             <PeriodsTab periods={periods} branchId={branchId} />
@@ -134,4 +180,11 @@ export async function ReconcileShell({
       </main>
     </div>
   );
+}
+
+// ─── helpers ───────────────────────────────────────────────────────
+function isoMinusDays(iso: string, days: number): string {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
 }

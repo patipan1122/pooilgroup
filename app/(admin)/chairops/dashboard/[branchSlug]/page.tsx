@@ -173,7 +173,7 @@ export default async function BranchDetailPage({
         <Card>
           <CardHeader className="p-4 pb-1 sm:p-5">
             <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              POS รวม
+              POS เงินสด
             </div>
           </CardHeader>
           <CardBody className="p-4 pt-0 text-2xl font-bold tabular-nums sm:p-5 sm:pt-0">

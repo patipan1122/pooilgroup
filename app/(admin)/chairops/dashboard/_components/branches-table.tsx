@@ -35,7 +35,7 @@ type SortDir = "asc" | "desc";
 
 const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
   { key: "branchName", label: "สาขา" },
-  { key: "posTotal", label: "POS รวม", numeric: true },
+  { key: "posTotal", label: "POS เงินสด", numeric: true },
   { key: "depositTotal", label: "ฝากรวม", numeric: true },
   { key: "driftAmount", label: "DRIFT", numeric: true },
   { key: "driftHours", label: "อายุ", numeric: true },

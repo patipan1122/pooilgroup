@@ -71,8 +71,11 @@ export function BranchesLeaderboard({ rows }: { rows: Row[] }) {
               <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground">
                 สาขา
               </th>
-              <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground">
-                POS รวม
+              <th
+                className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground"
+                title="เงินสด + เหรียญ ที่ POS บันทึก (online ไม่นับ · ไม่ผ่านมือแม่บ้าน)"
+              >
+                POS เงินสด
               </th>
               <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground">
                 ฝากรวม

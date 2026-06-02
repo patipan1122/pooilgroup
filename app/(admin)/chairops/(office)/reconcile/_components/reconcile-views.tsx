@@ -22,6 +22,7 @@ import {
   ledgerCumClass,
   ledgerDiffClass,
   type LedgerDay,
+  type LedgerTotals,
   type ReconcileFreshness,
   type ReconcileOverview,
   type TimelinePoint,
@@ -237,9 +238,12 @@ export function ReconcileTabs({
 // ─────────────────────────────────────────────────────────────
 export function LedgerTab({
   ledger,
+  totals,
   isOrg,
 }: {
   ledger: LedgerDay[];
+  /** Footer totals (null when no rows). */
+  totals: LedgerTotals | null;
   isOrg: boolean;
 }) {
   return (
@@ -319,12 +323,90 @@ export function LedgerTab({
               <td
                 className={"num mono rc-tcol co-drift " + ledgerCumClass(d)}
                 style={{ fontWeight: 500 }}
+                title={
+                  d.pending > 0
+                    ? `รวม pending ${fmtN(d.pending)} ฿ ที่ยังไม่ฝาก`
+                    : undefined
+                }
               >
                 {fmtSigned(d.cumDrift)}
               </td>
             </tr>
           ))}
         </tbody>
+        {/* CEO 2026-06-02: ยอดรวม row.  fontWeight + sticky bottom keep it
+            anchored when scrolling a long range; ตัวเลข aligns with the row
+            columns above. */}
+        {totals && ledger.length > 0 && (
+          <tfoot>
+            <tr
+              style={{
+                background: "var(--surface-soft)",
+                borderTop: "2px solid var(--border-strong)",
+                fontWeight: 600,
+              }}
+            >
+              <th style={{ textAlign: "left" }}>
+                ยอดรวม{" "}
+                <span className="text-3" style={{ fontWeight: 400 }}>
+                  ({totals.days} วัน · เก็บ {totals.daysCollected})
+                </span>
+              </th>
+              <td className="num mono">{fmtN(totals.online)}</td>
+              <td className="num mono">{fmtN(totals.cash)}</td>
+              <td className="num mono">{fmtN(totals.coin)}</td>
+              <td className="num mono rc-tcol">{fmtN(totals.cashTotal)}</td>
+              <td className="num mono">{fmtN(totals.totalRev)}</td>
+              <td className="num mono rc-tcol">{fmtN(totals.deposit)}</td>
+              <td />
+              <td
+                className={
+                  "num mono co-drift " +
+                  (totals.diff < -100
+                    ? "crit"
+                    : totals.diff > 100
+                      ? "ok"
+                      : "muted")
+                }
+              >
+                {fmtSigned(totals.diff)}
+              </td>
+              <td
+                className={
+                  "num mono rc-tcol co-drift " +
+                  (totals.driftEndingEngine > 500
+                    ? "crit"
+                    : totals.driftEndingEngine > 100
+                      ? "warn"
+                      : totals.driftEndingEngine < -100
+                        ? "ok"
+                        : "muted")
+                }
+                title={
+                  totals.pending > 0
+                    ? `รวม pending ${fmtN(totals.pending)} ฿ ที่ยังไม่ฝาก ณ วันสุดท้ายในช่วง`
+                    : "ไม่มี pending คงค้าง"
+                }
+              >
+                {fmtSigned(-totals.driftEndingEngine)}
+              </td>
+            </tr>
+            {totals.pending > 0 && (
+              <tr style={{ background: "var(--surface-soft)" }}>
+                <td
+                  colSpan={10}
+                  className="text-3"
+                  style={{ padding: "6px 12px", fontSize: 11 }}
+                >
+                  · มี pending <strong>{fmtN(totals.pending)} ฿</strong>{" "}
+                  ที่ยังไม่ฝาก ณ {ledger[0]?.date} (รวมอยู่ในหายสะสมแล้ว) ·
+                  engine drift = <strong>{fmtSigned(totals.driftEndingEngine)} ฿</strong>{" "}
+                  (positive = ค้างฝาก)
+                </td>
+              </tr>
+            )}
+          </tfoot>
+        )}
       </table>
       {isOrg && (
         <p className="text-3" style={{ fontSize: 11, padding: "8px 12px" }}>

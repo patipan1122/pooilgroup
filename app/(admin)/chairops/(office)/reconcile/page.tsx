@@ -26,6 +26,8 @@ export default async function ReconcileOrgPage({
   searchParams: Promise<{
     view?: string;
     recompute?: string;
+    from?: string;
+    to?: string;
   }>;
 }) {
   const session = await requireRole("OFFICE");
@@ -45,6 +47,8 @@ export default async function ReconcileOrgPage({
       branchId={null}
       branchName={null}
       view={view}
+      from={sp.from}
+      to={sp.to}
     />
   );
 }
