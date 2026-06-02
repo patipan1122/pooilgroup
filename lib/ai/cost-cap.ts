@@ -17,6 +17,9 @@ const PRICING = {
   "claude-haiku-output": 5.0 / 1_000_000,
   "gemini-flash-input": 0.075 / 1_000_000,
   "gemini-flash-output": 0.30 / 1_000_000,
+  // Ledger module receipt OCR — Gemini 3.1 Flash Lite (primary)
+  "gemini-3.1-flash-lite-input": 0.10 / 1_000_000,
+  "gemini-3.1-flash-lite-output": 0.40 / 1_000_000,
 };
 
 // Budget caps (USD)

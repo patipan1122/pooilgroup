@@ -64,10 +64,12 @@ import {
   BedDouble,
   ImageIcon,
   CalendarCheck,
+  Receipt,
+  Wallet2,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
-export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland" | "inbox" | "costctrl" | "hotelbook";
+export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland" | "inbox" | "costctrl" | "hotelbook" | "ledger";
 export type ModuleStatus = "active" | "coming_soon" | "beta";
 
 export interface NavItem {
@@ -810,6 +812,51 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         label: "เตือน + budget + คีย์",
         icon: Bell,
         roles: ["super_admin"],
+      },
+    ],
+  },
+
+  ledger: {
+    slug: "ledger",
+    name: "ระบบบัญชี",
+    tagline: "LedgerLine · ถ่ายใบเสร็จในกลุ่ม LINE → AI อ่าน → บัญชียืนยัน → ส่งเข้า TRCloud",
+    description:
+      "ระบบบันทึกค่าใช้จ่าย · staff ถ่ายใบเสร็จ/สลิป (LINE หรือเว็บ) → AI อ่านข้อมูล + ตรวจยอด → บัญชียืนยัน (ห้าม auto-post) → เก็บ + งบประมาณ + Dashboard + export เข้า TRCloud",
+    emoji: "🧾",
+    Icon: Receipt,
+    status: "beta",
+    basePath: "/ledger",
+    nav: [
+      {
+        href: "/ledger",
+        label: "หน้าหลัก",
+        icon: LayoutDashboard,
+        section: "บัญชี",
+      },
+      {
+        href: "/ledger/expenses",
+        label: "รายจ่าย",
+        icon: Receipt,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "staff"],
+      },
+      {
+        href: "/ledger/budgets",
+        label: "งบประมาณ",
+        icon: Wallet2,
+        roles: ["super_admin", "org_admin", "admin", "area_manager"],
+      },
+      {
+        href: "/ledger/dashboard",
+        label: "Dashboard",
+        icon: BarChart3,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+        section: "รายงาน",
+      },
+      {
+        href: "/ledger/settings",
+        label: "ตั้งค่า",
+        icon: Settings,
+        adminOnly: true,
       },
     ],
   },
