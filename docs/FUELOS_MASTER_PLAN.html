@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FuelOS — แผนรวม: ศูนย์รวมแชท + ขายส่งน้ำมัน | Pooil Group</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#15182a;--muted:#5a6072;--line:#e4e7ee;--bg:#f5f7fb;
+    --brand:#0b6b4f;--brand2:#0e8a66;--soft:#e7f4ee;
+    --amber:#b7791f;--amber-soft:#fdf3e7;--red:#c0392b;--red-soft:#fdeee8;
+    --blue:#1f6feb;--blue-soft:#e8f0fe;--line-green:#06c755;
+    --a:#0e8a66;--b:#1f6feb;--c:#8e44ad;--d:#b7791f;--e:#0b6b4f;--f:#7a8290;
+  }
+  *{box-sizing:border-box;}
+  body{font-family:'Sarabun','Prompt',-apple-system,'Segoe UI',sans-serif;color:var(--ink);background:var(--bg);margin:0;line-height:1.6;font-size:16px;-webkit-font-smoothing:antialiased;}
+  .page{max-width:920px;margin:0 auto;padding:44px 26px 90px;}
+  header.cover{background:linear-gradient(135deg,#06c755,#0b6b4f 55%,#0e8a66);color:#fff;border-radius:22px;padding:42px 38px;margin-bottom:26px;box-shadow:0 16px 44px rgba(11,107,79,.24);}
+  header.cover .eyebrow{font-size:13px;letter-spacing:.6px;opacity:.92;font-weight:600;}
+  header.cover h1{font-size:31px;margin:10px 0 8px;font-weight:700;line-height:1.22;}
+  header.cover p{margin:6px 0 0;font-size:15px;opacity:.96;max-width:660px;}
+  .draft{display:inline-block;margin-top:16px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px 28px;margin-bottom:20px;box-shadow:0 2px 10px rgba(20,30,60,.04);}
+  h2{font-size:21px;font-weight:700;margin:0 0 10px;color:var(--brand);display:flex;align-items:center;gap:10px;}
+  h2 .ic{font-size:22px;}
+  h3{font-size:16.5px;font-weight:700;margin:16px 0 6px;}
+  p{margin:8px 0;} .lead{color:var(--muted);font-size:15px;}
+  ul,ol{margin:8px 0;padding-left:22px;} li{margin:5px 0;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .mini{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:#fafbfd;font-size:14.5px;}
+  .mini b{color:var(--brand);}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px;}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top;}
+  th{background:#eef3f8;font-weight:700;} tr:nth-child(even) td{background:#fafbfd;}
+  .ok{color:var(--brand);font-weight:700;} .no{color:var(--red);font-weight:700;}
+  .speed{background:linear-gradient(135deg,#fff8ec,#fdf0d8);border:1px solid #f0d9a8;border-radius:16px;padding:22px 28px;margin-bottom:20px;}
+  .speed h2{color:var(--amber);}
+  .target{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;}
+  .target div{background:#fff;border:1px solid #f0d9a8;border-radius:12px;padding:9px 14px;font-size:13.5px;min-width:140px;flex:1;}
+  .target b{display:block;font-size:20px;color:var(--amber);font-weight:700;}
+  .reality{background:var(--red-soft);border:1px solid #f1c9bf;border-radius:16px;padding:22px 28px;margin-bottom:20px;}
+  .reality h2{color:var(--red);}
+  .phase{background:#fff;border:1px solid var(--line);border-left-width:5px;border-radius:0 14px 14px 0;padding:16px 22px;margin-bottom:13px;}
+  .phase.A{border-left-color:var(--a);} .phase.B{border-left-color:var(--b);} .phase.C{border-left-color:var(--c);}
+  .phase.D{border-left-color:var(--d);} .phase.E{border-left-color:var(--e);} .phase.F{border-left-color:var(--f);}
+  .phase .head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .pbadge{color:#fff;font-weight:700;border-radius:9px;padding:4px 12px;font-size:14px;}
+  .A .pbadge{background:var(--a);} .B .pbadge{background:var(--b);} .C .pbadge{background:var(--c);}
+  .D .pbadge{background:var(--d);} .E .pbadge{background:var(--e);} .F .pbadge{background:var(--f);}
+  .phase h3{margin:0;font-size:16.5px;} .phase .est{margin-left:auto;font-size:12.5px;color:var(--muted);background:#f0f3f8;padding:3px 10px;border-radius:20px;}
+  .phase .body{margin-top:9px;font-size:14.5px;}
+  .new{background:var(--line-green);color:#fff;font-size:11px;font-weight:700;padding:1px 7px;border-radius:5px;}
+  .have{background:var(--soft);color:var(--brand);font-size:11px;font-weight:700;padding:1px 7px;border-radius:5px;}
+  .tag{display:inline-block;background:var(--soft);color:var(--brand);border-radius:6px;padding:1px 8px;font-size:12px;font-weight:600;margin:2px 3px 2px 0;}
+  .callout{background:var(--soft);border-left:4px solid var(--brand);padding:11px 16px;border-radius:0 12px 12px 0;margin:12px 0;font-size:14.5px;}
+  .callout.info{background:var(--blue-soft);border-left-color:var(--blue);}
+  .q{background:#fff;border:1px dashed #c9b06a;border-radius:12px;padding:11px 16px;margin:9px 0;font-size:14.5px;}
+  .q b{color:var(--amber);}
+  code{background:#eef1f6;padding:1px 6px;border-radius:5px;font-size:12.5px;font-family:'SF Mono',Consolas,monospace;}
+  footer{text-align:center;color:var(--muted);font-size:13px;margin-top:24px;}
+  @media print{body{background:#fff;font-size:12px;}.page{padding:0;max-width:100%;}.card,.phase,.speed,.reality{box-shadow:none;break-inside:avoid;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
+  @media(max-width:640px){.grid2,.grid3{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="cover">
+    <div class="eyebrow">💬 + ⛽ Master Plan · ร่าง v0.2 · แก้ร่วมกัน</div>
+    <h1>ศูนย์รวมแชท LINE + CRM<br>+ ระบบขายส่งน้ำมัน (FuelOS)</h1>
+    <p>หน้าหลัก = <b>กล่องรวมแชท LINE ทุกกลุ่ม</b> ที่ลูกค้าทักเข้ามา · พนักงานทุกคนใช้ร่วมกัน · เห็นใครตอบ · ออกใบเสนอราคาจากในแชทได้ · มีบอทช่วยตอบ · มีรายงานเวลาตอบ — ทั้งหมดต่อยอดเข้าระบบขายส่งน้ำมัน</p>
+    <span class="draft">📝 ร่าง v0.3 · โปรแกรมแยกเดี่ยว (คนละแอป/คลัง/deploy) · ก๊อปโค้ดเดิมเป็นต้นแบบ</span>
+  </header>
+
+  <!-- เป้าหมาย -->
+  <section class="card">
+    <h2><span class="ic">🎯</span> ภาพใหญ่ที่คุณต้องการ</h2>
+    <p class="lead">ลูกค้าน้ำมันส่วนใหญ่ <b>ทักเข้ามาทาง LINE กลุ่ม</b> (สั่งของ · ส่งสลิปโอน · ถามราคา · แจ้งทะเบียนรถมารับ) → หน้าทำงานหลักจึงต้องเป็น <b>"กล่องรวมแชท"</b> ที่พนักงานทุกคนนั่งตอบร่วมกันในที่เดียว แล้วทำงานต่อได้ครบ (ออกใบราคา · ผูกลูกค้า · ส่งของ) + มีรายงานว่าใครตอบเร็ว/ช้า/ลูกค้าถามแล้วไม่มีคนตอบ</p>
+    <div class="grid2">
+      <div class="mini"><b>ปัญหาเดิม</b><br>แชทกระจัดกระจายหลายกลุ่ม LINE · ไม่รู้ใครตอบใครยัง · ลูกค้าถามแล้วตกหล่น · สลิป/ออเดอร์/ราคา ปนกันในแชท</div>
+      <div class="mini"><b>หลังมีระบบ</b><br>ทุกแชทรวมจอเดียว · เห็นสถานะ "ตอบแล้ว/ค้าง" · กดออกใบเสนอราคาในแชท · บอทช่วยตอบ · รายงานคนตอบเร็ว/ช้า + ลูกค้าที่ตกหล่น</div>
+    </div>
+  </section>
+
+  <!-- สถาปัตยกรรม: โปรแกรมแยก + ก๊อปโค้ด -->
+  <section class="card">
+    <h2><span class="ic">🧱</span> เป็นโปรแกรมแยกเดี่ยว · ก๊อปโค้ดเดิมเป็นต้นแบบ</h2>
+    <p class="lead">โปรแกรมขายส่งน้ำมันนี้ <b>แยกขาดจากระบบ Pool 100%</b> — คนละแอป คนละฐานข้อมูล คนละ deploy · แต่เรา <b>ก๊อป "โค้ด/สูตร" ของเดิมมาเป็นต้นแบบ</b> เพื่อสร้างเร็วขึ้น (ก๊อปโค้ด ≠ แชร์ข้อมูล)</p>
+    <table>
+      <tr><th>ส่วนของระบบ</th><th>เริ่มยังไง</th></tr>
+      <tr><td>โครงแอป + ระบบล็อกอิน + ดีไซน์ (UI kit)</td><td><span class="have">ก๊อปต้นแบบ</span></td></tr>
+      <tr><td>ระบบแชทรวม (Inbox engine)</td><td><span class="have">ก๊อปต้นแบบ</span> <span class="new">+ เพิ่มรับกลุ่ม</span></td></tr>
+      <tr><td>บอทตอบอัตโนมัติ + สรุปรายวัน</td><td><span class="have">ก๊อปต้นแบบ</span></td></tr>
+      <tr><td>16 ตารางขายน้ำมัน + GPS</td><td><span class="have">ก๊อปต้นแบบ</span></td></tr>
+      <tr><td>ฐานข้อมูลใหม่ (Supabase) — เปล่า เริ่มเก็บของตัวเอง</td><td><span class="new">ตั้งใหม่</span></td></tr>
+      <tr><td>CRM ผูกลูกค้า + รายงานเวลาตอบ + ออกใบราคาในแชท</td><td><span class="new">สร้างใหม่</span></td></tr>
+    </table>
+    <div class="callout info">💡 ผลคือ: ได้โปรแกรมของตัวเองสะอาด ๆ ไม่ปนเมนูอื่น · ข้อมูลอิสระไม่เชื่อม Pool · แต่ไม่ต้องเขียนทุกอย่างใหม่ตั้งแต่ศูนย์</div>
+  </section>
+
+  <!-- ความเร็ว -->
+  <section class="speed">
+    <h2><span class="ic">⚡</span> หลักการ "เร็วจริง" (เสาหลักที่ซีเรียสที่สุด)</h2>
+    <div class="target">
+      <div><b>&lt; 1 วิ</b>เปิดกล่องแชท</div>
+      <div><b>ทันที</b>ข้อความใหม่เด้งเข้า (realtime)</div>
+      <div><b>&lt; 0.3 วิ</b>กดตอบ/ออกใบราคา</div>
+      <div><b>0</b>แชทตกหล่น</div>
+    </div>
+    <ul>
+      <li><b>Realtime push</b> — ข้อความเข้าเด้งทันทีไม่ต้องรีเฟรช (ใช้ Supabase Realtime)</li>
+      <li><b>โหลดเฉพาะแชทที่เปิด</b> + เลื่อนค่อยโหลดเพิ่ม (ไม่ดึงพันแชทพร้อมกัน)</li>
+      <li><b>นับ "ค้างตอบ" ไว้ล่วงหน้า</b> (unreadCount) — ไม่ต้องคำนวณใหม่ทุกครั้ง</li>
+      <li><b>Render ที่ server</b> + โหลด JS น้อย + index ครบ ไม่มี N+1 (บทเรียนเดิมของ Pool)</li>
+      <li><b>กดแล้วเห็นผลทันที</b> (Optimistic) — พิมพ์ตอบ/ออกใบราคา เด้งเลย</li>
+    </ul>
+  </section>
+
+  <!-- ความจริงเรื่อง LINE -->
+  <section class="reality">
+    <h2><span class="ic">🟥</span> ความจริงเรื่อง LINE ที่ต้องเข้าใจก่อนเริ่ม</h2>
+    <ul>
+      <li><b>ดึงแชทเก่าย้อนหลังไม่ได้</b> — LINE ไม่มี API ให้ดึงประวัติ · เราจะ <b>เริ่มเก็บตั้งแต่วันเชื่อม</b> เป็นต้นไป (ของเก่ายังเปิดดูใน LINE ได้ปกติ แค่ไม่เข้าระบบเรา)</li>
+      <li><b>ต้องเพิ่มโค้ดรับ "ข้อความกลุ่ม"</b> — ปัจจุบันระบบรับแค่แชท 1:1 · กลุ่มที่ลูกค้าใช้ต้องเพิ่มการรับ (groupId)</li>
+      <li><b>ต้องมีกุญแจ LINE OA ของ PO Oil</b> (Channel Access Token + Secret) + ตั้ง Webhook URL ใน LINE Developers → ข้อความถึงจะไหลเข้าระบบ</li>
+      <li><b>ระบุพนักงานด้วย LINE userId</b> — เพื่อให้รู้ว่า "ใครตอบ" ในกลุ่ม ต้องจับคู่ userId ของพนักงาน 1 ครั้ง</li>
+      <li><b>OA ต้องอยู่ในกลุ่ม</b> + เปิดสิทธิ์ให้บอทรับข้อความกลุ่มได้ (ตั้งค่าใน LINE)</li>
+    </ul>
+    <div class="callout info">💡 "เชื่อม LINE ก่อน" = พอตั้งค่าเสร็จ ข้อความใหม่จะเริ่มไหลเข้า DB → ผมอ่าน/ทำงานกับข้อมูลจริงได้ → ต่อยอด CRM/รายงาน/ใบราคา ได้แม่นยำ</li>
+  </section>
+
+  <!-- ผู้ใช้ -->
+  <section class="card">
+    <h2><span class="ic">👥</span> ใครใช้ + ทำอะไร</h2>
+    <div class="grid3">
+      <div class="mini"><b>เซลล์ทุกคน</b><br>นั่งตอบแชทในกล่องรวม · ออกใบราคา · ผูกลูกค้า</div>
+      <div class="mini"><b>หัวหน้าขาย</b><br>กรอกราคาคลัง · ดูใครตอบเร็ว/ช้า · จัดผู้รับผิดชอบ</div>
+      <div class="mini"><b>การเงิน</b><br>เช็คสลิปโอนในแชท · วงเงินเครดิต · ติดตามเช็ค</div>
+      <div class="mini"><b>ฝ่ายจัดส่ง</b><br>รับทะเบียนรถจากแชท · จัดรถ · ดู GPS</div>
+      <div class="mini"><b>บอท (AI)</b><br>ช่วยตอบคำถามซ้ำ · ส่งต่อให้คนเมื่อจำเป็น</div>
+      <div class="mini"><b>CEO</b><br>ดูรายงานรวม · ยอดขาย · กำไร · ประสิทธิภาพทีม</div>
+    </div>
+  </section>
+
+  <!-- PHASES -->
+  <section class="card">
+    <h2><span class="ic">🚧</span> ลำดับการสร้าง (เรียงตามที่คุณอยากได้: แชทก่อน)</h2>
+
+    <div class="phase F">
+      <div class="head"><span class="pbadge">เฟส 0</span><h3>🧱 ตั้งโปรเจกต์ใหม่ + ก๊อปโค้ดต้นแบบ + ฐานข้อมูลใหม่</h3><span class="est">~1.5 วัน</span></div>
+      <div class="body">
+        สร้าง repo ใหม่ · ตั้งฐานข้อมูล Supabase ใหม่ (เปล่า) · ก๊อปโครงแอป+ล็อกอิน+UI+ระบบแชท+บอท+16 ตาราง+GPS จากของเดิมมาเป็นจุดเริ่ม · deploy ตัวเปล่าขึ้นทดสอบ
+        <div><span class="tag">repo ใหม่</span><span class="tag">Supabase ใหม่</span><span class="tag">copy template</span><span class="tag">Vercel ใหม่</span></div>
+      </div>
+    </div>
+
+    <div class="phase A">
+      <div class="head"><span class="pbadge">เฟส A</span><h3>💬 เชื่อม LINE + กล่องรวมแชท (ประตูหน้า)</h3><span class="est">~3 วัน</span></div>
+      <div class="body">
+        เชื่อม LINE OA ของ PO Oil → <b>เพิ่มการรับข้อความกลุ่ม</b> → ทุกแชทเข้ากล่องเดียว · ข้อความเด้ง realtime · เห็นสถานะ "ตอบแล้ว/ค้าง" · พนักงานตอบจากในระบบได้
+        <div><span class="tag">InboxChannel</span><span class="tag">InboxConversation</span><span class="tag">InboxMessage</span><span class="have">ต่อยอดของเดิม</span><span class="new">+ group ingest</span></div>
+        <div class="callout">ผลลัพธ์: ลูกค้าทักกลุ่มไหน เด้งเข้าจอเดียว ไม่ตกหล่น · นี่คือ "เชื่อม LINE ก่อน" ที่คุณอยากได้</div>
+      </div>
+    </div>
+
+    <div class="phase B">
+      <div class="head"><span class="pbadge">เฟส B</span><h3>📊 ใครตอบ + CRM + รายงานประสิทธิภาพ + บอท</h3><span class="est">~3 วัน</span></div>
+      <div class="body">
+        ผู้รับผิดชอบต่อแชท · <b>รายงาน: คนตอบเร็ว/ช้า · ลูกค้าถามแล้วไม่มีคนตอบ · เวลาตอบเฉลี่ย</b> · ผูกแชท ↔ ทะเบียนลูกค้า (CRM) · เปิดบอทน้ำมันช่วยตอบ
+        <div><span class="tag">assignee</span><span class="tag">response time</span><span class="tag">Contact link</span><span class="tag">Bot (pooil)</span><span class="have">บอทมีแล้ว</span><span class="new">+ รายงาน/CRM</span></div>
+        <div class="callout">ผลลัพธ์: CEO เห็นว่าทีมตอบไวแค่ไหน · แชทไหนตกหล่น · ลูกค้าคนนี้คือใครในระบบ</div>
+      </div>
+    </div>
+
+    <div class="phase C">
+      <div class="head"><span class="pbadge">เฟส C</span><h3>💰 ราคา — หัวใจของเซลล์</h3><span class="est">~1.5 วัน</span></div>
+      <div class="body">
+        หัวหน้ากรอกราคาคลังทุกเช้า → ตั้งกำไรตามโซน → ระบบคิดราคาขายให้ → เซลล์เห็นพร้อมกัน (ตอบราคาในแชทได้เร็ว)
+        <div><span class="tag">DepotPrice</span><span class="tag">ZoneMargin</span></div>
+      </div>
+    </div>
+
+    <div class="phase D">
+      <div class="head"><span class="pbadge">เฟส D</span><h3>📝 ออกใบราคา/ออเดอร์ จากในแชท + เครดิต</h3><span class="est">~3 วัน</span></div>
+      <div class="body">
+        กดออก <b>ใบเสนอราคาจากในแชทได้เลย</b> → เปิดออเดอร์ คิดกำไรอัตโนมัติ · ทะเบียนลูกค้า + วงเงินเครดิต + เอกสาร + เช็ค · เช็คสลิปโอนในแชท
+        <div><span class="tag">CustomerQuote</span><span class="tag">FuelOrder</span><span class="tag">CustomerEntity</span><span class="tag">CreditDocument</span><span class="tag">ChequeTracking</span><span class="tag">Payment</span></div>
+        <div class="callout">ผลลัพธ์: คุยในแชท → กดออกใบราคา → เป็นออเดอร์ → รู้กำไร ครบในไหลเดียว</div>
+      </div>
+    </div>
+
+    <div class="phase E">
+      <div class="head"><span class="pbadge">เฟส E</span><h3>🚚 จัดส่ง + 🛰️ GPS</h3><span class="est">~2.5 วัน</span></div>
+      <div class="body">
+        จัดรถ-คนขับ · จุดส่ง · <b>ดูตำแหน่งรถ real-time บนแผนที่</b> (Pull API จาก vendor — รออยู่) · ยืนยันส่งถึง
+        <div><span class="tag">Truck</span><span class="tag">DriverProfile</span><span class="tag">DriverLocation</span><span class="tag">GPS Pull API</span></div>
+      </div>
+    </div>
+
+    <div class="phase F">
+      <div class="head"><span class="pbadge">เฟส F</span><h3>📢 ของเสริม (ทีหลัง)</h3><span class="est">ภายหลัง</span></div>
+      <div class="body">
+        Flash sale · แจ้งราคา broadcast ผ่าน LINE · แดชบอร์ดยอดขาย/กำไรผู้บริหาร
+        <div><span class="tag">FlashSale</span><span class="tag">PriceAlertLog</span><span class="tag">LineResponseLog</span></div>
+      </div>
+    </div>
+
+    <p class="lead" style="margin-top:12px">⏱️ รวม เฟส 0–E (ใช้งานครบ) ≈ <b>~15 วันทำงาน</b> · เฟส 0+A+B (ตั้งระบบ+แชท+รายงาน) ใช้ได้จริงใน ~8 วันแรก</p>
+  </section>
+
+  <!-- decisions -->
+  <section class="card">
+    <h2><span class="ic">❓</span> สิ่งที่อยากให้ CEO เคาะ (เพื่อ lock แผน + เริ่มสร้าง)</h2>
+    <div class="q"><b>0. ฐานข้อมูล + ที่อยู่โปรแกรมใหม่:</b> ต้องมี <b>Supabase project ใหม่</b> (ฐานข้อมูลของโปรแกรมนี้) · คุณสร้างให้ หรือให้ผมแนะวิธีสร้างทีละขั้น? (เริ่มฟรีได้) · ชื่อโปรแกรม/URL อยากใช้ว่าอะไร?</div>
+    <div class="q"><b>1. กุญแจ LINE OA:</b> ขอ <b>Channel Access Token + Channel Secret</b> ของ PO Oil OA (อยู่ใน LINE Developers Console) — ผมต้องใช้เชื่อม · หาให้ไหม หรือให้ผมแนะวิธีหา?</div>
+    <div class="q"><b>2. กลุ่มลูกค้า:</b> OA ของ PO Oil อยู่ในกลุ่มลูกค้าครบทุกกลุ่มแล้วใช่ไหม? (เห็นในรูปว่าอยู่หลายกลุ่ม) มีกี่กลุ่มประมาณ?</div>
+    <div class="q"><b>3. ระบุพนักงาน:</b> พนักงานที่ตอบในกลุ่มมีกี่คน? เดี๋ยวเราจับคู่ LINE ของแต่ละคน 1 ครั้ง เพื่อให้รายงาน "ใครตอบ" แม่น</div>
+    <div class="q"><b>4. บอท:</b> อยากให้บอทตอบอัตโนมัติเรื่องอะไรบ้าง (เช่น ราคาวันนี้ · เลขบัญชีโอน) หรือช่วงแรกขอแค่ "เก็บแชท + ให้คนตอบ" ก่อน?</div>
+    <div class="q"><b>5. รายงานเวลาตอบ:</b> นับ "ช้า" ที่กี่นาที? (เช่น เกิน 30 นาทีไม่มีคนตอบ = แดง)</div>
+  </section>
+
+  <footer>
+    FuelOS Master Plan · ร่าง v0.3 · โปรแกรมแยกเดี่ยว · Pooil Group · 1 มิ.ย. 2026 — แก้ร่วมกันจนจบ แล้วค่อยลงมือเขียนโค้ด
+  </footer>
+
+</div>
+</body>
+</html>

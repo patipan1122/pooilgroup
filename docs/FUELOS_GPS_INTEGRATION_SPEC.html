@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FuelOS × GPS — เอกสารเชื่อมต่อระบบ GPS | Pooil Group</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1a1a2e; --muted:#5a6072; --line:#e4e7ee; --bg:#f6f7fb;
+    --brand:#0b6b4f; --brand-soft:#e7f4ee; --amber:#b7791f; --red:#c0392b;
+    --green:#1e8449; --yellow:#caa024; --grey:#7a8290;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family:'Sarabun','Prompt',-apple-system,'Segoe UI',sans-serif;
+    color:var(--ink); background:var(--bg); margin:0; line-height:1.65;
+    font-size:16px; -webkit-font-smoothing:antialiased;
+  }
+  .page{max-width:880px; margin:0 auto; padding:48px 28px 80px;}
+  header.cover{
+    background:linear-gradient(135deg,#0b6b4f 0%,#0e8a66 100%);
+    color:#fff; border-radius:20px; padding:40px 36px; margin-bottom:32px;
+    box-shadow:0 14px 40px rgba(11,107,79,.22);
+  }
+  header.cover .eyebrow{font-size:13px; letter-spacing:.5px; opacity:.85; font-weight:600;}
+  header.cover h1{font-size:30px; margin:8px 0 14px; font-weight:700; line-height:1.25;}
+  header.cover .meta{display:grid; grid-template-columns:repeat(2,1fr); gap:8px 24px; font-size:14px; opacity:.95;}
+  header.cover .meta b{font-weight:600;}
+  .card{
+    background:#fff; border:1px solid var(--line); border-radius:16px;
+    padding:26px 28px; margin-bottom:22px; box-shadow:0 2px 10px rgba(20,30,60,.04);
+  }
+  h2{font-size:21px; font-weight:700; margin:0 0 6px; color:var(--brand); display:flex; align-items:center; gap:10px;}
+  h2 .num{
+    background:var(--brand); color:#fff; width:30px; height:30px; border-radius:9px;
+    display:inline-flex; align-items:center; justify-content:center; font-size:15px; flex:0 0 auto;
+  }
+  h3{font-size:16px; font-weight:700; margin:20px 0 8px; color:var(--ink);}
+  p{margin:8px 0;}
+  .lead{color:var(--muted); font-size:15px;}
+  ol,ul{margin:8px 0; padding-left:22px;}
+  li{margin:6px 0;}
+  ol.q{counter-reset:q; list-style:none; padding-left:0;}
+  ol.q>li{counter-increment:q; position:relative; padding:8px 8px 8px 44px; border-bottom:1px dashed var(--line);}
+  ol.q>li:last-child{border-bottom:none;}
+  ol.q>li::before{
+    content:counter(q); position:absolute; left:6px; top:8px;
+    width:28px; height:28px; background:var(--brand-soft); color:var(--brand);
+    border-radius:8px; display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:14px;
+  }
+  table{width:100%; border-collapse:collapse; margin:14px 0; font-size:14.5px;}
+  th,td{border:1px solid var(--line); padding:10px 12px; text-align:left; vertical-align:top;}
+  th{background:#f0f3f8; font-weight:700;}
+  tr:nth-child(even) td{background:#fafbfd;}
+  .pick{background:var(--brand-soft) !important; font-weight:600;}
+  .callout{
+    background:var(--brand-soft); border-left:4px solid var(--brand);
+    padding:14px 18px; border-radius:0 12px 12px 0; margin:16px 0; font-size:15px;
+  }
+  .callout.warn{background:#fdf3e7; border-left-color:var(--amber);}
+  .check{list-style:none; padding-left:0;}
+  .check li{position:relative; padding:7px 0 7px 32px;}
+  .check li::before{
+    content:"☐"; position:absolute; left:0; top:5px; font-size:19px; color:var(--brand);
+  }
+  .tag{display:inline-block; padding:2px 9px; border-radius:20px; font-size:12.5px; font-weight:700; color:#fff;}
+  .t-red{background:var(--red);} .t-yellow{background:var(--yellow);} .t-green{background:var(--green);} .t-grey{background:var(--grey);}
+  .steps{counter-reset:s; list-style:none; padding-left:0;}
+  .steps>li{counter-increment:s; position:relative; padding:10px 0 10px 46px; border-bottom:1px solid var(--line);}
+  .steps>li:last-child{border-bottom:none;}
+  .steps>li::before{
+    content:counter(s); position:absolute; left:0; top:8px; width:32px; height:32px;
+    background:var(--brand); color:#fff; border-radius:50%; display:flex;
+    align-items:center; justify-content:center; font-weight:700;
+  }
+  code{background:#eef1f6; padding:1px 6px; border-radius:5px; font-size:13.5px; font-family:'SF Mono',Consolas,monospace;}
+  .who{display:inline-block; font-size:12px; font-weight:700; padding:2px 10px; border-radius:6px; margin-bottom:8px;}
+  .who.vendor{background:#fdeee8; color:var(--red);}
+  .who.us{background:var(--brand-soft); color:var(--brand);}
+  footer{text-align:center; color:var(--muted); font-size:13px; margin-top:30px;}
+  .appendix{background:#1a1a2e; color:#d8dce6; border-radius:16px; padding:24px 28px; font-size:14px;}
+  .appendix h2{color:#7fe3bf;}
+  .appendix code{background:#2c2c44; color:#9fe6c6;}
+  @media print{
+    body{background:#fff; font-size:12.5px;}
+    .page{padding:0; max-width:100%;}
+    .card,.appendix{box-shadow:none; break-inside:avoid; border:1px solid #ccc;}
+    header.cover{box-shadow:none; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
+    .tag,th,.pick,header.cover,.appendix{-webkit-print-color-adjust:exact; print-color-adjust:exact;}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="cover">
+    <div class="eyebrow">🛰️ เอกสารเชื่อมต่อระบบ · สำหรับคุยกับผู้ให้บริการ GPS</div>
+    <h1>FuelOS × GPS<br>เชื่อมข้อมูลตำแหน่งรถบรรทุกน้ำมัน เข้าโปรแกรมขายส่งน้ำมัน</h1>
+    <div class="meta">
+      <div><b>เจ้าของระบบ:</b> Pooil Group (PO Oil)</div>
+      <div><b>ผู้รับเอกสาร:</b> ทีมเทคนิค ผู้ให้บริการ GPS</div>
+      <div><b>วันที่:</b> 1 มิถุนายน 2026</div>
+      <div><b>เวอร์ชัน:</b> 1.0</div>
+    </div>
+  </header>
+
+  <!-- 0 -->
+  <section class="card">
+    <h2><span class="num">0</span> สรุปสำหรับผู้บริหาร <span style="font-size:13px;color:var(--muted);font-weight:400;">(อ่าน 30 วินาที)</span></h2>
+    <p class="lead">บริษัทกำลังสร้าง <b>โปรแกรมภายในสำหรับฝ่ายขายน้ำมัน</b> ที่ต้องแสดง <b>ตำแหน่งรถบรรทุกแบบ real-time</b> บนแผนที่ พร้อมสถานะการจัดส่ง</p>
+    <p>เราทราบว่าผู้ให้บริการมีข้อมูลนี้อยู่แล้ว (ส่งเข้ากรมการขนส่งทางบกตามกฎหมายทุกวัน) และแจ้งว่ามีให้เราเชื่อมได้ทั้ง 2 รูปแบบ เอกสารนี้รวบรวม:</p>
+    <ul>
+      <li>คำถามที่เราขอคำตอบจากผู้ให้บริการ <i>(ส่วน 2–3)</i></li>
+      <li>สิ่งที่อยากให้ผู้ให้บริการเตรียม/ส่งมอบ <i>(ส่วน 4)</i></li>
+      <li>สิ่งที่ฝั่งเราจะเตรียมเอง <i>(ส่วน 5)</i></li>
+      <li>รายการข้อมูล (data fields) ที่ต้องการ <i>(ส่วน 6)</i></li>
+    </ul>
+  </section>
+
+  <!-- 1 -->
+  <section class="card">
+    <h2><span class="num">1</span> รูปแบบการเชื่อมต่อ + แบบที่เราเลือก</h2>
+    <table>
+      <tr><th style="width:18%"></th><th>แบบ A · Pull (เราดึงเอา) ⭐ เลือกแบบนี้</th><th>แบบ B · Push (ผู้ให้บริการยิงมา)</th></tr>
+      <tr><td><b>ทิศทางข้อมูล</b></td><td class="pick">โปรแกรมเรา → เรียก API ผู้ให้บริการเป็นรอบ ๆ → ได้ตำแหน่งรถกลับมา</td><td>กล่อง GPS → server ผู้ให้บริการ → ยิงเข้าระบบเรา (เหมือนที่ส่งกรมขนส่ง)</td></tr>
+      <tr><td><b>ใครสร้างปลายทาง</b></td><td class="pick">ผู้ให้บริการมี API อยู่แล้ว เราแค่เรียก</td><td>เราต้องสร้างจุดรับ + ออกรหัสให้ผู้ให้บริการ</td></tr>
+      <tr><td><b>ความปลอดภัย</b></td><td class="pick">สูง (เราเป็นฝ่ายเรียก ไม่เปิดช่องสาธารณะ)</td><td>ต้องป้องกันจุดรับ + จำกัด IP</td></tr>
+      <tr><td><b>เหมาะกับงานเรา</b></td><td class="pick">✅ "รถอยู่ไหนตอนนี้ + ส่งถึงรึยัง"</td><td>เก็บเส้นทางละเอียดทั้งวัน (ทำทีหลังได้)</td></tr>
+    </table>
+    <div class="callout">
+      <b>การตัดสินใจของเรา:</b> ใช้ <b>แบบ A (Pull)</b> เป็นหลัก<br>
+      👉 <b>คำถามแรกสุดที่อยากให้ยืนยัน:</b> บริษัทรองรับให้เราดึงข้อมูล (Pull API) ได้ใช่หรือไม่? ถ้าใช่ ขอดำเนินการตามส่วนที่ 2
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section class="card">
+    <h2><span class="num">2</span> คำถามหลัก — แบบ A (Pull API)</h2>
+    <span class="who vendor">ขอให้ผู้ให้บริการตอบ</span>
+
+    <h3>2.1 ปลายทาง (Endpoint) และวิธีเรียก</h3>
+    <ol class="q">
+      <li><b>Base URL / Endpoint</b> ของ API ดู "ตำแหน่ง + สถานะรถ real-time" คืออะไร?</li>
+      <li>เป็น <b>REST API</b> (HTTP + JSON) ใช่ไหม? ถ้าไม่ใช่ ใช้รูปแบบอะไร (SOAP / WebSocket / อื่น ๆ)?</li>
+      <li>ขอ <b>เอกสาร API ฉบับเต็ม</b> + <b>ตัวอย่าง Request/Response จริง (sample JSON)</b></li>
+      <li>เรียกครั้งเดียวได้ <b>ตำแหน่งรถทุกคัน</b> เลยไหม หรือต้องเรียกทีละคัน?</li>
+    </ol>
+
+    <h3>2.2 การยืนยันตัวตน (Authentication)</h3>
+    <ol class="q" start="5">
+      <li>ใช้กุญแจแบบไหน — <b>API Key / Token / OAuth / Username-Password</b>?</li>
+      <li>ขอ <b>บัญชีทดสอบ + API Key สำหรับทดสอบ (sandbox)</b> เพื่อต่อระบบลองก่อนใช้จริง</li>
+      <li>กุญแจมี <b>วันหมดอายุ</b> ไหม? ต้องต่ออายุอย่างไร?</li>
+    </ol>
+
+    <h3>2.3 ข้อจำกัดการเรียก</h3>
+    <ol class="q" start="8">
+      <li>เรียกดูได้ <b>บ่อยแค่ไหน</b>? (เราอยากได้ ~ทุก 15–30 วินาที)</li>
+      <li>มี <b>จำกัดจำนวนครั้งต่อนาที (rate limit)</b> ไหม? เท่าไหร่?</li>
+      <li>ต้อง <b>แจ้ง IP ล่วงหน้า (whitelist)</b> ไหม? (ถ้าใช่ เราจะแจ้ง IP ให้)</li>
+    </ol>
+
+    <h3>2.4 ข้อมูลที่ได้กลับมา</h3>
+    <ol class="q" start="11">
+      <li>Response มี field อะไรบ้าง? เราต้องการอย่างน้อยตาม<b>ส่วนที่ 6</b></li>
+      <li><b>เวลา (timestamp)</b> เป็น UTC หรือเวลาไทย? มี field "เวลาอัปเดตล่าสุด" ไหม?</li>
+      <li>ถ้ารถ <b>จอด/ดับเครื่อง/สัญญาณขาด</b> ข้อมูลแสดงอย่างไร?</li>
+    </ol>
+
+    <h3>2.5 ข้อมูลย้อนหลัง (ถ้ามี)</h3>
+    <ol class="q" start="14">
+      <li>มี API <b>ดูเส้นทางย้อนหลัง</b> ไหม? ขอ endpoint + เอกสาร (ไว้ทำรายงาน/ยืนยันการส่ง)</li>
+    </ol>
+  </section>
+
+  <!-- 3 -->
+  <section class="card">
+    <h2><span class="num">3</span> คำถามสำรอง — แบบ B (Push) <span style="font-size:13px;color:var(--muted);font-weight:400;">เผื่อใช้ภายหลัง</span></h2>
+    <ol class="q" start="15">
+      <li>ผู้ให้บริการยิงข้อมูลมาในรูปแบบ <b>มาตรฐานกรมขนส่ง (DLT JSON)</b> ตรง ๆ ใช่ไหม?</li>
+      <li>ยิงมา <b>ทุกกี่นาที</b> และ <b>กี่คันต่อครั้ง</b>?</li>
+      <li>ฝั่งผู้ให้บริการต้องการอะไรจากเรา — <b>URL ปลายทาง, Username/Password, IP</b>?</li>
+      <li>ถ้า server เราล่มชั่วคราว มีระบบ <b>ส่งซ้ำ/ส่งย้อนหลัง</b> ไหม?</li>
+    </ol>
+  </section>
+
+  <!-- 4 -->
+  <section class="card">
+    <h2><span class="num">4</span> สิ่งที่อยากให้ผู้ให้บริการเตรียม</h2>
+    <span class="who vendor">ผู้ให้บริการเตรียม/ส่งมอบ</span>
+    <ul class="check">
+      <li><b>เอกสาร API</b> ของ Pull API + คำอธิบาย field ทุกตัว</li>
+      <li><b>ตัวอย่างข้อมูลจริง (sample Request/Response JSON)</b> อย่างน้อย 1 ชุด</li>
+      <li><b>บัญชีทดสอบ + API Key/Token</b> สำหรับทดสอบ (sandbox)</li>
+      <li><b>Base URL</b> ของระบบทดสอบ และระบบจริง (production)</li>
+      <li><b>รายการรถทั้งหมดของเรา</b> — ตาราง: เลขทะเบียน ↔ เลขกล่อง GPS (<code>unit_id</code>) ↔ รุ่นกล่อง <i>(ดูเหตุผล 5.2)</i></li>
+      <li><b>ข้อจำกัดการใช้งาน</b> — ความถี่, rate limit, ต้อง whitelist IP ไหม</li>
+      <li><b>ค่าใช้จ่าย</b> (ถ้ามี) สำหรับการใช้ API</li>
+      <li><b>ช่องทางติดต่อทีมเทคนิค</b> (อีเมล/เบอร์/LINE) กรณีติดปัญหา</li>
+    </ul>
+  </section>
+
+  <!-- 5 -->
+  <section class="card">
+    <h2><span class="num">5</span> สิ่งที่ฝั่งเราต้องเตรียม</h2>
+    <span class="who us">ทีมพัฒนาฝั่ง Pooil</span>
+
+    <h3>5.1 ระบบ</h3>
+    <ul class="check">
+      <li>ตัวเรียก API (API client) ดึงตำแหน่งรถ</li>
+      <li>งานเบื้องหลังดึงข้อมูลเป็นรอบ ทุก ~15–30 วินาที</li>
+      <li>ที่เก็บข้อมูลตำแหน่ง (ตาราง <code>driver_locations</code> มีอยู่แล้ว — ปรับให้ผูกกับ "กล่อง/รถ")</li>
+      <li>ตารางจับคู่ "เลขกล่อง <code>unit_id</code> ↔ รถ (Truck)" <b>— สำคัญมาก</b></li>
+      <li>หน้าจอแผนที่ real-time + สถานะ (เครื่องติด/ดับ, ความเร็ว, เวลาอัปเดต)</li>
+      <li>เก็บ API Key อย่างปลอดภัย (ไม่ commit ลงโค้ด)</li>
+    </ul>
+
+    <div class="callout warn">
+      <b>⭐ 5.2 การจับคู่รถ (ต้องทำให้ครบก่อนใช้จริง):</b> ข้อมูล GPS อ้างอิง <b>เลขกล่อง</b> และ <b>ทะเบียนรถ</b> แต่ระบบเราอ้างอิง "รถคันที่ X" → ต้องมีตารางจับคู่ จึงต้องขอ "รายการรถ + unit_id" จากผู้ให้บริการ (ส่วน 4)
+    </div>
+
+    <h3>5.3 ข้อมูลที่เราต้องส่งให้ผู้ให้บริการ</h3>
+    <ul class="check">
+      <li>IP Address (สาธารณะ) ของ server เรา — กรณีต้อง whitelist</li>
+      <li>(ถ้าใช้แบบ B) URL ปลายทาง + Username/Password ที่เราออกให้</li>
+    </ul>
+
+    <h3>5.4 การตัดสินใจที่ CEO ต้องเคาะ</h3>
+    <ul class="check">
+      <li>ความถี่อัปเดตที่ยอมรับได้ (เสนอ ~15–30 วินาที)</li>
+      <li>เก็บข้อมูลตำแหน่งย้อนหลังกี่วัน (เช่น 30/90 วัน)</li>
+    </ul>
+  </section>
+
+  <!-- 6 -->
+  <section class="card">
+    <h2><span class="num">6</span> รายการข้อมูลที่ต้องการ</h2>
+    <p class="lead">อ้างอิงมาตรฐานกรมขนส่ง (DLT) เพื่อให้ผู้ให้บริการเทียบได้ว่า Pull API มี field เหล่านี้ครบไหม</p>
+    <table>
+      <tr><th>ระดับ</th><th>Field (DLT)</th><th>ความหมาย</th><th>ใช้ทำอะไร</th></tr>
+      <tr><td><span class="tag t-red">ต้องมี</span></td><td><code>unit_id</code></td><td>เลขกล่อง GPS</td><td>จับคู่ว่าเป็นรถคันไหน</td></tr>
+      <tr><td><span class="tag t-red">ต้องมี</span></td><td><code>lat</code>, <code>lon</code></td><td>พิกัด</td><td>ปักหมุดบนแผนที่</td></tr>
+      <tr><td><span class="tag t-red">ต้องมี</span></td><td><code>utc_ts</code></td><td>เวลาที่กล่องส่ง</td><td>ตำแหน่งสดแค่ไหน</td></tr>
+      <tr><td><span class="tag t-red">ต้องมี</span></td><td><code>speed</code></td><td>ความเร็ว</td><td>รถวิ่ง/จอด, เร็วเกินไหม</td></tr>
+      <tr><td><span class="tag t-red">ต้องมี</span></td><td><code>engine_status</code></td><td>เครื่อง ติด/ดับ</td><td>รถทำงานหรือจอด</td></tr>
+      <tr><td><span class="tag t-yellow">อยากได้</span></td><td><code>course</code></td><td>ทิศทางวิ่ง</td><td>ลูกศรหัวรถบนแผนที่</td></tr>
+      <tr><td><span class="tag t-yellow">อยากได้</span></td><td>ทะเบียนรถ</td><td>เลขทะเบียน</td><td>จับคู่/แสดงให้คนอ่านง่าย</td></tr>
+      <tr><td><span class="tag t-yellow">อยากได้</span></td><td><code>fix</code></td><td>สถานะสัญญาณ</td><td>พิกัดเชื่อถือได้ไหม</td></tr>
+      <tr><td><span class="tag t-yellow">อยากได้</span></td><td><code>mileage</code></td><td>เลขไมล์สะสม</td><td>ดูระยะทางที่วิ่ง</td></tr>
+      <tr><td><span class="tag t-green">มีก็ดี</span></td><td><code>ext_power_status</code></td><td>สถานะไฟเลี้ยง</td><td>แจ้งเตือนกล่องถูกถอด</td></tr>
+      <tr><td><span class="tag t-green">มีก็ดี</span></td><td><code>over_speed_count</code></td><td>ครั้งขับเกินกำหนด</td><td>ความปลอดภัยคนขับ</td></tr>
+      <tr><td><span class="tag t-grey">มีก็ดี</span></td><td><code>driver_id</code></td><td>รหัสใบขับขี่</td><td>รู้ว่าใครขับ (ถ้ารูดบัตร)</td></tr>
+    </table>
+    <p style="font-size:14px;color:var(--muted)">หมายเหตุ: ถ้า Pull API ใช้ชื่อ field ต่างจากนี้ ขอเพียงระบุว่า field ไหน = ความหมายไหน ก็พอ</p>
+  </section>
+
+  <!-- 7 -->
+  <section class="card">
+    <h2><span class="num">7</span> ขั้นตอนถัดไป</h2>
+    <ol class="steps">
+      <li><b>เรา (Pooil):</b> ส่งเอกสารนี้ให้ทีมเทคนิคผู้ให้บริการ</li>
+      <li><b>ผู้ให้บริการ:</b> ยืนยันแบบ A + ส่งมอบของในส่วนที่ 4 (เน้น: เอกสาร API + ตัวอย่าง + test account)</li>
+      <li><b>เรา:</b> ได้ test account → ทดสอบเรียก API จริง → ยืนยันดึงตำแหน่งได้ → สร้างหน้าจอแผนที่</li>
+      <li><b>เรา:</b> ขอรายการ "รถ ↔ unit_id" → ทำตารางจับคู่ → เชื่อมเข้าระบบจริง</li>
+    </ol>
+  </section>
+
+  <!-- Appendix -->
+  <section class="appendix">
+    <h2>📎 ภาคผนวก — ข้อมูลทางเทคนิค (อ้างอิงมาตรฐาน DLT)</h2>
+    <p>เผื่อทีมเทคนิคผู้ให้บริการต้องการเทียบกับสิ่งที่ส่งกรมขนส่งอยู่แล้ว:</p>
+    <ul>
+      <li>รูปแบบข้อมูล: REST + JSON (UTF-8)</li>
+      <li>โครงสร้าง: <code>{ vender_id, locations_count, locations:[ { unit_id, driver_id, seq, utc_ts, recv_utc_ts, lat, lon, alt, speed, engine_status, fix, license, course, hdop, num_sats, mileage, ext_power_status, over_speed_count, max_speed } ] }</code></li>
+      <li>พิกัด: ทศนิยมอย่างน้อย 5 ตำแหน่ง · เวลา: UTC ISO 8601 (เช่น <code>2016-01-07T22:13:56.504Z</code>)</li>
+      <li>(แบบ B) Auth: Basic Authentication = <code>base64(username:password)</code> ใน Header <code>Authorization: Basic &lt;hash&gt;</code></li>
+      <li>(แบบ B) Endpoint แนว DLT: <code>POST /gps/add/locations</code> → ตอบ <code>{ code:1, message:"ok", received_records:N }</code></li>
+    </ul>
+  </section>
+
+  <footer>
+    เอกสารเชื่อมต่อระบบ FuelOS (โมดูลขายส่งน้ำมัน) ของ Pooil Group กับระบบ GPS ของผู้ให้บริการ · แก้ไขล่าสุด 1 มิ.ย. 2026
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FuelOS — พิมพ์เขียวระบบขายส่งน้ำมัน (Blueprint v1)</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}body{font-family:'Sarabun',sans-serif;background:#f5f7fb;color:#15182a;margin:0;line-height:1.6;font-size:15.5px}
+.page{max-width:920px;margin:0 auto;padding:40px 24px 80px}
+header{background:linear-gradient(135deg,#06c755,#0b6b4f 55%,#0e8a66);color:#fff;border-radius:22px;padding:38px 34px;margin-bottom:22px;box-shadow:0 16px 44px rgba(11,107,79,.24)}
+header .e{font-size:13px;opacity:.92;font-weight:600}header h1{margin:8px 0;font-size:29px}header p{margin:4px 0 0;opacity:.95;font-size:14.5px}
+.card{background:#fff;border:1px solid #e4e7ee;border-radius:16px;padding:22px 26px;margin-bottom:18px;box-shadow:0 2px 10px rgba(20,30,60,.04)}
+h2{color:#0b6b4f;font-size:20px;margin:0 0 12px;display:flex;gap:9px;align-items:center}
+h3{font-size:15px;margin:0}
+.feat{border:1px solid #e4e7ee;border-left:4px solid #0b6b4f;border-radius:0 12px 12px 0;padding:13px 16px;margin-bottom:11px;background:#fafbfd}
+.feat .t{font-weight:700;color:#0b6b4f;margin-bottom:5px}
+.feat ul{margin:4px 0 0;padding-left:20px}.feat li{margin:3px 0;font-size:14px}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;margin-left:6px;color:#fff}
+.mvp{background:#0b6b4f}.w2{background:#1f6feb}.w3{background:#8e44ad}.w4{background:#b7791f}.later{background:#7a8290}
+.speed{background:linear-gradient(135deg,#fff8ec,#fdf0d8);border:1px solid #f0d9a8;border-radius:16px;padding:18px 24px;margin-bottom:18px}
+.speed h2{color:#b7791f}
+.wave{border:1px solid #e4e7ee;border-radius:12px;padding:12px 16px;margin-bottom:10px}
+.wave b{color:#0b6b4f}
+.arch{background:#eef7f2;border:1px solid #bfe0cf;border-radius:14px;padding:16px 20px;margin-bottom:18px;font-size:14.5px}
+.todo{background:#fdf3e7;border:1px solid #f0d9a8;border-radius:14px;padding:16px 20px;margin-bottom:18px}
+.todo h2{color:#b7791f}
+ul.check{list-style:none;padding-left:0}ul.check li{position:relative;padding:6px 0 6px 28px}ul.check li::before{content:"☐";position:absolute;left:0;color:#b7791f;font-size:17px}
+.ok{color:#0b6b4f;font-weight:700}
+code{background:#eef1f6;padding:1px 6px;border-radius:5px;font-size:12.5px}
+footer{text-align:center;color:#5a6072;font-size:13px;margin-top:20px}
+@media print{body{background:#fff;font-size:12px}.card,.speed,.arch,.todo,.wave{box-shadow:none;break-inside:avoid}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body><div class="page">
+
+<header>
+  <div class="e">⛽ + 💬 Blueprint v1 · สรุปจากการเจาะทีละฟีเจอร์</div>
+  <h1>FuelOS — ระบบขายส่งน้ำมัน</h1>
+  <p>โปรแกรมแยกเดี่ยว (คนละแอป/คลัง/deploy) · ก๊อปโค้ดต้นแบบ · หน้าหลัก = ศูนย์รวมแชท LINE + CRM · เน้นเร็วจริง</p>
+</header>
+
+<div class="arch">
+  <b>🧱 สถาปัตยกรรม:</b> โปรแกรมแยกขาดจาก Pool 100% (แอป/ฐานข้อมูล/deploy ของตัวเอง) · ก๊อป "โค้ดต้นแบบ" (ระบบแชท+บอท+16 ตาราง+GPS) มาเริ่ม → ข้อมูลไม่ปนกัน · Stack: Next.js 15 + Supabase + Prisma
+</div>
+
+<div class="speed">
+  <h2>⚡ ความเร็ว (เสาหลัก)</h2>
+  เปิดหน้า &lt;1 วิ · ข้อความเด้ง realtime · กดปุ่ม &lt;0.3 วิ · 100+ กลุ่มต้องลื่น → โหลดทีละส่วน · ไม่ N+1 · cache ราคา · เก็บตำแหน่งรถล่าสุดแยกประวัติ · optimistic UI
+</div>
+
+<div class="card">
+  <h2>📋 12 ฟีเจอร์ + สิ่งที่ล็อกแล้ว</h2>
+
+  <div class="feat"><div class="t">F1 · กล่องรวมแชทกลุ่ม LINE (ประตูหน้า)<span class="pill mvp">MVP</span></div>
+  <ul><li>ตอบได้ทั้ง 2 ทาง: ใน LINE มือถือ (ระบบอ่าน+วัดผล) / ส่งจากเว็บผ่าน OA</li><li>100+ กลุ่ม · 1 กลุ่ม = 1 ลูกค้า</li><li>กรองลูกค้า เก่า/ใหม่/เช็คราคาเฉยๆ · ปุ่มสถานะเร็วในแชท · การ์ดโชว์ใบราคา/ออเดอร์ล่าสุด</li></ul></div>
+
+  <div class="feat"><div class="t">F2 · ใครตอบ / ค้างตอบ / ผู้รับผิดชอบ<span class="pill mvp">MVP</span></div>
+  <ul><li>เจ้าของหลัก + คนอื่นช่วยได้</li><li>ปุ่มสถานะ: เสนอราคาแล้ว · รอลูกค้าตัดสินใจ · ปิดการขาย/ได้ออเดอร์</li><li>ค้างตอบ = ลูกค้าพิมพ์ล่าสุด ยังไม่มีคนตอบ · เก่า/ใหม่: ขายได้ครั้งแรก→เก่าอัตโนมัติ</li></ul></div>
+
+  <div class="feat"><div class="t">F7 · ราคา (ราคาคลังเช้า + กำไรโซน)<span class="pill mvp">MVP</span></div>
+  <ul><li>2-3 คนกรอกราคาคลังเช้าได้ · ดีเซล B7/B10/B20 + แก๊สโซฮอล์ 91/95/E20/E85</li><li>ราคาขาย = ต้นทุน + กำไรโซน + เซลล์บวกเพิ่มรายลูกค้า · มี minMargin กันขาดทุน</li><li>เซลล์เห็นต้นทุน+กำไร</li></ul></div>
+
+  <div class="feat"><div class="t">F5 · CRM + เตือนลูกค้าผิดปกติ<span class="pill w2">คลื่น 2</span></div>
+  <ul><li>การ์ด: กำไรจากลูกค้า · เครดิตคงเหลือ/เช็คค้าง · timeline การซื้อ · ยอดเดือนนี้ vs ปกติ</li><li>🔔 เตือนลูกค้าผิดปกติ: เกินรอบซื้อ/ยอดตก (เช่น เคย 30,000→6,500 ลิตร) → เตือนเซลล์เจ้าของ · จับสัญญาณหนีไปเจ้าอื่น</li><li>รอบซื้อ: auto แนะ + เซลล์ปรับ · prospect มีระบบ follow-up</li></ul></div>
+
+  <div class="feat"><div class="t">F6 · ออกใบเสนอราคาจากแชท<span class="pill w2">คลื่น 2</span></div>
+  <ul><li>ส่งเป็นลิงก์เปิดหน้าใบราคา · หลายชนิดรวมใบเดียว</li><li>แพ้/ชนะ ไม่บังคับ + เตือนใบค้างผล · ลูกค้าใหม่ออกใบได้เลย ค่อยกรอกครบตอนเป็นออเดอร์</li></ul></div>
+
+  <div class="feat"><div class="t">F8 · ออเดอร์ (kanban) + กำไรอัตโนมัติ<span class="pill w2">คลื่น 2</span></div>
+  <ul><li>เซลล์กดแปลงใบราคา→ออเดอร์ · ราคาล็อกตอนออกใบ</li><li>Kanban: รอยืนยัน → กำลังส่ง → ส่งแล้ว/รอเก็บเงิน → ปิดบิล</li><li>เกินวงเงิน → ต้องขออนุมัติ (CEO) ก่อนขาย</li></ul></div>
+
+  <div class="feat"><div class="t">F3 · รายงาน/KPI<span class="pill w2">คลื่น 2</span></div>
+  <ul><li>เวลาตอบ (ช้า&gt;30นาที=แดง, วัด 24ชม.) · แชทตกหล่น · ยอด/กำไร/win-rate รายคน</li><li>ดูเฉยๆ ก่อน 1-2 เดือน (ยังไม่ผูกคอม)</li></ul></div>
+
+  <div class="feat"><div class="t">F9 · เครดิต + รับชำระ + เช็ค<span class="pill w3">คลื่น 3</span></div>
+  <ul><li>วงเงินรายบริษัท · เกินวงเงินอนุมัติโดย CEO</li><li>สลิปในแชท → การเงินยืนยันยอดเข้าจริงก่อนตัดเครดิต (กันสลิปปลอม)</li><li>เช็คเด้ง → ดึงวงเงินคืนอัตโนมัติ + แจ้งเตือน</li></ul></div>
+
+  <div class="feat"><div class="t">F11 · รายงานกำไร-ขาดทุน/ยอดขาย<span class="pill w3">คลื่น 3</span></div>
+  <ul><li>P&amp;L รวม (วัน/เดือน) · กำไรรายลูกค้า/ชนิดน้ำมัน/เซลล์/โซน</li><li>กำไร = หักต้นทุนน้ำมัน + ค่าขนส่ง · export Excel/CSV · เห็นได้ CEO+หัวหน้า</li><li>ไม่ทำบัญชีภาษีเต็มรูป (ส่งออกให้โปรแกรมบัญชีเดิม)</li></ul></div>
+
+  <div class="feat"><div class="t">F12 · ส่งต่องาน (คนลาออก)<span class="pill w3">คลื่น 3</span></div>
+  <ul><li>จัดคนใหม่มาดูแลแทน (โอนเจ้าของ) · คนใหม่เห็นประวัติเก่าหมด (แชท+ออเดอร์+โน้ต)</li></ul></div>
+
+  <div class="feat"><div class="t">F10 · จัดส่ง + GPS<span class="pill w4">คลื่น 4</span></div>
+  <ul><li>เราส่งเองเป็นหลัก · กระดานรวมออเดอร์ค้างส่ง → จัดรถทีเดียว</li><li>GPS: แผนที่รวมทุกคัน + ต่อออเดอร์ · ยืนยันส่ง = คนขับถ่ายรูป+พิกัด</li><li>route optimization ตัดจาก MVP · รอ vendor ส่งคู่มือ API + test account</li></ul></div>
+
+  <div class="feat"><div class="t">F4 · เครื่องมือช่วยเซลล์ (บอทช่วย ไม่ตอบเอง)<span class="pill mvp">MVP (บางส่วน)</span></div>
+  <ul><li>แปะราคาวันนี้ · ดึงเลขบัญชีโอน · ร่างคำตอบ/FAQ กดส่ง · สรุปแชทยาว/ออเดอร์ · กดทำใบราคา</li><li>สรุปรายวันส่ง CEO+หัวหน้าทาง LINE · ไม่ auto-reply ในกลุ่ม</li></ul></div>
+</div>
+
+<div class="card">
+  <h2>🚀 ลำดับสร้างที่แนะนำ (เป็นคลื่น)</h2>
+  <div class="wave"><b>คลื่น 0 · ตั้งระบบ + พิสูจน์ LINE</b> (~2 วัน) — repo+Supabase ใหม่ · ก๊อปต้นแบบ · เทส LINE กลุ่มจริง 1 กลุ่ม</div>
+  <div class="wave"><b>คลื่น 1 · MVP</b> (~1-2 สัปดาห์) — F1 กล่องแชทกลุ่ม + F2 ใครตอบ/ค้าง + F7 ราคา + F4 แปะราคา → <span class="ok">ใช้งานจริงได้</span></div>
+  <div class="wave"><b>คลื่น 2 · ขาย</b> — F5 CRM + F6 ใบราคาจากแชท + F8 ออเดอร์ + F3 KPI</div>
+  <div class="wave"><b>คลื่น 3 · เงิน</b> — F9 เครดิต/ชำระ + F11 รายงานกำไร + F12 ส่งต่องาน</div>
+  <div class="wave"><b>คลื่น 4 · ส่งของ</b> — F10 จัดส่ง + GPS (รอ vendor)</div>
+</div>
+
+<div class="todo">
+  <h2>📦 สิ่งที่ต้องเตรียมก่อนเริ่ม (CEO ช่วย)</h2>
+  <ul class="check">
+    <li>สร้าง <b>Supabase project ใหม่</b> (ฐานข้อมูลของโปรแกรมนี้) + ตั้งชื่อ repo/URL</li>
+    <li><b>LINE OA ของ PO Oil</b>: Channel Access Token + Secret + เปิด "Allow bot to join group chats"</li>
+    <li><b>เทส 1 กลุ่มจริง</b> ยืนยันข้อความกลุ่มเข้าครบ (รูป/สลิป/สติกเกอร์)</li>
+    <li><b>จับคู่ LINE ของพนักงานแต่ละคน</b> (เพื่อรู้ว่าใครตอบ)</li>
+    <li><b>GPS vendor</b>: คู่มือ API ดึงพิกัด + test account (สำหรับคลื่น 4)</li>
+    <li><b>Import ลูกค้าเดิม + วงเงินเครดิตเดิม</b> (จาก Excel) ไม่งั้นวันแรกว่างเปล่า</li>
+    <li>พิจารณา <b>Vercel Pro</b> (~$20/เดือน) เพื่อ realtime + cron ถี่</li>
+  </ul>
+</div>
+
+<footer>FuelOS Blueprint v1 · Pooil Group · 2 มิ.ย. 2026 · สรุปจากการเจาะ 12 ฟีเจอร์ + ทีมรีวิว 13 บทบาท</footer>
+</div></body></html>
