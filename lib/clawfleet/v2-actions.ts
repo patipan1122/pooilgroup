@@ -16,6 +16,9 @@ import {
   StartBranchSessionSchema,
   SubmitBranchEventSchema,
   CloseBranchSessionSchema,
+  StartGroupSessionSchema,
+  SubmitExchangerEventSchema,
+  CloseGroupSessionSchema,
 } from "./types";
 import { deriveEvent, validateBranchPhotos, deriveBranchCrossCheck } from "./validation";
 
@@ -341,6 +344,256 @@ export async function closeBranchSession(input: unknown): Promise<ResultOf<{ sta
     revalidatePath("/clawfleet/v2/anomalies");
     revalidatePath("/clawfleet/v2/hub");
     return { ok: true, data: { status: cc.status, flags: cc.flags } };
+  } catch (e) {
+    return { ok: false, error: `ปิดรอบไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
+// =============================================================
+// Group-scoped collect flow (Type B = TOKEN exchanger + claws · Type A = CASH)
+// Opening a session with group_id set re-enables the Postgres trigger
+// cf_session_close_crosscheck (3-way token check). Grafted from antifraud branch.
+// =============================================================
+
+/** เปิดรอบเก็บระดับกลุ่ม · resume ถ้ามีรอบ OPEN อยู่แล้ว */
+export async function startGroupSession(
+  input: unknown,
+): Promise<ResultOf<{ id: string; code: string; groupType: "TOKEN" | "CASH" }>> {
+  const parsed = StartGroupSessionSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+  const { groupId } = parsed.data;
+
+  const group = await prisma.cfMachineGroup.findFirst({
+    where: { id: groupId, orgId, isActive: true },
+    select: { id: true, branchId: true, exchangerId: true },
+  });
+  if (!group) return { ok: false, error: "ไม่พบกลุ่มตู้ หรือกลุ่มปิดใช้งาน" };
+
+  const allowed = await userBranchIds(session);
+  if (allowed !== "ALL" && !allowed.includes(group.branchId)) {
+    return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
+  }
+  const groupType: "TOKEN" | "CASH" = group.exchangerId ? "TOKEN" : "CASH";
+
+  const open = await prisma.cfCollectionSession.findFirst({
+    where: { orgId, groupId, status: "OPEN" },
+    select: { id: true, sessionCode: true },
+  });
+  if (open) return { ok: true, data: { id: open.id, code: open.sessionCode, groupType } };
+
+  const admin = adminClient();
+  const { data: codeData, error: codeErr } = await admin.rpc("cf_next_session_code", { p_org_id: orgId });
+  if (codeErr) return { ok: false, error: `รหัสรอบ: ${codeErr.message}` };
+
+  try {
+    const s = await prisma.cfCollectionSession.create({
+      data: {
+        orgId,
+        groupId,
+        branchId: group.branchId, // keep branch for access guards + branch reporting
+        sessionCode: codeData as string,
+        openedById: session.user.id,
+        status: "OPEN",
+      },
+      select: { id: true, sessionCode: true },
+    });
+    revalidatePath("/clawfleet/v2/operations");
+    revalidatePath("/clawfleet/v2/hub");
+    return { ok: true, data: { id: s.id, code: s.sessionCode, groupType } };
+  } catch (e) {
+    return { ok: false, error: `เปิดรอบไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
+/** กรอกตู้แลก (EXCHANGER) ในรอบกลุ่ม — token meter + เงินที่เก็บได้ + 3 รูป */
+export async function submitExchangerEvent(input: unknown): Promise<ResultOf<{ id: string }>> {
+  const parsed = SubmitExchangerEventSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const data = parsed.data;
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+
+  const machine = await prisma.cfMachine.findFirst({
+    where: { id: data.machineId, orgId, isActive: true, kind: "EXCHANGER" },
+    select: { id: true, branchId: true, groupId: true, qrToken: true, lastCoinMeter: true },
+  });
+  if (!machine) return { ok: false, error: "ไม่พบตู้แลก" };
+
+  const allowed = await userBranchIds(session);
+  if (allowed !== "ALL" && !allowed.includes(machine.branchId)) {
+    return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
+  }
+  if (data.qrToken && machine.qrToken !== data.qrToken) {
+    return { ok: false, error: "QR ไม่ตรงกับตู้แลกนี้ · สแกนใหม่" };
+  }
+
+  const cf = await prisma.cfCollectionSession.findFirst({
+    where: { id: data.sessionId, orgId, status: "OPEN" },
+    select: { id: true, groupId: true },
+  });
+  if (!cf) return { ok: false, error: "รอบนี้ไม่อยู่ในสถานะเปิด" };
+  if (!cf.groupId || cf.groupId !== machine.groupId) {
+    return { ok: false, error: "ตู้แลกไม่อยู่ในกลุ่มของรอบนี้" };
+  }
+  // C2: token meter must not regress
+  if (data.coinMeterAfter < machine.lastCoinMeter) {
+    return { ok: false, error: "มิเตอร์ token ถอยหลัง · ตรวจตัวเลข" };
+  }
+
+  const dup = await prisma.cfCollectionEvent.findFirst({
+    where: { sessionId: data.sessionId, machineId: data.machineId, eventType: "COLLECTION" },
+    select: { id: true },
+  });
+  if (dup) return { ok: false, error: "ตู้แลกนี้กรอกในรอบนี้ไปแล้ว" };
+
+  try {
+    const ev = await prisma.cfCollectionEvent.create({
+      data: {
+        orgId,
+        sessionId: data.sessionId,
+        machineId: data.machineId,
+        eventType: "COLLECTION",
+        collectedAt: new Date(),
+        collectedById: session.user.id,
+        coinMeterBefore: machine.lastCoinMeter,
+        coinMeterAfter: data.coinMeterAfter, // token dispensed = delta
+        cashCountedCents: data.cashCountedCents, // money collected at exchanger
+        promoCoinsDispensed: data.promoCoinsDispensed ?? null,
+        photoMeterAfterUrl: data.photoCoinMeterUrl,
+        photoCashUrl: data.photoCashUrl,
+        photoMeterBeforeUrl: data.photoTokenTrayUrl, // reuse slot for token-tray photo
+        notes: data.notes,
+      },
+      select: { id: true },
+    });
+    revalidatePath("/clawfleet/v2/operations");
+    return { ok: true, data: { id: ev.id } };
+  } catch (e) {
+    return { ok: false, error: `บันทึกตู้แลกไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
+/**
+ * ปิดรอบกลุ่ม. App-layer คำนวณ doll (+ cash สำหรับกลุ่มเงินสด) เป็น snapshot/preview
+ * แล้ว set status. Postgres trigger cf_session_close_crosscheck จะทำ TOKEN cross-check
+ * (exchanger coins-out == Σ claw coins-in) เองตอน UPDATE → append COIN_GROUP_MISMATCH
+ * + บังคับ ANOMALY_REVIEW ถ้าไม่ตรง. ตู้แลกถูก guard ด้วย exchanger_id IS NOT NULL.
+ */
+export async function closeGroupSession(
+  input: unknown,
+): Promise<ResultOf<{ status: string; flags: string[] }>> {
+  const parsed = CloseGroupSessionSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const data = parsed.data;
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+
+  const cf = await prisma.cfCollectionSession.findFirst({
+    where: { id: data.sessionId, orgId, status: "OPEN" },
+    select: {
+      id: true,
+      branchId: true,
+      groupId: true,
+      group: { select: { exchangerId: true } },
+      events: {
+        where: { eventType: "COLLECTION" },
+        select: {
+          machineId: true,
+          coinMeterBefore: true, coinMeterAfter: true, cashCountedCents: true,
+          dollMeterBefore: true, dollMeterAfter: true,
+          stockBefore: true, stockAfter: true, refillQty: true,
+        },
+      },
+    },
+  });
+  if (!cf) return { ok: false, error: "รอบนี้ไม่อยู่ในสถานะเปิด" };
+  if (!cf.groupId) return { ok: false, error: "รอบนี้ไม่ใช่ระดับกลุ่ม" };
+
+  const allowed = await userBranchIds(session);
+  if (allowed !== "ALL" && (!cf.branchId || !allowed.includes(cf.branchId))) {
+    return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
+  }
+
+  const isTokenGroup = !!cf.group?.exchangerId;
+
+  // completeness: ทุกตู้คีบในกลุ่ม + ตู้แลก (ถ้าเป็น token group) ต้องเก็บครบ
+  const clawCount = await prisma.cfMachine.count({
+    where: { orgId, groupId: cf.groupId, kind: "CLAW", isActive: true },
+  });
+  const exchangerCollected = isTokenGroup
+    ? cf.events.some((e) => e.machineId === cf.group!.exchangerId)
+    : true;
+  const clawEvents = cf.events.filter((e) => e.machineId !== cf.group?.exchangerId);
+
+  if (clawEvents.length === 0) return { ok: false, error: "ยังไม่มีตู้คีบที่กรอก" };
+  if (clawEvents.length < clawCount) {
+    return { ok: false, error: `เก็บไม่ครบ · ตู้คีบ ${clawEvents.length}/${clawCount} ตู้` };
+  }
+  if (!exchangerCollected) {
+    return { ok: false, error: "ยังไม่ได้เก็บตู้แลก (EXCHANGER) ของกลุ่มนี้" };
+  }
+
+  // App-layer cash+doll preview (token = trigger). For token groups the claws carry
+  // no cash, so skip the per-claw cash check; doll always applies.
+  const cc = deriveBranchCrossCheck(
+    clawEvents.map((e) => ({
+      coinMeterBefore: e.coinMeterBefore,
+      coinMeterAfter: e.coinMeterAfter,
+      cashCountedCents: isTokenGroup ? 0 : e.cashCountedCents,
+      dollMeterBefore: e.dollMeterBefore ?? 0,
+      dollMeterAfter: e.dollMeterAfter ?? 0,
+      stockBefore: e.stockBefore ?? 0,
+      stockAfter: e.stockAfter ?? 0,
+      refillQty: e.refillQty ?? 0,
+      // token group: claws have no cash → expected 0 so cash check is a no-op
+      cashPerCoinCents: isTokenGroup ? 0 : CASH_PER_PLAY_CENTS,
+    })),
+  );
+
+  // P0: for a TOKEN group the REAL money lives in the EXCHANGER, not the claws.
+  // The recorded cash the office reconciles against the bank slip = exchanger cash
+  // (+ any claw cash, 0 for token groups). Without this, settlement would reconcile
+  // a deposit slip against ฿0 and never catch a short deposit.
+  const exchangerCashCents = isTokenGroup
+    ? cf.events
+        .filter((e) => e.machineId === cf.group?.exchangerId)
+        .reduce((sum, e) => sum + (e.cashCountedCents ?? 0), 0)
+    : 0;
+  const recordedCashCents = cc.actualCashCents + exchangerCashCents;
+
+  try {
+    await prisma.cfCollectionSession.update({
+      where: { id: data.sessionId, status: "OPEN" },
+      data: {
+        // trigger may override to ANOMALY_REVIEW if token mismatch
+        status: cc.status,
+        closedById: session.user.id,
+        expectedCashCents: cc.expectedCashCents,
+        actualCashCents: recordedCashCents,
+        totalCashCents: recordedCashCents,
+        cashVarianceBps: cc.cashVarianceBps,
+        prizeMeterOut: cc.prizeMeterOut,
+        prizeCountedOut: cc.prizeCountedOut,
+        prizeVariance: cc.prizeVariance,
+        anomalyFlags: cc.flags,
+        reviewNote: data.reviewNote,
+      },
+      select: { id: true },
+    });
+    // read back what the trigger decided (token cross-check + final status)
+    const after = await prisma.cfCollectionSession.findFirst({
+      where: { id: data.sessionId, orgId },
+      select: { status: true, anomalyFlags: true },
+    });
+    revalidatePath("/clawfleet/v2/operations");
+    revalidatePath("/clawfleet/v2/anomalies");
+    revalidatePath("/clawfleet/v2/hub");
+    return {
+      ok: true,
+      data: { status: after?.status ?? cc.status, flags: after?.anomalyFlags ?? cc.flags },
+    };
   } catch (e) {
     return { ok: false, error: `ปิดรอบไม่สำเร็จ: ${(e as Error).message}` };
   }
