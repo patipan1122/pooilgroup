@@ -5,9 +5,15 @@
 // exportConfirmedCsv action). Confirmed/locked rows only — never drafts.
 import { useState, useTransition } from "react";
 
+// Current month in Asia/Bangkok (YYYY-MM). en-CA → "2026-06". Using the TZ
+// formatter (not getUTC*) so the default export period matches the dashboard
+// near the 1st of the month regardless of the browser's UTC offset.
 function currentPeriod(): string {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+  }).format(new Date());
 }
 
 export function ExportButton({ companyId }: { companyId: string }) {

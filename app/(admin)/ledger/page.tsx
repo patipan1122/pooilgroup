@@ -6,6 +6,7 @@ import { requireSession } from "@/lib/auth/session";
 import { resolveScope } from "./_scope";
 import { LedgerHeader, NoCompanyState } from "./_components/LedgerHeader";
 import { expenseSummary, listExpensesSummary, spendByCategory } from "./_data";
+import { currentPeriodBangkok } from "@/lib/ledger/dashboard";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
 import { LedgerEmptyState } from "@/components/ledger/Brand";
 
@@ -13,11 +14,6 @@ export const dynamic = "force-dynamic";
 
 function baht(n: number) {
   return `${Math.round(n).toLocaleString("en-US")} ฿`;
-}
-
-function currentPeriod() {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 export default async function LedgerHomePage({
@@ -38,7 +34,7 @@ export default async function LedgerHomePage({
     );
   }
 
-  const period = currentPeriod();
+  const period = currentPeriodBangkok();
   const filter = {
     orgId: scope.orgId,
     companyId: scope.companyId,

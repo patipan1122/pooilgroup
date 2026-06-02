@@ -13,6 +13,7 @@ import {
   expenseByMonth,
   listBudgets,
 } from "../_data";
+import { currentPeriodBangkok } from "@/lib/ledger/dashboard";
 import { InsightsPanel } from "./_components/InsightsPanel";
 import { QaBox } from "./_components/QaBox";
 import { BudgetVsActual } from "./_components/BudgetVsActual";
@@ -21,10 +22,6 @@ export const dynamic = "force-dynamic";
 
 function baht(n: number) {
   return `${Math.round(n).toLocaleString("en-US")} ฿`;
-}
-function currentPeriod() {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 function BarRow({
@@ -81,7 +78,9 @@ export default async function LedgerDashboardPage({
   }
 
   const period =
-    sp.period && /^\d{4}-\d{2}$/.test(sp.period) ? sp.period : currentPeriod();
+    sp.period && /^\d{4}-\d{2}$/.test(sp.period)
+      ? sp.period
+      : currentPeriodBangkok();
   const filter = {
     orgId: scope.orgId,
     companyId: scope.companyId,

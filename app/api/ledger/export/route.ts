@@ -26,9 +26,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: res.error }, { status: 400 });
   }
 
-  // UTF-8 BOM so Excel opens Thai text correctly.
-  const body = "﻿" + res.csv;
-  return new NextResponse(body, {
+  // The action's CSV already carries a single UTF-8 BOM (buildTrcloudCsv
+  // defaults bom:true) so Excel opens Thai text correctly. Do NOT prepend
+  // another BOM here — a double BOM corrupts the first header cell and can
+  // break a strict TRCloud importer.
+  return new NextResponse(res.csv, {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",

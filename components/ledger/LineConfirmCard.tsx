@@ -27,6 +27,14 @@ export interface LedgerOcrConfidence {
 export interface LedgerConfirmCardInput {
   /** ledger_expense.id — used to build the confirm/edit deep-links. */
   expenseId: string;
+  /**
+   * company_id the expense belongs to. Carried into the deep-link as ?company=
+   * so the web expenses page opens the RIGHT company. Without it the page
+   * defaults to the org's FIRST company (resolveScope), and a receipt belonging
+   * to any other company returns "ไม่พบรายการ". Required for multi-company orgs
+   * (JP Link runs 2 companies). The webhook knows it as channel.companyId.
+   */
+  companyId: string;
   /** ledger_expense.doc_code (EXP-YYYYMM-NNNN). */
   docCode: string;
   /** Vendor name as read by OCR (null until confirmed). */
@@ -233,6 +241,7 @@ function fieldRow(label: string, value: string, conf?: number): FlexBox {
 export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMessage {
   const {
     expenseId,
+    companyId,
     docCode,
     vendor,
     docDate,
@@ -249,6 +258,12 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
 
   const base = baseUrl.replace(/\/+$/, "");
   const payment = fmtPayment(paymentMethod);
+  // Deep-link querystring: pin the company so the web pane opens the right one
+  // (multi-company orgs) then select the expense. Skip ?company= only when the
+  // caller has no companyId (shouldn't happen — it's required).
+  const deepLink = `${base}/ledger/expenses?${
+    companyId ? `company=${encodeURIComponent(companyId)}&` : ""
+  }selected=${encodeURIComponent(expenseId)}`;
   // Absolute brand URLs (LINE flex images must be https). Only when baseUrl set.
   const mascotUrl = base ? `${base}${BRAND_PATH.mascot}` : null;
 
@@ -267,7 +282,7 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
         data: `ledger:confirm:${expenseId}`,
         displayText: "ยืนยันใบเสร็จนี้",
       }
-    : { type: "uri", label: "ยืนยัน", uri: `${base}/ledger/expenses?selected=${encodeURIComponent(expenseId)}` };
+    : { type: "uri", label: "ยืนยัน", uri: deepLink };
   const editAction: FlexAction = usePostback
     ? {
         type: "postback",
@@ -275,7 +290,7 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
         data: `ledger:edit:${expenseId}`,
         displayText: "ขอแก้ไขใบเสร็จนี้",
       }
-    : { type: "uri", label: "แก้ไข", uri: `${base}/ledger/expenses?selected=${encodeURIComponent(expenseId)}` };
+    : { type: "uri", label: "แก้ไข", uri: deepLink };
 
   const bodyContents: FlexComponent[] = [
     // Big amount line.

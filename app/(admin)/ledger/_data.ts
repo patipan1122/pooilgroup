@@ -8,6 +8,7 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import type { BudgetRow } from "@/components/ledger/_kit/types";
+import { currentPeriodBangkok, shiftPeriod } from "@/lib/ledger/dashboard";
 
 // Re-export B's queries so pages have a single import surface.
 export {
@@ -110,17 +111,21 @@ export const expenseByBranch = cache(
   },
 );
 
-/** Monthly confirmed-spend trend (last N months) — for dashboard bars. */
+/** Monthly confirmed-spend trend (last N months) — for dashboard bars.
+ *  Anchored on the Asia/Bangkok current month so the highlighted "current"
+ *  bar and bucket labels match the period the dashboard page shows (avoids the
+ *  UTC vs +07:00 off-by-one near the 1st of the month). */
 export const expenseByMonth = cache(
   async (
     orgId: string,
     companyId: string,
     months = 6,
   ): Promise<Array<{ period: string; total: number }>> => {
-    const now = new Date();
-    const start = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (months - 1), 1),
-    );
+    const anchor = currentPeriodBangkok(); // YYYY-MM (Bangkok)
+    const startPeriod = shiftPeriod(anchor, -(months - 1));
+    const [sy, sm] = startPeriod.split("-").map(Number);
+    const start = new Date(Date.UTC(sy, sm - 1, 1));
+
     const rows = await prisma.ledgerExpense.findMany({
       where: {
         orgId,
@@ -132,13 +137,7 @@ export const expenseByMonth = cache(
     });
     const buckets = new Map<string, number>();
     for (let i = 0; i < months; i++) {
-      const d = new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (months - 1) + i, 1),
-      );
-      buckets.set(
-        `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`,
-        0,
-      );
+      buckets.set(shiftPeriod(startPeriod, i), 0);
     }
     for (const r of rows) {
       if (!r.docDate) continue;

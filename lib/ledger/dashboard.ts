@@ -278,6 +278,8 @@ export async function spendByMonth(
 export interface BudgetVsActual {
   categoryId: string;
   categoryName: string | null;
+  /** null = company-wide budget · set = branch-specific budget. */
+  branchId: string | null;
   budget: number;
   actual: number;
   /** actual / budget · 0 when no budget set. */
@@ -290,44 +292,68 @@ export interface BudgetVsActual {
 }
 
 /**
- * Budget vs actual per category for a period. Matches a budget row for the exact
- * period OR a recurring budget (recurring=true), period-specific wins.
+ * Budget vs actual for a period. Matches a budget row for the exact period OR a
+ * recurring budget (recurring=true) — period-specific wins per (category,branch).
+ *
+ * IMPORTANT (must mirror _data.ts listBudgets so the AI/QA layer and the page's
+ * budget table never contradict):
+ *   - actual is computed via groupBy [categoryId, branchId] over the period, NOT
+ *     the company-wide spendByCategory total.
+ *   - branch-specific budget (branchId set) → compared against the (cat, that-branch)
+ *     bucket only.
+ *   - company-wide budget (branchId null) → compared against the SUM of all branch
+ *     buckets for the category.
+ *   - result map is keyed by `${categoryId}|${branchId ?? ""}` so per-branch and
+ *     company-wide budgets for the same category don't collide (which previously
+ *     let one cap shadow the other and fired false "ใช้เกินงบ" alerts).
  */
 export async function budgetVsActual(
   scope: DashboardScope,
 ): Promise<BudgetVsActual[]> {
   const period = scope.period ?? currentPeriodBangkok();
 
-  const [budgets, spend] = await Promise.all([
-    prisma.ledgerBudget.findMany({
-      where: {
-        orgId: scope.orgId,
-        companyId: scope.companyId,
-        ...(scope.branchId ? { branchId: scope.branchId } : {}),
-        OR: [{ period }, { recurring: true }],
-      },
-      select: {
-        categoryId: true,
-        period: true,
-        recurring: true,
-        amount: true,
-        alertPct: true,
-        category: { select: { name: true } },
-      },
-    }),
-    spendByCategory(scope),
-  ]);
+  const budgets = await prisma.ledgerBudget.findMany({
+    where: {
+      orgId: scope.orgId,
+      companyId: scope.companyId,
+      // Respect a single-branch scope; otherwise consider all (company-wide +
+      // every branch-specific) budgets — the actual lookup below keeps them apart.
+      ...(scope.branchId ? { branchId: scope.branchId } : {}),
+      OR: [{ period }, { recurring: true }],
+    },
+    select: {
+      categoryId: true,
+      branchId: true,
+      period: true,
+      recurring: true,
+      amount: true,
+      alertPct: true,
+      category: { select: { name: true } },
+    },
+  });
 
-  // Period-specific budget wins over a recurring one for the same category.
-  const byCat = new Map<
+  if (budgets.length === 0) return [];
+
+  // Period-specific budget wins over a recurring one for the SAME (cat,branch).
+  const byKey = new Map<
     string,
-    { amount: number; alertPct: number; name: string | null; specific: boolean }
+    {
+      categoryId: string;
+      branchId: string | null;
+      amount: number;
+      alertPct: number;
+      name: string | null;
+      specific: boolean;
+    }
   >();
   for (const b of budgets) {
+    const key = `${b.categoryId}|${b.branchId ?? ""}`;
     const specific = b.period === period && !b.recurring;
-    const prev = byCat.get(b.categoryId);
+    const prev = byKey.get(key);
     if (!prev || (specific && !prev.specific)) {
-      byCat.set(b.categoryId, {
+      byKey.set(key, {
+        categoryId: b.categoryId,
+        branchId: b.branchId,
         amount: dec(b.amount),
         alertPct: b.alertPct,
         name: b.category?.name ?? null,
@@ -336,22 +362,46 @@ export async function budgetVsActual(
     }
   }
 
-  const actualByCat = new Map(
-    spend.filter((s) => s.categoryId).map((s) => [s.categoryId!, s.total]),
-  );
+  // Actual spend grouped per (category, branch) for the period.
+  const where: Prisma.LedgerExpenseWhereInput = {
+    orgId: scope.orgId,
+    companyId: scope.companyId,
+    status: { in: [...SPEND_STATUS] },
+    categoryId: { in: [...new Set(budgets.map((b) => b.categoryId))] },
+  };
+  const b = monthBounds(period);
+  if (b) where.docDate = { gte: b.start, lt: b.end };
 
-  return [...byCat.entries()].map(([categoryId, b]) => {
-    const actual = actualByCat.get(categoryId) ?? 0;
-    const usedPct = b.amount > 0 ? (actual / b.amount) * 100 : 0;
+  const grouped = await prisma.ledgerExpense.groupBy({
+    by: ["categoryId", "branchId"],
+    where,
+    _sum: { total: true },
+  });
+
+  const byCatBranch = new Map<string, number>(); // `${cat}|${branch}`
+  const byCat = new Map<string, number>(); // company-wide total per category
+  for (const g of grouped) {
+    if (!g.categoryId) continue;
+    const amt = dec(g._sum.total);
+    byCatBranch.set(`${g.categoryId}|${g.branchId ?? ""}`, amt);
+    byCat.set(g.categoryId, (byCat.get(g.categoryId) ?? 0) + amt);
+  }
+
+  return [...byKey.values()].map((bud) => {
+    const actual = bud.branchId
+      ? byCatBranch.get(`${bud.categoryId}|${bud.branchId}`) ?? 0
+      : byCat.get(bud.categoryId) ?? 0;
+    const usedPct = bud.amount > 0 ? (actual / bud.amount) * 100 : 0;
     return {
-      categoryId,
-      categoryName: b.name,
-      budget: b.amount,
+      categoryId: bud.categoryId,
+      categoryName: bud.name,
+      branchId: bud.branchId,
+      budget: bud.amount,
       actual,
       usedPct,
-      alertPct: b.alertPct,
-      overAlert: b.amount > 0 && usedPct >= b.alertPct,
-      overBudget: b.amount > 0 && actual > b.amount,
+      alertPct: bud.alertPct,
+      overAlert: bud.amount > 0 && usedPct >= bud.alertPct,
+      overBudget: bud.amount > 0 && actual > bud.amount,
     };
   });
 }

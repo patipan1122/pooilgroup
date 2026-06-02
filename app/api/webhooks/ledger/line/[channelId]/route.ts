@@ -84,6 +84,7 @@ export async function POST(
     id: channel.id,
     orgId: channel.orgId,
     companyId: channel.companyId,
+    groupId: channel.groupId,
   };
 
   // Fast 200 — process after the response.
@@ -93,14 +94,34 @@ export async function POST(
 
       // --- TEXT → conversational Q&A (สรุปเดือนนี้ / หมวดไหนเยอะสุด / งบ ...) ---
       // Numbers come from the DB (lib/ledger/qa); the LINE bot is read-only here
-      // (it never confirms/posts — GOLDEN RULE). Free keyword routing first; the
-      // LLM intent fallback inside answerQuestion is budget-guarded.
+      // (it never confirms/posts — GOLDEN RULE).
+      //
+      // ROLE GATE: the financial QA answers leak company-level P&L (spend totals,
+      // VAT, budget, per-branch) that the web side restricts to admin/area_manager/
+      // viewer. So we ONLY answer when the message comes from the channel's REGISTERED
+      // group (the trusted staff group). 1:1 chats, other groups, or a channel with
+      // no bound group are skipped — anyone else in/around the chat (vendors, drivers,
+      // ex-staff) must not be able to ask "สรุปเดือนนี้" and get the P&L.
+      //
+      // BUDGET GATE: allowAi:false → keyword-only, the free LINE bot never fires the
+      // LLM (which, with userId:null, would skip the per-user circuit breakers and
+      // could drain the org's monthly AI budget). Keyword answers still come from
+      // the DB; the receipt-image path below is unaffected.
       if (ev.message?.type === "text" && ev.message.text?.trim()) {
+        const fromRegisteredGroup =
+          ev.source?.type === "group" &&
+          !!ch.groupId &&
+          ev.source.groupId === ch.groupId;
+        if (!fromRegisteredGroup) {
+          // Not the trusted staff group → do NOT answer (no P&L leak).
+          continue;
+        }
         try {
           const qa = await answerQuestion(ev.message.text, {
             orgId: ch.orgId,
             companyId: ch.companyId,
             userId: null, // no Pool session on a webhook → org-only AI budget cap
+            allowAi: false, // keyword-only on the free LINE bot (no LLM spend)
           });
           if (ev.replyToken && accessToken) {
             await replyText(accessToken, ev.replyToken, qa.answer).catch((e) =>
