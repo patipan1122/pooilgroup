@@ -34,6 +34,11 @@ import {
   batchDeposit,
   presignSlipUpload,
 } from "@/app/(admin)/chairops/collect/actions";
+import {
+  DEPOSIT_NOTES_GATE_BAHT,
+  DEPOSIT_REVIEW_GATE_BAHT,
+  DEPOSIT_NOTES_MIN_LEN,
+} from "@/app/(admin)/chairops/(office)/maids/types";
 
 interface PendingCollection {
   id: string;
@@ -196,6 +201,17 @@ export function BatchDepositForm({ pendingCollections }: Props) {
     if (depositedNum <= 0) return "กรอกยอดที่ฝากจริง (มากกว่า 0)";
     if (bankFeeNum < 0) return "ค่าธรรมเนียมต้องไม่ติดลบ";
     if (!slip) return "แนบสลิปธนาคารก่อนบันทึก";
+    // BF1 MAID-04 · anti-fraud gate. Notes mandatory when |diff| ≥ 100฿.
+    // Effective diff is (deposited + fee − collections) — matches the
+    // server-side check (drift-engine accounting + bankFee compensates for
+    // legitimate bank fees so the user's effective diff is ~0 when paying fee).
+    const effectiveDiff = depositedNum + bankFeeNum - selectedSum;
+    if (
+      Math.abs(effectiveDiff) >= DEPOSIT_NOTES_GATE_BAHT &&
+      notes.trim().length < DEPOSIT_NOTES_MIN_LEN
+    ) {
+      return `ผลต่าง ≥ ${DEPOSIT_NOTES_GATE_BAHT} ฿ ต้องระบุเหตุผลในหมายเหตุ (อย่างน้อย ${DEPOSIT_NOTES_MIN_LEN} ตัวอักษร)`;
+    }
     return null;
   }
 
@@ -368,26 +384,46 @@ export function BatchDepositForm({ pendingCollections }: Props) {
             </p>
           </div>
 
-          {depositedNum > 0 && (
-            <div
-              className={cn(
-                "rounded-md border p-3 text-sm",
-                absDiff > 100
-                  ? "border-amber-300 bg-amber-50 text-amber-800"
-                  : "border-zinc-200 bg-zinc-50 text-zinc-700",
-              )}
-              aria-live="polite"
-            >
-              ผลต่าง (นับรวม − ฝาก):{" "}
-              <span className="font-semibold tabular-nums">
-                {diff >= 0 ? "+" : ""}
-                {diff.toLocaleString()} ฿
-              </span>
-              {absDiff > 100 && (
-                <span className="ml-2 font-medium">⚠ ต่างมากกว่า 100฿</span>
-              )}
-            </div>
-          )}
+          {depositedNum > 0 && (() => {
+            // BF1 MAID-04 · use effective diff (with bank fee) for the gate UI.
+            const eff = depositedNum + bankFeeNum - selectedSum;
+            const absEff = Math.abs(eff);
+            const overReview = absEff >= DEPOSIT_REVIEW_GATE_BAHT;
+            const overNotes = absEff >= DEPOSIT_NOTES_GATE_BAHT;
+            return (
+              <div
+                className={cn(
+                  "rounded-md border p-3 text-sm",
+                  overReview
+                    ? "border-rose-300 bg-rose-50 text-rose-800"
+                    : overNotes
+                      ? "border-amber-300 bg-amber-50 text-amber-800"
+                      : "border-zinc-200 bg-zinc-50 text-zinc-700",
+                )}
+                aria-live="polite"
+              >
+                <div>
+                  ผลต่าง (นับรวม − ฝาก + ค่าธรรมเนียม):{" "}
+                  <span className="font-semibold tabular-nums">
+                    {diff >= 0 ? "+" : ""}
+                    {diff.toLocaleString()} ฿
+                  </span>
+                </div>
+                {overReview && (
+                  <div className="mt-1 font-medium">
+                    ⚠ ผลต่าง ≥ {DEPOSIT_REVIEW_GATE_BAHT.toLocaleString()} ฿ ·
+                    ออฟฟิศจะตรวจรายการนี้ก่อนยืนยัน
+                  </div>
+                )}
+                {!overReview && overNotes && (
+                  <div className="mt-1 font-medium">
+                    ⚠ ผลต่าง ≥ {DEPOSIT_NOTES_GATE_BAHT.toLocaleString()} ฿ ·
+                    ต้องระบุเหตุผลในหมายเหตุ (อย่างน้อย {DEPOSIT_NOTES_MIN_LEN} ตัวอักษร)
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </CardBody>
       </Card>
 

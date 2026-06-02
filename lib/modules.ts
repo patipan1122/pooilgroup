@@ -539,6 +539,13 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: ClipboardCheck,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
       },
+      // BF1 · maid roster + day-off + pay ledger (2026-06-02)
+      {
+        href: "/chairops/maids",
+        label: "แม่บ้าน",
+        icon: UsersIcon,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff", "viewer"],
+      },
       {
         href: "/chairops/alerts",
         label: "แจ้งเตือน",

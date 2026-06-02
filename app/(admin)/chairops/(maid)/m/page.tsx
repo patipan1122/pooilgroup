@@ -13,6 +13,7 @@ import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { baht, thaiDate, thaiRelative, ageDays, TZ } from "@/lib/chairops/utils/format";
 import { toZonedTime } from "date-fns-tz";
+import { SelfDayOffCard } from "./_components/self-dayoff-card";
 import {
   AlertTriangle,
   CalendarClock,
@@ -66,6 +67,18 @@ export default async function MaidHomePage() {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
+  // BF1 · today's day-off (if any) so the LIFF can show
+  // "วันนี้คุณลา" card + cancel-before-18:00 path.
+  const todayUtc = (() => {
+    const fmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    return new Date(`${fmt.format(new Date())}T00:00:00Z`);
+  })();
+
   const [
     branch,
     drift,
@@ -74,6 +87,7 @@ export default async function MaidHomePage() {
     todayCleanliness,
     openDamage,
     pendingDeposits,
+    todayDayOff,
   ] = await Promise.all([
     prisma.chairopsBranch.findUniqueOrThrow({
       where: { id: branchId },
@@ -124,6 +138,16 @@ export default async function MaidHomePage() {
         collectedAt: true,
         notes: true,
       },
+    }),
+    prisma.chairopsMaidDayOff.findUnique({
+      where: {
+        orgId_maidId_date: {
+          orgId: session.user.orgId,
+          maidId: session.user.id,
+          date: todayUtc,
+        },
+      },
+      select: { reason: true },
     }),
   ]);
 
@@ -336,6 +360,12 @@ export default async function MaidHomePage() {
           </Link>
         </section>
       )}
+
+      {/* BF1 · self-flag day-off (top of tasks so it's never buried) */}
+      <SelfDayOffCard
+        onLeaveToday={!!todayDayOff}
+        todayReason={todayDayOff?.reason ?? null}
+      />
 
       {/* 4 task cards (mockup .co-mini-tasks) */}
       <section className="space-y-2">
