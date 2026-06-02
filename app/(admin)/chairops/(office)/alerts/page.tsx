@@ -527,7 +527,23 @@ export default async function AlertsPage({
             รายละเอียด
           </p>
           <p className="mt-1.5 text-sm leading-relaxed text-zinc-800">{a.message}</p>
+          {typeof ctx.source === "string" && (
+            <p className="mt-2 text-[10px] uppercase tracking-wide text-zinc-400">
+              ที่มา: {String(ctx.source)}
+            </p>
+          )}
         </section>
+
+        {/* BF2 · deep-link to the page that fixes the underlying problem
+            (e.g. POS ingest, damage ticket, cleanliness report). */}
+        {typeof ctx.linkPath === "string" && ctx.linkPath && (
+          <Link
+            href={String(ctx.linkPath)}
+            className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-center text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
+          >
+            ไปยังหน้าที่เกี่ยวข้อง →
+          </Link>
+        )}
 
         {ackedByName && (
           <section className="rounded-xl border border-zinc-200 bg-white p-3 text-xs text-zinc-600">

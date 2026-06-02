@@ -107,6 +107,36 @@ async function ceoDigestHandler(): Promise<NextResponse> {
     },
   });
 
+  // BF2 · 24-hour alert digest by kind+level so CEO sees the "what broke
+  // overnight" summary, not just point-in-time counts.
+  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const recentAlerts = await prisma.chairopsAlert.groupBy({
+    by: ["kind", "level"],
+    where: { createdAt: { gte: since24h } },
+    _count: { _all: true },
+  });
+  const recentByKind = new Map<string, { warn: number; critical: number; info: number }>();
+  for (const r of recentAlerts) {
+    const bucket = recentByKind.get(r.kind) ?? { warn: 0, critical: 0, info: 0 };
+    if (r.level === ChairopsAlertLevel.CRITICAL) bucket.critical += r._count._all;
+    else if (r.level === ChairopsAlertLevel.WARN) bucket.warn += r._count._all;
+    else bucket.info += r._count._all;
+    recentByKind.set(r.kind, bucket);
+  }
+  const recentTotal = Array.from(recentByKind.values()).reduce(
+    (n, b) => n + b.warn + b.critical + b.info,
+    0,
+  );
+  const KIND_LABELS_TH: Record<string, string> = {
+    SHORTAGE: "เงินขาด",
+    MISSED_COLLECTION: "ไม่ส่งยอด",
+    POS_NOT_INGESTED: "POS ยังไม่นำเข้า",
+    CHAIR_OFFLINE: "เก้าอี้ออฟไลน์",
+    CLEANLINESS_FAIL: "ตรวจสภาพไม่ผ่าน",
+    REPAIR_OVERDUE: "ซ่อมเกิน SLA",
+    WRITE_OFF_REQUESTED: "ขอตัดเงินขาด",
+  };
+
   const lines: string[] = [];
   lines.push(`📊 สรุปประจำวัน · ${label}`);
   lines.push("");
@@ -126,6 +156,24 @@ async function ceoDigestHandler(): Promise<NextResponse> {
   lines.push(`⚠️ แจ้งเตือนวิกฤต (open): ${criticalOpen}`);
   lines.push(`💸 SHORTAGE ค้าง: ${shortageAlertsOpen}`);
   lines.push(`🔧 ใบซ่อมค้าง: ${openDamage} (ด่วน ${urgentDamage})`);
+
+  if (recentTotal > 0) {
+    lines.push("");
+    lines.push(`📢 แจ้งเตือน 24 ชม. ที่ผ่านมา: ${recentTotal}`);
+    for (const [kind, bucket] of recentByKind.entries()) {
+      const total = bucket.warn + bucket.critical + bucket.info;
+      const label = KIND_LABELS_TH[kind] ?? kind;
+      const parts: string[] = [];
+      if (bucket.critical) parts.push(`วิกฤต ${bucket.critical}`);
+      if (bucket.warn) parts.push(`เตือน ${bucket.warn}`);
+      if (bucket.info) parts.push(`แจ้ง ${bucket.info}`);
+      lines.push(`  · ${label}: ${total} (${parts.join(" · ")})`);
+    }
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+    if (appUrl) {
+      lines.push(`ดูรายละเอียด: ${appUrl}/chairops/alerts`);
+    }
+  }
 
   const message = lines.join("\n");
   const send = await notifyChannel("ceo", message);
