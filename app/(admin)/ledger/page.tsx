@@ -7,6 +7,7 @@ import { resolveScope } from "./_scope";
 import { LedgerHeader, NoCompanyState } from "./_components/LedgerHeader";
 import { expenseSummary, listExpensesSummary, spendByCategory } from "./_data";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
+import { LedgerEmptyState } from "@/components/ledger/Brand";
 
 export const dynamic = "force-dynamic";
 
@@ -164,9 +165,12 @@ export default async function LedgerHomePage({
             </Link>
           </div>
           {drafts.length === 0 ? (
-            <p className="py-8 text-center text-sm text-zinc-400">
-              ไม่มีใบรอยืนยัน 🎉
-            </p>
+            <LedgerEmptyState
+              mascotSize={48}
+              className="py-6"
+              title="ไม่มีใบรอยืนยัน"
+              hint="ทุกใบเสร็จถูกยืนยันครบแล้ว"
+            />
           ) : (
             <ul className="divide-y divide-zinc-100">
               {drafts.map((d) => (
@@ -210,9 +214,12 @@ export default async function LedgerHomePage({
             </Link>
           </div>
           {topCat.length === 0 ? (
-            <p className="py-8 text-center text-sm text-zinc-400">
-              ยังไม่มีค่าใช้จ่ายที่ยืนยัน
-            </p>
+            <LedgerEmptyState
+              mascotSize={48}
+              className="py-6"
+              title="ยังไม่มีค่าใช้จ่ายที่ยืนยัน"
+              hint="พอยืนยันใบเสร็จแล้ว ยอดตามหมวดจะขึ้นที่นี่"
+            />
           ) : (
             <ul className="space-y-2.5">
               {topCat.map((c) => (

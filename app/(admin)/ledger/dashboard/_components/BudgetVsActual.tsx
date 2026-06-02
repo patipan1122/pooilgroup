@@ -3,6 +3,7 @@
 // page (emerald ok / amber near / rose over) so the two surfaces stay coherent.
 import Link from "next/link";
 import type { BudgetRow } from "@/components/ledger/_kit/types";
+import { LedgerEmptyState } from "@/components/ledger/Brand";
 
 function baht(n: number): string {
   return `${Math.round(n).toLocaleString("en-US")} ฿`;
@@ -50,15 +51,20 @@ export function BudgetVsActual({
       </div>
 
       {budgets.length === 0 ? (
-        <div className="py-8 text-center">
-          <p className="text-sm text-zinc-400">ยังไม่ได้ตั้งงบสำหรับงวดนี้</p>
-          <Link
-            href={href}
-            className="mt-1 inline-block text-sm font-medium text-[var(--color-brand-600)] hover:underline"
-          >
-            ตั้งงบรายหมวด →
-          </Link>
-        </div>
+        <LedgerEmptyState
+          mascotSize={56}
+          className="py-6"
+          title="ยังไม่ได้ตั้งงบสำหรับงวดนี้"
+          hint="ตั้งงบรายหมวด แล้วน้องใบเสร็จจะเตือนเมื่อใกล้เพดาน"
+          action={
+            <Link
+              href={href}
+              className="text-sm font-medium text-[var(--color-brand-600)] hover:underline"
+            >
+              ตั้งงบรายหมวด →
+            </Link>
+          }
+        />
       ) : (
         <ul className="space-y-3">
           {sorted.map((b) => {

@@ -7,6 +7,7 @@ import { Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { createCategory, toggleCategory } from "../../_actions";
+import { LedgerEmptyState } from "@/components/ledger/Brand";
 
 type Cat = {
   id: string;
@@ -84,7 +85,12 @@ export function CategoryManager({
 
       {/* List */}
       {categories.length === 0 ? (
-        <p className="py-6 text-center text-sm text-zinc-400">ยังไม่มีหมวด</p>
+        <LedgerEmptyState
+          mascotSize={48}
+          className="py-6"
+          title="ยังไม่มีหมวด"
+          hint="เพิ่มหมวดแรกด้านบน เช่น ค่าน้ำมัน/ขนส่ง"
+        />
       ) : (
         <ul className="divide-y divide-zinc-100">
           {categories.map((c) => (

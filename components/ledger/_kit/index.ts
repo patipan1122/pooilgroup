@@ -2,6 +2,7 @@
 export { StatusBadge, type LedgerStatus } from "./StatusBadge";
 export { ConfidenceTag } from "./ConfidenceTag";
 export { AmountInput } from "./AmountInput";
+export { LedgerHeaderSkeleton } from "./LedgerHeaderSkeleton";
 export type {
   ExpenseRow,
   ExpenseItemRow,

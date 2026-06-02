@@ -25,6 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
 import { ReceiptThumb } from "./ReceiptThumb";
+import { VoucherMenu } from "./VoucherMenu";
 import { StatusBadge } from "./_kit/StatusBadge";
 import { ConfidenceTag } from "./_kit/ConfidenceTag";
 import { AmountInput } from "./_kit/AmountInput";
@@ -221,7 +222,17 @@ export function ExpenseReviewPane({
             {expense.ocrModel ? ` · AI: ${expense.ocrModel}` : ""}
           </div>
         </div>
-        <StatusBadge status={expense.status} />
+        <div className="flex items-center gap-2">
+          {/* ออกเอกสาร PV/JV/PCV/ใบแทนใบเสร็จ — เปิดเอกสารพิมพ์ใน tab ใหม่.
+              เปิดได้เฉพาะรายการที่ "ยืนยันแล้ว/ปิดงวด" (ร่าง/ยกเลิก ออกไม่ได้). */}
+          <VoucherMenu
+            expenseId={expense.id}
+            companyId={expense.companyId}
+            vendorTaxId={expense.vendorTaxId}
+            disabled={expense.status !== "confirmed" && expense.status !== "locked"}
+          />
+          <StatusBadge status={expense.status} />
+        </div>
       </div>
 
       {/* AI confidence / needs-review banner — บัญชีเห็นทันทีว่า AI มั่นใจแค่ไหน */}
