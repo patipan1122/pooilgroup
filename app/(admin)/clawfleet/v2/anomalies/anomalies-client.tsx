@@ -39,19 +39,22 @@ export function AnomaliesClient({
 
   const [reviewing, setReviewing] = useState<Anomaly | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [showFilter, setShowFilter] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<"all" | "cash_short" | "prize_short">("all");
 
-  const totalGap = anomalies.reduce((s, a) => s + a.gap, 0);
-  const totalPrize = anomalies.reduce((s, a) => s + Math.max(0, a.prizeGap), 0);
-  const sorted = [...anomalies].sort((a, b) => b.gap - a.gap);
+  const visible = anomalies.filter((a) => typeFilter === "all" || a.type === typeFilter);
+  const totalGap = visible.reduce((s, a) => s + a.gap, 0);
+  const totalPrize = visible.reduce((s, a) => s + Math.max(0, a.prizeGap), 0);
+  const sorted = [...visible].sort((a, b) => b.gap - a.gap);
 
   const openAnomaly = (a?: Anomaly) => {
     setReviewing(a ?? sorted[0] ?? anomalies[0] ?? null);
   };
 
   const nextAnomaly = () => {
-    if (!reviewing) return;
-    const i = anomalies.findIndex((x) => x.id === reviewing.id);
-    const next = anomalies[(i + 1) % anomalies.length];
+    if (!reviewing || sorted.length === 0) return;
+    const i = sorted.findIndex((x) => x.id === reviewing.id);
+    const next = sorted[(i + 1) % sorted.length];
     setReviewing(next ?? null);
   };
 
@@ -74,8 +77,8 @@ export function AnomaliesClient({
     setTimeout(() => setToast(null), 2400);
     // move to next anomaly if any
     if (!current) return;
-    const i = anomalies.findIndex((x) => x.id === current.id);
-    const remaining = anomalies.filter((x) => x.id !== current.id);
+    const i = sorted.findIndex((x) => x.id === current.id);
+    const remaining = sorted.filter((x) => x.id !== current.id);
     if (remaining.length > 0) {
       setReviewing(remaining[i % remaining.length] ?? remaining[0] ?? null);
     } else {
@@ -88,14 +91,18 @@ export function AnomaliesClient({
       <div className="cf-page-head">
         <div>
           <div className="cf-eyebrow">Anomaly inbox</div>
-          <h1 className="cf-h1">{anomalies.length} สาขาที่ระบบ flag</h1>
+          <h1 className="cf-h1">{visible.length} สาขาที่ระบบ flag</h1>
           <div className="cf-page-sub">
             เงิน/ตุ๊กตา ไม่ตรงกับมิเตอร์เกิน 5% threshold · เริ่มจากสาขาที่หายมากที่สุด
           </div>
         </div>
         <div className="cf-page-actions">
-          <button className="cf-btn cf-btn-ghost">
+          <button
+            className={`cf-btn cf-btn-ghost ${typeFilter !== "all" ? "is-active" : ""}`}
+            onClick={() => setShowFilter((v) => !v)}
+          >
             <Ic name="filter" size={14} /> ตัวกรอง
+            {typeFilter !== "all" && <span className="cf-tab-n">1</span>}
           </button>
           <button className="cf-btn cf-btn-primary" onClick={() => openAnomaly()}>
             เริ่มตรวจทีละสาขา <Ic name="arrowR" size={14} />
@@ -103,20 +110,42 @@ export function AnomaliesClient({
         </div>
       </div>
 
+      {showFilter && (
+        <div className="cf-tabs" style={{ marginBottom: 4 }}>
+          {(
+            [
+              { id: "all", name: "ทั้งหมด", n: anomalies.length },
+              { id: "cash_short", name: "เงินขาด", n: anomalies.filter((a) => a.type === "cash_short").length, color: "red" },
+              { id: "prize_short", name: "ตุ๊กตาหาย", n: anomalies.filter((a) => a.type === "prize_short").length, color: "amber" },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.id}
+              className={`cf-tab ${typeFilter === t.id ? "is-active" : ""}`}
+              onClick={() => setTypeFilter(t.id)}
+            >
+              {"color" in t && t.color && <span className={`cf-tab-dot cf-tab-dot-${t.color}`} />}
+              <span>{t.name}</span>
+              <span className="cf-tab-n">{t.n}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="cf-insight-cards">
         <StatTile label="P0 ขัดขวาง" value="0" sub="ไม่มีรอบขัดขวาง" tone="neutral" icon="alert" />
-        <StatTile label="P1 เตือน" value={anomalies.length} sub="cross-check ผิด" tone="amber" icon="alert" />
+        <StatTile label="P1 เตือน" value={visible.length} sub="cross-check ผิด" tone="amber" icon="alert" />
         <StatTile
           label="รวมเงินที่ขาด"
           value={fmtTHB(totalGap)}
-          sub={`จาก ${anomalies.filter((a) => a.gap > 0).length} รอบ`}
+          sub={`จาก ${visible.filter((a) => a.gap > 0).length} รอบ`}
           tone="primary"
           icon="trendDown"
         />
         <StatTile
           label="ตุ๊กตาที่หาย"
           value={`${totalPrize} ตัว`}
-          sub={`จาก ${anomalies.filter((a) => a.prizeGap > 0).length} รอบ`}
+          sub={`จาก ${visible.filter((a) => a.prizeGap > 0).length} รอบ`}
           tone="neutral"
           icon="package"
         />
@@ -127,6 +156,11 @@ export function AnomaliesClient({
           {sorted.map((a) => (
             <AnomalyRow key={a.id} a={a} branch={getBranch(a.branchId)} onOpen={() => openAnomaly(a)} />
           ))}
+          {sorted.length === 0 && (
+            <div className="cf-dim" style={{ padding: "20px 4px" }}>
+              ไม่มีรายการในตัวกรองนี้
+            </div>
+          )}
         </div>
       </Section>
 

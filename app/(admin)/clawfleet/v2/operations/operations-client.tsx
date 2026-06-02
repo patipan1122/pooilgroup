@@ -240,7 +240,13 @@ export function OperationsClient({
           <span></span>
         </div>
         {filtered.map((s) => (
-          <OpsRow key={s.id + s.status} s={s} branch={getBranch(s.branchId)} onOpenAnomaly={openAnomaly} />
+          <OpsRow
+            key={s.id + s.status}
+            s={s}
+            branch={getBranch(s.branchId)}
+            onOpenAnomaly={openAnomaly}
+            onDrill={(branchId) => router.push(`/clawfleet/v2/insights?branch=${branchId}`)}
+          />
         ))}
       </div>
 
@@ -269,10 +275,12 @@ function OpsRow({
   s,
   branch,
   onOpenAnomaly,
+  onDrill,
 }: {
   s: OpsSession;
   branch: Branch | BranchFallback;
   onOpenAnomaly: (a: Anomaly) => void;
+  onDrill: (branchId: string) => void;
 }) {
   const info = branch;
   const pct = s.machines ? Math.round((s.done / s.machines) * 100) : 0;
@@ -358,7 +366,11 @@ function OpsRow({
             ตรวจ <Ic name="arrowR" size={12} />
           </button>
         ) : (
-          <button className="cf-btn cf-btn-ghost cf-btn-sm">
+          <button
+            className="cf-btn cf-btn-ghost cf-btn-sm"
+            onClick={() => onDrill(s.branchId)}
+            title="ดูประวัติสาขานี้"
+          >
             <Ic name="chevronR" size={14} />
           </button>
         )}

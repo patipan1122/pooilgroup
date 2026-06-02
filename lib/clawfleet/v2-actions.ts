@@ -34,7 +34,13 @@ export async function reviewV2Session(
 
   const cf = await prisma.cfCollectionSession.findFirst({
     where: { orgId, sessionCode },
-    select: { id: true, branchId: true, groupId: true, group: { select: { branchId: true } } },
+    select: {
+      id: true,
+      branchId: true,
+      groupId: true,
+      group: { select: { branchId: true } },
+      closedById: true,
+    },
   });
   // Mock/showcase row (not in DB yet) — report a soft failure; the client keeps
   // its optimistic toast. Real rows proceed to the status update.
@@ -45,6 +51,15 @@ export async function reviewV2Session(
   const branchId = cf.branchId ?? cf.group?.branchId ?? null;
   if (allowed !== "ALL" && (!branchId || !allowed.includes(branchId))) {
     return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
+  }
+
+  // F2 (segregation of duties · CEO 2026-06-02): ห้ามอนุมัติรอบที่ตัวเองเป็นคนปิด/เก็บ
+  // (ยัง "ตรวจซ้ำ/ส่งต่อ" ได้ — แค่ห้าม approve เอง)
+  if (decision === "approve" && cf.closedById && cf.closedById === session.user.id) {
+    return {
+      ok: false,
+      error: "อนุมัติรอบที่ตัวเองเก็บ/ปิดไม่ได้ · ให้คนอื่นตรวจ (กดตรวจซ้ำหรือส่งต่อได้)",
+    };
   }
 
   const status =

@@ -226,12 +226,28 @@ export function deriveBranchCrossCheck(
   let actualCashCents = 0;
   let prizeMeterOut = 0;
   let prizeCountedOut = 0;
+  // F5 (netting guard · CEO 2026-06-02): a single machine that breaches the major
+  // threshold must flag the round even if it nets clean against other machines.
+  let perMachineCashShort = false;
+  let perMachinePrizeBreach = false;
   for (const e of events) {
     const coinsDelta = Math.max(0, e.coinMeterAfter - e.coinMeterBefore);
-    expectedCashCents += coinsDelta * e.cashPerCoinCents;
+    const evExpected = coinsDelta * e.cashPerCoinCents;
+    expectedCashCents += evExpected;
     actualCashCents += e.cashCountedCents;
     prizeMeterOut += Math.max(0, e.dollMeterAfter - e.dollMeterBefore);
     prizeCountedOut += e.stockBefore + e.refillQty - e.stockAfter;
+
+    const evVar = e.cashCountedCents - evExpected;
+    const evPct = evExpected > 0 ? Math.abs(evVar / evExpected) : 0;
+    if (evVar < 0 && (Math.abs(evVar) > DEFAULTS.CASH_VARIANCE_WARN_CENTS || evPct > 0.05)) {
+      perMachineCashShort = true;
+    }
+    const evPrizeMeter = Math.max(0, e.dollMeterAfter - e.dollMeterBefore);
+    const evPrizePhysical = e.stockBefore + e.refillQty - e.stockAfter;
+    if (Math.abs(evPrizeMeter - evPrizePhysical) > DEFAULTS.DOLL_VARIANCE_ACCEPTABLE) {
+      perMachinePrizeBreach = true;
+    }
   }
   const cashVarianceCents = actualCashCents - expectedCashCents;
   const cashVarianceBps =
@@ -239,8 +255,14 @@ export function deriveBranchCrossCheck(
   const prizeVariance = prizeMeterOut - prizeCountedOut;
 
   const flags: AnomalyFlag[] = [];
-  // เงินขาดเกิน tolerance
-  if (cashVarianceCents < 0 && Math.abs(cashVarianceBps) > toleranceBps) {
+  // เงินขาด: flag เมื่อเกิน tolerance % หรือ "เกินเพดานบาท" (F1 · CEO 2026-06-02 = ฿100)
+  // เพดานบาทกันเคสสาขายอดสูงที่ขาดก้อนใหญ่แต่คิดเป็น % ต่ำ
+  const cashShortFloorCents = DEFAULTS.CASH_VARIANCE_WARN_CENTS; // ฿100
+  if (
+    cashVarianceCents < 0 &&
+    (Math.abs(cashVarianceBps) > toleranceBps ||
+      Math.abs(cashVarianceCents) > cashShortFloorCents)
+  ) {
     flags.push(
       Math.abs(cashVarianceCents) > DEFAULTS.CASH_VARIANCE_WARN_CENTS
         ? ANOMALY_FLAGS.M3_CASH_SHORT_MAJOR
@@ -254,6 +276,21 @@ export function deriveBranchCrossCheck(
     flags.push(ANOMALY_FLAGS.P3_DOLL_VARIANCE_MAJOR);
   } else if (Math.abs(prizeVariance) > 0) {
     flags.push(ANOMALY_FLAGS.P2_DOLL_VARIANCE_MINOR);
+  }
+  // F5: per-machine breach masked by netting → ดันทั้งรอบเข้า review
+  if (
+    perMachineCashShort &&
+    !flags.includes(ANOMALY_FLAGS.M2_CASH_SHORT_MINOR) &&
+    !flags.includes(ANOMALY_FLAGS.M3_CASH_SHORT_MAJOR)
+  ) {
+    flags.push(ANOMALY_FLAGS.M3_CASH_SHORT_MAJOR);
+  }
+  if (
+    perMachinePrizeBreach &&
+    !flags.includes(ANOMALY_FLAGS.P2_DOLL_VARIANCE_MINOR) &&
+    !flags.includes(ANOMALY_FLAGS.P3_DOLL_VARIANCE_MAJOR)
+  ) {
+    flags.push(ANOMALY_FLAGS.P3_DOLL_VARIANCE_MAJOR);
   }
   const status: "CLOSED" | "ANOMALY_REVIEW" = flags.length > 0 ? "ANOMALY_REVIEW" : "CLOSED";
 

@@ -92,6 +92,8 @@ export function HubClient({
 
   const [reviewing, setReviewing] = useState<Anomaly | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
+  const [showFilter, setShowFilter] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<"all" | "cash_short" | "prize_short">("all");
 
   // tweak defaults (no live Tweaks panel in the ported app)
   const heroVariant = "split";
@@ -120,6 +122,12 @@ export function HubClient({
   const anomaliesSorted = useMemo(
     () => [...anomalies].sort((a, b) => b.gap - a.gap),
     [anomalies],
+  );
+
+  // inbox list honors the type filter (hero counts stay on the full set)
+  const inboxList = useMemo(
+    () => anomaliesSorted.filter((a) => typeFilter === "all" || a.type === typeFilter),
+    [anomaliesSorted, typeFilter],
   );
 
   /* ---- modal wiring (mirrors mockup App.openAnomaly / nextAnomaly / decide) ---- */
@@ -236,23 +244,53 @@ export function HubClient({
           sub={`${anomalies.length} สาขาที่ระบบ flag · จัดเรียงตามมูลค่าที่หาย`}
           action={
             <div className="cf-section-actions">
-              <button className="cf-btn cf-btn-ghost">
+              <button
+                className={`cf-btn cf-btn-ghost ${typeFilter !== "all" ? "is-active" : ""}`}
+                onClick={() => setShowFilter((v) => !v)}
+              >
                 <Ic name="filter" size={14} />
                 ตัวกรอง
+                {typeFilter !== "all" && <span className="cf-tab-n">1</span>}
               </button>
               <button
                 className="cf-btn cf-btn-primary"
-                onClick={() => openAnomaly(anomaliesSorted[0])}
+                onClick={() => openAnomaly(inboxList[0] ?? anomaliesSorted[0])}
               >
                 เริ่มตรวจทีละสาขา <Ic name="arrowR" size={14} />
               </button>
             </div>
           }
         >
+          {showFilter && (
+            <div className="cf-tabs" style={{ marginBottom: 8 }}>
+              {(
+                [
+                  { id: "all", name: "ทั้งหมด", n: anomalies.length },
+                  { id: "cash_short", name: "เงินขาด", n: anomalies.filter((a) => a.type === "cash_short").length, color: "red" },
+                  { id: "prize_short", name: "ตุ๊กตาหาย", n: anomalies.filter((a) => a.type === "prize_short").length, color: "amber" },
+                ] as const
+              ).map((t) => (
+                <button
+                  key={t.id}
+                  className={`cf-tab ${typeFilter === t.id ? "is-active" : ""}`}
+                  onClick={() => setTypeFilter(t.id)}
+                >
+                  {"color" in t && t.color && <span className={`cf-tab-dot cf-tab-dot-${t.color}`} />}
+                  <span>{t.name}</span>
+                  <span className="cf-tab-n">{t.n}</span>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="cf-anomaly-list">
-            {anomaliesSorted.map((a) => (
+            {inboxList.map((a) => (
               <AnomalyRow key={a.id} a={a} onOpen={() => openAnomaly(a)} getBranch={getBranch} />
             ))}
+            {inboxList.length === 0 && (
+              <div className="cf-dim" style={{ padding: "16px 4px" }}>
+                ไม่มีรายการในตัวกรองนี้
+              </div>
+            )}
           </div>
         </Section>
 
@@ -339,7 +377,12 @@ export function HubClient({
           >
             <div className="cf-stock-list">
               {stockLow.slice(0, 5).map((s, i) => (
-                <StockRow key={s.branchId + s.sku + i} s={s} getBranch={getBranch} />
+                <StockRow
+                  key={s.branchId + s.sku + i}
+                  s={s}
+                  getBranch={getBranch}
+                  onOrder={() => router.push(`/clawfleet/v2/stock?branch=${s.branchId}`)}
+                />
               ))}
             </div>
           </Section>
@@ -509,9 +552,11 @@ function SessionRow({
 function StockRow({
   s,
   getBranch,
+  onOrder,
 }: {
   s: StockLow;
   getBranch: (id: string) => Branch;
+  onOrder: () => void;
 }) {
   const branch = getBranch(s.branchId);
   const total = s.warehouse + s.inMachines;
@@ -537,7 +582,9 @@ function StockRow({
         </div>
       </div>
       <div className="cf-stock-cta">
-        <button className="cf-btn cf-btn-ghost cf-btn-sm">สั่งเติม</button>
+        <button className="cf-btn cf-btn-ghost cf-btn-sm" onClick={onOrder}>
+          สั่งเติม
+        </button>
       </div>
     </div>
   );

@@ -17,9 +17,16 @@ export const dynamic = "force-dynamic";
 
 export type BranchStock = { stock: StockEntry[]; deliveries: Delivery[] };
 
-export default async function StockPage() {
+export default async function StockPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ branch?: string }>;
+}) {
+  const { branch } = await searchParams;
   const branches = await loadBranches();
-  const first = branches[0]?.id ?? "";
+  // Honor a ?branch= deep-link (e.g. Hub "สั่งเติม"); else open the first branch.
+  const requested = branch && branches.some((b) => b.id === branch) ? branch : null;
+  const initialBranchId = requested ?? branches[0]?.id ?? "";
 
   const entries = await Promise.all(
     branches.map(async (b): Promise<[string, BranchStock]> => [b.id, await loadBranchStock(b.id)]),
@@ -27,6 +34,6 @@ export default async function StockPage() {
   const stockByBranch: Record<string, BranchStock> = Object.fromEntries(entries);
 
   return (
-    <StockClient branches={branches} initialBranchId={first} stockByBranch={stockByBranch} />
+    <StockClient branches={branches} initialBranchId={initialBranchId} stockByBranch={stockByBranch} />
   );
 }
