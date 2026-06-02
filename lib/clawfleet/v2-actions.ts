@@ -170,10 +170,16 @@ export async function submitBranchEvent(input: unknown): Promise<ResultOf<{ id: 
 
   const cf = await prisma.cfCollectionSession.findFirst({
     where: { id: data.sessionId, orgId, status: "OPEN" },
-    select: { id: true, branchId: true },
+    select: { id: true, branchId: true, groupId: true },
   });
   if (!cf) return { ok: false, error: "รอบนี้ไม่อยู่ในสถานะเปิด" };
   if (cf.branchId !== machine.branchId) return { ok: false, error: "ตู้ไม่อยู่ในสาขาของรอบนี้" };
+  // Anti-fraud (audit P1): for a GROUP-scoped round, the claw must belong to THAT
+  // group — else a claw from group B submitted into group A's round would corrupt
+  // the 3-way cross-check denominator (trigger sums claws of A+B vs A's exchanger).
+  if (cf.groupId && cf.groupId !== machine.groupId) {
+    return { ok: false, error: "ตู้ไม่อยู่ในกลุ่มของรอบนี้" };
+  }
 
   const photoCheck = validateBranchPhotos(data);
   if (!photoCheck.ok) return { ok: false, error: photoCheck.reason };
@@ -376,6 +382,16 @@ export async function startGroupSession(
     return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
   }
   const groupType: "TOKEN" | "CASH" = group.exchangerId ? "TOKEN" : "CASH";
+
+  // Anti-wedge (audit P0): a group with 0 active CLAW machines can OPEN but never
+  // CLOSE (closeGroupSession needs ≥1 claw event) — and the open session then blocks
+  // any retry. Refuse to open an empty group up front.
+  const clawCount = await prisma.cfMachine.count({
+    where: { orgId, groupId, kind: "CLAW", isActive: true },
+  });
+  if (clawCount === 0) {
+    return { ok: false, error: "กลุ่มนี้ยังไม่มีตู้คีบ · เพิ่มตู้เข้ากลุ่มก่อนเปิดรอบ" };
+  }
 
   const open = await prisma.cfCollectionSession.findFirst({
     where: { orgId, groupId, status: "OPEN" },
