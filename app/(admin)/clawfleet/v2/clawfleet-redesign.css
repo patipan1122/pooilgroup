@@ -1267,3 +1267,17 @@
 .cf-scope .cf-toast-approve .cf-toast-icon { background: var(--cf-emerald); }
 .cf-scope .cf-toast-recheck .cf-toast-icon { background: var(--cf-amber); }
 .cf-scope .cf-toast-escalate .cf-toast-icon { background: var(--cf-red); }
+
+/* ===== SLIM SHELL (unified nav 2026-06-02) — no 2nd sidebar; nests inside Pool AdminShell ===== */
+.cf-slim { display: flex; flex-direction: column; min-width: 0; }
+.cf-content-slim { padding: 20px 24px 80px; max-width: none; }
+.cf-branchbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 24px; border-bottom: 1px solid var(--cf-border-soft);
+  background: var(--cf-surface);
+}
+.cf-branchbar-label { font-size: 12px; font-weight: 600; color: var(--cf-text-3); }
+@media (max-width: 640px) {
+  .cf-content-slim { padding: 16px 16px 80px; }
+  .cf-branchbar { padding: 10px 16px; }
+}

@@ -436,7 +436,7 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     nav: [
       {
         href: "/clawfleet/v2/hub",
-        label: "หน้าแรก",
+        label: "หน้าหลัก",
         icon: Home,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff", "viewer"],
       },
@@ -444,12 +444,6 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         href: "/clawfleet/v2/collect",
         label: "เก็บเงิน",
         icon: ClipboardList,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
-      },
-      {
-        href: "/liff/clawfleet",
-        label: "กรอกงาน (LIFF)",
-        icon: ClipboardCheck,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
       },
       {
