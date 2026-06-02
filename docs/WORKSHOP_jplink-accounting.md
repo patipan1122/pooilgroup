@@ -180,7 +180,9 @@ erDiagram
 
 ## 11. ➡️ Next Step
 
-1. **ทดสอบ OCR (Accuracy Spike 1 วัน)** — ดึงใบจริง ~50 ใบจาก TRCloud AP (พิมพ์ 30 + ลายมือ 20) → A/B Claude Haiku vs Sonnet → วัด field-level accuracy (เกณฑ์: พิมพ์ ≥95% / ลายมือ ≥85%)
+1. **ทดสอบ OCR (Accuracy Spike 1 วัน)** — ดึงใบจริง ~50 ใบจาก TRCloud AP (พิมพ์ 30 + ลายมือ 20) → A/B/C/D เทียบ **4 โมเดล: Gemini 2.5 Flash-Lite · Gemini 2.5 Pro · Claude Haiku 4.5 · Claude Sonnet 4.6** → วัด field-level accuracy (เกณฑ์: พิมพ์ ≥95% / ลายมือ ≥85%) → เลือก "ตัวที่ถูกสุดที่ผ่านเกณฑ์"
+   - **ต้นทุน/1,000 ใบ (research, fact-checked):** Gemini Flash-Lite ~7-18฿ (ถูกสุด) · Gemini Pro ~126฿ (เก่งลายมือไทยสุด 0.714) · Claude Haiku ~180-250฿ · Claude Sonnet ~400-750฿. ที่ volume JP Link (~1k/เดือน) ค่า AI ทุกตัว < 1,000฿/เดือน → **accuracy (ลายมือ) สำคัญกว่าราคา**
+   - **Lean (รอ spike ยืนยัน):** Gemini Flash-Lite primary → escalate Gemini Pro สำหรับลายมือ (ถูกสุด + แม่นลายมือสุด); Claude = fallback. แลกกับการเพิ่ม Gemini เป็น vendor ที่ 2
 2. เช็กฟอร์แมต import/API ของ TRCloud (Open Q #1)
 3. `/plan` → แปลง spec เป็นแผน implement เฟส 1
 ```
