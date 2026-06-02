@@ -402,7 +402,6 @@ const SIDEBAR_PRIMARY: SidebarItem[] = [
   { id: "anom", name: "Anomaly", icon: "alert", desc: "รายการที่ต้องตรวจ", badge: 4, badgeColor: "red" },
   { id: "stock", name: "Stock", icon: "package", desc: "ของรางวัล + แลร์ต", badge: 3, badgeColor: "amber" },
   { id: "insights", name: "Insights", icon: "chart", desc: "ตาราง + CSV" },
-  { id: "mobile", name: "Mobile flow", icon: "phone", desc: "พรีวิวฟอร์มพนักงาน" },
 ];
 
 const SIDEBAR_SECONDARY: SidebarItem[] = [
