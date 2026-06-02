@@ -33,11 +33,11 @@ export default async function TeamPage() {
           </div>
         </div>
         <div className="cf-page-actions">
-          <Link href="/clawfleet/machines" className="cf-btn cf-btn-ghost">
-            <Ic name="package" size={14} /> จัดการตู้
+          <Link href="/clawfleet/v2/stock" className="cf-btn cf-btn-ghost">
+            <Ic name="package" size={14} /> สต๊อก & ตู้
           </Link>
-          <Link href="/clawfleet/setup" className="cf-btn cf-btn-primary">
-            <Ic name="settings" size={14} /> ตั้งค่าสาขา
+          <Link href="/clawfleet/v2/settings" className="cf-btn cf-btn-primary">
+            <Ic name="settings" size={14} /> ตั้งค่า
           </Link>
         </div>
       </div>

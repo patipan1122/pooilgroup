@@ -34,15 +34,14 @@ async function main() {
   for (const path of [
     "/home",
     "/clawfleet",
-    "/clawfleet/dashboard",
-    "/clawfleet/sessions",
-    "/clawfleet/machines",
-    "/clawfleet/groups",
-    "/clawfleet/products",
-    "/clawfleet/stock",
-    "/clawfleet/reports",
-    "/clawfleet/anomalies",
-    "/clawfleet/settings",
+    "/clawfleet/v2/hub",
+    "/clawfleet/v2/operations",
+    "/clawfleet/v2/anomalies",
+    "/clawfleet/v2/stock",
+    "/clawfleet/v2/insights",
+    "/clawfleet/v2/collect",
+    "/clawfleet/v2/team",
+    "/clawfleet/v2/settings",
   ]) {
     const r = await checkStatus(BASE + path);
     record(`GET ${path} → 307 (auth redirect)`, r.status === 307, `status=${r.status}`);
