@@ -19,7 +19,10 @@ export default async function InsightsPage({
 }) {
   const sp = await searchParams;
   const branch = sp.branch ?? "all";
-  const days = [7, 30, 90].includes(Number(sp.days)) ? Number(sp.days) : 7;
+  // Accept the 7/30/90 presets AND any custom day-count from the date picker
+  // (insights-client applyCustom navigates with an arbitrary ?days=N). Clamp 1–365.
+  const rawDays = Number(sp.days);
+  const days = Number.isFinite(rawDays) && rawDays >= 1 ? Math.min(365, Math.floor(rawDays)) : 7;
   const [rows, branches] = await Promise.all([loadInsights(branch, days), loadBranches()]);
   return <InsightsClient branch={branch} rows={rows} branches={branches} days={days} />;
 }

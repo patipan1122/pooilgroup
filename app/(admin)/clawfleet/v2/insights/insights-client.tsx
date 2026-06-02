@@ -10,9 +10,9 @@
  *   - `branches` backs the `getBranch` lookup (mirrors mockup helper).
  *   - `branch` is the active `?branch=` filter, used for the header sub-label.
  *
- * Tab pills + range buttons stay local UI state. The range buttons (7/30/90)
- * are cosmetic only.
- * TODO[v2-wire-db]: range refetch — wire range to loadInsights(branch, days).
+ * Tab pills stay local UI state. Range buttons (7/30/90) navigate with a
+ * `?days=` query that the server loader reads; "กำหนดเอง" reveals a date
+ * picker that converts a start date → day-count lookback and refetches.
  */
 
 import { useMemo, useState } from "react";
@@ -37,6 +37,7 @@ export function InsightsClient({
   const router = useRouter();
   const [range, setRange] = useState<RangeId>(String(days) as RangeId);
   const [tab, setTab] = useState<TabId>("round");
+  const [customFrom, setCustomFrom] = useState<string>("");
 
   const branchMap = useMemo(() => new Map(branches.map((b) => [b.id, b])), [branches]);
   const getBranch = (id: string): Branch => branchMap.get(id) ?? ({ id, name: id, code: id } as Branch);
@@ -68,13 +69,28 @@ export function InsightsClient({
     return [...m.entries()].sort((a, b) => b[1].cash - a[1].cash);
   }, [rows]);
 
-  function setDays(r: RangeId) {
-    setRange(r);
-    if (r === "custom") return;
+  function pushDays(d: number) {
     const qs = new URLSearchParams();
     if (branch !== "all") qs.set("branch", branch);
-    qs.set("days", r);
+    qs.set("days", String(Math.max(1, d)));
     router.push(`/clawfleet/v2/insights?${qs.toString()}`);
+  }
+
+  function setDays(r: RangeId) {
+    setRange(r);
+    if (r === "custom") return; // reveals the date picker below; "ดู" applies it
+    pushDays(Number(r));
+  }
+
+  /** custom range = from selected date → today, converted to a day-count lookback */
+  function applyCustom() {
+    if (!customFrom) return;
+    const from = new Date(`${customFrom}T00:00:00`);
+    if (Number.isNaN(from.getTime())) return;
+    const today = new Date();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const diff = Math.ceil((today.getTime() - from.getTime()) / dayMs) + 1;
+    pushDays(diff);
   }
 
   function pickTab(id: TabId) {
@@ -188,6 +204,32 @@ export function InsightsClient({
           ))}
         </div>
       </div>
+
+      {range === "custom" && (
+        <div className="cf-insight-toolbar" style={{ gap: 8, flexWrap: "wrap" }}>
+          <label className="cf-dim" style={{ fontSize: 12 }}>
+            ตั้งแต่วันที่
+          </label>
+          <input
+            type="date"
+            value={customFrom}
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={(e) => setCustomFrom(e.target.value)}
+            className="cf-range-btn"
+            style={{ minWidth: 150 }}
+          />
+          <span className="cf-dim" style={{ fontSize: 12 }}>
+            ถึงวันนี้
+          </span>
+          <button
+            className="cf-btn cf-btn-primary cf-btn-sm"
+            onClick={applyCustom}
+            disabled={!customFrom}
+          >
+            ดู <Ic name="arrowR" size={12} />
+          </button>
+        </div>
+      )}
 
       {tab === "round" && (
       <div className="cf-table">
