@@ -10,10 +10,18 @@ import {
   evidenceKey,
   cleanlinessKey,
   damageKey,
+  billSlipKey,
 } from "@/lib/chairops/storage/r2";
+import { rankOf } from "@/lib/chairops/auth/role-guards";
+import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
 
-type Kind = "cash-evidence" | "cleanliness" | "damage";
-const KINDS: ReadonlyArray<Kind> = ["cash-evidence", "cleanliness", "damage"];
+type Kind = "cash-evidence" | "cleanliness" | "damage" | "bill-slip";
+const KINDS: ReadonlyArray<Kind> = [
+  "cash-evidence",
+  "cleanliness",
+  "damage",
+  "bill-slip",
+];
 
 interface Body {
   kind?: string;
@@ -79,6 +87,14 @@ export async function POST(request: NextRequest) {
   const safeIdx = Number.isFinite(index) ? Math.max(0, Math.floor(index as number)) : 1;
   const safeContextId = contextId.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
 
+  // F2 vendor bill slips: OFFICE+ only (bills are not a maid-facing surface).
+  if (
+    (kind as Kind) === "bill-slip" &&
+    rankOf(session.user.role) < rankOf(ChairopsUserRole.OFFICE)
+  ) {
+    return NextResponse.json({ error: "forbidden-bill-slip" }, { status: 403 });
+  }
+
   let key: string;
   switch (kind as Kind) {
     case "cash-evidence":
@@ -89,6 +105,9 @@ export async function POST(request: NextRequest) {
       break;
     case "damage":
       key = damageKey(branch.slug, safeContextId, safeIdx, safeExt);
+      break;
+    case "bill-slip":
+      key = billSlipKey(branch.slug, safeContextId, safeExt);
       break;
   }
 

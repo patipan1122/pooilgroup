@@ -37,6 +37,7 @@ import {
   getBranchPL,
   rangeDayCount,
 } from "@/lib/chairops/queries/dashboard-pl";
+import { getPendingBillsTotal } from "@/lib/chairops/queries/vendor-bills";
 import { rankOf } from "@/lib/chairops/auth/role-guards";
 import { ChairopsAlertLevel } from "@/lib/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
@@ -48,6 +49,7 @@ import {
   Coins,
   Download,
   Info,
+  Receipt,
   TrendingUp,
   Upload,
   Users,
@@ -315,15 +317,23 @@ export default async function ExecDashboardPage({
       ? thaiDate(range.from, "d MMM yyyy")
       : `${thaiDate(range.from, "d MMM")} – ${thaiDate(range.to, "d MMM yyyy")} (${dayCount} วัน)`;
 
-  const [kpis, criticalBranches, missedMaids, recentAlerts, systemStatus, pl] =
-    await Promise.all([
-      getExecHomeKpis(orgId),
-      getCriticalBranches(orgId, { take: 8 }),
-      getMissedMaidsToday(orgId, { take: 5 }),
-      getRecentAlerts(orgId, { take: 5 }),
-      getSystemStatus(orgId),
-      getBranchPL({ orgId, from: range.from, to: range.to }),
-    ]);
+  const [
+    kpis,
+    criticalBranches,
+    missedMaids,
+    recentAlerts,
+    systemStatus,
+    pl,
+    pendingBills,
+  ] = await Promise.all([
+    getExecHomeKpis(orgId),
+    getCriticalBranches(orgId, { take: 8 }),
+    getMissedMaidsToday(orgId, { take: 5 }),
+    getRecentAlerts(orgId, { take: 5 }),
+    getSystemStatus(orgId),
+    getBranchPL({ orgId, from: range.from, to: range.to }),
+    getPendingBillsTotal({ orgId }),
+  ]);
 
   const plRows = sortBranchPL(pl.rows, plSort);
 
@@ -475,6 +485,21 @@ export default async function ExecDashboardPage({
             href="/chairops/reports"
           />
         )}
+        {/* F2 · บิลค้างจ่าย (audit MISS-01) — links to /chairops/bills (matrix view, latest months show pending chips) */}
+        <ChairopsKpiTile
+          label="บิลค้างจ่าย"
+          value={pendingBills.count}
+          unit="ใบ"
+          tone={pendingBills.overdueCount > 0 ? "danger" : "warning"}
+          icon={<Receipt className="size-4" aria-hidden="true" />}
+          delta={
+            pendingBills.overdueCount > 0
+              ? `${pendingBills.overdueCount} ใบเกินกำหนด · ${baht(pendingBills.overdueAmount)}`
+              : `รวม ${baht(pendingBills.pendingAmount)} ยังไม่ได้จ่าย`
+          }
+          deltaDirection={pendingBills.overdueCount > 0 ? "down" : "flat"}
+          href="/chairops/bills"
+        />
       </section>
 
       {/* date-range filter (CEO ask · drives the all-branches P&L table) */}

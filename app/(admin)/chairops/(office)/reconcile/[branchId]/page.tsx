@@ -37,6 +37,7 @@ export default async function ReconcileBranchPage({
     disputed?: string;
     from?: string;
     to?: string;
+    missingSlip?: string;
   }>;
 }) {
   const session = await requireRole("OFFICE");
@@ -66,6 +67,7 @@ export default async function ReconcileBranchPage({
         view={view}
         from={sp.from}
         to={sp.to}
+        missingSlip={sp.missingSlip === "1"}
       />
 
       {/* error / success ribbons (preserve old dispute/write-off feedback) */}

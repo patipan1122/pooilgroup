@@ -50,6 +50,7 @@ export async function ReconcileShell({
   view,
   from,
   to,
+  missingSlip,
 }: {
   orgId: string;
   /** null = org-level "ทุกสาขารวม" view */
@@ -58,6 +59,8 @@ export async function ReconcileShell({
   view: ReconcileView;
   from?: string;
   to?: string;
+  /** F1 · audit MISS-04: filter Ledger to days where a CSV_IMPORT row has no slip. */
+  missingSlip?: boolean;
 }) {
   const isOrg = branchId === null;
   const baseHref = isOrg
@@ -190,9 +193,71 @@ export async function ReconcileShell({
           />
         )}
 
+        {/* F1 (audit MISS-04 · 2026-06-02) — "ยังไม่มีสลิป" toggle. Chip is a
+            simple URL-driven anchor so the page stays server-rendered. Only
+            applies to the Ledger view. */}
+        {view === "ledger" && (
+          <div
+            className="row gap-2"
+            style={{ alignItems: "center", marginTop: 4 }}
+          >
+            <Link
+              href={(() => {
+                const usp = new URLSearchParams();
+                if (safeFrom) usp.set("from", safeFrom);
+                if (safeTo) usp.set("to", safeTo);
+                const qs = usp.toString();
+                return qs ? `${baseHref}?${qs}` : baseHref;
+              })()}
+              className="btn btn-sm"
+              aria-pressed={!missingSlip}
+              style={
+                missingSlip
+                  ? undefined
+                  : {
+                      background: "var(--surface-soft)",
+                      borderColor: "var(--border-strong)",
+                      fontWeight: 600,
+                    }
+              }
+            >
+              ทั้งหมด
+            </Link>
+            <Link
+              href={(() => {
+                const usp = new URLSearchParams();
+                if (safeFrom) usp.set("from", safeFrom);
+                if (safeTo) usp.set("to", safeTo);
+                usp.set("missingSlip", "1");
+                return `${baseHref}?${usp.toString()}`;
+              })()}
+              className="btn btn-sm"
+              aria-pressed={!!missingSlip}
+              title="แสดงเฉพาะวันที่มี CSV import และยังไม่มีสลิปฝาก"
+              style={
+                missingSlip
+                  ? {
+                      background: "#fef3c7",
+                      borderColor: "#fcd34d",
+                      color: "#92400e",
+                      fontWeight: 600,
+                    }
+                  : undefined
+              }
+            >
+              ยังไม่มีสลิป (CSV)
+            </Link>
+          </div>
+        )}
+
         <div className="rc-body">
           {view === "ledger" && (
-            <LedgerTab ledger={defaultedLedger} totals={totals} isOrg={isOrg} />
+            <LedgerTab
+              ledger={defaultedLedger}
+              totals={totals}
+              isOrg={isOrg}
+              csvOnlyMissingSlip={missingSlip}
+            />
           )}
           {view === "timeline" && <TimelineTab series={timeline} />}
           {view === "periods" && (

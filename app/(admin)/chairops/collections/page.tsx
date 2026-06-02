@@ -23,6 +23,8 @@ type SP = {
   to?: string;
   branch?: string;
   maid?: string;
+  /** F1 (audit MISS-04) · filter to CSV_IMPORT rows that have no slip yet. */
+  missingSlip?: string;
 };
 
 function parseDate(s: string | undefined, fallback: Date): Date {
@@ -47,10 +49,17 @@ export default async function AdminCollectionsPage({
   const from = parseDate(sp.from, monthStart);
   const to = parseDate(sp.to, tomorrow);
 
+  const missingSlipOnly = sp.missingSlip === "1";
   const where = {
     collectedAt: { gte: from, lt: to },
     ...(sp.branch ? { branchId: sp.branch } : {}),
     ...(sp.maid ? { maidId: sp.maid } : {}),
+    // F1 (audit MISS-04) · "ยังไม่มีสลิป" filter — CSV_IMPORT rows missing
+    // slipPhotoUrl. OFFICE_PROXY rows ALSO sometimes lack slips, but the CEO
+    // ruling 2026-06-02 only wires the chip for CSV.
+    ...(missingSlipOnly
+      ? { source: "CSV_IMPORT" as const, slipPhotoUrl: null }
+      : {}),
   };
 
   // Wave-2 audit P0 #6: deposits now live on chairops_cash_deposit (separate
@@ -74,7 +83,10 @@ export default async function AdminCollectionsPage({
         collectedAt: true,
         countedAmount: true,
         depositedAmount: true,
+        slipPhotoUrl: true,
         notes: true,
+        // F1 (audit MISS-04) · surface provenance for the source badge column.
+        source: true,
         branch: { select: { id: true, name: true, slug: true } },
         // Wave-2 B2: include role to label "(แทน)" when office tier collected.
         maid: { select: { id: true, displayName: true, role: true } },
@@ -191,6 +203,36 @@ export default async function AdminCollectionsPage({
           >
             ล้างตัวกรอง
           </Link>
+          {/* F1 (audit MISS-04) · "ยังไม่มีสลิป" toggle. Keeps existing filters
+              alive via inline hidden inputs preserved by the GET form above. */}
+          {(() => {
+            const baseParams = new URLSearchParams();
+            if (sp.from) baseParams.set("from", sp.from);
+            if (sp.to) baseParams.set("to", sp.to);
+            if (sp.branch) baseParams.set("branch", sp.branch);
+            if (sp.maid) baseParams.set("maid", sp.maid);
+            const onParams = new URLSearchParams(baseParams);
+            onParams.set("missingSlip", "1");
+            const offHref =
+              "/chairops/collections" +
+              (baseParams.toString() ? `?${baseParams}` : "");
+            const onHref = `/chairops/collections?${onParams}`;
+            return (
+              <Link
+                href={missingSlipOnly ? offHref : onHref}
+                className={
+                  "h-9 inline-flex items-center rounded-md border px-3 text-xs font-medium " +
+                  (missingSlipOnly
+                    ? "border-amber-300 bg-amber-100 text-amber-900"
+                    : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50")
+                }
+                aria-pressed={missingSlipOnly}
+                title="แสดงเฉพาะรอบที่นำเข้าจาก CSV และยังไม่ผูกสลิป"
+              >
+                {missingSlipOnly ? "✓ ยังไม่มีสลิป (CSV)" : "ยังไม่มีสลิป (CSV)"}
+              </Link>
+            );
+          })()}
         </div>
       </form>
 
@@ -231,6 +273,7 @@ export default async function AdminCollectionsPage({
               <th className="px-3 py-2.5">เวลา</th>
               <th className="px-3 py-2.5">สาขา</th>
               <th className="px-3 py-2.5">แม่บ้าน</th>
+              <th className="px-3 py-2.5">ที่มา</th>
               <th className="px-3 py-2.5 text-right">นับได้</th>
               <th className="px-3 py-2.5 text-right">ฝาก</th>
               <th className="px-3 py-2.5 text-right">ส่วนต่าง</th>
@@ -241,7 +284,7 @@ export default async function AdminCollectionsPage({
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-10 text-center text-sm text-zinc-500">
+                <td colSpan={9} className="px-3 py-10 text-center text-sm text-zinc-500">
                   ยังไม่มีรายการในช่วงนี้
                   <div className="mt-1 text-xs text-zinc-400">
                     {thaiDate(from)} – {thaiDate(new Date(to.getTime() - 86400_000))}
@@ -275,6 +318,39 @@ export default async function AdminCollectionsPage({
                           ? `${r.maid.displayName} (แทน)`
                           : r.maid.displayName
                         : "—"}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {(() => {
+                        // F1 (audit MISS-04) source-badge column. Legacy rows
+                        // with NULL source render as MAID_MANUAL.
+                        const src = r.source ?? "MAID_MANUAL";
+                        if (src === "CSV_IMPORT") {
+                          return (
+                            <Badge
+                              tone="warning"
+                              title={
+                                r.slipPhotoUrl
+                                  ? "นำเข้าจาก CSV"
+                                  : "นำเข้าจาก CSV · ยังไม่มีสลิป"
+                              }
+                            >
+                              Import{r.slipPhotoUrl ? "" : " · ไม่มีสลิป"}
+                            </Badge>
+                          );
+                        }
+                        if (src === "OFFICE_PROXY") {
+                          return (
+                            <Badge tone="info" title="สำนักงานบันทึกแทน">
+                              Office
+                            </Badge>
+                          );
+                        }
+                        return (
+                          <Badge tone="neutral" title="แม่บ้านบันทึกใน LIFF">
+                            มือ
+                          </Badge>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{baht(Number(r.countedAmount))}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums font-medium">

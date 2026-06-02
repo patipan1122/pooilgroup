@@ -236,16 +236,42 @@ export function ReconcileTabs({
 // ─────────────────────────────────────────────────────────────
 // Ledger tab — bank-statement table
 // ─────────────────────────────────────────────────────────────
+// F1 (audit MISS-04 · 2026-06-02): tiny source-badge column shows where each
+// day's collection rows came from — MAID_MANUAL / CSV_IMPORT / OFFICE_PROXY.
+// Helps CEO eyeball which days were filled in by CSV after the fact.
+function sourceBadge(src: LedgerDay["sources"][number]) {
+  if (src === "MAID_MANUAL")
+    return { label: "มือ", title: "แม่บ้านบันทึกใน LIFF", tone: "neutral" as const };
+  if (src === "CSV_IMPORT")
+    return { label: "Import", title: "นำเข้าจาก CSV", tone: "warning" as const };
+  return { label: "Office", title: "สำนักงานบันทึกแทน", tone: "info" as const };
+}
+
+const SOURCE_TONE_CLASS: Record<"neutral" | "warning" | "info", string> = {
+  neutral: "bg-zinc-100 text-zinc-700",
+  warning: "bg-amber-50 text-amber-800",
+  info: "bg-sky-50 text-sky-700",
+};
+
 export function LedgerTab({
   ledger,
   totals,
   isOrg,
+  csvOnlyMissingSlip,
 }: {
   ledger: LedgerDay[];
   /** Footer totals (null when no rows). */
   totals: LedgerTotals | null;
   isOrg: boolean;
+  /**
+   * When true, only render days where at least one CSV_IMPORT row has no slip.
+   * Drives the "ยังไม่มีสลิป" filter chip wired in reconcile-shell.
+   */
+  csvOnlyMissingSlip?: boolean;
 }) {
+  const rows = csvOnlyMissingSlip
+    ? ledger.filter((d) => d.hasCsvWithoutSlip)
+    : ledger;
   return (
     <div className="rc-ledger">
       <table className="tbl rc-ledger-tbl">
@@ -258,24 +284,27 @@ export function LedgerTab({
             <th className="num rc-tcol">รวมเงินสด</th>
             <th className="num">รายได้รวม</th>
             <th className="num rc-tcol">ฝาก</th>
+            <th>ที่มา</th>
             <th>สลิป</th>
             <th className="num">หาย</th>
             <th className="num rc-tcol">หายสะสม</th>
           </tr>
         </thead>
         <tbody>
-          {ledger.length === 0 && (
+          {rows.length === 0 && (
             <tr>
               <td
-                colSpan={10}
+                colSpan={11}
                 style={{ textAlign: "center", padding: "48px 0" }}
                 className="text-3"
               >
-                ยังไม่มีข้อมูล · อัพ POS แล้ว Recompute ก่อน
+                {csvOnlyMissingSlip
+                  ? "ไม่มีรอบเก็บ CSV ที่ยังไม่มีสลิปในช่วงนี้"
+                  : "ยังไม่มีข้อมูล · อัพ POS แล้ว Recompute ก่อน"}
               </td>
             </tr>
           )}
-          {ledger.map((d) => (
+          {rows.map((d) => (
             <tr key={d.date} className={d.collected ? "rc-row-collected" : ""}>
               <td>
                 <div className="rc-date">
@@ -305,9 +334,45 @@ export function LedgerTab({
                 )}
               </td>
               <td>
+                {d.sources.length === 0 ? (
+                  <span className="text-muted">—</span>
+                ) : (
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      flexWrap: "wrap",
+                      gap: 4,
+                    }}
+                  >
+                    {d.sources.map((s) => {
+                      const meta = sourceBadge(s);
+                      return (
+                        <span
+                          key={s}
+                          title={meta.title}
+                          className={
+                            "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium " +
+                            SOURCE_TONE_CLASS[meta.tone]
+                          }
+                        >
+                          {meta.label}
+                        </span>
+                      );
+                    })}
+                  </span>
+                )}
+              </td>
+              <td>
                 {d.slip ? (
                   <span className="rc-slip">
                     <Paperclip size={11} aria-hidden="true" /> สลิป
+                  </span>
+                ) : d.hasCsvWithoutSlip ? (
+                  <span
+                    title="CSV import ยังไม่มี slipUrl"
+                    className="inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+                  >
+                    ยังไม่มีสลิป
                   </span>
                 ) : (
                   <span className="text-muted">—</span>
@@ -359,6 +424,7 @@ export function LedgerTab({
               <td className="num mono">{fmtN(totals.totalRev)}</td>
               <td className="num mono rc-tcol">{fmtN(totals.deposit)}</td>
               <td />
+              <td />
               <td
                 className={
                   "num mono co-drift " +
@@ -394,7 +460,7 @@ export function LedgerTab({
             {totals.pending > 0 && (
               <tr style={{ background: "var(--surface-soft)" }}>
                 <td
-                  colSpan={10}
+                  colSpan={11}
                   className="text-3"
                   style={{ padding: "6px 12px", fontSize: 11 }}
                 >

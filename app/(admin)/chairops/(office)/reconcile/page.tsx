@@ -28,6 +28,7 @@ export default async function ReconcileOrgPage({
     recompute?: string;
     from?: string;
     to?: string;
+    missingSlip?: string;
   }>;
 }) {
   const session = await requireRole("OFFICE");
@@ -49,6 +50,7 @@ export default async function ReconcileOrgPage({
       view={view}
       from={sp.from}
       to={sp.to}
+      missingSlip={sp.missingSlip === "1"}
     />
   );
 }

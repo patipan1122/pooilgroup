@@ -36,6 +36,9 @@ import { getDepositsByDate } from "@/lib/chairops/queries/_deposits";
 // ----------------------------------------------------------------
 // Public types — shaped to drive the UI directly
 // ----------------------------------------------------------------
+/** Source provenance for each collection row aggregated into a ledger day. */
+export type LedgerDaySource = "MAID_MANUAL" | "CSV_IMPORT" | "OFFICE_PROXY";
+
 export interface LedgerDay {
   date: string; // "YYYY-MM-DD"
   online: number;
@@ -58,6 +61,17 @@ export interface LedgerDay {
    */
   cumDrift: number;
   pending: number; // cash awaiting collection (open balance)
+  /**
+   * F1 (audit MISS-04 · 2026-06-02) · what provenance(s) the collection rows
+   * for this day came from. A day with both MAID_MANUAL and CSV_IMPORT entries
+   * shows two pills · used by LedgerTab.
+   */
+  sources: LedgerDaySource[];
+  /**
+   * True when at least one collection on this day is CSV_IMPORT WITHOUT
+   * slipPhotoUrl. Drives the "ยังไม่มีสลิป" filter chip.
+   */
+  hasCsvWithoutSlip: boolean;
 }
 
 export interface LedgerTotals {
@@ -245,6 +259,10 @@ async function buildLedger(args: {
         collectedAt: true,
         slipPhotoUrl: true,
         evidencePhotoUrl: true,
+        // F1 (audit MISS-04 · 2026-06-02) — surface provenance + missing-slip
+        // signal to LedgerTab. `source` may be null on legacy rows because the
+        // CHECK constraint was added in 20260602153000 — fall back to MAID_MANUAL.
+        source: true,
       },
       orderBy: { collectedAt: "asc" },
     }),
@@ -255,6 +273,19 @@ async function buildLedger(args: {
     if (slipByDay.has(key)) continue;
     const slip = c.slipPhotoUrl ?? c.evidencePhotoUrl ?? "slip";
     slipByDay.set(key, slip);
+  }
+  // Build per-day source-set and missing-slip flag (F1 · audit MISS-04).
+  const sourcesByDay = new Map<string, Set<LedgerDaySource>>();
+  const csvMissingSlipByDay = new Set<string>();
+  for (const c of slipCollections) {
+    const key = isoDay(c.collectedAt);
+    const src = (c.source ?? "MAID_MANUAL") as LedgerDaySource;
+    const set = sourcesByDay.get(key) ?? new Set<LedgerDaySource>();
+    set.add(src);
+    sourcesByDay.set(key, set);
+    if (src === "CSV_IMPORT" && !c.slipPhotoUrl) {
+      csvMissingSlipByDay.add(key);
+    }
   }
   const depByDay = new Map<string, { deposit: number; slip: string | null }>();
   for (const [key, deposit] of depByDayAmount) {
@@ -305,6 +336,8 @@ async function buildLedger(args: {
       // panel/engine show −22,761. Negative = owed by branch (shortage).
       cumDrift: closedDrift - pending,
       pending,
+      sources: Array.from(sourcesByDay.get(date) ?? []),
+      hasCsvWithoutSlip: csvMissingSlipByDay.has(date),
     });
   }
 

@@ -56,3 +56,12 @@ export function damageKey(branchSlug: string, ticketCode: string, n: number, ext
   const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
   return `damage/${yyyy}/${mm}/${branchSlug}/${ticketCode}-${n}.${ext}`;
 }
+
+// F2 vendor bill slip (rent/utility/etc invoice receipt) · keyed by branch + bill id.
+// Used by /chairops/bills/[id] uploader + the mark-paid form.
+export function billSlipKey(branchSlug: string, billId: string, ext = "jpg") {
+  const now = new Date();
+  const yyyy = now.getUTCFullYear();
+  const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
+  return `bill-slip/${yyyy}/${mm}/${branchSlug}/${billId}.${ext}`;
+}

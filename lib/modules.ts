@@ -64,6 +64,7 @@ import {
   BedDouble,
   ImageIcon,
   CalendarCheck,
+  Receipt,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
@@ -515,6 +516,15 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: Building2,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
       },
+      // ── นำเข้า ──────────────────────────────────────────────
+      // F1 audit MISS-04 · CSV upload of maid rounds (CEO+ADMIN only)
+      {
+        href: "/chairops/import/maid-collections",
+        label: "นำเข้ายอดแม่บ้าน (CSV)",
+        icon: Upload,
+        section: "นำเข้า",
+        roles: ["super_admin", "org_admin", "admin"],
+      },
       // ── ปฏิบัติงาน ──────────────────────────────────────────
       {
         href: "/chairops/pos-ingest",
@@ -566,6 +576,14 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: ShieldX,
         section: "การเงิน",
         roles: ["super_admin", "org_admin", "admin"],
+      },
+      {
+        // F2 vendor bills matrix · audit MISS-01 (2026-06-02). CEO + ADMIN edit ·
+        // MANAGER + OFFICE view-only at the same URL (page handles the gate).
+        href: "/chairops/bills",
+        label: "บิล / ค่าใช้จ่าย",
+        icon: Receipt,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
       },
       {
         href: "/chairops/accounts",
