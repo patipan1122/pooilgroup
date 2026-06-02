@@ -11,6 +11,7 @@ import { writeAudit } from "@/lib/chairops/audit/log";
 import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { ChairopsTicketStatus } from "@/lib/generated/prisma/enums";
+import { autoResolveRepairOverdue } from "@/lib/chairops/alerts/auto-resolve";
 
 export type ActionResult<T = void> =
   | { ok: true; data?: T }
@@ -150,6 +151,13 @@ export async function updateStatus(
     newValue: { status: updated.status, closedAt: updated.closedAt },
     metadata: { ticketCode: updated.ticketCode },
   });
+
+  // BF2 D4 · auto-resolve REPAIR_OVERDUE on terminal transitions.
+  if (parsed.data.newStatus === "DONE" || parsed.data.newStatus === "CANCELLED") {
+    void autoResolveRepairOverdue(session.user.orgId, updated.id).catch((err) => {
+      console.error("[damage status_change] auto-resolve failed:", err);
+    });
+  }
 
   revalidatePath(`/chairops/damage/${parsed.data.code}`);
   revalidatePath("/chairops/damage");
@@ -314,6 +322,11 @@ export async function closeTicket(
     oldValue: old,
     newValue: { status: updated.status, notes: updated.notes, closedAt: updated.closedAt },
     metadata: { ticketCode: updated.ticketCode },
+  });
+
+  // BF2 D4 · auto-resolve REPAIR_OVERDUE when ticket closes.
+  void autoResolveRepairOverdue(session.user.orgId, updated.id).catch((err) => {
+    console.error("[damage close] auto-resolve failed:", err);
   });
 
   revalidatePath(`/chairops/damage/${parsed.data.code}`);

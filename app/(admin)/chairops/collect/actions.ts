@@ -25,6 +25,12 @@ import { presignUpload, evidenceKey, slipKey } from "@/lib/chairops/storage/r2";
 import { zBaht, zUUID } from "@/lib/chairops/schemas/zod-helpers";
 import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
 import { rateLimit, LIMITS } from "@/lib/chairops/utils/rate-limit";
+import { notifyChannel } from "@/lib/chairops/line/messaging";
+import {
+  DEPOSIT_NOTES_GATE_BAHT,
+  DEPOSIT_REVIEW_GATE_BAHT,
+  DEPOSIT_NOTES_MIN_LEN,
+} from "@/app/(admin)/chairops/(office)/maids/types";
 
 // Wave-2 B3 (NR-1): "mismatch" lets a maid flag a chair-code that's not
 // physically present at her branch (real-world drift between StarThing
@@ -429,6 +435,25 @@ export async function batchDeposit(
     return { ok: false, error: "สลิปนี้เคยใช้แล้ว · ถ่ายใหม่" };
   }
 
+  // BF1 MAID-04 anti-fraud (server enforcement · client mirrors gate).
+  // effectiveDiff = (deposited + fee) − collections-sum.
+  // |diff| ≥ 100 ฿ requires ≥10-char notes · |diff| ≥ 500 ฿ auto-flags review.
+  const collectionsSum = collections.reduce((s, c) => s + c.countedAmount, 0);
+  const effectiveDiff =
+    data.depositedAmount + data.bankFee - collectionsSum;
+  const absEffDiff = Math.abs(effectiveDiff);
+  const noteLen = (data.notes ?? "").trim().length;
+  if (
+    absEffDiff >= DEPOSIT_NOTES_GATE_BAHT &&
+    noteLen < DEPOSIT_NOTES_MIN_LEN
+  ) {
+    return {
+      ok: false,
+      error: `ผลต่าง ≥ ${DEPOSIT_NOTES_GATE_BAHT} ฿ ต้องระบุเหตุผลอย่างน้อย ${DEPOSIT_NOTES_MIN_LEN} ตัวอักษร`,
+    };
+  }
+  const requiresReview = absEffDiff >= DEPOSIT_REVIEW_GATE_BAHT;
+
   try {
     const deposit = await prisma.$transaction(async (tx) => {
       const dep = await tx.chairopsCashDeposit.create({
@@ -441,6 +466,7 @@ export async function batchDeposit(
           slipPhotoUrl: data.slipPhotoUrl,
           slipImageHash: data.slipImageHash,
           notes: data.notes ?? null,
+          requiresReview,
         },
       });
       await tx.chairopsCashCollection.updateMany({
@@ -458,7 +484,9 @@ export async function batchDeposit(
             collectionIds: data.collectionIds,
             depositedAmount: data.depositedAmount,
             bankFee: data.bankFee,
-            countedTotal: collections.reduce((s, c) => s + c.countedAmount, 0),
+            countedTotal: collectionsSum,
+            requiresReview,
+            effectiveDiff,
           },
           metadata: { route: "/chairops/m/deposit" },
         },
@@ -466,6 +494,25 @@ export async function batchDeposit(
       );
       return dep;
     });
+
+    // Fire-and-forget LINE alert when the office needs to review. We do this
+    // OUTSIDE the transaction so a Messaging API hiccup doesn't roll back
+    // the deposit. Best-effort; failure is silently logged in messaging.
+    if (requiresReview) {
+      try {
+        const branch = await prisma.chairopsBranch.findUnique({
+          where: { id: branchId },
+          select: { name: true },
+        });
+        const sign = effectiveDiff > 0 ? "+" : "";
+        await notifyChannel(
+          "ops",
+          `🚨 รอตรวจ · ${session.user.displayName} ฝากเงินที่ ${branch?.name ?? "สาขา"}\nผลต่าง ${sign}${effectiveDiff.toLocaleString()} ฿ · กดดูที่ /chairops/reconcile/${branchId}`,
+        );
+      } catch {
+        // swallow — deposit already committed
+      }
+    }
 
     await recomputeDriftForBranch(branchId);
 

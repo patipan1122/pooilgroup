@@ -9,12 +9,19 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { rankOf } from "@/lib/chairops/auth/role-guards";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
-import { getCategoryList, getAnomaly } from "@/lib/chairops/queries/vendor-bills";
+import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
+import {
+  getCategoryList,
+  getAnomaly,
+  deriveStatus,
+  bangkokDateOfToday,
+} from "@/lib/chairops/queries/vendor-bills";
 import { baht, thaiDate } from "@/lib/chairops/utils/format";
 
 import { BillEditForm } from "./_components/bill-edit-form";
 import { MarkPaidForm } from "./_components/mark-paid-form";
 import { DeleteBillForm } from "./_components/delete-bill-form";
+import { UnmarkPaidForm } from "./_components/unmark-paid-form";
 
 export const dynamic = "force-dynamic";
 
@@ -58,14 +65,12 @@ export default async function BillDetailPage({
   const billPeriodStr = bill.billPeriod.toISOString().slice(0, 7);
   const dueDateStr = bill.dueDate.toISOString().slice(0, 10);
   const paidAtStr = bill.paidAt ? bill.paidAt.toISOString().slice(0, 10) : "";
-  // `force-dynamic` ensures fresh render — capturing Date here is fine for this
-  // page (server-rendered per request, not a memoizable function call).
-  const nowMs = new Date().getTime();
-  const status: "PAID" | "PENDING" | "OVERDUE" = bill.paidAt
-    ? "PAID"
-    : bill.dueDate.getTime() < nowMs
-      ? "OVERDUE"
-      : "PENDING";
+  // BA-05 (2026-06-03) · share `deriveStatus` + `bangkokDateOfToday` with the
+  // matrix so the same bill never shows two different statuses (the inline
+  // ternary used wall-clock UTC; the matrix uses BKK calendar midnight — a
+  // 7-hour daily window of disagreement). Anchor to BKK day to match maid/
+  // branch operations cadence.
+  const status = deriveStatus(bill.paidAt, bill.dueDate, bangkokDateOfToday());
 
   const STATUS_LABEL = {
     PAID: { txt: "จ่ายแล้ว", chip: "bg-emerald-100 text-emerald-700" },
@@ -162,6 +167,21 @@ export default async function BillDetailPage({
             </div>
           ) : null}
 
+          {/* OWN-BILLS-03 (2026-06-03) · explicit revert-paid surface, replaces
+              the old silent-clear behaviour where blanking paidAt in the edit
+              form un-marked the bill. */}
+          {canEdit && status === "PAID" ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-4">
+              <h2 className="text-sm font-semibold text-amber-900">
+                ยกเลิกการจ่าย
+              </h2>
+              <p className="mt-1 text-xs text-amber-800/80">
+                ใช้เมื่อบันทึกจ่ายผิด · จะกลับเป็น &quot;รอจ่าย&quot;
+              </p>
+              <UnmarkPaidForm billId={bill.id} />
+            </div>
+          ) : null}
+
           {canEdit ? (
             <div className="rounded-lg border border-rose-200 bg-rose-50/30 p-4">
               <h2 className="text-sm font-semibold text-rose-900">
@@ -233,7 +253,10 @@ function ReadOnlyView({
       <Row label="ธนาคารผู้รับ" value={bankAccountTo || "—"} />
       <Row label="เงื่อนไขการชำระ" value={paymentTerms || "—"} />
       <Row label="หมายเหตุ" value={notes || "—"} />
-      {slipPhotoUrl ? (
+      {/* SEC-01 (2026-06-03) · render slip link only when URL passes the
+          canonical R2 allowlist guard — defense-in-depth against historical
+          rows that pre-date the zod validation tightening. */}
+      {slipPhotoUrl && isAllowedPhotoUrl(slipPhotoUrl) ? (
         <div className="col-span-full">
           <dt className="text-xs font-medium text-zinc-700">สลิป</dt>
           <dd className="mt-1">

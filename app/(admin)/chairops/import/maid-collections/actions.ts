@@ -28,10 +28,12 @@
 // flow. If `slipUrl` is set on a row it's recorded on the collection row so the
 // LedgerTab can show "ยังไม่มีสลิป" properly.
 
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { writeAudit } from "@/lib/chairops/audit/log";
+import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
 // CSV header constant + types live in ./types so this "use server" file only
 // exports async functions. Vercel build blocked otherwise:
 //   "A 'use server' file can only export async functions, found object"
@@ -125,6 +127,66 @@ function parseIntStrict(raw: string): number | null {
   const n = Number(cleaned);
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.round(n);
+}
+
+// DEVIL-01 (2026-06-03) · payload is HMAC-signed at preview time and verified
+// at commit so the browser cannot mutate countedAmount/collectedAt between
+// the two calls. Keys are pinned to the calling user+org so leaking one
+// payload can't be replayed for another tenant.
+const HMAC_KEY =
+  process.env.CHAIROPS_CSV_PAYLOAD_SECRET ??
+  process.env.NEXTAUTH_SECRET ??
+  // Last-resort dev fallback · production REQUIRES the real env to be set.
+  "chairops-csv-payload-dev-key";
+
+function signPayload(payload: string, userId: string, orgId: string): string {
+  return createHmac("sha256", HMAC_KEY)
+    .update(`${orgId}|${userId}|${payload}`)
+    .digest("hex");
+}
+
+function verifyPayloadSig(
+  payload: string,
+  userId: string,
+  orgId: string,
+  sig: string,
+): boolean {
+  const expected = Buffer.from(signPayload(payload, userId, orgId), "hex");
+  let given: Buffer;
+  try {
+    given = Buffer.from(sig, "hex");
+  } catch {
+    return false;
+  }
+  if (expected.length !== given.length) return false;
+  return timingSafeEqual(expected, given);
+}
+
+// SEC-02 (2026-06-03) · per-row hardening. notes <= 2000 chars, phone <= 20.
+// slipUrl must come from the R2 allowlist — the LIFF uploader writes there;
+// nothing legitimate ever stores `javascript:` or `data:` URIs.
+function sanitizeNotes(raw: string | null): { value: string | null; error?: string } {
+  if (!raw) return { value: null };
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return { value: null };
+  if (trimmed.length > 2000) return { value: null, error: "notes ยาวเกิน 2000 ตัวอักษร" };
+  return { value: trimmed };
+}
+function sanitizePhone(raw: string | null): { value: string | null; error?: string } {
+  if (!raw) return { value: null };
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return { value: null };
+  if (trimmed.length > 20) return { value: null, error: "maidPhone ยาวเกิน 20 ตัวอักษร" };
+  return { value: trimmed };
+}
+function sanitizeSlipUrl(raw: string | null): { value: string | null; error?: string } {
+  if (!raw) return { value: null };
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return { value: null };
+  if (!isAllowedPhotoUrl(trimmed)) {
+    return { value: null, error: "slipUrl ต้องเป็นลิงก์รูปจากระบบ (R2)" };
+  }
+  return { value: trimmed };
 }
 
 /** Normalize Thai phone numbers: keep digits only · strip leading 0/+66 · 9 or 10 digits. */
@@ -315,14 +377,22 @@ export async function previewMaidCsv(
       }
     }
 
+    // SEC-02 (2026-06-03) · validate per-row free-text BEFORE writing.
+    const phoneOut = sanitizePhone(phoneRaw || null);
+    if (phoneOut.error) errors.push(phoneOut.error);
+    const notesOut = sanitizeNotes(notesRaw || null);
+    if (notesOut.error) errors.push(notesOut.error);
+    const slipOut = sanitizeSlipUrl(slipRaw || null);
+    if (slipOut.error) errors.push(slipOut.error);
+
     draftRows.push({
       rowIndex: i,
       branchSlug: slug,
       collectedAt: collectedAt ? formatLocalIso(collectedAt) : null,
       countedAmount,
-      maidPhone: phoneRaw || null,
-      notes: notesRaw || null,
-      slipUrl: slipRaw || null,
+      maidPhone: phoneOut.value,
+      notes: notesOut.value,
+      slipUrl: slipOut.value,
       branchId: branch?.id ?? null,
       branchName: branch?.name ?? null,
       maidId,
@@ -333,26 +403,30 @@ export async function previewMaidCsv(
   }
 
   // Pass 2 · dedup within the batch and against existing rows. Two rows match
-  // when (branchId, |collectedAt diff| ≤ 60s, countedAmount) all align. We
-  // resolve in two steps:
-  //  (a) collapse intra-batch dupes — second occurrence flagged as dedup.
-  //  (b) check DB for any existing collection within ±60s of the row's stamp.
+  // when (branchId, |collectedAt diff| ≤ 60s, countedAmount) all align.
+  //
+  // BA-02 (2026-06-03) · the original implementation keyed dedup by
+  // Math.floor(ts/60000) — a minute INDEX — so two rows at 12:00:45 and
+  // 12:01:15 (30 s apart) landed in different buckets and BOTH survived.
+  // Switch to true ±60 s windowed compare on sorted neighbours.
   const readyForDb: PreviewRow[] = [];
-  const seen = new Map<string, number>(); // key→rowIndex of first occurrence
+  type DedupEntry = { row: PreviewRow; ts: number };
+  const byBranchAmount = new Map<string, DedupEntry[]>();
   for (const r of draftRows) {
     if (r.kind !== "ready" || !r.branchId || !r.collectedAt || r.countedAmount == null) {
       continue;
     }
-    const key = `${r.branchId}|${r.countedAmount}|${Math.floor(
-      new Date(r.collectedAt + "+07:00").getTime() / 60000,
-    )}`;
-    const first = seen.get(key);
-    if (first !== undefined) {
+    const ts = new Date(r.collectedAt + "+07:00").getTime();
+    const k = `${r.branchId}|${r.countedAmount}`;
+    const arr = byBranchAmount.get(k) ?? [];
+    const dupe = arr.find((e) => Math.abs(e.ts - ts) <= 60_000);
+    if (dupe) {
       r.kind = "dedup";
-      r.errors.push(`ซ้ำกับแถวที่ ${first} ในไฟล์เดียวกัน`);
+      r.errors.push(`ซ้ำกับแถวที่ ${dupe.row.rowIndex} ในไฟล์เดียวกัน (±60 วินาที)`);
       continue;
     }
-    seen.set(key, r.rowIndex);
+    arr.push({ row: r, ts });
+    byBranchAmount.set(k, arr);
     readyForDb.push(r);
   }
 
@@ -420,12 +494,16 @@ export async function previewMaidCsv(
   const payload = JSON.stringify(
     draftRows.filter((r) => r.kind === "ready"),
   );
+  // DEVIL-01 (2026-06-03) · HMAC over (orgId|userId|payload) so the client
+  // cannot mutate amounts/timestamps between preview and commit.
+  const payloadSig = signPayload(payload, session.user.id, orgId);
 
   return {
     ok: true,
     rows: draftRows,
     counts,
     payload,
+    payloadSig,
   };
 }
 
@@ -434,15 +512,26 @@ export async function previewMaidCsv(
 
 /**
  * Server action consumed by the preview UI. Receives the `payload` string from
- * `previewMaidCsv` (only "ready" rows) and the original dedup count for the
- * audit log. We re-validate the payload defensively before writing.
+ * `previewMaidCsv` (only "ready" rows) and its HMAC signature. We refuse to
+ * commit a payload whose signature doesn't verify against this user+org so
+ * the client cannot mutate countedAmount / collectedAt / slipUrl in transit
+ * (DEVIL-01 fix · 2026-06-03).
  */
 export async function commitMaidCsv(
   payload: string,
   dedupSeen: number,
+  payloadSig: string,
 ): Promise<CommitResponse> {
   const session = await requireRole("CEO");
   const orgId = session.user.orgId;
+
+  // DEVIL-01 · refuse tampered payloads.
+  if (!payloadSig || !verifyPayloadSig(payload, session.user.id, orgId, payloadSig)) {
+    return {
+      ok: false,
+      error: "payload signature ไม่ถูกต้อง · กรุณาอ่านไฟล์ใหม่อีกครั้ง",
+    };
+  }
 
   let rows: PreviewRow[];
   try {
@@ -460,55 +549,133 @@ export async function commitMaidCsv(
   // Stops a forged payload from writing into another tenant's tables.
   const branchIds = [...new Set(rows.map((r) => r.branchId).filter((s): s is string => !!s))];
   const maidIds = [...new Set(rows.map((r) => r.maidId).filter((s): s is string => !!s))];
-  const [branches, maids] = await Promise.all([
+  // BA-04 (2026-06-03) · also rebuild the (branchId → assigned maid set) map
+  // so we can refuse cross-branch attribution. The preview path resolves
+  // branch+maid in three steps (phone → sole assignment → primaryBranchId);
+  // commit must verify the final pair is internally consistent with the
+  // CURRENT assignment table, not just same-org.
+  const [branches, maids, assignments] = await Promise.all([
     prisma.chairopsBranch.findMany({
       where: { orgId, id: { in: branchIds } },
       select: { id: true },
     }),
     prisma.chairopsUser.findMany({
       where: { orgId, role: "MAID", id: { in: maidIds } },
-      select: { id: true },
+      select: { id: true, primaryBranchId: true },
+    }),
+    prisma.chairopsMaidAssignment.findMany({
+      where: { orgId, isActive: true, branchId: { in: branchIds } },
+      select: { branchId: true, userId: true },
     }),
   ]);
   const validBranch = new Set(branches.map((b) => b.id));
-  const validMaid = new Set(maids.map((m) => m.id));
-
-  const rowsToWrite = rows.filter(
-    (r) =>
-      r.branchId &&
-      r.maidId &&
-      r.collectedAt &&
-      r.countedAmount != null &&
-      validBranch.has(r.branchId) &&
-      validMaid.has(r.maidId),
-  );
-  if (rowsToWrite.length === 0) {
-    return { ok: false, error: "ทุกแถวอ้างถึงสาขา/แม่บ้านที่ไม่อยู่ในองค์กรนี้" };
+  const validMaid = new Map(maids.map((m) => [m.id, m]));
+  const assignedByBranch = new Map<string, Set<string>>();
+  for (const a of assignments) {
+    const s = assignedByBranch.get(a.branchId) ?? new Set();
+    s.add(a.userId);
+    assignedByBranch.set(a.branchId, s);
   }
 
-  const data = rowsToWrite.map((r) => ({
-    orgId,
-    branchId: r.branchId!,
-    maidId: r.maidId!,
-    collectedAt: new Date(r.collectedAt! + "+07:00"),
-    countedAmount: r.countedAmount!,
-    depositedAmount: 0, // deposits live on ChairopsCashDeposit · this is legacy column
-    // F1 (audit MISS-04) · CSV_IMPORT rows have no maid photo · DB CHECK
-    // constraint enforces nullability of these two only when source != MAID_MANUAL.
-    evidencePhotoUrl: null,
-    imageHash: null,
-    slipPhotoUrl: r.slipUrl ?? null,
-    notes: r.notes ?? null,
-    source: "CSV_IMPORT" as const,
-    importedById: session.user.id,
-  }));
-
-  // No multi-row write needs to be atomic with anything else here · drift /
-  // alerts run separately on the reconcile cron. createMany is enough.
-  const result = await prisma.chairopsCashCollection.createMany({
-    data,
-    skipDuplicates: false,
+  // SEC-02 · defense-in-depth · the payload was preview-validated but we
+  // re-check slip URLs in case the JSON was tampered (sig also catches this).
+  const rowsToWrite = rows.filter((r) => {
+    if (
+      !r.branchId ||
+      !r.maidId ||
+      !r.collectedAt ||
+      r.countedAmount == null ||
+      !validBranch.has(r.branchId) ||
+      !validMaid.has(r.maidId)
+    ) {
+      return false;
+    }
+    if (r.slipUrl && !isAllowedPhotoUrl(r.slipUrl)) return false;
+    // BA-04 · enforce assignment consistency · maid must either be in this
+    // branch's active assignment set OR have it as their primaryBranchId.
+    const assigned = assignedByBranch.get(r.branchId);
+    if (assigned && assigned.has(r.maidId)) return true;
+    const maid = validMaid.get(r.maidId);
+    if (maid?.primaryBranchId === r.branchId) return true;
+    return false;
   });
+  if (rowsToWrite.length === 0) {
+    return {
+      ok: false,
+      error:
+        "ทุกแถวไม่ผ่านการตรวจสอบ · เช็คว่าแม่บ้านผูกกับสาขาในไฟล์จริงหรือไม่ แล้ว preview อีกครั้ง",
+    };
+  }
+
+  // BA-01 / QA-02 / DEVIL-01 (2026-06-03) · TOCTOU re-check.
+  // Between preview and commit, another tab/admin could have inserted rows
+  // that collide. Run the same ±60 s window query INSIDE the transaction
+  // and filter out anything that already exists. Also let the DB partial
+  // unique index (migration 20260603000000) catch any final race via
+  // skipDuplicates: true.
+  const committed = await prisma.$transaction(async (tx) => {
+    const allTs = rowsToWrite
+      .map((r) => new Date(r.collectedAt! + "+07:00").getTime())
+      .sort((a, b) => a - b);
+    const minTs = allTs[0] - 2 * 60_000;
+    const maxTs = allTs[allTs.length - 1] + 2 * 60_000;
+    const branchSet = [...new Set(rowsToWrite.map((r) => r.branchId!))];
+    const collisions = await tx.chairopsCashCollection.findMany({
+      where: {
+        orgId,
+        branchId: { in: branchSet },
+        collectedAt: { gte: new Date(minTs), lte: new Date(maxTs) },
+      },
+      select: { branchId: true, collectedAt: true, countedAmount: true },
+    });
+    const collisionsByBranch = new Map<string, typeof collisions>();
+    for (const c of collisions) {
+      const arr = collisionsByBranch.get(c.branchId) ?? [];
+      arr.push(c);
+      collisionsByBranch.set(c.branchId, arr);
+    }
+    const finalRows = rowsToWrite.filter((r) => {
+      const target = new Date(r.collectedAt! + "+07:00").getTime();
+      const arr = collisionsByBranch.get(r.branchId!) ?? [];
+      return !arr.some(
+        (c) =>
+          Math.abs(c.collectedAt.getTime() - target) <= 60_000 &&
+          c.countedAmount === r.countedAmount,
+      );
+    });
+
+    if (finalRows.length === 0) {
+      return { count: 0, attempted: rowsToWrite.length };
+    }
+
+    const data = finalRows.map((r) => ({
+      orgId,
+      branchId: r.branchId!,
+      maidId: r.maidId!,
+      collectedAt: new Date(r.collectedAt! + "+07:00"),
+      countedAmount: r.countedAmount!,
+      depositedAmount: 0, // deposits live on ChairopsCashDeposit · this is legacy column
+      // F1 (audit MISS-04) · CSV_IMPORT rows have no maid photo · DB CHECK
+      // constraint enforces nullability of these two only when source != MAID_MANUAL.
+      evidencePhotoUrl: null,
+      imageHash: null,
+      slipPhotoUrl: r.slipUrl ?? null,
+      notes: r.notes ?? null,
+      source: "CSV_IMPORT" as const,
+      importedById: session.user.id,
+    }));
+
+    // skipDuplicates:true so the DB partial unique index (migration
+    // 20260603000000_chairops_csv_fk_and_dedup_index.sql) silently absorbs
+    // any race that slipped past the in-transaction findMany above.
+    const result = await tx.chairopsCashCollection.createMany({
+      data,
+      skipDuplicates: true,
+    });
+    return { count: result.count, attempted: rowsToWrite.length };
+  });
+
+  const skippedAtCommit = committed.attempted - committed.count;
 
   await writeAudit({
     userId: session.user.id,
@@ -517,7 +684,9 @@ export async function commitMaidCsv(
     entityId: "batch",
     orgId,
     newValue: {
-      committed: result.count,
+      committed: committed.count,
+      attempted: committed.attempted,
+      skippedAtCommit,
       dedupSeen,
       branchIds,
       maidIds,
@@ -532,8 +701,9 @@ export async function commitMaidCsv(
 
   return {
     ok: true,
-    committed: result.count,
+    committed: committed.count,
     dedup: dedupSeen,
+    skippedAtCommit,
   };
 }
 

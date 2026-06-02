@@ -7,6 +7,8 @@
 import { useState, useTransition } from "react";
 import { ImageIcon, Trash2 } from "lucide-react";
 
+import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
+
 interface Props {
   branchSlug: string;
   billId: string;
@@ -69,19 +71,24 @@ export function SlipUploader({ branchSlug, billId, value, onChange }: Props) {
     });
   };
 
+  // SEC-01 (2026-06-03) · only render <img src=...> when URL passes the
+  // R2 allowlist (https + R2 host). Blocks javascript:/data: payloads stored
+  // before tightening the zod schema.
+  const safeValue = value && isAllowedPhotoUrl(value) ? value : null;
+
   return (
     <div className="space-y-2">
-      {value ? (
+      {safeValue ? (
         <div className="flex items-start gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={value}
+            src={safeValue}
             alt="สลิป"
             className="size-24 rounded-md border border-zinc-200 object-cover"
           />
           <div className="flex flex-col gap-1 text-xs">
             <a
-              href={value}
+              href={safeValue}
               target="_blank"
               rel="noreferrer"
               className="text-blue-700 underline"

@@ -51,6 +51,14 @@ export function BillEditForm({
   const [slipUrl, setSlipUrl] = useState<string | null>(
     defaults.slipPhotoUrl,
   );
+  // BA-03 (2026-06-03) · live amount-vs-paid tracker so the CEO sees the
+  // shortfall/overpay BEFORE submitting (the server-side guard rejects > 5%
+  // overpay, but the UI surfaces partial-pay + small variances inline so the
+  // operator can fix typos without a round-trip).
+  const [amountInput, setAmountInput] = useState<number>(defaults.amount);
+  const [paidAmountInput, setPaidAmountInput] = useState<number | null>(
+    defaults.paidAmount,
+  );
   const [isPending, startTransition] = useTransition();
   const formRef = useRef<HTMLFormElement>(null);
   const router = useRouter();
@@ -157,6 +165,9 @@ export function BillEditForm({
             required
             defaultValue={defaults.amount}
             onBlur={recheckAnomaly}
+            onChange={(e) =>
+              setAmountInput(Number(e.currentTarget.value) || 0)
+            }
             className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm tabular-nums"
           />
         </Field>
@@ -200,6 +211,10 @@ export function BillEditForm({
             step="0.01"
             min="0"
             defaultValue={defaults.paidAmount ?? ""}
+            onChange={(e) => {
+              const raw = e.currentTarget.value;
+              setPaidAmountInput(raw === "" ? null : Number(raw) || 0);
+            }}
             className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm tabular-nums"
           />
         </Field>
@@ -214,6 +229,38 @@ export function BillEditForm({
           />
         </Field>
       </div>
+
+      {/* BA-03 (2026-06-03) · live diff tracker · partial pay warning */}
+      {paidAmountInput != null && paidAmountInput > 0 ? (
+        (() => {
+          const diff = amountInput - paidAmountInput;
+          const overpay = paidAmountInput > amountInput * 1.05;
+          const partial =
+            paidAmountInput > 0 && paidAmountInput < amountInput * 0.98;
+          if (overpay) {
+            return (
+              <p className="rounded-md bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                ⚠️ ยอดที่จ่าย {baht(paidAmountInput)} เกินยอดบิล{" "}
+                {baht(amountInput)} · ตรวจตัวเลขอีกครั้ง
+              </p>
+            );
+          }
+          if (partial) {
+            return (
+              <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                💡 จ่ายบางส่วน · ยอดบิล {baht(amountInput)} · จ่าย{" "}
+                {baht(paidAmountInput)} · ส่วนต่าง{" "}
+                <span className="font-semibold">{baht(diff)}</span>
+              </p>
+            );
+          }
+          return (
+            <p className="rounded-md bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+              ✓ ยอดที่จ่ายตรง · ส่วนต่าง {baht(Math.abs(diff))}
+            </p>
+          );
+        })()
+      ) : null}
 
       <Field label="เงื่อนไขการชำระ">
         <input

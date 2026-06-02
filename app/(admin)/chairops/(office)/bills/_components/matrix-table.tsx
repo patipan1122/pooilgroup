@@ -17,12 +17,16 @@ export interface MatrixCellPayload {
   pendingTotal: number;
   overdueTotal: number;
   worstStatus: "PAID" | "PENDING" | "OVERDUE" | null;
+  /** UX-01 (2026-06-03) · true if any bill in the cell is ±20% off prior month. */
+  isAnomalous: boolean;
   bills: Array<{
     id: string;
     categoryId: string;
     categoryLabel: string;
     amount: number;
     status: "PAID" | "PENDING" | "OVERDUE";
+    isAnomalous: boolean;
+    deltaPct: number | null;
   }>;
 }
 
@@ -111,9 +115,51 @@ export function BillsMatrixTable({
     return map;
   }, [rows, months, expanded]);
 
+  // PERF-01 (2026-06-03) · pre-compute a (branchId|monthKey|categoryId) → bill
+  // map so the inner sub-row render is O(1) instead of Array.find per cell.
+  // Without this, 30 branches × 6 months × 11 categories = 1,980 .find calls
+  // per re-render once all branches are expanded.
+  const billByKey = useMemo(() => {
+    const m = new Map<
+      string,
+      {
+        id: string;
+        amount: number;
+        status: "PAID" | "PENDING" | "OVERDUE";
+        isAnomalous: boolean;
+        deltaPct: number | null;
+      }
+    >();
+    for (const row of rows) {
+      for (const month of months) {
+        const cell = row.cells[month.monthKey];
+        if (!cell) continue;
+        for (const bill of cell.bills) {
+          m.set(`${row.branchId}|${month.monthKey}|${bill.categoryId}`, {
+            id: bill.id,
+            amount: bill.amount,
+            status: bill.status,
+            isAnomalous: bill.isAnomalous,
+            deltaPct: bill.deltaPct,
+          });
+        }
+      }
+    }
+    return m;
+  }, [rows, months]);
+
   return (
-    <div className="relative overflow-x-auto rounded-lg border border-zinc-200 bg-white">
-      <table className="w-full min-w-[720px] border-separate border-spacing-0 text-sm">
+    <div className="space-y-1">
+      {/* UX-02 (2026-06-03) · mobile-only horizontal-scroll hint · the table
+          extends past the viewport on phones and the sticky branch column
+          earlier gave no signal that more months exist to the right. */}
+      <p className="text-xs text-zinc-500 sm:hidden">
+        ← เลื่อนซ้าย-ขวาเพื่อดูเดือนทั้งหมด
+      </p>
+      <div
+        className="relative overflow-x-auto rounded-lg border border-zinc-200 bg-white before:pointer-events-none before:absolute before:right-0 before:top-0 before:bottom-0 before:z-[5] before:w-6 before:bg-gradient-to-l before:from-white before:to-transparent sm:before:hidden"
+      >
+        <table className="w-full min-w-[720px] border-separate border-spacing-0 text-sm">
         <thead className="sticky top-0 z-10 bg-zinc-50/95 backdrop-blur">
           <tr>
             <th
@@ -133,7 +179,7 @@ export function BillsMatrixTable({
             ))}
             <th
               scope="col"
-              className="border-b border-l border-zinc-200 bg-zinc-100/80 px-3 py-2 text-right text-xs font-semibold text-zinc-700"
+              className="sticky right-0 z-[15] border-b border-l border-zinc-200 bg-zinc-100/95 px-3 py-2 text-right text-xs font-semibold text-zinc-700 backdrop-blur"
             >
               รวม
             </th>
@@ -182,6 +228,7 @@ export function BillsMatrixTable({
                     const tone = status
                       ? STATUS_CHIP[status].tone
                       : "text-zinc-400";
+                    const isAnomalous = Boolean(cell?.isAnomalous);
                     const content =
                       !cell || cell.total === 0 ? (
                         <span className="text-zinc-300">—</span>
@@ -193,6 +240,8 @@ export function BillsMatrixTable({
                           tone={tone}
                           status={status}
                           amount={cell.total}
+                          isAnomalous={isAnomalous}
+                          onToggleExpand={() => toggleBranch(row.branchId)}
                         />
                       );
                     return (
@@ -201,13 +250,18 @@ export function BillsMatrixTable({
                         className={cn(
                           "border-b border-zinc-100 px-3 py-2 text-right text-sm tabular-nums",
                           cellBg(status),
+                          isAnomalous &&
+                            status !== "PAID" &&
+                            "ring-1 ring-inset ring-amber-400",
                         )}
                       >
                         {content}
                       </td>
                     );
                   })}
-                  <td className="border-b border-l border-zinc-200 bg-zinc-50/70 px-3 py-2 text-right text-sm font-semibold tabular-nums text-zinc-900">
+                  {/* UX-02 (2026-06-03) · sticky right so the row-total is
+                      never lost off-screen during horizontal scroll on mobile. */}
+                  <td className="sticky right-0 z-[6] border-b border-l border-zinc-200 bg-zinc-50/95 px-3 py-2 text-right text-sm font-semibold tabular-nums text-zinc-900 backdrop-blur">
                     {row.rowTotal === 0 ? (
                       <span className="text-zinc-300">—</span>
                     ) : (
@@ -229,9 +283,9 @@ export function BillsMatrixTable({
                           <span className="pl-6">{sub.categoryLabel}</span>
                         </th>
                         {months.map((m) => {
-                          const cell = row.cells[m.monthKey];
-                          const bill = cell?.bills.find(
-                            (b) => b.categoryId === sub.categoryId,
+                          // PERF-01 (2026-06-03) · O(1) lookup via memoized map.
+                          const bill = billByKey.get(
+                            `${row.branchId}|${m.monthKey}|${sub.categoryId}`,
                           );
                           if (!bill) {
                             return (
@@ -244,6 +298,10 @@ export function BillsMatrixTable({
                             );
                           }
                           const chip = STATUS_CHIP[bill.status];
+                          const anomalyTitle =
+                            bill.isAnomalous && bill.deltaPct != null
+                              ? `เดือนก่อนต่าง ${bill.deltaPct > 0 ? "+" : ""}${(bill.deltaPct * 100).toFixed(0)}%`
+                              : undefined;
                           return (
                             <td
                               key={m.monthKey}
@@ -252,6 +310,7 @@ export function BillsMatrixTable({
                               {canEdit ? (
                                 <Link
                                   href={`/chairops/bills/${bill.id}`}
+                                  title={anomalyTitle}
                                   className={cn(
                                     "inline-flex items-center gap-1 hover:underline",
                                     chip.tone,
@@ -263,10 +322,14 @@ export function BillsMatrixTable({
                                       chip.dot,
                                     )}
                                   />
+                                  {bill.isAnomalous ? (
+                                    <span className="text-amber-600">⚠</span>
+                                  ) : null}
                                   {baht(bill.amount)}
                                 </Link>
                               ) : (
                                 <span
+                                  title={anomalyTitle}
                                   className={cn(
                                     "inline-flex items-center gap-1",
                                     chip.tone,
@@ -278,13 +341,16 @@ export function BillsMatrixTable({
                                       chip.dot,
                                     )}
                                   />
+                                  {bill.isAnomalous ? (
+                                    <span className="text-amber-600">⚠</span>
+                                  ) : null}
                                   {baht(bill.amount)}
                                 </span>
                               )}
                             </td>
                           );
                         })}
-                        <td className="border-b border-l border-zinc-100 bg-zinc-50/40 px-3 py-1.5 text-right text-xs text-zinc-500" />
+                        <td className="sticky right-0 z-[6] border-b border-l border-zinc-100 bg-zinc-50/95 px-3 py-1.5 text-right text-xs text-zinc-500 backdrop-blur" />
                       </tr>
                     ))
                   : []),
@@ -310,23 +376,24 @@ export function BillsMatrixTable({
                   : "—"}
               </td>
             ))}
-            <td className="border-t border-l border-zinc-200 bg-zinc-200/60 px-3 py-2 text-right text-sm tabular-nums">
+            <td className="sticky right-0 z-[6] border-t border-l border-zinc-200 bg-zinc-200/80 px-3 py-2 text-right text-sm tabular-nums backdrop-blur">
               {grandTotal ? baht(grandTotal) : "—"}
             </td>
           </tr>
         </tfoot>
       </table>
+      </div>
     </div>
   );
 }
 
 function CellLink({
-  monthKey,
-  branchId,
   canEdit,
   tone,
   status,
   amount,
+  isAnomalous,
+  onToggleExpand,
 }: {
   monthKey: string;
   branchId: string;
@@ -334,6 +401,8 @@ function CellLink({
   tone: string;
   status: "PAID" | "PENDING" | "OVERDUE" | null;
   amount: number;
+  isAnomalous: boolean;
+  onToggleExpand: () => void;
 }) {
   const chip = status ? STATUS_CHIP[status] : null;
   const content = (
@@ -341,18 +410,32 @@ function CellLink({
       {chip ? (
         <span className={cn("size-1.5 rounded-full", chip.dot)} />
       ) : null}
+      {isAnomalous ? (
+        <span
+          aria-hidden="true"
+          title="ต่างจากเดือนก่อนเกิน 20%"
+          className="text-amber-600"
+        >
+          ⚠
+        </span>
+      ) : null}
       {baht(amount)}
     </span>
   );
   if (!canEdit) return content;
-  // Deep-link to a filtered new-bill view (branch + month preselected · admins
-  // can also click a sub-row category bill to edit specific rows).
+  // DEVIL-02 (2026-06-03) · clicking an amount used to open the "create new
+  // bill" modal pre-filled to that month — confusing because the cell already
+  // had bills. The semantic action is "inspect this cell"; toggle the branch
+  // row open so the sub-rows reveal the bills under it. The branch sub-row
+  // still shows each bill's deep link to /chairops/bills/[id] for editing.
   return (
-    <Link
-      href={`/chairops/bills?branch=${branchId}&month=${monthKey}`}
+    <button
+      type="button"
+      onClick={onToggleExpand}
       className="hover:underline"
+      aria-label="ดูรายการบิลในเดือนนี้"
     >
       {content}
-    </Link>
+    </button>
   );
 }

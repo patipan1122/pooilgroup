@@ -21,12 +21,23 @@
 //   5. revalidatePath("/chairops/bills") + the detail/categories page
 // ============================================================
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { writeAudit } from "@/lib/chairops/audit/log";
 import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
+import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
+
+// SEC-01 (2026-06-03) · slipPhotoUrl must come from the R2 CDN we control —
+// z.string().url() accepts `javascript:` and `data:` URIs, which then render as
+// <a href> / <img src> on the CEO/ADMIN audit surfaces. Use the canonical guard.
+const slipPhotoSchema = z
+  .string()
+  .trim()
+  .refine((s) => s === "" || isAllowedPhotoUrl(s), "ลิงก์รูปสลิปไม่ถูกต้อง")
+  .optional()
+  .or(z.literal(""));
 
 export type ActionResult<T = void> =
   | { ok: true; data?: T }
@@ -64,7 +75,7 @@ const createBillSchema = z.object({
     .optional()
     .or(z.literal("")),
   paidAmount: z.coerce.number().nonnegative().optional(),
-  slipPhotoUrl: z.string().url().optional().or(z.literal("")),
+  slipPhotoUrl: slipPhotoSchema,
   bankAccountTo: z.string().trim().max(200).optional().or(z.literal("")),
   paymentTerms: z.string().trim().max(200).optional().or(z.literal("")),
   notes: z.string().trim().max(2000).optional().or(z.literal("")),
@@ -82,7 +93,7 @@ const markPaidSchema = z.object({
     .optional()
     .or(z.literal("")),
   paidAmount: z.coerce.number().positive().optional(),
-  slipPhotoUrl: z.string().url().optional().or(z.literal("")),
+  slipPhotoUrl: slipPhotoSchema,
 });
 
 const deleteBillSchema = z.object({ id: zUUID() });
@@ -140,6 +151,14 @@ export async function createBill(formData: FormData): Promise<ActionResult<{ id:
   const billPeriod = firstOfMonthUTC(v.billPeriod);
   const dueDate = isoDateUTC(v.dueDate);
   const paidAt = v.paidAt ? isoDateUTC(v.paidAt) : null;
+  // BA-03 (2026-06-03) · same overpay guard as markPaid · createBill can also
+  // be used to enter an already-paid bill, so the same ±5% slack applies.
+  if (v.paidAmount != null && v.paidAmount > v.amount * 1.05) {
+    return {
+      ok: false,
+      error: `ยอดที่จ่าย ฿${v.paidAmount.toLocaleString()} เกินยอดบิล ฿${v.amount.toLocaleString()} · ตรวจตัวเลขอีกครั้ง`,
+    };
+  }
 
   try {
     const created = await prisma.$transaction(async (tx) => {
@@ -182,7 +201,9 @@ export async function createBill(formData: FormData): Promise<ActionResult<{ id:
     });
     revalidatePath("/chairops/bills");
     revalidatePath(`/chairops/bills/${created.id}`);
-    revalidatePath("/chairops");
+    // PERF-04 (2026-06-03) · tag-scoped invalidation instead of revalidatePath('/chairops')
+    // which would re-execute 7 unrelated home-page queries per write.
+    updateTag("chairops:pending-bills");
     return { ok: true, data: { id: created.id } };
   } catch (err) {
     // Unique constraint on (orgId, branchId, billPeriod, categoryId).
@@ -245,7 +266,31 @@ export async function updateBill(formData: FormData): Promise<ActionResult> {
 
   const billPeriod = firstOfMonthUTC(v.billPeriod);
   const dueDate = isoDateUTC(v.dueDate);
-  const paidAt = v.paidAt ? isoDateUTC(v.paidAt) : null;
+
+  // OWN-BILLS-03 (2026-06-03) · The edit form omits paidAt/paidAmount on the
+  // wire when the CEO is fixing a typo. Earlier this set paidAt=null silently
+  // and un-marked a PAID bill — caller had to call markPaid again. The new
+  // contract: form must POST `clearPaid=true` to revert; otherwise paidAt
+  // and paidAmount are LEFT UNCHANGED. Use `unmarkPaid` for explicit reverts.
+  const wantClearPaid = formData.get("clearPaid") === "true";
+  const paidAtUpdate = wantClearPaid
+    ? null
+    : v.paidAt
+      ? isoDateUTC(v.paidAt)
+      : undefined; // undefined = skip in Prisma
+  const paidAmountUpdate = wantClearPaid
+    ? null
+    : v.paidAmount != null
+      ? v.paidAmount
+      : undefined;
+
+  // BA-03 (2026-06-03) · overpay guard mirrors markPaid.
+  if (v.paidAmount != null && v.paidAmount > v.amount * 1.05) {
+    return {
+      ok: false,
+      error: `ยอดที่จ่าย ฿${v.paidAmount.toLocaleString()} เกินยอดบิล ฿${v.amount.toLocaleString()} · ตรวจตัวเลขอีกครั้ง`,
+    };
+  }
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -257,8 +302,8 @@ export async function updateBill(formData: FormData): Promise<ActionResult> {
           categoryId: v.categoryId,
           amount: v.amount,
           dueDate,
-          paidAt,
-          paidAmount: v.paidAmount ?? null,
+          paidAt: paidAtUpdate,
+          paidAmount: paidAmountUpdate,
           slipPhotoUrl: v.slipPhotoUrl || null,
           bankAccountTo: v.bankAccountTo || null,
           paymentTerms: v.paymentTerms || null,
@@ -280,7 +325,10 @@ export async function updateBill(formData: FormData): Promise<ActionResult> {
           newValue: {
             amount: v.amount,
             dueDate: v.dueDate,
-            paidAt: v.paidAt || null,
+            paidAt:
+              paidAtUpdate === undefined
+                ? "(unchanged)"
+                : (paidAtUpdate?.toISOString() ?? null),
           },
         },
         tx,
@@ -288,7 +336,7 @@ export async function updateBill(formData: FormData): Promise<ActionResult> {
     });
     revalidatePath("/chairops/bills");
     revalidatePath(`/chairops/bills/${v.id}`);
-    revalidatePath("/chairops");
+    updateTag("chairops:pending-bills");
     return { ok: true };
   } catch (err) {
     if (
@@ -329,10 +377,23 @@ export async function markPaid(formData: FormData): Promise<ActionResult> {
   if (!existing) return { ok: false, error: "ไม่พบบิล" };
 
   const paidAtDate = v.paidAt ? isoDateUTC(v.paidAt) : new Date();
+  const billAmount = Number(existing.amount);
   const paidAmt =
     v.paidAmount !== undefined && v.paidAmount > 0
       ? v.paidAmount
-      : Number(existing.amount);
+      : billAmount;
+
+  // BA-03 (2026-06-03) · guard against typo overpay > 5% of bill amount.
+  // CEO locked 3-state PAID/PENDING/OVERDUE — partial pay is intentionally NOT
+  // a 4th status, but we still flag it in the audit trail so PAID-with-shortfall
+  // is forensically distinguishable from PAID-in-full.
+  if (paidAmt > billAmount * 1.05) {
+    return {
+      ok: false,
+      error: `ยอดที่จ่าย ฿${paidAmt.toLocaleString()} เกินยอดบิล ฿${billAmount.toLocaleString()} · ตรวจตัวเลขอีกครั้ง`,
+    };
+  }
+  const isPartial = paidAmt > 0 && paidAmt < billAmount * 0.98;
 
   await prisma.$transaction(async (tx) => {
     await tx.chairopsVendorBill.update({
@@ -347,18 +408,68 @@ export async function markPaid(formData: FormData): Promise<ActionResult> {
     await writeAudit(
       {
         userId: session.user.id,
-        action: "bill.mark_paid",
+        action: isPartial ? "bill.mark_paid_partial" : "bill.mark_paid",
         entity: "ChairopsVendorBill",
         entityId: v.id,
         oldValue: { paidAt: existing.paidAt, paidAmount: existing.paidAmount },
-        newValue: { paidAt: paidAtDate, paidAmount: paidAmt },
+        newValue: {
+          paidAt: paidAtDate,
+          paidAmount: paidAmt,
+          billAmount,
+          shortfall: isPartial ? billAmount - paidAmt : 0,
+        },
+      },
+      tx,
+    );
+  });
+  // PERF-04 (2026-06-03) · scoped tag instead of broad revalidatePath('/chairops')
+  // which would invalidate 7 unrelated home-page queries on every bill mutation.
+  revalidatePath("/chairops/bills");
+  revalidatePath(`/chairops/bills/${v.id}`);
+  updateTag("chairops:pending-bills");
+  return { ok: true };
+}
+
+// ----- unmarkPaid (explicit "revert paid" verb) ----------------------------
+// OWN-BILLS-03 (2026-06-03) · separated from updateBill so clearing paidAt
+// can never happen silently · explicit confirm in the UI is wired to this.
+
+export async function unmarkPaid(formData: FormData): Promise<ActionResult> {
+  const session = await requireRole("CEO");
+  const parsed = deleteBillSchema.safeParse({ id: formData.get("id") });
+  if (!parsed.success) return { ok: false, error: "id ไม่ถูกต้อง" };
+
+  const existing = await prisma.chairopsVendorBill.findFirst({
+    where: { id: parsed.data.id, orgId: session.user.orgId },
+    select: { id: true, paidAt: true, paidAmount: true },
+  });
+  if (!existing) return { ok: false, error: "ไม่พบบิล" };
+  if (!existing.paidAt) return { ok: true };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.chairopsVendorBill.update({
+      where: { id: parsed.data.id },
+      data: {
+        paidAt: null,
+        paidAmount: null,
+        updatedById: session.user.id,
+      },
+    });
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "bill.unmark_paid",
+        entity: "ChairopsVendorBill",
+        entityId: parsed.data.id,
+        oldValue: { paidAt: existing.paidAt, paidAmount: existing.paidAmount },
+        newValue: { paidAt: null, paidAmount: null },
       },
       tx,
     );
   });
   revalidatePath("/chairops/bills");
-  revalidatePath(`/chairops/bills/${v.id}`);
-  revalidatePath("/chairops");
+  revalidatePath(`/chairops/bills/${parsed.data.id}`);
+  updateTag("chairops:pending-bills");
   return { ok: true };
 }
 
@@ -392,7 +503,7 @@ export async function deleteBill(formData: FormData): Promise<ActionResult> {
     );
   });
   revalidatePath("/chairops/bills");
-  revalidatePath("/chairops");
+  updateTag("chairops:pending-bills");
   return { ok: true };
 }
 
@@ -466,6 +577,26 @@ export async function archiveCategory(
   if (!existing) return { ok: false, error: "ไม่พบหมวด" };
   if (existing.archivedAt) return { ok: true }; // idempotent
 
+  // QA-03 (2026-06-03) · Prevent archive while unpaid bills still reference
+  // this category — otherwise the matrix shows orphan rows but createBill
+  // rejects "หมวดนี้ถูกซ่อนแล้ว" with no recovery path.
+  const force = formData.get("confirm") === "true";
+  if (!force) {
+    const openCount = await prisma.chairopsVendorBill.count({
+      where: {
+        orgId: session.user.orgId,
+        categoryId: parsed.data.id,
+        paidAt: null,
+      },
+    });
+    if (openCount > 0) {
+      return {
+        ok: false,
+        error: `หมวดนี้ยังมีบิลค้างจ่าย ${openCount} รายการ · จ่ายให้ครบหรือยืนยันบังคับซ่อน`,
+      };
+    }
+  }
+
   await prisma.$transaction(async (tx) => {
     await tx.chairopsExpenseCategory.update({
       where: { id: parsed.data.id },
@@ -474,7 +605,7 @@ export async function archiveCategory(
     await writeAudit(
       {
         userId: session.user.id,
-        action: "bill_category.archive",
+        action: force ? "bill_category.archive_forced" : "bill_category.archive",
         entity: "ChairopsExpenseCategory",
         entityId: parsed.data.id,
       },

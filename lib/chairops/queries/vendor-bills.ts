@@ -26,6 +26,7 @@
 // ============================================================
 
 import { cache } from "react";
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 
 // ----------------------------------------------------------------
@@ -42,8 +43,11 @@ function bangkokYmd(d: Date): string {
   return fmt.format(d);
 }
 
-/** UTC midnight of today's BKK calendar date — for `@db.Date` columns. */
-function bangkokDateOfToday(): Date {
+/**
+ * UTC midnight of today's BKK calendar date — for `@db.Date` columns.
+ * Exported (BA-05 fix · 2026-06-03) so detail page can match matrix semantics.
+ */
+export function bangkokDateOfToday(): Date {
   const ymd = bangkokYmd(new Date());
   return new Date(`${ymd}T00:00:00Z`);
 }
@@ -110,6 +114,10 @@ export interface BillRowVM {
   paymentTerms: string | null;
   notes: string | null;
   status: BillStatus;
+  /** ±20% off prior-month bill in same (branch, category). UX-01 · 2026-06-03. */
+  isAnomalous: boolean;
+  /** (current - prev) / prev · null when no prior. */
+  deltaPct: number | null;
 }
 
 export interface MatrixCellVM {
@@ -123,6 +131,11 @@ export interface MatrixCellVM {
   pendingTotal: number;
   /** Worst status across the cell — drives the color chip. */
   worstStatus: BillStatus | null;
+  /**
+   * True when any bill in the cell is ±20% off the prior-month bill for the
+   * same (branch, category). UX-01 fix · 2026-06-03.
+   */
+  isAnomalous: boolean;
   /** Underlying bills (already filtered to the cell). */
   bills: BillRowVM[];
 }
@@ -175,7 +188,14 @@ export interface PendingBillsSummary {
 // ----------------------------------------------------------------
 // Status derivation
 // ----------------------------------------------------------------
-function deriveStatus(
+/**
+ * Single source of truth for PAID/PENDING/OVERDUE. Exported (BA-05 fix ·
+ * 2026-06-03) so the detail page can share the same clock as the matrix —
+ * earlier the detail page compared dueDate against wall-clock `now()` while
+ * the matrix compared against BKK calendar midnight, creating a 7-hour
+ * window (BKK 00:00-07:00) where the two surfaces disagreed.
+ */
+export function deriveStatus(
   paidAt: Date | null,
   dueDate: Date,
   today: Date,
@@ -215,13 +235,15 @@ export async function getBillMatrix(args: {
   }
 
   // Single window query (no N+1) — fetch every bill whose billPeriod falls
-  // inside the visible window.
+  // inside the visible window. We also fetch one month BEFORE the window to
+  // power the per-cell ±20% anomaly chip without an extra round-trip.
   const windowEnd = addMonths(firstMonth, monthsBack); // exclusive upper bound
-  const [branches, bills, categories] = await Promise.all([
+  const anomalyLookbackStart = addMonths(firstMonth, -1);
+  const [activeBranches, bills, categories, priorBills] = await Promise.all([
     prisma.chairopsBranch.findMany({
       where: { orgId, isActive: true },
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, isActive: true },
     }),
     prisma.chairopsVendorBill.findMany({
       where: {
@@ -238,10 +260,66 @@ export async function getBillMatrix(args: {
       orderBy: { sortOrder: "asc" },
       select: { id: true, code: true, label: true },
     }),
+    // UX-01 (2026-06-03) · one month of lookback so the matrix can flag
+    // ±20% anomalies inline without per-cell extra queries.
+    prisma.chairopsVendorBill.findMany({
+      where: {
+        orgId,
+        billPeriod: { gte: anomalyLookbackStart, lt: firstMonth },
+      },
+      select: { branchId: true, categoryId: true, billPeriod: true, amount: true },
+    }),
   ]);
+
+  // QA-01 (2026-06-03) · also include inactive branches that still have
+  // bills in the visible window — otherwise pending KPI and matrix grand
+  // total diverge and CEO loses sight of bills owed by closed branches.
+  const billBranchIds = new Set(bills.map((b) => b.branchId));
+  const activeIds = new Set(activeBranches.map((b) => b.id));
+  const missingIds = [...billBranchIds].filter((id) => !activeIds.has(id));
+  const inactiveBranches = missingIds.length
+    ? await prisma.chairopsBranch.findMany({
+        where: { orgId, id: { in: missingIds } },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, isActive: true },
+      })
+    : [];
+  const branches = [...activeBranches, ...inactiveBranches];
 
   const categoryById = new Map(categories.map((c) => [c.id, c]));
   const branchById = new Map(branches.map((b) => [b.id, b]));
+
+  // Index prior bills by (branchId|categoryId|monthKey) so the inner loop
+  // is O(1) lookup. Anomaly compares cell's month-1 against itself.
+  const priorByKey = new Map<string, number>();
+  for (const p of priorBills) {
+    const k = `${p.branchId}|${p.categoryId}|${monthKey(p.billPeriod)}`;
+    priorByKey.set(k, (priorByKey.get(k) ?? 0) + decToNum(p.amount));
+  }
+  // Also fold bills inside the window so cell N has access to cell N-1 inside
+  // the same query (i.e. April anomaly compares against March even when both
+  // months are visible columns).
+  const windowByKey = new Map<string, number>();
+  for (const b of bills) {
+    const k = `${b.branchId}|${b.categoryId}|${monthKey(b.billPeriod)}`;
+    windowByKey.set(k, (windowByKey.get(k) ?? 0) + decToNum(b.amount));
+  }
+  function prevMonthKey(mk: string): string {
+    const [y, m] = mk.split("-").map(Number);
+    const prev = new Date(Date.UTC(y, m - 2, 1));
+    return monthKey(prev);
+  }
+  function anomalyFor(branchId: string, categoryId: string, mk: string, amt: number): {
+    isAnomalous: boolean;
+    deltaPct: number | null;
+  } {
+    const prevMk = prevMonthKey(mk);
+    const key = `${branchId}|${categoryId}|${prevMk}`;
+    const prev = windowByKey.get(key) ?? priorByKey.get(key) ?? 0;
+    if (prev <= 0) return { isAnomalous: false, deltaPct: null };
+    const deltaPct = (amt - prev) / prev;
+    return { isAnomalous: Math.abs(deltaPct) > 0.2, deltaPct };
+  }
 
   // Bucket bills into (branchId, monthKey).
   type Bucket = { bills: BillRowVM[] };
@@ -253,6 +331,8 @@ export async function getBillMatrix(args: {
     if (!branch) continue; // bill points to a branch outside this org (defensive)
     const cat = categoryById.get(b.categoryId);
     const mk = monthKey(b.billPeriod);
+    const amt = decToNum(b.amount);
+    const anom = anomalyFor(b.branchId, b.categoryId, mk, amt);
     const vm: BillRowVM = {
       id: b.id,
       branchId: b.branchId,
@@ -262,7 +342,7 @@ export async function getBillMatrix(args: {
       categoryId: b.categoryId,
       categoryCode: cat?.code ?? "UNKNOWN",
       categoryLabel: cat?.label ?? "—",
-      amount: decToNum(b.amount),
+      amount: amt,
       dueDate: b.dueDate,
       paidAt: b.paidAt,
       paidAmount: b.paidAmount == null ? null : decToNum(b.paidAmount),
@@ -271,6 +351,8 @@ export async function getBillMatrix(args: {
       paymentTerms: b.paymentTerms,
       notes: b.notes,
       status: deriveStatus(b.paidAt, b.dueDate, today),
+      isAnomalous: anom.isAnomalous,
+      deltaPct: anom.deltaPct,
     };
     const k = bucketKey(b.branchId, mk);
     let bucket = buckets.get(k);
@@ -297,6 +379,7 @@ export async function getBillMatrix(args: {
       let overdueTotal = 0;
       let pendingTotal = 0;
       let worst: BillStatus | null = null;
+      let cellAnomalous = false;
       for (const bill of billsArr) {
         total += bill.amount;
         if (bill.status === "PAID") paidTotal += bill.amount;
@@ -305,6 +388,7 @@ export async function getBillMatrix(args: {
         if (worst === null || STATUS_RANK[bill.status] > STATUS_RANK[worst]) {
           worst = bill.status;
         }
+        if (bill.isAnomalous) cellAnomalous = true;
       }
       cellsByMonth.set(mk, {
         total,
@@ -312,6 +396,7 @@ export async function getBillMatrix(args: {
         overdueTotal,
         pendingTotal,
         worstStatus: worst,
+        isAnomalous: cellAnomalous,
         bills: billsArr,
       });
       rowTotal += total;
@@ -395,6 +480,9 @@ export async function getBillsForBranchMonth(args: {
       paymentTerms: b.paymentTerms,
       notes: b.notes,
       status: deriveStatus(b.paidAt, b.dueDate, today),
+      // Drill-down view doesn't surface the chip — defaults are safe.
+      isAnomalous: false,
+      deltaPct: null,
     };
   });
 }
@@ -480,31 +568,53 @@ export const getCategoryList = cache(
 
 // ----------------------------------------------------------------
 // getPendingBillsTotal — KPI tile on /chairops (office home)
+// PERF-02 / DEVIL-03 (2026-06-03) · was a findMany scan over every
+// unpaid row + JS loop on every page render. Now two Prisma aggregates
+// (count + sum) and the result is unstable_cache'd · tagged
+// "chairops:pending-bills" so bill mutations can revalidate granularly
+// instead of broad revalidatePath('/chairops').
 // ----------------------------------------------------------------
+async function getPendingBillsTotalImpl(args: {
+  orgId: string;
+  todayMs: number;
+}): Promise<PendingBillsSummary> {
+  const today = new Date(args.todayMs);
+  const [pendingAgg, overdueAgg] = await Promise.all([
+    prisma.chairopsVendorBill.aggregate({
+      where: { orgId: args.orgId, paidAt: null },
+      _count: { _all: true },
+      _sum: { amount: true },
+    }),
+    prisma.chairopsVendorBill.aggregate({
+      where: {
+        orgId: args.orgId,
+        paidAt: null,
+        dueDate: { lt: today },
+      },
+      _count: { _all: true },
+      _sum: { amount: true },
+    }),
+  ]);
+
+  return {
+    count: pendingAgg._count._all,
+    pendingAmount: decToNum(pendingAgg._sum.amount),
+    overdueCount: overdueAgg._count._all,
+    overdueAmount: decToNum(overdueAgg._sum.amount),
+  };
+}
+
 export async function getPendingBillsTotal(args: {
   orgId: string;
 }): Promise<PendingBillsSummary> {
   const today = bangkokDateOfToday();
-  const rows = await prisma.chairopsVendorBill.findMany({
-    where: {
-      orgId: args.orgId,
-      paidAt: null,
-    },
-    select: { amount: true, dueDate: true },
-  });
-
-  let count = 0;
-  let pendingAmount = 0;
-  let overdueCount = 0;
-  let overdueAmount = 0;
-  for (const r of rows) {
-    const amt = decToNum(r.amount);
-    count += 1;
-    pendingAmount += amt;
-    if (r.dueDate.getTime() < today.getTime()) {
-      overdueCount += 1;
-      overdueAmount += amt;
-    }
-  }
-  return { count, pendingAmount, overdueCount, overdueAmount };
+  // Tag-scoped cache · refreshes on bill.create/update/delete/markPaid via
+  // revalidateTag("chairops:pending-bills"). Key includes today's BKK date
+  // so the OVERDUE filter rolls over correctly at BKK midnight.
+  const cached = unstable_cache(
+    () => getPendingBillsTotalImpl({ orgId: args.orgId, todayMs: today.getTime() }),
+    ["chairops:pending-bills", args.orgId, bangkokYmd(new Date())],
+    { tags: ["chairops:pending-bills"], revalidate: 300 },
+  );
+  return cached();
 }

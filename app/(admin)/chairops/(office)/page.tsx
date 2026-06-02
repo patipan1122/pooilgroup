@@ -500,6 +500,17 @@ export default async function ExecDashboardPage({
           deltaDirection={pendingBills.overdueCount > 0 ? "down" : "flat"}
           href="/chairops/bills"
         />
+        {/* BF1 · ค่าจ้างแม่บ้านเดือนนี้ (admin-only · canViewCost gate) */}
+        {showCost && (
+          <ChairopsKpiTile
+            label="ค่าจ้างแม่บ้านเดือนนี้"
+            value={baht(kpis.maidWageMonth)}
+            tone="neutral"
+            icon={<Users className="size-4" aria-hidden="true" />}
+            delta="ผลรวม MTD · บันทึกตามวัน"
+            href="/chairops/maids"
+          />
+        )}
       </section>
 
       {/* date-range filter (CEO ask · drives the all-branches P&L table) */}

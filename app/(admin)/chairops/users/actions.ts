@@ -10,6 +10,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient as createAdminSupabase } from "@supabase/supabase-js";
+import { Prisma } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { writeAudit } from "@/lib/chairops/audit/log";
@@ -102,6 +103,8 @@ export async function createUser(formData: FormData): Promise<ActionResult<{ id:
   }
 
   // Create Prisma profile — Wave-0 fix: profile + audit atomic
+  // BF1 fix · for new MAID users with a primary branch, also insert into
+  // ChairopsMaidAssignment so the audit-trail table stays in sync.
   try {
     const user = await prisma.$transaction(async (tx) => {
       const row = await tx.chairopsUser.create({
@@ -115,6 +118,21 @@ export async function createUser(formData: FormData): Promise<ActionResult<{ id:
           isActive: true,
         },
       });
+
+      if (
+        row.role === ChairopsUserRole.MAID &&
+        row.primaryBranchId
+      ) {
+        await tx.chairopsMaidAssignment.create({
+          data: {
+            orgId: session.user.orgId,
+            userId: row.id,
+            branchId: row.primaryBranchId,
+            startedAt: new Date(),
+            isActive: true,
+          },
+        });
+      }
 
       await writeAudit(
         {
@@ -138,6 +156,7 @@ export async function createUser(formData: FormData): Promise<ActionResult<{ id:
     });
 
     revalidatePath("/chairops/users");
+    revalidatePath("/chairops/maids");
     return { ok: true, data: { id: user.id } };
   } catch (e) {
     // Rollback auth user if Prisma fails
@@ -252,31 +271,58 @@ export async function assignBranch(
     if (!branch) return { ok: false, error: "ไม่พบสาขา" };
   }
 
-  // Wave-0 fix: branch assign + audit atomic
-  const updated = await prisma.$transaction(async (tx) => {
-    const row = await tx.chairopsUser.update({
-      where: { id: target.id },
-      data: { primaryBranchId: parsed.data.branchId },
+  // Wave-0 fix: branch assign + audit atomic.
+  // BF1 fix · also wire ChairopsMaidAssignment for maids — close prior
+  // open assignment(s), open a new one for the new branch. P2002 from the
+  // partial unique index (1 open per maid) is surfaced as a friendly error.
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      if (target.role === ChairopsUserRole.MAID) {
+        await tx.chairopsMaidAssignment.updateMany({
+          where: { userId: target.id, isActive: true, endedAt: null },
+          data: { isActive: false, endedAt: new Date() },
+        });
+        if (parsed.data.branchId) {
+          await tx.chairopsMaidAssignment.create({
+            data: {
+              orgId: session.user.orgId,
+              userId: target.id,
+              branchId: parsed.data.branchId,
+              startedAt: new Date(),
+              isActive: true,
+            },
+          });
+        }
+      }
+      const row = await tx.chairopsUser.update({
+        where: { id: target.id },
+        data: { primaryBranchId: parsed.data.branchId },
+      });
+      await writeAudit(
+        {
+          userId: session.user.id,
+          action: "user.assign_branch",
+          entity: "User",
+          entityId: row.id,
+          oldValue: { primaryBranchId: target.primaryBranchId },
+          newValue: { primaryBranchId: row.primaryBranchId },
+        },
+        tx,
+      );
+      return row;
     });
 
-    await writeAudit(
-      {
-        userId: session.user.id,
-        action: "user.assign_branch",
-        entity: "User",
-        entityId: row.id,
-        oldValue: { primaryBranchId: target.primaryBranchId },
-        newValue: { primaryBranchId: row.primaryBranchId },
-      },
-      tx,
-    );
-
-    return row;
-  });
-
-  revalidatePath(`/chairops/users/${updated.id}`);
-  revalidatePath("/chairops/users");
-  return { ok: true };
+    revalidatePath(`/chairops/users/${updated.id}`);
+    revalidatePath(`/chairops/maids/${updated.id}`);
+    revalidatePath("/chairops/users");
+    revalidatePath("/chairops/maids");
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { ok: false, error: "มี assignment ค้างอยู่ · refresh แล้วลองใหม่" };
+    }
+    return { ok: false, error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" };
+  }
 }
 
 const displayNameSchema = z.object({
@@ -554,6 +600,16 @@ export async function createMaidInvite(
           isActive: true,
         },
       });
+      // BF1 · wire ghost MaidAssignment table for audit trail.
+      await tx.chairopsMaidAssignment.create({
+        data: {
+          orgId: session.user.orgId,
+          userId: row.id,
+          branchId: parsed.data.primaryBranchId,
+          startedAt: new Date(),
+          isActive: true,
+        },
+      });
       await writeAudit(
         {
           userId: session.user.id,
@@ -577,6 +633,7 @@ export async function createMaidInvite(
       token,
     )}&next=${encodeURIComponent("/chairops/m")}`;
     revalidatePath("/chairops/users");
+    revalidatePath("/chairops/maids");
     return { ok: true, data: { link, userId: user.id } };
   } catch (e) {
     // Roll back the auth user if the profile write fails.

@@ -3,7 +3,13 @@
 // CEO + ADMIN: edit cells. MANAGER + OFFICE: read-only same view.
 
 import Link from "next/link";
-import { Settings2, AlertTriangle, BadgeCheck, Clock3 } from "lucide-react";
+import {
+  Settings2,
+  AlertTriangle,
+  BadgeCheck,
+  Clock3,
+  TrendingUp,
+} from "lucide-react";
 
 import { requireRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
@@ -13,8 +19,10 @@ import {
   getBillMatrix,
   getCategoryList,
   getPendingBillsTotal,
+  deriveStatus,
+  bangkokDateOfToday,
 } from "@/lib/chairops/queries/vendor-bills";
-import { baht } from "@/lib/chairops/utils/format";
+import { baht, thaiDate } from "@/lib/chairops/utils/format";
 
 import {
   BillsMatrixTable,
@@ -84,11 +92,17 @@ export default async function BillsMatrixPage({
   ]);
 
   // Shape the matrix for the client component (Map → plain object for
-  // serialization across the RSC boundary).
-  const months: MatrixMonth[] = matrix.months.map((m) => ({
-    monthKey: m.monthKey,
-    label: formatMonth(m.firstOfMonth),
-  }));
+  // serialization across the RSC boundary). OWN-BILLS-02 (2026-06-03) ·
+  // reverse so the newest month (with current OVERDUE chips) sits in the
+  // leftmost data column, directly next to the sticky branch column —
+  // CEO answers "which bills overdue right now" without horizontal scroll.
+  const months: MatrixMonth[] = [...matrix.months]
+    .reverse()
+    .map((m) => ({
+      monthKey: m.monthKey,
+      label: formatMonth(m.firstOfMonth),
+    }));
+  let anomalyCount = 0;
   const rows: MatrixRow[] = matrix.branches.map((b) => {
     const cells: MatrixRow["cells"] = {};
     for (const m of matrix.months) {
@@ -100,22 +114,27 @@ export default async function BillsMatrixPage({
           pendingTotal: 0,
           overdueTotal: 0,
           worstStatus: null,
+          isAnomalous: false,
           bills: [],
         };
         continue;
       }
+      if (cell.isAnomalous) anomalyCount += 1;
       cells[m.monthKey] = {
         total: cell.total,
         paidTotal: cell.paidTotal,
         pendingTotal: cell.pendingTotal,
         overdueTotal: cell.overdueTotal,
         worstStatus: cell.worstStatus,
+        isAnomalous: cell.isAnomalous,
         bills: cell.bills.map((bill) => ({
           id: bill.id,
           categoryId: bill.categoryId,
           categoryLabel: bill.categoryLabel,
           amount: bill.amount,
           status: bill.status,
+          isAnomalous: bill.isAnomalous,
+          deltaPct: bill.deltaPct,
         })),
       };
     }
@@ -126,14 +145,46 @@ export default async function BillsMatrixPage({
       cells,
     };
   });
+  // OWN-BILLS-01 (2026-06-03) · float branches with any OVERDUE cell to the top
+  // so the daily-driver question "what's overdue" is answered without scroll.
+  rows.sort((a, b) => {
+    const aHasOverdue = Object.values(a.cells).some(
+      (c) => c.overdueTotal > 0,
+    );
+    const bHasOverdue = Object.values(b.cells).some(
+      (c) => c.overdueTotal > 0,
+    );
+    if (aHasOverdue !== bHasOverdue) return aHasOverdue ? -1 : 1;
+    return a.branchName.localeCompare(b.branchName, "th");
+  });
   const totalsByMonth: Record<string, number> = {};
   matrix.totalsByMonth.forEach((v, k) => {
     totalsByMonth[k] = v;
   });
 
-  // Pre-fill values when user clicked a cell ?branch=&month=
-  const presetBranchId = sp.branch ?? null;
-  const presetMonth = sp.month ?? null;
+  // OWN-BILLS-01 (2026-06-03) · when ?status=overdue we render a flat list of
+  // overdue bills with "จ่ายเลย" link, replacing the matrix as the primary
+  // surface. Allows CEO to clear the queue in one screen.
+  const filterStatus = sp.status === "overdue" ? "overdue" : null;
+  const today = bangkokDateOfToday();
+  const overdueList = filterStatus
+    ? matrix.branches.flatMap((b) =>
+        Array.from(b.cellsByMonth.values()).flatMap((c) =>
+          c.bills.filter(
+            (bill) =>
+              deriveStatus(bill.paidAt, bill.dueDate, today) === "OVERDUE",
+          ),
+        ),
+      )
+    : [];
+  overdueList.sort((x, y) => x.dueDate.getTime() - y.dueDate.getTime());
+
+  // DEVIL-02 (2026-06-03) · we no longer auto-open the create-bill modal from
+  // ?branch=&month= URL params · clicking a cell now toggles the branch row
+  // open instead of pre-filling a "new bill" form (which silently duplicated
+  // existing bills until the unique-constraint error surfaced).
+  const presetBranchId: string | null = null;
+  const presetMonth: string | null = null;
 
   return (
     <div className="space-y-5">
@@ -185,12 +236,12 @@ export default async function BillsMatrixPage({
         </div>
       </header>
 
-      {/* Summary tiles */}
+      {/* Summary tiles · OWN-BILLS-01 (2026-06-03) · the rose "เกินกำหนด" tile
+          now links to a flat overdue list so CEO can clear the queue without
+          eyeballing the matrix. UX-02 grid drops to 2-col on mobile so the
+          tiles don't eat the entire fold. */}
       <section
-        className="grid gap-3"
-        style={{
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-        }}
+        className="grid grid-cols-2 gap-3 lg:grid-cols-4"
         aria-label="สรุปบิลค้างจ่าย"
       >
         <SummaryTile
@@ -200,12 +251,25 @@ export default async function BillsMatrixPage({
           value={`${pending.count - pending.overdueCount} ใบ`}
           subtitle={baht(pending.pendingAmount - pending.overdueAmount)}
         />
+        <Link
+          href="/chairops/bills?status=overdue"
+          className="block focus:outline-none focus:ring-2 focus:ring-rose-400 rounded-lg"
+        >
+          <SummaryTile
+            tone="rose"
+            icon={<AlertTriangle className="size-4" aria-hidden="true" />}
+            label="เกินกำหนด"
+            value={`${pending.overdueCount} ใบ`}
+            subtitle={baht(pending.overdueAmount)}
+            interactive
+          />
+        </Link>
         <SummaryTile
-          tone="rose"
-          icon={<AlertTriangle className="size-4" aria-hidden="true" />}
-          label="เกินกำหนด"
-          value={`${pending.overdueCount} ใบ`}
-          subtitle={baht(pending.overdueAmount)}
+          tone="amber"
+          icon={<TrendingUp className="size-4" aria-hidden="true" />}
+          label="บิลผิดปกติ (±20%)"
+          value={`${anomalyCount} เซลล์`}
+          subtitle="ต่างจากเดือนก่อน"
         />
         <SummaryTile
           tone="emerald"
@@ -215,6 +279,75 @@ export default async function BillsMatrixPage({
           subtitle={`${monthsBack} เดือน · ทุกสาขา`}
         />
       </section>
+
+      {filterStatus === "overdue" ? (
+        <section className="space-y-2">
+          <header className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-zinc-900">
+              บิลเกินกำหนด · {overdueList.length} ใบ
+            </h2>
+            <Link
+              href="/chairops/bills"
+              className="text-xs font-medium text-zinc-600 hover:text-zinc-900"
+            >
+              กลับตารางสรุป
+            </Link>
+          </header>
+          {overdueList.length === 0 ? (
+            <p className="rounded-md border border-emerald-200 bg-emerald-50/40 p-4 text-sm text-emerald-800">
+              ไม่มีบิลเกินกำหนด — เคลียร์หมดแล้ว
+            </p>
+          ) : (
+            <ul className="divide-y divide-zinc-100 rounded-lg border border-rose-200 bg-white">
+              {overdueList.map((bill) => {
+                const ageDays = Math.max(
+                  1,
+                  Math.floor(
+                    (bangkokDateOfToday().getTime() - bill.dueDate.getTime()) /
+                      86400_000,
+                  ),
+                );
+                return (
+                  <li
+                    key={bill.id}
+                    className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm"
+                  >
+                    <div>
+                      <p className="font-medium text-zinc-900">
+                        {bill.branchName} · {bill.categoryLabel}
+                      </p>
+                      <p className="text-xs text-zinc-500">
+                        ครบกำหนด {thaiDate(bill.dueDate, "d LLL yyyy")} ·
+                        เกิน {ageDays} วัน
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-semibold text-rose-700 tabular-nums">
+                        {baht(bill.amount)}
+                      </span>
+                      {canEdit ? (
+                        <Link
+                          href={`/chairops/bills/${bill.id}`}
+                          className="rounded-md bg-rose-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-rose-700"
+                        >
+                          เปิด · จ่ายเลย
+                        </Link>
+                      ) : (
+                        <Link
+                          href={`/chairops/bills/${bill.id}`}
+                          className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                        >
+                          เปิดบิล
+                        </Link>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       <BillsMatrixTable
         rows={rows}
@@ -237,12 +370,14 @@ function SummaryTile({
   label,
   value,
   subtitle,
+  interactive,
 }: {
   tone: "amber" | "rose" | "emerald";
   icon: React.ReactNode;
   label: string;
   value: string;
   subtitle: string;
+  interactive?: boolean;
 }) {
   const TONE_RING: Record<typeof tone, string> = {
     amber: "ring-amber-200 bg-amber-50/40",
@@ -255,7 +390,9 @@ function SummaryTile({
     emerald: "bg-emerald-100 text-emerald-700",
   };
   return (
-    <div className={`rounded-lg p-4 ring-1 ${TONE_RING[tone]}`}>
+    <div
+      className={`rounded-lg p-4 ring-1 ${TONE_RING[tone]} ${interactive ? "transition hover:shadow-sm" : ""}`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-medium text-zinc-600">{label}</p>

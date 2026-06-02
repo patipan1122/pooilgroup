@@ -44,6 +44,13 @@ export interface PreviewResult {
   counts: { ready: number; dedup: number; invalid: number; total: number };
   /** Serialized rows, ready to POST back to commitMaidCsv. */
   payload: string;
+  /**
+   * HMAC signature over (orgId|userId|payload). DEVIL-01 fix · 2026-06-03 ·
+   * commitMaidCsv refuses any payload whose signature does not verify with
+   * the same caller's session, so a client tampering with countedAmount or
+   * collectedAt between preview and commit is rejected at the server.
+   */
+  payloadSig: string;
 }
 
 export type PreviewResponse = PreviewResult | { ok: false; error: string };
@@ -52,6 +59,11 @@ export interface CommitResult {
   ok: true;
   committed: number;
   dedup: number;
+  /**
+   * Rows that passed preview but were rejected at commit-time (TOCTOU race
+   * caught by re-running the DB dedup window) — BA-01 / QA-02 fix.
+   */
+  skippedAtCommit: number;
 }
 
 export type CommitResponse = CommitResult | { ok: false; error: string };

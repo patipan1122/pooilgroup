@@ -104,6 +104,8 @@ export interface ExecHomeKpis {
   /** % change vs prior 30-day window · null if no history. */
   profit30dDeltaPct: number | null;
   activeBranchCount: number;
+  /** BF1 · Sum of MaidDailyPay for the current BKK month (admin-only tile). */
+  maidWageMonth: number;
   /** Pre-sorted by shortage size desc (largest drift first). */
   branches: Awaited<ReturnType<typeof getDashboardRows>>;
   computedAt: Date;
@@ -182,12 +184,43 @@ export const getExecHomeKpis = cache(async function getExecHomeKpis(
     0,
   );
 
-  // Missed maids = active branches that have NOT deposited today.
-  // depositsTodayByBranch only contains branches with > 0 baht today (helper
-  // omits zero entries) so `.has(branchId)` == "has deposited today".
+  // Missed maids = active branches that have NOT deposited today,
+  //                AND have a working maid (excluding leave + no-slot).
+  // BF1 (2026-06-02) · subtract leave-today + no-maid branches so the KPI
+  // counts only "real" missed days, matching the missed-maids-card variant
+  // logic. CEO's old morning false-alarm class is dead at the source.
   const depositedSet = new Set(depositsTodayByBranch.keys());
+  const [maidsAssigned, leavesToday] = await Promise.all([
+    prisma.chairopsUser.findMany({
+      where: {
+        orgId,
+        role: "MAID",
+        isActive: true,
+        primaryBranchId: { in: activeRows.map((r) => r.branchId) },
+      },
+      select: { id: true, primaryBranchId: true },
+    }),
+    prisma.chairopsMaidDayOff.findMany({
+      where: { orgId, date: dToday },
+      select: { maidId: true },
+    }),
+  ]);
+  const branchHasMaidSet = new Set(
+    maidsAssigned
+      .map((m) => m.primaryBranchId)
+      .filter((id): id is string => !!id),
+  );
+  const leaveMaidIds = new Set(leavesToday.map((l) => l.maidId));
+  const leaveBranchIdSet = new Set(
+    maidsAssigned
+      .filter((m) => m.primaryBranchId && leaveMaidIds.has(m.id))
+      .map((m) => m.primaryBranchId as string),
+  );
   const missedMaidCount = activeRows.filter(
-    (r) => !depositedSet.has(r.branchId),
+    (r) =>
+      !depositedSet.has(r.branchId) &&
+      branchHasMaidSet.has(r.branchId) &&
+      !leaveBranchIdSet.has(r.branchId),
   ).length;
   let todayDepositTotal = 0;
   for (const amt of depositsTodayByBranch.values()) todayDepositTotal += amt;
@@ -230,6 +263,16 @@ export const getExecHomeKpis = cache(async function getExecHomeKpis(
 
   const branches = [...rows].sort((a, b) => b.driftAmount - a.driftAmount);
 
+  // BF1 · MTD maid wage (admin-only · canViewCost = rank >= CEO at caller).
+  // Compute month-start in BKK calendar to match the rest of the KPIs.
+  const ymd = bangkokYmd(new Date());
+  const monthStart = new Date(`${ymd.slice(0, 7)}-01T00:00:00Z`);
+  const maidWageAgg = await prisma.chairopsMaidDailyPay.aggregate({
+    where: { orgId, date: { gte: monthStart } },
+    _sum: { amount: true },
+  });
+  const maidWageMonth = maidWageAgg._sum?.amount ?? 0;
+
   return {
     todayPosRevenue,
     posDeltaPct,
@@ -243,6 +286,7 @@ export const getExecHomeKpis = cache(async function getExecHomeKpis(
     profit30d,
     profit30dDeltaPct,
     activeBranchCount: activeRows.length,
+    maidWageMonth,
     branches,
     computedAt: new Date(),
   };
@@ -389,8 +433,17 @@ export const getCriticalBranches = cache(async function getCriticalBranches(
 export interface MissedMaidRow {
   branchId: string;
   branchName: string;
+  /**
+   * BF1 variant tag · drives row tone + CTA in missed-maids-card:
+   *  - "missed_actual" — assigned active maid + working today + no deposit
+   *  - "on_leave"      — maid on recorded leave today
+   *  - "no_slot"       — branch has no maid assigned
+   */
+  variant: "missed_actual" | "on_leave" | "no_slot";
   maidName: string | null;
   maidPhone: string | null;
+  maidLineUserId: string | null;
+  dayOffReason: string | null;
   posToday: number;
   status: "ok" | "warn" | "critical" | "missed";
 }
@@ -406,28 +459,34 @@ export const getMissedMaidsToday = cache(async function getMissedMaidsToday(
   const tsToday = bangkokStartOfToday();
   const dToday = bangkokDateOfToday();
 
-  // "Deposited today?" via canonical drift-engine formula. Previously the
-  // dead `CashCollection.depositedAmount` column made every maid look
-  // "missed" once the LIFF stopped writing that column (Wave-2). See
-  // `_deposits.ts` (CEO 2026-06-02 P0).
+  // "Deposited today?" via canonical drift-engine formula.
   const depositsTodayByBranch = await getDepositsInRange({
     orgId,
     since: tsToday,
   });
   const depositedSet = new Set(depositsTodayByBranch.keys());
 
-  // Missed = active + no deposit today · worst drift first.
-  const missed = active
-    .filter((r) => !depositedSet.has(r.branchId))
-    .sort((a, b) => b.driftAmount - a.driftAmount)
-    .slice(0, take);
-  if (missed.length === 0) return [];
-
-  const branchIds = missed.map((r) => r.branchId);
-  const [maids, posTodayRows] = await Promise.all([
+  // Pre-fetch maid + leave-today data ONCE so we can classify variants.
+  const branchIds = active.map((r) => r.branchId);
+  const [maids, leavesToday, posTodayRows] = await Promise.all([
     prisma.chairopsUser.findMany({
-      where: { orgId, role: "MAID", primaryBranchId: { in: branchIds } },
-      select: { displayName: true, phone: true, primaryBranchId: true },
+      where: {
+        orgId,
+        role: "MAID",
+        isActive: true,
+        primaryBranchId: { in: branchIds },
+      },
+      select: {
+        id: true,
+        displayName: true,
+        phone: true,
+        lineUserId: true,
+        primaryBranchId: true,
+      },
+    }),
+    prisma.chairopsMaidDayOff.findMany({
+      where: { orgId, date: dToday },
+      select: { maidId: true, reason: true },
     }),
     prisma.chairopsPosDaily.groupBy({
       by: ["branchId"],
@@ -440,17 +499,35 @@ export const getMissedMaidsToday = cache(async function getMissedMaidsToday(
       .filter((m) => m.primaryBranchId)
       .map((m) => [m.primaryBranchId as string, m]),
   );
+  const leaveReasonByMaid = new Map(leavesToday.map((l) => [l.maidId, l.reason]));
   const posTodayByBranch = new Map(
     posTodayRows.map((r) => [r.branchId, decToNum(r._sum?.grossTotal)]),
   );
 
-  return missed.map((r) => {
+  // Branches that have NOT deposited today are "candidates" — classify each
+  // into missed_actual / on_leave / no_slot.
+  const candidates = active
+    .filter((r) => !depositedSet.has(r.branchId))
+    .sort((a, b) => b.driftAmount - a.driftAmount)
+    .slice(0, take);
+  if (candidates.length === 0) return [];
+
+  return candidates.map((r) => {
     const maid = maidByBranch.get(r.branchId);
+    const onLeave = maid ? leaveReasonByMaid.has(maid.id) : false;
+    const variant: MissedMaidRow["variant"] = !maid
+      ? "no_slot"
+      : onLeave
+        ? "on_leave"
+        : "missed_actual";
     return {
       branchId: r.branchId,
       branchName: r.branchName,
+      variant,
       maidName: maid?.displayName ?? null,
       maidPhone: maid?.phone ?? null,
+      maidLineUserId: maid?.lineUserId ?? null,
+      dayOffReason: maid && onLeave ? (leaveReasonByMaid.get(maid.id) ?? null) : null,
       posToday: posTodayByBranch.get(r.branchId) ?? 0,
       status: classifyBranch(
         r.driftAmount,

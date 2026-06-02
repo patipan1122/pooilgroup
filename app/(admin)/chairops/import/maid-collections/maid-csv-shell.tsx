@@ -35,6 +35,8 @@ interface PreviewState {
   rows: PreviewRow[];
   counts: { ready: number; dedup: number; invalid: number; total: number };
   payload: string;
+  /** HMAC signature returned by previewMaidCsv · required at commit. */
+  payloadSig: string;
   filename: string;
 }
 
@@ -72,16 +74,29 @@ export function MaidCsvShell() {
     }
     setError(null);
     startTransition(async () => {
-      const res = await commitMaidCsv(preview.payload, preview.counts.dedup);
+      const res = await commitMaidCsv(
+        preview.payload,
+        preview.counts.dedup,
+        preview.payloadSig,
+      );
       if (!res.ok) {
         setError(res.error);
         toast.error(res.error);
         return;
       }
-      toast.success(`บันทึก ${res.committed} แถว`);
+      // BA-01 / QA-02 (2026-06-03) · surface the TOCTOU-skipped delta so the
+      // CEO sees "พร้อม 47 · เขียนจริง 45 · ข้ามตอน commit 2" visibly when
+      // a race collapsed concurrent imports.
+      if (res.skippedAtCommit > 0) {
+        toast.warning(
+          `บันทึก ${res.committed} แถว · ข้ามอีก ${res.skippedAtCommit} แถว (ซ้ำจากการ import พร้อมกัน)`,
+        );
+      } else {
+        toast.success(`บันทึก ${res.committed} แถว`);
+      }
       setPreview(null);
       router.push(
-        `/chairops/import/maid-collections?committed=${res.committed}&dedup=${res.dedup}`,
+        `/chairops/import/maid-collections?committed=${res.committed}&dedup=${res.dedup}&skipped=${res.skippedAtCommit}`,
       );
       router.refresh();
     });

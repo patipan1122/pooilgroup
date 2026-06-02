@@ -34,6 +34,10 @@ import { canEditPastDay } from "@/lib/chairops/auth/role-guards";
 import { recomputeAllDrifts } from "@/lib/chairops/reconcile/drift-engine";
 import { evaluateAndEmitAlerts } from "@/lib/chairops/reconcile/alerts";
 import {
+  autoResolvePosNotIngested,
+  autoResolveChairOffline,
+} from "@/lib/chairops/alerts/auto-resolve";
+import {
   parseStarThingXlsx,
   aggregateToBranchDaily,
   type AggregatedDailyRow,
@@ -1120,6 +1124,26 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
         metadata: { error: msg },
       }).catch(() => {});
     }),
+    // BF2 · auto-resolve POS_NOT_INGESTED + CHAIR_OFFLINE alerts triggered
+    // by this commit. The watchdog cron will re-emit on next run if still
+    // missing — but the user shouldn't see a stale alert after they fixed
+    // the underlying gap.
+    (async () => {
+      try {
+        const [posResolved, chairResolved] = await Promise.all([
+          autoResolvePosNotIngested(orgId, branchIdsInBatch),
+          autoResolveChairOffline(orgId, Array.from(chairCodesInBatch)),
+        ]);
+        if (posResolved + chairResolved > 0) {
+          console.log(
+            `[pos-ingest commit] auto-resolved ${posResolved} POS + ${chairResolved} CHAIR alerts`,
+          );
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[pos-ingest commit] auto-resolve failed:", msg);
+      }
+    })(),
   ]);
 
   await writeAudit({
