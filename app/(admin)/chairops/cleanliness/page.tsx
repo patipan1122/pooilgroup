@@ -1,12 +1,15 @@
-// Cleanliness home (maid) · recent reports + button to add a new one.
+// Cleanliness home · dual-mode by role.
+//   MAID  → today's button + own recent reports (existing behaviour)
+//   MANAGER+ → list view across branches (CEO 2026-06-02 approved)
 import Link from "next/link";
-import { requireRole, requireExactRole } from "@/lib/chairops/auth/session";
+import { requireAuth } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { thaiDateTime } from "@/lib/chairops/utils/format";
 import { Sparkles, CircleAlert } from "lucide-react";
+import { CleanlinessManagerView } from "./manager-view";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +19,24 @@ const gradeMap = {
   FAIL: { tone: "danger" as const, label: "ไม่ผ่าน" },
 };
 
-export default async function CleanlinessPage() {
-  const session = await requireExactRole("MAID");
+export default async function CleanlinessPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ branch?: string }>;
+}) {
+  const session = await requireAuth();
+
+  // Non-MAID roles → manager list view.
+  if (session.user.role !== "MAID") {
+    const sp = await searchParams;
+    return (
+      <CleanlinessManagerView
+        orgId={session.user.orgId}
+        branchSlug={sp.branch?.trim() || undefined}
+      />
+    );
+  }
+
   const branchId = session.user.primaryBranchId;
   if (!branchId) {
     return (

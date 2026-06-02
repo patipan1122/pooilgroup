@@ -13,6 +13,8 @@ import { baht } from "@/lib/chairops/utils/format";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { PartDetailPane } from "./part-detail-pane";
 import { PartAddPane } from "./part-add-pane";
+import { PartsRequestsPane } from "./parts-requests-pane";
+import { MAID_PART_REQUEST_PREFIX } from "@/lib/chairops/parts/constants";
 
 export default async function PartsWorkspacePage({
   searchParams,
@@ -34,11 +36,22 @@ export default async function PartsWorkspacePage({
     ];
   }
 
-  const parts = await prisma.chairopsSparePart.findMany({
-    where: w,
-    orderBy: [{ category: "asc" }, { name: "asc" }],
-    take: 500,
-  });
+  const [parts, pendingRequestCount] = await Promise.all([
+    prisma.chairopsSparePart.findMany({
+      where: w,
+      orderBy: [{ category: "asc" }, { name: "asc" }],
+      take: 500,
+    }),
+    // Count of maid requests (delta=0 movements with the request marker) — used
+    // for the red dot on the "เบิกของ" button in the left rail.
+    prisma.chairopsSparePartMovement.count({
+      where: {
+        orgId,
+        delta: 0,
+        reason: { startsWith: MAID_PART_REQUEST_PREFIX },
+      },
+    }),
+  ]);
 
   const lowCount = parts.filter((p) => p.stockOnHand <= p.reorderLevel).length;
 
@@ -46,6 +59,8 @@ export default async function PartsWorkspacePage({
   let rightPane: React.ReactNode;
   if (selected === "new") {
     rightPane = <PartAddPane />;
+  } else if (selected === "requests") {
+    rightPane = <PartsRequestsPane orgId={orgId} />;
   } else if (selected) {
     rightPane = <PartDetailPane partId={selected} orgId={orgId} />;
   } else {
@@ -86,6 +101,17 @@ export default async function PartsWorkspacePage({
           <div className="sticky top-14 z-10 space-y-2 rounded-t-lg border-b border-border bg-card p-3 sm:top-16">
             <Link href="/chairops/parts?selected=new" className="block">
               <Button className="w-full">＋ เพิ่มอะไหล่ใหม่</Button>
+            </Link>
+            <Link href="/chairops/parts?selected=requests" className="block">
+              <Button
+                variant={selected === "requests" ? "secondary" : "outline"}
+                className="w-full justify-between"
+              >
+                <span>📦 คำขอเบิกจากแม่บ้าน</span>
+                {pendingRequestCount > 0 && (
+                  <Badge tone="warning">{pendingRequestCount}</Badge>
+                )}
+              </Button>
             </Link>
             <form method="GET" className="flex gap-2">
               {/* keep current selection while searching */}

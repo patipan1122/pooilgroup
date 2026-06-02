@@ -11,6 +11,18 @@ import { writeAudit } from "@/lib/chairops/audit/log";
 import { presignUpload, cleanlinessKey } from "@/lib/chairops/storage/r2";
 import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
 import { assertAllowedPhotoUrls } from "@/lib/chairops/utils/url-guard";
+import {
+  ChairopsAlertKind,
+  ChairopsAlertLevel,
+  ChairopsAlertStatus,
+  ChairopsCleanlinessGrade,
+} from "@/lib/generated/prisma/enums";
+import {
+  fatigueCheck,
+  formatLineMessage,
+  notifyChannel,
+} from "@/lib/chairops/alerts/_shared";
+import { autoResolveCleanlinessFail } from "@/lib/chairops/alerts/auto-resolve";
 
 const checklistSchema = z.object({
   floor: z.boolean(),
@@ -97,6 +109,90 @@ export async function createCleanlinessReport(
 
     return row;
   });
+
+  // BF2 D3 · event-driven CLEANLINESS_FAIL emit (post-tx, fire-and-forget so
+  // a LINE outage doesn't block the maid's submit). Also auto-resolves any
+  // open FAIL alert when a PASS rolls in within the 14-day window.
+  void (async () => {
+    try {
+      if (grade === "PASS") {
+        await autoResolveCleanlinessFail(session.user.orgId, branchId);
+        return;
+      }
+      if (grade !== "FAIL") return;
+
+      // Idempotency · skip if event-hook already fired for this report.
+      const existing = await prisma.chairopsAlert.findFirst({
+        where: {
+          orgId: session.user.orgId,
+          kind: ChairopsAlertKind.CLEANLINESS_FAIL,
+          status: { in: [ChairopsAlertStatus.OPEN, ChairopsAlertStatus.ACK] },
+          contextJson: { path: ["reportId"], equals: created.id },
+        },
+        select: { id: true },
+      });
+      if (existing) return;
+
+      // 2× FAIL in last 7d → CRITICAL.
+      const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
+      const failCount7d = await prisma.chairopsCleanlinessReport.count({
+        where: {
+          orgId: session.user.orgId,
+          branchId,
+          grade: ChairopsCleanlinessGrade.FAIL,
+          reportedAt: { gte: sevenDaysAgo },
+        },
+      });
+      const level = failCount7d >= 2 ? ChairopsAlertLevel.CRITICAL : ChairopsAlertLevel.WARN;
+
+      const branch = await prisma.chairopsBranch.findUnique({
+        where: { id: branchId },
+        select: { name: true },
+      });
+      const branchName = branch?.name ?? "(ไม่ทราบสาขา)";
+
+      const alert = await prisma.chairopsAlert.create({
+        data: {
+          orgId: session.user.orgId,
+          branchId,
+          kind: ChairopsAlertKind.CLEANLINESS_FAIL,
+          level,
+          title: `ตรวจสภาพไม่ผ่าน · ${branchName}`,
+          message: failCount7d >= 2
+            ? `ไม่ผ่าน ${failCount7d} ครั้งใน 7 วัน · ตรวจสอบด่วน`
+            : `แม่บ้านรายงาน FAIL · ตรวจสอบรูปภาพ`,
+          contextJson: {
+            reportId: created.id,
+            byMaidId: session.user.id,
+            photoUrls: parsed.data.photoUrls,
+            failCount7d,
+            linkPath: `/chairops/cleanliness/${created.id}`,
+            source: "cleanliness-submit",
+          },
+        },
+      });
+
+      const channels: ("ops" | "ceo")[] = level === ChairopsAlertLevel.CRITICAL
+        ? ["ops", "ceo"]
+        : ["ops"];
+      const line = formatLineMessage({
+        orgId: alert.orgId,
+        branchId: alert.branchId,
+        kind: alert.kind,
+        level: alert.level,
+        title: alert.title,
+        message: alert.message,
+        contextJson: alert.contextJson as Record<string, unknown>,
+        channels,
+      });
+      for (const ch of channels) {
+        if (!fatigueCheck(ch)) continue;
+        await notifyChannel(ch, line);
+      }
+    } catch (err) {
+      console.error("[cleanliness-submit] alert emit failed:", err);
+    }
+  })();
 
   revalidatePath("/chairops/cleanliness");
   return { ok: true, data: { id: created.id, grade } };
