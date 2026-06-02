@@ -5,59 +5,95 @@
 // drifts out of sync with what real customers receive (audit BOT-003).
 
 import type { InboxTopic } from "./classify";
-import type { BotSettings } from "./settings";
+import type { BotSettings, ReplyTemplateKey } from "./settings";
+
+// Built-in default reply text per flow — the SOURCE OF TRUTH for wording the
+// CEO hasn't overridden in /inbox/bot.  Rules baked in per CEO 2026-06-02:
+//   • NEVER say "หากเร่งด่วน" (the bot isn't the one who decides what's urgent)
+//   • NEVER promise "ติดต่อกลับ" — the team does not call customers back;
+//     the customer calls IN instead
+//   • try to HELP / gather info first, then offer the phone as a way to reach
+//     the team — don't open by shoving the customer at the phone
+// Use the literal "{phone}" placeholder; it's filled from settings at render.
+export const DEFAULT_REPLY_TEMPLATES: Record<ReplyTemplateKey, string> = {
+  money_lost:
+    `ขออภัยมากๆ เลยนะคะ 🙏 เดี๋ยวทีมงานช่วยดูแลให้นะคะ\n` +
+    `รบกวนแจ้งข้อมูลนิดนึงค่ะ:\n` +
+    `• เครื่อง "กินเหรียญ" หรือ "กินแบงค์" คะ\n` +
+    `• สาขา + จังหวัด\n` +
+    `• เลขเครื่อง (มุมซ้ายบนของหน้าจอ เช่น G0310416)\n` +
+    `ทีมงานจะกดเปิด/แก้ออนไลน์ให้ได้เลยค่ะ · หรือโทรหาทีมงานที่ {phone} ได้เลยค่ะ`,
+  scan_fail:
+    `ขออภัยค่ะ 🙏 เดี๋ยวช่วยเช็คให้นะคะ\n` +
+    `รบกวนแจ้ง "สาขา + เลขเครื่อง" (มุมซ้ายบนของหน้าจอ เช่น G0310416) ค่ะ\n` +
+    `ทีมงานจะช่วยแก้ออนไลน์ให้ได้เลย · หรือโทรหาทีมงานที่ {phone} ได้เลยค่ะ`,
+  strong:
+    `ขอโทษด้วยนะคะ 🙏 รบกวนเล่าให้ฟังนิดนึง จะได้แนะนำการปรับให้พอดีกับคุณค่ะ\n` +
+    `1) นวดแรงตรงไหนคะ (แขน / ขา / หลัง / ทั่ว ๆ)\n` +
+    `2) ระดับความเจ็บเต็ม 10 ประมาณกี่คะแนน\n` +
+    `เครื่องปรับความแรงได้ระดับ 1–6 (เริ่มต้นที่ระดับ 3) · ลองกดลดระดับที่แผงควบคุมข้างที่นั่งดูนะคะ`,
+  buy:
+    `ขอบคุณที่สนใจค่ะ 😊 ขอข้อมูลสั้นๆ จะได้แนะนำให้ตรงความต้องการนะคะ\n` +
+    `1) สนใจไว้ใช้ที่บ้าน หรือเปิดร้าน/หยอดเหรียญคะ\n` +
+    `2) งบประมาณคร่าวๆ (เครื่องเดียว / หลายเครื่อง)\n` +
+    `สอบถามรายละเอียดเพิ่มเติม โทรได้เลยที่ {phone} ค่ะ`,
+  feedback: `ขอบคุณสำหรับคำติชมนะคะ 🙏 เรารับไว้ปรับปรุงและดูแลให้ดีขึ้นแน่นอนค่ะ`,
+  feedback_complaint:
+    `ขออภัยจริงๆ นะคะ 🙏 รบกวนเล่าเพิ่มได้ไหมคะว่าติดปัญหาเรื่องอะไร (สาขา/เลขเครื่องถ้ามี) เดี๋ยวทีมงานรีบดูแลให้ค่ะ`,
+  non_text_ack:
+    `ได้รับข้อความ/รูปแล้วนะคะ 🙏 เดี๋ยวทีมงานช่วยดูแลให้ค่ะ · สอบถามเพิ่มเติมโทรได้ที่ {phone} ค่ะ`,
+};
+
+// Replace the {phone} placeholder.  When no phone is configured, drop any
+// "·"-separated clause that mentions it so we never render "โทรได้ที่  ค่ะ".
+function fillPhone(text: string, phone: string | null): string {
+  if (phone && phone.trim()) return text.split("{phone}").join(phone.trim());
+  return text
+    .split("\n")
+    .map((line) =>
+      line
+        .split("·")
+        .filter((seg) => !seg.includes("{phone}"))
+        .join("·")
+        .replace(/·\s*$/, "")
+        .trimEnd(),
+    )
+    .join("\n");
+}
+
+// Resolve the effective reply for a key: CEO override (if any) else default,
+// then fill the phone placeholder.
+function resolveReply(key: ReplyTemplateKey, s: BotSettings): string {
+  const raw = s.replyTemplates[key]?.trim() || DEFAULT_REPLY_TEMPLATES[key];
+  return fillPhone(raw, s.contactPhone);
+}
 
 export function renderChairopsTemplate(
   topic: InboxTopic,
   s: BotSettings,
   isComplaint: boolean,
 ): string {
-  // Lead with the "just call us, we fix it online in 30 seconds" line so the
-  // customer dials first; everything else is bonus context.  Matches the
-  // CEO's intent: a tech flips the machine back on remotely, faster than
-  // chasing the customer for full details.
-  const phone = s.contactPhone || "ทีมงาน";
   switch (topic) {
     case "money_lost":
-      return (
-        `ขออภัยมากๆ เลยนะคะ 🙏 รบกวน**โทร ${phone} ทันที**นะคะ ` +
-        `ทีมงานจะกดเปิดเครื่อง/แก้ออนไลน์ให้ภายใน 30 วินาทีค่ะ\n\n` +
-        `ระหว่างเดินไปโทร ถ้าสะดวกแจ้งข้อมูลนี้ไว้ก่อนได้นะคะ (ไม่จำเป็นต้องครบ):\n` +
-        `• เครื่อง "กินเหรียญ" หรือ "กินแบงค์" คะ\n` +
-        `• สาขา + จังหวัด\n` +
-        `• เลขเครื่อง (มุมซ้ายบนของหน้าจอ เช่น G0310416)\n` +
-        `   _หาไม่เจอไม่เป็นไรค่ะ โทรเข้ามาก่อนได้เลย_`
-      );
+      return resolveReply("money_lost", s);
     case "scan_fail":
-      return (
-        `ขออภัยค่ะ 🙏 รบกวน**โทร ${phone} ทันที**นะคะ ` +
-        `ทีมงานจะช่วยเช็ค/แก้ออนไลน์ให้ภายใน 30 วินาทีค่ะ\n\n` +
-        `ถ้ามีเวลา ขอ "สาขา + เลขเครื่อง" (มุมซ้ายบนของหน้าจอ เช่น G0310416) ไว้ก่อนได้นะคะ ` +
-        `_หาเลขไม่เจอก็ไม่เป็นไรค่ะ_`
-      );
+      return resolveReply("scan_fail", s);
     case "strong":
-      return (
-        `ขอโทษด้วยนะคะ 🙏 รบกวนเล่าให้ฟังนิดนึง จะได้แนะนำการปรับให้พอดีกับคุณค่ะ\n` +
-        `1) นวดแรงตรงไหนคะ (แขน / ขา / หลัง / ทั่ว ๆ)\n` +
-        `2) ระดับความเจ็บเต็ม 10 ประมาณกี่คะแนน\n` +
-        `3) คุณเป็นชาย/หญิง อายุประมาณเท่าไรคะ\n\n` +
-        `เครื่องปรับความแรงได้ระดับ 1–6 (เริ่มต้นที่ระดับ 3) ค่ะ ` +
-        `พอได้รายละเอียดเดี๋ยวแนะนำต่อให้นะคะ`
-      );
+      return resolveReply("strong", s);
     case "buy":
-      return (
-        `ขอบคุณที่สนใจค่ะ 😊 ขอข้อมูลสั้นๆ จะได้แนะนำให้ตรงความต้องการนะคะ\n` +
-        `1) สนใจไว้ใช้ที่บ้าน หรือเปิดร้าน/หยอดเหรียญคะ\n` +
-        `2) งบประมาณคร่าวๆ (เป็นเครื่องเดียว / หลายเครื่อง)\n` +
-        `3) ฝาก "ชื่อ + เบอร์ติดต่อ" ไว้นะคะ เดี๋ยวทีมงานโทรกลับไปคุยรายละเอียด`
-      );
+      return resolveReply("buy", s);
     case "feedback":
-      return isComplaint
-        ? `ขออภัยจริงๆ นะคะ 🙏 รบกวนเล่าเพิ่มได้ไหมคะว่าติดปัญหาเรื่องอะไร (สาขา/เลขเครื่องถ้ามี) เดี๋ยวทีมงานรีบดูแลให้ค่ะ`
-        : `ขอบคุณสำหรับคำติชมนะคะ 🙏 เรารับไว้ปรับปรุงและดูแลให้ดีขึ้นแน่นอนค่ะ`;
+      return resolveReply(isComplaint ? "feedback_complaint" : "feedback", s);
     default:
       return s.fallbackText;
   }
+}
+
+// Acknowledgement sent when a customer's message is non-text (image / sticker
+// / audio).  Used by the live engine (handleNonTextInbound) + the trainer
+// preview so both stay identical and obey the CEO's "no หากเร่งด่วน" rule.
+export function renderNonTextAck(s: BotSettings): string {
+  return resolveReply("non_text_ack", s);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

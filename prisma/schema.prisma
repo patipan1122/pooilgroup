@@ -4601,6 +4601,7 @@ model InboxBotSettings {
   escalateText String?  @map("escalate_text")
   dailySummary Boolean  @default(true) @map("daily_summary")
   flowImages   Json     @default("{}") @map("flow_images") // { money_lost?: url, scan_fail?: url, strong?: url, buy?: url, feedback?: url, intro?: url }
+  replyTemplates Json   @default("{}") @map("reply_templates") // editable canned replies: { money_lost?, scan_fail?, strong?, buy?, feedback?, feedback_complaint?, non_text_ack? } — use {phone} placeholder
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 

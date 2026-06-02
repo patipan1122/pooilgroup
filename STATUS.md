@@ -1,8 +1,18 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-05-31 (รอบ 69 · HotelBook live on prod · Mix Hotel แรก)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-02 (Inbox bot: คำตอบแก้ในเว็บได้ + ห้องพัฒนาบอท)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-06-02 — Inbox chatbot: คำตอบเลิก hardcode + "ห้องพัฒนาบอท" (Claude เห็นแชทจริง))
+
+**ปัญหา CEO:** เทรนบอทเก้าอี้นวดเท่าไรก็ไม่เปลี่ยน — บอทยังพูด "หากเร่งด่วน" + "ติดต่อกลับ" ที่สั่งห้าม.
+**Root cause (พิสูจน์จาก DB+code):** คำตอบเคสหลัก (money_lost/scan_fail/ลูกค้าส่งรูป) **hardcoded ใน `lib/inbox/bot/templates.ts` + `engine.ts handleNonTextInbound`** → ไม่อ่าน FAQ/knowledge เลย. "เทรนกับ Claude" เขียนแค่ FAQ/knowledge ซึ่ง Gemini อ่านเฉพาะ topic "other" → 80% ของแชทไม่เคยเปลี่ยน.
+
+**แก้แล้ว (STEP 1+2):**
+- STEP 1: ย้ายคำตอบ 7 สถานการณ์ออกจาก code → `inbox_bot_settings.reply_templates` JSONB (แก้ในเว็บได้) · default ใหม่ลบ "หากเร่งด่วน"/"ติดต่อกลับ" + help-first + `{phone}` placeholder · migration `20260602160000` (+ แก้ fallback_text เก่าที่มี "ติดต่อกลับ").
+- STEP 2: `/inbox/bot → เทรนกับ Claude` = "ห้องพัฒนาบอท": panel "แชทจริงที่มีปัญหา" → "ให้ Claude ช่วยแก้เคสนี้" → Claude เสนอ ```template (ก่อน→หลัง) → CEO กด "ใช้คำตอบนี้เลย" (propose→confirm).
+- ⚠️ ต้อง run migration `20260602160000` ก่อนปุ่ม "ใช้คำตอบนี้เลย" จะทำงาน.
 
 ## 🆕 Update (2026-05-31 · รอบ 69 — HotelBook ✅ LIVE on prod · Mix Hotel แรก · Pool Module #11)
 

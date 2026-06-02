@@ -6,7 +6,7 @@
 // parse client-side and render as Apply cards.  Right pane has an inline
 // preview that simulates what the live bot would reply for a test message.
 
-import { useState, useTransition, useRef, useEffect } from "react";
+import { useState, useTransition, useRef, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import {
   Send,
@@ -17,6 +17,11 @@ import {
   PlayCircle,
   Loader2,
   RotateCcw,
+  AlertTriangle,
+  Wand2,
+  ArrowRight,
+  RefreshCw,
+  ChevronDown,
 } from "lucide-react";
 import {
   trainerChat,
@@ -27,7 +32,27 @@ import {
 import {
   createFaq,
   createKnowledge,
+  saveReplyTemplate,
+  listReplyTemplates,
+  type ReplyTemplateRow,
 } from "@/lib/inbox/bot/knowledge-actions";
+import {
+  listProblemConversations,
+  getConversationTranscript,
+  type ProblemChatSummary,
+} from "@/lib/inbox/bot/chat-review-actions";
+
+// Display-only Thai labels for the editable reply keys (mirrors
+// REPLY_TEMPLATE_LABELS server-side; safe to duplicate — display only).
+const TEMPLATE_LABELS: Record<string, string> = {
+  money_lost: "เครื่องกินเงิน / หยอดแล้วไม่ทำงาน",
+  scan_fail: "สแกน / จ่าย QR ไม่ได้",
+  strong: "นวดแรง / เจ็บ",
+  buy: "สนใจซื้อ / ลงทุน",
+  feedback: "ติชม (ทั่วไป)",
+  feedback_complaint: "ติชม (ร้องเรียน / ไม่พอใจ)",
+  non_text_ack: "ลูกค้าส่งรูป / สติกเกอร์ / เสียง",
+};
 
 interface FaqProposal {
   keywords: string;
@@ -40,20 +65,27 @@ interface KnowledgeProposal {
   content: string;
 }
 
+interface TemplateProposal {
+  key: string;
+  text: string;
+}
+
 interface ParsedAssistant {
   text: string;
   faqs: FaqProposal[];
   knowledge: KnowledgeProposal[];
+  templates: TemplateProposal[];
 }
 
-// Parse a Claude reply for ```faq / ```knowledge fenced blocks.  Anything
-// outside the blocks is preserved as the conversational reply text.
+// Parse a Claude reply for ```faq / ```knowledge / ```template fenced blocks.
+// Anything outside the blocks is preserved as the conversational reply text.
 function parseAssistant(raw: string): ParsedAssistant {
   const faqs: FaqProposal[] = [];
   const knowledge: KnowledgeProposal[] = [];
+  const templates: TemplateProposal[] = [];
   let text = raw;
 
-  const re = /```(faq|knowledge)\s*\n([\s\S]*?)```/g;
+  const re = /```(faq|knowledge|template)\s*\n([\s\S]*?)```/g;
   text = text.replace(re, (_match, kind: string, body: string) => {
     const fields = parseKeyValueBlock(body);
     if (kind === "faq" && fields.keywords && fields.answer) {
@@ -64,11 +96,18 @@ function parseAssistant(raw: string): ParsedAssistant {
       });
     } else if (kind === "knowledge" && fields.title && fields.content) {
       knowledge.push({ title: fields.title, content: fields.content });
+    } else if (
+      kind === "template" &&
+      fields.key &&
+      fields.text &&
+      TEMPLATE_LABELS[fields.key]
+    ) {
+      templates.push({ key: fields.key, text: fields.text });
     }
     return ""; // strip from chat text
   });
 
-  return { text: text.trim(), faqs, knowledge };
+  return { text: text.trim(), faqs, knowledge, templates };
 }
 
 // Light "key: value" parser — supports multi-line `answer:` / `content:`
@@ -81,6 +120,8 @@ function parseKeyValueBlock(raw: string): Record<string, string> {
     "answer",
     "title",
     "content",
+    "key",
+    "text",
   ]);
   const out: Record<string, string> = {};
   let currentKey: string | null = null;
@@ -98,10 +139,10 @@ function parseKeyValueBlock(raw: string): Record<string, string> {
 }
 
 const HINTS = [
-  "ลูกค้าบอกหาเลขเครื่องไม่เจอ — อยากให้บอทบอกให้โทรเข้ามาทันที จะแก้ออนไลน์ใน 30 วินาที",
+  "บอทชอบพูด 'หากเร่งด่วนโทร...' ทั้งที่ห้ามไป — ช่วยแก้คำตอบตอนลูกค้าส่งรูปให้หน่อย",
+  "ตอนเครื่องสแกนไม่ได้ อยากให้บอทช่วยถามข้อมูลก่อน ไม่ใช่ไล่ให้โทรทันที",
   "ลูกค้าถามราคา — อยากให้บอทตอบราคา 100฿/50นาที และวิธีชำระ (เหรียญ/แบงค์/QR)",
-  "ลูกค้าบอกนวดแรงเจ็บ — อยากเก็บข้อมูล: ตรงไหน, ระดับ 1-10, ชาย/หญิง, อายุ",
-  "ลูกค้าถามที่ตั้งสาขา — บอกว่ามีสาขาในห้างไหนบ้าง (ใส่ข้อมูลให้)",
+  "ลูกค้าบอกนวดแรงเจ็บ — อยากเก็บข้อมูล: ตรงไหน, ระดับ 1-10",
 ];
 
 // localStorage key — separate per business so chairops history doesn't
@@ -114,6 +155,25 @@ export function TrainerTab({ businessTag }: { businessTag: string }) {
   const [draft, setDraft] = useState("");
   const [sending, startSend] = useTransition();
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Current effective reply templates (override-or-default), keyed by key —
+  // used to show "ก่อน → หลัง" diffs on Claude's ```template proposals and to
+  // refresh after one is applied.
+  const [tplByKey, setTplByKey] = useState<Record<string, ReplyTemplateRow>>({});
+  const refreshTemplates = useCallback(() => {
+    listReplyTemplates(businessTag)
+      .then((rows) => {
+        const map: Record<string, ReplyTemplateRow> = {};
+        for (const r of rows) map[r.key] = r;
+        setTplByKey(map);
+      })
+      .catch(() => {
+        /* non-fatal — proposals still apply, just no "before" preview */
+      });
+  }, [businessTag]);
+  useEffect(() => {
+    refreshTemplates();
+  }, [refreshTemplates]);
 
   // Hydrate from localStorage so a page refresh doesn't lose context.  Done
   // after mount so SSR doesn't render the stored value (would break hydration).
@@ -183,8 +243,25 @@ export function TrainerTab({ businessTag }: { businessTag: string }) {
     });
   }
 
+  // Bridge from the "real problem chats" panel → Claude: paste the transcript
+  // into a new message asking Claude to diagnose + fix the canned replies.
+  function askClaudeAboutChat(
+    transcript: string,
+    meta: { topic: string | null; reason: string },
+  ) {
+    const tag =
+      meta.topic && meta.topic !== "other" ? ` · หัวข้อ ${meta.topic}` : "";
+    const msg =
+      `ช่วยดูแชทจริงเคสนี้ให้หน่อยครับ (${meta.reason}${tag}) — ` +
+      `บอทตอบมีปัญหาตรงไหน แล้วช่วยแก้ "คำตอบอัตโนมัติ" ให้ดีขึ้นด้วยนะครับ:\n\n` +
+      "```\n" +
+      transcript.slice(0, 4000) +
+      "\n```";
+    send(msg);
+  }
+
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_380px]">
       {/* LEFT — chat with Claude */}
       <div className="rounded-2xl border border-zinc-200 bg-white shadow-soft">
         <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3">
@@ -210,9 +287,10 @@ export function TrainerTab({ businessTag }: { businessTag: string }) {
           <div className="space-y-3 p-5">
             <p className="text-sm text-zinc-600">
               เล่าให้ Claude ฟังว่า <strong>ลูกค้าทักแบบไหน</strong>{" "}
-              และ <strong>อยากให้บอทตอบแบบไหน</strong>{" "}
-              Claude จะแนะนำว่าควรเป็น FAQ / ข้อมูลร้าน / หรือปรับ AI
-              พร้อมร่างคำตอบให้ · กด "เพิ่มเลย" ก็ขึ้นระบบทันที
+              และ <strong>อยากให้บอทตอบแบบไหน</strong> — Claude
+              จะร่างคำตอบให้ กด “ใช้เลย” บอทเปลี่ยนทันที 🟦 หรือกดดู{" "}
+              <strong>แชทจริงที่มีปัญหา</strong> ทางขวา แล้วกด “ให้ Claude
+              ช่วยแก้เคสนี้” — Claude จะอ่านแชทนั้นแล้วช่วยแก้ให้
             </p>
             <p className="text-xs text-zinc-500">
               💡 คุยกับ Claude ต่อเนื่องได้เลย — สอบถามเพิ่ม / แก้ร่าง /
@@ -246,6 +324,8 @@ export function TrainerTab({ businessTag }: { businessTag: string }) {
                 role={m.role}
                 content={m.content}
                 businessTag={businessTag}
+                templatesByKey={tplByKey}
+                onTemplateApplied={refreshTemplates}
               />
             ))}
             {sending && (
@@ -285,10 +365,281 @@ export function TrainerTab({ businessTag }: { businessTag: string }) {
         </div>
       </div>
 
-      {/* RIGHT — preview pane */}
+      {/* RIGHT — real problem chats + test preview (sub-tabbed) */}
       <div className="rounded-2xl border border-zinc-200 bg-white shadow-soft">
-        <PreviewPane businessTag={businessTag} />
+        <RightPanel
+          businessTag={businessTag}
+          onAskClaude={askClaudeAboutChat}
+        />
       </div>
+    </div>
+  );
+}
+
+// Right column: switch between the real "problem chats" review and the live
+// test preview.  Defaults to problem chats — that's what the CEO asked to see.
+function RightPanel({
+  businessTag,
+  onAskClaude,
+}: {
+  businessTag: string;
+  onAskClaude: (
+    transcript: string,
+    meta: { topic: string | null; reason: string },
+  ) => void;
+}) {
+  const [tab, setTab] = useState<"problems" | "preview">("problems");
+  return (
+    <div className="flex h-[640px] flex-col">
+      <div className="flex shrink-0 gap-1 border-b border-zinc-200 p-1.5">
+        <button
+          type="button"
+          onClick={() => setTab("problems")}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-bold ${
+            tab === "problems"
+              ? "bg-red-50 text-red-800"
+              : "text-zinc-500 hover:bg-zinc-50"
+          }`}
+        >
+          <AlertTriangle className="size-3.5" />
+          แชทจริงที่มีปัญหา
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("preview")}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-bold ${
+            tab === "preview"
+              ? "bg-[var(--color-brand-50)] text-[var(--color-brand-800)]"
+              : "text-zinc-500 hover:bg-zinc-50"
+          }`}
+        >
+          <PlayCircle className="size-3.5" />
+          ทดลองตอบ
+        </button>
+      </div>
+      <div className="min-h-0 flex-1">
+        {tab === "problems" ? (
+          <ProblemChatsPanel businessTag={businessTag} onAskClaude={onAskClaude} />
+        ) : (
+          <PreviewPane businessTag={businessTag} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Lists the conversations the bot likely mishandled (escalated / urgent).
+// Click one to read the real transcript; "ให้ Claude ช่วยแก้" hands it to the
+// trainer chat on the left to diagnose + propose a fixed canned reply.
+function ProblemChatsPanel({
+  businessTag,
+  onAskClaude,
+}: {
+  businessTag: string;
+  onAskClaude: (
+    transcript: string,
+    meta: { topic: string | null; reason: string },
+  ) => void;
+}) {
+  const [chats, setChats] = useState<ProblemChatSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    listProblemConversations(businessTag)
+      .then(setChats)
+      .catch((e) => toast.error((e as Error).message || "โหลดแชทไม่สำเร็จ"))
+      .finally(() => setLoading(false));
+  }, [businessTag]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-2 border-b border-zinc-100 px-3 py-2">
+        <p className="text-[11px] text-zinc-500">
+          เคสที่บอทส่งต่อให้คน / เคสด่วน — กดดูแล้วให้ Claude ช่วยแก้
+        </p>
+        <button
+          type="button"
+          onClick={load}
+          className="ml-auto inline-flex size-7 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50"
+          title="โหลดใหม่"
+          aria-label="โหลดใหม่"
+        >
+          <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5">
+        {loading && chats.length === 0 && (
+          <div className="flex items-center gap-2 p-4 text-xs text-zinc-500">
+            <Loader2 className="size-3.5 animate-spin" />
+            กำลังโหลดแชท...
+          </div>
+        )}
+        {!loading && chats.length === 0 && (
+          <div className="flex h-full flex-col items-center justify-center px-4 text-center">
+            <AlertTriangle className="size-7 text-zinc-300" />
+            <p className="mt-2 text-xs font-bold text-zinc-600">
+              ยังไม่มีแชทที่มีปัญหา
+            </p>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              เคสที่บอทตอบไม่ได้หรือเคสด่วนจะมาโผล่ที่นี่
+            </p>
+          </div>
+        )}
+        {chats.map((c) => (
+          <ProblemChatItem
+            key={c.id}
+            chat={c}
+            open={openId === c.id}
+            onToggle={() => setOpenId((p) => (p === c.id ? null : c.id))}
+            onAskClaude={onAskClaude}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProblemChatItem({
+  chat,
+  open,
+  onToggle,
+  onAskClaude,
+}: {
+  chat: ProblemChatSummary;
+  open: boolean;
+  onToggle: () => void;
+  onAskClaude: (
+    transcript: string,
+    meta: { topic: string | null; reason: string },
+  ) => void;
+}) {
+  const [transcript, setTranscript] = useState<
+    { who: string; body: string }[] | null
+  >(null);
+  const [rawText, setRawText] = useState("");
+  const [busy, startBusy] = useTransition();
+
+  function toggle() {
+    onToggle();
+    if (!open && transcript === null) {
+      startBusy(async () => {
+        try {
+          const r = await getConversationTranscript(chat.id);
+          setTranscript(r.lines.map((l) => ({ who: l.who, body: l.body })));
+          setRawText(r.text);
+        } catch (e) {
+          toast.error((e as Error).message || "เปิดแชทไม่สำเร็จ");
+        }
+      });
+    }
+  }
+
+  const when = new Date(chat.lastMessageAt).toLocaleDateString("th-TH", {
+    day: "numeric",
+    month: "short",
+  });
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-zinc-200">
+      <button
+        type="button"
+        onClick={toggle}
+        className="flex w-full items-start gap-2 p-2.5 text-left hover:bg-zinc-50"
+      >
+        <span
+          className={`mt-0.5 inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-bold ${
+            chat.isUrgent
+              ? "border-orange-200 bg-orange-50 text-orange-800"
+              : "border-red-200 bg-red-50 text-red-800"
+          }`}
+        >
+          {chat.reason}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-bold text-zinc-800">
+            {chat.displayName || "ลูกค้า"}
+            {chat.topicTag && chat.topicTag !== "other" && (
+              <span className="ml-1 font-normal text-zinc-400">
+                · {chat.topicTag}
+              </span>
+            )}
+          </span>
+          <span className="mt-0.5 block truncate text-[11px] text-zinc-500">
+            {chat.preview || "—"}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-1 text-[10px] text-zinc-400">
+          {when}
+          <ChevronDown
+            className={`size-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+          />
+        </span>
+      </button>
+
+      {open && (
+        <div className="border-t border-zinc-100 bg-zinc-50/60 p-2.5">
+          {busy && transcript === null ? (
+            <div className="flex items-center gap-2 py-2 text-[11px] text-zinc-500">
+              <Loader2 className="size-3.5 animate-spin" />
+              กำลังเปิดแชท...
+            </div>
+          ) : (
+            <>
+              <div className="max-h-52 space-y-1.5 overflow-y-auto rounded-lg bg-white p-2">
+                {transcript?.map((l, i) => (
+                  <div
+                    key={i}
+                    className={`flex ${l.who === "customer" ? "justify-start" : "justify-end"}`}
+                  >
+                    <span
+                      className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-2 py-1 text-[11px] ${
+                        l.who === "customer"
+                          ? "bg-zinc-100 text-zinc-800"
+                          : l.who === "bot"
+                            ? "bg-[var(--color-brand-50)] text-zinc-800"
+                            : "bg-emerald-50 text-zinc-800"
+                      }`}
+                    >
+                      <span className="mr-1 text-[9px] font-bold uppercase text-zinc-400">
+                        {l.who === "customer"
+                          ? "ลูกค้า"
+                          : l.who === "bot"
+                            ? "บอท"
+                            : "คน"}
+                      </span>
+                      {l.body}
+                    </span>
+                  </div>
+                ))}
+                {transcript && transcript.length === 0 && (
+                  <p className="py-2 text-center text-[11px] text-zinc-400">
+                    (ไม่มีข้อความ)
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                disabled={!rawText}
+                onClick={() =>
+                  onAskClaude(rawText, {
+                    topic: chat.topicTag,
+                    reason: chat.reason,
+                  })
+                }
+                className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--color-brand-600)] px-3 py-2 text-xs font-bold text-white hover:bg-[var(--color-brand-700)] disabled:opacity-40"
+              >
+                <Wand2 className="size-3.5" />
+                ให้ Claude ช่วยแก้เคสนี้
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -297,10 +648,14 @@ function ChatBubble({
   role,
   content,
   businessTag,
+  templatesByKey,
+  onTemplateApplied,
 }: {
   role: "user" | "assistant";
   content: string;
   businessTag: string;
+  templatesByKey: Record<string, ReplyTemplateRow>;
+  onTemplateApplied: () => void;
 }) {
   if (role === "user") {
     return (
@@ -322,6 +677,15 @@ function ChatBubble({
           </span>
         )}
       </div>
+      {parsed.templates.map((t, i) => (
+        <TemplateProposalCard
+          key={`tpl-${i}`}
+          proposal={t}
+          businessTag={businessTag}
+          current={templatesByKey[t.key]?.text}
+          onApplied={onTemplateApplied}
+        />
+      ))}
       {parsed.faqs.map((f, i) => (
         <FaqProposalCard key={`faq-${i}`} proposal={f} businessTag={businessTag} />
       ))}
@@ -332,6 +696,77 @@ function ChatBubble({
           businessTag={businessTag}
         />
       ))}
+    </div>
+  );
+}
+
+// Claude proposed a change to one of the 7 main canned replies.  Shows the
+// "ก่อน → หลัง" diff and applies it to the live bot on confirm (CEO gates it).
+function TemplateProposalCard({
+  proposal,
+  businessTag,
+  current,
+  onApplied,
+}: {
+  proposal: TemplateProposal;
+  businessTag: string;
+  current?: string;
+  onApplied: () => void;
+}) {
+  const [applied, setApplied] = useState(false);
+  const [busy, startBusy] = useTransition();
+  const label = TEMPLATE_LABELS[proposal.key] ?? proposal.key;
+
+  function apply() {
+    startBusy(async () => {
+      try {
+        await saveReplyTemplate({
+          businessTag,
+          key: proposal.key,
+          text: proposal.text,
+        });
+        setApplied(true);
+        onApplied();
+        toast.success("เปลี่ยนคำตอบบอทแล้ว — ลูกค้าจะได้คำตอบใหม่ทันที");
+      } catch (e) {
+        toast.error((e as Error).message || "บันทึกไม่สำเร็จ");
+      }
+    });
+  }
+
+  return (
+    <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-3">
+      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-sky-800">
+        <Wand2 className="size-3.5" />
+        แก้คำตอบอัตโนมัติ
+        <span className="rounded bg-white px-1.5 py-0.5 text-[10px] normal-case text-zinc-600">
+          {label}
+        </span>
+      </div>
+      {current && current.trim() !== proposal.text.trim() && (
+        <div className="mb-2">
+          <p className="text-[11px] text-zinc-500">ตอนนี้บอทตอบว่า</p>
+          <p className="whitespace-pre-wrap rounded-lg bg-white/70 px-2 py-1.5 text-[13px] text-zinc-500 line-through decoration-zinc-300">
+            {current}
+          </p>
+          <div className="my-1 flex items-center justify-center text-zinc-400">
+            <ArrowRight className="size-4 rotate-90" />
+          </div>
+        </div>
+      )}
+      <p className="text-[11px] text-zinc-500">คำตอบใหม่</p>
+      <p className="mb-2 whitespace-pre-wrap rounded-lg bg-white px-2 py-1.5 text-sm text-zinc-900">
+        {proposal.text}
+      </p>
+      <button
+        type="button"
+        onClick={apply}
+        disabled={busy || applied}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-sky-700 disabled:opacity-40"
+      >
+        <Plus className="size-3.5" />
+        {applied ? "ใช้แล้ว" : busy ? "กำลังบันทึก..." : "ใช้คำตอบนี้เลย"}
+      </button>
     </div>
   );
 }

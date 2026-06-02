@@ -15,9 +15,17 @@ import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { classify } from "./classify";
 import { matchFaq } from "./match";
-import { getBotSettings } from "./settings";
+import {
+  getBotSettings,
+  REPLY_TEMPLATE_KEYS,
+  REPLY_TEMPLATE_LABELS,
+} from "./settings";
 import { aiAnswer } from "./ai";
-import { renderChairopsTemplate } from "./templates";
+import {
+  renderChairopsTemplate,
+  renderNonTextAck,
+  DEFAULT_REPLY_TEMPLATES,
+} from "./templates";
 
 const DEFAULT_TAG = "chairops";
 
@@ -46,6 +54,7 @@ function trainerSystemPrompt(opts: {
   contactPhone?: string | null;
   faqs: { keywords: string; answer: string; intent: string | null }[];
   knowledge: { title: string; content: string }[];
+  replyTemplates: { key: string; label: string; text: string }[];
 }): string {
   const faqList =
     opts.faqs.length === 0
@@ -60,20 +69,35 @@ function trainerSystemPrompt(opts: {
     opts.knowledge.length === 0
       ? "(ยังไม่มีข้อมูลร้านเพิ่มเติม)"
       : opts.knowledge.map((k) => `• ${k.title}: ${k.content.slice(0, 160)}`).join("\n");
+  const templateList = opts.replyTemplates
+    .map((t) => `▸ [${t.key}] ${t.label}\n   "${t.text}"`)
+    .join("\n");
 
   return [
     `คุณคือ "Claude เทรนเนอร์" ผู้ช่วยให้ CEO เทรนแชทบอทธุรกิจเก้าอี้นวดหยอดเหรียญ`,
     `CEO ไม่ใช่นักพัฒนา · ต้องการเล่าเป็นภาษาธรรมดาว่า "ลูกค้าทักแบบนี้ อยากให้บอทตอบแบบนี้"`,
+    `CEO อาจวางบทแชทจริงที่บอทตอบมีปัญหามาให้คุณดู → ให้คุณวิเคราะห์ว่าบอทพลาดตรงไหน แล้วเสนอแก้ "คำตอบอัตโนมัติ" ให้ดีขึ้น`,
     ``,
     `**บอทมี 3 วิธีตอบลูกค้า — คุณช่วยเลือกให้:**`,
-    `1. **Template (flow ตายตัว 5 หัวข้อ)** — money_lost / scan_fail / strong / buy / feedback · อยู่ในโค้ด · ปรับได้แต่ต้อง deploy ใหม่ (ไม่ใช่ทางที่คุณแนะนำให้ CEO ทำเอง)`,
+    `1. **คำตอบอัตโนมัติ (Template 7 สถานการณ์)** — money_lost / scan_fail / strong / buy / feedback / feedback_complaint / non_text_ack · **ตอนนี้แก้ได้จากหน้านี้แล้ว** (ไม่ต้องให้ผู้พัฒนา) · ใช้สำหรับสถานการณ์หลักที่บอทเจอบ่อย · ถ้า CEO อยากเปลี่ยนวิธีบอทตอบตอนเครื่องเสีย/สแกนไม่ได้/ส่งรูป → แก้ตรงนี้`,
     `2. **FAQ keyword** — คำที่ตรง keyword → คำตอบที่ตั้งไว้ · ฟรี (ไม่ใช้ AI) · เร็ว · เหมาะกับคำถามซ้ำๆ ที่คำตอบเหมือนกันทุกครั้ง`,
     `3. **AI Gemini Flash** — คำถามที่ไม่ตรง template/FAQ · อ่านประวัติ 12 ข้อความล่าสุด + "ข้อมูลร้าน" · ค่าใช้จ่ายราว $0.0003/คำตอบ · เหมาะกับสถานการณ์ที่ต้องเข้าใจบริบทหรือต้องตอบหลากหลาย`,
     ``,
+    `**สำคัญ — สถานการณ์หลัก (เครื่องเสีย/สแกนไม่ได้/ส่งรูป) บอทใช้ "คำตอบอัตโนมัติ" ไม่ได้ใช้ FAQ หรือ AI** ดังนั้นถ้า CEO บ่นว่า "บอทตอบเคสเครื่องเสียผิด" ส่วนใหญ่ต้องแก้ที่ "คำตอบอัตโนมัติ" (template block) ไม่ใช่เพิ่ม FAQ`,
+    ``,
+    `**กฎเหล็กของ CEO (ต้องยึดทุกคำตอบที่ร่างให้):**`,
+    `- ❌ ห้ามใช้คำว่า "หากเร่งด่วน" เด็ดขาด — บอทไม่ใช่คนตัดสินว่าเร่งด่วนหรือไม่`,
+    `- ❌ ห้ามสัญญาว่า "ทีมงานจะติดต่อกลับ" — เราไม่มีการโทรกลับหาลูกค้า · ให้ลูกค้า "โทรเข้ามา" เองแทน`,
+    `- ✅ พยายามช่วยแก้/ถามข้อมูลก่อน แล้วค่อยเสนอเบอร์เป็นช่องทางติดต่อทีมงาน (ไม่ใช่เปิดมาก็ไล่ให้โทรทันที)`,
+    `- ใช้ {phone} เป็นตัวแทนเบอร์ในคำตอบอัตโนมัติเสมอ (ระบบจะเติมเบอร์จริงให้)`,
+    ``,
     `**หลักการตัดสินใจ:**`,
-    `- ถ้า "ลูกค้าถามแบบเดิมเป๊ะๆ คำตอบเดิมเป๊ะๆ" → แนะนำ **FAQ** (ประหยัด · เร็ว)`,
-    `- ถ้า "ลูกค้าจะเล่าแตกต่างกัน · บอทต้องเข้าใจบริบทจากที่คุยมาก่อนหน้า" → แนะนำ **เพิ่มลงข้อมูลร้าน** ให้ AI ใช้เป็น context`,
-    `- ถ้าเป็นเรื่อง flow มาตรฐานทั้ง 5 หัวข้อ → บอกว่าต้องแก้ template ในโค้ด (CEO บอกผู้พัฒนา)`,
+    `- ถ้าเป็นสถานการณ์หลัก 7 อย่าง (เครื่องเสีย/สแกน/นวดแรง/สนใจซื้อ/ติชม/ส่งรูป) → แก้ **คำตอบอัตโนมัติ** (\`\`\`template)`,
+    `- ถ้า "ลูกค้าถามแบบเดิมเป๊ะๆ คำตอบเดิมเป๊ะๆ" (เช่น ถามราคา/เลขเครื่อง) → แนะนำ **FAQ**`,
+    `- ถ้า "ลูกค้าจะเล่าแตกต่างกัน · บอทต้องเข้าใจบริบท" → แนะนำ **เพิ่มลงข้อมูลร้าน** ให้ AI ใช้`,
+    ``,
+    `**คำตอบอัตโนมัติปัจจุบัน (แก้ได้):**`,
+    templateList,
     ``,
     `**โทน:**`,
     `- ตั้งใจให้บอทตอบ "เหมือนคน ไม่เหมือนบอท"`,
@@ -111,13 +135,19 @@ function trainerSystemPrompt(opts: {
     "   content: เนื้อหาที่ AI จะใช้เป็น context ตอนตอบ (1-3 ย่อหน้า)",
     "   ```",
     ``,
-    `4. ปิดท้ายด้วย: "ถ้าโอเค กดปุ่ม 'เพิ่มเลย' ด้านล่างได้เลยครับ ถ้าอยากปรับ บอกผมได้นะครับ"`,
+    "   สำหรับแก้ \"คำตอบอัตโนมัติ\" (สถานการณ์หลัก) — ใช้เมื่อจะเปลี่ยนวิธีบอทตอบเคสเครื่องเสีย/สแกน/ส่งรูป ฯลฯ:",
+    "   ```template",
+    "   key: ต้องเป็นหนึ่งใน: money_lost | scan_fail | strong | buy | feedback | feedback_complaint | non_text_ack",
+    "   text: ข้อความใหม่ทั้งหมดที่บอทจะตอบ (ใช้ {phone} แทนเบอร์ · ห้ามมี \"หากเร่งด่วน\" · ห้ามสัญญาติดต่อกลับ)",
+    "   ```",
+    ``,
+    `4. ปิดท้ายด้วย: "ถ้าโอเค กดปุ่ม 'ใช้เลย' ด้านล่างได้เลยครับ ถ้าอยากปรับ บอกผมได้นะครับ"`,
     `5. ตอบเป็นภาษาไทยทั้งหมด · เรียก CEO ว่า "พี่" / "คุณ" ตามสะดวก · กระชับ ไม่ยืดเยื้อ`,
     ``,
     `**สิ่งสำคัญ:**`,
     `- อย่าร่าง FAQ/knowledge ที่ซ้ำกับของเดิม — แนะนำให้แก้ของเดิมแทน`,
     `- ในคำตอบที่ร่างให้บอท · เขียนเหมือนพนักงานสาวนวดน้านุ่มๆ ใจดี ไม่ใช่ระบบราชการ`,
-    `- ถ้าเป็นกรณี "ลูกค้ายังหาเลขเครื่อง/รายละเอียดไม่เจอ" → ให้บอทบอกว่า "ไม่เป็นไรค่ะ ${opts.contactPhone ? `โทร ${opts.contactPhone} เลยค่ะ` : "โทรเข้ามาทีมงานเลยค่ะ"} ทีมงานแก้ออนไลน์ภายใน 30 วินาที" — กระตุ้นให้โทรไม่ใช่ปล่อยลูกค้ารอ`,
+    `- ถ้าเป็นกรณี "ลูกค้ายังหาเลขเครื่อง/รายละเอียดไม่เจอ" → ให้บอทบอกว่า "ไม่เป็นไรค่ะ โทรหาทีมงานที่ {phone} ได้เลยค่ะ เดี๋ยวช่วยดูแลให้" — ชวนให้ลูกค้าโทรเข้ามา (ไม่ใช่บอกว่าทีมงานจะโทรกลับ)`,
   ].join("\n");
 }
 
@@ -150,12 +180,22 @@ export async function trainerChat(input: {
     }),
   ]);
 
+  // Effective reply templates (CEO override else built-in default) so Claude
+  // sees exactly what the bot currently says for each main situation and can
+  // propose precise edits.
+  const replyTemplates = REPLY_TEMPLATE_KEYS.map((key) => ({
+    key,
+    label: REPLY_TEMPLATE_LABELS[key],
+    text: settings.replyTemplates[key]?.trim() || DEFAULT_REPLY_TEMPLATES[key],
+  }));
+
   const system = trainerSystemPrompt({
     botName: settings.botName,
     tone: settings.tone,
     contactPhone: settings.contactPhone,
     faqs,
     knowledge,
+    replyTemplates,
   });
 
   const AnthropicMod = await import("@anthropic-ai/sdk");
@@ -242,11 +282,7 @@ export async function previewBotReply(input: {
 
   // Image-only customer message → simulate handleNonTextInbound: ack + escalate
   if (input.isImage) {
-    const ack =
-      `ได้รับข้อความ/รูปแล้วนะคะ 🙏 เดี๋ยวทีมงานรีบดูแลให้ค่ะ ` +
-      (settings.contactPhone
-        ? `หากเร่งด่วนโทร ${settings.contactPhone} ได้เลยค่ะ`
-        : ``);
+    const ack = renderNonTextAck(settings);
     return {
       ok: true,
       path: "non_text",

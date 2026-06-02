@@ -21,7 +21,7 @@ import {
 } from "../send";
 import { topicLabel, INBOX_BUSINESSES } from "../business";
 import type { FlowImageTopic } from "./settings";
-import { renderChairopsTemplate as template, renderHotelTemplate, classifyHotelIntent, appendHotelCta } from "./templates";
+import { renderChairopsTemplate as template, renderHotelTemplate, classifyHotelIntent, appendHotelCta, renderNonTextAck } from "./templates";
 
 export interface RunBotInput {
   channel: {
@@ -354,9 +354,9 @@ export async function handleNonTextInbound(opts: RunBotInput): Promise<void> {
     .catch(() => {});
   const settings = await getBotSettings(channel.orgId, channel.businessTag ?? "");
   if (!settings.botEnabled || !opts.accessToken) return;
-  const ack =
-    `ได้รับข้อความ/รูปแล้วนะคะ 🙏 เดี๋ยวทีมงานรีบดูแลให้ค่ะ ` +
-    (settings.contactPhone ? `หากเร่งด่วนโทร ${settings.contactPhone} ได้เลยค่ะ` : ``);
+  // Editable from /inbox/bot ("ลูกค้าส่งรูป/สติกเกอร์/เสียง") — no longer
+  // hardcoded, and no longer says "หากเร่งด่วน" (CEO 2026-06-02).
+  const ack = renderNonTextAck(settings);
   const res = await sendByPlatform(channel.platform, {
     body: ack,
     recipientExternalId: opts.externalUserId,
