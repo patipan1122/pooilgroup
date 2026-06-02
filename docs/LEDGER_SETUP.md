@@ -2,6 +2,17 @@
 
 > Created during M0+M1 build (2026-06-02). Items below are stubbed in code with
 > `// TODO[ledger-secret]` and do NOT block the build — fill them in to activate.
+> Code is on branch `claude/ledger-module` · tsc 0 + `next build` green · NOT deployed.
+
+## ▶️ GO-LIVE ORDER (do in this order)
+1. **Merge `claude/ledger-module` → `setup`** (Pool prod auto-deploys from `setup`) — CEO authorizes the deploy.
+2. **Apply the migration** (§1 below) to Supabase — **without this NOTHING runs / can't be tested.** ← the #1 gate.
+3. **Set `LEDGER_CHANNEL_KEY` env** (AES key) + create **LINE OA** → paste channel secret/token (§3) → staff can photograph receipts in the LINE group.
+4. (optional now) Google OAuth/Drive, SlipOK key, TRCloud write-API (§3) — until then: originals on R2, slips via manual, export via CSV download.
+5. **Drop real brand files** (replace placeholders): `public/ledger/brand/logo.{svg|png}` + `mascot.{svg|png}` (PNG auto-preferred).
+6. **Runtime/user test** (only possible after step 2): /bigsolvebug runtime + have staff/accountant/CEO walk every flow → fix.
+
+---
 
 ## 1. Apply the migration
 - `supabase db push` (or run `supabase/migrations/20260602190000_ledger_module_init.sql`)
