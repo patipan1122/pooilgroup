@@ -19,11 +19,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  previewMaidCsv,
-  commitMaidCsv,
-  type PreviewRow,
-} from "./actions";
+import { previewMaidCsv, commitMaidCsv } from "./actions";
+import type { PreviewRow } from "./types";
 
 const KIND_TONE: Record<
   PreviewRow["kind"],

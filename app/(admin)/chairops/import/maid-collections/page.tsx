@@ -16,7 +16,7 @@ import { requireRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
 import { Card, CardBody } from "@/components/ui/card";
 import { MaidCsvShell } from "./maid-csv-shell";
-import { CSV_HEADER } from "./actions";
+import { CSV_HEADER } from "./types";
 
 export const dynamic = "force-dynamic";
 

@@ -32,55 +32,20 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { writeAudit } from "@/lib/chairops/audit/log";
-
-// ---------- CSV header contract ---------------------------------------------
-
-export const CSV_HEADER = [
-  "branchSlug",
-  "collectedAt",
-  "countedAmount",
-  "maidPhone",
-  "notes",
-  "slipUrl",
-] as const;
-
-const HEADER_LINE = CSV_HEADER.join(",");
-
-// ---------- types -----------------------------------------------------------
-
-export type RowKind =
-  | "ready" // will insert
-  | "dedup" // exact-ish match exists → skip
-  | "invalid"; // parse / validation failed
-
-export interface PreviewRow {
-  rowIndex: number; // 1-based after header
-  branchSlug: string;
-  collectedAt: string | null; // ISO "YYYY-MM-DD HH:mm"
-  countedAmount: number | null;
-  maidPhone: string | null;
-  notes: string | null;
-  slipUrl: string | null;
-  branchId: string | null;
-  branchName: string | null;
-  maidId: string | null;
-  maidLabel: string | null;
-  /** Why this row is invalid · empty when kind != "invalid". */
-  errors: string[];
-  kind: RowKind;
-  /** Set when kind === "dedup". */
-  dedupCollectionId?: string;
-}
-
-export interface PreviewResult {
-  ok: true;
-  rows: PreviewRow[];
-  counts: { ready: number; dedup: number; invalid: number; total: number };
-  /** Serialized rows, ready to POST back to commitMaidCsv. */
-  payload: string;
-}
-
-export type PreviewResponse = PreviewResult | { ok: false; error: string };
+// CSV header constant + types live in ./types so this "use server" file only
+// exports async functions. Vercel build blocked otherwise:
+//   "A 'use server' file can only export async functions, found object"
+// (deploy f2g76l7iu @ 2026-06-02 10:41:33 UTC · for /chairops/import/maid-collections).
+import {
+  CSV_HEADER,
+  HEADER_LINE,
+  type RowKind,
+  type PreviewRow,
+  type PreviewResult,
+  type PreviewResponse,
+  type CommitResult,
+  type CommitResponse,
+} from "./types";
 
 // ---------- minimal CSV parser ----------------------------------------------
 // Matches the same conventions as pos-ingest/actions.ts but stripped down:
@@ -465,14 +430,7 @@ export async function previewMaidCsv(
 }
 
 // ---------- commit action ---------------------------------------------------
-
-export interface CommitResult {
-  ok: true;
-  committed: number;
-  dedup: number;
-}
-
-export type CommitResponse = CommitResult | { ok: false; error: string };
+// CommitResult / CommitResponse moved to ./types · see header.
 
 /**
  * Server action consumed by the preview UI. Receives the `payload` string from
