@@ -39,6 +39,10 @@ export interface LedgerConfirmCardInput {
   vat?: number | null;
   /** Human-readable category name (suggested by AI), or null. */
   categoryName?: string | null;
+  /** Branch name the expense is filed under (optional). */
+  branchName?: string | null;
+  /** Payment method as read (cash|transfer|qr|credit_card|other), optional. */
+  paymentMethod?: string | null;
   /** Per-field confidence — drives the low-confidence warning + colour. */
   confidence?: LedgerOcrConfidence | null;
   /** True when Recheck flagged a math/format mismatch (subtotal+vat≠total, bad taxid…). */
@@ -49,6 +53,16 @@ export interface LedgerConfirmCardInput {
    * requires absolute https URIs, so the webhook should always pass this).
    */
   baseUrl?: string;
+  /**
+   * When true, the buttons emit LINE *postback* actions instead of URI links, so
+   * the staffer can act without leaving LINE. The webhook (Partition B) handles
+   * the postback data `ledger:confirm:<id>` / `ledger:edit:<id>`.
+   *
+   * GOLDEN RULE preserved: a "ยืนยัน" postback only marks the field-staff
+   * acknowledgement and routes to the accountant confirm flow — it never
+   * auto-posts the expense. Defaults to false (URI deep-links into the web pane).
+   */
+  usePostback?: boolean;
 }
 
 // ── LINE flex primitives (the subset we emit) ───────────────────────────────
@@ -75,12 +89,15 @@ type FlexBox = {
   cornerRadius?: string;
   backgroundColor?: string;
 };
+type FlexAction =
+  | { type: "uri"; label: string; uri: string }
+  | { type: "postback"; label: string; data: string; displayText?: string };
 type FlexButton = {
   type: "button";
   style: "primary" | "secondary" | "link";
   height?: "sm" | "md";
   color?: string;
-  action: { type: "uri"; label: string; uri: string };
+  action: FlexAction;
 };
 type FlexSeparator = { type: "separator"; margin?: string; color?: string };
 type FlexComponent = FlexText | FlexBox | FlexButton | FlexSeparator;
@@ -134,6 +151,28 @@ function fmtDate(iso?: string | null): string {
   });
 }
 
+const PAYMENT_LABEL: Record<string, string> = {
+  cash: "เงินสด",
+  transfer: "โอน",
+  qr: "QR พร้อมเพย์",
+  credit_card: "บัตรเครดิต",
+  other: "อื่น ๆ",
+};
+function fmtPayment(m?: string | null): string | null {
+  if (!m) return null;
+  return PAYMENT_LABEL[m] ?? m;
+}
+
+/** Lowest confidence across the key fields → drives the "ตรวจ" nudge on the card. */
+function lowestConfidence(c?: LedgerOcrConfidence | null): number | null {
+  if (!c) return null;
+  const scores = [c.total, c.vendor, c.doc_date].filter(
+    (v): v is number => typeof v === "number",
+  );
+  if (!scores.length) return null;
+  return Math.min(...scores);
+}
+
 /** One "label · value" row, with the value tinted by its confidence. */
 function fieldRow(label: string, value: string, conf?: number): FlexBox {
   return {
@@ -159,11 +198,17 @@ function fieldRow(label: string, value: string, conf?: number): FlexBox {
  * Build the "บันทึกแล้ว — ยืนยัน/แก้ไข" flex message.
  *
  * Returns a plain object ready for LINE `messages: [...]`. The webhook (Partition
- * B) is responsible for pushing it. Deep-links target the web review pane:
- *   ยืนยัน → /ledger/expenses?confirm=<id>   (accountant taps; never auto-posts)
- *   แก้ไข  → /ledger/expenses?edit=<id>
- * (Per the golden rule, even the "ยืนยัน" button only OPENS the confirm flow —
- *  a human still presses confirm in the review pane.)
+ * B) is responsible for pushing it.
+ *
+ * Two action modes (set `usePostback`):
+ *   • URI (default) → deep-link the web review pane
+ *       ยืนยัน → /ledger/expenses?confirm=<id>
+ *       แก้ไข  → /ledger/expenses?edit=<id>
+ *   • postback → act inside LINE (webhook handles `ledger:confirm:<id>` /
+ *       `ledger:edit:<id>`), for when the field staff shouldn't leave the chat.
+ *
+ * Per the GOLDEN RULE, even the "ยืนยัน" action only OPENS / routes the confirm
+ * flow to an accountant — it never auto-posts the expense.
  */
 export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMessage {
   const {
@@ -174,14 +219,36 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
     total,
     vat,
     categoryName,
+    branchName,
+    paymentMethod,
     confidence,
     needsReview,
     baseUrl = "",
+    usePostback = false,
   } = input;
 
   const base = baseUrl.replace(/\/+$/, "");
-  const confirmUri = `${base}/ledger/expenses?confirm=${encodeURIComponent(expenseId)}`;
-  const editUri = `${base}/ledger/expenses?edit=${encodeURIComponent(expenseId)}`;
+  const payment = fmtPayment(paymentMethod);
+
+  // Button actions: postback (act inside LINE) or URI (open the web review pane).
+  // Either way confirm is an explicit human tap that routes to the accountant
+  // confirm flow — NEVER an auto-post (golden rule).
+  const confirmAction: FlexAction = usePostback
+    ? {
+        type: "postback",
+        label: "ยืนยัน",
+        data: `ledger:confirm:${expenseId}`,
+        displayText: "ยืนยันใบเสร็จนี้",
+      }
+    : { type: "uri", label: "ยืนยัน", uri: `${base}/ledger/expenses?confirm=${encodeURIComponent(expenseId)}` };
+  const editAction: FlexAction = usePostback
+    ? {
+        type: "postback",
+        label: "แก้ไข",
+        data: `ledger:edit:${expenseId}`,
+        displayText: "ขอแก้ไขใบเสร็จนี้",
+      }
+    : { type: "uri", label: "แก้ไข", uri: `${base}/ledger/expenses?edit=${encodeURIComponent(expenseId)}` };
 
   const bodyContents: FlexComponent[] = [
     // Big amount line.
@@ -210,13 +277,16 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
       contents: [
         fieldRow("ร้านค้า", vendor ?? "—", confidence?.vendor),
         fieldRow("วันที่", fmtDate(docDate), confidence?.doc_date),
-        fieldRow("หมวด", categoryName ?? "ยังไม่จัดหมวด"),
+        fieldRow("หมวด", categoryName ?? "ยังไม่จัดหมวด", confidence?.category),
+        ...(branchName ? [fieldRow("สาขา", branchName)] : []),
+        ...(payment ? [fieldRow("ชำระโดย", payment, confidence?.payment_method)] : []),
         ...(vat != null && vat > 0 ? [fieldRow("VAT", fmtTHB(vat))] : []),
       ],
     },
   ];
 
   // Recheck / low-confidence banner.
+  const lowConf = lowestConfidence(confidence);
   if (needsReview) {
     bodyContents.push({
       type: "box",
@@ -229,6 +299,26 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
         {
           type: "text",
           text: "⚠️ ตรวจเลขก่อนยืนยัน — ยอดอาจไม่ตรง",
+          size: "sm",
+          weight: "bold",
+          color: COLOR.warn,
+          wrap: true,
+        },
+      ],
+    });
+  } else if (lowConf != null && lowConf < 0.6) {
+    // No math error, but AI was unsure on a key field → soft nudge to eyeball it.
+    bodyContents.push({
+      type: "box",
+      layout: "vertical",
+      margin: "lg",
+      paddingAll: "10px",
+      cornerRadius: "8px",
+      backgroundColor: COLOR.warnBg,
+      contents: [
+        {
+          type: "text",
+          text: "👀 AI ไม่ค่อยมั่นใจบางช่อง — ลองตรวจก่อนยืนยัน",
           size: "sm",
           weight: "bold",
           color: COLOR.warn,
@@ -276,13 +366,13 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
             style: "primary",
             height: "sm",
             color: COLOR.brand,
-            action: { type: "uri", label: "ยืนยัน", uri: confirmUri },
+            action: confirmAction,
           },
           {
             type: "button",
             style: "secondary",
             height: "sm",
-            action: { type: "uri", label: "แก้ไข", uri: editUri },
+            action: editAction,
           },
         ],
       },

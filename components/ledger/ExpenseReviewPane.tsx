@@ -19,6 +19,8 @@ import {
   Save,
   Ban,
   Loader2,
+  Sparkles,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
@@ -151,10 +153,19 @@ export function ExpenseReviewPane({
     null,
   );
 
-  const conf = expense.ocrConfidence ?? {};
+  const conf = useMemo(() => expense.ocrConfidence ?? {}, [expense.ocrConfidence]);
   const findings = useMemo(() => runRecheck(draft), [draft]);
   const hasError = findings.some((f) => f.level === "error");
   const locked = readOnly || expense.status === "locked" || expense.status === "void";
+
+  // Overall AI confidence = mean of per-field scores (null if AI didn't read it).
+  const overallConf = useMemo(() => {
+    const vals = Object.values(conf).filter(
+      (v): v is number => typeof v === "number" && !Number.isNaN(v),
+    );
+    if (vals.length === 0) return null;
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
+  }, [conf]);
 
   function set<K extends keyof ExpenseDraft>(k: K, v: ExpenseDraft[K]) {
     setDraft((d) => ({ ...d, [k]: v }));
@@ -213,9 +224,35 @@ export function ExpenseReviewPane({
         <StatusBadge status={expense.status} />
       </div>
 
+      {/* AI confidence / needs-review banner — บัญชีเห็นทันทีว่า AI มั่นใจแค่ไหน */}
+      {expense.status === "draft" && (overallConf != null || expense.needsReview) && (
+        <div
+          className={cn(
+            "flex items-center gap-2 rounded-xl border px-3 py-2 text-sm",
+            expense.needsReview || (overallConf != null && overallConf < 0.6)
+              ? "border-rose-200 bg-rose-50 text-rose-800"
+              : overallConf != null && overallConf < 0.85
+                ? "border-amber-200 bg-amber-50 text-amber-800"
+                : "border-emerald-200 bg-emerald-50 text-emerald-800",
+          )}
+        >
+          <Sparkles className="size-4 shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1">
+            {expense.needsReview
+              ? "AI ไม่มั่นใจบางช่อง — โปรดตรวจก่อนยืนยัน"
+              : overallConf != null && overallConf >= 0.85
+                ? "AI อ่านได้ครบ — ตรวจแล้วกดยืนยันได้เลย"
+                : "AI อ่านได้บางส่วน — ตรวจช่องที่มีสีเหลือง/แดง"}
+          </span>
+          {overallConf != null && (
+            <ConfidenceTag score={overallConf} showLabel className="shrink-0" />
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
-        {/* รูปใบเสร็จ */}
-        <div>
+        {/* รูปใบเสร็จ (sticky บนจอใหญ่ — เลื่อนฟอร์มแล้วรูปยังอยู่) */}
+        <div className="lg:sticky lg:top-20 lg:self-start">
           <ReceiptThumb
             thumbUrl={expense.thumbUrl}
             originalUrl={expense.originalUrl}
@@ -378,6 +415,8 @@ export function ExpenseReviewPane({
       {/* Recheck */}
       {findings.length > 0 && (
         <div
+          role={hasError ? "alert" : "status"}
+          aria-live={hasError ? "assertive" : "polite"}
           className={cn(
             "space-y-1 rounded-xl border p-3 text-sm",
             hasError
@@ -400,6 +439,8 @@ export function ExpenseReviewPane({
       {/* ผลลัพธ์การบันทึก */}
       {msg && (
         <div
+          role="status"
+          aria-live="polite"
           className={cn(
             "flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm",
             msg.kind === "ok"
@@ -416,45 +457,50 @@ export function ExpenseReviewPane({
         </div>
       )}
 
-      {/* Actions — ห้าม auto-post: ต้องกดยืนยันเอง */}
+      {/* Actions — ห้าม auto-post: ต้องกดยืนยันเอง.
+          Sticky bottom bar so the confirm button is always reachable on phones. */}
       {!locked && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-3">
-          <Button
-            variant="primary"
-            disabled={pending || hasError}
-            onClick={() => handle(onConfirm, "ยืนยันแล้ว · บันทึกเป็น 'ยืนยันแล้ว'")}
-            title={hasError ? "แก้ยอดที่ไม่ตรงก่อนยืนยัน" : undefined}
-          >
-            {pending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <CheckCircle2 className="size-4" />
-            )}
-            ยืนยัน
-          </Button>
-          <Button
-            variant="outline"
-            disabled={pending}
-            onClick={() => handle(onSave, "บันทึกร่างแล้ว")}
-          >
-            <Save className="size-4" />
-            บันทึกร่าง
-          </Button>
-          <Button
-            variant="ghost"
-            disabled={pending}
-            onClick={handleVoid}
-            className="ml-auto text-rose-600 hover:bg-rose-50"
-          >
-            <Ban className="size-4" />
-            ยกเลิกใบนี้
-          </Button>
+        <div className="sticky bottom-0 -mx-4 border-t border-zinc-100 bg-white/95 px-4 pb-1 pt-3 backdrop-blur sm:-mx-6 sm:px-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="primary"
+              disabled={pending || hasError}
+              onClick={() => handle(onConfirm, "ยืนยันแล้ว · บันทึกเป็น 'ยืนยันแล้ว'")}
+              title={hasError ? "แก้ยอดที่ไม่ตรงก่อนยืนยัน" : undefined}
+              className="flex-1 sm:flex-none"
+            >
+              {pending ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <CheckCircle2 className="size-4" aria-hidden />
+              )}
+              ยืนยัน
+            </Button>
+            <Button
+              variant="outline"
+              disabled={pending}
+              onClick={() => handle(onSave, "บันทึกร่างแล้ว")}
+            >
+              <Save className="size-4" aria-hidden />
+              บันทึกร่าง
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={pending}
+              onClick={handleVoid}
+              className="ml-auto text-rose-600 hover:bg-rose-50"
+            >
+              <Ban className="size-4" aria-hidden />
+              ยกเลิก
+            </Button>
+          </div>
+          <p className="mt-2 flex items-center gap-1 text-[11px] text-zinc-400">
+            <ShieldCheck className="size-3.5" aria-hidden />
+            {hasError
+              ? "ยอดไม่ตรง — แก้ให้ถูกก่อนจึงจะกด “ยืนยัน” ได้"
+              : "ระบบไม่บันทึกอัตโนมัติ — รายการเป็น “ร่าง” จนกว่าจะกดยืนยันเอง"}
+          </p>
         </div>
-      )}
-      {hasError && !locked && (
-        <p className="text-xs text-rose-600">
-          * ยอดไม่ตรง — แก้ให้ถูกก่อนจึงจะกด &quot;ยืนยัน&quot; ได้
-        </p>
       )}
     </div>
   );

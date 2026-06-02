@@ -1,25 +1,98 @@
 // LedgerLine — LINE Mini App (LIFF) entry · /liff/ledger
 //
-// Phone-first capture+confirm for front-line staff: take/upload a receipt photo
-// → it's parsed by AI (/api/ledger/ocr) → staff eyeballs the read-back fields →
-// edits if wrong → confirms (POST /api/ledger/expenses). The expense is created
-// as status=draft (NEVER auto-post — an accountant still finalises it later in
-// the web review pane); this LIFF flow just speeds up first capture from the field.
+// Phone-first capture+confirm for front-line staff (the "Bainy in LINE" flow):
+// snap/upload a receipt photo → AI reads it (/api/ledger/ocr) → staff eyeballs
+// the read-back fields → edits if wrong → confirms. The expense is created
+// status=draft (GOLDEN RULE — NEVER auto-post; an accountant finalises it later
+// in the web review pane). This LIFF flow just speeds first capture from the field.
 //
-// Auth: the /liff layout's LiffBootstrap auto-logs-in via the verified LINE
-// id_token (same as ChairOps/ClawFleet). This page is a thin server shell; all
-// interaction lives in the client capture component, which talks ONLY to the
-// /api/ledger/* HTTP routes (Partition B) — it never imports server code, so it
-// stays self-contained and compiles even before those routes land.
+// This is a thin SERVER shell: it resolves the signed-in user's org companies
+// (+ branches + categories of the default company) so the client capture app can
+// post against the real API (which is company-scoped). Auth comes from the /liff
+// layout's LiffBootstrap (verified LINE id_token → Pool session), same as
+// ChairOps / HotelBook. All interaction lives in the client capture component,
+// which talks ONLY to the /api/ledger/* HTTP routes.
 
+import Link from "next/link";
+import { getSession } from "@/lib/auth/session";
+import { listCompanies, listBranches, listCategories } from "@/lib/ledger/queries";
 import { LedgerCaptureApp } from "./_components/ledger-capture-app";
 
 export const dynamic = "force-dynamic";
 
-export default function LedgerLiffPage() {
+export default async function LedgerLiffPage() {
+  const session = await getSession();
+
+  // Not signed in yet → LiffBootstrap (in the /liff layout) auto-logs-in via the
+  // verified LINE id_token and re-renders. Show a calm waiting state meanwhile.
+  if (!session) {
+    return (
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
+        <div className="size-12 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
+        <div className="space-y-1">
+          <p className="text-base font-semibold text-zinc-800">กำลังเข้าสู่ระบบ</p>
+          <p className="text-sm text-zinc-500">
+            ถ้าค้างนาน · บัญชีนี้อาจยังไม่ได้เปิดใช้ · ติดต่อออฟฟิศ
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const orgId = session.user.org_id;
+
+  // Resolve companies (+ default company's branches & categories) for the picker.
+  let companies: Array<{ id: string; code: string; name: string }> = [];
+  let branches: Array<{ id: string; code: string; name: string }> = [];
+  let categories: Array<{ id: string; name: string; color: string | null }> = [];
+  try {
+    companies = await listCompanies(orgId);
+    const defaultCompanyId = companies[0]?.id;
+    if (defaultCompanyId) {
+      [branches, categories] = await Promise.all([
+        listBranches(orgId, defaultCompanyId),
+        listCategories(orgId, defaultCompanyId).then((cs) =>
+          cs.map((c) => ({ id: c.id, name: c.name, color: c.color })),
+        ),
+      ]);
+    }
+  } catch {
+    // DB hiccup → let the app render with empty pickers (manual entry still works
+    // once a company exists). No dead end.
+  }
+
+  // No company configured for this org yet → friendly setup nudge (not a crash).
+  if (companies.length === 0) {
+    return (
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
+        <div className="grid size-14 place-items-center rounded-2xl bg-amber-100 text-2xl">
+          🏢
+        </div>
+        <div className="space-y-1">
+          <p className="text-base font-semibold text-zinc-800">
+            ยังไม่ได้ตั้งค่าบริษัท
+          </p>
+          <p className="text-sm text-zinc-500">
+            ให้ฝ่ายบัญชีเปิดบริษัทในเมนู “ตั้งค่า” ของ LedgerLine ก่อน แล้วค่อยถ่ายใบเสร็จ
+          </p>
+        </div>
+        <Link
+          href="/ledger/settings"
+          className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white active:bg-blue-700"
+        >
+          ไปหน้าตั้งค่า
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-md">
-      <LedgerCaptureApp />
+      <LedgerCaptureApp
+        companies={companies}
+        initialBranches={branches}
+        initialCategories={categories}
+      />
     </div>
   );
 }

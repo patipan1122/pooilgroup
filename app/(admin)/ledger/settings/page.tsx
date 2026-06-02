@@ -53,7 +53,7 @@ export default async function LedgerSettingsPage({
           />
         </div>
         <LineChannelCard companyName={scope.companies.find((c) => c.id === scope.companyId)?.name ?? ""} />
-        <ExportConfigCard />
+        <ExportConfigCard companyId={scope.companyId} />
       </div>
     </div>
   );

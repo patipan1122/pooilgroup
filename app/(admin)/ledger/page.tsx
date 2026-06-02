@@ -128,7 +128,7 @@ export default async function LedgerHomePage({
             <Link
               key={t.label}
               href={buildHref(t.href)}
-              className={`flex min-h-[110px] flex-col justify-between gap-2 rounded-2xl bg-white p-4 ring-1 transition-all hover:shadow-md ${toneRing[t.tone]}`}
+              className={`flex min-h-[110px] flex-col justify-between gap-2 rounded-2xl bg-white p-4 ring-1 transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-400)] ${toneRing[t.tone]}`}
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-zinc-500">

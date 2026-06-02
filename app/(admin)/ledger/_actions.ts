@@ -15,6 +15,9 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { recheckReceipt } from "@/lib/ledger/recheck";
+import { listExpenses } from "@/lib/ledger/queries";
+import { buildTrcloudCsv } from "@/lib/ledger/trcloud-export";
+import { audit } from "@/lib/audit/log";
 
 export type ActionResult = { ok: boolean; error?: string };
 
@@ -304,4 +307,87 @@ export async function deleteBudget(id: string): Promise<ActionResult> {
   });
   revalidatePath("/ledger/budgets");
   return { ok: true };
+}
+
+// ===================== Export → TRCloud CSV =====================
+// Real CSV export of CONFIRMED+LOCKED expenses for a company/period. Records a
+// LedgerExportBatch + audit row, then returns the CSV body so the client can
+// trigger a browser download. Column shape is provisional (buildTrcloudCsv) —
+// see docs/LEDGER_SETUP.md. NEVER touches drafts (only "real" spend is exported).
+const exportSchema = z.object({
+  companyId: z.string().uuid(),
+  period: z.string().regex(/^\d{4}-\d{2}$/, "งวดต้องเป็น YYYY-MM"),
+});
+
+export type ExportResult =
+  | { ok: true; csv: string; filename: string; rows: number }
+  | { ok: false; error: string };
+
+export async function exportConfirmedCsv(raw: unknown): Promise<ExportResult> {
+  const parsed = exportSchema.safeParse(raw);
+  if (!parsed.success)
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const { companyId, period } = parsed.data;
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+
+  // Scope check: company belongs to org.
+  const company = await prisma.company.findFirst({
+    where: { id: companyId, orgId },
+    select: { id: true, code: true },
+  });
+  if (!company) return { ok: false, error: "ไม่พบบริษัท" };
+
+  // Only confirmed/locked rows are real spend → exportable.
+  const expenses = await listExpenses({
+    orgId,
+    companyId,
+    status: ["confirmed", "locked"],
+    period,
+    take: 5000,
+  });
+  if (expenses.length === 0) {
+    return { ok: false, error: `งวด ${period} ยังไม่มีรายการที่ยืนยันแล้ว` };
+  }
+
+  // Resolve TRCloud account codes per category for the CSV mapping.
+  const categories = await prisma.ledgerCategory.findMany({
+    where: { orgId, companyId },
+    select: { id: true, trcloudAccCode: true },
+  });
+  const accCodeByCategory: Record<string, string | null> = {};
+  for (const c of categories) accCodeByCategory[c.id] = c.trcloudAccCode;
+
+  const { csv, rows } = buildTrcloudCsv(expenses, accCodeByCategory);
+
+  // Record the batch (audit trail of what left the system, when, by whom).
+  try {
+    const batch = await prisma.ledgerExportBatch.create({
+      data: {
+        orgId,
+        companyId,
+        period,
+        format: "csv",
+        status: "done",
+        rows,
+        exportedAt: new Date(),
+        createdBy: session.user.id,
+      },
+      select: { id: true },
+    });
+    await audit({
+      orgId,
+      userId: session.user.id,
+      action: "LEDGER_EXPENSE_EXPORTED",
+      resourceType: "ledger_export_batch",
+      resourceId: batch.id,
+      diff: { new: { period, rows, format: "csv" } },
+    });
+  } catch (err) {
+    // The CSV is still useful even if batch logging hiccups — don't block it.
+    console.error("[ledger:exportConfirmedCsv] batch log failed", err);
+  }
+
+  const filename = `ledger-${company.code}-${period}.csv`;
+  return { ok: true, csv, filename, rows };
 }

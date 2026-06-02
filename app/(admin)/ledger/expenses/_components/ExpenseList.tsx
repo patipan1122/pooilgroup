@@ -7,7 +7,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Loader2, CheckCircle2 } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import type { ExpenseRow, LedgerStatusValue } from "@/components/ledger/_kit/types";
@@ -108,15 +108,17 @@ export function ExpenseList({
       {/* Sticky filter header */}
       <div className="sticky top-14 z-20 space-y-2 rounded-t-2xl border-b border-zinc-200 bg-white p-3 sm:top-16">
         {/* Status tabs */}
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1" role="tablist" aria-label="กรองตามสถานะ">
           {STATUS_TABS.map((t) => {
             const active = (status ?? "") === t.value;
             return (
               <button
                 key={t.value || "all"}
+                role="tab"
+                aria-selected={active}
                 onClick={() => setStatus(t.value)}
                 className={
-                  "rounded-full px-2.5 py-1 text-xs font-medium transition-colors " +
+                  "rounded-full px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-300)] " +
                   (active
                     ? "bg-[var(--color-brand-600)] text-white"
                     : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200")
@@ -196,7 +198,11 @@ export function ExpenseList({
             </button>
           </div>
         )}
-        {msg && <p className="text-xs text-emerald-700">{msg}</p>}
+        {msg && (
+          <p className="text-xs text-emerald-700" role="status" aria-live="polite">
+            {msg}
+          </p>
+        )}
       </div>
 
       {/* List */}
@@ -232,11 +238,22 @@ export function ExpenseList({
                   }
                 >
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-zinc-800">
-                      {r.vendor || "ไม่ระบุผู้ขาย"}
+                    <div className="flex items-center gap-1.5">
+                      {isDraft && r.needsReview && (
+                        <AlertTriangle
+                          className="size-3.5 shrink-0 text-amber-500"
+                          aria-label="ต้องตรวจ"
+                        />
+                      )}
+                      <span className="truncate text-sm font-medium text-zinc-800">
+                        {r.vendor || "ไม่ระบุผู้ขาย"}
+                      </span>
                     </div>
                     <div className="flex items-center gap-1.5 truncate text-xs text-zinc-400">
                       <span className="font-mono">{r.docCode}</span>
+                      {r.docDate && (
+                        <span className="tabular-nums">· {r.docDate.slice(5)}</span>
+                      )}
                       {r.categoryName && (
                         <Badge tone="neutral" className="text-[10px]">
                           {r.categoryName}

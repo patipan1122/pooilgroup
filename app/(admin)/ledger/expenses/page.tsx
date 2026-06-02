@@ -12,6 +12,7 @@ import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
 import { listExpenses, getExpense, listCategories } from "../_data";
 import { ExpenseList } from "./_components/ExpenseList";
 import { ExpensePaneClient } from "./_components/ExpensePaneClient";
+import { UploadReceiptButton } from "./_components/UploadReceiptButton";
 import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
 
 export const dynamic = "force-dynamic";
@@ -88,6 +89,13 @@ export default async function ExpensesPage({
         title="รายจ่าย"
         subtitle={`${rows.length} รายการ`}
         scope={scope}
+        right={
+          <UploadReceiptButton
+            companyId={scope.companyId}
+            branchId={scope.branchId}
+            baseParams={baseParams.toString()}
+          />
+        }
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
@@ -122,17 +130,30 @@ export default async function ExpensesPage({
               branches={scope.branches}
             />
           ) : (
-            <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
-              <div className="text-4xl">🧾</div>
-              <p className="text-sm text-zinc-500">
-                เลือกใบเสร็จจากซ้ายเพื่อตรวจและยืนยัน
-              </p>
-              <Link
-                href={`/ledger/expenses?${baseParams.toString()}${baseParams.toString() ? "&" : ""}status=draft`}
-                className="text-sm font-medium text-[var(--color-brand-600)] hover:underline"
-              >
-                ดูเฉพาะที่รอยืนยัน →
-              </Link>
+            <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 px-6 text-center">
+              <div className="grid size-16 place-items-center rounded-2xl bg-[var(--color-brand-50)] text-3xl">
+                🧾
+              </div>
+              <div className="space-y-1">
+                <p className="text-base font-semibold text-zinc-800">
+                  {rows.length === 0
+                    ? "ยังไม่มีใบเสร็จในบริษัทนี้"
+                    : "เลือกใบเสร็จเพื่อตรวจและยืนยัน"}
+                </p>
+                <p className="text-sm text-zinc-500">
+                  {rows.length === 0
+                    ? "อัปโหลดใบเสร็จด้านบน หรือถ่ายในกลุ่ม LINE — AI จะอ่านให้แล้วรอบัญชียืนยัน"
+                    : "คลิกรายการจากซ้าย — รูป + ค่าที่ AI อ่านได้จะขึ้นตรงนี้ให้ตรวจก่อนยืนยัน"}
+                </p>
+              </div>
+              {rows.length > 0 && (
+                <Link
+                  href={`/ledger/expenses?${baseParams.toString()}${baseParams.toString() ? "&" : ""}status=draft`}
+                  className="text-sm font-medium text-[var(--color-brand-600)] hover:underline"
+                >
+                  ดูเฉพาะที่รอยืนยัน →
+                </Link>
+              )}
             </div>
           )}
         </div>
