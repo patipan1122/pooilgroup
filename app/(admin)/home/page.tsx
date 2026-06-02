@@ -325,6 +325,7 @@ export default async function HomePage() {
                 slug="fuelos"
                 enabled={moduleEnabled.fuelos ?? true}
                 landingPath="/fuelos"
+                externalUrl="https://pooil-fuel.vercel.app"
               />
             )}
           </div>
@@ -466,14 +467,18 @@ function ModuleCard({
   slug,
   enabled,
   landingPath,
+  externalUrl,
 }: {
   slug: keyof typeof MODULES;
   enabled: boolean;
   landingPath: string;
+  externalUrl?: string;
 }) {
   const m = MODULES[slug];
-  const isActive = enabled && m.status === "active";
-  const isComingSoon = m.status === "coming_soon" || !enabled;
+  // externalUrl = โปรแกรมแยก (คนละเว็บ เช่น pooil-fuel) → คลิกได้เลย เปิดแท็บใหม่
+  const isExternal = !!externalUrl;
+  const isActive = isExternal || (enabled && m.status === "active");
+  const isComingSoon = !isExternal && (m.status === "coming_soon" || !enabled);
 
   const cardBase =
     "relative group rounded-3xl border-2 bg-white p-6 sm:p-7 transition-all overflow-hidden";
@@ -526,7 +531,7 @@ function ModuleCard({
         <div className="mt-6 pt-5 border-t border-zinc-100 flex items-center justify-between">
           {isActive ? (
             <span className="inline-flex items-center gap-1.5 font-bold text-[var(--color-brand-700)] group-hover:text-[var(--color-brand-800)]">
-              เข้าโปรแกรม
+              {isExternal ? "เปิดโปรแกรม" : "เข้าโปรแกรม"}
               <ArrowUpRight className="size-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
             </span>
           ) : (
@@ -539,6 +544,13 @@ function ModuleCard({
     </>
   );
 
+  if (isExternal) {
+    return (
+      <a href={externalUrl} target="_blank" rel="noreferrer" className={`${cardBase} ${cardActive}`}>
+        {inner}
+      </a>
+    );
+  }
   if (isActive) {
     return (
       <Link href={landingPath} className={`${cardBase} ${cardActive}`}>
