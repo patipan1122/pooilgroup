@@ -2,7 +2,7 @@
 // Real data, org+company(+branch) scoped, current month.
 import Link from "next/link";
 import { Receipt, FileClock, CheckCircle2, Wallet } from "lucide-react";
-import { requireSession } from "@/lib/auth/session";
+import { requireRole } from "@/lib/auth/session";
 import { resolveScope } from "./_scope";
 import { LedgerHeader, NoCompanyState } from "./_components/LedgerHeader";
 import { expenseSummary, listExpensesSummary, spendByCategory } from "./_data";
@@ -21,7 +21,18 @@ export default async function LedgerHomePage({
 }: {
   searchParams: Promise<{ company?: string; branch?: string }>;
 }) {
-  const session = await requireSession();
+  // Page-level role gate (same financial-view tier as the dashboard nav policy).
+  // The home KPI tiles surface company-wide financials (posted total, confirmed
+  // count, spend-by-category) → front-line roles (staff/driver/branch_manager/
+  // program_admin) must not see them. Layout assertModuleEnabled only checks the
+  // module grant, not the role, so we gate here like dashboard/settings/budgets.
+  const session = await requireRole(
+    "super_admin",
+    "org_admin",
+    "admin",
+    "area_manager",
+    "viewer",
+  );
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);
 
@@ -74,7 +85,10 @@ export default async function LedgerHomePage({
       href: "/ledger/dashboard",
     },
     {
-      label: "ทั้งหมดในระบบ",
+      // Per-company total (scope is one companyId) — NOT org-wide. The module
+      // has no cross-company aggregation yet, so label it per-company to avoid
+      // a CEO running 2 companies reading this as an org-wide figure.
+      label: "ทั้งหมดในบริษัทนี้",
       value: summary.totalCount,
       unit: "ใบ",
       icon: Receipt,

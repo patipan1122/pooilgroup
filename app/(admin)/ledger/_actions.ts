@@ -229,10 +229,18 @@ export async function voidExpense(id: string): Promise<ActionResult> {
 }
 
 /** Bulk-confirm draft rows that already pass recheck (used by the list toolbar).
- *  Accountant-tier only — each row is the financial "post" event. */
-export async function bulkConfirm(ids: string[]): Promise<ActionResult & { confirmed?: number; skipped?: number }> {
+ *  Accountant-tier only — each row is the financial "post" event.
+ *  REQUIRES companyId: the id array is client-supplied, so without a company
+ *  filter an accountant viewing Company A could pass draft ids belonging to
+ *  Company B in the same org and confirm them (cross-company write). Every other
+ *  confirm/void/save path scopes by companyId — this one must too. */
+export async function bulkConfirm(
+  ids: string[],
+  companyId: string,
+): Promise<ActionResult & { confirmed?: number; skipped?: number }> {
   if (!Array.isArray(ids) || ids.length === 0)
     return { ok: false, error: "ไม่ได้เลือกรายการ" };
+  if (!companyId) return { ok: false, error: "ไม่ได้ระบุบริษัท" };
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
@@ -240,8 +248,17 @@ export async function bulkConfirm(ids: string[]): Promise<ActionResult & { confi
     return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลยืนยันได้" };
   }
 
+  // Confirm the company belongs to the caller's org before trusting it as a
+  // scope filter (mirrors exportConfirmedCsv / upsertBudget company checks).
+  const company = await prisma.company.findFirst({
+    where: { id: companyId, orgId: session.user.org_id },
+    select: { id: true },
+  });
+  if (!company) return { ok: false, error: "ไม่พบบริษัท" };
+
   const rows = await prisma.ledgerExpense.findMany({
-    where: { id: { in: ids }, orgId: session.user.org_id, status: "draft" },
+    // Scope by companyId too — never confirm rows outside the selected company.
+    where: { id: { in: ids }, orgId: session.user.org_id, companyId, status: "draft" },
   });
 
   let confirmed = 0;

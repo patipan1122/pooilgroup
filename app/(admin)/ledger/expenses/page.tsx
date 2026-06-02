@@ -6,7 +6,7 @@
 // NEVER auto-post: rows arrive as `draft`; the accountant confirms explicitly
 // in ExpenseReviewPane. Bulk-confirm only flips rows that already pass recheck.
 import Link from "next/link";
-import { requireSession } from "@/lib/auth/session";
+import { requireRole } from "@/lib/auth/session";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
 import { listExpensesSummary, getExpense, listCategories } from "../_data";
@@ -32,7 +32,21 @@ export default async function ExpensesPage({
     selected?: string;
   }>;
 }) {
-  const session = await requireSession();
+  // Page-level role gate. This review workspace exposes the FULL company-wide
+  // expense ledger (every vendor / total / branch / tax id) plus Confirm / Bulk /
+  // Void / Export / Voucher controls. requireSession() alone let ANY role holding
+  // the ledger module grant reach it by typing the URL (nav merely hides the
+  // link). We gate to the financial-view tier (matching the dashboard's "front-
+  // line roles must not see org-wide P&L" rationale). Staff capture is LIFF-only
+  // (LINE front-line), so staff are intentionally excluded from this web pane;
+  // the per-action gates (confirm/void/export = accountant) remain the backstop.
+  const session = await requireRole(
+    "super_admin",
+    "org_admin",
+    "admin",
+    "area_manager",
+    "viewer",
+  );
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);
 
@@ -118,6 +132,7 @@ export default async function ExpensesPage({
           categoryId={categoryId}
           q={q}
           draftIds={draftIds}
+          companyId={scope.companyId}
         />
 
         {/* RIGHT — review pane */}

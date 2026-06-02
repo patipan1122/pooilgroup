@@ -225,6 +225,27 @@ async function createDraftExpenseCore(
     revalidatePath("/ledger/expenses");
     return { ok: true, data: { id: created.id, docCode: created.docCode, duplicate: false } };
   } catch (err) {
+    // Concurrent-dedup guard: the findFirst above is best-effort; the DB partial
+    // unique index (org_id, company_id, sha256) is the real backstop. If two
+    // uploads of the SAME image race (double-click / LIFF + webhook), one create
+    // wins and the loser hits P2002 here. Re-read the winning row and return it
+    // as a duplicate — same shape as the findFirst path — so we never double-post.
+    const code =
+      typeof err === "object" && err !== null
+        ? (err as { code?: string }).code
+        : undefined;
+    if (code === "P2002" && input.sha256) {
+      const existing = await prisma.ledgerExpense.findFirst({
+        where: { orgId, companyId: input.companyId, sha256: input.sha256 },
+        select: { id: true, docCode: true },
+      });
+      if (existing) {
+        return {
+          ok: true,
+          data: { id: existing.id, docCode: existing.docCode, duplicate: true },
+        };
+      }
+    }
     console.error("[ledger:createDraftExpense] failed", err);
     return { ok: false, error: "บันทึกร่างไม่สำเร็จ" };
   }

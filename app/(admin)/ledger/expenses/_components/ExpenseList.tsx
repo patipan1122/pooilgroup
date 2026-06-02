@@ -35,6 +35,7 @@ export function ExpenseList({
   categoryId,
   q,
   draftIds,
+  companyId,
 }: {
   rows: ExpenseRow[];
   categories: Array<{ id: string; name: string; color: string | null; sort: number }>;
@@ -44,6 +45,8 @@ export function ExpenseList({
   categoryId?: string;
   q?: string;
   draftIds: string[];
+  /** Active company scope — passed to bulkConfirm so it can't cross companies. */
+  companyId: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -93,7 +96,7 @@ export function ExpenseList({
     if (checked.size === 0) return;
     setMsg(null);
     startTransition(async () => {
-      const res = await bulkConfirm(Array.from(checked));
+      const res = await bulkConfirm(Array.from(checked), companyId);
       if (res.ok) {
         setMsg(`ยืนยัน ${res.confirmed ?? 0} ใบ · ข้าม ${res.skipped ?? 0} ใบ (ยอดไม่ตรง)`);
         setChecked(new Set());

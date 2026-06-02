@@ -75,8 +75,16 @@ export async function GET(
   if (!expense) {
     return NextResponse.json({ error: "ไม่พบรายการ" }, { status: 404 });
   }
-  if (expense.status === "void") {
-    return NextResponse.json({ error: "รายการถูกยกเลิกแล้ว ออกเอกสารไม่ได้" }, { status: 400 });
+  // A voucher is an OFFICIAL accounting artefact — it may only be issued for a
+  // human-CONFIRMED row (or a locked/exported one). This route is the real
+  // security boundary (the UI only `disabled`s the button), so mirror that rule
+  // here: a draft (machine-ingested, never confirmed) must NOT become a printable
+  // PV/JV/PCV/substitute-receipt — that is the NEVER-auto-post class of risk.
+  if (expense.status !== "confirmed" && expense.status !== "locked") {
+    return NextResponse.json(
+      { error: "ออกเอกสารได้เฉพาะรายการที่ยืนยันแล้ว — โปรดยืนยันรายการก่อน" },
+      { status: 400 },
+    );
   }
 
   // 5) Substitute-receipt guardrail (RD / ILikeTax).

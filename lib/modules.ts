@@ -837,7 +837,10 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         href: "/ledger/expenses",
         label: "รายจ่าย",
         icon: Receipt,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "staff"],
+        // Financial-view tier — must match the page-level requireRole gate in
+        // app/(admin)/ledger/expenses/page.tsx. Staff capture is LIFF-only, so
+        // staff/driver/branch_manager are excluded from this web review pane.
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {
         href: "/ledger/budgets",
