@@ -2995,6 +2995,7 @@ model ChairopsUser {
 
   maidAssignments        ChairopsMaidAssignment[]
   cashCollections        ChairopsCashCollection[]
+  cashCollectionsImported ChairopsCashCollection[]  @relation("CashCollectionImporter")
   cashDeposits           ChairopsCashDeposit[]
   chairMovesBy           ChairopsChairMove[]
   posDailyEntries        ChairopsPosDaily[]
@@ -3007,6 +3008,11 @@ model ChairopsUser {
   writeOffsByMaker       ChairopsWriteOff[]          @relation("chairops_writeoffs_maker")
   writeOffsByApprover    ChairopsWriteOff[]          @relation("chairops_writeoffs_approver")
   branchesSecondaryAlert ChairopsBranch[]            @relation("chairops_secondary_alert")
+  // BF1 — Day-off + Daily-pay ledger (2026-06-02)
+  daysOff                ChairopsMaidDayOff[]        @relation("chairops_maid_dayoff_maid")
+  daysOffCreated         ChairopsMaidDayOff[]        @relation("chairops_maid_dayoff_created_by")
+  dailyPay               ChairopsMaidDailyPay[]      @relation("chairops_maid_dailypay_maid")
+  dailyPayPaid           ChairopsMaidDailyPay[]      @relation("chairops_maid_dailypay_paid_by")
 
   @@unique([orgId, authUserId])
   @@unique([orgId, email])
@@ -3033,6 +3039,51 @@ model ChairopsMaidAssignment {
   @@index([orgId])
   @@index([branchId, isActive])
   @@index([userId, isActive])
+  // NOTE: A partial unique index ((userId) WHERE endedAt IS NULL AND isActive)
+  // is enforced at the DB level via the BF1 migration. Prisma 5 cannot express
+  // partial indexes; rely on the SQL migration + P2002 handling in actions.
+  @@schema("chairops")
+}
+
+// BF1 · Day-off ledger (DEVIL minimalist). 1 row = 1 maid + 1 date.
+// DELETE to revoke. NO range cols, NO approval workflow. If maid wants 3 days
+// off the UI loops INSERT 3 rows in one prisma.$transaction.
+model ChairopsMaidDayOff {
+  id          String   @id @default(uuid())
+  orgId       String
+  maidId      String
+  date        DateTime @db.Date
+  reason      String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  maid    ChairopsUser @relation("chairops_maid_dayoff_maid", fields: [maidId], references: [id])
+  createdBy ChairopsUser @relation("chairops_maid_dayoff_created_by", fields: [createdById], references: [id])
+
+  @@unique([orgId, maidId, date])
+  @@index([orgId, date])
+  @@index([maidId, date(sort: Desc)])
+  @@schema("chairops")
+}
+
+// BF1 · Daily pay ledger (manual entry, no formula). Amount can be negative
+// for deductions (e.g. uniform · "หักค่าชุด") per BA Q7 default.
+model ChairopsMaidDailyPay {
+  id       String   @id @default(uuid())
+  orgId    String
+  maidId   String
+  date     DateTime @db.Date
+  amount   Int
+  note     String?
+  paidById String
+  paidAt   DateTime @default(now())
+
+  maid   ChairopsUser @relation("chairops_maid_dailypay_maid", fields: [maidId], references: [id])
+  paidBy ChairopsUser @relation("chairops_maid_dailypay_paid_by", fields: [paidById], references: [id])
+
+  @@unique([orgId, maidId, date])
+  @@index([orgId, date])
+  @@index([maidId, date(sort: Desc)])
   @@schema("chairops")
 }
 
@@ -3163,8 +3214,12 @@ model ChairopsCashCollection {
   imageHash        String?
   notes            String?
   // F1 (audit MISS-04) · provenance for CSV-imported maid rounds.
+  // FK to ChairopsUser via "CashCollectionImporter" relation · ON DELETE
+  // SET NULL so removing the admin who pasted the CSV nulls this pointer
+  // instead of leaving a dangling string (audit SA-1, 2026-06-03).
   source           CollectionSource     @default(MAID_MANUAL)
   importedById     String?
+  importer         ChairopsUser?        @relation("CashCollectionImporter", fields: [importedById], references: [id], onDelete: SetNull)
   // Per-chair breakdown captured by the maid at Step 1. Shape:
   //   { lines: [{ chairCode, status: "collected"|"broken"|"empty"|"skipped",
   //               amount: number, reason?: string, photoUrl?: string }, ...] }
@@ -3208,6 +3263,9 @@ model ChairopsCashDeposit {
   slipPhotoUrl    String
   slipImageHash   String
   notes           String?
+  // BF1 MAID-04 anti-fraud · auto-flagged TRUE when |diff| >= 500 ฿ ·
+  // office staff clears via reconcile flow. Indexed partial in migration.
+  requiresReview  Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
