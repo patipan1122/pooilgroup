@@ -3,8 +3,7 @@
  * Read-only configuration snapshot + links to v1 admin for editing.
  */
 
-import Link from "next/link";
-import { Ic, StatTile, Section } from "@/components/clawfleet/v2/chrome";
+import { StatTile, Section } from "@/components/clawfleet/v2/chrome";
 import { getSettingsData } from "@/lib/clawfleet/v2-admin-queries";
 
 export const dynamic = "force-dynamic";
@@ -49,13 +48,8 @@ export default async function SettingsPage() {
           <div className="cf-eyebrow">ตั้งค่า</div>
           <h1 className="cf-h1">การตั้งค่าระบบตู้คีบ</h1>
           <div className="cf-page-sub">
-            ค่าปริยายของระบบ (กฎ cross-check · เก็บรูป · ปิดรอบอัตโนมัติ) · แก้ได้ที่หน้าตั้งค่าเดิม
+            ค่าปริยายของระบบ (กฎ cross-check · เก็บรูป · ปิดรอบอัตโนมัติ) · แก้ไขได้ในเฟสถัดไป
           </div>
-        </div>
-        <div className="cf-page-actions">
-          <Link href="/clawfleet/setup" className="cf-btn cf-btn-primary">
-            <Ic name="settings" size={14} /> ไปหน้าตั้งค่าเดิม
-          </Link>
         </div>
       </div>
 

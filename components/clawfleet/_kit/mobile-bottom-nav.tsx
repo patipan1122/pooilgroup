@@ -12,19 +12,20 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Activity, BarChart3, Settings, HelpCircle } from "lucide-react";
+import { Home, ClipboardList, Activity, BarChart3, Settings } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
 interface MobileBottomNavProps {
   isAdmin: boolean;
 }
 
+// v2 routes only (v1 deleted 2026-06-02)
 const ALL_TABS = [
-  { href: "/clawfleet/hub", icon: Home, label: "หน้าแรก", adminOnly: false },
-  { href: "/clawfleet/operations", icon: Activity, label: "ปฏิบัติการ", adminOnly: false },
-  { href: "/clawfleet/insights", icon: BarChart3, label: "ข้อมูล", adminOnly: false },
-  { href: "/clawfleet/setup", icon: Settings, label: "ตั้งค่า", adminOnly: true },
-  { href: "/clawfleet/help", icon: HelpCircle, label: "คู่มือ", adminOnly: false },
+  { href: "/clawfleet/v2/hub", icon: Home, label: "หน้าหลัก", adminOnly: false },
+  { href: "/clawfleet/v2/collect", icon: ClipboardList, label: "เก็บเงิน", adminOnly: false },
+  { href: "/clawfleet/v2/operations", icon: Activity, label: "ปฏิบัติการ", adminOnly: false },
+  { href: "/clawfleet/v2/insights", icon: BarChart3, label: "ข้อมูล", adminOnly: false },
+  { href: "/clawfleet/v2/settings", icon: Settings, label: "ตั้งค่า", adminOnly: true },
 ] as const;
 
 export function MobileBottomNav({ isAdmin }: MobileBottomNavProps) {

@@ -402,7 +402,6 @@ const SIDEBAR_PRIMARY: SidebarItem[] = [
   { id: "anom", name: "Anomaly", icon: "alert", desc: "รายการที่ต้องตรวจ", badge: 4, badgeColor: "red" },
   { id: "stock", name: "Stock", icon: "package", desc: "ของรางวัล + แลร์ต", badge: 3, badgeColor: "amber" },
   { id: "insights", name: "Insights", icon: "chart", desc: "ตาราง + CSV" },
-  { id: "mobile", name: "Mobile flow", icon: "phone", desc: "พรีวิวฟอร์มพนักงาน" },
 ];
 
 const SIDEBAR_SECONDARY: SidebarItem[] = [
@@ -606,6 +605,111 @@ export function TopBar({ branch, onBranchChange, page, branches }: TopBarProps) 
 
 export type PillColor = "slate" | "emerald" | "red" | "amber" | "blue";
 export type PillSize = "sm" | "md";
+
+/* ===== BRANCH FILTER BAR (slim · no duplicate breadcrumb/search/profile) =====
+   The Pool AdminShell already provides the left nav, global company switcher,
+   search, notifications and profile. ClawFleet only needs the per-BRANCH filter
+   (?branch=), which Pool's company switcher does not cover. This is that one
+   control as a thin bar — no second sidebar, no duplicated chrome. */
+
+export type BranchFilterBarProps = {
+  branch: string;
+  onBranchChange: (id: string) => void;
+  branches: BranchSummary[];
+};
+
+export function BranchFilterBar({ branch, onBranchChange, branches }: BranchFilterBarProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handle = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, []);
+
+  const label = useMemo(() => {
+    if (branch === "all") return `ทุกสาขา (${branches.length})`;
+    return branches.find((b) => b.id === branch)?.name ?? branch;
+  }, [branch, branches]);
+
+  const filtered = useMemo(() => {
+    if (!search) return branches;
+    const q = search.toLowerCase();
+    return branches.filter(
+      (b) => b.name.includes(search) || b.area.includes(search) || b.code.toLowerCase().includes(q),
+    );
+  }, [branches, search]);
+
+  return (
+    <div className="cf-branchbar">
+      <span className="cf-branchbar-label">กรองสาขา</span>
+      <div className="cf-tb-branch" ref={ref}>
+        <button type="button" className="cf-tb-branch-btn" onClick={() => setOpen((o) => !o)}>
+          <Ic name="pin" size={14} />
+          <span>{label}</span>
+          <Ic name="chevronD" size={14} />
+        </button>
+        {open && (
+          <div className="cf-dropdown cf-dropdown-wide">
+            <div className="cf-dropdown-search">
+              <Ic name="search" size={14} />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="ค้นหา ปตท. จักราช, นครราชสีมา, รหัส..."
+                autoFocus
+              />
+            </div>
+            <button
+              type="button"
+              className={`cf-dropdown-item ${branch === "all" ? "is-active" : ""}`}
+              onClick={() => {
+                onBranchChange("all");
+                setOpen(false);
+              }}
+            >
+              <span>
+                <Ic name="layers" size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} />
+                ทุกสาขา
+              </span>
+              <span className="cf-dim">{branches.length}</span>
+            </button>
+            <div className="cf-dropdown-div" />
+            <div className="cf-dropdown-scroll">
+              {filtered.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  className={`cf-dropdown-item cf-dropdown-branch ${branch === b.id ? "is-active" : ""}`}
+                  onClick={() => {
+                    onBranchChange(b.id);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="cf-dropdown-branch-left">
+                    <span className={`cf-branch-flag cf-branch-flag-sm cf-branch-flag-${b.tone}`}>{b.avatar}</span>
+                    <span>
+                      <span className="cf-dropdown-branch-name">{b.name}</span>
+                      <span className="cf-dim cf-dropdown-branch-meta">
+                        {b.area} · {b.code}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="cf-dim">{b.machines} ตู้</span>
+                </button>
+              ))}
+              {filtered.length === 0 && <div className="cf-dropdown-empty">ไม่เจอสาขา &ldquo;{search}&rdquo;</div>}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export type PillProps = {
   color?: PillColor;

@@ -282,7 +282,7 @@ export default async function HomePage() {
               <ModuleCard
                 slug="clawfleet"
                 enabled={moduleEnabled.clawfleet ?? true}
-                landingPath="/clawfleet/dashboard"
+                landingPath="/clawfleet"
               />
             )}
             {canSee("chairops") && (

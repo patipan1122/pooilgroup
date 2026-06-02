@@ -212,6 +212,40 @@ export const CloseBranchSessionSchema = z.object({
 });
 export type CloseBranchSessionInput = z.infer<typeof CloseBranchSessionSchema>;
 
+// =============================================================
+// Group-scoped collect (Type B = TOKEN exchanger + claws · Type A = CASH claws)
+// Re-enables the Postgres trigger cf_session_close_crosscheck (3-way token check)
+// by opening a session with group_id set. Grafted from claude/clawfleet-antifraud.
+// =============================================================
+export const StartGroupSessionSchema = z.object({
+  groupId: zUUID(),
+});
+export type StartGroupSessionInput = z.infer<typeof StartGroupSessionSchema>;
+
+// กรอกข้อมูลตู้แลก (EXCHANGER) ในรอบกลุ่ม — Type B เท่านั้น
+// มิเตอร์ token (coinMeterAfter) + เงินสดที่เก็บได้ + 3 รูป
+export const SubmitExchangerEventSchema = z
+  .object({
+    sessionId: zUUID(),
+    machineId: zUUID(), // ต้องเป็น EXCHANGER ของกลุ่มนี้
+    qrToken: z.string().min(1).optional(),
+    coinMeterAfter: z.number().int().min(0), // มิเตอร์ token จ่ายออก (วันนี้)
+    cashCountedCents: z.number().int().min(0), // เงินที่เก็บได้จริงจากตู้แลก
+    promoCoinsDispensed: z.number().int().min(0).optional(), // token แจกจาก promo
+    photoCoinMeterUrl: z.string().url(),
+    photoCashUrl: z.string().url(),
+    photoTokenTrayUrl: z.string().url(),
+    notes: z.string().max(1000).optional(),
+  })
+  .strict();
+export type SubmitExchangerEventInput = z.infer<typeof SubmitExchangerEventSchema>;
+
+export const CloseGroupSessionSchema = z.object({
+  sessionId: zUUID(),
+  reviewNote: z.string().max(1000).optional(),
+});
+export type CloseGroupSessionInput = z.infer<typeof CloseGroupSessionSchema>;
+
 // Stock receive
 export const StockReceiveSchema = z.object({
   branchId: zUUID(),
