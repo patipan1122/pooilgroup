@@ -203,8 +203,14 @@ export function AllBranchesPLTable({
                       <StatusDot tone={st.tone} />
                     </td>
                     <td className="px-3 py-2.5">
+                      {/* CEO 2026-06-02 P0: route to the 3-pane branches
+                          workspace via `?branch=<id>` searchParam · the old
+                          `/chairops/branches/<slug>` URL pointed to a route
+                          that doesn't exist (404), so clicking a branch row
+                          went nowhere. Workspace already supports the
+                          searchParam (see branches/page.tsx). */}
                       <Link
-                        href={`/chairops/branches/${b.branchSlug}`}
+                        href={`/chairops/branches?branch=${b.branchId}`}
                         className="flex min-w-0 items-center gap-1.5 hover:underline"
                       >
                         <span className="max-w-[220px] truncate font-medium text-zinc-900">

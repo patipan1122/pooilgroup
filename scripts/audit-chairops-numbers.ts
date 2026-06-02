@@ -30,15 +30,19 @@ async function main() {
     },
   });
   for (const d of drifts.filter((d) => d.branch?.isActive)) {
+    // CEO 2026-06-02 P0 fix: drift = CASH owed by maid · NOT gross revenue.
+    // Online sales go straight to the bank · maid never touches them. Engine
+    // was migrated to use cashTotal; this audit was still using grossTotal
+    // and falsely flagging every branch with online sales as "stale".
     const livePos = await prisma.chairopsPosDaily.aggregate({
       where: { orgId: d.branch!.orgId, branchId: d.branchId },
-      _sum: { grossTotal: true },
+      _sum: { cashTotal: true },
     });
     const liveDep = await prisma.chairopsCashDeposit.aggregate({
       where: { orgId: d.branch!.orgId, branchId: d.branchId },
       _sum: { depositedAmount: true, bankFee: true },
     });
-    const livePosTotal = Number(livePos._sum.grossTotal ?? 0);
+    const livePosTotal = Number(livePos._sum.cashTotal ?? 0);
     const liveDepTotal =
       Number(liveDep._sum.depositedAmount ?? 0) + Number(liveDep._sum.bankFee ?? 0);
     const liveDrift = Math.round(livePosTotal - liveDepTotal);

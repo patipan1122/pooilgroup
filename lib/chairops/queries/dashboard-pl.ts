@@ -103,7 +103,7 @@ export async function getBranchPL(args: {
   const dayCount = rangeDayCount(args.from, args.to);
   const prorateFactor = dayCount / PRORATE_MONTH_DAYS;
 
-  const [branches, revenueRows, depositRows, drifts] = await Promise.all([
+  const [branches, revenueRows, legacyPosRows, depositRows, drifts] = await Promise.all([
     // All ACTIVE branches (empty-state friendly: 0-revenue branches still show).
     prisma.chairopsBranch.findMany({
       where: { orgId, isActive: true },
@@ -125,6 +125,17 @@ export async function getBranchPL(args: {
       where: { orgId, bizDate: { gte, lt: ltExclusive } },
       _sum: { grossTotal: true, cashTotal: true, onlineTotal: true },
     }),
+    // CEO 2026-06-02 P0 fix: branches whose POS lands in the legacy per-chair
+    // table (chairops_pos_daily) but NEVER in the new aggregate
+    // (chairops_branch_daily_revenue) — e.g. central โคราช — would show
+    // "—" everywhere in ภาพรวม because the only POS source returned no rows.
+    // Same fallback shape as drift-engine + reconcile-v2 ledger so all
+    // three surfaces agree on what revenue a branch had.
+    prisma.chairopsPosDaily.groupBy({
+      by: ["branchId"],
+      where: { orgId, bizDate: { gte, lt: ltExclusive } },
+      _sum: { grossTotal: true, cashTotal: true, onlineTotal: true },
+    }),
     prisma.chairopsCashCollection.groupBy({
       by: ["branchId"],
       where: { orgId, collectedAt: { gte, lt: ltExclusive } },
@@ -139,6 +150,7 @@ export async function getBranchPL(args: {
   ]);
 
   const revByBranch = new Map(revenueRows.map((r) => [r.branchId, r._sum]));
+  const legacyByBranch = new Map(legacyPosRows.map((r) => [r.branchId, r._sum]));
   const depByBranch = new Map(
     depositRows.map((r) => [r.branchId, r._sum?.depositedAmount ?? 0]),
   );
@@ -146,9 +158,15 @@ export async function getBranchPL(args: {
 
   const rows: BranchPLRow[] = branches.map((b) => {
     const rev = revByBranch.get(b.id);
-    const revenue = decToNum(rev?.grossTotal);
-    const cash = decToNum(rev?.cashTotal);
-    const online = decToNum(rev?.onlineTotal);
+    const legacy = legacyByBranch.get(b.id);
+    // Prefer the new aggregate; only fall back to legacy when there is NO new
+    // row for this branch in the range (W0 pre-import phase or branch whose
+    // POS only ever landed in the legacy table). Mixing the two would double-
+    // count days that appear in both tables.
+    const hasNew = rev && (decToNum(rev.grossTotal) || decToNum(rev.cashTotal));
+    const revenue = decToNum(hasNew ? rev.grossTotal : legacy?.grossTotal);
+    const cash = decToNum(hasNew ? rev.cashTotal : legacy?.cashTotal);
+    const online = decToNum(hasNew ? rev.onlineTotal : legacy?.onlineTotal);
     const deposit = depByBranch.get(b.id) ?? 0;
     const drift = driftByBranch.get(b.id) ?? 0;
 

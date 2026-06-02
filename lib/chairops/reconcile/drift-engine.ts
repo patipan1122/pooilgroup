@@ -110,7 +110,12 @@ async function recomputeDriftForBranch_legacy(
     await Promise.all([
       prisma.chairopsPosDaily.aggregate({
         where: { branchId, orgId: branch.orgId },
-        _sum: { grossTotal: true },
+        // CEO 2026-06-02 P0: drift = CASH owed to maid · NOT gross revenue.
+        // Online sales go straight to the bank; the maid never touches them.
+        // Previously this used `grossTotal` which mixed online into "shortage"
+        // and inflated every drift by the online-share (e.g. centralโคราช
+        // showed -22,761 instead of the real -7,920 of cash owed).
+        _sum: { cashTotal: true },
       }),
       prisma.chairopsCashDeposit.aggregate({
         where: { branchId, orgId: branch.orgId },
@@ -140,7 +145,7 @@ async function recomputeDriftForBranch_legacy(
       }),
     ]);
 
-  const posTotal = toNum(posAgg._sum?.grossTotal);
+  const posTotal = toNum(posAgg._sum?.cashTotal);
   const depositTotal =
     (newDepositAgg._sum?.depositedAmount ?? 0) +
     (newDepositAgg._sum?.bankFee ?? 0) +
