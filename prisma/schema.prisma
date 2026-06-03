@@ -4381,6 +4381,10 @@ enum FuelUserRole {
   DRIVER // คนขับ
   ADMIN
 
+  // DB enum type จริงชื่อ "UserRole" (จาก pooil-fuel เดิม) — เราเปลี่ยนชื่อ Prisma enum
+  // เป็น FuelUserRole กันชนกับ Pool แต่ต้อง @@map กลับไปชื่อ DB เดิม ไม่งั้น Prisma
+  // หา type "fuel.FuelUserRole" ไม่เจอ → ทุก read/write role พัง (B-019/enum-drift)
+  @@map("UserRole")
   @@schema("fuel")
 }
 
