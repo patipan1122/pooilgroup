@@ -162,6 +162,23 @@ export async function todayPriceText(zone: string | null): Promise<string> {
   return lines.join("\n");
 }
 
+// ผูก/ยกเลิกผูก แชท ↔ ลูกค้า — หลังบ้านล้วน (set conv.customerId เฉยๆ · ไม่ส่ง LINE · ลูกค้าไม่เห็น)
+export async function linkConversation(convId: string, customerId: string | null) {
+  const user = await requireUser();
+  await ownConv(user.orgId, convId);
+  if (customerId) {
+    const c = await prisma.customer.findFirst({ where: { id: customerId, orgId: user.orgId }, select: { id: true } });
+    if (!c) return { ok: false, error: "ไม่พบลูกค้าในองค์กร" };
+  }
+  await prisma.conversation.update({
+    where: { id: convId, orgId: user.orgId },
+    data: { customerId: customerId || null },
+  });
+  await audit({ orgId: user.orgId, userId: user.id, action: customerId ? "CONV_LINK_CUSTOMER" : "CONV_UNLINK_CUSTOMER", entity: "Conversation", entityId: convId, meta: { customerId } });
+  revalidatePath("/fuelos/inbox");
+  return { ok: true };
+}
+
 // ตั้งชื่อเล่น (alias) / ป้ายบทบาท ให้คนใน LINE — เปลี่ยนได้ แต่ชื่อจริง (displayName) ยังเก็บไว้ดู
 export async function updateContact(
   convId: string,

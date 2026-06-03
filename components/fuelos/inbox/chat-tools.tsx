@@ -4,9 +4,9 @@ import { useState, useEffect, useTransition, type ComponentProps } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { X, UserRound, FileText, Pencil, Check, Phone, Building2, TrendingUp, Calendar, Lock } from "lucide-react";
+import { X, UserRound, FileText, Pencil, Check, Phone, Building2, TrendingUp, Calendar, Lock, Link2, Search } from "lucide-react";
 import { QuoteForm } from "@/app/(admin)/fuelos/quotes/quote-form";
-import { updateContact } from "@/app/(admin)/fuelos/inbox/actions";
+import { updateContact, linkConversation } from "@/app/(admin)/fuelos/inbox/actions";
 import { LineAvatar } from "@/components/fuelos/inbox/line-avatar";
 import { cn } from "@/lib/fuelos/utils/cn";
 
@@ -118,6 +118,67 @@ function PersonRow({ convId, p }: { convId: string; p: Person }) {
   );
 }
 
+// ผูกแชท ↔ ลูกค้า (หลังบ้านล้วน · ลูกค้าไม่เห็น) — ค้นหา/เลือกลูกค้าเดิม หรือสร้างใหม่
+function CustomerLinkPicker({ convId, customers, currentId, currentName }: {
+  convId: string;
+  customers: { id: string; name: string; zone: string | null }[];
+  currentId: string | null;
+  currentName: string | null;
+}) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [q, setQ] = useState("");
+  const [pending, start] = useTransition();
+  const filtered = (q.trim()
+    ? customers.filter((c) => c.name.toLowerCase().includes(q.toLowerCase()) || (c.zone ?? "").includes(q))
+    : customers
+  ).slice(0, 8);
+
+  function link(id: string | null) {
+    start(async () => {
+      const r = await linkConversation(convId, id);
+      if (r.ok) { toast.success(id ? "ผูกลูกค้าแล้ว (หลังบ้าน · ลูกค้าไม่เห็น)" : "ยกเลิกการผูกแล้ว"); setEditing(false); setQ(""); router.refresh(); }
+      else toast.error(r.error ?? "ไม่สำเร็จ");
+    });
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-surface-2 p-3 mb-4">
+      <div className="text-xs font-semibold text-zinc-500 mb-1.5 flex items-center gap-1">
+        <Link2 className="size-3.5" /> ผูกลูกค้า <span className="font-normal text-zinc-400">· หลังบ้าน · ลูกค้าไม่เห็น</span>
+      </div>
+      {currentId && !editing ? (
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium flex-1 truncate text-leaf-700">✅ {currentName}</span>
+          <button onClick={() => setEditing(true)} className="text-xs text-brand-600">เปลี่ยน</button>
+          <button onClick={() => link(null)} disabled={pending} className="text-xs text-danger">ยกเลิกผูก</button>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          <div className="relative">
+            <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาลูกค้า (ชื่อ / โซน)" className="h-9 w-full rounded-lg border border-border bg-surface pl-8 pr-2.5 text-sm" />
+          </div>
+          <div className="max-h-44 overflow-y-auto divide-y divide-border rounded-lg border border-border bg-surface">
+            {filtered.length === 0 ? (
+              <div className="p-2.5 text-xs text-zinc-400">ไม่พบลูกค้า — ลองคำอื่น หรือสร้างใหม่</div>
+            ) : (
+              filtered.map((c) => (
+                <button key={c.id} onClick={() => link(c.id)} disabled={pending} className="w-full text-left px-2.5 py-2 hover:bg-surface-2 flex items-center justify-between gap-2">
+                  <span className="text-sm truncate">{c.name}</span>
+                  {c.zone && <span className="text-[10px] text-zinc-400 shrink-0">{c.zone}</span>}
+                </button>
+              ))
+            )}
+          </div>
+          <a href={`/fuelos/customers/new?conv=${convId}`} className="block text-center text-xs text-brand-600 hover:underline pt-1">+ สร้างลูกค้าใหม่จากแชทนี้</a>
+          {currentId && <button onClick={() => setEditing(false)} className="block w-full text-center text-xs text-zinc-400">ยกเลิก</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ChatTools({ convId, customerId, profile, people, quote }: {
   convId: string;
   customerId: string | null;
@@ -139,6 +200,7 @@ export function ChatTools({ convId, customerId, profile, people, quote }: {
 
       {/* PANEL: customer profile + people in group */}
       <SlideOver open={panel} onClose={() => setPanel(false)} title="ข้อมูลลูกค้า / กลุ่ม">
+        <CustomerLinkPicker convId={convId} customers={quote.customers} currentId={customerId} currentName={profile?.nickname || profile?.name || null} />
         {profile ? (
           <div className="space-y-4">
             <div>

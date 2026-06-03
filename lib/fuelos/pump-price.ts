@@ -1,75 +1,59 @@
 import "server-only";
 
-// ราคาหน้าปั๊ม PTTOR (SOAP) — endpoint จาก CEO
-// operations (จาก WSDL): CurrentOilPrice / CurrentOilPriceProvincial / GetOilPrice / GetOilPriceProvincial
-// param: Language (string). หมายเหตุ: ตอนทดสอบ server ตอบ "Language not provided"
-// → คาดว่าต้องมี auth/ค่าเฉพาะที่ CEO จะแจ้งภายหลัง. โค้ดนี้ยิงตาม WSDL ถูกต้อง + ดึงผลแบบ best-effort.
-const ENDPOINT = "https://orapiweb.pttor.com/oilservice/OilPrice.asmx";
-const NS = "https://orapiweb.pttor.com/";
+// ราคาหน้าปั๊ม (อ้างอิง) — ใช้ thai-oil-api (JSON สาธารณะ ไม่ต้อง auth · อัปเดตรายวัน)
+// แทน PTTOR SOAP ที่ติด auth. source: https://github.com/max180643/thai-oil-api
+const ENDPOINT = "https://api.chnwt.dev/thai-oil-api/latest";
 
-export type PumpPrice = { product: string; price: string };
+const STATION_LABELS: Record<string, string> = {
+  ptt: "PTT Station",
+  bcp: "บางจาก",
+  shell: "Shell",
+  esso: "Esso",
+  caltex: "Caltex",
+  pt: "PT",
+  susco: "ซัสโก้",
+  ptg: "PTG",
+  irpc: "IRPC",
+};
+
+export type PumpProduct = { name: string; price: string };
+export type PumpStation = { key: string; label: string; products: PumpProduct[] };
 export type PumpPriceResult =
-  | { ok: true; prices: PumpPrice[]; raw: string }
-  | { ok: false; error: string; raw?: string };
+  | { ok: true; date: string; note: string; stations: PumpStation[] }
+  | { ok: false; error: string };
 
-function decodeXml(s: string): string {
-  return s
-    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
-}
+type ApiResp = {
+  status?: string;
+  response?: {
+    note?: string;
+    date?: string;
+    stations?: Record<string, Record<string, { name?: string; price?: string }>>;
+  };
+};
 
-// แปลงผลลัพธ์ (อาจเป็น JSON หรือ XML ข้างใน) → list ราคา (best-effort)
-function parsePrices(result: string): PumpPrice[] {
-  const trimmed = result.trim();
-  // JSON?
+export async function fetchPumpPrices(): Promise<PumpPriceResult> {
   try {
-    const j = JSON.parse(trimmed);
-    const arr = Array.isArray(j) ? j : Array.isArray(j?.data) ? j.data : Array.isArray(j?.Table) ? j.Table : [];
-    const out: PumpPrice[] = [];
-    for (const row of arr) {
-      const product = row.ProductName ?? row.product ?? row.Name ?? row.name ?? row.PRODUCT ?? null;
-      const price = row.Price ?? row.price ?? row.PRICE ?? row.value ?? null;
-      if (product != null && price != null) out.push({ product: String(product), price: String(price) });
-    }
-    if (out.length) return out;
-  } catch {
-    /* not json */
-  }
-  // XML rows? (จับคู่ tag ที่ดูเหมือนชื่อสินค้า/ราคา)
-  const out: PumpPrice[] = [];
-  const rowRe = /<(?:Table|Row|OilPrice|Item)[^>]*>([\s\S]*?)<\/(?:Table|Row|OilPrice|Item)>/g;
-  let m: RegExpExecArray | null;
-  while ((m = rowRe.exec(trimmed))) {
-    const block = m[1];
-    const product = block.match(/<(?:ProductName|Product|Name)>([^<]+)</i)?.[1];
-    const price = block.match(/<(?:Price|Value)>([^<]+)</i)?.[1];
-    if (product && price) out.push({ product, price });
-  }
-  return out;
-}
+    const res = await fetch(ENDPOINT, { next: { revalidate: 1800 } }); // cache 30 นาที
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    const j = (await res.json()) as ApiResp;
+    const raw = j.response?.stations;
+    if (j.status !== "success" || !raw) return { ok: false, error: "รูปแบบข้อมูลไม่ตรง" };
 
-export async function fetchPumpPrices(language = "TH"): Promise<PumpPriceResult> {
-  const body =
-    `<?xml version="1.0" encoding="utf-8"?>` +
-    `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body>` +
-    `<CurrentOilPrice xmlns="${NS}"><Language>${language}</Language></CurrentOilPrice>` +
-    `</soap:Body></soap:Envelope>`;
-  try {
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: `${NS}CurrentOilPrice` },
-      body,
-      next: { revalidate: 1800 }, // cache 30 นาที
-    });
-    const text = await res.text();
-    if (!res.ok) return { ok: false, error: `HTTP ${res.status}`, raw: text.slice(0, 600) };
-    const m = text.match(/<CurrentOilPriceResult>([\s\S]*?)<\/CurrentOilPriceResult>/);
-    const result = m ? decodeXml(m[1]) : text;
-    const prices = parsePrices(result);
-    if (prices.length === 0) {
-      return { ok: false, error: result.trim().slice(0, 200) || "ดึงราคาไม่ได้", raw: result.slice(0, 600) };
-    }
-    return { ok: true, prices, raw: result.slice(0, 600) };
+    // เรียง PTT ก่อน แล้วตามด้วยปั๊มอื่น
+    const order = (k: string) => (k === "ptt" ? 0 : k === "bcp" ? 1 : 2);
+    const stations: PumpStation[] = Object.entries(raw)
+      .map(([key, prods]) => ({
+        key,
+        label: STATION_LABELS[key] ?? key.toUpperCase(),
+        products: Object.values(prods)
+          .filter((p) => p?.name && p?.price)
+          .map((p) => ({ name: p.name as string, price: p.price as string })),
+      }))
+      .filter((s) => s.products.length > 0)
+      .sort((a, b) => order(a.key) - order(b.key) || a.label.localeCompare(b.label));
+
+    if (stations.length === 0) return { ok: false, error: "ไม่มีข้อมูลราคา" };
+    return { ok: true, date: j.response?.date ?? "", note: j.response?.note ?? "", stations };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "network error" };
   }

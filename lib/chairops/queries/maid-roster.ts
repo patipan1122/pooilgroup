@@ -134,6 +134,12 @@ export const getMaidDetail = cache(async function getMaidDetail(
         primaryBranchId: true,
         isActive: true,
         createdAt: true,
+        // payroll / HR (CEO 2026-06-03)
+        bankName: true,
+        bankAccountNo: true,
+        bankAccountName: true,
+        contractFileUrl: true,
+        contractFileName: true,
       },
     }),
     prisma.chairopsMaidDayOff.findMany({

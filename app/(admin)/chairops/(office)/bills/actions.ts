@@ -650,6 +650,82 @@ export async function restoreCategory(
   return { ok: true };
 }
 
+// ----- getBillDetail (powers the draggable "pay this bill" window) ----------
+// CEO 2026-06-03 · clicking a bill in the matrix pops a floating window with
+// the payee bank account + amount (for fast bank-app transfer) + a one-click
+// mark-paid shortcut. MANAGER+ may read; mutations still gate on CEO.
+
+export type BillDetailDTO = {
+  id: string;
+  branchName: string;
+  categoryLabel: string;
+  periodLabel: string; // "มิ.ย. 2026"
+  amount: number;
+  paidAmount: number | null;
+  dueDateIso: string; // YYYY-MM-DD
+  paidAtIso: string | null; // YYYY-MM-DD
+  status: "PAID" | "PENDING" | "OVERDUE";
+  bankAccountTo: string | null;
+  paymentTerms: string | null;
+  notes: string | null;
+  slipPhotoUrl: string | null;
+};
+
+export async function getBillDetail(
+  billId: string,
+): Promise<ActionResult<BillDetailDTO>> {
+  const session = await requireRole("MANAGER");
+  const parsed = zUUID().safeParse(billId);
+  if (!parsed.success) return { ok: false, error: "id ไม่ถูกต้อง" };
+
+  const bill = await prisma.chairopsVendorBill.findFirst({
+    where: { id: parsed.data, orgId: session.user.orgId },
+    select: {
+      id: true,
+      amount: true,
+      paidAmount: true,
+      dueDate: true,
+      paidAt: true,
+      billPeriod: true,
+      bankAccountTo: true,
+      paymentTerms: true,
+      notes: true,
+      slipPhotoUrl: true,
+      branch: { select: { name: true } },
+      category: { select: { label: true } },
+    },
+  });
+  if (!bill) return { ok: false, error: "ไม่พบบิล" };
+
+  const { deriveStatus, bangkokDateOfToday } = await import(
+    "@/lib/chairops/queries/vendor-bills"
+  );
+  const periodLabel = new Intl.DateTimeFormat("th-TH", {
+    timeZone: "UTC", // billPeriod is a UTC-midnight @db.Date
+    month: "short",
+    year: "numeric",
+  }).format(bill.billPeriod);
+
+  return {
+    ok: true,
+    data: {
+      id: bill.id,
+      branchName: bill.branch?.name ?? "—",
+      categoryLabel: bill.category?.label ?? "—",
+      periodLabel,
+      amount: Number(bill.amount),
+      paidAmount: bill.paidAmount != null ? Number(bill.paidAmount) : null,
+      dueDateIso: bill.dueDate.toISOString().slice(0, 10),
+      paidAtIso: bill.paidAt ? bill.paidAt.toISOString().slice(0, 10) : null,
+      status: deriveStatus(bill.paidAt, bill.dueDate, bangkokDateOfToday()),
+      bankAccountTo: bill.bankAccountTo,
+      paymentTerms: bill.paymentTerms,
+      notes: bill.notes,
+      slipPhotoUrl: bill.slipPhotoUrl,
+    },
+  };
+}
+
 // ----- checkAnomaly (used by detail page · client form refetches) ----------
 
 export async function checkAnomaly(args: {
