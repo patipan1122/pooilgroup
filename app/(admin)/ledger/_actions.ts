@@ -309,7 +309,11 @@ export async function bulkConfirm(
 
 // ===================== Settings: categories =====================
 const categorySchema = z.object({
-  companyId: z.string().uuid(),
+  // NOT .uuid(): this org's company ids predate the uuid column convention
+  // (Pool schema drift) so they are not all RFC-uuid strings. The real gate is
+  // the `prisma.company.findFirst({ id, orgId })` ownership check below — format
+  // strictness here only produced a false "Invalid UUID" on a legit company.
+  companyId: z.string().trim().min(1, "ไม่ได้ระบุบริษัท"),
   name: z.string().trim().min(1, "ต้องระบุชื่อหมวด").max(100),
   color: z.string().trim().max(20).optional().or(z.literal("")),
   trcloudAccCode: z.string().trim().max(40).optional().or(z.literal("")),
@@ -377,9 +381,13 @@ export async function toggleCategory(
 
 // ===================== Budgets =====================
 const budgetSchema = z.object({
-  companyId: z.string().uuid(),
-  categoryId: z.string().uuid(),
-  branchId: z.string().uuid().optional().or(z.literal("")),
+  // NOT .uuid(): this org's company ids predate the uuid column convention
+  // (Pool schema drift) so they are not all RFC-uuid strings. The real gate is
+  // the `prisma.company.findFirst({ id, orgId })` ownership check below — format
+  // strictness here only produced a false "Invalid UUID" on a legit company.
+  companyId: z.string().trim().min(1, "ไม่ได้ระบุบริษัท"),
+  categoryId: z.string().trim().min(1),
+  branchId: z.string().trim().optional().or(z.literal("")),
   period: z.string().regex(/^\d{4}-\d{2}$/, "งวดต้องเป็น YYYY-MM"),
   amount: z.coerce.number().min(0),
   alertPct: z.coerce.number().int().min(0).max(200).default(90),
@@ -462,7 +470,11 @@ export async function deleteBudget(id: string): Promise<ActionResult> {
 // trigger a browser download. Column shape is provisional (buildTrcloudCsv) —
 // see docs/LEDGER_SETUP.md. NEVER touches drafts (only "real" spend is exported).
 const exportSchema = z.object({
-  companyId: z.string().uuid(),
+  // NOT .uuid(): this org's company ids predate the uuid column convention
+  // (Pool schema drift) so they are not all RFC-uuid strings. The real gate is
+  // the `prisma.company.findFirst({ id, orgId })` ownership check below — format
+  // strictness here only produced a false "Invalid UUID" on a legit company.
+  companyId: z.string().trim().min(1, "ไม่ได้ระบุบริษัท"),
   period: z.string().regex(/^\d{4}-\d{2}$/, "งวดต้องเป็น YYYY-MM"),
 });
 
@@ -554,7 +566,11 @@ export async function exportConfirmedCsv(raw: unknown): Promise<ExportResult> {
 // channel-crypto (same wrapping key as inbox/recruit) and NEVER returned to the
 // client; on edit, a blank field keeps the existing encrypted value.
 const lineChannelSchema = z.object({
-  companyId: z.string().uuid(),
+  // NOT .uuid(): this org's company ids predate the uuid column convention
+  // (Pool schema drift) so they are not all RFC-uuid strings. The real gate is
+  // the `prisma.company.findFirst({ id, orgId })` ownership check below — format
+  // strictness here only produced a false "Invalid UUID" on a legit company.
+  companyId: z.string().trim().min(1, "ไม่ได้ระบุบริษัท"),
   lineChannelId: z.string().trim().min(1, "ใส่ Channel ID").max(64),
   channelSecret: z.string().trim().max(200).optional().or(z.literal("")),
   accessToken: z.string().trim().max(8000).optional().or(z.literal("")),

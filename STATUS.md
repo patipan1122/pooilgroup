@@ -9,7 +9,7 @@
 **ปัญหา CEO:** LINE Developers ฟ้อง `308 Permanent Redirect` ตอน Verify webhook `…/api/webhooks/ledger/line/`.
 **Root cause:** (1) URL ขาด `<channelId>` ต่อท้าย + มี `/` ปิดท้าย → Next.js เด้ง 308. (2) หน้า ตั้งค่า → กลุ่ม LINE เป็นแค่ **stub** (TODO[ledger-secret]) — ไม่มีฟอร์มใส่ Channel Secret/Access Token · ไม่สร้างแถวใน `ledger_line_channel` → ไม่มี channelId จริง + webhook ตอบ 404 อยู่ดี.
 
-**แก้แล้ว (built · tsc 0 · eslint 0 · `next build` GREEN · branch `claude/ledger-module` · ยังไม่ deploy):**
+**🚀 DEPLOYED 2026-06-03 (merge `53aa910` → setup → Vercel · prod verified: /ledger/settings 307→login, webhook route alive, dashboard/chairops/cashhub ไม่พัง). tsc 0 · eslint 0 · next build GREEN:**
 - `LineChannelCard.tsx` rewrite: ฟอร์มจริง (Channel ID · Channel secret · Access token · Group ID) → กดเชื่อม → โชว์ Webhook URL จริง (มี channelId, ไม่มี `/` ปิดท้าย) + ปุ่ม copy + สถานะเชื่อม/พัก + ยกเลิก.
 - `_actions.ts`: `connectLineChannel` (upsert 1 ช่อง/บริษัท · secret/token เข้ารหัส channel-crypto · เว้นว่าง=ใช้ค่าเดิม) + `disconnectLineChannel` + `toggleLineChannel`. Admin-tier · scope org+company · audit.
 - `_data.ts`: `getLineChannel` (คืนแค่ hasSecret/hasAccessToken ไม่คืน secret) · `_actions`/`audit/log.ts` +2 audit action.
