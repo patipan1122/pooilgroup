@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChairOps × น้องแมวน้ำ — Mockup</title>
+<style>
+  :root{--blue:#2020F8;--cream:#EEEEE6;--em:#059669;--em50:#ecfdf5;--ink:#15151c;--line:#e4e4ea}
+  *{box-sizing:border-box;margin:0;padding:0;font-family:"Sukhumvit Set","IBM Plex Sans Thai",-apple-system,system-ui,sans-serif}
+  body{background:var(--cream);color:var(--ink);padding:40px}
+  .head{max-width:1240px;margin:0 auto 26px;display:flex;align-items:center;gap:16px}
+  .head img{height:54px}
+  .head h1{font-size:23px} .head p{color:#666;font-size:14px;margin-top:2px}
+  .wrap{max-width:1240px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+  .label{grid-column:1/-1;font-size:15px;font-weight:700;color:var(--blue);margin-top:10px;border-bottom:2px solid var(--blue);padding-bottom:6px}
+  /* phone */
+  .phone{background:#111;border-radius:38px;padding:12px;box-shadow:0 16px 40px rgba(0,0,0,.18);justify-self:center;width:330px}
+  .notch{height:24px;display:flex;justify-content:center}.notch::after{content:"";width:120px;height:22px;background:#111;border-radius:0 0 16px 16px;margin-top:-12px}
+  .screen{background:#fff;border-radius:28px;overflow:hidden;height:600px;display:flex;flex-direction:column}
+  .topbar{background:var(--blue);color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;font-weight:700;font-size:15px}
+  .topbar .ava{width:30px;height:30px;border-radius:50%;background:#fff}
+  .body{padding:16px;flex:1;display:flex;flex-direction:column;gap:14px;overflow:hidden}
+  .greet{background:var(--em50);border:1px solid #bbf7d0;border-radius:18px;padding:14px;display:flex;gap:12px;align-items:center}
+  .greet img{width:84px;height:auto}
+  .greet h2{font-size:17px} .greet span{font-size:13px;color:#4b5563}
+  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .tile{background:#f8f8fb;border:1px solid var(--line);border-radius:14px;padding:12px}
+  .tile b{font-size:20px;color:var(--blue)} .tile span{font-size:12px;color:#6b7280;display:block}
+  .btn{background:var(--blue);color:#fff;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:700;text-align:center}
+  .btn.em{background:var(--em)}
+  /* success */
+  .center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px;padding:10px}
+  .center img.hero{width:190px;height:auto}
+  .center h2{font-size:22px;color:var(--em)} .center p{color:#4b5563;font-size:14px}
+  .pill{background:var(--em50);color:var(--em);border-radius:999px;padding:8px 18px;font-weight:700;font-size:15px;margin-top:6px}
+  .spin{width:46px;height:46px;border:5px solid #dbeafe;border-top-color:var(--blue);border-radius:50%}
+  /* dashboard wide */
+  .dash{grid-column:1/-1;background:#fff;border:1px solid var(--line);border-radius:22px;padding:22px 26px;box-shadow:0 8px 26px rgba(0,0,0,.06)}
+  .dash .dh{display:flex;align-items:center;gap:18px;border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:18px}
+  .dash .dh img.logo{height:46px} .dash .dh img.seal{width:70px;margin-left:auto}
+  .dash .dh h2{font-size:22px} .dash .dh span{color:#6b7280;font-size:14px}
+  .dtiles{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .dtile{border:1px solid var(--line);border-radius:16px;padding:16px;background:#fafafe}
+  .dtile b{font-size:26px}.dtile.em b{color:var(--em)}.dtile.bl b{color:var(--blue)}.dtile.am b{color:#d97706}.dtile.ro b{color:#e11d48}
+  .dtile span{font-size:13px;color:#6b7280;display:block;margin-top:2px}
+  /* line flex */
+  .chat{grid-column:1/-1;background:#8aabd4;border-radius:22px;padding:26px;display:flex;gap:14px;align-items:flex-start}
+  .chat .oaava{width:46px;height:46px;border-radius:50%;flex:none}
+  .flex{background:#fff;border-radius:18px;overflow:hidden;width:300px;box-shadow:0 6px 18px rgba(0,0,0,.15)}
+  .flex .fhero{width:100%;height:150px;object-fit:cover;display:block}
+  .flex .fbody{padding:14px}.flex .fbody h3{font-size:16px}.flex .fbody p{font-size:13px;color:#555;margin:4px 0 10px}
+  .flex .fbtn{background:var(--blue);color:#fff;text-align:center;border-radius:10px;padding:10px;font-weight:700;font-size:14px}
+  /* rich menu */
+  .rm{grid-column:1/-1;text-align:center}
+  .rm img{width:100%;max-width:760px;border-radius:18px;border:1px solid var(--line);box-shadow:0 8px 26px rgba(0,0,0,.08)}
+  .cap{font-size:12.5px;color:#777;margin-top:8px}
+</style>
+</head>
+<body>
+  <div class="head">
+    <img src="../logos/jpsync-logo-full.png" alt="logo">
+    <div><h1>ChairOps × น้องแมวน้ำ 🦭</h1><p>ดราฟต์ว่ามาสคอท + โลโก้ ไปอยู่ในจอจริงแล้วเป็นยังไง · ทั้งเว็บ · LINE · Rich menu</p></div>
+  </div>
+
+  <div class="wrap">
+
+    <div class="label">📱 แอป LINE แม่บ้าน (LIFF)</div>
+
+    <!-- Home greeting -->
+    <div class="phone"><div class="notch"></div><div class="screen">
+      <div class="topbar"><span>ChairOps</span><img class="ava" src="avatars/seal-wave-avatar-blue.png"></div>
+      <div class="body">
+        <div class="greet">
+          <img src="clean/seal-wave-clean.png">
+          <div><h2>สวัสดีตอนเช้า ☀️</h2><span>คุณสมหญิง · สาขาเซ็นทรัลโคราช</span></div>
+        </div>
+        <div class="tiles">
+          <div class="tile"><b>3</b><span>รอบที่ต้องเก็บวันนี้</span></div>
+          <div class="tile"><b>12,500฿</b><span>เก็บแล้ววันนี้</span></div>
+        </div>
+        <div class="btn em">＋ บันทึกเก็บเงิน</div>
+        <div class="btn" style="background:#fff;color:var(--blue);border:1.5px solid var(--blue)">🛠️ แจ้งซ่อม</div>
+      </div>
+    </div></div>
+
+    <!-- Success -->
+    <div class="phone"><div class="notch"></div><div class="screen">
+      <div class="topbar"><span>ChairOps</span><img class="ava" src="avatars/seal-wave-avatar-blue.png"></div>
+      <div class="center">
+        <img class="hero" src="clean/seal-thumbsup-clean.png">
+        <h2>บันทึกสำเร็จ!</h2>
+        <p>เก็บเงินสาขาเซ็นทรัลโคราช</p>
+        <div class="pill">12,500 ฿ ✓</div>
+      </div>
+      <div class="body" style="flex:none"><div class="btn">กลับหน้าหลัก</div></div>
+    </div></div>
+
+    <!-- Loading -->
+    <div class="phone"><div class="notch"></div><div class="screen">
+      <div class="center" style="gap:18px">
+        <img class="hero" src="clean/seal-laugh-clean.png" style="width:170px">
+        <div class="spin"></div>
+        <p style="font-weight:700;color:#374151">กำลังเข้าสู่ระบบ ChairOps…</p>
+      </div>
+    </div></div>
+
+    <div class="label">🖥️ แดชบอร์ดผู้บริหาร (เว็บ)</div>
+    <div class="dash">
+      <div class="dh">
+        <img class="logo" src="../logos/jpsync-logo-full.png">
+        <div><h2>สวัสดี · เช้านี้มีอะไรต้องดู</h2><span>ภาพรวม 30 สาขา · 3 มิถุนายน 2026</span></div>
+        <img class="seal" src="clean/seal-wave-clean.png">
+      </div>
+      <div class="dtiles">
+        <div class="dtile bl"><b>248,900฿</b><span>ยอดเก็บวันนี้</span></div>
+        <div class="dtile am"><b>2</b><span>สาขาค้างเก็บ</span></div>
+        <div class="dtile em"><b>28/30</b><span>เก็บครบ</span></div>
+        <div class="dtile ro"><b>−7,920฿</b><span>ส่วนต่างเงินสด</span></div>
+      </div>
+    </div>
+
+    <div class="label">💬 ข้อความ LINE (Flex) — สรุปประจำวัน</div>
+    <div class="chat">
+      <img class="oaava" src="../logos/jpsync-badge-circle-blue.png">
+      <div class="flex">
+        <img class="fhero" src="banner/seal-onsen.jpg">
+        <div class="fbody">
+          <h3>สรุป ChairOps วันนี้ 🦭</h3>
+          <p>เก็บครบ 28/30 สาขา · ยอดรวม 248,900฿ · มี 2 สาขาค้างเก็บ</p>
+          <div class="fbtn">ดูรายละเอียด</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="label">🔘 Rich Menu (เมนูลัดใน LINE)</div>
+    <div class="rm">
+      <img src="banner/richmenu-draft-2500x1686.png">
+      <div class="cap">2500×1686 · 4 ปุ่ม + น้องแมวน้ำตรงกลาง</div>
+    </div>
+
+  </div>
+</body>
+</html>

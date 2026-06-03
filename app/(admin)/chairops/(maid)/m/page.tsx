@@ -232,13 +232,23 @@ export default async function MaidHomePage() {
       <Card className="border-emerald-200 bg-emerald-50/60">
         <CardBody className="space-y-2 p-4">
           <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <h1 className="text-lg font-bold leading-tight text-zinc-900">
-                {greeting} {session.user.displayName}
-              </h1>
-              <p className="text-xs text-zinc-500">
-                {thaiDate(now, "d MMM yyyy")} · สาขา {branch.name}
-              </p>
+            <div className="flex min-w-0 items-start gap-3">
+              {/* น้องแมวน้ำโบกมือทักทายแม่บ้าน */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/mascot/clean/seal-wave-clean.png"
+                alt=""
+                aria-hidden
+                className="-my-1 h-16 w-auto shrink-0"
+              />
+              <div className="min-w-0">
+                <h1 className="text-lg font-bold leading-tight text-zinc-900">
+                  {greeting} {session.user.displayName}
+                </h1>
+                <p className="text-xs text-zinc-500">
+                  {thaiDate(now, "d MMM yyyy")} · สาขา {branch.name}
+                </p>
+              </div>
             </div>
             <Badge tone={driftLabel.tone}>{driftLabel.text}</Badge>
           </div>

@@ -32,6 +32,14 @@ export default async function ChairopsLiffEntry({
   // from the URL, logs the maid in, and redirects there. Show a calm state.
   return (
     <div className="flex min-h-[70vh] flex-col items-center justify-center gap-4 px-6 text-center">
+      {/* น้องแมวน้ำหลับ — สถานะระหว่างเข้าระบบ */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/mascot/actions/seal-sleep.png"
+        alt=""
+        aria-hidden
+        className="h-36 w-auto"
+      />
       <div className="size-12 animate-spin rounded-full border-4 border-emerald-200 border-t-emerald-600" />
       <div className="space-y-1">
         <p className="text-base font-semibold text-zinc-800">
