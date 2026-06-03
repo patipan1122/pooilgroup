@@ -62,6 +62,13 @@ export interface LedgerConfirmCardInput {
    */
   baseUrl?: string;
   /**
+   * LedgerLine's OWN LIFF id (NEXT_PUBLIC_LEDGER_LIFF_ID). When set, the buttons
+   * open the web review pane THROUGH the LIFF (liff.line.me/<id>?next=…) so the
+   * staffer logs in inside LINE via LedgerLine's own channel and avoids the iOS
+   * in-app-browser cookie-drop. When omitted, falls back to a plain web deep-link.
+   */
+  liffId?: string;
+  /**
    * When true, the buttons emit LINE *postback* actions instead of URI links, so
    * the staffer can act without leaving LINE. The webhook (Partition B) handles
    * the postback data `ledger:confirm:<id>` / `ledger:edit:<id>`.
@@ -253,17 +260,23 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
     confidence,
     needsReview,
     baseUrl = "",
+    liffId,
     usePostback = false,
   } = input;
 
   const base = baseUrl.replace(/\/+$/, "");
   const payment = fmtPayment(paymentMethod);
-  // Deep-link querystring: pin the company so the web pane opens the right one
-  // (multi-company orgs) then select the expense. Skip ?company= only when the
-  // caller has no companyId (shouldn't happen — it's required).
-  const deepLink = `${base}/ledger/expenses?${
+  // The web review pane path (pin the company so a multi-company org opens the
+  // right one, then select the expense).
+  const webPath = `/ledger/expenses?${
     companyId ? `company=${encodeURIComponent(companyId)}&` : ""
   }selected=${encodeURIComponent(expenseId)}`;
+  // Prefer opening THROUGH LedgerLine's own LIFF (login inside LINE, no iOS
+  // cookie-drop): liff.line.me/<id>?next=<webPath> — the LIFF bootstrap reads
+  // ?next and redirects there after auth. Falls back to a plain web deep-link.
+  const deepLink = liffId
+    ? `https://liff.line.me/${liffId}?next=${encodeURIComponent(webPath)}`
+    : `${base}${webPath}`;
   // Absolute brand URLs (LINE flex images must be https). Only when baseUrl set.
   const mascotUrl = base ? `${base}${BRAND_PATH.mascot}` : null;
 

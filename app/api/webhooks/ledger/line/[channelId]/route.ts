@@ -18,6 +18,8 @@ import { parseReceipt, AiBudgetError } from "@/lib/ledger/ai-parse";
 import { createDraftExpenseSystem } from "@/lib/ledger/actions";
 import { sha256Hex } from "@/lib/ledger/storage";
 import { answerQuestion } from "@/lib/ledger/qa";
+import { buildLineConfirmCard, type LineFlexMessage } from "@/components/ledger/LineConfirmCard";
+import { getRequestBaseUrl } from "@/lib/utils/base-url";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -95,6 +97,10 @@ export async function POST(
     companyId: channel.companyId,
     groupId: channel.groupId,
   };
+  // Absolute origin for flex image URLs + web deep-links (LINE needs https).
+  const baseUrl = getRequestBaseUrl(req);
+  // LedgerLine's own LIFF — buttons open the review pane THROUGH it (login in LINE).
+  const ledgerLiffId = process.env.NEXT_PUBLIC_LEDGER_LIFF_ID || undefined;
 
   // Fast 200 — process after the response.
   after(async () => {
@@ -213,15 +219,37 @@ export async function POST(
           createdById: null,
         });
 
-        // 4. Push a confirm reply (best-effort; stub-safe if reply fails).
+        // 4. Reply with the rich "บันทึกแล้ว — ยืนยัน/แก้ไข" flex card (Bainy-style).
+        //    On success → flex card (deep-links open the review pane through the
+        //    ledger LIFF). On failure → plain-text nudge. GOLDEN RULE intact: the
+        //    card's buttons only OPEN the pane; the accountant confirms on web.
         if (ev.replyToken) {
-          await replyConfirm(accessToken, ev.replyToken, {
-            ok: res.ok,
-            docCode: res.ok ? res.data.docCode : null,
-            vendor: parsed?.vendor ?? null,
-            total: parsed?.total ?? null,
-            duplicate: res.ok ? res.data.duplicate : false,
-          }).catch((e) => console.error("[ledger:line-webhook] reply failed", e));
+          if (res.ok) {
+            const card = buildLineConfirmCard({
+              expenseId: res.data.id,
+              companyId: ch.companyId,
+              docCode: res.data.docCode,
+              vendor: parsed?.vendor ?? null,
+              docDate: parsed?.docDate ?? null,
+              total: parsed?.total ?? 0,
+              vat: parsed?.vat ?? null,
+              categoryName: null, // accountant picks the category on the web pane
+              paymentMethod: parsed?.paymentMethod ?? null,
+              confidence: parsed?.confidence ?? null,
+              needsReview: !parsed || res.data.duplicate,
+              baseUrl,
+              liffId: ledgerLiffId,
+            });
+            await replyFlex(accessToken, ev.replyToken, card).catch((e) =>
+              console.error("[ledger:line-webhook] flex reply failed", e),
+            );
+          } else {
+            await replyText(
+              accessToken,
+              ev.replyToken,
+              "บันทึกใบเสร็จไม่สำเร็จ · ลองส่งรูปใหม่อีกครั้งนะ 📷",
+            ).catch((e) => console.error("[ledger:line-webhook] reply failed", e));
+          }
         }
       } catch (e) {
         console.error("[ledger:line-webhook] process failed", e);
@@ -236,36 +264,21 @@ export async function GET() {
   return NextResponse.json({ ok: true, service: "ledger-line-webhook" });
 }
 
-/**
- * Best-effort LINE reply confirming the captured receipt. Partition D ships a
- * richer flex card (components/ledger/LineConfirmCard); this is a plain-text
- * fallback so the webhook is self-contained and never blocks on that file.
- */
-async function replyConfirm(
+/** Best-effort LINE reply with a flex message (the confirm card). */
+async function replyFlex(
   accessToken: string,
   replyToken: string,
-  info: {
-    ok: boolean;
-    docCode: string | null;
-    vendor: string | null;
-    total: number | null;
-    duplicate: boolean;
-  },
+  flex: LineFlexMessage,
 ): Promise<void> {
-  let text: string;
-  if (!info.ok) {
-    text = "บันทึกใบเสร็จไม่สำเร็จ · ลองส่งใหม่อีกครั้ง";
-  } else if (info.duplicate) {
-    text = `รูปนี้บันทึกไว้แล้ว (${info.docCode}) · ไม่บันทึกซ้ำ`;
-  } else {
-    const parts = [`บันทึกใบเสร็จแล้ว · ${info.docCode}`];
-    if (info.vendor) parts.push(`ร้าน: ${info.vendor}`);
-    if (info.total != null) parts.push(`ยอด: ${info.total.toLocaleString("th-TH")} บาท`);
-    parts.push("รอบัญชียืนยันในระบบ (ห้าม auto-post)");
-    text = parts.join("\n");
-  }
-
-  await replyText(accessToken, replyToken, text);
+  await fetch("https://api.line.me/v2/bot/message/reply", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ replyToken, messages: [flex] }),
+    signal: AbortSignal.timeout(3000),
+  });
 }
 
 /** Best-effort plain-text LINE reply (used by the Q&A path). */
