@@ -10,7 +10,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "chairops", "playland"]
+  schemas  = ["public", "chairops", "playland", "fuel"]
 }
 
 // =============================================================
@@ -64,22 +64,6 @@ model Organization {
   documentAnalyses        DocumentAnalysis[]
   aiSearchCache           AiSearchCache[]
   // FuelOS Sprint 6
-  depotPrices             DepotPrice[]
-  zoneMargins             ZoneMargin[]
-  contacts                Contact[]
-  customerEntities        CustomerEntity[]
-  deliveryLocations       DeliveryLocation[]
-  customerQuotes          CustomerQuote[]
-  priceAlertLogs          PriceAlertLog[]
-  lineResponseLogs        LineResponseLog[]
-  fuelOrders              FuelOrder[]
-  trucks                  Truck[]
-  driverProfiles          DriverProfile[]
-  driverLocations         DriverLocation[]
-  payments                Payment[]
-  flashSales              FlashSale[]
-  creditDocuments         CreditDocument[]
-  chequeTrackings         ChequeTracking[]
   // Recruit module
   recruitPostings         RecruitJobPosting[]
   recruitApplicants       RecruitApplicant[]
@@ -229,15 +213,6 @@ model User {
   personDocuments          PersonDocument[]
   signaturePlacements      DocumentSignaturePlacement[] @relation("SignaturePlacementSigner")
   // FuelOS Sprint 6
-  depotPricesEntered       DepotPrice[]                 @relation("DepotPriceEntered")
-  assignedContacts         Contact[]                    @relation("ContactSales")
-  quotesAsSales            CustomerQuote[]              @relation("QuoteSales")
-  priceAlertsSent          PriceAlertLog[]              @relation("PriceAlertSales")
-  lineResponsesAsSales     LineResponseLog[]            @relation("LineResponseSales")
-  fuelOrdersAsSales        FuelOrder[]                  @relation("FuelOrderSales")
-  driverProfile            DriverProfile?
-  paymentsCreated          Payment[]                    @relation("PaymentCreatedBy")
-  flashSalesCreated        FlashSale[]                  @relation("FlashSaleCreatedBy")
   // Recruit module
   recruitPostingsCreated   RecruitJobPosting[]          @relation("RecruitPostingCreator")
   recruitNotesAuthored     RecruitApplicationNote[]     @relation("RecruitNoteAuthor")
@@ -1137,7 +1112,6 @@ model Vehicle {
   company   Company?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
   branch    Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
   documents VehicleDocument[]
-  truck     Truck?
 
   @@unique([orgId, licensePlate])
   @@index([orgId, isActive])
@@ -2000,503 +1974,6 @@ model RepairVendorToken {
   @@schema("public")
 }
 
-// =============================================================
-// FUELOS QUARANTINE — module rebuild pending (รอบ 46 audit)
-// These 16 models have zero app/lib/component references.
-// Kept in schema to preserve DB tables in prod.
-// DO NOT add new code that imports these — coordinate with CEO first.
-// Audit date: 2026-05-21
-// =============================================================
-
-// =============================================================
-// ============================================================
-// FUELOS — Sprint 6 schema (kicked off 2026-05-11)
-// Spec: ดีเทลv1/FUELOS.md §2 (Price Engine), §3/§14 (CRM Multi-Entity),
-//       §5 (Sales Workspace), §7 (Dispatch), §11 (Flash Sale), §12 (DB Schema)
-// Plan: web/FUELOS_PLAN.md
-// ============================================================
-// =============================================================
-
-// =============================================================
-// 33. depot_prices — ราคาคลังต่อวัน (PTT/Shell/Dao Evo) — FUELOS §2.4 / §12
-// หัวหน้ากรอกทุกเช้า; เซลล์เห็นพร้อมกัน
-// =============================================================
-model DepotPrice {
-  id          String    @id @default(uuid()) @db.Uuid
-  orgId       String    @map("org_id") @db.Uuid
-  date        DateTime  @db.Date
-  depotName   String    @map("depot_name") // PTT | Shell | DaoEvo
-  productType String    @map("product_type") // B7 | B10 | 91 | 95
-  depotPrice  Decimal   @map("depot_price") @db.Decimal(10, 4) // ฿/L (4dp)
-  validUntil  String    @map("valid_until") // HH:mm e.g. "17:00"
-  enteredById String?   @map("entered_by_id") @db.Uuid
-  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  enteredBy User?        @relation("DepotPriceEntered", fields: [enteredById], references: [id], onDelete: SetNull)
-
-  @@unique([orgId, date, depotName, productType])
-  @@index([orgId, date])
-  @@map("depot_prices")
-  @@schema("public")
-}
-
-// =============================================================
-// 34. zone_margins — Zone × product margin (admin config) — FUELOS §2.4
-// =============================================================
-model ZoneMargin {
-  id          String   @id @default(uuid()) @db.Uuid
-  orgId       String   @map("org_id") @db.Uuid
-  zoneName    String   @map("zone_name") // KKN, Udon, Korat, ...
-  productType String   @map("product_type") // B7 | B10 | 91 | 95
-  baseMargin  Decimal  @map("base_margin") @db.Decimal(10, 4) // ฿/L
-  minMargin   Decimal  @map("min_margin") @db.Decimal(10, 4) // ฿/L
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
-
-  @@unique([orgId, zoneName, productType])
-  @@index([orgId, isActive])
-  @@map("zone_margins")
-  @@schema("public")
-}
-
-// =============================================================
-// 35. contacts — คนที่คุยด้วย (Multi-Entity layer 1) — FUELOS §14.1 / §14.6
-// Group credit limit aggregates across entities under this contact
-// =============================================================
-model Contact {
-  id               String   @id @default(uuid()) @db.Uuid
-  orgId            String   @map("org_id") @db.Uuid
-  name             String
-  nickname         String?
-  phone            String?
-  phone2           String?
-  lineUserId       String?  @map("line_user_id")
-  assignedSalesId  String?  @map("assigned_sales_id") @db.Uuid
-  creditGroupLimit Decimal? @map("credit_group_limit") @db.Decimal(15, 2)
-  creditGroupUsed  Decimal  @default(0) @map("credit_group_used") @db.Decimal(15, 2)
-  notes            String?
-  isActive         Boolean  @default(true) @map("is_active")
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org           Organization      @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  assignedSales User?             @relation("ContactSales", fields: [assignedSalesId], references: [id], onDelete: SetNull)
-  entities      CustomerEntity[]
-  quotes        CustomerQuote[]
-  priceAlerts   PriceAlertLog[]
-  lineResponses LineResponseLog[]
-
-  @@unique([orgId, lineUserId])
-  @@index([orgId, isActive])
-  @@index([assignedSalesId])
-  @@map("contacts")
-  @@schema("public")
-}
-
-// =============================================================
-// 36. customer_entities — นิติบุคคล/บุคคลธรรมดา (Multi-Entity layer 2)
-// Spec: FUELOS §14.1 / §14.6 — invoice ออกในนาม Entity, credit ราย Entity
-// =============================================================
-model CustomerEntity {
-  id            String   @id @default(uuid()) @db.Uuid
-  orgId         String   @map("org_id") @db.Uuid
-  contactId     String   @map("contact_id") @db.Uuid
-  entityType    String   @map("entity_type") // company | partnership | individual
-  legalName     String   @map("legal_name")
-  taxId         String?  @map("tax_id")
-  address       String?
-  creditLimit   Decimal? @map("credit_limit") @db.Decimal(15, 2)
-  creditUsed    Decimal  @default(0) @map("credit_used") @db.Decimal(15, 2)
-  paymentTerms  Int?     @map("payment_terms") // days; null = COD
-  paymentMethod String?  @map("payment_method") // transfer | cash | cheque | mixed
-  docStatus     String   @default("incomplete") @map("doc_status") // complete | incomplete | expired
-  creditScore   Int?     @map("credit_score") // 0-100, AI-computed (Sprint 6.4+)
-  isActive      Boolean  @default(true) @map("is_active")
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org             Organization       @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  contact         Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  locations       DeliveryLocation[]
-  fuelOrders      FuelOrder[]
-  payments        Payment[]
-  creditDocuments CreditDocument[]
-  chequeTrackings ChequeTracking[]
-
-  @@index([orgId, isActive])
-  @@index([contactId])
-  @@map("customer_entities")
-  @@schema("public")
-}
-
-// =============================================================
-// 37. delivery_locations — จุดส่งน้ำมัน (Multi-Entity layer 3) — FUELOS §14.1
-// =============================================================
-model DeliveryLocation {
-  id             String   @id @default(uuid()) @db.Uuid
-  orgId          String   @map("org_id") @db.Uuid
-  entityId       String   @map("entity_id") @db.Uuid
-  name           String
-  address        String?
-  lat            Decimal? @db.Decimal(10, 7)
-  lng            Decimal? @db.Decimal(10, 7)
-  zone           String? // KKN, Udon, ...
-  province       String?
-  preferredDepot String?  @map("preferred_depot") // PTT | Shell | DaoEvo | null
-  maxTruckLiters Int?     @map("max_truck_liters")
-  deliveryWindow String?  @map("delivery_window") // morning | afternoon | anytime
-  contactName    String?  @map("contact_name")
-  contactPhone   String?  @map("contact_phone")
-  // Distance cache to each depot (km) — recomputed when lat/lng changes
-  distPttKm      Decimal? @map("dist_ptt_km") @db.Decimal(6, 1)
-  distShellKm    Decimal? @map("dist_shell_km") @db.Decimal(6, 1)
-  distDaoKm      Decimal? @map("dist_dao_km") @db.Decimal(6, 1)
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org        Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  entity     CustomerEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
-  fuelOrders FuelOrder[]
-
-  @@index([orgId, isActive])
-  @@index([entityId])
-  @@index([orgId, zone])
-  @@map("delivery_locations")
-  @@schema("public")
-}
-
-// =============================================================
-// 38. customer_quotes — เสนอราคา + Win/Loss + Competitor capture
-// FUELOS §3.3 / §5.2 / §12 — capture lost-to in same step (Lean: 1-click)
-// =============================================================
-model CustomerQuote {
-  id              String   @id @default(uuid()) @db.Uuid
-  orgId           String   @map("org_id") @db.Uuid
-  contactId       String   @map("contact_id") @db.Uuid
-  salesId         String   @map("sales_id") @db.Uuid
-  productType     String   @map("product_type") // B7 | B10 | 91 | 95
-  quoteDate       DateTime @map("quote_date") @db.Date
-  depotPrice      Decimal  @map("depot_price") @db.Decimal(10, 4)
-  zoneMargin      Decimal  @map("zone_margin") @db.Decimal(10, 4)
-  salesMargin     Decimal  @map("sales_margin") @db.Decimal(10, 4) // +N สตาง
-  finalPrice      Decimal  @map("final_price") @db.Decimal(10, 4)
-  status          String   @default("pending") // pending | won | lost | declined | no_response
-  lostTo          String?  @map("lost_to") // competitor name
-  competitorPrice Decimal? @map("competitor_price") @db.Decimal(10, 4)
-  resultOrderId   String?  @map("result_order_id") @db.Uuid
-  notes           String?
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org     Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  contact Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  sales   User         @relation("QuoteSales", fields: [salesId], references: [id], onDelete: Restrict)
-
-  @@index([orgId, quoteDate])
-  @@index([contactId, quoteDate])
-  @@index([salesId, quoteDate])
-  @@index([orgId, status])
-  @@map("customer_quotes")
-  @@schema("public")
-}
-
-// =============================================================
-// 39. price_alert_log — บันทึกว่าแจ้งราคาให้ใครแล้ววันนี้ — FUELOS §12
-// ป้องกัน "ลืมแจ้ง" + วัด conversion ของการแจ้งราคา
-// =============================================================
-model PriceAlertLog {
-  id          String    @id @default(uuid()) @db.Uuid
-  orgId       String    @map("org_id") @db.Uuid
-  contactId   String    @map("contact_id") @db.Uuid
-  salesId     String    @map("sales_id") @db.Uuid
-  alertDate   DateTime  @map("alert_date") @db.Date
-  priceSent   Decimal   @map("price_sent") @db.Decimal(10, 4)
-  productType String    @map("product_type")
-  sentAt      DateTime  @default(now()) @map("sent_at") @db.Timestamptz(6)
-  result      String    @default("pending") // pending | ordered | declined | no_response
-  resolvedAt  DateTime? @map("resolved_at") @db.Timestamptz(6)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  org     Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  contact Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  sales   User         @relation("PriceAlertSales", fields: [salesId], references: [id], onDelete: Restrict)
-
-  @@unique([contactId, alertDate, productType])
-  @@index([orgId, alertDate])
-  @@index([salesId, alertDate])
-  @@map("price_alert_log")
-  @@schema("public")
-}
-
-// =============================================================
-// 40. line_response_log — Response Time tracking — FUELOS §6 / §12
-// KPI: เวลาเฉลี่ยตอบลูกค้าใน LINE group (target ≤30 นาที)
-// =============================================================
-model LineResponseLog {
-  id              String    @id @default(uuid()) @db.Uuid
-  orgId           String    @map("org_id") @db.Uuid
-  contactId       String    @map("contact_id") @db.Uuid
-  salesId         String?   @map("sales_id") @db.Uuid
-  lineGroupId     String?   @map("line_group_id")
-  customerSentAt  DateTime  @map("customer_sent_at") @db.Timestamptz(6)
-  salesRepliedAt  DateTime? @map("sales_replied_at") @db.Timestamptz(6)
-  responseMinutes Int?      @map("response_minutes") // computed at reply time
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  org     Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  contact Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  sales   User?        @relation("LineResponseSales", fields: [salesId], references: [id], onDelete: SetNull)
-
-  @@index([orgId, customerSentAt])
-  @@index([salesId, customerSentAt])
-  @@index([contactId, customerSentAt])
-  @@map("line_response_log")
-  @@schema("public")
-}
-
-// =============================================================
-// 41. fuel_orders — ออเดอร์น้ำมันจริง — FUELOS §12
-// Note: kept distinct name from any future generic `Order` to avoid collision
-// =============================================================
-model FuelOrder {
-  id                    String    @id @default(uuid()) @db.Uuid
-  orgId                 String    @map("org_id") @db.Uuid
-  orderNumber           String    @unique @map("order_number")
-  entityId              String    @map("entity_id") @db.Uuid
-  locationId            String    @map("location_id") @db.Uuid
-  salesId               String    @map("sales_id") @db.Uuid
-  productType           String    @map("product_type")
-  qtyOrdered            Decimal   @map("qty_ordered") @db.Decimal(12, 3)
-  qtyDelivered          Decimal?  @map("qty_delivered") @db.Decimal(12, 3)
-  pricePerLiter         Decimal   @map("price_per_liter") @db.Decimal(10, 4)
-  depotCost             Decimal   @map("depot_cost") @db.Decimal(10, 4)
-  transportCostPerLiter Decimal   @default(0) @map("transport_cost_per_liter") @db.Decimal(10, 4)
-  // marginPerLiter + totalAmount + totalProfit are GENERATED columns added in SQL migration
-  // (Prisma cannot express GENERATED columns yet; modeled as nullable read-only here)
-  marginPerLiter        Decimal?  @map("margin_per_liter") @db.Decimal(10, 4)
-  totalAmount           Decimal?  @map("total_amount") @db.Decimal(15, 2)
-  totalProfit           Decimal?  @map("total_profit") @db.Decimal(15, 2)
-  truckId               String?   @map("truck_id") @db.Uuid
-  driverId              String?   @map("driver_id") @db.Uuid // FK -> users (driver)
-  depot                 String?
-  status                String    @default("pending") // pending | scheduled | dispatched | delivered | cancelled
-  scheduledDate         DateTime? @map("scheduled_date") @db.Date
-  deliveredAt           DateTime? @map("delivered_at") @db.Timestamptz(6)
-  deliveryPhotoKey      String?   @map("delivery_photo_key")
-  deliveryLat           Decimal?  @map("delivery_lat") @db.Decimal(10, 7)
-  deliveryLng           Decimal?  @map("delivery_lng") @db.Decimal(10, 7)
-  source                String    @default("manual") // quote | flash_sale | manual | line_bot
-  sourceQuoteId         String?   @map("source_quote_id") @db.Uuid
-  notes                 String?
-  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org             Organization     @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  entity          CustomerEntity   @relation(fields: [entityId], references: [id], onDelete: Restrict)
-  location        DeliveryLocation @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  sales           User             @relation("FuelOrderSales", fields: [salesId], references: [id], onDelete: Restrict)
-  truck           Truck?           @relation(fields: [truckId], references: [id], onDelete: SetNull)
-  driverLocations DriverLocation[]
-
-  @@index([orgId, scheduledDate])
-  @@index([orgId, status])
-  @@index([entityId, scheduledDate])
-  @@index([salesId, scheduledDate])
-  @@index([truckId, scheduledDate])
-  @@map("fuel_orders")
-  @@schema("public")
-}
-
-// =============================================================
-// 42. trucks — ทะเบียน + capacity — FUELOS §12
-// Reuses Vehicle (DocuFlow scope) for documents. Truck = FuelOS-specific fields.
-// =============================================================
-model Truck {
-  id              String   @id @default(uuid()) @db.Uuid
-  orgId           String   @map("org_id") @db.Uuid
-  vehicleId       String   @unique @map("vehicle_id") @db.Uuid // 1-1 with Vehicle
-  capacityLiters  Int      @map("capacity_liters")
-  homeDepot       String?  @map("home_depot") // PTT | Shell | DaoEvo
-  status          String   @default("idle") // idle | loaded | dispatched | maintenance
-  currentDriverId String?  @map("current_driver_id") @db.Uuid
-  isActive        Boolean  @default(true) @map("is_active")
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org        Organization    @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  vehicle    Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
-  fuelOrders FuelOrder[]
-  drivers    DriverProfile[] @relation("DriverCurrentTruck")
-
-  @@index([orgId, isActive])
-  @@index([orgId, status])
-  @@map("trucks")
-  @@schema("public")
-}
-
-// =============================================================
-// 43. driver_profiles — satellite for User.role=driver — FUELOS §12
-// Adds FCM token + current truck assignment without forking User identity
-// =============================================================
-model DriverProfile {
-  id              String   @id @default(uuid()) @db.Uuid
-  orgId           String   @map("org_id") @db.Uuid
-  userId          String   @unique @map("user_id") @db.Uuid // 1-1 with User
-  androidFcmToken String?  @map("android_fcm_token")
-  currentTruckId  String?  @map("current_truck_id") @db.Uuid
-  status          String   @default("offline") // offline | available | on_route | break
-  isActive        Boolean  @default(true) @map("is_active")
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org          Organization     @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  currentTruck Truck?           @relation("DriverCurrentTruck", fields: [currentTruckId], references: [id], onDelete: SetNull)
-  locations    DriverLocation[]
-
-  @@index([orgId, status])
-  @@map("driver_profiles")
-  @@schema("public")
-}
-
-// =============================================================
-// 44. driver_locations — GPS track per order — FUELOS §12
-// Phase 1: Android phone GPS via Driver PWA. Phase 2: hardware GPS.
-// =============================================================
-model DriverLocation {
-  id         String   @id @default(uuid()) @db.Uuid
-  orgId      String   @map("org_id") @db.Uuid
-  driverId   String   @map("driver_id") @db.Uuid
-  orderId    String?  @map("order_id") @db.Uuid
-  lat        Decimal  @db.Decimal(10, 7)
-  lng        Decimal  @db.Decimal(10, 7)
-  speedKmh   Decimal? @map("speed_kmh") @db.Decimal(5, 1)
-  recordedAt DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
-
-  org    Organization  @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  driver DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  order  FuelOrder?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
-
-  @@index([driverId, recordedAt])
-  @@index([orderId, recordedAt])
-  @@map("driver_locations")
-  @@schema("public")
-}
-
-// =============================================================
-// 45. payments — รับชำระ — FUELOS §12 / §14.4
-// =============================================================
-model Payment {
-  id          String   @id @default(uuid()) @db.Uuid
-  orgId       String   @map("org_id") @db.Uuid
-  entityId    String   @map("entity_id") @db.Uuid
-  amount      Decimal  @db.Decimal(15, 2)
-  method      String // transfer | cash | cheque
-  paymentDate DateTime @map("payment_date") @db.Date
-  reference   String? // bank ref, slip number
-  notes       String?
-  createdById String?  @map("created_by_id") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  org       Organization     @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  entity    CustomerEntity   @relation(fields: [entityId], references: [id], onDelete: Restrict)
-  createdBy User?            @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  cheques   ChequeTracking[]
-
-  @@index([orgId, paymentDate])
-  @@index([entityId, paymentDate])
-  @@map("payments")
-  @@schema("public")
-}
-
-// =============================================================
-// 46. flash_sales — Broadcast offer — FUELOS §11
-// =============================================================
-model FlashSale {
-  id               String   @id @default(uuid()) @db.Uuid
-  orgId            String   @map("org_id") @db.Uuid
-  productType      String   @map("product_type")
-  qtyAvailable     Decimal  @map("qty_available") @db.Decimal(12, 3)
-  qtySold          Decimal  @default(0) @map("qty_sold") @db.Decimal(12, 3)
-  discountPerLiter Decimal  @map("discount_per_liter") @db.Decimal(10, 4)
-  zoneFilter       String[] @default([]) @map("zone_filter")
-  expiresAt        DateTime @map("expires_at") @db.Timestamptz(6)
-  status           String   @default("active") // active | sold_out | expired | cancelled
-  createdById      String?  @map("created_by_id") @db.Uuid
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  createdBy User?        @relation("FlashSaleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-
-  @@index([orgId, status])
-  @@index([orgId, expiresAt])
-  @@map("flash_sales")
-  @@schema("public")
-}
-
-// =============================================================
-// 47. credit_documents — link CustomerEntity ↔ DocuFlow Document — FUELOS §14.2
-// (e.g. สัญญาซื้อขายน้ำมัน, หนังสือรับรองบริษัท, สำเนาบัตร, statement, หลักประกัน)
-// =============================================================
-model CreditDocument {
-  id         String    @id @default(uuid()) @db.Uuid
-  orgId      String    @map("org_id") @db.Uuid
-  entityId   String    @map("entity_id") @db.Uuid
-  documentId String?   @map("document_id") @db.Uuid // FK -> documents (DocuFlow); null = required but not yet uploaded
-  docType    String    @map("doc_type") // contract | cert | id | statement | collateral
-  expiryDate DateTime? @map("expiry_date") @db.Date
-  status     String    @default("pending") // valid | expired | missing | pending
-  uploadedAt DateTime? @map("uploaded_at") @db.Timestamptz(6)
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org    Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  entity CustomerEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
-
-  @@unique([entityId, docType])
-  @@index([orgId, status])
-  @@index([orgId, expiryDate])
-  @@map("credit_documents")
-  @@schema("public")
-}
-
-// =============================================================
-// 48. cheque_tracking — เช็คที่รับชำระ + วันขึ้นเงิน + bounce flag — FUELOS §14.4
-// =============================================================
-model ChequeTracking {
-  id            String    @id @default(uuid()) @db.Uuid
-  orgId         String    @map("org_id") @db.Uuid
-  entityId      String    @map("entity_id") @db.Uuid
-  paymentId     String?   @map("payment_id") @db.Uuid
-  chequeNumber  String    @map("cheque_number")
-  bank          String
-  amount        Decimal   @db.Decimal(15, 2)
-  dueDate       DateTime  @map("due_date") @db.Date
-  status        String    @default("pending") // pending | cleared | bounced
-  clearedAt     DateTime? @map("cleared_at") @db.Timestamptz(6)
-  bouncedReason String?   @map("bounced_reason")
-  notes         String?
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  org     Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  entity  CustomerEntity @relation(fields: [entityId], references: [id], onDelete: Restrict)
-  payment Payment?       @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-
-  @@index([orgId, dueDate])
-  @@index([orgId, status])
-  @@index([entityId, dueDate])
-  @@map("cheque_tracking")
-  @@schema("public")
-}
 
 // =============================================================
 // CLAWFLEET — ระบบบริหารตู้คีบ + ตู้แลกเหรียญ
@@ -4887,6 +4364,730 @@ model HotelBlockedDate {
   @@unique([roomId, date])
   @@map("hotel_blocked_date")
   @@schema("public")
+}
+
+// =============================================================
+// FUELOS (migrated from pooil-fuel) — schema "fuel"
+// renamed to avoid Pool collisions: User->FuelUser, AuditLog->FuelAuditLog,
+// InboxChannel->FuelInboxChannel, enum UserRole->FuelUserRole
+// =============================================================
+// ---------- enums ----------
+enum FuelUserRole {
+  OWNER // CEO
+  SALES_HEAD // หัวหน้าขาย
+  SALES // เซลล์
+  FINANCE // การเงิน/เครดิต
+  DISPATCH // ฝ่ายจัดส่ง
+  DRIVER // คนขับ
+  ADMIN
+
+  @@schema("fuel")
+}
+
+enum ProductType {
+  B7
+  B10
+  B20
+  GASOHOL_91
+  GASOHOL_95
+  E20
+  E85
+
+  @@schema("fuel")
+}
+
+enum ConvStatus {
+  OPEN
+  SNOOZED
+  CLOSED
+
+  @@schema("fuel")
+}
+
+enum ConvSegment {
+  NEW // ลูกค้าใหม่ (ติดป้ายเอง)
+  OLD // เคยซื้อแล้ว (auto เมื่อมี order แรก)
+  PRICE_CHECK // เช็คราคาเฉย ๆ ยังไม่ซื้อ
+
+  @@schema("fuel")
+}
+
+enum MsgDirection {
+  IN
+  OUT
+
+  @@schema("fuel")
+}
+
+enum SenderType {
+  CUSTOMER
+  STAFF
+  BOT
+
+  @@schema("fuel")
+}
+
+enum QuoteStatus {
+  PENDING
+  WON
+  LOST
+  DECLINED
+  NO_RESPONSE
+
+  @@schema("fuel")
+}
+
+enum OrderStatus {
+  AWAITING_CONFIRM // รอยืนยัน/รอจัดส่ง
+  DELIVERING // กำลังจัดส่ง/รถออกแล้ว
+  DELIVERED_UNPAID // ส่งแล้ว/รอเก็บเงิน
+  CLOSED // ปิดบิล/จบ
+  CANCELLED
+
+  @@schema("fuel")
+}
+
+enum PaymentMethod {
+  TRANSFER
+  CASH
+  CHEQUE
+
+  @@schema("fuel")
+}
+
+enum PaymentStatus {
+  PENDING // รอการเงินยืนยัน
+  VERIFIED
+  REJECTED
+
+  @@schema("fuel")
+}
+
+enum ChequeStatus {
+  PENDING
+  CLEARED
+  BOUNCED
+
+  @@schema("fuel")
+}
+
+enum CreditApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@schema("fuel")
+}
+
+enum TruckStatus {
+  IDLE
+  LOADED
+  DISPATCHED
+  MAINTENANCE
+
+  @@schema("fuel")
+}
+
+enum FollowUpStatus {
+  OPEN
+  DONE
+
+  @@schema("fuel")
+}
+
+// ---------- core / auth ----------
+model Org {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime @default(now())
+
+  users            FuelUser[]
+  customers        Customer[]
+  depotPrices      DepotPrice[]
+  zoneMargins      ZoneMargin[]
+  conversations    Conversation[]
+  quotes           Quote[]
+  orders           Order[]
+  trucks           Truck[]
+  payments         Payment[]
+  cheques          Cheque[]
+  bankAccounts     BankAccount[]
+  botFaqs          BotFaq[]
+  followUps        FollowUp[]
+  auditLogs        FuelAuditLog[]
+  channels         FuelInboxChannel[]
+  creditApprovals  CreditApproval[]
+
+  @@map("orgs")
+  @@schema("fuel")
+}
+
+model FuelUser {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  role         FuelUserRole @default(SALES)
+  phone        String?
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  org              Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  lineIdentities   StaffLineIdentity[]
+  ownedCustomers   Customer[]         @relation("CustomerOwner")
+  assignedConvs    Conversation[]     @relation("ConvAssignee")
+  sentMessages     Message[]          @relation("MsgStaff")
+  quotes           Quote[]            @relation("QuoteSales")
+  orders           Order[]            @relation("OrderSales")
+  enteredPrices    DepotPrice[]       @relation("PriceEnteredBy")
+  followUps        FollowUp[]         @relation("FollowUpSales")
+  drivingTrucks    Truck[]            @relation("TruckDriver")
+  auditLogs        FuelAuditLog[]
+  approvalsAsked   CreditApproval[]   @relation("ApprovalRequester")
+  approvalsActed   CreditApproval[]   @relation("ApprovalActor")
+  verifiedPayments Payment[]          @relation("PaymentVerifier")
+
+  @@index([orgId, role])
+  @@map("users")
+  @@schema("fuel")
+}
+
+// แมป LINE userId ของพนักงาน → FuelUser (เพื่อรู้ว่า "ใครตอบ" ในกลุ่ม)
+model StaffLineIdentity {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  lineUserId String   @unique @map("line_user_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user FuelUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@map("staff_line_identities")
+  @@schema("fuel")
+}
+
+// ---------- F7 pricing ----------
+model DepotPrice {
+  id          String      @id @default(uuid()) @db.Uuid
+  orgId       String      @map("org_id") @db.Uuid
+  date        DateTime    @db.Date
+  depotName   String      @map("depot_name") // PTT / Shell / บางจาก
+  productType ProductType @map("product_type")
+  costPerL    Decimal     @map("cost_per_l") @db.Decimal(10, 4) // ต้นทุนคลัง ฿/ลิตร
+  validUntil  DateTime?   @map("valid_until") // เวลาหมดอายุราคา (timestamptz)
+  enteredById String?     @map("entered_by_id") @db.Uuid
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  org       Org   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  enteredBy FuelUser? @relation("PriceEnteredBy", fields: [enteredById], references: [id], onDelete: SetNull)
+
+  @@unique([orgId, date, depotName, productType])
+  @@index([orgId, date])
+  @@map("depot_prices")
+  @@schema("fuel")
+}
+
+model ZoneMargin {
+  id          String      @id @default(uuid()) @db.Uuid
+  orgId       String      @map("org_id") @db.Uuid
+  zoneName    String      @map("zone_name")
+  productType ProductType @map("product_type")
+  baseMargin  Decimal     @map("base_margin") @db.Decimal(10, 4) // กำไรโซน ฿/ลิตร
+  minMargin   Decimal     @map("min_margin") @db.Decimal(10, 4) // กันขายต่ำกว่าทุน
+  isActive    Boolean     @default(true) @map("is_active")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, zoneName, productType])
+  @@index([orgId, isActive])
+  @@map("zone_margins")
+  @@schema("fuel")
+}
+
+// ---------- F5 CRM (1 group = 1 customer/company) ----------
+model Customer {
+  id               String    @id @default(uuid()) @db.Uuid
+  orgId            String    @map("org_id") @db.Uuid
+  name             String // ชื่อเรียก
+  legalName        String?   @map("legal_name") // ชื่อนิติบุคคล (ออกใบ)
+  taxId            String?   @map("tax_id")
+  phone            String?
+  zone             String?
+  province         String?
+  assignedSalesId  String?   @map("assigned_sales_id") @db.Uuid // เจ้าของหลัก
+  creditLimit      Decimal?  @map("credit_limit") @db.Decimal(15, 2)
+  creditUsed       Decimal   @default(0) @map("credit_used") @db.Decimal(15, 2)
+  paymentTerms     Int?      @map("payment_terms") // วัน; null = COD
+  // CRM health (F3/F5)
+  firstOrderAt     DateTime? @map("first_order_at") // มี = ลูกค้าเก่า
+  lastOrderAt      DateTime? @map("last_order_at")
+  lastQuoteAt      DateTime? @map("last_quote_at")
+  normalCadenceDays Int?     @map("normal_cadence_days") // รอบซื้อปกติ (auto + ปรับได้)
+  cadenceManual    Boolean   @default(false) @map("cadence_manual")
+  notes            String?
+  isActive         Boolean   @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  org           Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  assignedSales FuelUser?              @relation("CustomerOwner", fields: [assignedSalesId], references: [id], onDelete: SetNull)
+  locations     DeliveryLocation[]
+  conversations Conversation[]
+  quotes        Quote[]
+  orders        Order[]
+  payments      Payment[]
+  cheques       Cheque[]
+  creditDocs    CreditDocument[]
+  followUps     FollowUp[]
+
+  @@index([orgId, isActive])
+  @@index([assignedSalesId])
+  @@index([orgId, lastOrderAt])
+  @@index([orgId, isActive, lastOrderAt])
+  @@map("customers")
+  @@schema("fuel")
+}
+
+model DeliveryLocation {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  name       String
+  address    String?
+  lat        Decimal? @db.Decimal(10, 7)
+  lng        Decimal? @db.Decimal(10, 7)
+  zone       String?
+  contactName  String? @map("contact_name")
+  contactPhone String? @map("contact_phone")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  orders   Order[]
+
+  @@index([customerId])
+  @@map("delivery_locations")
+  @@schema("fuel")
+}
+
+// ---------- F1/F2 Inbox (LINE OA + groups) ----------
+model FuelInboxChannel {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  displayName     String   @map("display_name")
+  externalId      String?  @map("external_id") // LINE channel id
+  accessTokenEnc  String?  @map("access_token_enc")
+  webhookSecret   String?  @map("webhook_secret")
+  botEnabled      Boolean  @default(false) @map("bot_enabled")
+  status          String   @default("setup") // setup | active | error
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  org           Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+
+  @@map("inbox_channels")
+  @@schema("fuel")
+}
+
+model Conversation {
+  id              String      @id @default(uuid()) @db.Uuid
+  orgId           String      @map("org_id") @db.Uuid
+  channelId       String?     @map("channel_id") @db.Uuid
+  lineGroupId     String?     @map("line_group_id") // groupId (1 กลุ่ม = 1 ลูกค้า)
+  externalUserId  String?     @map("external_user_id") // กรณี 1:1
+  customerId      String?     @map("customer_id") @db.Uuid
+  displayName     String?     @map("display_name")
+  status          ConvStatus  @default(OPEN)
+  segment         ConvSegment @default(NEW)
+  assignedToId    String?     @map("assigned_to_id") @db.Uuid // เจ้าของหลัก
+  isUnanswered    Boolean     @default(false) @map("is_unanswered") // ลูกค้าพิมพ์ล่าสุด ยังไม่มีคนตอบ
+  lastInboundAt   DateTime?   @map("last_inbound_at")
+  lastStaffReplyAt DateTime?  @map("last_staff_reply_at")
+  lastMessageAt   DateTime?   @map("last_message_at")
+  unreadCount     Int         @default(0) @map("unread_count")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  org        Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  channel    FuelInboxChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  customer   Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  assignedTo FuelUser?         @relation("ConvAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  messages   Message[]
+  quotes     Quote[]
+
+  @@unique([channelId, lineGroupId])
+  @@index([orgId, status])
+  @@index([orgId, isUnanswered])
+  @@index([assignedToId])
+  @@index([orgId, lastMessageAt])
+  @@index([orgId, isUnanswered, lastMessageAt])
+  @@map("conversations")
+  @@schema("fuel")
+}
+
+model Message {
+  id               String       @id @default(uuid()) @db.Uuid
+  orgId            String       @map("org_id") @db.Uuid
+  conversationId   String       @map("conversation_id") @db.Uuid
+  direction        MsgDirection
+  senderType       SenderType   @map("sender_type")
+  senderLineUserId String?      @map("sender_line_user_id")
+  senderUserId     String?      @map("sender_user_id") @db.Uuid // staff ที่ตอบ (รู้ว่าใครตอบ)
+  body             String
+  attachments      Json?
+  externalId       String?      @map("external_id")
+  sentByBot        Boolean      @default(false) @map("sent_by_bot")
+  createdAt        DateTime     @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderUser   FuelUser?        @relation("MsgStaff", fields: [senderUserId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@index([orgId, createdAt])
+  @@map("messages")
+  @@schema("fuel")
+}
+
+// ---------- F6 Quotes ----------
+model Quote {
+  id              String      @id @default(uuid()) @db.Uuid
+  orgId           String      @map("org_id") @db.Uuid
+  quoteNo         String      @map("quote_no")
+  customerId      String?     @map("customer_id") @db.Uuid
+  prospectName    String?     @map("prospect_name") // ลูกค้าใหม่ยังไม่มีในระบบ
+  prospectPhone   String?     @map("prospect_phone")
+  salesId         String      @map("sales_id") @db.Uuid
+  conversationId  String?     @map("conversation_id") @db.Uuid
+  status          QuoteStatus @default(PENDING)
+  publicToken     String      @unique @map("public_token") // ลิงก์เปิดหน้าใบราคา
+  quoteDate       DateTime    @default(now()) @map("quote_date")
+  validUntil      DateTime?   @map("valid_until")
+  subtotal        Decimal     @default(0) @db.Decimal(15, 2)
+  lostTo          String?     @map("lost_to")
+  competitorPrice Decimal?    @map("competitor_price") @db.Decimal(10, 4)
+  resultOrderId   String?     @map("result_order_id") @db.Uuid
+  notes           String?
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  org          Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  customer     Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  sales        FuelUser          @relation("QuoteSales", fields: [salesId], references: [id], onDelete: Restrict)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  items        QuoteItem[]
+
+  @@unique([orgId, quoteNo])
+  @@index([orgId, status])
+  @@index([salesId, quoteDate])
+  @@index([customerId])
+  @@map("quotes")
+  @@schema("fuel")
+}
+
+model QuoteItem {
+  id          String      @id @default(uuid()) @db.Uuid
+  quoteId     String      @map("quote_id") @db.Uuid
+  productType ProductType @map("product_type")
+  qtyLiters   Decimal     @map("qty_liters") @db.Decimal(12, 3)
+  costPerL    Decimal     @map("cost_per_l") @db.Decimal(10, 4) // snapshot ต้นทุน
+  zoneMargin  Decimal     @map("zone_margin") @db.Decimal(10, 4)
+  salesMargin Decimal     @default(0) @map("sales_margin") @db.Decimal(10, 4)
+  finalPrice  Decimal     @map("final_price") @db.Decimal(10, 4) // ราคาขาย/ลิตร (ล็อกตอนออกใบ)
+  lineTotal   Decimal     @map("line_total") @db.Decimal(15, 2)
+
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
+  @@map("quote_items")
+  @@schema("fuel")
+}
+
+// ---------- F8 Orders ----------
+model Order {
+  id              String      @id @default(uuid()) @db.Uuid
+  orgId           String      @map("org_id") @db.Uuid
+  orderNo         String      @map("order_no")
+  customerId      String      @map("customer_id") @db.Uuid
+  locationId      String?     @map("location_id") @db.Uuid
+  salesId         String      @map("sales_id") @db.Uuid
+  sourceQuoteId   String?     @map("source_quote_id") @db.Uuid
+  status          OrderStatus @default(AWAITING_CONFIRM)
+  scheduledDate   DateTime?   @map("scheduled_date") @db.Date
+  deliveredAt     DateTime?   @map("delivered_at")
+  truckId         String?     @map("truck_id") @db.Uuid
+  driverId        String?     @map("driver_id") @db.Uuid
+  deliveryPhotoKey String?    @map("delivery_photo_key")
+  deliveryLat     Decimal?    @map("delivery_lat") @db.Decimal(10, 7)
+  deliveryLng     Decimal?    @map("delivery_lng") @db.Decimal(10, 7)
+  subtotal        Decimal     @default(0) @db.Decimal(15, 2) // ยอดขายรวม
+  totalCost       Decimal     @default(0) @map("total_cost") @db.Decimal(15, 2) // ต้นทุน+ขนส่ง
+  totalProfit     Decimal     @default(0) @map("total_profit") @db.Decimal(15, 2)
+  creditOverride  Boolean     @default(false) @map("credit_override") // ขายเกินวงเงิน (อนุมัติแล้ว)
+  notes           String?
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  org      Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  customer Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  location DeliveryLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  sales    FuelUser              @relation("OrderSales", fields: [salesId], references: [id], onDelete: Restrict)
+  truck    Truck?            @relation(fields: [truckId], references: [id], onDelete: SetNull)
+  items    OrderItem[]
+  payments Payment[]
+  approval CreditApproval?
+
+  @@unique([orgId, orderNo])
+  @@index([orgId, status])
+  @@index([customerId, scheduledDate])
+  @@index([salesId, createdAt])
+  @@index([truckId, scheduledDate])
+  @@index([orgId, status, scheduledDate])
+  @@map("orders")
+  @@schema("fuel")
+}
+
+model OrderItem {
+  id                    String      @id @default(uuid()) @db.Uuid
+  orderId               String      @map("order_id") @db.Uuid
+  productType           ProductType @map("product_type")
+  qtyLiters             Decimal     @map("qty_liters") @db.Decimal(12, 3)
+  qtyDelivered          Decimal?    @map("qty_delivered") @db.Decimal(12, 3)
+  pricePerLiter         Decimal     @map("price_per_liter") @db.Decimal(10, 4)
+  costPerL              Decimal     @map("cost_per_l") @db.Decimal(10, 4)
+  transportCostPerL     Decimal     @default(0) @map("transport_cost_per_l") @db.Decimal(10, 4)
+  marginPerLiter        Decimal     @map("margin_per_liter") @db.Decimal(10, 4)
+  lineTotal             Decimal     @map("line_total") @db.Decimal(15, 2)
+  lineProfit            Decimal     @map("line_profit") @db.Decimal(15, 2)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("order_items")
+  @@schema("fuel")
+}
+
+model CreditApproval {
+  id            String               @id @default(uuid()) @db.Uuid
+  orgId         String               @map("org_id") @db.Uuid
+  orderId       String               @unique @map("order_id") @db.Uuid
+  requestedById String               @map("requested_by_id") @db.Uuid
+  approvedById  String?              @map("approved_by_id") @db.Uuid
+  status        CreditApprovalStatus @default(PENDING)
+  amountOver    Decimal              @map("amount_over") @db.Decimal(15, 2)
+  note          String?
+  createdAt     DateTime             @default(now()) @map("created_at")
+  actedAt       DateTime?            @map("acted_at")
+
+  org         Org   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  order       Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  requestedBy FuelUser  @relation("ApprovalRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  approvedBy  FuelUser? @relation("ApprovalActor", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([orgId, status])
+  @@map("credit_approvals")
+  @@schema("fuel")
+}
+
+// ---------- F9 Credit / payments / cheques ----------
+model CreditDocument {
+  id         String    @id @default(uuid()) @db.Uuid
+  orgId      String    @map("org_id") @db.Uuid
+  customerId String    @map("customer_id") @db.Uuid
+  docType    String    @map("doc_type") // contract | cert | id | statement | collateral
+  fileKey    String?   @map("file_key")
+  expiryDate DateTime? @map("expiry_date") @db.Date
+  status     String    @default("pending") // valid | expired | missing | pending
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("credit_documents")
+  @@schema("fuel")
+}
+
+model Payment {
+  id           String        @id @default(uuid()) @db.Uuid
+  orgId        String        @map("org_id") @db.Uuid
+  customerId   String        @map("customer_id") @db.Uuid
+  orderId      String?       @map("order_id") @db.Uuid
+  amount       Decimal       @db.Decimal(15, 2)
+  method       PaymentMethod
+  paymentDate  DateTime      @map("payment_date") @db.Date
+  slipKey      String?       @map("slip_key") // รูปสลิปใน R2
+  slipHash     String?       @map("slip_hash") // กันสลิปซ้ำ
+  reference    String?
+  status       PaymentStatus @default(PENDING) // รอการเงินยืนยันยอดเข้าจริง
+  verifiedById String?       @map("verified_by_id") @db.Uuid
+  verifiedAt   DateTime?     @map("verified_at")
+  notes        String?
+  createdById  String?       @map("created_by_id") @db.Uuid
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  order      Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  verifiedBy FuelUser?     @relation("PaymentVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+  cheques    Cheque[]
+
+  @@unique([orgId, slipHash])
+  @@index([orgId, status])
+  @@index([customerId, paymentDate])
+  @@map("payments")
+  @@schema("fuel")
+}
+
+model Cheque {
+  id           String       @id @default(uuid()) @db.Uuid
+  orgId        String       @map("org_id") @db.Uuid
+  customerId   String       @map("customer_id") @db.Uuid
+  paymentId    String?      @map("payment_id") @db.Uuid
+  chequeNumber String       @map("cheque_number")
+  bank         String
+  amount       Decimal      @db.Decimal(15, 2)
+  dueDate      DateTime     @map("due_date") @db.Date
+  status       ChequeStatus @default(PENDING)
+  clearedAt    DateTime?    @map("cleared_at")
+  bouncedReason String?     @map("bounced_reason")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  org      Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  payment  Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, status])
+  @@index([orgId, dueDate])
+  @@map("cheques")
+  @@schema("fuel")
+}
+
+// ---------- F10 Dispatch + GPS ----------
+model Truck {
+  id             String      @id @default(uuid()) @db.Uuid
+  orgId          String      @map("org_id") @db.Uuid
+  plate          String // ทะเบียนรถ
+  capacityLiters Int         @map("capacity_liters")
+  gpsUnitId      String?     @unique @map("gps_unit_id") // เลขกล่อง GPS (DLT unit_id)
+  homeDepot      String?     @map("home_depot")
+  status         TruckStatus @default(IDLE)
+  currentDriverId String?    @map("current_driver_id") @db.Uuid
+  // ตำแหน่งล่าสุด (denormalized เพื่อความเร็วหน้าแผนที่)
+  lastLat        Decimal?    @map("last_lat") @db.Decimal(10, 7)
+  lastLng        Decimal?    @map("last_lng") @db.Decimal(10, 7)
+  lastSpeedKmh   Decimal?    @map("last_speed_kmh") @db.Decimal(5, 1)
+  lastEngineOn   Boolean?    @map("last_engine_on")
+  lastCourseDeg  Int?        @map("last_course_deg")
+  lastSeenAt     DateTime?   @map("last_seen_at")
+  isActive       Boolean     @default(true) @map("is_active")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  org           Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  currentDriver FuelUser?           @relation("TruckDriver", fields: [currentDriverId], references: [id], onDelete: SetNull)
+  orders        Order[]
+  locations     TruckLocation[]
+
+  @@index([orgId, isActive])
+  @@index([orgId, status])
+  @@map("trucks")
+  @@schema("fuel")
+}
+
+model TruckLocation {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  truckId    String   @map("truck_id") @db.Uuid
+  lat        Decimal  @db.Decimal(10, 7)
+  lng        Decimal  @db.Decimal(10, 7)
+  speedKmh   Decimal? @map("speed_kmh") @db.Decimal(5, 1)
+  engineOn   Boolean? @map("engine_on")
+  courseDeg  Int?     @map("course_deg")
+  recordedAt DateTime @default(now()) @map("recorded_at")
+
+  truck Truck @relation(fields: [truckId], references: [id], onDelete: Cascade)
+
+  @@index([truckId, recordedAt])
+  @@map("truck_locations")
+  @@schema("fuel")
+}
+
+// ---------- F4 bot assist + bank accounts ----------
+model BotFaq {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  keywords  String // comma-separated
+  answer    String
+  enabled   Boolean  @default(true)
+  priority  Int      @default(0)
+  hits      Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, enabled])
+  @@map("bot_faqs")
+  @@schema("fuel")
+}
+
+model BankAccount {
+  id          String  @id @default(uuid()) @db.Uuid
+  orgId       String  @map("org_id") @db.Uuid
+  bankName    String  @map("bank_name")
+  accountName String  @map("account_name")
+  accountNo   String  @map("account_no")
+  isDefault   Boolean @default(false) @map("is_default")
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@map("bank_accounts")
+  @@schema("fuel")
+}
+
+// ---------- F5 follow-ups ----------
+model FollowUp {
+  id             String         @id @default(uuid()) @db.Uuid
+  orgId          String         @map("org_id") @db.Uuid
+  customerId     String?        @map("customer_id") @db.Uuid
+  salesId        String         @map("sales_id") @db.Uuid
+  dueDate        DateTime       @map("due_date") @db.Date
+  note           String
+  status         FollowUpStatus @default(OPEN)
+  kind           String         @default("manual") // manual | overdue | prospect
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  org      Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  sales    FuelUser      @relation("FollowUpSales", fields: [salesId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, status, dueDate])
+  @@index([salesId, status])
+  @@map("follow_ups")
+  @@schema("fuel")
+}
+
+// ---------- audit ----------
+model FuelAuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  meta      Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  org  Org   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user FuelUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, createdAt])
+  @@map("audit_logs")
+  @@schema("fuel")
 }
 
 // =============================================================

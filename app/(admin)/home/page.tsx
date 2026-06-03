@@ -324,8 +324,7 @@ export default async function HomePage() {
               <ModuleCard
                 slug="fuelos"
                 enabled={moduleEnabled.fuelos ?? true}
-                landingPath="/fuelos"
-                externalUrl="https://pooil-fuel.vercel.app"
+                landingPath="/fuelos/dashboard"
               />
             )}
           </div>
