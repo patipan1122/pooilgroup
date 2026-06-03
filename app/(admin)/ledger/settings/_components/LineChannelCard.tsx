@@ -29,10 +29,6 @@ export function LineChannelCard({
 
   const base =
     typeof window !== "undefined" ? window.location.origin : "https://pooilgroup.vercel.app";
-  // URL จริง = มีรหัสช่องต่อท้าย + ไม่มี "/" ปิดท้าย (จุดที่ทำให้ก่อนหน้านี้ error 308)
-  const webhookUrl = channel
-    ? `${base}/api/webhooks/ledger/line/${channel.id}`
-    : null;
 
   const [copied, setCopied] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -44,6 +40,15 @@ export function LineChannelCard({
   const [channelSecret, setChannelSecret] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [groupId, setGroupId] = useState(channel?.groupId ?? "");
+
+  // Webhook URL keys on the LINE Channel ID (stable + memorable) not the random
+  // row id → predictable, copy-pasteable URL. Shown as soon as a Channel ID is
+  // present (typed or saved); no trailing "/" (a trailing slash 308-redirects).
+  // NOTE: LINE "Verify" only passes AFTER เชื่อมต่อ stores the secret.
+  const effectiveChannelId = (lineChannelId || channel?.lineChannelId || "").trim();
+  const webhookUrl = effectiveChannelId
+    ? `${base}/api/webhooks/ledger/line/${effectiveChannelId}`
+    : null;
 
   function copy() {
     if (!webhookUrl) return;
@@ -241,8 +246,8 @@ export function LineChannelCard({
         </div>
       )}
 
-      {/* Webhook URL จริง — โชว์เฉพาะตอนเชื่อมแล้ว (มีรหัสช่อง) */}
-      {connected && webhookUrl && (
+      {/* Webhook URL — โชว์ทันทีที่มี Channel ID (พิมพ์/บันทึกแล้ว) ก็คัดลอกได้เลย */}
+      {webhookUrl && (
         <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
           <label className="mb-1 block text-xs font-semibold text-emerald-800">
             Webhook URL — วางใน LINE Developers (แท็บ Messaging API)
@@ -260,8 +265,8 @@ export function LineChannelCard({
             </button>
           </div>
           <p className="mt-1.5 text-xs text-emerald-700">
-            วางทั้งบรรทัด → เปิด &quot;Use webhook&quot; → กด Verify (ต้องได้ Success).
-            <strong> ห้ามมี &quot;/&quot; ปิดท้าย</strong>
+            วางทั้งบรรทัด → เปิด &quot;Use webhook&quot; → กด Verify.
+            <strong> กด &quot;เชื่อมต่อ&quot; ด้านบนก่อน Verify ถึงจะผ่าน</strong> · ห้ามมี &quot;/&quot; ปิดท้าย
           </p>
         </div>
       )}
