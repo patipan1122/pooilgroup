@@ -5164,6 +5164,9 @@ model LedgerExpense {
   paymentMethod String?             @map("payment_method")
   originalUrl   String?             @map("original_url") // Drive (P1.5) / R2
   thumbUrl      String?             @map("thumb_url") // R2
+  driveFileId   String?             @map("drive_file_id") // Google Drive file id (receipt original)
+  driveWebUrl   String?             @map("drive_web_url") // shareable Drive link for the accountant
+  branchTagPending Boolean          @default(false) @map("branch_tag_pending") // central group: branch not yet chosen
   sha256        String? // dedup
   ocrModel      String?             @map("ocr_model")
   ocrConfidence Json?               @map("ocr_confidence") // { vendor: 0.9, total: 0.95, ... }
@@ -5251,6 +5254,11 @@ model LedgerLineChannel {
   webhookSecretEnc String? @map("webhook_secret_enc") // TODO[ledger-secret]
   accessTokenEnc  String?  @map("access_token_enc") // TODO[ledger-secret]
   groupId         String?  @map("group_id")
+  branchId             String? @map("branch_id") @db.Uuid // group = THIS branch (null = central)
+  kind                 String  @default("central") // 'branch' | 'central' | 'dm'
+  defaultPaymentMethod String? @map("default_payment_method")
+  defaultCategoryId    String? @map("default_category_id") @db.Uuid
+  richMenuId           String? @map("rich_menu_id")
   active          Boolean  @default(true)
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -5262,6 +5270,49 @@ model LedgerLineChannel {
   @@index([orgId, companyId, active])
   @@index([lineChannelId])
   @@map("ledger_line_channel")
+  @@schema("public")
+}
+
+// ใครส่งใบเสร็จผ่าน LINE ได้ + ขอบเขต (สาขา/หมวดที่ดูแล) — จากลิงก์เชิญ
+model LedgerLineMember {
+  id                   String   @id @default(uuid()) @db.Uuid
+  orgId                String   @map("org_id") @db.Uuid
+  companyId            String   @map("company_id") @db.Uuid
+  lineUserId           String   @map("line_user_id") // verified LINE userId
+  poolUserId           String?  @map("pool_user_id") @db.Uuid
+  displayName          String?  @map("display_name")
+  role                 String   @default("staff") // staff | admin | accountant
+  scopeBranchIds       String[] @map("scope_branch_ids") @db.Uuid
+  scopeCategoryIds     String[] @map("scope_category_ids") @db.Uuid
+  defaultPaymentMethod String?  @map("default_payment_method")
+  active               Boolean  @default(true)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([orgId, lineUserId])
+  @@index([orgId, companyId, active])
+  @@map("ledger_line_member")
+  @@schema("public")
+}
+
+// ลิงก์เชิญแบบมีขอบเขต (ดูแลสาขา/หมวดไหน)
+model LedgerLineInvite {
+  id                String    @id @default(uuid()) @db.Uuid
+  orgId             String    @map("org_id") @db.Uuid
+  companyId         String    @map("company_id") @db.Uuid
+  token             String    @unique
+  role              String    @default("staff")
+  scopeBranchIds    String[]  @map("scope_branch_ids") @db.Uuid
+  scopeCategoryIds  String[]  @map("scope_category_ids") @db.Uuid
+  note              String?
+  expiresAt         DateTime? @map("expires_at") @db.Timestamptz(6)
+  usedByLineUserId  String?   @map("used_by_line_user_id")
+  usedAt            DateTime? @map("used_at") @db.Timestamptz(6)
+  createdBy         String?   @map("created_by") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([orgId, companyId])
+  @@map("ledger_line_invite")
   @@schema("public")
 }
 
