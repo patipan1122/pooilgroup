@@ -431,12 +431,9 @@ export default async function ExecDashboardPage({
         </Link>
       )}
 
-      {/* KPI strip — auto-fit minmax(180px, 1fr) */}
+      {/* KPI strip — responsive: 2 cols on phone, up to 4 on desktop (P1-2) */}
       <section
-        className="grid gap-3"
-        style={{
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-        }}
+        className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
         aria-label="ตัวชี้วัดวันนี้"
       >
         <ChairopsKpiTile
