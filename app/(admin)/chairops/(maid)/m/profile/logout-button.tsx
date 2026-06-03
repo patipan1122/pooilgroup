@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { browserClient } from "@/lib/db/client";
 import { Button } from "@/components/ui/button";
 import { LogOut, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 export function MaidLogoutButton() {
   const router = useRouter();
@@ -21,7 +22,14 @@ export function MaidLogoutButton() {
 
   function onLogout() {
     startTransition(async () => {
-      await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+      // Don't silently swallow a failed server logout — the local session below
+      // still clears, but warn so the user re-tries if the server row lingered.
+      const res = await fetch("/api/auth/logout", { method: "POST" }).catch(
+        () => null,
+      );
+      if (!res || !res.ok) {
+        toast.error("ออกจากระบบฝั่งเซิร์ฟเวอร์ไม่สำเร็จ · ถ้าค้างให้ลองอีกครั้ง");
+      }
       const sb = browserClient();
       await sb.auth.signOut().catch(() => {});
       router.refresh();

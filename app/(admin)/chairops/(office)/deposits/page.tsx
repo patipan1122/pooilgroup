@@ -8,7 +8,7 @@
 // user's own pending rounds grouped by branch and lets them batch-deposit per
 // branch via the shared BatchDepositForm (passing branchOverride).
 import Link from "next/link";
-import { ChevronLeft, Banknote, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, Banknote } from "lucide-react";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
 import { Card, CardBody } from "@/components/ui/card";
@@ -70,9 +70,18 @@ export default async function OfficeDepositsPage() {
 
       {byBranch.size === 0 ? (
         <Card className="border-emerald-200 bg-emerald-50">
-          <CardBody className="flex items-center gap-2 p-5 text-sm font-medium text-emerald-800">
-            <CheckCircle2 className="h-5 w-5 shrink-0" aria-hidden />
-            ไม่มีรายการค้างฝาก · เก็บครบฝากครบแล้ว 🎉
+          <CardBody className="flex flex-col items-center gap-3 p-6 text-center">
+            {/* น้องแมวน้ำพักผ่อน — สถานะว่าง (ฝากครบแล้ว) */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/mascot/banner/seal-onsen.jpg"
+              alt=""
+              aria-hidden
+              className="h-40 w-auto rounded-xl"
+            />
+            <p className="text-sm font-semibold text-emerald-800">
+              ไม่มีรายการค้างฝาก · เก็บครบฝากครบแล้ว 🎉
+            </p>
           </CardBody>
         </Card>
       ) : (
