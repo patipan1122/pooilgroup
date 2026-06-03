@@ -15,6 +15,7 @@
 
 import Link from "next/link";
 import { requireRole } from "@/lib/chairops/auth/session";
+import { ForbiddenToast } from "@/components/chairops/forbidden-toast";
 import {
   ChairopsKpiTile,
   StatusDot,
@@ -354,6 +355,8 @@ export default async function ExecDashboardPage({
 
   return (
     <div className="flex flex-col gap-4">
+      {/* แจ้งเตือนเมื่อถูกเด้งเพราะสิทธิ์ไม่ถึง (เช่น แอดมินกดเมนูแม่บ้าน) */}
+      <ForbiddenToast show={first(sp.error) === "forbidden"} />
       {/* page head */}
       <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
