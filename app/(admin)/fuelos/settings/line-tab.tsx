@@ -92,10 +92,10 @@ export function LineTab({ channels }: { channels: SettingsChannel[] }) {
               </div>
               <div className="flex items-center gap-1.5 mt-1">
                 <span className="text-[10px] text-zinc-400 shrink-0">Webhook:</span>
-                <code className="text-[10px] truncate bg-surface-2 px-1.5 py-0.5 rounded min-w-0">{`…/api/webhooks/line/${c.id}`}</code>
+                <code className="text-[10px] truncate bg-surface-2 px-1.5 py-0.5 rounded min-w-0">{`…/api/fuelos/webhooks/line/${c.id}`}</code>
                 <button
                   type="button"
-                  onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/api/webhooks/line/${c.id}`); toast.success("คัดลอก Webhook URL แล้ว — เอาไปวางใน LINE Console"); }}
+                  onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/api/fuelos/webhooks/line/${c.id}`); toast.success("คัดลอก Webhook URL แล้ว — เอาไปวางใน LINE Console"); }}
                   className="shrink-0 text-brand-600 text-[11px] font-medium"
                 >คัดลอก</button>
               </div>

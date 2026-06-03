@@ -24,23 +24,23 @@ function MsgContent({ attachments, externalId, body, out }: { attachments: unkno
   const att = (attachments ?? null) as Att | null;
   if (att?.type === "image" && externalId) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={`/api/line-content/${externalId}`} alt="รูปจากลูกค้า" className="rounded-lg max-h-64 w-auto" />;
+    return <img src={`/api/fuelos/line-content/${externalId}`} alt="รูปจากลูกค้า" className="rounded-lg max-h-64 w-auto" />;
   }
   if (att?.type === "sticker" && att.stickerId) {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={`https://stickershop.line-scdn.net/stickershop/v1/sticker/${att.stickerId}/android/sticker.png`} alt="สติกเกอร์" className="size-28 object-contain" />;
   }
   if (att?.type === "video" && externalId) {
-    return <video src={`/api/line-content/${externalId}`} controls className="rounded-lg max-h-64 w-auto" />;
+    return <video src={`/api/fuelos/line-content/${externalId}`} controls className="rounded-lg max-h-64 w-auto" />;
   }
   if (att?.type === "audio" && externalId) {
-    return <audio src={`/api/line-content/${externalId}`} controls className="max-w-full" />;
+    return <audio src={`/api/fuelos/line-content/${externalId}`} controls className="max-w-full" />;
   }
   if (att?.type === "location") {
     return <a href={`https://maps.google.com/?q=${att.lat},${att.lng}`} target="_blank" rel="noreferrer" className={cn("text-sm underline", out ? "text-white" : "text-brand-700")}>📍 {att.title || att.address || "ดูตำแหน่งบนแผนที่"}</a>;
   }
   if (att?.type === "file" && externalId) {
-    return <a href={`/api/line-content/${externalId}`} target="_blank" rel="noreferrer" className={cn("text-sm underline", out ? "text-white" : "text-brand-700")}>📎 {att.fileName || "ดาวน์โหลดไฟล์"}</a>;
+    return <a href={`/api/fuelos/line-content/${externalId}`} target="_blank" rel="noreferrer" className={cn("text-sm underline", out ? "text-white" : "text-brand-700")}>📎 {att.fileName || "ดาวน์โหลดไฟล์"}</a>;
   }
   return <div className="text-sm whitespace-pre-wrap break-words">{body}</div>;
 }
