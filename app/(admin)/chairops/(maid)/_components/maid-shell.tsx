@@ -98,13 +98,13 @@ export function MaidShell({
             className="flex items-center gap-2 text-base font-bold tracking-tight text-white"
             aria-label="หน้าหลัก ChairOps"
           >
-            {/* น้องแมวน้ำ — โลโก้แบรนด์ในหัวแอป */}
+            {/* โลโก้นวดน้า — แบรนด์ในหัวแอป */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/mascot/avatars/seal-wave-avatar-cream.png"
+              src="/logos/nuad-logo-128.png"
               alt=""
               aria-hidden
-              className="size-8 rounded-full ring-1 ring-white/40"
+              className="size-10 rounded-full bg-white/95 ring-1 ring-white/50"
             />
             ChairOps
           </Link>

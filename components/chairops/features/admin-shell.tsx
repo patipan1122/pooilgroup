@@ -33,13 +33,13 @@ export function AdminShell({
       <header className="sticky top-0 z-30 border-b border-border bg-background">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-3 sm:h-16 sm:px-6">
           <Link href="/chairops/dashboard" className="flex items-center gap-2 font-bold tracking-tight">
-            {/* น้องแมวน้ำ — โลโก้แบรนด์ในหัวเว็บ */}
+            {/* โลโก้นวดน้า — แบรนด์ในหัวเว็บ */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/mascot/avatars/seal-wave-avatar-cream.png"
+              src="/logos/nuad-logo-128.png"
               alt=""
               aria-hidden
-              className="size-8 rounded-full"
+              className="size-10 rounded-full"
             />
             <span className="text-lg sm:text-xl">ChairOps</span>
           </Link>
