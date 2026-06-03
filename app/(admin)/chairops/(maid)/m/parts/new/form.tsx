@@ -91,8 +91,18 @@ export function MaidPartsForm({ parts }: { parts: ReadonlyArray<PartOption> }) {
         refLabel="รายการที่เบิก"
         refCode={`${done.qty} ${done.unit}`}
         meta={done.name}
-        primaryHref="/chairops/m"
-        primaryLabel="กลับหน้าหลัก"
+        // เด้งไปหน้ารายการเบิก (ไม่ใช่หน้าหลัก) — แม่บ้านจะเห็นคำขอที่เพิ่งส่งทันที
+        // แก้อาการ "ทำแล้วหาไม่เจอ" (CEO 2026-06-03)
+        primaryHref="/chairops/m/parts"
+        primaryLabel="ดูรายการที่เบิก"
+        secondaryLabel="เบิกอีกรายการ"
+        onSecondary={() => {
+          setDone(null);
+          setQuery("");
+          setQty(1);
+          setReason("");
+          idempotencyKeyRef.current = newIdempotencyKey();
+        }}
       />
     );
   }

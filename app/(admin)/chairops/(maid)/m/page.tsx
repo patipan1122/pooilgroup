@@ -219,8 +219,8 @@ export default async function MaidHomePage() {
     {
       emoji: "📦",
       title: "เบิกของ",
-      sub: "ตามต้องการ",
-      href: "/chairops/m/parts/new",
+      sub: "ดู/เบิกของ",
+      href: "/chairops/m/parts",
       status: "idle",
       icon: <Package className="size-5" aria-hidden />,
     },
