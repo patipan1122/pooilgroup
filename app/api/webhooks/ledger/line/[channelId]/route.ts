@@ -20,6 +20,7 @@ import { sha256Hex } from "@/lib/ledger/storage";
 import { answerQuestion } from "@/lib/ledger/qa";
 import { parseExpenseText, stripJodTrigger } from "@/lib/ledger/parse-text";
 import { findRecentAmountDuplicate } from "@/lib/ledger/dedup";
+import { archiveReceiptToDrive, isDriveConfigured } from "@/lib/ledger/drive";
 import { buildLineConfirmCard, type LineFlexMessage } from "@/components/ledger/LineConfirmCard";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
 
@@ -251,10 +252,14 @@ export async function POST(
         //     existing draft instead of creating a duplicate). Best-effort: if
         //     the fetch fails we proceed without a hash (no dedup, never blocks).
         let sha256: string | null = null;
+        let imgBytes: Buffer | null = null;
+        let imgMime = "image/jpeg";
         try {
           const imgResp = await fetch(att.url, { signal: AbortSignal.timeout(8000) });
           if (imgResp.ok) {
-            sha256 = sha256Hex(Buffer.from(await imgResp.arrayBuffer()));
+            imgBytes = Buffer.from(await imgResp.arrayBuffer());
+            imgMime = imgResp.headers.get("content-type") || "image/jpeg";
+            sha256 = sha256Hex(imgBytes);
           }
         } catch (e) {
           console.warn("[ledger:line-webhook] sha256 fetch failed", e);
@@ -328,6 +333,45 @@ export async function POST(
               ev.replyToken,
               "บันทึกใบเสร็จไม่สำเร็จ · ลองส่งรูปใหม่อีกครั้งนะ 📷",
             ).catch((e) => console.error("[ledger:line-webhook] reply failed", e));
+          }
+        }
+        // 5. Archive the ORIGINAL to Google Drive (เดือน/สาขา/หมวด), best-effort,
+        //    AFTER the reply (card stays fast). The image stays on R2 as the fast
+        //    thumb; the Drive link is the shareable original for the accountant.
+        if (res.ok && imgBytes && isDriveConfigured()) {
+          try {
+            const bkk = new Date(Date.now() + 7 * 3600 * 1000);
+            const period = `${bkk.getUTCFullYear()}-${String(bkk.getUTCMonth() + 1).padStart(2, "0")}`;
+            let branchName: string | null = null;
+            if (ch.branchId) {
+              const b = await prisma.branch.findUnique({
+                where: { id: ch.branchId },
+                select: { name: true },
+              });
+              branchName = b?.name ?? null;
+            }
+            const drive = await archiveReceiptToDrive({
+              bytes: imgBytes,
+              mimeType: imgMime,
+              period,
+              branchName,
+              categoryName: parsed?.suggestedCategory ?? null,
+              docCode: res.data.docCode,
+              vendor: parsed?.vendor ?? null,
+              docDate: parsed?.docDate ?? null,
+            });
+            if (drive) {
+              await prisma.ledgerExpense.update({
+                where: { id: res.data.id },
+                data: {
+                  driveFileId: drive.fileId,
+                  driveWebUrl: drive.webViewLink,
+                  originalUrl: drive.webViewLink,
+                },
+              });
+            }
+          } catch (e) {
+            console.error("[ledger:line-webhook] drive archive failed", e);
           }
         }
       } catch (e) {
