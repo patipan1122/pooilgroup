@@ -88,6 +88,7 @@ export default async function MaidHomePage() {
     openDamage,
     pendingDeposits,
     todayDayOff,
+    pendingAgg,
   ] = await Promise.all([
     prisma.chairopsBranch.findUniqueOrThrow({
       where: { id: branchId },
@@ -149,12 +150,21 @@ export default async function MaidHomePage() {
       },
       select: { reason: true },
     }),
+    // ยอด/จำนวนรอบค้างฝาก "ทั้งหมด" — ไม่ผูกกับ take:20 ของ list ด้านบน
+    // (เดิม KPI นับจาก 20 แถวแรก → ถ้าค้างเกิน 20 รอบ ยอดจะต่ำกว่าจริง)
+    prisma.chairopsCashCollection.aggregate({
+      where: {
+        branchId,
+        maidId: session.user.id,
+        depositId: null,
+      },
+      _sum: { countedAmount: true },
+      _count: true,
+    }),
   ]);
 
-  const pendingTotal = pendingDeposits.reduce(
-    (sum, p) => sum + p.countedAmount,
-    0,
-  );
+  const pendingTotal = pendingAgg._sum.countedAmount ?? 0;
+  const pendingCount = pendingAgg._count;
 
   const daysSinceLast =
     drift.lastCollectionAt != null ? ageDays(drift.lastCollectionAt) : null;
@@ -295,10 +305,10 @@ export default async function MaidHomePage() {
           <ChairopsKpiTile
             label="เงินค้าง รอฝาก"
             value={baht(pendingTotal)}
-            tone={pendingDeposits.length > 0 ? "warning" : "neutral"}
+            tone={pendingCount > 0 ? "warning" : "neutral"}
             delta={
-              pendingDeposits.length > 0
-                ? `${pendingDeposits.length} รายการรอฝาก`
+              pendingCount > 0
+                ? `${pendingCount} รายการรอฝาก`
                 : "ฝากครบทุกรายการ"
             }
             icon={<Landmark className="size-4" aria-hidden />}
@@ -310,11 +320,11 @@ export default async function MaidHomePage() {
           picks which rounds to bundle on /m/deposit (saves bank fees per CEO
           2026-05-30 spec). Each preview row is a Link to the collection
           detail so the maid can inspect chair breakdown before depositing. */}
-      {pendingDeposits.length > 0 && (
+      {pendingCount > 0 && (
         <section className="space-y-2">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-700">
             <Landmark className="size-4 text-amber-600" aria-hidden />
-            เงินค้าง รอฝาก ({pendingDeposits.length})
+            เงินค้าง รอฝาก ({pendingCount})
           </h2>
           <ul className="space-y-2">
             {pendingDeposits.slice(0, 5).map((p) => (
@@ -340,9 +350,9 @@ export default async function MaidHomePage() {
                 </Link>
               </li>
             ))}
-            {pendingDeposits.length > 5 && (
+            {pendingCount > 5 && (
               <li className="px-1 text-xs text-zinc-500">
-                + อีก {pendingDeposits.length - 5} รอบ (ดูทั้งหมดในหน้าฝากเงิน)
+                + อีก {pendingCount - 5} รอบ (ดูทั้งหมดในหน้าฝากเงิน)
               </li>
             )}
           </ul>
@@ -357,7 +367,7 @@ export default async function MaidHomePage() {
                     ฝากเงินก้อน · เลือกรอบ
                   </div>
                   <div className="text-xs text-emerald-700">
-                    เลือก {pendingDeposits.length} รอบรวม {baht(pendingTotal)}{" "}
+                    เลือก {pendingCount} รอบรวม {baht(pendingTotal)}{" "}
                     · ฝากครั้งเดียวประหยัดค่าธรรมเนียม
                   </div>
                 </div>
