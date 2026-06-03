@@ -4600,8 +4600,9 @@ model ZoneMargin {
   orgId       String      @map("org_id") @db.Uuid
   zoneName    String      @map("zone_name")
   productType ProductType @map("product_type")
-  baseMargin  Decimal     @map("base_margin") @db.Decimal(10, 4) // กำไรโซน ฿/ลิตร
-  minMargin   Decimal     @map("min_margin") @db.Decimal(10, 4) // กันขายต่ำกว่าทุน
+  transportCost Decimal   @default(0) @map("transport_cost") @db.Decimal(10, 4) // ค่าขนส่งคลัง→โซน ฿/ลิตร (แยกจากกำไร)
+  baseMargin  Decimal     @map("base_margin") @db.Decimal(10, 4) // กำไรโซน ฿/ลิตร (กำไรล้วน)
+  minMargin   Decimal     @map("min_margin") @db.Decimal(10, 4) // กำไรขั้นต่ำ (กันขายต่ำกว่าทุน+ขนส่ง)
   isActive    Boolean     @default(true) @map("is_active")
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
@@ -4611,6 +4612,22 @@ model ZoneMargin {
   @@unique([orgId, zoneName, productType])
   @@index([orgId, isActive])
   @@map("zone_margins")
+  @@schema("fuel")
+}
+
+// คลังน้ำมัน (config) — CEO มี 5 คลัง · ใช้แสดงต้นทุนทุกคลังในหน้าราคา
+model FuelDepot {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  name      String // ชื่อคลัง (เช่น PTT, บางจาก)
+  sort      Int      @default(0)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([orgId, name])
+  @@index([orgId, isActive])
+  @@map("depots")
   @@schema("fuel")
 }
 

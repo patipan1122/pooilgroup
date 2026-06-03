@@ -8,21 +8,30 @@ export function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+// ราคาขาย = ทุนคลัง + ค่าขนส่ง(โซน) + กำไรโซน + เซลล์บวกเพิ่ม
+// transportCost แยกจากกำไร → เห็นชัดว่าอันไหนต้นทุนขนส่ง อันไหนกำไรล้วน
 export function computeSellPrice(input: {
   costPerL: number;
+  transportCost?: number;
   zoneMargin: number;
   salesMargin: number;
 }): number {
-  return round4(input.costPerL + input.zoneMargin + input.salesMargin);
+  return round4(input.costPerL + (input.transportCost ?? 0) + input.zoneMargin + input.salesMargin);
 }
 
-// เช็คว่าราคาขายไม่ต่ำกว่าต้นทุน + กำไรขั้นต่ำ (minMargin)
+// ต้นทุนถึงโซน (landed) = ทุนคลัง + ค่าขนส่ง
+export function landedCost(costPerL: number, transportCost?: number): number {
+  return round4(costPerL + (transportCost ?? 0));
+}
+
+// เช็คว่าราคาขายไม่ต่ำกว่า (ทุน + ขนส่ง + กำไรขั้นต่ำ)
 export function belowFloor(input: {
   costPerL: number;
+  transportCost?: number;
   finalPrice: number;
   minMargin: number;
 }): boolean {
-  return input.finalPrice < input.costPerL + input.minMargin;
+  return input.finalPrice < input.costPerL + (input.transportCost ?? 0) + input.minMargin;
 }
 
 export const PRODUCT_LABELS: Record<string, string> = {

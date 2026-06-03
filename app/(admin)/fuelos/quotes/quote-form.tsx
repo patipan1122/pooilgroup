@@ -11,7 +11,7 @@ import { Plus, Trash2, Fuel, AlertTriangle } from "lucide-react";
 import { createQuote, type QuoteLineInput } from "./actions";
 
 type Costs = Record<string, number | null>;
-type Margins = Record<string, Record<string, { base: number; min: number }>>;
+type Margins = Record<string, Record<string, { base: number; min: number; transport?: number }>>;
 type CustomerOption = { id: string; name: string; zone: string | null };
 
 type Line = {
@@ -68,10 +68,10 @@ export function QuoteForm({
     return null;
   }, [mode, customerId, customers, prefillZone]);
 
-  function zoneMarginFor(product: string): number {
-    // โซนมีแต่ไม่ได้ตั้ง margin ของสินค้านี้ → default เท่ากับฝั่ง server (กันโชว์กำไร 0 หลอกตา)
-    if (selectedZone) return margins[selectedZone]?.[product]?.base ?? DEFAULT_ZONE_MARGIN;
-    return DEFAULT_ZONE_MARGIN;
+  // ค่าขนส่ง + กำไรโซน (แยกกัน) — ฝั่งซ้ายเป็นต้นทุนวิ่ง, ฝั่งขวาเป็นกำไรล้วน
+  function zoneAddOn(product: string): { transport: number; base: number } {
+    const cell = selectedZone ? margins[selectedZone]?.[product] : undefined;
+    return { transport: cell?.transport ?? 0, base: cell?.base ?? DEFAULT_ZONE_MARGIN };
   }
   function zoneMinFor(product: string): number {
     if (selectedZone) return margins[selectedZone]?.[product]?.min ?? 0;
@@ -82,13 +82,14 @@ export function QuoteForm({
     const cost = costs[l.productType];
     const qty = Number(l.qtyLiters) || 0;
     const sm = Number(l.salesMargin) || 0;
-    const zm = zoneMarginFor(l.productType);
+    const { transport, base } = zoneAddOn(l.productType);
+    const zm = round2(transport + base); // โซน = ขนส่ง + กำไร (รวมที่บวกบนทุน)
     if (cost == null) {
       return { cost: null, zoneMargin: zm, finalPrice: null as number | null, lineTotal: 0, belowFloor: false };
     }
-    const finalPrice = computeSellPrice({ costPerL: cost, zoneMargin: zm, salesMargin: sm });
+    const finalPrice = computeSellPrice({ costPerL: cost, transportCost: transport, zoneMargin: base, salesMargin: sm });
     const lineTotal = round2(finalPrice * qty);
-    const belowFloor = finalPrice < cost + zoneMinFor(l.productType);
+    const belowFloor = finalPrice < cost + transport + zoneMinFor(l.productType);
     return { cost, zoneMargin: zm, finalPrice, lineTotal, belowFloor };
   }
 

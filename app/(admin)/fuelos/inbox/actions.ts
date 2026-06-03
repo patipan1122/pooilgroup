@@ -153,8 +153,10 @@ export async function todayPriceText(zone: string | null): Promise<string> {
   for (const p of PRODUCT_ORDER) {
     const cost = ctx.costs[p];
     if (cost == null) continue;
-    const zm = zone ? ctx.margins[zone]?.[p]?.base ?? 0.45 : 0.45;
-    lines.push(`${PRODUCT_LABELS[p]} = ${formatNumber(computeSellPrice({ costPerL: cost, zoneMargin: zm, salesMargin: 0 }))} บาท/ลิตร`);
+    const cell = zone ? ctx.margins[zone]?.[p] : undefined;
+    const zm = cell?.base ?? 0.45;
+    const tr = cell?.transport ?? 0;
+    lines.push(`${PRODUCT_LABELS[p]} = ${formatNumber(computeSellPrice({ costPerL: cost, transportCost: tr, zoneMargin: zm, salesMargin: 0 }))} บาท/ลิตร`);
   }
   lines.push("(ราคาส่งถึงหน้าโรง · สอบถามเพิ่มเติมได้เลยครับ)");
   return lines.join("\n");

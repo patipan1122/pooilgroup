@@ -63,14 +63,18 @@ export async function createQuote(input: CreateQuoteInput) {
     const product = l.productType as ProductType;
     const cost = ctx.costs[product];
     if (cost == null) return { ok: false, error: `ยังไม่ได้ตั้งราคาต้นทุน ${product} วันนี้` };
-    // โซนมีแต่ไม่ได้ตั้ง margin ของสินค้านี้ → default 0.45 (กันขายต่ำกว่าทุน)
-    const zoneMargin = zone ? ctx.margins[zone]?.[product]?.base ?? 0.45 : 0.45;
-    const minMargin = zone ? ctx.margins[zone]?.[product]?.min ?? 0 : 0;
+    // แยกค่าขนส่ง + กำไรโซน (default 0.45 กันขายต่ำกว่าทุน)
+    const cell = zone ? ctx.margins[zone]?.[product] : undefined;
+    const transport = cell?.transport ?? 0;
+    const base = cell?.base ?? 0.45;
+    const minMargin = cell?.min ?? 0;
     const salesMargin = Number.isFinite(l.salesMargin) ? l.salesMargin : 0;
-    const finalPrice = round4(cost + zoneMargin + salesMargin);
-    // กันขายต่ำกว่าทุน+กำไรขั้นต่ำ (server-side enforce — ไม่เชื่อ client)
-    if (finalPrice < cost + minMargin) {
-      return { ok: false, error: `ราคา ${product} (${finalPrice.toFixed(2)}) ต่ำกว่าขั้นต่ำ (ทุน ${cost.toFixed(2)} + ขั้นต่ำ ${minMargin.toFixed(2)})` };
+    // zoneMargin ที่เก็บ = ขนส่ง + กำไร (รวมส่วนที่บวกบนทุน) → cost + zoneMargin + sales = final
+    const zoneMargin = round4(transport + base);
+    const finalPrice = round4(cost + transport + base + salesMargin);
+    // กันขายต่ำกว่า ทุน+ขนส่ง+กำไรขั้นต่ำ (server-side enforce — ไม่เชื่อ client)
+    if (finalPrice < cost + transport + minMargin) {
+      return { ok: false, error: `ราคา ${product} (${finalPrice.toFixed(2)}) ต่ำกว่าขั้นต่ำ (ทุน ${cost.toFixed(2)} + ขนส่ง ${transport.toFixed(2)} + ขั้นต่ำ ${minMargin.toFixed(2)})` };
     }
     const lineTotal = round2(finalPrice * l.qtyLiters);
     items.push({ productType: product, qtyLiters: l.qtyLiters, costPerL: cost, zoneMargin, salesMargin, finalPrice, lineTotal });
