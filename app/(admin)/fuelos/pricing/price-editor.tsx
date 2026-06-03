@@ -64,10 +64,15 @@ export function PriceEditor({
     });
   }
 
+  // tab ตั้งค่า/จัดการคลัง โชว์เฉพาะคนที่แก้ได้ (หัวหน้าขายขึ้นไป) — กัน tab คลิกได้แต่ว่างเปล่า
   const TABS = [
     { key: "daily" as const, label: "ราคารายวัน", icon: Fuel },
-    { key: "zone" as const, label: "ตั้งค่าโซน (ขนส่ง+กำไร)", icon: MapPin },
-    { key: "depots" as const, label: "จัดการคลัง", icon: Warehouse },
+    ...(canEdit
+      ? [
+          { key: "zone" as const, label: "ตั้งค่าโซน (ขนส่ง+กำไร)", icon: MapPin },
+          { key: "depots" as const, label: "จัดการคลัง", icon: Warehouse },
+        ]
+      : []),
   ];
 
   return (
@@ -103,6 +108,11 @@ export function PriceEditor({
                 )}
               </div>
             </div>
+            {zones.length === 0 && (
+              <div className="rounded-xl bg-warning/10 text-warning text-xs px-3 py-2 mb-3">
+                ยังไม่มีโซนราคา — ราคาด้านล่างใช้กำไรค่าเริ่มต้น (0.45 บาท/ลิตร) · {canEdit ? "ไปแท็บ “ตั้งค่าโซน” เพื่อกำหนดค่าขนส่ง+กำไรจริง" : "ติดต่อหัวหน้าขายให้ตั้งค่าโซน"}
+              </div>
+            )}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {PRODUCT_ORDER.map((p) => {
                 const cost = costOf(costDepot, p);
@@ -250,13 +260,13 @@ function DepotManager({ depots, onChange }: { depots: DepotFull[]; onChange: () 
             {editId === d.id ? (
               <>
                 <input value={editName} onChange={(e) => setEditName(e.target.value)} className="h-8 flex-1 rounded-lg border border-border bg-surface px-2 text-sm" />
-                <button onClick={() => saveRename(d.id)} disabled={pending} className="size-8 grid place-items-center rounded-lg bg-brand-600 text-white"><Check className="size-4" /></button>
+                <button onClick={() => saveRename(d.id)} disabled={pending} aria-label="บันทึกชื่อคลัง" className="size-8 grid place-items-center rounded-lg bg-brand-600 text-white"><Check className="size-4" /></button>
                 <button onClick={() => setEditId(null)} className="text-xs text-zinc-500 px-2">ยกเลิก</button>
               </>
             ) : (
               <>
                 <span className={cn("flex-1 text-sm font-medium", !d.isActive && "text-zinc-400 line-through")}>{d.name}</span>
-                <button onClick={() => { setEditId(d.id); setEditName(d.name); }} className="size-8 grid place-items-center rounded-lg hover:bg-surface-2 text-zinc-400"><Pencil className="size-3.5" /></button>
+                <button onClick={() => { setEditId(d.id); setEditName(d.name); }} aria-label="แก้ไขชื่อคลัง" className="size-8 grid place-items-center rounded-lg hover:bg-surface-2 text-zinc-400"><Pencil className="size-3.5" /></button>
                 <button onClick={() => toggle(d.id, !d.isActive)} disabled={pending} className={cn("text-xs px-2.5 h-8 rounded-lg border", d.isActive ? "border-border text-zinc-500" : "border-leaf-300 bg-leaf-50 text-leaf-700")}>
                   {d.isActive ? "ปิด" : "เปิด"}
                 </button>

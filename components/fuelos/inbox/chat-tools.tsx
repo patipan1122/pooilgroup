@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { X, UserRound, FileText, Pencil, Check, Phone, Building2, TrendingUp, Calendar, Lock } from "lucide-react";
 import { QuoteForm } from "@/app/(admin)/fuelos/quotes/quote-form";
 import { updateContact } from "@/app/(admin)/fuelos/inbox/actions";
+import { LineAvatar } from "@/components/fuelos/inbox/line-avatar";
 import { cn } from "@/lib/fuelos/utils/cn";
 
 type Person = {
@@ -60,7 +61,7 @@ function SlideOver({ open, onClose, title, children, wide }: { open: boolean; on
       <div className={cn("absolute right-0 top-0 h-full bg-surface shadow-xl flex flex-col w-full", wide ? "sm:w-[480px]" : "sm:w-[380px]")}>
         <div className="shrink-0 flex items-center justify-between border-b border-border px-4 h-14">
           <h2 className="font-bold">{title}</h2>
-          <button onClick={onClose} className="size-9 grid place-items-center rounded-lg hover:bg-surface-2"><X className="size-5" /></button>
+          <button onClick={onClose} aria-label="ปิด" className="size-9 grid place-items-center rounded-lg hover:bg-surface-2"><X className="size-5" /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-4">{children}</div>
       </div>
@@ -85,22 +86,19 @@ function PersonRow({ convId, p }: { convId: string; p: Person }) {
     });
   }
 
+  function openEdit() { setAlias(p.alias ?? ""); setRole(p.roleLabel ?? ""); setEditing(true); }
+
   return (
     <div className="flex items-start gap-2.5 py-2.5 border-b border-border last:border-0">
-      {p.pictureUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={p.pictureUrl} alt={shown} className="size-9 rounded-full object-cover shrink-0" />
-      ) : (
-        <div className="size-9 rounded-full bg-brand-100 text-brand-700 grid place-items-center text-sm font-bold shrink-0">{shown.slice(0, 1)}</div>
-      )}
+      <LineAvatar src={p.pictureUrl} name={shown} size={36} />
       <div className="min-w-0 flex-1">
         {editing ? (
           <div className="space-y-1.5">
-            <input value={alias} onChange={(e) => setAlias(e.target.value)} placeholder="ตั้งชื่อเรียก (เช่น เถ้าแก่สมชาย)" className="h-8 w-full rounded-lg border border-border bg-surface px-2 text-sm" />
-            <input value={role} onChange={(e) => setRole(e.target.value)} placeholder="ป้ายบทบาท (เช่น เถ้าแก่ / บัญชี)" className="h-8 w-full rounded-lg border border-border bg-surface px-2 text-sm" />
+            <input value={alias} onChange={(e) => setAlias(e.target.value)} placeholder="ตั้งชื่อเรียก (เช่น เถ้าแก่สมชาย)" className="h-9 w-full rounded-lg border border-border bg-surface px-2 text-sm" />
+            <input value={role} onChange={(e) => setRole(e.target.value)} placeholder="ป้ายบทบาท (เช่น เถ้าแก่ / บัญชี)" className="h-9 w-full rounded-lg border border-border bg-surface px-2 text-sm" />
             <div className="flex gap-1.5">
-              <button onClick={save} disabled={pending} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-lg bg-brand-600 text-white text-xs"><Check className="size-3.5" /> บันทึก</button>
-              <button onClick={() => setEditing(false)} className="h-7 px-2.5 rounded-lg border border-border text-xs">ยกเลิก</button>
+              <button onClick={save} disabled={pending} className="inline-flex items-center gap-1 h-9 px-3 rounded-lg bg-brand-600 text-white text-xs"><Check className="size-3.5" /> บันทึก</button>
+              <button onClick={() => setEditing(false)} className="h-9 px-3 rounded-lg border border-border text-xs">ยกเลิก</button>
             </div>
           </div>
         ) : (
@@ -110,9 +108,9 @@ function PersonRow({ convId, p }: { convId: string; p: Person }) {
                 <span className="font-medium text-sm truncate">{shown}</span>
                 {p.roleLabel && <span className="text-[10px] text-brand-600 bg-brand-50 rounded px-1 shrink-0">{p.roleLabel}</span>}
               </div>
-              {p.alias && p.displayName && <div className="text-[11px] text-zinc-400 truncate">ชื่อจริง: {p.displayName}</div>}
+              {p.alias && p.displayName && <div className="text-[11px] text-zinc-500 truncate">ชื่อจริง: {p.displayName}</div>}
             </div>
-            <button onClick={() => setEditing(true)} className="ml-auto size-7 grid place-items-center rounded-lg hover:bg-surface-2 text-zinc-400 shrink-0" title="ตั้งชื่อ/ป้าย"><Pencil className="size-3.5" /></button>
+            <button onClick={openEdit} aria-label="แก้ไขชื่อเรียกและป้าย" className="ml-auto size-9 grid place-items-center rounded-lg hover:bg-surface-2 text-zinc-400 shrink-0"><Pencil className="size-3.5" /></button>
           </div>
         )}
       </div>

@@ -285,7 +285,8 @@ export function QuoteForm({
                       </span>
                     ) : (
                       <span className="text-zinc-500">
-                        ทุน {formatNumber(c.cost)} + โซน {formatNumber(c.zoneMargin)} ={" "}
+                        ทุน {formatNumber(c.cost)} + โซน {formatNumber(c.zoneMargin)}
+                        {Number(l.salesMargin) ? ` + เซลล์ ${formatNumber(Number(l.salesMargin))}` : ""} ={" "}
                         <span className="font-semibold text-zinc-800 font-[family-name:var(--font-plex-mono)]">
                           {c.finalPrice != null ? formatNumber(c.finalPrice) : "—"}
                         </span>{" "}

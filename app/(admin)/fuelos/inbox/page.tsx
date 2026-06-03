@@ -15,6 +15,7 @@ import { cn } from "@/lib/fuelos/utils/cn";
 import { ReplyBox } from "./reply-box";
 import { ChatControls } from "./chat-controls";
 import { ChatTools } from "@/components/fuelos/inbox/chat-tools";
+import { LineAvatar } from "@/components/fuelos/inbox/line-avatar";
 import { ArrowLeft, MessageSquareWarning, MessagesSquare, UserCircle2, Lock } from "lucide-react";
 
 const SEG_LABEL: Record<string, string> = { NEW: "ลูกค้าใหม่", OLD: "ลูกค้าเก่า", PRICE_CHECK: "เช็คราคา" };
@@ -97,7 +98,7 @@ export default async function InboxPage({
 
   return (
     <div className="h-[calc(100dvh-3.5rem)] sm:h-[calc(100dvh-4rem)] -m-4 sm:-m-6 lg:m-0 lg:h-[calc(100dvh-4rem)] min-h-0 overflow-hidden">
-      <div className="grid lg:grid-cols-[360px_1fr] h-full min-h-0">
+      <div className="lg:grid lg:grid-cols-[360px_1fr] h-full min-h-0">
         {/* LIST */}
         <div className={cn("lg:border-r border-border overflow-y-auto min-h-0 bg-surface", conv && "hidden lg:block")}>
           <div className="sticky top-0 z-10 bg-surface/95 backdrop-blur border-b border-border p-3">
@@ -162,7 +163,7 @@ export default async function InboxPage({
             <>
               {/* detail header */}
               <div className="shrink-0 bg-surface/95 backdrop-blur border-b border-border px-3 py-2.5 flex items-center gap-2">
-                <Link href={`/fuelos/inbox?filter=${filter}`} className="lg:hidden size-9 grid place-items-center rounded-lg hover:bg-surface-2">
+                <Link href={`/fuelos/inbox?filter=${filter}`} aria-label="กลับไปรายการแชท" className="lg:hidden size-9 grid place-items-center rounded-lg hover:bg-surface-2">
                   <ArrowLeft className="size-5" />
                 </Link>
                 <div className="min-w-0 flex-1">
@@ -211,18 +212,11 @@ export default async function InboxPage({
                       </div>
                     );
                   }
-                  const contactName = m.senderContact?.alias || m.senderContact?.displayName || "ลูกค้า";
+                  const contactName = m.senderContact?.alias?.trim() || m.senderContact?.displayName?.trim() || "ลูกค้า";
                   const pic = m.senderContact?.pictureUrl;
                   return (
                     <div key={m.id} className={cn("flex gap-2", out ? "justify-end" : "justify-start")}>
-                      {!out && (
-                        pic ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={pic} alt={contactName} className="size-7 rounded-full object-cover shrink-0 mt-0.5" />
-                        ) : (
-                          <div className="size-7 rounded-full bg-brand-100 text-brand-700 grid place-items-center text-[11px] font-bold shrink-0 mt-0.5">{contactName.slice(0, 1)}</div>
-                        )
-                      )}
+                      {!out && <LineAvatar src={pic} name={contactName} size={28} className="mt-0.5" />}
                       <div className={cn("max-w-[78%] rounded-2xl px-3.5 py-2", out ? "bg-brand-600 text-white" : "bg-surface border border-border")}>
                         {!out && (
                           <div className="text-[10px] text-zinc-500 mb-0.5 flex items-center gap-1">
