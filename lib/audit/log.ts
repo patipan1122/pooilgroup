@@ -117,7 +117,11 @@ export type AuditAction =
   | "LEDGER_EXPENSE_UPDATED"
   | "LEDGER_EXPENSE_CONFIRMED"
   | "LEDGER_EXPENSE_VOIDED"
-  | "LEDGER_EXPENSE_EXPORTED";
+  | "LEDGER_EXPENSE_EXPORTED"
+  // LINE Official Account connect for receipt capture. Stores encrypted Channel
+  // Secret / Access Token → security-sensitive, recorded for the auditor trail.
+  | "LEDGER_LINE_CHANNEL_CONNECTED"
+  | "LEDGER_LINE_CHANNEL_DISCONNECTED";
 
 export interface AuditEntry {
   orgId: string;

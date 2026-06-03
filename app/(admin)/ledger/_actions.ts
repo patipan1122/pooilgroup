@@ -27,6 +27,7 @@ import { recheckReceipt } from "@/lib/ledger/recheck";
 import { listExpenses } from "@/lib/ledger/queries";
 import { buildTrcloudCsv } from "@/lib/ledger/trcloud-export";
 import { audit } from "@/lib/audit/log";
+import { encryptToken } from "@/lib/recruit/channel-crypto";
 
 export type ActionResult = { ok: boolean; error?: string };
 
@@ -542,4 +543,157 @@ export async function exportConfirmedCsv(raw: unknown): Promise<ExportResult> {
 
   const filename = `ledger-${company.code}-${period}.csv`;
   return { ok: true, csv, filename, rows };
+}
+
+// ===================== Settings: LINE channel =====================
+// Connect the company's LINE Official Account so staff can photo receipts into
+// a LINE group → AI draft (the webhook lives at /api/webhooks/ledger/line/<id>).
+// ONE channel per company (upsert on orgId+companyId). Admin-tier only (matches
+// the settings page requireRole + the nav adminOnly flag — same gate as
+// categories). Secrets (Channel Secret / Access Token) are stored ENCRYPTED via
+// channel-crypto (same wrapping key as inbox/recruit) and NEVER returned to the
+// client; on edit, a blank field keeps the existing encrypted value.
+const lineChannelSchema = z.object({
+  companyId: z.string().uuid(),
+  lineChannelId: z.string().trim().min(1, "ใส่ Channel ID").max(64),
+  channelSecret: z.string().trim().max(200).optional().or(z.literal("")),
+  accessToken: z.string().trim().max(8000).optional().or(z.literal("")),
+  groupId: z.string().trim().max(100).optional().or(z.literal("")),
+});
+
+export async function connectLineChannel(raw: unknown): Promise<ActionResult> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลเชื่อมต่อ LINE ได้" };
+  }
+  const parsed = lineChannelSchema.safeParse(raw);
+  if (!parsed.success)
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const { companyId, lineChannelId, channelSecret, accessToken, groupId } = parsed.data;
+  const orgId = session.user.org_id;
+
+  // Confirm company belongs to org before binding a channel to it.
+  const company = await prisma.company.findFirst({
+    where: { id: companyId, orgId },
+    select: { id: true },
+  });
+  if (!company) return { ok: false, error: "ไม่พบบริษัท" };
+
+  // One channel per company. On edit, keep the stored secret/token when the
+  // field is left blank (so the accountant can update just the Group ID without
+  // re-pasting the long Access Token).
+  const existing = await prisma.ledgerLineChannel.findFirst({
+    where: { orgId, companyId },
+    select: { id: true, webhookSecretEnc: true, accessTokenEnc: true },
+  });
+  const secretEnc = channelSecret
+    ? encryptToken(channelSecret)
+    : existing?.webhookSecretEnc ?? null;
+  const tokenEnc = accessToken
+    ? encryptToken(accessToken)
+    : existing?.accessTokenEnc ?? null;
+  const gId = groupId || null;
+
+  let channelRowId: string;
+  try {
+    if (existing) {
+      await prisma.ledgerLineChannel.update({
+        where: { id: existing.id },
+        data: {
+          lineChannelId,
+          webhookSecretEnc: secretEnc,
+          accessTokenEnc: tokenEnc,
+          groupId: gId,
+          active: true,
+        },
+      });
+      channelRowId = existing.id;
+    } else {
+      const created = await prisma.ledgerLineChannel.create({
+        data: {
+          orgId,
+          companyId,
+          lineChannelId,
+          webhookSecretEnc: secretEnc,
+          accessTokenEnc: tokenEnc,
+          groupId: gId,
+          active: true,
+        },
+        select: { id: true },
+      });
+      channelRowId = created.id;
+    }
+  } catch {
+    // unique(orgId, lineChannelId) — this Channel ID is already bound elsewhere.
+    return { ok: false, error: "Channel ID นี้ถูกใช้ไปแล้ว (ผูกกับบริษัทอื่น)" };
+  }
+
+  await audit({
+    orgId,
+    userId: session.user.id,
+    action: "LEDGER_LINE_CHANNEL_CONNECTED",
+    resourceType: "ledger_line_channel",
+    resourceId: channelRowId,
+    // NEVER log the secrets — only whether they are now set.
+    diff: {
+      new: {
+        lineChannelId,
+        hasSecret: !!secretEnc,
+        hasAccessToken: !!tokenEnc,
+        groupSet: !!gId,
+      },
+    },
+  });
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
+/** Remove the company's LINE channel (stops the webhook accepting events). */
+export async function disconnectLineChannel(
+  companyId: string,
+): Promise<ActionResult> {
+  if (!companyId) return { ok: false, error: "ไม่ได้ระบุบริษัท" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลจัดการ LINE ได้" };
+  }
+  const res = await prisma.ledgerLineChannel.deleteMany({
+    where: { orgId: session.user.org_id, companyId },
+  });
+  if (res.count > 0) {
+    await audit({
+      orgId: session.user.org_id,
+      userId: session.user.id,
+      action: "LEDGER_LINE_CHANNEL_DISCONNECTED",
+      resourceType: "ledger_line_channel",
+      diff: { old: { companyId } },
+    });
+  }
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
+/** Pause/resume the channel without deleting its secrets (webhook 404s when
+ *  inactive — see the route's `!channel.active` guard). */
+export async function toggleLineChannel(
+  companyId: string,
+  active: boolean,
+): Promise<ActionResult> {
+  if (!companyId) return { ok: false, error: "ไม่ได้ระบุบริษัท" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลจัดการ LINE ได้" };
+  }
+  await prisma.ledgerLineChannel.updateMany({
+    where: { orgId: session.user.org_id, companyId },
+    data: { active },
+  });
+  revalidatePath("/ledger/settings");
+  return { ok: true };
 }
