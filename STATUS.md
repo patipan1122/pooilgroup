@@ -13,7 +13,8 @@
 - `LineChannelCard.tsx` rewrite: ฟอร์มจริง (Channel ID · Channel secret · Access token · Group ID) → กดเชื่อม → โชว์ Webhook URL จริง (มี channelId, ไม่มี `/` ปิดท้าย) + ปุ่ม copy + สถานะเชื่อม/พัก + ยกเลิก.
 - `_actions.ts`: `connectLineChannel` (upsert 1 ช่อง/บริษัท · secret/token เข้ารหัส channel-crypto · เว้นว่าง=ใช้ค่าเดิม) + `disconnectLineChannel` + `toggleLineChannel`. Admin-tier · scope org+company · audit.
 - `_data.ts`: `getLineChannel` (คืนแค่ hasSecret/hasAccessToken ไม่คืน secret) · `_actions`/`audit/log.ts` +2 audit action.
-- ⚠️ CEO: deploy (merge→setup) → เปิด /ledger/settings → กรอก secret 3 ช่อง → copy URL ไปวางใน LINE → Verify. ตรวจ env `RECRUIT_CHANNEL_KEY` ใน Vercel (inbox ใช้ตัวนี้อยู่แล้ว). Secret เก่าที่วางในแชท → rotate.
+- ✅ **LIVE & VERIFIED 2026-06-03** (deploys `53aa910`→`10a1337`→`a18436b`): LINE Developers "Verify" = Success. Bug chain แก้ครบ: 308 (URL ไม่มี channelId/ปิด `/`) → Invalid UUID (zod v4 RFC-strict ตี synthetic seed uuid `00000000-…-a2`) → 500 (encryptToken throw — **prod ไม่มี `RECRUIT_CHANNEL_KEY`/`NEXTAUTH_SECRET` เลย**, แก้โดย CEO อนุมัติให้ตั้ง key ใน Vercel + hardening ย้าย encrypt เข้า try-catch) → 404 (กด Verify ก่อนเชื่อมต่อในแอป) → 200. URL จำง่าย `…/line/2007211439` (route resolve ด้วย lineChannelId). Secret ที่วางในแชท → CEO ควร rotate.
+- 📌 Permissions: CEO เลือก "ขอเป็นรายครั้ง" — ไม่ตั้ง auto-allow · ต้องขอก่อนทุก prod action ([[ceo-per-request-prod-approval-2026-06-03]]).
 
 ## 🆕 Update (2026-06-02 — Inbox chatbot: คำตอบเลิก hardcode + "ห้องพัฒนาบอท" (Claude เห็นแชทจริง))
 
