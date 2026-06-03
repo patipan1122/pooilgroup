@@ -4,12 +4,12 @@
 // without a full reload. Data comes pre-buckedded from the server (single
 // query · no N+1 · see lib/chairops/queries/vendor-bills.ts).
 
-import { useMemo, useState } from "react";
-import Link from "next/link";
+import { useCallback, useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 
 import { cn } from "@/lib/utils/cn";
 import { baht } from "@/lib/chairops/utils/format";
+import { BillWindow } from "./bill-window";
 
 export interface MatrixCellPayload {
   total: number;
@@ -75,6 +75,17 @@ export function BillsMatrixTable({
   canEdit,
 }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // CEO 2026-06-03 · clicking a bill opens a draggable, non-modal "pay" window.
+  // Several can be open at once (compare bills) — track ids in order so we can
+  // cascade their initial positions.
+  const [openBills, setOpenBills] = useState<string[]>([]);
+  const openBill = useCallback((id: string) => {
+    setOpenBills((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }, []);
+  const closeBill = useCallback((id: string) => {
+    setOpenBills((prev) => prev.filter((b) => b !== id));
+  }, []);
 
   const toggleBranch = (branchId: string) => {
     setExpanded((prev) => {
@@ -307,46 +318,26 @@ export function BillsMatrixTable({
                               key={m.monthKey}
                               className="border-b border-zinc-100 px-3 py-1.5 text-right text-xs tabular-nums"
                             >
-                              {canEdit ? (
-                                <Link
-                                  href={`/chairops/bills/${bill.id}`}
-                                  title={anomalyTitle}
-                                  className={cn(
-                                    "inline-flex items-center gap-1 hover:underline",
-                                    chip.tone,
-                                  )}
-                                >
-                                  <span
-                                    className={cn(
-                                      "size-1.5 rounded-full",
-                                      chip.dot,
-                                    )}
-                                  />
-                                  {bill.isAnomalous ? (
-                                    <span className="text-amber-600">⚠</span>
-                                  ) : null}
-                                  {baht(bill.amount)}
-                                </Link>
-                              ) : (
+                              <button
+                                type="button"
+                                onClick={() => openBill(bill.id)}
+                                title={anomalyTitle ?? "เปิดหน้าต่างจ่ายบิล"}
+                                className={cn(
+                                  "inline-flex items-center gap-1 hover:underline",
+                                  chip.tone,
+                                )}
+                              >
                                 <span
-                                  title={anomalyTitle}
                                   className={cn(
-                                    "inline-flex items-center gap-1",
-                                    chip.tone,
+                                    "size-1.5 rounded-full",
+                                    chip.dot,
                                   )}
-                                >
-                                  <span
-                                    className={cn(
-                                      "size-1.5 rounded-full",
-                                      chip.dot,
-                                    )}
-                                  />
-                                  {bill.isAnomalous ? (
-                                    <span className="text-amber-600">⚠</span>
-                                  ) : null}
-                                  {baht(bill.amount)}
-                                </span>
-                              )}
+                                />
+                                {bill.isAnomalous ? (
+                                  <span className="text-amber-600">⚠</span>
+                                ) : null}
+                                {baht(bill.amount)}
+                              </button>
                             </td>
                           );
                         })}
@@ -383,6 +374,18 @@ export function BillsMatrixTable({
         </tfoot>
       </table>
       </div>
+
+      {/* Draggable, non-modal pay windows · portal to body so the table's
+          overflow:auto never clips them. */}
+      {openBills.map((id, i) => (
+        <BillWindow
+          key={id}
+          billId={id}
+          canEdit={canEdit}
+          initialOffset={i * 28}
+          onClose={() => closeBill(id)}
+        />
+      ))}
     </div>
   );
 }

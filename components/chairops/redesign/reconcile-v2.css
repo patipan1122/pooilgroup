@@ -332,6 +332,9 @@
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   overflow: auto;
+  /* CEO 2026-06-03: scroll INSIDE the table (not the whole page) so the
+     sticky header + frozen date column stay useful on long ranges. */
+  max-height: min(68vh, 640px);
   /* visible scrollbar on overflow-x — never hide it (anti-pattern guard) */
   scrollbar-width: thin;
 }
@@ -348,6 +351,29 @@
 }
 .co-scope .rc-ledger-tbl .rc-tcol { background: var(--surface-2); }
 .co-scope .rc-ledger-tbl thead .rc-tcol { background: var(--bg-sunken); }
+
+/* ── Freeze-panes (CEO 2026-06-03): lock the date column like Excel ──
+   First column (วันที่) stays pinned-left while scrolling sideways; the
+   thead corner cell sits above both sticky layers. Solid bg required so
+   scrolled cells don't bleed through (sticky-bg-inherit anti-pattern). */
+.co-scope .rc-ledger-tbl tbody td:first-child,
+.co-scope .rc-ledger-tbl tfoot > tr > th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  background: var(--surface);
+}
+.co-scope .rc-ledger-tbl tfoot > tr > th:first-child {
+  background: var(--surface-soft);
+}
+/* keep the frozen date cell solid even on the highlighted "collected" rows
+   (their gradient leaves the fill transparent → would show scrolled text) */
+.co-scope .rc-row-collected td:first-child { background: var(--surface) !important; }
+/* the header corner = pinned both top AND left, above every other sticky layer */
+.co-scope .rc-ledger-tbl thead th:first-child {
+  left: 0;
+  z-index: 30;
+}
 .co-scope .rc-row-collected td {
   background: linear-gradient(90deg, transparent 0%, var(--accent-soft) 50%, transparent 100%);
   background-size: 100% 1px;
@@ -366,8 +392,26 @@
   font-size: 11px;
   font-family: var(--font-mono);
   text-decoration: none;
+  /* reset button chrome — .rc-slip is now a <button> (slip lightbox trigger) */
+  border: none;
+  background: none;
+  padding: 0;
 }
 .co-scope .rc-slip:hover { color: var(--accent); text-decoration: underline; }
+
+/* deposit amount that opens the slip image (CEO 2026-06-03) */
+.co-scope .rc-deposit-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+.co-scope .rc-deposit-link:hover { color: var(--accent); }
 
 /* drift coloring (mockup .co-drift.{crit,warn,ok,muted}) */
 .co-scope .co-drift.crit { color: var(--crit); }

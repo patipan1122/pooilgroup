@@ -516,6 +516,40 @@ export async function batchDeposit(
 
     await recomputeDriftForBranch(branchId);
 
+    // Best-effort: archive the deposit slip to Google Drive → สลิปรายได้ folder
+    // (CEO 2026-06-03). Never blocks/fails the deposit — R2 copy is live.
+    try {
+      const { getDriveConnection, backupFileToDrive } = await import(
+        "@/lib/chairops/storage/drive"
+      );
+      if (await getDriveConnection(session.user.orgId)) {
+        const resp = await fetch(data.slipPhotoUrl, {
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (resp.ok) {
+          const bytes = Buffer.from(await resp.arrayBuffer());
+          const ym = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Bangkok",
+            year: "numeric",
+            month: "2-digit",
+          }).format(new Date());
+          await backupFileToDrive({
+            orgId: session.user.orgId,
+            category: "income_slip",
+            periodYm: ym,
+            fileName: `deposit-${deposit.id}.jpg`,
+            mimeType: resp.headers.get("content-type") ?? "image/jpeg",
+            bytes,
+            r2Url: data.slipPhotoUrl,
+            sourceTable: "ChairopsCashDeposit",
+            sourceId: deposit.id,
+          });
+        }
+      }
+    } catch (e) {
+      console.error("[chairops] deposit slip drive backup failed (non-fatal)", e);
+    }
+
     revalidatePath("/chairops/m");
     revalidatePath("/chairops/collect");
     return { ok: true, data: { id: deposit.id } };

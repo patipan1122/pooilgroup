@@ -624,6 +624,12 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: ScrollText,
         adminOnly: true,
       },
+      {
+        href: "/chairops/settings/drive",
+        label: "สำรองขึ้น Drive",
+        icon: Settings,
+        adminOnly: true,
+      },
     ],
   },
   recruit: {
