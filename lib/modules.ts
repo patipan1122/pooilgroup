@@ -246,6 +246,7 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       { href: "/fuelos/quotes", label: "ใบเสนอราคา", icon: FileText },
       { href: "/fuelos/orders", label: "ออเดอร์", icon: Receipt },
       { href: "/fuelos/pricing", label: "ราคาน้ำมัน", icon: Fuel },
+      { href: "/fuelos/pump-price", label: "ราคาหน้าปั๊ม", icon: Fuel },
       { href: "/fuelos/dispatch", label: "จัดส่ง + GPS", icon: Truck },
       { href: "/fuelos/finance", label: "การเงิน", icon: Wallet },
       { href: "/fuelos/reports", label: "รายงาน", icon: Gauge },

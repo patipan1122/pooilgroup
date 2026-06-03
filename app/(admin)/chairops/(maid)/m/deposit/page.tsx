@@ -72,7 +72,15 @@ export default async function MaidBatchDepositPage() {
 
       {pending.length === 0 ? (
         <Card className="border-emerald-200 bg-emerald-50">
-          <CardBody className="space-y-1 p-4 text-sm text-emerald-800">
+          <CardBody className="flex flex-col items-center gap-2 p-5 text-center text-emerald-800">
+            {/* น้องแมวน้ำพักผ่อน — ฝากครบแล้ว */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/mascot/banner/seal-onsen.jpg"
+              alt=""
+              aria-hidden
+              className="h-36 w-auto rounded-xl"
+            />
             <div className="font-semibold">ไม่มีรอบที่ค้างฝาก ✨</div>
             <p className="text-xs text-emerald-700">
               ทุกรอบที่นับไว้ ฝากเข้าธนาคารแล้วครบ · กลับไปหน้าหลักเพื่อเก็บเงินรอบใหม่

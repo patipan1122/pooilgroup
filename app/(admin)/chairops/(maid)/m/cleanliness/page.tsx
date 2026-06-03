@@ -1,11 +1,11 @@
-// Maid cleanliness · Wave 2 page. Until the new mobile UI ships, redirect
-// to the existing /chairops/cleanliness/new flow (which still works under
-// its own MaidShell layout).
-// TODO[claude-design]: replace with mobile-first cleanliness form (W9).
+// Maid cleanliness · the mobile-first form already lives at
+// /chairops/m/cleanliness/new (MaidCleanlinessForm). Bare /chairops/m/cleanliness
+// (e.g. an old deep link) now lands there instead of the legacy desktop form —
+// keeps everything inside the maid LIFF shell on mobile.
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default function MaidCleanlinessRedirect(): never {
-  redirect("/chairops/cleanliness/new");
+  redirect("/chairops/m/cleanliness/new");
 }

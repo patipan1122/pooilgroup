@@ -63,14 +63,18 @@ export async function createQuote(input: CreateQuoteInput) {
     const product = l.productType as ProductType;
     const cost = ctx.costs[product];
     if (cost == null) return { ok: false, error: `ยังไม่ได้ตั้งราคาต้นทุน ${product} วันนี้` };
-    // โซนมีแต่ไม่ได้ตั้ง margin ของสินค้านี้ → default 0.45 (กันขายต่ำกว่าทุน)
-    const zoneMargin = zone ? ctx.margins[zone]?.[product]?.base ?? 0.45 : 0.45;
-    const minMargin = zone ? ctx.margins[zone]?.[product]?.min ?? 0 : 0;
+    // แยกค่าขนส่ง + กำไรโซน (default 0.45 กันขายต่ำกว่าทุน)
+    const cell = zone ? ctx.margins[zone]?.[product] : undefined;
+    const transport = cell?.transport ?? 0;
+    const base = cell?.base ?? 0.45;
+    const minMargin = cell?.min ?? 0;
     const salesMargin = Number.isFinite(l.salesMargin) ? l.salesMargin : 0;
-    const finalPrice = round4(cost + zoneMargin + salesMargin);
-    // กันขายต่ำกว่าทุน+กำไรขั้นต่ำ (server-side enforce — ไม่เชื่อ client)
-    if (finalPrice < cost + minMargin) {
-      return { ok: false, error: `ราคา ${product} (${finalPrice.toFixed(2)}) ต่ำกว่าขั้นต่ำ (ทุน ${cost.toFixed(2)} + ขั้นต่ำ ${minMargin.toFixed(2)})` };
+    // zoneMargin ที่เก็บ = ขนส่ง + กำไร (รวมส่วนที่บวกบนทุน) → cost + zoneMargin + sales = final
+    const zoneMargin = round4(transport + base);
+    const finalPrice = round4(cost + transport + base + salesMargin);
+    // กันขายต่ำกว่า ทุน+ขนส่ง+กำไรขั้นต่ำ (server-side enforce — ไม่เชื่อ client)
+    if (finalPrice < cost + transport + minMargin) {
+      return { ok: false, error: `ราคา ${product} (${finalPrice.toFixed(2)}) ต่ำกว่าขั้นต่ำ (ทุน ${cost.toFixed(2)} + ขนส่ง ${transport.toFixed(2)} + ขั้นต่ำ ${minMargin.toFixed(2)})` };
     }
     const lineTotal = round2(finalPrice * l.qtyLiters);
     items.push({ productType: product, qtyLiters: l.qtyLiters, costPerL: cost, zoneMargin, salesMargin, finalPrice, lineTotal });
@@ -154,7 +158,7 @@ export async function convertToOrder(quoteId: string) {
 
   const quote = await prisma.quote.findFirst({
     where: { id: quoteId, orgId: user.orgId },
-    include: { items: true, customer: { select: { id: true, firstOrderAt: true } } },
+    include: { items: true, customer: { select: { id: true, firstOrderAt: true, zone: true } } },
   });
   if (!quote) return { ok: false, error: "ไม่พบใบเสนอราคา" };
   if (!quote.customerId || !quote.customer) {
@@ -168,14 +172,25 @@ export async function convertToOrder(quoteId: string) {
   const customerId = quote.customerId;
   const now = new Date();
 
+  // ค่าขนส่งจริงต่อสินค้า ของโซนลูกค้า → ใช้แยกกำไรออกจากต้นทุนขนส่ง (ไม่ใช้ค่า hardcoded)
+  const zoneTransport: Record<string, number> = {};
+  if (quote.customer.zone) {
+    const zm = await prisma.zoneMargin.findMany({
+      where: { orgId: user.orgId, zoneName: quote.customer.zone },
+      select: { productType: true, transportCost: true },
+    });
+    for (const r of zm) zoneTransport[r.productType] = Number(r.transportCost);
+  }
+
   const orderItems = quote.items.map((it) => {
     const qty = Number(it.qtyLiters);
     const pricePerLiter = round4(Number(it.finalPrice));
     const costPerL = round4(Number(it.costPerL));
-    const transportCostPerL = TRANSPORT_DEFAULT;
-    const marginPerLiter = round4(pricePerLiter - costPerL);
+    // ราคาขายรวมค่าขนส่งโซนแล้ว → ใช้ค่าขนส่งโซนจริง (fallback ค่า default ถ้าโซนยังไม่ตั้ง)
+    const transportCostPerL = round4(zoneTransport[it.productType] ?? TRANSPORT_DEFAULT);
+    const marginPerLiter = round4(pricePerLiter - costPerL - transportCostPerL); // กำไรล้วน
     const lineTotal = round2(pricePerLiter * qty);
-    const lineProfit = round2(qty * (marginPerLiter - transportCostPerL));
+    const lineProfit = round2(qty * marginPerLiter);
     return {
       productType: it.productType,
       qtyLiters: qty,

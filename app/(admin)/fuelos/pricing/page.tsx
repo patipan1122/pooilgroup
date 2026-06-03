@@ -1,24 +1,28 @@
 import { requireUser, atLeast } from "@/lib/fuelos/auth";
-import { getPricingContext } from "@/lib/fuelos/pricing-data";
+import { getPricingContext, listDepots } from "@/lib/fuelos/pricing-data";
 import { PageHeader } from "@/components/fuelos/ui/page-header";
 import { PriceEditor } from "./price-editor";
 import { thaiDateLong } from "@/lib/fuelos/utils/format";
 
 export default async function PricingPage() {
   const user = await requireUser();
-  const ctx = await getPricingContext(user.orgId);
   const canEdit = atLeast(user.role, "SALES_HEAD");
+  const [ctx, allDepots] = await Promise.all([
+    getPricingContext(user.orgId),
+    canEdit ? listDepots(user.orgId) : Promise.resolve([]),
+  ]);
 
   return (
     <div>
       <PageHeader
         title="ราคาน้ำมัน"
-        subtitle={`ราคาประจำวันที่ ${thaiDateLong(ctx.date)} · คลัง ${ctx.depotName}`}
+        subtitle={`ราคาประจำวันที่ ${thaiDateLong(ctx.date)} · ${ctx.depots.length} คลัง · ${ctx.zones.length} โซน`}
       />
       <PriceEditor
         canEdit={canEdit}
-        depotName={ctx.depotName}
-        initialCosts={ctx.costs}
+        depots={ctx.depots}
+        allDepots={allDepots}
+        initialCostsByDepot={ctx.costsByDepot}
         zones={ctx.zones}
         initialMargins={ctx.margins}
       />

@@ -17,7 +17,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireRole, requireAuth, requireExactRole } from "@/lib/chairops/auth/session";
+import { requireAuth, requireExactRole } from "@/lib/chairops/auth/session";
 import { canUnlockCollection } from "@/lib/chairops/auth/role-guards";
 import { writeAudit } from "@/lib/chairops/audit/log";
 import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
@@ -377,8 +377,15 @@ export type BatchDepositInput = z.infer<typeof batchDepositInput>;
 
 export async function batchDeposit(
   raw: BatchDepositInput,
+  opts?: { branchOverride?: string | null },
 ): Promise<ActionResult<{ id: string }>> {
-  const session = await requireExactRole("MAID");
+  // MAID deposits their own branch's rounds. OFFICE+ deposits the collections
+  // THEY collected on behalf (createCashCollection sets maidId = office user.id
+  // via branchOverride) for ONE chosen branch. Both tiers pin maidId = self in
+  // the query below, so office never touches a real maid's pending rounds.
+  const session = await requireAuth();
+  const isOfficeTier =
+    session.user.role !== "MAID" && session.user.role !== "TECHNICIAN";
   const parsed = batchDepositInput.safeParse(raw);
   if (!parsed.success) {
     return {
@@ -394,9 +401,18 @@ export async function batchDeposit(
     return { ok: false, error: "รูปสลิปไม่ถูกต้อง · อัปโหลดผ่านระบบ" };
   }
 
-  const branchId = session.user.primaryBranchId;
-  if (!branchId) {
-    return { ok: false, error: "บัญชีของคุณยังไม่ได้กำหนดสาขา" };
+  let branchId: string | null;
+  if (isOfficeTier) {
+    const ov = opts?.branchOverride ?? null;
+    if (!ov || !zUUID().safeParse(ov).success) {
+      return { ok: false, error: "ต้องระบุสาขาที่จะฝาก" };
+    }
+    branchId = ov;
+  } else {
+    branchId = session.user.primaryBranchId;
+    if (!branchId) {
+      return { ok: false, error: "บัญชีของคุณยังไม่ได้กำหนดสาขา" };
+    }
   }
 
   // All chosen collections must belong to this maid, this branch, and be
@@ -552,6 +568,8 @@ export async function batchDeposit(
 
     revalidatePath("/chairops/m");
     revalidatePath("/chairops/collect");
+    revalidatePath("/chairops/deposits");
+    revalidatePath("/chairops/branch-collect");
     return { ok: true, data: { id: deposit.id } };
   } catch {
     return { ok: false, error: "บันทึกการฝากไม่สำเร็จ · ลองอีกครั้ง" };
@@ -612,11 +630,17 @@ export async function presignSlipUpload(args: {
   contentType: string;
   /** Client-generated UUID — becomes the slip's R2 key + the eventual deposit row id reference. */
   depositDraftId: string;
+  /** OFFICE+ presigns for a branch they collected on behalf of. */
+  branchOverride?: string | null;
 }): Promise<ActionResult<{ url: string; publicUrl: string; key: string }>> {
-  const session = await requireExactRole("MAID");
-
-  if (!session.user.primaryBranchId) {
-    return { ok: false, error: "บัญชีของคุณยังไม่ได้กำหนดสาขา" };
+  const session = await requireAuth();
+  const isOfficeTier =
+    session.user.role !== "MAID" && session.user.role !== "TECHNICIAN";
+  const branchId = isOfficeTier
+    ? args.branchOverride ?? null
+    : session.user.primaryBranchId;
+  if (!branchId) {
+    return { ok: false, error: "ต้องระบุสาขา · บัญชีนี้ยังไม่ได้กำหนดสาขา" };
   }
   const idParsed = zUUID().safeParse(args.depositDraftId);
   if (!idParsed.success) return { ok: false, error: "depositDraftId ไม่ถูกต้อง" };
@@ -627,7 +651,7 @@ export async function presignSlipUpload(args: {
   }
 
   const collection = await prisma.chairopsBranch.findFirstOrThrow({
-    where: { id: session.user.primaryBranchId, orgId: session.user.orgId },
+    where: { id: branchId, orgId: session.user.orgId },
     select: { slug: true },
   });
   // Synthesize the shape the legacy presignSlipUpload code expects below.

@@ -63,7 +63,7 @@ export function ReplyBox({ convId, zone }: { convId: string; zone: string | null
   }
 
   return (
-    <div className="border-t border-border bg-surface p-2.5 space-y-2">
+    <div className="shrink-0 border-t border-border bg-surface p-2.5 space-y-2">
       {/* quick status */}
       <div className="flex gap-1.5 overflow-x-auto pb-0.5">
         {STATUS_CHIPS.map((s) => (

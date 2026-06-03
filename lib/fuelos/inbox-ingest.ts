@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { lineMessageToText, lineMessageAttachment, fetchLineProfileName, fetchLineGroupMemberName } from "@/lib/fuelos/line";
+import { lineMessageToText, lineMessageAttachment, fetchLineProfile, fetchLineGroupMemberProfile } from "@/lib/fuelos/line";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 type LineSource = { type?: string; userId?: string; groupId?: string; roomId?: string };
@@ -41,6 +41,46 @@ export async function ingestLineEvent(channel: Channel, ev: LineEvent): Promise<
   }
   const isStaff = !!staffUserId;
 
+  // เก็บ "ตัวตนของคนใน LINE" (ชื่อจริง + รูปโปรไฟล์) ต่อ lineUserId — เฉพาะลูกค้า (ไม่ใช่พนักงานเรา)
+  // ดึงโปรไฟล์จาก LINE เฉพาะครั้งแรก (ตอนยังไม่มีชื่อ) แล้ว cache ไว้ในตาราง → ประหยัด API
+  // ⚠️ หุ้ม try/catch: ถ้า contact ล้ม (เช่น migration ยังไม่ apply / LINE API ล่ม) ต้อง "ไม่บล็อก"
+  //    การเก็บข้อความ — ห้ามทำข้อความลูกค้าหาย (webhook กลืน error → LINE ไม่ retry)
+  let contactName: string | null = null;
+  if (lineUserId && !isStaff) {
+    try {
+      const existing = await prisma.fuelLineContact.findUnique({
+        where: { channelId_lineUserId: { channelId: channel.id, lineUserId } },
+        select: { displayName: true, alias: true },
+      });
+      if (token && (!existing || !existing.displayName)) {
+        const prof = groupId
+          ? await fetchLineGroupMemberProfile(token, groupId, lineUserId)
+          : await fetchLineProfile(token, lineUserId);
+        await prisma.fuelLineContact.upsert({
+          where: { channelId_lineUserId: { channelId: channel.id, lineUserId } },
+          create: {
+            orgId: channel.orgId, channelId: channel.id, lineUserId,
+            displayName: prof?.displayName ?? null, pictureUrl: prof?.pictureUrl ?? null, lastSeenAt: when,
+          },
+          update: {
+            ...(prof?.displayName ? { displayName: prof.displayName } : {}),
+            ...(prof?.pictureUrl ? { pictureUrl: prof.pictureUrl } : {}),
+            lastSeenAt: when,
+          },
+        });
+        contactName = existing?.alias ?? prof?.displayName ?? null;
+      } else if (existing) {
+        await prisma.fuelLineContact.update({
+          where: { channelId_lineUserId: { channelId: channel.id, lineUserId } },
+          data: { lastSeenAt: when },
+        });
+        contactName = existing.alias ?? existing.displayName ?? null;
+      }
+    } catch {
+      // contact ล้ม → ข้ามไป เก็บข้อความต่อ (ห้ามทำข้อความหาย)
+    }
+  }
+
   // หา/สร้างห้องสนทนา
   let conv = await prisma.conversation.findFirst({
     where: groupId
@@ -50,20 +90,13 @@ export async function ingestLineEvent(channel: Channel, ev: LineEvent): Promise<
   });
 
   if (!conv) {
-    // ดึงชื่อ (best-effort) — กลุ่มใช้ชื่อสมาชิก, 1:1 ใช้ชื่อโปรไฟล์
-    let displayName: string | null = null;
-    if (token && lineUserId) {
-      displayName = groupId
-        ? await fetchLineGroupMemberName(token, groupId, lineUserId)
-        : await fetchLineProfileName(token, lineUserId);
-    }
     conv = await prisma.conversation.create({
       data: {
         orgId: channel.orgId,
         channelId: channel.id,
         lineGroupId: groupId,
         externalUserId: groupId ? null : lineUserId,
-        displayName: displayName ?? (groupId ? "กลุ่มลูกค้า" : "ลูกค้า"),
+        displayName: contactName ?? (groupId ? "กลุ่มลูกค้า" : "ลูกค้า"),
       },
       select: { id: true },
     });
