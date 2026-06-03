@@ -7,7 +7,7 @@ import { audit } from "@/lib/fuelos/audit";
 import { getPricingContext } from "@/lib/fuelos/pricing-data";
 import { PRODUCT_LABELS, PRODUCT_ORDER, computeSellPrice } from "@/lib/fuelos/pricing";
 import { formatNumber } from "@/lib/fuelos/utils/format";
-import { pushLineMessage, pushLineSticker } from "@/lib/fuelos/line";
+import { pushLineMessage, pushLineSticker, prefixStaffName } from "@/lib/fuelos/line";
 import type { ConvSegment } from "@/lib/generated/prisma/enums";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
@@ -36,7 +36,8 @@ export async function sendReply(convId: string, body: string) {
   const to = conv.lineGroupId ?? conv.externalUserId;
   if (token && to) {
     try {
-      const r = await pushLineMessage(token, to, text);
+      // ใส่ชื่อพนักงานนำหน้า (ตัวเลือก A ของ CEO) → ลูกค้าเห็นว่าใครคุย แม้ส่งในนาม OA
+      const r = await pushLineMessage(token, to, prefixStaffName(text, user.name));
       if (!r.ok) errorMessage = `ส่ง LINE ไม่สำเร็จ (HTTP ${r.status})`;
     } catch {
       errorMessage = "ส่ง LINE ไม่สำเร็จ (เครือข่าย)";
@@ -157,6 +158,30 @@ export async function todayPriceText(zone: string | null): Promise<string> {
   }
   lines.push("(ราคาส่งถึงหน้าโรง · สอบถามเพิ่มเติมได้เลยครับ)");
   return lines.join("\n");
+}
+
+// ตั้งชื่อเล่น (alias) / ป้ายบทบาท ให้คนใน LINE — เปลี่ยนได้ แต่ชื่อจริง (displayName) ยังเก็บไว้ดู
+export async function updateContact(
+  convId: string,
+  lineUserId: string,
+  data: { alias?: string | null; roleLabel?: string | null },
+) {
+  const user = await requireUser();
+  const conv = await prisma.conversation.findFirst({
+    where: { id: convId, orgId: user.orgId },
+    select: { channelId: true },
+  });
+  if (!conv?.channelId) return { ok: false, error: "ไม่พบช่องทางของแชทนี้" };
+  const patch: Record<string, string | null> = {};
+  if ("alias" in data) patch.alias = (data.alias ?? "").trim() || null;
+  if ("roleLabel" in data) patch.roleLabel = (data.roleLabel ?? "").trim() || null;
+  await prisma.fuelLineContact.upsert({
+    where: { channelId_lineUserId: { channelId: conv.channelId, lineUserId } },
+    create: { orgId: user.orgId, channelId: conv.channelId, lineUserId, ...patch },
+    update: patch,
+  });
+  revalidatePath("/fuelos/inbox");
+  return { ok: true };
 }
 
 // F4 — ดึงเลขบัญชีโอน

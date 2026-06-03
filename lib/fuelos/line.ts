@@ -53,40 +53,50 @@ export async function pushLineSticker(
   return { ok: res.ok, status: res.status };
 }
 
-// ดึงชื่อโปรไฟล์ (1:1) — best-effort
-export async function fetchLineProfileName(
+export type LineProfile = { displayName: string | null; pictureUrl: string | null };
+
+// ดึงโปรไฟล์ (ชื่อ + รูป) แบบ 1:1 — best-effort
+export async function fetchLineProfile(
   accessToken: string,
   userId: string,
-): Promise<string | null> {
+): Promise<LineProfile | null> {
   try {
     const res = await fetch(`https://api.line.me/v2/bot/profile/${userId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!res.ok) return null;
-    const j = (await res.json()) as { displayName?: string };
-    return j.displayName ?? null;
+    const j = (await res.json()) as { displayName?: string; pictureUrl?: string };
+    return { displayName: j.displayName ?? null, pictureUrl: j.pictureUrl ?? null };
   } catch {
     return null;
   }
 }
 
-// ดึงชื่อสมาชิกในกลุ่ม — best-effort
-export async function fetchLineGroupMemberName(
+// ดึงโปรไฟล์สมาชิกในกลุ่ม (ชื่อ + รูป) — best-effort
+export async function fetchLineGroupMemberProfile(
   accessToken: string,
   groupId: string,
   userId: string,
-): Promise<string | null> {
+): Promise<LineProfile | null> {
   try {
     const res = await fetch(
       `https://api.line.me/v2/bot/group/${groupId}/member/${userId}`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
     if (!res.ok) return null;
-    const j = (await res.json()) as { displayName?: string };
-    return j.displayName ?? null;
+    const j = (await res.json()) as { displayName?: string; pictureUrl?: string };
+    return { displayName: j.displayName ?? null, pictureUrl: j.pictureUrl ?? null };
   } catch {
     return null;
   }
+}
+
+// แนบชื่อพนักงานนำหน้าข้อความที่ส่งออก (ตัวเลือก A ของ CEO) — ลูกค้าจะเห็นว่าใครคุย
+// เช่น "[นัท] ราคาวันนี้ดีเซล 37.35"
+export function prefixStaffName(text: string, staffName: string | null | undefined): string {
+  const n = (staffName ?? "").trim();
+  if (!n) return text;
+  return `[${n}] ${text}`;
 }
 
 // แปลง message event → ข้อความที่อ่านได้

@@ -1,17 +1,27 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/fuelos/auth";
 import { prisma } from "@/lib/prisma";
-import { listConversations, conversationCounts, getConversation, type ConvFilter } from "@/lib/fuelos/inbox-data";
+import {
+  listConversations,
+  conversationCounts,
+  getConversation,
+  customerProfileStats,
+  type ConvFilter,
+} from "@/lib/fuelos/inbox-data";
+import { getPricingContext } from "@/lib/fuelos/pricing-data";
+import { listCustomerOptions } from "@/lib/fuelos/quotes-data";
 import { bkkRelative, bkkTime } from "@/lib/fuelos/utils/format";
 import { cn } from "@/lib/fuelos/utils/cn";
 import { ReplyBox } from "./reply-box";
 import { ChatControls } from "./chat-controls";
-import { ArrowLeft, MessageSquareWarning, MessagesSquare, UserCircle2 } from "lucide-react";
+import { ChatTools } from "@/components/fuelos/inbox/chat-tools";
+import { ArrowLeft, MessageSquareWarning, MessagesSquare, UserCircle2, Lock } from "lucide-react";
 
 const SEG_LABEL: Record<string, string> = { NEW: "ลูกค้าใหม่", OLD: "ลูกค้าเก่า", PRICE_CHECK: "เช็คราคา" };
 const SEG_TONE: Record<string, string> = {
   NEW: "bg-info/10 text-info", OLD: "bg-leaf-100 text-leaf-700", PRICE_CHECK: "bg-warning/15 text-warning",
 };
+const STATUS_PREFIX = "📌 สถานะ:";
 
 type Att =
   | { type: "image" | "video" | "audio"; messageId: string | null }
@@ -19,7 +29,6 @@ type Att =
   | { type: "file"; messageId: string | null; fileName: string | null }
   | { type: "location"; lat: number | null; lng: number | null; title: string | null; address: string | null };
 
-// แสดงเนื้อหาข้อความ: รูป/สติกเกอร์/วิดีโอ/ตำแหน่ง/ไฟล์ หรือข้อความปกติ
 function MsgContent({ attachments, externalId, body, out }: { attachments: unknown; externalId: string | null; body: string; out: boolean }) {
   const att = (attachments ?? null) as Att | null;
   if (att?.type === "image" && externalId) {
@@ -61,6 +70,25 @@ export default async function InboxPage({
     prisma.fuelUser.findMany({ where: { orgId: user.orgId, role: { in: ["SALES", "SALES_HEAD"] }, isActive: true }, select: { id: true, name: true } }),
   ]);
 
+  // ข้อมูลประกอบ panel โปรไฟล์ + drawer ใบเสนอราคา (เฉพาะตอนเปิดแชท)
+  const [profileRaw, pricingCtx, customerOpts] = conv
+    ? await Promise.all([
+        conv.customer ? customerProfileStats(user.orgId, conv.customer.id) : Promise.resolve(null),
+        getPricingContext(user.orgId),
+        listCustomerOptions(user.orgId),
+      ])
+    : [null, null, []];
+
+  // serialize Decimal → number ก่อนส่งเข้า client component
+  const profile = profileRaw && {
+    ...profileRaw,
+    creditLimit: profileRaw.creditLimit == null ? null : Number(profileRaw.creditLimit),
+    creditUsed: Number(profileRaw.creditUsed),
+    recentOrders: profileRaw.recentOrders.map((o) => ({ ...o, subtotal: Number(o.subtotal), createdAt: o.createdAt.toISOString() })),
+    firstOrderAt: profileRaw.firstOrderAt?.toISOString() ?? null,
+    lastOrderAt: profileRaw.lastOrderAt?.toISOString() ?? null,
+  };
+
   const tabs = [
     { key: "all", label: "ทั้งหมด", n: counts.all },
     { key: "unanswered", label: "ค้างตอบ", n: counts.unanswered },
@@ -68,10 +96,10 @@ export default async function InboxPage({
   ];
 
   return (
-    <div className="lg:h-[calc(100dvh-3rem)] -m-4 sm:-m-6 lg:m-0">
-      <div className="lg:grid lg:grid-cols-[360px_1fr] lg:h-full lg:gap-0">
+    <div className="h-[calc(100dvh-3.5rem)] sm:h-[calc(100dvh-4rem)] -m-4 sm:-m-6 lg:m-0 lg:h-[calc(100dvh-4rem)] min-h-0 overflow-hidden">
+      <div className="grid lg:grid-cols-[360px_1fr] h-full min-h-0">
         {/* LIST */}
-        <div className={cn("lg:border-r border-border lg:overflow-y-auto bg-surface", conv && "hidden lg:block")}>
+        <div className={cn("lg:border-r border-border overflow-y-auto min-h-0 bg-surface", conv && "hidden lg:block")}>
           <div className="sticky top-0 z-10 bg-surface/95 backdrop-blur border-b border-border p-3">
             <div className="flex items-center gap-2 mb-2">
               <MessagesSquare className="size-5 text-brand-600" />
@@ -122,7 +150,7 @@ export default async function InboxPage({
         </div>
 
         {/* DETAIL */}
-        <div className={cn("flex flex-col lg:h-full bg-surface-2", !conv && "hidden lg:flex")}>
+        <div className={cn("flex flex-col h-full min-h-0 bg-surface-2", !conv && "hidden lg:flex")}>
           {!conv ? (
             <div className="flex-1 grid place-items-center text-zinc-400">
               <div className="text-center">
@@ -133,22 +161,32 @@ export default async function InboxPage({
           ) : (
             <>
               {/* detail header */}
-              <div className="sticky top-0 z-10 bg-surface/95 backdrop-blur border-b border-border px-3 py-2.5 flex items-center gap-2">
+              <div className="shrink-0 bg-surface/95 backdrop-blur border-b border-border px-3 py-2.5 flex items-center gap-2">
                 <Link href={`/fuelos/inbox?filter=${filter}`} className="lg:hidden size-9 grid place-items-center rounded-lg hover:bg-surface-2">
                   <ArrowLeft className="size-5" />
                 </Link>
                 <div className="min-w-0 flex-1">
-                  <div className="font-bold truncate">{conv.customer?.name ?? conv.displayName}</div>
+                  <div className="font-bold truncate">{conv.customer?.nickname || conv.customer?.name || conv.displayName}</div>
                   <div className="text-[11px] text-zinc-500">
                     {conv.customer?.zone ? `โซน ${conv.customer.zone}` : "ยังไม่ผูกลูกค้า"}
                     {conv.customer?.lastOrderAt && ` · ซื้อล่าสุด ${bkkRelative(conv.customer.lastOrderAt)}`}
+                    {conv.people.length > 1 && ` · ${conv.people.length} คนในกลุ่ม`}
                   </div>
                 </div>
-                {conv.customer && (
-                  <Link href={`/fuelos/customers/${conv.customer.id}`} className="text-xs text-brand-600 hover:underline shrink-0">
-                    ดูลูกค้า
-                  </Link>
-                )}
+                <ChatTools
+                  convId={conv.id}
+                  customerId={conv.customer?.id ?? null}
+                  profile={profile}
+                  people={conv.people}
+                  quote={{
+                    customers: customerOpts,
+                    costs: pricingCtx?.costs ?? {},
+                    margins: pricingCtx?.margins ?? {},
+                    prefillCustomerId: conv.customer?.id ?? null,
+                    prefillZone: conv.customer?.zone ?? null,
+                    prospectHint: conv.customer ? null : conv.displayName ?? null,
+                  }}
+                />
               </div>
 
               <ChatControls
@@ -159,13 +197,39 @@ export default async function InboxPage({
               />
 
               {/* messages */}
-              <div className="flex-1 overflow-y-auto p-3 space-y-2.5 lg:max-h-none max-h-[55vh]">
+              <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2.5">
                 {conv.messages.map((m) => {
                   const out = m.direction === "OUT";
+                  // โน้ตภายใน (สถานะ) — ลูกค้าไม่เห็น · แสดงกลางจอแบบ chip
+                  if (out && m.body.startsWith(STATUS_PREFIX)) {
+                    return (
+                      <div key={m.id} className="flex justify-center">
+                        <span className="inline-flex items-center gap-1 text-[11px] text-zinc-500 bg-surface border border-border rounded-full px-2.5 py-1">
+                          <Lock className="size-3" /> โน้ตภายใน · {m.body.replace(STATUS_PREFIX, "").trim()}
+                          <span className="text-zinc-400">(ลูกค้าไม่เห็น)</span>
+                        </span>
+                      </div>
+                    );
+                  }
+                  const contactName = m.senderContact?.alias || m.senderContact?.displayName || "ลูกค้า";
+                  const pic = m.senderContact?.pictureUrl;
                   return (
-                    <div key={m.id} className={cn("flex", out ? "justify-end" : "justify-start")}>
+                    <div key={m.id} className={cn("flex gap-2", out ? "justify-end" : "justify-start")}>
+                      {!out && (
+                        pic ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={pic} alt={contactName} className="size-7 rounded-full object-cover shrink-0 mt-0.5" />
+                        ) : (
+                          <div className="size-7 rounded-full bg-brand-100 text-brand-700 grid place-items-center text-[11px] font-bold shrink-0 mt-0.5">{contactName.slice(0, 1)}</div>
+                        )
+                      )}
                       <div className={cn("max-w-[78%] rounded-2xl px-3.5 py-2", out ? "bg-brand-600 text-white" : "bg-surface border border-border")}>
-                        {!out && <div className="text-[10px] text-zinc-400 mb-0.5">ลูกค้า</div>}
+                        {!out && (
+                          <div className="text-[10px] text-zinc-500 mb-0.5 flex items-center gap-1">
+                            {contactName}
+                            {m.senderContact?.roleLabel && <span className="text-brand-600 bg-brand-50 rounded px-1">{m.senderContact.roleLabel}</span>}
+                          </div>
+                        )}
                         {out && (m.senderUser?.name || m.sentByBot) && (
                           <div className="text-[10px] text-white/70 mb-0.5">{m.sentByBot ? "🤖 บอท" : m.senderUser?.name}</div>
                         )}
