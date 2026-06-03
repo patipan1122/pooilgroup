@@ -309,10 +309,11 @@ export async function bulkConfirm(
 
 // ===================== Settings: categories =====================
 const categorySchema = z.object({
-  // NOT .uuid(): this org's company ids predate the uuid column convention
-  // (Pool schema drift) so they are not all RFC-uuid strings. The real gate is
-  // the `prisma.company.findFirst({ id, orgId })` ownership check below — format
-  // strictness here only produced a false "Invalid UUID" on a legit company.
+  // NOT .uuid(): seed company/category ids are synthetic uuids like
+  // 00000000-0000-0000-0000-0000000000a2 — valid Postgres uuid SYNTAX (the
+  // column stores them fine) but NOT RFC-4122 (version/variant nibbles are 0),
+  // so zod v4's RFC-strict .uuid() rejects them → false "Invalid UUID". The real
+  // gate is the prisma.company.findFirst({ id, orgId }) ownership check below.
   companyId: z.string().trim().min(1, "ไม่ได้ระบุบริษัท"),
   name: z.string().trim().min(1, "ต้องระบุชื่อหมวด").max(100),
   color: z.string().trim().max(20).optional().or(z.literal("")),
@@ -381,10 +382,11 @@ export async function toggleCategory(
 
 // ===================== Budgets =====================
 const budgetSchema = z.object({
-  // NOT .uuid(): this org's company ids predate the uuid column convention
-  // (Pool schema drift) so they are not all RFC-uuid strings. The real gate is
-  // the `prisma.company.findFirst({ id, orgId })` ownership check below — format
-  // strictness here only produced a false "Invalid UUID" on a legit company.
+  // NOT .uuid(): seed company/category ids are synthetic uuids like
+  // 00000000-0000-0000-0000-0000000000a2 — valid Postgres uuid SYNTAX (the
+  // column stores them fine) but NOT RFC-4122 (version/variant nibbles are 0),
+  // so zod v4's RFC-strict .uuid() rejects them → false "Invalid UUID". The real
+  // gate is the prisma.company.findFirst({ id, orgId }) ownership check below.
   companyId: z.string().trim().min(1, "ไม่ได้ระบุบริษัท"),
   categoryId: z.string().trim().min(1),
   branchId: z.string().trim().optional().or(z.literal("")),
@@ -470,10 +472,11 @@ export async function deleteBudget(id: string): Promise<ActionResult> {
 // trigger a browser download. Column shape is provisional (buildTrcloudCsv) —
 // see docs/LEDGER_SETUP.md. NEVER touches drafts (only "real" spend is exported).
 const exportSchema = z.object({
-  // NOT .uuid(): this org's company ids predate the uuid column convention
-  // (Pool schema drift) so they are not all RFC-uuid strings. The real gate is
-  // the `prisma.company.findFirst({ id, orgId })` ownership check below — format
-  // strictness here only produced a false "Invalid UUID" on a legit company.
+  // NOT .uuid(): seed company/category ids are synthetic uuids like
+  // 00000000-0000-0000-0000-0000000000a2 — valid Postgres uuid SYNTAX (the
+  // column stores them fine) but NOT RFC-4122 (version/variant nibbles are 0),
+  // so zod v4's RFC-strict .uuid() rejects them → false "Invalid UUID". The real
+  // gate is the prisma.company.findFirst({ id, orgId }) ownership check below.
   companyId: z.string().trim().min(1, "ไม่ได้ระบุบริษัท"),
   period: z.string().regex(/^\d{4}-\d{2}$/, "งวดต้องเป็น YYYY-MM"),
 });
@@ -566,10 +569,11 @@ export async function exportConfirmedCsv(raw: unknown): Promise<ExportResult> {
 // channel-crypto (same wrapping key as inbox/recruit) and NEVER returned to the
 // client; on edit, a blank field keeps the existing encrypted value.
 const lineChannelSchema = z.object({
-  // NOT .uuid(): this org's company ids predate the uuid column convention
-  // (Pool schema drift) so they are not all RFC-uuid strings. The real gate is
-  // the `prisma.company.findFirst({ id, orgId })` ownership check below — format
-  // strictness here only produced a false "Invalid UUID" on a legit company.
+  // NOT .uuid(): seed company/category ids are synthetic uuids like
+  // 00000000-0000-0000-0000-0000000000a2 — valid Postgres uuid SYNTAX (the
+  // column stores them fine) but NOT RFC-4122 (version/variant nibbles are 0),
+  // so zod v4's RFC-strict .uuid() rejects them → false "Invalid UUID". The real
+  // gate is the prisma.company.findFirst({ id, orgId }) ownership check below.
   companyId: z.string().trim().min(1, "ไม่ได้ระบุบริษัท"),
   lineChannelId: z.string().trim().min(1, "ใส่ Channel ID").max(64),
   channelSecret: z.string().trim().max(200).optional().or(z.literal("")),
@@ -604,16 +608,21 @@ export async function connectLineChannel(raw: unknown): Promise<ActionResult> {
     where: { orgId, companyId },
     select: { id: true, webhookSecretEnc: true, accessTokenEnc: true },
   });
-  const secretEnc = channelSecret
-    ? encryptToken(channelSecret)
-    : existing?.webhookSecretEnc ?? null;
-  const tokenEnc = accessToken
-    ? encryptToken(accessToken)
-    : existing?.accessTokenEnc ?? null;
   const gId = groupId || null;
 
   let channelRowId: string;
+  let secretEnc: string | null;
+  let tokenEnc: string | null;
   try {
+    // Encrypt INSIDE the try: encryptToken → getKey() throws if neither
+    // RECRUIT_CHANNEL_KEY nor a NEXTAUTH_SECRET/AUTH_SECRET fallback is set, so
+    // keeping it here returns a clean ActionResult instead of a 500.
+    secretEnc = channelSecret
+      ? encryptToken(channelSecret)
+      : existing?.webhookSecretEnc ?? null;
+    tokenEnc = accessToken
+      ? encryptToken(accessToken)
+      : existing?.accessTokenEnc ?? null;
     if (existing) {
       await prisma.ledgerLineChannel.update({
         where: { id: existing.id },
@@ -641,8 +650,17 @@ export async function connectLineChannel(raw: unknown): Promise<ActionResult> {
       });
       channelRowId = created.id;
     }
-  } catch {
-    // unique(orgId, lineChannelId) — this Channel ID is already bound elsewhere.
+  } catch (e) {
+    // Two distinct failure modes — don't mislabel one as the other:
+    //  (a) encryptToken threw → no encryption key env configured.
+    //  (b) unique(orgId, lineChannelId) → this Channel ID is bound elsewhere.
+    const msg = e instanceof Error ? e.message : "";
+    if (/CHANNEL_KEY|NEXTAUTH_SECRET|32 bytes/i.test(msg)) {
+      return {
+        ok: false,
+        error: "ระบบเข้ารหัสยังไม่พร้อม — ผู้ดูแลต้องตั้งค่า RECRUIT_CHANNEL_KEY ใน env",
+      };
+    }
     return { ok: false, error: "Channel ID นี้ถูกใช้ไปแล้ว (ผูกกับบริษัทอื่น)" };
   }
 
