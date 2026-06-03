@@ -39,25 +39,24 @@ export const getCurrentUser = cache(async (): Promise<FuelUserCtx> => {
   const u = session.user;
   const role = mapRole(u.role);
 
-  // fuel Org keyed by Pool org_id (1:1)
-  await prisma.org.upsert({
-    where: { id: u.org_id },
-    create: { id: u.org_id, name: "PO Oil" },
-    update: {},
-  });
-  // FuelUser keyed by Pool user.id (1:1) — keeps fuel role in sync with Pool role
-  await prisma.fuelUser.upsert({
-    where: { id: u.id },
-    create: {
-      id: u.id,
-      orgId: u.org_id,
-      email: u.email ?? `${u.id}@pool.local`,
-      passwordHash: "", // login is via Pool/Supabase; fuel password unused
-      name: u.name,
-      role,
-    },
-    update: { role, name: u.name },
-  });
+  // perf: steady-state = 1 indexed PK read, 0 writes. Only provision on first
+  // access; only write to sync role when it actually changed.
+  const existing = await prisma.fuelUser.findUnique({ where: { id: u.id }, select: { role: true } });
+  if (!existing) {
+    await prisma.org.upsert({ where: { id: u.org_id }, create: { id: u.org_id, name: "PO Oil" }, update: {} });
+    await prisma.fuelUser.create({
+      data: {
+        id: u.id,
+        orgId: u.org_id,
+        email: u.email ?? `${u.id}@pool.local`,
+        passwordHash: "", // login is via Pool/Supabase; fuel password unused
+        name: u.name,
+        role,
+      },
+    });
+  } else if (existing.role !== role) {
+    await prisma.fuelUser.update({ where: { id: u.id }, data: { role, name: u.name } });
+  }
 
   return { id: u.id, orgId: u.org_id, role, name: u.name };
 });
