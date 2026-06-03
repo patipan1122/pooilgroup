@@ -12,6 +12,8 @@ export const AI_PRICING_USD_PER_M = {
   // Google Gemini — https://ai.google.dev/pricing
   "gemini-2.5-flash":    { in: 0.075, out: 0.30 },
   "gemini-2.5-pro":      { in: 1.25,  out: 5.0  },
+  "gemini-3.1-flash-lite": { in: 0.10, out: 0.40 }, // Ledger receipt OCR primary model
+  "gemini-3.1-pro":      { in: 1.25,  out: 5.0  },  // Ledger escalation (hard receipts)
   // OpenAI (placeholder, none deployed yet)
   "gpt-4o":              { in: 2.5,   out: 10.0 },
 } as const;

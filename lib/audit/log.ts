@@ -110,7 +110,14 @@ export type AuditAction =
   | "REPAIR_ETA_SET"
   | "REPAIR_TECHNICIAN_CREATED"
   | "REPAIR_TECHNICIAN_TOGGLED"
-  | "REPAIR_CATEGORY_CREATED";
+  | "REPAIR_CATEGORY_CREATED"
+  // Ledger module — LedgerLine (บัญชี/ใบเสร็จ). NEVER auto-post: confirm is
+  // an explicit human action, recorded here for the auditor trail.
+  | "LEDGER_EXPENSE_CREATED"
+  | "LEDGER_EXPENSE_UPDATED"
+  | "LEDGER_EXPENSE_CONFIRMED"
+  | "LEDGER_EXPENSE_VOIDED"
+  | "LEDGER_EXPENSE_EXPORTED";
 
 export interface AuditEntry {
   orgId: string;
