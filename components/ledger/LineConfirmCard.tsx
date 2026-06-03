@@ -132,8 +132,11 @@ type FlexComponent = FlexText | FlexBox | FlexButton | FlexSeparator | FlexImage
 // https URLs for flex images, so we build them from the webhook's baseUrl and
 // only show the mascot/logo when we have one (relative URLs would silently fail
 // to render in LINE). SVG is fine for LINE flex `image`.
+// Mascot "JP" (น้องใบเสร็จ) — the cheerful blue-purple monster, generated +
+// cut to transparent in public/ledger/brand/mascot/. The confirm card greets
+// the staffer with the "receipt" pose (holding a receipt + thumbs up).
 const BRAND_PATH = {
-  mascot: "/ledger/brand/mascot.svg",
+  mascot: "/ledger/brand/mascot/receipt-sm.png",
   logo: "/ledger/brand/logo.svg",
 } as const;
 
