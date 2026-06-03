@@ -152,6 +152,38 @@ export const expenseByMonth = cache(
   },
 );
 
+/** The connected LINE channel for a company (settings card). Reports WHETHER
+ *  the encrypted secret/token are set — NEVER returns the secrets themselves
+ *  (they only ever flow into the encrypted column, never back to the client). */
+export const getLineChannel = cache(
+  async (orgId: string, companyId: string) => {
+    const ch = await prisma.ledgerLineChannel.findFirst({
+      where: { orgId, companyId },
+      select: {
+        id: true,
+        lineChannelId: true,
+        groupId: true,
+        active: true,
+        webhookSecretEnc: true,
+        accessTokenEnc: true,
+      },
+    });
+    if (!ch) return null;
+    return {
+      id: ch.id,
+      lineChannelId: ch.lineChannelId,
+      groupId: ch.groupId,
+      active: ch.active,
+      hasSecret: !!ch.webhookSecretEnc,
+      hasAccessToken: !!ch.accessTokenEnc,
+    };
+  },
+);
+
+export type LineChannelInfo = NonNullable<
+  Awaited<ReturnType<typeof getLineChannel>>
+>;
+
 /** Budgets with used-vs-cap computed from confirmed spend in the period. */
 export const listBudgets = cache(
   async (

@@ -3,7 +3,7 @@
 import { requireRole } from "@/lib/auth/session";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
-import { listCategories } from "../_data";
+import { listCategories, getLineChannel } from "../_data";
 import { CategoryManager } from "./_components/CategoryManager";
 import { LineChannelCard } from "./_components/LineChannelCard";
 import { ExportConfigCard } from "./_components/ExportConfigCard";
@@ -28,7 +28,10 @@ export default async function LedgerSettingsPage({
     );
   }
 
-  const categories = await listCategories(scope.orgId, scope.companyId);
+  const [categories, lineChannel] = await Promise.all([
+    listCategories(scope.orgId, scope.companyId),
+    getLineChannel(scope.orgId, scope.companyId),
+  ]);
 
   return (
     <div className="p-4 sm:p-6">
@@ -52,7 +55,11 @@ export default async function LedgerSettingsPage({
             }))}
           />
         </div>
-        <LineChannelCard companyName={scope.companies.find((c) => c.id === scope.companyId)?.name ?? ""} />
+        <LineChannelCard
+          companyId={scope.companyId}
+          companyName={scope.companies.find((c) => c.id === scope.companyId)?.name ?? ""}
+          channel={lineChannel}
+        />
         <ExportConfigCard companyId={scope.companyId} />
       </div>
     </div>
