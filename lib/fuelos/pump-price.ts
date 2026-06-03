@@ -5,7 +5,8 @@ import "server-only";
 // param: Language (string). หมายเหตุ: ตอนทดสอบ server ตอบ "Language not provided"
 // → คาดว่าต้องมี auth/ค่าเฉพาะที่ CEO จะแจ้งภายหลัง. โค้ดนี้ยิงตาม WSDL ถูกต้อง + ดึงผลแบบ best-effort.
 const ENDPOINT = "https://orapiweb.pttor.com/oilservice/OilPrice.asmx";
-const NS = "https://orapiweb.pttor.com/";
+// targetNamespace ของ WSDL = ไม่มี / ท้าย (SOAPAction = NS + "/CurrentOilPrice")
+const NS = "https://orapiweb.pttor.com";
 
 export type PumpPrice = { product: string; price: string };
 export type PumpPriceResult =
@@ -57,7 +58,7 @@ export async function fetchPumpPrices(language = "TH"): Promise<PumpPriceResult>
   try {
     const res = await fetch(ENDPOINT, {
       method: "POST",
-      headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: `${NS}CurrentOilPrice` },
+      headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: `${NS}/CurrentOilPrice` },
       body,
       next: { revalidate: 1800 }, // cache 30 นาที
     });

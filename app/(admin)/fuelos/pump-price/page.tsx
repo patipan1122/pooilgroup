@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/fuelos/auth";
 import { fetchPumpPrices } from "@/lib/fuelos/pump-price";
 import { PageHeader } from "@/components/fuelos/ui/page-header";
-import { Fuel, ExternalLink, Info } from "lucide-react";
+import { Fuel, ExternalLink } from "lucide-react";
 
 export const revalidate = 1800; // อัปเดตทุก 30 นาที
 
@@ -26,25 +26,20 @@ export default async function PumpPricePage() {
           ))}
         </div>
       ) : (
-        <div className="space-y-3">
-          <div className="rounded-xl border border-border bg-surface-2 px-3 py-2.5 text-xs text-zinc-500 flex items-start gap-2">
-            <Info className="size-4 shrink-0 mt-0.5 text-info" />
-            <span>
-              ดึงจาก API ของ PTTOR ยังไม่สมบูรณ์ ({result.error}) — แสดงกระดานราคาทางการของ OR แทนชั่วคราว ·
-              เมื่อ CEO แจ้งค่า/สิทธิ์ของ API ระบบจะดึงเป็นการ์ดราคาให้อัตโนมัติ
-            </span>
-          </div>
-          {/* กระดานราคาทางการ OR (embed) — เห็นข้อมูลได้ทันที */}
-          <div className="rounded-2xl border border-border overflow-hidden bg-white">
-            <iframe
-              title="ราคาน้ำมัน PTT Station"
-              src="https://orweb-dev.rts2003.co.th/oil_price_board?lang=th"
-              className="w-full"
-              style={{ height: 460, border: 0 }}
-            />
-          </div>
-          <a href="https://www.pttor.com/th/oil_price" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-brand-600 hover:underline">
-            ดูราคาเต็มที่เว็บ OR <ExternalLink className="size-3.5" />
+        <div className="rounded-2xl border border-border bg-surface p-8 text-center">
+          <Fuel className="size-10 mx-auto text-zinc-300" />
+          <p className="mt-3 font-semibold">ยังไม่ได้เชื่อมราคาหน้าปั๊ม</p>
+          <p className="text-sm text-zinc-500 mt-1.5 max-w-md mx-auto">
+            ระบบพร้อมดึงราคาจาก API ของ PTTOR แล้ว · รอ CEO แจ้งค่า/สิทธิ์ (auth) ของ API → จะแสดงเป็นการ์ดราคาให้อัตโนมัติ
+            <span className="block text-[11px] text-zinc-400 mt-1">สถานะ API: {result.error}</span>
+          </p>
+          <a
+            href="https://www.pttor.com/th/oil_price"
+            target="_blank"
+            rel="noreferrer"
+            className="mt-4 inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-brand-600 text-white text-sm font-medium"
+          >
+            เปิดราคาหน้าปั๊ม OR (แท็บใหม่) <ExternalLink className="size-4" />
           </a>
         </div>
       )}
