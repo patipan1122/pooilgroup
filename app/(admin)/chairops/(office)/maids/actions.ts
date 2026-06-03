@@ -25,6 +25,7 @@ import { canManageUser, rankOf } from "@/lib/chairops/auth/role-guards";
 import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
 import { notifyChannel } from "@/lib/chairops/line/messaging";
+import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
 import type { ActionResult } from "./types";
 
 // -- helpers ----------------------------------------------------------------
@@ -307,6 +308,148 @@ export async function cancelOwnDayOff(): Promise<ActionResult> {
   revalidatePath("/chairops/maids");
   revalidatePath("/chairops");
   return { ok: true };
+}
+
+// ============================================================
+// Maid profile · payroll/HR fields (CEO+ADMIN only)
+// CEO 2026-06-03 · phone + bank account + employment-contract attachment so
+// payroll can be set up later. Contract file is uploaded to R2 by the client
+// (generic /api/r2/sign route) — we only store the resulting URL + filename.
+// ============================================================
+
+const updateMaidProfileSchema = z.object({
+  maidId: zUUID(),
+  phone: z.string().trim().max(30).optional().or(z.literal("")),
+  bankName: z.string().trim().max(60).optional().or(z.literal("")),
+  bankAccountNo: z.string().trim().max(40).optional().or(z.literal("")),
+  bankAccountName: z.string().trim().max(120).optional().or(z.literal("")),
+  // SEC: must be our R2 CDN — refusing arbitrary hosts closes the SSRF vector
+  // (the server fetches this URL to mirror the file into Drive).
+  contractFileUrl: z
+    .string()
+    .trim()
+    .max(2000)
+    .refine((s) => s === "" || isAllowedPhotoUrl(s), "ลิงก์ไฟล์ไม่ถูกต้อง")
+    .optional()
+    .or(z.literal("")),
+  contractFileName: z.string().trim().max(200).optional().or(z.literal("")),
+});
+
+export async function updateMaidProfile(
+  formData: FormData,
+): Promise<ActionResult> {
+  const session = await requireRole(ChairopsUserRole.ADMIN);
+
+  const parsed = updateMaidProfileSchema.safeParse({
+    maidId: formData.get("maidId"),
+    phone: formData.get("phone") || undefined,
+    bankName: formData.get("bankName") || undefined,
+    bankAccountNo: formData.get("bankAccountNo") || undefined,
+    bankAccountName: formData.get("bankAccountName") || undefined,
+    contractFileUrl: formData.get("contractFileUrl") || undefined,
+    contractFileName: formData.get("contractFileName") || undefined,
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  }
+  const v = parsed.data;
+
+  const target = await prisma.chairopsUser.findFirst({
+    where: { id: v.maidId, orgId: session.user.orgId },
+  });
+  if (!target) return { ok: false, error: "ไม่พบแม่บ้าน" };
+  if (!canManageUser(session.user, target)) {
+    return { ok: false, error: `คุณไม่มีสิทธิ์แก้ไขผู้ใช้ระดับ ${target.role}` };
+  }
+  if (target.role !== ChairopsUserRole.MAID) {
+    return { ok: false, error: "ใช้ได้เฉพาะแม่บ้าน" };
+  }
+
+  // Empty string → null (clear the field). The @@unique([orgId, phone]) means
+  // a phone collision throws P2002 → friendly message instead of a 500.
+  const norm = (s: string | undefined) => {
+    const t = (s ?? "").trim();
+    return t === "" ? null : t;
+  };
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.chairopsUser.update({
+        where: { id: target.id },
+        data: {
+          phone: norm(v.phone),
+          bankName: norm(v.bankName),
+          bankAccountNo: norm(v.bankAccountNo),
+          bankAccountName: norm(v.bankAccountName),
+          contractFileUrl: norm(v.contractFileUrl),
+          contractFileName: norm(v.contractFileName),
+        },
+      });
+      await writeAudit(
+        {
+          userId: session.user.id,
+          action: "maid.profile.update",
+          entity: "User",
+          entityId: target.id,
+          // never log full account number — just whether it was set
+          newValue: {
+            phone: norm(v.phone),
+            bankName: norm(v.bankName),
+            bankAccountSet: norm(v.bankAccountNo) != null,
+            contractSet: norm(v.contractFileUrl) != null,
+          },
+        },
+        tx,
+      );
+    });
+
+    // Best-effort: archive a newly-attached contract to Google Drive
+    // (CEO 2026-06-03). Never blocks/fails the save — R2 copy is authoritative.
+    const newContract = norm(v.contractFileUrl);
+    if (newContract && newContract !== target.contractFileUrl) {
+      try {
+        const { getDriveConnection, backupFileToDrive } = await import(
+          "@/lib/chairops/storage/drive"
+        );
+        if (await getDriveConnection(session.user.orgId)) {
+          const resp = await fetch(newContract, {
+            signal: AbortSignal.timeout(15_000),
+          });
+          if (resp.ok) {
+            const bytes = Buffer.from(await resp.arrayBuffer());
+            const ym = new Intl.DateTimeFormat("en-CA", {
+              timeZone: "Asia/Bangkok",
+              year: "numeric",
+              month: "2-digit",
+            }).format(new Date()); // "YYYY-MM"
+            await backupFileToDrive({
+              orgId: session.user.orgId,
+              category: "contract",
+              periodYm: ym,
+              fileName: norm(v.contractFileName) ?? `contract-${target.id}`,
+              mimeType:
+                resp.headers.get("content-type") ?? "application/octet-stream",
+              bytes,
+              r2Url: newContract,
+              sourceTable: "ChairopsUser",
+              sourceId: target.id,
+            });
+          }
+        }
+      } catch (e) {
+        console.error("[chairops] contract drive backup failed (non-fatal)", e);
+      }
+    }
+
+    revalidatePath(`/chairops/maids/${target.id}`);
+    revalidatePath("/chairops/maids");
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { ok: false, error: "เบอร์โทรนี้มีแม่บ้านคนอื่นใช้แล้ว" };
+    }
+    return { ok: false, error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" };
+  }
 }
 
 // ============================================================

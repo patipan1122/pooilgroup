@@ -19,6 +19,7 @@ import { prisma } from "@/lib/prisma";
 import { LeaveRequestForm } from "../_components/leave-request-form";
 import { DeleteLeaveButton } from "../_components/delete-leave-button";
 import { ReassignBranchForm } from "../_components/reassign-branch-form";
+import { MaidProfileForm } from "../_components/maid-profile-form";
 
 export const dynamic = "force-dynamic";
 
@@ -143,6 +144,29 @@ export default async function MaidDetailPage({
           </ul>
         </div>
       </section>
+
+      {/* Profile / payroll info (ADMIN+ · CEO 2026-06-03) */}
+      {canMutate && (
+        <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-zinc-800">
+            <Pencil className="size-4 text-zinc-500" /> ข้อมูลแม่บ้าน · เพื่อตั้งเงินเดือน
+          </div>
+          <p className="mb-3 text-xs text-zinc-500">
+            เบอร์โทร · เลขบัญชีธนาคาร · แนบสัญญาจ้าง — ใช้ตอนตั้งระบบจ่ายเงินเดือน
+          </p>
+          <div className="max-w-md">
+            <MaidProfileForm
+              maidId={maid.id}
+              phone={maid.phone}
+              bankName={maid.bankName}
+              bankAccountNo={maid.bankAccountNo}
+              bankAccountName={maid.bankAccountName}
+              contractFileUrl={maid.contractFileUrl}
+              contractFileName={maid.contractFileName}
+            />
+          </div>
+        </section>
+      )}
 
       {/* Leave history (90d) */}
       <section className="rounded-xl border border-zinc-200 bg-white shadow-sm">

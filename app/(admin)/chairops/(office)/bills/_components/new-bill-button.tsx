@@ -232,6 +232,16 @@ export function NewBillButton({
                 />
               </Field>
 
+              <Field label="โอนไปที่ · เลขบัญชีปลายทาง (เลือกใส่)">
+                <input
+                  type="text"
+                  name="bankAccountTo"
+                  maxLength={200}
+                  className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm"
+                  placeholder="เช่น กสิกร 123-4-56789-0 บจก.เซ็นทรัล"
+                />
+              </Field>
+
               <Field label="หมายเหตุ (เลือกใส่)">
                 <input
                   type="text"
