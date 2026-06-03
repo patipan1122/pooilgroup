@@ -20,7 +20,7 @@ export function ChatControls({
   const router = useRouter();
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-surface overflow-x-auto">
+    <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-border bg-surface overflow-x-auto">
       <span className="text-[11px] text-zinc-400 shrink-0">กลุ่ม:</span>
       <select
         defaultValue={segment} disabled={pending}
