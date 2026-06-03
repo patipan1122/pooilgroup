@@ -50,6 +50,8 @@ export default async function MaidPartsHubPage() {
   const requests = await prisma.chairopsSparePartMovement.findMany({
     where: {
       orgId: session.user.orgId,
+      // branchId so the hub scope matches the dedup scope in requestPartFromMaid (P0-3)
+      branchId,
       byUserId: session.user.id, // this maid's own requests
       delta: 0,
       reason: { startsWith: MAID_PART_REQUEST_PREFIX },

@@ -51,7 +51,9 @@ export default async function DamageListPage({
   // technician = scope to their own assignments unless explicit "all"
   const isTechnician = session.user.role === "TECHNICIAN";
 
-  const w: Prisma.ChairopsDamageTicketWhereInput = {};
+  // scope every damage query to the caller's org — ChairOps has no RLS, so the
+  // orgId filter is the tenant boundary (P1-17/19 cross-tenant leak fix)
+  const w: Prisma.ChairopsDamageTicketWhereInput = { orgId: session.user.orgId };
   if (isTechnician) {
     w.assignedToId = session.user.id;
   } else {

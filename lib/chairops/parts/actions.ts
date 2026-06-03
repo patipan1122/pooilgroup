@@ -123,6 +123,7 @@ export async function requestPartFromMaid(
 
     revalidatePath("/chairops/parts");
     revalidatePath("/chairops/m/parts/new");
+    revalidatePath("/chairops/m/parts"); // the maid hub lists this request (P1-20)
     return { ok: true, data: { id: created.id } };
   } catch (err) {
     return {

@@ -148,8 +148,6 @@ export function BatchDepositForm({
 
   const depositedNum = Number(deposited.replace(/,/g, "")) || 0;
   const bankFeeNum = Number(bankFee.replace(/,/g, "")) || 0;
-  const diff = selectedSum - depositedNum;
-  const absDiff = Math.abs(diff);
 
   async function onPickSlip(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -416,10 +414,10 @@ export function BatchDepositForm({
                 aria-live="polite"
               >
                 <div>
-                  ผลต่าง (นับรวม − ฝาก + ค่าธรรมเนียม):{" "}
+                  ผลต่าง (ฝาก + ค่าธรรมเนียม − นับรวม):{" "}
                   <span className="font-semibold tabular-nums">
-                    {diff >= 0 ? "+" : ""}
-                    {diff.toLocaleString()} ฿
+                    {eff >= 0 ? "+" : ""}
+                    {eff.toLocaleString()} ฿
                   </span>
                 </div>
                 {overReview && (

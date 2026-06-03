@@ -536,6 +536,9 @@ export async function batchDeposit(
     revalidatePath("/chairops/collect");
     revalidatePath("/chairops/deposits");
     revalidatePath("/chairops/branch-collect");
+    // deposit changes drift → reconcile sidebar + exec dashboard must refresh (P1-3)
+    revalidatePath("/chairops/reconcile");
+    revalidatePath("/chairops");
     return { ok: true, data: { id: deposit.id } };
   } catch {
     return { ok: false, error: "บันทึกการฝากไม่สำเร็จ · ลองอีกครั้ง" };

@@ -110,6 +110,7 @@ export async function createDamageTicket(
         });
 
         revalidatePath("/chairops/damage");
+        revalidatePath("/chairops/m"); // maid home shows the open-damage count (P1-16)
         return { ok: true, data: { id: created.id, ticketCode: created.ticketCode } };
       } catch (e) {
         const isUniq =
