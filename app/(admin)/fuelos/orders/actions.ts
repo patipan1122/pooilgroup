@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, atLeast } from "@/lib/fuelos/auth";
 import { audit } from "@/lib/fuelos/audit";
 import { isForwardStep } from "@/lib/fuelos/orders-data";
+import { trcloudConfigured, createOrderIV, deleteOrderIV } from "@/lib/fuelos/trcloud";
 import type { OrderStatus } from "@/lib/generated/prisma/enums";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -12,6 +13,57 @@ type ActionResult = { ok: true } | { ok: false; error: string };
 // โหลดออเดอร์ของ org เดียวกัน (กัน cross-org)
 async function loadOrder(orgId: string, id: string) {
   return prisma.order.findFirst({ where: { id, orgId } });
+}
+
+// วันที่ตามเขตเวลาไทย (UTC+7) → YYYY-MM-DD
+function bkkDate(offsetDays = 0): string {
+  const d = new Date(Date.now() + 7 * 3600 * 1000 + offsetDays * 86400 * 1000);
+  return d.toISOString().slice(0, 10);
+}
+
+// ออก IV เข้า TRCloud ตอนยืนยันออเดอร์ — best-effort (ถ้าล้มไม่บล็อกการขาย เก็บ error ไว้ retry)
+async function syncOrderIV(orgId: string, orderId: string): Promise<void> {
+  if (!trcloudConfigured()) return;
+  try {
+    const order = await prisma.order.findFirst({
+      where: { id: orderId, orgId },
+      select: {
+        trcloudIvId: true, orderNo: true,
+        customer: { select: { name: true, legalName: true, taxId: true, phone: true, paymentTerms: true } },
+        location: { select: { address: true } },
+        items: { select: { productType: true, pricePerLiter: true, qtyLiters: true } },
+      },
+    });
+    if (!order || order.trcloudIvId || order.items.length === 0) return; // สร้างแล้ว/ไม่มีรายการ → ข้าม
+    const term = order.customer.paymentTerms ?? 0;
+    const r = await createOrderIV({
+      issueDate: bkkDate(0),
+      dueDate: bkkDate(term),
+      paymentTerm: term,
+      reference: order.orderNo,
+      note: `อ้างอิงออเดอร์ ${order.orderNo}`,
+      customer: {
+        name: order.customer.name,
+        organization: order.customer.legalName,
+        taxId: order.customer.taxId,
+        telephone: order.customer.phone,
+        address: order.location?.address ?? null,
+      },
+      items: order.items.map((it) => ({
+        productType: it.productType,
+        pricePerLiter: Number(it.pricePerLiter),
+        qtyLiters: Number(it.qtyLiters),
+      })),
+    });
+    await prisma.order.update({
+      where: { id: orderId, orgId },
+      data: r.ok
+        ? { trcloudIvId: r.id, trcloudIvNo: r.no, trcloudSyncedAt: new Date(), trcloudError: null }
+        : { trcloudError: r.error.slice(0, 480) },
+    });
+  } catch (e) {
+    await prisma.order.update({ where: { id: orderId, orgId }, data: { trcloudError: (e instanceof Error ? e.message : "TRCloud error").slice(0, 480) } }).catch(() => {});
+  }
 }
 
 // เดินสถานะไปข้างหน้าทีละขั้น: AWAITING→DELIVERING→DELIVERED_UNPAID→CLOSED
@@ -67,6 +119,10 @@ export async function advanceOrderStatus(id: string, status: OrderStatus): Promi
     entityId: id,
     meta: { from: order.status, to: status },
   });
+  // ยืนยันออเดอร์ (AWAITING_CONFIRM → DELIVERING) = จุดออกใบกำกับภาษีเข้า TRCloud อัตโนมัติ
+  if (order.status === "AWAITING_CONFIRM" && status === "DELIVERING") {
+    await syncOrderIV(user.orgId, id);
+  }
   revalidatePath("/fuelos/orders");
   revalidatePath(`/fuelos/orders/${id}`);
   return { ok: true };
@@ -85,6 +141,16 @@ export async function cancelOrder(id: string): Promise<ActionResult> {
   if (order.status === "CANCELLED") return { ok: true };
 
   await prisma.order.updateMany({ where: { id, orgId: user.orgId }, data: { status: "CANCELLED" } });
+  // ยกเลิกออเดอร์ที่ออก IV ไปแล้ว → ลบ IV ใน TRCloud (CEO เลือก: ลบอัตโนมัติ) · best-effort
+  if (order.trcloudIvId) {
+    const del = await deleteOrderIV(order.trcloudIvId).catch(() => ({ ok: false as const, error: "TRCloud error" }));
+    await prisma.order.updateMany({
+      where: { id, orgId: user.orgId },
+      data: del.ok
+        ? { trcloudIvId: null, trcloudIvNo: null, trcloudSyncedAt: null, trcloudError: null }
+        : { trcloudError: `ลบ IV ไม่สำเร็จ: ${("error" in del && del.error) || ""}`.slice(0, 480) },
+    });
+  }
   await audit({
     orgId: user.orgId,
     userId: user.id,
