@@ -111,30 +111,12 @@ export async function storeReceiptImage(opts: {
  * otherwise returns null so the caller falls back to the original image.
  * Dynamic import keeps this from becoming a hard build dependency.
  */
-async function makeThumbnail(buffer: Buffer): Promise<Buffer | null> {
-  try {
-    const sharpMod = (await import("sharp").catch(() => null)) as
-      | { default: (input: Buffer) => SharpLike }
-      | null;
-    if (!sharpMod?.default) return null;
-    const out = await sharpMod
-      .default(buffer)
-      .rotate()
-      .resize(480, 480, { fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: 70 })
-      .toBuffer();
-    return out;
-  } catch {
-    return null;
-  }
-}
-
-// Minimal structural type so we don't take a hard dependency on @types/sharp.
-interface SharpLike {
-  rotate(): SharpLike;
-  resize(w: number, h: number, opts: object): SharpLike;
-  jpeg(opts: object): SharpLike;
-  toBuffer(): Promise<Buffer>;
+// Thumbnail via `sharp` is deferred: `sharp` is a native dep NOT in package.json,
+// so a static import breaks the Vercel build. Return null → caller falls back to
+// the original image (list thumbnails are lazy-loaded, so this is fine). To
+// re-enable: `npm i sharp` then restore a resize pipeline here. TODO[ledger].
+async function makeThumbnail(_buffer: Buffer): Promise<Buffer | null> {
+  return null;
 }
 
 // =============================================================
