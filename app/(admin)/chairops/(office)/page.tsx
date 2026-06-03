@@ -356,20 +356,30 @@ export default async function ExecDashboardPage({
     <div className="flex flex-col gap-4">
       {/* page head */}
       <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <nav className="mb-1 flex items-center gap-1 text-xs text-zinc-500">
-            <span>ChairOps</span>
-            <span aria-hidden="true">›</span>
-            <span className="font-medium text-zinc-700">Dashboard</span>
-          </nav>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
-            สวัสดี · เช้านี้มีอะไรต้องดู
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            {thaiDateLong(kpis.computedAt)} ·{" "}
-            {kpis.activeBranchCount.toLocaleString("th-TH")} สาขาทำการ · อัพเดท{" "}
-            {thaiRelative(kpis.computedAt)}
-          </p>
+        <div className="flex items-start gap-3">
+          {/* น้องแมวน้ำทักทายผู้บริหาร */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/mascot/clean/seal-wave-clean.png"
+            alt=""
+            aria-hidden
+            className="hidden h-16 w-auto shrink-0 sm:block"
+          />
+          <div>
+            <nav className="mb-1 flex items-center gap-1 text-xs text-zinc-500">
+              <span>ChairOps</span>
+              <span aria-hidden="true">›</span>
+              <span className="font-medium text-zinc-700">Dashboard</span>
+            </nav>
+            <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
+              สวัสดี · เช้านี้มีอะไรต้องดู
+            </h1>
+            <p className="mt-1 text-sm text-zinc-500">
+              {thaiDateLong(kpis.computedAt)} ·{" "}
+              {kpis.activeBranchCount.toLocaleString("th-TH")} สาขาทำการ · อัพเดท{" "}
+              {thaiRelative(kpis.computedAt)}
+            </p>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700">

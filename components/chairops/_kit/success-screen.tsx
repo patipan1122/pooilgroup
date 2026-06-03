@@ -8,7 +8,6 @@
 // secondary is an optional reset callback ("แจ้งอีกรายการ").
 
 import Link from "next/link";
-import { CheckCircle2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -47,13 +46,14 @@ export function SuccessScreen({
       role="status"
       aria-live="polite"
     >
-      <div className="grid size-20 place-items-center rounded-full bg-emerald-100">
-        <CheckCircle2
-          className="size-11 text-emerald-600"
-          strokeWidth={2}
-          aria-hidden
-        />
-      </div>
+      {/* น้องแมวน้ำดีใจ — แทน checkmark เดิม (แม่บ้านเห็นทุกครั้งที่บันทึกสำเร็จ) */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/mascot/actions/seal-celebrate.png"
+        alt=""
+        aria-hidden
+        className="h-32 w-auto drop-shadow-sm"
+      />
 
       <div className="space-y-1">
         <h2 className="text-xl font-bold text-zinc-900">{title}</h2>

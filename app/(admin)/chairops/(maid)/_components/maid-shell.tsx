@@ -95,9 +95,17 @@ export function MaidShell({
         <div className="flex h-14 items-center gap-2 px-4">
           <Link
             href="/chairops/m"
-            className="text-base font-bold tracking-tight text-white"
+            className="flex items-center gap-2 text-base font-bold tracking-tight text-white"
             aria-label="หน้าหลัก ChairOps"
           >
+            {/* โลโก้นวดน้า — แบรนด์ในหัวแอป */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logos/nuad-logo-128.png"
+              alt=""
+              aria-hidden
+              className="size-10 rounded-full bg-white/95 ring-1 ring-white/50"
+            />
             ChairOps
           </Link>
           <span className="ml-auto truncate text-xs font-medium text-emerald-50">
