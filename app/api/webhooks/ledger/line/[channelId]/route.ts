@@ -18,6 +18,8 @@ import { parseReceipt, AiBudgetError } from "@/lib/ledger/ai-parse";
 import { createDraftExpenseSystem } from "@/lib/ledger/actions";
 import { sha256Hex } from "@/lib/ledger/storage";
 import { answerQuestion } from "@/lib/ledger/qa";
+import { parseExpenseText, stripJodTrigger } from "@/lib/ledger/parse-text";
+import { findRecentAmountDuplicate } from "@/lib/ledger/dedup";
 import { buildLineConfirmCard, type LineFlexMessage } from "@/components/ledger/LineConfirmCard";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
 
@@ -61,6 +63,8 @@ export async function POST(
       webhookSecretEnc: true,
       accessTokenEnc: true,
       groupId: true,
+      branchId: true,
+      defaultPaymentMethod: true,
     },
   });
 
@@ -96,6 +100,8 @@ export async function POST(
     orgId: channel.orgId,
     companyId: channel.companyId,
     groupId: channel.groupId,
+    branchId: channel.branchId, // group = this branch (null = central group)
+    defaultPaymentMethod: channel.defaultPaymentMethod,
   };
   // Absolute origin for flex image URLs + web deep-links (LINE needs https).
   const baseUrl = getRequestBaseUrl(req);
@@ -123,20 +129,89 @@ export async function POST(
       // could drain the org's monthly AI budget). Keyword answers still come from
       // the DB; the receipt-image path below is unaffected.
       if (ev.message?.type === "text" && ev.message.text?.trim()) {
-        const fromRegisteredGroup =
-          ev.source?.type === "group" &&
-          !!ch.groupId &&
-          ev.source.groupId === ch.groupId;
-        if (!fromRegisteredGroup) {
-          // Not the trusted staff group → do NOT answer (no P&L leak).
+        const text = ev.message.text.trim();
+        const note = stripJodTrigger(text);
+
+        // --- "จด ..." → record an expense draft. AI fires ONLY on this trigger
+        //     (CEO rule: free text stays free; "จด" = pay-the-AI to parse). ---
+        if (note !== null) {
+          if (!captureAllowed(ev, ch) || !accessToken) continue;
+          try {
+            let parsed = null;
+            try {
+              parsed = await parseExpenseText(note || text, null, ch.orgId);
+            } catch (e) {
+              if (e instanceof AiBudgetError)
+                console.warn("[ledger:line-webhook] AI budget exceeded on จด");
+              else console.error("[ledger:line-webhook] จด parse failed", e);
+            }
+            if (!parsed || parsed.total == null) {
+              if (ev.replyToken)
+                await replyText(
+                  accessToken,
+                  ev.replyToken,
+                  'พิมพ์จำนวนเงินด้วยนะ เช่น "จด กาแฟ 45" 🧾',
+                ).catch(() => {});
+              continue;
+            }
+            // M4 cheap dedup — same amount today/yesterday → flag (lossless).
+            const dup = await findRecentAmountDuplicate(ch.orgId, ch.companyId, parsed.total);
+            const res = await createDraftExpenseSystem(ch.orgId, {
+              companyId: ch.companyId,
+              source: "line",
+              vendor: parsed.vendor,
+              docDate: parsed.docDate,
+              subtotal: parsed.total,
+              vat: 0,
+              wht: 0,
+              total: parsed.total,
+              paymentMethod: parsed.paymentMethod ?? ch.defaultPaymentMethod ?? null,
+              branchId: ch.branchId ?? null, // group = branch auto-tag
+              note: dup
+                ? `จากข้อความ: "${text}" · ⚠️ ยอดอาจซ้ำกับ ${dup.docCode}`
+                : `จากข้อความ: "${text}"`,
+              ocrConfidence: parsed.confidence,
+              createdById: null,
+            });
+            if (ev.replyToken && res.ok) {
+              await replyFlex(
+                accessToken,
+                ev.replyToken,
+                buildLineConfirmCard({
+                  expenseId: res.data.id,
+                  companyId: ch.companyId,
+                  docCode: res.data.docCode,
+                  vendor: parsed.vendor,
+                  docDate: parsed.docDate,
+                  total: parsed.total,
+                  categoryName: parsed.suggestedCategory,
+                  paymentMethod: parsed.paymentMethod ?? ch.defaultPaymentMethod ?? null,
+                  confidence: parsed.confidence,
+                  needsReview: !!dup,
+                  baseUrl,
+                  liffId: ledgerLiffId,
+                }),
+              ).catch((e) => console.error("[ledger:line-webhook] จด flex failed", e));
+            } else if (ev.replyToken) {
+              await replyText(accessToken, ev.replyToken, "บันทึกไม่สำเร็จ · ลองใหม่นะ").catch(() => {});
+            }
+          } catch (e) {
+            console.error("[ledger:line-webhook] จด path failed", e);
+          }
           continue;
         }
+
+        // --- not "จด" → conversational Q&A (registered group only; keyword-only,
+        //     no LLM spend; P&L numbers never leak outside the trusted group). ---
+        const fromRegisteredGroup =
+          ev.source?.type === "group" && !!ch.groupId && ev.source.groupId === ch.groupId;
+        if (!fromRegisteredGroup) continue;
         try {
           const qa = await answerQuestion(ev.message.text, {
             orgId: ch.orgId,
             companyId: ch.companyId,
-            userId: null, // no Pool session on a webhook → org-only AI budget cap
-            allowAi: false, // keyword-only on the free LINE bot (no LLM spend)
+            userId: null,
+            allowAi: false,
           });
           if (ev.replyToken && accessToken) {
             await replyText(accessToken, ev.replyToken, qa.answer).catch((e) =>
@@ -154,6 +229,9 @@ export async function POST(
         console.warn("[ledger:line-webhook] no access token — cannot fetch image");
         continue;
       }
+      // Security gate: a bound channel only captures from ITS group; an unbound
+      // channel is transitional (accepts) and 1:1 is the personal assistant.
+      if (!captureAllowed(ev, ch)) continue;
 
       try {
         // 1. Rehost the LINE image onto R2 (reuse inbox helper).
@@ -202,6 +280,7 @@ export async function POST(
         const res = await createDraftExpenseSystem(ch.orgId, {
           companyId: ch.companyId,
           source: "line",
+          branchId: ch.branchId ?? null, // group = branch auto-tag
           vendor: parsed?.vendor ?? null,
           vendorTaxId: parsed?.vendorTaxId ?? null,
           docDate: parsed?.docDate ?? null,
@@ -262,6 +341,23 @@ export async function POST(
 
 export async function GET() {
   return NextResponse.json({ ok: true, service: "ledger-line-webhook" });
+}
+
+/**
+ * Capture gate (M6 first pass). A channel BOUND to a group only accepts capture
+ * from THAT group (blocks outsiders dropping receipts in a different group). An
+ * unbound channel is transitional (accepts, preserves the live setup). 1:1 chat
+ * is the personal-assistant path (member-scope gating lands with ledger_line_member).
+ */
+function captureAllowed(
+  ev: LineEvent,
+  ch: { groupId: string | null },
+): boolean {
+  if (ev.source?.type === "group") {
+    if (!ch.groupId) return true; // not yet bound → transitional
+    return ev.source.groupId === ch.groupId; // only the bound group
+  }
+  return true; // 1:1 / other → allowed for now
 }
 
 /** Best-effort LINE reply with a flex message (the confirm card). */
