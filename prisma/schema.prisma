@@ -95,6 +95,13 @@ model Organization {
   cfCollectionEvents      CfCollectionEvent[]
   cfStockMovements        CfStockMovement[]
   cfDeliveries            CfDelivery[]
+  // Ledger module
+  ledgerCategories        LedgerCategory[]
+  ledgerExpenses          LedgerExpense[]
+  ledgerExpenseItems      LedgerExpenseItem[]
+  ledgerBudgets           LedgerBudget[]
+  ledgerLineChannels      LedgerLineChannel[]
+  ledgerExportBatches     LedgerExportBatch[]
 
   @@map("organizations")
   @@schema("public")
@@ -125,6 +132,13 @@ model Company {
   vehicles        Vehicle[]
   recruitPostings RecruitJobPosting[]
   repairTickets   RepairTicket[]
+  // Ledger module
+  ledgerCategories    LedgerCategory[]
+  ledgerExpenses      LedgerExpense[]
+  ledgerExpenseItems  LedgerExpenseItem[]
+  ledgerBudgets       LedgerBudget[]
+  ledgerLineChannels  LedgerLineChannel[]
+  ledgerExportBatches LedgerExportBatch[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -304,6 +318,9 @@ model Branch {
   cfStockMovements CfStockMovement[]
   cfSessions       CfCollectionSession[]
   cfDeliveries     CfDelivery[]
+  // Ledger module
+  ledgerExpenses   LedgerExpense[]
+  ledgerBudgets    LedgerBudget[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -5071,4 +5088,197 @@ model FuelAuditLog {
   @@index([orgId, createdAt])
   @@map("audit_logs")
   @@schema("fuel")
+}
+
+// =============================================================
+// LEDGER MODULE — LedgerLine (slug "ledger")
+// ระบบบัญชี/ใบเสร็จ · capture → AI OCR → Recheck → human-confirm → store
+// COMPLEMENT TRCloud (export INTO it; TRCloud = book of record)
+// 3-tier tenancy: org_id + company_id + branch_id · RLS org_id = current_org_id()
+// NEVER auto-post: expenses start status="draft" until accountant confirms.
+// Spec: docs/BIGFEATURE_ledger_SPEC.md · plan docs/PLAN_ledger_module.md
+// =============================================================
+enum LedgerExpenseStatus {
+  draft // อ่านด้วย AI แล้ว · รอคนยืนยัน (default — ห้าม auto-post)
+  confirmed // บัญชียืนยันแล้ว
+  locked // ปิดงวด/export แล้ว · แก้ไม่ได้
+  void // ยกเลิก
+
+  @@schema("public")
+}
+
+enum LedgerExpenseSource {
+  line // มาจากกลุ่ม LINE (staff ถ่าย)
+  web // อัปโหลดผ่านเว็บหลังบ้าน
+  email // Gmail auto-ingest (Phase 2)
+
+  @@schema("public")
+}
+
+// หมวดค่าใช้จ่าย — ผูกกับบริษัท (แต่ละบริษัทมีผังบัญชีของตัวเอง)
+model LedgerCategory {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  companyId     String   @map("company_id") @db.Uuid
+  name          String
+  kind          String   @default("expense") // เผื่ออนาคต (รายรับ v2)
+  color         String?
+  trcloudAccCode String? @map("trcloud_acc_code") // map → ผังบัญชี TRCloud
+  sort          Int      @default(0)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org      Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company  Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  expenses LedgerExpense[]
+  budgets  LedgerBudget[]
+
+  @@unique([orgId, companyId, name])
+  @@index([orgId, companyId, active, sort])
+  @@map("ledger_category")
+  @@schema("public")
+}
+
+// ค่าใช้จ่าย (core) — 1 ใบเสร็จ/สลิป = 1 row
+model LedgerExpense {
+  id            String              @id @default(uuid()) @db.Uuid
+  orgId         String              @map("org_id") @db.Uuid
+  companyId     String              @map("company_id") @db.Uuid
+  branchId      String?             @map("branch_id") @db.Uuid
+  docCode       String              @map("doc_code") // EXP-YYYYMM-NNNN
+  status        LedgerExpenseStatus @default(draft)
+  source        LedgerExpenseSource @default(web)
+  vendor        String?
+  vendorTaxId   String?             @map("vendor_tax_id")
+  docDate       DateTime?           @map("doc_date") @db.Date
+  subtotal      Decimal             @default(0) @db.Decimal(15, 2)
+  vat           Decimal             @default(0) @db.Decimal(15, 2)
+  wht           Decimal             @default(0) @db.Decimal(15, 2) // หัก ณ ที่จ่าย
+  total         Decimal             @default(0) @db.Decimal(15, 2)
+  categoryId    String?             @map("category_id") @db.Uuid
+  paymentMethod String?             @map("payment_method")
+  originalUrl   String?             @map("original_url") // Drive (P1.5) / R2
+  thumbUrl      String?             @map("thumb_url") // R2
+  sha256        String? // dedup
+  ocrModel      String?             @map("ocr_model")
+  ocrConfidence Json?               @map("ocr_confidence") // { vendor: 0.9, total: 0.95, ... }
+  slipRef       String?             @map("slip_ref") // SlipOK ref (Phase 2)
+  needsReview   Boolean             @default(true) @map("needs_review")
+  note          String?
+  createdBy     String?             @map("created_by") @db.Uuid
+  confirmedBy   String?             @map("confirmed_by") @db.Uuid
+  confirmedAt   DateTime?           @map("confirmed_at") @db.Timestamptz(6)
+  exportBatchId String?             @map("export_batch_id") @db.Uuid
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org         Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branch      Branch?             @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  category    LedgerCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  exportBatch LedgerExportBatch?  @relation(fields: [exportBatchId], references: [id], onDelete: SetNull)
+  items       LedgerExpenseItem[]
+
+  @@unique([orgId, companyId, docCode])
+  @@index([orgId, companyId, branchId, status])
+  @@index([orgId, companyId, status, docDate(sort: Desc)])
+  @@index([orgId, companyId, categoryId])
+  @@index([sha256]) // dedup lookup
+  @@index([exportBatchId])
+  @@map("ledger_expense")
+  @@schema("public")
+}
+
+// รายการย่อยในใบเสร็จ
+model LedgerExpenseItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
+  expenseId   String   @map("expense_id") @db.Uuid
+  description String
+  qty         Decimal  @default(1) @db.Decimal(15, 3)
+  unitPrice   Decimal  @default(0) @map("unit_price") @db.Decimal(15, 2)
+  amount      Decimal  @default(0) @db.Decimal(15, 2)
+  vatRate     Decimal? @map("vat_rate") @db.Decimal(6, 4) // 0.07 = 7%
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org     Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  expense LedgerExpense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@index([expenseId])
+  @@index([orgId, companyId])
+  @@map("ledger_expense_item")
+  @@schema("public")
+}
+
+// งบประมาณรายหมวด (รายเดือน) + เตือนเมื่อใกล้เกิน
+model LedgerBudget {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  companyId  String   @map("company_id") @db.Uuid
+  branchId   String?  @map("branch_id") @db.Uuid
+  categoryId String   @map("category_id") @db.Uuid
+  period     String // "YYYY-MM" · หรือ "recurring" สำหรับงบประจำทุกเดือน
+  recurring  Boolean  @default(false) // true = งบเดิมทุกเดือน
+  amount     Decimal  @default(0) @db.Decimal(15, 2)
+  alertPct   Int      @default(90) @map("alert_pct") // เตือนเมื่อใช้ถึง %
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org      Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company  Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branch   Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  category LedgerCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, companyId, branchId, categoryId, period])
+  @@index([orgId, companyId, period])
+  @@map("ledger_budget")
+  @@schema("public")
+}
+
+// ผูกกลุ่ม LINE (รับรูปใบเสร็จจากหน้างาน) — secrets เข้ารหัส (stub Phase 1)
+model LedgerLineChannel {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  companyId       String   @map("company_id") @db.Uuid
+  lineChannelId   String   @map("line_channel_id")
+  webhookSecretEnc String? @map("webhook_secret_enc") // TODO[ledger-secret]
+  accessTokenEnc  String?  @map("access_token_enc") // TODO[ledger-secret]
+  groupId         String?  @map("group_id")
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, lineChannelId])
+  @@index([orgId, companyId, active])
+  @@index([lineChannelId])
+  @@map("ledger_line_channel")
+  @@schema("public")
+}
+
+// งวด export เข้า TRCloud (CSV/API)
+model LedgerExportBatch {
+  id         String    @id @default(uuid()) @db.Uuid
+  orgId      String    @map("org_id") @db.Uuid
+  companyId  String    @map("company_id") @db.Uuid
+  period     String // "YYYY-MM"
+  format     String    @default("csv") // csv | trcloud_api
+  status     String    @default("pending") // pending | done | failed
+  rows       Int       @default(0)
+  exportedAt DateTime? @map("exported_at") @db.Timestamptz(6)
+  createdBy  String?   @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org      Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company  Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  expenses LedgerExpense[]
+
+  @@index([orgId, companyId, period])
+  @@map("ledger_export_batch")
+  @@schema("public")
 }
