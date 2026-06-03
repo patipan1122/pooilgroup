@@ -4924,6 +4924,11 @@ model Order {
   totalProfit     Decimal     @default(0) @map("total_profit") @db.Decimal(15, 2)
   creditOverride  Boolean     @default(false) @map("credit_override") // ขายเกินวงเงิน (อนุมัติแล้ว)
   notes           String?
+  // TRCloud sync (ออก IV เข้า TRCloud ตอนยืนยันออเดอร์ · ลบตอนยกเลิก)
+  trcloudIvId     String?     @map("trcloud_iv_id") // id ของ IV ในระบบ TRCloud (ใช้ลบ)
+  trcloudIvNo     String?     @map("trcloud_iv_no") // เลขที่เอกสาร IV
+  trcloudSyncedAt DateTime?   @map("trcloud_synced_at")
+  trcloudError    String?     @map("trcloud_error") // ถ้าออก IV ไม่สำเร็จ เก็บ error ไว้ retry
   createdAt       DateTime    @default(now()) @map("created_at")
   updatedAt       DateTime    @updatedAt @map("updated_at")
 
