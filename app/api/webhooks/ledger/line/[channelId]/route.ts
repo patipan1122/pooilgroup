@@ -40,8 +40,17 @@ export async function POST(
   const signature = req.headers.get("x-line-signature") ?? "";
   const rawBody = await req.text();
 
-  const channel = await prisma.ledgerLineChannel.findUnique({
-    where: { id: channelId },
+  // `channelId` in the URL is the LINE Channel ID (e.g. 2007211439) — stable,
+  // human-meaningful, and known to the admin, so the webhook URL is predictable
+  // and hand-over-able (no random row-UUID to copy). Older URLs used the row's
+  // UUID id; match either so previously-pasted URLs keep working.
+  const looksUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(channelId);
+  const channel = await prisma.ledgerLineChannel.findFirst({
+    where: looksUuid
+      ? { OR: [{ lineChannelId: channelId }, { id: channelId }] }
+      : { lineChannelId: channelId },
+    orderBy: { active: "desc" }, // prefer an active binding if a duplicate exists
     select: {
       id: true,
       orgId: true,
