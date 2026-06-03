@@ -6,23 +6,27 @@
 
 import type { Liff } from "@line/liff";
 
-let liffPromise: Promise<Liff | null> | null = null;
+// Cache one init promise PER liffId — a page uses exactly one module's LIFF id,
+// so this is at most one live entry per page, but the map lets a module pass its
+// OWN id (e.g. LedgerLine) instead of the single global NEXT_PUBLIC_LIFF_ID.
+const liffPromises = new Map<string, Promise<Liff | null>>();
 let lastLiffError: string | null = null;
 
 export function getLiffInitError(): string | null {
   return lastLiffError;
 }
 
-export async function getLiff(): Promise<Liff | null> {
+export async function getLiff(liffIdOverride?: string): Promise<Liff | null> {
   if (typeof window === "undefined") return null;
-  const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+  const liffId = liffIdOverride || process.env.NEXT_PUBLIC_LIFF_ID;
   if (!liffId) {
     lastLiffError = "env NEXT_PUBLIC_LIFF_ID not set on this deploy";
     return null;
   }
-  if (liffPromise) return liffPromise;
+  const cached = liffPromises.get(liffId);
+  if (cached) return cached;
 
-  liffPromise = (async () => {
+  const p = (async () => {
     try {
       const mod = await import("@line/liff");
       const liff = (mod.default ?? mod) as Liff;
@@ -38,11 +42,12 @@ export async function getLiff(): Promise<Liff | null> {
             : String(err);
       lastLiffError = `liff.init failed: ${msg} (liffId=${liffId})`;
       console.warn("[liff] init failed", err);
-      liffPromise = null;
+      liffPromises.delete(liffId);
       return null;
     }
   })();
-  return liffPromise;
+  liffPromises.set(liffId, p);
+  return p;
 }
 
 export interface LiffProfile {
@@ -52,8 +57,8 @@ export interface LiffProfile {
   isInClient: boolean;
 }
 
-export async function getLiffProfile(): Promise<LiffProfile | null> {
-  const liff = await getLiff();
+export async function getLiffProfile(liffIdOverride?: string): Promise<LiffProfile | null> {
+  const liff = await getLiff(liffIdOverride);
   if (!liff) return null;
   if (!liff.isLoggedIn()) {
     try {
@@ -79,8 +84,8 @@ export async function getLiffProfile(): Promise<LiffProfile | null> {
 // Get LINE id_token (JWT signed by LINE) for server-side verification.
 // Server MUST verify this token via LINE's verify endpoint before trusting
 // the userId — never trust profile.userId alone (Agent3 P0 finding).
-export async function getLiffIdToken(): Promise<string | null> {
-  const liff = await getLiff();
+export async function getLiffIdToken(liffIdOverride?: string): Promise<string | null> {
+  const liff = await getLiff(liffIdOverride);
   if (!liff) return null;
   if (!liff.isLoggedIn()) return null;
   try {

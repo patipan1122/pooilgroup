@@ -10,6 +10,7 @@ import {
   getLiffIdToken,
   getLiffInitError,
 } from "@/lib/line/liff-client";
+import { lineModuleFromPath, liffIdForModule } from "@/lib/line/channels";
 
 export function LiffBootstrap({
   haveSession,
@@ -43,6 +44,13 @@ export function LiffBootstrap({
       typeof window !== "undefined"
         ? new URLSearchParams(window.location.search).get("invite")
         : null;
+    // Which module's LINE channel are we on? /liff/ledger → LedgerLine's own
+    // channel; everything else → the shared default (unchanged behaviour).
+    const lineModule =
+      typeof window !== "undefined"
+        ? lineModuleFromPath(window.location.pathname)
+        : "default";
+    const liffId = liffIdForModule(lineModule);
 
     if (haveSession) {
       // Already authenticated (e.g. opened a second time) → go straight in.
@@ -71,13 +79,14 @@ export function LiffBootstrap({
       if (cancelled || !next) return false;
       const u = new URL("/auth/line-start", window.location.href);
       u.searchParams.set("next", next);
+      if (lineModule !== "default") u.searchParams.set("module", lineModule);
       window.location.replace(u.toString());
       return true;
     };
 
     let cancelled = false;
     void (async () => {
-      const profile = await getLiffProfile();
+      const profile = await getLiffProfile(liffId);
       if (cancelled) return;
       if (!profile) {
         const initErr = getLiffInitError();
@@ -92,7 +101,7 @@ export function LiffBootstrap({
         );
         return;
       }
-      const idToken = await getLiffIdToken();
+      const idToken = await getLiffIdToken(liffId);
       if (cancelled) return;
       if (!idToken) {
         // Missing openid scope or LIFF token API failed. OAuth fallback grants
@@ -116,6 +125,7 @@ export function LiffBootstrap({
             displayName: profile.displayName,
             redirectTo: next ?? undefined,
             invite: invite ?? undefined,
+            module: lineModule,
           }),
         });
         const json = await res.json().catch(() => ({}));

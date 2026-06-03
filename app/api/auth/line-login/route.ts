@@ -13,6 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
 import { verifyInvite } from "@/lib/chairops/line/invite";
+import { asLineModule, loginChannelIdForModule } from "@/lib/line/channels";
 import { randomUUID } from "node:crypto";
 import { ChairopsUserRole, UserRole } from "@/lib/generated/prisma/enums";
 
@@ -196,6 +197,10 @@ const Schema = z.object({
   // Optional signed maid-invite token (admin onboarding link) — binds this
   // verified LINE id to the ChairopsUser in the token.
   invite: z.string().max(512).optional(),
+  // Which program's LINE channel issued this id_token (CEO rule: per-module
+  // channels). Absent/"default" → shared channel; "ledger" → LedgerLine's own.
+  // The id_token MUST be verified against the SAME channel that issued it.
+  module: z.string().max(20).optional(),
 });
 
 // Only allow same-origin relative paths — never an absolute URL or "//host".
@@ -208,11 +213,11 @@ function safeRelPath(p: string | undefined): string {
 // Returns the verified payload { sub, name, ... } or null if invalid
 async function verifyLineIdToken(
   idToken: string,
+  channelId: string | undefined,
 ): Promise<{ sub: string; name?: string } | null> {
-  const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
-  if (!liffId) return null;
-  // LIFF ID format: "{channelId}-{liffAppId}" — LINE verify expects channelId
-  const channelId = liffId.split("-")[0];
+  // LINE verify expects the client_id of the SAME channel that issued the
+  // id_token. Passing the wrong channel (e.g. ChairOps' for a LedgerLine token)
+  // → verify fails. channelId comes from the per-module registry.
   if (!channelId) return null;
   try {
     const r = await fetch("https://api.line.me/oauth2/v2.1/verify", {
@@ -241,9 +246,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ข้อมูล LINE ไม่ครบ" }, { status: 400 });
   }
   const { idToken, displayName, redirectTo, invite } = parsed.data;
+  const lineModule = asLineModule(parsed.data.module);
 
-  // Verify token via LINE — only proceed if signature is valid + sub returned
-  const verified = await verifyLineIdToken(idToken);
+  // Verify token via LINE — only proceed if signature is valid + sub returned.
+  // Verify against the module's OWN channel (per-module channels rule).
+  const verified = await verifyLineIdToken(
+    idToken,
+    loginChannelIdForModule(lineModule),
+  );
   if (!verified) {
     return NextResponse.json(
       { error: "LINE token ไม่ถูกต้อง" },

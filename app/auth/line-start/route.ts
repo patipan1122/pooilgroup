@@ -13,6 +13,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
+import { asLineModule, loginChannelIdForModule } from "@/lib/line/channels";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,12 +26,13 @@ function safeRelPath(p: string | null): string {
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const next = safeRelPath(url.searchParams.get("next"));
-
-  const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
-  const channelId = liffId?.split("-")[0];
+  // Which program's LINE channel? (CEO rule: each module = its own channel.)
+  // Absent/"default" → unchanged shared channel; "ledger" → LedgerLine's own.
+  const lineModule = asLineModule(url.searchParams.get("module"));
+  const channelId = loginChannelIdForModule(lineModule);
   if (!channelId) {
     return NextResponse.json(
-      { error: "LINE channel not configured (NEXT_PUBLIC_LIFF_ID missing)" },
+      { error: "LINE channel not configured (LIFF id missing for module)" },
       { status: 500 },
     );
   }
@@ -68,5 +70,8 @@ export async function GET(req: NextRequest) {
   res.cookies.set("line_oauth_nonce", nonce, cookieOpts);
   res.cookies.set("line_oauth_next", next, cookieOpts);
   res.cookies.set("line_set_session_ticket", setSessionTicket, cookieOpts);
+  // Remember which module/channel started this OAuth so the callback exchanges
+  // the code with the SAME channel's secret + client_id.
+  res.cookies.set("line_oauth_module", lineModule, cookieOpts);
   return res;
 }

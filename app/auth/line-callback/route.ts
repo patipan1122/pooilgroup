@@ -9,6 +9,11 @@
 
 import { type NextRequest, NextResponse } from "next/server";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
+import {
+  asLineModule,
+  loginChannelIdForModule,
+  loginSecretForModule,
+} from "@/lib/line/channels";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +33,7 @@ function clearOauthCookies(res: NextResponse) {
   res.cookies.delete("line_oauth_state");
   res.cookies.delete("line_oauth_nonce");
   res.cookies.delete("line_oauth_next");
+  res.cookies.delete("line_oauth_module");
 }
 
 export async function GET(req: NextRequest) {
@@ -40,6 +46,8 @@ export async function GET(req: NextRequest) {
   const baseUrl = getRequestBaseUrl(req);
   const cookieState = req.cookies.get("line_oauth_state")?.value;
   const cookieNext = req.cookies.get("line_oauth_next")?.value ?? "/chairops/m";
+  // Same channel that started the flow (set by line-start). Default = unchanged.
+  const lineModule = asLineModule(req.cookies.get("line_oauth_module")?.value);
 
   function fail(reason: string, detail = ""): NextResponse {
     const u = new URL(`${baseUrl}/auth/line-error`);
@@ -60,13 +68,12 @@ export async function GET(req: NextRequest) {
     return fail("state-mismatch", "state cookie missing or differs");
   }
 
-  const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
-  const channelId = liffId?.split("-")[0];
-  const channelSecret = process.env.CHAIROPS_LINE_LOGIN_CHANNEL_SECRET;
+  const channelId = loginChannelIdForModule(lineModule);
+  const channelSecret = loginSecretForModule(lineModule);
   if (!channelId || !channelSecret) {
     return fail(
       "server-config",
-      `channelId=${!!channelId} secret=${!!channelSecret}`,
+      `module=${lineModule} channelId=${!!channelId} secret=${!!channelSecret}`,
     );
   }
 
@@ -111,7 +118,7 @@ export async function GET(req: NextRequest) {
         "Content-Type": "application/json",
         "x-line-internal": "1",
       },
-      body: JSON.stringify({ idToken, redirectTo: cookieNext }),
+      body: JSON.stringify({ idToken, redirectTo: cookieNext, module: lineModule }),
     });
     loginJson = (await loginRes.json()) as LoginResult;
     if (!loginRes.ok) {
