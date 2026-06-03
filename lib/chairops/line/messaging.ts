@@ -38,14 +38,25 @@ function sleep(ms: number): Promise<void> {
 // Push a text message to a LINE user/group id via the Messaging API.
 // Retries 429/5xx with bounded backoff; honours Retry-After (capped 3s) so a
 // serverless invocation never blocks past the request budget.
-async function pushRaw(to: string, text: string): Promise<LineSendResult> {
+async function pushRaw(
+  to: string,
+  text: string,
+  imageUrl?: string,
+): Promise<LineSendResult> {
   const token = process.env.CHAIROPS_LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) return { ok: false, error: "no-token" };
 
-  const body = JSON.stringify({
-    to,
-    messages: [{ type: "text", text: text.slice(0, 5000) }],
-  });
+  // Optional hero image (e.g. น้องแมวน้ำ in the daily digest) precedes the text.
+  const messages: Array<Record<string, unknown>> = [];
+  if (imageUrl) {
+    messages.push({
+      type: "image",
+      originalContentUrl: imageUrl,
+      previewImageUrl: imageUrl,
+    });
+  }
+  messages.push({ type: "text", text: text.slice(0, 5000) });
+  const body = JSON.stringify({ to, messages });
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -95,14 +106,15 @@ export async function pushToLineUser(
 export async function notifyChannel(
   channel: ChairopsLineChannel,
   text: string,
+  imageUrl?: string,
 ): Promise<LineSendResult> {
   const groupId = process.env[GROUP_ENV[channel]];
   if (process.env.CHAIROPS_LINE_CHANNEL_ACCESS_TOKEN && groupId) {
-    const r = await pushRaw(groupId, text);
+    const r = await pushRaw(groupId, text, imageUrl);
     if (r.ok) return r;
   }
   // Transition fallback — legacy Notify (EOL, but works until tokens land).
-  const legacy = await sendLineNotify(channel, text);
+  const legacy = await sendLineNotify(channel, text, imageUrl);
   if (legacy.ok) return { ok: true, via: "notify" };
 
   if (process.env.NODE_ENV !== "production") {
