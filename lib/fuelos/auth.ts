@@ -39,26 +39,49 @@ export const getCurrentUser = cache(async (): Promise<FuelUserCtx> => {
   const u = session.user;
   const role = mapRole(u.role);
 
-  // perf: steady-state = 1 indexed PK read, 0 writes. Only provision on first
-  // access; only write to sync role when it actually changed.
-  const existing = await prisma.fuelUser.findUnique({ where: { id: u.id }, select: { role: true } });
-  if (!existing) {
+  const email = u.email ?? `${u.id}@pool.local`;
+
+  // 1) เคสปกติ: fuel identity ที่ id == Pool user.id (provisioned โดยสะพานนี้)
+  // perf: steady-state = 1 indexed PK read, 0 writes.
+  let fuel = await prisma.fuelUser.findUnique({
+    where: { id: u.id },
+    select: { id: true, role: true, orgId: true },
+  });
+
+  // 2) เคส MIGRATION (สำคัญ): pooil-fuel เดิมสร้าง user ไว้แล้วด้วย email เดียวกัน
+  //    แต่ id คนละตัว → ถ้า create ซ้ำจะชน `email @unique` (P2002) แล้วพังทั้งหน้า.
+  //    → adopt identity เดิม + ใช้ orgId เดิมของมัน (ข้อมูล customers/orders/quotes
+  //    ทั้งหมดผูกกับ id + org นี้ ไม่ใช่ org ใหม่ของ Pool) ให้ user เห็นข้อมูลที่ย้ายมา.
+  if (!fuel) {
+    fuel = await prisma.fuelUser.findFirst({
+      where: { email },
+      select: { id: true, role: true, orgId: true },
+    });
+  }
+
+  // 3) user ใหม่จริง ๆ (ไม่มีทั้ง id และ email เดิม) → provision ใหม่ใต้ org ของ Pool
+  if (!fuel) {
     await prisma.org.upsert({ where: { id: u.org_id }, create: { id: u.org_id, name: "PO Oil" }, update: {} });
-    await prisma.fuelUser.create({
+    fuel = await prisma.fuelUser.create({
       data: {
         id: u.id,
         orgId: u.org_id,
-        email: u.email ?? `${u.id}@pool.local`,
-        passwordHash: "", // login is via Pool/Supabase; fuel password unused
+        email,
+        passwordHash: "", // login ผ่าน Pool/Supabase; password ฝั่ง fuel ไม่ใช้
         name: u.name,
         role,
       },
+      select: { id: true, role: true, orgId: true },
     });
-  } else if (existing.role !== role) {
-    await prisma.fuelUser.update({ where: { id: u.id }, data: { role, name: u.name } });
   }
 
-  return { id: u.id, orgId: u.org_id, role, name: u.name };
+  // sync role ให้ตรงกับ Pool (source of truth) เมื่อเปลี่ยนเท่านั้น
+  if (fuel.role !== role) {
+    await prisma.fuelUser.update({ where: { id: fuel.id }, data: { role, name: u.name } });
+  }
+
+  // ใช้ orgId ของ fuel identity (เคส migration = org เดิมที่ข้อมูลอยู่ · เคสใหม่ = org ของ Pool)
+  return { id: fuel.id, orgId: fuel.orgId, role, name: u.name };
 });
 
 export async function requireUser(): Promise<FuelUserCtx> {
