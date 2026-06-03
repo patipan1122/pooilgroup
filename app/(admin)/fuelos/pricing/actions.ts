@@ -56,7 +56,7 @@ export async function saveZoneMargins(
         orgId: user.orgId, zoneName: zone, productType: r.product,
         baseMargin: r.base, minMargin: r.min, isActive: true,
       },
-      update: { baseMargin: r.base, minMargin: r.min },
+      update: { baseMargin: r.base, minMargin: r.min, isActive: true },
     });
   }
   await audit({ orgId: user.orgId, userId: user.id, action: "MARGIN_SET", entity: "ZoneMargin", meta: { zone, count: rows.length } });

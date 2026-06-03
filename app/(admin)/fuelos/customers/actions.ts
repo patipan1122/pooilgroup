@@ -49,6 +49,9 @@ export async function updateCustomer(id: string, data: { notes?: string; cadence
 
 export async function addFollowUp(customerId: string, note: string, dueDate: string) {
   const user = await requireUser();
+  // กันสร้าง follow-up ให้ลูกค้าข้ามองค์กร (fuel ไม่มี RLS)
+  const customer = await prisma.customer.findFirst({ where: { id: customerId, orgId: user.orgId }, select: { id: true } });
+  if (!customer) return { ok: false, error: "ไม่พบลูกค้า" };
   await prisma.followUp.create({
     data: { orgId: user.orgId, customerId, salesId: user.id, note, dueDate: new Date(dueDate), kind: "manual" },
   });

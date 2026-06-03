@@ -30,7 +30,7 @@ export function PriceEditor({
   const [margins, setMargins] = useState<Margins>(initialMargins);
   const [pending, start] = useTransition();
 
-  const zoneMargin = (p: string) => margins[zone]?.[p]?.base ?? 0;
+  const zoneMargin = (p: string) => margins[zone]?.[p]?.base ?? 0.45;
   const zoneMin = (p: string) => margins[zone]?.[p]?.min ?? 0;
 
   function setCost(p: string, v: string) {

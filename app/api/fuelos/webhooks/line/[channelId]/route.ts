@@ -1,6 +1,6 @@
 // LINE Messaging API webhook receiver (per channel)
 // ตั้ง URL นี้ใน LINE Developers Console → Messaging API → Webhook URL:
-//   https://pooil-fuel.vercel.app/api/webhooks/line/<channelId>
+//   <pooilgroup-domain>/api/fuelos/webhooks/line/<channelId>
 // แล้ววาง Channel Secret + Access Token ที่หน้า /settings (แท็บ LINE)
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";

@@ -45,7 +45,7 @@ export function CustomerEditor({
           {followUps.length === 0 && <div className="text-xs text-zinc-400">ไม่มีงานค้าง</div>}
           {followUps.map((f) => (
             <div key={f.id} className="flex items-center gap-2 text-sm">
-              <button onClick={() => start(async () => { await doneFollowUp(f.id, id); router.refresh(); })}
+              <button onClick={() => start(async () => { await doneFollowUp(f.id, id); router.refresh(); })} disabled={pending}
                 className="size-5 rounded-md border border-border hover:bg-leaf-100 grid place-items-center shrink-0">
                 <Check className="size-3 text-leaf-600" />
               </button>

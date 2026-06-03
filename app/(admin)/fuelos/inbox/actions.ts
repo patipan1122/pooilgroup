@@ -51,7 +51,7 @@ export async function sendReply(convId: string, body: string) {
       },
     }),
     prisma.conversation.update({
-      where: { id: convId },
+      where: { id: convId, orgId: user.orgId },
       data: { isUnanswered: false, unreadCount: 0, lastStaffReplyAt: now, lastMessageAt: now },
     }),
   ]);
@@ -94,7 +94,7 @@ export async function sendSticker(convId: string, packageId: string, stickerId: 
       },
     }),
     prisma.conversation.update({
-      where: { id: convId },
+      where: { id: convId, orgId: user.orgId },
       data: { isUnanswered: false, unreadCount: 0, lastStaffReplyAt: now, lastMessageAt: now },
     }),
   ]);
@@ -114,7 +114,7 @@ export async function quickStatus(convId: string, label: string) {
       },
     }),
     prisma.conversation.update({
-      where: { id: convId },
+      where: { id: convId, orgId: user.orgId },
       data: { isUnanswered: false, lastStaffReplyAt: now, lastMessageAt: now },
     }),
   ]);
@@ -126,7 +126,12 @@ export async function quickStatus(convId: string, label: string) {
 export async function assignConv(convId: string, userId: string) {
   const user = await requireUser();
   await ownConv(user.orgId, convId);
-  await prisma.conversation.update({ where: { id: convId }, data: { assignedToId: userId || null } });
+  // กันมอบหมายให้พนักงานข้ามองค์กร
+  if (userId) {
+    const assignee = await prisma.fuelUser.findFirst({ where: { id: userId, orgId: user.orgId }, select: { id: true } });
+    if (!assignee) return { ok: false, error: "ไม่พบผู้ดูแลในองค์กร" };
+  }
+  await prisma.conversation.update({ where: { id: convId, orgId: user.orgId }, data: { assignedToId: userId || null } });
   revalidatePath("/fuelos/inbox");
   return { ok: true };
 }
@@ -134,7 +139,7 @@ export async function assignConv(convId: string, userId: string) {
 export async function setSegment(convId: string, segment: ConvSegment) {
   const user = await requireUser();
   await ownConv(user.orgId, convId);
-  await prisma.conversation.update({ where: { id: convId }, data: { segment } });
+  await prisma.conversation.update({ where: { id: convId, orgId: user.orgId }, data: { segment } });
   revalidatePath("/fuelos/inbox");
   return { ok: true };
 }

@@ -143,7 +143,7 @@ export async function verifyPayment(id: string): Promise<Result> {
   await prisma.$transaction(async (tx) => {
     // flip สถานะแบบมีเงื่อนไข → ลดเครดิตเฉพาะเมื่อแถวเปลี่ยนจริง (กัน double-reduce จาก race)
     const r = await tx.payment.updateMany({
-      where: { id, status: "PENDING" },
+      where: { id, orgId: user.orgId, status: "PENDING" },
       data: { status: "VERIFIED", verifiedById: user.id, verifiedAt: new Date() },
     });
     if (r.count === 1) await reduceCreditUsed(tx, user.orgId, payment.customerId, amount);
@@ -254,7 +254,7 @@ export async function clearCheque(id: string): Promise<Result> {
 
   await prisma.$transaction(async (tx) => {
     const r = await tx.cheque.updateMany({
-      where: { id, status: "PENDING" },
+      where: { id, orgId: user.orgId, status: "PENDING" },
       data: { status: "CLEARED", clearedAt: new Date() },
     });
     if (r.count === 1) await reduceCreditUsed(tx, user.orgId, cheque.customerId, amount);
@@ -288,7 +288,7 @@ export async function bounceCheque(id: string, reason?: string): Promise<Result>
 
   await prisma.$transaction(async (tx) => {
     const r = await tx.cheque.updateMany({
-      where: { id, status: { not: "BOUNCED" } },
+      where: { id, orgId: user.orgId, status: { not: "BOUNCED" } },
       data: { status: "BOUNCED", bouncedReason: reason?.trim() || null, clearedAt: null },
     });
     // คืนเครดิตเฉพาะเมื่อ "เคย CLEARED (เคยลดไปแล้ว)" และแถวเพิ่งเปลี่ยนเป็น BOUNCED จริง

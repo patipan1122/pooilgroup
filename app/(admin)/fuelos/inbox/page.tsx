@@ -36,7 +36,7 @@ function MsgContent({ attachments, externalId, body, out }: { attachments: unkno
   if (att?.type === "audio" && externalId) {
     return <audio src={`/api/fuelos/line-content/${externalId}`} controls className="max-w-full" />;
   }
-  if (att?.type === "location") {
+  if (att?.type === "location" && att.lat != null && att.lng != null) {
     return <a href={`https://maps.google.com/?q=${att.lat},${att.lng}`} target="_blank" rel="noreferrer" className={cn("text-sm underline", out ? "text-white" : "text-brand-700")}>📍 {att.title || att.address || "ดูตำแหน่งบนแผนที่"}</a>;
   }
   if (att?.type === "file" && externalId) {

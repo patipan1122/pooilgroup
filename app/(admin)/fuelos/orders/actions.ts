@@ -77,6 +77,10 @@ export async function cancelOrder(id: string): Promise<ActionResult> {
   const user = await requireUser();
   const order = await loadOrder(user.orgId, id);
   if (!order) return { ok: false, error: "ไม่พบออเดอร์" };
+  // เฉพาะหัวหน้าขายขึ้นไป หรือเซลล์เจ้าของออเดอร์ ถึงยกเลิกได้
+  if (!atLeast(user.role, "SALES_HEAD") && order.salesId !== user.id) {
+    return { ok: false, error: "ไม่มีสิทธิ์ยกเลิกออเดอร์นี้" };
+  }
   if (order.status === "CLOSED") return { ok: false, error: "ปิดบิลแล้วยกเลิกไม่ได้" };
   if (order.status === "CANCELLED") return { ok: true };
 
