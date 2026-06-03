@@ -26,7 +26,16 @@ import { SyncChairsFromPosButton } from "./sync-button";
 export const dynamic = "force-dynamic";
 
 export default async function BranchCollectPage() {
-  await requireRole("OFFICE");
+  const session = await requireRole("OFFICE");
+
+  // Office's own on-behalf rounds still awaiting deposit (drives the link below).
+  const pendingDepositCount = await prisma.chairopsCashCollection.count({
+    where: {
+      orgId: session.user.orgId,
+      maidId: session.user.id,
+      depositId: null,
+    },
+  });
 
   const branches = await prisma.chairopsBranch.findMany({
     where: { isActive: true },
@@ -85,6 +94,15 @@ export default async function BranchCollectPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {pendingDepositCount > 0 && (
+              <Link
+                href="/chairops/deposits"
+                className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+              >
+                <Banknote className="size-4" aria-hidden />
+                ฝากเงินที่เก็บแทน ({pendingDepositCount} รอฝาก)
+              </Link>
+            )}
             <Link
               href="/chairops/branches/import-equipment"
               className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-800 hover:bg-blue-100"

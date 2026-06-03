@@ -49,6 +49,11 @@ interface PendingCollection {
 
 interface Props {
   pendingCollections: ReadonlyArray<PendingCollection>;
+  /** OFFICE+ deposit: the branch these office-collected rounds belong to.
+   *  Omitted → maid flow (branch resolved server-side from primaryBranchId). */
+  branchOverride?: string;
+  /** Where to go after a successful deposit (default: maid home). */
+  redirectTo?: string;
 }
 
 async function sha256Hex(buf: ArrayBuffer): Promise<string> {
@@ -85,7 +90,11 @@ interface SlipState {
   sizeKb: number;
 }
 
-export function BatchDepositForm({ pendingCollections }: Props) {
+export function BatchDepositForm({
+  pendingCollections,
+  branchOverride,
+  redirectTo,
+}: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [uploading, setUploading] = useState(false);
@@ -162,6 +171,7 @@ export function BatchDepositForm({ pendingCollections }: Props) {
       const presign = await presignSlipUpload({
         contentType: compressed.compressed ? "image/jpeg" : file.type,
         depositDraftId: draftIdRef.current,
+        branchOverride,
       });
       if (!presign.ok) {
         toast.error(presign.error);
@@ -219,20 +229,23 @@ export function BatchDepositForm({ pendingCollections }: Props) {
     if (!slip) return;
     const ids = Array.from(selectedIds);
     startTransition(async () => {
-      const res = await batchDeposit({
-        collectionIds: ids,
-        depositedAmount: depositedNum,
-        bankFee: bankFeeNum,
-        slipPhotoUrl: slip.publicUrl,
-        slipImageHash: slip.hash,
-        notes: notes.trim() || null,
-      });
+      const res = await batchDeposit(
+        {
+          collectionIds: ids,
+          depositedAmount: depositedNum,
+          bankFee: bankFeeNum,
+          slipPhotoUrl: slip.publicUrl,
+          slipImageHash: slip.hash,
+          notes: notes.trim() || null,
+        },
+        branchOverride ? { branchOverride } : undefined,
+      );
       if (!res.ok) {
         toast.error(res.error);
         return;
       }
       toast.success("ฝากเงินก้อนบันทึกแล้ว ✓");
-      router.push("/chairops/m");
+      router.push(redirectTo ?? "/chairops/m");
       router.refresh();
     });
   }
