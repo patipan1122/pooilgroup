@@ -42,9 +42,9 @@ export default async function DashboardPage() {
   const profitToday = ordersToday.reduce((s, o) => s + Number(o.totalProfit), 0);
 
   const cards = [
-    { label: "แชทค้างตอบ", value: unanswered, href: "/inbox", icon: MessageSquareWarning, accent: unanswered > 0 ? "danger" : "zinc" },
-    { label: "ใบเสนอราคาวันนี้", value: quotesToday, href: "/quotes", icon: FileText, accent: "brand" },
-    { label: "ออเดอร์ที่ยังไม่ปิด", value: openOrders, href: "/orders", icon: ClipboardList, accent: "brand" },
+    { label: "แชทค้างตอบ", value: unanswered, href: "/fuelos/inbox", icon: MessageSquareWarning, accent: unanswered > 0 ? "danger" : "zinc" },
+    { label: "ใบเสนอราคาวันนี้", value: quotesToday, href: "/fuelos/quotes", icon: FileText, accent: "brand" },
+    { label: "ออเดอร์ที่ยังไม่ปิด", value: openOrders, href: "/fuelos/orders", icon: ClipboardList, accent: "brand" },
     { label: "ลูกค้าเกินรอบซื้อ", value: overdueCustomers, href: "/customers?filter=overdue", icon: Bell, accent: overdueCustomers > 0 ? "warning" : "zinc" },
   ];
 
@@ -82,7 +82,7 @@ export default async function DashboardPage() {
           <div className="text-3xl font-bold mt-2 tabular-nums">{formatBaht(salesToday)}</div>
           <div className="text-sm text-leaf-700 mt-1">กำไรวันนี้ {formatBaht(profitToday)}</div>
         </div>
-        <Link href="/inbox" className="rounded-2xl border border-border bg-gradient-to-br from-brand-600 to-leaf-700 text-white p-5 flex flex-col justify-between hover:shadow-md transition-shadow">
+        <Link href="/fuelos/inbox" className="rounded-2xl border border-border bg-gradient-to-br from-brand-600 to-leaf-700 text-white p-5 flex flex-col justify-between hover:shadow-md transition-shadow">
           <div className="text-sm text-white/80">เริ่มงานวันนี้</div>
           <div className="text-lg font-bold mt-1">เปิดกล่องแชทลูกค้า</div>
           <div className="flex items-center gap-1 text-sm mt-3 text-white/90">

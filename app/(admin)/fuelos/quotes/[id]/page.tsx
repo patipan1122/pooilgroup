@@ -24,7 +24,7 @@ export default async function QuoteDetail({ params }: { params: Promise<{ id: st
 
   return (
     <div>
-      <Link href="/quotes" className="inline-flex items-center gap-1 text-sm text-zinc-500 mb-3">
+      <Link href="/fuelos/quotes" className="inline-flex items-center gap-1 text-sm text-zinc-500 mb-3">
         <ArrowLeft className="size-4" /> ใบเสนอราคาทั้งหมด
       </Link>
 
@@ -47,7 +47,7 @@ export default async function QuoteDetail({ params }: { params: Promise<{ id: st
           <div className="flex items-center gap-2 text-zinc-600">
             <User className="size-4 text-zinc-400" />
             {q.customerId ? (
-              <Link href={`/customers/${q.customerId}`} className="font-medium text-brand-700 hover:underline">
+              <Link href={`/fuelos/customers/${q.customerId}`} className="font-medium text-brand-700 hover:underline">
                 {name}
               </Link>
             ) : (
@@ -79,7 +79,7 @@ export default async function QuoteDetail({ params }: { params: Promise<{ id: st
         {q.resultOrderId && (
           <div className="mt-3">
             <Link
-              href={`/orders/${q.resultOrderId}`}
+              href={`/fuelos/orders/${q.resultOrderId}`}
               className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-leaf-100 text-leaf-700 text-sm font-medium"
             >
               <Trophy className="size-4" /> ดูออเดอร์ที่เกิดจากใบนี้

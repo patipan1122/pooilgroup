@@ -39,7 +39,7 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
 
   return (
     <div>
-      <Link href="/orders" className="inline-flex items-center gap-1 text-sm text-zinc-500 mb-3">
+      <Link href="/fuelos/orders" className="inline-flex items-center gap-1 text-sm text-zinc-500 mb-3">
         <ArrowLeft className="size-4" /> บอร์ดออเดอร์
       </Link>
 
@@ -52,7 +52,7 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
               <span className={cn("text-[11px] px-2 py-0.5 rounded-full font-medium", meta.tone)}>{meta.label}</span>
             </div>
             <Link
-              href={`/customers/${order.customer.id}`}
+              href={`/fuelos/customers/${order.customer.id}`}
               className="text-sm text-zinc-600 hover:text-brand-700 inline-flex items-center gap-1 mt-1.5"
             >
               <User className="size-3.5" /> {order.customer.name}

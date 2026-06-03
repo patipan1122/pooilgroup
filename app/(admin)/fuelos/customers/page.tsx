@@ -29,7 +29,7 @@ export default async function CustomersPage({
         title="ลูกค้า"
         subtitle={`${list.length} ราย`}
         actions={
-          <Link href="/customers/new" className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-brand-600 text-white text-sm font-medium">
+          <Link href="/fuelos/customers/new" className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-brand-600 text-white text-sm font-medium">
             <Plus className="size-4" /> เพิ่มลูกค้า
           </Link>
         }
@@ -44,7 +44,7 @@ export default async function CustomersPage({
             </Link>
           ))}
         </div>
-        <form className="ml-auto relative" action="/customers">
+        <form className="ml-auto relative" action="/fuelos/customers">
           <input type="hidden" name="filter" value={filter} />
           <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input name="q" defaultValue={sp.q ?? ""} placeholder="ค้นหาลูกค้า…"
@@ -57,7 +57,7 @@ export default async function CustomersPage({
         {list.map((c) => {
           const pct = c.creditLimit ? Math.min(100, Math.round((c.creditUsed / c.creditLimit) * 100)) : 0;
           return (
-            <Link key={c.id} href={`/customers/${c.id}`} className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-3.5 hover:shadow-sm transition-shadow">
+            <Link key={c.id} href={`/fuelos/customers/${c.id}`} className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-3.5 hover:shadow-sm transition-shadow">
               <div className="size-11 rounded-full bg-brand-100 text-brand-700 grid place-items-center font-bold shrink-0">{c.name.slice(0, 1)}</div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">

@@ -15,7 +15,7 @@ import { Truck as TruckIcon, PackageCheck, MapPin } from "lucide-react";
 export default async function DispatchPage() {
   const user = await requireUser();
   // เฉพาะฝ่ายจัดส่งขึ้นไป (DISPATCH > SALES > DRIVER จะถูกกัน)
-  if (!atLeast(user.role, "DISPATCH")) redirect("/dashboard");
+  if (!atLeast(user.role, "DISPATCH")) redirect("/fuelos/dashboard");
 
   const [unassigned, inTransit, trucks, gps] = await Promise.all([
     listUnassignedOrders(user.orgId),

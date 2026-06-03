@@ -43,7 +43,7 @@ export function CreditTable({ rows }: { rows: CreditRow[] }) {
                 className={cn("border-t border-border", r.over90 && "bg-danger/5")}
               >
                 <td className="px-4 py-2.5">
-                  <Link href={`/customers/${r.id}`} className="font-medium hover:text-brand-700">
+                  <Link href={`/fuelos/customers/${r.id}`} className="font-medium hover:text-brand-700">
                     {r.name}
                   </Link>
                   <span className="text-zinc-400 text-xs ml-1.5">
@@ -90,7 +90,7 @@ export function CreditTable({ rows }: { rows: CreditRow[] }) {
         {rows.map((r) => (
           <Link
             key={r.id}
-            href={`/customers/${r.id}`}
+            href={`/fuelos/customers/${r.id}`}
             className={cn(
               "block rounded-2xl border border-border bg-surface p-3.5",
               r.over90 && "border-danger/40 bg-danger/5",

@@ -49,7 +49,7 @@ export default async function NewQuotePage({
 
   return (
     <div>
-      <Link href="/quotes" className="inline-flex items-center gap-1 text-sm text-zinc-500 mb-3">
+      <Link href="/fuelos/quotes" className="inline-flex items-center gap-1 text-sm text-zinc-500 mb-3">
         <ArrowLeft className="size-4" /> ใบเสนอราคาทั้งหมด
       </Link>
 

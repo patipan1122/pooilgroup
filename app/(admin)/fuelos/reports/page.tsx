@@ -38,7 +38,7 @@ const num = "tabular-nums font-[family-name:var(--font-plex-mono)]";
 export default async function ReportsPage() {
   const user = await requireUser();
   // ดูได้เฉพาะหัวหน้าขายขึ้นไป (SALES_HEAD / ADMIN / OWNER)
-  if (!atLeast(user.role, "SALES_HEAD")) redirect("/dashboard");
+  if (!atLeast(user.role, "SALES_HEAD")) redirect("/fuelos/dashboard");
 
   const [kpi, anomalies, pnl] = await Promise.all([
     getKpiSummary(user.orgId),
@@ -53,7 +53,7 @@ export default async function ReportsPage() {
         subtitle="สรุปผลงานทีมขาย · กำไร/ยอดขาย · ลูกค้าที่ควรตามต่อ"
         actions={
           <a
-            href="/reports/export"
+            href="/fuelos/reports/export"
             className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
           >
             <Download className="size-4" /> ดาวน์โหลด Excel/CSV
@@ -219,7 +219,7 @@ export default async function ReportsPage() {
                     >
                       <td className="px-4 py-2.5">
                         <Link
-                          href={`/customers/${a.id}`}
+                          href={`/fuelos/customers/${a.id}`}
                           className="font-medium hover:text-brand-700"
                         >
                           {a.name}
@@ -298,7 +298,7 @@ export default async function ReportsPage() {
               extra: c.zone ?? "—",
               sales: c.sales,
               profit: c.profit,
-              href: `/customers/${c.customerId}`,
+              href: `/fuelos/customers/${c.customerId}`,
             }))}
             extraHeader="โซน"
           />

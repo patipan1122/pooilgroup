@@ -36,7 +36,7 @@ export default async function QuotesPage({
         subtitle={`${counts.all ?? 0} ใบ`}
         actions={
           <Link
-            href="/quotes/new"
+            href="/fuelos/quotes/new"
             className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-brand-600 text-white text-sm font-medium"
           >
             <Plus className="size-4" /> สร้างใบเสนอราคา
@@ -51,7 +51,7 @@ export default async function QuotesPage({
           return (
             <Link
               key={t.key}
-              href={t.key === "all" ? "/quotes" : `/quotes?status=${t.key}`}
+              href={t.key === "all" ? "/fuelos/quotes" : `/quotes?status=${t.key}`}
               className={cn(
                 "shrink-0 px-3 h-9 rounded-lg text-sm font-medium inline-flex items-center gap-1.5",
                 active ? "bg-brand-600 text-white" : "bg-surface border border-border text-zinc-600",
@@ -76,7 +76,7 @@ export default async function QuotesPage({
           return (
             <Link
               key={q.id}
-              href={`/quotes/${q.id}`}
+              href={`/fuelos/quotes/${q.id}`}
               className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-3.5 hover:shadow-sm transition-shadow"
             >
               <div className="size-11 rounded-xl bg-brand-50 text-brand-600 grid place-items-center shrink-0">

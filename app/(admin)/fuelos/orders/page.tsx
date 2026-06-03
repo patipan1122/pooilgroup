@@ -48,7 +48,7 @@ export default async function OrdersPage() {
                 {col.cards.map((c) => (
                   <Link
                     key={c.id}
-                    href={`/orders/${c.id}`}
+                    href={`/fuelos/orders/${c.id}`}
                     className="block rounded-2xl border border-border bg-surface p-3.5 hover:shadow-sm transition-shadow"
                   >
                     <div className="flex items-center justify-between gap-2">

@@ -48,7 +48,7 @@ export async function createUser(formData: FormData) {
     },
   });
   await audit({ orgId: user.orgId, userId: user.id, action: "USER_CREATE", entity: "FuelUser", entityId: created.id, meta: { email, role } });
-  revalidatePath("/settings");
+  revalidatePath("/fuelos/settings");
   return { ok: true };
 }
 
@@ -64,7 +64,7 @@ export async function setUserActive(id: string, isActive: boolean) {
   }
   await prisma.fuelUser.update({ where: { id }, data: { isActive } });
   await audit({ orgId: user.orgId, userId: user.id, action: "USER_SET_ACTIVE", entity: "FuelUser", entityId: id, meta: { isActive } });
-  revalidatePath("/settings");
+  revalidatePath("/fuelos/settings");
   return { ok: true };
 }
 
@@ -79,7 +79,7 @@ export async function setUserRole(id: string, role: FuelUserRole) {
   }
   await prisma.fuelUser.update({ where: { id }, data: { role } });
   await audit({ orgId: user.orgId, userId: user.id, action: "USER_SET_ROLE", entity: "FuelUser", entityId: id, meta: { role } });
-  revalidatePath("/settings");
+  revalidatePath("/fuelos/settings");
   return { ok: true };
 }
 
@@ -96,12 +96,12 @@ export async function setStaffLine(userId: string, lineUserId: string) {
     return { ok: false, error: "LINE userId นี้ถูกผูกกับพนักงานคนอื่นแล้ว" };
   }
   if (existing) {
-    revalidatePath("/settings");
+    revalidatePath("/fuelos/settings");
     return { ok: true };
   }
   await prisma.staffLineIdentity.create({ data: { orgId: user.orgId, userId, lineUserId: id } });
   await audit({ orgId: user.orgId, userId: user.id, action: "STAFF_LINE_SET", entity: "StaffLineIdentity", entityId: userId, meta: { lineUserId: id } });
-  revalidatePath("/settings");
+  revalidatePath("/fuelos/settings");
   return { ok: true };
 }
 
@@ -111,7 +111,7 @@ export async function removeStaffLine(userId: string, lineUserId: string) {
   if (!rec || rec.orgId !== user.orgId || rec.userId !== userId) return { ok: false, error: "ไม่พบรายการ" };
   await prisma.staffLineIdentity.delete({ where: { id: rec.id } });
   await audit({ orgId: user.orgId, userId: user.id, action: "STAFF_LINE_REMOVE", entity: "StaffLineIdentity", entityId: userId, meta: { lineUserId } });
-  revalidatePath("/settings");
+  revalidatePath("/fuelos/settings");
   return { ok: true };
 }
 
@@ -140,9 +140,9 @@ export async function reassignAll(fromUserId: string, toUserId: string) {
     orgId: user.orgId, userId: user.id, action: "STAFF_REASSIGN_ALL", entity: "FuelUser", entityId: fromUserId,
     meta: { from: from.name, to: to.name, customers: cust.count, conversations: conv.count },
   });
-  revalidatePath("/settings");
-  revalidatePath("/customers");
-  revalidatePath("/inbox");
+  revalidatePath("/fuelos/settings");
+  revalidatePath("/fuelos/customers");
+  revalidatePath("/fuelos/inbox");
   return { ok: true, customers: cust.count, conversations: conv.count };
 }
 
@@ -183,7 +183,7 @@ export async function upsertChannel(formData: FormData) {
     });
     await audit({ orgId: user.orgId, userId: user.id, action: "CHANNEL_CREATE", entity: "FuelInboxChannel", entityId: created.id });
   }
-  revalidatePath("/settings");
+  revalidatePath("/fuelos/settings");
   return { ok: true };
 }
 
@@ -193,7 +193,7 @@ export async function toggleChannelBot(id: string, botEnabled: boolean) {
   if (!existing) return { ok: false, error: "ไม่พบช่องทาง" };
   await prisma.fuelInboxChannel.update({ where: { id }, data: { botEnabled } });
   await audit({ orgId: user.orgId, userId: user.id, action: "CHANNEL_TOGGLE_BOT", entity: "FuelInboxChannel", entityId: id, meta: { botEnabled } });
-  revalidatePath("/settings");
+  revalidatePath("/fuelos/settings");
   return { ok: true };
 }
 
@@ -223,7 +223,7 @@ export async function upsertBank(formData: FormData) {
     await prisma.$transaction(ops);
     await audit({ orgId: user.orgId, userId: user.id, action: "BANK_CREATE", entity: "BankAccount" });
   }
-  revalidatePath("/settings");
+  revalidatePath("/fuelos/settings");
   return { ok: true };
 }
 
@@ -233,7 +233,7 @@ export async function deleteBank(id: string) {
   if (!existing) return { ok: false, error: "ไม่พบบัญชี" };
   await prisma.bankAccount.delete({ where: { id } });
   await audit({ orgId: user.orgId, userId: user.id, action: "BANK_DELETE", entity: "BankAccount", entityId: id });
-  revalidatePath("/settings");
+  revalidatePath("/fuelos/settings");
   return { ok: true };
 }
 
@@ -256,7 +256,7 @@ export async function upsertFaq(formData: FormData) {
     const created = await prisma.botFaq.create({ data: { orgId: user.orgId, keywords, answer, priority } });
     await audit({ orgId: user.orgId, userId: user.id, action: "FAQ_CREATE", entity: "BotFaq", entityId: created.id });
   }
-  revalidatePath("/settings");
+  revalidatePath("/fuelos/settings");
   return { ok: true };
 }
 
@@ -266,6 +266,6 @@ export async function toggleFaq(id: string, enabled: boolean) {
   if (!existing) return { ok: false, error: "ไม่พบ FAQ" };
   await prisma.botFaq.update({ where: { id }, data: { enabled } });
   await audit({ orgId: user.orgId, userId: user.id, action: "FAQ_TOGGLE", entity: "BotFaq", entityId: id, meta: { enabled } });
-  revalidatePath("/settings");
+  revalidatePath("/fuelos/settings");
   return { ok: true };
 }

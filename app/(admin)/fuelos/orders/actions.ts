@@ -67,8 +67,8 @@ export async function advanceOrderStatus(id: string, status: OrderStatus): Promi
     entityId: id,
     meta: { from: order.status, to: status },
   });
-  revalidatePath("/orders");
-  revalidatePath(`/orders/${id}`);
+  revalidatePath("/fuelos/orders");
+  revalidatePath(`/fuelos/orders/${id}`);
   return { ok: true };
 }
 
@@ -89,8 +89,8 @@ export async function cancelOrder(id: string): Promise<ActionResult> {
     entityId: id,
     meta: { from: order.status },
   });
-  revalidatePath("/orders");
-  revalidatePath(`/orders/${id}`);
+  revalidatePath("/fuelos/orders");
+  revalidatePath(`/fuelos/orders/${id}`);
   return { ok: true };
 }
 
@@ -125,8 +125,8 @@ export async function assignTruck(
     entityId: id,
     meta: { truckId, scheduledDate },
   });
-  revalidatePath("/orders");
-  revalidatePath(`/orders/${id}`);
+  revalidatePath("/fuelos/orders");
+  revalidatePath(`/fuelos/orders/${id}`);
   return { ok: true };
 }
 
@@ -179,7 +179,7 @@ export async function requestCreditApproval(orderId: string, note: string): Prom
     entityId: orderId,
     meta: { amountOver },
   });
-  revalidatePath(`/orders/${orderId}`);
+  revalidatePath(`/fuelos/orders/${orderId}`);
   return { ok: true };
 }
 
@@ -218,6 +218,6 @@ export async function actCreditApproval(orderId: string, approve: boolean): Prom
     entityId: orderId,
     meta: { amountOver: Number(approval.amountOver) },
   });
-  revalidatePath(`/orders/${orderId}`);
+  revalidatePath(`/fuelos/orders/${orderId}`);
   return { ok: true };
 }

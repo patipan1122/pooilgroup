@@ -145,7 +145,7 @@ export default async function InboxPage({
                   </div>
                 </div>
                 {conv.customer && (
-                  <Link href={`/customers/${conv.customer.id}`} className="text-xs text-brand-600 hover:underline shrink-0">
+                  <Link href={`/fuelos/customers/${conv.customer.id}`} className="text-xs text-brand-600 hover:underline shrink-0">
                     ดูลูกค้า
                   </Link>
                 )}

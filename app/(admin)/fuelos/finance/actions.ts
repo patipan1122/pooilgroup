@@ -20,7 +20,7 @@ async function requireFinance() {
 }
 
 function refresh() {
-  revalidatePath("/finance");
+  revalidatePath("/fuelos/finance");
 }
 
 // ---------- helper: ปรับยอดใช้เครดิตของลูกค้าอย่างปลอดภัย ----------

@@ -83,7 +83,7 @@ export function ReplyBox({ convId, zone }: { convId: string; zone: string | null
         <button onClick={() => paste("bank")} disabled={!!toolLoading} className="shrink-0 h-8 px-2.5 rounded-lg border border-border text-xs inline-flex items-center gap-1 hover:bg-surface-2">
           {toolLoading === "bank" ? <Loader2 className="size-3.5 animate-spin" /> : <Landmark className="size-3.5 text-brand-600" />} เลขบัญชี
         </button>
-        <Link href={`/quotes/new?conv=${convId}`} className="shrink-0 h-8 px-2.5 rounded-lg border border-border text-xs inline-flex items-center gap-1 hover:bg-surface-2">
+        <Link href={`/fuelos/quotes/new?conv=${convId}`} className="shrink-0 h-8 px-2.5 rounded-lg border border-border text-xs inline-flex items-center gap-1 hover:bg-surface-2">
           <FileText className="size-3.5 text-brand-600" /> ออกใบเสนอราคา
         </Link>
         <button onClick={() => setShowStickers((v) => !v)} disabled={pending} className={cn("shrink-0 h-8 px-2.5 rounded-lg border text-xs inline-flex items-center gap-1", showStickers ? "border-brand-300 bg-brand-50 text-brand-700" : "border-border hover:bg-surface-2")}>

@@ -37,7 +37,7 @@ export async function saveDepotCosts(
     });
   }
   await audit({ orgId: user.orgId, userId: user.id, action: "PRICE_SET", entity: "DepotPrice", meta: { depotName, count: rows.length } });
-  revalidatePath("/pricing");
+  revalidatePath("/fuelos/pricing");
   return { ok: true };
 }
 
@@ -60,6 +60,6 @@ export async function saveZoneMargins(
     });
   }
   await audit({ orgId: user.orgId, userId: user.id, action: "MARGIN_SET", entity: "ZoneMargin", meta: { zone, count: rows.length } });
-  revalidatePath("/pricing");
+  revalidatePath("/fuelos/pricing");
   return { ok: true };
 }

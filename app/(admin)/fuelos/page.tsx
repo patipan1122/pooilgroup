@@ -5,5 +5,5 @@
 import { redirect } from "next/navigation";
 
 export default function FuelOsPage() {
-  redirect("/dashboard");
+  redirect("/fuelos/dashboard");
 }

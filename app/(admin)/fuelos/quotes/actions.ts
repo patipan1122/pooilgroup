@@ -115,8 +115,8 @@ export async function createQuote(input: CreateQuoteInput) {
 
   await audit({ orgId: user.orgId, userId: user.id, action: "QUOTE_CREATE", entity: "Quote", entityId: quote.id, meta: { quoteNo, subtotal } });
 
-  revalidatePath("/quotes");
-  redirect(`/quotes/${quote.id}`);
+  revalidatePath("/fuelos/quotes");
+  redirect(`/fuelos/quotes/${quote.id}`);
 }
 
 // บันทึกผลใบเสนอราคา: ชนะ / แพ้ / ลูกค้าปฏิเสธ / ไม่ตอบ
@@ -143,8 +143,8 @@ export async function setQuoteResult(
 
   await audit({ orgId: user.orgId, userId: user.id, action: "QUOTE_RESULT", entity: "Quote", entityId: quoteId, meta: { status, lostTo, competitorPrice } });
 
-  revalidatePath(`/quotes/${quoteId}`);
-  revalidatePath("/quotes");
+  revalidatePath(`/fuelos/quotes/${quoteId}`);
+  revalidatePath("/fuelos/quotes");
   return { ok: true };
 }
 
@@ -238,8 +238,8 @@ export async function convertToOrder(quoteId: string) {
 
   await audit({ orgId: user.orgId, userId: user.id, action: "QUOTE_CONVERT", entity: "Order", entityId: order.id, meta: { quoteId: quote.id, orderNo, subtotal } });
 
-  revalidatePath(`/quotes/${quote.id}`);
-  revalidatePath("/quotes");
-  revalidatePath("/orders");
-  redirect(`/orders/${order.id}`);
+  revalidatePath(`/fuelos/quotes/${quote.id}`);
+  revalidatePath("/fuelos/quotes");
+  revalidatePath("/fuelos/orders");
+  redirect(`/fuelos/orders/${order.id}`);
 }

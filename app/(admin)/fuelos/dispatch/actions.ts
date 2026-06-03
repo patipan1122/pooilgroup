@@ -53,7 +53,7 @@ export async function assignTruck(
     orgId: user.orgId, userId: user.id, action: "DISPATCH_ASSIGN",
     entity: "Order", entityId: orderId, meta: { truckId, scheduledDate },
   });
-  revalidatePath("/dispatch");
+  revalidatePath("/fuelos/dispatch");
   return { ok: true };
 }
 
@@ -110,6 +110,6 @@ export async function markDelivered(
     orgId: user.orgId, userId: user.id, action: "DISPATCH_DELIVERED",
     entity: "Order", entityId: orderId, meta: { lat, lng, photoKey },
   });
-  revalidatePath("/dispatch");
+  revalidatePath("/fuelos/dispatch");
   return { ok: true };
 }

@@ -10,7 +10,7 @@ export default async function NewCustomerPage() {
   await requireUser();
   return (
     <div className="max-w-lg mx-auto">
-      <Link href="/customers" className="inline-flex items-center gap-1 text-sm text-zinc-500 mb-3"><ArrowLeft className="size-4" /> กลับ</Link>
+      <Link href="/fuelos/customers" className="inline-flex items-center gap-1 text-sm text-zinc-500 mb-3"><ArrowLeft className="size-4" /> กลับ</Link>
       <PageHeader title="เพิ่มลูกค้าใหม่" />
       <form action={createCustomer} className="space-y-4 rounded-2xl border border-border bg-surface p-5">
         <div>

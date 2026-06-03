@@ -23,7 +23,7 @@ export default async function FinancePage({
 }) {
   const user = await requireUser();
   // หน้าการเงิน = เฉพาะฝ่ายการเงินขึ้นไป (FINANCE ↑) — คนอื่นเด้งกลับ dashboard
-  if (!atLeast(user.role, "FINANCE")) redirect("/dashboard");
+  if (!atLeast(user.role, "FINANCE")) redirect("/fuelos/dashboard");
 
   const sp = await searchParams;
   const tab = (["credit", "payments", "cheques"].includes(sp.tab ?? "")

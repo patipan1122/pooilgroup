@@ -55,7 +55,7 @@ export async function sendReply(convId: string, body: string) {
       data: { isUnanswered: false, unreadCount: 0, lastStaffReplyAt: now, lastMessageAt: now },
     }),
   ]);
-  revalidatePath("/inbox");
+  revalidatePath("/fuelos/inbox");
   return { ok: true, warning: errorMessage };
 }
 
@@ -98,7 +98,7 @@ export async function sendSticker(convId: string, packageId: string, stickerId: 
       data: { isUnanswered: false, unreadCount: 0, lastStaffReplyAt: now, lastMessageAt: now },
     }),
   ]);
-  revalidatePath("/inbox");
+  revalidatePath("/fuelos/inbox");
   return { ok: true, warning };
 }
 
@@ -119,7 +119,7 @@ export async function quickStatus(convId: string, label: string) {
     }),
   ]);
   await audit({ orgId: user.orgId, userId: user.id, action: "CONV_STATUS", entity: "Conversation", entityId: convId, meta: { label } });
-  revalidatePath("/inbox");
+  revalidatePath("/fuelos/inbox");
   return { ok: true };
 }
 
@@ -127,7 +127,7 @@ export async function assignConv(convId: string, userId: string) {
   const user = await requireUser();
   await ownConv(user.orgId, convId);
   await prisma.conversation.update({ where: { id: convId }, data: { assignedToId: userId || null } });
-  revalidatePath("/inbox");
+  revalidatePath("/fuelos/inbox");
   return { ok: true };
 }
 
@@ -135,7 +135,7 @@ export async function setSegment(convId: string, segment: ConvSegment) {
   const user = await requireUser();
   await ownConv(user.orgId, convId);
   await prisma.conversation.update({ where: { id: convId }, data: { segment } });
-  revalidatePath("/inbox");
+  revalidatePath("/fuelos/inbox");
   return { ok: true };
 }
 

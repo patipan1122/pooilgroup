@@ -28,7 +28,7 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
 
   return (
     <div>
-      <Link href="/customers" className="inline-flex items-center gap-1 text-sm text-zinc-500 mb-3"><ArrowLeft className="size-4" /> ลูกค้าทั้งหมด</Link>
+      <Link href="/fuelos/customers" className="inline-flex items-center gap-1 text-sm text-zinc-500 mb-3"><ArrowLeft className="size-4" /> ลูกค้าทั้งหมด</Link>
 
       {/* header */}
       <div className="rounded-2xl border border-border bg-surface p-5 mb-3">
@@ -90,7 +90,7 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
             {c.quotes.length === 0 ? <Empty>ยังไม่มีใบเสนอราคา</Empty> : (
               <div className="space-y-1.5">
                 {c.quotes.map((q) => (
-                  <Link key={q.id} href={`/quotes/${q.id}`} className="flex items-center justify-between text-sm hover:text-brand-700">
+                  <Link key={q.id} href={`/fuelos/quotes/${q.id}`} className="flex items-center justify-between text-sm hover:text-brand-700">
                     <span>{q.quoteNo} · {bkkDate(q.quoteDate)}</span>
                     <span className="tabular-nums">{formatBaht(Number(q.subtotal))}</span>
                   </Link>
