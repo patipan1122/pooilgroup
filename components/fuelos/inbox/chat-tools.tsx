@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition, type ComponentProps } from "react";
+import { useState, useEffect, useTransition, type ComponentProps } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { X, UserRound, FileText, Pencil, Check, Phone, Building2, TrendingUp, Calendar, Lock } from "lucide-react";
@@ -40,10 +41,22 @@ function dt(iso: string | null) {
 
 // Slide-over ขวา (LINE-like) — reusable
 function SlideOver({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean }) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+  // ⚠️ ต้อง render ผ่าน portal ไป document.body — ไม่งั้น fixed panel จะถูก trap/clip
+  // เพราะ inbox container มี overflow-hidden + header มี backdrop-blur (filter สร้าง containing block)
+  // → panel จะโผล่แค่ในกล่อง content แทนที่จะเต็มจอ (อาการที่ CEO เห็น: panel ตัน/ว่าง)
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  // ล็อก scroll พื้นหลังตอนเปิด
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
+  if (!open || !mounted) return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[100]">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className={cn("absolute right-0 top-0 h-full bg-surface shadow-xl flex flex-col w-full", wide ? "sm:w-[480px]" : "sm:w-[380px]")}>
         <div className="shrink-0 flex items-center justify-between border-b border-border px-4 h-14">
           <h2 className="font-bold">{title}</h2>
@@ -51,7 +64,8 @@ function SlideOver({ open, onClose, title, children, wide }: { open: boolean; on
         </div>
         <div className="flex-1 overflow-y-auto p-4">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
