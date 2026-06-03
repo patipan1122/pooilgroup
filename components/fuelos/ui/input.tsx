@@ -17,7 +17,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           className={cn(
             "relative flex h-12 items-center rounded-xl border bg-white",
             invalid
-              ? "border-[var(--color-danger)] ring-1 ring-red-100"
+              ? "border-[var(--color-danger)] ring-1 ring-[var(--color-danger)]/15"
               : "border-zinc-200 focus-within:border-[var(--color-brand-500)]",
             "transition-colors",
           )}
@@ -52,7 +52,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           "placeholder:text-zinc-400 tabular-nums",
           "outline-none transition-colors",
           invalid
-            ? "border-[var(--color-danger)] ring-1 ring-red-100"
+            ? "border-[var(--color-danger)] ring-1 ring-[var(--color-danger)]/15"
             : "border-zinc-200 focus:border-[var(--color-brand-500)]",
           "disabled:bg-zinc-50 disabled:text-zinc-500",
           className,

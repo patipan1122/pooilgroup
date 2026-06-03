@@ -35,14 +35,14 @@ const accentClasses: Record<
     valueText: "text-[var(--color-brand-800)]",
   },
   danger: {
-    iconBg: "bg-red-100",
-    iconText: "text-red-700",
-    valueText: "text-red-700",
+    iconBg: "bg-[var(--color-danger)]/15",
+    iconText: "text-[var(--color-danger)]",
+    valueText: "text-[var(--color-danger)]",
   },
   warning: {
-    iconBg: "bg-amber-100",
-    iconText: "text-amber-700",
-    valueText: "text-amber-700",
+    iconBg: "bg-[var(--color-warning)]/15",
+    iconText: "text-[var(--color-warning)]",
+    valueText: "text-[var(--color-warning)]",
   },
   orange: {
     iconBg: "bg-orange-100",
@@ -50,14 +50,14 @@ const accentClasses: Record<
     valueText: "text-orange-700",
   },
   success: {
-    iconBg: "bg-emerald-100",
-    iconText: "text-emerald-700",
-    valueText: "text-emerald-800",
+    iconBg: "bg-[var(--color-leaf-100)]",
+    iconText: "text-[var(--color-leaf-700)]",
+    valueText: "text-[var(--color-leaf-800)]",
   },
   info: {
-    iconBg: "bg-blue-100",
-    iconText: "text-blue-700",
-    valueText: "text-blue-800",
+    iconBg: "bg-[var(--color-info)]/15",
+    iconText: "text-[var(--color-info)]",
+    valueText: "text-[var(--color-info)]",
   },
 };
 

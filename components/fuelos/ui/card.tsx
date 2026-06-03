@@ -14,7 +14,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-2xl border-2 border-zinc-200 bg-white shadow-soft transition-colors",
+        "rounded-2xl border-2 border-[var(--color-border)] bg-white shadow-soft transition-colors",
         "hover:border-zinc-300",
         className,
       )}
@@ -30,7 +30,7 @@ export function CardHeader({
   return (
     <div
       className={cn(
-        "flex items-start justify-between gap-3 px-5 py-4 border-b border-zinc-100",
+        "flex items-start justify-between gap-3 px-5 py-4 border-b border-[var(--color-border)]",
         className,
       )}
       {...props}
@@ -79,7 +79,7 @@ export function CardFooter({
   return (
     <div
       className={cn(
-        "px-5 py-3 border-t border-zinc-100 flex items-center justify-end gap-2 bg-zinc-50/40",
+        "px-5 py-3 border-t border-[var(--color-border)] flex items-center justify-end gap-2 bg-[var(--color-surface-2)]",
         className,
       )}
       {...props}
