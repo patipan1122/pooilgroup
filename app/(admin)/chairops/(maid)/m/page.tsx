@@ -154,6 +154,7 @@ export default async function MaidHomePage() {
     // (เดิม KPI นับจาก 20 แถวแรก → ถ้าค้างเกิน 20 รอบ ยอดจะต่ำกว่าจริง)
     prisma.chairopsCashCollection.aggregate({
       where: {
+        orgId: session.user.orgId, // defense-in-depth (no RLS) + matches badge query
         branchId,
         maidId: session.user.id,
         depositId: null,
