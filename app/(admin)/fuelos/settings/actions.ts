@@ -34,7 +34,7 @@ export async function createUser(formData: FormData) {
   if (user.role !== "OWNER" && RANK[role] >= RANK[user.role]) {
     return { ok: false, error: "ไม่มีสิทธิ์สร้างผู้ใช้บทบาทนี้" };
   }
-  const dup = await prisma.fuelUser.findUnique({ where: { email }, select: { id: true } });
+  const dup = await prisma.fuelUser.findFirst({ where: { email, orgId: user.orgId }, select: { id: true } });
   if (dup) return { ok: false, error: "อีเมลนี้ถูกใช้แล้ว" };
 
   const created = await prisma.fuelUser.create({
@@ -62,7 +62,7 @@ export async function setUserActive(id: string, isActive: boolean) {
   if (user.role !== "OWNER" && RANK[target.role] >= RANK[user.role]) {
     return { ok: false, error: "ไม่มีสิทธิ์จัดการพนักงานบทบาทนี้" };
   }
-  await prisma.fuelUser.update({ where: { id }, data: { isActive } });
+  await prisma.fuelUser.update({ where: { id, orgId: user.orgId }, data: { isActive } });
   await audit({ orgId: user.orgId, userId: user.id, action: "USER_SET_ACTIVE", entity: "FuelUser", entityId: id, meta: { isActive } });
   revalidatePath("/fuelos/settings");
   return { ok: true };
@@ -77,7 +77,7 @@ export async function setUserRole(id: string, role: FuelUserRole) {
   if (user.role !== "OWNER" && (RANK[role] >= RANK[user.role] || RANK[target.role] >= RANK[user.role])) {
     return { ok: false, error: "ไม่มีสิทธิ์กำหนดบทบาทนี้" };
   }
-  await prisma.fuelUser.update({ where: { id }, data: { role } });
+  await prisma.fuelUser.update({ where: { id, orgId: user.orgId }, data: { role } });
   await audit({ orgId: user.orgId, userId: user.id, action: "USER_SET_ROLE", entity: "FuelUser", entityId: id, meta: { role } });
   revalidatePath("/fuelos/settings");
   return { ok: true };
@@ -91,7 +91,7 @@ export async function setStaffLine(userId: string, lineUserId: string) {
   const target = await prisma.fuelUser.findFirst({ where: { id: userId, orgId: user.orgId }, select: { id: true } });
   if (!target) return { ok: false, error: "ไม่พบพนักงาน" };
   // กันชนกับเจ้าของเดิม (lineUserId unique)
-  const existing = await prisma.staffLineIdentity.findUnique({ where: { lineUserId: id }, select: { userId: true } });
+  const existing = await prisma.staffLineIdentity.findFirst({ where: { lineUserId: id, orgId: user.orgId }, select: { userId: true } });
   if (existing && existing.userId !== userId) {
     return { ok: false, error: "LINE userId นี้ถูกผูกกับพนักงานคนอื่นแล้ว" };
   }
@@ -160,7 +160,7 @@ export async function upsertChannel(formData: FormData) {
     const existing = await prisma.fuelInboxChannel.findFirst({ where: { id, orgId: user.orgId }, select: { id: true } });
     if (!existing) return { ok: false, error: "ไม่พบช่องทาง" };
     await prisma.fuelInboxChannel.update({
-      where: { id },
+      where: { id, orgId: user.orgId },
       data: {
         displayName,
         externalId,
@@ -191,7 +191,7 @@ export async function toggleChannelBot(id: string, botEnabled: boolean) {
   const user = await requireAdmin();
   const existing = await prisma.fuelInboxChannel.findFirst({ where: { id, orgId: user.orgId }, select: { id: true } });
   if (!existing) return { ok: false, error: "ไม่พบช่องทาง" };
-  await prisma.fuelInboxChannel.update({ where: { id }, data: { botEnabled } });
+  await prisma.fuelInboxChannel.update({ where: { id, orgId: user.orgId }, data: { botEnabled } });
   await audit({ orgId: user.orgId, userId: user.id, action: "CHANNEL_TOGGLE_BOT", entity: "FuelInboxChannel", entityId: id, meta: { botEnabled } });
   revalidatePath("/fuelos/settings");
   return { ok: true };
@@ -215,7 +215,7 @@ export async function upsertBank(formData: FormData) {
   if (id) {
     const existing = await prisma.bankAccount.findFirst({ where: { id, orgId: user.orgId }, select: { id: true } });
     if (!existing) return { ok: false, error: "ไม่พบบัญชี" };
-    ops.push(prisma.bankAccount.update({ where: { id }, data: { bankName, accountName, accountNo, isDefault } }));
+    ops.push(prisma.bankAccount.update({ where: { id, orgId: user.orgId }, data: { bankName, accountName, accountNo, isDefault } }));
     await prisma.$transaction(ops);
     await audit({ orgId: user.orgId, userId: user.id, action: "BANK_UPDATE", entity: "BankAccount", entityId: id });
   } else {
@@ -231,7 +231,7 @@ export async function deleteBank(id: string) {
   const user = await requireAdmin();
   const existing = await prisma.bankAccount.findFirst({ where: { id, orgId: user.orgId }, select: { id: true } });
   if (!existing) return { ok: false, error: "ไม่พบบัญชี" };
-  await prisma.bankAccount.delete({ where: { id } });
+  await prisma.bankAccount.delete({ where: { id, orgId: user.orgId } });
   await audit({ orgId: user.orgId, userId: user.id, action: "BANK_DELETE", entity: "BankAccount", entityId: id });
   revalidatePath("/fuelos/settings");
   return { ok: true };
@@ -250,7 +250,7 @@ export async function upsertFaq(formData: FormData) {
   if (id) {
     const existing = await prisma.botFaq.findFirst({ where: { id, orgId: user.orgId }, select: { id: true } });
     if (!existing) return { ok: false, error: "ไม่พบ FAQ" };
-    await prisma.botFaq.update({ where: { id }, data: { keywords, answer, priority } });
+    await prisma.botFaq.update({ where: { id, orgId: user.orgId }, data: { keywords, answer, priority } });
     await audit({ orgId: user.orgId, userId: user.id, action: "FAQ_UPDATE", entity: "BotFaq", entityId: id });
   } else {
     const created = await prisma.botFaq.create({ data: { orgId: user.orgId, keywords, answer, priority } });
@@ -264,7 +264,7 @@ export async function toggleFaq(id: string, enabled: boolean) {
   const user = await requireAdmin();
   const existing = await prisma.botFaq.findFirst({ where: { id, orgId: user.orgId }, select: { id: true } });
   if (!existing) return { ok: false, error: "ไม่พบ FAQ" };
-  await prisma.botFaq.update({ where: { id }, data: { enabled } });
+  await prisma.botFaq.update({ where: { id, orgId: user.orgId }, data: { enabled } });
   await audit({ orgId: user.orgId, userId: user.id, action: "FAQ_TOGGLE", entity: "BotFaq", entityId: id, meta: { enabled } });
   revalidatePath("/fuelos/settings");
   return { ok: true };

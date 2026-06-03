@@ -61,7 +61,7 @@ export default async function SettingsPage({
           return (
             <Link
               key={t.key}
-              href={`/settings?tab=${t.key}`}
+              href={`/fuelos/settings?tab=${t.key}`}
               className={cn(
                 "inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg text-sm font-medium shrink-0",
                 active ? "bg-brand-600 text-white" : "bg-surface border border-border text-zinc-600",

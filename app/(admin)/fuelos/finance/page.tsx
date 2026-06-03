@@ -49,7 +49,7 @@ export default async function FinancePage({
         {tabs.map((t) => (
           <Link
             key={t.key}
-            href={`/finance?tab=${t.key}`}
+            href={`/fuelos/finance?tab=${t.key}`}
             className={cn(
               "px-3.5 h-9 rounded-lg text-sm font-medium inline-flex items-center gap-1.5 shrink-0",
               tab === t.key

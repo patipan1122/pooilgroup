@@ -80,7 +80,7 @@ export default async function InboxPage({
             <div className="flex gap-1.5">
               {tabs.map((t) => (
                 <Link
-                  key={t.key} href={`/inbox?filter=${t.key}`}
+                  key={t.key} href={`/fuelos/inbox?filter=${t.key}`}
                   className={cn(
                     "px-2.5 h-8 rounded-lg text-xs font-medium inline-flex items-center gap-1.5",
                     filter === t.key ? "bg-brand-600 text-white" : "bg-surface-2 text-zinc-600",
@@ -96,7 +96,7 @@ export default async function InboxPage({
             {list.length === 0 && <div className="p-8 text-center text-zinc-400 text-sm">ไม่มีแชทในหมวดนี้</div>}
             {list.map((c) => (
               <Link
-                key={c.id} href={`/inbox?filter=${filter}&c=${c.id}`}
+                key={c.id} href={`/fuelos/inbox?filter=${filter}&c=${c.id}`}
                 className={cn("flex gap-3 p-3 hover:bg-surface-2", conv?.id === c.id && "bg-brand-50")}
               >
                 <div className="size-10 rounded-full bg-brand-100 text-brand-700 grid place-items-center font-bold shrink-0">
@@ -134,7 +134,7 @@ export default async function InboxPage({
             <>
               {/* detail header */}
               <div className="sticky top-0 z-10 bg-surface/95 backdrop-blur border-b border-border px-3 py-2.5 flex items-center gap-2">
-                <Link href={`/inbox?filter=${filter}`} className="lg:hidden size-9 grid place-items-center rounded-lg hover:bg-surface-2">
+                <Link href={`/fuelos/inbox?filter=${filter}`} className="lg:hidden size-9 grid place-items-center rounded-lg hover:bg-surface-2">
                   <ArrowLeft className="size-5" />
                 </Link>
                 <div className="min-w-0 flex-1">

@@ -38,7 +38,7 @@ export default async function CustomersPage({
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex gap-1.5">
           {tabs.map((t) => (
-            <Link key={t.key} href={`/customers?filter=${t.key}`}
+            <Link key={t.key} href={`/fuelos/customers?filter=${t.key}`}
               className={cn("px-3 h-9 rounded-lg text-sm font-medium inline-flex items-center", filter === t.key ? "bg-brand-600 text-white" : "bg-surface border border-border text-zinc-600")}>
               {t.label}
             </Link>

@@ -39,7 +39,7 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
             <div className="text-sm text-zinc-500 mt-0.5">{c.legalName ?? "—"}</div>
             <div className="text-sm text-zinc-500">{c.zone ? `โซน ${c.zone}` : ""}{c.phone ? ` · ${c.phone}` : ""} · ดูแลโดย {c.assignedSales?.name ?? "—"}</div>
           </div>
-          {convId && <Link href={`/inbox?c=${convId}`} className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-border text-sm shrink-0"><MessageSquare className="size-4" /> แชท</Link>}
+          {convId && <Link href={`/fuelos/inbox?c=${convId}`} className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-border text-sm shrink-0"><MessageSquare className="size-4" /> แชท</Link>}
         </div>
         {creditLimit != null && (
           <div className="mt-4">

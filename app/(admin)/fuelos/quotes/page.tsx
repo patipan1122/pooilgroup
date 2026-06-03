@@ -51,7 +51,7 @@ export default async function QuotesPage({
           return (
             <Link
               key={t.key}
-              href={t.key === "all" ? "/fuelos/quotes" : `/quotes?status=${t.key}`}
+              href={t.key === "all" ? "/fuelos/quotes" : `/fuelos/quotes?status=${t.key}`}
               className={cn(
                 "shrink-0 px-3 h-9 rounded-lg text-sm font-medium inline-flex items-center gap-1.5",
                 active ? "bg-brand-600 text-white" : "bg-surface border border-border text-zinc-600",

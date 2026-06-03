@@ -110,7 +110,7 @@ export async function createQuote(input: CreateQuoteInput) {
 
   // ปรับ lastQuoteAt ของลูกค้า เพื่อ CRM health รู้ว่าเสนอราคาแล้ว
   if (customerId) {
-    await prisma.customer.update({ where: { id: customerId }, data: { lastQuoteAt: new Date() } });
+    await prisma.customer.update({ where: { id: customerId, orgId: user.orgId }, data: { lastQuoteAt: new Date() } });
   }
 
   await audit({ orgId: user.orgId, userId: user.id, action: "QUOTE_CREATE", entity: "Quote", entityId: quote.id, meta: { quoteNo, subtotal } });
@@ -133,7 +133,7 @@ export async function setQuoteResult(
   if (q.resultOrderId) return { ok: false, error: "ใบนี้ถูกแปลงเป็นออเดอร์แล้ว เปลี่ยนผลไม่ได้" };
 
   await prisma.quote.update({
-    where: { id: quoteId },
+    where: { id: quoteId, orgId: user.orgId },
     data: {
       status,
       lostTo: status === "LOST" ? (lostTo?.trim() || null) : null,
@@ -222,11 +222,11 @@ export async function convertToOrder(quoteId: string) {
     });
 
     // ใบเสนอราคา → WON + ผูก order
-    await tx.quote.update({ where: { id: quote.id }, data: { status: "WON", resultOrderId: created.id } });
+    await tx.quote.update({ where: { id: quote.id, orgId: user.orgId }, data: { status: "WON", resultOrderId: created.id } });
 
     // CRM: ลูกค้าใหม่ → ตั้ง firstOrderAt · ทุกครั้ง → อัปเดต lastOrderAt
     await tx.customer.update({
-      where: { id: customerId },
+      where: { id: customerId, orgId: user.orgId },
       data: {
         ...(quote.customer && !quote.customer.firstOrderAt ? { firstOrderAt: now } : {}),
         lastOrderAt: now,

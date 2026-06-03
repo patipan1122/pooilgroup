@@ -148,7 +148,7 @@ export async function requestCreditApproval(orderId: string, note: string): Prom
   if (amountOver <= 0) return { ok: false, error: "ยอดออเดอร์ยังไม่เกินวงเงิน ไม่ต้องขออนุมัติ" };
 
   // กันรีเซ็ตคำขอที่อนุมัติไปแล้วกลับเป็น PENDING
-  const existing = await prisma.creditApproval.findUnique({ where: { orderId }, select: { status: true } });
+  const existing = await prisma.creditApproval.findFirst({ where: { orderId, orgId: user.orgId }, select: { status: true } });
   if (existing?.status === "APPROVED") return { ok: false, error: "ออเดอร์นี้ได้รับอนุมัติแล้ว" };
 
   // 1 ออเดอร์ = 1 คำขอ (orderId unique) → upsert กลับมาเป็น PENDING ได้ถ้าเคยถูกปฏิเสธ

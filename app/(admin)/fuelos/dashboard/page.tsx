@@ -45,7 +45,7 @@ export default async function DashboardPage() {
     { label: "แชทค้างตอบ", value: unanswered, href: "/fuelos/inbox", icon: MessageSquareWarning, accent: unanswered > 0 ? "danger" : "zinc" },
     { label: "ใบเสนอราคาวันนี้", value: quotesToday, href: "/fuelos/quotes", icon: FileText, accent: "brand" },
     { label: "ออเดอร์ที่ยังไม่ปิด", value: openOrders, href: "/fuelos/orders", icon: ClipboardList, accent: "brand" },
-    { label: "ลูกค้าเกินรอบซื้อ", value: overdueCustomers, href: "/customers?filter=overdue", icon: Bell, accent: overdueCustomers > 0 ? "warning" : "zinc" },
+    { label: "ลูกค้าเกินรอบซื้อ", value: overdueCustomers, href: "/fuelos/customers?filter=overdue", icon: Bell, accent: overdueCustomers > 0 ? "warning" : "zinc" },
   ];
 
   const accentClass: Record<string, string> = {
