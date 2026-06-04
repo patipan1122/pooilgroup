@@ -20,28 +20,40 @@ import { useState } from "react";
 
 const BASE = "/ledger/brand";
 
-/** Try PNG first → fall back to the committed SVG placeholder on 404. */
-function BrandImg({
-  name,
+/** The mascot "JP" poses available in public/ledger/brand/mascot/. */
+export type MascotPose =
+  | "welcome"
+  | "receipt"
+  | "money"
+  | "camera"
+  | "typing"
+  | "confused"
+  | "explain"
+  | "alert"
+  | "sleepy"
+  | "celebrate";
+
+/** Render an image trying a chain of srcs (swap to next on error). */
+function FallbackImg({
+  srcs,
   alt,
   className,
   width,
   height,
   priority,
 }: {
-  name: "logo" | "mascot";
+  srcs: string[];
   alt: string;
   className?: string;
   width: number;
   height: number;
   priority?: boolean;
 }) {
-  // Start with PNG (CEO override); swap to SVG placeholder if it isn't there.
-  const [src, setSrc] = useState(`${BASE}/${name}.png`);
+  const [idx, setIdx] = useState(0);
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={src}
+      src={srcs[idx]}
       alt={alt}
       width={width}
       height={height}
@@ -50,8 +62,7 @@ function BrandImg({
       decoding="async"
       draggable={false}
       onError={() => {
-        // PNG missing → use the SVG placeholder (guaranteed to exist in repo).
-        if (!src.endsWith(".svg")) setSrc(`${BASE}/${name}.svg`);
+        if (idx < srcs.length - 1) setIdx(idx + 1);
       }}
     />
   );
@@ -74,8 +85,8 @@ export function LedgerLogo({
   priority?: boolean;
 }) {
   return (
-    <BrandImg
-      name="logo"
+    <FallbackImg
+      srcs={[`${BASE}/logo.png`, `${BASE}/logo.svg`]}
       alt="JP Sync Group"
       width={Math.round(height * LOGO_RATIO)}
       height={height}
@@ -90,23 +101,31 @@ export function LedgerLogo({
  * Use in LIFF hero + empty states to warm up the otherwise text-only screens.
  */
 export function LedgerMascot({
+  pose = "welcome",
   size = 64,
   className,
   priority,
   alt = "น้องใบเสร็จ ผู้ช่วยบันทึกค่าใช้จ่าย",
 }: {
+  pose?: MascotPose;
   size?: number;
   className?: string;
   priority?: boolean;
   alt?: string;
 }) {
   return (
-    <BrandImg
-      name="mascot"
+    <FallbackImg
+      // pose poses live in /ledger/brand/mascot/<pose>(-sm).png; fall back to the
+      // committed mascot.svg placeholder if a pose isn't deployed yet.
+      srcs={[
+        `${BASE}/mascot/${pose}-sm.png`,
+        `${BASE}/mascot/${pose}.png`,
+        `${BASE}/mascot.svg`,
+      ]}
       alt={alt}
       width={size}
       height={size}
-      className={["select-none", className].filter(Boolean).join(" ")}
+      className={["select-none object-contain", className].filter(Boolean).join(" ")}
       priority={priority}
     />
   );
@@ -120,12 +139,14 @@ export function LedgerEmptyState({
   title,
   hint,
   mascotSize = 72,
+  pose = "explain",
   action,
   className,
 }: {
   title: string;
   hint?: string;
   mascotSize?: number;
+  pose?: MascotPose;
   action?: React.ReactNode;
   className?: string;
 }) {
@@ -138,7 +159,7 @@ export function LedgerEmptyState({
         .filter(Boolean)
         .join(" ")}
     >
-      <LedgerMascot size={mascotSize} />
+      <LedgerMascot pose={pose} size={mascotSize} />
       <div className="space-y-1">
         <p className="text-sm font-semibold text-zinc-700">{title}</p>
         {hint && <p className="text-xs text-zinc-400">{hint}</p>}

@@ -8,7 +8,7 @@ import { LedgerHeader, NoCompanyState } from "./_components/LedgerHeader";
 import { expenseSummary, listExpensesSummary, spendByCategory } from "./_data";
 import { currentPeriodBangkok } from "@/lib/ledger/dashboard";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
-import { LedgerEmptyState } from "@/components/ledger/Brand";
+import { LedgerEmptyState, LedgerMascot } from "@/components/ledger/Brand";
 
 export const dynamic = "force-dynamic";
 
@@ -130,6 +130,26 @@ export default async function LedgerHomePage({
           </Link>
         }
       />
+
+      {/* Welcome banner — น้องใบเสร็จ greets + nudges the draft queue (web + mobile) */}
+      <div className="mb-4 flex items-center gap-4 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-white p-4">
+        <LedgerMascot
+          pose={summary.draftCount > 0 ? "receipt" : "welcome"}
+          size={72}
+          priority
+          className="shrink-0 drop-shadow-sm"
+        />
+        <div className="min-w-0">
+          <p className="text-base font-bold text-zinc-900">
+            {summary.draftCount > 0
+              ? `มี ${summary.draftCount} ใบรอตรวจ — ช่วยยืนยันหน่อยนะ`
+              : "สวัสดีครับ พร้อมช่วยจดค่าใช้จ่าย"}
+          </p>
+          <p className="mt-0.5 text-sm text-zinc-500">
+            ถ่ายใบเสร็จส่งในกลุ่ม LINE หรือพิมพ์ &ldquo;จด กาแฟ 45&rdquo; — น้องใบเสร็จจัดให้
+          </p>
+        </div>
+      </div>
 
       {/* KPI tiles */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
