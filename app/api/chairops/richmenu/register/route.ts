@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       },
       {
         bounds: { x: 1250, y: 843, width: 1250, height: 843 },
-        action: { type: "uri", label: "เบิกของ", uri: liff("/chairops/m/parts/new") },
+        action: { type: "uri", label: "เบิกของ", uri: liff("/chairops/m/parts") },
       },
     ],
   };

@@ -74,6 +74,7 @@ export async function assignTicket(
 
   revalidatePath(`/chairops/damage/${parsed.data.code}`);
   revalidatePath("/chairops/damage");
+  revalidatePath("/chairops/m"); // maid home open-damage count (P1-18)
   return { ok: true };
 }
 
@@ -161,6 +162,7 @@ export async function updateStatus(
 
   revalidatePath(`/chairops/damage/${parsed.data.code}`);
   revalidatePath("/chairops/damage");
+  revalidatePath("/chairops/m"); // maid home open-damage count (P1-18)
   return { ok: true };
 }
 
@@ -331,5 +333,6 @@ export async function closeTicket(
 
   revalidatePath(`/chairops/damage/${parsed.data.code}`);
   revalidatePath("/chairops/damage");
+  revalidatePath("/chairops/m"); // maid home open-damage count (P1-18)
   return { ok: true };
 }

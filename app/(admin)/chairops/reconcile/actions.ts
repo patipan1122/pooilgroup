@@ -42,7 +42,7 @@ export async function disputeCollection(formData: FormData) {
   const c = await prisma.chairopsCashCollection.findFirst({
     where: { id: collectionId, orgId },
   });
-  if (!c) redirect(`/reconcile?error=${encodeURIComponent("ไม่พบรายการ")}`);
+  if (!c) redirect(`/chairops/reconcile?error=${encodeURIComponent("ไม่พบรายการ")}`);
 
   // We don't have a "disputed" column in schema; we use notes + audit.
   // Wave-0 fix: note update + audit atomic
@@ -101,7 +101,7 @@ export async function requestWriteOff(formData: FormData) {
     where: { id: branchId, orgId: sessionOrgId },
     select: { id: true, name: true, orgId: true },
   });
-  if (!branch) redirect(`/reconcile?error=${encodeURIComponent("ไม่พบสาขา")}`);
+  if (!branch) redirect(`/chairops/reconcile?error=${encodeURIComponent("ไม่พบสาขา")}`);
 
   // Wave-0 fix: write-off + alert + audit atomic in one tx
   const wo = await prisma.$transaction(async (tx) => {
@@ -153,7 +153,7 @@ export async function requestWriteOff(formData: FormData) {
 export async function approveWriteOff(formData: FormData) {
   const session = await requireRole("OFFICE"); // hierarchy enforced via canWriteOff below
   const writeOffId = String(formData.get("writeOffId") ?? "");
-  if (!writeOffId) redirect(`/write-offs?error=${encodeURIComponent("missing id")}`);
+  if (!writeOffId) redirect(`/chairops/write-offs?error=${encodeURIComponent("missing id")}`);
   // CEO 2026-06-02 P0 IDOR fix · approving a write-off must be scoped to the
   // session org so a forged id cannot APPROVE another tenant's pending write
   // (which would also fool that tenant's drift engine).
@@ -161,8 +161,8 @@ export async function approveWriteOff(formData: FormData) {
   const wo = await prisma.chairopsWriteOff.findFirst({
     where: { id: writeOffId, orgId },
   });
-  if (!wo) redirect(`/write-offs?error=${encodeURIComponent("ไม่พบรายการ")}`);
-  if (wo.status !== "PENDING") redirect(`/write-offs?error=${encodeURIComponent("รายการนี้ปิดไปแล้ว")}`);
+  if (!wo) redirect(`/chairops/write-offs?error=${encodeURIComponent("ไม่พบรายการ")}`);
+  if (wo.status !== "PENDING") redirect(`/chairops/write-offs?error=${encodeURIComponent("รายการนี้ปิดไปแล้ว")}`);
 
   // Privilege check: <500 needs MANAGER, >=500 needs CEO
   if (!canWriteOff(session.user, wo.amount)) {
@@ -173,7 +173,7 @@ export async function approveWriteOff(formData: FormData) {
     );
   }
   if (wo.makerId === session.user.id) {
-    redirect(`/write-offs?error=${encodeURIComponent("ห้ามอนุมัติ write-off ที่ตัวเองขอ (maker/checker)")}`);
+    redirect(`/chairops/write-offs?error=${encodeURIComponent("ห้ามอนุมัติ write-off ที่ตัวเองขอ (maker/checker)")}`);
   }
 
   // Wave-0 fix: approve + audit atomic. CEO 2026-06-02 P0 IDOR fix: composite
@@ -216,6 +216,9 @@ export async function approveWriteOff(formData: FormData) {
 
   revalidatePath("/chairops/write-offs");
   revalidatePath(`/chairops/reconcile/${wo.branchId}`);
+  // sidebar cumDrift + exec dashboard read the same drift → refresh both (P1-9)
+  revalidatePath("/chairops/reconcile");
+  revalidatePath("/chairops");
   redirect(`/chairops/write-offs?approved=${writeOffId}`);
 }
 
@@ -225,16 +228,16 @@ export async function rejectWriteOff(formData: FormData) {
   const session = await requireRole("OFFICE");
   const writeOffId = String(formData.get("writeOffId") ?? "");
   const reason = String(formData.get("reason") ?? "").trim();
-  if (!writeOffId) redirect(`/write-offs?error=${encodeURIComponent("missing id")}`);
-  if (reason.length < 3) redirect(`/write-offs?error=${encodeURIComponent("เหตุผลสั้นเกินไป")}`);
+  if (!writeOffId) redirect(`/chairops/write-offs?error=${encodeURIComponent("missing id")}`);
+  if (reason.length < 3) redirect(`/chairops/write-offs?error=${encodeURIComponent("เหตุผลสั้นเกินไป")}`);
 
   // CEO 2026-06-02 P0 IDOR fix · see approveWriteOff note.
   const orgId = session.user.orgId;
   const wo = await prisma.chairopsWriteOff.findFirst({
     where: { id: writeOffId, orgId },
   });
-  if (!wo) redirect(`/write-offs?error=${encodeURIComponent("ไม่พบรายการ")}`);
-  if (wo.status !== "PENDING") redirect(`/write-offs?error=${encodeURIComponent("ปิดไปแล้ว")}`);
+  if (!wo) redirect(`/chairops/write-offs?error=${encodeURIComponent("ไม่พบรายการ")}`);
+  if (wo.status !== "PENDING") redirect(`/chairops/write-offs?error=${encodeURIComponent("ปิดไปแล้ว")}`);
   if (!canWriteOff(session.user, wo.amount)) {
     redirect(
       `/chairops/write-offs?error=${encodeURIComponent(

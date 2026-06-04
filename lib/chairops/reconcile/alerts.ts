@@ -110,12 +110,15 @@ export async function ackAlert(
 
 export async function resolveAlert(
   alertId: string,
-  userId: string,
+  // _userId kept for signature parity with ackAlert; the resolver is recorded in
+  // the audit log (alert.resolve) — we must NOT overwrite ackedById here or the
+  // original acknowledger is lost (P1-10).
+  _userId: string,
   orgId: string,
   client: AlertClient = prisma,
 ) {
   return client.chairopsAlert.updateMany({
     where: { id: alertId, orgId },
-    data: { status: ChairopsAlertStatus.RESOLVED, ackedById: userId, resolvedAt: new Date() },
+    data: { status: ChairopsAlertStatus.RESOLVED, resolvedAt: new Date() },
   });
 }

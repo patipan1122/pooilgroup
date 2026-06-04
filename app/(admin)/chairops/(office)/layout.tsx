@@ -13,6 +13,7 @@
 // mockup (CEO "พื้นที่สีขาวเหลือเยอะ · ใช้เต็มพื้นที่").
 
 import { requireRole } from "@/lib/chairops/auth/session";
+import { OfficeBottomNav } from "./_components/office-bottom-nav";
 
 export const dynamic = "force-dynamic";
 
@@ -24,8 +25,10 @@ export default async function OfficeShellLayout({
   await requireRole("OFFICE");
 
   return (
-    <div className="co-scope chairops-scope min-h-[calc(100vh-3.5rem)] bg-muted/40 sm:min-h-[calc(100vh-4rem)]">
+    <div className="co-scope chairops-scope min-h-[calc(100vh-3.5rem)] bg-muted/40 pb-[calc(64px+env(safe-area-inset-bottom))] sm:min-h-[calc(100vh-4rem)] lg:pb-0">
       <main className="w-full px-4 py-5 sm:px-6 lg:px-8">{children}</main>
+      {/* แถบเมนูล่างเฉพาะมือถือ — desktop ใช้ sidebar เดิม */}
+      <OfficeBottomNav />
     </div>
   );
 }

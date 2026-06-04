@@ -51,6 +51,8 @@ export default async function MaidRouteGroupLayout({
     ? await prisma.chairopsCashCollection.count({
         where: {
           orgId: session.user.orgId,
+          // branchId so the badge matches the home "เงินค้าง" KPI exactly (P1-14)
+          branchId: session.user.primaryBranchId,
           maidId: session.user.id,
           depositId: null,
         },

@@ -18,6 +18,7 @@ import {
   Info,
 } from "lucide-react";
 import { baht } from "@/lib/chairops/utils/format";
+import { SlipBadge, DepositAmount } from "@/components/chairops/redesign/slip-viewer";
 import {
   ledgerCumClass,
   ledgerDiffClass,
@@ -328,7 +329,13 @@ export function LedgerTab({
                 style={{ fontWeight: 500 }}
               >
                 {d.deposit != null ? (
-                  fmtN(d.deposit)
+                  <DepositAmount
+                    amount={fmtN(d.deposit)}
+                    // d.slip is the literal "slip" placeholder when a collection
+                    // exists but carries no photo → pass null (not clickable).
+                    slipUrl={d.slip && d.slip !== "slip" ? d.slip : null}
+                    caption={`ฝาก ${fmtN(d.deposit)} ฿ · ${d.date}`}
+                  />
                 ) : (
                   <span className="text-muted">—</span>
                 )}
@@ -363,20 +370,11 @@ export function LedgerTab({
                 )}
               </td>
               <td>
-                {d.slip ? (
-                  <span className="rc-slip">
-                    <Paperclip size={11} aria-hidden="true" /> สลิป
-                  </span>
-                ) : d.hasCsvWithoutSlip ? (
-                  <span
-                    title="CSV import ยังไม่มี slipUrl"
-                    className="inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
-                  >
-                    ยังไม่มีสลิป
-                  </span>
-                ) : (
-                  <span className="text-muted">—</span>
-                )}
+                <SlipBadge
+                  url={d.slip}
+                  missing={!!d.hasCsvWithoutSlip}
+                  caption={`สลิปฝากเงิน · ${d.date}`}
+                />
               </td>
               <td className={"num mono co-drift " + ledgerDiffClass(d)}>
                 {d.collected ? (

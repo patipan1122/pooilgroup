@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notifyChannel } from "@/lib/chairops/line/messaging";
 import { baht, thaiDate, TZ } from "@/lib/chairops/utils/format";
+import { getBaseUrl } from "@/lib/utils/base-url";
 import { ChairopsAlertKind, ChairopsAlertLevel, ChairopsAlertStatus, ChairopsTicketStatus } from "@/lib/generated/prisma/enums";
 import { requireCronSecret } from "@/lib/chairops/auth/cron-secret";
 import { runWithMonitor } from "@/lib/cron/runner";
@@ -176,7 +177,13 @@ async function ceoDigestHandler(): Promise<NextResponse> {
   }
 
   const message = lines.join("\n");
-  const send = await notifyChannel("ceo", message);
+  // น้องแมวน้ำ hero image atop the daily digest — only when a real https base
+  // is resolvable (LINE can't fetch a localhost url in dev).
+  const base = getBaseUrl();
+  const sealImage = base.startsWith("https://")
+    ? `${base}/mascot/banner/seal-onsen.jpg`
+    : undefined;
+  const send = await notifyChannel("ceo", message, sealImage);
 
   return NextResponse.json({
     ok: true,

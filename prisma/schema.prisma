@@ -2484,6 +2484,13 @@ model ChairopsUser {
   role            ChairopsUserRole
   isActive        Boolean          @default(true)
   primaryBranchId String?
+  // Payroll / HR info (CEO 2026-06-03) — for future payroll runs. `phone`
+  // already exists above. Bank details + employment-contract attachment.
+  bankName         String?
+  bankAccountNo    String?
+  bankAccountName  String?
+  contractFileUrl  String?
+  contractFileName String?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -3130,6 +3137,49 @@ model ChairopsVendorBill {
   @@index([branchId, billPeriod(sort: Desc)])
   @@index([orgId, paidAt])
   @@map("chairops_vendor_bill")
+  @@schema("chairops")
+}
+
+// =============================================================
+// Google Drive backup (CEO 2026-06-03) — archive slips/contracts in the
+// CEO's free 2 TB Drive; keep R2 as the live copy for ~2 months then offload.
+// =============================================================
+model ChairopsDriveConnection {
+  id              String   @id @default(uuid())
+  orgId           String
+  refreshTokenEnc String // AES-256-GCM "iv:cipher:tag"
+  rootFolderId    String?
+  rootFolderName  String   @default("เก้าอี้นวด backup1")
+  driveEmail      String?
+  scopes          String?
+  connectedById   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([orgId])
+  @@schema("chairops")
+}
+
+model ChairopsDriveAsset {
+  id             String    @id @default(uuid())
+  orgId          String
+  category       String // contract | expense_slip | income_slip | other
+  periodYm       String // "YYYY-MM" folder bucket
+  r2Key          String? // null once offloaded
+  r2Url          String?
+  driveFileId    String
+  driveUrl       String // webViewLink (opens in Drive)
+  driveDirectUrl String? // uc?export=view inline link
+  fileName       String?
+  sizeBytes      Int?
+  sourceTable    String?
+  sourceId       String?
+  createdAt      DateTime  @default(now())
+  offloadedAt    DateTime?
+
+  @@index([orgId])
+  @@index([orgId, offloadedAt, createdAt])
+  @@index([sourceTable, sourceId])
   @@schema("chairops")
 }
 
@@ -4600,8 +4650,9 @@ model ZoneMargin {
   orgId       String      @map("org_id") @db.Uuid
   zoneName    String      @map("zone_name")
   productType ProductType @map("product_type")
-  baseMargin  Decimal     @map("base_margin") @db.Decimal(10, 4) // กำไรโซน ฿/ลิตร
-  minMargin   Decimal     @map("min_margin") @db.Decimal(10, 4) // กันขายต่ำกว่าทุน
+  transportCost Decimal   @default(0) @map("transport_cost") @db.Decimal(10, 4) // ค่าขนส่งคลัง→โซน ฿/ลิตร (แยกจากกำไร)
+  baseMargin  Decimal     @map("base_margin") @db.Decimal(10, 4) // กำไรโซน ฿/ลิตร (กำไรล้วน)
+  minMargin   Decimal     @map("min_margin") @db.Decimal(10, 4) // กำไรขั้นต่ำ (กันขายต่ำกว่าทุน+ขนส่ง)
   isActive    Boolean     @default(true) @map("is_active")
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
@@ -4614,11 +4665,28 @@ model ZoneMargin {
   @@schema("fuel")
 }
 
+// คลังน้ำมัน (config) — CEO มี 5 คลัง · ใช้แสดงต้นทุนทุกคลังในหน้าราคา
+model FuelDepot {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  name      String // ชื่อคลัง (เช่น PTT, บางจาก)
+  sort      Int      @default(0)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([orgId, name])
+  @@index([orgId, isActive])
+  @@map("depots")
+  @@schema("fuel")
+}
+
 // ---------- F5 CRM (1 group = 1 customer/company) ----------
 model Customer {
   id               String    @id @default(uuid()) @db.Uuid
   orgId            String    @map("org_id") @db.Uuid
   name             String // ชื่อเรียก
+  nickname         String? // ชื่อเล่น (เรียกตอนคุย/โทร)
   legalName        String?   @map("legal_name") // ชื่อนิติบุคคล (ออกใบ)
   taxId            String?   @map("tax_id")
   phone            String?
@@ -4696,6 +4764,28 @@ model FuelInboxChannel {
   conversations Conversation[]
 
   @@map("inbox_channels")
+  @@schema("fuel")
+}
+
+// แต่ละคน (LINE userId) ในกลุ่ม/แชท — เก็บชื่อจริงจาก LINE + รูปโปรไฟล์
+// + alias ที่พนักงานตั้งเอง (rename ได้ · ยังดูชื่อจริงได้) + ป้ายบทบาท (เถ้าแก่/บัญชี)
+// keyed (channelId, lineUserId) · ไม่มี relation เพื่อเลี่ยงแก้ Org/Channel (scope ด้วย orgId column)
+model FuelLineContact {
+  id          String    @id @default(uuid()) @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  channelId   String    @map("channel_id") @db.Uuid
+  lineUserId  String    @map("line_user_id")
+  displayName String?   @map("display_name") // ชื่อจริงจาก LINE (original · อ่านอย่างเดียว)
+  pictureUrl  String?   @map("picture_url") // รูปโปรไฟล์จาก LINE
+  alias       String? // ชื่อที่พนักงานตั้งเอง (rename)
+  roleLabel   String?   @map("role_label") // ป้าย เช่น เถ้าแก่ / บัญชี / จัดซื้อ
+  lastSeenAt  DateTime? @map("last_seen_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@unique([channelId, lineUserId])
+  @@index([orgId])
+  @@map("line_contacts")
   @@schema("fuel")
 }
 
@@ -4834,6 +4924,11 @@ model Order {
   totalProfit     Decimal     @default(0) @map("total_profit") @db.Decimal(15, 2)
   creditOverride  Boolean     @default(false) @map("credit_override") // ขายเกินวงเงิน (อนุมัติแล้ว)
   notes           String?
+  // TRCloud sync (ออก IV เข้า TRCloud ตอนยืนยันออเดอร์ · ลบตอนยกเลิก)
+  trcloudIvId     String?     @map("trcloud_iv_id") // id ของ IV ในระบบ TRCloud (ใช้ลบ)
+  trcloudIvNo     String?     @map("trcloud_iv_no") // เลขที่เอกสาร IV
+  trcloudSyncedAt DateTime?   @map("trcloud_synced_at")
+  trcloudError    String?     @map("trcloud_error") // ถ้าออก IV ไม่สำเร็จ เก็บ error ไว้ retry
   createdAt       DateTime    @default(now()) @map("created_at")
   updatedAt       DateTime    @updatedAt @map("updated_at")
 

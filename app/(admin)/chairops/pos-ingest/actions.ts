@@ -1421,7 +1421,7 @@ export async function cancelImport(importId: string) {
   });
   if (!imp) redirect("/chairops/pos-ingest");
   if (imp.committed) {
-    redirect(`/pos-ingest?error=${encodeURIComponent("commit แล้ว ยกเลิกไม่ได้")}`);
+    redirect(`/chairops/pos-ingest?error=${encodeURIComponent("commit แล้ว ยกเลิกไม่ได้")}`);
   }
   // deleteMany w/ composite key — TOCTOU-safe.
   await prisma.chairopsPosImport.deleteMany({

@@ -127,7 +127,7 @@ export async function requireAuth(): Promise<Session> {
 export async function requireRole(min: ChairopsUserRole): Promise<Session> {
   const session = await requireAuth();
   if (rankOf(session.user.role) < rankOf(min)) {
-    redirect("/chairops/dashboard?error=forbidden");
+    redirect("/chairops?error=forbidden");
   }
   return session;
 }
@@ -136,7 +136,7 @@ export async function requireRole(min: ChairopsUserRole): Promise<Session> {
 export async function requireExactRole(role: ChairopsUserRole): Promise<Session> {
   const session = await requireAuth();
   if (session.user.role !== role) {
-    redirect("/chairops/dashboard?error=forbidden");
+    redirect("/chairops?error=forbidden");
   }
   return session;
 }
@@ -145,7 +145,7 @@ export async function requireBranch(branchId: string): Promise<Session> {
   const session = await requireAuth();
   const { canSeeBranch } = await import("./role-guards");
   if (!canSeeBranch(session.user, branchId)) {
-    redirect("/chairops/dashboard?error=forbidden");
+    redirect("/chairops?error=forbidden");
   }
   return session;
 }

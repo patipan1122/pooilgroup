@@ -7,7 +7,7 @@ import { audit } from "@/lib/fuelos/audit";
 import { getPricingContext } from "@/lib/fuelos/pricing-data";
 import { PRODUCT_LABELS, PRODUCT_ORDER, computeSellPrice } from "@/lib/fuelos/pricing";
 import { formatNumber } from "@/lib/fuelos/utils/format";
-import { pushLineMessage, pushLineSticker } from "@/lib/fuelos/line";
+import { pushLineMessage, pushLineSticker, prefixStaffName } from "@/lib/fuelos/line";
 import type { ConvSegment } from "@/lib/generated/prisma/enums";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
@@ -36,7 +36,8 @@ export async function sendReply(convId: string, body: string) {
   const to = conv.lineGroupId ?? conv.externalUserId;
   if (token && to) {
     try {
-      const r = await pushLineMessage(token, to, text);
+      // ใส่ชื่อพนักงานนำหน้า (ตัวเลือก A ของ CEO) → ลูกค้าเห็นว่าใครคุย แม้ส่งในนาม OA
+      const r = await pushLineMessage(token, to, prefixStaffName(text, user.name));
       if (!r.ok) errorMessage = `ส่ง LINE ไม่สำเร็จ (HTTP ${r.status})`;
     } catch {
       errorMessage = "ส่ง LINE ไม่สำเร็จ (เครือข่าย)";
@@ -152,11 +153,54 @@ export async function todayPriceText(zone: string | null): Promise<string> {
   for (const p of PRODUCT_ORDER) {
     const cost = ctx.costs[p];
     if (cost == null) continue;
-    const zm = zone ? ctx.margins[zone]?.[p]?.base ?? 0.45 : 0.45;
-    lines.push(`${PRODUCT_LABELS[p]} = ${formatNumber(computeSellPrice({ costPerL: cost, zoneMargin: zm, salesMargin: 0 }))} บาท/ลิตร`);
+    const cell = zone ? ctx.margins[zone]?.[p] : undefined;
+    const zm = cell?.base ?? 0.45;
+    const tr = cell?.transport ?? 0;
+    lines.push(`${PRODUCT_LABELS[p]} = ${formatNumber(computeSellPrice({ costPerL: cost, transportCost: tr, zoneMargin: zm, salesMargin: 0 }))} บาท/ลิตร`);
   }
   lines.push("(ราคาส่งถึงหน้าโรง · สอบถามเพิ่มเติมได้เลยครับ)");
   return lines.join("\n");
+}
+
+// ผูก/ยกเลิกผูก แชท ↔ ลูกค้า — หลังบ้านล้วน (set conv.customerId เฉยๆ · ไม่ส่ง LINE · ลูกค้าไม่เห็น)
+export async function linkConversation(convId: string, customerId: string | null) {
+  const user = await requireUser();
+  await ownConv(user.orgId, convId);
+  if (customerId) {
+    const c = await prisma.customer.findFirst({ where: { id: customerId, orgId: user.orgId }, select: { id: true } });
+    if (!c) return { ok: false, error: "ไม่พบลูกค้าในองค์กร" };
+  }
+  await prisma.conversation.update({
+    where: { id: convId, orgId: user.orgId },
+    data: { customerId: customerId || null },
+  });
+  await audit({ orgId: user.orgId, userId: user.id, action: customerId ? "CONV_LINK_CUSTOMER" : "CONV_UNLINK_CUSTOMER", entity: "Conversation", entityId: convId, meta: { customerId } });
+  revalidatePath("/fuelos/inbox");
+  return { ok: true };
+}
+
+// ตั้งชื่อเล่น (alias) / ป้ายบทบาท ให้คนใน LINE — เปลี่ยนได้ แต่ชื่อจริง (displayName) ยังเก็บไว้ดู
+export async function updateContact(
+  convId: string,
+  lineUserId: string,
+  data: { alias?: string | null; roleLabel?: string | null },
+) {
+  const user = await requireUser();
+  const conv = await prisma.conversation.findFirst({
+    where: { id: convId, orgId: user.orgId },
+    select: { channelId: true },
+  });
+  if (!conv?.channelId) return { ok: false, error: "ไม่พบช่องทางของแชทนี้" };
+  const patch: Record<string, string | null> = {};
+  if ("alias" in data) patch.alias = (data.alias ?? "").trim() || null;
+  if ("roleLabel" in data) patch.roleLabel = (data.roleLabel ?? "").trim() || null;
+  await prisma.fuelLineContact.upsert({
+    where: { channelId_lineUserId: { channelId: conv.channelId, lineUserId } },
+    create: { orgId: user.orgId, channelId: conv.channelId, lineUserId, ...patch },
+    update: patch,
+  });
+  revalidatePath("/fuelos/inbox");
+  return { ok: true };
 }
 
 // F4 — ดึงเลขบัญชีโอน
