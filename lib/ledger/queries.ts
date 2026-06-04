@@ -11,7 +11,24 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/lib/generated/prisma/client";
-import type { Expense, ExpenseItem, ExpenseStatus, FieldConfidence } from "./types";
+import type {
+  Expense,
+  ExpenseAttachment,
+  ExpenseDocType,
+  ExpenseItem,
+  ExpenseStatus,
+  FieldConfidence,
+  PaymentStatus,
+} from "./types";
+
+/** Coerce the jsonb attachments column → typed array (tolerant of bad rows). */
+function attachmentsOf(v: unknown): ExpenseAttachment[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter(
+    (a): a is ExpenseAttachment =>
+      !!a && typeof a === "object" && typeof (a as ExpenseAttachment).url === "string",
+  );
+}
 
 // ---- Decimal/Date serialization (RSC-safe) ----
 type DecimalLike = { toNumber: () => number } | number | null | undefined;
@@ -63,6 +80,17 @@ export function serializeExpense(row: ExpenseRow): Expense {
     categoryId: row.categoryId,
     categoryName: row.category?.name ?? null,
     paymentMethod: row.paymentMethod,
+    docType: (row.docType as ExpenseDocType) ?? "tax_invoice",
+    vendorDocNumber: row.vendorDocNumber,
+    vendorAddress: row.vendorAddress,
+    vendorBranchCode: row.vendorBranchCode,
+    discount: dec(row.discount),
+    paymentStatus: (row.paymentStatus as PaymentStatus) ?? "paid",
+    claimantName: row.claimantName,
+    bankDetail: row.bankDetail,
+    isRecurring: row.isRecurring,
+    attachments: attachmentsOf(row.attachments),
+    driveWebUrl: row.driveWebUrl,
     originalUrl: row.originalUrl,
     thumbUrl: row.thumbUrl,
     sha256: row.sha256,
@@ -169,6 +197,13 @@ const EXPENSE_SUMMARY_SELECT = {
   total: true,
   categoryId: true,
   paymentMethod: true,
+  docType: true,
+  vendorDocNumber: true,
+  discount: true,
+  paymentStatus: true,
+  claimantName: true,
+  isRecurring: true,
+  driveWebUrl: true,
   originalUrl: true,
   thumbUrl: true,
   sha256: true,
@@ -209,6 +244,17 @@ function serializeExpenseSummary(row: ExpenseSummaryRow): Expense {
     categoryId: row.categoryId,
     categoryName: row.category?.name ?? null,
     paymentMethod: row.paymentMethod,
+    docType: (row.docType as ExpenseDocType) ?? "tax_invoice",
+    vendorDocNumber: row.vendorDocNumber,
+    vendorAddress: null, // not needed in the list — skipped
+    vendorBranchCode: null,
+    discount: dec(row.discount),
+    paymentStatus: (row.paymentStatus as PaymentStatus) ?? "paid",
+    claimantName: row.claimantName,
+    bankDetail: null,
+    isRecurring: row.isRecurring,
+    attachments: [], // not needed in the list — skipped
+    driveWebUrl: row.driveWebUrl,
     originalUrl: row.originalUrl,
     thumbUrl: row.thumbUrl,
     sha256: row.sha256,

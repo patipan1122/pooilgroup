@@ -39,6 +39,8 @@ const RECEIPT_PROMPT = `คุณเป็นผู้เชี่ยวชา�
 {
   "vendor": "<ชื่อร้าน/ผู้ขาย หรือ null>",
   "vendor_tax_id": "<เลขผู้เสียภาษี 13 หลัก หรือ null>",
+  "vendor_doc_number": "<เลขที่เอกสาร/เลขที่ใบกำกับภาษีของร้าน หรือ null>",
+  "vendor_address": "<ที่อยู่ผู้ขายแบบย่อ หรือ null>",
   "doc_date": "<วันที่ในเอกสาร YYYY-MM-DD หรือ null>",
   "subtotal": <ยอดก่อน VAT เป็น number ไม่มีคอมม่า หรือ null>,
   "vat": <ภาษีมูลค่าเพิ่ม เป็น number หรือ null>,
@@ -66,6 +68,8 @@ const RECEIPT_PROMPT = `คุณเป็นผู้เชี่ยวชา�
 interface RawParsed {
   vendor?: string | null;
   vendor_tax_id?: string | null;
+  vendor_doc_number?: string | null;
+  vendor_address?: string | null;
   doc_date?: string | null;
   subtotal?: number | null;
   vat?: number | null;
@@ -234,6 +238,8 @@ export async function parseReceipt(
   return {
     vendor: parsed.vendor?.trim() || null,
     vendorTaxId: parsed.vendor_tax_id?.replace(/\D/g, "") || null,
+    vendorDocNumber: parsed.vendor_doc_number?.trim() || null,
+    vendorAddress: parsed.vendor_address?.trim() || null,
     docDate: parsed.doc_date ?? null,
     subtotal: numOrNull(parsed.subtotal),
     vat: numOrNull(parsed.vat),

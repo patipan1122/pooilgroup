@@ -7,6 +7,14 @@
 export type ExpenseStatus = "draft" | "confirmed" | "locked" | "void";
 export type ExpenseSource = "line" | "web" | "email";
 
+export type ExpenseDocType =
+  | "tax_invoice" // ใบกำกับภาษี
+  | "receipt" // ใบเสร็จรับเงิน
+  | "cash_bill" // บิลเงินสด
+  | "delivery_note" // ใบส่งของ
+  | "other"; // อื่น ๆ
+export type PaymentStatus = "paid" | "unpaid" | "partial";
+
 /** One line item read off a receipt. */
 export interface ExpenseItem {
   id?: string;
@@ -15,6 +23,13 @@ export interface ExpenseItem {
   unitPrice: number;
   amount: number;
   vatRate?: number | null;
+}
+
+/** A PO / supporting-evidence file attached to an expense (Bainy section 4). */
+export interface ExpenseAttachment {
+  url: string;
+  kind: "po" | "evidence";
+  name?: string;
 }
 
 /** A single expense row, serialized for the UI. */
@@ -36,6 +51,18 @@ export interface Expense {
   categoryId: string | null;
   categoryName?: string | null;
   paymentMethod: string | null;
+  // — Bainy-parity fields —
+  docType: ExpenseDocType;
+  vendorDocNumber: string | null;
+  vendorAddress: string | null;
+  vendorBranchCode: string | null;
+  discount: number;
+  paymentStatus: PaymentStatus;
+  claimantName: string | null;
+  bankDetail: string | null;
+  isRecurring: boolean;
+  attachments: ExpenseAttachment[];
+  driveWebUrl?: string | null;
   originalUrl: string | null;
   thumbUrl: string | null;
   sha256: string | null;
@@ -77,6 +104,8 @@ export interface FieldConfidence {
 export interface ParsedReceipt {
   vendor: string | null;
   vendorTaxId: string | null;
+  vendorDocNumber?: string | null; // เลขที่เอกสารของผู้ขาย (invoice no.)
+  vendorAddress?: string | null; // ที่อยู่ผู้ขาย
   docDate: string | null; // YYYY-MM-DD
   subtotal: number | null;
   vat: number | null;

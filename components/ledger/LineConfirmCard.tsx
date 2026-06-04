@@ -128,28 +128,43 @@ type FlexButton = {
 type FlexSeparator = { type: "separator"; margin?: string; color?: string };
 type FlexComponent = FlexText | FlexBox | FlexButton | FlexSeparator | FlexImage;
 
-// Brand art lives in public/ledger/brand/ (CEO-swappable). LINE needs ABSOLUTE
-// https URLs for flex images, so we build them from the webhook's baseUrl and
-// only show the mascot/logo when we have one (relative URLs would silently fail
-// to render in LINE). SVG is fine for LINE flex `image`.
-// Mascot "JP" (น้องใบเสร็จ) — the cheerful blue-purple monster, generated +
-// cut to transparent in public/ledger/brand/mascot/. The confirm card greets
-// the staffer with the "receipt" pose (holding a receipt + thumbs up).
-const BRAND_PATH = {
-  mascot: "/ledger/brand/mascot/receipt-sm.png",
-  logo: "/ledger/brand/logo.svg",
-} as const;
+// Brand art lives in public/ledger/brand/mascot/ (CEO-swappable). LINE needs
+// ABSOLUTE https URLs for flex images, built from the webhook's baseUrl; we only
+// show the mascot when we have one (relative URLs silently fail to render in
+// LINE). Mascot "JP" (น้องใบเสร็จ) ships ~10 emotion poses (sticker-style) —
+// the card picks the pose that matches the result, like a LINE sticker reacting:
+//   • needs review / low confidence → "confused" (raised brow)
+//   • all good                      → "celebrate" (thumbs up / OK)
+//   • multi-receipt summary         → "money" (juggling receipts)
+const MASCOT_DIR = "/ledger/brand/mascot";
+type MascotPose =
+  | "receipt" | "celebrate" | "confused" | "alert" | "money"
+  | "camera" | "explain" | "welcome" | "typing" | "sleepy";
+function mascotPath(pose: MascotPose): string {
+  return `${MASCOT_DIR}/${pose}-sm.png`;
+}
+/** Pick the pose that matches a single card's state (sticker-like reaction). */
+function poseForState(needsReview: boolean | undefined, lowConf: number | null): MascotPose {
+  if (needsReview) return "confused";
+  if (lowConf != null && lowConf < 0.6) return "alert";
+  return "celebrate";
+}
 
+export interface FlexBubble {
+  type: "bubble";
+  size?: "nano" | "micro" | "kilo" | "mega" | "giga";
+  header?: FlexBox;
+  body: FlexBox;
+  footer?: FlexBox;
+}
+export interface FlexCarousel {
+  type: "carousel";
+  contents: FlexBubble[];
+}
 export interface LineFlexMessage {
   type: "flex";
   altText: string;
-  contents: {
-    type: "bubble";
-    size?: "nano" | "micro" | "kilo" | "mega" | "giga";
-    header?: FlexBox;
-    body: FlexBox;
-    footer?: FlexBox;
-  };
+  contents: FlexBubble | FlexCarousel;
 }
 
 const COLOR = {
@@ -248,7 +263,11 @@ function fieldRow(label: string, value: string, conf?: number): FlexBox {
  * Per the GOLDEN RULE, even the "ยืนยัน" action only OPENS / routes the confirm
  * flow to an accountant — it never auto-posts the expense.
  */
-export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMessage {
+/**
+ * Build a single confirm BUBBLE (used standalone by buildLineConfirmCard or as
+ * one slide of a multi-receipt carousel).
+ */
+export function buildConfirmBubble(input: LedgerConfirmCardInput): FlexBubble {
   const {
     expenseId,
     companyId,
@@ -269,6 +288,7 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
 
   const base = baseUrl.replace(/\/+$/, "");
   const payment = fmtPayment(paymentMethod);
+  const lowConf = lowestConfidence(confidence);
   // The web review pane path (pin the company so a multi-company org opens the
   // right one, then select the expense).
   const webPath = `/ledger/expenses?${
@@ -281,7 +301,8 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
     ? `https://liff.line.me/${liffId}?next=${encodeURIComponent(webPath)}`
     : `${base}${webPath}`;
   // Absolute brand URLs (LINE flex images must be https). Only when baseUrl set.
-  const mascotUrl = base ? `${base}${BRAND_PATH.mascot}` : null;
+  // Pose reacts to the result like a sticker — celebrate / alert / confused.
+  const mascotUrl = base ? `${base}${mascotPath(poseForState(needsReview, lowConf))}` : null;
 
   // Button actions: postback (act inside LINE) or URI (open the web review pane).
   // Either way confirm is an explicit human tap that routes to the accountant
@@ -344,7 +365,6 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
   ];
 
   // Recheck / low-confidence banner.
-  const lowConf = lowestConfidence(confidence);
   if (needsReview) {
     bodyContents.push({
       type: "box",
@@ -387,9 +407,6 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
   }
 
   return {
-    type: "flex",
-    altText: `บันทึกแล้ว ${docCode} · ${fmtTHB(total)} — กดยืนยัน/แก้ไข`,
-    contents: {
       type: "bubble",
       size: "kilo",
       // Friendly header — น้องใบเสร็จ (mascot avatar) greets the staffer next to
@@ -468,6 +485,113 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
           },
         ],
       },
+  };
+}
+
+/**
+ * Build the "บันทึกแล้ว — ยืนยัน/แก้ไข" flex MESSAGE (single receipt). Wraps one
+ * bubble. See buildConfirmBubble for the per-field logic.
+ */
+export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMessage {
+  return {
+    type: "flex",
+    altText: `บันทึกแล้ว ${input.docCode} · ${fmtTHB(input.total)} — กดยืนยัน/แก้ไข`,
+    contents: buildConfirmBubble(input),
+  };
+}
+
+/**
+ * Build a multi-receipt CAROUSEL — used when a staffer drops several photos in
+ * one burst. A leading "summary" bubble shows the count + combined total (น้อง
+ * ใบเสร็จ celebrating), followed by ONE bubble per receipt (each independently
+ * editable via its own ยืนยัน/แก้ไข buttons). LINE caps a carousel at 12 bubbles,
+ * so with ≥12 receipts we keep the summary + the first 11 (the rest are still
+ * saved as drafts and visible on the web pane; the summary notes the overflow).
+ *
+ * A single-card input returns the same as buildLineConfirmCard (no summary
+ * bubble) so the common 1-receipt path stays clean.
+ */
+export function buildLineConfirmCarousel(cards: LedgerConfirmCardInput[]): LineFlexMessage {
+  if (cards.length <= 1) {
+    return buildLineConfirmCard(
+      cards[0] ?? ({ expenseId: "", companyId: "", docCode: "-", total: 0 } as LedgerConfirmCardInput),
+    );
+  }
+
+  const baseUrl = (cards[0]?.baseUrl ?? "").replace(/\/+$/, "");
+  const combined = cards.reduce((s, c) => s + (Number.isFinite(c.total) ? c.total : 0), 0);
+  const flagged = cards.filter((c) => c.needsReview).length;
+  const MAX = 12; // LINE carousel cap (incl. summary bubble)
+  const shown = cards.slice(0, MAX - 1);
+  const overflow = cards.length - shown.length;
+
+  const summaryMascot = baseUrl ? `${baseUrl}${mascotPath("money")}` : null;
+  const summaryBubble: FlexBubble = {
+    type: "bubble",
+    size: "kilo",
+    header: {
+      type: "box",
+      layout: "horizontal",
+      paddingAll: "16px",
+      spacing: "md",
+      alignItems: "center",
+      backgroundColor: "#EFF4FF",
+      contents: [
+        ...(summaryMascot
+          ? ([{ type: "image", url: summaryMascot, size: "sm", aspectMode: "fit", aspectRatio: "1:1", flex: 0 } as FlexImage] as FlexComponent[])
+          : []),
+        {
+          type: "box",
+          layout: "vertical",
+          flex: 1,
+          spacing: "none",
+          contents: [
+            { type: "text", text: `บันทึกให้ ${cards.length} ใบ`, size: "md", weight: "bold", color: COLOR.ink, wrap: true },
+            { type: "text", text: "ปัดดูแต่ละใบ แล้วกดแก้ไขได้เลย →", size: "xs", color: COLOR.sub, margin: "xs" },
+          ],
+        },
+      ],
+    },
+    body: {
+      type: "box",
+      layout: "vertical",
+      paddingAll: "16px",
+      contents: [
+        { type: "text", text: "ยอดรวมทั้งหมด", size: "xs", color: COLOR.sub },
+        { type: "text", text: fmtTHB(combined), size: "xxl", weight: "bold", color: COLOR.ink },
+        { type: "separator", margin: "lg", color: COLOR.line },
+        {
+          type: "box",
+          layout: "vertical",
+          margin: "lg",
+          spacing: "sm",
+          contents: [
+            fieldRow("จำนวนใบเสร็จ", `${cards.length} ใบ`),
+            ...(flagged > 0 ? [fieldRow("ต้องตรวจ", `${flagged} ใบ`)] : []),
+            ...(overflow > 0 ? [fieldRow("เกินที่แสดง", `อีก ${overflow} ใบ (ดูบนเว็บ)`)] : []),
+          ],
+        },
+        ...(flagged > 0
+          ? ([{
+              type: "box",
+              layout: "vertical",
+              margin: "lg",
+              paddingAll: "10px",
+              cornerRadius: "8px",
+              backgroundColor: COLOR.warnBg,
+              contents: [{ type: "text", text: `⚠️ มี ${flagged} ใบที่ควรตรวจเลขก่อนยืนยัน`, size: "sm", weight: "bold", color: COLOR.warn, wrap: true }],
+            }] as FlexComponent[])
+          : []),
+      ],
+    },
+  };
+
+  return {
+    type: "flex",
+    altText: `บันทึกให้ ${cards.length} ใบ · รวม ${fmtTHB(combined)} — ปัดดูแล้วกดแก้ไขได้`,
+    contents: {
+      type: "carousel",
+      contents: [summaryBubble, ...shown.map(buildConfirmBubble)],
     },
   };
 }

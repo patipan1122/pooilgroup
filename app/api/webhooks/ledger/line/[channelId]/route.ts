@@ -23,6 +23,7 @@ import { findRecentAmountDuplicate } from "@/lib/ledger/dedup";
 import { handleLedgerCommand } from "@/lib/ledger/line-commands";
 import { archiveReceiptToDrive, isDriveConfigured } from "@/lib/ledger/drive";
 import { buildLineConfirmCard, type LineFlexMessage } from "@/components/ledger/LineConfirmCard";
+import { openOrAppendBatch, flushBatchAfterQuiet } from "@/lib/ledger/capture-batch";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
 
 export const dynamic = "force-dynamic";
@@ -112,6 +113,22 @@ export async function POST(
 
   // Fast 200 — process after the response.
   after(async () => {
+    // Multi-image: photos sent in a burst land as separate events; each schedules
+    // a debounced flush that, once the burst is quiet, sends ONE carousel.
+    const pendingFlushes: Promise<void>[] = [];
+    const flushDeps = {
+      baseUrl,
+      liffId: ledgerLiffId,
+      replyFlex: (token: string, msg: LineFlexMessage) =>
+        accessToken
+          ? replyFlex(accessToken, token, msg).then(() => true).catch(() => false)
+          : Promise.resolve(false),
+      pushFlex: (to: string, msg: LineFlexMessage) =>
+        accessToken
+          ? pushFlex(accessToken, to, msg).then(() => true).catch(() => false)
+          : Promise.resolve(false),
+    };
+
     for (const ev of body.events ?? []) {
       if (ev.type !== "message") continue;
 
@@ -301,7 +318,24 @@ export async function POST(
           parsed = null;
         }
 
-        // 3. Create a DRAFT (never auto-post) via the SESSION-LESS system path.
+        // 3. Group this photo into a capture batch (so a burst of 4-5 receipts
+        //    becomes ONE carousel). groupKey = where to send the summary.
+        const groupKey = ev.source?.groupId ?? ev.source?.userId ?? null;
+        const sourceType: "group" | "user" =
+          ev.source?.type === "group" ? "group" : "user";
+        let batch: { batchId: string; isFirst: boolean } | null = null;
+        if (groupKey) {
+          batch = await openOrAppendBatch({
+            orgId: ch.orgId,
+            companyId: ch.companyId,
+            channelRowId: ch.id,
+            groupKey,
+            sourceType,
+            replyToken: ev.replyToken ?? null,
+          }).catch(() => null);
+        }
+
+        // 4. Create a DRAFT (never auto-post) via the SESSION-LESS system path.
         //    org scope = the trusted ledger_line_channel row (ch.orgId), NOT a
         //    user session. createdById null → shows as machine-ingested.
         const res = await createDraftExpenseSystem(ch.orgId, {
@@ -310,6 +344,8 @@ export async function POST(
           branchId: ch.branchId ?? null, // group = branch auto-tag
           vendor: parsed?.vendor ?? null,
           vendorTaxId: parsed?.vendorTaxId ?? null,
+          vendorDocNumber: parsed?.vendorDocNumber ?? null,
+          vendorAddress: parsed?.vendorAddress ?? null,
           docDate: parsed?.docDate ?? null,
           subtotal: parsed?.subtotal ?? 0,
           vat: parsed?.vat ?? 0,
@@ -322,14 +358,16 @@ export async function POST(
           ocrModel: parsed?.ocrModel ?? null,
           ocrConfidence: parsed?.confidence ?? null,
           items: parsed?.items ?? [],
+          captureBatchId: batch?.batchId ?? null,
           createdById: null,
         });
 
-        // 4. Reply with the rich "บันทึกแล้ว — ยืนยัน/แก้ไข" flex card (Bainy-style).
-        //    On success → flex card (deep-links open the review pane through the
-        //    ledger LIFF). On failure → plain-text nudge. GOLDEN RULE intact: the
-        //    card's buttons only OPEN the pane; the accountant confirms on web.
-        if (ev.replyToken) {
+        // 5. Fast feedback: the FIRST photo of a batch (or any photo when we
+        //    couldn't open a batch) gets an immediate single card via reply. If
+        //    more photos join, the debounced flush sends a consolidated carousel.
+        //    GOLDEN RULE intact: the card's buttons only OPEN the web pane.
+        const replyInline = !batch || batch.isFirst;
+        if (ev.replyToken && replyInline) {
           if (res.ok) {
             const card = buildLineConfirmCard({
               expenseId: res.data.id,
@@ -357,7 +395,12 @@ export async function POST(
             ).catch((e) => console.error("[ledger:line-webhook] reply failed", e));
           }
         }
-        // 5. Archive the ORIGINAL to Google Drive (เดือน/สาขา/หมวด), best-effort,
+
+        // 6. Schedule the debounced carousel flush (sends only if ≥2 photos).
+        if (batch && res.ok) {
+          pendingFlushes.push(flushBatchAfterQuiet(batch.batchId, flushDeps));
+        }
+        // 7. Archive the ORIGINAL to Google Drive (เดือน/สาขา/หมวด), best-effort,
         //    AFTER the reply (card stays fast). The image stays on R2 as the fast
         //    thumb; the Drive link is the shareable original for the accountant.
         if (res.ok && imgBytes && isDriveConfigured()) {
@@ -400,6 +443,10 @@ export async function POST(
         console.error("[ledger:line-webhook] process failed", e);
       }
     }
+
+    // Wait for all debounced carousel flushes (each ~3.3s) before the function
+    // exits, so a multi-photo burst always sends its summary card.
+    if (pendingFlushes.length) await Promise.allSettled(pendingFlushes);
   });
 
   return NextResponse.json({ ok: true });
@@ -439,6 +486,23 @@ async function replyFlex(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ replyToken, messages: [flex] }),
+    signal: AbortSignal.timeout(3000),
+  });
+}
+
+/** Best-effort LINE push (to a group/user) with a flex message — carousel flush. */
+async function pushFlex(
+  accessToken: string,
+  to: string,
+  flex: LineFlexMessage,
+): Promise<void> {
+  await fetch("https://api.line.me/v2/bot/message/push", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ to, messages: [flex] }),
     signal: AbortSignal.timeout(3000),
   });
 }

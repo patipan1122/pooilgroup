@@ -22,7 +22,15 @@ import { audit } from "@/lib/audit/log";
 import type { DbUser } from "@/lib/auth/session";
 import { recheckReceipt } from "./recheck";
 import { serializeExpense } from "./queries";
-import type { ExpenseItem, ExpenseSource, FieldConfidence } from "./types";
+import type {
+  ExpenseAttachment,
+  ExpenseDocType,
+  ExpenseItem,
+  ExpenseSource,
+  FieldConfidence,
+  PaymentStatus,
+} from "./types";
+import type { Prisma } from "@/lib/generated/prisma/client";
 
 type Result<T = void> =
   | (T extends void ? { ok: true } : { ok: true; data: T })
@@ -76,6 +84,19 @@ export interface CreateDraftInput {
   ocrConfidence?: FieldConfidence | null;
   note?: string | null;
   items?: ExpenseItem[];
+  // — Bainy-parity fields —
+  docType?: ExpenseDocType;
+  vendorDocNumber?: string | null;
+  vendorAddress?: string | null;
+  vendorBranchCode?: string | null;
+  discount?: number;
+  paymentStatus?: PaymentStatus;
+  claimantName?: string | null;
+  bankDetail?: string | null;
+  isRecurring?: boolean;
+  attachments?: ExpenseAttachment[] | null;
+  /** groups several receipts sent together → ONE LINE summary carousel. */
+  captureBatchId?: string | null;
   /** override the created_by user (e.g. LINE webhook ingest on behalf of staff). */
   createdById?: string | null;
 }
@@ -187,6 +208,17 @@ async function createDraftExpenseCore(
         total: input.total ?? 0,
         categoryId: input.categoryId ?? null,
         paymentMethod: input.paymentMethod ?? null,
+        docType: input.docType ?? "tax_invoice",
+        vendorDocNumber: input.vendorDocNumber ?? null,
+        vendorAddress: input.vendorAddress ?? null,
+        vendorBranchCode: input.vendorBranchCode ?? null,
+        discount: input.discount ?? 0,
+        paymentStatus: input.paymentStatus ?? "paid",
+        claimantName: input.claimantName ?? null,
+        bankDetail: input.bankDetail ?? null,
+        isRecurring: input.isRecurring ?? false,
+        attachments: (input.attachments ?? undefined) as Prisma.InputJsonValue | undefined,
+        captureBatchId: input.captureBatchId ?? null,
         originalUrl: input.originalUrl ?? null,
         thumbUrl: input.thumbUrl ?? null,
         sha256: input.sha256 ?? null,
@@ -266,6 +298,17 @@ export interface UpdateExpenseInput {
   note?: string | null;
   branchId?: string | null;
   items?: ExpenseItem[]; // when provided, replaces existing items
+  // — Bainy-parity fields —
+  docType?: ExpenseDocType;
+  vendorDocNumber?: string | null;
+  vendorAddress?: string | null;
+  vendorBranchCode?: string | null;
+  discount?: number;
+  paymentStatus?: PaymentStatus;
+  claimantName?: string | null;
+  bankDetail?: string | null;
+  isRecurring?: boolean;
+  attachments?: ExpenseAttachment[] | null;
 }
 
 /**
@@ -331,6 +374,19 @@ export async function updateExpense(
           paymentMethod: input.paymentMethod ?? undefined,
           note: input.note ?? undefined,
           branchId: input.branchId === undefined ? undefined : input.branchId,
+          docType: input.docType ?? undefined,
+          vendorDocNumber: input.vendorDocNumber === undefined ? undefined : input.vendorDocNumber,
+          vendorAddress: input.vendorAddress === undefined ? undefined : input.vendorAddress,
+          vendorBranchCode: input.vendorBranchCode === undefined ? undefined : input.vendorBranchCode,
+          discount: input.discount ?? undefined,
+          paymentStatus: input.paymentStatus ?? undefined,
+          claimantName: input.claimantName === undefined ? undefined : input.claimantName,
+          bankDetail: input.bankDetail === undefined ? undefined : input.bankDetail,
+          isRecurring: input.isRecurring ?? undefined,
+          attachments:
+            input.attachments === undefined
+              ? undefined
+              : ((input.attachments ?? []) as unknown as Prisma.InputJsonValue),
           needsReview: input.items || input.subtotal != null || input.total != null ? !recheck.ok : undefined,
           items:
             input.items && input.items.length > 0

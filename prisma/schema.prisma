@@ -5173,6 +5173,18 @@ model LedgerExpense {
   slipRef       String?             @map("slip_ref") // SlipOK ref (Phase 2)
   needsReview   Boolean             @default(true) @map("needs_review")
   note          String?
+  // — Bainy-parity edit-form fields (Phase 3) —
+  docType          String  @default("tax_invoice") @map("doc_type") // ใบกำกับภาษี/ใบเสร็จ/บิลเงินสด/ใบส่งของ/อื่นๆ
+  vendorDocNumber  String? @map("vendor_doc_number") // เลขที่เอกสารของผู้ขาย (≠ doc_code ภายใน)
+  vendorAddress    String? @map("vendor_address")
+  vendorBranchCode String? @map("vendor_branch_code")
+  discount         Decimal @default(0) @db.Decimal(15, 2) // ส่วนลด
+  paymentStatus    String  @default("paid") @map("payment_status") // paid | unpaid | partial
+  claimantName     String? @map("claimant_name") // ผู้เบิก
+  bankDetail       String? @map("bank_detail")
+  isRecurring      Boolean @default(false) @map("is_recurring") // รายจ่ายประจำ
+  attachments      Json? // [{url,kind:'po'|'evidence',name}] PO + หลักฐานเพิ่มเติม
+  captureBatchId   String? @map("capture_batch_id") @db.Uuid // groups receipts sent together
   createdBy     String?             @map("created_by") @db.Uuid
   confirmedBy   String?             @map("confirmed_by") @db.Uuid
   confirmedAt   DateTime?           @map("confirmed_at") @db.Timestamptz(6)
@@ -5193,7 +5205,29 @@ model LedgerExpense {
   @@index([orgId, companyId, categoryId])
   @@index([sha256]) // dedup lookup
   @@index([exportBatchId])
+  @@index([captureBatchId])
   @@map("ledger_expense")
+  @@schema("public")
+}
+
+// Debounced multi-image buffer: a burst of receipt photos (album) lands as
+// separate webhook events → grouped here → ONE LINE carousel after ~3s quiet.
+model LedgerCaptureBatch {
+  id           String    @id @default(uuid()) @db.Uuid
+  orgId        String    @map("org_id") @db.Uuid
+  companyId    String    @map("company_id") @db.Uuid
+  channelRowId String    @map("channel_row_id") @db.Uuid
+  groupKey     String    @map("group_key") // groupId (group) or userId (1:1)
+  sourceType   String    @default("group") @map("source_type") // 'group' | 'user'
+  replyToken   String?   @map("reply_token") // freshest LINE replyToken
+  status       String    @default("open") // 'open' | 'sent'
+  count        Int       @default(0)
+  lastEventAt  DateTime  @default(now()) @map("last_event_at") @db.Timestamptz(6)
+  sentAt       DateTime? @map("sent_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([channelRowId, groupKey, status, lastEventAt])
+  @@map("ledger_capture_batch")
   @@schema("public")
 }
 
