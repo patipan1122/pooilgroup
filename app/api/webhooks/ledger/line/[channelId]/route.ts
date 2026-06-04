@@ -20,6 +20,7 @@ import { sha256Hex } from "@/lib/ledger/storage";
 import { answerQuestion } from "@/lib/ledger/qa";
 import { parseExpenseText, stripJodTrigger } from "@/lib/ledger/parse-text";
 import { findRecentAmountDuplicate } from "@/lib/ledger/dedup";
+import { handleLedgerCommand } from "@/lib/ledger/line-commands";
 import { archiveReceiptToDrive, isDriveConfigured } from "@/lib/ledger/drive";
 import { buildLineConfirmCard, type LineFlexMessage } from "@/components/ledger/LineConfirmCard";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
@@ -131,6 +132,27 @@ export async function POST(
       // the DB; the receipt-image path below is unaffected.
       if (ev.message?.type === "text" && ev.message.text?.trim()) {
         const text = ev.message.text.trim();
+
+        // --- commands first: /help · /menu · /guide · วิธีใช้ · /setting (admin) ---
+        if (text.startsWith("/") || text === "วิธีใช้") {
+          try {
+            const cmdReply = await handleLedgerCommand(text, {
+              orgId: ch.orgId,
+              companyId: ch.companyId,
+              channelRowId: ch.id,
+              branchId: ch.branchId,
+              senderLineUserId: ev.source?.userId ?? null,
+            });
+            if (cmdReply !== null) {
+              if (ev.replyToken && accessToken)
+                await replyText(accessToken, ev.replyToken, cmdReply).catch(() => {});
+              continue;
+            }
+          } catch (e) {
+            console.error("[ledger:line-webhook] command failed", e);
+          }
+        }
+
         const note = stripJodTrigger(text);
 
         // --- "จด ..." → record an expense draft. AI fires ONLY on this trigger
