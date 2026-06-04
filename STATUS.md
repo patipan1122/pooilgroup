@@ -4,6 +4,23 @@
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
+## 🆕 Update (2026-06-04 — LedgerLine: ครบประสบการณ์ LINE แบบ Bainy (Phase 2+3) · build GREEN · ยังไม่ deploy)
+
+**Goal CEO (`/goal`):** ทำส่วนที่เหลือของ "ระบบบัญชี" ให้จบ + Drive (เดือน→สาขา→หมวด) + มาสคอตแสดงอารมณ์ + การ์ดหลายรูปแก้ทีละใบ + ฟอร์มแก้ละเอียด + ฟังก์ชันในกลุ่ม LINE.
+
+**สร้างเสร็จบน branch `claude/ledger-line-bainy-parity` (tsc 0 · eslint 0 · `next build` GREEN · commits 025f51c→…):**
+1. **หลายรูป → การ์ดเดียว** — burst 4-5 ใบรวมเป็น LINE carousel (สรุป + ทีละใบกดแก้ได้) · debounce 3.3s + atomic claim (ส่งครั้งเดียว) · ตาราง `ledger_capture_batch`. รูปเดียวยังตอบไวเหมือนเดิม.
+2. **ฟอร์มแก้แบบ Bainy 4 ส่วน** — ร้าน/เอกสาร (ประเภท·เลขที่·ที่อยู่·สาขา) · รายการ+ยอด (แก้ line items·ส่วนลด·VAT) · ชำระเงิน/ผู้เบิก (สถานะจ่าย·ธนาคาร·รายจ่ายประจำ) · หมายเหตุ/หลักฐาน. +11 คอลัมน์ Bainy บน `ledger_expense` + ai-parse อ่านเลขที่/ที่อยู่ร้านเพิ่ม.
+3. **Rich Menu** 6 ปุ่ม — `/api/ledger/richmenu/register` + ปุ่มใน /ledger/settings (decrypt token จาก DB).
+4. **ลิงก์เชิญกำหนดสิทธิ์ (M7)** — createLedgerInvite + InviteManager UI + `/api/ledger/invite/accept` (verify LINE id_token → scoped member) + `/liff/ledger/join`.
+5. **สรุปรายวัน + เตือนงบ** — `/api/ledger/cron/daily-digest` DM หา บัญชี/แอดมิน (ไม่เข้ากลุ่มสาขา) · cron 19:30 ไทย.
+6. **Google Drive** — sync ต้นฉบับ เดือน→สาขา→หมวด ทั้ง LINE + web/LIFF + ปุ่ม manual ในเว็บ (`/api/ledger/drive/sync`) · no-op ถ้า env ยังไม่ตั้ง.
+7. **มาสคอตน้องใบเสร็จ** — pose ตามผล (celebrate/alert/confused/money) บนการ์ด+เว็บ+join (10 ท่ามีอยู่แล้ว).
+
+**ตรวจคุณภาพ:** prod build GREEN (11 ledger routes compile) + 5-agent adversarial static review (no confirmed findings) + maxDuration=30 บน webhook (กัน flush โดน kill).
+
+**⛔ CEO-GATED ก่อน live (ดู `docs/LEDGER_LINE_SETUP.md`):** (1) apply migration `20260603210000` + `20260604120000` ที่ prod · (2) อนุมัติ deploy (merge→setup, fetch+merge origin/setup ก่อนตาม trap memory) · (3) กดตั้ง Rich Menu ใน settings · (4) (ถ้าจะใช้ Drive) ตั้ง 4 LEDGER_DRIVE_* env · (5) เชิญพนักงาน · (6) rotate secret ที่พิมพ์ในแชท.
+
 ## 🆕 Update (2026-06-03 — LedgerLine: หน้า "เชื่อมต่อ LINE" ใช้ได้จริง (แก้ webhook 308))
 
 **ปัญหา CEO:** LINE Developers ฟ้อง `308 Permanent Redirect` ตอน Verify webhook `…/api/webhooks/ledger/line/`.

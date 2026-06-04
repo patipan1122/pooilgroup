@@ -28,6 +28,11 @@ import { getRequestBaseUrl } from "@/lib/utils/base-url";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+// AI parse (~2-4s) + the debounced multi-image carousel flush (~3.3s sleep in
+// after()) can run ~8s — give the function headroom so the flush isn't killed
+// mid-sleep on a multi-photo burst (the inline single-photo reply already went
+// out before the sleep, so single captures are unaffected even if this were low).
+export const maxDuration = 30;
 
 interface LineEvent {
   type: string;
