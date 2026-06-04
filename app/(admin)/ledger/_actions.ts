@@ -17,10 +17,12 @@
 //   5. Audit — confirm/void/export write a LEDGER_* audit row (the financial
 //      "post" event must leave a trail for the auditor / TRCloud reconciliation).
 
+import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/lib/generated/prisma/client";
+import { liffIdForModule } from "@/lib/line/channels";
 import { requireSession, type DbUser } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { userHasModuleAccess } from "@/lib/auth/module-access";
@@ -800,6 +802,94 @@ export async function toggleLineChannel(
   await prisma.ledgerLineChannel.updateMany({
     where: { orgId: session.user.org_id, companyId },
     data: { active },
+  });
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
+// ── Scoped LINE invites (M7) ────────────────────────────────────────────────
+// CEO model: invite a person with a link that pins WHICH branches/categories
+// they oversee. Opening the link (inside the LedgerLine LIFF) verifies their
+// LINE id and creates a scoped ledger_line_member. Admin-tier creates/revokes.
+
+const inviteSchema = z.object({
+  companyId: z.string().trim().min(1),
+  role: z.enum(["staff", "accountant", "admin"]).default("staff"),
+  scopeBranchIds: z.array(z.string().trim().min(1)).max(200).optional(),
+  scopeCategoryIds: z.array(z.string().trim().min(1)).max(200).optional(),
+  note: z.string().trim().max(200).optional(),
+  expiresInDays: z.coerce.number().int().min(1).max(365).optional(),
+});
+
+/** Build the shareable invite link (opens the LedgerLine LIFF → /liff/ledger/join). */
+function inviteUrl(token: string): string {
+  const liffId = liffIdForModule("ledger");
+  const next = `/liff/ledger/join?invite=${token}`;
+  return liffId
+    ? `https://liff.line.me/${liffId}?next=${encodeURIComponent(next)}`
+    : next;
+}
+
+export async function createLedgerInvite(
+  raw: unknown,
+): Promise<ActionResult & { token?: string; url?: string }> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลสร้างคำเชิญได้" };
+  }
+  const parsed = inviteSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "ข้อมูลคำเชิญไม่ถูกต้อง" };
+  const p = parsed.data;
+
+  // Company must belong to the org (don't trust the client id).
+  const company = await prisma.company.findFirst({
+    where: { id: p.companyId, orgId: session.user.org_id },
+    select: { id: true },
+  });
+  if (!company) return { ok: false, error: "ไม่พบบริษัท" };
+
+  const token = randomBytes(18).toString("base64url");
+  const expiresAt = p.expiresInDays
+    ? new Date(Date.now() + p.expiresInDays * 86400_000)
+    : null;
+
+  await prisma.ledgerLineInvite.create({
+    data: {
+      orgId: session.user.org_id,
+      companyId: p.companyId,
+      token,
+      role: p.role,
+      scopeBranchIds: p.scopeBranchIds ?? [],
+      scopeCategoryIds: p.scopeCategoryIds ?? [],
+      note: p.note || null,
+      expiresAt,
+      createdBy: session.user.id,
+    },
+  });
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_INVITE_CREATED",
+    resourceType: "ledger_line_invite",
+    diff: { new: { role: p.role, branches: p.scopeBranchIds?.length ?? 0 } },
+  });
+  revalidatePath("/ledger/settings");
+  return { ok: true, token, url: inviteUrl(token) };
+}
+
+export async function revokeLedgerInvite(id: string): Promise<ActionResult> {
+  if (!id) return { ok: false, error: "ไม่ได้ระบุคำเชิญ" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลจัดการคำเชิญได้" };
+  }
+  // Soft-revoke = delete the unused token (scoped to org).
+  await prisma.ledgerLineInvite.deleteMany({
+    where: { id, orgId: session.user.org_id, usedAt: null },
   });
   revalidatePath("/ledger/settings");
   return { ok: true };

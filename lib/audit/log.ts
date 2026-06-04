@@ -121,7 +121,9 @@ export type AuditAction =
   // LINE Official Account connect for receipt capture. Stores encrypted Channel
   // Secret / Access Token → security-sensitive, recorded for the auditor trail.
   | "LEDGER_LINE_CHANNEL_CONNECTED"
-  | "LEDGER_LINE_CHANNEL_DISCONNECTED";
+  | "LEDGER_LINE_CHANNEL_DISCONNECTED"
+  // Scoped LINE onboarding invites (M7) — who may capture + their branch/category scope.
+  | "LEDGER_INVITE_CREATED";
 
 export interface AuditEntry {
   orgId: string;

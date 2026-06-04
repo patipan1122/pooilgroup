@@ -166,6 +166,7 @@ export const getLineChannel = cache(
         active: true,
         webhookSecretEnc: true,
         accessTokenEnc: true,
+        richMenuId: true,
       },
     });
     if (!ch) return null;
@@ -176,6 +177,7 @@ export const getLineChannel = cache(
       active: ch.active,
       hasSecret: !!ch.webhookSecretEnc,
       hasAccessToken: !!ch.accessTokenEnc,
+      richMenuId: ch.richMenuId,
     };
   },
 );
@@ -252,3 +254,37 @@ export const listBudgets = cache(
     }));
   },
 );
+
+/** Scoped LINE invites for a company (admin settings list). Not cached — the
+ *  list changes on create/revoke. Resolves branch names for display. */
+export async function listInvites(orgId: string, companyId: string) {
+  const rows = await prisma.ledgerLineInvite.findMany({
+    where: { orgId, companyId },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+    select: {
+      id: true,
+      token: true,
+      role: true,
+      scopeBranchIds: true,
+      scopeCategoryIds: true,
+      note: true,
+      expiresAt: true,
+      usedAt: true,
+      usedByLineUserId: true,
+      createdAt: true,
+    },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    token: r.token,
+    role: r.role,
+    branchCount: r.scopeBranchIds.length,
+    categoryCount: r.scopeCategoryIds.length,
+    note: r.note,
+    expiresAt: r.expiresAt ? r.expiresAt.toISOString() : null,
+    used: !!r.usedAt,
+    createdAt: r.createdAt.toISOString(),
+  }));
+}
+export type InviteRow = Awaited<ReturnType<typeof listInvites>>[number];

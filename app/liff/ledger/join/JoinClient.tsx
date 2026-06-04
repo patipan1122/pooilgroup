@@ -1,0 +1,87 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { getLiffIdToken } from "@/lib/line/liff-client";
+import { LedgerMascot } from "@/components/ledger/Brand";
+
+type State =
+  | { kind: "loading" }
+  | { kind: "ok"; message: string; role: string }
+  | { kind: "error"; message: string };
+
+const LEDGER_LIFF_ID = process.env.NEXT_PUBLIC_LEDGER_LIFF_ID;
+
+export function JoinClient({ token }: { token: string }) {
+  const [state, setState] = useState<State>({ kind: "loading" });
+  const ran = useRef(false);
+
+  useEffect(() => {
+    if (ran.current) return;
+    ran.current = true;
+
+    (async () => {
+      if (!token) {
+        setState({ kind: "error", message: "ลิงก์เชิญไม่ถูกต้อง — ขอลิงก์ใหม่จากแอดมิน" });
+        return;
+      }
+      // The LIFF bootstrap (in the /liff layout) has init'd LINE; grab the verified
+      // id_token so the server can confirm who we are (never trust a raw userId).
+      const idToken = await getLiffIdToken(LEDGER_LIFF_ID);
+      if (!idToken) {
+        setState({ kind: "error", message: "ยังเข้าสู่ระบบ LINE ไม่สำเร็จ — ปิดแล้วเปิดลิงก์ใหม่อีกครั้ง" });
+        return;
+      }
+      try {
+        const res = await fetch("/api/ledger/invite/accept", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, idToken }),
+        });
+        const j = (await res.json()) as { ok: boolean; message?: string; role?: string; error?: string };
+        if (j.ok) {
+          setState({ kind: "ok", message: j.message ?? "เข้าร่วมเรียบร้อย", role: j.role ?? "staff" });
+        } else {
+          setState({ kind: "error", message: j.error ?? "เข้าร่วมไม่สำเร็จ" });
+        }
+      } catch {
+        setState({ kind: "error", message: "เชื่อมต่อไม่สำเร็จ ลองใหม่อีกครั้ง" });
+      }
+    })();
+  }, [token]);
+
+  const ROLE_LABEL: Record<string, string> = {
+    staff: "พนักงานถ่ายใบเสร็จ",
+    accountant: "บัญชี (ยืนยันได้)",
+    admin: "ผู้ดูแล",
+  };
+
+  return (
+    <div className="flex min-h-[70vh] flex-col items-center justify-center gap-4 text-center">
+      {state.kind === "loading" && (
+        <>
+          <div className="size-12 animate-spin rounded-full border-4 border-[var(--color-brand-200)] border-t-[var(--color-brand-600)]" />
+          <p className="text-sm text-zinc-500">กำลังเข้าร่วม…</p>
+        </>
+      )}
+      {state.kind === "ok" && (
+        <>
+          <LedgerMascot pose="celebrate" size={104} priority />
+          <div className="space-y-1">
+            <p className="text-lg font-bold text-zinc-800">ยินดีต้อนรับ! 🎉</p>
+            <p className="text-sm text-zinc-600">{state.message}</p>
+            <p className="text-xs text-zinc-400">สิทธิ์: {ROLE_LABEL[state.role] ?? state.role}</p>
+          </div>
+        </>
+      )}
+      {state.kind === "error" && (
+        <>
+          <LedgerMascot pose="confused" size={104} priority />
+          <div className="space-y-1">
+            <p className="text-base font-semibold text-zinc-800">เข้าร่วมไม่สำเร็จ</p>
+            <p className="text-sm text-rose-600">{state.message}</p>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

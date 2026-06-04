@@ -64,6 +64,17 @@ export async function handleLedgerCommand(
     return HELP;
   }
 
+  if (lower === "/support" || text === "แจ้งปัญหา") {
+    return [
+      "🛟 แจ้งปัญหา LedgerLine",
+      "",
+      "พิมพ์อาการที่เจอในแชตนี้ได้เลย แล้วแอดมินจะตามให้",
+      "หรือทักแอดมินบัญชีของบริษัทโดยตรง",
+      "",
+      "เคล็ดลับ: ส่งรูปใบเสร็จที่มีปัญหามาด้วย จะช่วยให้แก้ได้ไวขึ้น 🙏",
+    ].join("\n");
+  }
+
   if (lower === "/setting" || text.startsWith("/setting ") || text.startsWith("/ตั้งค่า")) {
     if (!(await isAdminSender(ctx.orgId, ctx.senderLineUserId))) {
       return "เฉพาะแอดมิน/บัญชีที่ผูกบัญชีกับ LINE แล้วเท่านั้นที่ตั้งค่าได้";

@@ -3,10 +3,12 @@
 import { requireRole } from "@/lib/auth/session";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
-import { listCategories, getLineChannel } from "../_data";
+import { listCategories, getLineChannel, listBranches, listInvites } from "../_data";
 import { CategoryManager } from "./_components/CategoryManager";
 import { LineChannelCard } from "./_components/LineChannelCard";
 import { ExportConfigCard } from "./_components/ExportConfigCard";
+import { RichMenuButton } from "./_components/RichMenuButton";
+import { InviteManager } from "./_components/InviteManager";
 
 export const dynamic = "force-dynamic";
 
@@ -28,9 +30,11 @@ export default async function LedgerSettingsPage({
     );
   }
 
-  const [categories, lineChannel] = await Promise.all([
+  const [categories, lineChannel, branches, invites] = await Promise.all([
     listCategories(scope.orgId, scope.companyId),
     getLineChannel(scope.orgId, scope.companyId),
+    listBranches(scope.orgId, scope.companyId),
+    listInvites(scope.orgId, scope.companyId),
   ]);
 
   return (
@@ -59,6 +63,16 @@ export default async function LedgerSettingsPage({
           companyId={scope.companyId}
           companyName={scope.companies.find((c) => c.id === scope.companyId)?.name ?? ""}
           channel={lineChannel}
+        />
+        <RichMenuButton
+          companyId={scope.companyId}
+          connected={!!lineChannel?.hasAccessToken}
+          alreadySet={!!lineChannel?.richMenuId}
+        />
+        <InviteManager
+          companyId={scope.companyId}
+          branches={branches.map((b) => ({ id: b.id, code: b.code, name: b.name }))}
+          invites={invites}
         />
         <ExportConfigCard companyId={scope.companyId} />
       </div>
