@@ -4,7 +4,7 @@
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
-## 🆕 Update (2026-06-04 — LedgerLine: ครบประสบการณ์ LINE แบบ Bainy (Phase 2+3) · build GREEN · ยังไม่ deploy)
+## 🆕 Update (2026-06-04 — LedgerLine: ครบประสบการณ์ LINE แบบ Bainy (Phase 2+3) · 🚀 DEPLOYED LIVE)
 
 **Goal CEO (`/goal`):** ทำส่วนที่เหลือของ "ระบบบัญชี" ให้จบ + Drive (เดือน→สาขา→หมวด) + มาสคอตแสดงอารมณ์ + การ์ดหลายรูปแก้ทีละใบ + ฟอร์มแก้ละเอียด + ฟังก์ชันในกลุ่ม LINE.
 
@@ -19,7 +19,9 @@
 
 **ตรวจคุณภาพ:** prod build GREEN (11 ledger routes compile) + 5-agent adversarial static review (no confirmed findings) + maxDuration=30 บน webhook (กัน flush โดน kill).
 
-**⛔ CEO-GATED ก่อน live (ดู `docs/LEDGER_LINE_SETUP.md`):** (1) apply migration `20260603210000` + `20260604120000` ที่ prod · (2) อนุมัติ deploy (merge→setup, fetch+merge origin/setup ก่อนตาม trap memory) · (3) กดตั้ง Rich Menu ใน settings · (4) (ถ้าจะใช้ Drive) ตั้ง 4 LEDGER_DRIVE_* env · (5) เชิญพนักงาน · (6) rotate secret ที่พิมพ์ในแชท.
+**🚀 DEPLOYED 2026-06-04** (CEO อนุมัติ): merge `claude/ledger-line-bainy-parity`→setup ff `c2bc898..5a80567` · ✅ migration `20260603210000`+`20260604120000` ลง prod ผ่าน psql (verify 7/7 ตาราง/คอลัมน์) · merge origin/setup เข้า branch ก่อนตาม trap memory (ไม่มี conflict). **prod verified:** /ledger* 307→login · /liff/ledger + /liff/ledger/join 200 · /api/ledger/meta 401 · webhook 200 · /dashboard /chairops /cashhub 307 (ไม่พัง · merge สะอาด). build GREEN.
+
+**เหลือ (post-deploy · CEO กดเอง · ไม่บล็อกการใช้งานหลัก):** (1) กด "ติดตั้งเมนู" Rich Menu ใน /ledger/settings (ต้อง login) · (2) ถ้าจะเปิด Google Drive: ตั้ง 4 `LEDGER_DRIVE_*` env ใน Vercel · (3) สร้างลิงก์เชิญพนักงาน · (4) rotate LINE secret ที่เคยพิมพ์ในแชท. ดู `docs/LEDGER_LINE_SETUP.md`.
 
 ## 🆕 Update (2026-06-03 — LedgerLine: หน้า "เชื่อมต่อ LINE" ใช้ได้จริง (แก้ webhook 308))
 
