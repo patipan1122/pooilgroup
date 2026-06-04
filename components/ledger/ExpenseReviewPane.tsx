@@ -21,6 +21,12 @@ import {
   Loader2,
   Sparkles,
   ShieldCheck,
+  Plus,
+  Trash2,
+  FileText,
+  Wallet,
+  StickyNote,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
@@ -30,6 +36,7 @@ import { StatusBadge } from "./_kit/StatusBadge";
 import { ConfidenceTag } from "./_kit/ConfidenceTag";
 import { AmountInput } from "./_kit/AmountInput";
 import type { ExpenseRow, CategoryOption, BranchOption } from "./_kit/types";
+import type { ExpenseItem, ExpenseDocType, PaymentStatus } from "@/lib/ledger/types";
 
 export type ExpenseDraft = {
   vendor: string;
@@ -43,7 +50,45 @@ export type ExpenseDraft = {
   wht: number;
   total: number;
   note: string;
+  // — Bainy-parity fields —
+  docType: ExpenseDocType;
+  vendorDocNumber: string;
+  vendorAddress: string;
+  vendorBranchCode: string;
+  discount: number;
+  paymentStatus: PaymentStatus;
+  claimantName: string;
+  bankDetail: string;
+  isRecurring: boolean;
+  items: ExpenseItem[];
 };
+
+const DOC_TYPES: { value: ExpenseDocType; label: string }[] = [
+  { value: "tax_invoice", label: "ใบกำกับภาษี" },
+  { value: "receipt", label: "ใบเสร็จรับเงิน" },
+  { value: "cash_bill", label: "บิลเงินสด" },
+  { value: "delivery_note", label: "ใบส่งของ" },
+  { value: "other", label: "อื่น ๆ" },
+];
+
+const PAYMENT_STATUSES: { value: PaymentStatus; label: string }[] = [
+  { value: "paid", label: "จ่ายครบแล้ว" },
+  { value: "unpaid", label: "ยังไม่จ่าย" },
+  { value: "partial", label: "จ่ายบางส่วน" },
+];
+
+/** Section title chip — mirrors Bainy's numbered sections (1·2·3·4). */
+function SectionTitle({ n, icon, children }: { n: number; icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="mb-2 flex items-center gap-2">
+      <span className="flex size-6 items-center justify-center rounded-full bg-[var(--color-brand-600,#2563EB)] text-xs font-bold text-white">
+        {n}
+      </span>
+      <span className="text-zinc-500">{icon}</span>
+      <h3 className="text-sm font-bold text-zinc-800">{children}</h3>
+    </div>
+  );
+}
 
 export type RecheckFinding = {
   field: string;
@@ -148,6 +193,16 @@ export function ExpenseReviewPane({
     wht: expense.wht,
     total: expense.total,
     note: expense.note ?? "",
+    docType: expense.docType ?? "tax_invoice",
+    vendorDocNumber: expense.vendorDocNumber ?? "",
+    vendorAddress: expense.vendorAddress ?? "",
+    vendorBranchCode: expense.vendorBranchCode ?? "",
+    discount: expense.discount ?? 0,
+    paymentStatus: expense.paymentStatus ?? "paid",
+    claimantName: expense.claimantName ?? "",
+    bankDetail: expense.bankDetail ?? "",
+    isRecurring: expense.isRecurring ?? false,
+    items: expense.items ?? [],
   });
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
@@ -172,6 +227,30 @@ export function ExpenseReviewPane({
     setDraft((d) => ({ ...d, [k]: v }));
     setMsg(null);
   }
+
+  // ── line items (แยกรายการ) ──
+  function addItem() {
+    set("items", [...draft.items, { description: "", qty: 1, unitPrice: 0, amount: 0, vatRate: null }]);
+  }
+  function updateItem(i: number, patch: Partial<ExpenseItem>) {
+    const next = draft.items.map((it, idx) => {
+      if (idx !== i) return it;
+      const merged = { ...it, ...patch };
+      // qty × unitPrice → amount (unless amount was the field edited directly)
+      if (patch.qty != null || patch.unitPrice != null) {
+        merged.amount = +(merged.qty * merged.unitPrice).toFixed(2);
+      }
+      return merged;
+    });
+    set("items", next);
+  }
+  function removeItem(i: number) {
+    set("items", draft.items.filter((_, idx) => idx !== i));
+  }
+  const itemsSum = useMemo(
+    () => draft.items.reduce((s, it) => s + (Number.isFinite(it.amount) ? it.amount : 0), 0),
+    [draft.items],
+  );
 
   function handle(
     action: SaveExpenseAction | ConfirmExpenseAction,
@@ -271,155 +350,346 @@ export function ExpenseReviewPane({
           />
         </div>
 
-        {/* ฟอร์มแก้ */}
-        <div className="space-y-3">
-          <div>
-            <FieldLabel confidence={conf.vendor}>ผู้ขาย / ร้านค้า</FieldLabel>
-            <input
-              className={inputCls}
-              value={draft.vendor}
-              disabled={locked}
-              onChange={(e) => set("vendor", e.target.value)}
-              placeholder="ชื่อร้าน / บริษัท"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
+        {/* ฟอร์มแก้ — 4 ส่วนแบบ Bainy */}
+        <div className="space-y-5">
+          {/* 1 · ข้อมูลร้านค้า & เอกสาร */}
+          <section className="space-y-3 rounded-2xl border border-zinc-100 p-3">
+            <SectionTitle n={1} icon={<FileText className="size-4" aria-hidden />}>
+              ข้อมูลร้านค้า & เอกสาร
+            </SectionTitle>
             <div>
-              <FieldLabel confidence={conf.vendor_tax_id ?? conf.vendorTaxId}>
-                เลขภาษี 13 หลัก
-              </FieldLabel>
+              <FieldLabel confidence={conf.vendor}>ชื่อร้านค้า / ผู้รับเงิน</FieldLabel>
               <input
                 className={inputCls}
-                value={draft.vendorTaxId}
+                value={draft.vendor}
                 disabled={locked}
-                inputMode="numeric"
-                onChange={(e) => set("vendorTaxId", e.target.value)}
-                placeholder="0000000000000"
+                onChange={(e) => set("vendor", e.target.value)}
+                placeholder="ชื่อร้าน / บริษัท"
               />
             </div>
-            <div>
-              <FieldLabel confidence={conf.doc_date ?? conf.docDate}>
-                วันที่บนเอกสาร
-              </FieldLabel>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <FieldLabel>ประเภทเอกสาร</FieldLabel>
+                <select
+                  className={inputCls}
+                  value={draft.docType}
+                  disabled={locked}
+                  onChange={(e) => set("docType", e.target.value as ExpenseDocType)}
+                >
+                  {DOC_TYPES.map((d) => (
+                    <option key={d.value} value={d.value}>{d.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <FieldLabel>เลขที่เอกสาร (ของร้าน)</FieldLabel>
+                <input
+                  className={inputCls}
+                  value={draft.vendorDocNumber}
+                  disabled={locked}
+                  onChange={(e) => set("vendorDocNumber", e.target.value)}
+                  placeholder="เช่น 6906-BR109-00129"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <FieldLabel confidence={conf.vendor_tax_id ?? conf.vendorTaxId}>
+                  เลขผู้เสียภาษี (13 หลัก)
+                </FieldLabel>
+                <input
+                  className={inputCls}
+                  value={draft.vendorTaxId}
+                  disabled={locked}
+                  inputMode="numeric"
+                  onChange={(e) => set("vendorTaxId", e.target.value)}
+                  placeholder="0000000000000"
+                />
+              </div>
+              <div>
+                <FieldLabel confidence={conf.doc_date ?? conf.docDate}>
+                  วันที่ออกเอกสาร
+                </FieldLabel>
+                <input
+                  type="date"
+                  className={inputCls}
+                  value={draft.docDate}
+                  disabled={locked}
+                  onChange={(e) => set("docDate", e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-3">
+              <div>
+                <FieldLabel>ที่อยู่ผู้ขาย</FieldLabel>
+                <input
+                  className={inputCls}
+                  value={draft.vendorAddress}
+                  disabled={locked}
+                  onChange={(e) => set("vendorAddress", e.target.value)}
+                  placeholder="ที่อยู่ (ถ้ามี)"
+                />
+              </div>
+              <div>
+                <FieldLabel>รหัสสาขา</FieldLabel>
+                <input
+                  className={inputCls}
+                  value={draft.vendorBranchCode}
+                  disabled={locked}
+                  onChange={(e) => set("vendorBranchCode", e.target.value)}
+                  placeholder="00000"
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* 2 · รายการ & ยอดเงิน */}
+          <section className="space-y-3 rounded-2xl border border-zinc-100 p-3">
+            <SectionTitle n={2} icon={<Wallet className="size-4" aria-hidden />}>
+              รายการ & ยอดเงิน
+            </SectionTitle>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <FieldLabel confidence={conf.suggested_category ?? conf.category}>
+                  ประเภทค่าใช้จ่าย
+                </FieldLabel>
+                <select
+                  className={inputCls}
+                  value={draft.categoryId}
+                  disabled={locked}
+                  onChange={(e) => set("categoryId", e.target.value)}
+                >
+                  <option value="">— เลือกหมวด —</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <FieldLabel>สาขา (ของเรา)</FieldLabel>
+                <select
+                  className={inputCls}
+                  value={draft.branchId}
+                  disabled={locked}
+                  onChange={(e) => set("branchId", e.target.value)}
+                >
+                  <option value="">— ไม่ระบุ —</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>{b.code} · {b.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* แยกรายการ — line items */}
+            <div className="rounded-xl border border-zinc-100 bg-zinc-50/60 p-2.5">
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="text-xs font-semibold text-zinc-600">
+                  รายการสินค้า / บริการ {draft.items.length > 0 ? `(${draft.items.length})` : ""}
+                </span>
+                {!locked && (
+                  <button
+                    type="button"
+                    onClick={addItem}
+                    className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-xs font-medium text-[var(--color-brand-600,#2563EB)] ring-1 ring-zinc-200 hover:bg-zinc-50"
+                  >
+                    <Plus className="size-3.5" aria-hidden /> เพิ่มรายการ
+                  </button>
+                )}
+              </div>
+              {draft.items.length === 0 ? (
+                <p className="px-1 py-2 text-xs text-zinc-400">ยังไม่มีรายการย่อย — เพิ่มได้ถ้าต้องการแยกบรรทัด</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {draft.items.map((it, i) => (
+                    <div key={i} className="grid grid-cols-[minmax(0,1fr)_56px_80px_88px_28px] items-center gap-1.5">
+                      <input
+                        className="h-8 rounded-md border border-zinc-200 bg-white px-2 text-xs outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100"
+                        value={it.description}
+                        disabled={locked}
+                        onChange={(e) => updateItem(i, { description: e.target.value })}
+                        placeholder="ชื่อสินค้า/บริการ"
+                      />
+                      <input
+                        className="h-8 rounded-md border border-zinc-200 bg-white px-1.5 text-right text-xs outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100"
+                        value={it.qty}
+                        disabled={locked}
+                        inputMode="decimal"
+                        onChange={(e) => updateItem(i, { qty: Number(e.target.value) || 0 })}
+                        aria-label="จำนวน"
+                      />
+                      <input
+                        className="h-8 rounded-md border border-zinc-200 bg-white px-1.5 text-right text-xs outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100"
+                        value={it.unitPrice}
+                        disabled={locked}
+                        inputMode="decimal"
+                        onChange={(e) => updateItem(i, { unitPrice: Number(e.target.value) || 0 })}
+                        aria-label="ราคาต่อหน่วย"
+                      />
+                      <input
+                        className="h-8 rounded-md border border-zinc-200 bg-white px-1.5 text-right text-xs font-medium outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100"
+                        value={it.amount}
+                        disabled={locked}
+                        inputMode="decimal"
+                        onChange={(e) => updateItem(i, { amount: Number(e.target.value) || 0 })}
+                        aria-label="ยอดรวมรายการ"
+                      />
+                      {!locked && (
+                        <button
+                          type="button"
+                          onClick={() => removeItem(i)}
+                          className="flex size-7 items-center justify-center rounded-md text-rose-500 hover:bg-rose-50"
+                          aria-label="ลบรายการ"
+                        >
+                          <Trash2 className="size-3.5" aria-hidden />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {!locked && Math.abs(itemsSum - draft.subtotal) >= 1 && (
+                    <button
+                      type="button"
+                      onClick={() => set("subtotal", +itemsSum.toFixed(2))}
+                      className="mt-1 text-[11px] font-medium text-[var(--color-brand-600,#2563EB)] hover:underline"
+                    >
+                      ผลรวมรายการ = {itemsSum.toLocaleString()} — กดเติมเป็นยอดย่อย
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* ยอดเงิน */}
+            <div className="grid grid-cols-2 gap-3 rounded-xl bg-zinc-50 p-3 sm:grid-cols-3">
+              <div>
+                <FieldLabel confidence={conf.subtotal}>ยอดก่อนภาษี (Net)</FieldLabel>
+                <AmountInput value={draft.subtotal} disabled={locked} ariaLabel="ยอดย่อย" onValueChange={(v) => set("subtotal", v)} />
+              </div>
+              <div>
+                <FieldLabel>ส่วนลด</FieldLabel>
+                <AmountInput value={draft.discount} disabled={locked} ariaLabel="ส่วนลด" onValueChange={(v) => set("discount", v)} />
+              </div>
+              <div>
+                <FieldLabel confidence={conf.vat}>VAT 7%</FieldLabel>
+                <AmountInput value={draft.vat} disabled={locked} ariaLabel="VAT" onValueChange={(v) => set("vat", v)} />
+              </div>
+              <div>
+                <FieldLabel>หัก ณ ที่จ่าย</FieldLabel>
+                <AmountInput value={draft.wht} disabled={locked} ariaLabel="หัก ณ ที่จ่าย" onValueChange={(v) => set("wht", v)} />
+              </div>
+              <div className="col-span-2 sm:col-span-1">
+                <FieldLabel confidence={conf.total}>ยอดรวมสุทธิ</FieldLabel>
+                <AmountInput value={draft.total} disabled={locked} ariaLabel="ยอดรวม" onValueChange={(v) => set("total", v)} className="border-zinc-300 font-semibold" />
+              </div>
+            </div>
+          </section>
+
+          {/* 3 · การชำระเงิน & ผู้เบิก */}
+          <section className="space-y-3 rounded-2xl border border-zinc-100 p-3">
+            <SectionTitle n={3} icon={<Wallet className="size-4" aria-hidden />}>
+              การชำระเงิน & ผู้เบิก
+            </SectionTitle>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <FieldLabel>ชื่อผู้เบิก</FieldLabel>
+                <input
+                  className={inputCls}
+                  value={draft.claimantName}
+                  disabled={locked}
+                  onChange={(e) => set("claimantName", e.target.value)}
+                  placeholder="ใครเป็นคนจ่าย/เบิก"
+                />
+              </div>
+              <div>
+                <FieldLabel>สถานะการชำระเงิน</FieldLabel>
+                <select
+                  className={inputCls}
+                  value={draft.paymentStatus}
+                  disabled={locked}
+                  onChange={(e) => set("paymentStatus", e.target.value as PaymentStatus)}
+                >
+                  {PAYMENT_STATUSES.map((s) => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <FieldLabel confidence={conf.payment_method ?? conf.paymentMethod}>วิธีชำระเงิน</FieldLabel>
+                <select
+                  className={inputCls}
+                  value={draft.paymentMethod}
+                  disabled={locked}
+                  onChange={(e) => set("paymentMethod", e.target.value)}
+                >
+                  <option value="">— ไม่ระบุ —</option>
+                  {PAYMENT_METHODS.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <FieldLabel>ธนาคาร / รายละเอียด</FieldLabel>
+                <input
+                  className={inputCls}
+                  value={draft.bankDetail}
+                  disabled={locked}
+                  onChange={(e) => set("bankDetail", e.target.value)}
+                  placeholder="เช่น KBank โอน"
+                />
+              </div>
+            </div>
+            <label className={cn("flex items-center justify-between rounded-xl border border-zinc-200 px-3 py-2", locked && "opacity-60")}>
+              <span className="text-sm">
+                <span className="font-medium text-zinc-700">ตั้งเป็นรายจ่ายประจำ</span>
+                <span className="block text-[11px] text-zinc-400">แสดงบนแดชบอร์ดตามวันที่กำหนด</span>
+              </span>
               <input
-                type="date"
-                className={inputCls}
-                value={draft.docDate}
+                type="checkbox"
+                checked={draft.isRecurring}
                 disabled={locked}
-                onChange={(e) => set("docDate", e.target.value)}
+                onChange={(e) => set("isRecurring", e.target.checked)}
+                className="size-5 accent-[var(--color-brand-600,#2563EB)]"
               />
-            </div>
-          </div>
+            </label>
+          </section>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <FieldLabel confidence={conf.suggested_category ?? conf.category}>
-                หมวด
-              </FieldLabel>
-              <select
-                className={inputCls}
-                value={draft.categoryId}
-                disabled={locked}
-                onChange={(e) => set("categoryId", e.target.value)}
-              >
-                <option value="">— เลือกหมวด —</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <FieldLabel>สาขา</FieldLabel>
-              <select
-                className={inputCls}
-                value={draft.branchId}
-                disabled={locked}
-                onChange={(e) => set("branchId", e.target.value)}
-              >
-                <option value="">— ไม่ระบุ —</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.code} · {b.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* ยอดเงิน */}
-          <div className="grid grid-cols-2 gap-3 rounded-xl bg-zinc-50 p-3">
-            <div>
-              <FieldLabel confidence={conf.subtotal}>ยอดย่อย</FieldLabel>
-              <AmountInput
-                value={draft.subtotal}
-                disabled={locked}
-                ariaLabel="ยอดย่อย"
-                onValueChange={(v) => set("subtotal", v)}
-              />
-            </div>
-            <div>
-              <FieldLabel confidence={conf.vat}>VAT</FieldLabel>
-              <AmountInput
-                value={draft.vat}
-                disabled={locked}
-                ariaLabel="VAT"
-                onValueChange={(v) => set("vat", v)}
-              />
-            </div>
-            <div>
-              <FieldLabel>หัก ณ ที่จ่าย</FieldLabel>
-              <AmountInput
-                value={draft.wht}
-                disabled={locked}
-                ariaLabel="หัก ณ ที่จ่าย"
-                onValueChange={(v) => set("wht", v)}
-              />
-            </div>
-            <div>
-              <FieldLabel confidence={conf.total}>ยอดรวม</FieldLabel>
-              <AmountInput
-                value={draft.total}
-                disabled={locked}
-                ariaLabel="ยอดรวม"
-                onValueChange={(v) => set("total", v)}
-                className="border-zinc-300 font-semibold"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <FieldLabel confidence={conf.payment_method ?? conf.paymentMethod}>
-                วิธีชำระ
-              </FieldLabel>
-              <select
-                className={inputCls}
-                value={draft.paymentMethod}
-                disabled={locked}
-                onChange={(e) => set("paymentMethod", e.target.value)}
-              >
-                <option value="">— ไม่ระบุ —</option>
-                {PAYMENT_METHODS.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </div>
+          {/* 4 · หมายเหตุ & หลักฐาน */}
+          <section className="space-y-3 rounded-2xl border border-zinc-100 p-3">
+            <SectionTitle n={4} icon={<StickyNote className="size-4" aria-hidden />}>
+              หมายเหตุ & หลักฐาน
+            </SectionTitle>
             <div>
               <FieldLabel>หมายเหตุ</FieldLabel>
-              <input
-                className={inputCls}
+              <textarea
+                className={cn(inputCls, "h-auto min-h-[60px] py-2")}
                 value={draft.note}
                 disabled={locked}
                 onChange={(e) => set("note", e.target.value)}
-                placeholder="โน้ตเพิ่มเติม"
+                placeholder="ระบุเหตุผลหรือวัตถุประสงค์ของค่าใช้จ่ายนี้…"
+                rows={2}
               />
             </div>
-          </div>
+            {(expense.attachments?.length ?? 0) > 0 || expense.driveWebUrl ? (
+              <div className="space-y-1.5">
+                <span className="text-xs font-semibold text-zinc-600">หลักฐานแนบ</span>
+                {expense.driveWebUrl && (
+                  <a href={expense.driveWebUrl} target="_blank" rel="noreferrer"
+                     className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50">
+                    <ExternalLink className="size-3.5 text-zinc-400" aria-hidden /> เปิดต้นฉบับใน Google Drive
+                  </a>
+                )}
+                {(expense.attachments ?? []).map((a, i) => (
+                  <a key={i} href={a.url} target="_blank" rel="noreferrer"
+                     className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50">
+                    <FileText className="size-3.5 text-zinc-400" aria-hidden />
+                    {a.kind === "po" ? "ไฟล์ PO / ใบสั่งซื้อ" : "หลักฐานเพิ่มเติม"}{a.name ? ` · ${a.name}` : ""}
+                  </a>
+                ))}
+              </div>
+            ) : null}
+          </section>
         </div>
       </div>
 

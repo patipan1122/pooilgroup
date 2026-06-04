@@ -20,6 +20,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import { requireSession, type DbUser } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { userHasModuleAccess } from "@/lib/auth/module-access";
@@ -62,6 +63,13 @@ async function requireLedgerAccess(): Promise<
 }
 
 // ---- shared expense patch shape (mirrors ExpenseDraft in ExpenseReviewPane) ----
+const itemSchema = z.object({
+  description: z.string().trim().max(300),
+  qty: z.coerce.number(),
+  unitPrice: z.coerce.number(),
+  amount: z.coerce.number(),
+  vatRate: z.coerce.number().nullable().optional(),
+});
 const patchSchema = z.object({
   vendor: z.string().trim().max(200),
   vendorTaxId: z.string().trim().max(20),
@@ -74,6 +82,17 @@ const patchSchema = z.object({
   wht: z.coerce.number().min(0),
   total: z.coerce.number().min(0),
   note: z.string().trim().max(1000),
+  // — Bainy-parity fields (optional so older callers still validate) —
+  docType: z.enum(["tax_invoice", "receipt", "cash_bill", "delivery_note", "other"]).optional(),
+  vendorDocNumber: z.string().trim().max(60).optional(),
+  vendorAddress: z.string().trim().max(300).optional(),
+  vendorBranchCode: z.string().trim().max(20).optional(),
+  discount: z.coerce.number().min(0).optional(),
+  paymentStatus: z.enum(["paid", "unpaid", "partial"]).optional(),
+  claimantName: z.string().trim().max(120).optional(),
+  bankDetail: z.string().trim().max(120).optional(),
+  isRecurring: z.boolean().optional(),
+  items: z.array(itemSchema).max(100).optional(),
 });
 export type ExpensePatch = z.infer<typeof patchSchema>;
 
@@ -90,7 +109,39 @@ function toData(p: ExpensePatch) {
     wht: p.wht,
     total: p.total,
     note: p.note || null,
+    docType: p.docType ?? undefined,
+    vendorDocNumber: p.vendorDocNumber === undefined ? undefined : p.vendorDocNumber || null,
+    vendorAddress: p.vendorAddress === undefined ? undefined : p.vendorAddress || null,
+    vendorBranchCode: p.vendorBranchCode === undefined ? undefined : p.vendorBranchCode || null,
+    discount: p.discount ?? undefined,
+    paymentStatus: p.paymentStatus ?? undefined,
+    claimantName: p.claimantName === undefined ? undefined : p.claimantName || null,
+    bankDetail: p.bankDetail === undefined ? undefined : p.bankDetail || null,
+    isRecurring: p.isRecurring ?? undefined,
   };
+}
+
+/** Replace an expense's line items (delete-all + recreate) inside a tx, scoped. */
+async function replaceItems(
+  tx: Prisma.TransactionClient,
+  args: { expenseId: string; orgId: string; companyId: string; items: ExpensePatch["items"] },
+) {
+  if (args.items === undefined) return; // omitted → keep existing
+  await tx.ledgerExpenseItem.deleteMany({ where: { expenseId: args.expenseId } });
+  if (args.items.length > 0) {
+    await tx.ledgerExpenseItem.createMany({
+      data: args.items.map((it) => ({
+        orgId: args.orgId,
+        companyId: args.companyId,
+        expenseId: args.expenseId,
+        description: it.description,
+        qty: it.qty,
+        unitPrice: it.unitPrice,
+        amount: it.amount,
+        vatRate: it.vatRate ?? null,
+      })),
+    });
+  }
 }
 
 /** Load the expense and assert it belongs to the caller's org+company.
@@ -122,10 +173,18 @@ export async function saveExpense(
   if (row.status === "locked" || row.status === "void")
     return { ok: false, error: "รายการถูกล็อก/ยกเลิก แก้ไม่ได้" };
 
-  await prisma.ledgerExpense.updateMany({
-    // Scope by company too so an edit can't cross a company boundary in-org.
-    where: { id, orgId: session.user.org_id, companyId: row.companyId },
-    data: { ...toData(parsed.data), needsReview: true },
+  await prisma.$transaction(async (tx) => {
+    await tx.ledgerExpense.updateMany({
+      // Scope by company too so an edit can't cross a company boundary in-org.
+      where: { id, orgId: session.user.org_id, companyId: row.companyId },
+      data: { ...toData(parsed.data), needsReview: true },
+    });
+    await replaceItems(tx, {
+      expenseId: id,
+      orgId: session.user.org_id,
+      companyId: row.companyId,
+      items: parsed.data.items,
+    });
   });
   await audit({
     orgId: session.user.org_id,
@@ -163,7 +222,13 @@ export async function confirmExpense(
     vat: p.vat,
     wht: p.wht,
     total: p.total,
-    items: [],
+    items: (p.items ?? []).map((it) => ({
+      description: it.description,
+      qty: it.qty,
+      unitPrice: it.unitPrice,
+      amount: it.amount,
+      vatRate: it.vatRate ?? null,
+    })),
   });
   // Only hard math errors block; soft warnings (tax id / vat%) are advisory.
   const blocking = rc.warnings.filter((w) => w.includes("ยอดรวม") || w.toLowerCase().includes("total"));
@@ -176,15 +241,23 @@ export async function confirmExpense(
   if (row.status === "locked" || row.status === "void")
     return { ok: false, error: "รายการถูกล็อก/ยกเลิก ยืนยันไม่ได้" };
 
-  await prisma.ledgerExpense.updateMany({
-    where: { id, orgId: session.user.org_id, companyId: row.companyId },
-    data: {
-      ...toData(p),
-      status: "confirmed",
-      needsReview: false,
-      confirmedBy: session.user.id,
-      confirmedAt: new Date(),
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.ledgerExpense.updateMany({
+      where: { id, orgId: session.user.org_id, companyId: row.companyId },
+      data: {
+        ...toData(p),
+        status: "confirmed",
+        needsReview: false,
+        confirmedBy: session.user.id,
+        confirmedAt: new Date(),
+      },
+    });
+    await replaceItems(tx, {
+      expenseId: id,
+      orgId: session.user.org_id,
+      companyId: row.companyId,
+      items: p.items,
+    });
   });
   await audit({
     orgId: session.user.org_id,
