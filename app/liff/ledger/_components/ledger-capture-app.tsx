@@ -377,12 +377,23 @@ export function LedgerCaptureApp({
         throw new Error(j.error || `บันทึกไม่สำเร็จ (HTTP ${res.status})`);
       }
       const j = (await res.json().catch(() => ({}))) as {
+        id?: string;
         docCode?: string;
         duplicate?: boolean;
       };
       setSavedCode(j.docCode ?? null);
       setDuplicate(!!j.duplicate);
       setPhase("done");
+      // Fire-and-forget: archive the original into Google Drive (เดือน/สาขา/หมวด)
+      // so the accountant gets the shareable original. No-ops if Drive isn't
+      // configured; never blocks the capture flow.
+      if (j.id && !j.duplicate) {
+        void fetch("/api/ledger/drive/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: j.id, companyId }),
+        }).catch(() => {});
+      }
     } catch (err) {
       setErrMsg(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
       setPhase("error");

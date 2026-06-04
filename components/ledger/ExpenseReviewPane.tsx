@@ -208,6 +208,28 @@ export function ExpenseReviewPane({
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
     null,
   );
+  // Drive sync (manual "ส่งเข้า Google Drive") — separate from the save/confirm tx.
+  const [driveUrl, setDriveUrl] = useState<string | null>(expense.driveWebUrl ?? null);
+  const [driveBusy, setDriveBusy] = useState(false);
+  const [driveErr, setDriveErr] = useState<string | null>(null);
+  async function syncDrive() {
+    setDriveBusy(true);
+    setDriveErr(null);
+    try {
+      const res = await fetch("/api/ledger/drive/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: expense.id, companyId: expense.companyId }),
+      });
+      const j = (await res.json()) as { ok: boolean; driveWebUrl?: string; notConfigured?: boolean; error?: string };
+      if (j.ok && j.driveWebUrl) setDriveUrl(j.driveWebUrl);
+      else setDriveErr(j.notConfigured ? "ยังไม่ได้ตั้งค่า Google Drive (แอดมินตั้งใน Vercel)" : (j.error ?? "ส่งไม่สำเร็จ"));
+    } catch {
+      setDriveErr("เชื่อมต่อไม่สำเร็จ");
+    } finally {
+      setDriveBusy(false);
+    }
+  }
 
   const conf = useMemo(() => expense.ocrConfidence ?? {}, [expense.ocrConfidence]);
   const findings = useMemo(() => runRecheck(draft), [draft]);
@@ -671,24 +693,33 @@ export function ExpenseReviewPane({
                 rows={2}
               />
             </div>
-            {(expense.attachments?.length ?? 0) > 0 || expense.driveWebUrl ? (
-              <div className="space-y-1.5">
-                <span className="text-xs font-semibold text-zinc-600">หลักฐานแนบ</span>
-                {expense.driveWebUrl && (
-                  <a href={expense.driveWebUrl} target="_blank" rel="noreferrer"
-                     className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50">
-                    <ExternalLink className="size-3.5 text-zinc-400" aria-hidden /> เปิดต้นฉบับใน Google Drive
-                  </a>
-                )}
-                {(expense.attachments ?? []).map((a, i) => (
-                  <a key={i} href={a.url} target="_blank" rel="noreferrer"
-                     className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50">
-                    <FileText className="size-3.5 text-zinc-400" aria-hidden />
-                    {a.kind === "po" ? "ไฟล์ PO / ใบสั่งซื้อ" : "หลักฐานเพิ่มเติม"}{a.name ? ` · ${a.name}` : ""}
-                  </a>
-                ))}
-              </div>
-            ) : null}
+            <div className="space-y-1.5">
+              <span className="text-xs font-semibold text-zinc-600">หลักฐานแนบ & ต้นฉบับ</span>
+              {driveUrl ? (
+                <a href={driveUrl} target="_blank" rel="noreferrer"
+                   className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100">
+                  <ExternalLink className="size-3.5" aria-hidden /> เปิดต้นฉบับใน Google Drive (แชร์ให้สำนักงานบัญชีได้)
+                </a>
+              ) : (expense.thumbUrl || expense.originalUrl) ? (
+                <button
+                  type="button"
+                  onClick={syncDrive}
+                  disabled={driveBusy}
+                  className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                >
+                  {driveBusy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <ExternalLink className="size-3.5 text-zinc-400" aria-hidden />}
+                  ส่งต้นฉบับเข้า Google Drive (เดือน/สาขา/หมวด)
+                </button>
+              ) : null}
+              {driveErr && <p className="text-[11px] text-amber-600">{driveErr}</p>}
+              {(expense.attachments ?? []).map((a, i) => (
+                <a key={i} href={a.url} target="_blank" rel="noreferrer"
+                   className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50">
+                  <FileText className="size-3.5 text-zinc-400" aria-hidden />
+                  {a.kind === "po" ? "ไฟล์ PO / ใบสั่งซื้อ" : "หลักฐานเพิ่มเติม"}{a.name ? ` · ${a.name}` : ""}
+                </a>
+              ))}
+            </div>
           </section>
         </div>
       </div>
