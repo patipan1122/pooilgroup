@@ -23,6 +23,13 @@
 
 **เหลือ (post-deploy · CEO กดเอง · ไม่บล็อกการใช้งานหลัก):** (1) กด "ติดตั้งเมนู" Rich Menu ใน /ledger/settings (ต้อง login) · (2) ถ้าจะเปิด Google Drive: ตั้ง 4 `LEDGER_DRIVE_*` env ใน Vercel · (3) สร้างลิงก์เชิญพนักงาน · (4) rotate LINE secret ที่เคยพิมพ์ในแชท. ดู `docs/LEDGER_LINE_SETUP.md`.
 
+**🔍 QUALITY PASS 2026-06-04 (auditbigteam+bigsolvebug+upspeed รวมเป็น 7-agent workflow · 34 findings · verify):** แก้ committed `93eaaca` (tsc 0/eslint 0/build GREEN) — **ยังไม่ deploy (รอ CEO อนุมัติ redeploy)**:
+- P1 **discount integrity**: `total = subtotal − discount + vat − wht` ทั้ง recheck + client validators + ai-parse + TRCloud export column + ทุก call site (ก่อนแก้: ใบที่มีส่วนลด "ยืนยันไม่ได้" + หล่นจาก export).
+- P1 security: confirm/bulk +`userHasModuleAccess` · /api/ledger/expenses strip client `createdById` (กันปลอม author).
+- P1 bug: carousel ไม่โชว์ใบแรกซ้ำ (skipFirstBubble) · P1 ux: AmountInput พิมพ์ทศนิยม "10.50" ได้แล้ว.
+- P2: OCR SSRF allowlist (R2 only) · form aria-labels · join retry/close · invite "ทุกสาขา" warning · + migration `20260604160000` (dedup index · **ยังไม่ apply** · P2 perf ไม่บังคับ).
+- LESSONS + finding-library อัปเดต (A-024 money-field-not-factored · A-025 controlled-number-input · A-026 inline+batch-double-show).
+
 ## 🆕 Update (2026-06-03 — LedgerLine: หน้า "เชื่อมต่อ LINE" ใช้ได้จริง (แก้ webhook 308))
 
 **ปัญหา CEO:** LINE Developers ฟ้อง `308 Permanent Redirect` ตอน Verify webhook `…/api/webhooks/ledger/line/`.
