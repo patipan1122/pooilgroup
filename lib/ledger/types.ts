@@ -108,6 +108,7 @@ export interface ParsedReceipt {
   vendorAddress?: string | null; // ที่อยู่ผู้ขาย
   docDate: string | null; // YYYY-MM-DD
   subtotal: number | null;
+  discount?: number | null; // ส่วนลดระดับเอกสาร (ลดฐานภาษี)
   vat: number | null;
   wht: number | null;
   total: number | null;

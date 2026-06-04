@@ -44,6 +44,13 @@ export function InviteManager({
 
   function create() {
     setErr(null);
+    // Footgun guard: an empty branch scope = the person sees EVERY branch. For a
+    // non-staff role that's broad — make the operator confirm it's intentional.
+    if (scope.length === 0 && role !== "staff") {
+      if (!confirm(`ลิงก์นี้ไม่ได้จำกัดสาขา — ผู้รับ (สิทธิ์ "${ROLE_LABEL[role]}") จะเห็น/ดูแลทุกสาขา ยืนยันไหม?`)) {
+        return;
+      }
+    }
     setCreated(null);
     setCopied(false);
     start(async () => {
@@ -155,7 +162,7 @@ export function InviteManager({
         className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-[var(--color-brand-600,#2563EB)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
       >
         {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Link2 className="size-4" aria-hidden />}
-        สร้างลิงก์เชิญ
+        {scope.length === 0 ? "สร้างลิงก์เชิญ (ทุกสาขา)" : `สร้างลิงก์เชิญ (${scope.length} สาขา)`}
       </button>
       {err && <p className="mt-2 text-xs text-rose-600">{err}</p>}
 

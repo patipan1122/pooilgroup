@@ -127,16 +127,18 @@ export function runRecheck(d: ExpenseDraft): RecheckFinding[] {
       message: "เลขภาษีควรเป็น 13 หลัก",
     });
   }
-  const computed = d.subtotal + d.vat - d.wht;
+  const computed = d.subtotal - (d.discount ?? 0) + d.vat - d.wht;
   if (d.total > 0 && Math.abs(computed - d.total) >= 1) {
+    const discPart = (d.discount ?? 0) > 0 ? ` − ส่วนลด ${d.discount.toLocaleString()}` : "";
     out.push({
       field: "total",
       level: "error",
-      message: `ยอดรวมไม่ตรง: ยอดย่อย ${d.subtotal.toLocaleString()} + VAT ${d.vat.toLocaleString()} − หัก ${d.wht.toLocaleString()} = ${computed.toLocaleString()} ≠ ${d.total.toLocaleString()}`,
+      message: `ยอดรวมไม่ตรง: ยอดย่อย ${d.subtotal.toLocaleString()}${discPart} + VAT ${d.vat.toLocaleString()} − หัก ${d.wht.toLocaleString()} = ${computed.toLocaleString()} ≠ ${d.total.toLocaleString()}`,
     });
   }
-  if (d.subtotal > 0 && d.vat > 0) {
-    const ratio = d.vat / d.subtotal;
+  const taxBase = d.subtotal - (d.discount ?? 0);
+  if (taxBase > 0 && d.vat > 0) {
+    const ratio = d.vat / taxBase;
     if (Math.abs(ratio - 0.07) > 0.02) {
       out.push({
         field: "vat",
@@ -394,6 +396,7 @@ export function ExpenseReviewPane({
                 <FieldLabel>ประเภทเอกสาร</FieldLabel>
                 <select
                   className={inputCls}
+                  aria-label="ประเภทเอกสาร"
                   value={draft.docType}
                   disabled={locked}
                   onChange={(e) => set("docType", e.target.value as ExpenseDocType)}
@@ -435,6 +438,7 @@ export function ExpenseReviewPane({
                 <input
                   type="date"
                   className={inputCls}
+                  aria-label="วันที่ออกเอกสาร"
                   value={draft.docDate}
                   disabled={locked}
                   onChange={(e) => set("docDate", e.target.value)}
@@ -477,6 +481,7 @@ export function ExpenseReviewPane({
                 </FieldLabel>
                 <select
                   className={inputCls}
+                  aria-label="ประเภทค่าใช้จ่าย"
                   value={draft.categoryId}
                   disabled={locked}
                   onChange={(e) => set("categoryId", e.target.value)}
@@ -491,6 +496,7 @@ export function ExpenseReviewPane({
                 <FieldLabel>สาขา (ของเรา)</FieldLabel>
                 <select
                   className={inputCls}
+                  aria-label="สาขา"
                   value={draft.branchId}
                   disabled={locked}
                   onChange={(e) => set("branchId", e.target.value)}
@@ -626,6 +632,7 @@ export function ExpenseReviewPane({
                 <FieldLabel>สถานะการชำระเงิน</FieldLabel>
                 <select
                   className={inputCls}
+                  aria-label="สถานะการชำระเงิน"
                   value={draft.paymentStatus}
                   disabled={locked}
                   onChange={(e) => set("paymentStatus", e.target.value as PaymentStatus)}
@@ -641,6 +648,7 @@ export function ExpenseReviewPane({
                 <FieldLabel confidence={conf.payment_method ?? conf.paymentMethod}>วิธีชำระเงิน</FieldLabel>
                 <select
                   className={inputCls}
+                  aria-label="วิธีชำระเงิน"
                   value={draft.paymentMethod}
                   disabled={locked}
                   onChange={(e) => set("paymentMethod", e.target.value)}

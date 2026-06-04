@@ -353,6 +353,7 @@ export async function POST(
           vendorAddress: parsed?.vendorAddress ?? null,
           docDate: parsed?.docDate ?? null,
           subtotal: parsed?.subtotal ?? 0,
+          discount: parsed?.discount ?? 0,
           vat: parsed?.vat ?? 0,
           wht: parsed?.wht ?? 0,
           total: parsed?.total ?? 0,

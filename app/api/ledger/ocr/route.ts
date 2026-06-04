@@ -39,8 +39,17 @@ export async function POST(req: NextRequest) {
   try {
     if (contentType.includes("application/json")) {
       const body = (await req.json()) as { imageUrl?: string; imageBase64?: string };
-      if (body.imageUrl) imageInput = body.imageUrl;
-      else if (body.imageBase64) imageInput = body.imageBase64;
+      if (body.imageUrl) {
+        // SSRF guard: a caller-supplied URL is fetched server-side, so only allow
+        // our own R2 public bucket (where the presign route uploads). Anything
+        // else (internal IPs, metadata endpoints, arbitrary hosts) is rejected.
+        const r2Base = process.env.R2_PUBLIC_URL;
+        const isHttp = /^https?:\/\//i.test(body.imageUrl);
+        if (isHttp && (!r2Base || !body.imageUrl.startsWith(r2Base))) {
+          return NextResponse.json({ error: "URL ไม่ได้รับอนุญาต" }, { status: 400 });
+        }
+        imageInput = body.imageUrl;
+      } else if (body.imageBase64) imageInput = body.imageBase64;
       else return NextResponse.json({ error: "ต้องมี imageUrl หรือไฟล์" }, { status: 400 });
     } else {
       const form = await req.formData();

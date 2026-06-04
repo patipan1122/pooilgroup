@@ -182,6 +182,7 @@ async function createDraftExpenseCore(
   const recheck = recheckReceipt({
     vendorTaxId: input.vendorTaxId,
     subtotal: input.subtotal,
+    discount: input.discount,
     vat: input.vat,
     wht: input.wht,
     total: input.total,
@@ -349,6 +350,7 @@ export async function updateExpense(
   const recheck = recheckReceipt({
     vendorTaxId: input.vendorTaxId,
     subtotal: input.subtotal,
+    discount: input.discount,
     vat: input.vat,
     wht: input.wht,
     total: input.total,
@@ -444,6 +446,12 @@ export async function confirmExpense(input: {
   if (!isAccountant(user.role)) {
     return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลยืนยันได้" };
   }
+  // Module entitlement: server actions are directly-invokable POST endpoints, so
+  // a viewer (accountant-tier) NOT granted the ledger module must still be blocked
+  // — mirror updateExpense / _actions.ts. Admin tier bypasses.
+  if (!isAdminTier(user.role) && !(await userHasModuleAccess(user, "ledger"))) {
+    return { ok: false, error: "ไม่มีสิทธิ์ใช้งานโมดูลนี้" };
+  }
 
   const existing = await prisma.ledgerExpense.findFirst({
     where: { id: input.id, orgId, companyId: input.companyId },
@@ -497,6 +505,12 @@ export async function confirmExpensesBulk(input: {
   }
   if (!isAccountant(user.role)) {
     return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลยืนยันได้" };
+  }
+  // Module entitlement: server actions are directly-invokable POST endpoints, so
+  // a viewer (accountant-tier) NOT granted the ledger module must still be blocked
+  // — mirror updateExpense / _actions.ts. Admin tier bypasses.
+  if (!isAdminTier(user.role) && !(await userHasModuleAccess(user, "ledger"))) {
+    return { ok: false, error: "ไม่มีสิทธิ์ใช้งานโมดูลนี้" };
   }
   if (!input.ids.length) return { ok: true, data: { confirmed: 0 } };
 

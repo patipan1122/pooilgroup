@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getLiffIdToken } from "@/lib/line/liff-client";
+import { getLiff, getLiffIdToken } from "@/lib/line/liff-client";
 import { LedgerMascot } from "@/components/ledger/Brand";
 
 type State =
@@ -79,6 +79,22 @@ export function JoinClient({ token }: { token: string }) {
           <div className="space-y-1">
             <p className="text-base font-semibold text-zinc-800">เข้าร่วมไม่สำเร็จ</p>
             <p className="text-sm text-rose-600">{state.message}</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="rounded-xl bg-[var(--color-brand-600,#2563EB)] px-4 py-2 text-sm font-semibold text-white"
+            >
+              ลองใหม่
+            </button>
+            <button
+              type="button"
+              onClick={async () => { (await getLiff(LEDGER_LIFF_ID))?.closeWindow?.(); }}
+              className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-600"
+            >
+              ปิด
+            </button>
           </div>
         </>
       )}

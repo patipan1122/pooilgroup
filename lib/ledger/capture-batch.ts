@@ -167,7 +167,9 @@ export async function flushBatchAfterQuiet(
       liffId: deps.liffId,
     }));
 
-    const carousel = buildLineConfirmCarousel(cards);
+    // The FIRST photo of the burst already got an inline single-card reply (fast
+    // feedback), so omit its per-receipt bubble here — the summary still counts all.
+    const carousel = buildLineConfirmCarousel(cards, { skipFirstBubble: true });
 
     // Prefer a free reply (token only seconds old); fall back to push.
     let delivered = false;

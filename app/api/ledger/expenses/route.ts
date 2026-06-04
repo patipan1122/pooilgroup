@@ -86,6 +86,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ต้องระบุ companyId" }, { status: 400 });
   }
 
+  // SECURITY: never trust a client-supplied author. createdById is the system/
+  // webhook-only override (server-to-server path uses createDraftExpenseSystem);
+  // for this session route, force the author to the logged-in user (the action
+  // defaults createdById → session.user.id when absent). Strip any forged value.
+  body.createdById = undefined;
+
   const res = await createDraftExpense(body);
   if (!res.ok) {
     return NextResponse.json({ error: res.error }, { status: 400 });

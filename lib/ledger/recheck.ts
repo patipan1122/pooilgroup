@@ -41,6 +41,7 @@ function num(v: number | null | undefined): number {
 export function recheckReceipt(p: {
   vendorTaxId?: string | null;
   subtotal?: number | null;
+  discount?: number | null;
   vat?: number | null;
   wht?: number | null;
   total?: number | null;
@@ -56,23 +57,28 @@ export function recheckReceipt(p: {
   }
 
   const subtotal = num(p.subtotal);
+  const discount = num(p.discount);
   const vat = num(p.vat);
   const wht = num(p.wht);
   const total = num(p.total);
 
-  // 2. subtotal + vat - wht = total
+  // 2. subtotal − discount + vat − wht = total
+  //    (subtotal = gross pre-discount; discount reduces the taxable base, Bainy-style)
   if (total > 0 || subtotal > 0) {
-    const expectedTotal = subtotal + vat - wht;
+    const expectedTotal = subtotal - discount + vat - wht;
     if (!near(expectedTotal, total)) {
+      const discPart = discount > 0 ? ` − ส่วนลด ${discount.toFixed(2)}` : "";
       warnings.push(
-        `ยอดรวมไม่ตรง: ยอดย่อย ${subtotal.toFixed(2)} + VAT ${vat.toFixed(2)} − หัก ณ ที่จ่าย ${wht.toFixed(2)} = ${expectedTotal.toFixed(2)} แต่ยอดรวมที่อ่านได้ = ${total.toFixed(2)}`,
+        `ยอดรวมไม่ตรง: ยอดย่อย ${subtotal.toFixed(2)}${discPart} + VAT ${vat.toFixed(2)} − หัก ณ ที่จ่าย ${wht.toFixed(2)} = ${expectedTotal.toFixed(2)} แต่ยอดรวมที่อ่านได้ = ${total.toFixed(2)}`,
       );
     }
   }
 
-  // 3. VAT ≈ 7% sanity (warn only — exempt vendors / VAT-inclusive prices vary)
-  if (subtotal > 0 && vat > 0) {
-    const impliedRate = vat / subtotal;
+  // 3. VAT ≈ 7% sanity (warn only — exempt vendors / VAT-inclusive prices vary).
+  //    Base is the post-discount taxable amount.
+  const taxBase = subtotal - discount;
+  if (taxBase > 0 && vat > 0) {
+    const impliedRate = vat / taxBase;
     if (Math.abs(impliedRate - VAT_RATE) > VAT_SANITY_TOL) {
       warnings.push(
         `อัตรา VAT ผิดปกติ: ${(impliedRate * 100).toFixed(1)}% (ปกติ 7%) — ตรวจว่าเป็นราคารวม VAT หรือผู้ขายไม่จด VAT`,
@@ -99,6 +105,7 @@ export function recheckParsed(parsed: ParsedReceipt): RecheckResult {
   return recheckReceipt({
     vendorTaxId: parsed.vendorTaxId,
     subtotal: parsed.subtotal,
+    discount: parsed.discount ?? 0,
     vat: parsed.vat,
     wht: parsed.wht,
     total: parsed.total,

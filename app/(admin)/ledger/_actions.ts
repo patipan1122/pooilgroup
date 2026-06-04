@@ -221,6 +221,7 @@ export async function confirmExpense(
   const rc = recheckReceipt({
     vendorTaxId: p.vendorTaxId || null,
     subtotal: p.subtotal,
+    discount: p.discount,
     vat: p.vat,
     wht: p.wht,
     total: p.total,

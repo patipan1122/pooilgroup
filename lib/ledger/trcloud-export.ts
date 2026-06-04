@@ -23,6 +23,7 @@ export interface TrcloudExportRow {
   acc_code: string; // category.trcloud_acc_code (the TRCloud GL account)
   payment_method: string;
   subtotal: number;
+  discount: number;
   vat: number;
   wht: number;
   total: number;
@@ -49,6 +50,7 @@ const HEADERS: (keyof TrcloudExportRow)[] = [
   "acc_code",
   "payment_method",
   "subtotal",
+  "discount",
   "vat",
   "wht",
   "total",
@@ -64,6 +66,7 @@ const HEADER_TH: Record<keyof TrcloudExportRow, string> = {
   acc_code: "รหัสบัญชี",
   payment_method: "วิธีชำระ",
   subtotal: "ยอดก่อนภาษี",
+  discount: "ส่วนลด",
   vat: "ภาษีมูลค่าเพิ่ม",
   wht: "หัก ณ ที่จ่าย",
   total: "ยอดรวม",
@@ -95,6 +98,7 @@ function toRow(
     acc_code: (e.categoryId ? accCodeByCategory[e.categoryId] : null) ?? "",
     payment_method: e.paymentMethod ?? "",
     subtotal: e.subtotal,
+    discount: e.discount ?? 0,
     vat: e.vat,
     wht: e.wht,
     total: e.total,
@@ -121,6 +125,7 @@ export function buildTrcloudCsv(
 
   const moneyKeys = new Set<keyof TrcloudExportRow>([
     "subtotal",
+    "discount",
     "vat",
     "wht",
     "total",

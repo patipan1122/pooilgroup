@@ -510,8 +510,15 @@ export function buildLineConfirmCard(input: LedgerConfirmCardInput): LineFlexMes
  *
  * A single-card input returns the same as buildLineConfirmCard (no summary
  * bubble) so the common 1-receipt path stays clean.
+ *
+ * `opts.skipFirstBubble` — the first receipt of a burst already got an inline
+ * single-card reply (fast feedback), so the carousel omits its per-receipt
+ * bubble to avoid showing it twice; the SUMMARY still counts/sums ALL receipts.
  */
-export function buildLineConfirmCarousel(cards: LedgerConfirmCardInput[]): LineFlexMessage {
+export function buildLineConfirmCarousel(
+  cards: LedgerConfirmCardInput[],
+  opts: { skipFirstBubble?: boolean } = {},
+): LineFlexMessage {
   if (cards.length <= 1) {
     return buildLineConfirmCard(
       cards[0] ?? ({ expenseId: "", companyId: "", docCode: "-", total: 0 } as LedgerConfirmCardInput),
@@ -519,11 +526,13 @@ export function buildLineConfirmCarousel(cards: LedgerConfirmCardInput[]): LineF
   }
 
   const baseUrl = (cards[0]?.baseUrl ?? "").replace(/\/+$/, "");
+  // Summary stats span ALL receipts; per-receipt bubbles may skip the inline-replied first.
   const combined = cards.reduce((s, c) => s + (Number.isFinite(c.total) ? c.total : 0), 0);
   const flagged = cards.filter((c) => c.needsReview).length;
+  const bubbleCards = opts.skipFirstBubble ? cards.slice(1) : cards;
   const MAX = 12; // LINE carousel cap (incl. summary bubble)
-  const shown = cards.slice(0, MAX - 1);
-  const overflow = cards.length - shown.length;
+  const shown = bubbleCards.slice(0, MAX - 1);
+  const overflow = bubbleCards.length - shown.length;
 
   const summaryMascot = baseUrl ? `${baseUrl}${mascotPath("money")}` : null;
   const summaryBubble: FlexBubble = {
