@@ -174,6 +174,8 @@ export function ExpenseReviewPane({
   onConfirm,
   onVoid,
   readOnly = false,
+  canConfirm = true,
+  showTrcloud = true,
 }: {
   expense: ExpenseRow;
   categories: CategoryOption[];
@@ -183,6 +185,10 @@ export function ExpenseReviewPane({
   onVoid: VoidExpenseAction;
   /** locked/void → ดูอย่างเดียว */
   readOnly?: boolean;
+  /** false = staff ที่ยังไม่มีสิทธิ์ยืนยัน → กดได้แค่ "บันทึกร่าง" */
+  canConfirm?: boolean;
+  /** false = ซ่อนปุ่ม "ส่งเข้า TRCloud" (LIFF/สมาชิก — ส่งเป็นงานบัญชีฝั่งเว็บ) */
+  showTrcloud?: boolean;
 }) {
   const [draft, setDraft] = useState<ExpenseDraft>({
     vendor: expense.vendor ?? "",
@@ -329,13 +335,15 @@ export function ExpenseReviewPane({
         <div className="flex items-center gap-2">
           {/* ออกเอกสาร PV/JV/PCV/ใบแทนใบเสร็จ — เปิดเอกสารพิมพ์ใน tab ใหม่.
               เปิดได้เฉพาะรายการที่ "ยืนยันแล้ว/ปิดงวด" (ร่าง/ยกเลิก ออกไม่ได้). */}
-          <SendToTrcloudButton
-            expenseId={expense.id}
-            status={expense.status}
-            trcloudDocId={expense.trcloudDocId}
-            trcloudDocNo={expense.trcloudDocNo}
-            trcloudError={expense.trcloudError}
-          />
+          {showTrcloud && (
+            <SendToTrcloudButton
+              expenseId={expense.id}
+              status={expense.status}
+              trcloudDocId={expense.trcloudDocId}
+              trcloudDocNo={expense.trcloudDocNo}
+              trcloudError={expense.trcloudError}
+            />
+          )}
           <VoucherMenu
             expenseId={expense.id}
             companyId={expense.companyId}
@@ -792,9 +800,15 @@ export function ExpenseReviewPane({
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="primary"
-              disabled={pending || hasError}
+              disabled={pending || hasError || !canConfirm}
               onClick={() => handle(onConfirm, "ยืนยันแล้ว · บันทึกเป็น 'ยืนยันแล้ว'")}
-              title={hasError ? "แก้ยอดที่ไม่ตรงก่อนยืนยัน" : undefined}
+              title={
+                !canConfirm
+                  ? "เฉพาะบัญชี/ผู้ดูแลยืนยันได้ — คุณกดบันทึกร่างได้"
+                  : hasError
+                    ? "แก้ยอดที่ไม่ตรงก่อนยืนยัน"
+                    : undefined
+              }
               className="flex-1 sm:flex-none"
             >
               {pending ? (
@@ -812,15 +826,17 @@ export function ExpenseReviewPane({
               <Save className="size-4" aria-hidden />
               บันทึกร่าง
             </Button>
-            <Button
-              variant="ghost"
-              disabled={pending}
-              onClick={handleVoid}
-              className="ml-auto text-rose-600 hover:bg-rose-50"
-            >
-              <Ban className="size-4" aria-hidden />
-              ยกเลิก
-            </Button>
+            {canConfirm && (
+              <Button
+                variant="ghost"
+                disabled={pending}
+                onClick={handleVoid}
+                className="ml-auto text-rose-600 hover:bg-rose-50"
+              >
+                <Ban className="size-4" aria-hidden />
+                ยกเลิก
+              </Button>
+            )}
           </div>
           <p className="mt-2 flex items-center gap-1 text-[11px] text-zinc-400">
             <ShieldCheck className="size-3.5" aria-hidden />

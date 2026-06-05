@@ -15,7 +15,8 @@ import Link from "next/link";
 import { getSession } from "@/lib/auth/session";
 import { resolveScope } from "@/app/(admin)/ledger/_scope";
 import { getExpense, listCategories } from "@/app/(admin)/ledger/_data";
-import { ExpensePaneClient } from "@/app/(admin)/ledger/expenses/_components/ExpensePaneClient";
+import { resolveLedgerActor } from "@/lib/ledger/liff-auth";
+import { LiffExpensePane } from "./LiffExpensePane";
 import { LedgerMascot } from "@/components/ledger/Brand";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +40,23 @@ export default async function LedgerLiffExpensePage({
           <p className="text-base font-semibold text-zinc-800">กำลังเข้าสู่ระบบ</p>
           <p className="text-sm text-zinc-500">
             ถ้าค้างนาน · บัญชีนี้อาจยังไม่ได้เปิดใช้ · ติดต่อออฟฟิศ
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Signed in but no ledger access (not a member yet, or disabled) → needs-link
+  // screen instead of a form whose every button would reject with "ไม่มีสิทธิ์".
+  const actor = await resolveLedgerActor();
+  if (!actor) {
+    return (
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
+        <LedgerMascot size={88} pose="confused" priority />
+        <div className="space-y-1">
+          <p className="text-base font-semibold text-zinc-800">บัญชียังไม่เปิดใช้งานสำหรับคุณ</p>
+          <p className="text-sm text-zinc-500">
+            แจ้งออฟฟิศ/ผู้ดูแลให้เพิ่มคุณเป็นสมาชิก แล้วเปิดสิทธิ์ในระบบบัญชี — จากนั้นเปิดลิงก์นี้อีกครั้ง
           </p>
         </div>
       </div>
@@ -91,7 +109,7 @@ export default async function LedgerLiffExpensePage({
         </div>
       </header>
 
-      <ExpensePaneClient
+      <LiffExpensePane
         expense={expense}
         categories={categories.map((c) => ({
           id: c.id,
@@ -100,6 +118,7 @@ export default async function LedgerLiffExpensePage({
           sort: c.sort,
         }))}
         branches={scope.branches}
+        canConfirm={actor.canConfirm}
       />
     </div>
   );
