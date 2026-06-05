@@ -1150,3 +1150,144 @@ export async function setLedgerPermission(
   revalidatePath("/liff/ledger/admin");
   return { ok: true };
 }
+
+// ── Branch CRUD (GAP 5 · LIFF "สาขา" tab) ───────────────────────────────────
+// NOTE: Branch is a SHARED Pool core entity (chairops/clawfleet/fuel use it too).
+// Adding/editing here touches all modules — the UI shows a clear warning. Admin-tier.
+const branchCreateSchema = z.object({
+  companyId: z.string().trim().min(1, "ไม่ได้ระบุบริษัท"),
+  code: z.string().trim().min(1, "ใส่รหัสสาขา").max(40),
+  name: z.string().trim().min(1, "ใส่ชื่อสาขา").max(120),
+  province: z.string().trim().max(80).optional().or(z.literal("")),
+  // Branch is a shared Pool entity → it needs a business type (drives module nav).
+  businessType: z.enum([
+    "fuel_station", "lpg_station", "lpg_retail", "bottling_plant", "hotel",
+    "convenience_store", "ev_station", "cafe", "cafe_punthai", "massage_chair",
+    "claw_machine", "training_center", "transport", "gas_fleet",
+  ]),
+});
+
+export async function createLedgerBranch(raw: unknown): Promise<ActionResult> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลเพิ่มสาขาได้" };
+  }
+  const parsed = branchCreateSchema.safeParse(raw);
+  if (!parsed.success)
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const { companyId, code, name, province, businessType } = parsed.data;
+  const orgId = session.user.org_id;
+
+  const company = await prisma.company.findFirst({
+    where: { id: companyId, orgId },
+    select: { id: true },
+  });
+  if (!company) return { ok: false, error: "ไม่พบบริษัท" };
+
+  try {
+    const branch = await prisma.branch.create({
+      data: { orgId, companyId, code, name, province: province || null, businessType },
+      select: { id: true },
+    });
+    await audit({
+      orgId,
+      userId: session.user.id,
+      action: "LEDGER_BRANCH_UPDATED",
+      resourceType: "branch",
+      resourceId: branch.id,
+      diff: { new: { created: true, code, name } },
+    });
+  } catch {
+    // @@unique([orgId, code]) → duplicate code anywhere in the org.
+    return { ok: false, error: `รหัสสาขา "${code}" ถูกใช้แล้วในองค์กรนี้` };
+  }
+  revalidatePath("/liff/ledger/admin");
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
+const branchUpdateSchema = z.object({
+  name: z.string().trim().min(1, "ใส่ชื่อสาขา").max(120),
+  province: z.string().trim().max(80).optional().or(z.literal("")),
+  isActive: z.boolean(),
+});
+
+export async function updateLedgerBranch(
+  branchId: string,
+  raw: unknown,
+): Promise<ActionResult> {
+  if (!branchId) return { ok: false, error: "ไม่ได้ระบุสาขา" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลแก้สาขาได้" };
+  }
+  const parsed = branchUpdateSchema.safeParse(raw);
+  if (!parsed.success)
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const { name, province, isActive } = parsed.data;
+
+  const res = await prisma.branch.updateMany({
+    where: { id: branchId, orgId: session.user.org_id },
+    data: { name, province: province || null, isActive },
+  });
+  if (res.count === 0) return { ok: false, error: "ไม่พบสาขา" };
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_BRANCH_UPDATED",
+    resourceType: "branch",
+    resourceId: branchId,
+    diff: { new: { name, isActive } },
+  });
+  revalidatePath("/liff/ledger/admin");
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
+// ── Org/Company info (GAP 5 · LIFF "องค์กร" tab) ─────────────────────────────
+const orgInfoSchema = z.object({
+  companyId: z.string().trim().min(1, "ไม่ได้ระบุบริษัท"),
+  name: z.string().trim().min(1, "ใส่ชื่อบริษัท").max(200),
+  taxId: z.string().trim().max(20).optional().or(z.literal("")),
+  address: z.string().trim().max(400).optional().or(z.literal("")),
+  phone: z.string().trim().max(40).optional().or(z.literal("")),
+});
+
+export async function updateLedgerOrgInfo(raw: unknown): Promise<ActionResult> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลแก้ข้อมูลบริษัทได้" };
+  }
+  const parsed = orgInfoSchema.safeParse(raw);
+  if (!parsed.success)
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const { companyId, name, taxId, address, phone } = parsed.data;
+
+  const res = await prisma.company.updateMany({
+    where: { id: companyId, orgId: session.user.org_id },
+    data: {
+      name,
+      taxId: taxId || null,
+      address: address || null,
+      phone: phone || null,
+    },
+  });
+  if (res.count === 0) return { ok: false, error: "ไม่พบบริษัท" };
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_ORG_UPDATED",
+    resourceType: "company",
+    resourceId: companyId,
+    diff: { new: { name, taxIdSet: !!taxId } },
+  });
+  revalidatePath("/liff/ledger/admin");
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}

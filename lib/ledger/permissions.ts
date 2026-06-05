@@ -1,122 +1,38 @@
 // LedgerLine — money-capability permission model (LIFF Admin Console, GAP 5).
 //
-// ONE source of truth for "what each ledger role may do" with the money-risk
-// actions. CEO 2026-06-05: 4 roles × 5 toggles (NOT a full Bainy matrix). The
-// `can()` helper here is the SINGLE authz gate — call it from LIFF actions, LINE
-// commands, and the web money-actions so the two role systems can never diverge
-// (workshop lesson W-013). A missing override row → the code DEFAULTS below.
+// THE authz gate (server-only, DB). Pure constants/labels/defaults live in
+// permission-constants.ts (client-safe); re-exported here for back-compat so
+// existing server imports (`from "@/lib/ledger/permissions"`) keep working.
 //
-// IMPORTANT: this governs the LEDGER role (ledger_line_member.role) used in the
-// LINE/LIFF context. The web (Pool session) keeps its own requireRole gates; this
-// is an additional, money-specific gate that both surfaces consult.
+// `can()` is the SINGLE money-capability gate — call it from LIFF actions, LINE
+// commands, and web money-actions so the two role systems can never diverge
+// (workshop lesson W-013). A missing override row → the code DEFAULTS. It governs
+// the LEDGER role (ledger_line_member.role) in the LINE/LIFF context; the web
+// keeps its own requireRole gates as well.
 
 import { prisma } from "@/lib/prisma";
+import {
+  LEDGER_ROLES,
+  PERMISSION_DEFAULTS,
+  isLedgerRole,
+  isLedgerCapability,
+  type LedgerRole,
+  type LedgerCapability,
+} from "./permission-constants";
 
-/** The 4 ledger roles (mirrors Bainy's สิทธิ์ tab). */
-export const LEDGER_ROLES = [
-  "staff",
-  "accountant",
-  "admin",
-  "external_accountant",
-] as const;
-export type LedgerRole = (typeof LEDGER_ROLES)[number];
-
-export function isLedgerRole(v: unknown): v is LedgerRole {
-  return typeof v === "string" && (LEDGER_ROLES as readonly string[]).includes(v);
-}
-
-/** The 5 money-risk capabilities an admin can toggle per role. */
-export const LEDGER_CAPABILITIES = [
-  "expense.confirm", // ยืนยันบิล → เข้าเล่ม/ส่งออกได้
-  "expense.export", // ส่งออกไฟล์ (Excel/CSV → TRCloud)
-  "report.view_pnl", // ดูภาพรวมการเงิน (กำไร-ขาดทุน)
-  "scope.all_branches", // เห็นทุกสาขา (ไม่งั้นเฉพาะสาขาที่ดูแล)
-  "expense.edit_others", // แก้ไข/ลบรายการของคนอื่น
-] as const;
-export type LedgerCapability = (typeof LEDGER_CAPABILITIES)[number];
-
-export function isLedgerCapability(v: unknown): v is LedgerCapability {
-  return (
-    typeof v === "string" &&
-    (LEDGER_CAPABILITIES as readonly string[]).includes(v)
-  );
-}
-
-/** Human-readable labels (CEO is non-developer — sentence + short gloss). */
-export const ROLE_LABEL: Record<LedgerRole, string> = {
-  staff: "พนักงาน",
-  accountant: "บัญชี",
-  admin: "ผู้ดูแล",
-  external_accountant: "สำนักงานบัญชีภายนอก",
-};
-
-export const CAPABILITY_LABEL: Record<
-  LedgerCapability,
-  { title: string; desc: string }
-> = {
-  "expense.confirm": {
-    title: "ยืนยันค่าใช้จ่าย",
-    desc: "กดยืนยันบิลให้เข้าเล่มบัญชี/ส่งออกได้",
-  },
-  "expense.export": {
-    title: "ส่งออกไฟล์บัญชี",
-    desc: "โหลดไฟล์ Excel/CSV ออกไป (เข้า TRCloud)",
-  },
-  "report.view_pnl": {
-    title: "ดูภาพรวมการเงิน",
-    desc: "เห็นกำไร-ขาดทุน ยอดรวมทั้งบริษัท",
-  },
-  "scope.all_branches": {
-    title: "เห็นทุกสาขา",
-    desc: "ดูข้อมูลได้ทุกสาขา (ไม่จำกัดเฉพาะสาขาที่ดูแล)",
-  },
-  "expense.edit_others": {
-    title: "แก้/ลบรายการคนอื่น",
-    desc: "แก้ไขหรือลบรายจ่ายที่คนอื่นบันทึก",
-  },
-};
-
-/** Code defaults — used when no DB override row exists for (org, role, cap). */
-const DEFAULTS: Record<LedgerRole, Record<LedgerCapability, boolean>> = {
-  // พนักงาน: ถ่าย/บันทึกเท่านั้น — ไม่แตะเรื่องเงิน
-  staff: {
-    "expense.confirm": false,
-    "expense.export": false,
-    "report.view_pnl": false,
-    "scope.all_branches": false,
-    "expense.edit_others": false,
-  },
-  // บัญชี: ทำได้หมด (เป็นคนคุมเล่ม)
-  accountant: {
-    "expense.confirm": true,
-    "expense.export": true,
-    "report.view_pnl": true,
-    "scope.all_branches": true,
-    "expense.edit_others": true,
-  },
-  // ผู้ดูแล: ทำได้หมด
-  admin: {
-    "expense.confirm": true,
-    "expense.export": true,
-    "report.view_pnl": true,
-    "scope.all_branches": true,
-    "expense.edit_others": true,
-  },
-  // สำนักงานบัญชีภายนอก: ดู + ส่งออกเท่านั้น (ไม่ยืนยัน ไม่แก้ของคนอื่น)
-  external_accountant: {
-    "expense.confirm": false,
-    "expense.export": true,
-    "report.view_pnl": true,
-    "scope.all_branches": true,
-    "expense.edit_others": false,
-  },
-};
-
-/** Synchronous default lookup (no DB) — safe fallback. */
-export function defaultCan(role: string, cap: LedgerCapability): boolean {
-  if (!isLedgerRole(role)) return false;
-  return DEFAULTS[role][cap];
-}
+export {
+  LEDGER_ROLES,
+  LEDGER_CAPABILITIES,
+  ROLE_LABEL,
+  ROLE_HINT,
+  CAPABILITY_LABEL,
+  PERMISSION_DEFAULTS,
+  isLedgerRole,
+  isLedgerCapability,
+  defaultCan,
+  type LedgerRole,
+  type LedgerCapability,
+} from "./permission-constants";
 
 /**
  * THE authz gate. Returns whether `role` may do `capability` in this org.
@@ -134,14 +50,14 @@ export async function can(
     where: { orgId_role_capability: { orgId, role, capability } },
     select: { allowed: true },
   });
-  return row ? row.allowed : DEFAULTS[role][capability];
+  return row ? row.allowed : PERMISSION_DEFAULTS[role][capability];
 }
 
 /** Full effective matrix for an org (defaults merged with overrides) — สิทธิ์ tab. */
 export async function getPermissionMatrix(
   orgId: string,
 ): Promise<Record<LedgerRole, Record<LedgerCapability, boolean>>> {
-  const out = structuredCloneMatrix();
+  const out = cloneDefaults();
   if (!orgId) return out;
   const rows = await prisma.ledgerPermission.findMany({
     where: { orgId },
@@ -155,13 +71,10 @@ export async function getPermissionMatrix(
   return out;
 }
 
-function structuredCloneMatrix(): Record<
-  LedgerRole,
-  Record<LedgerCapability, boolean>
-> {
+function cloneDefaults(): Record<LedgerRole, Record<LedgerCapability, boolean>> {
   const out = {} as Record<LedgerRole, Record<LedgerCapability, boolean>>;
   for (const role of LEDGER_ROLES) {
-    out[role] = { ...DEFAULTS[role] };
+    out[role] = { ...PERMISSION_DEFAULTS[role] };
   }
   return out;
 }
