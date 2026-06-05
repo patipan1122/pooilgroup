@@ -17,7 +17,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { resolveLedgerActor, isLedgerAdminActor } from "@/lib/ledger/liff-auth";
 import { listCompanies, listCategories } from "@/lib/ledger/queries";
 import {
   getLineChannel,
@@ -52,10 +52,12 @@ export default async function LedgerLiffAdminPage({
     );
   }
 
-  // Admin gate — Pool role is the source of truth for settings authz (workshop
-  // W-013: never gate settings on the LINE-side role). Staff/accountant who tap
-  // the shared Rich Menu button land on a calm "for admins only" screen.
-  if (!isAdminTier(session.user.role)) {
+  // Admin gate — the SINGLE ledger-admin test (audit 2026-06-05): Pool admin-tier
+  // (super_admin/org_admin/admin) OR a person whose ledger role is 'admin' (top-down
+  // promoted). Unifies the bot gate + console + web. Staff/accountant who tap the
+  // shared Rich Menu button land on a calm "for admins only" screen.
+  const actor = await resolveLedgerActor();
+  if (!isLedgerAdminActor(actor)) {
     return (
       <div className="mx-auto flex min-h-[70vh] w-full max-w-md flex-col items-center justify-center gap-5 px-6 text-center">
         <LedgerMascot size={92} pose="confused" priority />

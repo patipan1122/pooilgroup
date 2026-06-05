@@ -37,19 +37,13 @@ import {
   trcloudPushConfigured,
   type PushableExpense,
 } from "@/lib/ledger/trcloud-push";
-import { resolveLedgerActor, actorCanReachBranch } from "@/lib/ledger/liff-auth";
+import { resolveLedgerActor, actorCanReachBranch, ledgerWebCanForRole } from "@/lib/ledger/liff-auth";
 import { audit } from "@/lib/audit/log";
 import { encryptToken } from "@/lib/recruit/channel-crypto";
 
 export type ActionResult = { ok: boolean; error?: string };
 
 // ── Auth helpers (shared gate stack for every action) ───────────────────────
-
-/** Accountant tier = admin tiers + `viewer` (UserRole "viewer" = accountant/HR).
- *  Mirrors isAccountant() in lib/ledger/actions.ts. */
-function isAccountant(role: DbUser["role"]): boolean {
-  return isAdminTier(role) || role === "viewer";
-}
 
 /**
  * Resolve the session AND enforce module entitlement. Returns the session when
@@ -217,8 +211,9 @@ export async function confirmExpense(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  // Confirm = the financial "post" event → accountant tier only.
-  if (!isAccountant(session.user.role)) {
+  // Confirm = the financial "post" event → governed by the expense.confirm
+  // capability (admin tier always passes; accountant per the สิทธิ์ matrix).
+  if (!(await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.confirm"))) {
     return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลยืนยันได้" };
   }
 
@@ -293,7 +288,7 @@ export async function voidExpense(id: string): Promise<ActionResult> {
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAccountant(session.user.role)) {
+  if (!(await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.confirm"))) {
     return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลยกเลิกได้" };
   }
 
@@ -334,7 +329,7 @@ export async function bulkConfirm(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAccountant(session.user.role)) {
+  if (!(await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.confirm"))) {
     return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลยืนยันได้" };
   }
 
@@ -578,8 +573,8 @@ export async function exportConfirmedCsv(raw: unknown): Promise<ExportResult> {
   const access = await requireLedgerAccess();
   if (!access.ok) return { ok: false, error: access.error };
   const { session } = access;
-  // Exporting confirmed P&L to CSV (feeds TRCloud) is an accountant action.
-  if (!isAccountant(session.user.role)) {
+  // Exporting confirmed P&L to CSV (feeds TRCloud) → expense.export capability.
+  if (!(await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.export"))) {
     return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลส่งออกได้" };
   }
   const parsed = exportSchema.safeParse(raw);
@@ -751,7 +746,7 @@ export async function sendExpenseToTrcloud(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAccountant(session.user.role)) {
+  if (!(await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.export"))) {
     return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลส่งเข้า TRCloud ได้" };
   }
   if (!trcloudPushConfigured()) {
@@ -785,7 +780,7 @@ export async function sendExpensesToTrcloud(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAccountant(session.user.role)) {
+  if (!(await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.export"))) {
     return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลส่งเข้า TRCloud ได้" };
   }
   if (!trcloudPushConfigured()) {
@@ -1262,6 +1257,117 @@ export async function createLedgerInvite(
     action: "LEDGER_INVITE_CREATED",
     resourceType: "ledger_line_invite",
     diff: { new: { role: p.role, branches: p.scopeBranchIds?.length ?? 0 } },
+  });
+  revalidatePath("/ledger/settings");
+  return { ok: true, token, url: inviteUrl(token) };
+}
+
+/**
+ * Owner/admin SELF-CLAIM link (identity fix 2026-06-05). The admin is already a
+ * Pool user but the LIFF authenticates via the LINE *Login* channel sub, which can
+ * differ from the messaging userId (different providers) — so the admin gets blocked
+ * in the LIFF even though the bot knows them. This mints a one-tap admin_claim invite
+ * targeting THE CALLER's own Pool user; opening it in LINE binds their verified login
+ * sub (users.line_login_sub) so every channel resolves them. No id guessing, no dance.
+ */
+export async function createLedgerSelfClaimLink(): Promise<
+  ActionResult & { url?: string }
+> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลผูกบัญชีของตัวเองได้" };
+  }
+  const company = await prisma.company.findFirst({
+    where: { orgId: session.user.org_id },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!company) return { ok: false, error: "ยังไม่มีบริษัทในระบบ" };
+  // Clear prior unused self-claim tokens for this user (avoid pile-up).
+  await prisma.ledgerLineInvite.deleteMany({
+    where: { orgId: session.user.org_id, targetPoolUserId: session.user.id, usedAt: null },
+  });
+  const token = randomBytes(18).toString("base64url");
+  await prisma.ledgerLineInvite.create({
+    data: {
+      orgId: session.user.org_id,
+      companyId: company.id,
+      token,
+      role: "admin",
+      kind: "admin_claim",
+      targetPoolUserId: session.user.id, // bind to ME
+      scopeBranchIds: [],
+      scopeCategoryIds: [],
+      expiresAt: new Date(Date.now() + 86400_000), // 24h
+      createdBy: session.user.id,
+    },
+  });
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_ADMIN_LINE_LINKED",
+    resourceType: "user",
+    resourceId: session.user.id,
+    diff: { new: { kind: "admin_claim", self: true, via: "self_claim_link" } },
+  });
+  revalidatePath("/ledger/settings");
+  return { ok: true, url: inviteUrl(token) };
+}
+
+/**
+ * TOP-DOWN admin invite (CEO req 2). The owner/admin generates a link and hands it
+ * to a new admin; opening it in LINE mints a FRESH ledger-only Pool user (isolated
+ * from ChairOps) + binds their login sub + makes them a ledger admin. Role-rank: only
+ * admin-tier may create it, and it only grants LEDGER admin (never a Pool super_admin).
+ */
+const adminInviteSchema = z.object({
+  companyId: z.string().trim().min(1),
+  scopeBranchIds: z.array(z.string().trim().min(1)).max(200).optional(),
+  note: z.string().trim().max(200).optional(),
+  expiresInDays: z.coerce.number().int().min(1).max(30).optional(),
+});
+
+export async function createLedgerAdminInvite(
+  raw: unknown,
+): Promise<ActionResult & { token?: string; url?: string }> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลตั้งแอดมินได้" };
+  }
+  const parsed = adminInviteSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "ข้อมูลคำเชิญไม่ถูกต้อง" };
+  const p = parsed.data;
+  const company = await prisma.company.findFirst({
+    where: { id: p.companyId, orgId: session.user.org_id },
+    select: { id: true },
+  });
+  if (!company) return { ok: false, error: "ไม่พบบริษัท" };
+  const token = randomBytes(18).toString("base64url");
+  await prisma.ledgerLineInvite.create({
+    data: {
+      orgId: session.user.org_id,
+      companyId: p.companyId,
+      token,
+      role: "admin",
+      kind: "admin_claim",
+      targetPoolUserId: null, // mints a fresh ledger-only Pool user on accept
+      scopeBranchIds: p.scopeBranchIds ?? [],
+      scopeCategoryIds: [],
+      note: p.note || null,
+      expiresAt: new Date(Date.now() + (p.expiresInDays ?? 7) * 86400_000),
+      createdBy: session.user.id,
+    },
+  });
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_INVITE_CREATED",
+    resourceType: "ledger_line_invite",
+    diff: { new: { kind: "admin_claim", role: "admin", branches: p.scopeBranchIds?.length ?? 0 } },
   });
   revalidatePath("/ledger/settings");
   return { ok: true, token, url: inviteUrl(token) };

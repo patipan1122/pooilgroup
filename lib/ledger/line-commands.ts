@@ -66,7 +66,9 @@ function adminConsoleUrl(): string | null {
   return `https://liff.line.me/${liffId}/ledger?next=${encodeURIComponent("/liff/ledger/admin")}`;
 }
 
-/** Is this the `/setting`-able admin? (Pool user, admin-tier or accountant) */
+/** Is this sender a ledger ADMIN in chat? Pool admin-tier / accountant (viewer) /
+ *  area_manager OR a person whose LEDGER member role is 'admin' (top-down promoted).
+ *  Unified with the LIFF/web admin notion (audit 2026-06-05). */
 async function isAdminSender(
   orgId: string,
   lineUserId: string | null,
@@ -76,8 +78,36 @@ async function isAdminSender(
     where: { lineUserId, orgId },
     select: { role: true },
   });
-  if (!u) return false;
-  return isAdminTier(u.role) || u.role === "viewer" || u.role === "area_manager";
+  if (u && (isAdminTier(u.role) || u.role === "viewer" || u.role === "area_manager")) {
+    return true;
+  }
+  // Top-down ledger admin: a member explicitly set to role 'admin' (not necessarily
+  // a Pool admin) may run admin commands in chat too.
+  const m = await prisma.ledgerLineMember.findUnique({
+    where: { orgId_lineUserId: { orgId, lineUserId } },
+    select: { role: true, active: true },
+  });
+  return !!m && m.active && m.role === "admin";
+}
+
+/** Stricter than isAdminSender: who may pull ALL-company financial EVIDENCE (Drive
+ *  folder, full P&L). Admin + accountant ONLY — a branch manager (area_manager)
+ *  oversees one area and must NOT pull the whole company's receipts (audit P2 #11). */
+async function senderSeesAllFinancials(
+  orgId: string,
+  lineUserId: string | null,
+): Promise<boolean> {
+  if (!lineUserId) return false;
+  const u = await prisma.user.findFirst({
+    where: { lineUserId, orgId },
+    select: { role: true },
+  });
+  if (u && (isAdminTier(u.role) || u.role === "viewer")) return true;
+  const m = await prisma.ledgerLineMember.findUnique({
+    where: { orgId_lineUserId: { orgId, lineUserId } },
+    select: { role: true, active: true },
+  });
+  return !!m && m.active && (m.role === "admin" || m.role === "accountant");
 }
 
 export async function handleLedgerCommand(
@@ -94,8 +124,8 @@ export async function handleLedgerCommand(
   // /drive — ลิงก์โฟลเดอร์ Google Drive ที่เก็บใบเสร็จจริง (หลักฐานให้สำนักงานบัญชี).
   // แอดมินเท่านั้น (โฟลเดอร์รวมทุกใบ); ลิงก์เปิดได้ต่อเมื่อมีสิทธิ์ใน Google Drive อยู่แล้ว.
   if (lower === "/drive" || text === "ไดรฟ์" || text === "ดูไฟล์" || text === "ดูสลิป") {
-    if (!(await isAdminSender(ctx.orgId, ctx.senderLineUserId))) {
-      return "เฉพาะแอดมิน/บัญชีดูลิงก์ Google Drive ได้ · ขอลิงก์จากผู้ดูแลของบริษัท";
+    if (!(await senderSeesAllFinancials(ctx.orgId, ctx.senderLineUserId))) {
+      return "เฉพาะผู้ดูแล/บัญชีดูลิงก์ Google Drive ได้ · ขอลิงก์จากผู้ดูแลของบริษัท";
     }
     const link = await getLedgerDriveFolderLink(ctx.orgId);
     if (!link) {

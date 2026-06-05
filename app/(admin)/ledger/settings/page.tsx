@@ -11,6 +11,7 @@ import { RichMenuButton } from "./_components/RichMenuButton";
 import { InviteManager } from "./_components/InviteManager";
 import { MemberManager } from "./_components/MemberManager";
 import { GroupBranchManager } from "./_components/GroupBranchManager";
+import { IdentityClaimCard } from "./_components/IdentityClaimCard";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,7 @@ export default async function LedgerSettingsPage({
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <IdentityClaimCard companyId={scope.companyId} />
         <div className="lg:col-span-2">
           <CategoryManager
             companyId={scope.companyId}
