@@ -33,9 +33,10 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
 import { compressImage } from "@/lib/chairops/utils/image-compress";
 import { isOnline } from "@/lib/chairops/utils/maid-outbox";
+
 import {
   batchDeposit,
-  presignSlipUpload,
+  uploadSlipServer,
   extractSlipAmount,
 } from "@/app/(admin)/chairops/collect/actions";
 import {
@@ -58,13 +59,6 @@ interface Props {
   branchOverride?: string;
   /** Where to go after a successful deposit (default: maid home). */
   redirectTo?: string;
-}
-
-async function sha256Hex(buf: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", buf);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 function newUuid(): string {
@@ -157,7 +151,10 @@ export function BatchDepositForm({
   async function onPickSlip(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!/^image\//.test(file.type)) {
+
+    // iOS LINE browser may return "" for HEIC photos — treat as image
+    const resolvedType = file.type || "image/jpeg";
+    if (!/^image\//.test(resolvedType)) {
       toast.error("ต้องเป็นไฟล์รูปภาพ");
       return;
     }
@@ -165,59 +162,49 @@ export function BatchDepositForm({
       toast.error("รูปใหญ่เกินไป · ถ่ายใหม่");
       return;
     }
+    if (!isOnline()) {
+      toast.error("ออฟไลน์ · เชื่อมต่อก่อนแล้วลองอีกครั้ง");
+      return;
+    }
+
     setUploading(true);
+    // Capture preview URL before we lose the file reference
+    const localPreview = URL.createObjectURL(file);
     try {
       const compressed = await compressImage(file);
       const blob = compressed.blob;
-      const buf = await blob.arrayBuffer();
-      const hash = await sha256Hex(buf);
-      const presign = await presignSlipUpload({
-        contentType: compressed.compressed ? "image/jpeg" : file.type,
-        depositDraftId: draftIdRef.current,
-        branchOverride,
-      });
-      if (!presign.ok) {
-        toast.error(presign.error);
+
+      // Upload server-side — bypasses R2 CORS (same fix as DocuFlow proxy)
+      const fd = new FormData();
+      fd.append("file", blob, "slip.jpg");
+      fd.append("depositDraftId", draftIdRef.current);
+      if (branchOverride) fd.append("branchOverride", branchOverride);
+
+      const result = await uploadSlipServer(fd);
+      if (!result.ok) {
+        toast.error(result.error);
         return;
       }
-      if (!isOnline()) {
-        toast.error("ออฟไลน์ · เชื่อมต่อก่อนแล้วลองอีกครั้ง");
-        return;
-      }
-      const putRes = await fetch(presign.data.url, {
-        method: "PUT",
-        body: blob,
-        headers: {
-          "Content-Type": compressed.compressed ? "image/jpeg" : file.type,
-        },
-      });
-      if (!putRes.ok) {
-        toast.error("อัปโหลดรูปไม่สำเร็จ");
-        return;
-      }
-      const publicUrl = presign.data.publicUrl;
-      setSlip({
-        publicUrl,
-        hash,
-        previewUrl: URL.createObjectURL(blob),
-        sizeKb: Math.round(blob.size / 1024),
-      });
-      toast.success(`แนบสลิปแล้ว (${Math.round(blob.size / 1024)} KB)`);
+
+      const { publicUrl, hash, sizeKb } = result.data;
+      setSlip({ publicUrl, hash, previewUrl: localPreview, sizeKb });
+      toast.success(`แนบสลิปแล้ว (${sizeKb} KB)`);
 
       // OCR: อ่านยอดจากสลิปอัตโนมัติ (best-effort)
       setOcrRunning(true);
       extractSlipAmount(publicUrl)
-        .then((result) => {
-          if (result.ok && result.data.amount !== null && depositedNum === 0) {
-            setDeposited(String(result.data.amount));
+        .then((r) => {
+          if (r.ok && r.data.amount !== null && depositedNum === 0) {
+            setDeposited(String(r.data.amount));
             toast.success(
-              `OCR อ่านยอดได้ ${result.data.amount.toLocaleString()} ฿ · ตรวจสอบก่อนกดบันทึก`,
+              `OCR อ่านยอดได้ ${r.data.amount.toLocaleString()} ฿ · ตรวจสอบก่อนกดบันทึก`,
             );
           }
         })
         .catch(() => undefined)
         .finally(() => setOcrRunning(false));
     } catch {
+      URL.revokeObjectURL(localPreview);
       toast.error("เกิดข้อผิดพลาด · ลองอีกครั้ง");
     } finally {
       setUploading(false);

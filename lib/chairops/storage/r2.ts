@@ -16,7 +16,10 @@ function client(): S3Client {
   return _client;
 }
 
-const BUCKET = process.env.R2_BUCKET_NAME || "chairops";
+// Use same env var name as the rest of the codebase (lib/r2/client.ts uses R2_BUCKET).
+// R2_BUCKET_NAME was a typo introduced during initial ChairOps setup — leaving a
+// fallback of "chairops" which pointed at a non-existent bucket.
+const BUCKET = process.env.R2_BUCKET || process.env.R2_BUCKET_NAME || "pooilgroup";
 
 export async function presignUpload(key: string, contentType: string) {
   const cmd = new PutObjectCommand({
