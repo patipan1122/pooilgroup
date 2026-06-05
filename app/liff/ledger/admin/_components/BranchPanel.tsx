@@ -5,6 +5,7 @@
 // module. Add via an inline form; edit name/active via a bottom sheet.
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { MapPin, Plus, Loader2, AlertTriangle, Check, X } from "lucide-react";
 import {
   createLedgerBranch,
@@ -55,9 +56,12 @@ export function BranchPanel({
   const [edit, setEdit] = useState<BranchFull | null>(null);
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
+  const router = useRouter();
 
   function create() {
     setErr(null);
+    setOkMsg(null);
     if (!code.trim() || !name.trim()) {
       setErr("ใส่รหัสและชื่อสาขา");
       return;
@@ -66,6 +70,8 @@ export function BranchPanel({
       const res = await createLedgerBranch({ companyId, code, name, province, businessType });
       if (!res.ok) { setErr(res.error ?? "เพิ่มไม่สำเร็จ"); return; }
       setCode(""); setName(""); setProvince(""); setAdding(false);
+      setOkMsg(`เพิ่มสาขา "${name}" แล้ว ✓`);
+      router.refresh();
     });
   }
 
@@ -89,6 +95,10 @@ export function BranchPanel({
         <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
         สาขาใช้ร่วมกับทุกระบบ (เก้าอี้นวด/ตู้คีบ/น้ำมัน) — เพิ่ม/แก้ที่นี่กระทบทุกที่
       </div>
+
+      {okMsg && (
+        <p className="mb-3 text-xs font-medium text-emerald-700" role="status" aria-live="polite">{okMsg}</p>
+      )}
 
       {adding && (
         <div className="mb-3 space-y-2 rounded-xl border border-zinc-200 bg-zinc-50/60 p-3">
@@ -159,6 +169,7 @@ function BranchEditSheet({
   const [isActive, setIsActive] = useState(branch.isActive);
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
+  const router = useRouter();
 
   function save() {
     setErr(null);
@@ -166,6 +177,7 @@ function BranchEditSheet({
       const res = await updateLedgerBranch(branch.id, { name, province, isActive });
       if (!res.ok) { setErr(res.error ?? "บันทึกไม่สำเร็จ"); return; }
       onClose();
+      router.refresh();
     });
   }
 

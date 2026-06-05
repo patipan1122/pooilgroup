@@ -297,10 +297,17 @@ export async function POST(
             const m = await prisma.ledgerLineMember
               .findUnique({
                 where: { orgId_lineUserId: { orgId: ch.orgId, lineUserId: ev.source.userId } },
-                select: { role: true },
+                select: { role: true, active: true, companyId: true },
               })
               .catch(() => null);
-            if (m && !(await can(ch.orgId, m.role, "report.view_pnl"))) {
+            // Only gate a member of THIS company: disabled (admin turned them off)
+            // OR lacking "ดูภาพรวมการเงิน" → decline. Non-members / other-company
+            // members keep the prior default-open behaviour (trusted group only).
+            if (
+              m &&
+              m.companyId === ch.companyId &&
+              (!m.active || !(await can(ch.orgId, m.role, "report.view_pnl")))
+            ) {
               if (ev.replyToken && accessToken)
                 await replyText(
                   accessToken,

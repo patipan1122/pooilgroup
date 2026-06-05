@@ -10,15 +10,10 @@ import {
 } from "lucide-react";
 import { createLedgerInvite, revokeLedgerInvite } from "../../_actions";
 import type { InviteRow } from "../../_data";
+import { LEDGER_ROLES, ROLE_LABEL, ROLE_HINT, type LedgerRole } from "@/lib/ledger/permission-constants";
 
 type BranchOpt = { id: string; code: string; name: string };
-type Role = "staff" | "accountant" | "admin";
-
-const ROLE_LABEL: Record<Role, string> = {
-  staff: "พนักงาน (ถ่ายใบเสร็จ)",
-  accountant: "บัญชี (ยืนยันได้)",
-  admin: "ผู้ดูแล",
-};
+type Role = LedgerRole;
 
 export function InviteManager({
   companyId,
@@ -104,8 +99,8 @@ export function InviteManager({
         <div>
           <label className="mb-1 block text-xs font-semibold text-zinc-600">สิทธิ์</label>
           <select className={inputCls} value={role} onChange={(e) => setRole(e.target.value as Role)} aria-label="สิทธิ์">
-            {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
-              <option key={r} value={r}>{ROLE_LABEL[r]}</option>
+            {LEDGER_ROLES.map((r) => (
+              <option key={r} value={r}>{ROLE_LABEL[r]} — {ROLE_HINT[r]}</option>
             ))}
           </select>
         </div>

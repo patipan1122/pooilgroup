@@ -20,15 +20,9 @@ import {
   rejectMemberPending,
 } from "../../_actions";
 import type { LedgerMemberRow } from "../../_data";
+import { LEDGER_ROLES, ROLE_LABEL } from "@/lib/ledger/permission-constants";
 
 type BranchOpt = { id: string; code: string; name: string };
-type Role = "staff" | "accountant" | "admin";
-
-const ROLE_LABEL: Record<Role, string> = {
-  staff: "พนักงาน",
-  accountant: "บัญชี",
-  admin: "ผู้ดูแล",
-};
 
 const inputCls =
   "h-9 rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]";
@@ -109,7 +103,7 @@ function MemberRow({
             aria-label="สิทธิ์"
             className={inputCls}
           >
-            {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
+            {LEDGER_ROLES.map((r) => (
               <option key={r} value={r}>{ROLE_LABEL[r]}</option>
             ))}
           </select>

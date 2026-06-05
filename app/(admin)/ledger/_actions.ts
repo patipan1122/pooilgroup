@@ -866,7 +866,7 @@ export async function setChannelBranch(
 
 const inviteSchema = z.object({
   companyId: z.string().trim().min(1),
-  role: z.enum(["staff", "accountant", "admin"]).default("staff"),
+  role: z.enum(["staff", "accountant", "admin", "external_accountant"]).default("staff"),
   scopeBranchIds: z.array(z.string().trim().min(1)).max(200).optional(),
   scopeCategoryIds: z.array(z.string().trim().min(1)).max(200).optional(),
   note: z.string().trim().max(200).optional(),
@@ -1008,10 +1008,11 @@ export async function updateMemberBranches(
     diff: { new: { branches: scope.length } },
   });
   revalidatePath("/ledger/settings");
+  revalidatePath("/liff/ledger/admin");
   return { ok: true };
 }
 
-/** Admin changes a member's role (staff | accountant | admin). */
+/** Admin changes a member's role (staff | accountant | admin | external_accountant). */
 export async function setMemberRole(
   memberId: string,
   role: string,
@@ -1031,7 +1032,16 @@ export async function setMemberRole(
     data: { role },
   });
   if (r.count === 0) return { ok: false, error: "ไม่พบสมาชิก" };
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_MEMBER_SCOPE_UPDATED",
+    resourceType: "ledger_line_member",
+    resourceId: memberId,
+    diff: { new: { role } },
+  });
   revalidatePath("/ledger/settings");
+  revalidatePath("/liff/ledger/admin");
   return { ok: true };
 }
 
@@ -1053,6 +1063,7 @@ export async function toggleMemberActive(
   });
   if (r.count === 0) return { ok: false, error: "ไม่พบสมาชิก" };
   revalidatePath("/ledger/settings");
+  revalidatePath("/liff/ledger/admin");
   return { ok: true };
 }
 
@@ -1089,6 +1100,7 @@ export async function approveMemberPending(
     diff: { new: { approvedRequest: true, branches: nextScope.length } },
   });
   revalidatePath("/ledger/settings");
+  revalidatePath("/liff/ledger/admin");
   return { ok: true };
 }
 
@@ -1108,6 +1120,7 @@ export async function rejectMemberPending(
     data: { pendingBranchId: null },
   });
   revalidatePath("/ledger/settings");
+  revalidatePath("/liff/ledger/admin");
   return { ok: true };
 }
 

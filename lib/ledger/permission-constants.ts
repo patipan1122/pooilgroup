@@ -59,7 +59,7 @@ export const CAPABILITY_LABEL: Record<
   },
   "expense.export": {
     title: "ส่งออกไฟล์บัญชี",
-    desc: "โหลดไฟล์ Excel/CSV ออกไป (เข้า TRCloud)",
+    desc: "โหลดไฟล์ Excel/CSV ส่งเข้าโปรแกรมบัญชี",
   },
   "report.view_pnl": {
     title: "ดูภาพรวมการเงิน",

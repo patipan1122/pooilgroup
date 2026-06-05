@@ -4,6 +4,7 @@
 // These appear on tax documents, so accuracy matters. GAP 5. updateLedgerOrgInfo.
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Building2, Loader2, Check } from "lucide-react";
 import { updateLedgerOrgInfo } from "@/app/(admin)/ledger/_actions";
 
@@ -25,13 +26,19 @@ export function OrgPanel({ company }: { company: OrgInfo }) {
   const [phone, setPhone] = useState(company.phone ?? "");
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const router = useRouter();
 
   function save() {
     setMsg(null);
     if (!name.trim()) { setMsg({ kind: "err", text: "ใส่ชื่อบริษัท" }); return; }
     start(async () => {
       const res = await updateLedgerOrgInfo({ companyId: company.id, name, taxId, address, phone });
-      setMsg(res.ok ? { kind: "ok", text: "บันทึกแล้ว ✓" } : { kind: "err", text: res.error ?? "บันทึกไม่สำเร็จ" });
+      if (res.ok) {
+        setMsg({ kind: "ok", text: "บันทึกแล้ว ✓" });
+        router.refresh();
+      } else {
+        setMsg({ kind: "err", text: res.error ?? "บันทึกไม่สำเร็จ" });
+      }
     });
   }
 

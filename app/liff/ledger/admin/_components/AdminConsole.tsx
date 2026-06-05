@@ -110,7 +110,7 @@ export function AdminConsole({
           </div>
         )}
         {tab === "permission" && (
-          <PermissionPanel matrix={permissionMatrix} />
+          <PermissionPanel key={companyId} matrix={permissionMatrix} />
         )}
         {tab === "branch" && (
           <BranchPanel companyId={companyId} branches={branchesFull} />
