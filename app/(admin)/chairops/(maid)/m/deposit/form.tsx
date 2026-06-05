@@ -1,9 +1,9 @@
 "use client";
 
-// Batch-deposit client form. Maid checks 1+ pending collection rounds,
-// confirms the actual amount that landed in the bank, optional bank fee, and
-// uploads ONE slip photo. Submits to batchDeposit() which creates the
-// ChairopsCashDeposit row + flips every chosen collection.depositId.
+// Batch-deposit client form — 2-phase:
+// Phase "select": tick which pending rounds to batch (checkboxes only).
+// Phase "deposit": deposit form + slip upload + submit.
+// File inputs use <label htmlFor> (not ref.click()) for iOS LINE browser.
 
 import {
   type ChangeEvent,
@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import {
   Camera,
   CheckCircle2,
+  ChevronLeft,
   Images,
   Landmark,
   Loader2,
@@ -102,6 +103,7 @@ export function BatchDepositForm({
   const [pending, startTransition] = useTransition();
   const [uploading, setUploading] = useState(false);
   const [online, setOnline] = useState(true);
+  const [phase, setPhase] = useState<"select" | "deposit">("select");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
     () => new Set(pendingCollections.map((p) => p.id)),
   );
@@ -110,6 +112,7 @@ export function BatchDepositForm({
   const [notes, setNotes] = useState("");
   const [slip, setSlip] = useState<SlipState | null>(null);
   const [ocrRunning, setOcrRunning] = useState(false);
+  // refs used only for resetting input value (allow re-picking same file)
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const draftIdRef = useRef<string>(newUuid());
@@ -117,6 +120,9 @@ export function BatchDepositForm({
   const depositedId = useId();
   const bankFeeId = useId();
   const notesId = useId();
+  // IDs for label→input binding (iOS-reliable alternative to ref.click())
+  const cameraInputId = useId();
+  const galleryInputId = useId();
 
   useEffect(() => {
     setOnline(isOnline());
@@ -143,12 +149,6 @@ export function BatchDepositForm({
       else next.add(id);
       return next;
     });
-  }
-  function selectAll() {
-    setSelectedIds(new Set(pendingCollections.map((p) => p.id)));
-  }
-  function clearAll() {
-    setSelectedIds(new Set());
   }
 
   const depositedNum = Number(deposited.replace(/,/g, "")) || 0;
@@ -210,15 +210,20 @@ export function BatchDepositForm({
         .then((result) => {
           if (result.ok && result.data.amount !== null && depositedNum === 0) {
             setDeposited(String(result.data.amount));
-            toast.success(`OCR อ่านยอดได้ ${result.data.amount.toLocaleString()} ฿ · ตรวจสอบก่อนกดบันทึก`);
+            toast.success(
+              `OCR อ่านยอดได้ ${result.data.amount.toLocaleString()} ฿ · ตรวจสอบก่อนกดบันทึก`,
+            );
           }
         })
         .catch(() => undefined)
         .finally(() => setOcrRunning(false));
     } catch {
-      toast.error("เกิดข้อผิดพลาด");
+      toast.error("เกิดข้อผิดพลาด · ลองอีกครั้ง");
     } finally {
       setUploading(false);
+      // reset so same file can be re-picked
+      if (cameraRef.current) cameraRef.current.value = "";
+      if (galleryRef.current) galleryRef.current.value = "";
     }
   }
 
@@ -228,9 +233,6 @@ export function BatchDepositForm({
     if (bankFeeNum < 0) return "ค่าธรรมเนียมต้องไม่ติดลบ";
     if (!slip) return "แนบสลิปธนาคารก่อนบันทึก";
     // BF1 MAID-04 · anti-fraud gate. Notes mandatory when |diff| ≥ 100฿.
-    // Effective diff is (deposited + fee − collections) — matches the
-    // server-side check (drift-engine accounting + bankFee compensates for
-    // legitimate bank fees so the user's effective diff is ~0 when paying fee).
     const effectiveDiff = depositedNum + bankFeeNum - selectedSum;
     if (
       Math.abs(effectiveDiff) >= DEPOSIT_NOTES_GATE_BAHT &&
@@ -280,8 +282,106 @@ export function BatchDepositForm({
     submitNow();
   }
 
+  // Hidden file inputs — always rendered, IDs stable across phases.
+  // Labels reference these IDs (htmlFor) — works reliably on iOS LINE browser.
+  const fileInputs = (
+    <>
+      <input
+        ref={cameraRef}
+        id={cameraInputId}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={onPickSlip}
+      />
+      <input
+        ref={galleryRef}
+        id={galleryInputId}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={onPickSlip}
+      />
+    </>
+  );
+
+  // Tailwind classes that mimic the outline Button variant
+  const labelBtn =
+    "inline-flex cursor-pointer select-none items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 font-medium text-zinc-700 transition-colors hover:bg-zinc-50 active:bg-zinc-100";
+
+  // ─── PHASE 1: select rounds ──────────────────────────────────────────────
+  if (phase === "select") {
+    return (
+      <div className="space-y-4">
+        {fileInputs}
+
+        {!online && (
+          <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-medium text-amber-800">
+            <WifiOff className="h-5 w-5 shrink-0" aria-hidden />
+            ออฟไลน์ · เชื่อมต่อก่อนกดบันทึก
+          </div>
+        )}
+
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold text-zinc-700">
+            รอบที่ยังไม่ได้ฝาก ({pendingCollections.length})
+          </h2>
+          <ul className="space-y-2">
+            {pendingCollections.map((p) => {
+              const checked = selectedIds.has(p.id);
+              return (
+                <li key={p.id}>
+                  <label
+                    className={cn(
+                      "flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors active:bg-zinc-100",
+                      checked
+                        ? "border-emerald-300 bg-emerald-50/60"
+                        : "border-zinc-200 bg-white",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggle(p.id)}
+                      className="size-5 accent-emerald-600"
+                    />
+                    <div className="min-w-0 grow">
+                      <div className="text-base font-semibold tabular-nums text-zinc-900">
+                        {p.countedAmount.toLocaleString()} ฿
+                      </div>
+                      <div className="text-xs text-zinc-500">
+                        นับเมื่อ {fmtDate(p.collectedAt)}
+                        {p.notes ? ` · ${p.notes.slice(0, 50)}` : ""}
+                      </div>
+                    </div>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+
+        <button
+          type="button"
+          onClick={() => setPhase("deposit")}
+          disabled={selectedIds.size === 0}
+          className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 text-base font-semibold text-white transition-colors active:bg-emerald-700 disabled:bg-zinc-200 disabled:text-zinc-400"
+        >
+          <Landmark className="h-5 w-5" />
+          ฝากเงิน · {selectedIds.size} รอบ · {selectedSum.toLocaleString()} ฿
+        </button>
+      </div>
+    );
+  }
+
+  // ─── PHASE 2: deposit form ────────────────────────────────────────────────
+  const selectedList = pendingCollections.filter((p) => selectedIds.has(p.id));
+
   return (
     <form onSubmit={onSubmit} className="space-y-4" noValidate>
+      {fileInputs}
+
       {!online && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-medium text-amber-800">
           <WifiOff className="h-5 w-5 shrink-0" aria-hidden />
@@ -289,80 +389,46 @@ export function BatchDepositForm({
         </div>
       )}
 
+      <button
+        type="button"
+        onClick={() => setPhase("select")}
+        className="flex items-center gap-1 text-sm font-medium text-zinc-500 hover:text-zinc-700"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        เปลี่ยนรอบที่เลือก
+      </button>
+
+      {/* Summary of selected rounds (read-only) */}
       <Card className="border-emerald-200 bg-emerald-50/60">
-        <CardBody className="flex items-center justify-between gap-3 p-4">
-          <div>
-            <div className="text-xs text-emerald-700">ยอดรวมที่เลือก</div>
-            <div className="text-2xl font-bold tabular-nums text-emerald-900">
-              {selectedSum.toLocaleString()} ฿
-            </div>
-            <div className="text-xs text-emerald-700">
-              {selectedIds.size} จาก {pendingCollections.length} รอบ
-            </div>
+        <CardBody className="p-4">
+          <div className="mb-2 text-xs font-semibold text-emerald-700">
+            รอบที่จะฝากพร้อมกัน ({selectedList.length} รอบ)
           </div>
-          <div className="flex flex-col gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="h-9 text-xs"
-              onClick={selectAll}
-              disabled={selectedIds.size === pendingCollections.length}
-            >
-              เลือกทั้งหมด
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-9 text-xs"
-              onClick={clearAll}
-              disabled={selectedIds.size === 0}
-            >
-              ล้างเลือก
-            </Button>
+          <ul className="space-y-1.5">
+            {selectedList.map((p) => (
+              <li
+                key={p.id}
+                className="flex items-center justify-between text-sm"
+              >
+                <span className="text-xs text-zinc-600">
+                  นับเมื่อ {fmtDate(p.collectedAt)}
+                </span>
+                <span className="font-semibold tabular-nums text-zinc-900">
+                  {p.countedAmount.toLocaleString()} ฿
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-2 flex items-center justify-between border-t border-emerald-200 pt-2">
+            <span className="text-xs font-semibold text-emerald-800">รวม</span>
+            <span className="text-lg font-bold tabular-nums text-emerald-900">
+              {selectedSum.toLocaleString()} ฿
+            </span>
           </div>
         </CardBody>
       </Card>
 
-      {/* Pending rounds — each checkbox flips selectedIds. */}
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-zinc-700">
-          รอบที่ยังไม่ได้ฝาก ({pendingCollections.length})
-        </h2>
-        <ul className="space-y-2">
-          {pendingCollections.map((p) => {
-            const checked = selectedIds.has(p.id);
-            return (
-              <li key={p.id}>
-                <label
-                  className={cn(
-                    "flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors active:bg-zinc-100",
-                    checked
-                      ? "border-emerald-300 bg-emerald-50/60"
-                      : "border-zinc-200 bg-white",
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggle(p.id)}
-                    className="size-5 accent-emerald-600"
-                  />
-                  <div className="min-w-0 grow">
-                    <div className="text-base font-semibold tabular-nums text-zinc-900">
-                      {p.countedAmount.toLocaleString()} ฿
-                    </div>
-                    <div className="text-xs text-zinc-500">
-                      นับเมื่อ {fmtDate(p.collectedAt)}
-                      {p.notes ? ` · ${p.notes.slice(0, 50)}` : ""}
-                    </div>
-                  </div>
-                </label>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-
+      {/* Amount + fee inputs */}
       <Card>
         <CardBody className="space-y-4 p-4">
           <div className="space-y-2">
@@ -413,54 +479,57 @@ export function BatchDepositForm({
             </p>
           </div>
 
-          {depositedNum > 0 && (() => {
-            // BF1 MAID-04 · use effective diff (with bank fee) for the gate UI.
-            const eff = depositedNum + bankFeeNum - selectedSum;
-            const absEff = Math.abs(eff);
-            const overReview = absEff >= DEPOSIT_REVIEW_GATE_BAHT;
-            const overNotes = absEff >= DEPOSIT_NOTES_GATE_BAHT;
-            return (
-              <div
-                className={cn(
-                  "rounded-md border p-3 text-sm",
-                  overReview
-                    ? "border-rose-300 bg-rose-50 text-rose-800"
-                    : overNotes
-                      ? "border-amber-300 bg-amber-50 text-amber-800"
-                      : "border-zinc-200 bg-zinc-50 text-zinc-700",
-                )}
-                aria-live="polite"
-              >
-                <div>
-                  ผลต่าง (ฝาก + ค่าธรรมเนียม − นับรวม):{" "}
-                  <span className="font-semibold tabular-nums">
-                    {eff >= 0 ? "+" : ""}
-                    {eff.toLocaleString()} ฿
-                  </span>
+          {depositedNum > 0 &&
+            (() => {
+              const eff = depositedNum + bankFeeNum - selectedSum;
+              const absEff = Math.abs(eff);
+              const overReview = absEff >= DEPOSIT_REVIEW_GATE_BAHT;
+              const overNotes = absEff >= DEPOSIT_NOTES_GATE_BAHT;
+              return (
+                <div
+                  className={cn(
+                    "rounded-md border p-3 text-sm",
+                    overReview
+                      ? "border-rose-300 bg-rose-50 text-rose-800"
+                      : overNotes
+                        ? "border-amber-300 bg-amber-50 text-amber-800"
+                        : "border-zinc-200 bg-zinc-50 text-zinc-700",
+                  )}
+                  aria-live="polite"
+                >
+                  <div>
+                    ผลต่าง (ฝาก + ค่าธรรมเนียม − นับรวม):{" "}
+                    <span className="font-semibold tabular-nums">
+                      {eff >= 0 ? "+" : ""}
+                      {eff.toLocaleString()} ฿
+                    </span>
+                  </div>
+                  {overReview && (
+                    <div className="mt-1 font-medium">
+                      ⚠ ผลต่าง ≥ {DEPOSIT_REVIEW_GATE_BAHT.toLocaleString()} ฿
+                      · ออฟฟิศจะตรวจรายการนี้ก่อนยืนยัน
+                    </div>
+                  )}
+                  {!overReview && overNotes && (
+                    <div className="mt-1 font-medium">
+                      ⚠ ผลต่าง ≥ {DEPOSIT_NOTES_GATE_BAHT.toLocaleString()} ฿
+                      · ต้องระบุเหตุผลในหมายเหตุ (อย่างน้อย{" "}
+                      {DEPOSIT_NOTES_MIN_LEN} ตัวอักษร)
+                    </div>
+                  )}
                 </div>
-                {overReview && (
-                  <div className="mt-1 font-medium">
-                    ⚠ ผลต่าง ≥ {DEPOSIT_REVIEW_GATE_BAHT.toLocaleString()} ฿ ·
-                    ออฟฟิศจะตรวจรายการนี้ก่อนยืนยัน
-                  </div>
-                )}
-                {!overReview && overNotes && (
-                  <div className="mt-1 font-medium">
-                    ⚠ ผลต่าง ≥ {DEPOSIT_NOTES_GATE_BAHT.toLocaleString()} ฿ ·
-                    ต้องระบุเหตุผลในหมายเหตุ (อย่างน้อย {DEPOSIT_NOTES_MIN_LEN} ตัวอักษร)
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+              );
+            })()}
         </CardBody>
       </Card>
 
+      {/* Slip upload */}
       <Card>
         <CardBody className="space-y-3 p-4">
           <div className="text-sm font-semibold text-zinc-800">
             สลิปธนาคาร (ต้องแนบ)
           </div>
+
           {slip ? (
             <div className="space-y-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -473,27 +542,31 @@ export function BatchDepositForm({
                 <span className="flex items-center gap-1 font-medium text-emerald-700">
                   <CheckCircle2 className="h-4 w-4" /> อัปโหลดเรียบร้อย
                 </span>
-                <span className="font-mono text-zinc-500">{slip.sizeKb} KB</span>
+                <span className="font-mono text-zinc-500">
+                  {slip.sizeKb} KB
+                </span>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => cameraRef.current?.click()}
-                  disabled={uploading || pending}
-                  className="h-12 text-sm"
+                <label
+                  htmlFor={cameraInputId}
+                  className={cn(
+                    labelBtn,
+                    "h-12 text-sm",
+                    (uploading || pending) && "pointer-events-none opacity-50",
+                  )}
                 >
-                  <Camera className="mr-1.5 h-4 w-4" /> ถ่ายใหม่
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => galleryRef.current?.click()}
-                  disabled={uploading || pending}
-                  className="h-12 text-sm"
+                  <Camera className="h-4 w-4" /> ถ่ายใหม่
+                </label>
+                <label
+                  htmlFor={galleryInputId}
+                  className={cn(
+                    labelBtn,
+                    "h-12 text-sm",
+                    (uploading || pending) && "pointer-events-none opacity-50",
+                  )}
                 >
-                  <Images className="mr-1.5 h-4 w-4" /> เลือกใหม่
-                </Button>
+                  <Images className="h-4 w-4" /> เลือกใหม่
+                </label>
               </div>
             </div>
           ) : uploading ? (
@@ -502,52 +575,39 @@ export function BatchDepositForm({
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => cameraRef.current?.click()}
-                disabled={uploading || pending}
-                className="h-14 text-sm"
+              <label
+                htmlFor={cameraInputId}
+                className={cn(
+                  labelBtn,
+                  "h-14 text-sm",
+                  (uploading || pending) && "pointer-events-none opacity-50",
+                )}
               >
-                <Camera className="mr-2 h-5 w-5" /> ถ่ายรูปสด
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => galleryRef.current?.click()}
-                disabled={uploading || pending}
-                className="h-14 text-sm"
+                <Camera className="h-5 w-5" /> ถ่ายรูปสด
+              </label>
+              <label
+                htmlFor={galleryInputId}
+                className={cn(
+                  labelBtn,
+                  "h-14 text-sm",
+                  (uploading || pending) && "pointer-events-none opacity-50",
+                )}
               >
-                <Images className="mr-2 h-5 w-5" /> เลือกจากคลัง
-              </Button>
+                <Images className="h-5 w-5" /> เลือกจากคลัง
+              </label>
             </div>
           )}
+
           {ocrRunning && (
             <div className="flex items-center gap-2 text-xs text-violet-600">
               <Sparkles className="h-3.5 w-3.5 animate-pulse" />
               กำลังอ่านยอดจากสลิป...
             </div>
           )}
-          {/* camera — บังคับเปิดกล้อง */}
-          <input
-            ref={cameraRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={onPickSlip}
-          />
-          {/* gallery — เปิด file picker ปกติ */}
-          <input
-            ref={galleryRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={onPickSlip}
-          />
         </CardBody>
       </Card>
 
+      {/* Notes */}
       <Card>
         <CardBody className="space-y-2 p-4">
           <label
