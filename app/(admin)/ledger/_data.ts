@@ -344,12 +344,16 @@ export type LedgerMemberRow = Awaited<ReturnType<typeof listLedgerMembers>>[numb
  *  its own branch. Rows self-register when an admin types "/setting สาขา <สาขา>"
  *  inside a branch group; the webhook reads them to auto-tag receipts per group. */
 export async function listLedgerGroups(orgId: string, companyId: string) {
-  const rows = await prisma.ledgerLineGroup.findMany({
-    where: { orgId, companyId },
-    orderBy: [{ active: "desc" }, { createdAt: "asc" }],
-    take: 200,
-    select: { id: true, groupId: true, branchId: true, label: true, active: true },
-  });
+  // Defensive: tolerate the table not existing yet (deploy landing before the
+  // additive migration is applied) — the settings page must never 500 on this.
+  const rows = await prisma.ledgerLineGroup
+    .findMany({
+      where: { orgId, companyId },
+      orderBy: [{ active: "desc" }, { createdAt: "asc" }],
+      take: 200,
+      select: { id: true, groupId: true, branchId: true, label: true, active: true },
+    })
+    .catch(() => [] as { id: string; groupId: string; branchId: string | null; label: string | null; active: boolean }[]);
   const ids = Array.from(new Set(rows.map((r) => r.branchId).filter(Boolean) as string[]));
   const branches = ids.length
     ? await prisma.branch.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
