@@ -106,7 +106,7 @@ async function recomputeDriftForBranch_legacy(
   // carry a non-zero depositedAmount are folded in too — only the ones that
   // have NEVER been linked to a CashDeposit (depositId IS NULL), because
   // anything already linked is counted via the new table.
-  const [posAgg, newDepositAgg, legacyDepositAgg, lastCollection, lastPos] =
+  const [posAgg, newDepositAgg, legacyDepositAgg, writeOffAgg, lastCollection, lastPos] =
     await Promise.all([
       prisma.chairopsPosDaily.aggregate({
         where: { branchId, orgId: branch.orgId },
@@ -133,6 +133,12 @@ async function recomputeDriftForBranch_legacy(
         },
         _sum: { depositedAmount: true },
       }),
+      // Sprint-1 fix: approved write-offs reduce the effective shortage.
+      // Subtracting from the deposit side keeps the formula additive.
+      prisma.chairopsWriteOff.aggregate({
+        where: { branchId, orgId: branch.orgId, status: "APPROVED" },
+        _sum: { amount: true },
+      }),
       prisma.chairopsCashCollection.findFirst({
         where: { branchId, orgId: branch.orgId },
         orderBy: { collectedAt: "desc" },
@@ -149,7 +155,8 @@ async function recomputeDriftForBranch_legacy(
   const depositTotal =
     (newDepositAgg._sum?.depositedAmount ?? 0) +
     (newDepositAgg._sum?.bankFee ?? 0) +
-    (legacyDepositAgg._sum?.depositedAmount ?? 0);
+    (legacyDepositAgg._sum?.depositedAmount ?? 0) +
+    (writeOffAgg._sum?.amount ?? 0);
   const driftAmount = posTotal - depositTotal;
 
   // Determine when drift began (same logic as v0 · uses existing driftSince anchor)
@@ -219,7 +226,7 @@ async function recomputeDriftForBranch_window(
   const anchorDate = new Date(anchor);
   anchorDate.setHours(0, 0, 0, 0);
 
-  const [posAgg, newDepositAgg, legacyDepositAgg, lastCollection, lastPos] =
+  const [posAgg, newDepositAgg, legacyDepositAgg, writeOffAgg, lastCollection, lastPos] =
     await Promise.all([
       // POS since the window opened · ChairopsBranchDailyRevenue is the new
       // per-branch-per-day aggregate (BA-2 / W0 migration step 6).
@@ -253,6 +260,13 @@ async function recomputeDriftForBranch_window(
         },
         _sum: { depositedAmount: true },
       }),
+      // Sprint-1 fix: approved write-offs reduce the effective shortage.
+      // Window mode: only write-offs approved within this window count
+      // (write-offs before the anchor are already "closed" in the prior period).
+      prisma.chairopsWriteOff.aggregate({
+        where: { branchId, orgId: branch.orgId, status: "APPROVED", approverAt: { gt: anchor } },
+        _sum: { amount: true },
+      }),
       prisma.chairopsCashCollection.findFirst({
         where: { branchId, orgId: branch.orgId },
         orderBy: { collectedAt: "desc" },
@@ -282,7 +296,8 @@ async function recomputeDriftForBranch_window(
   const depositTotal =
     (newDepositAgg._sum?.depositedAmount ?? 0) +
     (newDepositAgg._sum?.bankFee ?? 0) +
-    (legacyDepositAgg._sum?.depositedAmount ?? 0);
+    (legacyDepositAgg._sum?.depositedAmount ?? 0) +
+    (writeOffAgg._sum?.amount ?? 0);
   const driftAmount = posTotal - depositTotal;
 
   // Window mode: drift "since" = window anchor (so age = age of the window
@@ -338,7 +353,10 @@ function classifyStatus(
   } else if (driftAmount > 0) {
     status = "watch";
   }
-  if (daysSinceLastCollection > DRIFT_DEFAULTS.maxDaysSinceCollection) {
+  // "shortage" beats "missed" — a branch with cash owed AND no recent
+  // collection is a SHORTAGE first. Overwriting it with "missed" silenced
+  // the SHORTAGE alert for almost every real delinquent branch.
+  if (daysSinceLastCollection > DRIFT_DEFAULTS.maxDaysSinceCollection && status !== "shortage") {
     status = "missed";
   }
   return status;

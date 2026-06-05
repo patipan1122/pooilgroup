@@ -188,6 +188,42 @@ export async function ReconcileShell({
           context={isOrg ? "org" : "branch"}
         />
 
+        {/* Sprint-1: POS staleness alert banner — amber ≥3 days, red ≥7 days.
+            FreshnessBar shows the date inline but office staff miss it when
+            busy; this banner blocks the data with an explicit warning. */}
+        {overview.freshness.posCoverDaysAgo != null &&
+          overview.freshness.posCoverDaysAgo >= 3 && (
+            <div
+              role="alert"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "8px 12px",
+                borderRadius: 6,
+                fontSize: 13,
+                fontWeight: 500,
+                marginBottom: 4,
+                background:
+                  overview.freshness.posCoverDaysAgo >= 7
+                    ? "var(--co-error-bg, #fef2f2)"
+                    : "#fffbeb",
+                border: `1px solid ${overview.freshness.posCoverDaysAgo >= 7 ? "var(--co-error-border, #fca5a5)" : "#fcd34d"}`,
+                color:
+                  overview.freshness.posCoverDaysAgo >= 7
+                    ? "var(--co-error-text, #991b1b)"
+                    : "#92400e",
+              }}
+            >
+              <span aria-hidden="true">{overview.freshness.posCoverDaysAgo >= 7 ? "🔴" : "🟡"}</span>
+              <span>
+                POS ยังไม่ได้อัพโหลด{" "}
+                <strong>{overview.freshness.posCoverDaysAgo} วัน</strong>
+                {" "}— ตัวเลข Reconcile อาจไม่สะท้อนยอดล่าสุด · กรุณาอัพ XLSX แล้ว Recompute
+              </span>
+            </div>
+          )}
+
         <DriftHero overview={overview} label={heroLabel} />
 
         <ReconcileTabs baseHref={baseHref} active={view} />

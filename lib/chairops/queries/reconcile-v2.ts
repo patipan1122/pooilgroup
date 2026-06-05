@@ -684,10 +684,13 @@ export async function getReconcileSidebar(args: {
     const driftAmount = d?.driftAmount ?? 0;
     const cumDrift = -driftAmount;
     const daysSince = d?.daysSinceLastCollection ?? 999;
+    // "critical" (money shortage) beats "missed" — a branch with both a
+    // shortage AND no recent collection needs the revenue-recovery action, not
+    // just the collection reminder. Sprint-1 fix (UAT finding MISS-06).
     let status: ReconcileSidebarRow["status"] = "ok";
-    if (daysSince > 1) status = "missed";
-    else if (driftAmount > 0) status = "critical";
+    if (driftAmount > 0) status = "critical";
     else if (driftAmount < -100) status = "warn";
+    else if (daysSince > 1) status = "missed";
     return {
       branchId: b.id,
       name: b.name,
