@@ -5425,6 +5425,22 @@ model LedgerLineMember {
   @@schema("public")
 }
 
+// สิทธิ์เรื่องเงินต่อ role (LIFF admin "สิทธิ์" tab) — เก็บเฉพาะ override; ไม่มีแถว = ใช้ default ในโค้ด
+model LedgerPermission {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  role       String // staff | accountant | admin | external_accountant
+  capability String // expense.confirm | expense.export | report.view_pnl | scope.all_branches | expense.edit_others
+  allowed    Boolean
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy  String?  @map("updated_by") @db.Uuid
+
+  @@unique([orgId, role, capability])
+  @@index([orgId])
+  @@map("ledger_permission")
+  @@schema("public")
+}
+
 // ลิงก์เชิญแบบมีขอบเขต (ดูแลสาขา/หมวดไหน)
 model LedgerLineInvite {
   id                String    @id @default(uuid()) @db.Uuid

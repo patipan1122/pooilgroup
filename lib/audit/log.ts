@@ -125,7 +125,11 @@ export type AuditAction =
   // Scoped LINE onboarding invites (M7) — who may capture + their branch/category scope.
   | "LEDGER_INVITE_CREATED"
   // Member ↔ branch back-office (GAP 4) — admin (re)assigns / approves the branch a member oversees.
-  | "LEDGER_MEMBER_SCOPE_UPDATED";
+  | "LEDGER_MEMBER_SCOPE_UPDATED"
+  // LIFF admin console (GAP 5) — money-capability permission toggle + branch/org edits via mobile.
+  | "LEDGER_PERMISSION_UPDATED"
+  | "LEDGER_BRANCH_UPDATED"
+  | "LEDGER_ORG_UPDATED";
 
 export interface AuditEntry {
   orgId: string;

@@ -27,6 +27,7 @@ import { requireSession, type DbUser } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { userHasModuleAccess } from "@/lib/auth/module-access";
 import { recheckReceipt } from "@/lib/ledger/recheck";
+import { setPermission, isLedgerRole, isLedgerCapability } from "@/lib/ledger/permissions";
 import { listExpenses } from "@/lib/ledger/queries";
 import { buildTrcloudCsv } from "@/lib/ledger/trcloud-export";
 import { audit } from "@/lib/audit/log";
@@ -1016,7 +1017,7 @@ export async function setMemberRole(
   role: string,
 ): Promise<ActionResult> {
   if (!memberId) return { ok: false, error: "ไม่ได้ระบุสมาชิก" };
-  if (!["staff", "accountant", "admin"].includes(role)) {
+  if (!["staff", "accountant", "admin", "external_accountant"].includes(role)) {
     return { ok: false, error: "สิทธิ์ไม่ถูกต้อง" };
   }
   const access = await requireLedgerAccess();
@@ -1107,5 +1108,45 @@ export async function rejectMemberPending(
     data: { pendingBranchId: null },
   });
   revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
+// ── Permission matrix (GAP 5 · LIFF "สิทธิ์" tab) ────────────────────────────
+/** Admin toggles one money-capability for a role. Single source of truth via
+ *  lib/ledger/permissions.can(); every money action consults it. Admin-tier. */
+export async function setLedgerPermission(
+  role: string,
+  capability: string,
+  allowed: boolean,
+): Promise<ActionResult> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลตั้งสิทธิ์ได้" };
+  }
+  if (!isLedgerRole(role) || !isLedgerCapability(capability)) {
+    return { ok: false, error: "สิทธิ์ไม่ถูกต้อง" };
+  }
+  // ผู้ดูแลห้ามปิดสิทธิ์ของตัวเอง (กันล็อกตัวเองออก) — admin คงเปิดเสมอ
+  if (role === "admin" && !allowed) {
+    return { ok: false, error: "ปิดสิทธิ์ของผู้ดูแลไม่ได้" };
+  }
+  await setPermission({
+    orgId: session.user.org_id,
+    role,
+    capability,
+    allowed,
+    updatedBy: session.user.id,
+  });
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_PERMISSION_UPDATED",
+    resourceType: "ledger_permission",
+    diff: { new: { role, capability, allowed } },
+  });
+  revalidatePath("/ledger/settings");
+  revalidatePath("/liff/ledger/admin");
   return { ok: true };
 }
