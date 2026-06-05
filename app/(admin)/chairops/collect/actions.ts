@@ -136,8 +136,8 @@ export async function createCashCollection(
     }
     seenCodes.add(code);
     if (line.status === "collected") {
-      if (line.amount <= 0) {
-        return { ok: false, error: `${code} · เก็บแล้วยอดต้อง > 0` };
+      if (line.amount < 0) {
+        return { ok: false, error: `${code} · ยอดติดลบไม่ได้` };
       }
     } else {
       if (line.amount !== 0) {

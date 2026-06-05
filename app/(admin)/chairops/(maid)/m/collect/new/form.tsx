@@ -271,7 +271,7 @@ export function CollectNewForm({
       if (l.status !== "collected" || l.amount !== "") nonDefaultLines += 1;
       if (l.status === "collected") {
         const n = Number(l.amount.replace(/,/g, "")) || 0;
-        if (n <= 0 && l.amount !== "") return `${code} · กรอกยอดที่เก็บได้`;
+        if (n < 0 && l.amount !== "") return `${code} · กรอกยอดที่เก็บได้`;
       } else {
         if (!l.reasonCode) return `${code} · เลือกเหตุผล`;
         if (l.reasonCode === "other" && !l.reasonFree.trim()) {
