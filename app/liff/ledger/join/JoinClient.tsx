@@ -24,9 +24,13 @@ export function JoinClient({ token }: { token: string }) {
         setState({ kind: "error", message: "ลิงก์เชิญไม่ถูกต้อง — ขอลิงก์ใหม่จากแอดมิน" });
         return;
       }
-      // The LIFF bootstrap (in the /liff layout) has init'd LINE; grab the verified
-      // id_token so the server can confirm who we are (never trust a raw userId).
-      const idToken = await getLiffIdToken(LEDGER_LIFF_ID);
+      // Grab the verified id_token so the server can confirm who we are (never trust
+      // a raw userId). Race a 12s timeout so a hung liff.init shows an actionable
+      // error instead of an endless spinner (audit 2026-06-05).
+      const idToken = await Promise.race([
+        getLiffIdToken(LEDGER_LIFF_ID),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 12000)),
+      ]);
       if (!idToken) {
         setState({ kind: "error", message: "ยังเข้าสู่ระบบ LINE ไม่สำเร็จ — ปิดแล้วเปิดลิงก์ใหม่อีกครั้ง" });
         return;

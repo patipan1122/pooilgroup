@@ -11,6 +11,7 @@ import {
   getLiffInitError,
 } from "@/lib/line/liff-client";
 import { lineModuleFromPath, liffIdForModule } from "@/lib/line/channels";
+import { JoinClient } from "./ledger/join/JoinClient";
 
 export function LiffBootstrap({
   haveSession,
@@ -18,6 +19,33 @@ export function LiffBootstrap({
   haveSession: boolean;
 }) {
   const router = useRouter();
+  // LedgerLine invite/claim: run the bind INLINE on the first-loaded page (fresh
+  // LIFF context), NOT by redirecting. Redirecting to /liff/ledger/join caused a
+  // full reload that lost the LIFF launch context AND let liff.init() auto-redirect
+  // to the buried liff.state — an endless loop with two stuck spinners. Here we
+  // also strip liff.state from the URL so liff.init() won't bounce. (audit 2026-06-05)
+  const [ledgerInvite] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    if (lineModuleFromPath(window.location.pathname) !== "ledger") return null;
+    const sp = new URLSearchParams(window.location.search);
+    let inv = sp.get("invite");
+    if (!inv) {
+      const state = sp.get("liff.state");
+      if (state) {
+        const q = state.indexOf("?");
+        if (q >= 0) inv = new URLSearchParams(state.slice(q + 1)).get("invite");
+      }
+    }
+    if (inv) {
+      // Remove liff.state → liff.init() inside JoinClient won't auto-redirect.
+      try {
+        window.history.replaceState(null, "", `/liff/ledger/join?invite=${encodeURIComponent(inv)}`);
+      } catch {
+        /* history API may be unavailable in some webviews */
+      }
+    }
+    return inv;
+  });
   const [phase, setPhase] = useState<
     "idle" | "linking" | "linked" | "skip" | "needslink" | "failed"
   >("idle");
@@ -28,6 +56,9 @@ export function LiffBootstrap({
   const [errMsg, setErrMsg] = useState<string>("");
 
   useEffect(() => {
+    // Ledger invite/claim is handled INLINE (JoinClient rendered below) — skip the
+    // whole line-login flow so nothing races the bind / re-triggers liff.state.
+    if (ledgerInvite) return;
     // Read a deep-link param (next/invite). Normally it's a top-level query param
     // (?next=…) — set either directly or by /liff/page.tsx re-expanding LINE's
     // ?liff.state. BUT when a module's LIFF Endpoint URL is a sub-path (e.g.
@@ -66,22 +97,6 @@ export function LiffBootstrap({
         ? lineModuleFromPath(window.location.pathname)
         : "default";
     const liffId = liffIdForModule(lineModule);
-
-    // LedgerLine invite/claim tokens are OWNED by the JOIN page (JoinClient →
-    // /api/ledger/invite/accept), NOT by line-login. Two jobs here:
-    //  • On the capture page (LINE's sub-path endpoint drops "/ledger/join?invite=…"
-    //    into liff.state and lands here): bounce to the join page.
-    //  • On the join page itself: STOP (return) — do NOT run the line-login flow.
-    //    If the bootstrap kept going it would re-init LIFF + call line-login in
-    //    parallel with JoinClient, the two would fight over the LIFF SDK, and BOTH
-    //    spinners ("กำลังเข้าร่วม…" + "กำลังเข้าสู่ระบบ") would hang forever. Letting
-    //    JoinClient run alone fixes the stuck/looping claim. (audit 2026-06-05)
-    if (invite && lineModule === "ledger" && typeof window !== "undefined") {
-      if (!window.location.pathname.includes("/ledger/join")) {
-        window.location.replace(`/liff/ledger/join?invite=${encodeURIComponent(invite)}`);
-      }
-      return;
-    }
 
     if (haveSession) {
       // Already authenticated (e.g. opened a second time) → go straight in.
@@ -193,7 +208,19 @@ export function LiffBootstrap({
     return () => {
       cancelled = true;
     };
-  }, [haveSession, router]);
+  }, [haveSession, router, ledgerInvite]);
+
+  // LedgerLine claim/invite — bind RIGHT HERE on the first-loaded page (LIFF context
+  // is fresh, liff.state already stripped above). No navigation = no loop.
+  if (ledgerInvite) {
+    return (
+      <div className="fixed inset-0 z-50 overflow-auto bg-white">
+        <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center px-4 py-12">
+          <JoinClient token={ledgerInvite} />
+        </div>
+      </div>
+    );
+  }
 
   if (phase === "linking") {
     return (
