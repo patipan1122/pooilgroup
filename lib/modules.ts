@@ -631,6 +631,12 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: Settings,
         adminOnly: true,
       },
+      {
+        href: "/chairops/line-setup",
+        label: "ตั้งค่าเมนู LINE",
+        icon: MessagesSquare,
+        adminOnly: true,
+      },
     ],
   },
   recruit: {
