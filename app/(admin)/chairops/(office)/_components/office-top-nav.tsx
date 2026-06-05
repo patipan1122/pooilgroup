@@ -26,6 +26,7 @@ const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { href: "/chairops/pos-ingest", label: "POS" },
   { href: "/chairops/alerts", label: "Alerts" },
   { href: "/chairops/write-offs", label: "ตัดเงินขาด" },
+  { href: "/chairops/review-queue", label: "ตรวจสอบ" },
   { href: "/chairops/users", label: "ผู้ใช้", min: "MANAGER" },
   { href: "/chairops/settings/email", label: "ตั้งค่า", min: "ADMIN" },
 ];

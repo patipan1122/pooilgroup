@@ -173,6 +173,12 @@ model User {
   passwordHash        String?   @map("password_hash")
   role                UserRole
   lineUserId          String?   @unique @map("line_user_id")
+  // LINE *Login/LIFF* channel id_token `sub`. DISTINCT from lineUserId (the
+  // Messaging-API userId the webhook sees): when the ledger Login channel and the
+  // Messaging OA sit under different LINE providers, one human has two ids. The
+  // bot gate matches lineUserId; the LIFF/line-login matches lineLoginSub — so
+  // both channels resolve to the SAME Pool user. (D-identity 2026-06-05)
+  lineLoginSub        String?   @unique @map("line_login_sub")
   telegramUserId      String?   @map("telegram_user_id")
   telegramChatId      String?   @map("telegram_chat_id")
   mustChangePassword  Boolean   @default(true) @map("must_change_password")
@@ -5520,6 +5526,12 @@ model LedgerLineInvite {
   scopeBranchIds    String[]  @map("scope_branch_ids") @db.Uuid
   scopeCategoryIds  String[]  @map("scope_category_ids") @db.Uuid
   note              String?
+  // Top-down binding (D-identity 2026-06-05): when set, accepting this invite ALSO
+  // binds the accepter's verified Login `sub` to THIS Pool user (users.line_login_sub)
+  // and links the ledger member → that Pool user. `kind='admin_claim'` = grant ledger
+  // admin to that Pool user (used by promoteMemberToAdmin + the owner self-claim link).
+  targetPoolUserId  String?   @map("target_pool_user_id") @db.Uuid
+  kind              String    @default("member") // member | admin_claim
   expiresAt         DateTime? @map("expires_at") @db.Timestamptz(6)
   usedByLineUserId  String?   @map("used_by_line_user_id")
   usedAt            DateTime? @map("used_at") @db.Timestamptz(6)

@@ -872,7 +872,9 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       "ระบบบันทึกค่าใช้จ่าย · staff ถ่ายใบเสร็จ/สลิป (LINE หรือเว็บ) → AI อ่านข้อมูล + ตรวจยอด → บัญชียืนยัน (ห้าม auto-post) → เก็บ + งบประมาณ + Dashboard + export เข้า TRCloud",
     emoji: "🧾",
     Icon: Receipt,
-    status: "beta",
+    // CEO 2026-06-05: เปิดใช้เต็มตัว — โผล่ในหน้าเชิญผู้ใช้ (program-admin) + ขึ้น
+    // "ใช้งานอยู่" บน Hub รวม. ก่อนหน้านี้เป็น "beta" จึงถูกตัวกรอง status==="active" กันออก.
+    status: "active",
     basePath: "/ledger",
     nav: [
       {

@@ -356,10 +356,16 @@ export async function POST(req: NextRequest) {
   }
 
   if (!resolved) {
+    // Resolve a Pool user by EITHER LINE identity:
+    //   line_user_id   = Messaging-API userId (what the webhook/bot sees)
+    //   line_login_sub = Login/LIFF channel id_token sub (what THIS verify returns)
+    // When the Login channel + Messaging OA sit under different LINE providers a
+    // single human has both ids — match either so the bot and the LIFF resolve the
+    // SAME Pool user (audit 2026-06-05 root cause).
     const { data: poolUser } = await admin
       .from("users")
       .select("id, org_id, email, name, role, is_active")
-      .eq("line_user_id", lineUserId)
+      .or(`line_user_id.eq.${lineUserId},line_login_sub.eq.${lineUserId}`)
       .eq("is_active", true)
       .maybeSingle();
     if (poolUser) {
@@ -370,7 +376,11 @@ export async function POST(req: NextRequest) {
         name: poolUser.name,
         role: poolUser.role,
       };
-    } else {
+    } else if (lineModule !== "ledger") {
+      // ChairOps/maid resolution — ONLY for non-ledger logins. LedgerLine uses a
+      // SEPARATE LINE OA; a ledger login must NEVER resolve to a ChairOps maid
+      // (CEO 2026-06-05: "คนละ LINE OA ห้ามปน"). A ledger login with no Pool match
+      // falls through to needsLink — the owner binds via the ledger claim link.
       const maid = await prisma.chairopsUser.findFirst({
         where: { lineUserId, isActive: true },
         select: { id: true, orgId: true, email: true, displayName: true, role: true, authUserId: true },
@@ -408,7 +418,8 @@ export async function POST(req: NextRequest) {
   // ChairOps context (deep-link into /chairops/*) + still unbound → self-register
   // a branchless MAID from the verified LINE identity. Office assigns a branch
   // to activate. (Recruit/generic LIFF has no /chairops next → not triggered.)
-  if (!resolved && (redirectTo ?? "").startsWith("/chairops")) {
+  // NEVER for a ledger login — keeps the two OAs' identities from mixing.
+  if (!resolved && lineModule !== "ledger" && (redirectTo ?? "").startsWith("/chairops")) {
     resolved = await selfRegisterChairopsMaid(
       admin,
       lineUserId,

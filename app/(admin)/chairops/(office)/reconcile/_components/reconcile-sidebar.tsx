@@ -13,10 +13,13 @@ import Link from "next/link";
 import { LayoutGrid, Search } from "lucide-react";
 import type { ReconcileSidebarRow } from "@/lib/chairops/queries/reconcile-v2";
 
-function fmtSigned(n: number): string {
+function fmtCumDrift(n: number): string {
   const r = Math.round(n);
-  const sign = r > 0 ? "+" : r < 0 ? "−" : "";
-  return sign + Math.abs(r).toLocaleString("en-US");
+  // cumDrift = -(driftAmount): negative = shortage, positive = surplus.
+  // Show "ค้างฝาก X" so office staff aren't confused by "−5,168".
+  if (r < 0) return `ค้างฝาก ${Math.abs(r).toLocaleString("en-US")}`;
+  if (r > 0) return `+${r.toLocaleString("en-US")}`;
+  return "ปกติ";
 }
 
 /**
@@ -124,7 +127,7 @@ export function ReconcileSidebar({
               </div>
             </div>
             <div className={"rc-side-cum mono co-drift " + cumClass(b.cumDrift)}>
-              {fmtSigned(b.cumDrift)}
+              {fmtCumDrift(b.cumDrift)}
             </div>
           </Link>
         ))}
