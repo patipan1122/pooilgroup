@@ -67,6 +67,23 @@ export function LiffBootstrap({
         : "default";
     const liffId = liffIdForModule(lineModule);
 
+    // LedgerLine invite/claim tokens are consumed by the JOIN page (which calls
+    // /api/ledger/invite/accept), NOT by line-login — line-login would mis-handle a
+    // ledger token as a ChairOps maid invite and silently fail, leaving the user on
+    // the capture page. LINE's sub-path endpoint can land a "/ledger/join?invite=…"
+    // deep link on the capture page (the token ends up in liff.state); bounce
+    // straight to the join page so JoinClient binds the verified Login sub. Guard
+    // against a redirect loop (the join page itself must not bounce). (audit 2026-06-05)
+    if (
+      invite &&
+      lineModule === "ledger" &&
+      typeof window !== "undefined" &&
+      !window.location.pathname.includes("/ledger/join")
+    ) {
+      window.location.replace(`/liff/ledger/join?invite=${encodeURIComponent(invite)}`);
+      return;
+    }
+
     if (haveSession) {
       // Already authenticated (e.g. opened a second time) → go straight in.
       if (next) window.location.replace(next);
