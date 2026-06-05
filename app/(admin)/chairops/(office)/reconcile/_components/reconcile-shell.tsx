@@ -99,12 +99,18 @@ export async function ReconcileShell({
   // ending at posCoverThrough" — same as how a bank statement opens on the
   // most-recent month, not a random year-old slice. Only applies when the
   // user hasn't supplied an explicit ?from/?to.
+  //
+  // FIX 2026-06-05: upper bound is today (not posThrough). When a deposit is
+  // made AFTER the last POS upload (depositedAt > posThrough), capping at
+  // posThrough silently hides the deposit row. The lower bound still anchors
+  // to posThrough-29 so the ledger opens on the latest POS data window.
   const posThrough = overview.freshness.posCoverThrough;
   const defaultedLedger = (() => {
     if (view !== "ledger" || safeFrom || safeTo) return ledger;
     if (!posThrough) return ledger;
     const cutoff = isoMinusDays(posThrough, 29); // 30-day inclusive window
-    return ledger.filter((d) => d.date >= cutoff && d.date <= posThrough);
+    const today = new Date().toISOString().slice(0, 10);
+    return ledger.filter((d) => d.date >= cutoff && d.date <= today);
   })();
   const totals = view === "ledger" ? ledgerTotals(defaultedLedger) : null;
 
@@ -132,7 +138,9 @@ export async function ReconcileShell({
   }
   if (safeTo) exportQs.set("to", safeTo);
   else if (posThrough && view === "ledger") {
-    exportQs.set("to", posThrough);
+    // Match the visible window ceiling (today, not posThrough) so deposits
+    // after the last POS upload appear in the downloaded file too.
+    exportQs.set("to", new Date().toISOString().slice(0, 10));
   }
   const exportHref = `/chairops/reconcile/export${exportQs.toString() ? `?${exportQs.toString()}` : ""}`;
 

@@ -144,8 +144,10 @@ export interface ReconcileSidebarRow {
 const DAY_MS = 86_400_000;
 
 function isoDay(d: Date): string {
-  // Use local-ish slice; bizDate is a DATE column so its UTC midnight is fine.
-  return d.toISOString().slice(0, 10);
+  // Bangkok-local day grain (UTC+7). Safe for DATE columns (midnight UTC →
+  // midnight+7h stays same date) and correct for DATETIME columns where
+  // an event at 00:15 Bangkok (17:15 UTC prev day) must bucket to Bangkok date.
+  return new Date(d.getTime() + 7 * 3_600_000).toISOString().slice(0, 10);
 }
 
 function toNum(d: { toNumber: () => number } | number | null | undefined): number {

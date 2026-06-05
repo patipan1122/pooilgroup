@@ -81,8 +81,9 @@ function buildLegacyCollectionWhere(args: RangeArgs) {
 }
 
 function isoDay(d: Date): string {
-  // Bangkok-local day grain (matches reconcile-v2 + branches-workspace).
-  return d.toISOString().slice(0, 10);
+  // Bangkok-local day grain (UTC+7). UTC-ISO would bucket a deposit at
+  // 00:15 Bangkok to the previous day, creating phantom diffs.
+  return new Date(d.getTime() + 7 * 3_600_000).toISOString().slice(0, 10);
 }
 
 /**
