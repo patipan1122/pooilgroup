@@ -67,20 +67,19 @@ export function LiffBootstrap({
         : "default";
     const liffId = liffIdForModule(lineModule);
 
-    // LedgerLine invite/claim tokens are consumed by the JOIN page (which calls
-    // /api/ledger/invite/accept), NOT by line-login — line-login would mis-handle a
-    // ledger token as a ChairOps maid invite and silently fail, leaving the user on
-    // the capture page. LINE's sub-path endpoint can land a "/ledger/join?invite=…"
-    // deep link on the capture page (the token ends up in liff.state); bounce
-    // straight to the join page so JoinClient binds the verified Login sub. Guard
-    // against a redirect loop (the join page itself must not bounce). (audit 2026-06-05)
-    if (
-      invite &&
-      lineModule === "ledger" &&
-      typeof window !== "undefined" &&
-      !window.location.pathname.includes("/ledger/join")
-    ) {
-      window.location.replace(`/liff/ledger/join?invite=${encodeURIComponent(invite)}`);
+    // LedgerLine invite/claim tokens are OWNED by the JOIN page (JoinClient →
+    // /api/ledger/invite/accept), NOT by line-login. Two jobs here:
+    //  • On the capture page (LINE's sub-path endpoint drops "/ledger/join?invite=…"
+    //    into liff.state and lands here): bounce to the join page.
+    //  • On the join page itself: STOP (return) — do NOT run the line-login flow.
+    //    If the bootstrap kept going it would re-init LIFF + call line-login in
+    //    parallel with JoinClient, the two would fight over the LIFF SDK, and BOTH
+    //    spinners ("กำลังเข้าร่วม…" + "กำลังเข้าสู่ระบบ") would hang forever. Letting
+    //    JoinClient run alone fixes the stuck/looping claim. (audit 2026-06-05)
+    if (invite && lineModule === "ledger" && typeof window !== "undefined") {
+      if (!window.location.pathname.includes("/ledger/join")) {
+        window.location.replace(`/liff/ledger/join?invite=${encodeURIComponent(invite)}`);
+      }
       return;
     }
 
