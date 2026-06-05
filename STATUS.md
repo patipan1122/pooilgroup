@@ -1,8 +1,15 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-05 (ChairOps Maid Management: build + Reverse Audit PASS · รอ CEO deploy)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-05 (ChairOps Maid Management: 9 features 🚀 DEPLOYED LIVE)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-06-05 — ChairOps Maid Management: 🚀 DEPLOYED LIVE · setup 242eb17 · migration applied)
+
+**สิ่งที่ deploy:** F1 iOS fix · F2 vacancy badge · F3 inline panel · F4 self-onboarding · F5 auto-revoke invite · F6 settle gate · F7 deactivation reason + name confirm · F8 LINE block · F9 graceful screen (091-774-5963 · 086-980-1234)
+**Migration applied:** `20260605_chairops_maid_management.sql` — enum OffboardingReason + 11 columns + backfill
+**Env:** `CHAIROPS_LINE_CHANNEL_ACCESS_TOKEN` ✅ Vercel
+**Branch:** `claude/chairops-maid-management-9features` → `setup` merged
 
 ## 🆕 Update (2026-06-05 — ChairOps Maid Management: /auditbigteam Reverse Audit · 3 P0 bugs fixed · ✅ PASS)
 
