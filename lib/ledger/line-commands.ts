@@ -26,6 +26,9 @@ export interface CommandCtx {
   companyId: string;
   channelRowId: string;
   branchId: string | null;
+  /** The LINE group this command came from (null in 1:1). Drives per-group
+   *  branch binding (B3 multi-group): /setting สาขา in a group pins THAT group. */
+  groupId: string | null;
   senderLineUserId: string | null;
 }
 
@@ -51,11 +54,13 @@ const MEMBER_ROLE_LABEL: Record<string, string> = {
   external_accountant: "สนง.บัญชีภายนอก",
 };
 
-/** Build the LIFF admin-console deep link (opens /liff/ledger/admin inside LINE). */
+/** Build the LIFF admin-console deep link (opens /liff/ledger/admin inside LINE).
+ *  The `/ledger` segment is REQUIRED (see LineConfirmCard) — without it LINE's
+ *  liff.state fallback bounces to the ChairOps default and the console never opens. */
 function adminConsoleUrl(): string | null {
   const liffId = process.env.NEXT_PUBLIC_LEDGER_LIFF_ID;
   if (!liffId) return null;
-  return `https://liff.line.me/${liffId}?next=${encodeURIComponent("/liff/ledger/admin")}`;
+  return `https://liff.line.me/${liffId}/ledger?next=${encodeURIComponent("/liff/ledger/admin")}`;
 }
 
 /** Is this the `/setting`-able admin? (Pool user, admin-tier or accountant) */
@@ -225,10 +230,33 @@ export async function handleLedgerCommand(
         select: { id: true, code: true, name: true },
       });
       if (!branch) return `ไม่พบสาขา "${code}" · พิมพ์ /setting เพื่อดูรายการสาขา`;
-      await prisma.ledgerLineChannel.update({
-        where: { id: ctx.channelRowId },
-        data: { branchId: branch.id, kind: "branch" },
-      });
+      if (ctx.groupId) {
+        // Multi-group (B3): pin THIS LINE group → this branch. Each branch group
+        // binds its own branch; the webhook reads this override per incoming group,
+        // so one OA can serve many branches at once.
+        await prisma.ledgerLineGroup.upsert({
+          where: {
+            orgId_companyId_groupId: {
+              orgId: ctx.orgId,
+              companyId: ctx.companyId,
+              groupId: ctx.groupId,
+            },
+          },
+          update: { branchId: branch.id, active: true },
+          create: {
+            orgId: ctx.orgId,
+            companyId: ctx.companyId,
+            groupId: ctx.groupId,
+            branchId: branch.id,
+          },
+        });
+      } else {
+        // 1:1 / no group context → set the channel's default branch (unchanged).
+        await prisma.ledgerLineChannel.update({
+          where: { id: ctx.channelRowId },
+          data: { branchId: branch.id, kind: "branch" },
+        });
+      }
       return `✅ ผูกกลุ่มนี้กับสาขา "${branch.name}" แล้ว · รายจ่ายในกลุ่มนี้จะลงสาขานี้อัตโนมัติ`;
     }
 
@@ -253,8 +281,17 @@ export async function handleLedgerCommand(
       take: 30,
     });
     let bound = "ยังไม่ผูกสาขา (เป็นกลุ่มกลาง — ระบุสาขาทีหลังได้)";
-    if (ctx.branchId) {
-      const b = await prisma.branch.findUnique({ where: { id: ctx.branchId }, select: { name: true } });
+    // Prefer this group's own binding (B3); fall back to the channel default.
+    let boundBranchId = ctx.branchId;
+    if (ctx.groupId) {
+      const gm = await prisma.ledgerLineGroup.findFirst({
+        where: { orgId: ctx.orgId, companyId: ctx.companyId, groupId: ctx.groupId, active: true },
+        select: { branchId: true },
+      });
+      if (gm?.branchId) boundBranchId = gm.branchId;
+    }
+    if (boundBranchId) {
+      const b = await prisma.branch.findUnique({ where: { id: boundBranchId }, select: { name: true } });
       if (b) bound = `ผูกกับสาขา: ${b.name}`;
     }
     const list = branches.length

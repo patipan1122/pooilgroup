@@ -126,6 +126,9 @@ export type AuditAction =
   | "LEDGER_INVITE_CREATED"
   // Member ↔ branch back-office (GAP 4) — admin (re)assigns / approves the branch a member oversees.
   | "LEDGER_MEMBER_SCOPE_UPDATED"
+  // Admin binds a LINE member's verified userId to a Pool account → that LINE can
+  // run admin commands (security-sensitive: grants in-LINE privilege; audited).
+  | "LEDGER_ADMIN_LINE_LINKED"
   // LIFF admin console (GAP 5) — money-capability permission toggle + branch/org edits via mobile.
   | "LEDGER_PERMISSION_UPDATED"
   | "LEDGER_BRANCH_UPDATED"

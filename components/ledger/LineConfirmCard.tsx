@@ -398,10 +398,16 @@ export function buildConfirmBubble(input: LedgerConfirmCardInput): FlexBubble {
     companyId ? `company=${encodeURIComponent(companyId)}&` : ""
   }selected=${encodeURIComponent(expenseId)}`;
   // Prefer opening THROUGH LedgerLine's own LIFF (login inside LINE, no iOS
-  // cookie-drop): liff.line.me/<id>?next=<webPath> — the LIFF bootstrap reads
-  // ?next and redirects there after auth. Falls back to a plain web deep-link.
+  // cookie-drop): liff.line.me/<id>/ledger?next=<webPath> — the LIFF bootstrap
+  // reads ?next and redirects there after auth. Falls back to a plain web link.
+  //
+  // The `/ledger` segment is REQUIRED: LINE stuffs everything after the LIFF id
+  // into ?liff.state, and /liff/page.tsx only honours a state that starts with
+  // "/" (else it falls through to the ChairOps default). Without /ledger the
+  // edit button silently bounced to the ChairOps maid screen — the GAP-3 bug.
+  // Mirrors the proven ChairOps rich-menu pattern (liff.line.me/<id>/chairops?next=).
   const deepLink = liffId
-    ? `https://liff.line.me/${liffId}?next=${encodeURIComponent(webPath)}`
+    ? `https://liff.line.me/${liffId}/ledger?next=${encodeURIComponent(webPath)}`
     : `${base}${webPath}`;
   // Absolute brand URLs (LINE flex images must be https). Only when baseUrl set.
   // Pose reacts to the result like a sticker — celebrate / alert / confused.

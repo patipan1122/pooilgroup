@@ -5402,6 +5402,28 @@ model LedgerLineChannel {
   @@schema("public")
 }
 
+// หลายกลุ่ม LINE → หลายสาขา (B3): one OA serves many branch groups, each group
+// pinned to its OWN branch. The webhook resolves the incoming group → branch here;
+// when there's NO row for a group it falls back to ledger_line_channel.branchId
+// (so single-group setups behave exactly as before). Relationless (matches
+// LedgerLineMember) to keep the migration additive + low-risk on the live DB.
+model LedgerLineGroup {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  groupId   String   @map("group_id") // LINE group id (C...)
+  branchId  String?  @map("branch_id") @db.Uuid // this group → this branch
+  label     String? // optional human label (e.g. the group name)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([orgId, companyId, groupId])
+  @@index([orgId, companyId, active])
+  @@map("ledger_line_group")
+  @@schema("public")
+}
+
 // ใครส่งใบเสร็จผ่าน LINE ได้ + ขอบเขต (สาขา/หมวดที่ดูแล) — จากลิงก์เชิญ
 model LedgerLineMember {
   id                   String   @id @default(uuid()) @db.Uuid

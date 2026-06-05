@@ -10,7 +10,7 @@
 
 import { useState, useTransition } from "react";
 import {
-  Users, Check, X, Loader2, Clock, MapPin, Power,
+  Users, Check, X, Loader2, Clock, MapPin, Power, Crown, Link2, Link2Off,
 } from "lucide-react";
 import {
   updateMemberBranches,
@@ -18,6 +18,8 @@ import {
   toggleMemberActive,
   approveMemberPending,
   rejectMemberPending,
+  linkLineMemberToMe,
+  unlinkLineMember,
 } from "../../_actions";
 import type { LedgerMemberRow } from "../../_data";
 import { LEDGER_ROLES, ROLE_LABEL } from "@/lib/ledger/permission-constants";
@@ -36,9 +38,11 @@ function sameSet(a: string[], b: string[]): boolean {
 function MemberRow({
   member,
   branches,
+  myUserId,
 }: {
   member: LedgerMemberRow;
   branches: BranchOpt[];
+  myUserId: string;
 }) {
   const [scope, setScope] = useState<string[]>(member.scopeBranchIds);
   const [pending, start] = useTransition();
@@ -77,6 +81,20 @@ function MemberRow({
     start(async () => {
       const res = await toggleMemberActive(member.id, !member.active);
       if (!res.ok) setErr(res.error ?? "ทำรายการไม่สำเร็จ");
+    });
+  }
+  function linkAsMe() {
+    setErr(null);
+    start(async () => {
+      const res = await linkLineMemberToMe(member.id);
+      if (!res.ok) setErr(res.error ?? "ผูกบัญชีไม่สำเร็จ");
+    });
+  }
+  function unlink() {
+    setErr(null);
+    start(async () => {
+      const res = await unlinkLineMember(member.id);
+      if (!res.ok) setErr(res.error ?? "ยกเลิกไม่สำเร็จ");
     });
   }
 
@@ -121,6 +139,42 @@ function MemberRow({
             <Power className="size-4" aria-hidden />
           </button>
         </div>
+      </div>
+
+      {/* LINE ↔ Pool admin link — bind this LINE identity to a Pool account so
+          it can run admin commands in chat (the "เฉพาะแอดมิน..." unlock). */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {member.poolLinked ? (
+          member.poolUserId === myUserId ? (
+            <>
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                <Crown className="size-3" aria-hidden /> นี่คือบัญชีของคุณ · สั่งงานในแชตได้
+              </span>
+              <button
+                type="button"
+                onClick={unlink}
+                disabled={pending}
+                className="inline-flex items-center gap-1 text-[11px] text-zinc-400 hover:text-rose-600 disabled:opacity-50"
+              >
+                <Link2Off className="size-3" aria-hidden /> ยกเลิกการผูก
+              </button>
+            </>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+              <Link2 className="size-3" aria-hidden /> ผูกกับบัญชีแอดมินแล้ว
+            </span>
+          )
+        ) : (
+          <button
+            type="button"
+            onClick={linkAsMe}
+            disabled={pending}
+            className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+          >
+            {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Crown className="size-3.5" aria-hidden />}
+            นี่คือ LINE ของฉัน → ตั้งเป็นแอดมิน
+          </button>
+        )}
       </div>
 
       {/* Pending self-request banner */}
@@ -199,10 +253,14 @@ function MemberRow({
 export function MemberManager({
   branches,
   members,
+  myUserId,
+  myLineLinked,
 }: {
   companyId: string;
   branches: BranchOpt[];
   members: LedgerMemberRow[];
+  myUserId: string;
+  myLineLinked: boolean;
 }) {
   const pendingCount = members.filter((m) => m.pendingBranchId).length;
 
@@ -221,6 +279,19 @@ export function MemberManager({
         คนที่ส่งใบเสร็จ/พิมพ์ในกลุ่ม LINE จะมาโผล่ที่นี่เอง · แตะชิปเลือกสาขาที่แต่ละคนดูแล แล้วกดบันทึก
       </p>
 
+      {/* First-run nudge: bind YOUR LINE so admin commands work in chat. */}
+      {!myLineLinked && (
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2.5 text-xs text-amber-900">
+          <p className="font-semibold">👑 อยากสั่งงานใน LINE ได้ไหม?</p>
+          <p className="mt-0.5 leading-relaxed text-amber-800">
+            พิมพ์อะไรก็ได้ในกลุ่ม LINE 1 ครั้ง (เช่น <span className="font-mono">/help</span>) →
+            ชื่อ LINE ของคุณจะมาโผล่ในรายการด้านล่าง → กด{" "}
+            <span className="font-semibold">“นี่คือ LINE ของฉัน → ตั้งเป็นแอดมิน”</span> ที่ชื่อคุณ ·
+            จากนั้นคำสั่งแอดมินทั้งหมดในแชตจะใช้ได้
+          </p>
+        </div>
+      )}
+
       {members.length === 0 ? (
         <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-6 text-center text-xs text-zinc-500">
           ยังไม่มีสมาชิก — ให้พนักงานส่งใบเสร็จในกลุ่ม LINE สักใบ หรือเชิญผ่านลิงก์ด้านบน
@@ -229,7 +300,7 @@ export function MemberManager({
       ) : (
         <ul className="space-y-2">
           {members.map((m) => (
-            <MemberRow key={m.id} member={m} branches={branches} />
+            <MemberRow key={m.id} member={m} branches={branches} myUserId={myUserId} />
           ))}
         </ul>
       )}

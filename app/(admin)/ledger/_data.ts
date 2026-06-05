@@ -305,6 +305,7 @@ export async function listLedgerMembers(orgId: string, companyId: string) {
       role: true,
       scopeBranchIds: true,
       pendingBranchId: true,
+      poolUserId: true,
       active: true,
       createdAt: true,
     },
@@ -331,8 +332,36 @@ export async function listLedgerMembers(orgId: string, companyId: string) {
     scopeBranchNames: r.scopeBranchIds.map((id) => nameById.get(id) ?? "?"),
     pendingBranchId: r.pendingBranchId,
     pendingBranchName: r.pendingBranchId ? nameById.get(r.pendingBranchId) ?? null : null,
+    poolUserId: r.poolUserId,
+    poolLinked: !!r.poolUserId,
     active: r.active,
     createdAt: r.createdAt.toISOString(),
   }));
 }
 export type LedgerMemberRow = Awaited<ReturnType<typeof listLedgerMembers>>[number];
+
+/** Group → branch overrides (B3 multi-group). Each row = one LINE group pinned to
+ *  its own branch. Rows self-register when an admin types "/setting สาขา <สาขา>"
+ *  inside a branch group; the webhook reads them to auto-tag receipts per group. */
+export async function listLedgerGroups(orgId: string, companyId: string) {
+  const rows = await prisma.ledgerLineGroup.findMany({
+    where: { orgId, companyId },
+    orderBy: [{ active: "desc" }, { createdAt: "asc" }],
+    take: 200,
+    select: { id: true, groupId: true, branchId: true, label: true, active: true },
+  });
+  const ids = Array.from(new Set(rows.map((r) => r.branchId).filter(Boolean) as string[]));
+  const branches = ids.length
+    ? await prisma.branch.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+    : [];
+  const nameById = new Map(branches.map((b) => [b.id, b.name]));
+  return rows.map((r) => ({
+    id: r.id,
+    groupId: r.groupId,
+    branchId: r.branchId,
+    branchName: r.branchId ? nameById.get(r.branchId) ?? null : null,
+    label: r.label,
+    active: r.active,
+  }));
+}
+export type LedgerGroupRow = Awaited<ReturnType<typeof listLedgerGroups>>[number];

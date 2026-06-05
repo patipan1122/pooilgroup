@@ -45,6 +45,7 @@ interface LineEvent {
   replyToken?: string;
   source?: { type?: string; userId?: string; groupId?: string };
   message?: { id?: string; type?: string; text?: string };
+  postback?: { data?: string };
 }
 interface LineWebhookBody {
   events?: LineEvent[];
@@ -159,7 +160,71 @@ export async function POST(
         }
         continue;
       }
+
+      // --- POSTBACK fallback (B4) — the confirm/edit buttons default to URI
+      //     deep-links (open the web pane THROUGH the LIFF). If a card is ever
+      //     rendered in postback mode, or a client can't follow the URI on iOS,
+      //     the data `ledger:edit:<id>` / `ledger:confirm:<id>` lands here and we
+      //     reply with the SAME working deep-link so the user still reaches the
+      //     review pane. GOLDEN RULE: this NEVER confirms — it only hands back a
+      //     link; the accountant confirms on the web.
+      if (ev.type === "postback") {
+        const data = ev.postback?.data ?? "";
+        const m = data.match(/^ledger:(?:confirm|edit):(.+)$/);
+        if (m && ev.replyToken && accessToken) {
+          const expenseId = m[1];
+          const webPath = `/ledger/expenses?company=${encodeURIComponent(
+            ch.companyId,
+          )}&selected=${encodeURIComponent(expenseId)}`;
+          const link = ledgerLiffId
+            ? `https://liff.line.me/${ledgerLiffId}/ledger?next=${encodeURIComponent(webPath)}`
+            : `${baseUrl}${webPath}`;
+          await replyText(
+            accessToken,
+            ev.replyToken,
+            ["เปิดใบเสร็จเพื่อตรวจ/ยืนยันที่นี่ 👇", link, "", "ทุกใบเป็นฉบับร่าง — ยืนยันบนเว็บอีกที ไม่โพสต์อัตโนมัติ"].join("\n"),
+          ).catch(() => {});
+        }
+        continue;
+      }
+
       if (ev.type !== "message") continue;
+
+      // Auto-seed the sender as a member on ANY message (commands + Q&A too, not
+      // just captures). This puts every person who interacts into the web back-
+      // office — so an admin who types /setting, or the CEO who types anything,
+      // appears in สมาชิก with their REAL messaging-API LINE id + name, ready to
+      // be linked to a Pool admin account (the "เชื่อม LINE เป็นแอดมิน" flow).
+      // Best-effort + idempotent (keyed by orgId+lineUserId); never blocks.
+      if (ev.source?.userId) {
+        await ensureLedgerMember({
+          orgId: ch.orgId,
+          companyId: ch.companyId,
+          lineUserId: ev.source.userId,
+          groupId: ev.source.groupId ?? null,
+          accessToken,
+        });
+      }
+
+      // --- Resolve THIS group's branch (B3 multi-group → multi-branch). One OA
+      //     can serve many branch groups; a per-group override row wins, else we
+      //     fall back to the channel's single branch — so single-group setups are
+      //     byte-for-byte unchanged. One cheap indexed lookup per event.
+      let effectiveBranchId: string | null = ch.branchId;
+      if (ev.source?.groupId) {
+        const gm = await prisma.ledgerLineGroup
+          .findFirst({
+            where: {
+              orgId: ch.orgId,
+              companyId: ch.companyId,
+              groupId: ev.source.groupId,
+              active: true,
+            },
+            select: { branchId: true },
+          })
+          .catch(() => null);
+        if (gm?.branchId) effectiveBranchId = gm.branchId;
+      }
 
       // --- TEXT → conversational Q&A (สรุปเดือนนี้ / หมวดไหนเยอะสุด / งบ ...) ---
       // Numbers come from the DB (lib/ledger/qa); the LINE bot is read-only here
@@ -187,6 +252,7 @@ export async function POST(
               companyId: ch.companyId,
               channelRowId: ch.id,
               branchId: ch.branchId,
+              groupId: ev.source?.groupId ?? null,
               senderLineUserId: ev.source?.userId ?? null,
             });
             if (cmdReply !== null) {
@@ -235,7 +301,7 @@ export async function POST(
               wht: 0,
               total: parsed.total,
               paymentMethod: parsed.paymentMethod ?? ch.defaultPaymentMethod ?? null,
-              branchId: ch.branchId ?? null, // group = branch auto-tag
+              branchId: effectiveBranchId, // per-group branch (B3) → fallback channel branch
               note: dup
                 ? `จากข้อความ: "${text}" · ⚠️ ยอดอาจซ้ำกับ ${dup.docCode}`
                 : `จากข้อความ: "${text}"`,
@@ -266,17 +332,7 @@ export async function POST(
             } else if (ev.replyToken) {
               await replyText(accessToken, ev.replyToken, "บันทึกไม่สำเร็จ · ลองใหม่นะ").catch(() => {});
             }
-            // Auto-seed the sender as a member → shows in the back-office for
-            // branch assignment (best-effort, never blocks).
-            if (res.ok && ev.source?.userId) {
-              await ensureLedgerMember({
-                orgId: ch.orgId,
-                companyId: ch.companyId,
-                lineUserId: ev.source.userId,
-                groupId: ev.source.groupId ?? null,
-                accessToken,
-              });
-            }
+            // (member auto-seed now happens once per message at the top of the loop)
           } catch (e) {
             console.error("[ledger:line-webhook] จด path failed", e);
           }
@@ -411,7 +467,7 @@ export async function POST(
         const res = await createDraftExpenseSystem(ch.orgId, {
           companyId: ch.companyId,
           source: "line",
-          branchId: ch.branchId ?? null, // group = branch auto-tag
+          branchId: effectiveBranchId, // per-group branch (B3) → fallback channel branch
           vendor: parsed?.vendor ?? null,
           docType: parsed?.docType ?? undefined, // AI-classified (falls back tax_invoice)
           vendorTaxId: parsed?.vendorTaxId ?? null,
@@ -518,18 +574,7 @@ export async function POST(
           }
         }
 
-        // 8. Auto-seed the sender as a member (best-effort) so they appear in the
-        //    back-office for branch assignment. role=staff, no scope until admin
-        //    assigns; name back-filled from their LINE group profile once.
-        if (res.ok && ev.source?.userId) {
-          await ensureLedgerMember({
-            orgId: ch.orgId,
-            companyId: ch.companyId,
-            lineUserId: ev.source.userId,
-            groupId: ev.source.groupId ?? null,
-            accessToken,
-          });
-        }
+        // (member auto-seed now happens once per message at the top of the loop)
       } catch (e) {
         console.error("[ledger:line-webhook] process failed", e);
       }

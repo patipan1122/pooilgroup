@@ -46,6 +46,8 @@ export function AdminConsole({
   branchesFull,
   channel,
   permissionMatrix,
+  myUserId,
+  myLineLinked,
 }: {
   companyId: string;
   companyName: string;
@@ -58,6 +60,8 @@ export function AdminConsole({
   branchesFull: BranchFull[];
   channel: LineChannelInfo | null;
   permissionMatrix: Record<LedgerRole, Record<LedgerCapability, boolean>>;
+  myUserId: string;
+  myLineLinked: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("member");
   const pendingCount = members.filter((m) => m.pendingBranchId).length;
@@ -105,7 +109,7 @@ export function AdminConsole({
       <main className="flex-1 overflow-y-auto px-3 pb-24 pt-3">
         {tab === "member" && (
           <div className="space-y-3">
-            <MemberManager companyId={companyId} branches={branchOpts} members={members} />
+            <MemberManager companyId={companyId} branches={branchOpts} members={members} myUserId={myUserId} myLineLinked={myLineLinked} />
             <InviteManager companyId={companyId} branches={branchOpts} invites={invites} />
           </div>
         )}

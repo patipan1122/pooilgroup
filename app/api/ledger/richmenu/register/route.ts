@@ -59,9 +59,12 @@ export async function POST(request: NextRequest) {
   const liffId = process.env.NEXT_PUBLIC_LEDGER_LIFF_ID;
   const base = getRequestBaseUrl(request);
   // LIFF opens the capture app (endpoint = /liff/ledger); ?next deep-links the web pane.
+  // The `/ledger` segment is REQUIRED — LINE stuffs everything after the LIFF id into
+  // ?liff.state and /liff/page.tsx only honours a state starting with "/" (else it
+  // bounces to the ChairOps default). Without it every menu cell opened ChairOps.
   const liff = (next?: string) =>
     liffId
-      ? `https://liff.line.me/${liffId}${next ? `?next=${encodeURIComponent(next)}` : ""}`
+      ? `https://liff.line.me/${liffId}/ledger${next ? `?next=${encodeURIComponent(next)}` : ""}`
       : `${base}${next ?? "/liff/ledger"}`;
 
   // 6 cells (2500×1686, 3 cols × 2 rows) matching public/ledger/brand/richmenu.png.
@@ -75,7 +78,7 @@ export async function POST(request: NextRequest) {
       { bounds: { x: 0, y: 0, width: cw, height: ch }, action: { type: "uri", label: "ถ่ายใบเสร็จ", uri: liff() } },
       { bounds: { x: cw, y: 0, width: cw, height: ch }, action: { type: "message", label: "พิมพ์รายจ่าย", text: "/guide" } },
       { bounds: { x: cw * 2, y: 0, width: W - cw * 2, height: ch }, action: { type: "uri", label: "รายการของฉัน", uri: liff("/ledger/expenses") } },
-      { bounds: { x: 0, y: ch, width: cw, height: H - ch }, action: { type: "message", label: "เปลี่ยนสาขา", text: "/setting" } },
+      { bounds: { x: 0, y: ch, width: cw, height: H - ch }, action: { type: "uri", label: "จัดการทีม", uri: liff("/liff/ledger/admin") } },
       { bounds: { x: cw, y: ch, width: cw, height: H - ch }, action: { type: "message", label: "วิธีใช้", text: "/help" } },
       { bounds: { x: cw * 2, y: ch, width: W - cw * 2, height: H - ch }, action: { type: "message", label: "แจ้งปัญหา", text: "แจ้งปัญหา" } },
     ],

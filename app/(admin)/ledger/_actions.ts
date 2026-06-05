@@ -873,13 +873,16 @@ const inviteSchema = z.object({
   expiresInDays: z.coerce.number().int().min(1).max(365).optional(),
 });
 
-/** Build the shareable invite link (opens the LedgerLine LIFF → /liff/ledger/join). */
+/** Build the shareable invite link (opens the LedgerLine LIFF → /liff/ledger/join).
+ *  Lands DIRECTLY on the join page (invite stays a top-level param the page +
+ *  bootstrap read). The `/ledger/join` path after the LIFF id is REQUIRED — without
+ *  it LINE's liff.state fallback bounces to the ChairOps default and the invite dies. */
 function inviteUrl(token: string): string {
   const liffId = liffIdForModule("ledger");
-  const next = `/liff/ledger/join?invite=${token}`;
+  const path = `/liff/ledger/join?invite=${token}`;
   return liffId
-    ? `https://liff.line.me/${liffId}?next=${encodeURIComponent(next)}`
-    : next;
+    ? `https://liff.line.me/${liffId}/ledger/join?invite=${encodeURIComponent(token)}`
+    : path;
 }
 
 export async function createLedgerInvite(
@@ -1121,6 +1124,157 @@ export async function rejectMemberPending(
   });
   revalidatePath("/ledger/settings");
   revalidatePath("/liff/ledger/admin");
+  return { ok: true };
+}
+
+// ── LINE ↔ Pool admin linking ────────────────────────────────────────────────
+// The LINE command gate (lib/ledger/line-commands.ts · isAdminSender) recognises
+// an admin by looking up the sender's LINE userId on a Pool `user` row with an
+// admin-tier role. Until a user.lineUserId is set, EVERY admin command in LINE
+// is rejected ("เฉพาะแอดมิน..."). These actions bind a LINE member's VERIFIED
+// messaging-API userId (auto-seeded into ledger_line_member the moment they
+// message the bot) to a Pool account — so that LINE account inherits the Pool
+// user's powers in chat. Binding the id the WEBHOOK actually sees (not an OAuth
+// id) guarantees the gate matches, regardless of how the LINE channels are set up.
+
+/** The signed-in admin claims a LINE member as THEIR OWN account → their LINE can
+ *  now run every admin command (super_admin → full powers in chat). Admin-tier. */
+export async function linkLineMemberToMe(memberId: string): Promise<ActionResult> {
+  if (!memberId) return { ok: false, error: "ไม่ได้ระบุสมาชิก" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลผูกบัญชี LINE ได้" };
+  }
+  const member = await prisma.ledgerLineMember.findFirst({
+    where: { id: memberId, orgId: session.user.org_id },
+    select: { id: true, lineUserId: true, displayName: true },
+  });
+  if (!member) return { ok: false, error: "ไม่พบสมาชิก" };
+
+  // Refuse if this LINE id is already bound to a DIFFERENT Pool account (the
+  // user.lineUserId column is @unique — and we never silently steal an identity).
+  const clash = await prisma.user.findFirst({
+    where: { lineUserId: member.lineUserId },
+    select: { id: true, name: true },
+  });
+  if (clash && clash.id !== session.user.id) {
+    return { ok: false, error: `LINE นี้ผูกกับบัญชี "${clash.name}" อยู่แล้ว` };
+  }
+
+  await prisma.user.update({
+    where: { id: session.user.id },
+    data: { lineUserId: member.lineUserId },
+  });
+  // Mark the member as linked to this Pool user + bump to admin role so the LIFF
+  // console + money capabilities line up with their web powers.
+  await prisma.ledgerLineMember.update({
+    where: { id: member.id },
+    data: { poolUserId: session.user.id, role: "admin" },
+  });
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_ADMIN_LINE_LINKED",
+    resourceType: "user",
+    resourceId: session.user.id,
+    diff: { new: { memberId: member.id, lineUserId: member.lineUserId } },
+  });
+  revalidatePath("/ledger/settings");
+  revalidatePath("/liff/ledger/admin");
+  return { ok: true };
+}
+
+/** Unbind a LINE member from its Pool account (revoke in-LINE admin). Admin-tier. */
+export async function unlinkLineMember(memberId: string): Promise<ActionResult> {
+  if (!memberId) return { ok: false, error: "ไม่ได้ระบุสมาชิก" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลจัดการได้" };
+  }
+  const member = await prisma.ledgerLineMember.findFirst({
+    where: { id: memberId, orgId: session.user.org_id },
+    select: { id: true, lineUserId: true, poolUserId: true },
+  });
+  if (!member || !member.poolUserId) return { ok: false, error: "สมาชิกนี้ยังไม่ได้ผูกบัญชี" };
+
+  // Clear the Pool user's lineUserId only if it still points at THIS member's id.
+  await prisma.user.updateMany({
+    where: { id: member.poolUserId, lineUserId: member.lineUserId },
+    data: { lineUserId: null },
+  });
+  await prisma.ledgerLineMember.update({
+    where: { id: member.id },
+    data: { poolUserId: null },
+  });
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_ADMIN_LINE_LINKED",
+    resourceType: "user",
+    resourceId: member.poolUserId,
+    diff: { old: { memberId: member.id, lineUserId: member.lineUserId }, new: { unlinked: true } },
+  });
+  revalidatePath("/ledger/settings");
+  revalidatePath("/liff/ledger/admin");
+  return { ok: true };
+}
+
+// ── Group → branch overrides (B3 multi-group → multi-branch) ─────────────────
+// One LINE OA can serve many branch groups, each pinned to its own branch. Rows
+// usually self-register via "/setting สาขา" inside a group; these let an admin
+// view + re-point + pause the bindings from the web. Admin-tier.
+
+/** Re-point a group binding to a (different) branch. */
+export async function setLedgerGroupBranch(
+  groupRowId: string,
+  branchId: string,
+): Promise<ActionResult> {
+  if (!groupRowId) return { ok: false, error: "ไม่ได้ระบุกลุ่ม" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลกำหนดสาขาได้" };
+  }
+  const row = await prisma.ledgerLineGroup.findFirst({
+    where: { id: groupRowId, orgId: session.user.org_id },
+    select: { id: true, companyId: true },
+  });
+  if (!row) return { ok: false, error: "ไม่พบกลุ่ม" };
+  // null/"" → clear (group falls back to the channel's default branch).
+  const valid = branchId
+    ? await validBranchIds(session.user.org_id, row.companyId, [branchId])
+    : [];
+  await prisma.ledgerLineGroup.update({
+    where: { id: row.id },
+    data: { branchId: valid[0] ?? null },
+  });
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
+/** Pause/resume a group binding (paused → group falls back to the channel branch). */
+export async function toggleLedgerGroup(
+  groupRowId: string,
+  active: boolean,
+): Promise<ActionResult> {
+  if (!groupRowId) return { ok: false, error: "ไม่ได้ระบุกลุ่ม" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลจัดการได้" };
+  }
+  const r = await prisma.ledgerLineGroup.updateMany({
+    where: { id: groupRowId, orgId: session.user.org_id },
+    data: { active },
+  });
+  if (r.count === 0) return { ok: false, error: "ไม่พบกลุ่ม" };
+  revalidatePath("/ledger/settings");
   return { ok: true };
 }
 

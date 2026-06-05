@@ -142,6 +142,8 @@ export default async function LedgerLiffAdminPage({
       branchesFull={branchesFull}
       channel={channel}
       permissionMatrix={permissionMatrix}
+      myUserId={session.user.id}
+      myLineLinked={!!session.user.line_user_id}
     />
   );
 }

@@ -3,13 +3,14 @@
 import { requireRole } from "@/lib/auth/session";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
-import { listCategories, getLineChannel, listBranches, listInvites, listLedgerMembers } from "../_data";
+import { listCategories, getLineChannel, listBranches, listInvites, listLedgerMembers, listLedgerGroups } from "../_data";
 import { CategoryManager } from "./_components/CategoryManager";
 import { LineChannelCard } from "./_components/LineChannelCard";
 import { ExportConfigCard } from "./_components/ExportConfigCard";
 import { RichMenuButton } from "./_components/RichMenuButton";
 import { InviteManager } from "./_components/InviteManager";
 import { MemberManager } from "./_components/MemberManager";
+import { GroupBranchManager } from "./_components/GroupBranchManager";
 
 export const dynamic = "force-dynamic";
 
@@ -31,12 +32,13 @@ export default async function LedgerSettingsPage({
     );
   }
 
-  const [categories, lineChannel, branches, invites, members] = await Promise.all([
+  const [categories, lineChannel, branches, invites, members, groups] = await Promise.all([
     listCategories(scope.orgId, scope.companyId),
     getLineChannel(scope.orgId, scope.companyId),
     listBranches(scope.orgId, scope.companyId),
     listInvites(scope.orgId, scope.companyId),
     listLedgerMembers(scope.orgId, scope.companyId),
+    listLedgerGroups(scope.orgId, scope.companyId),
   ]);
 
   return (
@@ -72,6 +74,11 @@ export default async function LedgerSettingsPage({
           connected={!!lineChannel?.hasAccessToken}
           alreadySet={!!lineChannel?.richMenuId}
         />
+        <GroupBranchManager
+          companyId={scope.companyId}
+          groups={groups}
+          branches={branches.map((b) => ({ id: b.id, code: b.code, name: b.name }))}
+        />
         <InviteManager
           companyId={scope.companyId}
           branches={branches.map((b) => ({ id: b.id, code: b.code, name: b.name }))}
@@ -81,6 +88,8 @@ export default async function LedgerSettingsPage({
           companyId={scope.companyId}
           branches={branches.map((b) => ({ id: b.id, code: b.code, name: b.name }))}
           members={members}
+          myUserId={session.user.id}
+          myLineLinked={!!session.user.line_user_id}
         />
         <ExportConfigCard companyId={scope.companyId} />
       </div>

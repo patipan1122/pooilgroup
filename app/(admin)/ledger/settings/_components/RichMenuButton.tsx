@@ -8,12 +8,12 @@ import { useState } from "react";
 import { Loader2, LayoutGrid, CheckCircle2, AlertTriangle } from "lucide-react";
 
 const CELLS = [
-  "📷 ถ่ายใบเสร็จ",
-  "⌨️ พิมพ์รายจ่าย",
-  "📋 รายการของฉัน",
-  "🏬 เปลี่ยนสาขา",
-  "❓ วิธีใช้",
-  "🛟 แจ้งปัญหา",
+  "ถ่ายใบเสร็จ",
+  "พิมพ์รายจ่าย",
+  "รายการของฉัน",
+  "จัดการทีม",
+  "วิธีใช้",
+  "แจ้งปัญหา",
 ];
 
 export function RichMenuButton({
