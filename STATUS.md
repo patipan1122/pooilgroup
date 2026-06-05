@@ -1,8 +1,31 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-05 (LedgerLine GAP 5 LIFF Admin + ChairOps Maid Management 🚀 LIVE)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-05 (ChairOps Reconcile 3 bugs fixed · awaiting deploy)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-06-05 — ChairOps Reconcile 3 bugs: ⏳ branch 0ab3db4 · รอ deploy)
+
+**bug 1 (P0):** ฝากเงินแล้วไม่เห็นในหน้า reconcile — default window cap ที่ `posThrough` ตัดทอนวันที่ฝากหลัง POS อัพโหลดครั้งสุดท้าย → แก้ ceiling เป็น today
+**bug 2 (P0):** Export CSV ใช้ `posThrough` เป็น `?to` → CSV หายไม่ตรงหน้าจอ → แก้เป็น today
+**bug 3 (P0):** `isoDay()` ใช้ UTC → deposit ตี 00:15 BKK บัคเก็ตผิดวัน สร้าง phantom diff → แก้เป็น UTC+7 ทั้ง `_deposits.ts` + `reconcile-v2.ts`
+**ไม่มี migration** · tsc 0 · commit `0ab3db4`
+**audit findings (แก้ใน sprint ถัดไป):** write-offs ไม่ลด driftAmount · `requiresReview` ไม่มี clearing workflow · monthly report ใช้ `grossTotal` ≠ drift engine (cashTotal)
+
+## 🆕 Update (2026-06-05 — LedgerLine แก้สิทธิ์ LIFF มือถือ + Drive auto: 🚀 DEPLOYED LIVE · setup bf28560)
+
+**บั๊กที่แก้:** บนมือถือ (LINE/LIFF) กดอะไรไม่ได้เลย เจอ "ไม่มีสิทธิ์ใช้งานโมดูลนี้" ทุกปุ่ม — เพราะหน้าแก้ไขยืมปุ่มฝั่งแอดมินเว็บ (ขอสิทธิ์ Pool module) แต่พนักงานหน้างานเป็น "สมาชิก LINE" ไม่ใช่ Pool user
+**แก้:** `resolveLedgerActor()` (`lib/ledger/liff-auth.ts`) — รู้จักสมาชิก LINE (`ledger_line_member` + `can()` matrix) · สมาชิกแก้/บันทึกร่างได้ · role บัญชี/แอดมินถึงยืนยันได้ (staff แก้อย่างเดียว) · คนยังไม่เป็นสมาชิกเห็นหน้า "ยังไม่เปิดใช้งาน" · ปุ่ม "ส่งเข้า TRCloud" ซ่อนบนมือถือ
+**Drive:** auto แนบรูปตอน "ยืนยัน" เพิ่ม (ตอน "จับ" มีอยู่แล้ว) + ปุ่ม Drive เดิมสมาชิกใช้ได้แล้ว — **แต่ no-op จนกว่า org จะเชื่อม Google Drive (CEO setup)** · รูปเซฟบน R2 ระหว่างนี้
+**Deploy:** cherry-pick `7d857e6..bf28560 setup` (ไม่รวมงาน ChairOps ของ session คู่ขนาน) · build GREEN · ไม่มี migration · prod /ledger* 307 · /liff/ledger* 200 · dashboard/chairops 307
+**เหลือ:** (1) เชื่อม Google Drive · (2) มือถือใช้ได้เฉพาะสมาชิก LINE (ส่งใบเสร็จ 1 ครั้ง = เป็นสมาชิกอัตโนมัติ) · (3) ยืนยันบนมือถือต้อง role บัญชี/แอดมิน
+
+## 🆕 Update (2026-06-05 — LedgerLine โผล่ในหน้าเชิญผู้ใช้: status beta→active · ⏳ บน branch ยังไม่ deploy)
+
+**ปัญหา CEO แจ้ง:** หน้า `/users/new` (เลือก "แอดมินโปรแกรม") โชว์โปรแกรมแค่ 10 ตัว — ขาด **ระบบบัญชี (LedgerLine)**
+**ต้นเหตุ:** ตัวกรองหน้านั้นรับเฉพาะ `status === "active"` แต่ ledger ตั้งเป็น `"beta"` (CostCtrl ถูกซ่อนตั้งใจ — แดชบอร์ดต้นทุน CEO)
+**แก้:** [lib/modules.ts](lib/modules.ts) ledger `status: "beta" → "active"` (CEO 2026-06-05 เลือก "เปิดใช้เต็มตัว") → โผล่ในหน้าเชิญผู้ใช้ + ขึ้น "ใช้งานอยู่" บน Hub รวม
+**สถานะ:** ⏳ แก้บน branch `claude/ledger-line-bainy-parity` แล้ว · ยังไม่ขึ้น prod (รอ deploy เข้า `setup`)
 
 ## 🆕 Update (2026-06-05 — LedgerLine ↔ TRCloud API push สมบูรณ์: 🚀 DEPLOYED LIVE · setup 24c80e9 · migration applied)
 
@@ -10,8 +33,9 @@
 **กันซ้ำ (search-before-create):** หาคู่ค้าด้วยเลขภาษี · หาสินค้าด้วยชื่อ → เจอใช้ซ้ำ ไม่เจอสร้างใหม่ (สินค้า = บริการ status=0 ไม่ตัดสต๊อก · ผูกผังบัญชีตามหมวด) → จำ id ใน `ledger_trcloud_contact`/`ledger_trcloud_product`
 **UI:** ปุ่มส่งทีละใบใน pane + เลือกหลายใบส่งทีเดียวใน list + ป้ายสถานะ "TR ✓/✗" + filter ส่งแล้ว/ยังไม่ส่ง (มือถือ+คอม) · กันส่งซ้ำ (idempotent) · เฉพาะใบยืนยันแล้ว (ร่างไม่หลุด) · audit ทุกการส่ง
 **พิสูจน์จริง:** ยิงครบวงจรกับ company 31 (บริษัททดลอง) — สร้างคู่ค้า→สินค้า→AP (เลข AP260001)→อ่าน→**ลบหมดไม่มีขยะค้าง** · tsc 0 · eslint 0 · next build GREEN
-**Branch:** `claude/ledger-line-bainy-parity` (ยังไม่ deploy)
-**CEO gates:** (1) ลง migration `20260605180000_ledger_trcloud_push.sql` · (2) env `TRCLOUD_*` มีใน Vercel แล้ว (ใช้ร่วม FuelOS company 31 — ไม่ต้องเพิ่ม) · (3) deploy (merge→setup) · (4) **เปลี่ยน passkey ใหม่** ในหน้า API Key (โผล่ในแชต)
+**Deploy:** migration `20260605180000_ledger_trcloud_push.sql` ลง prod แล้ว ✅ (psql DIRECT_URL · verified 4 cols + 2 map tables + RLS) · push `6713547..24c80e9 setup` (cherry-pick เฉพาะงานบัญชี — ไม่รวม ChairOps Gmail c957050 ของอีก session) · prod /ledger* 307 · /api/ledger/meta 401 · dashboard/chairops/cashhub 307 (ไม่พัง)
+**⚠️ เจอ near-incident:** session ChairOps คู่ขนาน autocommit (`git add -A`) ดันโค้ดบัญชีบางส่วนของผม (ที่ SELECT คอลัมน์ใหม่) ขึ้น setup→prod **ก่อน** ลง migration → หน้า /ledger/expenses ของคนที่ login จะ 500 · แก้ด้วยการลง migration ทันที (ดู memory)
+**เหลือให้พี่:** (1) นักบัญชี login กดปุ่ม "ส่งเข้า TRCloud" ทดสอบจริง (ผมไม่มี session) · (2) **เปลี่ยน passkey ใหม่** ในหน้า API Key (โผล่ในแชต) · (3) งาน ChairOps Gmail (c957050) ยัง commit ค้างบน branch ผมไม่ได้ deploy (เป็นของอีก session)
 
 ## 🆕 Update (2026-06-05 — LedgerLine LIFF Admin Console (GAP 5): 🚀 DEPLOYED LIVE · migrations applied)
 
