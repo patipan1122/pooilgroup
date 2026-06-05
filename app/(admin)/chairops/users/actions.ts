@@ -12,13 +12,14 @@ import { z } from "zod";
 import { createClient as createAdminSupabase } from "@supabase/supabase-js";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/chairops/auth/session";
+import { requireRole, requireExactRole } from "@/lib/chairops/auth/session";
 import { writeAudit } from "@/lib/chairops/audit/log";
 import { canAssignRole, canManageUser } from "@/lib/chairops/auth/role-guards";
 import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
-import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
+import { ChairopsUserRole, OffboardingReason } from "@/lib/generated/prisma/enums";
 import { randomUUID } from "node:crypto";
 import { signInvite } from "@/lib/chairops/line/invite";
+import { blockLineUser } from "@/lib/chairops/line/block";
 
 export type ActionResult<T = void> =
   | { ok: true; data?: T }
@@ -377,14 +378,24 @@ export async function updateDisplayName(formData: FormData): Promise<ActionResul
   return { ok: true };
 }
 
-export async function deactivateUser(userId: string): Promise<ActionResult> {
+const deactivateSchema = z.object({
+  userId: zUUID(),
+  reason: z.enum(OffboardingReason),
+  note: z.string().trim().max(500).optional(),
+});
+
+export async function deactivateUser(
+  userId: string,
+  reason: OffboardingReason,
+  note?: string,
+): Promise<ActionResult> {
   const session = await requireRole("ADMIN");
 
-  const parsed = zUUID().safeParse(userId);
-  if (!parsed.success) return { ok: false, error: "userId ไม่ถูกต้อง" };
+  const parsed = deactivateSchema.safeParse({ userId, reason, note });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
 
   const target = await prisma.chairopsUser.findFirst({
-    where: { id: parsed.data, orgId: session.user.orgId },
+    where: { id: parsed.data.userId, orgId: session.user.orgId },
   });
   if (!target) return { ok: false, error: "ไม่พบผู้ใช้" };
 
@@ -401,31 +412,95 @@ export async function deactivateUser(userId: string): Promise<ActionResult> {
 
   if (!target.isActive) return { ok: false, error: "ปิดบัญชีไปแล้ว" };
 
-  // Wave-0 fix: deactivate + audit atomic
-  const updated = await prisma.$transaction(async (tx) => {
-    const row = await tx.chairopsUser.update({
-      where: { id: target.id },
-      data: { isActive: false },
+  // F6: settle gate — block deactivation if maid still has uncollected deposits.
+  // Check + deactivate in one transaction (prevents TOCTOU race).
+  let lineUserIdForBlock: string | null = null;
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      // F6: check pending cash collections (same orgId + maid, depositId=null)
+      if (target.role === ChairopsUserRole.MAID) {
+        const pendingCount = await tx.chairopsCashCollection.count({
+          where: { orgId: target.orgId, maidId: target.id, depositId: null },
+        });
+        if (pendingCount > 0) {
+          throw Object.assign(new Error("SETTLE_REQUIRED"), { pendingCount });
+        }
+      }
+
+      const row = await tx.chairopsUser.update({
+        where: { id: target.id },
+        data: {
+          isActive: false,
+          // F7: deactivation reason + audit trail
+          deactivatedAt: new Date(),
+          deactivatedById: session.user.id,
+          offboardingReason: parsed.data.reason,
+          offboardingNote: parsed.data.note ?? null,
+          // Clear any pending invite token so the link can't be reused
+          inviteToken: null,
+          inviteExpiresAt: null,
+        },
+      });
+
+      await writeAudit(
+        {
+          userId: session.user.id,
+          action: "user.deactivate",
+          entity: "User",
+          entityId: row.id,
+          oldValue: { isActive: true },
+          newValue: {
+            isActive: false,
+            offboardingReason: parsed.data.reason,
+            offboardingNote: parsed.data.note ?? null,
+          },
+          metadata: { targetEmail: target.email },
+        },
+        tx,
+      );
+
+      return row;
     });
 
-    await writeAudit(
-      {
-        userId: session.user.id,
-        action: "user.deactivate",
-        entity: "User",
-        entityId: row.id,
-        oldValue: { isActive: true },
-        newValue: { isActive: false },
-        metadata: { targetEmail: target.email },
-      },
-      tx,
-    );
+    lineUserIdForBlock = updated.lineUserId ?? null;
 
-    return row;
-  });
+    revalidatePath(`/chairops/users/${updated.id}`);
+    revalidatePath("/chairops/users");
+  } catch (e) {
+    if (e instanceof Error && e.message === "SETTLE_REQUIRED") {
+      const pending = (e as Error & { pendingCount?: number }).pendingCount ?? 0;
+      return {
+        ok: false,
+        error: `ยังมียอดเก็บเงินค้างอยู่ ${pending} รายการ · กรุณาฝากเงินก่อนไล่ออก`,
+      };
+    }
+    return { ok: false, error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" };
+  }
 
-  revalidatePath(`/chairops/users/${updated.id}`);
-  revalidatePath("/chairops/users");
+  // F8: LINE block — best-effort, after transaction (never fails the action).
+  // Wrap in try/catch: fetch() can throw on network error (ECONNREFUSED/timeout) which
+  // would otherwise poison the return value even though the deactivation already committed.
+  if (lineUserIdForBlock) {
+    try {
+      const blockResult = await blockLineUser(lineUserIdForBlock);
+      if (!blockResult.ok) {
+        // Write audit entry so admin can see the failure in the audit trail,
+        // not just in server logs that may not be queryable from the app.
+        await writeAudit({
+          userId: session.user.id,
+          action: "user.line_block_failed",
+          entity: "User",
+          entityId: target.id,
+          metadata: { lineUserId: lineUserIdForBlock, error: blockResult.error ?? "unknown" },
+        });
+        console.error("[chairops] LINE block failed after deactivate:", blockResult.error);
+      }
+    } catch (err) {
+      // Network-level error — deactivation already committed, log and move on
+      console.error("[chairops] LINE block threw unexpectedly:", err);
+    }
+  }
+
   return { ok: true };
 }
 
@@ -587,8 +662,23 @@ export async function createMaidInvite(
     return { ok: false, error: `สร้างบัญชี auth ไม่สำเร็จ: ${authError?.message ?? "unknown"}` };
   }
 
+  // F5: generate token BEFORE transaction so we can store it atomically
+  const token = signInvite(authData.user.id);
+  const inviteExpiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+
   try {
     const user = await prisma.$transaction(async (tx) => {
+      // F5: auto-revoke any existing pending invite for the same branch
+      await tx.chairopsUser.updateMany({
+        where: {
+          orgId: session.user.orgId,
+          primaryBranchId: parsed.data.primaryBranchId,
+          role: ChairopsUserRole.MAID,
+          inviteToken: { not: null },
+        },
+        data: { inviteToken: null, inviteExpiresAt: null },
+      });
+
       const row = await tx.chairopsUser.create({
         data: {
           orgId: session.user.orgId,
@@ -598,6 +688,9 @@ export async function createMaidInvite(
           role: ChairopsUserRole.MAID,
           primaryBranchId: parsed.data.primaryBranchId,
           isActive: true,
+          // F5: store token in DB for revocation
+          inviteToken: token,
+          inviteExpiresAt,
         },
       });
       // BF1 · wire ghost MaidAssignment table for audit trail.
@@ -628,10 +721,15 @@ export async function createMaidInvite(
       return row;
     });
 
-    const token = signInvite(user.id);
-    const link = `https://liff.line.me/${liffId}/chairops?invite=${encodeURIComponent(
-      token,
-    )}&next=${encodeURIComponent("/chairops/m")}`;
+    // F1: ?openExternalBrowser=1 forces LINE iOS to open Safari (not WKWebView).
+    // WKWebView drops httpOnly cookies → session lost on iPhone.
+    // See [[liff-magic-link-ios-webview-cookie-drop]].
+    const link =
+      `https://liff.line.me/${liffId}/chairops` +
+      `?openExternalBrowser=1` +
+      `&invite=${encodeURIComponent(token)}` +
+      `&next=${encodeURIComponent("/chairops/m")}`;
+
     revalidatePath("/chairops/users");
     revalidatePath("/chairops/maids");
     return { ok: true, data: { link, userId: user.id } };
@@ -640,4 +738,64 @@ export async function createMaidInvite(
     await supabase.auth.admin.deleteUser(authData.user.id);
     return { ok: false, error: `บันทึกไม่สำเร็จ: ${e instanceof Error ? e.message : "unknown"}` };
   }
+}
+
+// F4: Maid self-onboarding — maid fills 5 fields on first login.
+// Called from /chairops/m/onboarding (outside maid layout gate).
+// Gate: onboardingComplete must be false (skip if already done).
+const onboardingSchema = z.object({
+  displayName: z.string().trim().min(1, "ต้องระบุชื่อ").max(100),
+  mobilePhone: z.string().trim().min(9, "เบอร์ไม่ถูกต้อง").max(20),
+  emergencyContact: z.string().trim().min(1, "ต้องระบุผู้ติดต่อฉุกเฉิน").max(100),
+  emergencyPhone: z.string().trim().min(9, "เบอร์ไม่ถูกต้อง").max(20),
+  currentMainEmployer: z.string().trim().min(1, "ต้องระบุ").max(200),
+});
+
+export async function submitOnboarding(formData: FormData): Promise<ActionResult> {
+  const session = await requireExactRole("MAID");
+
+  if (session.user.onboardingComplete) {
+    return { ok: false, error: "กรอกข้อมูลไปแล้ว" };
+  }
+
+  const parsed = onboardingSchema.safeParse({
+    displayName: formData.get("displayName"),
+    mobilePhone: formData.get("mobilePhone"),
+    emergencyContact: formData.get("emergencyContact"),
+    emergencyPhone: formData.get("emergencyPhone"),
+    currentMainEmployer: formData.get("currentMainEmployer"),
+  });
+  if (!parsed.success)
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.chairopsUser.update({
+      where: { id: session.user.id },
+      data: {
+        displayName: parsed.data.displayName,
+        mobilePhone: parsed.data.mobilePhone,
+        emergencyContact: parsed.data.emergencyContact,
+        emergencyPhone: parsed.data.emergencyPhone,
+        currentMainEmployer: parsed.data.currentMainEmployer,
+        onboardingComplete: true,
+        // Clear invite token after successful onboarding
+        inviteToken: null,
+        inviteExpiresAt: null,
+      },
+    });
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "user.onboarding_complete",
+        entity: "User",
+        entityId: session.user.id,
+        newValue: { onboardingComplete: true },
+      },
+      tx,
+    );
+  });
+
+  revalidatePath("/chairops/m");
+  revalidatePath("/chairops/m/onboarding");
+  return { ok: true };
 }

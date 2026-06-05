@@ -1,8 +1,48 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-02 (Inbox bot: คำตอบแก้ในเว็บได้ + ห้องพัฒนาบอท)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-05 (ChairOps Maid Management: build + Reverse Audit PASS · รอ CEO deploy)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-06-05 — ChairOps Maid Management: /auditbigteam Reverse Audit · 3 P0 bugs fixed · ✅ PASS)
+
+**Audit:** `/auditbigteam --reverse` · 7 personas (SA·BA·FE·QA·DEVIL·SEC·SRE) · commit `9c6fe3d`
+**Audit doc:** `docs/AUDIT_chairops-maid-management_2026-06-05.md`
+
+**P0 bugs fixed (all in this audit round):**
+- **P0-A** `line-login/route.ts:304` — inviteToken revocation check inverted (null token → check skipped → revoked tokens accepted). Fix: `maid.inviteToken !== invite` (rejects null = revoked).
+- **P0-B** `users/actions.ts:480` — `blockLineUser()` unhandled exception poisoned deactivation return value. Fix: try/catch + `writeAudit("user.line_block_failed")` bundled.
+- **P0-C** `users/page.tsx:336` — F2 vacancy badge `u.isActive &&` made condition always false. Fix: removed the guard.
+
+**All 7 personas: ✅ PASS** · tsc 0 after fixes
+
+**Open questions for CEO (block deploy):**
+- Q1: LINE OA มี Messaging API + `blockMember` permission ไหม? (F8)
+- Q2: F9 phone = เบอร์อะไร? (`deactivated/page.tsx:29` ยังเป็น placeholder `+66020000000`)
+- Q3: `CHAIROPS_LINE_CHANNEL_ACCESS_TOKEN` → ใส่ใน REQUIRED_VARS (boot-fail) หรือ optional (fail silently)?
+
+## 🆕 Update (2026-06-05 — ChairOps Maid Management: 9-feature build · รอ CEO อนุมัติ deploy + apply migration)
+
+**Goal:** ให้ admin จัดการแม่บ้านได้จากหน้าเดียว (เชิญ/ดูสถานะ/ไล่ออก) + ให้แม่บ้านกรอกข้อมูลตัวเองตอน onboard
+
+**สร้างเสร็จบน branch `claude/chairops-maid-management-9features` (tsc 0 · next build GREEN · commit `9c6fe3d`):**
+- **F1 iOS fix** — `?openExternalBrowser=1` บนลิงก์เชิญ LINE → Safari แทน WKWebView (กัน cookie drop)
+- **F2 Vacancy badge** — แถบกรองสาขาในหน้า /users แสดงป้าย "ว่าง" ถ้าไม่มีแม่บ้านประจำ
+- **F3 Inline side panel** — คลิก row หรือ "เชิญแม่บ้าน" เปิด panel ขวา ไม่เปลี่ยนหน้า (`?selected=` URL state)
+- **F4 Self-onboarding** — หน้า `/chairops/m/onboarding` ให้แม่บ้านกรอก 5 ฟิลด์แรก + gate ในหน้า (maid) layout
+- **F5 Auto-revoke invite** — `inviteToken` เก็บใน DB + สร้าง invite ใหม่ = revoke เก่า + consume token หลัง bind
+- **F6 Settle gate** — deactivateUser block ถ้ายังมีเงินค้างฝาก (ตรวจ+ปิดบัญชีใน transaction เดียว)
+- **F7 Deactivation reason** — dropdown ลาออก/เลิกจ้าง/ย้าย/อื่นๆ + note + `deactivatedAt/By/offboardingReason/Note`
+- **F8 LINE block** — `blockLineUser()` best-effort หลัง deactivate (`lib/chairops/line/block.ts`)
+- **F9 Graceful screen** — `/chairops/m/deactivated` outside (maid) layout group → "ขอบคุณที่ร่วมงาน"
+
+**Schema migration: `prisma/migrations/20260605_chairops_maid_management.sql`**
+- enum `OffboardingReason` + 12 คอลัมน์ใหม่บน `ChairopsUser`
+- backfill: `onboarding_complete = TRUE` สำหรับแม่บ้านที่มี `line_user_id` แล้ว (ไม่ lock out คนเก่า)
+
+**⚠️ ก่อน deploy: CEO ต้องอนุมัติ 2 ขั้น:**
+1. `git merge claude/chairops-maid-management-9features setup` (หรือ PR → merge)
+2. Apply migration บน prod DB: `psql $DATABASE_URL < prisma/migrations/20260605_chairops_maid_management.sql`
 
 ## 🆕 Update (2026-06-04 — LedgerLine: ครบประสบการณ์ LINE แบบ Bainy (Phase 2+3) · 🚀 DEPLOYED LIVE)
 

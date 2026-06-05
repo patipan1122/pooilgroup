@@ -245,7 +245,9 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "ข้อมูล LINE ไม่ครบ" }, { status: 400 });
   }
-  const { idToken, displayName, redirectTo, invite } = parsed.data;
+  const { idToken, displayName, invite } = parsed.data;
+  // F4: may be overridden to /chairops/m/onboarding for un-onboarded maids
+  let redirectTo = parsed.data.redirectTo;
   const lineModule = asLineModule(parsed.data.module);
 
   // Verify token via LINE — only proceed if signature is valid + sub returned.
@@ -282,12 +284,28 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+    // F5: also validate that the token matches what's stored in DB.
+    // If a new invite was issued for the same branch (auto-revoke), the old
+    // HMAC token is still cryptographically valid but the DB row was cleared —
+    // this check catches it.
     const maid = await prisma.chairopsUser.findFirst({
       where: { id: targetId, isActive: true },
-      select: { id: true, orgId: true, email: true, displayName: true, role: true, lineUserId: true, authUserId: true },
+      select: {
+        id: true, orgId: true, email: true, displayName: true, role: true,
+        lineUserId: true, authUserId: true,
+        inviteToken: true, inviteExpiresAt: true,
+        onboardingComplete: true,
+      },
     });
     if (!maid) {
       return NextResponse.json({ error: "ไม่พบบัญชีในลิงก์เชิญ" }, { status: 404 });
+    }
+    // F5: reject if token was revoked (inviteToken cleared by auto-revoke)
+    // AUDIT-FIX: condition was `!== null && !== invite` — when token is null (revoked),
+    // `null !== null` = false → check was skipped, allowing old HMAC-valid tokens to bind.
+    // Correct: reject when stored token is null (revoked) OR doesn't match (tampered/rotated).
+    if (maid.inviteToken !== invite) {
+      return NextResponse.json({ error: "ลิงก์เชิญถูกยกเลิกหรือหมดอายุแล้ว" }, { status: 410 });
     }
     if (maid.lineUserId && maid.lineUserId !== lineUserId) {
       return NextResponse.json(
@@ -297,9 +315,10 @@ export async function POST(req: NextRequest) {
     }
     if (!maid.lineUserId) {
       try {
+        // F5: bind LINE id + consume (null out) the invite token atomically
         await prisma.chairopsUser.update({
           where: { id: maid.id },
-          data: { lineUserId },
+          data: { lineUserId, inviteToken: null, inviteExpiresAt: null },
         });
       } catch {
         return NextResponse.json(
@@ -322,6 +341,10 @@ export async function POST(req: NextRequest) {
           { status: 502 },
         );
       }
+    }
+    // F4: un-onboarded maid → override destination to onboarding form
+    if (!maid.onboardingComplete) {
+      redirectTo = "/chairops/m/onboarding";
     }
     resolved = {
       id: maid.id,
