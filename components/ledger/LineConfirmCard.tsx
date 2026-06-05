@@ -860,6 +860,12 @@ export function buildLedgerWelcomeCard(opts: { baseUrl?: string } = {}): LineFle
           height: "sm",
           action: { type: "message", label: "🔗 ผูกกลุ่มกับสาขา", text: "/setting" },
         },
+        {
+          type: "button",
+          style: "secondary",
+          height: "sm",
+          action: { type: "message", label: "📁 ไฟล์ใน Google Drive", text: "/drive" },
+        },
       ],
     },
   };

@@ -13,6 +13,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { isAdminTier } from "@/lib/auth/role-guards";
+import { getLedgerDriveFolderLink } from "@/lib/ledger/drive";
 
 const PAYMENT_WORDS: Record<string, string> = {
   เงินสด: "cash", สด: "cash",
@@ -39,12 +40,14 @@ const HELP = [
   '⌨️ พิมพ์ "จด กาแฟ 45" → บันทึกรายจ่าย (ฟรี)',
   '❓ ถาม "สรุปเดือนนี้" / "หมวดไหนเยอะ" → ดูยอด',
   "✏️ แก้ไข/ยืนยัน ทำในเว็บหรือกดปุ่มบนการ์ด",
+  "📁 ดูไฟล์ใบเสร็จจริงใน Google Drive → พิมพ์ /drive",
   '🏢 พิมพ์ "/สาขา ชุมพวง" → ขอดูแลสาขา (รอแอดมินอนุมัติ)',
   "",
   "⚙️ คำสั่งแอดมิน:",
   "• /จัดการ — เปิดหน้าจัดการทีม/สิทธิ์/สาขา (มือถือ)",
   "• /link (หรือ /setting) — ผูกกลุ่มนี้กับสาขา",
   "• /members — ดูว่าใครดูแลสาขาไหน",
+  "• /drive — ลิงก์โฟลเดอร์ Google Drive (หลักฐานให้สำนักงานบัญชี)",
 ].join("\n");
 
 const MEMBER_ROLE_LABEL: Record<string, string> = {
@@ -86,6 +89,31 @@ export async function handleLedgerCommand(
 
   if (lower === "/help" || lower === "/menu" || lower === "/guide" || text === "วิธีใช้") {
     return HELP;
+  }
+
+  // /drive — ลิงก์โฟลเดอร์ Google Drive ที่เก็บใบเสร็จจริง (หลักฐานให้สำนักงานบัญชี).
+  // แอดมินเท่านั้น (โฟลเดอร์รวมทุกใบ); ลิงก์เปิดได้ต่อเมื่อมีสิทธิ์ใน Google Drive อยู่แล้ว.
+  if (lower === "/drive" || text === "ไดรฟ์" || text === "ดูไฟล์" || text === "ดูสลิป") {
+    if (!(await isAdminSender(ctx.orgId, ctx.senderLineUserId))) {
+      return "เฉพาะแอดมิน/บัญชีดูลิงก์ Google Drive ได้ · ขอลิงก์จากผู้ดูแลของบริษัท";
+    }
+    const link = await getLedgerDriveFolderLink(ctx.orgId);
+    if (!link) {
+      return [
+        "📁 Google Drive ยังไม่ได้เชื่อม",
+        "",
+        "ให้แอดมินเชื่อม Google Drive ก่อน (หน้า ChairOps → ตั้งค่า → เชื่อม Google Drive)",
+        "พอเชื่อมแล้ว ทุกใบเสร็จจะถูกเก็บเข้า Drive อัตโนมัติ แยกเป็น เดือน/ธุรกิจ/สาขา/ประเภท",
+      ].join("\n");
+    }
+    return [
+      "📁 ไฟล์ใบเสร็จทั้งหมดใน Google Drive",
+      "เก็บแยก: เดือน → ธุรกิจ → สาขา → ประเภท",
+      "",
+      `เปิดที่นี่: ${link}`,
+      "",
+      "ส่งลิงก์นี้ให้สำนักงานบัญชีได้เลย 🧾",
+    ].join("\n");
   }
 
   if (lower === "/support" || text === "แจ้งปัญหา") {

@@ -268,3 +268,19 @@ export async function archiveExpenseToDrive(args: {
   });
   return { ok: true, driveWebUrl: drive.webViewLink };
 }
+
+/**
+ * The browseable Google Drive FOLDER link for this org's LedgerLine archive root
+ * ("ระบบบัญชี2027"). Ensures the folder exists, returns its Drive URL. Powers the
+ * `/drive` LINE command + the in-app "ดูโฟลเดอร์ Drive" button so the accountant can
+ * jump straight to where every receipt is filed (เดือน/ธุรกิจ/สาขา/ประเภท).
+ * Returns null when Drive isn't connected for the org (caller shows a hint).
+ */
+export async function getLedgerDriveFolderLink(orgId: string): Promise<string | null> {
+  const token = await getAccessToken(orgId);
+  if (!token) return null;
+  const explicitRoot = process.env.LEDGER_DRIVE_ROOT_FOLDER_ID;
+  const baseId = explicitRoot || (await ensureFolder(token, ROOT_NAME, "root"));
+  if (!baseId) return null;
+  return `https://drive.google.com/drive/folders/${baseId}`;
+}
