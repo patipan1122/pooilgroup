@@ -19,6 +19,8 @@
 
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
+import { archiveExpenseToDrive } from "@/lib/ledger/drive";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/lib/generated/prisma/client";
@@ -35,6 +37,7 @@ import {
   trcloudPushConfigured,
   type PushableExpense,
 } from "@/lib/ledger/trcloud-push";
+import { resolveLedgerActor, actorCanReachBranch } from "@/lib/ledger/liff-auth";
 import { audit } from "@/lib/audit/log";
 import { encryptToken } from "@/lib/recruit/channel-crypto";
 
@@ -276,6 +279,10 @@ export async function confirmExpense(
     resourceId: id,
     diff: { old: { status: row.status }, new: { status: "confirmed", total: p.total } },
   });
+  // Auto-archive the receipt original into Google Drive (no-op if not connected).
+  after(() =>
+    archiveExpenseToDrive({ orgId: session.user.org_id, companyId: row.companyId, id }).catch(() => {}),
+  );
   revalidatePath("/ledger/expenses");
   revalidatePath("/ledger");
   return { ok: true };
@@ -825,6 +832,142 @@ export async function sendExpensesToTrcloud(
     return { ok: false, error: firstError ?? "ส่งไม่สำเร็จ", sent, skipped, failed, firstError };
   }
   return { ok: true, sent, skipped, failed, firstError };
+}
+
+// ===================== LIFF member actions (แก้ไข/ยืนยันจาก LINE) =====================
+// Field staff capture receipts in LINE and edit them in the LIFF — but they are
+// `ledger_line_member` rows, NOT Pool-module users, so the back-office actions
+// (saveExpense/confirmExpense) reject them with "ไม่มีสิทธิ์ใช้งานโมดูลนี้". These
+// member-aware variants authorize via resolveLedgerActor() (Pool admin OR active
+// LINE member) + the money-capability matrix: ANY active member may edit a draft
+// (scoped to their branch); only an actor with can(expense.confirm) may confirm/
+// void. GOLDEN RULE preserved — never auto-post; confirm stays an explicit action.
+
+/** Load an expense scoped to an org (the actor's org) — used by LIFF actions. */
+async function loadScopedByOrg(orgId: string, id: string) {
+  return prisma.ledgerExpense.findFirst({
+    where: { id, orgId },
+    select: { id: true, companyId: true, branchId: true, status: true },
+  });
+}
+
+/** Edit a draft from the LIFF. Any active member (in branch scope) may save. */
+export async function liffSaveExpense(id: string, raw: unknown): Promise<ActionResult> {
+  const actor = await resolveLedgerActor();
+  if (!actor) return { ok: false, error: "บัญชียังไม่เปิดใช้งานสำหรับคุณ · ติดต่อออฟฟิศ" };
+  const parsed = patchSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" };
+  const row = await loadScopedByOrg(actor.orgId, id);
+  if (!row) return { ok: false, error: "ไม่พบรายการ" };
+  if (!actorCanReachBranch(actor, row.branchId)) return { ok: false, error: "ไม่มีสิทธิ์ในสาขานี้" };
+  if (row.status === "locked" || row.status === "void")
+    return { ok: false, error: "รายการถูกล็อก/ยกเลิก แก้ไม่ได้" };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.ledgerExpense.updateMany({
+      where: { id, orgId: actor.orgId, companyId: row.companyId },
+      data: { ...toData(parsed.data), needsReview: true },
+    });
+    await replaceItems(tx, {
+      expenseId: id,
+      orgId: actor.orgId,
+      companyId: row.companyId,
+      items: parsed.data.items,
+    });
+  });
+  await audit({
+    orgId: actor.orgId,
+    userId: actor.userId,
+    action: "LEDGER_EXPENSE_UPDATED",
+    resourceType: "ledger_expense",
+    resourceId: id,
+    diff: { new: { via: "liff", total: parsed.data.total } },
+  });
+  revalidatePath("/ledger/expenses");
+  return { ok: true };
+}
+
+/** Confirm a draft from the LIFF — only an actor with the expense.confirm capability. */
+export async function liffConfirmExpense(id: string, raw: unknown): Promise<ActionResult> {
+  const actor = await resolveLedgerActor();
+  if (!actor) return { ok: false, error: "บัญชียังไม่เปิดใช้งานสำหรับคุณ · ติดต่อออฟฟิศ" };
+  if (!actor.canConfirm) return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลยืนยันได้ — กดบันทึกร่างได้" };
+  const parsed = patchSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" };
+  const p = parsed.data;
+
+  // Same recheck gate as the web confirm — only hard total mismatches block.
+  const rc = recheckReceipt({
+    vendorTaxId: p.vendorTaxId || null,
+    subtotal: p.subtotal,
+    discount: p.discount,
+    vat: p.vat,
+    wht: p.wht,
+    total: p.total,
+    items: (p.items ?? []).map((it) => ({
+      description: it.description,
+      qty: it.qty,
+      unitPrice: it.unitPrice,
+      amount: it.amount,
+      vatRate: it.vatRate ?? null,
+    })),
+  });
+  const blocking = rc.warnings.filter((w) => w.includes("ยอดรวม") || w.toLowerCase().includes("total"));
+  if (blocking.length > 0) return { ok: false, error: `ยอดไม่ตรง: ${blocking.join(" · ")}` };
+
+  const row = await loadScopedByOrg(actor.orgId, id);
+  if (!row) return { ok: false, error: "ไม่พบรายการ" };
+  if (!actorCanReachBranch(actor, row.branchId)) return { ok: false, error: "ไม่มีสิทธิ์ในสาขานี้" };
+  if (row.status === "locked" || row.status === "void")
+    return { ok: false, error: "รายการถูกล็อก/ยกเลิก ยืนยันไม่ได้" };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.ledgerExpense.updateMany({
+      where: { id, orgId: actor.orgId, companyId: row.companyId },
+      data: { ...toData(p), status: "confirmed", needsReview: false, confirmedBy: actor.userId, confirmedAt: new Date() },
+    });
+    await replaceItems(tx, { expenseId: id, orgId: actor.orgId, companyId: row.companyId, items: p.items });
+  });
+  await audit({
+    orgId: actor.orgId,
+    userId: actor.userId,
+    action: "LEDGER_EXPENSE_CONFIRMED",
+    resourceType: "ledger_expense",
+    resourceId: id,
+    diff: { new: { via: "liff", status: "confirmed", total: p.total } },
+  });
+  // Auto-archive the receipt original into Google Drive (no-op if not connected).
+  after(() =>
+    archiveExpenseToDrive({ orgId: actor.orgId, companyId: row.companyId, id }).catch(() => {}),
+  );
+  revalidatePath("/ledger/expenses");
+  return { ok: true };
+}
+
+/** Void from the LIFF — only an actor with the expense.confirm capability. */
+export async function liffVoidExpense(id: string): Promise<ActionResult> {
+  const actor = await resolveLedgerActor();
+  if (!actor) return { ok: false, error: "บัญชียังไม่เปิดใช้งานสำหรับคุณ · ติดต่อออฟฟิศ" };
+  if (!actor.canConfirm) return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลยกเลิกได้" };
+  const row = await loadScopedByOrg(actor.orgId, id);
+  if (!row) return { ok: false, error: "ไม่พบรายการ" };
+  if (!actorCanReachBranch(actor, row.branchId)) return { ok: false, error: "ไม่มีสิทธิ์ในสาขานี้" };
+  if (row.status === "locked") return { ok: false, error: "รายการถูกล็อก ยกเลิกไม่ได้" };
+
+  await prisma.ledgerExpense.updateMany({
+    where: { id, orgId: actor.orgId, companyId: row.companyId },
+    data: { status: "void", needsReview: false },
+  });
+  await audit({
+    orgId: actor.orgId,
+    userId: actor.userId,
+    action: "LEDGER_EXPENSE_VOIDED",
+    resourceType: "ledger_expense",
+    resourceId: id,
+    diff: { new: { via: "liff", status: "void" } },
+  });
+  revalidatePath("/ledger/expenses");
+  return { ok: true };
 }
 
 // ===================== Settings: LINE channel =====================

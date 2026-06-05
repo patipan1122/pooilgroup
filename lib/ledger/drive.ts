@@ -22,6 +22,7 @@ import {
   decryptToken,
   refreshAccessToken,
 } from "@/lib/chairops/storage/drive";
+import { prisma } from "@/lib/prisma";
 
 const FILES_URL = "https://www.googleapis.com/drive/v3/files";
 const UPLOAD_URL =
@@ -198,4 +199,72 @@ export async function archiveReceiptToDrive(
     console.error("[ledger:drive] upload error", e);
     return null;
   }
+}
+
+/**
+ * Archive ONE expense's receipt (by id) into Drive — loads the row + R2 image +
+ * folder names, uploads, and stores the Drive link back. Idempotent (already-
+ * archived → returns the existing link). Graceful no-op if Drive isn't connected.
+ * Shared by the /api/ledger/drive/sync route (manual) AND the auto-archive
+ * fire-and-forget calls on capture/confirm — one source of truth.
+ */
+export async function archiveExpenseToDrive(args: {
+  orgId: string;
+  companyId: string;
+  id: string;
+}): Promise<{ ok: boolean; driveWebUrl?: string; already?: boolean; notConfigured?: boolean; error?: string }> {
+  if (!isDriveConfigured()) return { ok: false, notConfigured: true, error: "ยังไม่ได้ตั้งค่า Google Drive" };
+
+  const exp = await prisma.ledgerExpense.findFirst({
+    where: { id: args.id, orgId: args.orgId, companyId: args.companyId },
+    select: {
+      id: true, docCode: true, vendor: true, docDate: true, thumbUrl: true,
+      originalUrl: true, driveFileId: true, driveWebUrl: true, branchId: true,
+      category: { select: { name: true } },
+    },
+  });
+  if (!exp) return { ok: false, error: "ไม่พบรายการ" };
+  if (exp.driveFileId && exp.driveWebUrl) return { ok: true, driveWebUrl: exp.driveWebUrl, already: true };
+
+  const srcUrl = exp.thumbUrl || exp.originalUrl;
+  if (!srcUrl || !/^https?:\/\//.test(srcUrl)) return { ok: false, error: "ไม่มีไฟล์รูปให้ส่ง" };
+  let bytes: Buffer;
+  let mimeType = "image/jpeg";
+  try {
+    const r = await fetch(srcUrl, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error(String(r.status));
+    bytes = Buffer.from(await r.arrayBuffer());
+    mimeType = r.headers.get("content-type") || "image/jpeg";
+  } catch {
+    return { ok: false, error: "โหลดรูปไม่สำเร็จ" };
+  }
+
+  const bkk = new Date(Date.now() + 7 * 3600_000); // Asia/Bangkok month folder
+  const period = `${bkk.getUTCFullYear()}-${String(bkk.getUTCMonth() + 1).padStart(2, "0")}`;
+  const [branchRow, companyRow] = await Promise.all([
+    exp.branchId
+      ? prisma.branch.findUnique({ where: { id: exp.branchId }, select: { name: true } })
+      : Promise.resolve(null),
+    prisma.company.findUnique({ where: { id: args.companyId }, select: { name: true } }),
+  ]);
+
+  const drive = await archiveReceiptToDrive({
+    orgId: args.orgId,
+    bytes,
+    mimeType,
+    period,
+    companyName: companyRow?.name ?? null,
+    branchName: branchRow?.name ?? null,
+    categoryName: exp.category?.name ?? null,
+    docCode: exp.docCode,
+    vendor: exp.vendor,
+    docDate: exp.docDate ? exp.docDate.toISOString().slice(0, 10) : null,
+  });
+  if (!drive) return { ok: false, error: "ส่งเข้า Drive ไม่สำเร็จ" };
+
+  await prisma.ledgerExpense.update({
+    where: { id: exp.id },
+    data: { driveFileId: drive.fileId, driveWebUrl: drive.webViewLink },
+  });
+  return { ok: true, driveWebUrl: drive.webViewLink };
 }
