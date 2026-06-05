@@ -85,6 +85,7 @@ interface Props {
 
 const REASON_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: "", label: "เลือกเหตุผล …" },
+  { value: "หยุด", label: "แม่บ้านหยุด/ลา" },
   { value: "machine_broken", label: "เครื่องเสีย" },
   { value: "stuck", label: "ตู้ค้าง · เปิดไม่ได้" },
   { value: "no_customer", label: "ไม่มีลูกค้าใช้" },
@@ -299,12 +300,19 @@ export function CollectNewForm({
           l.status === "collected"
             ? Number(l.amount.replace(/,/g, "")) || 0
             : 0;
+        // Auto-convert: collected + 0 บาท → ถือว่าแม่บ้านหยุด/ลา
+        const isZeroCollect = l.status === "collected" && amountNum === 0;
         // Wave-2 B3: reasonCode === "chair_missing" overrides the status to
         // "mismatch" and pipes the actual found code through.
         const isMismatch = l.status !== "collected" && l.reasonCode === "chair_missing";
-        const effectiveStatus: LineStatus = isMismatch ? "mismatch" : l.status;
-        const reasonText =
-          l.status === "collected"
+        const effectiveStatus: LineStatus = isMismatch
+          ? "mismatch"
+          : isZeroCollect
+            ? "broken"
+            : l.status;
+        const reasonText = isZeroCollect
+          ? "แม่บ้านหยุด/ลา"
+          : l.status === "collected"
             ? null
             : l.reasonCode === "other"
               ? l.reasonFree.trim() || null
