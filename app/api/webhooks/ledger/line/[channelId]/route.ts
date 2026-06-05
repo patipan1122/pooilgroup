@@ -21,6 +21,7 @@ import { answerQuestion } from "@/lib/ledger/qa";
 import { parseExpenseText, stripJodTrigger } from "@/lib/ledger/parse-text";
 import { findRecentAmountDuplicate } from "@/lib/ledger/dedup";
 import { handleLedgerCommand } from "@/lib/ledger/line-commands";
+import { ensureLedgerMember } from "@/lib/ledger/members";
 import { archiveReceiptToDrive, isDriveConfigured } from "@/lib/ledger/drive";
 import {
   buildLineConfirmCard,
@@ -264,6 +265,17 @@ export async function POST(
             } else if (ev.replyToken) {
               await replyText(accessToken, ev.replyToken, "บันทึกไม่สำเร็จ · ลองใหม่นะ").catch(() => {});
             }
+            // Auto-seed the sender as a member → shows in the back-office for
+            // branch assignment (best-effort, never blocks).
+            if (res.ok && ev.source?.userId) {
+              await ensureLedgerMember({
+                orgId: ch.orgId,
+                companyId: ch.companyId,
+                lineUserId: ev.source.userId,
+                groupId: ev.source.groupId ?? null,
+                accessToken,
+              });
+            }
           } catch (e) {
             console.error("[ledger:line-webhook] จด path failed", e);
           }
@@ -475,6 +487,19 @@ export async function POST(
           } catch (e) {
             console.error("[ledger:line-webhook] drive archive failed", e);
           }
+        }
+
+        // 8. Auto-seed the sender as a member (best-effort) so they appear in the
+        //    back-office for branch assignment. role=staff, no scope until admin
+        //    assigns; name back-filled from their LINE group profile once.
+        if (res.ok && ev.source?.userId) {
+          await ensureLedgerMember({
+            orgId: ch.orgId,
+            companyId: ch.companyId,
+            lineUserId: ev.source.userId,
+            groupId: ev.source.groupId ?? null,
+            accessToken,
+          });
         }
       } catch (e) {
         console.error("[ledger:line-webhook] process failed", e);

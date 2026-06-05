@@ -290,3 +290,49 @@ export async function listInvites(orgId: string, companyId: string) {
   }));
 }
 export type InviteRow = Awaited<ReturnType<typeof listInvites>>[number];
+
+/** LINE members of a company (back-office "ใครดูแลสาขาไหน"). Resolves branch
+ *  names for the assigned scope + any pending self-request. Not cached — the
+ *  list changes on assign/approve. */
+export async function listLedgerMembers(orgId: string, companyId: string) {
+  const rows = await prisma.ledgerLineMember.findMany({
+    where: { orgId, companyId },
+    orderBy: [{ active: "desc" }, { createdAt: "asc" }],
+    take: 200,
+    select: {
+      id: true,
+      displayName: true,
+      role: true,
+      scopeBranchIds: true,
+      pendingBranchId: true,
+      active: true,
+      createdAt: true,
+    },
+  });
+  const ids = Array.from(
+    new Set(
+      rows.flatMap((r) =>
+        [...r.scopeBranchIds, r.pendingBranchId].filter(Boolean) as string[],
+      ),
+    ),
+  );
+  const branches = ids.length
+    ? await prisma.branch.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true },
+      })
+    : [];
+  const nameById = new Map(branches.map((b) => [b.id, b.name]));
+  return rows.map((r) => ({
+    id: r.id,
+    displayName: r.displayName,
+    role: r.role,
+    scopeBranchIds: r.scopeBranchIds,
+    scopeBranchNames: r.scopeBranchIds.map((id) => nameById.get(id) ?? "?"),
+    pendingBranchId: r.pendingBranchId,
+    pendingBranchName: r.pendingBranchId ? nameById.get(r.pendingBranchId) ?? null : null,
+    active: r.active,
+    createdAt: r.createdAt.toISOString(),
+  }));
+}
+export type LedgerMemberRow = Awaited<ReturnType<typeof listLedgerMembers>>[number];

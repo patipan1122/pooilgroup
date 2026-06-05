@@ -5413,6 +5413,7 @@ model LedgerLineMember {
   role                 String   @default("staff") // staff | admin | accountant
   scopeBranchIds       String[] @map("scope_branch_ids") @db.Uuid
   scopeCategoryIds     String[] @map("scope_category_ids") @db.Uuid
+  pendingBranchId      String?  @map("pending_branch_id") @db.Uuid // สาขาที่สมาชิกขอ (รออนุมัติ)
   defaultPaymentMethod String?  @map("default_payment_method")
   active               Boolean  @default(true)
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)

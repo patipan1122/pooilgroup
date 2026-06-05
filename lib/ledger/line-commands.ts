@@ -36,6 +36,7 @@ const HELP = [
   '⌨️ พิมพ์ "จด กาแฟ 45" → บันทึกรายจ่าย (ฟรี)',
   '❓ ถาม "สรุปเดือนนี้" / "หมวดไหนเยอะ" → ดูยอด',
   "✏️ แก้ไข/ยืนยัน ทำในเว็บหรือกดปุ่มบนการ์ด",
+  '🏢 พิมพ์ "/สาขา ชุมพวง" → ขอดูแลสาขา (รอแอดมินอนุมัติ)',
   "",
   "⚙️ คำสั่งแอดมิน:",
   "• /link (หรือ /setting) — ผูกกลุ่มนี้กับสาขา",
@@ -121,6 +122,50 @@ export async function handleLedgerCommand(
       return `• ${who} · ${role}\n   ดูแล: ${scope}`;
     });
     return ["👥 สมาชิกและสาขาที่ดูแล", "", ...lines, "", "กำหนด/เปลี่ยนสาขาได้ในเว็บ → ตั้งค่า"].join("\n");
+  }
+
+  // /สาขา <ชื่อ/รหัส> — สมาชิกขอดูแลสาขานี้เอง (รออนุมัติจากแอดมินในเว็บ).
+  // ไม่ต้องเป็นแอดมิน · ใครก็ขอได้ · ผลคือ pendingBranchId รออนุมัติ (ไม่ผูกทันที).
+  if (lower === "/สาขา" || lower === "/branch" || text === "เปลี่ยนสาขา") {
+    return [
+      "🏢 ขอดูแลสาขา",
+      "",
+      'พิมพ์  /สาขา <ชื่อสาขา>  เช่น "/สาขา ชุมพวง"',
+      "ระบบจะส่งคำขอให้แอดมินอนุมัติก่อน",
+    ].join("\n");
+  }
+  const branchReq = text.match(/^\/(?:สาขา|branch)\s+(.+)$/i);
+  if (branchReq) {
+    if (!ctx.senderLineUserId) {
+      return "ระบุตัวตนไม่ได้ · ลองทักบอทในแชตส่วนตัวแล้วพิมพ์อีกครั้ง";
+    }
+    const code = branchReq[1].trim();
+    const branch = await prisma.branch.findFirst({
+      where: {
+        orgId: ctx.orgId,
+        companyId: ctx.companyId,
+        OR: [
+          { code: { equals: code, mode: "insensitive" } },
+          { name: { contains: code, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true, name: true },
+    });
+    if (!branch) return `ไม่พบสาขา "${code}" · ลองพิมพ์ชื่อให้ตรงขึ้น`;
+    await prisma.ledgerLineMember.upsert({
+      where: { orgId_lineUserId: { orgId: ctx.orgId, lineUserId: ctx.senderLineUserId } },
+      update: { pendingBranchId: branch.id },
+      create: {
+        orgId: ctx.orgId,
+        companyId: ctx.companyId,
+        lineUserId: ctx.senderLineUserId,
+        role: "staff",
+        scopeBranchIds: [],
+        scopeCategoryIds: [],
+        pendingBranchId: branch.id,
+      },
+    });
+    return `📩 ส่งคำขอดูแลสาขา "${branch.name}" แล้ว · รอแอดมินอนุมัติในระบบ`;
   }
 
   if (

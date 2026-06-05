@@ -1,0 +1,244 @@
+"use client";
+
+// Member ↔ branch back-office (GAP 4, CEO 2026-06-05) — "ใครดูแลสาขาไหน".
+//
+// Members land here two ways: auto-seeded when they drop a receipt / type "จด"
+// in a bound LINE group, OR by accepting a scoped invite. The admin assigns the
+// branch(es) each oversees (tap chips → บันทึก), sets their role, approves a
+// member's self-requested branch (⏳ from /สาขา in LINE), or disables them.
+// Mobile-first: each member is a stacked card, chips wrap, big tap targets.
+
+import { useState, useTransition } from "react";
+import {
+  Users, Check, X, Loader2, Clock, MapPin, Power,
+} from "lucide-react";
+import {
+  updateMemberBranches,
+  setMemberRole,
+  toggleMemberActive,
+  approveMemberPending,
+  rejectMemberPending,
+} from "../../_actions";
+import type { LedgerMemberRow } from "../../_data";
+
+type BranchOpt = { id: string; code: string; name: string };
+type Role = "staff" | "accountant" | "admin";
+
+const ROLE_LABEL: Record<Role, string> = {
+  staff: "พนักงาน",
+  accountant: "บัญชี",
+  admin: "ผู้ดูแล",
+};
+
+const inputCls =
+  "h-9 rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]";
+
+function sameSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sb = new Set(b);
+  return a.every((x) => sb.has(x));
+}
+
+function MemberRow({
+  member,
+  branches,
+}: {
+  member: LedgerMemberRow;
+  branches: BranchOpt[];
+}) {
+  const [scope, setScope] = useState<string[]>(member.scopeBranchIds);
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  const dirty = !sameSet(scope, member.scopeBranchIds);
+
+  function toggle(id: string) {
+    setScope((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  }
+  function saveBranches() {
+    setErr(null);
+    start(async () => {
+      const res = await updateMemberBranches(member.id, scope);
+      if (!res.ok) setErr(res.error ?? "บันทึกไม่สำเร็จ");
+    });
+  }
+  function changeRole(role: string) {
+    setErr(null);
+    start(async () => {
+      const res = await setMemberRole(member.id, role);
+      if (!res.ok) setErr(res.error ?? "เปลี่ยนสิทธิ์ไม่สำเร็จ");
+    });
+  }
+  function approve() {
+    start(async () => {
+      const res = await approveMemberPending(member.id);
+      if (!res.ok) setErr(res.error ?? "อนุมัติไม่สำเร็จ");
+    });
+  }
+  function reject() {
+    start(async () => {
+      await rejectMemberPending(member.id);
+    });
+  }
+  function toggleActive() {
+    start(async () => {
+      const res = await toggleMemberActive(member.id, !member.active);
+      if (!res.ok) setErr(res.error ?? "ทำรายการไม่สำเร็จ");
+    });
+  }
+
+  return (
+    <li className={"rounded-xl border p-3 " + (member.active ? "border-zinc-200 bg-white" : "border-zinc-100 bg-zinc-50 opacity-70")}>
+      {/* Header: name + role + active toggle */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="grid size-7 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-500">
+            <Users className="size-3.5" aria-hidden />
+          </span>
+          <span className="truncate text-sm font-semibold text-zinc-800">
+            {member.displayName?.trim() || "(ยังไม่มีชื่อ)"}
+          </span>
+          {!member.active && (
+            <span className="rounded bg-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-600">ปิดอยู่</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <select
+            value={member.role}
+            onChange={(e) => changeRole(e.target.value)}
+            disabled={pending}
+            aria-label="สิทธิ์"
+            className={inputCls}
+          >
+            {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
+              <option key={r} value={r}>{ROLE_LABEL[r]}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={toggleActive}
+            disabled={pending}
+            aria-label={member.active ? "ปิดใช้งาน" : "เปิดใช้งาน"}
+            title={member.active ? "ปิดใช้งาน" : "เปิดใช้งาน"}
+            className={"grid size-9 place-items-center rounded-lg border " +
+              (member.active
+                ? "border-zinc-200 text-zinc-400 hover:bg-zinc-50"
+                : "border-emerald-200 text-emerald-600 hover:bg-emerald-50")}
+          >
+            <Power className="size-4" aria-hidden />
+          </button>
+        </div>
+      </div>
+
+      {/* Pending self-request banner */}
+      {member.pendingBranchId && (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-2.5 py-1.5">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-amber-800">
+            <Clock className="size-3.5" aria-hidden />
+            ขอดูแลสาขา: {member.pendingBranchName ?? "?"}
+          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={approve}
+              disabled={pending}
+              className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-xs font-medium text-white disabled:opacity-50"
+            >
+              <Check className="size-3.5" aria-hidden /> อนุมัติ
+            </button>
+            <button
+              type="button"
+              onClick={reject}
+              disabled={pending}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-zinc-200 px-2 text-xs text-zinc-600 disabled:opacity-50"
+            >
+              <X className="size-3.5" aria-hidden /> ปฏิเสธ
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Branch scope chips */}
+      <div className="mt-2">
+        <div className="mb-1 flex items-center gap-1 text-xs font-semibold text-zinc-600">
+          <MapPin className="size-3.5" aria-hidden />
+          ดูแลสาขา {scope.length > 0 ? `(${scope.length})` : "(ว่าง = ทุกสาขา)"}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {branches.length === 0 && <span className="text-xs text-zinc-400">ยังไม่มีสาขา</span>}
+          {branches.map((b) => {
+            const on = scope.includes(b.id);
+            return (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => toggle(b.id)}
+                disabled={pending}
+                className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${
+                  on
+                    ? "bg-[var(--color-brand-600,#2563EB)] text-white ring-transparent"
+                    : "bg-white text-zinc-600 ring-zinc-200 hover:bg-zinc-50"
+                }`}
+              >
+                {b.code} · {b.name}
+              </button>
+            );
+          })}
+        </div>
+        {dirty && (
+          <button
+            type="button"
+            onClick={saveBranches}
+            disabled={pending}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-brand-600,#2563EB)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+          >
+            {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Check className="size-3.5" aria-hidden />}
+            บันทึกสาขา
+          </button>
+        )}
+      </div>
+
+      {err && <p className="mt-2 text-xs text-rose-600">{err}</p>}
+    </li>
+  );
+}
+
+export function MemberManager({
+  branches,
+  members,
+}: {
+  companyId: string;
+  branches: BranchOpt[];
+  members: LedgerMemberRow[];
+}) {
+  const pendingCount = members.filter((m) => m.pendingBranchId).length;
+
+  return (
+    <div className="rounded-2xl border border-zinc-100 bg-white p-4 lg:col-span-2">
+      <div className="mb-1 flex items-center gap-2">
+        <Users className="size-4 text-[var(--color-brand-600,#2563EB)]" aria-hidden />
+        <h3 className="text-sm font-bold text-zinc-800">สมาชิก & สาขาที่ดูแล</h3>
+        {pendingCount > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+            <Clock className="size-3" aria-hidden /> {pendingCount} คำขอ
+          </span>
+        )}
+      </div>
+      <p className="mb-3 text-xs text-zinc-500">
+        คนที่ส่งใบเสร็จ/พิมพ์ในกลุ่ม LINE จะมาโผล่ที่นี่เอง · แตะชิปเลือกสาขาที่แต่ละคนดูแล แล้วกดบันทึก
+      </p>
+
+      {members.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-6 text-center text-xs text-zinc-500">
+          ยังไม่มีสมาชิก — ให้พนักงานส่งใบเสร็จในกลุ่ม LINE สักใบ หรือเชิญผ่านลิงก์ด้านบน
+          แล้วเขาจะมาแสดงที่นี่ให้กำหนดสาขาได้
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {members.map((m) => (
+            <MemberRow key={m.id} member={m} branches={branches} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

@@ -945,3 +945,167 @@ export async function revokeLedgerInvite(id: string): Promise<ActionResult> {
   revalidatePath("/ledger/settings");
   return { ok: true };
 }
+
+// ── Member ↔ branch back-office (GAP 4) ─────────────────────────────────────
+// "ใครดูแลสาขาไหน": members appear here (auto-seeded from group activity OR via
+// invite). Admin assigns/changes the branches each oversees, sets role, and
+// approves a member's self-requested branch (pendingBranchId from /สาขา in LINE).
+// Admin-tier only — same gate as channel/category settings.
+
+/** Load a member scoped to the caller's org (returns null if not theirs). */
+async function loadMemberScoped(orgId: string, memberId: string) {
+  return prisma.ledgerLineMember.findFirst({
+    where: { id: memberId, orgId },
+    select: { id: true, companyId: true, scopeBranchIds: true, pendingBranchId: true },
+  });
+}
+
+/** Keep only the branchIds that actually belong to this org+company. */
+async function validBranchIds(
+  orgId: string,
+  companyId: string,
+  branchIds: string[],
+): Promise<string[]> {
+  if (branchIds.length === 0) return [];
+  const found = await prisma.branch.findMany({
+    where: { id: { in: branchIds }, orgId, companyId },
+    select: { id: true },
+  });
+  return found.map((b) => b.id);
+}
+
+/** Admin sets the branches a member oversees (replaces the whole scope list). */
+export async function updateMemberBranches(
+  memberId: string,
+  branchIds: string[],
+): Promise<ActionResult> {
+  if (!memberId) return { ok: false, error: "ไม่ได้ระบุสมาชิก" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลกำหนดสาขาได้" };
+  }
+  const member = await loadMemberScoped(session.user.org_id, memberId);
+  if (!member) return { ok: false, error: "ไม่พบสมาชิก" };
+
+  const scope = await validBranchIds(
+    session.user.org_id,
+    member.companyId,
+    Array.isArray(branchIds) ? branchIds.slice(0, 200) : [],
+  );
+  await prisma.ledgerLineMember.update({
+    where: { id: member.id },
+    data: { scopeBranchIds: scope },
+  });
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_MEMBER_SCOPE_UPDATED",
+    resourceType: "ledger_line_member",
+    resourceId: member.id,
+    diff: { new: { branches: scope.length } },
+  });
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
+/** Admin changes a member's role (staff | accountant | admin). */
+export async function setMemberRole(
+  memberId: string,
+  role: string,
+): Promise<ActionResult> {
+  if (!memberId) return { ok: false, error: "ไม่ได้ระบุสมาชิก" };
+  if (!["staff", "accountant", "admin"].includes(role)) {
+    return { ok: false, error: "สิทธิ์ไม่ถูกต้อง" };
+  }
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลตั้งสิทธิ์ได้" };
+  }
+  const r = await prisma.ledgerLineMember.updateMany({
+    where: { id: memberId, orgId: session.user.org_id },
+    data: { role },
+  });
+  if (r.count === 0) return { ok: false, error: "ไม่พบสมาชิก" };
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
+/** Admin enables/disables a member (disabled = no auto-tag / hidden from list use). */
+export async function toggleMemberActive(
+  memberId: string,
+  active: boolean,
+): Promise<ActionResult> {
+  if (!memberId) return { ok: false, error: "ไม่ได้ระบุสมาชิก" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลจัดการสมาชิกได้" };
+  }
+  const r = await prisma.ledgerLineMember.updateMany({
+    where: { id: memberId, orgId: session.user.org_id },
+    data: { active },
+  });
+  if (r.count === 0) return { ok: false, error: "ไม่พบสมาชิก" };
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
+/** Approve a member's self-requested branch → add it to their scope, clear pending. */
+export async function approveMemberPending(
+  memberId: string,
+): Promise<ActionResult> {
+  if (!memberId) return { ok: false, error: "ไม่ได้ระบุสมาชิก" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลอนุมัติได้" };
+  }
+  const member = await loadMemberScoped(session.user.org_id, memberId);
+  if (!member) return { ok: false, error: "ไม่พบสมาชิก" };
+  if (!member.pendingBranchId) return { ok: false, error: "ไม่มีคำขอที่รออนุมัติ" };
+
+  // Re-validate the requested branch still belongs to the company, then merge.
+  const valid = await validBranchIds(session.user.org_id, member.companyId, [
+    member.pendingBranchId,
+  ]);
+  const nextScope = Array.from(new Set([...member.scopeBranchIds, ...valid]));
+  await prisma.ledgerLineMember.update({
+    where: { id: member.id },
+    data: { scopeBranchIds: nextScope, pendingBranchId: null },
+  });
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_MEMBER_SCOPE_UPDATED",
+    resourceType: "ledger_line_member",
+    resourceId: member.id,
+    diff: { new: { approvedRequest: true, branches: nextScope.length } },
+  });
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
+/** Reject a member's self-requested branch → just clear the pending request. */
+export async function rejectMemberPending(
+  memberId: string,
+): Promise<ActionResult> {
+  if (!memberId) return { ok: false, error: "ไม่ได้ระบุสมาชิก" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลจัดการคำขอได้" };
+  }
+  await prisma.ledgerLineMember.updateMany({
+    where: { id: memberId, orgId: session.user.org_id },
+    data: { pendingBranchId: null },
+  });
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}

@@ -123,7 +123,9 @@ export type AuditAction =
   | "LEDGER_LINE_CHANNEL_CONNECTED"
   | "LEDGER_LINE_CHANNEL_DISCONNECTED"
   // Scoped LINE onboarding invites (M7) — who may capture + their branch/category scope.
-  | "LEDGER_INVITE_CREATED";
+  | "LEDGER_INVITE_CREATED"
+  // Member ↔ branch back-office (GAP 4) — admin (re)assigns / approves the branch a member oversees.
+  | "LEDGER_MEMBER_SCOPE_UPDATED";
 
 export interface AuditEntry {
   orgId: string;
