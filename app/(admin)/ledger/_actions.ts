@@ -808,6 +808,56 @@ export async function toggleLineChannel(
   return { ok: true };
 }
 
+/**
+ * Bind the company's LINE group ↔ a branch FROM THE WEB (admin tier). Receipts
+ * dropped in that group then auto-tag this branch. This is the back-office
+ * equivalent of the in-LINE `/setting สาขา <code>` command — but it does NOT
+ * need the sender's LINE id to be pre-linked to a Pool admin (the web session
+ * IS the admin gate). Pass branchId="" to clear (back to central group).
+ */
+export async function setChannelBranch(
+  companyId: string,
+  branchId: string,
+): Promise<ActionResult> {
+  if (!companyId) return { ok: false, error: "ไม่ได้ระบุบริษัท" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลตั้งค่าสาขาได้" };
+  }
+  const orgId = session.user.org_id;
+
+  // Validate the branch belongs to this org+company before binding (don't trust
+  // a client id — same defence as the category/budget company checks).
+  let bId: string | null = null;
+  if (branchId) {
+    const branch = await prisma.branch.findFirst({
+      where: { id: branchId, orgId, companyId },
+      select: { id: true },
+    });
+    if (!branch) return { ok: false, error: "ไม่พบสาขาในบริษัทนี้" };
+    bId = branch.id;
+  }
+
+  const res = await prisma.ledgerLineChannel.updateMany({
+    where: { orgId, companyId },
+    data: { branchId: bId, kind: bId ? "branch" : "central" },
+  });
+  if (res.count === 0) {
+    return { ok: false, error: "ยังไม่ได้เชื่อมกลุ่ม LINE — เชื่อมต่อก่อน" };
+  }
+  await audit({
+    orgId,
+    userId: session.user.id,
+    action: "LEDGER_LINE_CHANNEL_CONNECTED",
+    resourceType: "ledger_line_channel",
+    diff: { new: { branchBound: !!bId } },
+  });
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
 // ── Scoped LINE invites (M7) ────────────────────────────────────────────────
 // CEO model: invite a person with a link that pins WHICH branches/categories
 // they oversee. Opening the link (inside the LedgerLine LIFF) verifies their

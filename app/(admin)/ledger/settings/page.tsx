@@ -63,6 +63,7 @@ export default async function LedgerSettingsPage({
           companyId={scope.companyId}
           companyName={scope.companies.find((c) => c.id === scope.companyId)?.name ?? ""}
           channel={lineChannel}
+          branches={branches.map((b) => ({ id: b.id, code: b.code, name: b.name }))}
         />
         <RichMenuButton
           companyId={scope.companyId}

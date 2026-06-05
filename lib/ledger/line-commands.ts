@@ -2,9 +2,10 @@
 //
 // /help · วิธีใช้           → how-to (anyone)
 // /menu · /guide            → same help
-// /setting                  → admin only: show this group's branch binding + how to set
+// /setting · /link          → admin only: show this group's branch binding + how to set
 // /setting สาขา <code>      → bind THIS group ↔ a branch (group = branch auto-tag)
 // /setting จ่าย <วิธี>       → set the group's default payment method
+// /members · /สมาชิก         → admin only: list members + the branch each oversees
 //
 // Admin gate: the sender's LINE userId must map to a Pool user with admin-tier
 // or accountant role (we never trust a raw LINE id for privileged actions).
@@ -36,8 +37,16 @@ const HELP = [
   '❓ ถาม "สรุปเดือนนี้" / "หมวดไหนเยอะ" → ดูยอด',
   "✏️ แก้ไข/ยืนยัน ทำในเว็บหรือกดปุ่มบนการ์ด",
   "",
-  "⚙️ /setting (แอดมิน) — ผูกกลุ่มนี้กับสาขา",
+  "⚙️ คำสั่งแอดมิน:",
+  "• /link (หรือ /setting) — ผูกกลุ่มนี้กับสาขา",
+  "• /members — ดูว่าใครดูแลสาขาไหน",
 ].join("\n");
+
+const MEMBER_ROLE_LABEL: Record<string, string> = {
+  staff: "พนักงาน",
+  accountant: "บัญชี",
+  admin: "แอดมิน",
+};
 
 /** Is this the `/setting`-able admin? (Pool user, admin-tier or accountant) */
 async function isAdminSender(
@@ -75,11 +84,58 @@ export async function handleLedgerCommand(
     ].join("\n");
   }
 
-  if (lower === "/setting" || text.startsWith("/setting ") || text.startsWith("/ตั้งค่า")) {
+  // /members — ใครดูแลสาขาไหน (แอดมินเท่านั้น)
+  if (lower === "/members" || lower === "/สมาชิก" || text === "สมาชิก") {
     if (!(await isAdminSender(ctx.orgId, ctx.senderLineUserId))) {
-      return "เฉพาะแอดมิน/บัญชีที่ผูกบัญชีกับ LINE แล้วเท่านั้นที่ตั้งค่าได้";
+      return "เฉพาะแอดมิน/บัญชีที่ผูกบัญชีกับ LINE แล้วเท่านั้นที่ดูได้";
     }
-    const arg = text.replace(/^\/(setting|ตั้งค่า)\s*/i, "").trim();
+    const members = await prisma.ledgerLineMember.findMany({
+      where: { orgId: ctx.orgId, companyId: ctx.companyId, active: true },
+      select: { displayName: true, role: true, scopeBranchIds: true },
+      orderBy: { createdAt: "asc" },
+      take: 50,
+    });
+    if (!members.length) {
+      return [
+        "👥 ยังไม่มีสมาชิกที่ผูกบัญชี",
+        "",
+        "เชิญคนเข้าระบบ + กำหนดสาขาที่ดูแลได้ที่หน้าเว็บ",
+        "ตั้งค่า → คำเชิญ (สร้างลิงก์เชิญแบบระบุสาขา)",
+      ].join("\n");
+    }
+    // resolve branch names ทีเดียว (กันยิง N+1)
+    const branchIds = Array.from(new Set(members.flatMap((m) => m.scopeBranchIds)));
+    const branches = branchIds.length
+      ? await prisma.branch.findMany({
+          where: { id: { in: branchIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const nameById = new Map(branches.map((b) => [b.id, b.name]));
+    const lines = members.map((m) => {
+      const who = m.displayName?.trim() || "(ไม่มีชื่อ)";
+      const role = MEMBER_ROLE_LABEL[m.role] ?? m.role;
+      const scope = m.scopeBranchIds.length
+        ? m.scopeBranchIds.map((id) => nameById.get(id) ?? "?").join(", ")
+        : "ทุกสาขา/ยังไม่กำหนด";
+      return `• ${who} · ${role}\n   ดูแล: ${scope}`;
+    });
+    return ["👥 สมาชิกและสาขาที่ดูแล", "", ...lines, "", "กำหนด/เปลี่ยนสาขาได้ในเว็บ → ตั้งค่า"].join("\n");
+  }
+
+  if (
+    lower === "/setting" ||
+    lower === "/link" ||
+    lower === "/เชื่อม" ||
+    text.startsWith("/setting ") ||
+    lower.startsWith("/link ") ||
+    text.startsWith("/ตั้งค่า") ||
+    text.startsWith("/เชื่อม ")
+  ) {
+    if (!(await isAdminSender(ctx.orgId, ctx.senderLineUserId))) {
+      return "เฉพาะแอดมิน/บัญชีที่ผูกบัญชีกับ LINE แล้วเท่านั้นที่ตั้งค่าได้ · หรือกำหนดสาขาให้กลุ่มนี้ได้ในเว็บ → ตั้งค่า";
+    }
+    const arg = text.replace(/^\/(setting|ตั้งค่า|link|เชื่อม)\s*/i, "").trim();
 
     // /setting สาขา <code>
     const branchMatch = arg.match(/^(?:สาขา|branch)\s+(.+)$/i);

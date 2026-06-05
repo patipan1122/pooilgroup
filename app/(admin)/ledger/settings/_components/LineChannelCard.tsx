@@ -13,6 +13,7 @@ import {
   connectLineChannel,
   disconnectLineChannel,
   toggleLineChannel,
+  setChannelBranch,
 } from "../../_actions";
 import type { LineChannelInfo } from "../../_data";
 
@@ -20,10 +21,12 @@ export function LineChannelCard({
   companyId,
   companyName,
   channel,
+  branches,
 }: {
   companyId: string;
   companyName: string;
   channel: LineChannelInfo | null;
+  branches: Array<{ id: string; code: string; name: string }>;
 }) {
   const connected = !!channel;
 
@@ -40,6 +43,27 @@ export function LineChannelCard({
   const [channelSecret, setChannelSecret] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [groupId, setGroupId] = useState(channel?.groupId ?? "");
+
+  // สาขาที่กลุ่มนี้ผูกอยู่ — ตั้งจากเว็บได้เลย (ไม่ต้องพิมพ์ /setting ใน LINE ที่ติด
+  // admin-gate). เปลี่ยนปุ๊บบันทึกปั๊บ.
+  const [branchId, setBranchId] = useState(channel?.branchId ?? "");
+  const [branchMsg, setBranchMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  function changeBranch(next: string) {
+    setBranchId(next);
+    setBranchMsg(null);
+    startTransition(async () => {
+      const res = await setChannelBranch(companyId, next);
+      if (!res.ok) {
+        setBranchMsg({ kind: "err", text: res.error ?? "บันทึกไม่สำเร็จ" });
+        return;
+      }
+      setBranchMsg({
+        kind: "ok",
+        text: next ? "ผูกสาขาให้กลุ่มนี้แล้ว ✓" : "ตั้งเป็นกลุ่มกลางแล้ว (เลือกสาขาตอนตรวจ)",
+      });
+    });
+  }
 
   // Webhook URL keys on the LINE Channel ID (stable + memorable) not the random
   // row id → predictable, copy-pasteable URL. Shown as soon as a Channel ID is
@@ -243,6 +267,46 @@ export function LineChannelCard({
             <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
           )}
           <span>{msg.text}</span>
+        </div>
+      )}
+
+      {/* สาขาของกลุ่มนี้ — ตั้งจากเว็บ (แก้ปัญหาผูกสาขาไม่ได้ใน LINE) */}
+      {connected && (
+        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
+          <label className="mb-1 block text-xs font-semibold text-emerald-800">
+            สาขาของกลุ่มนี้
+            <span className="font-normal text-emerald-700/80"> — ใบเสร็จที่ส่งในกลุ่มจะลงสาขานี้อัตโนมัติ</span>
+          </label>
+          <select
+            value={branchId}
+            onChange={(e) => changeBranch(e.target.value)}
+            disabled={pending}
+            className={inputCls}
+          >
+            <option value="">ส่วนกลาง (เลือกสาขาเองตอนตรวจ)</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.code} — {b.name}
+              </option>
+            ))}
+          </select>
+          {branches.length === 0 && (
+            <p className="mt-1.5 text-xs text-amber-700">
+              ยังไม่มีสาขาในบริษัทนี้ — เพิ่มสาขาก่อนที่หน้า &quot;สาขา&quot;
+            </p>
+          )}
+          {branchMsg && (
+            <p
+              className={
+                "mt-1.5 text-xs " +
+                (branchMsg.kind === "ok" ? "text-emerald-700" : "text-rose-700")
+              }
+              role="status"
+              aria-live="polite"
+            >
+              {branchMsg.text}
+            </p>
+          )}
         </div>
       )}
 
