@@ -23,6 +23,7 @@ import { canUnlockCollection } from "@/lib/chairops/auth/role-guards";
 import { writeAudit } from "@/lib/chairops/audit/log";
 import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
 import { presignUpload, evidenceKey, slipKey } from "@/lib/chairops/storage/r2";
+import { putObject } from "@/lib/r2/upload";
 import { zBaht, zUUID } from "@/lib/chairops/schemas/zod-helpers";
 import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
 import { rateLimit, LIMITS } from "@/lib/chairops/utils/rate-limit";
@@ -780,4 +781,76 @@ export async function extractSlipAmount(
     console.error("[chairops] extractSlipAmount failed (non-fatal)", e);
     return { ok: true, data: { amount: null } };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Server-side slip upload — bypasses R2 CORS (same pattern as DocuFlow proxy).
+//
+// Direct browser → R2 PUT fails because CORS is not allowlisted on the bucket
+// (same root cause as /api/docuflow/upload-proxy). Sending through the server
+// avoids CORS entirely: Next.js → R2 is a server-to-server call.
+// ---------------------------------------------------------------------------
+export async function uploadSlipServer(
+  formData: FormData,
+): Promise<ActionResult<{ publicUrl: string; hash: string; sizeKb: number }>> {
+  const session = await requireAuth();
+
+  const file = formData.get("file");
+  const depositDraftId = formData.get("depositDraftId");
+  const branchOverride = formData.get("branchOverride");
+
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "ไม่มีไฟล์รูปภาพ" };
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    return { ok: false, error: "รูปใหญ่เกินไป (สูงสุด 8 MB)" };
+  }
+
+  const rl = rateLimit(`slip:${session.user.id}`, LIMITS.r2Presign);
+  if (!rl.ok) return { ok: false, error: "ลองใหม่ภายหลัง · เร็วเกินไป" };
+
+  // Normalize MIME — iOS LINE browser may return "" or "image/heif"
+  let ct = (file.type || "image/jpeg").toLowerCase();
+  if (ct === "image/heif") ct = "image/heic";
+  if (!/^image\/(jpeg|jpg|png|webp|heic)$/.test(ct)) ct = "image/jpeg";
+
+  const isOfficeTier =
+    session.user.role !== "MAID" && session.user.role !== "TECHNICIAN";
+  const branchId = isOfficeTier
+    ? (typeof branchOverride === "string" ? branchOverride : null)
+    : session.user.primaryBranchId;
+  if (!branchId) {
+    return { ok: false, error: "ต้องระบุสาขา · บัญชีนี้ยังไม่ได้กำหนดสาขา" };
+  }
+
+  const idParsed = zUUID().safeParse(depositDraftId);
+  if (!idParsed.success) return { ok: false, error: "depositDraftId ไม่ถูกต้อง" };
+
+  const branch = await prisma.chairopsBranch.findFirst({
+    where: { id: branchId, orgId: session.user.orgId },
+    select: { slug: true },
+  });
+  if (!branch) return { ok: false, error: "สาขาไม่ถูกต้อง" };
+
+  const buf = Buffer.from(await file.arrayBuffer());
+
+  // SHA-256 for dedup / tamper detection (same as client-side check)
+  const hashBuf = await crypto.subtle.digest("SHA-256", buf);
+  const hash = Array.from(new Uint8Array(hashBuf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  const ext = ct === "image/heic" ? "jpg" : (ct.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg");
+  const key = slipKey(branch.slug, idParsed.data, ext);
+
+  try {
+    // putObject uses lib/r2/client.ts which reads the correct R2_BUCKET env var
+    await putObject(key, buf, ct === "image/heic" ? "image/jpeg" : ct);
+  } catch (err) {
+    console.error("[chairops] uploadSlipServer R2 put failed", err);
+    return { ok: false, error: "อัปโหลดรูปไม่สำเร็จ · ลองอีกครั้ง" };
+  }
+
+  const publicUrl = `${process.env.R2_PUBLIC_URL}/${key}`;
+  return { ok: true, data: { publicUrl, hash, sizeKb: Math.round(buf.byteLength / 1024) } };
 }
