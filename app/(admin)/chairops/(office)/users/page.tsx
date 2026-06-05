@@ -332,8 +332,11 @@ export default async function UsersListPage({
                       {u.primaryBranchId ? (
                         <span className="inline-flex items-center gap-1.5">
                           {branchById.get(u.primaryBranchId) ?? "—"}
-                          {/* F2: vacancy badge — branch has no active maid */}
-                          {u.role === "MAID" && u.isActive && !occupiedBranchIds.has(u.primaryBranchId) && (
+                          {/* F2: vacancy badge — this maid's branch has no active coverage.
+                              Removed `u.isActive &&`: active maids are always in occupiedBranchIds
+                              so the badge would never render; the useful signal is for inactive maids
+                              whose branch is now vacant and needs a replacement. */}
+                          {u.role === "MAID" && !occupiedBranchIds.has(u.primaryBranchId) && (
                             <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
                               ว่าง
                             </span>

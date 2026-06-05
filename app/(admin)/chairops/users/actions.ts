@@ -477,12 +477,27 @@ export async function deactivateUser(
     return { ok: false, error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" };
   }
 
-  // F8: LINE block — best-effort, after transaction (never fails the action)
+  // F8: LINE block — best-effort, after transaction (never fails the action).
+  // Wrap in try/catch: fetch() can throw on network error (ECONNREFUSED/timeout) which
+  // would otherwise poison the return value even though the deactivation already committed.
   if (lineUserIdForBlock) {
-    const blockResult = await blockLineUser(lineUserIdForBlock);
-    if (!blockResult.ok) {
-      // Log but don't fail — admin can manually block if needed
-      console.error("[chairops] LINE block failed after deactivate:", blockResult.error);
+    try {
+      const blockResult = await blockLineUser(lineUserIdForBlock);
+      if (!blockResult.ok) {
+        // Write audit entry so admin can see the failure in the audit trail,
+        // not just in server logs that may not be queryable from the app.
+        await writeAudit({
+          userId: session.user.id,
+          action: "user.line_block_failed",
+          entity: "User",
+          entityId: target.id,
+          metadata: { lineUserId: lineUserIdForBlock, error: blockResult.error ?? "unknown" },
+        });
+        console.error("[chairops] LINE block failed after deactivate:", blockResult.error);
+      }
+    } catch (err) {
+      // Network-level error — deactivation already committed, log and move on
+      console.error("[chairops] LINE block threw unexpectedly:", err);
     }
   }
 

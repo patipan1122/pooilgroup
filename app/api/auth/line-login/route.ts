@@ -301,8 +301,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "ไม่พบบัญชีในลิงก์เชิญ" }, { status: 404 });
     }
     // F5: reject if token was revoked (inviteToken cleared by auto-revoke)
-    if (maid.inviteToken !== null && maid.inviteToken !== invite) {
-      return NextResponse.json({ error: "ลิงก์เชิญถูกยกเลิกแล้ว" }, { status: 410 });
+    // AUDIT-FIX: condition was `!== null && !== invite` — when token is null (revoked),
+    // `null !== null` = false → check was skipped, allowing old HMAC-valid tokens to bind.
+    // Correct: reject when stored token is null (revoked) OR doesn't match (tampered/rotated).
+    if (maid.inviteToken !== invite) {
+      return NextResponse.json({ error: "ลิงก์เชิญถูกยกเลิกหรือหมดอายุแล้ว" }, { status: 410 });
     }
     if (maid.lineUserId && maid.lineUserId !== lineUserId) {
       return NextResponse.json(
