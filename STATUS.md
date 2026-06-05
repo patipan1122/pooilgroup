@@ -1,8 +1,28 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-05 (ChairOps Reconcile 3 bugs fixed · awaiting deploy)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-05 (ChairOps Reconcile Sprint 1+2 + LedgerLine identity fix · DEPLOYED setup af01ba1)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-06-05 — ChairOps Reconcile Sprint 1+2 + LedgerLine identity fix: 🚀 DEPLOYED setup af01ba1)
+
+**Sprint 1 — Reconcile accuracy (commit af01ba1):**
+- **write-offs ลด drift แล้ว** — `recomputeDriftForBranch()` เพิ่ม `ChairopsWriteOff` aggregate ทั้ง legacy + window mode → approve write-off = driftAmount ลดจริง
+- **SHORTAGE alert ถูกต้อง** — `classifyStatus()` ป้องกัน "missed" ทับ "shortage" (`&& status !== "shortage"`) → สาขาค้างฝากแจ้งเตือนถูก category
+- **"−5,168" เป็น "ค้างฝาก 5,168"** — `fmtCumDrift()` ใน sidebar แปลเป็นภาษาคน ไม่สับสน
+- **POS staleness banner** — amber/red banner บน reconcile shell เมื่อ POS ไม่ได้ upload ≥3 วัน
+
+**Sprint 2 — Review queue UX (commit 9c9c596):**
+- **`/chairops/review-queue`** — inbox สำหรับฝากที่ |diff| ≥500฿ (requiresReview=true) · แสดงสลิป+ยอด+ปุ่ม "ตรวจแล้ว" + audit log
+- **`/chairops/deposits/[id]`** — drill-down เห็นว่ารอบเก็บไหนอยู่ในการฝากนี้ (แก้ UAT "ฝาก 9,970 ครอบคลุมรอบไหน")
+- **Nav "ตรวจสอบ"** — เพิ่มใน office-top-nav ระหว่าง write-offs กับ users
+
+**LedgerLine identity fix (commit 9c9c596):**
+- **dual-id resolution** — `line-login/route.ts` หา Pool user จาก `line_user_id` OR `line_login_sub` → super_admin ใช้ LIFF ได้แล้วไม่ block
+- **Schema:** `users.line_login_sub` + `ledger_line_invite.target_pool_user_id` + `kind`
+- **⚠️ Migration ยังต้องรัน:** ไปที่ Supabase SQL Editor → รัน `supabase/migrations/20260605200000_ledger_identity_isolation.sql`
+
+**Deploy:** `git push origin claude/ledger-identity-fix:setup` (7c54b00 → af01ba1) · tsc 0 · Vercel building...
 
 ## 🆕 Update (2026-06-05 — ChairOps Reconcile 3 bugs: ⏳ branch 0ab3db4 · รอ deploy)
 
