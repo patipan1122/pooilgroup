@@ -16,6 +16,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, requireExactRole } from "@/lib/chairops/auth/session";
 import { canUnlockCollection } from "@/lib/chairops/auth/role-guards";
@@ -701,4 +702,82 @@ export async function presignEvidenceUpload(args: {
   const key = evidenceKey(branch.slug, draftIdParsed.data, ext);
   const { url, publicUrl } = await presignUpload(key, ct);
   return { ok: true, data: { url, publicUrl, key } };
+}
+
+// ---------------------------------------------------------------------------
+// OCR: อ่านยอดเงินจากรูปสลิปธนาคารโดยอัตโนมัติ
+// ---------------------------------------------------------------------------
+
+/** Fetch a public R2/storage URL and return it as base64. */
+async function fetchImageAsBase64(
+  url: string,
+): Promise<{ base64: string; mediaType: "image/jpeg" | "image/png" | "image/webp" } | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const ct = res.headers.get("content-type") ?? "image/jpeg";
+    const mediaType = ct.startsWith("image/png")
+      ? "image/png"
+      : ct.startsWith("image/webp")
+        ? "image/webp"
+        : "image/jpeg";
+    const buf = Buffer.from(await res.arrayBuffer());
+    return { base64: buf.toString("base64"), mediaType };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Use Claude Haiku vision to extract the transfer/deposit amount from a Thai
+ * bank slip image. Returns the parsed amount (satang-free integer baht) or null
+ * when the image is unreadable / not a slip.
+ */
+export async function extractSlipAmount(
+  slipPublicUrl: string,
+): Promise<ActionResult<{ amount: number | null }>> {
+  await requireAuth();
+
+  if (!slipPublicUrl || typeof slipPublicUrl !== "string") {
+    return { ok: false, error: "URL รูปสลิปไม่ถูกต้อง" };
+  }
+
+  try {
+    const img = await fetchImageAsBase64(slipPublicUrl);
+    if (!img) return { ok: true, data: { amount: null } };
+
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const response = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 128,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: img.mediaType, data: img.base64 },
+            },
+            {
+              type: "text",
+              text: 'นี่คือสลิปธนาคารไทย กรุณาอ่านยอดเงินที่โอน/ฝาก (ไม่ใช่ยอดคงเหลือ) ตอบ JSON เท่านั้น ไม่มีข้อความอื่น: {"amount": <number>} หรือ {"amount": null} ถ้าอ่านไม่ได้',
+            },
+          ],
+        },
+      ],
+    });
+
+    const text =
+      response.content[0]?.type === "text" ? response.content[0].text.trim() : "";
+    const match = text.match(/\{[^}]*"amount"\s*:\s*([0-9.]+|null)[^}]*\}/);
+    if (!match) return { ok: true, data: { amount: null } };
+    const raw = match[1];
+    if (raw === "null") return { ok: true, data: { amount: null } };
+    const num = Math.round(parseFloat(raw));
+    if (isNaN(num) || num <= 0) return { ok: true, data: { amount: null } };
+    return { ok: true, data: { amount: num } };
+  } catch (e) {
+    console.error("[chairops] extractSlipAmount failed (non-fatal)", e);
+    return { ok: true, data: { amount: null } };
+  }
 }

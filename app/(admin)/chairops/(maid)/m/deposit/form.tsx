@@ -20,8 +20,10 @@ import { toast } from "sonner";
 import {
   Camera,
   CheckCircle2,
+  Images,
   Landmark,
   Loader2,
+  Sparkles,
   WifiOff,
 } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
@@ -33,6 +35,7 @@ import { isOnline } from "@/lib/chairops/utils/maid-outbox";
 import {
   batchDeposit,
   presignSlipUpload,
+  extractSlipAmount,
 } from "@/app/(admin)/chairops/collect/actions";
 import {
   DEPOSIT_NOTES_GATE_BAHT,
@@ -106,7 +109,9 @@ export function BatchDepositForm({
   const [bankFee, setBankFee] = useState("");
   const [notes, setNotes] = useState("");
   const [slip, setSlip] = useState<SlipState | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [ocrRunning, setOcrRunning] = useState(false);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
   const draftIdRef = useRef<string>(newUuid());
 
   const depositedId = useId();
@@ -190,13 +195,26 @@ export function BatchDepositForm({
         toast.error("อัปโหลดรูปไม่สำเร็จ");
         return;
       }
+      const publicUrl = presign.data.publicUrl;
       setSlip({
-        publicUrl: presign.data.publicUrl,
+        publicUrl,
         hash,
         previewUrl: URL.createObjectURL(blob),
         sizeKb: Math.round(blob.size / 1024),
       });
       toast.success(`แนบสลิปแล้ว (${Math.round(blob.size / 1024)} KB)`);
+
+      // OCR: อ่านยอดจากสลิปอัตโนมัติ (best-effort)
+      setOcrRunning(true);
+      extractSlipAmount(publicUrl)
+        .then((result) => {
+          if (result.ok && result.data.amount !== null && depositedNum === 0) {
+            setDeposited(String(result.data.amount));
+            toast.success(`OCR อ่านยอดได้ ${result.data.amount.toLocaleString()} ฿ · ตรวจสอบก่อนกดบันทึก`);
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => setOcrRunning(false));
     } catch {
       toast.error("เกิดข้อผิดพลาด");
     } finally {
@@ -457,40 +475,73 @@ export function BatchDepositForm({
                 </span>
                 <span className="font-mono text-zinc-500">{slip.sizeKb} KB</span>
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => cameraRef.current?.click()}
+                  disabled={uploading || pending}
+                  className="h-12 text-sm"
+                >
+                  <Camera className="mr-1.5 h-4 w-4" /> ถ่ายใหม่
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => galleryRef.current?.click()}
+                  disabled={uploading || pending}
+                  className="h-12 text-sm"
+                >
+                  <Images className="mr-1.5 h-4 w-4" /> เลือกใหม่
+                </Button>
+              </div>
+            </div>
+          ) : uploading ? (
+            <div className="flex h-14 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 text-sm text-zinc-600">
+              <Loader2 className="h-5 w-5 animate-spin" /> กำลังอัปโหลด...
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => fileRef.current?.click()}
+                onClick={() => cameraRef.current?.click()}
                 disabled={uploading || pending}
-                className="h-12 w-full"
+                className="h-14 text-sm"
               >
-                ถ่ายใหม่
+                <Camera className="mr-2 h-5 w-5" /> ถ่ายรูปสด
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => galleryRef.current?.click()}
+                disabled={uploading || pending}
+                className="h-14 text-sm"
+              >
+                <Images className="mr-2 h-5 w-5" /> เลือกจากคลัง
               </Button>
             </div>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading || pending}
-              className="h-14 w-full text-base"
-            >
-              {uploading ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" /> กำลังอัปโหลด...
-                </>
-              ) : (
-                <>
-                  <Camera className="mr-2 h-5 w-5" /> ถ่ายรูปสลิปธนาคาร
-                </>
-              )}
-            </Button>
           )}
+          {ocrRunning && (
+            <div className="flex items-center gap-2 text-xs text-violet-600">
+              <Sparkles className="h-3.5 w-3.5 animate-pulse" />
+              กำลังอ่านยอดจากสลิป...
+            </div>
+          )}
+          {/* camera — บังคับเปิดกล้อง */}
           <input
-            ref={fileRef}
+            ref={cameraRef}
             type="file"
             accept="image/*"
             capture="environment"
+            className="hidden"
+            onChange={onPickSlip}
+          />
+          {/* gallery — เปิด file picker ปกติ */}
+          <input
+            ref={galleryRef}
+            type="file"
+            accept="image/*"
             className="hidden"
             onChange={onPickSlip}
           />
