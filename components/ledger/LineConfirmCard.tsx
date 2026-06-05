@@ -15,12 +15,21 @@
 // Confidence colours follow the Pool palette used in the web review pane so the
 // LINE card and the desktop ConfidenceTag agree: ≥0.85 green · ≥0.6 amber · low rose.
 
+import type { ExpenseDocType } from "@/lib/ledger/types";
+
 /** Per-field OCR confidence (0–1) returned by ai-parse (jsonb on ledger_expense). */
 export interface LedgerOcrConfidence {
   vendor?: number;
   doc_date?: number;
   total?: number;
   [field: string]: number | undefined;
+}
+
+/** Minimal line-item shape the card renders (a lenient subset of ExpenseItem). */
+export interface ConfirmCardItem {
+  description: string;
+  qty?: number;
+  amount?: number;
 }
 
 /** Minimal draft-expense shape needed to render the LINE confirm card. */
@@ -51,6 +60,21 @@ export interface LedgerConfirmCardInput {
   branchName?: string | null;
   /** Payment method as read (cash|transfer|qr|credit_card|other), optional. */
   paymentMethod?: string | null;
+  // — Bainy-parity fields (all optional; each renders its row only when present) —
+  /** ประเภทเอกสาร (AI-classified). Shows a "ประเภท" row when present. */
+  docType?: ExpenseDocType | null;
+  /** เลขที่เอกสารของผู้ขาย (invoice/receipt no.) — shown as a รายละเอียด row. */
+  vendorDocNumber?: string | null;
+  /** ที่อยู่ผู้ขาย (ย่อ) — shown as a wrapped รายละเอียด row. */
+  vendorAddress?: string | null;
+  /** ส่วนลดระดับเอกสาร (THB). Shows a "ส่วนลด" row only when > 0. */
+  discount?: number | null;
+  /** วันที่บันทึก (capture/record date, ISO) — the 2nd date beside docDate (วันที่บิล). */
+  recordedDate?: string | null;
+  /** Free-text detail (note) — e.g. the "จด …" text or a dup warning. */
+  note?: string | null;
+  /** Line items read off the receipt — rendered as a compact list block. */
+  items?: ConfirmCardItem[] | null;
   /** Per-field confidence — drives the low-confidence warning + colour. */
   confidence?: LedgerOcrConfidence | null;
   /** True when Recheck flagged a math/format mismatch (subtotal+vat≠total, bad taxid…). */
@@ -117,7 +141,8 @@ type FlexImage = {
 };
 type FlexAction =
   | { type: "uri"; label: string; uri: string }
-  | { type: "postback"; label: string; data: string; displayText?: string };
+  | { type: "postback"; label: string; data: string; displayText?: string }
+  | { type: "message"; label: string; text: string };
 type FlexButton = {
   type: "button";
   style: "primary" | "secondary" | "link";
@@ -216,6 +241,76 @@ function fmtPayment(m?: string | null): string | null {
   return PAYMENT_LABEL[m] ?? m;
 }
 
+const DOC_TYPE_LABEL: Record<string, string> = {
+  tax_invoice: "ใบกำกับภาษี",
+  receipt: "ใบเสร็จรับเงิน",
+  cash_bill: "บิลเงินสด",
+  delivery_note: "ใบส่งของ",
+  other: "อื่น ๆ",
+};
+function fmtDocType(t?: string | null): string | null {
+  if (!t) return null;
+  return DOC_TYPE_LABEL[t] ?? t;
+}
+
+// LINE flex truncates long values badly; keep a wrapped detail (address/note)
+// readable but bounded so the bubble doesn't balloon.
+function clip(s: string, max = 80): string {
+  return s.length > max ? s.slice(0, max - 1) + "…" : s;
+}
+
+const MAX_CARD_ITEMS = 5; // keep the bubble short; overflow noted as "+ อีก N"
+/** A compact "รายการสินค้า" block (header + up to N line items + overflow). */
+function itemsBlock(items: ConfirmCardItem[]): FlexBox {
+  const shown = items.slice(0, MAX_CARD_ITEMS);
+  const overflow = items.length - shown.length;
+  const lines: FlexComponent[] = shown.map((it) => {
+    const qtyTxt = it.qty != null && it.qty !== 1 ? ` ×${it.qty}` : "";
+    return {
+      type: "box",
+      layout: "baseline",
+      spacing: "sm",
+      contents: [
+        {
+          type: "text",
+          text: `• ${clip(it.description, 40)}${qtyTxt}`,
+          size: "xs",
+          color: COLOR.ink,
+          flex: 5,
+          wrap: true,
+        },
+        {
+          type: "text",
+          text: it.amount != null ? fmtTHB(it.amount) : "—",
+          size: "xs",
+          color: COLOR.sub,
+          align: "end",
+          flex: 3,
+        },
+      ],
+    };
+  });
+  if (overflow > 0) {
+    lines.push({
+      type: "text",
+      text: `+ อีก ${overflow} รายการ`,
+      size: "xs",
+      color: COLOR.sub,
+      margin: "xs",
+    });
+  }
+  return {
+    type: "box",
+    layout: "vertical",
+    margin: "md",
+    spacing: "xs",
+    contents: [
+      { type: "text", text: "รายการสินค้า", size: "xs", color: COLOR.sub, weight: "bold" },
+      ...lines,
+    ],
+  };
+}
+
 /** Lowest confidence across the key fields → drives the "ตรวจ" nudge on the card. */
 function lowestConfidence(c?: LedgerOcrConfidence | null): number | null {
   if (!c) return null;
@@ -279,6 +374,13 @@ export function buildConfirmBubble(input: LedgerConfirmCardInput): FlexBubble {
     categoryName,
     branchName,
     paymentMethod,
+    docType,
+    vendorDocNumber,
+    vendorAddress,
+    discount,
+    recordedDate,
+    note,
+    items,
     confidence,
     needsReview,
     baseUrl = "",
@@ -288,6 +390,7 @@ export function buildConfirmBubble(input: LedgerConfirmCardInput): FlexBubble {
 
   const base = baseUrl.replace(/\/+$/, "");
   const payment = fmtPayment(paymentMethod);
+  const docTypeLabel = fmtDocType(docType);
   const lowConf = lowestConfidence(confidence);
   // The web review pane path (pin the company so a multi-company org opens the
   // right one, then select the expense).
@@ -354,14 +457,24 @@ export function buildConfirmBubble(input: LedgerConfirmCardInput): FlexBubble {
       margin: "lg",
       spacing: "sm",
       contents: [
+        ...(docTypeLabel ? [fieldRow("ประเภท", docTypeLabel)] : []),
         fieldRow("ร้านค้า", vendor ?? "—", confidence?.vendor),
-        fieldRow("วันที่", fmtDate(docDate), confidence?.doc_date),
+        ...(vendorDocNumber ? [fieldRow("เลขที่เอกสาร", vendorDocNumber)] : []),
+        fieldRow("วันที่บิล", fmtDate(docDate), confidence?.doc_date),
+        ...(recordedDate ? [fieldRow("วันที่บันทึก", fmtDate(recordedDate))] : []),
         fieldRow("หมวด", categoryName ?? "ยังไม่จัดหมวด", confidence?.category),
         ...(branchName ? [fieldRow("สาขา", branchName)] : []),
         ...(payment ? [fieldRow("ชำระโดย", payment, confidence?.payment_method)] : []),
+        ...(discount != null && discount > 0
+          ? [fieldRow("ส่วนลด", `−${fmtTHB(discount)}`)]
+          : []),
         ...(vat != null && vat > 0 ? [fieldRow("VAT", fmtTHB(vat))] : []),
+        ...(vendorAddress ? [fieldRow("ที่อยู่", clip(vendorAddress))] : []),
+        ...(note ? [fieldRow("รายละเอียด", clip(note))] : []),
       ],
     },
+    // รายการสินค้า (line items) — own block; only when the receipt had any.
+    ...(items && items.length > 0 ? [itemsBlock(items)] : []),
   ];
 
   // Recheck / low-confidence banner.
@@ -602,6 +715,151 @@ export function buildLineConfirmCarousel(
       type: "carousel",
       contents: [summaryBubble, ...shown.map(buildConfirmBubble)],
     },
+  };
+}
+
+/** One "emoji · how-to" line in the welcome card. */
+function howtoLine(emoji: string, text: string): FlexBox {
+  return {
+    type: "box",
+    layout: "baseline",
+    spacing: "md",
+    contents: [
+      { type: "text", text: emoji, size: "sm", flex: 0 },
+      { type: "text", text, size: "sm", color: COLOR.ink, flex: 8, wrap: true },
+    ],
+  };
+}
+
+/**
+ * Build the WELCOME flex card the bot replies with when it's added to a LINE
+ * group (event `join`) or followed in a 1:1 chat (event `follow`). Bainy-style:
+ * น้องใบเสร็จ greets the team, shows the 3 ways to use it (photo / "จด" text /
+ * ask), reassures that nothing auto-posts, and offers two working buttons —
+ * "วิธีใช้" (sends /help) and "ผูกกลุ่มกับสาขา" (sends /setting, admin-gated).
+ *
+ * Pure builder (no imports) like the confirm card — the webhook drops it into
+ * messages: [...]. Buttons use `message` actions so the staffer never leaves LINE
+ * (they post /help · /setting, which lib/ledger/line-commands.ts answers).
+ */
+export function buildLedgerWelcomeCard(opts: { baseUrl?: string } = {}): LineFlexMessage {
+  const base = (opts.baseUrl ?? "").replace(/\/+$/, "");
+  const mascotUrl = base ? `${base}${mascotPath("welcome")}` : null;
+
+  const bubble: FlexBubble = {
+    type: "bubble",
+    size: "kilo",
+    header: {
+      type: "box",
+      layout: "horizontal",
+      paddingAll: "16px",
+      spacing: "md",
+      alignItems: "center",
+      backgroundColor: "#EFF4FF",
+      contents: [
+        ...(mascotUrl
+          ? ([
+              {
+                type: "image",
+                url: mascotUrl,
+                size: "sm",
+                aspectMode: "fit",
+                aspectRatio: "1:1",
+                flex: 0,
+              } as FlexImage,
+            ] as FlexComponent[])
+          : []),
+        {
+          type: "box",
+          layout: "vertical",
+          flex: 1,
+          spacing: "none",
+          contents: [
+            {
+              type: "text",
+              text: "สวัสดีครับ ผมน้องใบเสร็จ 🧾",
+              size: "md",
+              weight: "bold",
+              color: COLOR.ink,
+              wrap: true,
+            },
+            {
+              type: "text",
+              text: "ผู้ช่วยบันทึกค่าใช้จ่ายของกลุ่มนี้",
+              size: "xs",
+              color: COLOR.sub,
+              margin: "xs",
+              wrap: true,
+            },
+          ],
+        },
+      ],
+    },
+    body: {
+      type: "box",
+      layout: "vertical",
+      paddingAll: "16px",
+      spacing: "sm",
+      contents: [
+        { type: "text", text: "ใช้งานง่าย ๆ 3 วิธี", size: "xs", color: COLOR.sub, weight: "bold" },
+        howtoLine("📷", "ส่งรูปใบเสร็จ/บิล — ผมอ่านยอด ร้าน วันที่ ให้อัตโนมัติ"),
+        howtoLine("✏️", 'พิมพ์ "จด ค่ากาแฟ 45" — บันทึกเร็ว ไม่ต้องมีรูป'),
+        howtoLine("💬", 'ถาม "สรุปเดือนนี้" — ดูยอดรวมในกลุ่มได้เลย'),
+        { type: "separator", margin: "lg", color: COLOR.line },
+        {
+          type: "box",
+          layout: "vertical",
+          margin: "lg",
+          paddingAll: "10px",
+          cornerRadius: "8px",
+          backgroundColor: "#F4F4F5",
+          contents: [
+            {
+              type: "text",
+              text: "ทุกใบที่บันทึกเป็น “ฉบับร่าง” — ฝ่ายบัญชีตรวจและยืนยันบนเว็บอีกที ไม่โพสต์อัตโนมัติ ✅",
+              size: "xs",
+              color: COLOR.sub,
+              wrap: true,
+            },
+          ],
+        },
+        {
+          type: "text",
+          text: "แอดมิน: พิมพ์ /setting เพื่อผูกกลุ่มนี้กับสาขา",
+          size: "xs",
+          color: COLOR.brand,
+          margin: "md",
+          wrap: true,
+        },
+      ],
+    },
+    footer: {
+      type: "box",
+      layout: "vertical",
+      spacing: "sm",
+      paddingAll: "16px",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          height: "sm",
+          color: COLOR.brand,
+          action: { type: "message", label: "📖 วิธีใช้ทั้งหมด", text: "/help" },
+        },
+        {
+          type: "button",
+          style: "secondary",
+          height: "sm",
+          action: { type: "message", label: "🔗 ผูกกลุ่มกับสาขา", text: "/setting" },
+        },
+      ],
+    },
+  };
+
+  return {
+    type: "flex",
+    altText: "สวัสดีครับ ผมน้องใบเสร็จ — ส่งรูปใบเสร็จ หรือพิมพ์ “จด ค่ากาแฟ 45” ได้เลย",
+    contents: bubble,
   };
 }
 

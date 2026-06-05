@@ -22,7 +22,11 @@ import { parseExpenseText, stripJodTrigger } from "@/lib/ledger/parse-text";
 import { findRecentAmountDuplicate } from "@/lib/ledger/dedup";
 import { handleLedgerCommand } from "@/lib/ledger/line-commands";
 import { archiveReceiptToDrive, isDriveConfigured } from "@/lib/ledger/drive";
-import { buildLineConfirmCard, type LineFlexMessage } from "@/components/ledger/LineConfirmCard";
+import {
+  buildLineConfirmCard,
+  buildLedgerWelcomeCard,
+  type LineFlexMessage,
+} from "@/components/ledger/LineConfirmCard";
 import { openOrAppendBatch, flushBatchAfterQuiet } from "@/lib/ledger/capture-batch";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
 
@@ -115,6 +119,8 @@ export async function POST(
   const baseUrl = getRequestBaseUrl(req);
   // LedgerLine's own LIFF — buttons open the review pane THROUGH it (login in LINE).
   const ledgerLiffId = process.env.NEXT_PUBLIC_LEDGER_LIFF_ID || undefined;
+  // Today (Asia/Bangkok) = the "วันที่บันทึก" shown on the card beside the bill date.
+  const todayBkk = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 
   // Fast 200 — process after the response.
   after(async () => {
@@ -135,6 +141,22 @@ export async function POST(
     };
 
     for (const ev of body.events ?? []) {
+      // --- bot ADDED to a group (`join`) or FOLLOWED in 1:1 (`follow`) → greet,
+      //     Bainy-style. Shows the 3 ways to use it + how to bind the group to a
+      //     branch. We intentionally do NOT greet on `memberJoined` (every new
+      //     person joining a busy branch group would spam the chat).
+      if (ev.type === "join" || ev.type === "follow") {
+        if (ev.replyToken && accessToken) {
+          await replyFlex(
+            accessToken,
+            ev.replyToken,
+            buildLedgerWelcomeCard({ baseUrl }),
+          ).catch((e) =>
+            console.error("[ledger:line-webhook] welcome reply failed", e),
+          );
+        }
+        continue;
+      }
       if (ev.type !== "message") continue;
 
       // --- TEXT → conversational Q&A (สรุปเดือนนี้ / หมวดไหนเยอะสุด / งบ ...) ---
@@ -228,9 +250,11 @@ export async function POST(
                   docCode: res.data.docCode,
                   vendor: parsed.vendor,
                   docDate: parsed.docDate,
+                  recordedDate: todayBkk,
                   total: parsed.total,
                   categoryName: parsed.suggestedCategory,
                   paymentMethod: parsed.paymentMethod ?? ch.defaultPaymentMethod ?? null,
+                  note: text, // รายละเอียด = ข้อความที่พิมพ์มา (เช่น "จด กาแฟ 45")
                   confidence: parsed.confidence,
                   needsReview: !!dup,
                   baseUrl,
@@ -348,6 +372,7 @@ export async function POST(
           source: "line",
           branchId: ch.branchId ?? null, // group = branch auto-tag
           vendor: parsed?.vendor ?? null,
+          docType: parsed?.docType ?? undefined, // AI-classified (falls back tax_invoice)
           vendorTaxId: parsed?.vendorTaxId ?? null,
           vendorDocNumber: parsed?.vendorDocNumber ?? null,
           vendorAddress: parsed?.vendorAddress ?? null,
@@ -380,9 +405,15 @@ export async function POST(
               companyId: ch.companyId,
               docCode: res.data.docCode,
               vendor: parsed?.vendor ?? null,
+              docType: parsed?.docType ?? null,
+              vendorDocNumber: parsed?.vendorDocNumber ?? null,
+              vendorAddress: parsed?.vendorAddress ?? null,
               docDate: parsed?.docDate ?? null,
+              recordedDate: todayBkk,
               total: parsed?.total ?? 0,
+              discount: parsed?.discount ?? null,
               vat: parsed?.vat ?? null,
+              items: parsed?.items ?? null,
               categoryName: null, // accountant picks the category on the web pane
               paymentMethod: parsed?.paymentMethod ?? null,
               confidence: parsed?.confidence ?? null,

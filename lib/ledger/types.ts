@@ -103,6 +103,7 @@ export interface FieldConfidence {
  */
 export interface ParsedReceipt {
   vendor: string | null;
+  docType?: ExpenseDocType | null; // ประเภทเอกสาร (AI-classified from the header)
   vendorTaxId: string | null;
   vendorDocNumber?: string | null; // เลขที่เอกสารของผู้ขาย (invoice no.)
   vendorAddress?: string | null; // ที่อยู่ผู้ขาย

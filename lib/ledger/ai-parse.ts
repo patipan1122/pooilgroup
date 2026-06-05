@@ -15,7 +15,7 @@
 // re-adds the numbers; a human always confirms (no auto-post).
 
 import { checkAiBudget, recordAiUsage } from "@/lib/ai/cost-cap";
-import type { ParsedReceipt, FieldConfidence, ExpenseItem } from "./types";
+import type { ParsedReceipt, FieldConfidence, ExpenseItem, ExpenseDocType } from "./types";
 
 const PRIMARY_MODEL = "gemini-3.1-flash-lite";
 
@@ -38,6 +38,7 @@ const RECEIPT_PROMPT = `คุณเป็นผู้เชี่ยวชา�
 
 {
   "vendor": "<ชื่อร้าน/ผู้ขาย หรือ null>",
+  "doc_type": "<ประเภทเอกสาร: tax_invoice (ใบกำกับภาษี) | receipt (ใบเสร็จรับเงิน) | cash_bill (บิลเงินสด) | delivery_note (ใบส่งของ) | other (อื่นๆ) — ดูจากหัวเอกสาร>",
   "vendor_tax_id": "<เลขผู้เสียภาษี 13 หลัก หรือ null>",
   "vendor_doc_number": "<เลขที่เอกสาร/เลขที่ใบกำกับภาษีของร้าน หรือ null>",
   "vendor_address": "<ที่อยู่ผู้ขายแบบย่อ หรือ null>",
@@ -68,6 +69,7 @@ const RECEIPT_PROMPT = `คุณเป็นผู้เชี่ยวชา�
 
 interface RawParsed {
   vendor?: string | null;
+  doc_type?: string | null;
   vendor_tax_id?: string | null;
   vendor_doc_number?: string | null;
   vendor_address?: string | null;
@@ -91,6 +93,24 @@ interface RawParsed {
 
 function numOrNull(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+/**
+ * Map the AI's doc_type (enum slug OR Thai words) onto our ExpenseDocType.
+ * Defaults to "tax_invoice" (matches the DB default) when unreadable/missing —
+ * so a non-receipt image stays consistent with current behaviour.
+ */
+function normalizeDocType(raw: unknown): ExpenseDocType {
+  const v = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (!v) return "tax_invoice";
+  if (v === "tax_invoice" || v.includes("กำกับ")) return "tax_invoice";
+  if (v === "receipt" || v.includes("เสร็จ")) return "receipt";
+  if (v === "delivery_note" || v.includes("ส่งของ") || v.includes("ส่งสินค้า"))
+    return "delivery_note";
+  if (v === "cash_bill" || v.includes("เงินสด") || v.includes("บิล"))
+    return "cash_bill";
+  if (v === "other" || v.includes("อื่น")) return "other";
+  return "tax_invoice";
 }
 
 function normalizeItems(raw: RawParsed["items"]): ExpenseItem[] {
@@ -239,6 +259,7 @@ export async function parseReceipt(
   // 5. Normalize → ParsedReceipt.
   return {
     vendor: parsed.vendor?.trim() || null,
+    docType: normalizeDocType(parsed.doc_type),
     vendorTaxId: parsed.vendor_tax_id?.replace(/\D/g, "") || null,
     vendorDocNumber: parsed.vendor_doc_number?.trim() || null,
     vendorAddress: parsed.vendor_address?.trim() || null,
