@@ -118,6 +118,7 @@ export type AuditAction =
   | "LEDGER_EXPENSE_CONFIRMED"
   | "LEDGER_EXPENSE_VOIDED"
   | "LEDGER_EXPENSE_EXPORTED"
+  | "LEDGER_EXPENSE_PUSHED_TRCLOUD"
   // LINE Official Account connect for receipt capture. Stores encrypted Channel
   // Secret / Access Token → security-sensitive, recorded for the auditor trail.
   | "LEDGER_LINE_CHANNEL_CONNECTED"

@@ -5546,6 +5546,7 @@ model LedgerTrcloudContact {
   companyId  String   @map("company_id") @db.Uuid
   taxId      String   @default("") @map("tax_id")
   contactId  String   @map("contact_id") // TRCloud system contact id
+  codeNumber String?  @map("code_number") // TRCloud contact code/title (e.g. S260001) — AP customer block needs it
   name       String?
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

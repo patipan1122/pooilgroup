@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS public.ledger_trcloud_contact (
   company_id  uuid        NOT NULL,
   tax_id      text        NOT NULL DEFAULT '',
   contact_id  text        NOT NULL,            -- TRCloud system contact id
+  code_number text,                            -- TRCloud contact code (title, e.g. S260001) — AP customer block requires it
   name        text,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()

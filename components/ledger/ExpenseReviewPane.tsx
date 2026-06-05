@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
 import { ReceiptThumb } from "./ReceiptThumb";
 import { VoucherMenu } from "./VoucherMenu";
+import { SendToTrcloudButton } from "./SendToTrcloudButton";
 import { StatusBadge } from "./_kit/StatusBadge";
 import { ConfidenceTag } from "./_kit/ConfidenceTag";
 import { AmountInput } from "./_kit/AmountInput";
@@ -328,6 +329,13 @@ export function ExpenseReviewPane({
         <div className="flex items-center gap-2">
           {/* ออกเอกสาร PV/JV/PCV/ใบแทนใบเสร็จ — เปิดเอกสารพิมพ์ใน tab ใหม่.
               เปิดได้เฉพาะรายการที่ "ยืนยันแล้ว/ปิดงวด" (ร่าง/ยกเลิก ออกไม่ได้). */}
+          <SendToTrcloudButton
+            expenseId={expense.id}
+            status={expense.status}
+            trcloudDocId={expense.trcloudDocId}
+            trcloudDocNo={expense.trcloudDocNo}
+            trcloudError={expense.trcloudError}
+          />
           <VoucherMenu
             expenseId={expense.id}
             companyId={expense.companyId}
