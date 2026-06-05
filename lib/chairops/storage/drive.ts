@@ -133,7 +133,9 @@ export async function exchangeCodeForTokens(
 // in-memory access-token cache (per refresh token) — access tokens last ~1h
 const tokenCache = new Map<string, { token: string; exp: number }>();
 
-async function refreshAccessToken(refreshToken: string): Promise<string | null> {
+// Exported so other modules (LedgerLine) can REUSE this same Google connection
+// (same OAuth app + the org's stored refresh token) instead of a separate one.
+export async function refreshAccessToken(refreshToken: string): Promise<string | null> {
   const cached = tokenCache.get(refreshToken);
   // 2-minute safety margin so a token can't expire mid-request
   if (cached && cached.exp > Date.now() + 120_000) return cached.token;

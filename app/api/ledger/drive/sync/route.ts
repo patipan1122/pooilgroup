@@ -76,17 +76,20 @@ export async function POST(req: NextRequest) {
   // Period (Asia/Bangkok) for the month folder.
   const bkk = new Date(Date.now() + 7 * 3600_000);
   const period = `${bkk.getUTCFullYear()}-${String(bkk.getUTCMonth() + 1).padStart(2, "0")}`;
-  let branchName: string | null = null;
-  if (exp.branchId) {
-    const b = await prisma.branch.findUnique({ where: { id: exp.branchId }, select: { name: true } });
-    branchName = b?.name ?? null;
-  }
+  const [branchRow, companyRow] = await Promise.all([
+    exp.branchId
+      ? prisma.branch.findUnique({ where: { id: exp.branchId }, select: { name: true } })
+      : Promise.resolve(null),
+    prisma.company.findUnique({ where: { id: body.companyId }, select: { name: true } }),
+  ]);
 
   const drive = await archiveReceiptToDrive({
+    orgId: session.user.org_id,
     bytes,
     mimeType,
     period,
-    branchName,
+    companyName: companyRow?.name ?? null,
+    branchName: branchRow?.name ?? null,
     categoryName: exp.category?.name ?? null,
     docCode: exp.docCode,
     vendor: exp.vendor,

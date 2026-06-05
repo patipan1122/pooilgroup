@@ -534,26 +534,26 @@ export async function POST(
         if (batch && res.ok) {
           pendingFlushes.push(flushBatchAfterQuiet(batch.batchId, flushDeps));
         }
-        // 7. Archive the ORIGINAL to Google Drive (เดือน/สาขา/หมวด), best-effort,
-        //    AFTER the reply (card stays fast). The image stays on R2 as the fast
-        //    thumb; the Drive link is the shareable original for the accountant.
+        // 7. Archive the ORIGINAL to Google Drive (เดือน/ธุรกิจ/สาขา/ประเภท), best-
+        //    effort, AFTER the reply (card stays fast). The image stays on R2 as the
+        //    fast thumb; the Drive link is the shareable original for the accountant.
         if (res.ok && imgBytes && isDriveConfigured()) {
           try {
             const bkk = new Date(Date.now() + 7 * 3600 * 1000);
             const period = `${bkk.getUTCFullYear()}-${String(bkk.getUTCMonth() + 1).padStart(2, "0")}`;
-            let branchName: string | null = null;
-            if (ch.branchId) {
-              const b = await prisma.branch.findUnique({
-                where: { id: ch.branchId },
-                select: { name: true },
-              });
-              branchName = b?.name ?? null;
-            }
+            const [branchRow, companyRow] = await Promise.all([
+              effectiveBranchId
+                ? prisma.branch.findUnique({ where: { id: effectiveBranchId }, select: { name: true } })
+                : Promise.resolve(null),
+              prisma.company.findUnique({ where: { id: ch.companyId }, select: { name: true } }),
+            ]);
             const drive = await archiveReceiptToDrive({
+              orgId: ch.orgId,
               bytes: imgBytes,
               mimeType: imgMime,
               period,
-              branchName,
+              companyName: companyRow?.name ?? null,
+              branchName: branchRow?.name ?? null,
               categoryName: parsed?.suggestedCategory ?? null,
               docCode: res.data.docCode,
               vendor: parsed?.vendor ?? null,

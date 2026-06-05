@@ -1,52 +1,50 @@
 // LedgerLine — Google Drive archive for receipt originals.
 //
-// CEO ask: every receipt/slip we read goes into Google Drive "ระบบบัญชี2027",
-// foldered by MONTH → BRANCH → CATEGORY, named meaningfully, with a shareable
-// link the accounting office can open. Keeps R2 light (Drive is free + CEO-owned).
+// CEO 2026-06-05: every receipt/slip goes into Google Drive "ระบบบัญชี2027",
+// foldered MONTH → BUSINESS(company) → BRANCH → CATEGORY, named meaningfully,
+// with a shareable link the accounting office can open. Keeps R2 light.
 //
-// Pure REST (fetch) — mirrors the proven ChairOps drive pattern (drive.file
-// scope, ensureFolder + multipart upload). LedgerLine uses its OWN Drive creds
-// (per-module rule). Reads env:
-//   LEDGER_DRIVE_CLIENT_ID / LEDGER_DRIVE_CLIENT_SECRET / LEDGER_DRIVE_REFRESH_TOKEN
-//   LEDGER_DRIVE_ROOT_FOLDER_ID  (the "ระบบบัญชี2027" folder id; root if unset)
-//   LEDGER_DRIVE_PUBLIC_LINKS = "1"  → also grant anyone-with-link reader
+// AUTH (CEO: "ใช้อันเดียวกัน"): reuses the SAME Google connection ChairOps already
+// uses — the shared GOOGLE_OAUTH_CLIENT_ID/SECRET app + the org's refresh token
+// stored (encrypted) in ChairopsDriveConnection via the one-time "Connect Google
+// Drive" OAuth click. No separate LEDGER_DRIVE_* creds needed.
 //
-// If not configured, every export is a graceful no-op (returns null) so LINE
-// capture never breaks — the image simply stays on R2.
+// NOTE on scope: the OAuth scope is `drive.file` (app sees ONLY files it creates),
+// so we create our OWN "ระบบบัญชี2027" root — the app cannot write into a folder a
+// human made by hand. The structure inside is exactly เดือน/ธุรกิจ/สาขา/ประเภท.
+//
+// If the org hasn't connected Drive yet, every export is a graceful no-op (returns
+// null) so LINE/LIFF capture never breaks — the image simply stays on R2.
 
-const TOKEN_URL = "https://oauth2.googleapis.com/token";
+import {
+  isDriveOAuthConfigured,
+  getDriveConnection,
+  decryptToken,
+  refreshAccessToken,
+} from "@/lib/chairops/storage/drive";
+
 const FILES_URL = "https://www.googleapis.com/drive/v3/files";
 const UPLOAD_URL =
   "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink";
 
+/** The LedgerLine root folder name in the shared Drive (configurable). */
+const ROOT_NAME = process.env.LEDGER_DRIVE_ROOT_NAME || "ระบบบัญชี2027";
+
+/** Env-level gate (the shared Google OAuth app). The per-org connection (refresh
+ *  token) is checked at runtime inside archiveReceiptToDrive. */
 export function isDriveConfigured(): boolean {
-  return !!(
-    process.env.LEDGER_DRIVE_CLIENT_ID &&
-    process.env.LEDGER_DRIVE_CLIENT_SECRET &&
-    process.env.LEDGER_DRIVE_REFRESH_TOKEN
-  );
+  return isDriveOAuthConfigured();
 }
 
-async function getAccessToken(): Promise<string | null> {
-  if (!isDriveConfigured()) return null;
+/** Resolve a usable access token from the org's SHARED (ChairOps) Drive connection. */
+async function getAccessToken(orgId: string): Promise<string | null> {
+  if (!isDriveOAuthConfigured()) return null;
   try {
-    const res = await fetch(TOKEN_URL, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: process.env.LEDGER_DRIVE_CLIENT_ID!,
-        client_secret: process.env.LEDGER_DRIVE_CLIENT_SECRET!,
-        refresh_token: process.env.LEDGER_DRIVE_REFRESH_TOKEN!,
-        grant_type: "refresh_token",
-      }),
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) {
-      console.error("[ledger:drive] token refresh failed", res.status);
-      return null;
-    }
-    const j = (await res.json()) as { access_token?: string };
-    return j.access_token ?? null;
+    const conn = await getDriveConnection(orgId);
+    if (!conn) return null; // org hasn't connected Google Drive yet
+    const refreshToken = decryptToken(conn.refreshTokenEnc);
+    if (!refreshToken) return null;
+    return await refreshAccessToken(refreshToken);
   } catch (e) {
     console.error("[ledger:drive] token error", e);
     return null;
@@ -56,7 +54,7 @@ async function getAccessToken(): Promise<string | null> {
 const DRIVE_Q = (name: string, parent: string) =>
   `name='${name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parent}' in parents`;
 
-/** Find or create a folder under `parent`; returns its id (or null on failure). */
+/** Find or create a folder under `parent` ("root" allowed); returns its id. */
 async function ensureFolder(
   token: string,
   name: string,
@@ -110,10 +108,14 @@ function sanitize(s: string | null | undefined, fallback: string): string {
 }
 
 export interface DriveArchiveInput {
+  /** Org that owns the receipt — selects the shared Drive connection. */
+  orgId: string;
   bytes: Buffer;
   mimeType: string;
   /** YYYY-MM (Asia/Bangkok period) */
   period: string;
+  /** ธุรกิจ/บริษัท — the top split under the month. null → "ทั่วไป". */
+  companyName: string | null;
   branchName: string | null; // null → "ส่วนกลาง"
   categoryName: string | null; // null → "ยังไม่จัดหมวด"
   docCode: string;
@@ -122,25 +124,32 @@ export interface DriveArchiveInput {
 }
 
 /**
- * Archive a receipt original into Drive at ระบบบัญชี2027/<period>/<branch>/<category>,
- * named <date>_<vendor>_<docCode>.<ext>. Returns { fileId, webViewLink } or null
- * (graceful) when Drive isn't configured or any step fails.
+ * Archive a receipt original into Drive at
+ *   ระบบบัญชี2027 / <เดือน> / <ธุรกิจ> / <สาขา> / <ประเภท> / <date>_<vendor>_<docCode>.<ext>
+ * Returns { fileId, webViewLink } or null (graceful) when Drive isn't connected
+ * for this org or any step fails. Evidence pack for the accounting office.
  */
 export async function archiveReceiptToDrive(
   input: DriveArchiveInput,
 ): Promise<{ fileId: string; webViewLink: string } | null> {
-  const token = await getAccessToken();
+  const token = await getAccessToken(input.orgId);
   if (!token) return null;
-  const root = process.env.LEDGER_DRIVE_ROOT_FOLDER_ID || "root";
+
+  // App-owned root (drive.file scope can't reuse a hand-made folder). Optional
+  // LEDGER_DRIVE_ROOT_FOLDER_ID pins an explicit folder id if ever shared to the app.
+  const explicitRoot = process.env.LEDGER_DRIVE_ROOT_FOLDER_ID;
+  const baseId = explicitRoot || (await ensureFolder(token, ROOT_NAME, "root"));
+  if (!baseId) return null;
 
   const folderId = await ensureFolderPath(
     token,
     [
-      input.period,
-      sanitize(input.branchName, "ส่วนกลาง"),
-      sanitize(input.categoryName, "ยังไม่จัดหมวด"),
+      input.period, // เดือน (YYYY-MM)
+      sanitize(input.companyName, "ทั่วไป"), // ธุรกิจ/บริษัท
+      sanitize(input.branchName, "ส่วนกลาง"), // สาขา
+      sanitize(input.categoryName, "ยังไม่จัดหมวด"), // ประเภทค่าใช้จ่าย
     ],
-    root,
+    baseId,
   );
   if (!folderId) return null;
 

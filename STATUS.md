@@ -4,7 +4,7 @@
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
-## 🆕 Update (2026-06-05 — LedgerLine ↔ TRCloud API push สมบูรณ์: ✅ BUILT + LIVE-VERIFIED · ยังไม่ deploy)
+## 🆕 Update (2026-06-05 — LedgerLine ↔ TRCloud API push สมบูรณ์: 🚀 DEPLOYED LIVE · setup 24c80e9 · migration applied)
 
 **สิ่งที่ทำ:** เชื่อมระบบบัญชี (LedgerLine) → TRCloud แบบ API เต็มรูป — นักบัญชีกด "ส่งเข้า TRCloud" ใบที่ยืนยันแล้ว → ระบบสร้าง **ใบกำกับภาษีซื้อ (AP)** ให้อัตโนมัติ ไม่ต้องคีย์ซ้ำ
 **กันซ้ำ (search-before-create):** หาคู่ค้าด้วยเลขภาษี · หาสินค้าด้วยชื่อ → เจอใช้ซ้ำ ไม่เจอสร้างใหม่ (สินค้า = บริการ status=0 ไม่ตัดสต๊อก · ผูกผังบัญชีตามหมวด) → จำ id ใน `ledger_trcloud_contact`/`ledger_trcloud_product`
