@@ -264,6 +264,7 @@ export function UserDetailForm({
         {target.isActive ? (
           <DeactivateSection
             targetId={target.id}
+            targetName={target.displayName}
             canManage={canManage}
             isPending={isPending}
             startTransition={startTransition}
@@ -315,11 +316,13 @@ const OFFBOARDING_LABEL: Record<OffboardingReason, string> = {
 
 function DeactivateSection({
   targetId,
+  targetName,
   canManage,
   isPending,
   startTransition,
 }: {
   targetId: string;
+  targetName: string;
   canManage: boolean;
   isPending: boolean;
   startTransition: (fn: () => void) => void;
@@ -327,6 +330,7 @@ function DeactivateSection({
   const [reason, setReason] = useState<OffboardingReason>("RESIGNED");
   const [note, setNote] = useState("");
   const [confirming, setConfirming] = useState(false);
+  const [confirmName, setConfirmName] = useState("");
 
   if (!confirming) {
     return (
@@ -374,12 +378,25 @@ function DeactivateSection({
           className="w-full resize-none rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm focus:outline-none"
         />
       </div>
+      {/* Q5: Name confirmation — admin must type the maid's name to proceed */}
+      <div className="space-y-1.5">
+        <label className="block text-xs font-medium text-zinc-700">
+          พิมพ์ชื่อ <span className="font-bold text-zinc-900">{targetName}</span> เพื่อยืนยัน
+        </label>
+        <Input
+          value={confirmName}
+          onChange={(e) => setConfirmName(e.target.value)}
+          placeholder={targetName}
+          disabled={isPending}
+          className="text-sm"
+        />
+      </div>
       <div className="flex gap-2">
         <Button
           type="button"
           variant="danger"
           size="sm"
-          disabled={isPending}
+          disabled={isPending || confirmName.trim() !== targetName.trim()}
           loading={isPending}
           onClick={() =>
             startTransition(async () => {
@@ -396,7 +413,7 @@ function DeactivateSection({
           variant="secondary"
           size="sm"
           disabled={isPending}
-          onClick={() => setConfirming(false)}
+          onClick={() => { setConfirming(false); setConfirmName(""); }}
         >
           ยกเลิก
         </Button>

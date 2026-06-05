@@ -23,14 +23,23 @@ export default function MaidDeactivatedPage() {
         หากมีข้อสงสัยกรุณาติดต่อสำนักงาน
       </p>
 
-      {/* Office contact */}
-      <a
-        href="tel:+66020000000"
-        className="inline-flex items-center gap-2 rounded-xl bg-[var(--co-primary)] text-white px-6 py-3 text-base font-semibold active:opacity-80"
-      >
-        <PhoneCall className="h-5 w-5" aria-hidden />
-        โทรสำนักงาน
-      </a>
+      {/* Office contact — two numbers */}
+      <div className="flex flex-col gap-3 w-full max-w-xs">
+        <a
+          href="tel:+66917745963"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--co-primary)] text-white px-6 py-3 text-base font-semibold active:opacity-80"
+        >
+          <PhoneCall className="h-5 w-5" aria-hidden />
+          091-774-5963
+        </a>
+        <a
+          href="tel:+66869801234"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--co-primary)] text-white px-6 py-3 text-base font-semibold active:opacity-80"
+        >
+          <PhoneCall className="h-5 w-5" aria-hidden />
+          086-980-1234
+        </a>
+      </div>
 
       <p className="mt-10 text-xs text-[var(--co-text-muted)]">
         ChairOps · JP Sync Group
