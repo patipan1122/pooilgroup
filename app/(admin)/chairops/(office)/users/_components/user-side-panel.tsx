@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { InviteMaidForm } from "../invite/invite-form";
 import { UserDetailForm } from "../[id]/user-detail-form";
+import { SecondaryBranchPicker } from "./secondary-branch-picker";
 import { canManageUser, canAssignRole } from "@/lib/chairops/auth/role-guards";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
 import type { ChairopsUser } from "@/lib/generated/prisma/client";
@@ -97,6 +98,14 @@ export function UserPanel({
         assignableRoles={assignableRoles}
         branches={branches as Branch[]}
       />
+
+      {user.role === ChairopsUserRole.MAID && manageable && (
+        <SecondaryBranchPicker
+          maidId={user.id}
+          currentSecondaryBranchId={user.secondaryBranchId ?? null}
+          branches={branches}
+        />
+      )}
     </div>
   );
 }

@@ -799,3 +799,103 @@ export async function submitOnboarding(formData: FormData): Promise<ActionResult
   revalidatePath("/chairops/m/onboarding");
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// Profile edit — maid แก้ข้อมูลส่วนตัวหลัง onboard
+// ---------------------------------------------------------------------------
+
+const profileUpdateSchema = z.object({
+  displayName: z.string().min(2, "ชื่ออย่างน้อย 2 ตัวอักษร").max(80),
+  mobilePhone: z.string().min(9, "เบอร์มือถือไม่ถูกต้อง").max(20).regex(/^[0-9+\-() ]+$/, "เบอร์มือถือไม่ถูกต้อง"),
+  emergencyContact: z.string().min(2, "ระบุชื่อผู้ติดต่อ").max(80),
+  emergencyPhone: z.string().min(9, "เบอร์ฉุกเฉินไม่ถูกต้อง").max(20).regex(/^[0-9+\-() ]+$/, "เบอร์ไม่ถูกต้อง"),
+  currentMainEmployer: z.string().max(100).optional(),
+});
+
+export async function updateMaidProfile(formData: FormData): Promise<ActionResult> {
+  const session = await requireExactRole("MAID");
+
+  const parsed = profileUpdateSchema.safeParse({
+    displayName: formData.get("displayName"),
+    mobilePhone: formData.get("mobilePhone"),
+    emergencyContact: formData.get("emergencyContact"),
+    emergencyPhone: formData.get("emergencyPhone"),
+    currentMainEmployer: formData.get("currentMainEmployer") ?? undefined,
+  });
+  if (!parsed.success)
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.chairopsUser.update({
+      where: { id: session.user.id },
+      data: {
+        displayName: parsed.data.displayName,
+        mobilePhone: parsed.data.mobilePhone,
+        emergencyContact: parsed.data.emergencyContact,
+        emergencyPhone: parsed.data.emergencyPhone,
+        currentMainEmployer: parsed.data.currentMainEmployer ?? null,
+      },
+    });
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "user.profile_update",
+        entity: "User",
+        entityId: session.user.id,
+        newValue: { fields: ["displayName", "mobilePhone", "emergencyContact"] },
+      },
+      tx,
+    );
+  });
+
+  revalidatePath("/chairops/m/profile");
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// S1 Cover ชั่วคราว — admin กำหนด/ล้าง secondary branch ของแม่บ้าน
+// ---------------------------------------------------------------------------
+
+export async function assignSecondaryBranch(
+  maidId: string,
+  branchId: string | null,
+): Promise<ActionResult> {
+  const session = await requireRole("MANAGER");
+
+  const target = await prisma.chairopsUser.findUnique({
+    where: { id: maidId, orgId: session.user.orgId },
+    select: { id: true, role: true, displayName: true },
+  });
+  if (!target) return { ok: false, error: "ไม่พบแม่บ้านรายนี้" };
+  if (!canManageUser(session.user, target as Parameters<typeof canManageUser>[1]))
+    return { ok: false, error: "ไม่มีสิทธิ์แก้ไขบัญชีนี้" };
+
+  if (branchId) {
+    const branch = await prisma.chairopsBranch.findUnique({
+      where: { id: branchId, orgId: session.user.orgId },
+      select: { id: true },
+    });
+    if (!branch) return { ok: false, error: "ไม่พบสาขานี้" };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.chairopsUser.update({
+      where: { id: maidId },
+      data: { secondaryBranchId: branchId },
+    });
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: branchId ? "user.secondary_branch_assign" : "user.secondary_branch_clear",
+        entity: "User",
+        entityId: maidId,
+        newValue: { secondaryBranchId: branchId },
+      },
+      tx,
+    );
+  });
+
+  revalidatePath("/chairops/users");
+  revalidatePath(`/chairops/users/${maidId}`);
+  return { ok: true };
+}

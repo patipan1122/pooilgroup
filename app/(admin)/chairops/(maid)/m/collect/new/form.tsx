@@ -27,8 +27,10 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   AlertTriangle,
+  ArrowRight,
   Camera,
   CheckCircle2,
+  ChevronLeft,
   Loader2,
   Wifi,
   WifiOff,
@@ -145,6 +147,8 @@ export function CollectNewForm({
   });
 
   const notesId = useId();
+  // Two-phase UX: "flag" = quick-mark problem chairs first · "amounts" = enter amounts
+  const [phase, setPhase] = useState<"flag" | "amounts">("flag");
 
   useEffect(() => {
     setOnline(isOnline());
@@ -418,188 +422,269 @@ export function CollectNewForm({
         </Card>
       )}
 
-      {/* Chair list — one row per chair. Order = chairCode asc (server sorted). */}
-      <ul className="space-y-2">
-        {chairCodes.map((code) => {
-          const l = lines[code] ?? defaultLine();
-          const isProblem = l.status !== "collected";
-          const movedIn = movedInMap.get(code);
-          return (
-            <li key={code}>
-              <Card
-                className={cn(
-                  "transition-colors",
-                  isProblem
-                    ? "border-amber-300 bg-amber-50/40"
-                    : movedIn
-                      ? "border-sky-300 bg-sky-50/40"
-                      : "border-zinc-200",
-                )}
-              >
-                <CardBody className="space-y-2 p-3">
-                  {movedIn && (
-                    /* Wave-2 B4: copy from MAID POV — she should read it as
-                       "this chair just joined MY branch" not "moved somewhere". */
-                    <div className="flex items-center gap-1.5 text-xs text-sky-700">
-                      <span className="rounded bg-sky-100 px-1.5 py-0.5 font-medium">
-                        🆕 ย้ายเข้าสาขานี้
-                      </span>
-                      <span>
-                        {movedIn.fromName ? `เดิมอยู่ ${movedIn.fromName} · ` : ""}
-                        {fmtMovedAt(movedIn.movedAt)}
-                      </span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <span className="grid h-10 min-w-[64px] place-items-center rounded-md bg-zinc-100 px-2 font-mono text-sm font-semibold text-zinc-900">
+      {/* ─── Phase 1: Quick-flag ─── */}
+      {phase === "flag" && (
+        <>
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
+            กดที่เก้าอี้ตัวไหน <span className="font-semibold text-amber-700">ถ้าเก็บเงินไม่ได้</span>
+            {" "}· ที่เหลือถือว่าเก็บปกติ
+          </div>
+          <ul className="space-y-2">
+            {chairCodes.map((code) => {
+              const l = lines[code] ?? defaultLine();
+              const isProblem = l.status !== "collected";
+              const movedIn = movedInMap.get(code);
+              return (
+                <li key={code}>
+                  <button
+                    type="button"
+                    onClick={() => toggleProblem(code)}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors active:scale-[0.98]",
+                      isProblem
+                        ? "border-amber-300 bg-amber-50 text-amber-900"
+                        : "border-zinc-200 bg-white text-zinc-900",
+                    )}
+                  >
+                    <span className="w-[60px] font-mono text-sm font-bold">
                       {code}
                     </span>
-                    {isProblem ? (
-                      <div className="grow text-sm font-medium text-amber-700">
-                        ⚠ เก็บไม่ได้
-                      </div>
-                    ) : (
-                      <Input
-                        type="tel"
-                        inputMode="numeric"
-                        autoComplete="off"
-                        placeholder="0"
-                        value={l.amount}
-                        onChange={(e) =>
-                          patchLine(code, {
-                            amount: e.target.value.replace(/[^0-9]/g, ""),
-                          })
-                        }
-                        className="h-10 grow text-right text-lg font-semibold tabular-nums"
-                        aria-label={`ยอดที่เก็บได้จาก ${code}`}
-                      />
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => toggleProblem(code)}
-                      className={cn(
-                        "grid size-10 shrink-0 place-items-center rounded-md border transition-colors",
-                        isProblem
-                          ? "border-zinc-300 bg-white text-zinc-600 active:bg-zinc-100"
-                          : "border-amber-300 bg-amber-50 text-amber-700 active:bg-amber-100",
+                    <span className="grow text-sm">
+                      {movedIn && (
+                        <span className="mr-2 rounded bg-sky-100 px-1.5 py-0.5 text-[11px] font-medium text-sky-700">
+                          🆕 ย้ายเข้า
+                        </span>
                       )}
-                      aria-label={
-                        isProblem
-                          ? `ยกเลิก ขัดข้อง ${code}`
-                          : `ระบุว่า ${code} ขัดข้อง`
+                      {isProblem
+                        ? <span className="font-medium text-amber-700">⚠ เก็บไม่ได้</span>
+                        : <span className="text-zinc-500">เก็บปกติ</span>
                       }
+                    </span>
+                    <span
+                      className={cn(
+                        "grid size-6 shrink-0 place-items-center rounded-full border-2",
+                        isProblem
+                          ? "border-amber-400 bg-amber-400 text-white"
+                          : "border-zinc-300 bg-white",
+                      )}
                     >
-                      {isProblem ? (
-                        <X className="size-5" aria-hidden />
-                      ) : (
-                        <AlertTriangle className="size-5" aria-hidden />
-                      )}
-                    </button>
-                  </div>
-                  {isProblem && (
-                    <div className="space-y-2 rounded-md border border-amber-200 bg-white p-2">
-                      <select
-                        value={l.reasonCode}
-                        onChange={(e) =>
-                          patchLine(code, { reasonCode: e.target.value })
-                        }
-                        className="h-10 w-full rounded-md border border-zinc-200 bg-white px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-                        aria-label={`เหตุผล ${code}`}
-                      >
-                        {REASON_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                      {l.reasonCode === "other" && (
-                        <Input
-                          type="text"
-                          placeholder="ระบุเหตุผล …"
-                          value={l.reasonFree}
-                          onChange={(e) =>
-                            patchLine(code, { reasonFree: e.target.value })
-                          }
-                          className="h-10"
-                          maxLength={200}
-                          aria-label={`พิมพ์เหตุผลของ ${code}`}
-                        />
-                      )}
-                      {l.reasonCode === "chair_missing" && (
-                        <div className="space-y-1">
+                      {isProblem && <X className="size-3.5" aria-hidden />}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <Button
+            type="button"
+            size="xl"
+            className="h-14 w-full text-base font-semibold"
+            onClick={() => setPhase("amounts")}
+            disabled={chairCodes.length === 0}
+          >
+            กรอกยอดต่อ
+            <ArrowRight className="ml-2 h-5 w-5" />
+          </Button>
+          {totals.problem > 0 && (
+            <p className="text-center text-xs text-amber-700">
+              มีปัญหา {totals.problem} ตัว · กด "กรอกยอดต่อ" เพื่อระบุเหตุผล
+            </p>
+          )}
+        </>
+      )}
+
+      {/* ─── Phase 2: Enter amounts ─── */}
+      {phase === "amounts" && (
+        <>
+          <button
+            type="button"
+            onClick={() => setPhase("flag")}
+            className="flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-800"
+          >
+            <ChevronLeft className="h-4 w-4" /> แก้ไขสถานะ
+          </button>
+
+          {/* Normal chairs */}
+          {chairCodes.filter((c) => (lines[c] ?? defaultLine()).status === "collected").length > 0 && (
+            <section className="space-y-2">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                เก้าอี้เก็บปกติ
+              </h2>
+              <ul className="space-y-2">
+                {chairCodes
+                  .filter((c) => (lines[c] ?? defaultLine()).status === "collected")
+                  .map((code) => {
+                    const l = lines[code] ?? defaultLine();
+                    const movedIn = movedInMap.get(code);
+                    return (
+                      <li key={code}>
+                        <div className="flex items-center gap-2">
+                          <span className="grid h-10 min-w-[64px] place-items-center rounded-md bg-zinc-100 px-2 font-mono text-sm font-semibold text-zinc-900">
+                            {code}
+                            {movedIn && (
+                              <span className="ml-1 text-[9px] text-sky-600">🆕</span>
+                            )}
+                          </span>
                           <Input
-                            type="text"
-                            placeholder="พบรหัสจริง (ถ้ามี) เช่น CH-2042"
-                            value={l.foundChairCode ?? ""}
+                            type="tel"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            placeholder="0"
+                            value={l.amount}
                             onChange={(e) =>
                               patchLine(code, {
-                                foundChairCode: e.target.value
-                                  .toUpperCase()
-                                  .replace(/[^A-Z0-9_-]/g, "")
-                                  .slice(0, 40),
+                                amount: e.target.value.replace(/[^0-9]/g, ""),
                               })
                             }
-                            className="h-10 font-mono"
-                            maxLength={40}
-                            aria-label={`รหัสจริงที่พบแทน ${code}`}
+                            className="h-10 grow text-right text-lg font-semibold tabular-nums"
+                            aria-label={`ยอดที่เก็บได้จาก ${code}`}
                           />
-                          <p className="text-[11px] text-amber-700">
-                            ถ้าไม่มีเก้าอี้เลย ปล่อยว่าง · ออฟฟิศจะตามตรวจ
-                          </p>
+                          <span className="text-sm text-zinc-500">฿</span>
+                          <button
+                            type="button"
+                            onClick={() => toggleProblem(code)}
+                            className="grid size-10 shrink-0 place-items-center rounded-md border border-amber-300 bg-amber-50 text-amber-700 active:bg-amber-100"
+                            aria-label={`ระบุว่า ${code} ขัดข้อง`}
+                          >
+                            <AlertTriangle className="size-5" aria-hidden />
+                          </button>
                         </div>
-                      )}
-                      <ChairPhotoButton
-                        code={code}
-                        state={l}
-                        onPick={(file) => void onPickChairPhoto(code, file)}
-                        disabled={pending}
-                      />
-                    </div>
-                  )}
-                </CardBody>
-              </Card>
-            </li>
-          );
-        })}
-      </ul>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </section>
+          )}
 
-      <Card>
-        <CardBody className="space-y-2 p-4">
-          <label
-            htmlFor={notesId}
-            className="text-sm font-semibold text-zinc-800"
+          {/* Problem chairs */}
+          {chairCodes.filter((c) => (lines[c] ?? defaultLine()).status !== "collected").length > 0 && (
+            <section className="space-y-2">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+                เก้าอี้มีปัญหา — ระบุเหตุผล
+              </h2>
+              <ul className="space-y-2">
+                {chairCodes
+                  .filter((c) => (lines[c] ?? defaultLine()).status !== "collected")
+                  .map((code) => {
+                    const l = lines[code] ?? defaultLine();
+                    return (
+                      <li key={code}>
+                        <Card className="border-amber-300 bg-amber-50/40">
+                          <CardBody className="space-y-2 p-3">
+                            <div className="flex items-center gap-2">
+                              <span className="grid h-8 min-w-[60px] place-items-center rounded-md bg-amber-100 px-2 font-mono text-sm font-semibold text-amber-900">
+                                {code}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => toggleProblem(code)}
+                                className="ml-auto grid size-8 shrink-0 place-items-center rounded-md border border-zinc-300 bg-white text-zinc-600 active:bg-zinc-100"
+                                aria-label={`ยกเลิก ขัดข้อง ${code}`}
+                              >
+                                <X className="size-4" aria-hidden />
+                              </button>
+                            </div>
+                            <select
+                              value={l.reasonCode}
+                              onChange={(e) => patchLine(code, { reasonCode: e.target.value })}
+                              className="h-10 w-full rounded-md border border-zinc-200 bg-white px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                              aria-label={`เหตุผล ${code}`}
+                            >
+                              {REASON_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                            {l.reasonCode === "other" && (
+                              <Input
+                                type="text"
+                                placeholder="ระบุเหตุผล …"
+                                value={l.reasonFree}
+                                onChange={(e) => patchLine(code, { reasonFree: e.target.value })}
+                                className="h-10"
+                                maxLength={200}
+                                aria-label={`พิมพ์เหตุผลของ ${code}`}
+                              />
+                            )}
+                            {l.reasonCode === "chair_missing" && (
+                              <div className="space-y-1">
+                                <Input
+                                  type="text"
+                                  placeholder="พบรหัสจริง (ถ้ามี) เช่น CH-2042"
+                                  value={l.foundChairCode ?? ""}
+                                  onChange={(e) =>
+                                    patchLine(code, {
+                                      foundChairCode: e.target.value
+                                        .toUpperCase()
+                                        .replace(/[^A-Z0-9_-]/g, "")
+                                        .slice(0, 40),
+                                    })
+                                  }
+                                  className="h-10 font-mono"
+                                  maxLength={40}
+                                  aria-label={`รหัสจริงที่พบแทน ${code}`}
+                                />
+                                <p className="text-[11px] text-amber-700">
+                                  ถ้าไม่มีเก้าอี้เลย ปล่อยว่าง · ออฟฟิศจะตามตรวจ
+                                </p>
+                              </div>
+                            )}
+                            <ChairPhotoButton
+                              code={code}
+                              state={l}
+                              onPick={(file) => void onPickChairPhoto(code, file)}
+                              disabled={pending}
+                            />
+                          </CardBody>
+                        </Card>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </section>
+          )}
+        </>
+      )}
+
+      {phase === "amounts" && (
+        <>
+          <Card>
+            <CardBody className="space-y-2 p-4">
+              <label htmlFor={notesId} className="text-sm font-semibold text-zinc-800">
+                หมายเหตุรอบนี้ (ถ้ามี)
+              </label>
+              <textarea
+                id={notesId}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+                maxLength={500}
+                placeholder="เช่น แลกเงินก่อนฝาก, มีเหรียญแยก, ..."
+                className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              />
+            </CardBody>
+          </Card>
+
+          <Button
+            type="submit"
+            size="xl"
+            className="h-14 w-full text-base font-semibold"
+            disabled={pending || chairCodes.length === 0}
           >
-            หมายเหตุรอบนี้ (ถ้ามี)
-          </label>
-          <textarea
-            id={notesId}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={3}
-            maxLength={500}
-            placeholder="เช่น แลกเงินก่อนฝาก, มีเหรียญแยก, ..."
-            className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-          />
-        </CardBody>
-      </Card>
-
-      <Button
-        type="submit"
-        size="xl"
-        className="h-14 w-full text-base font-semibold"
-        disabled={pending || chairCodes.length === 0}
-      >
-        {pending ? (
-          <>
-            <Loader2 className="mr-2 h-5 w-5 animate-spin" /> กำลังบันทึก...
-          </>
-        ) : (
-          "บันทึกการนับ · ฝากเงินทีหลังได้"
-        )}
-      </Button>
-      <p className="text-center text-xs text-zinc-500">
-        Step 1 จาก 2 · ฝากเงินก้อนใหญ่ทีหลัง (รวมรอบไหนก็ได้ที่ยังไม่ฝาก) ที่หน้าหลัก
-      </p>
+            {pending ? (
+              <>
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" /> กำลังบันทึก...
+              </>
+            ) : (
+              "บันทึกการนับ · ฝากเงินทีหลังได้"
+            )}
+          </Button>
+          <p className="text-center text-xs text-zinc-500">
+            Step 1 จาก 2 · ฝากเงินก้อนใหญ่ทีหลัง (รวมรอบไหนก็ได้ที่ยังไม่ฝาก) ที่หน้าหลัก
+          </p>
+        </>
+      )}
     </form>
   );
 }
