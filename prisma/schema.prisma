@@ -5309,6 +5309,12 @@ model LedgerExpense {
   confirmedBy   String?             @map("confirmed_by") @db.Uuid
   confirmedAt   DateTime?           @map("confirmed_at") @db.Timestamptz(6)
   exportBatchId String?             @map("export_batch_id") @db.Uuid
+  // — TRCloud API push (ใบ AP เข้า TRCloud) — stamped once on a successful push so
+  //   the expense can never be double-pushed; trcloudError holds the last failure. —
+  trcloudDocId    String?           @map("trcloud_doc_id") // id ของ AP ในระบบ TRCloud
+  trcloudDocNo    String?           @map("trcloud_doc_no") // เลขที่เอกสาร AP
+  trcloudPushedAt DateTime?         @map("trcloud_pushed_at") @db.Timestamptz(6)
+  trcloudError    String?           @map("trcloud_error")
   createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -5528,5 +5534,40 @@ model LedgerExportBatch {
 
   @@index([orgId, companyId, period])
   @@map("ledger_export_batch")
+  @@schema("public")
+}
+
+// TRCloud vendor map — tax_id → TRCloud contact_id (search-before-create dedup so a
+// supplier is created in TRCloud ONCE and reused). taxId "" = the shared
+// "เจ้าหนี้เบ็ดเตล็ด" bucket for cash/no-tax-id receipts. org/company scoped in app + RLS.
+model LedgerTrcloudContact {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  companyId  String   @map("company_id") @db.Uuid
+  taxId      String   @default("") @map("tax_id")
+  contactId  String   @map("contact_id") // TRCloud system contact id
+  name       String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([orgId, companyId, taxId])
+  @@map("ledger_trcloud_contact")
+  @@schema("public")
+}
+
+// TRCloud product map — normalized line name → TRCloud product_id/SKU (dedup so the
+// same item never spawns a second SKU). org/company scoped in app + RLS.
+model LedgerTrcloudProduct {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
+  nameKey     String   @map("name_key")
+  productId   String   @map("product_id") // TRCloud SKU code
+  productName String?  @map("product_name")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([orgId, companyId, nameKey])
+  @@map("ledger_trcloud_product")
   @@schema("public")
 }
