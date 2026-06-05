@@ -112,23 +112,28 @@ function round2(n: number): number {
 // ── vendor (contact) resolution ──────────────────────────────────────────────
 type Scope = { orgId: string; companyId: string };
 
-async function searchContactByTaxId(taxId: string): Promise<string | null> {
+type ContactRef = { contactId: string; codeNumber: string | null };
+
+async function searchContactByTaxId(taxId: string): Promise<ContactRef | null> {
   const r = await post("contact/search.php", { keyword: taxId, group_code: "S", limit: "20" });
   if (!isSuccess(r.data)) return null;
-  // Response shape is { ..., data:[{contact_id, tax_id, ...}] } or { body:[…] }.
-  const list = asArr(r.data?.data) ?? asArr(r.data?.body) ?? asArr(r.data?.result) ?? [];
+  // Response shape is { result:[{contact_id, tax_id, title, ...}] } (title = code_number).
+  const list = asArr(r.data?.result) ?? asArr(r.data?.data) ?? asArr(r.data?.body) ?? [];
   const want = digitsOnly(taxId);
+  const refOf = (o: Json): ContactRef | null => {
+    const id = pick(o, "contact_id", "id");
+    return id ? { contactId: id, codeNumber: pick(o, "title", "code_number") } : null;
+  };
   for (const row of list) {
     const o = asObj(row);
-    if (!o) continue;
-    if (digitsOnly(pick(o, "tax_id")) === want) {
-      const id = pick(o, "contact_id", "id");
-      if (id) return id;
+    if (o && digitsOnly(pick(o, "tax_id")) === want) {
+      const ref = refOf(o);
+      if (ref) return ref;
     }
   }
   // Fallback: a single result with no tax_id echoed → trust the top hit.
   const first = asObj(list[0]);
-  return first ? pick(first, "contact_id", "id") : null;
+  return first ? refOf(first) : null;
 }
 
 async function createContact(input: {
@@ -137,7 +142,7 @@ async function createContact(input: {
   organization?: string | null;
   address?: string | null;
   accAp?: string | null;
-}): Promise<{ ok: true; contactId: string } | { ok: false; error: string }> {
+}): Promise<{ ok: true; ref: ContactRef } | { ok: false; error: string }> {
   const issue = new Date().toISOString().slice(0, 10);
   const r = await post("contact/create.php", {
     date: issue,
@@ -158,29 +163,31 @@ async function createContact(input: {
   const inner = asObj(r.data?.data) ?? asObj(r.data?.head) ?? r.data;
   const contactId = pick(inner, "contact_id", "id") ?? pick(r.data, "contact_id", "id");
   if (!contactId) return { ok: false, error: "TRCloud ไม่คืน contact_id" };
-  return { ok: true, contactId };
+  // `last` = the freshly-assigned contact code (title, e.g. S260001) — the AP needs it.
+  const codeNumber = pick(r.data, "last", "title") ?? pick(inner, "title", "code_number");
+  return { ok: true, ref: { contactId, codeNumber } };
 }
 
-/** Map the expense's vendor → a TRCloud contact_id, creating it once if new. */
+/** Map the expense's vendor → a TRCloud contact (id + code), creating it once if new. */
 async function resolveContactId(
   scope: Scope,
   v: { vendor: string | null; vendorTaxId: string | null; vendorAddress: string | null },
-): Promise<{ ok: true; contactId: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; ref: ContactRef } | { ok: false; error: string }> {
   const taxId = digitsOnly(v.vendorTaxId); // "" for cash/no-tax-id receipts
   const where = { orgId: scope.orgId, companyId: scope.companyId, taxId };
 
   const cached = await prisma.ledgerTrcloudContact.findUnique({
     where: { orgId_companyId_taxId: where },
   });
-  if (cached) return { ok: true, contactId: cached.contactId };
+  if (cached) return { ok: true, ref: { contactId: cached.contactId, codeNumber: cached.codeNumber } };
 
   // No-tax-id receipts share ONE "เจ้าหนี้เบ็ดเตล็ด" contact (keeps the book clean).
   const name = taxId ? (v.vendor || "ไม่ระบุชื่อผู้ขาย") : "เจ้าหนี้เบ็ดเตล็ด (LedgerLine)";
 
-  let contactId: string | null = null;
-  if (taxId) contactId = await searchContactByTaxId(taxId); // reuse a manual/earlier contact
+  let ref: ContactRef | null = null;
+  if (taxId) ref = await searchContactByTaxId(taxId); // reuse a manual/earlier contact
 
-  if (!contactId) {
+  if (!ref) {
     const created = await createContact({
       name,
       taxId,
@@ -188,15 +195,15 @@ async function resolveContactId(
       address: v.vendorAddress,
     });
     if (!created.ok) return created;
-    contactId = created.contactId;
+    ref = created.ref;
   }
 
   await prisma.ledgerTrcloudContact.upsert({
     where: { orgId_companyId_taxId: where },
-    update: { contactId, name },
-    create: { ...where, contactId, name },
+    update: { contactId: ref.contactId, codeNumber: ref.codeNumber, name },
+    create: { ...where, contactId: ref.contactId, codeNumber: ref.codeNumber, name },
   });
-  return { ok: true, contactId };
+  return { ok: true, ref };
 }
 
 // ── product (inventory) resolution ───────────────────────────────────────────
@@ -390,6 +397,9 @@ export async function pushExpenseToTrcloud(
     invoice_note: `ระบบบัญชี (LedgerLine) · อ้างอิง ${e.docCode}`,
     customer: {
       group_code: "S",
+      // AP requires the contact code; send the NUMERIC part (TRCloud re-prefixes the
+      // group code, so passing the full "S260001" would store a doubled "SS260001").
+      code_number: (contact.ref.codeNumber ?? "").replace(/^\D+/, ""),
       name: e.vendor || "ไม่ระบุชื่อผู้ขาย",
       organization: e.vendor || "",
       branch: "00000",
@@ -398,7 +408,7 @@ export async function pushExpenseToTrcloud(
       telephone: "",
       tax_id: digitsOnly(e.vendorTaxId),
       contact_type: "normal",
-      contact_id: contact.contactId, // reuse the resolved contact (no duplicate)
+      contact_id: contact.ref.contactId, // reuse the resolved contact (no duplicate)
       add_contact: "0",
     },
     product: built.lines,
