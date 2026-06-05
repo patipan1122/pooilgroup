@@ -22,7 +22,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
+import { ChairopsUserRole, OffboardingReason } from "@/lib/generated/prisma/enums";
 import {
   assignBranch,
   bindLineUserId,
@@ -256,24 +256,19 @@ export function UserDetailForm({
         </form>
       </Section>
 
-      {/* 4. status */}
+      {/* 4. status · F7: reason + note required for deactivation */}
       <Section
         title="สถานะบัญชี"
         hint="ปิดบัญชีจะ block ทันทีในรอบ session ถัดไป (getSession เช็ค isActive)"
       >
         {target.isActive ? (
-          <Button
-            type="button"
-            variant="danger"
-            size="md"
-            disabled={!canManage || isPending}
-            loading={isPending}
-            onClick={() =>
-              run(() => deactivateUser(target.id), "ปิดบัญชีแล้ว")
-            }
-          >
-            ปิดใช้งานบัญชี
-          </Button>
+          <DeactivateSection
+            targetId={target.id}
+            targetName={target.displayName}
+            canManage={canManage}
+            isPending={isPending}
+            startTransition={startTransition}
+          />
         ) : (
           <Button
             type="button"
@@ -308,5 +303,121 @@ function Section({
       {children}
       {hint && <p className="mt-2 text-[11px] text-zinc-500">{hint}</p>}
     </section>
+  );
+}
+
+// F7: deactivation reason dropdown + optional note
+const OFFBOARDING_LABEL: Record<OffboardingReason, string> = {
+  RESIGNED: "ลาออก",
+  TERMINATED: "เลิกจ้าง",
+  TRANSFERRED: "ย้ายสาขา",
+  OTHER: "อื่นๆ",
+};
+
+function DeactivateSection({
+  targetId,
+  targetName,
+  canManage,
+  isPending,
+  startTransition,
+}: {
+  targetId: string;
+  targetName: string;
+  canManage: boolean;
+  isPending: boolean;
+  startTransition: (fn: () => void) => void;
+}) {
+  const [reason, setReason] = useState<OffboardingReason>("RESIGNED");
+  const [note, setNote] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [confirmName, setConfirmName] = useState("");
+
+  if (!confirming) {
+    return (
+      <Button
+        type="button"
+        variant="danger"
+        size="md"
+        disabled={!canManage || isPending}
+        onClick={() => setConfirming(true)}
+      >
+        ปิดใช้งานบัญชี
+      </Button>
+    );
+  }
+
+  return (
+    <div className="space-y-3 rounded-xl border-2 border-red-200 bg-red-50/50 p-3">
+      <p className="text-xs font-semibold text-red-700">ยืนยันการปิดบัญชี</p>
+      <div className="space-y-1.5">
+        <label className="block text-xs font-medium text-zinc-700">
+          เหตุผล
+        </label>
+        <select
+          value={reason}
+          onChange={(e) => setReason(e.target.value as OffboardingReason)}
+          className="h-9 w-full rounded-md border border-zinc-300 bg-white px-2 text-sm focus:outline-none"
+        >
+          {(Object.keys(OFFBOARDING_LABEL) as OffboardingReason[]).map((r) => (
+            <option key={r} value={r}>
+              {OFFBOARDING_LABEL[r]}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="space-y-1.5">
+        <label className="block text-xs font-medium text-zinc-700">
+          หมายเหตุ (ไม่บังคับ)
+        </label>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={2}
+          maxLength={500}
+          placeholder="รายละเอียดเพิ่มเติม..."
+          className="w-full resize-none rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm focus:outline-none"
+        />
+      </div>
+      {/* Q5: Name confirmation — admin must type the maid's name to proceed */}
+      <div className="space-y-1.5">
+        <label className="block text-xs font-medium text-zinc-700">
+          พิมพ์ชื่อ <span className="font-bold text-zinc-900">{targetName}</span> เพื่อยืนยัน
+        </label>
+        <Input
+          value={confirmName}
+          onChange={(e) => setConfirmName(e.target.value)}
+          placeholder={targetName}
+          disabled={isPending}
+          className="text-sm"
+        />
+      </div>
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          variant="danger"
+          size="sm"
+          disabled={isPending || confirmName.trim() !== targetName.trim()}
+          loading={isPending}
+          onClick={() =>
+            startTransition(async () => {
+              const r = await deactivateUser(targetId, reason, note || undefined);
+              if (r.ok) toast.success("ปิดบัญชีแล้ว");
+              else toast.error(r.error ?? "ทำงานไม่สำเร็จ");
+            })
+          }
+        >
+          ยืนยันปิดบัญชี
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          disabled={isPending}
+          onClick={() => { setConfirming(false); setConfirmName(""); }}
+        >
+          ยกเลิก
+        </Button>
+      </div>
+    </div>
   );
 }

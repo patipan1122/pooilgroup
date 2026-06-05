@@ -149,3 +149,14 @@ export async function requireBranch(branchId: string): Promise<Session> {
   }
   return session;
 }
+
+// F9: Raw lookup for maid routes — returns ChairopsUser without isActive filter.
+// Use ONLY in the maid layout to differentiate "deactivated" from "no access".
+// All other code must use getSession() / requireAuth() which enforces isActive.
+export const getMaidUserRaw = cache(async (): Promise<ChairopsUser | null> => {
+  const poolSession = await poolGetSession();
+  if (!poolSession) return null;
+  return prisma.chairopsUser.findFirst({
+    where: { authUserId: poolSession.authUserId },
+  });
+});

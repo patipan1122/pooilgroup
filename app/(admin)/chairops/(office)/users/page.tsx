@@ -33,6 +33,7 @@ import type { Prisma } from "@/lib/generated/prisma/client";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
 import { UserPlus, Inbox } from "lucide-react";
 import { PlayAsMaidButton } from "./play-as-maid-button";
+import { InvitePanel, UserPanel, EmptyPanel } from "./_components/user-side-panel";
 
 // ---------- copy ----------
 
@@ -76,6 +77,7 @@ export default async function UsersListPage({
     branch?: string;
     status?: "active" | "inactive";
     q?: string;
+    selected?: string;
   }>;
 }) {
   const session = await requireRole("ADMIN");
@@ -84,8 +86,9 @@ export default async function UsersListPage({
   const roleFilter = (sp.role as ChairopsUserRole | undefined) ?? undefined;
   const branchFilter = sp.branch ?? "";
   const statusFilter = sp.status;
+  const selected = sp.selected ?? "";
 
-  const where: Prisma.ChairopsUserWhereInput = {};
+  const where: Prisma.ChairopsUserWhereInput = { orgId: session.user.orgId };
   if (roleFilter && ALL_ROLES.includes(roleFilter)) {
     where.role = roleFilter;
   }
@@ -103,41 +106,76 @@ export default async function UsersListPage({
     ];
   }
 
-  const [users, branches, roleCounts, pendingDenials] = await Promise.all([
-    prisma.chairopsUser.findMany({
-      where,
-      orderBy: [{ isActive: "desc" }, { role: "asc" }, { displayName: "asc" }],
-      take: 500,
-    }),
-    prisma.chairopsBranch.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-    prisma.chairopsUser.groupBy({
-      by: ["role"],
-      where: { isActive: true },
-      _count: { _all: true },
-    }),
-    // Pending access-request denials (distinct authUserId in last 30 days).
-    // Used only for the "Pending (N)" badge in the sidebar — full triage lives
-    // in `/chairops/users/pending`.
-    prisma.chairopsAuditLog.findMany({
-      where: {
-        action: "access.denied_no_chairops_user",
-        createdAt: {
-          gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+  const [users, branches, roleCounts, pendingDenials, activeMaidsByBranch, selectedUser] =
+    await Promise.all([
+      prisma.chairopsUser.findMany({
+        where,
+        orderBy: [{ isActive: "desc" }, { role: "asc" }, { displayName: "asc" }],
+        take: 500,
+      }),
+      prisma.chairopsBranch.findMany({
+        where: { isActive: true, orgId: session.user.orgId },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.chairopsUser.groupBy({
+        by: ["role"],
+        where: { isActive: true, orgId: session.user.orgId },
+        _count: { _all: true },
+      }),
+      // Pending access-request denials (distinct authUserId in last 30 days).
+      prisma.chairopsAuditLog.findMany({
+        where: {
+          action: "access.denied_no_chairops_user",
+          createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
         },
-      },
-      select: { entityId: true },
-      distinct: ["entityId"],
-    }),
-  ]);
+        select: { entityId: true },
+        distinct: ["entityId"],
+      }),
+      // F2: vacancy per branch — count active maids per primaryBranchId
+      prisma.chairopsUser.groupBy({
+        by: ["primaryBranchId"],
+        where: {
+          orgId: session.user.orgId,
+          role: ChairopsUserRole.MAID,
+          isActive: true,
+          primaryBranchId: { not: null },
+        },
+        _count: { _all: true },
+      }),
+      // F3: load selected user for side panel
+      selected && selected !== "invite"
+        ? prisma.chairopsUser.findFirst({
+            where: { id: selected, orgId: session.user.orgId },
+          })
+        : Promise.resolve(null),
+    ]);
 
   const branchById = new Map(branches.map((b) => [b.id, b.name]));
   const roleCountMap = new Map<ChairopsUserRole, number>(
     roleCounts.map((r) => [r.role, r._count._all]),
   );
+  // F2: set of branch IDs that have at least 1 active maid
+  const occupiedBranchIds = new Set(
+    activeMaidsByBranch.map((r) => r.primaryBranchId!),
+  );
+
+  // F3: build right-side panel based on ?selected=
+  let rightPane: React.ReactNode;
+  if (selected === "invite") {
+    rightPane = <InvitePanel branches={branches} />;
+  } else if (selectedUser) {
+    rightPane = (
+      <UserPanel
+        user={selectedUser}
+        actor={session.user}
+        branches={branches}
+        branchName={selectedUser.primaryBranchId ? branchById.get(selectedUser.primaryBranchId) : undefined}
+      />
+    );
+  } else {
+    rightPane = <EmptyPanel />;
+  }
 
   return (
     <div className="chairops-scope">
@@ -151,9 +189,10 @@ export default async function UsersListPage({
             activeBranch={branchFilter}
             activeStatus={statusFilter}
             activeQuery={q}
+            occupiedBranchIds={occupiedBranchIds}
           />
         }
-        noMeta
+        meta={rightPane}
       >
         <header className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -185,10 +224,16 @@ export default async function UsersListPage({
                 คำขอเข้าใช้ ({pendingDenials.length})
               </Button>
             </Link>
-            <Link href="/chairops/users/new">
+            <Link href={`/chairops/users?${new URLSearchParams({ ...Object.fromEntries(Object.entries({ role: roleFilter, branch: branchFilter, status: statusFilter, q: q || undefined }).filter(([,v]) => v != null && v !== '')), selected: 'invite' })}`}>
               <Button variant="primary" size="sm">
                 <UserPlus className="size-4" aria-hidden="true" />
-                เพิ่มผู้ใช้
+                เชิญแม่บ้าน
+              </Button>
+            </Link>
+            <Link href="/chairops/users/new">
+              <Button variant="outline" size="sm">
+                <UserPlus className="size-4" aria-hidden="true" />
+                เพิ่มผู้ใช้อื่น
               </Button>
             </Link>
           </div>
@@ -221,7 +266,7 @@ export default async function UsersListPage({
                 <th className="px-3 py-3 font-semibold">สาขาประจำ</th>
                 <th className="px-3 py-3 font-semibold">สถานะ</th>
                 <th className="px-3 py-3 font-semibold">สร้างเมื่อ</th>
-                <th className="px-3 py-3" aria-label="actions" />
+                <th className="px-3 py-3 font-semibold" aria-label="actions">การจัดการ</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -261,7 +306,7 @@ export default async function UsersListPage({
                   >
                     <td className="px-3 py-2.5">
                       <Link
-                        href={`/chairops/users/${u.id}`}
+                        href={`/chairops/users?selected=${u.id}`}
                         className="block"
                       >
                         <div className="font-semibold text-zinc-900">
@@ -271,6 +316,7 @@ export default async function UsersListPage({
                               คุณ
                             </span>
                           )}
+                          {/* F2: show "ว่าง" badge if maid's branch has no active maid (should not happen if this user is active, but show for inactive maids) */}
                         </div>
                         <div className="text-xs text-zinc-500">
                           {u.email ?? "—"}
@@ -283,11 +329,22 @@ export default async function UsersListPage({
                       </StatusPill>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-zinc-700">
-                      {u.primaryBranchId
-                        ? (branchById.get(u.primaryBranchId) ?? "—")
-                        : (
-                          <span className="text-zinc-400">ไม่ระบุ</span>
-                        )}
+                      {u.primaryBranchId ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          {branchById.get(u.primaryBranchId) ?? "—"}
+                          {/* F2: vacancy badge — this maid's branch has no active coverage.
+                              Removed `u.isActive &&`: active maids are always in occupiedBranchIds
+                              so the badge would never render; the useful signal is for inactive maids
+                              whose branch is now vacant and needs a replacement. */}
+                          {u.role === "MAID" && !occupiedBranchIds.has(u.primaryBranchId) && (
+                            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                              ว่าง
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-zinc-400">ไม่ระบุ</span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5">
                       {u.isActive ? (
@@ -318,12 +375,14 @@ export default async function UsersListPage({
                             />
                           )}
                         <Link
-                          href={`/chairops/users/${u.id}`}
+                          href={`/chairops/users?selected=${u.id}`}
                           className={
                             "rounded-md border px-2.5 py-1 text-xs font-medium " +
-                            (manageable
-                              ? "border-zinc-300 text-zinc-700 hover:bg-zinc-50"
-                              : "border-zinc-200 text-zinc-500 hover:bg-zinc-50")
+                            (selected === u.id
+                              ? "border-zinc-700 bg-zinc-900 text-white"
+                              : manageable
+                                ? "border-zinc-300 text-zinc-700 hover:bg-zinc-50"
+                                : "border-zinc-200 text-zinc-500 hover:bg-zinc-50")
                           }
                         >
                           {manageable ? "แก้ไข" : "ดู"}
@@ -351,6 +410,7 @@ function UsersSidebar({
   activeBranch,
   activeStatus,
   activeQuery,
+  occupiedBranchIds,
 }: {
   branches: { id: string; name: string }[];
   roleCountMap: Map<ChairopsUserRole, number>;
@@ -359,6 +419,7 @@ function UsersSidebar({
   activeBranch?: string;
   activeStatus?: "active" | "inactive";
   activeQuery: string;
+  occupiedBranchIds: Set<string>;
 }) {
   function buildHref(
     overrides: Partial<{
@@ -458,6 +519,7 @@ function UsersSidebar({
             href={buildHref({ branch: b.id })}
             label={b.name}
             active={activeBranch === b.id}
+            vacant={!occupiedBranchIds.has(b.id)}
           />
         ))}
       </FilterSection>
@@ -488,12 +550,14 @@ function FilterRow({
   count,
   dotClass,
   active,
+  vacant,
 }: {
   href: string;
   label: string;
   count?: number;
   dotClass?: string;
   active: boolean;
+  vacant?: boolean;
 }) {
   return (
     <li>
@@ -511,6 +575,15 @@ function FilterRow({
             <span className={"size-2 rounded-full " + dotClass} aria-hidden />
           )}
           {label}
+          {/* F2: vacancy badge — branch has no active maid */}
+          {vacant && (
+            <span className={
+              "rounded px-1 py-0.5 text-[10px] font-semibold " +
+              (active ? "bg-white/20 text-white" : "bg-amber-100 text-amber-700")
+            }>
+              ว่าง
+            </span>
+          )}
         </span>
         {typeof count === "number" && (
           <span
