@@ -2368,6 +2368,15 @@ enum ChairopsAlertLevel {
   @@schema("chairops")
 }
 
+enum OffboardingReason {
+  RESIGNED
+  TERMINATED
+  TRANSFERRED
+  OTHER
+
+  @@schema("chairops")
+}
+
 enum ChairopsAlertStatus {
   OPEN
   ACK
@@ -2491,6 +2500,22 @@ model ChairopsUser {
   bankAccountName  String?
   contractFileUrl  String?
   contractFileName String?
+  // F5: invite token stored in DB for revocation
+  inviteToken         String?   @unique @map("invite_token")
+  inviteExpiresAt     DateTime? @map("invite_expires_at") @db.Timestamptz(6)
+  // F4: self-onboarding (5 fields maid fills on first login)
+  mobilePhone         String?   @map("mobile_phone")
+  emergencyContact    String?   @map("emergency_contact")
+  emergencyPhone      String?   @map("emergency_phone")
+  currentMainEmployer String?   @map("current_main_employer")
+  onboardingComplete  Boolean   @default(false) @map("onboarding_complete")
+  // F7: deactivation reason + audit trail
+  deactivatedAt     DateTime?          @map("deactivated_at") @db.Timestamptz(6)
+  deactivatedById   String?            @map("deactivated_by_id")
+  offboardingReason OffboardingReason? @map("offboarding_reason")
+  offboardingNote   String?            @map("offboarding_note")
+  // S1: cover branch (secondary assignment)
+  secondaryBranchId String?            @map("secondary_branch_id")
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 

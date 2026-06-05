@@ -8,12 +8,15 @@
 //   - .chairops-scope wrapper (D-NEW-5)
 //
 // MAID role gate enforced here; per-page guards still call requireExactRole.
+// F9: inactive maid → graceful deactivated screen (not /403).
+// F4: onboarding gate → /chairops/m/onboarding before MAID can use /m/*.
 
 import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";
 import {
-  requireAuth,
+  getMaidUserRaw,
 } from "@/lib/chairops/auth/session";
+import { requireSession as poolRequireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { MaidShell } from "./_components/maid-shell";
 
@@ -36,32 +39,44 @@ export default async function MaidRouteGroupLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await requireAuth();
-  // 2026-05-30: Rich Menu URIs always land here even when the caller is an
-  // admin/office user (the URI is global per LINE OA, not per user). Hard-
-  // 403 was unfriendly — bounce non-maid roles to the office branch picker
-  // so CEO can pick a branch + impersonate from the same tap.
-  if (session.user.role !== "MAID") {
-    redirect("/chairops/branch-collect");
+  // Step 1: enforce Pool authentication (redirects to /login if not signed in)
+  await poolRequireSession();
+
+  // Step 2: get raw ChairopsUser — includes inactive users (needed for F9)
+  const rawUser = await getMaidUserRaw();
+
+  // No ChairopsUser row at all → access denied
+  if (!rawUser) redirect("/403?reason=chairops_access_pending");
+
+  // F9: deactivated maid → graceful screen (not /403)
+  // The /deactivated route is OUTSIDE the (maid) layout group so it doesn't loop.
+  if (!rawUser.isActive) redirect("/chairops/m/deactivated");
+
+  // Non-maid roles (admin/office tapping Rich Menu) → branch collector
+  if (rawUser.role !== "MAID") redirect("/chairops/branch-collect");
+
+  // F4: onboarding gate — maid must complete profile before using /m/*
+  // Skip gate for /m/onboarding itself to avoid infinite redirect.
+  if (!rawUser.onboardingComplete) {
+    redirect("/chairops/m/onboarding");
   }
-  // Wave-2 B4: pending-deposit count drives the red dot on the new "ฝาก" tab.
-  // A collection is "pending" when it has no linked ChairopsCashDeposit row.
-  // Bound to maid's own collections only (not whole branch).
-  const pendingDepositCount = session.user.primaryBranchId
+
+  // Step 3: safe to query with active maid confirmed
+  const pendingDepositCount = rawUser.primaryBranchId
     ? await prisma.chairopsCashCollection.count({
         where: {
-          orgId: session.user.orgId,
-          // branchId so the badge matches the home "เงินค้าง" KPI exactly (P1-14)
-          branchId: session.user.primaryBranchId,
-          maidId: session.user.id,
+          orgId: rawUser.orgId,
+          branchId: rawUser.primaryBranchId,
+          maidId: rawUser.id,
           depositId: null,
         },
       })
     : 0;
+
   return (
     <div className="chairops-scope">
       <MaidShell
-        displayName={session.user.displayName}
+        displayName={rawUser.displayName}
         pendingDepositCount={pendingDepositCount}
       >
         {children}
