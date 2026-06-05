@@ -72,8 +72,8 @@ export default async function MaidCsvImportPage({
           นำเข้ายอดแม่บ้าน (CSV)
         </h1>
         <p className="text-sm text-zinc-500">
-          ใช้เมื่อบันทึกรอบเก็บเงินใน LIFF ไม่ทัน · พิมพ์ลง Excel/Sheets
-          แล้วอัปโหลด CSV เข้ามา · ระบบกรองรายการซ้ำให้
+          ใช้เมื่อบันทึกรอบเก็บเงินใน LIFF ไม่ทัน · กรอกลง Excel
+          แล้วอัปโหลดเข้ามา · รองรับ .xlsx และ .csv · ระบบกรองรายการซ้ำให้
         </p>
       </header>
 
@@ -131,7 +131,7 @@ export default async function MaidCsvImportPage({
           <div className="grid gap-1 text-xs text-zinc-600">
             <div>
               <code className="font-semibold">branchSlug</code> — slug ของสาขา
-              (เช่น <code>central-rama-9</code>) ดูได้จากหน้า /chairops/branches
+              (อยู่ใน sheet &quot;รายชื่อสาขา&quot; ของ template)
             </div>
             <div>
               <code className="font-semibold">collectedAt</code> —{" "}
@@ -149,17 +149,25 @@ export default async function MaidCsvImportPage({
               <code className="font-semibold">notes, slipUrl</code> (ใส่หรือเว้นได้)
             </div>
           </div>
-          <a
-            href={`data:text/csv;charset=utf-8,${encodeURIComponent(
-              CSV_HEADER.join(",") +
-                "\n" +
-                "central-rama-9,2026-06-01 10:30,5400,0891234567,,",
-            )}`}
-            download="maid-collections-template.csv"
-            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-          >
-            ดาวน์โหลด template
-          </a>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href="/api/chairops/import/maid-collections/template"
+              className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+            >
+              ดาวน์โหลด template (.xlsx) — แนะนำ
+            </a>
+            <a
+              href={`data:text/csv;charset=utf-8,${encodeURIComponent(
+                CSV_HEADER.join(",") +
+                  "\n" +
+                  "central-rama-9,2026-06-01 10:30,5400,0891234567,,",
+              )}`}
+              download="maid-collections-template.csv"
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+            >
+              ดาวน์โหลด template (.csv)
+            </a>
+          </div>
         </CardBody>
       </Card>
 

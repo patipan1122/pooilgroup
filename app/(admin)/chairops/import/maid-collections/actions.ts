@@ -30,6 +30,7 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { writeAudit } from "@/lib/chairops/audit/log";
@@ -48,6 +49,25 @@ import {
   type CommitResult,
   type CommitResponse,
 } from "./types";
+
+// ---------- xlsx → string[][] converter -------------------------------------
+// Reads the first sheet of an xlsx workbook and returns rows as string arrays,
+// same shape as parseCsv(). raw:false converts numbers/dates to strings.
+function parseXlsx(buf: Buffer): string[][] {
+  const wb = XLSX.read(buf, { type: "buffer", cellDates: false });
+  const sheetName = wb.SheetNames[0];
+  if (!sheetName) return [];
+  const ws = wb.Sheets[sheetName];
+  const raw = XLSX.utils.sheet_to_json<unknown[]>(ws!, {
+    header: 1,
+    raw: false,
+    defval: "",
+    blankrows: false,
+  }) as unknown[][];
+  return raw.map((row) =>
+    row.map((cell) => (cell == null ? "" : String(cell).trim())),
+  );
+}
 
 // ---------- minimal CSV parser ----------------------------------------------
 // Matches the same conventions as pos-ingest/actions.ts but stripped down:
@@ -210,22 +230,30 @@ export async function previewMaidCsv(
 
   const file = formData.get("file");
   if (!(file instanceof File)) {
-    return { ok: false, error: "ยังไม่ได้เลือกไฟล์ CSV" };
+    return { ok: false, error: "ยังไม่ได้เลือกไฟล์" };
   }
   if (file.size === 0) return { ok: false, error: "ไฟล์ว่าง" };
   if (file.size > 5 * 1024 * 1024) {
     return { ok: false, error: "ไฟล์ใหญ่เกิน 5MB" };
   }
 
-  let text: string;
+  const isXlsx =
+    file.name.toLowerCase().endsWith(".xlsx") ||
+    file.type ===
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+  let grid: string[][];
   try {
-    text = Buffer.from(await file.arrayBuffer()).toString("utf-8");
+    const buf = Buffer.from(await file.arrayBuffer());
+    if (isXlsx) {
+      grid = parseXlsx(buf);
+    } else {
+      grid = parseCsv(buf.toString("utf-8"));
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : "อ่านไฟล์ไม่ออก";
     return { ok: false, error: `อ่านไฟล์ไม่สำเร็จ · ${msg}` };
   }
-
-  const grid = parseCsv(text);
   if (grid.length < 2) {
     return {
       ok: false,

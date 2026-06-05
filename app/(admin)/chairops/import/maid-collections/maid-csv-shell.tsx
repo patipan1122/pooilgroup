@@ -113,12 +113,12 @@ export function MaidCsvShell() {
       <form action={onUpload} className="space-y-3">
         <div>
           <label className="mb-1.5 block text-sm font-semibold text-zinc-800">
-            เลือกไฟล์ CSV
+            เลือกไฟล์ (.xlsx หรือ .csv)
           </label>
           <Input
             type="file"
             name="file"
-            accept=".csv,text/csv"
+            accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
             required
             onChange={(e) => setFilename(e.target.files?.[0]?.name ?? null)}
             disabled={isPending}
@@ -127,7 +127,7 @@ export function MaidCsvShell() {
           <p className="mt-1 text-xs text-zinc-500">
             {filename
               ? `เลือกไฟล์: ${filename}`
-              : "รับเฉพาะ .csv · ขนาดไม่เกิน 5MB"}
+              : "รับ .xlsx (Excel) และ .csv · ขนาดไม่เกิน 5MB"}
           </p>
         </div>
         <Button type="submit" disabled={isPending} size="lg">
