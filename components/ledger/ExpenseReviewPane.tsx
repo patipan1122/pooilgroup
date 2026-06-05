@@ -312,7 +312,8 @@ export function ExpenseReviewPane({
   }
 
   const inputCls =
-    "h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-50 disabled:text-zinc-500";
+    // h-11/text-base on mobile = ≥44px touch target + 16px (no iOS zoom); sm: keeps the dense desktop form.
+    "h-11 w-full rounded-lg border border-zinc-200 bg-white px-2 text-base outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-50 disabled:text-zinc-500 sm:h-9 sm:text-sm";
 
   return (
     <div className="space-y-4">
@@ -407,7 +408,7 @@ export function ExpenseReviewPane({
                 placeholder="ชื่อร้าน / บริษัท"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <FieldLabel>ประเภทเอกสาร</FieldLabel>
                 <select
@@ -433,7 +434,7 @@ export function ExpenseReviewPane({
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <FieldLabel confidence={conf.vendor_tax_id ?? conf.vendorTaxId}>
                   เลขผู้เสียภาษี (13 หลัก)
@@ -461,7 +462,7 @@ export function ExpenseReviewPane({
                 />
               </div>
             </div>
-            <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
               <div>
                 <FieldLabel>ที่อยู่ผู้ขาย</FieldLabel>
                 <input
@@ -490,7 +491,7 @@ export function ExpenseReviewPane({
             <SectionTitle n={2} icon={<Wallet className="size-4" aria-hidden />}>
               รายการ & ยอดเงิน
             </SectionTitle>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <FieldLabel confidence={conf.suggested_category ?? conf.category}>
                   ประเภทค่าใช้จ่าย
@@ -546,16 +547,16 @@ export function ExpenseReviewPane({
               ) : (
                 <div className="space-y-1.5">
                   {draft.items.map((it, i) => (
-                    <div key={i} className="grid grid-cols-[minmax(0,1fr)_56px_80px_88px_28px] items-center gap-1.5">
+                    <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-1.5 sm:grid-cols-[minmax(0,1fr)_56px_80px_88px_28px]">
                       <input
-                        className="h-8 rounded-md border border-zinc-200 bg-white px-2 text-xs outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100"
+                        className="col-span-4 h-11 rounded-md border border-zinc-200 bg-white px-2 text-base outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 sm:col-span-1 sm:h-8 sm:text-xs"
                         value={it.description}
                         disabled={locked}
                         onChange={(e) => updateItem(i, { description: e.target.value })}
                         placeholder="ชื่อสินค้า/บริการ"
                       />
                       <input
-                        className="h-8 rounded-md border border-zinc-200 bg-white px-1.5 text-right text-xs outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100"
+                        className="h-11 rounded-md border border-zinc-200 bg-white px-1.5 text-right text-base outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 sm:h-8 sm:text-xs"
                         value={it.qty}
                         disabled={locked}
                         inputMode="decimal"
@@ -563,7 +564,7 @@ export function ExpenseReviewPane({
                         aria-label="จำนวน"
                       />
                       <input
-                        className="h-8 rounded-md border border-zinc-200 bg-white px-1.5 text-right text-xs outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100"
+                        className="h-11 rounded-md border border-zinc-200 bg-white px-1.5 text-right text-base outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 sm:h-8 sm:text-xs"
                         value={it.unitPrice}
                         disabled={locked}
                         inputMode="decimal"
@@ -571,7 +572,7 @@ export function ExpenseReviewPane({
                         aria-label="ราคาต่อหน่วย"
                       />
                       <input
-                        className="h-8 rounded-md border border-zinc-200 bg-white px-1.5 text-right text-xs font-medium outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100"
+                        className="h-11 rounded-md border border-zinc-200 bg-white px-1.5 text-right text-base font-medium outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 sm:h-8 sm:text-xs"
                         value={it.amount}
                         disabled={locked}
                         inputMode="decimal"
@@ -582,7 +583,7 @@ export function ExpenseReviewPane({
                         <button
                           type="button"
                           onClick={() => removeItem(i)}
-                          className="flex size-7 items-center justify-center rounded-md text-rose-500 hover:bg-rose-50"
+                          className="flex size-11 items-center justify-center rounded-md text-rose-500 hover:bg-rose-50 sm:size-7"
                           aria-label="ลบรายการ"
                         >
                           <Trash2 className="size-3.5" aria-hidden />
@@ -633,7 +634,7 @@ export function ExpenseReviewPane({
             <SectionTitle n={3} icon={<Wallet className="size-4" aria-hidden />}>
               การชำระเงิน & ผู้เบิก
             </SectionTitle>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <FieldLabel>ชื่อผู้เบิก</FieldLabel>
                 <input
@@ -659,7 +660,7 @@ export function ExpenseReviewPane({
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <FieldLabel confidence={conf.payment_method ?? conf.paymentMethod}>วิธีชำระเงิน</FieldLabel>
                 <select

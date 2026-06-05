@@ -755,6 +755,14 @@ export function LedgerCaptureApp({
             >
               ยกเลิก
             </button>
+            {/* ถ่ายใหม่ — รูปเบลอ/AI อ่านผิด กดถ่ายใหม่ได้เลย (เก็บบริษัท/สาขาไว้ ผ่าน onPick เดิม). */}
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="flex h-12 flex-1 items-center justify-center gap-1 rounded-xl border border-[var(--color-brand-200)] bg-[var(--color-brand-50)] text-sm font-semibold text-[var(--color-brand-700)] transition active:bg-white"
+            >
+              📷 ถ่ายใหม่
+            </button>
             <button
               type="button"
               onClick={onConfirm}

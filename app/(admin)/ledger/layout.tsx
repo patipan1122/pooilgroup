@@ -11,6 +11,8 @@
 // searchParams — the picker is URL-driven (?company=&branch=).
 
 import { assertModuleEnabled } from "@/lib/auth/module-access";
+import { getSession } from "@/lib/auth/session";
+import { LedgerBottomNav } from "@/components/ledger/LedgerBottomNav";
 
 export const dynamic = "force-dynamic";
 
@@ -20,5 +22,16 @@ export default async function LedgerLayout({
   children: React.ReactNode;
 }) {
   await assertModuleEnabled("ledger");
-  return <div className="ledger-scope">{children}</div>;
+  // getSession() is React cache()-wrapped → shared with child pages, no extra
+  // round-trip. Drives the role-filtered mobile bottom nav.
+  const session = await getSession();
+
+  return (
+    // pb spacer keeps content clear of the fixed mobile bar; desktop (lg) uses
+    // the Pool sidebar so no bottom bar + no spacer.
+    <div className="ledger-scope pb-[calc(64px+env(safe-area-inset-bottom))] lg:pb-0">
+      {children}
+      {session ? <LedgerBottomNav role={session.user.role} /> : null}
+    </div>
+  );
 }
