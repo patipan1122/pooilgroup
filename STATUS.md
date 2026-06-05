@@ -1,8 +1,13 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-05 (ChairOps Maid Management: 9 features 🚀 DEPLOYED LIVE)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-05 (LedgerLine GAP 5 LIFF Admin + ChairOps Maid Management 🚀 LIVE)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-06-05 — LedgerLine LIFF Admin Console (GAP 5): 🚀 DEPLOYED LIVE · migrations applied)
+
+**สิ่งที่ deploy:** หน้า `/จัดการ` ใน LINE LIFF — แอดมิน toggle สิทธิ์ 4 roles × 5 money-capabilities (confirm/export/P&L/all-branches/edit-others) + BranchPanel + OrgPanel
+**Migrations applied:** `20260605120000_ledger_member_pending.sql` + `20260605140000_ledger_permission.sql` ✅
 
 ## 🆕 Update (2026-06-05 — ChairOps Maid Management: 🚀 DEPLOYED LIVE · setup 242eb17 · migration applied)
 
