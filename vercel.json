@@ -25,6 +25,7 @@
     { "path": "/api/chairops/cron/backfill-pool-plumbing", "schedule": "0 4 * * *" },
     { "path": "/api/inbox/cron/daily-summary", "schedule": "15 13 * * *" },
     { "path": "/api/costctrl/cron/sync", "schedule": "0 19 * * *" },
-    { "path": "/api/ledger/cron/daily-digest", "schedule": "30 12 * * *" }
+    { "path": "/api/ledger/cron/daily-digest", "schedule": "30 12 * * *" },
+    { "path": "/api/chairops/cron/gmail-import", "schedule": "0 1 * * *" }
   ]
 }

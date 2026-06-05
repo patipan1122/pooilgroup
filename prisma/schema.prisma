@@ -3185,6 +3185,22 @@ model ChairopsDriveConnection {
   @@schema("chairops")
 }
 
+model ChairopsGmailConnection {
+  id              String    @id @default(uuid())
+  orgId           String    @unique
+  gmailEmail      String?
+  refreshTokenEnc String    // AES-256-GCM "iv:cipher:tag" — same encrypt/decrypt as Drive
+  scopes          String?
+  connectedById   String?
+  lastSyncAt      DateTime?
+  lastSyncStatus  String?   // "ok" | "error: <msg>"
+  lastSyncCount   Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@schema("chairops")
+}
+
 model ChairopsDriveAsset {
   id             String    @id @default(uuid())
   orgId          String
@@ -5546,6 +5562,7 @@ model LedgerTrcloudContact {
   companyId  String   @map("company_id") @db.Uuid
   taxId      String   @default("") @map("tax_id")
   contactId  String   @map("contact_id") // TRCloud system contact id
+  codeNumber String?  @map("code_number") // TRCloud contact code/title (e.g. S260001) — AP customer block needs it
   name       String?
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

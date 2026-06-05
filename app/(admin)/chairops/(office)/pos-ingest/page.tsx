@@ -15,6 +15,7 @@
 // `app/(admin)/chairops/layout.tsx` entitlement gate — no behaviour change.
 
 import Link from "next/link";
+import { Mail } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { Card } from "@/components/ui/card";
@@ -107,12 +108,16 @@ export default async function PosIngestListPage({
   const session = await requireRole("OFFICE");
   const params = await searchParams;
 
-  const [imports, latest] = await Promise.all([
+  const [imports, latest, gmailConn] = await Promise.all([
     prisma.chairopsPosImport.findMany({
       orderBy: { uploadedAt: "desc" },
       take: 50,
     }),
     getStarThingLatest(session.user.orgId),
+    prisma.chairopsGmailConnection.findUnique({
+      where: { orgId: session.user.orgId },
+      select: { gmailEmail: true, lastSyncAt: true, lastSyncStatus: true, lastSyncCount: true },
+    }),
   ]);
 
   const uploaderIds = [...new Set(imports.map((i) => i.uploadedById))];
@@ -153,6 +158,33 @@ export default async function PosIngestListPage({
           อัปโหลด StarThing XLSX ได้ทั้ง 3 ชนิด (daily / cash / coin) ในช่องเดียว · ระบบเดาชนิดให้ + เตรียม diff ก่อน commit เสมอ
         </p>
       </div>
+
+      {/* ── Gmail auto-import status bar ─────────────────────────────── */}
+      {gmailConn ? (
+        <div className="mb-4 flex items-center gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-sm shadow-sm">
+          <Mail className="size-4 shrink-0 text-blue-500" />
+          <span className="text-zinc-600">
+            Gmail auto-import ({gmailConn.gmailEmail}) ·{" "}
+            {gmailConn.lastSyncAt
+              ? `sync ล่าสุด ${gmailConn.lastSyncAt.toLocaleDateString("th-TH")} · `
+              : "ยังไม่เคย sync · "}
+            <span className={gmailConn.lastSyncStatus === "ok" || gmailConn.lastSyncStatus === null ? "text-emerald-700" : "text-amber-700"}>
+              {gmailConn.lastSyncStatus ?? "รอ sync"}
+            </span>
+          </span>
+          <Link href="/chairops/settings/email" className="ml-auto shrink-0 text-xs text-zinc-400 hover:text-zinc-700">
+            ตั้งค่า →
+          </Link>
+        </div>
+      ) : (
+        <div className="mb-4 flex items-center gap-3 rounded-lg border border-dashed border-zinc-200 px-4 py-2.5 text-sm text-zinc-500">
+          <Mail className="size-4 shrink-0" />
+          ยังไม่ได้เชื่อม Gmail auto-import ·{" "}
+          <Link href="/chairops/settings/email" className="text-blue-600 hover:underline">
+            เชื่อมเลย →
+          </Link>
+        </div>
+      )}
 
       {/* ── Latest data per type ─────────────────────────────────────── */}
       <div className="mb-6">

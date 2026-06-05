@@ -4,6 +4,15 @@
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
+## 🆕 Update (2026-06-05 — LedgerLine ↔ TRCloud API push สมบูรณ์: ✅ BUILT + LIVE-VERIFIED · ยังไม่ deploy)
+
+**สิ่งที่ทำ:** เชื่อมระบบบัญชี (LedgerLine) → TRCloud แบบ API เต็มรูป — นักบัญชีกด "ส่งเข้า TRCloud" ใบที่ยืนยันแล้ว → ระบบสร้าง **ใบกำกับภาษีซื้อ (AP)** ให้อัตโนมัติ ไม่ต้องคีย์ซ้ำ
+**กันซ้ำ (search-before-create):** หาคู่ค้าด้วยเลขภาษี · หาสินค้าด้วยชื่อ → เจอใช้ซ้ำ ไม่เจอสร้างใหม่ (สินค้า = บริการ status=0 ไม่ตัดสต๊อก · ผูกผังบัญชีตามหมวด) → จำ id ใน `ledger_trcloud_contact`/`ledger_trcloud_product`
+**UI:** ปุ่มส่งทีละใบใน pane + เลือกหลายใบส่งทีเดียวใน list + ป้ายสถานะ "TR ✓/✗" + filter ส่งแล้ว/ยังไม่ส่ง (มือถือ+คอม) · กันส่งซ้ำ (idempotent) · เฉพาะใบยืนยันแล้ว (ร่างไม่หลุด) · audit ทุกการส่ง
+**พิสูจน์จริง:** ยิงครบวงจรกับ company 31 (บริษัททดลอง) — สร้างคู่ค้า→สินค้า→AP (เลข AP260001)→อ่าน→**ลบหมดไม่มีขยะค้าง** · tsc 0 · eslint 0 · next build GREEN
+**Branch:** `claude/ledger-line-bainy-parity` (ยังไม่ deploy)
+**CEO gates:** (1) ลง migration `20260605180000_ledger_trcloud_push.sql` · (2) env `TRCLOUD_*` มีใน Vercel แล้ว (ใช้ร่วม FuelOS company 31 — ไม่ต้องเพิ่ม) · (3) deploy (merge→setup) · (4) **เปลี่ยน passkey ใหม่** ในหน้า API Key (โผล่ในแชต)
+
 ## 🆕 Update (2026-06-05 — LedgerLine LIFF Admin Console (GAP 5): 🚀 DEPLOYED LIVE · migrations applied)
 
 **สิ่งที่ deploy:** หน้า `/จัดการ` ใน LINE LIFF — แอดมิน toggle สิทธิ์ 4 roles × 5 money-capabilities (confirm/export/P&L/all-branches/edit-others) + BranchPanel + OrgPanel
