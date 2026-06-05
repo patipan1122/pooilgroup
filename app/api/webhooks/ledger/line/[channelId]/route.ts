@@ -22,6 +22,7 @@ import { parseExpenseText, stripJodTrigger } from "@/lib/ledger/parse-text";
 import { findRecentAmountDuplicate } from "@/lib/ledger/dedup";
 import { handleLedgerCommand } from "@/lib/ledger/line-commands";
 import { ensureLedgerMember } from "@/lib/ledger/members";
+import { can } from "@/lib/ledger/permissions";
 import { archiveReceiptToDrive, isDriveConfigured } from "@/lib/ledger/drive";
 import {
   buildLineConfirmCard,
@@ -288,6 +289,27 @@ export async function POST(
           ev.source?.type === "group" && !!ch.groupId && ev.source.groupId === ch.groupId;
         if (!fromRegisteredGroup) continue;
         try {
+          // Permission gate (REAL enforcement of the "สิทธิ์" toggle): a KNOWN member
+          // whose role lacks "ดูภาพรวมการเงิน" (report.view_pnl) can't pull P&L/totals
+          // here. Unknown senders (not a member yet) keep the prior behaviour, so this
+          // only TIGHTENS — never breaks — the live group Q&A.
+          if (ev.source?.userId) {
+            const m = await prisma.ledgerLineMember
+              .findUnique({
+                where: { orgId_lineUserId: { orgId: ch.orgId, lineUserId: ev.source.userId } },
+                select: { role: true },
+              })
+              .catch(() => null);
+            if (m && !(await can(ch.orgId, m.role, "report.view_pnl"))) {
+              if (ev.replyToken && accessToken)
+                await replyText(
+                  accessToken,
+                  ev.replyToken,
+                  "ดูยอด/ภาพรวมการเงินได้เฉพาะผู้มีสิทธิ์ · แจ้งผู้ดูแลถ้าต้องการสิทธิ์นี้",
+                ).catch(() => {});
+              continue;
+            }
+          }
           const qa = await answerQuestion(ev.message.text, {
             orgId: ch.orgId,
             companyId: ch.companyId,

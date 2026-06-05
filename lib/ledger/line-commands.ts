@@ -39,6 +39,7 @@ const HELP = [
   '🏢 พิมพ์ "/สาขา ชุมพวง" → ขอดูแลสาขา (รอแอดมินอนุมัติ)',
   "",
   "⚙️ คำสั่งแอดมิน:",
+  "• /จัดการ — เปิดหน้าจัดการทีม/สิทธิ์/สาขา (มือถือ)",
   "• /link (หรือ /setting) — ผูกกลุ่มนี้กับสาขา",
   "• /members — ดูว่าใครดูแลสาขาไหน",
 ].join("\n");
@@ -47,7 +48,15 @@ const MEMBER_ROLE_LABEL: Record<string, string> = {
   staff: "พนักงาน",
   accountant: "บัญชี",
   admin: "แอดมิน",
+  external_accountant: "สนง.บัญชีภายนอก",
 };
+
+/** Build the LIFF admin-console deep link (opens /liff/ledger/admin inside LINE). */
+function adminConsoleUrl(): string | null {
+  const liffId = process.env.NEXT_PUBLIC_LEDGER_LIFF_ID;
+  if (!liffId) return null;
+  return `https://liff.line.me/${liffId}?next=${encodeURIComponent("/liff/ledger/admin")}`;
+}
 
 /** Is this the `/setting`-able admin? (Pool user, admin-tier or accountant) */
 async function isAdminSender(
@@ -82,6 +91,27 @@ export async function handleLedgerCommand(
       "หรือทักแอดมินบัญชีของบริษัทโดยตรง",
       "",
       "เคล็ดลับ: ส่งรูปใบเสร็จที่มีปัญหามาด้วย จะช่วยให้แก้ได้ไวขึ้น 🙏",
+    ].join("\n");
+  }
+
+  // จัดการ / /admin — เปิดหน้าจัดการทีม (LIFF console) — แอดมินเท่านั้น
+  if (
+    text === "จัดการ" ||
+    text === "จัดการทีม" ||
+    lower === "/admin" ||
+    lower === "/console" ||
+    lower === "/จัดการ"
+  ) {
+    if (!(await isAdminSender(ctx.orgId, ctx.senderLineUserId))) {
+      return "เฉพาะแอดมินเท่านั้น · ถ้าต้องการสิทธิ์ ติดต่อผู้ดูแลของบริษัท";
+    }
+    const url = adminConsoleUrl();
+    return [
+      "🛠️ หน้าจัดการทีม (เปิดในมือถือ)",
+      "",
+      "จัดการสมาชิก · สาขา · สิทธิ์ · หมวด · ข้อมูลบริษัท ได้ในที่เดียว",
+      "",
+      url ? `เปิดที่นี่: ${url}` : "ยังไม่ได้ตั้งค่า LIFF · ติดต่อผู้ดูแลระบบ",
     ].join("\n");
   }
 
@@ -236,6 +266,9 @@ export async function handleLedgerCommand(
       "",
       'ผูกสาขา: พิมพ์  /setting สาขา <รหัสสาขา>',
       'ตั้งวิธีจ่าย: พิมพ์  /setting จ่าย โอน',
+      ...(adminConsoleUrl()
+        ? ["", `🛠️ จัดการทีม/สิทธิ์/สาขาแบบเต็ม: ${adminConsoleUrl()}`]
+        : []),
       "",
       "สาขาที่มี:",
       list,
