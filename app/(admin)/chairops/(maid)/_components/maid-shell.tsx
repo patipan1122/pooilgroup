@@ -12,7 +12,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Banknote,
   Sparkles,
@@ -20,9 +20,11 @@ import {
   Wallet,
   Wrench,
   Package,
+  ArrowLeftCircle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
+import { useTransition } from "react";
 
 interface NavItem {
   href: string;
@@ -75,19 +77,52 @@ function isActive(pathname: string, item: NavItem): boolean {
   return pathname.startsWith(item.match);
 }
 
+function ReturnToSelfBar({ adminName }: { adminName: string }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+
+  function returnToSelf() {
+    startTransition(async () => {
+      await fetch("/api/admin/users/return-to-self", { method: "POST" });
+      router.push("/chairops/users");
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-2 border-b-2 border-amber-600 bg-amber-500 px-4 py-2 text-xs font-semibold text-zinc-900">
+      <span className="truncate">
+        🎭 เล่นเป็นแม่บ้าน · บัญชีจริง: {adminName}
+      </span>
+      <button
+        onClick={returnToSelf}
+        disabled={pending}
+        className="inline-flex shrink-0 items-center gap-1 rounded-md bg-zinc-900 px-2.5 py-1 text-[11px] font-semibold text-white active:bg-zinc-700 disabled:opacity-60"
+      >
+        <ArrowLeftCircle className="size-3.5" aria-hidden />
+        {pending ? "กำลังกลับ..." : "กลับเป็นตัวเอง"}
+      </button>
+    </div>
+  );
+}
+
 export function MaidShell({
   displayName,
   pendingDepositCount = 0,
+  actingAsAdminName,
   children,
 }: {
   displayName: string;
   pendingDepositCount?: number;
+  /** Set when a super_admin is impersonating this maid. Shows return-to-self bar. */
+  actingAsAdminName?: string | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname() ?? "/chairops/m";
 
   return (
     <div className="min-h-screen bg-zinc-50 pb-[calc(64px+env(safe-area-inset-bottom))]">
+      {actingAsAdminName && <ReturnToSelfBar adminName={actingAsAdminName} />}
       <header
         className="sticky top-0 z-30 border-b border-emerald-700 bg-emerald-600 text-white"
         // Green ChairOps banner per mockup · no backdrop-blur (old Chrome safe)

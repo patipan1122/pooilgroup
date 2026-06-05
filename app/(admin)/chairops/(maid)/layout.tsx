@@ -16,7 +16,7 @@ import { redirect } from "next/navigation";
 import {
   getMaidUserRaw,
 } from "@/lib/chairops/auth/session";
-import { requireSession as poolRequireSession } from "@/lib/auth/session";
+import { requireSession as poolRequireSession, getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { MaidShell } from "./_components/maid-shell";
 
@@ -41,6 +41,10 @@ export default async function MaidRouteGroupLayout({
 }) {
   // Step 1: enforce Pool authentication (redirects to /login if not signed in)
   await poolRequireSession();
+
+  // Check if a super_admin is currently impersonating this maid
+  const poolSession = await getSession();
+  const actingAsName = poolSession?.actingAs?.realUser.name ?? null;
 
   // Step 2: get raw ChairopsUser — includes inactive users (needed for F9)
   const rawUser = await getMaidUserRaw();
@@ -78,6 +82,7 @@ export default async function MaidRouteGroupLayout({
       <MaidShell
         displayName={rawUser.displayName}
         pendingDepositCount={pendingDepositCount}
+        actingAsAdminName={actingAsName}
       >
         {children}
       </MaidShell>

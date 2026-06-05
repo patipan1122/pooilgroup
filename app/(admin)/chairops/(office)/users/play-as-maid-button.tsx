@@ -1,15 +1,11 @@
 "use client";
 
-// "เล่นเป็นแม่บ้าน" — office/CEO impersonates a specific maid for the rare
-// day they want to test the maid flow OR actually do a cash-collect run
-// themselves (CEO 2026-05-30). Posts to the existing Pool impersonation
-// endpoint (relaxed to org_admin/admin from super_admin-only in this round),
-// then navigates straight to /chairops/m so they land in the maid hub.
+// "เล่นเป็น" — super_admin impersonates ANY ChairOps user to test their view.
+// MAID → lands at /chairops/m (maid PWA hub).
+// Other roles (OFFICE, MANAGER, CEO, ADMIN, TECHNICIAN) → lands at /chairops.
 //
-// Render only when (a) caller is admin-tier (parent page already filters)
-// AND (b) the target maid has an authUserId (Pool users row exists — see
-// ensurePoolMembership). Without authUserId the impersonation cookie can't
-// resolve a Pool session.
+// Render only when target has authUserId (Pool users row exists via
+// ensurePoolMembership) — without it the impersonation cookie can't resolve.
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -18,18 +14,21 @@ import { Loader2, UserCog } from "lucide-react";
 
 interface Props {
   authUserId: string;
-  maidDisplayName: string;
+  displayName: string;
+  /** ChairopsUserRole — determines which hub to navigate to after impersonation. */
+  role: string;
 }
 
-export function PlayAsMaidButton({ authUserId, maidDisplayName }: Props) {
+export function PlayAsUserButton({ authUserId, displayName, role }: Props) {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  const dest = role === "MAID" ? "/chairops/m" : "/chairops";
 
   function onClick() {
     if (pending) return;
     if (
       !confirm(
-        `เข้าใช้งานเป็น "${maidDisplayName}"?\n\nระบบจะแสดงผลเหมือนคุณเป็นแม่บ้านคนนี้ ` +
+        `เข้าใช้งานเป็น "${displayName}"?\n\nระบบจะแสดงผลเหมือนคุณเป็นคนนี้ ` +
           `จนกว่าจะกด "กลับเป็นตัวเอง" (1 ชม.) · ทุก action จะถูกบันทึก audit`,
       )
     ) {
@@ -46,8 +45,8 @@ export function PlayAsMaidButton({ authUserId, maidDisplayName }: Props) {
           toast.error(json?.error ?? `เปิดไม่สำเร็จ (${res.status})`);
           return;
         }
-        toast.success(`กำลังเข้าเป็น ${maidDisplayName}`);
-        router.push("/chairops/m");
+        toast.success(`กำลังเข้าเป็น ${displayName}`);
+        router.push(dest);
         router.refresh();
       } catch (e) {
         toast.error(
@@ -63,7 +62,7 @@ export function PlayAsMaidButton({ authUserId, maidDisplayName }: Props) {
       onClick={onClick}
       disabled={pending}
       className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60"
-      aria-label={`เข้าใช้งานเป็น ${maidDisplayName}`}
+      aria-label={`เข้าใช้งานเป็น ${displayName}`}
     >
       {pending ? (
         <Loader2 className="size-3 animate-spin" aria-hidden />

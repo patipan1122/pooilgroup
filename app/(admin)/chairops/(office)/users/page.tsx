@@ -32,7 +32,7 @@ import { thaiDate, thaiRelative } from "@/lib/chairops/utils/format";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
 import { UserPlus, Inbox } from "lucide-react";
-import { PlayAsMaidButton } from "./play-as-maid-button";
+import { PlayAsUserButton } from "./play-as-maid-button";
 import { InvitePanel, UserPanel, EmptyPanel } from "./_components/user-side-panel";
 
 // ---------- copy ----------
@@ -224,7 +224,17 @@ export default async function UsersListPage({
                 คำขอเข้าใช้ ({pendingDenials.length})
               </Button>
             </Link>
-            <Link href={`/chairops/users?${new URLSearchParams({ ...Object.fromEntries(Object.entries({ role: roleFilter, branch: branchFilter, status: statusFilter, q: q || undefined }).filter(([,v]) => v != null && v !== '')), selected: 'invite' })}`}>
+            {/* mobile: full-page invite · desktop: side-panel invite */}
+            <Link href="/chairops/users/invite" className="lg:hidden">
+              <Button variant="primary" size="sm">
+                <UserPlus className="size-4" aria-hidden="true" />
+                เชิญแม่บ้าน
+              </Button>
+            </Link>
+            <Link
+              href={`/chairops/users?${new URLSearchParams({ ...Object.fromEntries(Object.entries({ role: roleFilter, branch: branchFilter, status: statusFilter, q: q || undefined }).filter(([,v]) => v != null && v !== '')), selected: 'invite' })}`}
+              className="hidden lg:inline-flex"
+            >
               <Button variant="primary" size="sm">
                 <UserPlus className="size-4" aria-hidden="true" />
                 เชิญแม่บ้าน
@@ -365,13 +375,13 @@ export default async function UsersListPage({
                     </td>
                     <td className="px-3 py-2.5 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        {u.role === "MAID" &&
-                          u.isActive &&
+                        {u.isActive &&
                           u.authUserId &&
                           u.authUserId !== session.user.authUserId && (
-                            <PlayAsMaidButton
+                            <PlayAsUserButton
                               authUserId={u.authUserId}
-                              maidDisplayName={u.displayName}
+                              displayName={u.displayName}
+                              role={u.role}
                             />
                           )}
                         <Link
