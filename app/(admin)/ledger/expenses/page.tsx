@@ -30,6 +30,7 @@ export default async function ExpensesPage({
     category?: string;
     q?: string;
     selected?: string;
+    tr?: string; // TRCloud send filter: "sent" | "unsent"
   }>;
 }) {
   // Page-level role gate. This review workspace exposes the FULL company-wide
@@ -66,6 +67,8 @@ export default async function ExpensesPage({
   const categoryId = sp.category || undefined;
   const q = sp.q?.trim() || undefined;
   const selected = sp.selected?.trim() || undefined;
+  const tr = sp.tr === "sent" || sp.tr === "unsent" ? sp.tr : undefined;
+  const trcloudPushed = tr === "sent" ? true : tr === "unsent" ? false : undefined;
 
   const [rows, categories] = await Promise.all([
     listExpensesSummary({
@@ -74,6 +77,7 @@ export default async function ExpensesPage({
       branchId: scope.branchId,
       status,
       categoryId,
+      trcloudPushed,
       search: q,
       take: 300,
     }),
@@ -94,9 +98,14 @@ export default async function ExpensesPage({
   if (sp.branch) baseParams.set("branch", sp.branch);
   if (status) baseParams.set("status", status);
   if (categoryId) baseParams.set("category", categoryId);
+  if (tr) baseParams.set("tr", tr);
   if (q) baseParams.set("q", q);
 
   const draftIds = rows.filter((r) => r.status === "draft").map((r) => r.id);
+  // Confirmed/locked rows not yet in TRCloud → bulk-sendable.
+  const sendableIds = rows
+    .filter((r) => (r.status === "confirmed" || r.status === "locked") && !r.trcloudDocId)
+    .map((r) => r.id);
 
   return (
     <div className="p-4 sm:p-6">
@@ -130,8 +139,10 @@ export default async function ExpensesPage({
           baseParams={baseParams.toString()}
           status={status}
           categoryId={categoryId}
+          tr={tr}
           q={q}
           draftIds={draftIds}
+          sendableIds={sendableIds}
           companyId={scope.companyId}
         />
 

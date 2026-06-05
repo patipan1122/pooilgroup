@@ -103,6 +103,10 @@ export function serializeExpense(row: ExpenseRow): Expense {
     confirmedBy: row.confirmedBy,
     confirmedAt: iso(row.confirmedAt),
     exportBatchId: row.exportBatchId,
+    trcloudDocId: row.trcloudDocId,
+    trcloudDocNo: row.trcloudDocNo,
+    trcloudPushedAt: iso(row.trcloudPushedAt),
+    trcloudError: row.trcloudError,
     createdAt: iso(row.createdAt)!,
     updatedAt: iso(row.updatedAt)!,
     items: row.items.map(serializeItem),
@@ -123,6 +127,8 @@ export interface ExpenseListFilter {
   /** YYYY-MM — filter by doc month. */
   period?: string | null;
   needsReview?: boolean;
+  /** true = ส่ง TRCloud แล้ว · false = ยังไม่ส่ง · undefined = ทั้งหมด */
+  trcloudPushed?: boolean;
   search?: string | null;
   take?: number;
   skip?: number;
@@ -139,6 +145,9 @@ function buildWhere(f: ExpenseListFilter): Prisma.LedgerExpenseWhereInput {
   }
   if (f.categoryId) where.categoryId = f.categoryId;
   if (f.needsReview !== undefined) where.needsReview = f.needsReview;
+  if (f.trcloudPushed !== undefined) {
+    where.trcloudDocId = f.trcloudPushed ? { not: null } : null;
+  }
   if (f.period) {
     const [y, m] = f.period.split("-").map(Number);
     if (y && m) {
@@ -216,6 +225,10 @@ const EXPENSE_SUMMARY_SELECT = {
   confirmedBy: true,
   confirmedAt: true,
   exportBatchId: true,
+  trcloudDocId: true,
+  trcloudDocNo: true,
+  trcloudPushedAt: true,
+  trcloudError: true,
   createdAt: true,
   updatedAt: true,
   category: { select: { name: true } },
@@ -267,6 +280,10 @@ function serializeExpenseSummary(row: ExpenseSummaryRow): Expense {
     confirmedBy: row.confirmedBy,
     confirmedAt: iso(row.confirmedAt),
     exportBatchId: row.exportBatchId,
+    trcloudDocId: row.trcloudDocId,
+    trcloudDocNo: row.trcloudDocNo,
+    trcloudPushedAt: iso(row.trcloudPushedAt),
+    trcloudError: row.trcloudError,
     createdAt: iso(row.createdAt)!,
     updatedAt: iso(row.updatedAt)!,
     items: [], // list UI never reads items — skipped to avoid the join

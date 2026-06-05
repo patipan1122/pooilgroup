@@ -1,18 +1,18 @@
 "use client";
 
-// Left pane of the รายจ่าย workspace: status/category/search filters, a scrollable
-// receipt list, and a bulk-confirm bar for selected drafts.
+// Left pane of the รายจ่าย workspace: status/category/TRCloud/search filters, a
+// scrollable receipt list, and a context-aware bulk bar (ยืนยันร่าง · ส่งเข้า TRCloud).
 // All filters are URL-driven (GET form / router.push) so the server page re-reads
 // scope on every change.
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck } from "lucide-react";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
 import { LedgerEmptyState } from "@/components/ledger/Brand";
 import { Badge } from "@/components/ui/badge";
 import type { ExpenseRow, LedgerStatusValue } from "@/components/ledger/_kit/types";
-import { bulkConfirm } from "../../_actions";
+import { bulkConfirm, sendExpensesToTrcloud } from "../../_actions";
 
 const STATUS_TABS: Array<{ value: LedgerStatusValue | ""; label: string }> = [
   { value: "", label: "ทั้งหมด" },
@@ -20,6 +20,12 @@ const STATUS_TABS: Array<{ value: LedgerStatusValue | ""; label: string }> = [
   { value: "confirmed", label: "ยืนยันแล้ว" },
   { value: "locked", label: "ล็อก" },
   { value: "void", label: "ยกเลิก" },
+];
+
+const TR_TABS: Array<{ value: "" | "unsent" | "sent"; label: string }> = [
+  { value: "", label: "ทุกการส่ง" },
+  { value: "unsent", label: "ยังไม่ส่ง TRCloud" },
+  { value: "sent", label: "ส่งแล้ว" },
 ];
 
 function baht(n: number) {
@@ -33,8 +39,10 @@ export function ExpenseList({
   baseParams,
   status,
   categoryId,
+  tr,
   q,
   draftIds,
+  sendableIds,
   companyId,
 }: {
   rows: ExpenseRow[];
@@ -43,16 +51,25 @@ export function ExpenseList({
   baseParams: string;
   status?: LedgerStatusValue;
   categoryId?: string;
+  tr?: "sent" | "unsent";
   q?: string;
   draftIds: string[];
-  /** Active company scope — passed to bulkConfirm so it can't cross companies. */
+  /** Confirmed/locked rows not yet pushed to TRCloud — eligible for bulk send. */
+  sendableIds: string[];
+  /** Active company scope — passed to bulk actions so they can't cross companies. */
   companyId: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const draftSet = new Set(draftIds);
+  const sendableSet = new Set(sendableIds);
+  const selDrafts = [...checked].filter((id) => draftSet.has(id));
+  const selSendable = [...checked].filter((id) => sendableSet.has(id));
+  const actionableIds = [...draftIds, ...sendableIds];
 
   // Build a link to a row keeping company/branch/filter context.
   function rowHref(id: string) {
@@ -61,18 +78,10 @@ export function ExpenseList({
     return `${pathname}?${sp.toString()}`;
   }
 
-  function setStatus(next: string) {
+  function setParam(key: string, next: string) {
     const sp = new URLSearchParams(baseParams);
-    sp.delete("status");
-    if (next) sp.set("status", next);
-    if (selectedId) sp.set("selected", selectedId);
-    router.push(`${pathname}?${sp.toString()}`);
-  }
-
-  function setCategory(next: string) {
-    const sp = new URLSearchParams(baseParams);
-    sp.delete("category");
-    if (next) sp.set("category", next);
+    sp.delete(key);
+    if (next) sp.set(key, next);
     if (selectedId) sp.set("selected", selectedId);
     router.push(`${pathname}?${sp.toString()}`);
   }
@@ -86,23 +95,41 @@ export function ExpenseList({
     });
   }
 
-  function selectAllDrafts() {
+  function selectAllActionable() {
     setChecked((prev) =>
-      prev.size === draftIds.length ? new Set() : new Set(draftIds),
+      prev.size === actionableIds.length ? new Set() : new Set(actionableIds),
     );
   }
 
-  function runBulk() {
-    if (checked.size === 0) return;
+  function runBulkConfirm() {
+    if (selDrafts.length === 0) return;
     setMsg(null);
     startTransition(async () => {
-      const res = await bulkConfirm(Array.from(checked), companyId);
+      const res = await bulkConfirm(selDrafts, companyId);
       if (res.ok) {
-        setMsg(`ยืนยัน ${res.confirmed ?? 0} ใบ · ข้าม ${res.skipped ?? 0} ใบ (ยอดไม่ตรง)`);
+        setMsg({ kind: "ok", text: `ยืนยัน ${res.confirmed ?? 0} ใบ · ข้าม ${res.skipped ?? 0} ใบ (ยอดไม่ตรง)` });
         setChecked(new Set());
         router.refresh();
       } else {
-        setMsg(res.error ?? "ยืนยันไม่สำเร็จ");
+        setMsg({ kind: "err", text: res.error ?? "ยืนยันไม่สำเร็จ" });
+      }
+    });
+  }
+
+  function runBulkSend() {
+    if (selSendable.length === 0) return;
+    setMsg(null);
+    startTransition(async () => {
+      const res = await sendExpensesToTrcloud(selSendable, companyId);
+      if (res.ok) {
+        const parts = [`ส่งเข้า TRCloud ${res.sent ?? 0} ใบ`];
+        if (res.skipped) parts.push(`ข้าม ${res.skipped}`);
+        if (res.failed) parts.push(`พลาด ${res.failed}`);
+        setMsg({ kind: res.failed ? "err" : "ok", text: parts.join(" · ") });
+        setChecked(new Set());
+        router.refresh();
+      } else {
+        setMsg({ kind: "err", text: res.error ?? "ส่งเข้า TRCloud ไม่สำเร็จ" });
       }
     });
   }
@@ -120,7 +147,7 @@ export function ExpenseList({
                 key={t.value || "all"}
                 role="tab"
                 aria-selected={active}
-                onClick={() => setStatus(t.value)}
+                onClick={() => setParam("status", t.value)}
                 className={
                   "rounded-full px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-300)] " +
                   (active
@@ -134,11 +161,34 @@ export function ExpenseList({
           })}
         </div>
 
+        {/* TRCloud send filter */}
+        <div className="flex flex-wrap gap-1" role="tablist" aria-label="กรองตามการส่ง TRCloud">
+          {TR_TABS.map((t) => {
+            const active = (tr ?? "") === t.value;
+            return (
+              <button
+                key={t.value || "all-tr"}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setParam("tr", t.value)}
+                className={
+                  "rounded-full px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-300)] " +
+                  (active
+                    ? "bg-blue-600 text-white"
+                    : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200")
+                }
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+
         <div className="flex gap-2">
           <select
             aria-label="กรองตามหมวด"
             value={categoryId ?? ""}
-            onChange={(e) => setCategory(e.target.value)}
+            onChange={(e) => setParam("category", e.target.value)}
             className="h-9 min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]"
           >
             <option value="">ทุกหมวด</option>
@@ -176,44 +226,58 @@ export function ExpenseList({
           </button>
         </form>
 
-        {/* Bulk-confirm bar */}
-        {draftIds.length > 0 && (
-          <div className="flex items-center justify-between gap-2 rounded-lg bg-amber-50 px-2 py-1.5">
-            <label className="flex items-center gap-1.5 text-xs font-medium text-amber-800">
+        {/* Context-aware bulk bar — appears when there are actionable rows */}
+        {actionableIds.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-zinc-50 px-2 py-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-zinc-700">
               <input
                 type="checkbox"
-                checked={checked.size > 0 && checked.size === draftIds.length}
-                onChange={selectAllDrafts}
-                className="size-3.5 accent-amber-600"
+                checked={checked.size > 0 && checked.size === actionableIds.length}
+                onChange={selectAllActionable}
+                className="size-3.5 accent-zinc-700"
               />
-              เลือกร่างทั้งหมด ({checked.size}/{draftIds.length})
+              เลือก ({checked.size})
             </label>
-            <button
-              onClick={runBulk}
-              disabled={pending || checked.size === 0}
-              className="inline-flex h-7 items-center gap-1 rounded-lg bg-emerald-600 px-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:bg-zinc-300"
-            >
-              {pending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <CheckCircle2 className="size-3.5" />
+            <div className="flex flex-wrap items-center gap-1.5">
+              {selDrafts.length > 0 && (
+                <button
+                  onClick={runBulkConfirm}
+                  disabled={pending}
+                  className="inline-flex h-7 items-center gap-1 rounded-lg bg-emerald-600 px-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:bg-zinc-300"
+                >
+                  {pending ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+                  ยืนยัน ({selDrafts.length})
+                </button>
               )}
-              ยืนยันที่เลือก
-            </button>
+              {selSendable.length > 0 && (
+                <button
+                  onClick={runBulkSend}
+                  disabled={pending}
+                  className="inline-flex h-7 items-center gap-1 rounded-lg bg-blue-600 px-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:bg-zinc-300"
+                >
+                  {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+                  ส่งเข้า TRCloud ({selSendable.length})
+                </button>
+              )}
+            </div>
           </div>
         )}
         {msg && (
-          <p className="text-xs text-emerald-700" role="status" aria-live="polite">
-            {msg}
+          <p
+            className={"text-xs " + (msg.kind === "ok" ? "text-emerald-700" : "text-rose-700")}
+            role="status"
+            aria-live="polite"
+          >
+            {msg.text}
           </p>
         )}
       </div>
 
       {/* List */}
-      <ul className="max-h-[calc(100dvh-20rem)] divide-y divide-zinc-100 overflow-y-auto">
+      <ul className="max-h-[calc(100dvh-23rem)] divide-y divide-zinc-100 overflow-y-auto">
         {rows.length === 0 ? (
           <li>
-            {q || status || categoryId ? (
+            {q || status || categoryId || tr ? (
               <LedgerEmptyState
                 title="ไม่พบรายการตามเงื่อนไข"
                 hint="ลองล้างตัวกรอง หรือเปลี่ยนคำค้น"
@@ -229,16 +293,20 @@ export function ExpenseList({
           rows.map((r) => {
             const active = selectedId === r.id;
             const isDraft = r.status === "draft";
+            const isSendable = sendableSet.has(r.id);
+            const selectable = isDraft || isSendable;
+            const pushed = !!r.trcloudDocId;
+            const pushErr = !pushed && !!r.trcloudError;
             return (
               <li key={r.id} className="flex items-stretch">
-                {isDraft && (
+                {selectable && (
                   <label className="flex shrink-0 items-center pl-3">
                     <input
                       type="checkbox"
                       checked={checked.has(r.id)}
                       onChange={() => toggle(r.id)}
                       onClick={(e) => e.stopPropagation()}
-                      className="size-4 accent-emerald-600"
+                      className={"size-4 " + (isDraft ? "accent-emerald-600" : "accent-blue-600")}
                       aria-label={`เลือก ${r.docCode}`}
                     />
                   </label>
@@ -275,11 +343,29 @@ export function ExpenseList({
                       )}
                     </div>
                   </div>
-                  <div className="shrink-0 text-right">
+                  <div className="flex shrink-0 flex-col items-end gap-0.5">
                     <div className="text-sm font-semibold tabular-nums text-zinc-900">
                       {baht(r.total)}
                     </div>
-                    <StatusBadge status={r.status} className="mt-0.5 text-[10px]" />
+                    <div className="flex items-center gap-1">
+                      {pushed && (
+                        <span
+                          className="inline-flex items-center gap-0.5 rounded bg-blue-50 px-1 py-0.5 text-[10px] font-semibold text-blue-700"
+                          title={r.trcloudDocNo ? `TRCloud: ${r.trcloudDocNo}` : "ส่งเข้า TRCloud แล้ว"}
+                        >
+                          <CloudCheck className="size-3" /> TR
+                        </span>
+                      )}
+                      {pushErr && (
+                        <span
+                          className="inline-flex items-center gap-0.5 rounded bg-rose-50 px-1 py-0.5 text-[10px] font-semibold text-rose-700"
+                          title={r.trcloudError ?? "ส่ง TRCloud ไม่สำเร็จ"}
+                        >
+                          <AlertTriangle className="size-3" /> TR
+                        </span>
+                      )}
+                      <StatusBadge status={r.status} className="text-[10px]" />
+                    </div>
                   </div>
                 </Link>
               </li>

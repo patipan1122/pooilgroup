@@ -75,6 +75,11 @@ export interface Expense {
   confirmedBy: string | null;
   confirmedAt: string | null;
   exportBatchId: string | null;
+  // — TRCloud API push status (null = ยังไม่ส่ง · set = ส่งแล้ว) —
+  trcloudDocId: string | null;
+  trcloudDocNo: string | null;
+  trcloudPushedAt: string | null;
+  trcloudError: string | null;
   createdAt: string;
   updatedAt: string;
   items: ExpenseItem[];

@@ -30,6 +30,11 @@ import { recheckReceipt } from "@/lib/ledger/recheck";
 import { setPermission, isLedgerRole, isLedgerCapability } from "@/lib/ledger/permissions";
 import { listExpenses } from "@/lib/ledger/queries";
 import { buildTrcloudCsv } from "@/lib/ledger/trcloud-export";
+import {
+  pushExpenseToTrcloud,
+  trcloudPushConfigured,
+  type PushableExpense,
+} from "@/lib/ledger/trcloud-push";
 import { audit } from "@/lib/audit/log";
 import { encryptToken } from "@/lib/recruit/channel-crypto";
 
@@ -635,6 +640,191 @@ export async function exportConfirmedCsv(raw: unknown): Promise<ExportResult> {
 
   const filename = `ledger-${company.code}-${period}.csv`;
   return { ok: true, csv, filename, rows };
+}
+
+// ===================== TRCloud API push (ส่ง AP เข้า TRCloud) =====================
+// Push a CONFIRMED expense INTO TRCloud as an AP via api-connector2. The heavy
+// lifting (search-before-create vendor + SKUs, then ap/create) lives in
+// lib/ledger/trcloud-push.ts. These actions enforce the security bar: accountant
+// tier, org+company scope, NEVER a draft (golden rule), idempotent (a row with a
+// trcloudDocId can't be pushed twice), audit trail, and per-row error capture.
+
+/** Load the full expense (items + category GL) → the shape the pusher needs. */
+async function loadPushable(
+  orgId: string,
+  id: string,
+): Promise<
+  | {
+      pushable: PushableExpense;
+      status: string;
+      companyId: string;
+      alreadyPushed: boolean;
+    }
+  | null
+> {
+  const row = await prisma.ledgerExpense.findFirst({
+    where: { id, orgId },
+    include: {
+      items: { orderBy: { createdAt: "asc" } },
+      category: { select: { name: true, trcloudAccCode: true } },
+    },
+  });
+  if (!row) return null;
+  return {
+    status: row.status,
+    companyId: row.companyId,
+    alreadyPushed: !!row.trcloudDocId,
+    pushable: {
+      id: row.id,
+      orgId: row.orgId,
+      companyId: row.companyId,
+      docCode: row.docCode,
+      vendor: row.vendor,
+      vendorTaxId: row.vendorTaxId,
+      vendorAddress: row.vendorAddress,
+      docDate: row.docDate,
+      subtotal: Number(row.subtotal),
+      vat: Number(row.vat),
+      wht: Number(row.wht),
+      discount: Number(row.discount),
+      total: Number(row.total),
+      paymentStatus: row.paymentStatus,
+      note: row.note,
+      categoryName: row.category?.name ?? null,
+      categoryAccCode: row.category?.trcloudAccCode ?? null,
+      items: row.items.map((it) => ({
+        description: it.description,
+        qty: Number(it.qty),
+        unitPrice: Number(it.unitPrice),
+        amount: Number(it.amount),
+        vatRate: it.vatRate == null ? null : Number(it.vatRate),
+      })),
+    },
+  };
+}
+
+/** Stamp the push result back on the expense (success or error) + audit. */
+async function recordPushResult(
+  orgId: string,
+  companyId: string,
+  id: string,
+  userId: string,
+  res: { ok: true; docId: string | null; docNo: string | null } | { ok: false; error: string },
+): Promise<void> {
+  if (res.ok) {
+    await prisma.ledgerExpense.updateMany({
+      where: { id, orgId, companyId },
+      data: {
+        trcloudDocId: res.docId ?? "sent",
+        trcloudDocNo: res.docNo,
+        trcloudPushedAt: new Date(),
+        trcloudError: null,
+      },
+    });
+    await audit({
+      orgId,
+      userId,
+      action: "LEDGER_EXPENSE_PUSHED_TRCLOUD",
+      resourceType: "ledger_expense",
+      resourceId: id,
+      diff: { new: { trcloudDocNo: res.docNo, trcloudDocId: res.docId } },
+    });
+  } else {
+    await prisma.ledgerExpense.updateMany({
+      where: { id, orgId, companyId },
+      data: { trcloudError: res.error.slice(0, 500) },
+    });
+  }
+}
+
+/** Push ONE confirmed expense → TRCloud AP. Idempotent + accountant-tier. */
+export async function sendExpenseToTrcloud(
+  id: string,
+): Promise<ActionResult & { docNo?: string | null; alreadySent?: boolean }> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAccountant(session.user.role)) {
+    return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลส่งเข้า TRCloud ได้" };
+  }
+  if (!trcloudPushConfigured()) {
+    return { ok: false, error: "ยังไม่ได้ตั้งค่าการเชื่อม TRCloud (ผู้ดูแลตั้ง env TRCLOUD_* ใน Vercel)" };
+  }
+  const orgId = session.user.org_id;
+  const loaded = await loadPushable(orgId, id);
+  if (!loaded) return { ok: false, error: "ไม่พบรายการ" };
+  // Golden rule: only confirmed/locked spend leaves the building — never a draft.
+  if (loaded.status !== "confirmed" && loaded.status !== "locked") {
+    return { ok: false, error: "ส่งได้เฉพาะรายการที่ยืนยันแล้ว" };
+  }
+  if (loaded.alreadyPushed) return { ok: true, alreadySent: true };
+
+  const res = await pushExpenseToTrcloud(loaded.pushable);
+  await recordPushResult(orgId, loaded.companyId, id, session.user.id, res);
+  revalidatePath("/ledger/expenses");
+  revalidatePath("/ledger");
+  if (!res.ok) return { ok: false, error: res.error };
+  return { ok: true, docNo: res.docNo };
+}
+
+/** Push MANY confirmed expenses (multi-select). Company-scoped like bulkConfirm:
+ *  the id array is client-supplied, so a companyId filter stops a cross-company push. */
+export async function sendExpensesToTrcloud(
+  ids: string[],
+  companyId: string,
+): Promise<ActionResult & { sent?: number; skipped?: number; failed?: number; firstError?: string }> {
+  if (!Array.isArray(ids) || ids.length === 0) return { ok: false, error: "ไม่ได้เลือกรายการ" };
+  if (!companyId) return { ok: false, error: "ไม่ได้ระบุบริษัท" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAccountant(session.user.role)) {
+    return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลส่งเข้า TRCloud ได้" };
+  }
+  if (!trcloudPushConfigured()) {
+    return { ok: false, error: "ยังไม่ได้ตั้งค่าการเชื่อม TRCloud (ผู้ดูแลตั้ง env TRCLOUD_* ใน Vercel)" };
+  }
+  const orgId = session.user.org_id;
+  const company = await prisma.company.findFirst({
+    where: { id: companyId, orgId },
+    select: { id: true },
+  });
+  if (!company) return { ok: false, error: "ไม่พบบริษัท" };
+
+  let sent = 0,
+    skipped = 0,
+    failed = 0;
+  let firstError: string | undefined;
+  // Sequential on purpose: each push creates/looks-up shared TRCloud masters; serial
+  // avoids racing two new-vendor creates into duplicates within one batch.
+  for (const id of ids) {
+    const loaded = await loadPushable(orgId, id);
+    if (!loaded || loaded.companyId !== companyId) {
+      skipped++;
+      continue;
+    }
+    if (loaded.status !== "confirmed" && loaded.status !== "locked") {
+      skipped++;
+      continue;
+    }
+    if (loaded.alreadyPushed) {
+      skipped++;
+      continue;
+    }
+    const res = await pushExpenseToTrcloud(loaded.pushable);
+    await recordPushResult(orgId, companyId, id, session.user.id, res);
+    if (res.ok) sent++;
+    else {
+      failed++;
+      firstError ??= res.error;
+    }
+  }
+  revalidatePath("/ledger/expenses");
+  revalidatePath("/ledger");
+  if (sent === 0 && failed > 0) {
+    return { ok: false, error: firstError ?? "ส่งไม่สำเร็จ", sent, skipped, failed, firstError };
+  }
+  return { ok: true, sent, skipped, failed, firstError };
 }
 
 // ===================== Settings: LINE channel =====================
