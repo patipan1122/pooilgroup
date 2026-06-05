@@ -173,12 +173,12 @@ export async function POST(
         const m = data.match(/^ledger:(?:confirm|edit):(.+)$/);
         if (m && ev.replyToken && accessToken) {
           const expenseId = m[1];
-          const webPath = `/ledger/expenses?company=${encodeURIComponent(
-            ch.companyId,
-          )}&selected=${encodeURIComponent(expenseId)}`;
+          const liffEditPath = `/liff/ledger/expense/${encodeURIComponent(
+            expenseId,
+          )}?company=${encodeURIComponent(ch.companyId)}`;
           const link = ledgerLiffId
-            ? `https://liff.line.me/${ledgerLiffId}/ledger?next=${encodeURIComponent(webPath)}`
-            : `${baseUrl}${webPath}`;
+            ? `https://liff.line.me/${ledgerLiffId}/ledger?next=${encodeURIComponent(liffEditPath)}`
+            : `${baseUrl}/ledger/expenses?company=${encodeURIComponent(ch.companyId)}&selected=${encodeURIComponent(expenseId)}`;
           await replyText(
             accessToken,
             ev.replyToken,

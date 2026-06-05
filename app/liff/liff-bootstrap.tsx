@@ -28,22 +28,37 @@ export function LiffBootstrap({
   const [errMsg, setErrMsg] = useState<string>("");
 
   useEffect(() => {
-    // Optional deep-link target — ChairOps Rich Menu opens the LIFF with
-    // ?next=/chairops/m/<screen>. Read from the URL (not useSearchParams, to
-    // avoid a CSR-bailout/Suspense requirement on every /liff page).
-    const rawNext =
-      typeof window !== "undefined"
-        ? new URLSearchParams(window.location.search).get("next")
-        : null;
+    // Read a deep-link param (next/invite). Normally it's a top-level query param
+    // (?next=…) — set either directly or by /liff/page.tsx re-expanding LINE's
+    // ?liff.state. BUT when a module's LIFF Endpoint URL is a sub-path (e.g.
+    // ledger's is /liff/ledger, NOT /liff), LINE loads that page directly with the
+    // original query BURIED inside ?liff.state and /liff/page.tsx never runs to
+    // expand it. So we also dig the param out of liff.state's query part. This is
+    // what made the LedgerLine edit button never navigate.
+    const readDeepLinkParam = (name: string): string | null => {
+      if (typeof window === "undefined") return null;
+      const sp = new URLSearchParams(window.location.search);
+      const direct = sp.get(name);
+      if (direct) return direct;
+      const state = sp.get("liff.state"); // e.g. "/ledger?next=/liff/ledger/expense/X" or "?next=…"
+      if (state) {
+        const q = state.indexOf("?");
+        if (q >= 0) {
+          const v = new URLSearchParams(state.slice(q + 1)).get(name);
+          if (v) return v;
+        }
+      }
+      return null;
+    };
+    // Optional deep-link target — Rich Menu / confirm-card buttons open the LIFF
+    // with ?next=/<path>.
+    const rawNext = readDeepLinkParam("next");
     const next =
       rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//")
         ? rawNext
         : null;
-    // Optional signed maid-invite token (admin onboarding link).
-    const invite =
-      typeof window !== "undefined"
-        ? new URLSearchParams(window.location.search).get("invite")
-        : null;
+    // Optional signed invite token (onboarding link).
+    const invite = readDeepLinkParam("invite");
     // Which module's LINE channel are we on? /liff/ledger → LedgerLine's own
     // channel; everything else → the shared default (unchanged behaviour).
     const lineModule =

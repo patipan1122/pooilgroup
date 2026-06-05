@@ -392,22 +392,24 @@ export function buildConfirmBubble(input: LedgerConfirmCardInput): FlexBubble {
   const payment = fmtPayment(paymentMethod);
   const docTypeLabel = fmtDocType(docType);
   const lowConf = lowestConfidence(confidence);
-  // The web review pane path (pin the company so a multi-company org opens the
-  // right one, then select the expense).
+  // Web (no-LIFF) fallback → the desktop review pane (pin the company so a multi-
+  // company org opens the right one, then select the expense).
   const webPath = `/ledger/expenses?${
     companyId ? `company=${encodeURIComponent(companyId)}&` : ""
   }selected=${encodeURIComponent(expenseId)}`;
-  // Prefer opening THROUGH LedgerLine's own LIFF (login inside LINE, no iOS
-  // cookie-drop): liff.line.me/<id>/ledger?next=<webPath> — the LIFF bootstrap
-  // reads ?next and redirects there after auth. Falls back to a plain web link.
-  //
-  // The `/ledger` segment is REQUIRED: LINE stuffs everything after the LIFF id
-  // into ?liff.state, and /liff/page.tsx only honours a state that starts with
-  // "/" (else it falls through to the ChairOps default). Without /ledger the
-  // edit button silently bounced to the ChairOps maid screen — the GAP-3 bug.
-  // Mirrors the proven ChairOps rich-menu pattern (liff.line.me/<id>/chairops?next=).
+  // In-LIFF target → a FULL Bainy-style mobile edit form (reuses ExpenseReviewPane),
+  // opened INSIDE LINE so the capturer edits without bouncing to the desktop pane
+  // (which is admin-gated + cramped on phones). This is what Bainy does.
+  const liffEditPath = `/liff/ledger/expense/${encodeURIComponent(expenseId)}${
+    companyId ? `?company=${encodeURIComponent(companyId)}` : ""
+  }`;
+  // Open THROUGH LedgerLine's own LIFF (login inside LINE, no iOS cookie-drop):
+  // liff.line.me/<id>/ledger?next=<liffEditPath>. LiffBootstrap reads ?next (top-
+  // level OR buried in ?liff.state) and redirects there after auth — robust to
+  // BOTH LIFF endpoint configs (/liff and /liff/ledger). Falls back to the plain
+  // web pane when no LIFF id is configured.
   const deepLink = liffId
-    ? `https://liff.line.me/${liffId}/ledger?next=${encodeURIComponent(webPath)}`
+    ? `https://liff.line.me/${liffId}/ledger?next=${encodeURIComponent(liffEditPath)}`
     : `${base}${webPath}`;
   // Absolute brand URLs (LINE flex images must be https). Only when baseUrl set.
   // Pose reacts to the result like a sticker — celebrate / alert / confused.
