@@ -57,13 +57,16 @@ export default async function LedgerSettingsPage({
 
   return (
     <div className="p-4 pb-24 sm:p-6 lg:pb-6">
-      <Link
-        href={expensesHref}
-        className="mb-2 inline-flex items-center gap-1 text-sm font-medium text-zinc-500 transition hover:text-zinc-800"
-      >
-        <ChevronLeft className="size-4" aria-hidden />
-        รายการค่าใช้จ่าย
-      </Link>
+      {/* Sticky back bar — visible from anywhere on this page when scrolled */}
+      <div className="sticky top-0 z-20 -mx-4 mb-3 border-b border-zinc-100 bg-white/95 px-4 py-2 backdrop-blur-sm sm:-mx-6 sm:px-6">
+        <Link
+          href={expensesHref}
+          className="inline-flex items-center gap-0.5 text-sm font-medium text-zinc-500 transition hover:text-zinc-800"
+        >
+          <ChevronLeft className="size-4" aria-hidden />
+          รายการค่าใช้จ่าย
+        </Link>
+      </div>
       <LedgerHeader
         title="ตั้งค่า"
         subtitle="จัดการระบบบัญชี · ทีม · การเชื่อมต่อ LINE"
