@@ -5270,7 +5270,7 @@ model LedgerCategory {
   color              String?
   trcloudAccCode     String?  @map("trcloud_acc_code")     // GL account code (e.g. 5220020)
   trcloudProductCode String?  @map("trcloud_product_code") // fixed SKU (JPS-100/101/103)
-  vatClaimable       Boolean  @default(true) @map("vat_claimable") // false = ค่ารับรอง/non-claimable VAT
+  vatClaimable       Boolean  @default(false) @map("vat_claimable") // true = ขอ VAT คืนได้ (ต้องตั้งใจ); false = default conservative
   sort               Int      @default(0)
   active             Boolean  @default(true)
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)

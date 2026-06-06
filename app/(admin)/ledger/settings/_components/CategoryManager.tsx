@@ -43,7 +43,7 @@ export function CategoryManager({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", trcloudAccCode: "" });
+  const [form, setForm] = useState({ name: "", trcloudAccCode: "", trcloudProductCode: "", vatClaimable: false });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editState, setEditState] = useState<EditState>({
     trcloudAccCode: "",
@@ -91,15 +91,22 @@ export function CategoryManager({
 
   function add() {
     if (!form.name.trim()) return;
+    const code = form.trcloudAccCode.trim();
+    if (code && !/^[0-9]{7}$/.test(code)) {
+      setMsg("รหัสบัญชีต้องเป็นตัวเลข 7 หลัก เช่น 5101001");
+      return;
+    }
     setMsg(null);
     startTransition(async () => {
       const res = await createCategory({
         companyId,
         name: form.name.trim(),
-        trcloudAccCode: form.trcloudAccCode.trim(),
+        trcloudAccCode: code,
+        trcloudProductCode: form.trcloudProductCode,
+        vatClaimable: form.vatClaimable,
       });
       if (res.ok) {
-        setForm({ name: "", trcloudAccCode: "" });
+        setForm({ name: "", trcloudAccCode: "", trcloudProductCode: "", vatClaimable: false });
         router.refresh();
       } else {
         setMsg(res.error ?? "เพิ่มไม่สำเร็จ");
@@ -119,23 +126,46 @@ export function CategoryManager({
       <h2 className="mb-3 text-sm font-bold text-zinc-800">หมวดค่าใช้จ่าย</h2>
 
       {/* Add form */}
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row">
-        <input
-          className={`${input} flex-1`}
-          placeholder="ชื่อหมวด เช่น ค่าน้ำมัน/ขนส่ง"
-          value={form.name}
-          onChange={(e) => { setMsg(null); setForm({ ...form, name: e.target.value }); }}
-        />
-        <input
-          className={`${input} sm:w-36`}
-          placeholder="รหัสบัญชี GL"
-          value={form.trcloudAccCode}
-          onChange={(e) => setForm({ ...form, trcloudAccCode: e.target.value })}
-        />
-        <Button variant="primary" disabled={pending || !form.name.trim()} onClick={add}>
-          {pending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-          เพิ่ม
-        </Button>
+      <div className="mb-4 flex flex-col gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            className={`${input} flex-1`}
+            placeholder="ชื่อหมวด เช่น ค่าน้ำมัน/ขนส่ง"
+            value={form.name}
+            onChange={(e) => { setMsg(null); setForm({ ...form, name: e.target.value }); }}
+          />
+          <input
+            className={`${input} sm:w-36`}
+            placeholder="รหัสบัญชี GL (7 หลัก)"
+            value={form.trcloudAccCode}
+            onChange={(e) => { setMsg(null); setForm({ ...form, trcloudAccCode: e.target.value }); }}
+          />
+          <select
+            aria-label="SKU TRCloud"
+            className={`${input} sm:w-44`}
+            value={form.trcloudProductCode}
+            onChange={(e) => setForm({ ...form, trcloudProductCode: e.target.value })}
+          >
+            {SKUS.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-600">
+            <input
+              type="checkbox"
+              className="rounded"
+              checked={form.vatClaimable}
+              onChange={(e) => setForm({ ...form, vatClaimable: e.target.checked })}
+            />
+            <span>VAT ขอคืนได้ <span className="text-zinc-400">(เปิดถ้ามีใบกำกับภาษีแบบเต็มจากผู้ขายจด VAT)</span></span>
+          </label>
+          <Button variant="primary" disabled={pending || !form.name.trim()} onClick={add}>
+            {pending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+            เพิ่ม
+          </Button>
+        </div>
       </div>
       {msg && <p className="mb-2 text-xs text-rose-600">{msg}</p>}
 

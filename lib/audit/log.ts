@@ -118,8 +118,12 @@ export type AuditAction =
   | "LEDGER_EXPENSE_CONFIRMED"
   | "LEDGER_EXPENSE_VOIDED"
   | "LEDGER_EXPENSE_EXPORTED"
+  | "LEDGER_EXPENSE_PUSH_STARTED"
   | "LEDGER_EXPENSE_PUSHED_TRCLOUD"
   | "LEDGER_EXPENSE_PUSH_FAILED"
+  | "LEDGER_EXPENSE_TRCLOUD_AP_DELETE_STARTED"
+  | "LEDGER_EXPENSE_TRCLOUD_AP_DELETE_FAILED"
+  | "LEDGER_EXPENSE_TRCLOUD_AP_DELETED"
   // TRCloud mapping settings (GL code, SKU, department/project) updated by admin.
   | "LEDGER_CATEGORY_UPDATED"
   // LINE Official Account connect for receipt capture. Stores encrypted Channel

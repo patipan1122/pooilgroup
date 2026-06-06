@@ -184,7 +184,17 @@ function buildWhere(f: ExpenseListFilter): Prisma.LedgerExpenseWhereInput {
   if (f.paymentStatus) where.paymentStatus = f.paymentStatus;
   if (f.needsReview !== undefined) where.needsReview = f.needsReview;
   if (f.trcloudPushed !== undefined) {
-    where.trcloudDocId = f.trcloudPushed ? { not: null } : null;
+    if (f.trcloudPushed) {
+      // Exclude null AND the in-flight "pending" sentinel so only rows with a
+      // real TRCloud docId are shown as "ส่งแล้ว".
+      where.AND = [
+        ...(Array.isArray(where.AND) ? (where.AND as Prisma.LedgerExpenseWhereInput[]) : []),
+        { trcloudDocId: { not: null } },
+        { trcloudDocId: { not: "pending" } },
+      ];
+    } else {
+      where.trcloudDocId = null;
+    }
   }
   if (f.completeness) {
     where.completenessStatus = COMPLETENESS_STATUS_BY_FILTER[f.completeness];

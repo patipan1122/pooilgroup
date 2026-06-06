@@ -41,6 +41,7 @@ import { buildTrcloudCsv } from "@/lib/ledger/trcloud-export";
 import { createDraftExpense } from "@/lib/ledger/actions";
 import {
   pushExpenseToTrcloud,
+  deleteTrcloudAp,
   trcloudPushConfigured,
   type PushableExpense,
 } from "@/lib/ledger/trcloud-push";
@@ -835,6 +836,9 @@ async function currentDocCodeFallback(): Promise<string> {
 }
 
 // ===================== Settings: categories =====================
+// Keep VALID_SKUS before categorySchema so both schemas can reference it.
+const CATEGORY_VALID_SKUS = ["JPS-100", "JPS-101", "JPS-103"] as const;
+
 const categorySchema = z.object({
   // NOT .uuid(): seed company/category ids are synthetic uuids like
   // 00000000-0000-0000-0000-0000000000a2 — valid Postgres uuid SYNTAX (the
@@ -845,6 +849,15 @@ const categorySchema = z.object({
   name: z.string().trim().min(1, "ต้องระบุชื่อหมวด").max(100),
   color: z.string().trim().max(20).optional().or(z.literal("")),
   trcloudAccCode: z.string().trim().max(40).optional().or(z.literal("")),
+  trcloudProductCode: z
+    .string()
+    .trim()
+    .refine((v) => !v || (CATEGORY_VALID_SKUS as readonly string[]).includes(v), {
+      message: "SKU ต้องเป็น JPS-100, JPS-101 หรือ JPS-103 เท่านั้น",
+    })
+    .optional()
+    .or(z.literal("")),
+  vatClaimable: z.boolean().optional(),
 });
 
 export async function createCategory(raw: unknown): Promise<ActionResult> {
@@ -859,7 +872,7 @@ export async function createCategory(raw: unknown): Promise<ActionResult> {
   const parsed = categorySchema.safeParse(raw);
   if (!parsed.success)
     return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
-  const { companyId, name, color, trcloudAccCode } = parsed.data;
+  const { companyId, name, color, trcloudAccCode, trcloudProductCode, vatClaimable } = parsed.data;
   // Confirm company belongs to org.
   const company = await prisma.company.findFirst({
     where: { id: companyId, orgId: session.user.org_id },
@@ -879,6 +892,8 @@ export async function createCategory(raw: unknown): Promise<ActionResult> {
         name,
         color: color || null,
         trcloudAccCode: trcloudAccCode || null,
+        trcloudProductCode: trcloudProductCode || null,
+        vatClaimable: vatClaimable ?? false,
         sort: (max._max.sort ?? 0) + 1,
       },
     });
@@ -946,14 +961,13 @@ export async function updateCategory(raw: unknown): Promise<ActionResult> {
   return { ok: true };
 }
 
-const VALID_SKUS = ["JPS-100", "JPS-101", "JPS-103"] as const;
 const updateCategoryTrcloudSchema = z.object({
   id: z.string().trim().min(1),
   trcloudAccCode: z.string().trim().max(40).optional().or(z.literal("")),
   trcloudProductCode: z
     .string()
     .trim()
-    .refine((v) => !v || (VALID_SKUS as readonly string[]).includes(v), {
+    .refine((v) => !v || (CATEGORY_VALID_SKUS as readonly string[]).includes(v), {
       message: "SKU ต้องเป็น JPS-100, JPS-101 หรือ JPS-103 เท่านั้น",
     })
     .optional()
@@ -1295,7 +1309,7 @@ async function loadPushable(
       categoryAccCode: row.category?.trcloudAccCode ?? null,
       trcloudProductCode:
         (row.category?.trcloudProductCode as string | null) ?? null,
-      inputVatClaimable: row.category?.vatClaimable ?? true,
+      inputVatClaimable: row.category?.vatClaimable ?? false,
       branchTrcloudProject:
         typeof branchSettings.trcloudProject === "string"
           ? branchSettings.trcloudProject
@@ -1315,13 +1329,17 @@ async function loadPushable(
   };
 }
 
-/** Stamp the push result back on the expense (success or error) + audit. */
+type PushMeta = { vendor?: string | null; total?: number; vendorTaxId?: string | null; docCode?: string | null };
+
+/** Stamp the push result back on the expense (success or error) + audit.
+ *  meta is optional enrichment for the audit diff (vendor, amount, taxId). */
 async function recordPushResult(
   orgId: string,
   companyId: string,
   id: string,
   userId: string,
   res: { ok: true; docId: string | null; docNo: string | null } | { ok: false; error: string },
+  meta?: PushMeta,
 ): Promise<void> {
   if (res.ok) {
     await prisma.ledgerExpense.updateMany({
@@ -1339,7 +1357,17 @@ async function recordPushResult(
       action: "LEDGER_EXPENSE_PUSHED_TRCLOUD",
       resourceType: "ledger_expense",
       resourceId: id,
-      diff: { new: { trcloudDocNo: res.docNo, trcloudDocId: res.docId } },
+      diff: {
+        new: {
+          trcloudDocNo: res.docNo,
+          trcloudDocId: res.docId,
+          // Revenue Dept required fields for input-VAT audit trail
+          ...(meta?.vendor !== undefined && { vendor: meta.vendor }),
+          ...(meta?.total !== undefined && { total: meta.total }),
+          ...(meta?.vendorTaxId !== undefined && { vendorTaxId: meta.vendorTaxId }),
+          ...(meta?.docCode !== undefined && { docCode: meta.docCode }),
+        },
+      },
     });
   } else {
     await prisma.ledgerExpense.updateMany({
@@ -1353,9 +1381,75 @@ async function recordPushResult(
       action: "LEDGER_EXPENSE_PUSH_FAILED",
       resourceType: "ledger_expense",
       resourceId: id,
-      diff: { new: { error: res.error.slice(0, 500) } },
+      diff: {
+        new: {
+          error: res.error.slice(0, 500),
+          ...(meta?.vendor !== undefined && { vendor: meta.vendor }),
+          ...(meta?.total !== undefined && { total: meta.total }),
+          ...(meta?.docCode !== undefined && { docCode: meta.docCode }),
+        },
+      },
     });
   }
+}
+
+/** Delete a TRCloud AP — accountant/admin only, with full audit trail. */
+export async function deleteTrcloudApAction(
+  expenseId: string,
+  trcloudDocId: string,
+): Promise<ActionResult> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  // Only accountant-tier may remove AP documents (Thai maker/checker principle).
+  if (!(await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.confirm"))) {
+    return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลยกเลิก AP ใน TRCloud ได้" };
+  }
+  const orgId = session.user.org_id;
+  const lightRow = await prisma.ledgerExpense.findFirst({
+    where: { id: expenseId, orgId, trcloudDocId },
+    select: { companyId: true, vendor: true, total: true, docCode: true },
+  });
+  if (!lightRow) return { ok: false, error: "ไม่พบรายการหรือ AP ไม่ตรงกัน" };
+
+  // Intent audit before the TRCloud HTTP call.
+  await audit({
+    orgId,
+    userId: session.user.id,
+    action: "LEDGER_EXPENSE_TRCLOUD_AP_DELETE_STARTED",
+    resourceType: "ledger_expense",
+    resourceId: expenseId,
+    diff: { old: { trcloudDocId, vendor: lightRow.vendor, total: Number(lightRow.total) } },
+  });
+
+  const res = await deleteTrcloudAp(trcloudDocId);
+  if (!res.ok) {
+    await audit({
+      orgId,
+      userId: session.user.id,
+      action: "LEDGER_EXPENSE_TRCLOUD_AP_DELETE_FAILED",
+      resourceType: "ledger_expense",
+      resourceId: expenseId,
+      diff: { new: { error: res.error } },
+    });
+    return { ok: false, error: res.error ?? "ลบ AP ไม่สำเร็จ" };
+  }
+
+  // Clear the docId so the expense can be re-pushed.
+  await prisma.ledgerExpense.updateMany({
+    where: { id: expenseId, orgId, companyId: lightRow.companyId },
+    data: { trcloudDocId: null, trcloudDocNo: null, trcloudError: null },
+  });
+  await audit({
+    orgId,
+    userId: session.user.id,
+    action: "LEDGER_EXPENSE_TRCLOUD_AP_DELETED",
+    resourceType: "ledger_expense",
+    resourceId: expenseId,
+    diff: { old: { trcloudDocId }, new: { trcloudDocId: null } },
+  });
+  revalidatePath("/ledger/expenses");
+  return { ok: true };
 }
 
 /** Push ONE confirmed expense → TRCloud AP. Idempotent + accountant-tier. */
@@ -1403,8 +1497,24 @@ export async function sendExpenseToTrcloud(
   });
   if (claimed.count === 0) return { ok: true, alreadySent: true }; // another request won the race
 
+  // Intent audit — written BEFORE the HTTP call so that if the function dies
+  // mid-push, an auditor can see the push was started (and check TRCloud).
+  await audit({
+    orgId,
+    userId: session.user.id,
+    action: "LEDGER_EXPENSE_PUSH_STARTED",
+    resourceType: "ledger_expense",
+    resourceId: id,
+    diff: { new: { vendor: loaded.pushable.vendor, total: loaded.pushable.total, docCode: loaded.pushable.docCode } },
+  });
+
   const res = await pushExpenseToTrcloud(loaded.pushable);
-  await recordPushResult(orgId, loaded.companyId, id, session.user.id, res);
+  await recordPushResult(orgId, loaded.companyId, id, session.user.id, res, {
+    vendor: loaded.pushable.vendor,
+    total: loaded.pushable.total,
+    vendorTaxId: loaded.pushable.vendorTaxId,
+    docCode: loaded.pushable.docCode,
+  });
   revalidatePath("/ledger/expenses");
   revalidatePath("/ledger");
   if (!res.ok) return { ok: false, error: res.error };
@@ -1460,8 +1570,31 @@ export async function sendExpensesToTrcloud(
       skipped++;
       continue;
     }
+    // Atomic claim — prevents duplicate AP if bulk is retried concurrently.
+    const bulkClaimed = await prisma.ledgerExpense.updateMany({
+      where: { id, orgId, companyId, trcloudDocId: null },
+      data: { trcloudDocId: "pending" },
+    });
+    if (bulkClaimed.count === 0) {
+      skipped++;
+      continue;
+    }
+    // Intent audit before HTTP call (AUD P0 requirement).
+    await audit({
+      orgId,
+      userId: session.user.id,
+      action: "LEDGER_EXPENSE_PUSH_STARTED",
+      resourceType: "ledger_expense",
+      resourceId: id,
+      diff: { new: { vendor: loaded.pushable.vendor, total: loaded.pushable.total, docCode: loaded.pushable.docCode } },
+    });
     const res = await pushExpenseToTrcloud(loaded.pushable);
-    await recordPushResult(orgId, companyId, id, session.user.id, res);
+    await recordPushResult(orgId, companyId, id, session.user.id, res, {
+      vendor: loaded.pushable.vendor,
+      total: loaded.pushable.total,
+      vendorTaxId: loaded.pushable.vendorTaxId ?? undefined,
+      docCode: loaded.pushable.docCode,
+    });
     if (res.ok) sent++;
     else {
       failed++;
