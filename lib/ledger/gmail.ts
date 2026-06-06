@@ -79,6 +79,8 @@ export type LedgerMailbox = {
   scopes: string | null;
   filterSenders: string[];
   suppressedSenders: string[];
+  gmailLabel: string | null;
+  filterKeywords: string[];
   lastSyncAt: Date | null;
   lastSyncStatus: string | null;
   lastSyncCount: number;
@@ -100,6 +102,8 @@ export async function listLedgerMailboxes(
       scopes: true,
       filterSenders: true,
       suppressedSenders: true,
+      gmailLabel: true,
+      filterKeywords: true,
       lastSyncAt: true,
       lastSyncStatus: true,
       lastSyncCount: true,
@@ -133,6 +137,8 @@ export function buildSmartReceiptQuery(opts: {
   senders?: string[];
   suppressed?: string[];
   afterUnixSec?: number;
+  label?: string | null;
+  keywords?: string[];
 }): string {
   const parts: string[] = [
     "-category:promotions", // Gmail already sorts ads here → skip
@@ -145,6 +151,16 @@ export function buildSmartReceiptQuery(opts: {
   }
   for (const s of opts.suppressed ?? []) {
     if (s) parts.push(`-from:${s}`);
+  }
+  // Gmail label filter: quoted to handle spaces + Thai; strip any embedded quotes first
+  const label = opts.label?.trim();
+  if (label) {
+    parts.push(`label:"${label.replace(/"/g, "")}"`);
+  }
+  // Subject keyword OR filter — AND with everything else in the query (Gmail default)
+  const keywords = (opts.keywords ?? []).filter(Boolean);
+  if (keywords.length > 0) {
+    parts.push("subject:(" + keywords.join(" OR ") + ")");
   }
   if (opts.afterUnixSec) parts.push(`after:${opts.afterUnixSec}`);
   return parts.join(" ");

@@ -68,6 +68,8 @@ export async function scanMailbox(
     senders: conn.filterSenders,
     suppressed: conn.suppressedSenders,
     afterUnixSec,
+    label: conn.gmailLabel,
+    keywords: conn.filterKeywords,
   });
 
   const messages = await searchMessages(token, q, opts?.maxMessages ?? 25);

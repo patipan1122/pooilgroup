@@ -5492,8 +5492,10 @@ model LedgerEmailConnection {
   refreshTokenEnc   String    @map("refresh_token_enc") // AES-256-GCM "iv:cipher:tag"
   scopes            String?
   connectedById     String?   @map("connected_by_id") @db.Uuid
-  filterSenders     String[]  @default([]) @map("filter_senders") // allow-list ผู้ส่ง (cron ไม่รันถ้าว่าง)
-  suppressedSenders String[]  @default([]) @map("suppressed_senders") // "ไม่ใช่ค่าใช้จ่าย/ทิ้ง" → ตัดออกรอบหน้า
+  filterSenders     String[]  @default([]) @map("filter_senders") // allow-list ผู้ส่ง (OR logic)
+  suppressedSenders String[]  @default([]) @map("suppressed_senders") // block-list → ตัดออก
+  gmailLabel        String?   @map("gmail_label") // Gmail label name filter (NULL = ไม่กรอง)
+  filterKeywords    String[]  @default([]) @map("filter_keywords") // subject keyword filter (OR)
   lastSyncAt        DateTime? @map("last_sync_at") @db.Timestamptz(6)
   lastSyncStatus    String?   @map("last_sync_status") // "ok" | "error: <msg>"
   lastSyncCount     Int       @default(0) @map("last_sync_count")

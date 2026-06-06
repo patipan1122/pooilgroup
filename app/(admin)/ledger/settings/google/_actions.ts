@@ -102,7 +102,12 @@ export async function scanMailboxNow(
 
 export async function updateMailboxFilters(
   connectionId: string,
-  filterSenders: string[],
+  filters: {
+    filterSenders: string[];
+    suppressedSenders: string[];
+    gmailLabel: string | null;
+    filterKeywords: string[];
+  },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = await requireRole("super_admin", "org_admin", "admin");
   const conn = await prisma.ledgerEmailConnection.findFirst({
@@ -112,7 +117,12 @@ export async function updateMailboxFilters(
   if (!conn) return { ok: false, error: "ไม่พบการเชื่อมต่อ" };
   await prisma.ledgerEmailConnection.update({
     where: { id: connectionId },
-    data: { filterSenders },
+    data: {
+      filterSenders: filters.filterSenders,
+      suppressedSenders: filters.suppressedSenders,
+      gmailLabel: filters.gmailLabel || null,
+      filterKeywords: filters.filterKeywords,
+    },
   });
   revalidatePath("/ledger/settings/google");
   return { ok: true };
