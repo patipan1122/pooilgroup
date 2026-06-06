@@ -59,12 +59,13 @@ export async function POST(request: NextRequest) {
   const liffId = process.env.NEXT_PUBLIC_LEDGER_LIFF_ID;
   const base = getRequestBaseUrl(request);
   // LIFF opens the capture app (endpoint = /liff/ledger); ?next deep-links the web pane.
-  // The `/ledger` segment is REQUIRED — LINE stuffs everything after the LIFF id into
-  // ?liff.state and /liff/page.tsx only honours a state starting with "/" (else it
-  // bounces to the ChairOps default). Without it every menu cell opened ChairOps.
+  // LINE "Concatenate" rule (official docs): the path after the LIFF id is appended to
+  // the FULL endpoint URL (/liff/ledger), so a `/ledger` segment DUPLICATES it →
+  // /liff/ledger/ledger → 404. NO path; the deep target rides in ?next= and the LIFF
+  // bootstrap navigates there. (Ledger has its OWN LIFF id, so no path = its own endpoint.)
   const liff = (next?: string) =>
     liffId
-      ? `https://liff.line.me/${liffId}/ledger${next ? `?next=${encodeURIComponent(next)}` : ""}`
+      ? `https://liff.line.me/${liffId}${next ? `?next=${encodeURIComponent(next)}` : ""}`
       : `${base}${next ?? "/liff/ledger"}`;
 
   // 6 cells (2500×1686, 3 cols × 2 rows) matching public/ledger/brand/richmenu.png.

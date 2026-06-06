@@ -12,7 +12,7 @@
 // Server actions มาจาก props (parent ฉีดจาก lib/ledger/actions หรือ local
 // fallback — ดู NOTE[ledger-partition-B] ใน _kit/types.ts).
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -28,9 +28,16 @@ import {
   StickyNote,
   ExternalLink,
   ReceiptText,
+  ChevronDown,
+  Building2,
+  ListTree,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
+import {
+  expenseConfirmability,
+  confirmabilityMessage,
+} from "@/lib/ledger/confirmability";
 import { ReceiptThumb } from "./ReceiptThumb";
 import { VoucherMenu } from "./VoucherMenu";
 import { SendToTrcloudButton } from "./SendToTrcloudButton";
@@ -130,6 +137,18 @@ export type OverrideClaimabilityAction = (raw: {
   claimable: boolean;
   reason?: InputVatBlockReason;
 }) => Promise<LedgerActionResult>;
+/** D2 · soft-void a fresh draft you created yourself (selfDeleteExpense). Server re-checks owner/age/draft/not-pushed. */
+export type SelfDeleteAction = (id: string) => Promise<LedgerActionResult>;
+/** D2 · ask the office to delete a row you can't self-void (requestDeleteExpense). Always ok from the user side. */
+export type RequestDeleteAction = (
+  id: string,
+  reason?: string,
+) => Promise<LedgerActionResult>;
+/** D1 · idempotent find-or-create of the "สำนักงาน (ส่วนกลาง)" branch (ensureCentralBranch).
+ *  Called ONLY when the user deliberately picks the central option — returns the branchId to drop in. */
+export type EnsureCentralBranchAction = (
+  companyId: string,
+) => Promise<LedgerActionResult & { branchId?: string }>;
 
 // ── ภาษีซื้อ copy maps (deterministic, ไม่ใช้ AI) ──
 const COMPLETENESS_META: Record<
@@ -198,6 +217,9 @@ const PAYMENT_METHODS = [
   "อื่นๆ",
 ];
 
+/** D2 self-delete window — mirrors SELF_DELETE_WINDOW_MS in _actions.ts (server is authoritative). */
+const SELF_DELETE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+
 // Pure validators — also used (re-implemented) server-side in recheck.ts.
 export function runRecheck(d: ExpenseDraft): RecheckFinding[] {
   const out: RecheckFinding[] = [];
@@ -256,6 +278,10 @@ export function ExpenseReviewPane({
   onVoid,
   onOverrideClaimability,
   onAttachReplacement,
+  onSelfDelete,
+  onRequestDelete,
+  onEnsureCentralBranch,
+  currentUserId,
   readOnly = false,
   canConfirm = true,
   canEditClaimability = false,
@@ -273,6 +299,14 @@ export function ExpenseReviewPane({
   onOverrideClaimability?: OverrideClaimabilityAction;
   /** แนบใบใหม่ทดแทน (attachReplacementInvoice action). */
   onAttachReplacement?: AttachReplacementAction;
+  /** D2 · ลบร่างของตัวเอง (selfDeleteExpense). ไม่ส่งมา = ไม่โชว์ปุ่มลบ. */
+  onSelfDelete?: SelfDeleteAction;
+  /** D2 · ขอให้บัญชีลบให้ (requestDeleteExpense). ไม่ส่งมา = ไม่โชว์ปุ่มลบ. */
+  onRequestDelete?: RequestDeleteAction;
+  /** D1 · สร้าง/หา "สำนักงาน (ส่วนกลาง)" เมื่อผู้ใช้เลือกตั้งใจ (ensureCentralBranch). */
+  onEnsureCentralBranch?: EnsureCentralBranchAction;
+  /** id ของผู้ใช้ปัจจุบัน — ใช้เช็คว่ารายการนี้ "ของฉัน" ไหม (UX gate; server re-checks). */
+  currentUserId?: string | null;
   /** locked/void → ดูอย่างเดียว */
   readOnly?: boolean;
   /** false = staff ที่ยังไม่มีสิทธิ์ยืนยัน → กดได้แค่ "บันทึกร่าง" */
@@ -410,6 +444,114 @@ export function ExpenseReviewPane({
     () => draft.items.reduce((s, it) => s + (Number.isFinite(it.amount) ? it.amount : 0), 0),
     [draft.items],
   );
+
+  // ── line-items accordion (M2) — มือถือ default ยุบไว้ (staff แก้ vendor/total/สาขา/หมวด
+  //    เป็นหลัก ไม่ใช่รายการย่อย). มีรายการอยู่แล้ว → เปิดให้เห็นเลยกันงง. ───────────────
+  const [itemsOpen, setItemsOpen] = useState(draft.items.length > 0);
+
+  // ── confirm-gate (D1) — ปุ่ม "ยืนยัน" จะกดได้ต่อเมื่อมี "สาขา + หมวด" ครบ.
+  //    คิดจากค่าใน draft ปัจจุบัน (UX layer; server ตรวจซ้ำใน action เสมอ). ──────────────
+  const gate = useMemo(
+    () =>
+      expenseConfirmability({
+        branchId: draft.branchId || null,
+        categoryId: draft.categoryId || null,
+      }),
+    [draft.branchId, draft.categoryId],
+  );
+  const gateMissingBranch = gate.missing.includes("branch");
+  const gateMissingCategory = gate.missing.includes("category");
+
+  // ── "สำนักงาน (ส่วนกลาง)" — เมื่อ staff ไม่รู้สาขา เลือกอันนี้อย่างตั้งใจ →
+  //    เรียก ensureCentralBranch ฝั่ง server แล้วเอา branchId มาใส่ช่องสาขา. ────────────
+  const CENTRAL_OPTION = "__central__";
+  const [centralPending, setCentralPending] = useState(false);
+  function pickBranch(value: string) {
+    if (value === CENTRAL_OPTION) {
+      if (!onEnsureCentralBranch) return;
+      setCentralPending(true);
+      setMsg(null);
+      startTransition(async () => {
+        const res = await onEnsureCentralBranch(expense.companyId);
+        setCentralPending(false);
+        if (res.ok && res.branchId) {
+          set("branchId", res.branchId);
+        } else {
+          setMsg({ kind: "err", text: res.error ?? "สร้างสาขาสำนักงานไม่สำเร็จ" });
+        }
+      });
+      return;
+    }
+    set("branchId", value);
+  }
+  // central branch อาจยังไม่อยู่ใน branches list (เพิ่ง create) → โชว์ option ของมันเองด้วย.
+  const centralBranch = useMemo(
+    () => branches.find((b) => b.name === "สำนักงาน (ส่วนกลาง)"),
+    [branches],
+  );
+
+  // ── delete control (D2) — เช็คฝั่ง client ว่า "ลบเองได้ไหม" (server re-checks):
+  //    ของฉัน + ร่าง + ยังไม่ส่ง TRCloud + ภายใน 5 นาที. ────────────────────────────────
+  const isMine = currentUserId != null && expense.createdBy === currentUserId;
+  const createdAtMs = useMemo(() => {
+    const t = new Date(expense.createdAt).getTime();
+    return Number.isNaN(t) ? 0 : t;
+  }, [expense.createdAt]);
+  // นาฬิกาเดินจริง → countdown 5 นาที (nice-to-have; server ตัดสินจริง).
+  const [now, setNow] = useState(() => Date.now());
+  const withinWindow = createdAtMs > 0 && now - createdAtMs < SELF_DELETE_WINDOW_MS;
+  const canSelfDelete =
+    isMine && expense.status === "draft" && expense.trcloudDocId == null && withinWindow;
+  const secsLeft = canSelfDelete
+    ? Math.max(0, Math.ceil((createdAtMs + SELF_DELETE_WINDOW_MS - now) / 1000))
+    : 0;
+  // เดินนาฬิกาเฉพาะตอนยังอยู่ในหน้าต่าง self-delete (กัน setInterval ค้าง).
+  useEffect(() => {
+    if (!isMine || expense.status !== "draft" || expense.trcloudDocId != null) return;
+    if (createdAtMs <= 0 || Date.now() - createdAtMs >= SELF_DELETE_WINDOW_MS) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [isMine, expense.status, expense.trcloudDocId, createdAtMs]);
+
+  const [delConfirm, setDelConfirm] = useState(false); // 2-step self-delete กันกดพลาด
+  const [delPending, setDelPending] = useState(false);
+
+  function handleSelfDelete() {
+    if (!onSelfDelete) return;
+    if (!delConfirm) {
+      setDelConfirm(true);
+      return;
+    }
+    setDelConfirm(false);
+    setDelPending(true);
+    setMsg(null);
+    startTransition(async () => {
+      const res = await onSelfDelete(expense.id);
+      setDelPending(false);
+      setMsg(
+        res.ok
+          ? { kind: "ok", text: "ลบรายการแล้ว (ขึ้นเป็น 'ยกเลิก')" }
+          : { kind: "err", text: res.error ?? "ลบไม่สำเร็จ" },
+      );
+    });
+  }
+
+  function handleRequestDelete() {
+    if (!onRequestDelete) return;
+    const reason = prompt("เหตุผลที่ขอลบ (ไม่ใส่ก็ได้):") ?? undefined;
+    setDelPending(true);
+    setMsg(null);
+    startTransition(async () => {
+      const res = await onRequestDelete(expense.id, reason);
+      setDelPending(false);
+      // requestDeleteExpense ตอบ ok:true เสมอ — .error เป็น hint (ยังไม่เชื่อม LINE).
+      setMsg(
+        res.error
+          ? { kind: "ok", text: res.error }
+          : { kind: "ok", text: "ส่งคำขอให้บัญชีลบแล้ว" },
+      );
+    });
+  }
 
   function handle(
     action: SaveExpenseAction | ConfirmExpenseAction,
@@ -705,7 +847,7 @@ export function ExpenseReviewPane({
                   ประเภทค่าใช้จ่าย
                 </FieldLabel>
                 <select
-                  className={inputCls}
+                  className={cn(inputCls, gateMissingCategory && "border-amber-300 ring-1 ring-amber-200")}
                   aria-label="ประเภทค่าใช้จ่าย"
                   value={draft.categoryId}
                   disabled={locked}
@@ -716,97 +858,151 @@ export function ExpenseReviewPane({
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
+                {gateMissingCategory && (
+                  <p className="mt-1 text-[11px] text-amber-700">ต้องระบุหมวดหมู่ค่าใช้จ่าย</p>
+                )}
               </div>
               <div>
                 <FieldLabel>สาขา (ของเรา)</FieldLabel>
                 <select
-                  className={inputCls}
+                  className={cn(inputCls, gateMissingBranch && "border-amber-300 ring-1 ring-amber-200")}
                   aria-label="สาขา"
                   value={draft.branchId}
-                  disabled={locked}
-                  onChange={(e) => set("branchId", e.target.value)}
+                  disabled={locked || centralPending}
+                  onChange={(e) => pickBranch(e.target.value)}
                 >
                   <option value="">— ไม่ระบุ —</option>
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>{b.code} · {b.name}</option>
                   ))}
+                  {/* เลือก "สำนักงาน (ส่วนกลาง)" อย่างตั้งใจเมื่อไม่รู้สาขา —
+                      ถ้ายังไม่มีในลิสต์ เสนอเป็นตัวเลือกพิเศษ (เรียก ensureCentralBranch). */}
+                  {onEnsureCentralBranch && !centralBranch && (
+                    <option value={CENTRAL_OPTION}>สำนักงาน (ส่วนกลาง)</option>
+                  )}
                 </select>
+                {gateMissingBranch && (
+                  <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-700">
+                    {centralPending ? (
+                      <Loader2 className="size-3 animate-spin" aria-hidden />
+                    ) : (
+                      <Building2 className="size-3" aria-hidden />
+                    )}
+                    {centralPending ? "กำลังตั้งสาขาสำนักงาน…" : "ต้องระบุสาขา — ไม่รู้สาขาเลือก “สำนักงาน (ส่วนกลาง)”"}
+                  </p>
+                )}
               </div>
             </div>
 
-            {/* แยกรายการ — line items */}
+            {/* แยกรายการ — line items (M2: มือถือ default ยุบไว้ใต้ accordion · ≥768px
+                stack เป็นการ์ดต่อรายการ เพื่อไม่ให้ grid ล้นจอ 375px เวลายอด 5+ หลัก). */}
             <div className="rounded-xl border border-zinc-100 bg-zinc-50/60 p-2.5">
-              <div className="mb-1.5 flex items-center justify-between">
-                <span className="text-xs font-semibold text-zinc-600">
+              <button
+                type="button"
+                onClick={() => setItemsOpen((o) => !o)}
+                aria-expanded={itemsOpen}
+                aria-controls="line-items-body"
+                className="flex w-full items-center justify-between gap-2 text-left"
+              >
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600">
+                  <ListTree className="size-3.5 text-zinc-400" aria-hidden />
                   รายการสินค้า / บริการ {draft.items.length > 0 ? `(${draft.items.length})` : ""}
                 </span>
-                {!locked && (
-                  <button
-                    type="button"
-                    onClick={addItem}
-                    className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-xs font-medium text-[var(--color-brand-600,#2563EB)] ring-1 ring-zinc-200 hover:bg-zinc-50"
-                  >
-                    <Plus className="size-3.5" aria-hidden /> เพิ่มรายการ
-                  </button>
-                )}
-              </div>
-              {draft.items.length === 0 ? (
-                <p className="px-1 py-2 text-xs text-zinc-400">ยังไม่มีรายการย่อย — เพิ่มได้ถ้าต้องการแยกบรรทัด</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {draft.items.map((it, i) => (
-                    <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-1.5 sm:grid-cols-[minmax(0,1fr)_56px_80px_88px_28px]">
-                      <input
-                        className="col-span-4 h-11 rounded-md border border-zinc-200 bg-white px-2 text-base outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 sm:col-span-1 sm:h-8 sm:text-xs"
-                        value={it.description}
-                        disabled={locked}
-                        onChange={(e) => updateItem(i, { description: e.target.value })}
-                        placeholder="ชื่อสินค้า/บริการ"
-                      />
-                      <input
-                        className="h-11 rounded-md border border-zinc-200 bg-white px-1.5 text-right text-base outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 sm:h-8 sm:text-xs"
-                        value={it.qty}
-                        disabled={locked}
-                        inputMode="decimal"
-                        onChange={(e) => updateItem(i, { qty: Number(e.target.value) || 0 })}
-                        aria-label="จำนวน"
-                      />
-                      <input
-                        className="h-11 rounded-md border border-zinc-200 bg-white px-1.5 text-right text-base outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 sm:h-8 sm:text-xs"
-                        value={it.unitPrice}
-                        disabled={locked}
-                        inputMode="decimal"
-                        onChange={(e) => updateItem(i, { unitPrice: Number(e.target.value) || 0 })}
-                        aria-label="ราคาต่อหน่วย"
-                      />
-                      <input
-                        className="h-11 rounded-md border border-zinc-200 bg-white px-1.5 text-right text-base font-medium outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 sm:h-8 sm:text-xs"
-                        value={it.amount}
-                        disabled={locked}
-                        inputMode="decimal"
-                        onChange={(e) => updateItem(i, { amount: Number(e.target.value) || 0 })}
-                        aria-label="ยอดรวมรายการ"
-                      />
-                      {!locked && (
+                <ChevronDown
+                  className={cn("size-4 text-zinc-400 transition-transform", itemsOpen && "rotate-180")}
+                  aria-hidden
+                />
+              </button>
+
+              {itemsOpen && (
+                <div id="line-items-body" className="mt-2">
+                  <div className="mb-1.5 flex items-center justify-end">
+                    {!locked && (
+                      <button
+                        type="button"
+                        onClick={addItem}
+                        className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-xs font-medium text-[var(--color-brand-600,#2563EB)] ring-1 ring-zinc-200 hover:bg-zinc-50"
+                      >
+                        <Plus className="size-3.5" aria-hidden /> เพิ่มรายการ
+                      </button>
+                    )}
+                  </div>
+                  {draft.items.length === 0 ? (
+                    <p className="px-1 py-2 text-xs text-zinc-400">ยังไม่มีรายการย่อย — เพิ่มได้ถ้าต้องการแยกบรรทัด</p>
+                  ) : (
+                    <div className="space-y-2 md:space-y-1.5">
+                      {draft.items.map((it, i) => (
+                        <div
+                          key={i}
+                          className="rounded-lg border border-zinc-200 bg-white p-2 md:grid md:grid-cols-[minmax(0,1fr)_56px_80px_88px_28px] md:items-center md:gap-1.5 md:rounded-md md:border-0 md:bg-transparent md:p-0"
+                        >
+                          {/* ชื่อรายการ — กว้างเต็มบนมือถือ */}
+                          <input
+                            className="h-11 w-full rounded-md border border-zinc-200 bg-white px-2 text-base outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 md:h-8 md:text-xs"
+                            value={it.description}
+                            disabled={locked}
+                            onChange={(e) => updateItem(i, { description: e.target.value })}
+                            placeholder="ชื่อสินค้า/บริการ"
+                          />
+                          {/* จำนวน · ราคา/หน่วย · ยอดรวม — มือถือ stack เป็น 3 ช่องมีป้ายกำกับ */}
+                          <div className="mt-2 grid grid-cols-3 gap-1.5 md:mt-0 md:contents">
+                            <label className="block md:contents">
+                              <span className="mb-0.5 block text-[10px] font-medium text-zinc-400 md:hidden">จำนวน</span>
+                              <input
+                                className="h-11 w-full rounded-md border border-zinc-200 bg-white px-1.5 text-right text-base outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 md:h-8 md:text-xs"
+                                value={it.qty}
+                                disabled={locked}
+                                inputMode="decimal"
+                                onChange={(e) => updateItem(i, { qty: Number(e.target.value) || 0 })}
+                                aria-label="จำนวน"
+                              />
+                            </label>
+                            <label className="block md:contents">
+                              <span className="mb-0.5 block text-[10px] font-medium text-zinc-400 md:hidden">ราคา/หน่วย</span>
+                              <input
+                                className="h-11 w-full rounded-md border border-zinc-200 bg-white px-1.5 text-right text-base outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 md:h-8 md:text-xs"
+                                value={it.unitPrice}
+                                disabled={locked}
+                                inputMode="decimal"
+                                onChange={(e) => updateItem(i, { unitPrice: Number(e.target.value) || 0 })}
+                                aria-label="ราคาต่อหน่วย"
+                              />
+                            </label>
+                            <label className="block md:contents">
+                              <span className="mb-0.5 block text-[10px] font-medium text-zinc-400 md:hidden">ยอดรวม</span>
+                              <input
+                                className="h-11 w-full rounded-md border border-zinc-200 bg-white px-1.5 text-right text-base font-medium outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 md:h-8 md:text-xs"
+                                value={it.amount}
+                                disabled={locked}
+                                inputMode="decimal"
+                                onChange={(e) => updateItem(i, { amount: Number(e.target.value) || 0 })}
+                                aria-label="ยอดรวมรายการ"
+                              />
+                            </label>
+                          </div>
+                          {!locked && (
+                            <button
+                              type="button"
+                              onClick={() => removeItem(i)}
+                              className="mt-1 flex h-9 w-full items-center justify-center gap-1 rounded-md text-xs text-rose-500 hover:bg-rose-50 md:mt-0 md:size-7 md:w-auto md:text-transparent"
+                              aria-label="ลบรายการ"
+                            >
+                              <Trash2 className="size-3.5" aria-hidden />
+                              <span className="md:hidden">ลบรายการนี้</span>
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      {!locked && Math.abs(itemsSum - draft.subtotal) >= 1 && (
                         <button
                           type="button"
-                          onClick={() => removeItem(i)}
-                          className="flex size-11 items-center justify-center rounded-md text-rose-500 hover:bg-rose-50 sm:size-7"
-                          aria-label="ลบรายการ"
+                          onClick={() => set("subtotal", +itemsSum.toFixed(2))}
+                          className="mt-1 text-[11px] font-medium text-[var(--color-brand-600,#2563EB)] hover:underline"
                         >
-                          <Trash2 className="size-3.5" aria-hidden />
+                          ผลรวมรายการ = {itemsSum.toLocaleString()} — กดเติมเป็นยอดย่อย
                         </button>
                       )}
                     </div>
-                  ))}
-                  {!locked && Math.abs(itemsSum - draft.subtotal) >= 1 && (
-                    <button
-                      type="button"
-                      onClick={() => set("subtotal", +itemsSum.toFixed(2))}
-                      className="mt-1 text-[11px] font-medium text-[var(--color-brand-600,#2563EB)] hover:underline"
-                    >
-                      ผลรวมรายการ = {itemsSum.toLocaleString()} — กดเติมเป็นยอดย่อย
-                    </button>
                   )}
                 </div>
               )}
@@ -1089,14 +1285,16 @@ export function ExpenseReviewPane({
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="primary"
-              disabled={pending || hasError || !canConfirm}
+              disabled={pending || hasError || !canConfirm || !gate.ok}
               onClick={() => handle(onConfirm, "ยืนยันแล้ว · บันทึกเป็น 'ยืนยันแล้ว'")}
               title={
                 !canConfirm
                   ? "เฉพาะบัญชี/ผู้ดูแลยืนยันได้ — คุณกดบันทึกร่างได้"
-                  : hasError
-                    ? "แก้ยอดที่ไม่ตรงก่อนยืนยัน"
-                    : undefined
+                  : !gate.ok
+                    ? confirmabilityMessage(gate.missing)
+                    : hasError
+                      ? "แก้ยอดที่ไม่ตรงก่อนยืนยัน"
+                      : undefined
               }
               className="flex-1 sm:flex-none"
             >
@@ -1115,23 +1313,82 @@ export function ExpenseReviewPane({
               <Save className="size-4" aria-hidden />
               บันทึกร่าง
             </Button>
-            {canConfirm && (
+
+            {/* ลบรายการ (D2) — ลบเองได้ภายใน 5 นาที (ของฉัน+ร่าง+ยังไม่ส่ง) ·
+                นอกนั้นเป็น "ขอลบ" ส่งให้บัญชี. server ตรวจซ้ำทุกกรณี. */}
+            {onSelfDelete && canSelfDelete ? (
               <Button
                 variant="ghost"
-                disabled={pending}
-                onClick={handleVoid}
-                className="ml-auto text-rose-600 hover:bg-rose-50"
+                disabled={pending || delPending}
+                onClick={handleSelfDelete}
+                className={cn(
+                  "ml-auto hover:bg-rose-50",
+                  delConfirm ? "bg-rose-50 text-rose-700" : "text-rose-600",
+                )}
+                title={delConfirm ? "กดอีกครั้งเพื่อยืนยันการลบ" : undefined}
               >
-                <Ban className="size-4" aria-hidden />
-                ยกเลิก
+                {delPending ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                ) : (
+                  <Trash2 className="size-4" aria-hidden />
+                )}
+                {delConfirm
+                  ? "กดอีกครั้งเพื่อลบ"
+                  : secsLeft > 0
+                    ? `ลบรายการ (${Math.floor(secsLeft / 60)}:${String(secsLeft % 60).padStart(2, "0")})`
+                    : "ลบรายการ"}
               </Button>
+            ) : onRequestDelete ? (
+              <Button
+                variant="ghost"
+                disabled={pending || delPending}
+                onClick={handleRequestDelete}
+                className="ml-auto text-rose-600 hover:bg-rose-50"
+                title="ส่งคำขอให้บัญชีลบให้ (เกิน 5 นาที / ไม่ใช่ของคุณ / ยืนยันแล้ว)"
+              >
+                {delPending ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                ) : (
+                  <Trash2 className="size-4" aria-hidden />
+                )}
+                ขอลบ
+              </Button>
+            ) : (
+              canConfirm && (
+                <Button
+                  variant="ghost"
+                  disabled={pending}
+                  onClick={handleVoid}
+                  className="ml-auto text-rose-600 hover:bg-rose-50"
+                >
+                  <Ban className="size-4" aria-hidden />
+                  ยกเลิก
+                </Button>
+              )
             )}
           </div>
+
+          {/* ถ้ามีปุ่มลบใหม่ + ผู้ใช้เป็นบัญชี → ยังให้ "ยกเลิก" แยกไว้ (void ของบัญชี). */}
+          {(onSelfDelete || onRequestDelete) && canConfirm && (
+            <div className="mt-2 flex justify-end">
+              <button
+                type="button"
+                disabled={pending}
+                onClick={handleVoid}
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-400 hover:text-rose-600 disabled:opacity-50"
+              >
+                <Ban className="size-3" aria-hidden /> ยกเลิกใบนี้ (บัญชี)
+              </button>
+            </div>
+          )}
+
           <p className="mt-2 flex items-center gap-1 text-[11px] text-zinc-400">
             <ShieldCheck className="size-3.5" aria-hidden />
             {hasError
               ? "ยอดไม่ตรง — แก้ให้ถูกก่อนจึงจะกด “ยืนยัน” ได้"
-              : "ระบบไม่บันทึกอัตโนมัติ — รายการเป็น “ร่าง” จนกว่าจะกดยืนยันเอง"}
+              : !gate.ok && canConfirm
+                ? confirmabilityMessage(gate.missing)
+                : "ระบบไม่บันทึกอัตโนมัติ — รายการเป็น “ร่าง” จนกว่าจะกดยืนยันเอง"}
           </p>
         </div>
       )}

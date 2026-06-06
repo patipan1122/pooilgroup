@@ -19,11 +19,14 @@ export function LiffBootstrap({
   haveSession: boolean;
 }) {
   const router = useRouter();
-  // LedgerLine invite/claim: run the bind INLINE on the first-loaded page (fresh
-  // LIFF context), NOT by redirecting. Redirecting to /liff/ledger/join caused a
-  // full reload that lost the LIFF launch context AND let liff.init() auto-redirect
-  // to the buried liff.state — an endless loop with two stuck spinners. Here we
-  // also strip liff.state from the URL so liff.init() won't bounce. (audit 2026-06-05)
+  // LedgerLine invite/claim: run the bind INLINE on the first-loaded page (the LIFF
+  // endpoint /liff/ledger). With the corrected deep-link liff.line.me/{id}?invite=…
+  // there is NO sub-path → NO liff.state → liff.init() won't bounce, so we DON'T need
+  // (and must NOT) rewrite the URL: history.replaceState here was stripping LINE's
+  // login params (code/state) BEFORE liff.init() consumed them → login never
+  // established → getIDToken() null → "เข้าร่วมไม่สำเร็จ". LINE's docs are explicit:
+  // do not modify SDK-provided query params until liff.init() resolves. So we just
+  // capture the token and render JoinClient; liff.init() handles the URL itself.
   const [ledgerInvite] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     if (lineModuleFromPath(window.location.pathname) !== "ledger") return null;
@@ -34,16 +37,6 @@ export function LiffBootstrap({
       if (state) {
         const q = state.indexOf("?");
         if (q >= 0) inv = new URLSearchParams(state.slice(q + 1)).get("invite");
-      }
-    }
-    if (inv) {
-      // Strip liff.state (keep the invite) so liff.init() inside JoinClient won't
-      // auto-redirect to the buried path. Stay on the capture page we already loaded
-      // — JoinClient renders inline over it; no sub-path navigation.
-      try {
-        window.history.replaceState(null, "", `/liff/ledger?invite=${encodeURIComponent(inv)}`);
-      } catch {
-        /* history API may be unavailable in some webviews */
       }
     }
     return inv;

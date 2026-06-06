@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getLiff, getLiffIdToken } from "@/lib/line/liff-client";
+import { getLiff, getLiffInitError } from "@/lib/line/liff-client";
 import { LedgerMascot } from "@/components/ledger/Brand";
 
 type State =
@@ -24,15 +24,35 @@ export function JoinClient({ token }: { token: string }) {
         setState({ kind: "error", message: "ลิงก์เชิญไม่ถูกต้อง — ขอลิงก์ใหม่จากแอดมิน" });
         return;
       }
-      // Grab the verified id_token so the server can confirm who we are (never trust
-      // a raw userId). Race a 12s timeout so a hung liff.init shows an actionable
-      // error instead of an endless spinner (audit 2026-06-05).
-      const idToken = await Promise.race([
-        getLiffIdToken(LEDGER_LIFF_ID),
+      // Init LIFF (12s guard so a hung init shows an error, not an endless spinner).
+      const liff = await Promise.race([
+        getLiff(LEDGER_LIFF_ID),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 12000)),
       ]);
+      if (!liff) {
+        // LIFF SDK failed to init — the known iOS LINE-webview "TypeError: Load failed".
+        // Fall back to the OAuth flow (NO LIFF SDK) which binds via /auth/line-start?claim=.
+        // Guard against a loop: only auto-redirect once (marker in the URL).
+        if (typeof window !== "undefined" && !window.location.search.includes("oauth=1")) {
+          window.location.href = `/auth/line-start?claim=${encodeURIComponent(token)}&module=ledger`;
+          return;
+        }
+        const e = getLiffInitError();
+        setState({ kind: "error", message: e ? `เปิดระบบ LINE ไม่สำเร็จ (${e})` : "เปิดระบบ LINE ไม่สำเร็จ — ปิดแล้วเปิดลิงก์ใหม่" });
+        return;
+      }
+      // Not logged in yet → trigger the LINE login (redirects, returns to this URL
+      // logged-in). getIDToken returns null without this, which was the silent fail.
+      if (!liff.isLoggedIn()) {
+        try { liff.login(); } catch { /* preview env */ }
+        return; // page re-loads after login; the effect runs again
+      }
+      let idToken: string | null = null;
+      try { idToken = liff.getIDToken(); } catch { /* ignore */ }
       if (!idToken) {
-        setState({ kind: "error", message: "ยังเข้าสู่ระบบ LINE ไม่สำเร็จ — ปิดแล้วเปิดลิงก์ใหม่อีกครั้ง" });
+        // Logged in but no id_token = the LIFF/Login channel is missing the openid
+        // scope (LINE console). Surface it so the office can fix the channel config.
+        setState({ kind: "error", message: "ไม่ได้รหัสยืนยันจาก LINE (ตรวจ scope openid ของ LIFF) — แจ้งผู้ดูแล" });
         return;
       }
       try {

@@ -181,7 +181,9 @@ export async function POST(
             expenseId,
           )}?company=${encodeURIComponent(ch.companyId)}`;
           const link = ledgerLiffId
-            ? `https://liff.line.me/${ledgerLiffId}/ledger?next=${encodeURIComponent(liffEditPath)}`
+            // LINE "Concatenate" rule: NO `/ledger` path (it duplicates the /liff/ledger
+            // endpoint → 404). Target rides in ?next=; the LIFF bootstrap navigates there.
+            ? `https://liff.line.me/${ledgerLiffId}?next=${encodeURIComponent(liffEditPath)}`
             : `${baseUrl}/ledger/expenses?company=${encodeURIComponent(ch.companyId)}&selected=${encodeURIComponent(expenseId)}`;
           await replyText(
             accessToken,

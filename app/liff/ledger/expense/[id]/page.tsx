@@ -128,6 +128,7 @@ export default async function LedgerLiffExpensePage({
         }))}
         branches={scope.branches}
         canConfirm={actor.canConfirm}
+        currentUserId={actor.userId}
       />
     </div>
   );
