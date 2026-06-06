@@ -164,7 +164,8 @@ export default async function ExpensesPage({
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
-        {/* LEFT — list + filters + bulk-confirm */}
+        {/* LEFT — list + filters + bulk-confirm. Mobile master-detail: hide list when a receipt is open (?selected). */}
+        <div className={selected ? "hidden lg:block" : "block"}>
         <ExpenseList
           rows={rows}
           categories={categories.map((c) => ({
@@ -184,9 +185,22 @@ export default async function ExpensesPage({
           sendableIds={sendableIds}
           companyId={scope.companyId}
         />
+        </div>
 
-        {/* RIGHT — review pane */}
-        <div className="min-w-0 rounded-2xl border border-zinc-200 bg-white p-4 sm:p-6">
+        {/* RIGHT — review pane. Mobile: hidden until a receipt is selected (master-detail). */}
+        <div
+          className={`min-w-0 rounded-2xl border border-zinc-200 bg-white p-4 sm:p-6 ${
+            selected ? "block" : "hidden lg:block"
+          }`}
+        >
+          {selected && (
+            <Link
+              href={`/ledger/expenses?${baseParams.toString()}`}
+              className="mb-3 inline-flex min-h-[44px] items-center gap-1 text-sm font-medium text-[var(--color-brand-600)] lg:hidden"
+            >
+              ← กลับไปรายการ
+            </Link>
+          )}
           {selectedExpense ? (
             <ExpensePaneClient
               expense={selectedExpense}

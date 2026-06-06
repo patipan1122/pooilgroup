@@ -79,7 +79,7 @@ export function AmountInput({
           lastEmitted.current = num;
           onValueChange(num);
         }}
-        className="h-9 w-full bg-transparent text-right text-sm tabular-nums outline-none"
+        className="h-11 w-full bg-transparent text-right text-base tabular-nums outline-none sm:h-9 sm:text-sm"
       />
     </div>
   );
