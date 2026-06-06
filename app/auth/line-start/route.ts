@@ -29,6 +29,9 @@ export async function GET(req: NextRequest) {
   // Which program's LINE channel? (CEO rule: each module = its own channel.)
   // Absent/"default" → unchanged shared channel; "ledger" → LedgerLine's own.
   const lineModule = asLineModule(url.searchParams.get("module"));
+  // Optional LedgerLine claim/invite token — when present, the callback binds the
+  // verified login sub (the LIFF-SDK-free path for iOS where liff.init() "Load failed").
+  const claim = (url.searchParams.get("claim") ?? "").trim().slice(0, 512);
   const channelId = loginChannelIdForModule(lineModule);
   if (!channelId) {
     return NextResponse.json(
@@ -73,5 +76,6 @@ export async function GET(req: NextRequest) {
   // Remember which module/channel started this OAuth so the callback exchanges
   // the code with the SAME channel's secret + client_id.
   res.cookies.set("line_oauth_module", lineModule, cookieOpts);
+  if (claim) res.cookies.set("line_oauth_claim", claim, cookieOpts);
   return res;
 }

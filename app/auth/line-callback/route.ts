@@ -34,6 +34,7 @@ function clearOauthCookies(res: NextResponse) {
   res.cookies.delete("line_oauth_nonce");
   res.cookies.delete("line_oauth_next");
   res.cookies.delete("line_oauth_module");
+  res.cookies.delete("line_oauth_claim");
 }
 
 export async function GET(req: NextRequest) {
@@ -48,6 +49,9 @@ export async function GET(req: NextRequest) {
   const cookieNext = req.cookies.get("line_oauth_next")?.value ?? "/chairops/m";
   // Same channel that started the flow (set by line-start). Default = unchanged.
   const lineModule = asLineModule(req.cookies.get("line_oauth_module")?.value);
+  // LedgerLine claim/invite token (LIFF-SDK-free bind path for iOS). When present we
+  // bind the verified login sub via /api/ledger/invite/accept instead of logging in.
+  const cookieClaim = req.cookies.get("line_oauth_claim")?.value;
 
   function fail(reason: string, detail = ""): NextResponse {
     const u = new URL(`${baseUrl}/auth/line-error`);
@@ -101,6 +105,31 @@ export async function GET(req: NextRequest) {
     idToken = tokenJson.id_token;
   } catch (e) {
     return fail("token-fetch", e instanceof Error ? e.message : "unknown");
+  }
+
+  // LedgerLine CLAIM path (LIFF-SDK-free): we already hold a verified id_token from
+  // the OAuth exchange. Bind it via the ledger invite/accept endpoint (which re-verifies
+  // against the ledger login channel + sets users.line_login_sub / the member). This is
+  // the iOS escape hatch for "liff.init: Load failed". No magic-link/session needed —
+  // binding is enough; the owner then passes every gate on the next open.
+  if (cookieClaim) {
+    try {
+      const acceptRes = await fetch(`${baseUrl}/api/ledger/invite/accept`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: cookieClaim, idToken }),
+      });
+      const acceptJson = (await acceptRes.json()) as { ok?: boolean; error?: string };
+      if (!acceptRes.ok || !acceptJson.ok) {
+        return fail("claim-failed", acceptJson?.error ?? `accept ${acceptRes.status}`);
+      }
+    } catch (e) {
+      return fail("claim-fetch", e instanceof Error ? e.message : "unknown");
+    }
+    const u = new URL(`${baseUrl}/auth/line-claimed`);
+    const res = NextResponse.redirect(u);
+    clearOauthCookies(res);
+    return res;
   }
 
   // Internal call to line-login. We send `x-line-internal: 1` which makes

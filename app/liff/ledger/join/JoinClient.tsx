@@ -30,6 +30,13 @@ export function JoinClient({ token }: { token: string }) {
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 12000)),
       ]);
       if (!liff) {
+        // LIFF SDK failed to init — the known iOS LINE-webview "TypeError: Load failed".
+        // Fall back to the OAuth flow (NO LIFF SDK) which binds via /auth/line-start?claim=.
+        // Guard against a loop: only auto-redirect once (marker in the URL).
+        if (typeof window !== "undefined" && !window.location.search.includes("oauth=1")) {
+          window.location.href = `/auth/line-start?claim=${encodeURIComponent(token)}&module=ledger`;
+          return;
+        }
         const e = getLiffInitError();
         setState({ kind: "error", message: e ? `เปิดระบบ LINE ไม่สำเร็จ (${e})` : "เปิดระบบ LINE ไม่สำเร็จ — ปิดแล้วเปิดลิงก์ใหม่" });
         return;
