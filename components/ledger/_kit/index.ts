@@ -2,6 +2,7 @@
 export { StatusBadge, type LedgerStatus } from "./StatusBadge";
 export { ConfidenceTag } from "./ConfidenceTag";
 export { CompletenessDot, missingLabel, MISSING_LABELS } from "./CompletenessDot";
+export { DocTag, PaymentTag, docTagOf } from "./StatusTags";
 export { AmountInput } from "./AmountInput";
 export { LedgerHeaderSkeleton } from "./LedgerHeaderSkeleton";
 export type {

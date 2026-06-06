@@ -9,7 +9,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck } from "lucide-react";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
-import { CompletenessDot } from "@/components/ledger/_kit/CompletenessDot";
+import { DocTag, PaymentTag } from "@/components/ledger/_kit/StatusTags";
 import { LedgerEmptyState } from "@/components/ledger/Brand";
 import { Badge } from "@/components/ui/badge";
 import type { ExpenseRow, LedgerStatusValue } from "@/components/ledger/_kit/types";
@@ -359,13 +359,17 @@ export function ExpenseList({
                   }
                 >
                   <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      {/* จุดสีภาษีซื้อ — โชว์ก็ต่อเมื่อตรวจแล้ว (undecided = ใบเก่า ไม่รก) */}
-                      {r.completenessStatus !== "undecided" && (
-                        <CompletenessDot
-                          status={r.completenessStatus}
-                          missing={r.completenessMissing}
-                        />
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {/* ป้ายสถานะเอกสาร/ภาษีซื้อ (D3) — undecided = ไม่ใส่ป้าย (ใบเก่า) */}
+                      <DocTag
+                        docType={r.docType}
+                        vat={r.vat}
+                        completenessStatus={r.completenessStatus}
+                        missing={r.completenessMissing}
+                      />
+                      {/* ป้ายจ่ายเงิน — โชว์เฉพาะที่ยังไม่จ่าย (จ่ายแล้ว = ปกติ ไม่รก) */}
+                      {r.paymentStatus && r.paymentStatus !== "paid" && (
+                        <PaymentTag status={r.paymentStatus} />
                       )}
                       {isDraft && r.needsReview && (
                         <AlertTriangle

@@ -7,8 +7,12 @@
 // receipts with the branch shown here (paused/empty → the channel's default branch).
 
 import { useState, useTransition } from "react";
-import { Network, Loader2, Power } from "lucide-react";
-import { setLedgerGroupBranch, toggleLedgerGroup } from "../../_actions";
+import { Network, Loader2, Power, Banknote } from "lucide-react";
+import {
+  setLedgerGroupBranch,
+  toggleLedgerGroup,
+  toggleLedgerGroupSlipIntake,
+} from "../../_actions";
 import type { LedgerGroupRow } from "../../_data";
 
 type BranchOpt = { id: string; code: string; name: string };
@@ -23,6 +27,7 @@ function shortGroup(id: string): string {
 
 function GroupRow({ row, branches }: { row: LedgerGroupRow; branches: BranchOpt[] }) {
   const [branchId, setBranchId] = useState(row.branchId ?? "");
+  const [slipIntake, setSlipIntake] = useState(row.isSlipIntake);
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
 
@@ -39,6 +44,18 @@ function GroupRow({ row, branches }: { row: LedgerGroupRow; branches: BranchOpt[
     start(async () => {
       const res = await toggleLedgerGroup(row.id, !row.active);
       if (!res.ok) setErr(res.error ?? "ทำรายการไม่สำเร็จ");
+    });
+  }
+  function toggleSlip() {
+    const next = !slipIntake;
+    setSlipIntake(next);
+    setErr(null);
+    start(async () => {
+      const res = await toggleLedgerGroupSlipIntake(row.id, next);
+      if (!res.ok) {
+        setSlipIntake(!next); // revert on failure
+        setErr(res.error ?? "ทำรายการไม่สำเร็จ");
+      }
     });
   }
 
@@ -79,6 +96,26 @@ function GroupRow({ row, branches }: { row: LedgerGroupRow; branches: BranchOpt[
           </button>
         </div>
       </div>
+      <button
+        type="button"
+        onClick={toggleSlip}
+        disabled={pending}
+        aria-pressed={slipIntake}
+        className={
+          "mt-2 inline-flex min-h-[36px] items-center gap-1.5 rounded-full border px-3 text-xs font-medium " +
+          (slipIntake
+            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+            : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50")
+        }
+      >
+        <Banknote className="size-3.5" aria-hidden />
+        {slipIntake ? "กลุ่มส่งสลิป · เปิดอยู่" : "ตั้งเป็นกลุ่มส่งสลิป"}
+      </button>
+      {slipIntake && (
+        <p className="mt-1 text-[11px] text-emerald-700">
+          รูปทุกใบในกลุ่มนี้ = สลิปจ่ายเงิน — อ่าน QR กันจ่ายซ้ำ + AI อ่านยอด แล้วจับคู่บิลให้
+        </p>
+      )}
       {err && <p className="mt-2 text-xs text-rose-600">{err}</p>}
     </li>
   );

@@ -145,6 +145,10 @@ export interface ExpenseListFilter {
   branchId?: string | null;
   status?: ExpenseStatus | ExpenseStatus[];
   categoryId?: string | null;
+  /** กรองตามประเภทเอกสาร เช่น "quotation" สำหรับแท็บ "รอใบกำกับ" (D1). */
+  docType?: ExpenseDocType | ExpenseDocType[];
+  /** กรองตามสถานะจ่ายเงิน — ใช้ดึง "บิลค้างจ่าย" มาจับคู่สลิป (D4). */
+  paymentStatus?: PaymentStatus;
   /** YYYY-MM — filter by doc month. */
   period?: string | null;
   needsReview?: boolean;
@@ -174,6 +178,10 @@ function buildWhere(f: ExpenseListFilter): Prisma.LedgerExpenseWhereInput {
     where.status = Array.isArray(f.status) ? { in: f.status } : f.status;
   }
   if (f.categoryId) where.categoryId = f.categoryId;
+  if (f.docType) {
+    where.docType = Array.isArray(f.docType) ? { in: f.docType } : f.docType;
+  }
+  if (f.paymentStatus) where.paymentStatus = f.paymentStatus;
   if (f.needsReview !== undefined) where.needsReview = f.needsReview;
   if (f.trcloudPushed !== undefined) {
     where.trcloudDocId = f.trcloudPushed ? { not: null } : null;

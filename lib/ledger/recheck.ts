@@ -220,6 +220,14 @@ export function gradeCompleteness(p: CompletenessInput): CompletenessResult {
     suggestedClaimable: false,
   });
 
+  // R0 (D1) — ใบเสนอราคา/บิลที่ยังไม่ใช่ใบกำกับ: นับเป็นค่าใช้จ่ายจริงทันที (accrual)
+  //   แต่ "ภาษีซื้อ" ขอคืนไม่ได้จนกว่าใบกำกับจริงจะมา supersede → เกรดเหลืองเสมอ
+  //   (ขอคืนไม่ได้). การแยก "รอใบกำกับ" (มี VAT, ต้องตามใบจริง) vs "ไม่มี VAT" (ยอด
+  //   สุดท้าย, จบ) เป็นเรื่องการแสดงผล (DocTag derive จาก vat) ไม่ใช่เรื่องเกรด.
+  if (p.docType === "quotation") {
+    return yellow("incomplete_invoice");
+  }
+
   // R1 — ผู้ขายต้องมีเลขภาษี 13 หลัก (ม.86/4(1)). ไม่ครบ = แดง.
   if (vendorDigits.length !== 13) {
     missing.push("vendor_taxid");

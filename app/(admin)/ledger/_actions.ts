@@ -32,6 +32,7 @@ import { recheckReceipt, gradeCompleteness } from "@/lib/ledger/recheck";
 import { OUR_BUYER } from "@/lib/ledger/group-identity";
 import { setPermission, isLedgerRole, isLedgerCapability } from "@/lib/ledger/permissions";
 import { listExpenses } from "@/lib/ledger/queries";
+import { recordSlipPayment } from "@/lib/ledger/payments";
 import { parseReceipt } from "@/lib/ledger/ai-parse";
 import { storeReceiptImage } from "@/lib/ledger/storage";
 import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
@@ -207,6 +208,8 @@ async function loadScoped(
       id: true,
       companyId: true,
       status: true,
+      // — supersede: ใบนี้มาแทนใบไหน (ใช้ void ใบเสนอราคาเดิมตอน confirm) —
+      replacementOfId: true,
       // — for re-grading input-VAT completeness on save/confirm —
       buyerTaxIdOnDoc: true,
       vendorAddress: true,
@@ -312,6 +315,7 @@ export async function confirmExpense(
   // grade — else the snapshot the accountant just confirmed keeps a stale color).
   const { grade: _gc, ...gradeColsC } = gradeColumnsFromPatch(p, row);
   void _gc;
+  let supersededQuotationId: string | null = null;
   await prisma.$transaction(async (tx) => {
     await tx.ledgerExpense.updateMany({
       where: { id, orgId: session.user.org_id, companyId: row.companyId },
@@ -330,6 +334,23 @@ export async function confirmExpense(
       companyId: row.companyId,
       items: p.items,
     });
+    // กันนับซ้ำ (D1 · supersede): ถ้าใบที่เพิ่งยืนยันคือ "ใบกำกับจริง" ที่มาแทน
+    // ใบเสนอราคา → void ใบเสนอราคาเดิมในธุรกรรมเดียวกัน เพื่อให้มีเพียงใบเดียวที่ถูก
+    // นับใน totals เสมอ (ไม่มีช่องว่างที่หายทั้งคู่). gate ที่ docType=quotation
+    // เท่านั้น → ใบทดแทน ม.86/4 ปกติไม่ถูกแตะ (no-op ถ้าใบเดิมไม่ใช่ใบเสนอราคา).
+    if (row.replacementOfId) {
+      const res = await tx.ledgerExpense.updateMany({
+        where: {
+          id: row.replacementOfId,
+          orgId: session.user.org_id,
+          companyId: row.companyId,
+          docType: "quotation",
+          status: { not: "void" },
+        },
+        data: { status: "void", needsReview: false },
+      });
+      if (res.count > 0) supersededQuotationId = row.replacementOfId;
+    }
   });
   await audit({
     orgId: session.user.org_id,
@@ -339,6 +360,16 @@ export async function confirmExpense(
     resourceId: id,
     diff: { old: { status: row.status }, new: { status: "confirmed", total: p.total } },
   });
+  if (supersededQuotationId) {
+    await audit({
+      orgId: session.user.org_id,
+      userId: session.user.id,
+      action: "LEDGER_QUOTATION_SUPERSEDED",
+      resourceType: "ledger_expense",
+      resourceId: supersededQuotationId,
+      diff: { old: { status: "confirmed" }, new: { status: "void", supersededBy: id } },
+    });
+  }
   // Auto-archive the receipt original into Google Drive (no-op if not connected).
   after(() =>
     archiveExpenseToDrive({ orgId: session.user.org_id, companyId: row.companyId, id }).catch(() => {}),
@@ -2048,6 +2079,129 @@ export async function toggleLedgerGroup(
   });
   if (r.count === 0) return { ok: false, error: "ไม่พบกลุ่ม" };
   revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
+// ── PR4/D4 · สลิปจ่ายเงิน ─────────────────────────────────────────────────────
+
+/** Mark/clear a LINE group as the dedicated "ส่งสลิป" intake group (images=slips).
+ *  Admin-tier. Only ONE makes sense per company but we don't force it — many
+ *  could relay to the same intake (the auto-match is company-scoped, not group). */
+export async function toggleLedgerGroupSlipIntake(
+  groupRowId: string,
+  on: boolean,
+): Promise<ActionResult> {
+  if (!groupRowId) return { ok: false, error: "ไม่ได้ระบุกลุ่ม" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลตั้งกลุ่มส่งสลิปได้" };
+  }
+  const r = await prisma.ledgerLineGroup.updateMany({
+    where: { id: groupRowId, orgId: session.user.org_id },
+    data: { isSlipIntake: on },
+  });
+  if (r.count === 0) return { ok: false, error: "ไม่พบกลุ่ม" };
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
+/** จับคู่ "สลิปลอย" (ยังไม่รู้ว่าจ่ายบิลไหน) กับบิล → mark บิลนั้นจ่ายแล้ว.
+ *  Accountant/admin-tier (เดียวกับ confirm). บันทึก audit. กันข้ามบริษัท. */
+export async function matchFloatingSlip(
+  paymentId: string,
+  expenseId: string,
+): Promise<ActionResult> {
+  if (!paymentId || !expenseId) return { ok: false, error: "ข้อมูลไม่ครบ" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  const orgId = session.user.org_id;
+  if (!(await ledgerWebCanForRole(orgId, session.user.role, "expense.confirm"))) {
+    return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลจับคู่สลิปได้" };
+  }
+
+  const payment = await prisma.ledgerPayment.findFirst({
+    where: { id: paymentId, orgId },
+    select: { id: true, companyId: true, matchedExpenseId: true, amount: true },
+  });
+  if (!payment) return { ok: false, error: "ไม่พบสลิป" };
+  if (payment.matchedExpenseId) return { ok: false, error: "สลิปนี้จับคู่แล้ว" };
+
+  const bill = await prisma.ledgerExpense.findFirst({
+    where: { id: expenseId, orgId, companyId: payment.companyId },
+    select: { id: true, status: true, total: true, paymentStatus: true },
+  });
+  if (!bill) return { ok: false, error: "ไม่พบบิล (หรือคนละบริษัทกับสลิป)" };
+  if (bill.status === "void") return { ok: false, error: "บิลถูกยกเลิกแล้ว" };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.ledgerPayment.update({
+      where: { id: payment.id },
+      data: { matchedExpenseId: bill.id, markedBy: session.user.id },
+    });
+    await tx.ledgerExpense.updateMany({
+      where: { id: bill.id, orgId, companyId: payment.companyId },
+      data: { paymentStatus: "paid" },
+    });
+  });
+  await audit({
+    orgId,
+    userId: session.user.id,
+    action: "LEDGER_SLIP_MATCHED",
+    resourceType: "ledger_payment",
+    resourceId: payment.id,
+    diff: { old: { matchedExpenseId: null }, new: { matchedExpenseId: bill.id, paymentStatus: "paid" } },
+  });
+  revalidatePath("/ledger/payments");
+  revalidatePath("/ledger/expenses");
+  return { ok: true };
+}
+
+/** Mark a bill paid by CASH (no slip) — accountant action on the web. Records a
+ *  cash ledger_payment for the audit trail + flips the bill to paid. */
+export async function markBillPaidCash(expenseId: string): Promise<ActionResult> {
+  if (!expenseId) return { ok: false, error: "ไม่ได้ระบุบิล" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  const orgId = session.user.org_id;
+  if (!(await ledgerWebCanForRole(orgId, session.user.role, "expense.confirm"))) {
+    return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลทำรายการจ่ายได้" };
+  }
+  const bill = await prisma.ledgerExpense.findFirst({
+    where: { id: expenseId, orgId },
+    select: { id: true, companyId: true, status: true, total: true, paymentStatus: true },
+  });
+  if (!bill) return { ok: false, error: "ไม่พบบิล" };
+  if (bill.status === "void") return { ok: false, error: "บิลถูกยกเลิกแล้ว" };
+  if (bill.paymentStatus === "paid") return { ok: true }; // idempotent
+
+  const rec = await recordSlipPayment({
+    orgId,
+    companyId: bill.companyId,
+    matchedExpenseId: bill.id,
+    amount: Number(bill.total),
+    method: "cash",
+    sendingBank: null,
+    transRef: null,
+    slipSha256: null,
+    slipUrl: null,
+    qrRaw: null,
+    qrDecoded: false,
+    markedBy: session.user.id,
+  });
+  if (!rec.ok) return { ok: false, error: rec.error ?? "บันทึกการจ่ายไม่สำเร็จ" };
+  await audit({
+    orgId,
+    userId: session.user.id,
+    action: "LEDGER_BILL_PAID_CASH",
+    resourceType: "ledger_expense",
+    resourceId: bill.id,
+    diff: { old: { paymentStatus: bill.paymentStatus }, new: { paymentStatus: "paid", method: "cash" } },
+  });
+  revalidatePath("/ledger/expenses");
   return { ok: true };
 }
 

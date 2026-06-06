@@ -16,6 +16,7 @@ import { CompletenessSummaryStrip } from "./_components/CompletenessSummaryStrip
 import { ExpensePaneClient } from "./_components/ExpensePaneClient";
 import { UploadReceiptButton } from "./_components/UploadReceiptButton";
 import { ExportButton } from "./_components/ExportButton";
+import { ledgerQuotationV1, ledgerSlipV1 } from "@/lib/ledger/flags";
 import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,7 @@ export default async function ExpensesPage({
     selected?: string;
     tr?: string; // TRCloud send filter: "sent" | "unsent"
     cc?: string; // ภาษีซื้อ color filter: "green" | "yellow" | "red"
+    dt?: string; // docType filter: "quotation" (แท็บ "รอใบกำกับ" · D1)
   }>;
 }) {
   // Page-level role gate. This review workspace exposes the FULL company-wide
@@ -74,6 +76,10 @@ export default async function ExpensesPage({
   const trcloudPushed = tr === "sent" ? true : tr === "unsent" ? false : undefined;
   const cc =
     sp.cc === "green" || sp.cc === "yellow" || sp.cc === "red" ? sp.cc : undefined;
+  // แท็บ "รอใบกำกับ" (D1) — เห็นเฉพาะตอนเปิด flag · กรองเป็นใบเสนอราคา.
+  const quotationTabOn = ledgerQuotationV1();
+  const docType = quotationTabOn && sp.dt === "quotation" ? ("quotation" as const) : undefined;
+  const slipOn = ledgerSlipV1();
 
   // ภาษีซื้อ summary uses the SAME scope (+ status/category/tr/search) so the strip
   // counts match the list — but NOT the cc filter itself (the strip shows the full mix).
@@ -98,6 +104,7 @@ export default async function ExpensesPage({
     listExpensesSummary({
       ...summaryFilter,
       completeness: cc,
+      docType,
       take: 300,
     }),
     listCategories(scope.orgId, scope.companyId),
@@ -129,7 +136,15 @@ export default async function ExpensesPage({
   if (categoryId) baseParams.set("category", categoryId);
   if (tr) baseParams.set("tr", tr);
   if (cc) baseParams.set("cc", cc);
+  if (docType) baseParams.set("dt", docType);
   if (q) baseParams.set("q", q);
+
+  // ลิงก์สลับแท็บ "รอใบกำกับ" — คงพารามิเตอร์ scope เดิมไว้ (company/branch) เท่านั้น.
+  const quotationOnParams = new URLSearchParams();
+  if (sp.company) quotationOnParams.set("company", sp.company);
+  if (sp.branch) quotationOnParams.set("branch", sp.branch);
+  const quotationOffParams = new URLSearchParams(quotationOnParams);
+  quotationOnParams.set("dt", "quotation");
 
   const draftIds = rows.filter((r) => r.status === "draft").map((r) => r.id);
   // Confirmed/locked rows not yet in TRCloud → bulk-sendable.
@@ -145,6 +160,14 @@ export default async function ExpensesPage({
         scope={scope}
         right={
           <>
+            {slipOn && (
+              <Link
+                href={`/ledger/payments?${quotationOffParams.toString()}`}
+                className="inline-flex min-h-[40px] items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              >
+                สลิปรอจับคู่
+              </Link>
+            )}
             <ExportButton companyId={scope.companyId} />
             <UploadReceiptButton
               companyId={scope.companyId}
@@ -162,6 +185,32 @@ export default async function ExpensesPage({
         selectedId={selected}
         cc={cc}
       />
+
+      {/* แท็บ "รอใบกำกับ" (D1) — ใบเสนอราคา/บิลที่นับเป็นค่าใช้จ่ายแล้วแต่ยังรอใบกำกับจริง */}
+      {quotationTabOn && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+          <Link
+            href={`/ledger/expenses?${quotationOffParams.toString()}`}
+            className={`inline-flex min-h-[36px] items-center rounded-full border px-3 font-medium ${
+              docType
+                ? "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"
+                : "border-[var(--color-brand-200)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)]"
+            }`}
+          >
+            ทั้งหมด
+          </Link>
+          <Link
+            href={`/ledger/expenses?${quotationOnParams.toString()}`}
+            className={`inline-flex min-h-[36px] items-center rounded-full border px-3 font-medium ${
+              docType
+                ? "border-amber-300 bg-amber-50 text-amber-700"
+                : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"
+            }`}
+          >
+            รอใบกำกับ · ใบเสนอราคา
+          </Link>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
         {/* LEFT — list + filters + bulk-confirm. Mobile master-detail: hide list when a receipt is open (?selected). */}

@@ -24,6 +24,10 @@ import { handleLedgerCommand } from "@/lib/ledger/line-commands";
 import { ensureLedgerMember } from "@/lib/ledger/members";
 import { can } from "@/lib/ledger/permissions";
 import { archiveReceiptToDrive, isDriveConfigured } from "@/lib/ledger/drive";
+import { ledgerSlipV1 } from "@/lib/ledger/flags";
+import { decodeSlipQr } from "@/lib/ledger/slip-qr";
+import { checkSlipDuplicate } from "@/lib/ledger/slip-match";
+import { recordSlipPayment, findAutoMatchBill } from "@/lib/ledger/payments";
 import {
   buildLineConfirmCard,
   buildLedgerWelcomeCard,
@@ -211,6 +215,8 @@ export async function POST(
       //     fall back to the channel's single branch — so single-group setups are
       //     byte-for-byte unchanged. One cheap indexed lookup per event.
       let effectiveBranchId: string | null = ch.branchId;
+      // PR4/D4 — is THIS group the dedicated "ส่งสลิป" intake group? (images = slips)
+      let slipIntakeGroup = false;
       if (ev.source?.groupId) {
         const gm = await prisma.ledgerLineGroup
           .findFirst({
@@ -220,10 +226,11 @@ export async function POST(
               groupId: ev.source.groupId,
               active: true,
             },
-            select: { branchId: true },
+            select: { branchId: true, isSlipIntake: true },
           })
           .catch(() => null);
         if (gm?.branchId) effectiveBranchId = gm.branchId;
+        if (gm?.isSlipIntake) slipIntakeGroup = true;
       }
 
       // --- TEXT → conversational Q&A (สรุปเดือนนี้ / หมวดไหนเยอะสุด / งบ ...) ---
@@ -393,6 +400,21 @@ export async function POST(
       if (ev.message?.type !== "image" || !ev.message.id) continue;
       if (!accessToken) {
         console.warn("[ledger:line-webhook] no access token — cannot fetch image");
+        continue;
+      }
+      // PR4/D4 — slip-intake group: every image here is a PAYMENT SLIP (not a
+      // receipt). Decode the QR (dedup) → AI-OCR the amount → auto-match to ONE
+      // unpaid bill, else float for the accountant. Flag-gated; off = no change.
+      if (slipIntakeGroup && ledgerSlipV1()) {
+        await handleSlipImage({
+          ev,
+          ch: { id: ch.id, orgId: ch.orgId, companyId: ch.companyId },
+          accessToken,
+          reply: (text: string) =>
+            ev.replyToken
+              ? replyText(accessToken, ev.replyToken, text).catch(() => {})
+              : Promise.resolve(),
+        }).catch((e) => console.error("[ledger:line-webhook] slip handling failed", e));
         continue;
       }
       // Security gate: a bound channel only captures from ITS group; an unbound
@@ -643,6 +665,119 @@ async function pushFlex(
     body: JSON.stringify({ to, messages: [flex] }),
     signal: AbortSignal.timeout(3000),
   });
+}
+
+/**
+ * PR4/D4 — handle one image in the "ส่งสลิป" group as a payment slip.
+ *   rehost → sha256 → decode QR (transRef = dedup key) → dup gate (BLOCK on a
+ *   repeated transfer, silent on a resent image) → AI-OCR the amount once →
+ *   auto-match to exactly ONE unpaid bill (mark paid) else float for the web.
+ * NEVER throws past its own catch — a bad slip must not 500 the webhook.
+ */
+async function handleSlipImage(opts: {
+  ev: LineEvent;
+  ch: { id: string; orgId: string; companyId: string };
+  accessToken: string;
+  reply: (text: string) => Promise<void>;
+}): Promise<void> {
+  const { ev, ch, accessToken, reply } = opts;
+  const messageId = ev.message?.id;
+  if (!messageId) return;
+
+  // 1. Rehost the slip image onto R2 (reuse the inbox helper).
+  const att = await rehostLineImage({
+    orgId: ch.orgId,
+    conversationId: `ledger-slip-${ch.id}`,
+    messageId,
+    channelAccessToken: accessToken,
+  }).catch(() => null);
+  if (!att?.url) {
+    await reply("รับสลิปไม่สำเร็จ · ลองส่งใหม่อีกครั้งนะ 🧾");
+    return;
+  }
+
+  // 2. Fetch bytes → sha256 (image dedup) + decode the slip QR (transRef dedup).
+  let sha256: string | null = null;
+  let qr = { decoded: false, transRef: null as string | null, sendingBank: null as string | null, rawPayload: null as string | null };
+  try {
+    const resp = await fetch(att.url, { signal: AbortSignal.timeout(8000) });
+    if (resp.ok) {
+      const bytes = Buffer.from(await resp.arrayBuffer());
+      sha256 = sha256Hex(bytes);
+      const decoded = await decodeSlipQr(bytes);
+      qr = { decoded: decoded.decoded, transRef: decoded.transRef, sendingBank: decoded.sendingBank, rawPayload: decoded.rawPayload };
+    }
+  } catch (e) {
+    console.warn("[ledger:line-webhook] slip fetch/decode failed", e);
+  }
+
+  // 3. Duplicate gate — same transfer (bank+ref) BLOCKS; same image is silent.
+  const dup = await checkSlipDuplicate({
+    orgId: ch.orgId,
+    sendingBank: qr.sendingBank,
+    transRef: qr.transRef,
+    slipSha256: sha256,
+  }).catch(() => ({ kind: "none" as const, blocking: false }));
+  if (dup.kind === "trans_ref") {
+    await reply(
+      `⚠️ สลิปนี้ (เลขอ้างอิง ${qr.transRef}) เคยบันทึกจ่ายไปแล้ว — กันจ่ายซ้ำให้\nถ้าโอนซ้ำจริง ให้บัญชียืนยันบนเว็บอีกที`,
+    );
+    return;
+  }
+  if (dup.kind === "slip_image") {
+    // resent the same photo — quietly acknowledge, don't double-record.
+    await reply("รับสลิปนี้ไว้แล้วนะ 👍");
+    return;
+  }
+
+  // 4. AI-OCR the amount ONCE (reuse the receipt parser → total). Budget-guarded
+  //    inside parseReceipt; on failure amount stays null → the slip floats.
+  let amount: number | null = null;
+  try {
+    const parsed = await parseReceipt(att.url, /*userId*/ null, ch.orgId);
+    amount = parsed?.total ?? null;
+  } catch (e) {
+    if (e instanceof AiBudgetError) console.warn("[ledger:line-webhook] slip AI budget exceeded");
+    else console.error("[ledger:line-webhook] slip OCR failed", e);
+  }
+
+  // 5. Auto-match: amount → exactly ONE recent unpaid bill?
+  const match = await findAutoMatchBill({ orgId: ch.orgId, companyId: ch.companyId, amount });
+  const matchedExpenseId = match.kind === "matched" ? match.expenseId : null;
+
+  const rec = await recordSlipPayment({
+    orgId: ch.orgId,
+    companyId: ch.companyId,
+    matchedExpenseId,
+    amount,
+    method: "transfer",
+    sendingBank: qr.sendingBank,
+    transRef: qr.transRef,
+    slipSha256: sha256,
+    slipUrl: att.url,
+    slipThumbUrl: att.url,
+    qrRaw: qr.rawPayload,
+    qrDecoded: qr.decoded,
+    markedBy: null,
+  });
+
+  if (!rec.ok) {
+    if (rec.duplicate) {
+      await reply("⚠️ สลิปนี้ถูกบันทึกไปแล้ว (กันจ่ายซ้ำ)");
+    } else {
+      await reply("บันทึกสลิปไม่สำเร็จ · ลองใหม่อีกครั้งนะ");
+    }
+    return;
+  }
+
+  const baht = amount != null ? amount.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
+  if (match.kind === "matched" && rec.marked) {
+    await reply(`✅ จับคู่บิล ${match.docCode} แล้ว · จ่ายแล้ว ${baht} บาท\n(ตรวจ/แก้ได้บนเว็บ — ไม่โพสต์อัตโนมัติ)`);
+  } else if (match.kind === "ambiguous") {
+    await reply(`📩 รับสลิป ${baht} บาทแล้ว · เจอบิลยอดเท่ากัน ${match.count} ใบ — บัญชีจะเลือกจับคู่ให้บนเว็บ`);
+  } else {
+    await reply(`📩 รับสลิป ${baht} บาทแล้ว · ยังไม่เจอบิลที่ตรงพอดี — บัญชีจะจับคู่ให้บนเว็บ`);
+  }
 }
 
 /** Best-effort plain-text LINE reply (used by the Q&A path). */

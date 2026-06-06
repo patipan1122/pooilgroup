@@ -139,7 +139,13 @@ export type AuditAction =
   // because each one changes whether VAT may be claimed (สรรพากร trail).
   | "LEDGER_EXPENSE_REPLACEMENT_ATTACHED"
   | "LEDGER_EXPENSE_VAT_OVERRIDDEN"
-  | "LEDGER_EXPENSE_RECHECKED";
+  | "LEDGER_EXPENSE_RECHECKED"
+  // Payments + quotations (PR3–PR5 · D1/D4): a quotation voided when the real
+  // tax-invoice supersedes it (no double-count), a floating slip matched to a
+  // bill, and a bill marked paid by cash. Each moves money state → audited.
+  | "LEDGER_QUOTATION_SUPERSEDED"
+  | "LEDGER_SLIP_MATCHED"
+  | "LEDGER_BILL_PAID_CASH";
 
 export interface AuditEntry {
   orgId: string;

@@ -353,9 +353,9 @@ export async function listLedgerGroups(orgId: string, companyId: string) {
       where: { orgId, companyId },
       orderBy: [{ active: "desc" }, { createdAt: "asc" }],
       take: 200,
-      select: { id: true, groupId: true, branchId: true, label: true, active: true },
+      select: { id: true, groupId: true, branchId: true, label: true, active: true, isSlipIntake: true },
     })
-    .catch(() => [] as { id: string; groupId: string; branchId: string | null; label: string | null; active: boolean }[]);
+    .catch(() => [] as { id: string; groupId: string; branchId: string | null; label: string | null; active: boolean; isSlipIntake: boolean }[]);
   const ids = Array.from(new Set(rows.map((r) => r.branchId).filter(Boolean) as string[]));
   const branches = ids.length
     ? await prisma.branch.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
@@ -368,6 +368,7 @@ export async function listLedgerGroups(orgId: string, companyId: string) {
     branchName: r.branchId ? nameById.get(r.branchId) ?? null : null,
     label: r.label,
     active: r.active,
+    isSlipIntake: r.isSlipIntake,
   }));
 }
 export type LedgerGroupRow = Awaited<ReturnType<typeof listLedgerGroups>>[number];

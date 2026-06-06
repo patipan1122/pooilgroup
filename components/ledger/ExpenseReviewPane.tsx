@@ -38,7 +38,8 @@ import { AttachReplacementButton } from "./AttachReplacementButton";
 import type { AttachReplacementAction } from "./AttachReplacementButton";
 import { StatusBadge } from "./_kit/StatusBadge";
 import { ConfidenceTag } from "./_kit/ConfidenceTag";
-import { CompletenessDot, missingLabel } from "./_kit/CompletenessDot";
+import { missingLabel } from "./_kit/CompletenessDot";
+import { DocTag, PaymentTag } from "./_kit/StatusTags";
 import { AmountInput } from "./_kit/AmountInput";
 import type { ExpenseRow, CategoryOption, BranchOption } from "./_kit/types";
 import type {
@@ -512,8 +513,13 @@ export function ExpenseReviewPane({
       {completeness !== "undecided" && (
         <div className={cn("rounded-xl border p-3", ccMeta.cls)}>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <CompletenessDot status={completeness} />
+            <div className="flex flex-wrap items-center gap-2">
+              <DocTag
+                docType={expense.docType}
+                vat={expense.vat}
+                completenessStatus={completeness}
+              />
+              <PaymentTag status={expense.paymentStatus} />
               <h3 className="text-sm font-bold">{ccMeta.title}</h3>
             </div>
             <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", ccMeta.chip)}>

@@ -38,7 +38,7 @@ const RECEIPT_PROMPT = `คุณเป็นผู้เชี่ยวชา�
 
 {
   "vendor": "<ชื่อร้าน/ผู้ขาย หรือ null>",
-  "doc_type": "<ประเภทเอกสาร: tax_invoice (ใบกำกับภาษี) | receipt (ใบเสร็จรับเงิน) | cash_bill (บิลเงินสด) | delivery_note (ใบส่งของ) | other (อื่นๆ) — ดูจากหัวเอกสาร>",
+  "doc_type": "<ประเภทเอกสาร: tax_invoice (ใบกำกับภาษี) | receipt (ใบเสร็จรับเงิน) | cash_bill (บิลเงินสด) | quotation (ใบเสนอราคา/ใบแจ้งหนี้ที่ยังไม่ใช่ใบกำกับ) | delivery_note (ใบส่งของ) | other (อื่นๆ) — ดูจากหัวเอกสาร>",
   "vendor_tax_id": "<เลขผู้เสียภาษี 13 หลัก หรือ null>",
   "buyer_tax_id": "<เลขผู้เสียภาษีของผู้ซื้อบนเอกสาร ถ้ามี หรือ null — มองบล็อกลูกค้า/ผู้ซื้อ/ในนาม ไม่ใช่เลขร้านผู้ขาย ห้ามเดา>",
   "vendor_doc_number": "<เลขที่เอกสาร/เลขที่ใบกำกับภาษีของร้าน หรือ null>",
@@ -107,6 +107,10 @@ function normalizeDocType(raw: unknown): ExpenseDocType {
   if (!v) return "tax_invoice";
   if (v === "tax_invoice" || v.includes("กำกับ")) return "tax_invoice";
   if (v === "receipt" || v.includes("เสร็จ")) return "receipt";
+  // ใบเสนอราคา / ใบแจ้งหนี้ที่ยังไม่ใช่ใบกำกับ (D1) — ตรวจก่อน cash_bill เพราะ
+  // cash_bill จับคำว่า "บิล" ซึ่งกว้างเกินไป.
+  if (v === "quotation" || v.includes("เสนอราคา") || v.includes("ใบเสนอ"))
+    return "quotation";
   if (v === "delivery_note" || v.includes("ส่งของ") || v.includes("ส่งสินค้า"))
     return "delivery_note";
   if (v === "cash_bill" || v.includes("เงินสด") || v.includes("บิล"))

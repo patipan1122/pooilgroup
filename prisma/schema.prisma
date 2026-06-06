@@ -5522,6 +5522,8 @@ model LedgerLineGroup {
   branchId  String?  @map("branch_id") @db.Uuid // this group → this branch
   label     String? // optional human label (e.g. the group name)
   active    Boolean  @default(true)
+  // PR4/D4 — true = กลุ่มส่งสลิป (รูป = สลิปจ่ายเงิน ไม่ใช่ใบเสร็จ).
+  isSlipIntake Boolean @default(false) @map("is_slip_intake")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
