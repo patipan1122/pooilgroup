@@ -976,6 +976,14 @@ export async function updateCategoryTrcloud(raw: unknown): Promise<ActionResult>
       ...(vatClaimable !== undefined ? { vatClaimable } : {}),
     },
   });
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_CATEGORY_UPDATED",
+    resourceType: "ledger_category",
+    resourceId: id,
+    diff: { new: { trcloudAccCode: trcloudAccCode || null, trcloudProductCode: trcloudProductCode || null, vatClaimable } },
+  });
   revalidatePath("/ledger/settings");
   return { ok: true };
 }
@@ -1006,8 +1014,8 @@ export async function updateBranchTrcloud(raw: unknown): Promise<ActionResult> {
     branch.settings && typeof branch.settings === "object"
       ? (branch.settings as Record<string, unknown>)
       : {};
-  await prisma.branch.update({
-    where: { id: branchId },
+  await prisma.branch.updateMany({
+    where: { id: branchId, orgId: session.user.org_id },
     data: {
       settings: {
         ...currentSettings,
@@ -1015,6 +1023,14 @@ export async function updateBranchTrcloud(raw: unknown): Promise<ActionResult> {
         trcloudDepartment: trcloudDepartment || null,
       },
     },
+  });
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_BRANCH_UPDATED",
+    resourceType: "branch",
+    resourceId: branchId,
+    diff: { new: { trcloudProject: trcloudProject || null, trcloudDepartment: trcloudDepartment || null } },
   });
   revalidatePath("/ledger/settings");
   return { ok: true };
@@ -1319,6 +1335,14 @@ async function recordPushResult(
     await prisma.ledgerExpense.updateMany({
       where: { id, orgId, companyId },
       data: { trcloudError: res.error.slice(0, 500) },
+    });
+    await audit({
+      orgId,
+      userId,
+      action: "LEDGER_EXPENSE_PUSH_FAILED",
+      resourceType: "ledger_expense",
+      resourceId: id,
+      diff: { new: { error: res.error.slice(0, 500) } },
     });
   }
 }

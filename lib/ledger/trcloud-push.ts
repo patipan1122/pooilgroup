@@ -15,12 +15,12 @@ import { prisma } from "@/lib/prisma";
 //
 // See docs/WORKSHOP_ledger-trcloud-v2.md for full spec.
 
-const BASE        = process.env.TRCLOUD_BASE       ?? "https://pooil.trcloud.co/application/api-connector2/end-point";
-const ORIGIN      = process.env.TRCLOUD_JPS_ORIGIN ?? process.env.TRCLOUD_ORIGIN ?? "https://pooil.trcloud.co";
-// Use JPS-specific creds (company 45); fall back to legacy vars for local dev
-const COMPANY_ID  = process.env.TRCLOUD_JPS_COMPANY_ID  ?? process.env.TRCLOUD_COMPANY_ID  ?? "";
-const PASSKEY     = process.env.TRCLOUD_JPS_PASSKEY     ?? process.env.TRCLOUD_PASSKEY     ?? "";
-const ENCRYPT_HEAD= process.env.TRCLOUD_JPS_ENCRYPT_HEAD?? process.env.TRCLOUD_ENCRYPT_HEAD?? "";
+const BASE        = process.env.TRCLOUD_BASE        ?? "https://pooil.trcloud.co/application/api-connector2/end-point";
+const ORIGIN      = process.env.TRCLOUD_JPS_ORIGIN  ?? "https://pooil.trcloud.co";
+// MUST use JPS-specific creds (company 45). No fallback to company-31 shared account.
+const COMPANY_ID  = process.env.TRCLOUD_JPS_COMPANY_ID   ?? "";
+const PASSKEY     = process.env.TRCLOUD_JPS_PASSKEY       ?? "";
+const ENCRYPT_HEAD= process.env.TRCLOUD_JPS_ENCRYPT_HEAD  ?? "";
 
 const AP_TYPE_CASH   = process.env.TRCLOUD_AP_TYPE_CASH   ?? "Cash[AP]";
 const AP_TYPE_CREDIT = process.env.TRCLOUD_AP_TYPE_CREDIT ?? "Credit[AP]";
@@ -282,7 +282,7 @@ async function buildLines(
       product: r.desc.slice(0, 2000),
       price: String(inclPrice),
       quantity: String(qty),
-      vat: "7", // rate (not amount)
+      vat: lineVat === 0 ? "0" : "7", // rate — "0" for VAT-exempt lines
       acc_code: accCode,
     });
   }
