@@ -22,6 +22,7 @@ import { parseExpenseText, stripJodTrigger } from "@/lib/ledger/parse-text";
 import { findRecentAmountDuplicate } from "@/lib/ledger/dedup";
 import { handleLedgerCommand } from "@/lib/ledger/line-commands";
 import { ensureLedgerMember } from "@/lib/ledger/members";
+import { refreshLedgerGroupMeta } from "@/lib/ledger/line-group";
 import { can } from "@/lib/ledger/permissions";
 import { archiveReceiptToDrive, isDriveConfigured } from "@/lib/ledger/drive";
 import { ledgerSlipV1 } from "@/lib/ledger/flags";
@@ -228,11 +229,23 @@ export async function POST(
               groupId: ev.source.groupId,
               active: true,
             },
-            select: { branchId: true, isSlipIntake: true },
+            select: { branchId: true, isSlipIntake: true, label: true },
           })
           .catch(() => null);
         if (gm?.branchId) effectiveBranchId = gm.branchId;
         if (gm?.isSlipIntake) slipIntakeGroup = true;
+        // Lazy backfill: a bound group that has never had its name fetched still
+        // shows "กลุ่ม <id-tail>" on the web. Fill the real LINE name + member
+        // count ONCE (only when label is still empty) on any activity. Cheap —
+        // skipped forever after the first successful fetch. Best-effort.
+        if (gm && !gm.label?.trim() && accessToken) {
+          await refreshLedgerGroupMeta({
+            orgId: ch.orgId,
+            companyId: ch.companyId,
+            groupId: ev.source.groupId,
+            accessToken,
+          }).catch(() => {});
+        }
       }
 
       // --- TEXT → conversational Q&A (สรุปเดือนนี้ / หมวดไหนเยอะสุด / งบ ...) ---

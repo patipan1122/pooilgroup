@@ -7,13 +7,13 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2 } from "lucide-react";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
 import { CompletenessDot } from "@/components/ledger/_kit/CompletenessDot";
 import { DocTag, PaymentTag } from "@/components/ledger/_kit/StatusTags";
 import { LedgerEmptyState } from "@/components/ledger/Brand";
 import { expenseConfirmability } from "@/lib/ledger/confirmability";
-import { bulkConfirm, sendExpensesToTrcloud } from "../../_actions";
+import { bulkConfirm, bulkVoid, sendExpensesToTrcloud } from "../../_actions";
 import type { ExpenseTab } from "../page";
 import { FilterSheet } from "./FilterSheet";
 import type { ExpenseRow, LedgerStatusValue } from "@/components/ledger/_kit/types";
@@ -74,6 +74,9 @@ export function ExpenseList({
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  // Bulk-delete two-step guard: open a confirm sheet, require typing "ลบ".
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteText, setDeleteText] = useState("");
 
   const draftSet = new Set(draftIds);
   const sendableSet = new Set(sendableIds);
@@ -152,6 +155,25 @@ export function ExpenseList({
         router.refresh();
       } else {
         setMsg({ kind: "err", text: res.error ?? "ส่งเข้า TRCloud ไม่สำเร็จ" });
+      }
+    });
+  }
+
+  function runBulkVoid() {
+    const ids = [...checked];
+    if (ids.length === 0) return;
+    setMsg(null);
+    startTransition(async () => {
+      const res = await bulkVoid(ids, companyId);
+      if (res.ok) {
+        const extra = res.skipped ? ` · ข้าม ${res.skipped} (ถูกล็อก)` : "";
+        setMsg({ kind: "ok", text: `ลบ ${res.voided ?? 0} ใบแล้ว${extra}` });
+        setChecked(new Set());
+        setConfirmDelete(false);
+        setDeleteText("");
+        router.refresh();
+      } else {
+        setMsg({ kind: "err", text: res.error ?? "ลบไม่สำเร็จ" });
       }
     });
   }
@@ -271,6 +293,59 @@ export function ExpenseList({
                   ส่งเข้า TRCloud ({selSendable.length})
                 </button>
               )}
+              {checked.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setDeleteText(""); setConfirmDelete(true); }}
+                  disabled={pending}
+                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                >
+                  <Trash2 className="size-3.5" />
+                  ลบ ({checked.size})
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {/* Type-"ลบ" guard — bulk delete is destructive, so it needs a deliberate
+            second step (CEO: "พิมคำว่าลบอีก กันลบโง่ๆ"). */}
+        {confirmDelete && (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+            <p className="text-xs font-semibold text-rose-800">
+              ลบ {checked.size} รายการที่เลือก?
+            </p>
+            <p className="mt-0.5 text-[11px] text-rose-600">
+              จะเปลี่ยนสถานะเป็น &ldquo;ยกเลิก&rdquo; (ถอดออกจากยอดรวม) · รายการที่ถูกล็อกจะถูกข้าม
+            </p>
+            <p className="mt-2 text-[11px] font-medium text-zinc-600">
+              พิมพ์ <span className="font-bold text-rose-700">ลบ</span> เพื่อยืนยัน
+            </p>
+            <div className="mt-1 flex items-center gap-1.5">
+              <input
+                type="text"
+                value={deleteText}
+                onChange={(e) => setDeleteText(e.target.value)}
+                placeholder="พิมพ์ ลบ"
+                autoFocus
+                className="h-8 w-24 rounded-lg border border-rose-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-rose-200"
+              />
+              <button
+                type="button"
+                onClick={runBulkVoid}
+                disabled={pending || deleteText.trim() !== "ลบ"}
+                className="inline-flex h-8 items-center gap-1 rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-700 disabled:bg-zinc-300"
+              >
+                {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                ยืนยันลบ
+              </button>
+              <button
+                type="button"
+                onClick={() => { setConfirmDelete(false); setDeleteText(""); }}
+                disabled={pending}
+                className="inline-flex h-8 items-center rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+              >
+                ยกเลิก
+              </button>
             </div>
           </div>
         )}

@@ -524,6 +524,60 @@ export async function bulkConfirm(
   return { ok: true, confirmed, skipped, skippedReasons };
 }
 
+/** Bulk-void rows from the list toolbar (the "ลบ (N)" button). Accountant-tier
+ *  only — voiding removes a row from every total (status=void), so it carries the
+ *  same weight as confirm. companyId-scoped for the same cross-company reason as
+ *  bulkConfirm (client-supplied ids). Locked rows are skipped, never force-voided.
+ *  The UI gates this behind a type-"ลบ" confirmation; the server re-checks the role. */
+export async function bulkVoid(
+  ids: string[],
+  companyId: string,
+): Promise<ActionResult & { voided?: number; skipped?: number }> {
+  if (!Array.isArray(ids) || ids.length === 0)
+    return { ok: false, error: "ไม่ได้เลือกรายการ" };
+  if (!companyId) return { ok: false, error: "ไม่ได้ระบุบริษัท" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!(await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.confirm"))) {
+    return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลลบได้" };
+  }
+  const company = await prisma.company.findFirst({
+    where: { id: companyId, orgId: session.user.org_id },
+    select: { id: true },
+  });
+  if (!company) return { ok: false, error: "ไม่พบบริษัท" };
+
+  // Only void rows that are NOT locked (locked = posted/immutable). Scope by
+  // org+company so a client-supplied id from another company can't be voided.
+  const rows = await prisma.ledgerExpense.findMany({
+    where: {
+      id: { in: ids },
+      orgId: session.user.org_id,
+      companyId,
+      status: { not: "locked" },
+    },
+    select: { id: true, status: true },
+  });
+  if (rows.length === 0) return { ok: false, error: "ไม่มีรายการที่ลบได้ (อาจถูกล็อกแล้ว)" };
+
+  const voidIds = rows.map((r) => r.id);
+  await prisma.ledgerExpense.updateMany({
+    where: { id: { in: voidIds }, orgId: session.user.org_id, companyId },
+    data: { status: "void", needsReview: false },
+  });
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_EXPENSE_VOIDED",
+    resourceType: "ledger_expense",
+    diff: { new: { bulk: true, count: voidIds.length, ids: voidIds } },
+  });
+  revalidatePath("/ledger/expenses");
+  revalidatePath("/ledger");
+  return { ok: true, voided: voidIds.length, skipped: ids.length - voidIds.length };
+}
+
 // ===================== Input-VAT claimability (ภาษีซื้อ) =====================
 // Two accountant-only flows on top of the deterministic สถานะสี:
 //   1. overrideClaimability — the accountant manually decides ขอคืนได้/ไม่ได้ + เหตุผล,

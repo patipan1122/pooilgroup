@@ -9,7 +9,8 @@
 // the company context + a pending-approval badge.
 
 import { useState } from "react";
-import { Building2, MapPin, Users, ShieldCheck, Settings2 } from "lucide-react";
+import Link from "next/link";
+import { Building2, MapPin, Users, ShieldCheck, Settings2, ChevronLeft } from "lucide-react";
 import { MemberManager } from "@/app/(admin)/ledger/settings/_components/MemberManager";
 import { InviteManager } from "@/app/(admin)/ledger/settings/_components/InviteManager";
 import { CategoryManager } from "@/app/(admin)/ledger/settings/_components/CategoryManager";
@@ -75,8 +76,15 @@ export function AdminConsole({
     <div className="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col bg-zinc-50">
       {/* Sticky header — company context + pending badge */}
       <header className="sticky top-0 z-20 border-b border-zinc-200 bg-white px-4 pb-2 pt-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
+        <div className="flex items-center gap-1.5">
+          <Link
+            href={`/liff/ledger/my?company=${encodeURIComponent(companyId)}`}
+            aria-label="กลับไปหน้ารายการ"
+            className="-ml-1 grid size-9 shrink-0 place-items-center rounded-lg text-zinc-500 active:bg-zinc-100"
+          >
+            <ChevronLeft className="size-5" aria-hidden />
+          </Link>
+          <div className="min-w-0 flex-1">
             <p className="text-[11px] font-medium text-zinc-400">จัดการทีม</p>
             {companies.length > 1 ? (
               <select
