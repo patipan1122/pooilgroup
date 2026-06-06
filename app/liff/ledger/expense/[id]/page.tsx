@@ -12,6 +12,7 @@
 // accountant tier by their own action guards (GOLDEN RULE — never auto-post).
 
 import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
 import { getSession } from "@/lib/auth/session";
 import { resolveScope } from "@/app/(admin)/ledger/_scope";
 import { getExpense, listCategories } from "@/app/(admin)/ledger/_data";
@@ -98,8 +99,15 @@ export default async function LedgerLiffExpensePage({
 
   return (
     <div className="mx-auto w-full max-w-md px-3 pb-10">
-      {/* Mobile header — น้องใบเสร็จ + context. Keeps the form anchored Bainy-style. */}
-      <header className="sticky top-0 z-10 -mx-3 mb-3 flex items-center gap-3 border-b border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur">
+      {/* Mobile header — back to list + น้องใบเสร็จ + context. Anchored Bainy-style. */}
+      <header className="sticky top-0 z-10 -mx-3 mb-3 flex items-center gap-2 border-b border-zinc-200 bg-white/95 px-3 py-3 backdrop-blur">
+        <Link
+          href={`/liff/ledger/my${sp.company ? `?company=${encodeURIComponent(sp.company)}` : ""}`}
+          aria-label="กลับไปหน้ารายการ"
+          className="grid size-9 shrink-0 place-items-center rounded-lg text-zinc-500 active:bg-zinc-100"
+        >
+          <ChevronLeft className="size-5" aria-hidden />
+        </Link>
         <LedgerMascot size={40} pose="receipt" />
         <div className="min-w-0">
           <p className="truncate text-sm font-bold text-zinc-900">ตรวจ & แก้ไขใบเสร็จ</p>
