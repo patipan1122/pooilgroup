@@ -111,6 +111,15 @@ export default async function LedgerLiffExpensePage({
 
       <LiffExpensePane
         expense={expense}
+        replacement={
+          expense.replacedById && scope.companyId
+            ? await getExpense({
+                orgId: scope.orgId,
+                companyId: scope.companyId,
+                id: expense.replacedById,
+              }).catch(() => null)
+            : null
+        }
         categories={categories.map((c) => ({
           id: c.id,
           name: c.name,

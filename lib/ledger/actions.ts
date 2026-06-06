@@ -20,7 +20,8 @@ import { isAdminTier } from "@/lib/auth/role-guards";
 import { userHasModuleAccess } from "@/lib/auth/module-access";
 import { audit } from "@/lib/audit/log";
 import type { DbUser } from "@/lib/auth/session";
-import { recheckReceipt } from "./recheck";
+import { recheckReceipt, gradeCompleteness } from "./recheck";
+import { OUR_BUYER } from "./group-identity";
 import { serializeExpense } from "./queries";
 import type {
   ExpenseAttachment,
@@ -70,6 +71,10 @@ export interface CreateDraftInput {
   source?: ExpenseSource;
   vendor?: string | null;
   vendorTaxId?: string | null;
+  /** เลขภาษีผู้ซื้อที่ OCR อ่านได้บนใบ (13 หลัก หรือ null) — ส่งต่อจาก parsed. */
+  buyerTaxIdOnDoc?: string | null;
+  /** OCR raw text (optional) — ใช้ heuristic ใบกำกับอย่างย่อ ม.86/6. */
+  rawText?: string | null;
   docDate?: string | null; // YYYY-MM-DD
   subtotal?: number;
   vat?: number;
@@ -189,6 +194,21 @@ async function createDraftExpenseCore(
     items: input.items,
   });
 
+  // — Input-VAT completeness (ภาษีซื้อ) — deterministic grade beside recheck.
+  //   buyer snapshot = master (เจพีซิ้งค์ OUR_BUYER), ตัดสินด้วยเลขภาษี 13 หลัก.
+  const grade = gradeCompleteness({
+    docType: input.docType,
+    vendor: input.vendor,
+    vendorTaxId: input.vendorTaxId,
+    vendorAddress: input.vendorAddress,
+    vendorBranchCode: input.vendorBranchCode,
+    subtotal: input.subtotal,
+    vat: input.vat,
+    total: input.total,
+    buyerTaxIdOnDoc: input.buyerTaxIdOnDoc,
+    rawText: input.rawText,
+  });
+
   const docCode = await nextDocCode(orgId, input.companyId);
 
   try {
@@ -228,6 +248,17 @@ async function createDraftExpenseCore(
         needsReview: !recheck.ok,
         note: input.note ?? null,
         createdBy: userId,
+        // — Input-VAT claimability (ภาษีซื้อ) — สถานะสี + buyer snapshot + ผลตรวจ —
+        buyerTaxIdSnapshot: OUR_BUYER.taxId,
+        buyerNameSnapshot: OUR_BUYER.name,
+        buyerTaxIdOnDoc: input.buyerTaxIdOnDoc ?? null,
+        buyerMatchStatus: grade.buyerMatch,
+        completenessStatus: grade.status,
+        completenessMissing: grade.missing as unknown as Prisma.InputJsonValue,
+        completenessCheckedAt: new Date(),
+        inputVatBlockReason: grade.blockReason,
+        // claimable: เขียว → true · อื่น → null (ยังไม่ตัดสิน · นักบัญชี override ได้)
+        inputVatClaimable: grade.suggestedClaimable ? true : null,
         items:
           input.items && input.items.length > 0
             ? {

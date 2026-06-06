@@ -7,10 +7,12 @@
 // in ExpenseReviewPane. Bulk-confirm only flips rows that already pass recheck.
 import Link from "next/link";
 import { requireRole } from "@/lib/auth/session";
+import { ledgerWebCanForRole } from "@/lib/ledger/liff-auth";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
-import { listExpensesSummary, getExpense, listCategories } from "../_data";
+import { listExpensesSummary, getExpense, listCategories, summarizeCompleteness } from "../_data";
 import { ExpenseList } from "./_components/ExpenseList";
+import { CompletenessSummaryStrip } from "./_components/CompletenessSummaryStrip";
 import { ExpensePaneClient } from "./_components/ExpensePaneClient";
 import { UploadReceiptButton } from "./_components/UploadReceiptButton";
 import { ExportButton } from "./_components/ExportButton";
@@ -31,6 +33,7 @@ export default async function ExpensesPage({
     q?: string;
     selected?: string;
     tr?: string; // TRCloud send filter: "sent" | "unsent"
+    cc?: string; // ภาษีซื้อ color filter: "green" | "yellow" | "red"
   }>;
 }) {
   // Page-level role gate. This review workspace exposes the FULL company-wide
@@ -69,19 +72,36 @@ export default async function ExpensesPage({
   const selected = sp.selected?.trim() || undefined;
   const tr = sp.tr === "sent" || sp.tr === "unsent" ? sp.tr : undefined;
   const trcloudPushed = tr === "sent" ? true : tr === "unsent" ? false : undefined;
+  const cc =
+    sp.cc === "green" || sp.cc === "yellow" || sp.cc === "red" ? sp.cc : undefined;
 
-  const [rows, categories] = await Promise.all([
+  // ภาษีซื้อ summary uses the SAME scope (+ status/category/tr/search) so the strip
+  // counts match the list — but NOT the cc filter itself (the strip shows the full mix).
+  const summaryFilter = {
+    orgId: scope.orgId,
+    companyId: scope.companyId,
+    branchId: scope.branchId,
+    status,
+    categoryId,
+    trcloudPushed,
+    search: q,
+  };
+
+  // นักบัญชี/แอดมิน-เท่านั้น ที่ปรับ "ขอคืนได้?" + override + แนบใบทดแทน (gate เดียวกับ confirm).
+  const canEditClaimability = await ledgerWebCanForRole(
+    scope.orgId,
+    session.user.role,
+    "expense.confirm",
+  );
+
+  const [rows, categories, completenessSummary] = await Promise.all([
     listExpensesSummary({
-      orgId: scope.orgId,
-      companyId: scope.companyId,
-      branchId: scope.branchId,
-      status,
-      categoryId,
-      trcloudPushed,
-      search: q,
+      ...summaryFilter,
+      completeness: cc,
       take: 300,
     }),
     listCategories(scope.orgId, scope.companyId),
+    summarizeCompleteness(summaryFilter),
   ]);
 
   const selectedExpense = selected
@@ -92,6 +112,15 @@ export default async function ExpensesPage({
       })
     : null;
 
+  // ถ้าใบที่เลือกมีใบทดแทน → โหลดใบทดแทนมาโชว์รูปคู่กัน (ใบเดิม + ใบใหม่).
+  const replacementExpense = selectedExpense?.replacedById
+    ? await getExpense({
+        orgId: scope.orgId,
+        companyId: scope.companyId,
+        id: selectedExpense.replacedById,
+      })
+    : null;
+
   // Preserve scope params on links from the list.
   const baseParams = new URLSearchParams();
   if (sp.company) baseParams.set("company", sp.company);
@@ -99,6 +128,7 @@ export default async function ExpensesPage({
   if (status) baseParams.set("status", status);
   if (categoryId) baseParams.set("category", categoryId);
   if (tr) baseParams.set("tr", tr);
+  if (cc) baseParams.set("cc", cc);
   if (q) baseParams.set("q", q);
 
   const draftIds = rows.filter((r) => r.status === "draft").map((r) => r.id);
@@ -125,6 +155,14 @@ export default async function ExpensesPage({
         }
       />
 
+      {/* ภาษีซื้อ — แถบสรุปสถานะสี (เขียว/เหลือง/แดง) + ยอด VAT ที่ยังติด */}
+      <CompletenessSummaryStrip
+        summary={completenessSummary}
+        baseParams={baseParams.toString()}
+        selectedId={selected}
+        cc={cc}
+      />
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
         {/* LEFT — list + filters + bulk-confirm */}
         <ExpenseList
@@ -140,6 +178,7 @@ export default async function ExpensesPage({
           status={status}
           categoryId={categoryId}
           tr={tr}
+          cc={cc}
           q={q}
           draftIds={draftIds}
           sendableIds={sendableIds}
@@ -151,6 +190,7 @@ export default async function ExpensesPage({
           {selectedExpense ? (
             <ExpensePaneClient
               expense={selectedExpense}
+              replacement={replacementExpense}
               categories={categories.map((c) => ({
                 id: c.id,
                 name: c.name,
@@ -158,6 +198,7 @@ export default async function ExpensesPage({
                 sort: c.sort,
               }))}
               branches={scope.branches}
+              canEditClaimability={canEditClaimability}
             />
           ) : (
             <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 px-6 text-center">

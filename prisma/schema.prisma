@@ -127,11 +127,11 @@ model Company {
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org             Organization        @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  branches        Branch[]
-  vehicles        Vehicle[]
-  recruitPostings RecruitJobPosting[]
-  repairTickets   RepairTicket[]
+  org                 Organization        @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  branches            Branch[]
+  vehicles            Vehicle[]
+  recruitPostings     RecruitJobPosting[]
+  repairTickets       RepairTicket[]
   // Ledger module
   ledgerCategories    LedgerCategory[]
   ledgerExpenses      LedgerExpense[]
@@ -1980,7 +1980,6 @@ model RepairVendorToken {
   @@schema("public")
 }
 
-
 // =============================================================
 // CLAWFLEET — ระบบบริหารตู้คีบ + ตู้แลกเหรียญ
 // Spec: docs/CLAWFLEET_PLAN.md (v2 · 2026-05-21)
@@ -2488,63 +2487,63 @@ model ChairopsBranch {
 }
 
 model ChairopsUser {
-  id              String           @id @default(uuid())
-  orgId           String
+  id                  String             @id @default(uuid())
+  orgId               String
   // Links to Supabase auth.users.id — same id space as Pool's users
-  authUserId      String?
-  email           String?
-  phone           String?
-  lineUserId      String?
-  displayName     String
-  role            ChairopsUserRole
-  isActive        Boolean          @default(true)
-  primaryBranchId String?
+  authUserId          String?
+  email               String?
+  phone               String?
+  lineUserId          String?
+  displayName         String
+  role                ChairopsUserRole
+  isActive            Boolean            @default(true)
+  primaryBranchId     String?
   // Payroll / HR info (CEO 2026-06-03) — for future payroll runs. `phone`
   // already exists above. Bank details + employment-contract attachment.
-  bankName         String?
-  bankAccountNo    String?
-  bankAccountName  String?
-  contractFileUrl  String?
-  contractFileName String?
+  bankName            String?
+  bankAccountNo       String?
+  bankAccountName     String?
+  contractFileUrl     String?
+  contractFileName    String?
   // F5: invite token stored in DB for revocation
-  inviteToken         String?   @unique @map("invite_token")
-  inviteExpiresAt     DateTime? @map("invite_expires_at") @db.Timestamptz(6)
+  inviteToken         String?            @unique @map("invite_token")
+  inviteExpiresAt     DateTime?          @map("invite_expires_at") @db.Timestamptz(6)
   // F4: self-onboarding (5 fields maid fills on first login)
-  mobilePhone         String?   @map("mobile_phone")
-  emergencyContact    String?   @map("emergency_contact")
-  emergencyPhone      String?   @map("emergency_phone")
-  currentMainEmployer String?   @map("current_main_employer")
-  onboardingComplete  Boolean   @default(false) @map("onboarding_complete")
+  mobilePhone         String?            @map("mobile_phone")
+  emergencyContact    String?            @map("emergency_contact")
+  emergencyPhone      String?            @map("emergency_phone")
+  currentMainEmployer String?            @map("current_main_employer")
+  onboardingComplete  Boolean            @default(false) @map("onboarding_complete")
   // F7: deactivation reason + audit trail
-  deactivatedAt     DateTime?          @map("deactivated_at") @db.Timestamptz(6)
-  deactivatedById   String?            @map("deactivated_by_id")
-  offboardingReason OffboardingReason? @map("offboarding_reason")
-  offboardingNote   String?            @map("offboarding_note")
+  deactivatedAt       DateTime?          @map("deactivated_at") @db.Timestamptz(6)
+  deactivatedById     String?            @map("deactivated_by_id")
+  offboardingReason   OffboardingReason? @map("offboarding_reason")
+  offboardingNote     String?            @map("offboarding_note")
   // S1: cover branch (secondary assignment)
-  secondaryBranchId String?            @map("secondary_branch_id")
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  secondaryBranchId   String?            @map("secondary_branch_id")
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
-  maidAssignments        ChairopsMaidAssignment[]
-  cashCollections        ChairopsCashCollection[]
-  cashCollectionsImported ChairopsCashCollection[]  @relation("CashCollectionImporter")
-  cashDeposits           ChairopsCashDeposit[]
-  chairMovesBy           ChairopsChairMove[]
-  posDailyEntries        ChairopsPosDaily[]
-  damageReported         ChairopsDamageTicket[]      @relation("chairops_damage_reported_by")
-  damageAssigned         ChairopsDamageTicket[]      @relation("chairops_damage_assigned_to")
-  cleanlinessByMaid      ChairopsCleanlinessReport[] @relation("chairops_cleanliness_by_maid")
-  cleanlinessByAuditor   ChairopsCleanlinessReport[] @relation("chairops_cleanliness_by_auditor")
-  auditLogs              ChairopsAuditLog[]
-  alertsAcked            ChairopsAlert[]             @relation("chairops_alerts_acked_by")
-  writeOffsByMaker       ChairopsWriteOff[]          @relation("chairops_writeoffs_maker")
-  writeOffsByApprover    ChairopsWriteOff[]          @relation("chairops_writeoffs_approver")
-  branchesSecondaryAlert ChairopsBranch[]            @relation("chairops_secondary_alert")
+  maidAssignments         ChairopsMaidAssignment[]
+  cashCollections         ChairopsCashCollection[]
+  cashCollectionsImported ChairopsCashCollection[]    @relation("CashCollectionImporter")
+  cashDeposits            ChairopsCashDeposit[]
+  chairMovesBy            ChairopsChairMove[]
+  posDailyEntries         ChairopsPosDaily[]
+  damageReported          ChairopsDamageTicket[]      @relation("chairops_damage_reported_by")
+  damageAssigned          ChairopsDamageTicket[]      @relation("chairops_damage_assigned_to")
+  cleanlinessByMaid       ChairopsCleanlinessReport[] @relation("chairops_cleanliness_by_maid")
+  cleanlinessByAuditor    ChairopsCleanlinessReport[] @relation("chairops_cleanliness_by_auditor")
+  auditLogs               ChairopsAuditLog[]
+  alertsAcked             ChairopsAlert[]             @relation("chairops_alerts_acked_by")
+  writeOffsByMaker        ChairopsWriteOff[]          @relation("chairops_writeoffs_maker")
+  writeOffsByApprover     ChairopsWriteOff[]          @relation("chairops_writeoffs_approver")
+  branchesSecondaryAlert  ChairopsBranch[]            @relation("chairops_secondary_alert")
   // BF1 — Day-off + Daily-pay ledger (2026-06-02)
-  daysOff                ChairopsMaidDayOff[]        @relation("chairops_maid_dayoff_maid")
-  daysOffCreated         ChairopsMaidDayOff[]        @relation("chairops_maid_dayoff_created_by")
-  dailyPay               ChairopsMaidDailyPay[]      @relation("chairops_maid_dailypay_maid")
-  dailyPayPaid           ChairopsMaidDailyPay[]      @relation("chairops_maid_dailypay_paid_by")
+  daysOff                 ChairopsMaidDayOff[]        @relation("chairops_maid_dayoff_maid")
+  daysOffCreated          ChairopsMaidDayOff[]        @relation("chairops_maid_dayoff_created_by")
+  dailyPay                ChairopsMaidDailyPay[]      @relation("chairops_maid_dailypay_maid")
+  dailyPayPaid            ChairopsMaidDailyPay[]      @relation("chairops_maid_dailypay_paid_by")
 
   @@unique([orgId, authUserId])
   @@unique([orgId, email])
@@ -2589,7 +2588,7 @@ model ChairopsMaidDayOff {
   createdById String
   createdAt   DateTime @default(now())
 
-  maid    ChairopsUser @relation("chairops_maid_dayoff_maid", fields: [maidId], references: [id])
+  maid      ChairopsUser @relation("chairops_maid_dayoff_maid", fields: [maidId], references: [id])
   createdBy ChairopsUser @relation("chairops_maid_dayoff_created_by", fields: [createdById], references: [id])
 
   @@unique([orgId, maidId, date])
@@ -3195,11 +3194,11 @@ model ChairopsGmailConnection {
   id              String    @id @default(uuid())
   orgId           String    @unique
   gmailEmail      String?
-  refreshTokenEnc String    // AES-256-GCM "iv:cipher:tag" — same encrypt/decrypt as Drive
+  refreshTokenEnc String // AES-256-GCM "iv:cipher:tag" — same encrypt/decrypt as Drive
   scopes          String?
   connectedById   String?
   lastSyncAt      DateTime?
-  lastSyncStatus  String?   // "ok" | "error: <msg>"
+  lastSyncStatus  String? // "ok" | "error: <msg>"
   lastSyncCount   Int       @default(0)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -4181,20 +4180,20 @@ model InboxBotKnowledge {
 
 // Per-business bot configuration (tone, contact phone, on/off, daily summary)
 model InboxBotSettings {
-  id           String   @id @default(uuid()) @db.Uuid
-  orgId        String   @map("org_id") @db.Uuid
-  businessTag  String   @map("business_tag")
-  botEnabled   Boolean  @default(true) @map("bot_enabled")
-  tone         String   @default("สุภาพ สั้น เป็นกันเอง")
-  botName      String?  @map("bot_name")
-  contactPhone String?  @map("contact_phone") // used by scan_fail / money_lost flows
-  fallbackText String   @default("ขออภัยค่ะ เดี๋ยวทีมงานติดต่อกลับโดยเร็วที่สุดนะคะ") @map("fallback_text")
-  escalateText String?  @map("escalate_text")
-  dailySummary Boolean  @default(true) @map("daily_summary")
-  flowImages   Json     @default("{}") @map("flow_images") // { money_lost?: url, scan_fail?: url, strong?: url, buy?: url, feedback?: url, intro?: url }
-  replyTemplates Json   @default("{}") @map("reply_templates") // editable canned replies: { money_lost?, scan_fail?, strong?, buy?, feedback?, feedback_complaint?, non_text_ack? } — use {phone} placeholder
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id             String   @id @default(uuid()) @db.Uuid
+  orgId          String   @map("org_id") @db.Uuid
+  businessTag    String   @map("business_tag")
+  botEnabled     Boolean  @default(true) @map("bot_enabled")
+  tone           String   @default("สุภาพ สั้น เป็นกันเอง")
+  botName        String?  @map("bot_name")
+  contactPhone   String?  @map("contact_phone") // used by scan_fail / money_lost flows
+  fallbackText   String   @default("ขออภัยค่ะ เดี๋ยวทีมงานติดต่อกลับโดยเร็วที่สุดนะคะ") @map("fallback_text")
+  escalateText   String?  @map("escalate_text")
+  dailySummary   Boolean  @default(true) @map("daily_summary")
+  flowImages     Json     @default("{}") @map("flow_images") // { money_lost?: url, scan_fail?: url, strong?: url, buy?: url, feedback?: url, intro?: url }
+  replyTemplates Json     @default("{}") @map("reply_templates") // editable canned replies: { money_lost?, scan_fail?, strong?, buy?, feedback?, feedback_complaint?, non_text_ack? } — use {phone} placeholder
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@unique([orgId, businessTag])
   @@map("inbox_bot_settings")
@@ -4602,53 +4601,53 @@ model Org {
   name      String
   createdAt DateTime @default(now())
 
-  users            FuelUser[]
-  customers        Customer[]
-  depotPrices      DepotPrice[]
-  zoneMargins      ZoneMargin[]
-  conversations    Conversation[]
-  quotes           Quote[]
-  orders           Order[]
-  trucks           Truck[]
-  payments         Payment[]
-  cheques          Cheque[]
-  bankAccounts     BankAccount[]
-  botFaqs          BotFaq[]
-  followUps        FollowUp[]
-  auditLogs        FuelAuditLog[]
-  channels         FuelInboxChannel[]
-  creditApprovals  CreditApproval[]
+  users           FuelUser[]
+  customers       Customer[]
+  depotPrices     DepotPrice[]
+  zoneMargins     ZoneMargin[]
+  conversations   Conversation[]
+  quotes          Quote[]
+  orders          Order[]
+  trucks          Truck[]
+  payments        Payment[]
+  cheques         Cheque[]
+  bankAccounts    BankAccount[]
+  botFaqs         BotFaq[]
+  followUps       FollowUp[]
+  auditLogs       FuelAuditLog[]
+  channels        FuelInboxChannel[]
+  creditApprovals CreditApproval[]
 
   @@map("orgs")
   @@schema("fuel")
 }
 
 model FuelUser {
-  id           String   @id @default(uuid()) @db.Uuid
-  orgId        String   @map("org_id") @db.Uuid
-  email        String   @unique
-  passwordHash String   @map("password_hash")
+  id           String       @id @default(uuid()) @db.Uuid
+  orgId        String       @map("org_id") @db.Uuid
+  email        String       @unique
+  passwordHash String       @map("password_hash")
   name         String
   role         FuelUserRole @default(SALES)
   phone        String?
-  isActive     Boolean  @default(true) @map("is_active")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  isActive     Boolean      @default(true) @map("is_active")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
 
-  org              Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org              Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   lineIdentities   StaffLineIdentity[]
-  ownedCustomers   Customer[]         @relation("CustomerOwner")
-  assignedConvs    Conversation[]     @relation("ConvAssignee")
-  sentMessages     Message[]          @relation("MsgStaff")
-  quotes           Quote[]            @relation("QuoteSales")
-  orders           Order[]            @relation("OrderSales")
-  enteredPrices    DepotPrice[]       @relation("PriceEnteredBy")
-  followUps        FollowUp[]         @relation("FollowUpSales")
-  drivingTrucks    Truck[]            @relation("TruckDriver")
+  ownedCustomers   Customer[]          @relation("CustomerOwner")
+  assignedConvs    Conversation[]      @relation("ConvAssignee")
+  sentMessages     Message[]           @relation("MsgStaff")
+  quotes           Quote[]             @relation("QuoteSales")
+  orders           Order[]             @relation("OrderSales")
+  enteredPrices    DepotPrice[]        @relation("PriceEnteredBy")
+  followUps        FollowUp[]          @relation("FollowUpSales")
+  drivingTrucks    Truck[]             @relation("TruckDriver")
   auditLogs        FuelAuditLog[]
-  approvalsAsked   CreditApproval[]   @relation("ApprovalRequester")
-  approvalsActed   CreditApproval[]   @relation("ApprovalActor")
-  verifiedPayments Payment[]          @relation("PaymentVerifier")
+  approvalsAsked   CreditApproval[]    @relation("ApprovalRequester")
+  approvalsActed   CreditApproval[]    @relation("ApprovalActor")
+  verifiedPayments Payment[]           @relation("PaymentVerifier")
 
   @@index([orgId, role])
   @@map("users")
@@ -4683,7 +4682,7 @@ model DepotPrice {
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
-  org       Org   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   enteredBy FuelUser? @relation("PriceEnteredBy", fields: [enteredById], references: [id], onDelete: SetNull)
 
   @@unique([orgId, date, depotName, productType])
@@ -4693,16 +4692,16 @@ model DepotPrice {
 }
 
 model ZoneMargin {
-  id          String      @id @default(uuid()) @db.Uuid
-  orgId       String      @map("org_id") @db.Uuid
-  zoneName    String      @map("zone_name")
-  productType ProductType @map("product_type")
-  transportCost Decimal   @default(0) @map("transport_cost") @db.Decimal(10, 4) // ค่าขนส่งคลัง→โซน ฿/ลิตร (แยกจากกำไร)
-  baseMargin  Decimal     @map("base_margin") @db.Decimal(10, 4) // กำไรโซน ฿/ลิตร (กำไรล้วน)
-  minMargin   Decimal     @map("min_margin") @db.Decimal(10, 4) // กำไรขั้นต่ำ (กันขายต่ำกว่าทุน+ขนส่ง)
-  isActive    Boolean     @default(true) @map("is_active")
-  createdAt   DateTime    @default(now()) @map("created_at")
-  updatedAt   DateTime    @updatedAt @map("updated_at")
+  id            String      @id @default(uuid()) @db.Uuid
+  orgId         String      @map("org_id") @db.Uuid
+  zoneName      String      @map("zone_name")
+  productType   ProductType @map("product_type")
+  transportCost Decimal     @default(0) @map("transport_cost") @db.Decimal(10, 4) // ค่าขนส่งคลัง→โซน ฿/ลิตร (แยกจากกำไร)
+  baseMargin    Decimal     @map("base_margin") @db.Decimal(10, 4) // กำไรโซน ฿/ลิตร (กำไรล้วน)
+  minMargin     Decimal     @map("min_margin") @db.Decimal(10, 4) // กำไรขั้นต่ำ (กันขายต่ำกว่าทุน+ขนส่ง)
+  isActive      Boolean     @default(true) @map("is_active")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
 
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
@@ -4730,32 +4729,32 @@ model FuelDepot {
 
 // ---------- F5 CRM (1 group = 1 customer/company) ----------
 model Customer {
-  id               String    @id @default(uuid()) @db.Uuid
-  orgId            String    @map("org_id") @db.Uuid
-  name             String // ชื่อเรียก
-  nickname         String? // ชื่อเล่น (เรียกตอนคุย/โทร)
-  legalName        String?   @map("legal_name") // ชื่อนิติบุคคล (ออกใบ)
-  taxId            String?   @map("tax_id")
-  phone            String?
-  zone             String?
-  province         String?
-  assignedSalesId  String?   @map("assigned_sales_id") @db.Uuid // เจ้าของหลัก
-  creditLimit      Decimal?  @map("credit_limit") @db.Decimal(15, 2)
-  creditUsed       Decimal   @default(0) @map("credit_used") @db.Decimal(15, 2)
-  paymentTerms     Int?      @map("payment_terms") // วัน; null = COD
+  id                String    @id @default(uuid()) @db.Uuid
+  orgId             String    @map("org_id") @db.Uuid
+  name              String // ชื่อเรียก
+  nickname          String? // ชื่อเล่น (เรียกตอนคุย/โทร)
+  legalName         String?   @map("legal_name") // ชื่อนิติบุคคล (ออกใบ)
+  taxId             String?   @map("tax_id")
+  phone             String?
+  zone              String?
+  province          String?
+  assignedSalesId   String?   @map("assigned_sales_id") @db.Uuid // เจ้าของหลัก
+  creditLimit       Decimal?  @map("credit_limit") @db.Decimal(15, 2)
+  creditUsed        Decimal   @default(0) @map("credit_used") @db.Decimal(15, 2)
+  paymentTerms      Int?      @map("payment_terms") // วัน; null = COD
   // CRM health (F3/F5)
-  firstOrderAt     DateTime? @map("first_order_at") // มี = ลูกค้าเก่า
-  lastOrderAt      DateTime? @map("last_order_at")
-  lastQuoteAt      DateTime? @map("last_quote_at")
-  normalCadenceDays Int?     @map("normal_cadence_days") // รอบซื้อปกติ (auto + ปรับได้)
-  cadenceManual    Boolean   @default(false) @map("cadence_manual")
-  notes            String?
-  isActive         Boolean   @default(true) @map("is_active")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  firstOrderAt      DateTime? @map("first_order_at") // มี = ลูกค้าเก่า
+  lastOrderAt       DateTime? @map("last_order_at")
+  lastQuoteAt       DateTime? @map("last_quote_at")
+  normalCadenceDays Int?      @map("normal_cadence_days") // รอบซื้อปกติ (auto + ปรับได้)
+  cadenceManual     Boolean   @default(false) @map("cadence_manual")
+  notes             String?
+  isActive          Boolean   @default(true) @map("is_active")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
   org           Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  assignedSales FuelUser?              @relation("CustomerOwner", fields: [assignedSalesId], references: [id], onDelete: SetNull)
+  assignedSales FuelUser?          @relation("CustomerOwner", fields: [assignedSalesId], references: [id], onDelete: SetNull)
   locations     DeliveryLocation[]
   conversations Conversation[]
   quotes        Quote[]
@@ -4774,18 +4773,18 @@ model Customer {
 }
 
 model DeliveryLocation {
-  id         String   @id @default(uuid()) @db.Uuid
-  orgId      String   @map("org_id") @db.Uuid
-  customerId String   @map("customer_id") @db.Uuid
-  name       String
-  address    String?
-  lat        Decimal? @db.Decimal(10, 7)
-  lng        Decimal? @db.Decimal(10, 7)
-  zone       String?
-  contactName  String? @map("contact_name")
-  contactPhone String? @map("contact_phone")
-  isActive   Boolean  @default(true) @map("is_active")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  customerId   String   @map("customer_id") @db.Uuid
+  name         String
+  address      String?
+  lat          Decimal? @db.Decimal(10, 7)
+  lng          Decimal? @db.Decimal(10, 7)
+  zone         String?
+  contactName  String?  @map("contact_name")
+  contactPhone String?  @map("contact_phone")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   orders   Order[]
@@ -4797,15 +4796,15 @@ model DeliveryLocation {
 
 // ---------- F1/F2 Inbox (LINE OA + groups) ----------
 model FuelInboxChannel {
-  id              String   @id @default(uuid()) @db.Uuid
-  orgId           String   @map("org_id") @db.Uuid
-  displayName     String   @map("display_name")
-  externalId      String?  @map("external_id") // LINE channel id
-  accessTokenEnc  String?  @map("access_token_enc")
-  webhookSecret   String?  @map("webhook_secret")
-  botEnabled      Boolean  @default(false) @map("bot_enabled")
-  status          String   @default("setup") // setup | active | error
-  createdAt       DateTime @default(now()) @map("created_at")
+  id             String   @id @default(uuid()) @db.Uuid
+  orgId          String   @map("org_id") @db.Uuid
+  displayName    String   @map("display_name")
+  externalId     String?  @map("external_id") // LINE channel id
+  accessTokenEnc String?  @map("access_token_enc")
+  webhookSecret  String?  @map("webhook_secret")
+  botEnabled     Boolean  @default(false) @map("bot_enabled")
+  status         String   @default("setup") // setup | active | error
+  createdAt      DateTime @default(now()) @map("created_at")
 
   org           Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   conversations Conversation[]
@@ -4837,27 +4836,27 @@ model FuelLineContact {
 }
 
 model Conversation {
-  id              String      @id @default(uuid()) @db.Uuid
-  orgId           String      @map("org_id") @db.Uuid
-  channelId       String?     @map("channel_id") @db.Uuid
-  lineGroupId     String?     @map("line_group_id") // groupId (1 กลุ่ม = 1 ลูกค้า)
-  externalUserId  String?     @map("external_user_id") // กรณี 1:1
-  customerId      String?     @map("customer_id") @db.Uuid
-  displayName     String?     @map("display_name")
-  status          ConvStatus  @default(OPEN)
-  segment         ConvSegment @default(NEW)
-  assignedToId    String?     @map("assigned_to_id") @db.Uuid // เจ้าของหลัก
-  isUnanswered    Boolean     @default(false) @map("is_unanswered") // ลูกค้าพิมพ์ล่าสุด ยังไม่มีคนตอบ
-  lastInboundAt   DateTime?   @map("last_inbound_at")
-  lastStaffReplyAt DateTime?  @map("last_staff_reply_at")
-  lastMessageAt   DateTime?   @map("last_message_at")
-  unreadCount     Int         @default(0) @map("unread_count")
-  createdAt       DateTime    @default(now()) @map("created_at")
-  updatedAt       DateTime    @updatedAt @map("updated_at")
+  id               String      @id @default(uuid()) @db.Uuid
+  orgId            String      @map("org_id") @db.Uuid
+  channelId        String?     @map("channel_id") @db.Uuid
+  lineGroupId      String?     @map("line_group_id") // groupId (1 กลุ่ม = 1 ลูกค้า)
+  externalUserId   String?     @map("external_user_id") // กรณี 1:1
+  customerId       String?     @map("customer_id") @db.Uuid
+  displayName      String?     @map("display_name")
+  status           ConvStatus  @default(OPEN)
+  segment          ConvSegment @default(NEW)
+  assignedToId     String?     @map("assigned_to_id") @db.Uuid // เจ้าของหลัก
+  isUnanswered     Boolean     @default(false) @map("is_unanswered") // ลูกค้าพิมพ์ล่าสุด ยังไม่มีคนตอบ
+  lastInboundAt    DateTime?   @map("last_inbound_at")
+  lastStaffReplyAt DateTime?   @map("last_staff_reply_at")
+  lastMessageAt    DateTime?   @map("last_message_at")
+  unreadCount      Int         @default(0) @map("unread_count")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
 
-  org        Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org        Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
   channel    FuelInboxChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
-  customer   Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customer   Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull)
   assignedTo FuelUser?         @relation("ConvAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   messages   Message[]
   quotes     Quote[]
@@ -4887,7 +4886,7 @@ model Message {
   createdAt        DateTime     @default(now()) @map("created_at")
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  senderUser   FuelUser?        @relation("MsgStaff", fields: [senderUserId], references: [id], onDelete: SetNull)
+  senderUser   FuelUser?    @relation("MsgStaff", fields: [senderUserId], references: [id], onDelete: SetNull)
 
   @@index([conversationId, createdAt])
   @@index([orgId, createdAt])
@@ -4919,7 +4918,7 @@ model Quote {
 
   org          Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   customer     Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  sales        FuelUser          @relation("QuoteSales", fields: [salesId], references: [id], onDelete: Restrict)
+  sales        FuelUser      @relation("QuoteSales", fields: [salesId], references: [id], onDelete: Restrict)
   conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   items        QuoteItem[]
 
@@ -4951,38 +4950,38 @@ model QuoteItem {
 
 // ---------- F8 Orders ----------
 model Order {
-  id              String      @id @default(uuid()) @db.Uuid
-  orgId           String      @map("org_id") @db.Uuid
-  orderNo         String      @map("order_no")
-  customerId      String      @map("customer_id") @db.Uuid
-  locationId      String?     @map("location_id") @db.Uuid
-  salesId         String      @map("sales_id") @db.Uuid
-  sourceQuoteId   String?     @map("source_quote_id") @db.Uuid
-  status          OrderStatus @default(AWAITING_CONFIRM)
-  scheduledDate   DateTime?   @map("scheduled_date") @db.Date
-  deliveredAt     DateTime?   @map("delivered_at")
-  truckId         String?     @map("truck_id") @db.Uuid
-  driverId        String?     @map("driver_id") @db.Uuid
-  deliveryPhotoKey String?    @map("delivery_photo_key")
-  deliveryLat     Decimal?    @map("delivery_lat") @db.Decimal(10, 7)
-  deliveryLng     Decimal?    @map("delivery_lng") @db.Decimal(10, 7)
-  subtotal        Decimal     @default(0) @db.Decimal(15, 2) // ยอดขายรวม
-  totalCost       Decimal     @default(0) @map("total_cost") @db.Decimal(15, 2) // ต้นทุน+ขนส่ง
-  totalProfit     Decimal     @default(0) @map("total_profit") @db.Decimal(15, 2)
-  creditOverride  Boolean     @default(false) @map("credit_override") // ขายเกินวงเงิน (อนุมัติแล้ว)
-  notes           String?
+  id               String      @id @default(uuid()) @db.Uuid
+  orgId            String      @map("org_id") @db.Uuid
+  orderNo          String      @map("order_no")
+  customerId       String      @map("customer_id") @db.Uuid
+  locationId       String?     @map("location_id") @db.Uuid
+  salesId          String      @map("sales_id") @db.Uuid
+  sourceQuoteId    String?     @map("source_quote_id") @db.Uuid
+  status           OrderStatus @default(AWAITING_CONFIRM)
+  scheduledDate    DateTime?   @map("scheduled_date") @db.Date
+  deliveredAt      DateTime?   @map("delivered_at")
+  truckId          String?     @map("truck_id") @db.Uuid
+  driverId         String?     @map("driver_id") @db.Uuid
+  deliveryPhotoKey String?     @map("delivery_photo_key")
+  deliveryLat      Decimal?    @map("delivery_lat") @db.Decimal(10, 7)
+  deliveryLng      Decimal?    @map("delivery_lng") @db.Decimal(10, 7)
+  subtotal         Decimal     @default(0) @db.Decimal(15, 2) // ยอดขายรวม
+  totalCost        Decimal     @default(0) @map("total_cost") @db.Decimal(15, 2) // ต้นทุน+ขนส่ง
+  totalProfit      Decimal     @default(0) @map("total_profit") @db.Decimal(15, 2)
+  creditOverride   Boolean     @default(false) @map("credit_override") // ขายเกินวงเงิน (อนุมัติแล้ว)
+  notes            String?
   // TRCloud sync (ออก IV เข้า TRCloud ตอนยืนยันออเดอร์ · ลบตอนยกเลิก)
-  trcloudIvId     String?     @map("trcloud_iv_id") // id ของ IV ในระบบ TRCloud (ใช้ลบ)
-  trcloudIvNo     String?     @map("trcloud_iv_no") // เลขที่เอกสาร IV
-  trcloudSyncedAt DateTime?   @map("trcloud_synced_at")
-  trcloudError    String?     @map("trcloud_error") // ถ้าออก IV ไม่สำเร็จ เก็บ error ไว้ retry
-  createdAt       DateTime    @default(now()) @map("created_at")
-  updatedAt       DateTime    @updatedAt @map("updated_at")
+  trcloudIvId      String?     @map("trcloud_iv_id") // id ของ IV ในระบบ TRCloud (ใช้ลบ)
+  trcloudIvNo      String?     @map("trcloud_iv_no") // เลขที่เอกสาร IV
+  trcloudSyncedAt  DateTime?   @map("trcloud_synced_at")
+  trcloudError     String?     @map("trcloud_error") // ถ้าออก IV ไม่สำเร็จ เก็บ error ไว้ retry
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
 
   org      Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
   customer Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
   location DeliveryLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  sales    FuelUser              @relation("OrderSales", fields: [salesId], references: [id], onDelete: Restrict)
+  sales    FuelUser          @relation("OrderSales", fields: [salesId], references: [id], onDelete: Restrict)
   truck    Truck?            @relation(fields: [truckId], references: [id], onDelete: SetNull)
   items    OrderItem[]
   payments Payment[]
@@ -4999,17 +4998,17 @@ model Order {
 }
 
 model OrderItem {
-  id                    String      @id @default(uuid()) @db.Uuid
-  orderId               String      @map("order_id") @db.Uuid
-  productType           ProductType @map("product_type")
-  qtyLiters             Decimal     @map("qty_liters") @db.Decimal(12, 3)
-  qtyDelivered          Decimal?    @map("qty_delivered") @db.Decimal(12, 3)
-  pricePerLiter         Decimal     @map("price_per_liter") @db.Decimal(10, 4)
-  costPerL              Decimal     @map("cost_per_l") @db.Decimal(10, 4)
-  transportCostPerL     Decimal     @default(0) @map("transport_cost_per_l") @db.Decimal(10, 4)
-  marginPerLiter        Decimal     @map("margin_per_liter") @db.Decimal(10, 4)
-  lineTotal             Decimal     @map("line_total") @db.Decimal(15, 2)
-  lineProfit            Decimal     @map("line_profit") @db.Decimal(15, 2)
+  id                String      @id @default(uuid()) @db.Uuid
+  orderId           String      @map("order_id") @db.Uuid
+  productType       ProductType @map("product_type")
+  qtyLiters         Decimal     @map("qty_liters") @db.Decimal(12, 3)
+  qtyDelivered      Decimal?    @map("qty_delivered") @db.Decimal(12, 3)
+  pricePerLiter     Decimal     @map("price_per_liter") @db.Decimal(10, 4)
+  costPerL          Decimal     @map("cost_per_l") @db.Decimal(10, 4)
+  transportCostPerL Decimal     @default(0) @map("transport_cost_per_l") @db.Decimal(10, 4)
+  marginPerLiter    Decimal     @map("margin_per_liter") @db.Decimal(10, 4)
+  lineTotal         Decimal     @map("line_total") @db.Decimal(15, 2)
+  lineProfit        Decimal     @map("line_profit") @db.Decimal(15, 2)
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
@@ -5030,8 +5029,8 @@ model CreditApproval {
   createdAt     DateTime             @default(now()) @map("created_at")
   actedAt       DateTime?            @map("acted_at")
 
-  org         Org   @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  order       Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  org         Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
   requestedBy FuelUser  @relation("ApprovalRequester", fields: [requestedById], references: [id], onDelete: Restrict)
   approvedBy  FuelUser? @relation("ApprovalActor", fields: [approvedById], references: [id], onDelete: SetNull)
 
@@ -5079,7 +5078,7 @@ model Payment {
   org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
   order      Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  verifiedBy FuelUser?     @relation("PaymentVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+  verifiedBy FuelUser? @relation("PaymentVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
   cheques    Cheque[]
 
   @@unique([orgId, slipHash])
@@ -5090,18 +5089,18 @@ model Payment {
 }
 
 model Cheque {
-  id           String       @id @default(uuid()) @db.Uuid
-  orgId        String       @map("org_id") @db.Uuid
-  customerId   String       @map("customer_id") @db.Uuid
-  paymentId    String?      @map("payment_id") @db.Uuid
-  chequeNumber String       @map("cheque_number")
-  bank         String
-  amount       Decimal      @db.Decimal(15, 2)
-  dueDate      DateTime     @map("due_date") @db.Date
-  status       ChequeStatus @default(PENDING)
-  clearedAt    DateTime?    @map("cleared_at")
-  bouncedReason String?     @map("bounced_reason")
-  createdAt    DateTime     @default(now()) @map("created_at")
+  id            String       @id @default(uuid()) @db.Uuid
+  orgId         String       @map("org_id") @db.Uuid
+  customerId    String       @map("customer_id") @db.Uuid
+  paymentId     String?      @map("payment_id") @db.Uuid
+  chequeNumber  String       @map("cheque_number")
+  bank          String
+  amount        Decimal      @db.Decimal(15, 2)
+  dueDate       DateTime     @map("due_date") @db.Date
+  status        ChequeStatus @default(PENDING)
+  clearedAt     DateTime?    @map("cleared_at")
+  bouncedReason String?      @map("bounced_reason")
+  createdAt     DateTime     @default(now()) @map("created_at")
 
   org      Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
@@ -5115,27 +5114,27 @@ model Cheque {
 
 // ---------- F10 Dispatch + GPS ----------
 model Truck {
-  id             String      @id @default(uuid()) @db.Uuid
-  orgId          String      @map("org_id") @db.Uuid
-  plate          String // ทะเบียนรถ
-  capacityLiters Int         @map("capacity_liters")
-  gpsUnitId      String?     @unique @map("gps_unit_id") // เลขกล่อง GPS (DLT unit_id)
-  homeDepot      String?     @map("home_depot")
-  status         TruckStatus @default(IDLE)
-  currentDriverId String?    @map("current_driver_id") @db.Uuid
+  id              String      @id @default(uuid()) @db.Uuid
+  orgId           String      @map("org_id") @db.Uuid
+  plate           String // ทะเบียนรถ
+  capacityLiters  Int         @map("capacity_liters")
+  gpsUnitId       String?     @unique @map("gps_unit_id") // เลขกล่อง GPS (DLT unit_id)
+  homeDepot       String?     @map("home_depot")
+  status          TruckStatus @default(IDLE)
+  currentDriverId String?     @map("current_driver_id") @db.Uuid
   // ตำแหน่งล่าสุด (denormalized เพื่อความเร็วหน้าแผนที่)
-  lastLat        Decimal?    @map("last_lat") @db.Decimal(10, 7)
-  lastLng        Decimal?    @map("last_lng") @db.Decimal(10, 7)
-  lastSpeedKmh   Decimal?    @map("last_speed_kmh") @db.Decimal(5, 1)
-  lastEngineOn   Boolean?    @map("last_engine_on")
-  lastCourseDeg  Int?        @map("last_course_deg")
-  lastSeenAt     DateTime?   @map("last_seen_at")
-  isActive       Boolean     @default(true) @map("is_active")
-  createdAt      DateTime    @default(now()) @map("created_at")
-  updatedAt      DateTime    @updatedAt @map("updated_at")
+  lastLat         Decimal?    @map("last_lat") @db.Decimal(10, 7)
+  lastLng         Decimal?    @map("last_lng") @db.Decimal(10, 7)
+  lastSpeedKmh    Decimal?    @map("last_speed_kmh") @db.Decimal(5, 1)
+  lastEngineOn    Boolean?    @map("last_engine_on")
+  lastCourseDeg   Int?        @map("last_course_deg")
+  lastSeenAt      DateTime?   @map("last_seen_at")
+  isActive        Boolean     @default(true) @map("is_active")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
 
   org           Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  currentDriver FuelUser?           @relation("TruckDriver", fields: [currentDriverId], references: [id], onDelete: SetNull)
+  currentDriver FuelUser?       @relation("TruckDriver", fields: [currentDriverId], references: [id], onDelete: SetNull)
   orders        Order[]
   locations     TruckLocation[]
 
@@ -5197,19 +5196,19 @@ model BankAccount {
 
 // ---------- F5 follow-ups ----------
 model FollowUp {
-  id             String         @id @default(uuid()) @db.Uuid
-  orgId          String         @map("org_id") @db.Uuid
-  customerId     String?        @map("customer_id") @db.Uuid
-  salesId        String         @map("sales_id") @db.Uuid
-  dueDate        DateTime       @map("due_date") @db.Date
-  note           String
-  status         FollowUpStatus @default(OPEN)
-  kind           String         @default("manual") // manual | overdue | prospect
-  createdAt      DateTime       @default(now()) @map("created_at")
+  id         String         @id @default(uuid()) @db.Uuid
+  orgId      String         @map("org_id") @db.Uuid
+  customerId String?        @map("customer_id") @db.Uuid
+  salesId    String         @map("sales_id") @db.Uuid
+  dueDate    DateTime       @map("due_date") @db.Date
+  note       String
+  status     FollowUpStatus @default(OPEN)
+  kind       String         @default("manual") // manual | overdue | prospect
+  createdAt  DateTime       @default(now()) @map("created_at")
 
   org      Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   customer Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  sales    FuelUser      @relation("FollowUpSales", fields: [salesId], references: [id], onDelete: Cascade)
+  sales    FuelUser  @relation("FollowUpSales", fields: [salesId], references: [id], onDelete: Cascade)
 
   @@index([orgId, status, dueDate])
   @@index([salesId, status])
@@ -5228,7 +5227,7 @@ model FuelAuditLog {
   meta      Json?
   createdAt DateTime @default(now()) @map("created_at")
 
-  org  Org   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org  Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user FuelUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([orgId, createdAt])
@@ -5263,17 +5262,17 @@ enum LedgerExpenseSource {
 
 // หมวดค่าใช้จ่าย — ผูกกับบริษัท (แต่ละบริษัทมีผังบัญชีของตัวเอง)
 model LedgerCategory {
-  id            String   @id @default(uuid()) @db.Uuid
-  orgId         String   @map("org_id") @db.Uuid
-  companyId     String   @map("company_id") @db.Uuid
-  name          String
-  kind          String   @default("expense") // เผื่ออนาคต (รายรับ v2)
-  color         String?
-  trcloudAccCode String? @map("trcloud_acc_code") // map → ผังบัญชี TRCloud
-  sort          Int      @default(0)
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id             String   @id @default(uuid()) @db.Uuid
+  orgId          String   @map("org_id") @db.Uuid
+  companyId      String   @map("company_id") @db.Uuid
+  name           String
+  kind           String   @default("expense") // เผื่ออนาคต (รายรับ v2)
+  color          String?
+  trcloudAccCode String?  @map("trcloud_acc_code") // map → ผังบัญชี TRCloud
+  sort           Int      @default(0)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org      Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   company  Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -5288,64 +5287,83 @@ model LedgerCategory {
 
 // ค่าใช้จ่าย (core) — 1 ใบเสร็จ/สลิป = 1 row
 model LedgerExpense {
-  id            String              @id @default(uuid()) @db.Uuid
-  orgId         String              @map("org_id") @db.Uuid
-  companyId     String              @map("company_id") @db.Uuid
-  branchId      String?             @map("branch_id") @db.Uuid
-  docCode       String              @map("doc_code") // EXP-YYYYMM-NNNN
-  status        LedgerExpenseStatus @default(draft)
-  source        LedgerExpenseSource @default(web)
-  vendor        String?
-  vendorTaxId   String?             @map("vendor_tax_id")
-  docDate       DateTime?           @map("doc_date") @db.Date
-  subtotal      Decimal             @default(0) @db.Decimal(15, 2)
-  vat           Decimal             @default(0) @db.Decimal(15, 2)
-  wht           Decimal             @default(0) @db.Decimal(15, 2) // หัก ณ ที่จ่าย
-  total         Decimal             @default(0) @db.Decimal(15, 2)
-  categoryId    String?             @map("category_id") @db.Uuid
-  paymentMethod String?             @map("payment_method")
-  originalUrl   String?             @map("original_url") // Drive (P1.5) / R2
-  thumbUrl      String?             @map("thumb_url") // R2
-  driveFileId   String?             @map("drive_file_id") // Google Drive file id (receipt original)
-  driveWebUrl   String?             @map("drive_web_url") // shareable Drive link for the accountant
-  branchTagPending Boolean          @default(false) @map("branch_tag_pending") // central group: branch not yet chosen
-  sha256        String? // dedup
-  ocrModel      String?             @map("ocr_model")
-  ocrConfidence Json?               @map("ocr_confidence") // { vendor: 0.9, total: 0.95, ... }
-  slipRef       String?             @map("slip_ref") // SlipOK ref (Phase 2)
-  needsReview   Boolean             @default(true) @map("needs_review")
-  note          String?
+  id                    String              @id @default(uuid()) @db.Uuid
+  orgId                 String              @map("org_id") @db.Uuid
+  companyId             String              @map("company_id") @db.Uuid
+  branchId              String?             @map("branch_id") @db.Uuid
+  docCode               String              @map("doc_code") // EXP-YYYYMM-NNNN
+  status                LedgerExpenseStatus @default(draft)
+  source                LedgerExpenseSource @default(web)
+  vendor                String?
+  vendorTaxId           String?             @map("vendor_tax_id")
+  docDate               DateTime?           @map("doc_date") @db.Date
+  subtotal              Decimal             @default(0) @db.Decimal(15, 2)
+  vat                   Decimal             @default(0) @db.Decimal(15, 2)
+  wht                   Decimal             @default(0) @db.Decimal(15, 2) // หัก ณ ที่จ่าย
+  total                 Decimal             @default(0) @db.Decimal(15, 2)
+  categoryId            String?             @map("category_id") @db.Uuid
+  paymentMethod         String?             @map("payment_method")
+  originalUrl           String?             @map("original_url") // Drive (P1.5) / R2
+  thumbUrl              String?             @map("thumb_url") // R2
+  driveFileId           String?             @map("drive_file_id") // Google Drive file id (receipt original)
+  driveWebUrl           String?             @map("drive_web_url") // shareable Drive link for the accountant
+  branchTagPending      Boolean             @default(false) @map("branch_tag_pending") // central group: branch not yet chosen
+  sha256                String? // dedup
+  ocrModel              String?             @map("ocr_model")
+  ocrConfidence         Json?               @map("ocr_confidence") // { vendor: 0.9, total: 0.95, ... }
+  slipRef               String?             @map("slip_ref") // SlipOK ref (Phase 2)
+  needsReview           Boolean             @default(true) @map("needs_review")
+  note                  String?
   // — Bainy-parity edit-form fields (Phase 3) —
-  docType          String  @default("tax_invoice") @map("doc_type") // ใบกำกับภาษี/ใบเสร็จ/บิลเงินสด/ใบส่งของ/อื่นๆ
-  vendorDocNumber  String? @map("vendor_doc_number") // เลขที่เอกสารของผู้ขาย (≠ doc_code ภายใน)
-  vendorAddress    String? @map("vendor_address")
-  vendorBranchCode String? @map("vendor_branch_code")
-  discount         Decimal @default(0) @db.Decimal(15, 2) // ส่วนลด
-  paymentStatus    String  @default("paid") @map("payment_status") // paid | unpaid | partial
-  claimantName     String? @map("claimant_name") // ผู้เบิก
-  bankDetail       String? @map("bank_detail")
-  isRecurring      Boolean @default(false) @map("is_recurring") // รายจ่ายประจำ
-  attachments      Json? // [{url,kind:'po'|'evidence',name}] PO + หลักฐานเพิ่มเติม
-  captureBatchId   String? @map("capture_batch_id") @db.Uuid // groups receipts sent together
-  createdBy     String?             @map("created_by") @db.Uuid
-  confirmedBy   String?             @map("confirmed_by") @db.Uuid
-  confirmedAt   DateTime?           @map("confirmed_at") @db.Timestamptz(6)
-  exportBatchId String?             @map("export_batch_id") @db.Uuid
+  docType               String              @default("tax_invoice") @map("doc_type") // ใบกำกับภาษี/ใบเสร็จ/บิลเงินสด/ใบส่งของ/อื่นๆ
+  vendorDocNumber       String?             @map("vendor_doc_number") // เลขที่เอกสารของผู้ขาย (≠ doc_code ภายใน)
+  vendorAddress         String?             @map("vendor_address")
+  vendorBranchCode      String?             @map("vendor_branch_code")
+  discount              Decimal             @default(0) @db.Decimal(15, 2) // ส่วนลด
+  paymentStatus         String              @default("paid") @map("payment_status") // paid | unpaid | partial
+  claimantName          String?             @map("claimant_name") // ผู้เบิก
+  bankDetail            String?             @map("bank_detail")
+  isRecurring           Boolean             @default(false) @map("is_recurring") // รายจ่ายประจำ
+  attachments           Json? // [{url,kind:'po'|'evidence',name}] PO + หลักฐานเพิ่มเติม
+  captureBatchId        String?             @map("capture_batch_id") @db.Uuid // groups receipts sent together
+  createdBy             String?             @map("created_by") @db.Uuid
+  confirmedBy           String?             @map("confirmed_by") @db.Uuid
+  confirmedAt           DateTime?           @map("confirmed_at") @db.Timestamptz(6)
+  exportBatchId         String?             @map("export_batch_id") @db.Uuid
   // — TRCloud API push (ใบ AP เข้า TRCloud) — stamped once on a successful push so
   //   the expense can never be double-pushed; trcloudError holds the last failure. —
-  trcloudDocId    String?           @map("trcloud_doc_id") // id ของ AP ในระบบ TRCloud
-  trcloudDocNo    String?           @map("trcloud_doc_no") // เลขที่เอกสาร AP
-  trcloudPushedAt DateTime?         @map("trcloud_pushed_at") @db.Timestamptz(6)
-  trcloudError    String?           @map("trcloud_error")
-  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  trcloudDocId          String?             @map("trcloud_doc_id") // id ของ AP ในระบบ TRCloud
+  trcloudDocNo          String?             @map("trcloud_doc_no") // เลขที่เอกสาร AP
+  trcloudPushedAt       DateTime?           @map("trcloud_pushed_at") @db.Timestamptz(6)
+  trcloudError          String?             @map("trcloud_error")
+  // — Input-VAT claimability (ภาษีซื้อ) — ตัดสินด้วยเลขภาษี 13 หลักเป๊ะ (ไม่เดาชื่อ).
+  //   buyer = ผู้ซื้อ (เจพีซิ้งค์); สถานะสี = deterministic จาก recheck.ts; never-auto-post.
+  buyerTaxIdSnapshot    String?             @map("buyer_tax_id_snapshot") // เลขภาษีผู้ซื้อ ณ เวลาบันทึก จาก master (ไม่ใช่ OCR)
+  buyerNameSnapshot     String?             @map("buyer_name_snapshot") // ชื่อผู้ซื้อจาก master
+  buyerTaxIdOnDoc       String?             @map("buyer_tax_id_on_doc") // OCR เจอบนใบ — เพื่อ audit/verify
+  buyerMatchStatus      String              @default("undecided") @map("buyer_match_status") // matched | mismatch | not_found_on_doc | undecided
+  completenessStatus    String              @default("undecided") @map("completeness_status") // green_full | yellow_partial | red_invalid | undecided
+  completenessMissing   Json?               @map("completeness_missing") // string[] — element ที่ขาด
+  completenessCheckedAt DateTime?           @map("completeness_checked_at") @db.Timestamptz(6) // snapshot audit
+  inputVatClaimable     Boolean?            @map("input_vat_claimable") // null = ยังไม่ตัดสิน
+  inputVatBlockReason   String?             @map("input_vat_block_reason") // abbreviated_86_6 | buyer_mismatch | wrong_entity | incomplete_invoice | entertainment | passenger_car | other
+  replacementOfId       String?             @map("replacement_of_id") @db.Uuid // ใบนี้เป็นใบทดแทนของใบเดิม
+  replacedById          String?             @map("replaced_by_id") @db.Uuid // ใบนี้ถูกทดแทนโดยใบใหม่
+  overrideBy            String?             @map("override_by") @db.Uuid
+  overrideAt            DateTime?           @map("override_at") @db.Timestamptz(6)
+  overrideReason        String?             @map("override_reason")
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org         Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  branch      Branch?             @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  category    LedgerCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  exportBatch LedgerExportBatch?  @relation(fields: [exportBatchId], references: [id], onDelete: SetNull)
-  items       LedgerExpenseItem[]
+  org           Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branch        Branch?             @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  category      LedgerCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  exportBatch   LedgerExportBatch?  @relation(fields: [exportBatchId], references: [id], onDelete: SetNull)
+  items         LedgerExpenseItem[]
+  // Replacement chain (แนบใบใหม่ทดแทน — เก็บทั้ง 2 ใบ): self-relation.
+  replacementOf LedgerExpense?      @relation("ExpenseReplacement", fields: [replacementOfId], references: [id], onDelete: SetNull)
+  replacedBy    LedgerExpense[]     @relation("ExpenseReplacement")
 
   @@unique([orgId, companyId, docCode])
   @@index([orgId, companyId, branchId, status])
@@ -5354,6 +5372,8 @@ model LedgerExpense {
   @@index([sha256]) // dedup lookup
   @@index([exportBatchId])
   @@index([captureBatchId])
+  @@index([replacementOfId])
+  @@index([orgId, companyId, completenessStatus])
   @@map("ledger_expense")
   @@schema("public")
 }
@@ -5429,21 +5449,21 @@ model LedgerBudget {
 
 // ผูกกลุ่ม LINE (รับรูปใบเสร็จจากหน้างาน) — secrets เข้ารหัส (stub Phase 1)
 model LedgerLineChannel {
-  id              String   @id @default(uuid()) @db.Uuid
-  orgId           String   @map("org_id") @db.Uuid
-  companyId       String   @map("company_id") @db.Uuid
-  lineChannelId   String   @map("line_channel_id")
-  webhookSecretEnc String? @map("webhook_secret_enc") // TODO[ledger-secret]
-  accessTokenEnc  String?  @map("access_token_enc") // TODO[ledger-secret]
-  groupId         String?  @map("group_id")
-  branchId             String? @map("branch_id") @db.Uuid // group = THIS branch (null = central)
-  kind                 String  @default("central") // 'branch' | 'central' | 'dm'
-  defaultPaymentMethod String? @map("default_payment_method")
-  defaultCategoryId    String? @map("default_category_id") @db.Uuid
-  richMenuId           String? @map("rich_menu_id")
-  active          Boolean  @default(true)
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                   String   @id @default(uuid()) @db.Uuid
+  orgId                String   @map("org_id") @db.Uuid
+  companyId            String   @map("company_id") @db.Uuid
+  lineChannelId        String   @map("line_channel_id")
+  webhookSecretEnc     String?  @map("webhook_secret_enc") // TODO[ledger-secret]
+  accessTokenEnc       String?  @map("access_token_enc") // TODO[ledger-secret]
+  groupId              String?  @map("group_id")
+  branchId             String?  @map("branch_id") @db.Uuid // group = THIS branch (null = central)
+  kind                 String   @default("central") // 'branch' | 'central' | 'dm'
+  defaultPaymentMethod String?  @map("default_payment_method")
+  defaultCategoryId    String?  @map("default_category_id") @db.Uuid
+  richMenuId           String?  @map("rich_menu_id")
+  active               Boolean  @default(true)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -5518,25 +5538,25 @@ model LedgerPermission {
 
 // ลิงก์เชิญแบบมีขอบเขต (ดูแลสาขา/หมวดไหน)
 model LedgerLineInvite {
-  id                String    @id @default(uuid()) @db.Uuid
-  orgId             String    @map("org_id") @db.Uuid
-  companyId         String    @map("company_id") @db.Uuid
-  token             String    @unique
-  role              String    @default("staff")
-  scopeBranchIds    String[]  @map("scope_branch_ids") @db.Uuid
-  scopeCategoryIds  String[]  @map("scope_category_ids") @db.Uuid
-  note              String?
+  id               String    @id @default(uuid()) @db.Uuid
+  orgId            String    @map("org_id") @db.Uuid
+  companyId        String    @map("company_id") @db.Uuid
+  token            String    @unique
+  role             String    @default("staff")
+  scopeBranchIds   String[]  @map("scope_branch_ids") @db.Uuid
+  scopeCategoryIds String[]  @map("scope_category_ids") @db.Uuid
+  note             String?
   // Top-down binding (D-identity 2026-06-05): when set, accepting this invite ALSO
   // binds the accepter's verified Login `sub` to THIS Pool user (users.line_login_sub)
   // and links the ledger member → that Pool user. `kind='admin_claim'` = grant ledger
   // admin to that Pool user (used by promoteMemberToAdmin + the owner self-claim link).
-  targetPoolUserId  String?   @map("target_pool_user_id") @db.Uuid
-  kind              String    @default("member") // member | admin_claim
-  expiresAt         DateTime? @map("expires_at") @db.Timestamptz(6)
-  usedByLineUserId  String?   @map("used_by_line_user_id")
-  usedAt            DateTime? @map("used_at") @db.Timestamptz(6)
-  createdBy         String?   @map("created_by") @db.Uuid
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  targetPoolUserId String?   @map("target_pool_user_id") @db.Uuid
+  kind             String    @default("member") // member | admin_claim
+  expiresAt        DateTime? @map("expires_at") @db.Timestamptz(6)
+  usedByLineUserId String?   @map("used_by_line_user_id")
+  usedAt           DateTime? @map("used_at") @db.Timestamptz(6)
+  createdBy        String?   @map("created_by") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([orgId, companyId])
   @@map("ledger_line_invite")

@@ -28,9 +28,14 @@ import { liffIdForModule } from "@/lib/line/channels";
 import { requireSession, type DbUser } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { userHasModuleAccess } from "@/lib/auth/module-access";
-import { recheckReceipt } from "@/lib/ledger/recheck";
+import { recheckReceipt, gradeCompleteness } from "@/lib/ledger/recheck";
+import { OUR_BUYER } from "@/lib/ledger/group-identity";
 import { setPermission, isLedgerRole, isLedgerCapability } from "@/lib/ledger/permissions";
 import { listExpenses } from "@/lib/ledger/queries";
+import { parseReceipt } from "@/lib/ledger/ai-parse";
+import { storeReceiptImage } from "@/lib/ledger/storage";
+import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
+import type { InputVatBlockReason } from "@/lib/ledger/types";
 import { buildTrcloudCsv } from "@/lib/ledger/trcloud-export";
 import {
   pushExpenseToTrcloud,
@@ -97,6 +102,10 @@ const patchSchema = z.object({
   claimantName: z.string().trim().max(120).optional(),
   bankDetail: z.string().trim().max(120).optional(),
   isRecurring: z.boolean().optional(),
+  // NOTE: input-VAT claimability (inputVatClaimable / inputVatBlockReason) is
+  // DELIBERATELY NOT in this edit schema. การตัดสิน "ขอคืนได้?" เขียนได้ทางเดียว =
+  // overrideClaimability() ที่ gate ด้วย expense.confirm (นักบัญชี/แอดมิน) เท่านั้น.
+  // ถ้ารับผ่าน save/LIFF จะเป็นช่องให้ staff ยัดค่า + ทับ override นักบัญชีเงียบ ๆ.
   items: z.array(itemSchema).max(100).optional(),
 });
 export type ExpensePatch = z.infer<typeof patchSchema>;
@@ -123,6 +132,43 @@ function toData(p: ExpensePatch) {
     claimantName: p.claimantName === undefined ? undefined : p.claimantName || null,
     bankDetail: p.bankDetail === undefined ? undefined : p.bankDetail || null,
     isRecurring: p.isRecurring ?? undefined,
+    // ภาษีซื้อ (inputVatClaimable / inputVatBlockReason) ไม่อยู่ที่นี่โดยตั้งใจ —
+    // เขียนได้ทางเดียวผ่าน overrideClaimability() เท่านั้น (ดู patchSchema).
+  };
+}
+
+/**
+ * Re-grade an expense's input-VAT completeness from the patched values + the
+ * row's OCR-derived buyer tax id (which the patch never carries). Returns the
+ * columns to persist so save/confirm keep the สถานะสี in sync with edits.
+ * The buyer SNAPSHOT is always re-stamped from master (เจพีซิ้งค์ OUR_BUYER).
+ */
+function gradeColumnsFromPatch(
+  p: ExpensePatch,
+  row: { buyerTaxIdOnDoc: string | null; vendorAddress: string | null; vendorBranchCode: string | null },
+) {
+  const grade = gradeCompleteness({
+    docType: p.docType ?? "tax_invoice",
+    vendor: p.vendor || null,
+    vendorTaxId: p.vendorTaxId || null,
+    vendorAddress: p.vendorAddress === undefined ? row.vendorAddress : p.vendorAddress || null,
+    vendorBranchCode: p.vendorBranchCode === undefined ? row.vendorBranchCode : p.vendorBranchCode || null,
+    subtotal: p.subtotal,
+    vat: p.vat,
+    total: p.total,
+    buyerTaxIdOnDoc: row.buyerTaxIdOnDoc,
+  });
+  return {
+    buyerTaxIdSnapshot: OUR_BUYER.taxId,
+    buyerNameSnapshot: OUR_BUYER.name,
+    buyerMatchStatus: grade.buyerMatch,
+    completenessStatus: grade.status,
+    completenessMissing: grade.missing as unknown as Prisma.InputJsonValue,
+    completenessCheckedAt: new Date(),
+    // re-grade อัปเดตเฉพาะ "สถานะสี" (derived) — ไม่แตะ inputVatClaimable/BlockReason
+    // (การตัดสินของนักบัญชีผ่าน overrideClaimability) มิฉะนั้นการแก้ field อื่นจะรีเซ็ต
+    // override เงียบ ๆ → ใบที่ block ไว้กลับมาขอคืนได้ (false-accept).
+    grade,
   };
 }
 
@@ -157,7 +203,15 @@ async function loadScoped(
 ) {
   const row = await prisma.ledgerExpense.findFirst({
     where: { id, orgId: session.user.org_id },
-    select: { id: true, companyId: true, status: true },
+    select: {
+      id: true,
+      companyId: true,
+      status: true,
+      // — for re-grading input-VAT completeness on save/confirm —
+      buyerTaxIdOnDoc: true,
+      vendorAddress: true,
+      vendorBranchCode: true,
+    },
   });
   return { row };
 }
@@ -178,11 +232,17 @@ export async function saveExpense(
   if (row.status === "locked" || row.status === "void")
     return { ok: false, error: "รายการถูกล็อก/ยกเลิก แก้ไม่ได้" };
 
+  // Re-grade input-VAT completeness from the edited values (สถานะสีต้องตามการแก้ไข).
+  const { grade: _g, ...gradeCols } = gradeColumnsFromPatch(parsed.data, row);
+  void _g;
   await prisma.$transaction(async (tx) => {
     await tx.ledgerExpense.updateMany({
       // Scope by company too so an edit can't cross a company boundary in-org.
       where: { id, orgId: session.user.org_id, companyId: row.companyId },
-      data: { ...toData(parsed.data), needsReview: true },
+      // gradeCols = derived สถานะสี (re-graded); toData = the edited fields. NEITHER
+      // writes inputVatClaimable/BlockReason — that decision is owned solely by the
+      // accountant-gated overrideClaimability(), so an edit never reopens a blocked claim.
+      data: { ...gradeCols, ...toData(parsed.data), needsReview: true },
     });
     await replaceItems(tx, {
       expenseId: id,
@@ -248,10 +308,15 @@ export async function confirmExpense(
   if (row.status === "locked" || row.status === "void")
     return { ok: false, error: "รายการถูกล็อก/ยกเลิก ยืนยันไม่ได้" };
 
+  // Re-grade input-VAT completeness from the confirmed values too (both paths must
+  // grade — else the snapshot the accountant just confirmed keeps a stale color).
+  const { grade: _gc, ...gradeColsC } = gradeColumnsFromPatch(p, row);
+  void _gc;
   await prisma.$transaction(async (tx) => {
     await tx.ledgerExpense.updateMany({
       where: { id, orgId: session.user.org_id, companyId: row.companyId },
       data: {
+        ...gradeColsC,
         ...toData(p),
         status: "confirmed",
         needsReview: false,
@@ -389,6 +454,262 @@ export async function bulkConfirm(
   revalidatePath("/ledger/expenses");
   revalidatePath("/ledger");
   return { ok: true, confirmed, skipped };
+}
+
+// ===================== Input-VAT claimability (ภาษีซื้อ) =====================
+// Two accountant-only flows on top of the deterministic สถานะสี:
+//   1. overrideClaimability — the accountant manually decides ขอคืนได้/ไม่ได้ + เหตุผล,
+//      stamped with who/when/why (สรรพากร trail). Gated on expense.confirm.
+//   2. attachReplacementInvoice — แนบใบกำกับเต็มรูปที่ขอจากร้าน เก็บทั้ง 2 ใบ (self-link),
+//      re-parse + re-grade → flip เขียวถ้าผ่าน. The replacement is itself a draft
+//      expense (never auto-posted — GOLDEN RULE). Gated on expense.confirm.
+
+const overrideSchema = z.object({
+  expenseId: zUUID(),
+  claimable: z.boolean(),
+  reason: z
+    .enum([
+      "abbreviated_86_6",
+      "buyer_mismatch",
+      "wrong_entity",
+      "incomplete_invoice",
+      "entertainment",
+      "passenger_car",
+      "other",
+    ])
+    .optional(),
+});
+
+/**
+ * Accountant override of the claimable flag (CEO philosophy: "มี VAT ควรขอคืนได้
+ * ทั้งหมด — ที่ขอไม่ได้มักเพราะคนออกผิด"). Stores who/when/why so the override is
+ * auditable. Gated on expense.confirm. NEVER changes status/total — only the
+ * input-VAT decision + its reason.
+ */
+export async function overrideClaimability(
+  raw: unknown,
+): Promise<ActionResult> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!(await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.confirm"))) {
+    return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลปรับสิทธิ์ขอคืนภาษีได้" };
+  }
+  const parsed = overrideSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" };
+  const { expenseId, claimable, reason } = parsed.data;
+
+  const { row } = await loadScoped(session, expenseId);
+  if (!row) return { ok: false, error: "ไม่พบรายการ" };
+  if (row.status === "void") return { ok: false, error: "รายการถูกยกเลิกแล้ว" };
+
+  // เหตุผลจำเป็นเมื่อ "ขอคืนไม่ได้" (กันบันทึกบล็อกโดยไม่ระบุเหตุผล).
+  const blockReason: InputVatBlockReason | null = claimable ? null : reason ?? "other";
+
+  await prisma.ledgerExpense.updateMany({
+    where: { id: expenseId, orgId: session.user.org_id, companyId: row.companyId },
+    data: {
+      inputVatClaimable: claimable,
+      inputVatBlockReason: blockReason,
+      overrideBy: session.user.id,
+      overrideAt: new Date(),
+      overrideReason: reason ?? (claimable ? "manual_allow" : "manual_block"),
+    },
+  });
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_EXPENSE_VAT_OVERRIDDEN",
+    resourceType: "ledger_expense",
+    resourceId: expenseId,
+    diff: { new: { claimable, reason: blockReason } },
+  });
+  revalidatePath("/ledger/expenses");
+  revalidatePath("/ledger");
+  return { ok: true };
+}
+
+const attachReplacementSchema = z
+  .object({
+    expenseId: zUUID(),
+    // either a base64 data-url/raw image OR an already-hosted url.
+    imageBase64: z.string().trim().min(1).optional(),
+    url: z.string().trim().url().optional(),
+  })
+  .refine((v) => !!v.imageBase64 || !!v.url, {
+    message: "ต้องแนบรูปหรือ URL ของใบทดแทน",
+  });
+
+/**
+ * แนบใบกำกับเต็มรูปทดแทนใบเหลือง/แดง. เก็บทั้ง 2 ใบ (self-relation):
+ *   - upload via storage.ts (ถ้าส่ง base64) → R2
+ *   - re-parse via parseReceipt (อ่านผู้ขาย/VAT/เลขผู้ซื้อบนใบใหม่)
+ *   - create ใบใหม่ status=draft (GOLDEN RULE — never auto-post) ผูก replacementOfId
+ *   - set replacedById บนใบเดิม
+ *   - re-grade ใบใหม่ → flip เขียวถ้าผ่าน
+ * Gated on expense.confirm. Returns the new draft id.
+ */
+export async function attachReplacementInvoice(
+  raw: unknown,
+): Promise<ActionResult & { replacementId?: string; completenessStatus?: string }> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!(await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.confirm"))) {
+    return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลแนบใบทดแทนได้" };
+  }
+  const parsed = attachReplacementSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  }
+  const { expenseId, imageBase64, url } = parsed.data;
+  const orgId = session.user.org_id;
+
+  // Load the ORIGINAL (the yellow/red row being remediated) — full row for the link.
+  const original = await prisma.ledgerExpense.findFirst({
+    where: { id: expenseId, orgId },
+    select: { id: true, companyId: true, branchId: true, status: true, replacedById: true },
+  });
+  if (!original) return { ok: false, error: "ไม่พบรายการเดิม" };
+  if (original.status === "void") return { ok: false, error: "รายการถูกยกเลิกแล้ว" };
+  if (original.replacedById) return { ok: false, error: "ใบนี้มีใบทดแทนแล้ว" };
+
+  // 1. Re-parse the replacement image (budget-guarded inside parseReceipt).
+  let parsedReceipt;
+  try {
+    parsedReceipt = await parseReceipt(url ?? imageBase64!, session.user.id, orgId);
+  } catch (e) {
+    console.error("[ledger:attachReplacementInvoice] parse failed", e);
+    return { ok: false, error: "อ่านใบทดแทนไม่สำเร็จ · ลองใหม่หรือถ่ายให้ชัดขึ้น" };
+  }
+
+  // 1b. Persist the image to R2 when we were handed raw bytes (a hosted url stays
+  //     as-is). Best-effort: a storage hiccup must not block the draft/link.
+  let originalUrl: string | null = url ?? null;
+  let thumbUrl: string | null = url ?? null;
+  let sha256: string | null = null;
+  if (imageBase64) {
+    try {
+      const m = imageBase64.match(/^data:(.+?);base64,([\s\S]*)$/);
+      const b64 = m ? m[2] : imageBase64;
+      const contentType = m?.[1] ?? "image/jpeg";
+      const buffer = Buffer.from(b64, "base64");
+      const stored = await storeReceiptImage({
+        orgId,
+        companySlug: original.companyId,
+        expenseId: `${expenseId}-repl`,
+        buffer,
+        contentType,
+      });
+      originalUrl = stored.originalUrl;
+      thumbUrl = stored.thumbUrl;
+      sha256 = stored.sha256;
+    } catch (e) {
+      console.error("[ledger:attachReplacementInvoice] store failed", e);
+    }
+  }
+
+  // 2. Grade the replacement (deterministic).
+  const grade = gradeCompleteness({
+    docType: parsedReceipt.docType ?? "tax_invoice",
+    vendor: parsedReceipt.vendor,
+    vendorTaxId: parsedReceipt.vendorTaxId,
+    vendorAddress: parsedReceipt.vendorAddress ?? null,
+    vendorBranchCode: null,
+    subtotal: parsedReceipt.subtotal,
+    vat: parsedReceipt.vat,
+    total: parsedReceipt.total,
+    buyerTaxIdOnDoc: parsedReceipt.buyerTaxIdOnDoc,
+    rawText: parsedReceipt.raw,
+  });
+
+  // 3. Create the replacement as a DRAFT (never auto-post) + link it ↔ original.
+  const docCode = `${(await currentDocCodeFallback())}-R`;
+  let replacementId: string;
+  try {
+    const created = await prisma.$transaction(async (tx) => {
+      const repl = await tx.ledgerExpense.create({
+        data: {
+          orgId,
+          companyId: original.companyId,
+          branchId: original.branchId,
+          docCode,
+          status: "draft", // GOLDEN RULE — never auto-post
+          source: "web",
+          vendor: parsedReceipt.vendor ?? null,
+          vendorTaxId: parsedReceipt.vendorTaxId ?? null,
+          vendorDocNumber: parsedReceipt.vendorDocNumber ?? null,
+          vendorAddress: parsedReceipt.vendorAddress ?? null,
+          docType: parsedReceipt.docType ?? "tax_invoice",
+          docDate: parsedReceipt.docDate ? new Date(parsedReceipt.docDate) : null,
+          subtotal: parsedReceipt.subtotal ?? 0,
+          discount: parsedReceipt.discount ?? 0,
+          vat: parsedReceipt.vat ?? 0,
+          wht: parsedReceipt.wht ?? 0,
+          total: parsedReceipt.total ?? 0,
+          paymentMethod: parsedReceipt.paymentMethod ?? null,
+          originalUrl,
+          thumbUrl,
+          sha256,
+          ocrModel: parsedReceipt.ocrModel,
+          ocrConfidence: parsedReceipt.confidence as unknown as Prisma.InputJsonValue,
+          needsReview: true,
+          note: "ใบทดแทน (แนบเพื่อกู้ภาษีซื้อ)",
+          createdBy: session.user.id,
+          // link: this new row replaces the original
+          replacementOfId: original.id,
+          // — input-VAT grade of the replacement —
+          buyerTaxIdSnapshot: OUR_BUYER.taxId,
+          buyerNameSnapshot: OUR_BUYER.name,
+          buyerTaxIdOnDoc: parsedReceipt.buyerTaxIdOnDoc,
+          buyerMatchStatus: grade.buyerMatch,
+          completenessStatus: grade.status,
+          completenessMissing: grade.missing as unknown as Prisma.InputJsonValue,
+          completenessCheckedAt: new Date(),
+          inputVatBlockReason: grade.blockReason,
+          inputVatClaimable: grade.suggestedClaimable ? true : null,
+        },
+        select: { id: true },
+      });
+      // back-link the original → flip its color to follow the (hopefully green) replacement
+      await tx.ledgerExpense.update({
+        where: { id: original.id },
+        data: {
+          replacedById: repl.id,
+          completenessStatus: grade.status,
+          completenessMissing: grade.missing as unknown as Prisma.InputJsonValue,
+          completenessCheckedAt: new Date(),
+          inputVatBlockReason: grade.blockReason,
+          inputVatClaimable: grade.suggestedClaimable ? true : null,
+        },
+      });
+      return repl;
+    });
+    replacementId = created.id;
+  } catch (e) {
+    console.error("[ledger:attachReplacementInvoice] create failed", e);
+    return { ok: false, error: "บันทึกใบทดแทนไม่สำเร็จ" };
+  }
+
+  await audit({
+    orgId,
+    userId: session.user.id,
+    action: "LEDGER_EXPENSE_REPLACEMENT_ATTACHED",
+    resourceType: "ledger_expense",
+    resourceId: original.id,
+    diff: { new: { replacementId, completenessStatus: grade.status } },
+  });
+  revalidatePath("/ledger/expenses");
+  revalidatePath("/ledger");
+  return { ok: true, replacementId, completenessStatus: grade.status };
+}
+
+/** Month-prefixed doc-code stem for replacement rows (the real per-company counter
+ *  lives in actions.ts; here we just need a unique-enough -R code, scoped by the
+ *  @@unique(orgId,companyId,docCode) which appends the row id collision-free). */
+async function currentDocCodeFallback(): Promise<string> {
+  const ym = new Date().toISOString().slice(0, 7).replace("-", "");
+  return `EXP-${ym}-${Date.now().toString().slice(-5)}`;
 }
 
 // ===================== Settings: categories =====================

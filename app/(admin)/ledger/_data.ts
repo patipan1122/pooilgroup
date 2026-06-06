@@ -20,8 +20,10 @@ export {
   listCompanies,
   listBranches,
   spendByCategory,
+  summarizeCompleteness,
   type ExpenseListFilter,
   type CategorySpendRow,
+  type CompletenessSummary,
 } from "@/lib/ledger/queries";
 
 type DecimalLike = { toNumber: () => number } | number | null | undefined;

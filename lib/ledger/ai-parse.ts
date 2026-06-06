@@ -40,6 +40,7 @@ const RECEIPT_PROMPT = `คุณเป็นผู้เชี่ยวชา�
   "vendor": "<ชื่อร้าน/ผู้ขาย หรือ null>",
   "doc_type": "<ประเภทเอกสาร: tax_invoice (ใบกำกับภาษี) | receipt (ใบเสร็จรับเงิน) | cash_bill (บิลเงินสด) | delivery_note (ใบส่งของ) | other (อื่นๆ) — ดูจากหัวเอกสาร>",
   "vendor_tax_id": "<เลขผู้เสียภาษี 13 หลัก หรือ null>",
+  "buyer_tax_id": "<เลขผู้เสียภาษีของผู้ซื้อบนเอกสาร ถ้ามี หรือ null — มองบล็อกลูกค้า/ผู้ซื้อ/ในนาม ไม่ใช่เลขร้านผู้ขาย ห้ามเดา>",
   "vendor_doc_number": "<เลขที่เอกสาร/เลขที่ใบกำกับภาษีของร้าน หรือ null>",
   "vendor_address": "<ที่อยู่ผู้ขายแบบย่อ หรือ null>",
   "doc_date": "<วันที่ในเอกสาร YYYY-MM-DD หรือ null>",
@@ -71,6 +72,7 @@ interface RawParsed {
   vendor?: string | null;
   doc_type?: string | null;
   vendor_tax_id?: string | null;
+  buyer_tax_id?: string | null;
   vendor_doc_number?: string | null;
   vendor_address?: string | null;
   doc_date?: string | null;
@@ -261,6 +263,7 @@ export async function parseReceipt(
     vendor: parsed.vendor?.trim() || null,
     docType: normalizeDocType(parsed.doc_type),
     vendorTaxId: parsed.vendor_tax_id?.replace(/\D/g, "") || null,
+    buyerTaxIdOnDoc: parsed.buyer_tax_id?.replace(/\D/g, "") || null,
     vendorDocNumber: parsed.vendor_doc_number?.trim() || null,
     vendorAddress: parsed.vendor_address?.trim() || null,
     docDate: parsed.doc_date ?? null,

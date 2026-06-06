@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck } from "lucide-react";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
+import { CompletenessDot } from "@/components/ledger/_kit/CompletenessDot";
 import { LedgerEmptyState } from "@/components/ledger/Brand";
 import { Badge } from "@/components/ui/badge";
 import type { ExpenseRow, LedgerStatusValue } from "@/components/ledger/_kit/types";
@@ -20,6 +21,15 @@ const STATUS_TABS: Array<{ value: LedgerStatusValue | ""; label: string }> = [
   { value: "confirmed", label: "ยืนยันแล้ว" },
   { value: "locked", label: "ล็อก" },
   { value: "void", label: "ยกเลิก" },
+];
+
+// ภาษีซื้อ (input-VAT) color filter — mirrors STATUS_TABS, driven by ?cc=.
+// Each tab carries a tiny color swatch so the meaning is obvious without a legend.
+const CC_TABS: Array<{ value: "" | "green" | "yellow" | "red"; label: string; dot: string }> = [
+  { value: "", label: "ทุกสถานะใบ", dot: "" },
+  { value: "green", label: "ขอคืนได้", dot: "bg-emerald-500" },
+  { value: "yellow", label: "ขอใบใหม่", dot: "bg-amber-500" },
+  { value: "red", label: "ขอคืนไม่ได้", dot: "bg-rose-500" },
 ];
 
 const TR_TABS: Array<{ value: "" | "unsent" | "sent"; label: string }> = [
@@ -40,6 +50,7 @@ export function ExpenseList({
   status,
   categoryId,
   tr,
+  cc,
   q,
   draftIds,
   sendableIds,
@@ -52,6 +63,8 @@ export function ExpenseList({
   status?: LedgerStatusValue;
   categoryId?: string;
   tr?: "sent" | "unsent";
+  /** ภาษีซื้อ color filter (?cc=) — green/yellow/red. */
+  cc?: "green" | "yellow" | "red";
   q?: string;
   draftIds: string[];
   /** Confirmed/locked rows not yet pushed to TRCloud — eligible for bulk send. */
@@ -178,6 +191,32 @@ export function ExpenseList({
                     : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200")
                 }
               >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ภาษีซื้อ color filter — กรองตามสถานะใบกำกับ (เขียว/เหลือง/แดง) */}
+        <div className="flex flex-wrap gap-1" role="tablist" aria-label="กรองตามสถานะใบกำกับ (ภาษีซื้อ)">
+          {CC_TABS.map((t) => {
+            const active = (cc ?? "") === t.value;
+            return (
+              <button
+                key={t.value || "all-cc"}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setParam("cc", t.value)}
+                className={
+                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-300)] " +
+                  (active
+                    ? "bg-zinc-900 text-white"
+                    : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200")
+                }
+              >
+                {t.dot && (
+                  <span className={"size-2 rounded-full " + t.dot} aria-hidden />
+                )}
                 {t.label}
               </button>
             );
@@ -321,6 +360,13 @@ export function ExpenseList({
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
+                      {/* จุดสีภาษีซื้อ — โชว์ก็ต่อเมื่อตรวจแล้ว (undecided = ใบเก่า ไม่รก) */}
+                      {r.completenessStatus !== "undecided" && (
+                        <CompletenessDot
+                          status={r.completenessStatus}
+                          missing={r.completenessMissing}
+                        />
+                      )}
                       {isDraft && r.needsReview && (
                         <AlertTriangle
                           className="size-3.5 shrink-0 text-amber-500"

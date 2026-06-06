@@ -1,0 +1,356 @@
+{
+  "_meta": {
+    "purpose": "Golden fixtures for gradeCompleteness() — input-VAT completeness engine (PLAN_ledger_tax_invoice.md §3 / §7).",
+    "ourBuyerTaxId": "0305564001581",
+    "shape": "each .input matches CompletenessInput; .expect asserts {status, buyerMatch, blockReason}",
+    "lures": ["L18_offgroup_buyer", "L19_one_digit_off", "L20_offgroup_other"],
+    "notes": [
+      "GROUP_TAX_IDS in the real code currently holds ONLY our own id (0305564001581).",
+      "Therefore a *different* group company's id is NOT whitelisted yet -> it lands on R3 buyer_mismatch (still RED), not R2 wrong_entity.",
+      "R2 (wrong_entity) is effectively unreachable until CEO supplies the full group whitelist (Open#1). This is correct per real code; PLAN row R2 is aspirational.",
+      "All lures must grade red_invalid (zero false-accept). vat=0 must never be green. abbreviated -> yellow. name-wrong-but-taxid-right -> not red."
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "F01_full_tax_invoice_buyer_matched",
+      "desc": "ใบกำกับเต็มรูป · ผู้ขายเลข 13 หลัก · ผู้ซื้อ = เจพีซิ้งค์ · VAT แยก · ที่อยู่+สาขาครบ -> เขียว",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "บริษัท ออฟฟิศเมท จำกัด (มหาชน)",
+        "vendorTaxId": "0107547000346",
+        "vendorAddress": "24 ถ.วิภาวดีรังสิต แขวงสามเสนใน เขตพญาไท กรุงเทพฯ 10400",
+        "vendorBranchCode": "00000",
+        "subtotal": 1000,
+        "vat": 70,
+        "total": 1070,
+        "buyerTaxIdOnDoc": "0305564001581",
+        "rawText": "ใบกำกับภาษี/ใบส่งของ ในนาม บริษัท เจพีซิ้งค์ กรุ๊ป จำกัด เลขประจำตัวผู้เสียภาษี 0305564001581"
+      },
+      "expect": { "status": "green_full", "buyerMatch": "matched", "blockReason": null }
+    },
+    {
+      "name": "F02_full_tax_invoice_buyer_matched_dashed",
+      "desc": "เหมือน F01 แต่เลขผู้ซื้อบนใบมีขีดคั่น (strip แล้วต้องตรง) -> เขียว",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "บริษัท ซีโอแอล จำกัด (มหาชน)",
+        "vendorTaxId": "0-1075-47000-34-6",
+        "vendorAddress": "เลขที่ 2 อาคารเอไอเอ ถนนรัชดาภิเษก กรุงเทพฯ",
+        "vendorBranchCode": "สำนักงานใหญ่",
+        "subtotal": 5000,
+        "vat": 350,
+        "total": 5350,
+        "buyerTaxIdOnDoc": "0-3055-64001-58-1",
+        "rawText": "ใบกำกับภาษี ในนาม เจพีซิ้งค์ กรุ๊ป"
+      },
+      "expect": { "status": "green_full", "buyerMatch": "matched", "blockReason": null }
+    },
+    {
+      "name": "F03_full_buyer_name_wrong_but_taxid_right",
+      "desc": "ชื่อผู้ซื้อพิมพ์ผิด ('เจพีชิปปิ้ง') แต่เลขภาษี 13 หลักตรงเป๊ะ -> ยัง GREEN (ตัดสินที่เลข ไม่ใช่ชื่อ)",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "บริษัท ปตท. น้ำมันและการค้าปลีก จำกัด (มหาชน)",
+        "vendorTaxId": "0107561000013",
+        "vendorAddress": "555/2 ศูนย์เอนเนอร์ยี่คอมเพล็กซ์ อาคารบี ถ.วิภาวดีรังสิต กรุงเทพฯ",
+        "vendorBranchCode": "00001",
+        "subtotal": 2000,
+        "vat": 140,
+        "total": 2140,
+        "buyerTaxIdOnDoc": "0305564001581",
+        "rawText": "ใบกำกับภาษี ในนาม บริษัท เจพีชิปปิ้ง กรุ๊ป จำกัด เลขผู้เสียภาษี 0305564001581"
+      },
+      "expect": { "status": "green_full", "buyerMatch": "matched", "blockReason": null }
+    },
+    {
+      "name": "F04_vat_zero_tax_invoice_red",
+      "desc": "ระบุ docType=ใบกำกับ แต่ไม่มีบรรทัด VAT แยก (vat=0) ไม่ใช่ใบย่อ -> แดง R4 incomplete_invoice",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "ร้านวัสดุก่อสร้าง รุ่งเรือง",
+        "vendorTaxId": "0125548000111",
+        "vendorAddress": "99/1 ถ.มิตรภาพ ต.ในเมือง อ.เมือง จ.นครราชสีมา",
+        "vendorBranchCode": "00000",
+        "subtotal": 800,
+        "vat": 0,
+        "total": 800,
+        "buyerTaxIdOnDoc": "0305564001581",
+        "rawText": "ใบกำกับภาษี ยอดรวม 800 บาท"
+      },
+      "expect": { "status": "red_invalid", "buyerMatch": "matched", "blockReason": "incomplete_invoice" }
+    },
+    {
+      "name": "F05_vat_zero_no_vat_line_buyer_matched_red",
+      "desc": "vat=0 อีกใบ · ผู้ซื้อตรง · ไม่มี keyword ใบย่อ -> ห้ามเขียว -> แดง R4",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "บริษัท สยามแม็คโคร จำกัด (มหาชน)",
+        "vendorTaxId": "0107537000882",
+        "vendorAddress": "1468 ถ.พัฒนาการ แขวงสวนหลวง เขตสวนหลวง กรุงเทพฯ",
+        "vendorBranchCode": "00012",
+        "subtotal": 1500,
+        "vat": 0,
+        "total": 1500,
+        "buyerTaxIdOnDoc": "0305564001581",
+        "rawText": "บิลขาย ยอดสุทธิ 1500"
+      },
+      "expect": { "status": "red_invalid", "buyerMatch": "matched", "blockReason": "incomplete_invoice" }
+    },
+    {
+      "name": "F06_abbreviated_keyword_yellow",
+      "desc": "ใบกำกับภาษีอย่างย่อ — rawText มีคำว่า 'อย่างย่อ' (keyword pre-empt R4) -> เหลือง R5 abbreviated_86_6",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "บริษัท เซ็นทรัล ฟู้ด รีเทล จำกัด (ท็อปส์)",
+        "vendorTaxId": "0105537090251",
+        "vendorAddress": "306 ถ.สีลม แขวงสุริยวงศ์ เขตบางรัก กรุงเทพฯ",
+        "vendorBranchCode": "00045",
+        "subtotal": 214,
+        "vat": 0,
+        "total": 214,
+        "buyerTaxIdOnDoc": null,
+        "rawText": "ใบกำกับภาษีอย่างย่อ (ABB TAX INVOICE) รวมเงิน 214.00"
+      },
+      "expect": { "status": "yellow_partial", "buyerMatch": "not_found_on_doc", "blockReason": "abbreviated_86_6" }
+    },
+    {
+      "name": "F07_abbreviated_keyword_with_vat_yellow",
+      "desc": "ใบย่อที่ยังโชว์ VAT รวมในราคา + keyword 'อย่างย่อ' -> keyword ชนะ -> เหลือง R5",
+      "input": {
+        "docType": "receipt",
+        "vendor": "ร้านสะดวกซื้อ 7-Eleven สาขาจักราช",
+        "vendorTaxId": "0107536000897",
+        "vendorAddress": "ต.จักราช อ.จักราช จ.นครราชสีมา",
+        "vendorBranchCode": "13579",
+        "subtotal": 93.46,
+        "vat": 6.54,
+        "total": 100,
+        "buyerTaxIdOnDoc": null,
+        "rawText": "ใบกำกับภาษีอย่างย่อ VAT included รวม 100.00 บาท"
+      },
+      "expect": { "status": "yellow_partial", "buyerMatch": "not_found_on_doc", "blockReason": "abbreviated_86_6" }
+    },
+    {
+      "name": "F08_non_tax_invoice_doctype_with_vat_yellow",
+      "desc": "docType=receipt (ไม่ใช่ tax_invoice) แต่มี VAT แยก >0 ไม่มี keyword -> ใบย่อ heuristic (docType≠tax_invoice && vat>0) -> เหลือง R5",
+      "input": {
+        "docType": "receipt",
+        "vendor": "ร้านกาแฟ Amazon สาขาปั๊ม",
+        "vendorTaxId": "0994000165510",
+        "vendorAddress": "ปั๊ม ปตท. ต.หนองบัวศาลา อ.เมือง จ.นครราชสีมา",
+        "vendorBranchCode": "00003",
+        "subtotal": 84.11,
+        "vat": 5.89,
+        "total": 90,
+        "buyerTaxIdOnDoc": null,
+        "rawText": "ใบเสร็จรับเงิน รวม 90.00 (รวม VAT 5.89)"
+      },
+      "expect": { "status": "yellow_partial", "buyerMatch": "not_found_on_doc", "blockReason": "abbreviated_86_6" }
+    },
+    {
+      "name": "F09_vendor_taxid_short_12_digits_red",
+      "desc": "เลขภาษีผู้ขายมีแค่ 12 หลัก (ไม่ครบ 13) -> แดง R1 incomplete_invoice (ก่อนตรวจอย่างอื่น)",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "ร้านเครื่องเขียน เอกชัย",
+        "vendorTaxId": "010754700034",
+        "vendorAddress": "12 ถ.โพธิ์กลาง ต.ในเมือง อ.เมือง จ.นครราชสีมา",
+        "vendorBranchCode": "00000",
+        "subtotal": 300,
+        "vat": 21,
+        "total": 321,
+        "buyerTaxIdOnDoc": "0305564001581",
+        "rawText": "ใบกำกับภาษี เลขผู้เสียภาษี 010754700034"
+      },
+      "expect": { "status": "red_invalid", "buyerMatch": "matched", "blockReason": "incomplete_invoice" }
+    },
+    {
+      "name": "F10_vendor_taxid_null_red",
+      "desc": "ไม่มีเลขภาษีผู้ขายเลย (null) -> แดง R1",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "ร้านค้าทั่วไป ไม่มีเลขภาษี",
+        "vendorTaxId": null,
+        "vendorAddress": "ตลาดสด อ.เมือง จ.นครราชสีมา",
+        "vendorBranchCode": null,
+        "subtotal": 450,
+        "vat": 31.5,
+        "total": 481.5,
+        "buyerTaxIdOnDoc": "0305564001581",
+        "rawText": "บิลเงินสด ไม่มีเลขผู้เสียภาษี"
+      },
+      "expect": { "status": "red_invalid", "buyerMatch": "matched", "blockReason": "incomplete_invoice" }
+    },
+    {
+      "name": "F11_vendor_taxid_14_digits_red",
+      "desc": "เลขภาษีผู้ขาย 14 หลัก (เกิน) -> แดง R1",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "บริษัท ไทยวัสดุ จำกัด",
+        "vendorTaxId": "01075470003460",
+        "vendorAddress": "ถ.มิตรภาพ ต.หนองบัวศาลา อ.เมือง จ.นครราชสีมา",
+        "vendorBranchCode": "00001",
+        "subtotal": 2500,
+        "vat": 175,
+        "total": 2675,
+        "buyerTaxIdOnDoc": "0305564001581",
+        "rawText": "ใบกำกับภาษี TIN 01075470003460"
+      },
+      "expect": { "status": "red_invalid", "buyerMatch": "matched", "blockReason": "incomplete_invoice" }
+    },
+    {
+      "name": "F12_buyer_not_found_otherwise_full_yellow",
+      "desc": "อย่างอื่นครบ (เลขผู้ขาย 13 · VAT แยก · ที่อยู่+สาขา) แต่ไม่เจอเลขผู้ซื้อบนใบ -> เหลือง R6 incomplete_invoice",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "บริษัท โฮมโปร จำกัด (มหาชน)",
+        "vendorTaxId": "0107544000043",
+        "vendorAddress": "31 ถ.ประชาชื่นนนทบุรี ต.บางเขน อ.เมือง จ.นนทบุรี",
+        "vendorBranchCode": "00021",
+        "subtotal": 1200,
+        "vat": 84,
+        "total": 1284,
+        "buyerTaxIdOnDoc": null,
+        "rawText": "ใบกำกับภาษีเต็มรูป (ไม่ระบุเลขผู้ซื้อ)"
+      },
+      "expect": { "status": "yellow_partial", "buyerMatch": "not_found_on_doc", "blockReason": "incomplete_invoice" }
+    },
+    {
+      "name": "F13_buyer_taxid_only_11_digits_on_doc_yellow",
+      "desc": "เลขผู้ซื้อบนใบมีแค่ 11 หลัก (len≠13) -> not_found_on_doc · อย่างอื่นครบ -> เหลือง R6",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "บริษัท ดูโฮม จำกัด (มหาชน)",
+        "vendorTaxId": "0107561000200",
+        "vendorAddress": "อ.เมือง จ.อุบลราชธานี",
+        "vendorBranchCode": "00005",
+        "subtotal": 3000,
+        "vat": 210,
+        "total": 3210,
+        "buyerTaxIdOnDoc": "03055640015",
+        "rawText": "ใบกำกับภาษี ผู้ซื้อ 03055640015 (อ่านไม่ครบ)"
+      },
+      "expect": { "status": "yellow_partial", "buyerMatch": "not_found_on_doc", "blockReason": "incomplete_invoice" }
+    },
+    {
+      "name": "F14_missing_vendor_address_yellow",
+      "desc": "เลขผู้ขายครบ · ผู้ซื้อตรง · VAT แยก · มีสาขา แต่ขาดที่อยู่ผู้ขาย -> เหลือง R7 (missing vendor_address)",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "บริษัท ออฟฟิศเมท จำกัด (มหาชน)",
+        "vendorTaxId": "0107547000346",
+        "vendorAddress": null,
+        "vendorBranchCode": "00000",
+        "subtotal": 640,
+        "vat": 44.8,
+        "total": 684.8,
+        "buyerTaxIdOnDoc": "0305564001581",
+        "rawText": "ใบกำกับภาษี ในนาม เจพีซิ้งค์ กรุ๊ป (ไม่ระบุที่อยู่ผู้ขาย)"
+      },
+      "expect": { "status": "yellow_partial", "buyerMatch": "matched", "blockReason": "incomplete_invoice" }
+    },
+    {
+      "name": "F15_missing_vendor_branch_green",
+      "desc": "ครบทุกอย่าง · ผู้ซื้อตรง · มีที่อยู่ แต่ขาดรหัสสาขาผู้ขาย -> ยังเขียว (CEO 2026-06-06: สาขาขาดไม่ลดเกรด · เป็นแค่หมายเหตุ vendor_branch ใน missing[])",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "บริษัท สยามโกลบอลเฮ้าส์ จำกัด (มหาชน)",
+        "vendorTaxId": "0107552000223",
+        "vendorAddress": "232 หมู่ 19 ต.รอบเมือง อ.เมือง จ.ร้อยเอ็ด",
+        "vendorBranchCode": null,
+        "subtotal": 980,
+        "vat": 68.6,
+        "total": 1048.6,
+        "buyerTaxIdOnDoc": "0305564001581",
+        "rawText": "ใบกำกับภาษี ในนาม เจพีซิ้งค์ กรุ๊ป (ไม่ระบุสาขาผู้ขาย)"
+      },
+      "expect": { "status": "green_full", "buyerMatch": "matched", "blockReason": null }
+    },
+    {
+      "name": "F16_missing_both_address_and_branch_yellow",
+      "desc": "ผู้ซื้อตรง · VAT แยก แต่ขาดทั้งที่อยู่และสาขาผู้ขาย -> เหลือง R7 (2 missing)",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "บริษัท เจมาร์ท จำกัด (มหาชน)",
+        "vendorTaxId": "0107550000114",
+        "vendorAddress": "   ",
+        "vendorBranchCode": "",
+        "subtotal": 1870,
+        "vat": 130.9,
+        "total": 2000.9,
+        "buyerTaxIdOnDoc": "0305564001581",
+        "rawText": "ใบกำกับภาษี ในนาม เจพีซิ้งค์ (ที่อยู่/สาขาผู้ขายว่าง)"
+      },
+      "expect": { "status": "yellow_partial", "buyerMatch": "matched", "blockReason": "incomplete_invoice" }
+    },
+    {
+      "name": "F17_full_green_branch_thai_label",
+      "desc": "ใบเต็มรูปอีกใบ · ผู้ซื้อตรง · สาขาเป็นข้อความไทย 'สำนักงานใหญ่' (ยังนับว่ามี) -> เขียว",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "บริษัท เอสซีจี ดิสทริบิวชั่น จำกัด",
+        "vendorTaxId": "0105540085581",
+        "vendorAddress": "1 ถ.ปูนซิเมนต์ไทย แขวงบางซื่อ เขตบางซื่อ กรุงเทพฯ 10800",
+        "vendorBranchCode": "สำนักงานใหญ่",
+        "subtotal": 12000,
+        "vat": 840,
+        "total": 12840,
+        "buyerTaxIdOnDoc": "0305564001581",
+        "rawText": "ใบกำกับภาษี/ใบส่งสินค้า ในนาม บริษัท เจพีซิ้งค์ กรุ๊ป จำกัด 0305564001581 สำนักงานใหญ่"
+      },
+      "expect": { "status": "green_full", "buyerMatch": "matched", "blockReason": null }
+    },
+    {
+      "name": "L18_offgroup_buyer",
+      "desc": "ใบล่อ #1 — ผู้ซื้อบนใบเป็นเลขภาษีบริษัทอื่น (นอกเครือ 13 หลักถูกต้อง) ต่างจาก 0305564001581 -> ต้องแดง · buyerMatch=mismatch · R3 buyer_mismatch",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "บริษัท ออฟฟิศเมท จำกัด (มหาชน)",
+        "vendorTaxId": "0107547000346",
+        "vendorAddress": "24 ถ.วิภาวดีรังสิต กรุงเทพฯ",
+        "vendorBranchCode": "00000",
+        "subtotal": 1000,
+        "vat": 70,
+        "total": 1070,
+        "buyerTaxIdOnDoc": "0125560123456",
+        "rawText": "ใบกำกับภาษี ในนาม บริษัทอื่น เลขผู้เสียภาษี 0125560123456"
+      },
+      "expect": { "status": "red_invalid", "buyerMatch": "mismatch", "blockReason": "buyer_mismatch" }
+    },
+    {
+      "name": "L19_one_digit_off",
+      "desc": "ใบล่อ #2 — เลขผู้ซื้อผิดจาก 0305564001581 แค่หลักสุดท้าย (..81 -> ..82) -> ต้องแดง · mismatch · R3 buyer_mismatch (ห้าม false-accept)",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "บริษัท ปตท. น้ำมันและการค้าปลีก จำกัด (มหาชน)",
+        "vendorTaxId": "0107561000013",
+        "vendorAddress": "555/2 ถ.วิภาวดีรังสิต กรุงเทพฯ",
+        "vendorBranchCode": "00001",
+        "subtotal": 2000,
+        "vat": 140,
+        "total": 2140,
+        "buyerTaxIdOnDoc": "0305564001582",
+        "rawText": "ใบกำกับภาษี ในนาม เจพีซิ้งค์ กรุ๊ป 0305564001582 (เลขเพี้ยน 1 หลัก)"
+      },
+      "expect": { "status": "red_invalid", "buyerMatch": "mismatch", "blockReason": "buyer_mismatch" }
+    },
+    {
+      "name": "L20_offgroup_other_first_digit",
+      "desc": "ใบล่อ #3 — เลขผู้ซื้อผิดจาก 0305564001581 ที่หลักแรก (0 -> 1), 13 หลักครบ -> ต้องแดง · mismatch · R3 buyer_mismatch",
+      "input": {
+        "docType": "tax_invoice",
+        "vendor": "บริษัท สยามแม็คโคร จำกัด (มหาชน)",
+        "vendorTaxId": "0107537000882",
+        "vendorAddress": "1468 ถ.พัฒนาการ กรุงเทพฯ",
+        "vendorBranchCode": "00012",
+        "subtotal": 3500,
+        "vat": 245,
+        "total": 3745,
+        "buyerTaxIdOnDoc": "1305564001581",
+        "rawText": "ใบกำกับภาษี เลขผู้ซื้อ 1305564001581 (หลักแรกเพี้ยน)"
+      },
+      "expect": { "status": "red_invalid", "buyerMatch": "mismatch", "blockReason": "buyer_mismatch" }
+    }
+  ]
+}
