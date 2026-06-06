@@ -67,11 +67,15 @@ export function UploadReceiptButton({
   companyId,
   branchId,
   baseParams,
+  hideTriggerOnMobile = false,
 }: {
   companyId: string;
   branchId?: string | null;
   /** company/branch/filter params to preserve when we navigate to the new draft */
   baseParams: string;
+  /** Hide the visible trigger button on phones (the bottom-nav camera FAB fires
+   *  the same `ledger:open-upload` event) — the modal + listener stay mounted. */
+  hideTriggerOnMobile?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -301,19 +305,21 @@ export function UploadReceiptButton({
         tabIndex={-1}
       />
 
-      <Button
-        variant="primary"
-        onClick={openSheet}
-        disabled={busy || !companyId}
-        aria-label="อัปโหลดใบเสร็จ"
-      >
-        {busy ? (
-          <Loader2 className="size-4 animate-spin" aria-hidden />
-        ) : (
-          <Upload className="size-4" aria-hidden />
-        )}
-        {busy ? `กำลังทำ ${job?.done}/${job?.total}…` : "อัปโหลดใบเสร็จ"}
-      </Button>
+      <div className={hideTriggerOnMobile ? "hidden sm:block" : undefined}>
+        <Button
+          variant="primary"
+          onClick={openSheet}
+          disabled={busy || !companyId}
+          aria-label="อัปโหลดใบเสร็จ"
+        >
+          {busy ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : (
+            <Upload className="size-4" aria-hidden />
+          )}
+          {busy ? `กำลังทำ ${job?.done}/${job?.total}…` : "อัปโหลดใบเสร็จ"}
+        </Button>
+      </div>
       {topErr && (
         <p className="flex items-center gap-1 text-xs text-rose-600" role="alert">
           <AlertTriangle className="size-3.5 shrink-0" aria-hidden />

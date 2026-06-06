@@ -251,17 +251,23 @@ export default async function ExpensesPage({
                 สลิปรอจับคู่
               </Link>
             )}
-            <ExportButton companyId={scope.companyId} />
+            {/* CSV export = desktop/accounting task — hidden on phones (declutter) */}
+            <span className="hidden sm:contents">
+              <ExportButton companyId={scope.companyId} />
+            </span>
             <NoReceiptButton
               companyId={scope.companyId}
               branchId={scope.branchId}
               categories={categories.map((c) => ({ id: c.id, name: c.name }))}
               branches={scope.branches.map((b) => ({ id: b.id, name: b.name }))}
             />
+            {/* On phones the bottom-nav camera FAB fires open-upload; hide the
+                big duplicate button (keeps the modal + listener mounted). */}
             <UploadReceiptButton
               companyId={scope.companyId}
               branchId={scope.branchId}
               baseParams={baseParams.toString()}
+              hideTriggerOnMobile
             />
           </>
         }

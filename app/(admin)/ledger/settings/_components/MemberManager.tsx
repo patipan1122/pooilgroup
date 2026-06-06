@@ -10,7 +10,7 @@
 
 import { useState, useTransition } from "react";
 import {
-  Users, Check, X, Loader2, Clock, MapPin, Power, Crown, Link2, Link2Off,
+  Users, Check, X, Loader2, Clock, MapPin, Power, Crown, Link2, Link2Off, ChevronDown,
 } from "lucide-react";
 import {
   updateMemberBranches,
@@ -47,6 +47,9 @@ function MemberRow({
   const [scope, setScope] = useState<string[]>(member.scopeBranchIds);
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
+  // Branch chips are collapsed by default — just a count — to keep each member
+  // card short (CEO: บัตรเยอะไป). Tap to expand the editable chip grid.
+  const [scopeOpen, setScopeOpen] = useState(false);
   const dirty = !sameSet(scope, member.scopeBranchIds);
 
   function toggle(id: string) {
@@ -205,43 +208,67 @@ function MemberRow({
         </div>
       )}
 
-      {/* Branch scope chips */}
+      {/* Branch scope — collapsed to a count by default; tap to expand+edit */}
       <div className="mt-2">
-        <div className="mb-1 flex items-center gap-1 text-xs font-semibold text-zinc-600">
-          <MapPin className="size-3.5" aria-hidden />
-          ดูแลสาขา {scope.length > 0 ? `(${scope.length})` : "(ว่าง = ทุกสาขา)"}
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {branches.length === 0 && <span className="text-xs text-zinc-400">ยังไม่มีสาขา</span>}
-          {branches.map((b) => {
-            const on = scope.includes(b.id);
-            return (
+        <button
+          type="button"
+          onClick={() => setScopeOpen((v) => !v)}
+          aria-expanded={scopeOpen}
+          className="flex w-full items-center gap-1 text-xs font-semibold text-zinc-600"
+        >
+          <MapPin className="size-3.5 shrink-0" aria-hidden />
+          <span>
+            ดูแลสาขา{" "}
+            <span className="font-bold text-zinc-800">
+              {scope.length > 0 ? `${scope.length} สาขา` : "ทุกสาขา"}
+            </span>
+          </span>
+          {dirty && !scopeOpen && (
+            <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+              ยังไม่บันทึก
+            </span>
+          )}
+          <ChevronDown
+            className={"ml-auto size-4 shrink-0 text-zinc-400 transition-transform " + (scopeOpen ? "rotate-180" : "")}
+            aria-hidden
+          />
+        </button>
+
+        {scopeOpen && (
+          <>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {branches.length === 0 && <span className="text-xs text-zinc-400">ยังไม่มีสาขา</span>}
+              {branches.map((b) => {
+                const on = scope.includes(b.id);
+                return (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => toggle(b.id)}
+                    disabled={pending}
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${
+                      on
+                        ? "bg-[var(--color-brand-600,#2563EB)] text-white ring-transparent"
+                        : "bg-white text-zinc-600 ring-zinc-200 hover:bg-zinc-50"
+                    }`}
+                  >
+                    {b.code} · {b.name}
+                  </button>
+                );
+              })}
+            </div>
+            {dirty && (
               <button
-                key={b.id}
                 type="button"
-                onClick={() => toggle(b.id)}
+                onClick={saveBranches}
                 disabled={pending}
-                className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${
-                  on
-                    ? "bg-[var(--color-brand-600,#2563EB)] text-white ring-transparent"
-                    : "bg-white text-zinc-600 ring-zinc-200 hover:bg-zinc-50"
-                }`}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-brand-600,#2563EB)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
               >
-                {b.code} · {b.name}
+                {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Check className="size-3.5" aria-hidden />}
+                บันทึกสาขา
               </button>
-            );
-          })}
-        </div>
-        {dirty && (
-          <button
-            type="button"
-            onClick={saveBranches}
-            disabled={pending}
-            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-brand-600,#2563EB)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-          >
-            {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Check className="size-3.5" aria-hidden />}
-            บันทึกสาขา
-          </button>
+            )}
+          </>
         )}
       </div>
 

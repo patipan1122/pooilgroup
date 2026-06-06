@@ -58,53 +58,46 @@ export function CompletenessSummaryStrip({
   // ไม่มีใบที่ตรวจแล้วเลย → ไม่ต้องโชว์แถบ (กันรกหน้าใบเก่าล้วน).
   if (graded === 0 && counts.undecided === 0) return null;
 
+  // Compact single-row strip (CEO: cards กินพื้นที่ → เล็ก + โชว์เลขพอ). Each tile
+  // is a small clickable pill that still filters by colour; VAT-stuck on the right.
   return (
-    <div className="mb-4 rounded-2xl border border-zinc-200 bg-white p-3">
-      <div className="flex flex-wrap items-stretch gap-2">
-        {TILES.map((t) => {
-          const active = cc === t.cc;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setCc(t.cc)}
-              aria-pressed={active}
-              className={
-                "flex min-w-[96px] flex-1 items-center gap-2 rounded-xl border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-300)] " +
-                (active
-                  ? "border-zinc-900 bg-zinc-50"
-                  : "border-zinc-200 hover:bg-zinc-50")
-              }
-            >
-              <span className={"size-2.5 shrink-0 rounded-full " + t.dot} aria-hidden />
-              <span className="min-w-0">
-                <span className={"block text-lg font-bold tabular-nums " + t.text}>
-                  {counts[t.key].toLocaleString("en-US")}
-                </span>
-                <span className="block truncate text-[11px] text-zinc-500">{t.label}</span>
-              </span>
-            </button>
-          );
-        })}
+    <div className="mb-3 flex flex-wrap items-center gap-1.5">
+      {TILES.map((t) => {
+        const active = cc === t.cc;
+        return (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setCc(t.cc)}
+            aria-pressed={active}
+            title={t.label}
+            className={
+              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-300)] " +
+              (active ? "border-zinc-900 bg-zinc-50" : "border-zinc-200 bg-white hover:bg-zinc-50")
+            }
+          >
+            <span className={"size-2 shrink-0 rounded-full " + t.dot} aria-hidden />
+            <span className={"font-bold tabular-nums " + t.text}>
+              {counts[t.key].toLocaleString("en-US")}
+            </span>
+            <span className="text-zinc-500">{t.label}</span>
+          </button>
+        );
+      })}
 
-        {/* ยอด VAT ที่ยังติด (ขอคืนไม่ได้/ยังไม่ตัดสิน) — เป้าหมายไล่ให้เป็นเขียว */}
-        <div className="flex min-w-[150px] flex-1 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-          <ShieldAlert className="size-4 shrink-0 text-amber-600" aria-hidden />
-          <span className="min-w-0">
-            <span className="block text-lg font-bold tabular-nums text-amber-800">
-              {baht(blockedVat)}
-            </span>
-            <span className="block truncate text-[11px] text-amber-700">
-              ยอด VAT ที่ยังติด
-            </span>
-          </span>
-        </div>
-      </div>
+      {/* ยอด VAT ที่ยังติด — เป้าหมายไล่ให้เป็นเขียว */}
+      {blockedVat > 0 && (
+        <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs">
+          <ShieldAlert className="size-3.5 shrink-0 text-amber-600" aria-hidden />
+          <span className="font-bold tabular-nums text-amber-800">{baht(blockedVat)}</span>
+          <span className="text-amber-700">VAT ติด</span>
+        </span>
+      )}
 
       {counts.undecided > 0 && (
-        <p className="mt-2 text-[11px] text-zinc-400">
-          มีอีก {counts.undecided.toLocaleString("en-US")} ใบที่ยังไม่ตรวจสถานะ (ใบเก่าก่อนเปิดฟีเจอร์ — เปิดแล้วกดบันทึกจะตรวจให้)
-        </p>
+        <span className="text-[11px] text-zinc-400">
+          · อีก {counts.undecided.toLocaleString("en-US")} ใบยังไม่ตรวจ
+        </span>
       )}
     </div>
   );
