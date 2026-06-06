@@ -1522,15 +1522,16 @@ const inviteSchema = z.object({
   expiresInDays: z.coerce.number().int().min(1).max(365).optional(),
 });
 
-/** Build the shareable invite link (opens the LedgerLine LIFF → /liff/ledger/join).
- *  Lands DIRECTLY on the join page (invite stays a top-level param the page +
- *  bootstrap read). The `/ledger/join` path after the LIFF id is REQUIRED — without
- *  it LINE's liff.state fallback bounces to the ChairOps default and the invite dies. */
+/** Build the shareable invite link. The LIFF Endpoint is the SUB-PATH /liff/ledger,
+ *  so the path after the LIFF id must be `/ledger` (NOT `/ledger/join` — that became
+ *  /liff/ledger/ledger/join → 404). We pass the token as `?invite=` and the LIFF
+ *  bootstrap on the capture page reads it (from query OR liff.state) and runs the
+ *  bind INLINE (JoinClient) — no sub-path navigation, no liff.state bounce loop. */
 function inviteUrl(token: string): string {
   const liffId = liffIdForModule("ledger");
-  const path = `/liff/ledger/join?invite=${token}`;
+  const path = `/liff/ledger/join?invite=${token}`; // web fallback (no LIFF)
   return liffId
-    ? `https://liff.line.me/${liffId}/ledger/join?invite=${encodeURIComponent(token)}`
+    ? `https://liff.line.me/${liffId}/ledger?invite=${encodeURIComponent(token)}`
     : path;
 }
 
