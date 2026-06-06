@@ -407,20 +407,31 @@ export async function findExpenseBySha(opts: {
 /** Active expense categories for a company (org+company scoped). cache()d. */
 export const listCategories = cache(
   async (orgId: string, companyId: string) => {
-    return prisma.ledgerCategory.findMany({
-      where: { orgId, companyId },
-      orderBy: [{ sort: "asc" }, { name: "asc" }],
-      select: {
-        id: true,
-        name: true,
-        color: true,
-        trcloudAccCode: true,
-        trcloudProductCode: true,
-        vatClaimable: true,
-        sort: true,
-        active: true,
-      },
-    });
+    type CatRow = {
+      id: string; name: string; color: string | null;
+      trcloudAccCode: string | null; trcloudProductCode: string | null;
+      vatClaimable: boolean; sort: number; active: boolean;
+    };
+    try {
+      return (await prisma.ledgerCategory.findMany({
+        where: { orgId, companyId },
+        orderBy: [{ sort: "asc" }, { name: "asc" }],
+        select: {
+          id: true, name: true, color: true, trcloudAccCode: true,
+          trcloudProductCode: true, vatClaimable: true, sort: true, active: true,
+        },
+      })) as CatRow[];
+    } catch {
+      // Fallback when trcloud_product_code / vat_claimable columns not yet migrated
+      const cats = await prisma.ledgerCategory.findMany({
+        where: { orgId, companyId },
+        orderBy: [{ sort: "asc" }, { name: "asc" }],
+        select: { id: true, name: true, color: true, trcloudAccCode: true, sort: true, active: true },
+      });
+      return cats.map((c) => ({
+        ...c, trcloudProductCode: null, vatClaimable: true,
+      })) as CatRow[];
+    }
   },
 );
 
