@@ -620,6 +620,11 @@ export function ExpenseReviewPane({
             companyId={expense.companyId}
             vendorTaxId={expense.vendorTaxId}
             disabled={expense.status !== "confirmed" && expense.status !== "locked"}
+            defaultSubReason={
+              expense.note?.startsWith("[ไม่มีใบเสร็จ]")
+                ? expense.note.replace(/^\[ไม่มีใบเสร็จ\]\s*/, "")
+                : ""
+            }
           />
           <StatusBadge status={expense.status} />
         </div>

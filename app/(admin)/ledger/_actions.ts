@@ -38,6 +38,7 @@ import { storeReceiptImage } from "@/lib/ledger/storage";
 import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
 import type { InputVatBlockReason } from "@/lib/ledger/types";
 import { buildTrcloudCsv } from "@/lib/ledger/trcloud-export";
+import { createDraftExpense } from "@/lib/ledger/actions";
 import {
   pushExpenseToTrcloud,
   trcloudPushConfigured,
@@ -2847,4 +2848,45 @@ export async function updateLedgerOrgInfo(raw: unknown): Promise<ActionResult> {
   revalidatePath("/liff/ledger/admin");
   revalidatePath("/ledger/settings");
   return { ok: true };
+}
+
+/**
+ * ปุ่มเดียว "เพิ่มค่าใช้จ่ายไม่มีใบเสร็จ" — สร้างใบร่างแบบไม่มีรูป + เก็บเหตุผลไว้ใน note
+ * (ใช้ pre-fill ตอนออกใบรับรองแทนใบเสร็จ/SUB หลังบัญชียืนยัน). ใช้ createDraftExpense
+ * (session-bound + module-grant gate เดิม ไม่แตะ); ทุกใบเป็น draft (golden rule).
+ */
+export async function createNoReceiptExpense(input: {
+  companyId: string;
+  vendor: string;
+  total: number;
+  reason: string;
+  categoryId?: string | null;
+  branchId?: string | null;
+  docDate?: string | null;
+}): Promise<{ ok: true; id: string; docCode: string } | { ok: false; error: string }> {
+  const vendor = input.vendor?.trim();
+  const reason = input.reason?.trim();
+  if (!vendor) return { ok: false, error: "กรุณาระบุชื่อร้าน/ผู้รับเงิน" };
+  if (!(input.total > 0)) return { ok: false, error: "กรุณาระบุยอดเงินมากกว่า 0" };
+  if (!reason || reason.length < 3) {
+    return { ok: false, error: "กรุณาระบุเหตุผลที่ไม่มีใบเสร็จ (อย่างน้อย 3 ตัวอักษร)" };
+  }
+
+  const res = await createDraftExpense({
+    companyId: input.companyId,
+    source: "web",
+    vendor,
+    total: input.total,
+    subtotal: input.total,
+    vat: 0,
+    categoryId: input.categoryId ?? null,
+    branchId: input.branchId ?? null,
+    docDate: input.docDate ?? null,
+    docType: "other",
+    paymentStatus: "paid",
+    note: `[ไม่มีใบเสร็จ] ${reason}`,
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidatePath("/ledger/expenses");
+  return { ok: true, id: res.data.id, docCode: res.data.docCode };
 }

@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   MapPin,
   MessageSquare,
+  CloudUpload,
   ChevronRight,
   Check,
 } from "lucide-react";
@@ -160,7 +161,7 @@ export function SettingsHub({
       ],
     },
     {
-      label: "การเชื่อมต่อ LINE",
+      label: "การเชื่อมต่อ",
       rows: [
         {
           href: `/ledger/settings/line-groups${qs}`,
@@ -170,6 +171,13 @@ export function SettingsHub({
           subtitle: "ดูกลุ่มไลน์ + ผูกแต่ละกลุ่มเข้าสาขา",
           count: counts.groups,
           status: { label: counts.lineConnected ? "เชื่อมแล้ว" : "ยังไม่เชื่อม", ok: counts.lineConnected },
+        },
+        {
+          href: `/ledger/settings/google${qs}`,
+          icon: CloudUpload,
+          tone: "sky",
+          title: "เชื่อมต่อ Google",
+          subtitle: "Drive (เก็บไฟล์ใบเสร็จ) + Gmail (ดึงค่าใช้จ่ายจากอีเมล)",
         },
       ],
     },

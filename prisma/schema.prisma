@@ -5481,6 +5481,56 @@ model LedgerBudget {
   @@schema("public")
 }
 
+// เชื่อม Gmail การเงิน (ดึงค่าใช้จ่ายจากอีเมล แบบ Paypers) — รองรับหลายตู้เมล/บริษัท
+// (D1: ตารางใหม่ของ LedgerLine เอง · ไม่ reuse ChairopsGmailConnection ที่เป็น org-only)
+// refresh token เข้ารหัส AES-256-GCM (กุญแจเดียวกับ Drive/ChairOps Gmail) · scope readonly
+model LedgerEmailConnection {
+  id                String    @id @default(uuid()) @db.Uuid
+  orgId             String    @map("org_id") @db.Uuid
+  companyId         String    @map("company_id") @db.Uuid
+  gmailEmail        String    @map("gmail_email") // ตู้เมลที่เชื่อม (เป็น unique key ต่อบริษัท)
+  refreshTokenEnc   String    @map("refresh_token_enc") // AES-256-GCM "iv:cipher:tag"
+  scopes            String?
+  connectedById     String?   @map("connected_by_id") @db.Uuid
+  filterSenders     String[]  @default([]) @map("filter_senders") // allow-list ผู้ส่ง (cron ไม่รันถ้าว่าง)
+  suppressedSenders String[]  @default([]) @map("suppressed_senders") // "ไม่ใช่ค่าใช้จ่าย/ทิ้ง" → ตัดออกรอบหน้า
+  lastSyncAt        DateTime? @map("last_sync_at") @db.Timestamptz(6)
+  lastSyncStatus    String?   @map("last_sync_status") // "ok" | "error: <msg>"
+  lastSyncCount     Int       @default(0) @map("last_sync_count")
+  firstScanDone     Boolean   @default(false) @map("first_scan_done") // กัน backfill 30 วันซ้ำ
+  active            Boolean   @default(true)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([orgId, companyId, gmailEmail])
+  @@index([orgId, companyId, active])
+  @@map("ledger_email_connection")
+  @@schema("public")
+}
+
+// ประวัติเมลที่สแกนแล้ว — กันซ้ำ (ก่อนเรียก AI) + audit trail + suppress-list driver
+// + run summary. 1 แถว/อีเมลที่เจอ. unique(connection, gmailMessageId) = สแกนซ้ำไม่อ่าน AI ซ้ำ
+model LedgerEmailMessage {
+  id             String    @id @default(uuid()) @db.Uuid
+  orgId          String    @map("org_id") @db.Uuid
+  companyId      String    @map("company_id") @db.Uuid
+  connectionId   String    @map("connection_id") @db.Uuid
+  gmailMessageId String    @map("gmail_message_id")
+  status         String    @default("imported") // imported | needs_manual | skipped | error
+  senderEmail    String?   @map("sender_email")
+  subject        String?
+  receivedAt     DateTime? @map("received_at") @db.Timestamptz(6)
+  scanRunId      String?   @map("scan_run_id")
+  expenseId      String?   @map("expense_id") @db.Uuid // ใบร่างที่สร้าง (ถ้าสร้าง)
+  note           String?
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([connectionId, gmailMessageId])
+  @@index([orgId, companyId])
+  @@map("ledger_email_message")
+  @@schema("public")
+}
+
 // ผูกกลุ่ม LINE (รับรูปใบเสร็จจากหน้างาน) — secrets เข้ารหัส (stub Phase 1)
 model LedgerLineChannel {
   id                   String   @id @default(uuid()) @db.Uuid

@@ -18,6 +18,7 @@ import { ExpenseList } from "./_components/ExpenseList";
 import { CompletenessSummaryStrip } from "./_components/CompletenessSummaryStrip";
 import { ExpensePaneClient } from "./_components/ExpensePaneClient";
 import { UploadReceiptButton } from "./_components/UploadReceiptButton";
+import { NoReceiptButton } from "./_components/NoReceiptButton";
 import { ExportButton } from "./_components/ExportButton";
 import { ledgerQuotationV1, ledgerSlipV1 } from "@/lib/ledger/flags";
 import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
@@ -27,8 +28,8 @@ export const dynamic = "force-dynamic";
 const STATUS_VALUES: LedgerStatusValue[] = ["draft", "confirmed", "locked", "void"];
 
 // D4 source tabs: all / สแกนจาก LINE / เพิ่มเอง / ส่วนตัว(=createdBy self).
-export type ExpenseTab = "all" | "line" | "web" | "mine";
-const TAB_VALUES: ExpenseTab[] = ["all", "line", "web", "mine"];
+export type ExpenseTab = "all" | "line" | "email" | "web" | "mine";
+const TAB_VALUES: ExpenseTab[] = ["all", "line", "email", "web", "mine"];
 
 // CONTRACT for the UI agent (C1) that owns ExpenseList: add these two props to the
 // ExpenseList signature (import the types from this page) so the source-tab strip
@@ -142,6 +143,7 @@ export default async function ExpensesPage({
   // predicate (rows already carry `source` + `createdBy` from the summary select).
   const matchesTab = (r: { source: string; createdBy: string | null }): boolean => {
     if (tab === "line") return r.source === "line";
+    if (tab === "email") return r.source === "email";
     if (tab === "web") return r.source === "web";
     if (tab === "mine") return r.createdBy === session.user.id;
     return true; // "all"
@@ -176,15 +178,17 @@ export default async function ExpensesPage({
         }
       : {}),
   };
-  const [countAll, countLine, countWeb, countMine] = await Promise.all([
+  const [countAll, countLine, countEmail, countWeb, countMine] = await Promise.all([
     prisma.ledgerExpense.count({ where: tabCountWhere }),
     prisma.ledgerExpense.count({ where: { ...tabCountWhere, source: "line" } }),
+    prisma.ledgerExpense.count({ where: { ...tabCountWhere, source: "email" } }),
     prisma.ledgerExpense.count({ where: { ...tabCountWhere, source: "web" } }),
     prisma.ledgerExpense.count({ where: { ...tabCountWhere, createdBy: session.user.id } }),
   ]);
   const tabCounts: Record<ExpenseTab, number> = {
     all: countAll,
     line: countLine,
+    email: countEmail,
     web: countWeb,
     mine: countMine,
   };
@@ -248,6 +252,12 @@ export default async function ExpensesPage({
               </Link>
             )}
             <ExportButton companyId={scope.companyId} />
+            <NoReceiptButton
+              companyId={scope.companyId}
+              branchId={scope.branchId}
+              categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+              branches={scope.branches.map((b) => ({ id: b.id, name: b.name }))}
+            />
             <UploadReceiptButton
               companyId={scope.companyId}
               branchId={scope.branchId}

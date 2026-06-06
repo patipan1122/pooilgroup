@@ -24,6 +24,7 @@ import type { ExpenseRow, LedgerStatusValue } from "@/components/ledger/_kit/typ
 const SOURCE_TABS: Array<{ value: ExpenseTab; label: string }> = [
   { value: "all", label: "ทั้งหมด" },
   { value: "line", label: "สแกนจาก LINE" },
+  { value: "email", label: "อีเมล" },
   { value: "web", label: "เพิ่มเอง" },
   { value: "mine", label: "ส่วนตัว" },
 ];
