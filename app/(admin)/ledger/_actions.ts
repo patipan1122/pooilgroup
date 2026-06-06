@@ -1522,16 +1522,17 @@ const inviteSchema = z.object({
   expiresInDays: z.coerce.number().int().min(1).max(365).optional(),
 });
 
-/** Build the shareable invite link. The LIFF Endpoint is the SUB-PATH /liff/ledger,
- *  so the path after the LIFF id must be `/ledger` (NOT `/ledger/join` — that became
- *  /liff/ledger/ledger/join → 404). We pass the token as `?invite=` and the LIFF
- *  bootstrap on the capture page reads it (from query OR liff.state) and runs the
- *  bind INLINE (JoinClient) — no sub-path navigation, no liff.state bounce loop. */
+/** Build the shareable invite link. LINE LIFF "Concatenate" rule (official docs): the
+ *  path after the LIFF id is appended to the FULL Endpoint URL. Ledger's endpoint is
+ *  /liff/ledger, so any "/ledger…" path DUPLICATES it → /liff/ledger/ledger… → 404
+ *  (the bug we hit). Correct = append ONLY the part beyond the endpoint; for the
+ *  endpoint page itself, NO path. So `{id}?invite=TOKEN` lands on /liff/ledger and the
+ *  bootstrap reads `invite` (direct query) → binds INLINE (JoinClient). */
 function inviteUrl(token: string): string {
   const liffId = liffIdForModule("ledger");
   const path = `/liff/ledger/join?invite=${token}`; // web fallback (no LIFF)
   return liffId
-    ? `https://liff.line.me/${liffId}/ledger?invite=${encodeURIComponent(token)}`
+    ? `https://liff.line.me/${liffId}?invite=${encodeURIComponent(token)}`
     : path;
 }
 

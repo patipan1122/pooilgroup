@@ -58,12 +58,13 @@ const MEMBER_ROLE_LABEL: Record<string, string> = {
 };
 
 /** Build the LIFF admin-console deep link (opens /liff/ledger/admin inside LINE).
- *  The `/ledger` segment is REQUIRED (see LineConfirmCard) — without it LINE's
- *  liff.state fallback bounces to the ChairOps default and the console never opens. */
+ *  LINE "Concatenate" rule: path after the LIFF id is appended to the FULL endpoint
+ *  (/liff/ledger). A `/ledger` segment here would DUPLICATE it → /liff/ledger/ledger
+ *  → 404. So NO path; pass the target in ?next= and the bootstrap navigates there. */
 function adminConsoleUrl(): string | null {
   const liffId = process.env.NEXT_PUBLIC_LEDGER_LIFF_ID;
   if (!liffId) return null;
-  return `https://liff.line.me/${liffId}/ledger?next=${encodeURIComponent("/liff/ledger/admin")}`;
+  return `https://liff.line.me/${liffId}?next=${encodeURIComponent("/liff/ledger/admin")}`;
 }
 
 /** Is this sender a ledger ADMIN in chat? Pool admin-tier / accountant (viewer) /
