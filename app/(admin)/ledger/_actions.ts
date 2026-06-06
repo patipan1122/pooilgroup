@@ -44,7 +44,11 @@ import {
 } from "@/lib/ledger/trcloud-push";
 import { resolveLedgerActor, actorCanReachBranch, ledgerWebCanForRole } from "@/lib/ledger/liff-auth";
 import { audit } from "@/lib/audit/log";
-import { encryptToken } from "@/lib/recruit/channel-crypto";
+import { encryptToken, decryptToken } from "@/lib/recruit/channel-crypto";
+import {
+  expenseConfirmability,
+  confirmabilityMessage,
+} from "@/lib/ledger/confirmability";
 
 export type ActionResult = { ok: boolean; error?: string };
 
@@ -308,6 +312,17 @@ export async function confirmExpense(
   if (row.status === "locked" || row.status === "void")
     return { ok: false, error: "รายการถูกล็อก/ยกเลิก ยืนยันไม่ได้" };
 
+  // D1 CONFIRM-GATE — check the FINAL value that WILL be persisted (toData coerces
+  // ''→null), not the stale DB row: a confirm patch can blank branch/category in
+  // the same call. Both must be present or the post is refused (Thai message names
+  // the missing field). Kept separate from VAT completeness on purpose.
+  const merged = toData(p);
+  const gate = expenseConfirmability({
+    branchId: merged.branchId,
+    categoryId: merged.categoryId,
+  });
+  if (!gate.ok) return { ok: false, error: confirmabilityMessage(gate.missing) };
+
   // Re-grade input-VAT completeness from the confirmed values too (both paths must
   // grade — else the snapshot the accountant just confirmed keeps a stale color).
   const { grade: _gc, ...gradeColsC } = gradeColumnsFromPatch(p, row);
@@ -387,7 +402,14 @@ export async function voidExpense(id: string): Promise<ActionResult> {
 export async function bulkConfirm(
   ids: string[],
   companyId: string,
-): Promise<ActionResult & { confirmed?: number; skipped?: number }> {
+): Promise<
+  ActionResult & {
+    confirmed?: number;
+    skipped?: number;
+    /** typed breakdown of WHY rows were skipped (so the toolbar can explain). */
+    skippedReasons?: { math: number; missingBranch: number; missingCategory: number };
+  }
+> {
   if (!Array.isArray(ids) || ids.length === 0)
     return { ok: false, error: "ไม่ได้เลือกรายการ" };
   if (!companyId) return { ok: false, error: "ไม่ได้ระบุบริษัท" };
@@ -413,8 +435,21 @@ export async function bulkConfirm(
 
   let confirmed = 0;
   let skipped = 0;
+  // D1 CONFIRM-GATE for the blind batch: bulkConfirm has NO patch, so the gate
+  // checks each PERSISTED row directly (branchId/categoryId as stored). This path
+  // is the most exposed — it blind-confirms up to 50 rows at once — so a missing
+  // posting field here MUST skip that row, not slip through. Track WHY per bucket.
+  const skippedReasons = { math: 0, missingBranch: 0, missingCategory: 0 };
   const confirmedIds: string[] = [];
   for (const r of rows) {
+    // Posting gate first — never confirm a row we can't classify (branch+category).
+    const gate = expenseConfirmability({ branchId: r.branchId, categoryId: r.categoryId });
+    if (!gate.ok) {
+      skipped++;
+      if (gate.missing.includes("branch")) skippedReasons.missingBranch++;
+      if (gate.missing.includes("category")) skippedReasons.missingCategory++;
+      continue;
+    }
     const rc = recheckReceipt({
       vendorTaxId: r.vendorTaxId,
       subtotal: Number(r.subtotal),
@@ -428,6 +463,7 @@ export async function bulkConfirm(
     );
     if (blocking.length > 0) {
       skipped++;
+      skippedReasons.math++;
       continue;
     }
     await prisma.ledgerExpense.update({
@@ -453,7 +489,7 @@ export async function bulkConfirm(
   }
   revalidatePath("/ledger/expenses");
   revalidatePath("/ledger");
-  return { ok: true, confirmed, skipped };
+  return { ok: true, confirmed, skipped, skippedReasons };
 }
 
 // ===================== Input-VAT claimability (ภาษีซื้อ) =====================
@@ -781,6 +817,48 @@ export async function toggleCategory(
     where: { id, orgId: session.user.org_id },
     data: { active },
   });
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
+// D5/S4 — edit an existing category's name/color/TRCloud account code. Same
+// admin-tier gate as createCategory/toggleCategory (categories drive the chart of
+// accounts + TRCloud mapping). No schema change — columns already exist. Scoped by
+// org (the id @@unique within org); a duplicate name in the same company throws.
+const categoryUpdateSchema = z.object({
+  id: z.string().trim().min(1, "ไม่ได้ระบุหมวด"),
+  name: z.string().trim().min(1, "ต้องระบุชื่อหมวด").max(100),
+  color: z.string().trim().max(20).optional().or(z.literal("")),
+  trcloudAccCode: z.string().trim().max(40).optional().or(z.literal("")),
+});
+
+export async function updateCategory(raw: unknown): Promise<ActionResult> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลตั้งค่าหมวดได้" };
+  }
+  const parsed = categoryUpdateSchema.safeParse(raw);
+  if (!parsed.success)
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const { id, name, color, trcloudAccCode } = parsed.data;
+
+  try {
+    const res = await prisma.ledgerCategory.updateMany({
+      // org scope is the ownership gate (category id is unique within the org).
+      where: { id, orgId: session.user.org_id },
+      data: {
+        name,
+        color: color || null,
+        trcloudAccCode: trcloudAccCode || null,
+      },
+    });
+    if (res.count === 0) return { ok: false, error: "ไม่พบหมวด" };
+  } catch {
+    // @@unique(orgId, companyId, name) collision → another category owns this name.
+    return { ok: false, error: "ชื่อหมวดนี้มีอยู่แล้ว" };
+  }
   revalidatePath("/ledger/settings");
   return { ok: true };
 }
@@ -1237,6 +1315,16 @@ export async function liffConfirmExpense(id: string, raw: unknown): Promise<Acti
   if (row.status === "locked" || row.status === "void")
     return { ok: false, error: "รายการถูกล็อก/ยกเลิก ยืนยันไม่ได้" };
 
+  // D1 CONFIRM-GATE (LIFF) — same posting gate as the web confirm, on the FINAL
+  // merged values (toData coerces ''→null). actor.canConfirm is already re-verified
+  // above via resolveLedgerActor (re-checks the LINE id_token per action).
+  const mergedLiff = toData(p);
+  const gateLiff = expenseConfirmability({
+    branchId: mergedLiff.branchId,
+    categoryId: mergedLiff.categoryId,
+  });
+  if (!gateLiff.ok) return { ok: false, error: confirmabilityMessage(gateLiff.missing) };
+
   await prisma.$transaction(async (tx) => {
     await tx.ledgerExpense.updateMany({
       where: { id, orgId: actor.orgId, companyId: row.companyId },
@@ -1284,6 +1372,138 @@ export async function liffVoidExpense(id: string): Promise<ActionResult> {
   });
   revalidatePath("/ledger/expenses");
   return { ok: true };
+}
+
+// ── LIFF (LINE-auth) delete variants (D2) ───────────────────────────────────
+// Mirror the WEB selfDeleteExpense / requestDeleteExpense rules, but authenticate
+// via resolveLedgerActor() (the LINE id_token) instead of the web session — so the
+// same self-delete window + request-delete LINE ping work from inside the LIFF.
+// companyId is filtered on EVERY query/mutation (orgId-only = cross-company leak,
+// P0). NEVER hard-delete — soft void only. Reuses SELF_DELETE_WINDOW_MS (the web
+// constant) so the two paths can never drift apart.
+
+/** Soft-void a fresh draft you created yourself, from the LIFF. companyId-scoped. */
+export async function liffSelfDeleteExpense(id: string): Promise<ActionResult> {
+  if (!id) return { ok: false, error: "ไม่ได้ระบุรายการ" };
+  const actor = await resolveLedgerActor();
+  if (!actor) return { ok: false, error: "บัญชียังไม่เปิดใช้งานสำหรับคุณ · ติดต่อออฟฟิศ" };
+
+  // Need createdBy/createdAt/trcloudDocId for the self-delete gate — fields the
+  // shared loadScopedByOrg() does NOT select — so query directly (orgId-scoped read,
+  // then the void below is locked to the row's own companyId).
+  const row = await prisma.ledgerExpense.findFirst({
+    where: { id, orgId: actor.orgId },
+    select: {
+      id: true,
+      companyId: true,
+      branchId: true,
+      status: true,
+      createdBy: true,
+      createdAt: true,
+      trcloudDocId: true,
+    },
+  });
+  if (!row) return { ok: false, error: "ไม่พบรายการ" };
+  if (!actorCanReachBranch(actor, row.branchId))
+    return { ok: false, error: "ไม่มีสิทธิ์ในสาขานี้" };
+
+  // ALL conditions must hold — each failure steers the user to "ขอลบ".
+  if (row.createdBy !== actor.userId)
+    return { ok: false, error: "ลบได้เฉพาะรายการที่คุณสร้างเอง · กดขอลบให้บัญชีลบแทน" };
+  if (row.status !== "draft")
+    return { ok: false, error: "ยืนยันแล้วลบเองไม่ได้ · กดขอลบให้บัญชียกเลิกแทน" };
+  if (row.trcloudDocId)
+    return { ok: false, error: "ส่งเข้าระบบบัญชีแล้วลบเองไม่ได้ · กดขอลบ" };
+  // Server-side clock — never trust a client timestamp for the window.
+  if (Date.now() - row.createdAt.getTime() >= SELF_DELETE_WINDOW_MS)
+    return { ok: false, error: "เกิน 5 นาทีแล้ว ลบเองไม่ได้ · กดขอลบให้บัญชีลบแทน" };
+
+  // Soft delete = void (same semantics as web). companyId-scoped, never hard-delete.
+  await prisma.ledgerExpense.updateMany({
+    where: { id, orgId: actor.orgId, companyId: row.companyId },
+    data: { status: "void", needsReview: false },
+  });
+  await audit({
+    orgId: actor.orgId,
+    userId: actor.userId,
+    action: "LEDGER_EXPENSE_VOIDED",
+    resourceType: "ledger_expense",
+    resourceId: id,
+    diff: { old: { status: row.status }, new: { status: "void", via: "liff_self_delete" } },
+  });
+  revalidatePath("/ledger/expenses");
+  return { ok: true };
+}
+
+/** Ask the office (via LINE) to delete a row you CAN'T self-void, from the LIFF.
+ *  Mirrors the web requestDeleteExpense ping — does NOT delete. companyId-scoped. */
+export async function liffRequestDeleteExpense(
+  id: string,
+  reason?: string,
+): Promise<ActionResult> {
+  if (!id) return { ok: false, error: "ไม่ได้ระบุรายการ" };
+  const actor = await resolveLedgerActor();
+  if (!actor) return { ok: false, error: "บัญชียังไม่เปิดใช้งานสำหรับคุณ · ติดต่อออฟฟิศ" };
+
+  const row = await prisma.ledgerExpense.findFirst({
+    where: { id, orgId: actor.orgId },
+    select: { id: true, companyId: true, branchId: true, docCode: true, vendor: true, status: true },
+  });
+  if (!row) return { ok: false, error: "ไม่พบรายการ" };
+  if (!actorCanReachBranch(actor, row.branchId))
+    return { ok: false, error: "ไม่มีสิทธิ์ในสาขานี้" };
+
+  const cleanReason = (reason ?? "").trim().slice(0, 300);
+  const text =
+    `🗑️ ขอให้ลบรายจ่าย\n` +
+    `เอกสาร: ${row.docCode}${row.vendor ? ` · ${row.vendor}` : ""}\n` +
+    `ผู้ขอ: ${actor.userId} (ผ่าน LINE)\n` +
+    (cleanReason ? `เหตุผล: ${cleanReason}` : `เหตุผล: (ไม่ได้ระบุ)`) +
+    `\nกรุณาตรวจและกดยกเลิกให้ในเมนู “รายจ่าย”`;
+
+  // Best-effort LINE ping → the company's ledger admins/accountants. companyId-scoped.
+  let notified = 0;
+  try {
+    const channel = await prisma.ledgerLineChannel.findFirst({
+      where: { orgId: actor.orgId, companyId: row.companyId, active: true },
+      select: { accessTokenEnc: true },
+    });
+    const accessToken = channel?.accessTokenEnc ? decryptToken(channel.accessTokenEnc) : null;
+    if (accessToken) {
+      const recipients = await prisma.ledgerLineMember.findMany({
+        where: {
+          orgId: actor.orgId,
+          companyId: row.companyId,
+          active: true,
+          role: { in: ["admin", "accountant"] },
+        },
+        select: { lineUserId: true },
+      });
+      const seen = new Set<string>();
+      for (const r of recipients) {
+        if (!r.lineUserId || seen.has(r.lineUserId)) continue;
+        seen.add(r.lineUserId);
+        const ok = await pushLedgerLineText(accessToken, r.lineUserId, text);
+        if (ok) notified++;
+      }
+    }
+  } catch {
+    // Swallow — the request is informal; never fail the user's click on a push error.
+  }
+
+  await audit({
+    orgId: actor.orgId,
+    userId: actor.userId,
+    action: "LEDGER_EXPENSE_UPDATED",
+    resourceType: "ledger_expense",
+    resourceId: id,
+    diff: { new: { deleteRequested: true, via: "liff", notified, reason: cleanReason || null } },
+  });
+
+  // Always ok from the user's side — they've asked; the office will action it.
+  return notified > 0
+    ? { ok: true }
+    : { ok: true, error: "ส่งคำขอแล้ว แต่ยังไม่ได้เชื่อม LINE บัญชี — แจ้งออฟฟิศโดยตรงด้วยนะ" };
 }
 
 // ===================== Settings: LINE channel =====================
@@ -2175,6 +2395,248 @@ export async function updateLedgerBranch(
   revalidatePath("/liff/ledger/admin");
   revalidatePath("/ledger/settings");
   return { ok: true };
+}
+
+// ── Central "office" branch (D1 fallback) ───────────────────────────────────
+// CEO: "ถ้าไม่รู้สาขา ก็ต้องระบุเป็นค่าใช้จ่ายสำนักงาน". The confirm-gate refuses a
+// blank branch, so the UI offers a deliberate "สำนักงาน (ส่วนกลาง)" option that
+// resolves to THIS branch. find-or-create is idempotent + ADDITIVE (never renames
+// or deletes — Branch is a SHARED Pool entity read by ChairOps/ClawFleet/Fuel).
+// Matched by the stable code OFFICE-CENTRAL (unique per org via @@unique(orgId,code)).
+const CENTRAL_BRANCH_CODE = "OFFICE-CENTRAL";
+const CENTRAL_BRANCH_NAME = "สำนักงาน (ส่วนกลาง)";
+
+/**
+ * Idempotently return the company's central-office branchId, creating an isActive
+ * Branch named "สำนักงาน (ส่วนกลาง)" the first time. Invoked ONLY when the user
+ * deliberately picks the central option (NOT silently auto-filled). Caller must
+ * have already established org+company scope; companyId is validated as belonging
+ * to the actor's org. businessType=training_center = the least-operational generic
+ * type (not a kiosk/station, so it stays out of fuel/chair/claw module nav).
+ */
+export async function ensureCentralBranch(companyId: string): Promise<ActionResult & { branchId?: string }> {
+  if (!companyId) return { ok: false, error: "ไม่ได้ระบุบริษัท" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  const orgId = session.user.org_id;
+
+  // Validate the company belongs to the caller's org before touching shared Branch.
+  const company = await prisma.company.findFirst({
+    where: { id: companyId, orgId },
+    select: { id: true },
+  });
+  if (!company) return { ok: false, error: "ไม่พบบริษัท" };
+
+  // Branch code is org-UNIQUE (@@unique([orgId, code])), but each company in the org
+  // needs its OWN central office. So suffix the code with a company fragment — two
+  // companies never collide on "OFFICE-CENTRAL" and the race-recovery lookup below
+  // resolves to the RIGHT company's row.
+  const centralCode = `${CENTRAL_BRANCH_CODE}-${companyId.slice(0, 8)}`;
+
+  // Already exists? (match by company-scoped name OR the per-company code).
+  const existing = await prisma.branch.findFirst({
+    where: {
+      orgId,
+      companyId,
+      OR: [{ code: centralCode }, { name: CENTRAL_BRANCH_NAME }],
+    },
+    select: { id: true, isActive: true },
+  });
+  if (existing) {
+    // Additive only — re-activate if someone deactivated it, never rename/delete.
+    if (!existing.isActive) {
+      await prisma.branch.update({ where: { id: existing.id }, data: { isActive: true } });
+    }
+    return { ok: true, branchId: existing.id };
+  }
+
+  try {
+    const branch = await prisma.branch.create({
+      data: {
+        orgId,
+        companyId,
+        code: centralCode,
+        name: CENTRAL_BRANCH_NAME,
+        businessType: "training_center",
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    await audit({
+      orgId,
+      userId: session.user.id,
+      action: "LEDGER_BRANCH_UPDATED",
+      resourceType: "branch",
+      resourceId: branch.id,
+      diff: { new: { created: true, central: true, code: centralCode } },
+    });
+    revalidatePath("/ledger/expenses");
+    revalidatePath("/ledger/settings");
+    return { ok: true, branchId: branch.id };
+  } catch {
+    // Race: a concurrent call created it between our read and create (@@unique).
+    // Look up by the per-company code so we never hand back another company's branch.
+    const raced = await prisma.branch.findFirst({
+      where: { orgId, companyId, code: centralCode },
+      select: { id: true },
+    });
+    if (raced) return { ok: true, branchId: raced.id };
+    return { ok: false, error: "สร้างสาขาสำนักงานไม่สำเร็จ" };
+  }
+}
+
+// ── Delete a draft (D2) ─────────────────────────────────────────────────────
+// NEVER hard-delete an expense (soft void only). Two paths:
+//   selfDeleteExpense    — the creator pulls back their OWN fresh draft (<5 min,
+//                          not yet pushed to TRCloud) → soft void. Self-service.
+//   requestDeleteExpense — anything else (>5 min · not owner · not draft) → does
+//                          NOT delete; pings the office accountants/admins on LINE
+//                          to do it. Informal — no approval queue, no new table.
+
+const SELF_DELETE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Soft-void a fresh draft you created yourself (D2 self-delete). companyId-scoped. */
+export async function selfDeleteExpense(id: string): Promise<ActionResult> {
+  if (!id) return { ok: false, error: "ไม่ได้ระบุรายการ" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+
+  const row = await prisma.ledgerExpense.findFirst({
+    where: { id, orgId: session.user.org_id },
+    select: {
+      id: true,
+      companyId: true,
+      status: true,
+      createdBy: true,
+      createdAt: true,
+      trcloudDocId: true,
+    },
+  });
+  if (!row) return { ok: false, error: "ไม่พบรายการ" };
+
+  // ALL conditions must hold — else route the user to requestDeleteExpense.
+  if (row.createdBy !== session.user.id)
+    return { ok: false, error: "ลบได้เฉพาะรายการที่คุณสร้างเอง · แจ้งบัญชีให้ลบแทน" };
+  if (row.status !== "draft")
+    return { ok: false, error: "ยืนยันแล้วลบเองไม่ได้ · แจ้งบัญชีให้ยกเลิกแทน" };
+  if (row.trcloudDocId)
+    return { ok: false, error: "ส่งเข้าระบบบัญชีแล้วลบเองไม่ได้ · แจ้งบัญชี" };
+  // Server-side clock — never trust a client timestamp for the window.
+  if (Date.now() - row.createdAt.getTime() >= SELF_DELETE_WINDOW_MS)
+    return { ok: false, error: "เกิน 5 นาทีแล้ว ลบเองไม่ได้ · แจ้งบัญชีให้ลบแทน" };
+
+  // Soft delete = void (reuse the same void semantics; the row stays visible).
+  await prisma.ledgerExpense.updateMany({
+    where: { id, orgId: session.user.org_id, companyId: row.companyId },
+    data: { status: "void", needsReview: false },
+  });
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_EXPENSE_VOIDED",
+    resourceType: "ledger_expense",
+    resourceId: id,
+    diff: { old: { status: row.status }, new: { status: "void", via: "self_delete" } },
+  });
+  revalidatePath("/ledger/expenses");
+  return { ok: true };
+}
+
+/** Ask the office to delete a row you CAN'T self-void (D2). Sends a LINE ping to
+ *  the company's ledger admins/accountants — NO approval queue, NO new table. */
+export async function requestDeleteExpense(
+  id: string,
+  reason?: string,
+): Promise<ActionResult> {
+  if (!id) return { ok: false, error: "ไม่ได้ระบุรายการ" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+
+  const row = await prisma.ledgerExpense.findFirst({
+    where: { id, orgId: session.user.org_id },
+    select: { id: true, companyId: true, docCode: true, vendor: true, status: true },
+  });
+  if (!row) return { ok: false, error: "ไม่พบรายการ" };
+
+  const cleanReason = (reason ?? "").trim().slice(0, 300);
+  const who = session.user.name || session.user.email || "ผู้ใช้";
+  const text =
+    `🗑️ ขอให้ลบรายจ่าย\n` +
+    `เอกสาร: ${row.docCode}${row.vendor ? ` · ${row.vendor}` : ""}\n` +
+    `ผู้ขอ: ${who}\n` +
+    (cleanReason ? `เหตุผล: ${cleanReason}` : `เหตุผล: (ไม่ได้ระบุ)`) +
+    `\nกรุณาตรวจและกดยกเลิกให้ในเมนู “รายจ่าย”`;
+
+  // Best-effort LINE ping → the company's ledger admins/accountants (verified
+  // LINE members). Decrypt the channel token; push to each admin/accountant userId.
+  let notified = 0;
+  try {
+    const channel = await prisma.ledgerLineChannel.findFirst({
+      where: { orgId: session.user.org_id, companyId: row.companyId, active: true },
+      select: { accessTokenEnc: true },
+    });
+    const accessToken = channel?.accessTokenEnc ? decryptToken(channel.accessTokenEnc) : null;
+    if (accessToken) {
+      const recipients = await prisma.ledgerLineMember.findMany({
+        where: {
+          orgId: session.user.org_id,
+          companyId: row.companyId,
+          active: true,
+          role: { in: ["admin", "accountant"] },
+        },
+        select: { lineUserId: true },
+      });
+      const seen = new Set<string>();
+      for (const r of recipients) {
+        if (!r.lineUserId || seen.has(r.lineUserId)) continue;
+        seen.add(r.lineUserId);
+        const ok = await pushLedgerLineText(accessToken, r.lineUserId, text);
+        if (ok) notified++;
+      }
+    }
+  } catch {
+    // Swallow — the request is informal; never fail the user's click on a push error.
+  }
+
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_EXPENSE_UPDATED",
+    resourceType: "ledger_expense",
+    resourceId: id,
+    diff: { new: { deleteRequested: true, notified, reason: cleanReason || null } },
+  });
+
+  // Always ok from the user's side — they've asked; the office will action it.
+  return notified > 0
+    ? { ok: true }
+    : { ok: true, error: "ส่งคำขอแล้ว แต่ยังไม่ได้เชื่อม LINE บัญชี — แจ้งออฟฟิศโดยตรงด้วยนะ" };
+}
+
+/** Best-effort plain-text LINE push to one userId. Returns true on 2xx. */
+async function pushLedgerLineText(
+  accessToken: string,
+  to: string,
+  text: string,
+): Promise<boolean> {
+  const safe = text.length > 4900 ? text.slice(0, 4900) + "…" : text;
+  try {
+    const res = await fetch("https://api.line.me/v2/bot/message/push", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ to, messages: [{ type: "text", text: safe }] }),
+      signal: AbortSignal.timeout(3000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 // ── Org/Company info (GAP 5 · LIFF "องค์กร" tab) ─────────────────────────────

@@ -27,6 +27,7 @@ import {
   Wallet2,
   MoreHorizontal,
   BarChart3,
+  BookOpen,
   Settings,
   X,
 } from "lucide-react";
@@ -77,6 +78,7 @@ const RIGHT: ReadonlyArray<NavItem> = [
 ];
 // "เพิ่มเติม" overflow sheet — flat, one level deep.
 const OVERFLOW: ReadonlyArray<NavItem> = [
+  { href: "/ledger/ledger-book", label: "สมุดค่าใช้จ่าย", icon: BookOpen, match: "/ledger/ledger-book", roles: FINANCIAL },
   { href: "/ledger/dashboard", label: "Dashboard", icon: BarChart3, match: "/ledger/dashboard", roles: FINANCIAL },
   { href: "/ledger/settings", label: "ตั้งค่า", icon: Settings, match: "/ledger/settings", roles: ADMIN },
 ];

@@ -7,18 +7,22 @@
 // receipts with the branch shown here (paused/empty → the channel's default branch).
 
 import { useState, useTransition } from "react";
-import { Network, Loader2, Power } from "lucide-react";
+import { Network, Loader2, Power, Users, ArrowRight, Building2 } from "lucide-react";
 import { setLedgerGroupBranch, toggleLedgerGroup } from "../../_actions";
 import type { LedgerGroupRow } from "../../_data";
 
 type BranchOpt = { id: string; code: string; name: string };
 
 const inputCls =
-  "h-9 rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]";
+  "h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]";
 
-/** Show a friendly short tail of the LINE group id (full ids are opaque C-strings). */
-function shortGroup(id: string): string {
-  return id.length > 10 ? `…${id.slice(-8)}` : id;
+/** Readable label for a LINE group: its set label, else a clear id tail with a
+ *  prefix so "which group" is recognisable even when no label was set. */
+function groupTitle(row: LedgerGroupRow): string {
+  const label = row.label?.trim();
+  if (label) return label;
+  const id = row.groupId;
+  return id.length > 8 ? `กลุ่ม ${id.slice(-8)}` : `กลุ่ม ${id}`;
 }
 
 function GroupRow({ row, branches }: { row: LedgerGroupRow; branches: BranchOpt[] }) {
@@ -42,43 +46,75 @@ function GroupRow({ row, branches }: { row: LedgerGroupRow; branches: BranchOpt[
     });
   }
 
+  // Resolve the bound branch from the live select value → full code + name; falls
+  // back to the server-resolved branchName when the option isn't in the list.
+  const bound = branches.find((b) => b.id === branchId);
+  const boundLabel = bound
+    ? `${bound.code} · ${bound.name}`
+    : branchId
+      ? row.branchName ?? "สาขาที่ผูกไว้"
+      : null;
+
   return (
     <li className={"rounded-xl border p-3 " + (row.active ? "border-zinc-200 bg-white" : "border-zinc-100 bg-zinc-50 opacity-70")}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-zinc-800">
-            {row.label?.trim() || "กลุ่ม LINE"}
+      {/* Readable join: which LINE group → which branch */}
+      <div className="flex items-start gap-2">
+        <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-[var(--color-brand-50)] text-[var(--color-brand-600,#2563EB)]">
+          <Users className="size-4" aria-hidden />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-zinc-800">{groupTitle(row)}</p>
+          <p className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-zinc-500">
+            {row.label?.trim() && (
+              <span className="truncate font-mono text-zinc-400">id …{row.groupId.slice(-8)}</span>
+            )}
           </p>
-          <p className="font-mono text-[11px] text-zinc-400">{shortGroup(row.groupId)}</p>
+          <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+            <ArrowRight className="size-3.5 shrink-0 text-zinc-300" aria-hidden />
+            <Building2 className="size-3.5 shrink-0 text-zinc-400" aria-hidden />
+            {boundLabel ? (
+              <span className="truncate font-medium text-zinc-700">{boundLabel}</span>
+            ) : (
+              <span className="text-zinc-400">ใช้สาขาเริ่มต้น (ตามช่องทางหลัก)</span>
+            )}
+            {!row.active && (
+              <span className="ml-1 shrink-0 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500">
+                พักอยู่
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <select
-            value={branchId}
-            onChange={(e) => changeBranch(e.target.value)}
-            disabled={pending}
-            aria-label="สาขาของกลุ่มนี้"
-            className={inputCls}
-          >
-            <option value="">— ใช้สาขาเริ่มต้น —</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>{b.code} · {b.name}</option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={toggleActive}
-            disabled={pending}
-            aria-label={row.active ? "พักการผูก" : "ใช้งานการผูก"}
-            title={row.active ? "พักการผูก" : "ใช้งานการผูก"}
-            className={"grid size-9 place-items-center rounded-lg border " +
-              (row.active
-                ? "border-zinc-200 text-zinc-400 hover:bg-zinc-50"
-                : "border-emerald-200 text-emerald-600 hover:bg-emerald-50")}
-          >
-            {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Power className="size-4" aria-hidden />}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={toggleActive}
+          disabled={pending}
+          aria-label={row.active ? "พักการผูก" : "ใช้งานการผูก"}
+          title={row.active ? "พักการผูก" : "ใช้งานการผูก"}
+          className={"grid size-9 shrink-0 place-items-center rounded-lg border " +
+            (row.active
+              ? "border-zinc-200 text-zinc-400 hover:bg-zinc-50"
+              : "border-emerald-200 text-emerald-600 hover:bg-emerald-50")}
+        >
+          {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Power className="size-4" aria-hidden />}
+        </button>
       </div>
+
+      {/* Edit binding */}
+      <label className="mt-2.5 block">
+        <span className="mb-1 block text-[11px] font-medium text-zinc-500">ผูกกลุ่มนี้กับสาขา</span>
+        <select
+          value={branchId}
+          onChange={(e) => changeBranch(e.target.value)}
+          disabled={pending}
+          aria-label="สาขาของกลุ่มนี้"
+          className={inputCls}
+        >
+          <option value="">— ใช้สาขาเริ่มต้น —</option>
+          {branches.map((b) => (
+            <option key={b.id} value={b.id}>{b.code} · {b.name}</option>
+          ))}
+        </select>
+      </label>
       {err && <p className="mt-2 text-xs text-rose-600">{err}</p>}
     </li>
   );
