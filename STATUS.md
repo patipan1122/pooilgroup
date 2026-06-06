@@ -1,8 +1,45 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-06 (LedgerLine TRCloud v2 Full Sprint · commit 6eeeb79 · pending prod deploy)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-07 (LedgerLine TRCloud v2 · 5 skills complete · pending prod deploy + CEO DB migration)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-06-07 — LedgerLine TRCloud v2 — 5 skills complete · ⏳ รอ CEO deploy)
+
+### 2026-06-07 · LedgerLine TRCloud v2 — 5-skill sprint COMPLETE (commits 1ed0e38 + c08350e)
+
+**All 5 skills done — pending CEO prod deploy:**
+
+**Skill 1 /bigfeature** ✅ — spec `docs/BIGFEATURE_ledger-trcloud-v2_SPEC.md`
+
+**Skill 2 /auditbigteam** ✅ — 15 personas, `docs/AUDIT_ledger-trcloud-v2_2026-06-07.md`
+
+**Skill 3 /bigsolvebug** ✅ — commit 1ed0e38 · 6 P0 fixes:
+- `vatClaimable` default `true→false` (schema + migration + loadPushable)
+- `pending` sentinel excluded from `trcloudPushed:true` filter (queries.ts)
+- Bulk push: atomic claim + intent audit added (was missing, single push had it)
+- `LEDGER_EXPENSE_PUSH_STARTED/TRCLOUD_AP_DELETE_*` added to AuditAction type
+- `recordPushResult` enriched with vendor/total/vendorTaxId/docCode for ภ.ง.ด. trail
+- `deleteTrcloudApAction` server action added (was missing auth gate)
+
+**Skill 4 /claude-design** ✅ — commit c08350e · ExpenseList UX:
+- Added "กำลังส่ง TRCloud" amber+spinner chip for pending sentinel
+- Blue chip now shows docNo inline (`TRCloud AP260001` instead of generic)
+- `isPending` flag at component level (not just query level)
+- CategoryManager: "ยังไม่ผูก TRCloud" warning badge for unconfigured active categories
+
+**Skill 5 /upspeed** ✅ — commit c08350e · TRCloud push path:
+- `recordPushResult`: DB write + audit now run in `Promise.all` (−20-50ms per push)
+- Schema + migration: composite index `(org_id, company_id, trcloud_doc_id)` added
+
+**⚠️ PENDING CEO ACTIONS before go-live:**
+1. Apply migration `20260606_ledger_trcloud_v2.sql` in Supabase Dashboard SQL editor
+2. Run seed: `node scripts/seed-ledger-categories-jps.mjs` (21 JP Sync categories with GL+SKU)
+3. Set `trcloudProject` + `trcloudDepartment` per branch in Settings → สาขา
+4. Deploy: push `setup` branch to Vercel (per-request approval required)
+5. Verify: push 1 confirmed expense → TRCloud → check blue "TRCloud AP-XXXXXX" badge
+
+---
 
 ## 🆕 Update (2026-06-07 — LedgerLine TRCloud v2 — Audit P0 blockers resolved · ⏳ รอ CEO อนุมัติ deploy)
 
