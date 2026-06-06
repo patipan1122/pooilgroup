@@ -11,7 +11,7 @@
 // on a LIVE multi-company app, so it is tight and defaults to UNDER-showing.
 
 import Link from "next/link";
-import { Camera } from "lucide-react";
+import { Camera, Home } from "lucide-react";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth/session";
@@ -89,8 +89,17 @@ export default async function LedgerLiffMyPage() {
 
   return (
     <div className="mx-auto w-full max-w-md px-4 pt-4 pb-[calc(76px+env(safe-area-inset-bottom))]">
-      <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-lg font-bold text-zinc-900">ใบของฉัน</h1>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <Link
+            href="/liff/ledger"
+            aria-label="กลับหน้าหลัก"
+            className="grid size-9 shrink-0 place-items-center rounded-lg text-zinc-500 active:bg-zinc-100"
+          >
+            <Home className="size-5" aria-hidden />
+          </Link>
+          <h1 className="text-lg font-bold text-zinc-900">ใบของฉัน</h1>
+        </div>
         <Link
           href="/liff/ledger"
           className="inline-flex h-11 items-center gap-1 rounded-full bg-[var(--color-brand-600)] px-4 text-sm font-semibold text-white active:bg-[var(--color-brand-700)]"

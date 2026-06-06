@@ -8,7 +8,7 @@
 // It owns NO URL state: the parent (ExpenseList) passes the active values plus the
 // shared `onSet(key, value)` (the existing setParam URL pattern), so every change
 // still routes through the one server-driven GET round-trip.
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { SlidersHorizontal, X } from "lucide-react";
 import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
 
@@ -46,6 +46,9 @@ export interface FilterSheetProps {
   /** Clears status+tr+cc+category in ONE router push (sequential onSet calls
    *  would each re-push from the same baseParams snapshot — only the last wins). */
   onClear: () => void;
+  /** Shortcut actions (ไม่มีใบเสร็จ · สลิปรอจับคู่) shown at the top of the mobile
+   *  sheet — moved off the cramped page header (CEO 2026-06-06 "ยุบเข้าตัวกรอง"). */
+  extraActions?: ReactNode;
 }
 
 /** How many filters are non-default (drives the "ตัวกรอง (n)" badge). cc lives in the
@@ -215,6 +218,11 @@ export function FilterSheet(props: FilterSheetProps) {
                 <X className="size-5" />
               </button>
             </div>
+            {props.extraActions && (
+              <div className="mb-3 flex flex-wrap gap-2 border-b border-zinc-100 pb-3">
+                {props.extraActions}
+              </div>
+            )}
             <div className="space-y-3">
               <FilterControls {...props} />
             </div>

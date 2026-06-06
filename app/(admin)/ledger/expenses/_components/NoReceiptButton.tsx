@@ -85,7 +85,7 @@ export function NoReceiptButton({
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
           <div className="w-full max-w-md rounded-t-2xl bg-white p-5 sm:rounded-2xl">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-base font-bold text-zinc-900">เพิ่มค่าใช้จ่ายไม่มีใบเสร็จ</h2>

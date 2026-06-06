@@ -48,6 +48,7 @@ export function ExpenseList({
   companyId,
   tab,
   tabCounts,
+  listActions,
 }: {
   rows: ExpenseRow[];
   categories: Array<{ id: string; name: string; color: string | null; sort: number }>;
@@ -68,6 +69,9 @@ export function ExpenseList({
   tab: ExpenseTab;
   /** DB-accurate per-tab counts (from page.tsx) for the badge on each source tab. */
   tabCounts: Record<ExpenseTab, number>;
+  /** Shortcut actions (ไม่มีใบเสร็จ · สลิปรอจับคู่) — rendered inside the mobile
+   *  ตัวกรอง sheet so they're off the page header. */
+  listActions?: React.ReactNode;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -232,6 +236,7 @@ export function ExpenseList({
           categories={categories}
           onSet={setParam}
           onClear={clearFilters}
+          extraActions={listActions}
         />
 
         {/* Search (GET form to keep it simple/server-driven) */}

@@ -243,24 +243,26 @@ export default async function ExpensesPage({
         scope={scope}
         right={
           <>
-            {slipOn && (
-              <Link
-                href={`/ledger/payments?${quotationOffParams.toString()}`}
-                className="inline-flex min-h-[40px] items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-              >
-                สลิปรอจับคู่
-              </Link>
-            )}
-            {/* CSV export = desktop/accounting task — hidden on phones (declutter) */}
-            <span className="hidden sm:contents">
+            {/* สลิปรอจับคู่ + CSV + ไม่มีใบเสร็จ = desktop header only (lg+); below lg
+                they move INTO the ตัวกรอง sheet (listActions) — CEO declutter.
+                Breakpoint matches FilterSheet's lg:hidden so they never double up. */}
+            <span className="hidden lg:contents">
+              {slipOn && (
+                <Link
+                  href={`/ledger/payments?${quotationOffParams.toString()}`}
+                  className="inline-flex min-h-[40px] items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                >
+                  สลิปรอจับคู่
+                </Link>
+              )}
               <ExportButton companyId={scope.companyId} />
+              <NoReceiptButton
+                companyId={scope.companyId}
+                branchId={scope.branchId}
+                categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+                branches={scope.branches.map((b) => ({ id: b.id, name: b.name }))}
+              />
             </span>
-            <NoReceiptButton
-              companyId={scope.companyId}
-              branchId={scope.branchId}
-              categories={categories.map((c) => ({ id: c.id, name: c.name }))}
-              branches={scope.branches.map((b) => ({ id: b.id, name: b.name }))}
-            />
             {/* On phones the bottom-nav camera FAB fires open-upload; hide the
                 big duplicate button (keeps the modal + listener mounted). */}
             <UploadReceiptButton
@@ -330,6 +332,24 @@ export default async function ExpensesPage({
           companyId={scope.companyId}
           tab={tab}
           tabCounts={tabCounts}
+          listActions={
+            <>
+              {slipOn && (
+                <Link
+                  href={`/ledger/payments?${quotationOffParams.toString()}`}
+                  className="inline-flex min-h-[40px] items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                >
+                  สลิปรอจับคู่
+                </Link>
+              )}
+              <NoReceiptButton
+                companyId={scope.companyId}
+                branchId={scope.branchId}
+                categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+                branches={scope.branches.map((b) => ({ id: b.id, name: b.name }))}
+              />
+            </>
+          }
         />
         </div>
 
