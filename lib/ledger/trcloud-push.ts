@@ -2,28 +2,27 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 
-// LedgerLine → TRCloud API push (เชื่อมบัญชี TRCloud แบบสมบูรณ์).
+// LedgerLine → TRCloud AP push v2 (JP Sync company 45)
 //
-// Pushes a CONFIRMED expense INTO TRCloud as an AP (ใบกำกับภาษีซื้อ) via
-// api-connector2. The hard rule (proven live 2026-06-05): TRCloud rejects an AP if
-// any product_id (SKU) or — implicitly — the vendor doesn't exist. So before the AP
-// we run SEARCH-BEFORE-CREATE for the vendor and every line item, caching the
-// resolved ids in ledger_trcloud_contact / ledger_trcloud_product so each master is
-// created ONCE and reused forever (no duplicate vendors/SKUs in the shared book).
+// KEY CHANGES from v1:
+// - company_format="JPS_AP" (JP Sync custom format, not generic "AP")
+// - tax_option="in" (VAT-inclusive prices, matching live JPS AP docs)
+// - Fixed SKU taxonomy: only JPS-100/101/103 — never auto-create new SKUs
+// - acc_code per AP line (from LedgerCategory.trcloudAccCode)
+// - department (นิติบุคคล/VAT branch) + project (สาขา) per AP
+// - Validation gate: block push if any required mapping missing
+// - Uses TRCLOUD_JPS_* env vars (company 45) not the shared company 31
 //
-// Auth = same md5 scheme as lib/fuelos/trcloud.ts. Creds come from env (CEO sets
-// TRCLOUD_* in Vercel; reused with FuelOS — company 31). Never commit/secret-log.
-// See [[trcloud-api-ap-create-2026-06-05]].
+// See docs/WORKSHOP_ledger-trcloud-v2.md for full spec.
 
-const BASE = process.env.TRCLOUD_BASE ?? "https://pooil.trcloud.co/application/api-connector2/end-point";
-const ORIGIN = process.env.TRCLOUD_ORIGIN ?? "https://pooil.trcloud.co";
-const COMPANY_ID = process.env.TRCLOUD_COMPANY_ID ?? "";
-const PASSKEY = process.env.TRCLOUD_PASSKEY ?? "";
-const ENCRYPT_HEAD = process.env.TRCLOUD_ENCRYPT_HEAD ?? "";
-const APPROVE_ID = process.env.TRCLOUD_APPROVE_ID ?? "1";
-// Accounting formula per payment status — overridable if the company names them
-// differently (default Cash[AP] = ซื้อเงินสด · Credit[AP] = ซื้อเชื่อ).
-const AP_TYPE_CASH = process.env.TRCLOUD_AP_TYPE_CASH ?? "Cash[AP]";
+const BASE        = process.env.TRCLOUD_BASE       ?? "https://pooil.trcloud.co/application/api-connector2/end-point";
+const ORIGIN      = process.env.TRCLOUD_JPS_ORIGIN ?? process.env.TRCLOUD_ORIGIN ?? "https://pooil.trcloud.co";
+// Use JPS-specific creds (company 45); fall back to legacy vars for local dev
+const COMPANY_ID  = process.env.TRCLOUD_JPS_COMPANY_ID  ?? process.env.TRCLOUD_COMPANY_ID  ?? "";
+const PASSKEY     = process.env.TRCLOUD_JPS_PASSKEY     ?? process.env.TRCLOUD_PASSKEY     ?? "";
+const ENCRYPT_HEAD= process.env.TRCLOUD_JPS_ENCRYPT_HEAD?? process.env.TRCLOUD_ENCRYPT_HEAD?? "";
+
+const AP_TYPE_CASH   = process.env.TRCLOUD_AP_TYPE_CASH   ?? "Cash[AP]";
 const AP_TYPE_CREDIT = process.env.TRCLOUD_AP_TYPE_CREDIT ?? "Credit[AP]";
 
 export function trcloudPushConfigured(): boolean {
@@ -38,14 +37,12 @@ function authFields(): Json {
   const securekey = createHash("md5").update(`${ENCRYPT_HEAD}t${timestamp}`).digest("hex");
   return { company_id: COMPANY_ID, passkey: PASSKEY, timestamp, securekey };
 }
-
 function asObj(v: unknown): Json | null {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : null;
 }
 function asArr(v: unknown): unknown[] | null {
   return Array.isArray(v) ? v : null;
 }
-/** First non-empty string/number value among keys (deep-ish). */
 function pick(o: Json | null, ...keys: string[]): string | null {
   if (!o) return null;
   for (const k of keys) {
@@ -70,15 +67,10 @@ async function post(
   });
   const raw = await res.text();
   let data: Json | null = null;
-  try {
-    data = asObj(JSON.parse(raw));
-  } catch {
-    /* non-json (e.g. 404 html) */
-  }
+  try { data = asObj(JSON.parse(raw)); } catch { /* 404 html etc */ }
   return { ok: res.ok, status: res.status, data, raw };
 }
 
-/** TRCloud success signal — these endpoints answer {success:1} or {HTTP:"…"} or an id. */
 function isSuccess(d: Json | null): boolean {
   if (!d) return false;
   if (d.success === 1 || d.success === "1" || d.success === true) return true;
@@ -87,23 +79,13 @@ function isSuccess(d: Json | null): boolean {
   return false;
 }
 function errMsg(r: { data: Json | null; raw: string }): string {
-  // `??` may not be combined with `||` without parens (SyntaxError) — this broke
-  // the whole setup build. Intent: the API message, else the raw body, else a default.
   return pick(r.data, "message", "error") ?? (r.raw.slice(0, 200) || "TRCloud error");
 }
-
-// ── helpers ──────────────────────────────────────────────────────────────────
 function digitsOnly(s: string | null | undefined): string {
   return (s ?? "").replace(/\D/g, "");
 }
 function normalizeKey(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 200);
-}
-/** Deterministic, rule-safe (alphanumeric, uppercase) SKU code from a name. Same
- *  name → same code, so even without our map TRCloud would dedup by code. */
-function productCodeFor(nameKey: string): string {
-  const h = createHash("sha1").update(nameKey).digest("hex").slice(0, 10).toUpperCase();
-  return `LDG${h}`; // e.g. LDG3A9F2C1B8 (13 chars, ≤150 limit)
 }
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -111,13 +93,11 @@ function round2(n: number): number {
 
 // ── vendor (contact) resolution ──────────────────────────────────────────────
 type Scope = { orgId: string; companyId: string };
-
 type ContactRef = { contactId: string; codeNumber: string | null };
 
 async function searchContactByTaxId(taxId: string): Promise<ContactRef | null> {
   const r = await post("contact/search.php", { keyword: taxId, group_code: "S", limit: "20" });
   if (!isSuccess(r.data)) return null;
-  // Response shape is { result:[{contact_id, tax_id, title, ...}] } (title = code_number).
   const list = asArr(r.data?.result) ?? asArr(r.data?.data) ?? asArr(r.data?.body) ?? [];
   const want = digitsOnly(taxId);
   const refOf = (o: Json): ContactRef | null => {
@@ -131,73 +111,45 @@ async function searchContactByTaxId(taxId: string): Promise<ContactRef | null> {
       if (ref) return ref;
     }
   }
-  // Fallback: a single result with no tax_id echoed → trust the top hit.
   const first = asObj(list[0]);
   return first ? refOf(first) : null;
 }
 
 async function createContact(input: {
-  name: string;
-  taxId: string;
-  organization?: string | null;
-  address?: string | null;
-  accAp?: string | null;
+  name: string; taxId: string; organization?: string | null; address?: string | null;
 }): Promise<{ ok: true; ref: ContactRef } | { ok: false; error: string }> {
   const issue = new Date().toISOString().slice(0, 10);
   const r = await post("contact/create.php", {
-    date: issue,
-    group_code: "S", // S = supplier (เจ้าหนี้)
-    code_number: "", // autorun
-    name: input.name,
-    organization: input.organization ?? input.name,
-    branch: "00000",
-    address: input.address ?? "-",
-    email: "",
-    telephone: "",
-    tax_id: input.taxId,
-    contact_type: "normal",
-    contact_for: "buy", // vendor (we buy from them)
-    ...(input.accAp ? { acc_ap: input.accAp } : {}),
+    date: issue, group_code: "S", code_number: "", name: input.name,
+    organization: input.organization ?? input.name, branch: "00000",
+    address: input.address ?? "-", email: "", telephone: "",
+    tax_id: input.taxId, contact_type: "normal", contact_for: "buy",
   });
   if (!isSuccess(r.data)) return { ok: false, error: errMsg(r) };
   const inner = asObj(r.data?.data) ?? asObj(r.data?.head) ?? r.data;
   const contactId = pick(inner, "contact_id", "id") ?? pick(r.data, "contact_id", "id");
   if (!contactId) return { ok: false, error: "TRCloud ไม่คืน contact_id" };
-  // `last` = the freshly-assigned contact code (title, e.g. S260001) — the AP needs it.
   const codeNumber = pick(r.data, "last", "title") ?? pick(inner, "title", "code_number");
   return { ok: true, ref: { contactId, codeNumber } };
 }
 
-/** Map the expense's vendor → a TRCloud contact (id + code), creating it once if new. */
 async function resolveContactId(
   scope: Scope,
   v: { vendor: string | null; vendorTaxId: string | null; vendorAddress: string | null },
 ): Promise<{ ok: true; ref: ContactRef } | { ok: false; error: string }> {
-  const taxId = digitsOnly(v.vendorTaxId); // "" for cash/no-tax-id receipts
+  const taxId = digitsOnly(v.vendorTaxId);
   const where = { orgId: scope.orgId, companyId: scope.companyId, taxId };
-
-  const cached = await prisma.ledgerTrcloudContact.findUnique({
-    where: { orgId_companyId_taxId: where },
-  });
+  const cached = await prisma.ledgerTrcloudContact.findUnique({ where: { orgId_companyId_taxId: where } });
   if (cached) return { ok: true, ref: { contactId: cached.contactId, codeNumber: cached.codeNumber } };
 
-  // No-tax-id receipts share ONE "เจ้าหนี้เบ็ดเตล็ด" contact (keeps the book clean).
   const name = taxId ? (v.vendor || "ไม่ระบุชื่อผู้ขาย") : "เจ้าหนี้เบ็ดเตล็ด (LedgerLine)";
-
   let ref: ContactRef | null = null;
-  if (taxId) ref = await searchContactByTaxId(taxId); // reuse a manual/earlier contact
-
+  if (taxId) ref = await searchContactByTaxId(taxId);
   if (!ref) {
-    const created = await createContact({
-      name,
-      taxId,
-      organization: v.vendor,
-      address: v.vendorAddress,
-    });
+    const created = await createContact({ name, taxId, organization: v.vendor, address: v.vendorAddress });
     if (!created.ok) return created;
     ref = created.ref;
   }
-
   await prisma.ledgerTrcloudContact.upsert({
     where: { orgId_companyId_taxId: where },
     update: { contactId: ref.contactId, codeNumber: ref.codeNumber, name },
@@ -206,81 +158,44 @@ async function resolveContactId(
   return { ok: true, ref };
 }
 
-// ── product (inventory) resolution ───────────────────────────────────────────
-async function searchInventoryByName(name: string): Promise<string | null> {
-  const r = await post("inventory/search.php", { keyword: name, limit: "20" });
-  if (!isSuccess(r.data)) return null;
-  const list = asArr(r.data?.data) ?? asArr(r.data?.body) ?? asArr(r.data?.result) ?? [];
-  const want = normalizeKey(name);
+// ── product (SKU) resolution — FIXED 3-SKU model ────────────────────────────
+// v2: only JPS-100/101/103 exist; we verify they exist in TRCloud once then cache.
+// Never auto-create new SKUs (that was the v1 "SKU explosion" bug).
+
+async function resolveFixedSku(
+  scope: Scope,
+  productCode: string, // e.g. "JPS-101"
+): Promise<{ ok: true; productId: string } | { ok: false; error: string }> {
+  const nameKey = normalizeKey(productCode);
+  const where = { orgId: scope.orgId, companyId: scope.companyId, nameKey };
+  const cached = await prisma.ledgerTrcloudProduct.findUnique({ where: { orgId_companyId_nameKey: where } });
+  if (cached) return { ok: true, productId: cached.productId };
+
+  // Verify SKU exists in TRCloud
+  const r = await post("inventory/search.php", { keyword: productCode, limit: "10" });
+  const list = asArr(r.data?.data) ?? asArr(r.data?.result) ?? asArr(r.data?.body) ?? [];
+  let foundId: string | null = null;
   for (const row of list) {
     const o = asObj(row);
     if (!o) continue;
-    // Only reuse on an EXACT normalized-name match (fuzzy contains would wrongly merge).
-    const pname = pick(o, "product_name", "product", "name");
-    if (pname && normalizeKey(pname) === want) {
-      const id = pick(o, "product_id", "id");
-      if (id) return id;
+    const code = pick(o, "product_id", "code");
+    if (code && normalizeKey(code) === normalizeKey(productCode)) {
+      foundId = pick(o, "id", "product_id") ?? code;
+      break;
     }
   }
-  return null;
-}
-
-async function createInventory(input: {
-  productId: string;
-  name: string;
-  accBuy?: string | null;
-}): Promise<{ ok: true; productId: string } | { ok: false; error: string }> {
-  const r = await post("inventory/create.php", {
-    product_id: input.productId,
-    product_name: input.name.slice(0, 255),
-    status: "0", // 0 = Service → NO stock tracking (v1 hybrid: record the line, don't move stock)
-    product_for: "buy", // purchase-only expense item
-    pvat: "7",
-    unit: "หน่วย",
-    ...(input.accBuy ? { acc_buy: input.accBuy } : {}),
-  });
-  if (!isSuccess(r.data)) {
-    // If it already exists (created earlier with this exact code) treat as success —
-    // the code IS the product_id we wanted.
-    const m = errMsg(r);
-    if (/exist|ซ้ำ|duplicate/i.test(m)) return { ok: true, productId: input.productId };
-    return { ok: false, error: m };
+  if (!foundId) {
+    return { ok: false, error: `ไม่พบ SKU "${productCode}" ใน TRCloud — กรุณาสร้าง ${productCode} ใน TRCloud ก่อน` };
   }
-  return { ok: true, productId: input.productId };
-}
-
-/** Map a line description → a TRCloud product_id, creating it once (as a Service). */
-async function resolveProductId(
-  scope: Scope,
-  description: string,
-  accBuy: string | null,
-): Promise<{ ok: true; productId: string } | { ok: false; error: string }> {
-  const nameKey = normalizeKey(description) || "ค่าใช้จ่ายทั่วไป";
-  const where = { orgId: scope.orgId, companyId: scope.companyId, nameKey };
-
-  const cached = await prisma.ledgerTrcloudProduct.findUnique({
-    where: { orgId_companyId_nameKey: where },
-  });
-  if (cached) return { ok: true, productId: cached.productId };
-
-  // Reuse an existing TRCloud SKU with the exact same name, else create one.
-  let productId = await searchInventoryByName(nameKey);
-  if (!productId) {
-    const code = productCodeFor(nameKey);
-    const created = await createInventory({ productId: code, name: description, accBuy });
-    if (!created.ok) return created;
-    productId = created.productId;
-  }
-
   await prisma.ledgerTrcloudProduct.upsert({
     where: { orgId_companyId_nameKey: where },
-    update: { productId, productName: description.slice(0, 255) },
-    create: { ...where, productId, productName: description.slice(0, 255) },
+    update: { productId: foundId, productName: productCode },
+    create: { ...where, productId: foundId, productName: productCode },
   });
-  return { ok: true, productId };
+  return { ok: true, productId: foundId };
 }
 
-// ── AP build + create ────────────────────────────────────────────────────────
+// ── AP line builder ──────────────────────────────────────────────────────────
 export type PushableExpense = {
   id: string;
   orgId: string;
@@ -298,47 +213,77 @@ export type PushableExpense = {
   paymentStatus: string | null;
   note: string | null;
   categoryName: string | null;
-  categoryAccCode: string | null;
+  categoryAccCode: string | null;      // GL code e.g. "5220020"
+  trcloudProductCode: string | null;   // fixed SKU e.g. "JPS-101"
+  inputVatClaimable: boolean;          // false → tax_report=0 (ไม่เข้า ภ.พ.30)
+  branchTrcloudProject: string | null;    // TRCloud project code (สาขา)
+  branchTrcloudDepartment: string | null; // TRCloud department code (นิติบุคคล)
   items: { description: string; qty: number; unitPrice: number; amount: number; vatRate: number | null }[];
 };
 
-type ApLine = { product_id: string; product: string; price: string; quantity: string; vat: string };
+type ApLine = {
+  product_id: string;
+  product: string;
+  price: string;
+  quantity: string;
+  vat: string;    // always "7" (rate, not amount) for tax_option="in"
+  acc_code: string;
+};
 
-/** Build AP product lines that reconcile to the expense: Σ(price·qty)=subtotal and
- *  Σ(line vat)=expense.vat. Each line gets a resolved TRCloud product_id. */
+/** Build AP lines. tax_option="in" → price = VAT-inclusive amount per unit. */
 async function buildLines(
   scope: Scope,
   e: PushableExpense,
 ): Promise<{ ok: true; lines: ApLine[] } | { ok: false; error: string }> {
-  const acc = e.categoryAccCode;
-  // Source rows: real OCR items if their amounts add up; else a single category line.
+  const productCode = e.trcloudProductCode;
+  if (!productCode) {
+    return { ok: false, error: `หมวด "${e.categoryName}" ยังไม่มีรหัส SKU — กรุณาตั้งค่าใน LedgerLine Settings` };
+  }
+  const accCode = e.categoryAccCode;
+  if (!accCode) {
+    return { ok: false, error: `หมวด "${e.categoryName}" ยังไม่มีรหัสบัญชี GL — กรุณาตั้งค่าใน LedgerLine Settings` };
+  }
+
+  const skuResult = await resolveFixedSku(scope, productCode);
+  if (!skuResult.ok) return skuResult;
+
+  // For tax_option="in": line price = VAT-inclusive = base + VAT
+  // Use items if they sum to subtotal, else one summary line
   const itemsSum = round2(e.items.reduce((s, it) => s + (it.amount || 0), 0));
   const useItems = e.items.length > 0 && Math.abs(itemsSum - e.subtotal) < 0.05;
 
   const rows = useItems
-    ? e.items.map((it) => ({ desc: it.description || e.categoryName || "ค่าใช้จ่าย", amount: round2(it.amount), qty: it.qty || 1 }))
-    : [{ desc: e.categoryName ? `ค่าใช้จ่าย: ${e.categoryName}` : (e.vendor || "ค่าใช้จ่าย"), amount: round2(e.subtotal), qty: 1 }];
+    ? e.items.map((it) => ({
+        desc: it.description || e.categoryName || "ค่าใช้จ่าย",
+        baseAmount: round2(it.amount),
+        qty: it.qty || 1,
+      }))
+    : [{
+        desc: e.categoryName ? `${e.categoryName}${e.vendor ? ` - ${e.vendor}` : ""}` : (e.vendor || "ค่าใช้จ่าย"),
+        baseAmount: round2(e.subtotal),
+        qty: 1,
+      }];
 
-  // Distribute the document VAT across lines proportionally to amount (last line
-  // absorbs the rounding remainder so the totals match exactly).
-  const baseSum = rows.reduce((s, r) => s + r.amount, 0) || 1;
+  // Distribute VAT proportionally across rows (last row absorbs rounding)
+  const baseSum = rows.reduce((s, r) => s + r.baseAmount, 0) || 1;
   let vatLeft = round2(e.vat);
   const lines: ApLine[] = [];
+
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    const lineVat = i === rows.length - 1 ? vatLeft : round2((r.amount / baseSum) * e.vat);
+    const isLast = i === rows.length - 1;
+    const lineVat = isLast ? vatLeft : round2((r.baseAmount / baseSum) * e.vat);
     vatLeft = round2(vatLeft - lineVat);
-    const resolved = await resolveProductId(scope, r.desc, acc);
-    if (!resolved.ok) return resolved;
-    const qty = r.qty && r.qty > 0 ? r.qty : 1;
-    // price is per-unit (TRCloud computes price·qty); keep 4dp to avoid drift.
-    const price = Math.round((r.amount / qty) * 10000) / 10000;
+    const qty = r.qty > 0 ? r.qty : 1;
+    // tax_option="in" → send VAT-inclusive price per unit
+    const inclPrice = round2((r.baseAmount + lineVat) / qty);
     lines.push({
-      product_id: resolved.productId,
+      product_id: skuResult.productId,
       product: r.desc.slice(0, 2000),
-      price: String(price),
+      price: String(inclPrice),
       quantity: String(qty),
-      vat: String(i === rows.length - 1 ? round2(lineVat + vatLeft) : lineVat),
+      vat: "7", // rate (not amount)
+      acc_code: accCode,
     });
   }
   return { ok: true, lines };
@@ -350,55 +295,69 @@ function toIsoDate(d: Date | string | null): string {
   return d.toISOString().slice(0, 10);
 }
 
+// ── main push ────────────────────────────────────────────────────────────────
+
 /**
- * Push ONE confirmed expense into TRCloud as an AP. Resolves vendor + every line's
- * SKU first (search-before-create), then creates the AP. Returns the TRCloud doc
- * id/number for idempotent storage. Idempotency (don't double-push) is enforced by
- * the caller via expense.trcloudDocId.
+ * Push ONE confirmed expense into TRCloud as a JPS_AP (company 45, VAT-in, draft).
+ * Validates all required mappings before sending; blocks with clear Thai error if missing.
  */
 export async function pushExpenseToTrcloud(
   e: PushableExpense,
 ): Promise<{ ok: true; docId: string | null; docNo: string | null } | { ok: false; error: string }> {
   if (!trcloudPushConfigured()) {
-    return { ok: false, error: "ยังไม่ได้ตั้งค่า TRCloud (env TRCLOUD_*)" };
+    return { ok: false, error: "ยังไม่ได้ตั้งค่า TRCloud (env TRCLOUD_JPS_*)" };
   }
+
+  // ── Validation gate ────────────────────────────────────────────────────────
+  if (!e.trcloudProductCode) {
+    return { ok: false, error: `หมวด "${e.categoryName}" ไม่มีรหัส SKU — ตั้งค่าใน Settings → หมวดค่าใช้จ่าย` };
+  }
+  if (!e.categoryAccCode) {
+    return { ok: false, error: `หมวด "${e.categoryName}" ไม่มีรหัสบัญชี GL — ตั้งค่าใน Settings → หมวดค่าใช้จ่าย` };
+  }
+  if (!e.branchTrcloudProject) {
+    return { ok: false, error: "สาขานี้ยังไม่มีรหัสโครงการ TRCloud — ตั้งค่าใน Settings → สาขา → TRCloud" };
+  }
+  if (!e.branchTrcloudDepartment) {
+    return { ok: false, error: "สาขานี้ยังไม่มีรหัสแผนก TRCloud — ตั้งค่าใน Settings → สาขา → TRCloud" };
+  }
+
   const scope: Scope = { orgId: e.orgId, companyId: e.companyId };
 
   // 1) vendor → contact_id
   const contact = await resolveContactId(scope, {
-    vendor: e.vendor,
-    vendorTaxId: e.vendorTaxId,
-    vendorAddress: e.vendorAddress,
+    vendor: e.vendor, vendorTaxId: e.vendorTaxId, vendorAddress: e.vendorAddress,
   });
   if (!contact.ok) return { ok: false, error: `คู่ค้า: ${contact.error}` };
 
-  // 2) line items → product_ids (each resolved/created)
+  // 2) line items (fixed SKU + acc_code)
   const built = await buildLines(scope, e);
   if (!built.ok) return { ok: false, error: `สินค้า: ${built.error}` };
 
-  // 3) create the AP
+  // 3) create AP
   const issue = toIsoDate(e.docDate);
   const apType = (e.paymentStatus ?? "paid") === "paid" ? AP_TYPE_CASH : AP_TYPE_CREDIT;
   const payload: Json = {
     issue_date: issue,
     due_date: issue,
     tax_date: issue,
-    company_format: "AP",
-    document_number: "", // autorun (avoid colliding with manual entries)
+    company_format: "JPS_AP",  // JP Sync custom format (NOT generic "AP")
+    document_number: "",        // autorun
     payment_term: "0",
-    reference: e.docCode, // back-reference to our internal doc
+    reference: e.docCode,
     discount: String(round2(e.discount)),
     wht: String(round2(e.wht)),
-    tax_option: "ex",
-    tax_report: "1", // include in ภพ.30 purchase tax report
+    tax_option: "in",           // VAT-inclusive (matches live JPS AP docs)
+    tax_report: e.inputVatClaimable ? "1" : "0", // 0 = ไม่เข้า ภ.พ.30
     type: apType,
-    approve_id: APPROVE_ID,
-    approve_status: "wait",
-    invoice_note: `ระบบบัญชี (LedgerLine) · อ้างอิง ${e.docCode}`,
+    approve_status: "wait",     // always draft; accountant approves in TRCloud
+    department: e.branchTrcloudDepartment,  // นิติบุคคล/VAT branch
+    project: e.branchTrcloudProject,        // สาขา
+    invoice_note: e.note
+      ? `${e.note} · อ้างอิง ${e.docCode}`
+      : `LedgerLine · อ้างอิง ${e.docCode}`,
     customer: {
       group_code: "S",
-      // AP requires the contact code; send the NUMERIC part (TRCloud re-prefixes the
-      // group code, so passing the full "S260001" would store a doubled "SS260001").
       code_number: (contact.ref.codeNumber ?? "").replace(/^\D+/, ""),
       name: e.vendor || "ไม่ระบุชื่อผู้ขาย",
       organization: e.vendor || "",
@@ -408,7 +367,7 @@ export async function pushExpenseToTrcloud(
       telephone: "",
       tax_id: digitsOnly(e.vendorTaxId),
       contact_type: "normal",
-      contact_id: contact.ref.contactId, // reuse the resolved contact (no duplicate)
+      contact_id: contact.ref.contactId,
       add_contact: "0",
     },
     product: built.lines,
@@ -422,7 +381,7 @@ export async function pushExpenseToTrcloud(
   return { ok: true, docId, docNo };
 }
 
-/** Delete an AP (used for test cleanup / future "ยกเลิกการส่ง"). */
+/** Delete an AP (test cleanup / future "ยกเลิกการส่ง"). */
 export async function deleteTrcloudAp(docId: string): Promise<{ ok: boolean; error?: string }> {
   if (!trcloudPushConfigured()) return { ok: false, error: "ยังไม่ได้ตั้งค่า TRCloud" };
   const r = await post("ap/delete.php", { id: docId });

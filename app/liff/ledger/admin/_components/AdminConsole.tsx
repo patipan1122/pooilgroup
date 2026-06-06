@@ -56,7 +56,7 @@ export function AdminConsole({
   company: OrgInfo;
   members: LedgerMemberRow[];
   invites: InviteRow[];
-  categories: { id: string; name: string; color: string | null; trcloudAccCode: string | null; sort: number; active: boolean }[];
+  categories: { id: string; name: string; color: string | null; trcloudAccCode: string | null; trcloudProductCode: string | null; vatClaimable: boolean; sort: number; active: boolean }[];
   branchOpts: BranchOpt[];
   branchesFull: BranchFull[];
   channel: LineChannelInfo | null;

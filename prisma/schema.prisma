@@ -5262,17 +5262,19 @@ enum LedgerExpenseSource {
 
 // หมวดค่าใช้จ่าย — ผูกกับบริษัท (แต่ละบริษัทมีผังบัญชีของตัวเอง)
 model LedgerCategory {
-  id             String   @id @default(uuid()) @db.Uuid
-  orgId          String   @map("org_id") @db.Uuid
-  companyId      String   @map("company_id") @db.Uuid
-  name           String
-  kind           String   @default("expense") // เผื่ออนาคต (รายรับ v2)
-  color          String?
-  trcloudAccCode String?  @map("trcloud_acc_code") // map → ผังบัญชี TRCloud
-  sort           Int      @default(0)
-  active         Boolean  @default(true)
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                 String   @id @default(uuid()) @db.Uuid
+  orgId              String   @map("org_id") @db.Uuid
+  companyId          String   @map("company_id") @db.Uuid
+  name               String
+  kind               String   @default("expense") // เผื่ออนาคต (รายรับ v2)
+  color              String?
+  trcloudAccCode     String?  @map("trcloud_acc_code")     // GL account code (e.g. 5220020)
+  trcloudProductCode String?  @map("trcloud_product_code") // fixed SKU (JPS-100/101/103)
+  vatClaimable       Boolean  @default(true) @map("vat_claimable") // false = ค่ารับรอง/non-claimable VAT
+  sort               Int      @default(0)
+  active             Boolean  @default(true)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org      Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   company  Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)

@@ -907,10 +907,7 @@ export async function toggleCategory(
   return { ok: true };
 }
 
-// D5/S4 — edit an existing category's name/color/TRCloud account code. Same
-// admin-tier gate as createCategory/toggleCategory (categories drive the chart of
-// accounts + TRCloud mapping). No schema change — columns already exist. Scoped by
-// org (the id @@unique within org); a duplicate name in the same company throws.
+// D5/S4 — edit an existing category's name/color/TRCloud account code.
 const categoryUpdateSchema = z.object({
   id: z.string().trim().min(1, "ไม่ได้ระบุหมวด"),
   name: z.string().trim().min(1, "ต้องระบุชื่อหมวด").max(100),
@@ -932,7 +929,6 @@ export async function updateCategory(raw: unknown): Promise<ActionResult> {
 
   try {
     const res = await prisma.ledgerCategory.updateMany({
-      // org scope is the ownership gate (category id is unique within the org).
       where: { id, orgId: session.user.org_id },
       data: {
         name,
@@ -942,9 +938,84 @@ export async function updateCategory(raw: unknown): Promise<ActionResult> {
     });
     if (res.count === 0) return { ok: false, error: "ไม่พบหมวด" };
   } catch {
-    // @@unique(orgId, companyId, name) collision → another category owns this name.
     return { ok: false, error: "ชื่อหมวดนี้มีอยู่แล้ว" };
   }
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
+const VALID_SKUS = ["JPS-100", "JPS-101", "JPS-103"] as const;
+const updateCategoryTrcloudSchema = z.object({
+  id: z.string().trim().min(1),
+  trcloudAccCode: z.string().trim().max(40).optional().or(z.literal("")),
+  trcloudProductCode: z
+    .string()
+    .trim()
+    .refine((v) => !v || (VALID_SKUS as readonly string[]).includes(v), {
+      message: "SKU ต้องเป็น JPS-100, JPS-101 หรือ JPS-103 เท่านั้น",
+    })
+    .optional()
+    .or(z.literal("")),
+  vatClaimable: z.boolean().optional(),
+});
+
+export async function updateCategoryTrcloud(raw: unknown): Promise<ActionResult> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) return { ok: false, error: "เฉพาะผู้ดูแลตั้งค่าหมวดได้" };
+  const parsed = updateCategoryTrcloudSchema.safeParse(raw);
+  if (!parsed.success)
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const { id, trcloudAccCode, trcloudProductCode, vatClaimable } = parsed.data;
+  await prisma.ledgerCategory.updateMany({
+    where: { id, orgId: session.user.org_id },
+    data: {
+      trcloudAccCode: trcloudAccCode || null,
+      trcloudProductCode: trcloudProductCode || null,
+      ...(vatClaimable !== undefined ? { vatClaimable } : {}),
+    },
+  });
+  revalidatePath("/ledger/settings");
+  return { ok: true };
+}
+
+const updateBranchTrcloudSchema = z.object({
+  branchId: z.string().trim().min(1),
+  trcloudProject: z.string().trim().max(100).optional().or(z.literal("")),
+  trcloudDepartment: z.string().trim().max(100).optional().or(z.literal("")),
+});
+
+export async function updateBranchTrcloud(raw: unknown): Promise<ActionResult> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isAdminTier(session.user.role)) return { ok: false, error: "เฉพาะผู้ดูแลตั้งค่าสาขาได้" };
+  const parsed = updateBranchTrcloudSchema.safeParse(raw);
+  if (!parsed.success)
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const { branchId, trcloudProject, trcloudDepartment } = parsed.data;
+
+  const branch = await prisma.branch.findFirst({
+    where: { id: branchId, orgId: session.user.org_id },
+    select: { id: true, settings: true },
+  });
+  if (!branch) return { ok: false, error: "ไม่พบสาขา" };
+
+  const currentSettings =
+    branch.settings && typeof branch.settings === "object"
+      ? (branch.settings as Record<string, unknown>)
+      : {};
+  await prisma.branch.update({
+    where: { id: branchId },
+    data: {
+      settings: {
+        ...currentSettings,
+        trcloudProject: trcloudProject || null,
+        trcloudDepartment: trcloudDepartment || null,
+      },
+    },
+  });
   revalidatePath("/ledger/settings");
   return { ok: true };
 }
@@ -1154,10 +1225,25 @@ async function loadPushable(
     where: { id, orgId },
     include: {
       items: { orderBy: { createdAt: "asc" } },
-      category: { select: { name: true, trcloudAccCode: true } },
+      category: {
+        select: {
+          name: true,
+          trcloudAccCode: true,
+          trcloudProductCode: true,
+          vatClaimable: true,
+        },
+      },
+      branch: { select: { settings: true } },
     },
   });
   if (!row) return null;
+
+  // Branch.settings stores TRCloud branch config: { trcloudProject, trcloudDepartment }
+  const branchSettings =
+    row.branch?.settings && typeof row.branch.settings === "object"
+      ? (row.branch.settings as Record<string, unknown>)
+      : {};
+
   return {
     status: row.status,
     docType: row.docType,
@@ -1181,6 +1267,17 @@ async function loadPushable(
       note: row.note,
       categoryName: row.category?.name ?? null,
       categoryAccCode: row.category?.trcloudAccCode ?? null,
+      trcloudProductCode:
+        (row.category?.trcloudProductCode as string | null) ?? null,
+      inputVatClaimable: row.category?.vatClaimable ?? true,
+      branchTrcloudProject:
+        typeof branchSettings.trcloudProject === "string"
+          ? branchSettings.trcloudProject
+          : null,
+      branchTrcloudDepartment:
+        typeof branchSettings.trcloudDepartment === "string"
+          ? branchSettings.trcloudDepartment
+          : null,
       items: row.items.map((it) => ({
         description: it.description,
         qty: Number(it.qty),

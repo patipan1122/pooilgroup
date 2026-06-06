@@ -135,8 +135,10 @@ export default async function LedgerLiffAdminPage({
       categories={categories.map((c) => ({
         id: c.id,
         name: c.name,
-        color: c.color,
+        color: c.color ?? null,
         trcloudAccCode: c.trcloudAccCode ?? null,
+        trcloudProductCode: c.trcloudProductCode ?? null,
+        vatClaimable: c.vatClaimable ?? true,
         sort: c.sort,
         active: true,
       }))}

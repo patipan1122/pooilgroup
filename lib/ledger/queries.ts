@@ -410,7 +410,15 @@ export const listCategories = cache(
     return prisma.ledgerCategory.findMany({
       where: { orgId, companyId, active: true },
       orderBy: [{ sort: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, color: true, trcloudAccCode: true, sort: true },
+      select: {
+        id: true,
+        name: true,
+        color: true,
+        trcloudAccCode: true,
+        trcloudProductCode: true,
+        vatClaimable: true,
+        sort: true,
+      },
     });
   },
 );
@@ -429,7 +437,7 @@ export const listBranches = cache(async (orgId: string, companyId: string) => {
   return prisma.branch.findMany({
     where: { orgId, companyId, isActive: true },
     orderBy: { code: "asc" },
-    select: { id: true, code: true, name: true },
+    select: { id: true, code: true, name: true, settings: true },
   });
 });
 

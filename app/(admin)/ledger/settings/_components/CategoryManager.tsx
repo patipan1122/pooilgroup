@@ -1,21 +1,36 @@
 "use client";
 
-// จัดการหมวดค่าใช้จ่าย — เพิ่มใหม่ + เปิด/ปิดใช้งาน + แสดงรหัสบัญชี TRCloud.
+// จัดการหมวดค่าใช้จ่าย — เพิ่มใหม่ + เปิด/ปิดใช้งาน + ผูก GL + SKU + VAT claimable
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus, Pencil, X, Check } from "lucide-react";
+import { Loader2, Plus, Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { createCategory, toggleCategory, updateCategory } from "../../_actions";
+import { createCategory, toggleCategory, updateCategoryTrcloud } from "../../_actions";
 import { LedgerEmptyState } from "@/components/ledger/Brand";
+
+const SKUS = [
+  { value: "", label: "— เลือก SKU —" },
+  { value: "JPS-100", label: "JPS-100 · สินค้าทั่วไป" },
+  { value: "JPS-101", label: "JPS-101 · ซื้อบริการ" },
+  { value: "JPS-103", label: "JPS-103 · วัสดุก่อสร้าง" },
+];
 
 type Cat = {
   id: string;
   name: string;
   color: string | null;
   trcloudAccCode: string | null;
+  trcloudProductCode: string | null;
+  vatClaimable: boolean;
   sort: number;
   active: boolean;
+};
+
+type EditState = {
+  trcloudAccCode: string;
+  trcloudProductCode: string;
+  vatClaimable: boolean;
 };
 
 export function CategoryManager({
@@ -29,46 +44,38 @@ export function CategoryManager({
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", trcloudAccCode: "" });
-
-  // Inline edit — one category open at a time (id), with its draft fields.
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", color: "", trcloudAccCode: "" });
-  const [editMsg, setEditMsg] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editState, setEditState] = useState<EditState>({
+    trcloudAccCode: "",
+    trcloudProductCode: "",
+    vatClaimable: true,
+  });
 
   const input =
     "h-9 rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]";
 
   function startEdit(c: Cat) {
-    setEditMsg(null);
-    setEditId(c.id);
-    setEditForm({
-      name: c.name,
-      color: c.color ?? "",
+    setEditingId(c.id);
+    setEditState({
       trcloudAccCode: c.trcloudAccCode ?? "",
+      trcloudProductCode: c.trcloudProductCode ?? "",
+      vatClaimable: c.vatClaimable,
     });
   }
 
-  function cancelEdit() {
-    setEditId(null);
-    setEditMsg(null);
-  }
-
-  function saveEdit() {
-    if (!editId || !editForm.name.trim()) return;
-    setEditMsg(null);
-    const id = editId;
+  function saveEdit(id: string) {
     startTransition(async () => {
-      const res = await updateCategory({
+      const res = await updateCategoryTrcloud({
         id,
-        name: editForm.name.trim(),
-        color: editForm.color.trim(),
-        trcloudAccCode: editForm.trcloudAccCode.trim(),
+        trcloudAccCode: editState.trcloudAccCode,
+        trcloudProductCode: editState.trcloudProductCode,
+        vatClaimable: editState.vatClaimable,
       });
       if (res.ok) {
-        setEditId(null);
+        setEditingId(null);
         router.refresh();
       } else {
-        setEditMsg(res.error ?? "แก้ไขไม่สำเร็จ");
+        setMsg(res.error ?? "บันทึกไม่สำเร็จ");
       }
     });
   }
@@ -111,8 +118,8 @@ export function CategoryManager({
           onChange={(e) => setForm({ ...form, name: e.target.value })}
         />
         <input
-          className={`${input} sm:w-44`}
-          placeholder="รหัสบัญชี TRCloud"
+          className={`${input} sm:w-36`}
+          placeholder="รหัสบัญชี GL"
           value={form.trcloudAccCode}
           onChange={(e) => setForm({ ...form, trcloudAccCode: e.target.value })}
         />
@@ -133,99 +140,112 @@ export function CategoryManager({
         />
       ) : (
         <ul className="divide-y divide-zinc-100">
-          {categories.map((c) =>
-            editId === c.id ? (
-              // Inline edit row
-              <li key={c.id} className="rounded-lg bg-zinc-50 px-2.5 py-3">
+          {categories.map((c) => (
+            <li key={c.id} className="py-2.5">
+              {editingId === c.id ? (
+                /* Inline edit row */
                 <div className="flex flex-col gap-2">
-                  <input
-                    className={`${input} w-full`}
-                    placeholder="ชื่อหมวด"
-                    aria-label="ชื่อหมวด"
-                    value={editForm.name}
-                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                  />
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <label className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2 sm:w-32">
-                      <span className="text-xs text-zinc-500">สี</span>
-                      <input
-                        type="color"
-                        aria-label="สีของหมวด"
-                        value={editForm.color || "#71717a"}
-                        onChange={(e) => setEditForm({ ...editForm, color: e.target.value })}
-                        className="size-7 cursor-pointer rounded border-0 bg-transparent p-0"
-                      />
-                    </label>
+                  <span className="text-sm font-medium text-zinc-800">{c.name}</span>
+                  <div className="flex flex-wrap gap-2">
                     <input
-                      className={`${input} flex-1`}
-                      placeholder="รหัสบัญชี TRCloud"
-                      aria-label="รหัสบัญชี TRCloud"
-                      value={editForm.trcloudAccCode}
-                      onChange={(e) => setEditForm({ ...editForm, trcloudAccCode: e.target.value })}
+                      className={`${input} w-32`}
+                      placeholder="GL code"
+                      value={editState.trcloudAccCode}
+                      onChange={(e) =>
+                        setEditState({ ...editState, trcloudAccCode: e.target.value })
+                      }
                     />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      disabled={pending || !editForm.name.trim()}
-                      onClick={saveEdit}
+                    <select
+                      aria-label="SKU สินค้า TRCloud"
+                      className={`${input} w-52`}
+                      value={editState.trcloudProductCode}
+                      onChange={(e) =>
+                        setEditState({ ...editState, trcloudProductCode: e.target.value })
+                      }
                     >
-                      {pending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-                      บันทึก
-                    </Button>
-                    <Button variant="outline" size="sm" disabled={pending} onClick={cancelEdit}>
-                      <X className="size-4" />
-                      ยกเลิก
-                    </Button>
+                      {SKUS.map((s) => (
+                        <option key={s.value} value={s.value}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                    <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+                      <input
+                        type="checkbox"
+                        checked={editState.vatClaimable}
+                        onChange={(e) =>
+                          setEditState({ ...editState, vatClaimable: e.target.checked })
+                        }
+                      />
+                      VAT ขอคืนได้
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => saveEdit(c.id)}
+                      disabled={pending}
+                      className="flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      <Check className="size-3" /> บันทึก
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingId(null)}
+                      disabled={pending}
+                      className="flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-500 hover:text-zinc-800 disabled:opacity-50"
+                    >
+                      <X className="size-3" /> ยกเลิก
+                    </button>
                   </div>
-                  {editMsg && <p className="text-xs text-rose-600">{editMsg}</p>}
                 </div>
-              </li>
-            ) : (
-              <li key={c.id} className="flex items-center justify-between gap-2 py-2.5">
-                <div className="flex min-w-0 items-center gap-2">
-                  {c.color && (
-                    <span
-                      className="size-3 shrink-0 rounded-full border border-black/5"
-                      style={{ backgroundColor: c.color }}
-                      aria-hidden
-                    />
-                  )}
-                  <span className="truncate font-medium text-zinc-800">{c.name}</span>
-                  {c.trcloudAccCode && (
-                    <Badge tone="info" className="font-mono text-[10px]">
-                      {c.trcloudAccCode}
-                    </Badge>
-                  )}
-                  {!c.active && (
-                    <Badge tone="neutral" className="text-[10px]">
-                      ปิดใช้งาน
-                    </Badge>
-                  )}
+              ) : (
+                /* Display row */
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="font-medium text-zinc-800">{c.name}</span>
+                    {c.trcloudAccCode && (
+                      <Badge tone="info" className="ml-2 font-mono text-[10px]">
+                        {c.trcloudAccCode}
+                      </Badge>
+                    )}
+                    {c.trcloudProductCode && (
+                      <Badge tone="neutral" className="ml-1 font-mono text-[10px]">
+                        {c.trcloudProductCode}
+                      </Badge>
+                    )}
+                    {!c.vatClaimable && (
+                      <Badge tone="warning" className="ml-1 text-[10px]">
+                        VAT ขอคืนไม่ได้
+                      </Badge>
+                    )}
+                    {!c.active && (
+                      <Badge tone="neutral" className="ml-2 text-[10px]">
+                        ปิดใช้งาน
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => startEdit(c)}
+                      disabled={pending}
+                      className="text-xs font-medium text-zinc-400 hover:text-zinc-700 disabled:opacity-50"
+                      title="แก้ไข GL/SKU"
+                    >
+                      <Pencil className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggle(c.id, !c.active)}
+                      disabled={pending}
+                      className="text-xs font-medium text-zinc-500 hover:text-zinc-800 disabled:opacity-50"
+                    >
+                      {c.active ? "ปิดใช้งาน" : "เปิดใช้งาน"}
+                    </button>
+                  </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => startEdit(c)}
-                    disabled={pending}
-                    aria-label={`แก้ไขหมวด ${c.name}`}
-                    title="แก้ไข"
-                    className="grid size-8 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-50"
-                  >
-                    <Pencil className="size-4" aria-hidden />
-                  </button>
-                  <button
-                    onClick={() => toggle(c.id, !c.active)}
-                    disabled={pending}
-                    className="text-xs font-medium text-zinc-500 hover:text-zinc-800 disabled:opacity-50"
-                  >
-                    {c.active ? "ปิดใช้งาน" : "เปิดใช้งาน"}
-                  </button>
-                </div>
-              </li>
-            ),
-          )}
+              )}
+            </li>
+          ))}
         </ul>
       )}
     </div>
