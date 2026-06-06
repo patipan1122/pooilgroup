@@ -110,8 +110,11 @@ export async function GET(req: NextRequest) {
   // LedgerLine CLAIM path (LIFF-SDK-free): we already hold a verified id_token from
   // the OAuth exchange. Bind it via the ledger invite/accept endpoint (which re-verifies
   // against the ledger login channel + sets users.line_login_sub / the member). This is
-  // the iOS escape hatch for "liff.init: Load failed". No magic-link/session needed —
-  // binding is enough; the owner then passes every gate on the next open.
+  // the iOS escape hatch for "liff.init: Load failed". After binding we DON'T return —
+  // we FALL THROUGH to the line-login flow below so a FRESH session is minted for the
+  // just-bound user. Critical: the LINE webview may hold a STALE non-admin session from
+  // earlier failed attempts; the bootstrap reuses it and the admin/edit gates reject the
+  // owner. Minting a new (super_admin) session here overwrites that stale cookie.
   if (cookieClaim) {
     try {
       const acceptRes = await fetch(`${baseUrl}/api/ledger/invite/accept`, {
@@ -126,10 +129,7 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       return fail("claim-fetch", e instanceof Error ? e.message : "unknown");
     }
-    const u = new URL(`${baseUrl}/auth/line-claimed`);
-    const res = NextResponse.redirect(u);
-    clearOauthCookies(res);
-    return res;
+    // bind OK → fall through to mint a fresh session (post-login lands on the success page)
   }
 
   // Internal call to line-login. We send `x-line-internal: 1` which makes
@@ -147,7 +147,7 @@ export async function GET(req: NextRequest) {
         "Content-Type": "application/json",
         "x-line-internal": "1",
       },
-      body: JSON.stringify({ idToken, redirectTo: cookieNext, module: lineModule }),
+      body: JSON.stringify({ idToken, redirectTo: cookieClaim ? "/auth/line-claimed" : cookieNext, module: lineModule }),
     });
     loginJson = (await loginRes.json()) as LoginResult;
     if (!loginRes.ok) {
