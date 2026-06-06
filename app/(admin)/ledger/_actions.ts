@@ -886,6 +886,7 @@ export async function createCategory(raw: unknown): Promise<ActionResult> {
     return { ok: false, error: "หมวดนี้มีอยู่แล้ว" };
   }
   revalidatePath("/ledger/settings");
+  revalidatePath("/liff/ledger/admin");
   return { ok: true };
 }
 
@@ -904,6 +905,7 @@ export async function toggleCategory(
     data: { active },
   });
   revalidatePath("/ledger/settings");
+  revalidatePath("/liff/ledger/admin");
   return { ok: true };
 }
 
@@ -985,11 +987,13 @@ export async function updateCategoryTrcloud(raw: unknown): Promise<ActionResult>
     diff: { new: { trcloudAccCode: trcloudAccCode || null, trcloudProductCode: trcloudProductCode || null, vatClaimable } },
   });
   revalidatePath("/ledger/settings");
+  revalidatePath("/liff/ledger/admin");
   return { ok: true };
 }
 
 const updateBranchTrcloudSchema = z.object({
   branchId: z.string().trim().min(1),
+  companyId: z.string().trim().min(1, "ไม่ได้ระบุบริษัท"),
   trcloudProject: z.string().trim().max(100).optional().or(z.literal("")),
   trcloudDepartment: z.string().trim().max(100).optional().or(z.literal("")),
 });
@@ -1002,10 +1006,10 @@ export async function updateBranchTrcloud(raw: unknown): Promise<ActionResult> {
   const parsed = updateBranchTrcloudSchema.safeParse(raw);
   if (!parsed.success)
     return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
-  const { branchId, trcloudProject, trcloudDepartment } = parsed.data;
+  const { branchId, companyId, trcloudProject, trcloudDepartment } = parsed.data;
 
   const branch = await prisma.branch.findFirst({
-    where: { id: branchId, orgId: session.user.org_id },
+    where: { id: branchId, orgId: session.user.org_id, companyId },
     select: { id: true, settings: true },
   });
   if (!branch) return { ok: false, error: "ไม่พบสาขา" };
@@ -1033,6 +1037,7 @@ export async function updateBranchTrcloud(raw: unknown): Promise<ActionResult> {
     diff: { new: { trcloudProject: trcloudProject || null, trcloudDepartment: trcloudDepartment || null } },
   });
   revalidatePath("/ledger/settings");
+  revalidatePath("/liff/ledger/admin");
   return { ok: true };
 }
 
@@ -1227,6 +1232,7 @@ export async function exportConfirmedCsv(raw: unknown): Promise<ExportResult> {
 async function loadPushable(
   orgId: string,
   id: string,
+  companyId?: string,
 ): Promise<
   | {
       pushable: PushableExpense;
@@ -1238,7 +1244,7 @@ async function loadPushable(
   | null
 > {
   const row = await prisma.ledgerExpense.findFirst({
-    where: { id, orgId },
+    where: { id, orgId, ...(companyId ? { companyId } : {}) },
     include: {
       items: { orderBy: { createdAt: "asc" } },
       category: {
@@ -1334,7 +1340,8 @@ async function recordPushResult(
   } else {
     await prisma.ledgerExpense.updateMany({
       where: { id, orgId, companyId },
-      data: { trcloudError: res.error.slice(0, 500) },
+      // Clear "pending" sentinel so the expense can be retried after a failure.
+      data: { trcloudDocId: null, trcloudError: res.error.slice(0, 500) },
     });
     await audit({
       orgId,
@@ -1373,6 +1380,16 @@ export async function sendExpenseToTrcloud(
     return { ok: false, error: "ใบเสนอราคายังส่งเข้า TRCloud ไม่ได้ — ต้องแนบใบกำกับ/ใบเสร็จตัวจริงก่อน" };
   }
   if (loaded.alreadyPushed) return { ok: true, alreadySent: true };
+
+  // Atomically claim the row before calling TRCloud — prevents a duplicate AP if
+  // two concurrent requests both pass the alreadyPushed check (race condition),
+  // and prevents orphaned APs if the serverless function dies after TRCloud responds
+  // but before recordPushResult writes to the DB.
+  const claimed = await prisma.ledgerExpense.updateMany({
+    where: { id, orgId, companyId: loaded.companyId, trcloudDocId: null },
+    data: { trcloudDocId: "pending" },
+  });
+  if (claimed.count === 0) return { ok: true, alreadySent: true }; // another request won the race
 
   const res = await pushExpenseToTrcloud(loaded.pushable);
   await recordPushResult(orgId, loaded.companyId, id, session.user.id, res);

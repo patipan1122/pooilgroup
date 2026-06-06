@@ -17,6 +17,7 @@ import { CategoryManager } from "@/app/(admin)/ledger/settings/_components/Categ
 import { LineChannelCard } from "@/app/(admin)/ledger/settings/_components/LineChannelCard";
 import { RichMenuButton } from "@/app/(admin)/ledger/settings/_components/RichMenuButton";
 import { ExportConfigCard } from "@/app/(admin)/ledger/settings/_components/ExportConfigCard";
+import { TRCloudBranchConfig } from "@/app/(admin)/ledger/settings/_components/TRCloudBranchConfig";
 import { PermissionPanel } from "./PermissionPanel";
 import { BranchPanel, type BranchFull } from "./BranchPanel";
 import { OrgPanel, type OrgInfo } from "./OrgPanel";
@@ -58,7 +59,7 @@ export function AdminConsole({
   invites: InviteRow[];
   categories: { id: string; name: string; color: string | null; trcloudAccCode: string | null; trcloudProductCode: string | null; vatClaimable: boolean; sort: number; active: boolean }[];
   branchOpts: BranchOpt[];
-  branchesFull: BranchFull[];
+  branchesFull: (BranchFull & { settings?: Record<string, unknown> | null })[];
   channel: LineChannelInfo | null;
   permissionMatrix: Record<LedgerRole, Record<LedgerCapability, boolean>>;
   myUserId: string;
@@ -135,6 +136,18 @@ export function AdminConsole({
             <CategoryManager
               companyId={companyId}
               categories={categories}
+            />
+            <TRCloudBranchConfig
+              companyId={companyId}
+              branches={branchesFull.map((b) => ({
+                id: b.id,
+                code: b.code,
+                name: b.name,
+                settings:
+                  b.settings && typeof b.settings === "object"
+                    ? (b.settings as Record<string, unknown>)
+                    : null,
+              }))}
             />
             <LineChannelCard
               companyId={companyId}

@@ -60,11 +60,21 @@ async function post(
   payload: Json,
 ): Promise<{ ok: boolean; status: number; data: Json | null; raw: string }> {
   const body = new URLSearchParams({ json: JSON.stringify({ ...authFields(), ...payload }) });
-  const res = await fetch(`${BASE}/${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", Origin: ORIGIN },
-    body: body.toString(),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Origin: ORIGIN },
+      body: body.toString(),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (e) {
+    const msg =
+      e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")
+        ? "TRCloud ไม่ตอบสนองภายใน 15 วินาที — กรุณาลองใหม่"
+        : `TRCloud network error: ${e instanceof Error ? e.message : String(e)}`;
+    return { ok: false, status: 0, data: null, raw: msg };
+  }
   const raw = await res.text();
   let data: Json | null = null;
   try { data = asObj(JSON.parse(raw)); } catch { /* 404 html etc */ }
@@ -138,9 +148,15 @@ async function resolveContactId(
   v: { vendor: string | null; vendorTaxId: string | null; vendorAddress: string | null },
 ): Promise<{ ok: true; ref: ContactRef } | { ok: false; error: string }> {
   const taxId = digitsOnly(v.vendorTaxId);
-  const where = { orgId: scope.orgId, companyId: scope.companyId, taxId };
-  const cached = await prisma.ledgerTrcloudContact.findUnique({ where: { orgId_companyId_taxId: where } });
-  if (cached) return { ok: true, ref: { contactId: cached.contactId, codeNumber: cached.codeNumber } };
+
+  // Only use the cache when we have a real tax ID — empty string is NOT a unique key.
+  // Using "" as a cache key would map ALL no-taxId vendors to the first vendor ever
+  // cached, assigning a wrong TRCloud contact_id to every subsequent no-taxId AP.
+  if (taxId) {
+    const where = { orgId: scope.orgId, companyId: scope.companyId, taxId };
+    const cached = await prisma.ledgerTrcloudContact.findUnique({ where: { orgId_companyId_taxId: where } });
+    if (cached) return { ok: true, ref: { contactId: cached.contactId, codeNumber: cached.codeNumber } };
+  }
 
   const name = taxId ? (v.vendor || "ไม่ระบุชื่อผู้ขาย") : "เจ้าหนี้เบ็ดเตล็ด (LedgerLine)";
   let ref: ContactRef | null = null;
@@ -150,11 +166,15 @@ async function resolveContactId(
     if (!created.ok) return created;
     ref = created.ref;
   }
-  await prisma.ledgerTrcloudContact.upsert({
-    where: { orgId_companyId_taxId: where },
-    update: { contactId: ref.contactId, codeNumber: ref.codeNumber, name },
-    create: { ...where, contactId: ref.contactId, codeNumber: ref.codeNumber, name },
-  });
+  // Only upsert the cache for a real tax ID — no-taxId vendors are never cached.
+  if (taxId) {
+    const where = { orgId: scope.orgId, companyId: scope.companyId, taxId };
+    await prisma.ledgerTrcloudContact.upsert({
+      where: { orgId_companyId_taxId: where },
+      update: { contactId: ref.contactId, codeNumber: ref.codeNumber, name },
+      create: { ...where, contactId: ref.contactId, codeNumber: ref.codeNumber, name },
+    });
+  }
   return { ok: true, ref };
 }
 

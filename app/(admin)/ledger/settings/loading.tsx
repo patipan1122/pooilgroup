@@ -28,6 +28,23 @@ export default function LedgerSettingsLoading() {
           </div>
         </div>
 
+        {/* TRCloud branch config (full width) */}
+        <div className="rounded-2xl border border-zinc-200 bg-white p-4 lg:col-span-2">
+          <div className="mb-3 flex items-center justify-between">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+          <Skeleton className="mb-3 h-8 w-full rounded-lg" />
+          {Array.from({ length: 5 }, (_, i) => (
+            <div key={i} className="flex items-center gap-3 border-t border-zinc-100 py-3">
+              <Skeleton className="h-4 flex-1" />
+              <Skeleton className="h-8 w-24 rounded-lg" />
+              <Skeleton className="h-8 w-24 rounded-lg" />
+              <Skeleton className="h-8 w-14 rounded-lg" />
+            </div>
+          ))}
+        </div>
+
         {/* LINE channel card + export config card */}
         {Array.from({ length: 2 }, (_, i) => (
           <div

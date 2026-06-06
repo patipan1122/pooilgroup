@@ -109,7 +109,7 @@ export default async function LedgerLiffAdminPage({
       prisma.branch.findMany({
         where: { orgId, companyId },
         orderBy: { code: "asc" },
-        select: { id: true, code: true, name: true, province: true, isActive: true },
+        select: { id: true, code: true, name: true, province: true, isActive: true, settings: true },
       }),
       getLineChannel(orgId, companyId),
       getPermissionMatrix(orgId),
@@ -140,10 +140,16 @@ export default async function LedgerLiffAdminPage({
         trcloudProductCode: c.trcloudProductCode ?? null,
         vatClaimable: c.vatClaimable ?? true,
         sort: c.sort,
-        active: true,
+        active: c.active ?? true,
       }))}
       branchOpts={branchOpts}
-      branchesFull={branchesFull}
+      branchesFull={branchesFull.map((b) => ({
+        ...b,
+        settings:
+          b.settings && typeof b.settings === "object" && !Array.isArray(b.settings)
+            ? (b.settings as Record<string, unknown>)
+            : null,
+      }))}
       channel={channel}
       permissionMatrix={permissionMatrix}
       myUserId={session.user.id}

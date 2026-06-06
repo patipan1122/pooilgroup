@@ -408,7 +408,7 @@ export async function findExpenseBySha(opts: {
 export const listCategories = cache(
   async (orgId: string, companyId: string) => {
     return prisma.ledgerCategory.findMany({
-      where: { orgId, companyId, active: true },
+      where: { orgId, companyId },
       orderBy: [{ sort: "asc" }, { name: "asc" }],
       select: {
         id: true,
@@ -418,6 +418,7 @@ export const listCategories = cache(
         trcloudProductCode: true,
         vatClaimable: true,
         sort: true,
+        active: true,
       },
     });
   },

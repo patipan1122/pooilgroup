@@ -50,12 +50,14 @@ export function CategoryManager({
     trcloudProductCode: "",
     vatClaimable: true,
   });
+  const [accCodeError, setAccCodeError] = useState<string | null>(null);
 
   const input =
     "h-9 rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]";
 
   function startEdit(c: Cat) {
     setEditingId(c.id);
+    setAccCodeError(null);
     setEditState({
       trcloudAccCode: c.trcloudAccCode ?? "",
       trcloudProductCode: c.trcloudProductCode ?? "",
@@ -64,10 +66,17 @@ export function CategoryManager({
   }
 
   function saveEdit(id: string) {
+    // Validate GL code: must be exactly 7 digits if provided
+    const code = editState.trcloudAccCode.trim();
+    if (code && !/^[0-9]{7}$/.test(code)) {
+      setAccCodeError("รหัสบัญชีต้องเป็นตัวเลข 7 หลัก เช่น 5101001");
+      return;
+    }
+    setAccCodeError(null);
     startTransition(async () => {
       const res = await updateCategoryTrcloud({
         id,
-        trcloudAccCode: editState.trcloudAccCode,
+        trcloudAccCode: code,
         trcloudProductCode: editState.trcloudProductCode,
         vatClaimable: editState.vatClaimable,
       });
@@ -115,7 +124,7 @@ export function CategoryManager({
           className={`${input} flex-1`}
           placeholder="ชื่อหมวด เช่น ค่าน้ำมัน/ขนส่ง"
           value={form.name}
-          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          onChange={(e) => { setMsg(null); setForm({ ...form, name: e.target.value }); }}
         />
         <input
           className={`${input} sm:w-36`}
@@ -143,57 +152,110 @@ export function CategoryManager({
           {categories.map((c) => (
             <li key={c.id} className="py-2.5">
               {editingId === c.id ? (
-                /* Inline edit row */
-                <div className="flex flex-col gap-2">
-                  <span className="text-sm font-medium text-zinc-800">{c.name}</span>
-                  <div className="flex flex-wrap gap-2">
+                /* Expanded edit panel — bordered card below the row */
+                <div className="rounded-xl border border-[var(--color-brand-200,theme(colors.violet.200))] bg-zinc-50 p-3">
+                  {/* Panel header */}
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="text-sm font-semibold text-zinc-800">{c.name}</span>
+                    <button
+                      type="button"
+                      aria-label="ปิดแก้ไข"
+                      onClick={() => { setEditingId(null); setAccCodeError(null); }}
+                      disabled={pending}
+                      className="rounded-md p-1 text-zinc-400 hover:text-zinc-700 disabled:opacity-50"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+
+                  {/* Fields grid — 2-col on sm+ */}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {/* GL code */}
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-zinc-600">
+                        รหัสบัญชี GL
+                      </label>
+                      <input
+                        className={`${input} w-full ${accCodeError ? "border-rose-400 focus:ring-rose-300" : ""}`}
+                        placeholder="7 หลัก เช่น 5101001"
+                        value={editState.trcloudAccCode}
+                        onChange={(e) => {
+                          setAccCodeError(null);
+                          setEditState({ ...editState, trcloudAccCode: e.target.value });
+                        }}
+                      />
+                      {accCodeError ? (
+                        <p className="mt-0.5 text-[10px] text-rose-600">{accCodeError}</p>
+                      ) : (
+                        <p className="mt-0.5 text-[10px] text-zinc-400">ตัวเลข 7 หลักจาก TRCloud ผังบัญชี</p>
+                      )}
+                    </div>
+
+                    {/* SKU select — option labels include description; hint echoes selection */}
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-zinc-600">
+                        SKU สินค้า TRCloud
+                      </label>
+                      <select
+                        aria-label="SKU สินค้า TRCloud"
+                        className={`${input} w-full`}
+                        value={editState.trcloudProductCode}
+                        onChange={(e) =>
+                          setEditState({ ...editState, trcloudProductCode: e.target.value })
+                        }
+                      >
+                        {SKUS.map((s) => (
+                          <option key={s.value} value={s.value}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-0.5 text-[10px] text-zinc-400">
+                        {editState.trcloudProductCode
+                          ? (SKUS.find((s) => s.value === editState.trcloudProductCode)?.label ?? "")
+                          : "เลือก SKU ที่ตรงกับประเภทค่าใช้จ่าย"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* VAT checkbox */}
+                  <label className="mt-3 flex cursor-pointer items-center gap-2 text-xs text-zinc-600">
                     <input
-                      className={`${input} w-32`}
-                      placeholder="GL code"
-                      value={editState.trcloudAccCode}
+                      type="checkbox"
+                      className="rounded"
+                      checked={editState.vatClaimable}
                       onChange={(e) =>
-                        setEditState({ ...editState, trcloudAccCode: e.target.value })
+                        setEditState({ ...editState, vatClaimable: e.target.checked })
                       }
                     />
-                    <select
-                      aria-label="SKU สินค้า TRCloud"
-                      className={`${input} w-52`}
-                      value={editState.trcloudProductCode}
-                      onChange={(e) =>
-                        setEditState({ ...editState, trcloudProductCode: e.target.value })
-                      }
+                    <span>
+                      VAT ขอคืนได้{" "}
+                      <span className="text-zinc-400">(ปิดถ้าซื้อจากผู้ขายไม่จด VAT)</span>
+                    </span>
+                  </label>
+
+                  {/* Action bar */}
+                  <div className="mt-3 flex justify-end gap-2 border-t border-zinc-200 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => { setEditingId(null); setAccCodeError(null); }}
+                      disabled={pending}
+                      className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-800 disabled:opacity-50"
                     >
-                      {SKUS.map((s) => (
-                        <option key={s.value} value={s.value}>
-                          {s.label}
-                        </option>
-                      ))}
-                    </select>
-                    <label className="flex items-center gap-1.5 text-xs text-zinc-600">
-                      <input
-                        type="checkbox"
-                        checked={editState.vatClaimable}
-                        onChange={(e) =>
-                          setEditState({ ...editState, vatClaimable: e.target.checked })
-                        }
-                      />
-                      VAT ขอคืนได้
-                    </label>
+                      ยกเลิก
+                    </button>
                     <button
                       type="button"
                       onClick={() => saveEdit(c.id)}
                       disabled={pending}
-                      className="flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                      className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
                     >
-                      <Check className="size-3" /> บันทึก
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditingId(null)}
-                      disabled={pending}
-                      className="flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-500 hover:text-zinc-800 disabled:opacity-50"
-                    >
-                      <X className="size-3" /> ยกเลิก
+                      {pending ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <Check className="size-3" />
+                      )}
+                      บันทึก
                     </button>
                   </div>
                 </div>
@@ -226,10 +288,10 @@ export function CategoryManager({
                   <div className="flex shrink-0 items-center gap-3">
                     <button
                       type="button"
+                      aria-label="แก้ไข GL/SKU"
                       onClick={() => startEdit(c)}
                       disabled={pending}
-                      className="text-xs font-medium text-zinc-400 hover:text-zinc-700 disabled:opacity-50"
-                      title="แก้ไข GL/SKU"
+                      className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-50 hover:text-zinc-700 disabled:opacity-50"
                     >
                       <Pencil className="size-3.5" />
                     </button>

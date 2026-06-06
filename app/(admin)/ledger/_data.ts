@@ -259,9 +259,10 @@ export const listBudgets = cache(
   },
 );
 
-/** Scoped LINE invites for a company (admin settings list). Not cached — the
- *  list changes on create/revoke. Resolves branch names for display. */
-export async function listInvites(orgId: string, companyId: string) {
+/** Scoped LINE invites for a company (admin settings list). cache() dedupes
+ *  within a single RSC render pass; force-dynamic ensures freshness on each
+ *  navigation. Resolves branch names for display. */
+export const listInvites = cache(async function listInvites(orgId: string, companyId: string) {
   const rows = await prisma.ledgerLineInvite.findMany({
     where: { orgId, companyId },
     orderBy: { createdAt: "desc" },
@@ -290,13 +291,13 @@ export async function listInvites(orgId: string, companyId: string) {
     used: !!r.usedAt,
     createdAt: r.createdAt.toISOString(),
   }));
-}
+});
 export type InviteRow = Awaited<ReturnType<typeof listInvites>>[number];
 
 /** LINE members of a company (back-office "ใครดูแลสาขาไหน"). Resolves branch
- *  names for the assigned scope + any pending self-request. Not cached — the
- *  list changes on assign/approve. */
-export async function listLedgerMembers(orgId: string, companyId: string) {
+ *  names for the assigned scope + any pending self-request. cache() dedupes
+ *  within a single RSC render pass; force-dynamic ensures freshness each nav. */
+export const listLedgerMembers = cache(async function listLedgerMembers(orgId: string, companyId: string) {
   const rows = await prisma.ledgerLineMember.findMany({
     where: { orgId, companyId },
     orderBy: [{ active: "desc" }, { createdAt: "asc" }],
@@ -339,13 +340,14 @@ export async function listLedgerMembers(orgId: string, companyId: string) {
     active: r.active,
     createdAt: r.createdAt.toISOString(),
   }));
-}
+});
 export type LedgerMemberRow = Awaited<ReturnType<typeof listLedgerMembers>>[number];
 
 /** Group → branch overrides (B3 multi-group). Each row = one LINE group pinned to
  *  its own branch. Rows self-register when an admin types "/setting สาขา <สาขา>"
- *  inside a branch group; the webhook reads them to auto-tag receipts per group. */
-export async function listLedgerGroups(orgId: string, companyId: string) {
+ *  inside a branch group; the webhook reads them to auto-tag receipts per group.
+ *  cache() dedupes within a single RSC render pass; force-dynamic ensures freshness. */
+export const listLedgerGroups = cache(async function listLedgerGroups(orgId: string, companyId: string) {
   // Defensive: tolerate the table not existing yet (deploy landing before the
   // additive migration is applied) — the settings page must never 500 on this.
   const rows = await prisma.ledgerLineGroup
@@ -371,5 +373,5 @@ export async function listLedgerGroups(orgId: string, companyId: string) {
     active: r.active,
     isSlipIntake: r.isSlipIntake,
   }));
-}
+});
 export type LedgerGroupRow = Awaited<ReturnType<typeof listLedgerGroups>>[number];
