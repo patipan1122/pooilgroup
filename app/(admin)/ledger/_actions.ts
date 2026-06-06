@@ -980,6 +980,7 @@ async function loadPushable(
   | {
       pushable: PushableExpense;
       status: string;
+      docType: string;
       companyId: string;
       alreadyPushed: boolean;
     }
@@ -995,6 +996,7 @@ async function loadPushable(
   if (!row) return null;
   return {
     status: row.status,
+    docType: row.docType,
     companyId: row.companyId,
     alreadyPushed: !!row.trcloudDocId,
     pushable: {
@@ -1080,6 +1082,11 @@ export async function sendExpenseToTrcloud(
   if (loaded.status !== "confirmed" && loaded.status !== "locked") {
     return { ok: false, error: "ส่งได้เฉพาะรายการที่ยืนยันแล้ว" };
   }
+  // ใบเสนอราคาไม่ใช่เอกสารทางบัญชี → ห้ามดันเข้า TRCloud (company 31 ใช้ร่วม) จนกว่า
+  // จะแนบใบกำกับ/ใบเสร็จตัวจริงมาแทนที่ (supersede). กัน double-doc ในระบบบัญชีจริง.
+  if (loaded.docType === "quotation") {
+    return { ok: false, error: "ใบเสนอราคายังส่งเข้า TRCloud ไม่ได้ — ต้องแนบใบกำกับ/ใบเสร็จตัวจริงก่อน" };
+  }
   if (loaded.alreadyPushed) return { ok: true, alreadySent: true };
 
   const res = await pushExpenseToTrcloud(loaded.pushable);
@@ -1127,6 +1134,11 @@ export async function sendExpensesToTrcloud(
       continue;
     }
     if (loaded.status !== "confirmed" && loaded.status !== "locked") {
+      skipped++;
+      continue;
+    }
+    if (loaded.docType === "quotation") {
+      // ใบเสนอราคา ห้ามดันเข้า TRCloud จนแนบใบจริงแทนที่ (supersede).
       skipped++;
       continue;
     }

@@ -5312,6 +5312,7 @@ model LedgerExpense {
   ocrModel              String?             @map("ocr_model")
   ocrConfidence         Json?               @map("ocr_confidence") // { vendor: 0.9, total: 0.95, ... }
   slipRef               String?             @map("slip_ref") // SlipOK ref (Phase 2)
+  lineConfirmMessageId  String?             @map("line_confirm_message_id") // LINE confirm-card messageId → reply-to-bill match
   needsReview           Boolean             @default(true) @map("needs_review")
   note                  String?
   // — Bainy-parity edit-form fields (Phase 3) —
@@ -5364,6 +5365,7 @@ model LedgerExpense {
   // Replacement chain (แนบใบใหม่ทดแทน — เก็บทั้ง 2 ใบ): self-relation.
   replacementOf LedgerExpense?      @relation("ExpenseReplacement", fields: [replacementOfId], references: [id], onDelete: SetNull)
   replacedBy    LedgerExpense[]     @relation("ExpenseReplacement")
+  payments      LedgerPayment[]     @relation("ExpensePayments")
 
   @@unique([orgId, companyId, docCode])
   @@index([orgId, companyId, branchId, status])
@@ -5375,6 +5377,38 @@ model LedgerExpense {
   @@index([replacementOfId])
   @@index([orgId, companyId, completenessStatus])
   @@map("ledger_expense")
+  @@schema("public")
+}
+
+// หลักฐานการจ่ายเงิน (สลิปโอน) — 1 bill : N payments (N เผื่อ partial/split v2).
+// กันจ่ายซ้ำด้วย (sendingBank, transRef) จาก QR สลิป (ถอดเองฟรี). never-auto-post.
+model LedgerPayment {
+  id                String    @id @default(uuid()) @db.Uuid
+  orgId             String    @map("org_id") @db.Uuid
+  companyId         String    @map("company_id") @db.Uuid
+  matchedExpenseId  String?   @map("matched_expense_id") @db.Uuid
+  amount            Decimal   @default(0) @db.Decimal(15, 2)
+  currency          String    @default("THB")
+  method            String    @default("transfer") // transfer | cash | qr
+  sendingBank       String?   @map("sending_bank")
+  transRef          String?   @map("trans_ref") // EMVCo slip-QR ref — dup key
+  slipSha256        String?   @map("slip_sha256")
+  slipUrl           String?   @map("slip_url")
+  slipThumbUrl      String?   @map("slip_thumb_url")
+  qrRaw             String?   @map("qr_raw")
+  qrDecoded         Boolean   @default(false) @map("qr_decoded")
+  paidAt            DateTime? @map("paid_at") @db.Timestamptz(6)
+  markedBy          String?   @map("marked_by") @db.Uuid
+  dupOverrideBy     String?   @map("dup_override_by") @db.Uuid
+  dupOverrideReason String?   @map("dup_override_reason")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  matchedExpense LedgerExpense? @relation("ExpensePayments", fields: [matchedExpenseId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, companyId, matchedExpenseId])
+  @@index([slipSha256])
+  @@map("ledger_payment")
   @@schema("public")
 }
 

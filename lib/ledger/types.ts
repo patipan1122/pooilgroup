@@ -12,6 +12,7 @@ export type ExpenseDocType =
   | "receipt" // ใบเสร็จรับเงิน
   | "cash_bill" // บิลเงินสด
   | "delivery_note" // ใบส่งของ
+  | "quotation" // ใบเสนอราคา — นับเป็นค่าใช้จ่ายจริง (D1) · ขอคืน VAT ไม่ได้จนใบกำกับจริงมา supersede
   | "other"; // อื่น ๆ
 export type PaymentStatus = "paid" | "unpaid" | "partial";
 

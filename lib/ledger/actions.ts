@@ -234,7 +234,8 @@ async function createDraftExpenseCore(
         vendorAddress: input.vendorAddress ?? null,
         vendorBranchCode: input.vendorBranchCode ?? null,
         discount: input.discount ?? 0,
-        paymentStatus: input.paymentStatus ?? "paid",
+        // D-NEW-1: ใบเสนอราคา/บิลที่ยังไม่จ่าย → "unpaid" (รอสลิป); ใบเสร็จ/ใบกำกับ = จ่ายแล้ว
+        paymentStatus: input.paymentStatus ?? (input.docType === "quotation" ? "unpaid" : "paid"),
         claimantName: input.claimantName ?? null,
         bankDetail: input.bankDetail ?? null,
         isRecurring: input.isRecurring ?? false,
