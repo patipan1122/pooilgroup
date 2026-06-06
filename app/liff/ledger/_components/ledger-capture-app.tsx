@@ -40,6 +40,20 @@ interface CategoryOpt {
   color: string | null;
 }
 
+type BatchFileStatus = "ok" | "dup" | "fail";
+interface BatchResult {
+  name: string;
+  status: BatchFileStatus;
+  error?: string;
+}
+interface BatchState {
+  total: number;
+  done: number;
+  current: string;
+  results: BatchResult[];
+  finished: boolean;
+}
+
 interface ParsedFields {
   vendor: string;
   vendorTaxId: string;
@@ -152,6 +166,9 @@ export function LedgerCaptureApp({
   const [errMsg, setErrMsg] = useState<string>("");
   const [serverWarnings, setServerWarnings] = useState<string[]>([]);
   const [isPdf, setIsPdf] = useState(false);
+  // Batch upload (เลือกหลายไฟล์พร้อมกัน) — runs headless: ทุกไฟล์ขึ้นเป็น "ร่าง"
+  // ให้บัญชีตรวจทีหลัง (เหมือนหน้าเว็บ). null = โหมดถ่ายทีละใบปกติ.
+  const [batch, setBatch] = useState<BatchState | null>(null);
 
   // Company / branch context (the API is company-scoped).
   const [companyId, setCompanyId] = useState<string>(companies[0]?.id ?? "");
@@ -223,8 +240,150 @@ export function LedgerCaptureApp({
     return hit?.id ?? "";
   }
 
+  // ── Batch upload (หลายไฟล์พร้อมกัน) ─────────────────────────────────────────
+  // One file → presign → PUT R2 → OCR (non-fatal) → create DRAFT. Never reviews
+  // each one here (the accountant reviews on /my or web); this is the "ส่งเข้าระบบ
+  // ทีละกอง" path. Mirrors the web UploadReceiptButton multi flow.
+  async function processOneToDraft(file: File): Promise<BatchResult> {
+    const name = file.name || "ไฟล์";
+    try {
+      const contentType =
+        file.type || (name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image/jpeg");
+      const hash = await sha256Of(file);
+
+      // 1) presign + PUT → R2
+      const ps = await fetch("/api/ledger/r2/presign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId, uploadId: uploadId(), contentType }),
+      });
+      if (!ps.ok) throw new Error("ขอที่อัปโหลดไม่สำเร็จ");
+      const ud = (await ps.json()) as { url?: string; publicUrl?: string };
+      if (!ud.url) throw new Error("ขอที่อัปโหลดไม่สำเร็จ");
+      const put = await fetch(ud.url, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": contentType },
+      });
+      if (!put.ok) throw new Error("อัปโหลดไฟล์ไม่สำเร็จ");
+      const uploadedUrl = ud.publicUrl ?? null;
+
+      // 2) OCR (non-fatal — อ่านไม่ออกก็ขึ้นร่างเปล่าให้กรอกเอง)
+      let parsed: {
+        vendor?: string | null;
+        vendorTaxId?: string | null;
+        docDate?: string | null;
+        subtotal?: number | null;
+        vat?: number | null;
+        total?: number | null;
+        paymentMethod?: string | null;
+        suggestedCategory?: string | null;
+        confidence?: Record<string, number> | null;
+      } = {};
+      try {
+        if (uploadedUrl) {
+          const ocrRes = await fetch("/api/ledger/ocr", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imageUrl: uploadedUrl }),
+          });
+          if (ocrRes.ok) {
+            const b = (await ocrRes.json()) as { parsed?: typeof parsed };
+            parsed = b.parsed ?? {};
+          }
+        }
+      } catch {
+        /* ignore — blank draft */
+      }
+
+      // 3) create DRAFT (never auto-post)
+      const res = await fetch("/api/ledger/expenses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          branchId: branchId || null,
+          source: "line",
+          vendor: parsed.vendor ?? null,
+          vendorTaxId: parsed.vendorTaxId ?? null,
+          docDate: parsed.docDate ?? null,
+          subtotal: parsed.subtotal ?? 0,
+          vat: parsed.vat ?? 0,
+          total: parsed.total ?? 0,
+          categoryId: matchCategory(parsed.suggestedCategory) || null,
+          paymentMethod: parsed.paymentMethod ?? null,
+          originalUrl: uploadedUrl,
+          thumbUrl: uploadedUrl,
+          sha256: hash,
+          ocrModel: "gemini-flash",
+          ocrConfidence: parsed.confidence ?? null,
+          note: parsed.suggestedCategory && !matchCategory(parsed.suggestedCategory)
+            ? parsed.suggestedCategory
+            : null,
+        }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error || "บันทึกไม่สำเร็จ");
+      }
+      const j = (await res.json().catch(() => ({}))) as { id?: string; duplicate?: boolean };
+      // Drive archive (fire-and-forget · no-op ถ้ายังไม่เชื่อม Drive)
+      if (j.id && !j.duplicate) {
+        void fetch("/api/ledger/drive/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: j.id, companyId }),
+        }).catch(() => {});
+      }
+      return { name, status: j.duplicate ? "dup" : "ok" };
+    } catch (e) {
+      return { name, status: "fail", error: e instanceof Error ? e.message : "ล้มเหลว" };
+    }
+  }
+
+  async function runBatch(fileList: File[]) {
+    if (!companyId) {
+      setErrMsg("เลือกบริษัทก่อนอัปโหลด");
+      setPhase("error");
+      return;
+    }
+    const valid = fileList.filter(
+      (f) =>
+        (f.type.startsWith("image/") ||
+          f.type === "application/pdf" ||
+          f.name.toLowerCase().endsWith(".pdf")) &&
+        f.size <= 15 * 1024 * 1024,
+    );
+    if (valid.length === 0) {
+      setErrMsg("ไฟล์ไม่รองรับ หรือใหญ่เกิน 15MB (รับรูปภาพและ PDF)");
+      setPhase("error");
+      return;
+    }
+    setErrMsg("");
+    const results: BatchResult[] = [];
+    setBatch({ total: valid.length, done: 0, current: valid[0].name || "ไฟล์", results: [], finished: false });
+    for (let i = 0; i < valid.length; i++) {
+      setBatch((b) => (b ? { ...b, current: valid[i].name || "ไฟล์", done: i } : b));
+      const r = await processOneToDraft(valid[i]);
+      results.push(r);
+      setBatch((b) => (b ? { ...b, done: i + 1, results: [...results] } : b));
+    }
+    setBatch((b) => (b ? { ...b, finished: true } : b));
+  }
+
   async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+
+    // หลายไฟล์ → โหมด batch (ส่งเข้าระบบทีละกอง ขึ้นเป็นร่าง)
+    if (fileList.length > 1) {
+      const arr = Array.from(fileList);
+      e.target.value = "";
+      await runBatch(arr);
+      return;
+    }
+
+    const file = fileList[0];
     if (!file) return;
     if (file.size > 15 * 1024 * 1024) {
       setErrMsg("ไฟล์ใหญ่เกินไป · ต้องไม่เกิน 15MB");
@@ -416,6 +575,109 @@ export function LedgerCaptureApp({
 
   const showContextPicker = phase === "capture";
 
+  // ── Batch overlay (หลายไฟล์) — แทนหน้าถ่ายปกติระหว่าง/หลังอัปโหลดเป็นกอง ──
+  if (batch) {
+    const okCount = batch.results.filter((r) => r.status === "ok").length;
+    const dupCount = batch.results.filter((r) => r.status === "dup").length;
+    const failCount = batch.results.filter((r) => r.status === "fail").length;
+    const pct = batch.total > 0 ? Math.round((batch.done / batch.total) * 100) : 0;
+    return (
+      <div className="min-h-screen bg-zinc-50 px-4 pb-32 pt-5">
+        <header className="mb-5">
+          <LedgerLogo height={20} className="mb-3 opacity-90" priority />
+          <h1 className="text-xl font-bold text-zinc-900">อัปโหลดหลายไฟล์</h1>
+        </header>
+
+        {!batch.finished ? (
+          <div className="rounded-2xl bg-white p-5 ring-1 ring-zinc-200" role="status" aria-live="polite">
+            <div className="mb-1 flex items-center gap-2">
+              <div className="size-5 animate-spin rounded-full border-[3px] border-[var(--color-brand-200)] border-t-[var(--color-brand-600)]" />
+              <span className="text-base font-bold text-zinc-900">กำลังอัปโหลด</span>
+            </div>
+            <p className="mb-4 text-sm text-zinc-500">AI กำลังอ่านใบเสร็จทีละใบ · อย่าเพิ่งปิดหน้านี้</p>
+            <div className="mb-2 flex items-baseline justify-between">
+              <span className="text-2xl font-bold tabular-nums text-zinc-900">
+                {batch.done}
+                <span className="text-base font-medium text-zinc-400"> / {batch.total}</span>
+              </span>
+              <span className="text-xs font-medium tabular-nums text-zinc-400">{pct}%</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+              <div
+                className="h-full rounded-full bg-[var(--color-brand-600)] transition-all"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <p className="mt-2 truncate text-xs text-zinc-400">{batch.current}</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-white p-5 text-center ring-1 ring-zinc-200">
+              <div className="mx-auto mb-3 grid size-14 place-items-center rounded-full bg-emerald-100 text-3xl text-emerald-600">
+                ✓
+              </div>
+              <h2 className="text-lg font-bold text-zinc-900">
+                {okCount > 0 ? `เพิ่ม ${okCount} ใบ (ร่าง) แล้ว` : "เสร็จสิ้น"}
+              </h2>
+              <p className="mt-1 text-sm text-zinc-500">
+                ส่งให้ฝ่ายบัญชีตรวจ · ดูได้ที่ “ใบของฉัน”
+              </p>
+              <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+                {okCount > 0 && (
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                    สำเร็จ {okCount}
+                  </span>
+                )}
+                {dupCount > 0 && (
+                  <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                    ซ้ำ (ข้าม) {dupCount}
+                  </span>
+                )}
+                {failCount > 0 && (
+                  <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">
+                    ล้มเหลว {failCount}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {failCount > 0 && (
+              <ul className="space-y-1 rounded-2xl bg-white p-3 text-xs text-zinc-600 ring-1 ring-zinc-200">
+                {batch.results
+                  .filter((r) => r.status === "fail")
+                  .map((r, i) => (
+                    <li key={i} className="flex items-start gap-1.5">
+                      <span aria-hidden>⚠️</span>
+                      <span className="min-w-0">
+                        <span className="font-medium text-zinc-700">{r.name}</span> — {r.error}
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setBatch(null);
+                reset();
+              }}
+              className="h-12 w-full rounded-xl bg-[var(--color-brand-600)] text-base font-semibold text-white transition active:bg-[var(--color-brand-700)]"
+            >
+              อัปโหลดเพิ่ม
+            </button>
+            <Link
+              href="/liff/ledger/my"
+              className="flex h-12 w-full items-center justify-center rounded-xl border border-zinc-300 bg-white text-sm font-semibold text-zinc-700 transition active:bg-zinc-50"
+            >
+              📋 ดูใบของฉัน
+            </Link>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-zinc-50 px-4 pb-32 pt-5">
@@ -520,7 +782,7 @@ export function LedgerCaptureApp({
           >
             <span className="text-4xl" aria-hidden>📷</span>
             <span className="text-base font-semibold">แตะเพื่อถ่าย / เลือกรูป · PDF</span>
-            <span className="text-xs text-[var(--color-brand-600)]/80">รองรับใบเสร็จ · บิล · สลิป · ไฟล์ PDF</span>
+            <span className="text-xs text-[var(--color-brand-600)]/80">เลือกหลายไฟล์พร้อมกันได้ · รองรับรูป · บิล · สลิป · PDF</span>
           </button>
           <p className="px-1 text-center text-[11px] text-zinc-400">
             เคล็ดลับ: ปิด Live Photo บน iPhone เพื่อให้ AI อ่านแม่นขึ้น
@@ -804,12 +1066,13 @@ export function LedgerCaptureApp({
         </div>
       )}
 
-      {/* รับรูปภาพ + PDF · ไม่ใส่ capture เพื่อให้เลือกไฟล์/PDF จากเครื่องได้
-          (OS ยังเสนอกล้องให้อยู่) */}
+      {/* รับรูปภาพ + PDF · multiple = เลือกหลายไฟล์พร้อมกันได้ (โหมด batch)
+          ไม่ใส่ capture เพื่อให้เลือกไฟล์/PDF จากเครื่องได้ (OS ยังเสนอกล้องให้อยู่) */}
       <input
         ref={fileRef}
         type="file"
         accept="image/*,application/pdf"
+        multiple
         className="hidden"
         onChange={onPick}
       />
