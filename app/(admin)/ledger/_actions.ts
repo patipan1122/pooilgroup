@@ -1228,11 +1228,15 @@ export async function exportConfirmedCsv(raw: unknown): Promise<ExportResult> {
 // tier, org+company scope, NEVER a draft (golden rule), idempotent (a row with a
 // trcloudDocId can't be pushed twice), audit trail, and per-row error capture.
 
-/** Load the full expense (items + category GL) → the shape the pusher needs. */
+/** Load the full expense (items + category GL) → the shape the pusher needs.
+ *  companyId is REQUIRED — never omit it, as one org can own multiple legal
+ *  entities (e.g. Pooil + JP Sync with separate VAT books). A query without
+ *  companyId would let an accountant push an expense belonging to a different
+ *  company in the same org (cross-company VAT leak). */
 async function loadPushable(
   orgId: string,
   id: string,
-  companyId?: string,
+  companyId: string,
 ): Promise<
   | {
       pushable: PushableExpense;
@@ -1244,7 +1248,7 @@ async function loadPushable(
   | null
 > {
   const row = await prisma.ledgerExpense.findFirst({
-    where: { id, orgId, ...(companyId ? { companyId } : {}) },
+    where: { id, orgId, companyId },
     include: {
       items: { orderBy: { createdAt: "asc" } },
       category: {
@@ -1368,7 +1372,15 @@ export async function sendExpenseToTrcloud(
     return { ok: false, error: "ยังไม่ได้ตั้งค่าการเชื่อม TRCloud (ผู้ดูแลตั้ง env TRCLOUD_* ใน Vercel)" };
   }
   const orgId = session.user.org_id;
-  const loaded = await loadPushable(orgId, id);
+  // Lightweight load first — establishes the company boundary before the heavy
+  // include. Without this, loadPushable would have to accept an optional companyId,
+  // allowing a cross-company fetch when the caller doesn't know the company upfront.
+  const lightRow = await prisma.ledgerExpense.findFirst({
+    where: { id, orgId },
+    select: { companyId: true },
+  });
+  if (!lightRow) return { ok: false, error: "ไม่พบรายการ" };
+  const loaded = await loadPushable(orgId, id, lightRow.companyId);
   if (!loaded) return { ok: false, error: "ไม่พบรายการ" };
   // Golden rule: only confirmed/locked spend leaves the building — never a draft.
   if (loaded.status !== "confirmed" && loaded.status !== "locked") {
@@ -1430,7 +1442,7 @@ export async function sendExpensesToTrcloud(
   // Sequential on purpose: each push creates/looks-up shared TRCloud masters; serial
   // avoids racing two new-vendor creates into duplicates within one batch.
   for (const id of ids) {
-    const loaded = await loadPushable(orgId, id);
+    const loaded = await loadPushable(orgId, id, companyId);
     if (!loaded || loaded.companyId !== companyId) {
       skipped++;
       continue;

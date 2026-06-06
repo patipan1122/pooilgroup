@@ -121,8 +121,10 @@ async function searchContactByTaxId(taxId: string): Promise<ContactRef | null> {
       if (ref) return ref;
     }
   }
-  const first = asObj(list[0]);
-  return first ? refOf(first) : null;
+  // No exact tax_id match → return null so the caller creates a NEW contact.
+  // Falling back to list[0] risks assigning a random vendor's AP to a different
+  // creditor when TRCloud returns partial search results.
+  return null;
 }
 
 async function createContact(input: {

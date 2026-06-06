@@ -1,8 +1,59 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-05 (ChairOps Reconcile Sprint 1+2 + LedgerLine identity fix · DEPLOYED setup af01ba1)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-06 (LedgerLine TRCloud v2 Full Sprint · commit 6eeeb79 · pending prod deploy)
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
+
+## 🆕 Update (2026-06-07 — LedgerLine TRCloud v2 — Audit P0 blockers resolved · ⏳ รอ CEO อนุมัติ deploy)
+
+### 2026-06-07 · LedgerLine TRCloud P0 blocker fixes (pre-go-live)
+
+**3 audit P0 blockers — all resolved:**
+
+1. **TRCloudBranchConfig ใน LIFF AdminConsole** ✅ — admin mobile ผูก branch ได้แล้ว (workflow agent เพิ่ม tab "ตั้งค่า" + TRCloudBranchConfig ใน AdminConsole.tsx)
+2. **`loadPushable` companyId filter** ✅ — companyId บังคับ (required, ไม่ optional) ใน `_actions.ts`; `sendExpenseToTrcloud` ทำ lightweight lookup ก่อนแล้วจึงส่ง companyId; `sendExpensesToTrcloud` ส่ง companyId ด้วย → ป้องกัน cross-company VAT leak
+3. **contact fallback `list[0]`** ✅ — `searchContactByTaxId` ใน `trcloud-push.ts` ลบ fallback ออก; ถ้าไม่พบ tax_id match → return null → caller สร้าง contact ใหม่ → ไม่เสี่ยงผูก AP กับเจ้าหนี้ผิดราย
+
+**B-1 Race condition** ✅ — แก้แล้วใน session ก่อน (DB sentinel: `updateMany WHERE trcloudDocId IS NULL → set "pending"`)
+
+**TypeScript:** 0 errors ใน ledger files
+
+---
+
+### 2026-06-06 · LedgerLine TRCloud v2 — Full Sprint Complete
+
+**Build (P0 bug fixes committed as 6eeeb79):**
+- Fixed: vat:"7" always sent for zero-VAT lines → now conditional
+- Fixed: env fallback to shared company-31 removed
+- Fixed: branch.updateMany with orgId (TOCTOU fix)
+- Fixed: audit log on push failure (LEDGER_EXPENSE_PUSH_FAILED)
+- Fixed: per-branch pending state in TRCloudBranchConfig
+- Fixed: "ยังไม่ผูก" visual badge + unconfigured count
+
+**Audit (auditbigteam · 8+8 personas · phases 2-5):**
+- See docs/AUDIT_ledger-trcloud_2026-06-06.md
+- HTML mockup: /tmp/audit_ledger-trcloud_mockup_settings.html
+
+**Bug Hunt (bigsolvebug · 5 verify areas):**
+- See docs/BUGSOLVE_ledger-trcloud_2026-06-06.md
+- Key: AbortController timeout added to TRCloud API calls
+
+**UX Design (claude-design · 4 personas):**
+- See docs/CLAUDE_DESIGN_ledger-trcloud_2026-06-06.md
+- Added: search filter + progress indicator to TRCloudBranchConfig
+- Added: descriptive SKU labels + GL validation to CategoryManager
+- Added: TRCloudBranchConfig to LIFF AdminConsole settings tab
+
+**Performance (upspeed · 4 lenses):**
+- See docs/UPSPEED_ledger-trcloud_2026-06-06.md
+- Added: loading.tsx for /ledger/settings
+
+**⚠️ PENDING PROD DEPLOY — needs CEO approval:**
+- cherry-pick commits → setup branch
+- Apply migration: 20260606_ledger_trcloud_v2.sql to prod Supabase
+- Add env vars to Vercel: TRCLOUD_JPS_COMPANY_ID, TRCLOUD_JPS_PASSKEY, TRCLOUD_JPS_ENCRYPT_HEAD, TRCLOUD_JPS_BASE_URL
+- Run seed: node scripts/seed-ledger-categories-jps.mjs
+- Configure 31 branch project/department mappings in /ledger/settings
 
 ## 🆕 Update (2026-06-05 — ChairOps Reconcile Sprint 1+2 + LedgerLine identity fix: 🚀 DEPLOYED setup af01ba1)
 
