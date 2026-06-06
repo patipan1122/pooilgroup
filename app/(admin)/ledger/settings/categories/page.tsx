@@ -45,8 +45,10 @@ export default async function CategorySettingsPage({
             name: c.name,
             color: c.color,
             trcloudAccCode: c.trcloudAccCode ?? null,
+            trcloudProductCode: c.trcloudProductCode ?? null,
+            vatClaimable: c.vatClaimable ?? true,
             sort: c.sort,
-            active: true,
+            active: c.active,
           }))}
         />
       </div>
