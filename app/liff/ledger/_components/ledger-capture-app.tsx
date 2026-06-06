@@ -19,6 +19,7 @@
 // manual entry if AI is unavailable, so the flow never dead-ends.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { LedgerLogo, LedgerMascot } from "@/components/ledger/Brand";
 
 type Phase = "capture" | "parsing" | "review" | "saving" | "done" | "error";
@@ -710,6 +711,13 @@ export function LedgerCaptureApp({
           >
             ถ่ายใบเสร็จอื่น
           </button>
+          {/* discoverability: jump to the staffer's own receipt list */}
+          <Link
+            href="/liff/ledger/my"
+            className="flex h-12 w-full items-center justify-center rounded-xl border border-zinc-300 bg-white text-sm font-semibold text-zinc-700 transition active:bg-zinc-50"
+          >
+            📋 ดูใบของฉัน
+          </Link>
         </div>
       )}
 

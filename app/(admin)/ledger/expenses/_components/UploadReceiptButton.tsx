@@ -10,7 +10,7 @@
 //   5. เปิดใบนั้นในแพเนลขวาให้บัญชีตรวจ/ยืนยัน
 //
 // *** ห้าม auto-post *** — ใบที่สร้างเป็น "ร่าง" จนกว่าบัญชีจะกดยืนยันเอง.
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import {
   Upload,
@@ -69,6 +69,19 @@ export function UploadReceiptButton({
     setErr(null);
     inputRef.current?.click();
   }
+
+  // The mobile bottom-nav capture FAB (LedgerBottomNav) fires this event when the
+  // user is already on /ledger/expenses → opens the camera in the SAME user
+  // gesture (so iOS/LINE-webview don't block the file picker). From other pages
+  // the FAB navigates here instead, where this visible button is the next tap.
+  useEffect(() => {
+    const open = () => {
+      setErr(null);
+      inputRef.current?.click();
+    };
+    window.addEventListener("ledger:open-upload", open);
+    return () => window.removeEventListener("ledger:open-upload", open);
+  }, []);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];

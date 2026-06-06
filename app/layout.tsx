@@ -61,6 +61,13 @@ export const viewport: Viewport = {
   maximumScale: 5,
   userScalable: true,
   themeColor: "#0a0a0a",
+  // viewportFit:'cover' activates env(safe-area-inset-*) on notch/home-indicator
+  // devices — every fixed bottom bar in Pool (chairops office-nav, maid-shell,
+  // ledger bottom-nav) already reserves safe-area padding, so this makes that
+  // padding real instead of computing to 0. interactiveWidget keeps the on-screen
+  // keyboard from covering sticky confirm/submit bars.
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({

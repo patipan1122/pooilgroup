@@ -19,7 +19,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Receipt,
@@ -111,6 +111,7 @@ function Cell({ item, pathname }: { item: NavItem; pathname: string }) {
 
 export function LedgerBottomNav({ role }: { role: Role }) {
   const pathname = usePathname() ?? "/ledger";
+  const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
 
   // Collision guard — never stack under the single-receipt edit/admin surfaces.
@@ -203,13 +204,23 @@ export function LedgerBottomNav({ role }: { role: Role }) {
           {/* center raised capture FAB */}
           <div className="flex w-16 flex-none flex-col items-center justify-start pt-1">
             {canCapture ? (
-              <Link
-                href="/ledger/expenses"
+              <button
+                type="button"
                 aria-label="ถ่ายใบเสร็จ / อัปโหลด"
+                onClick={() => {
+                  // On the receipts page → open the camera in THIS gesture (reliable
+                  // on iOS/LINE webview). Elsewhere → go there; the visible upload
+                  // button is the next tap (never a dead button).
+                  if (pathname.startsWith("/ledger/expenses")) {
+                    window.dispatchEvent(new CustomEvent("ledger:open-upload"));
+                  } else {
+                    router.push("/ledger/expenses");
+                  }
+                }}
                 className="grid size-14 -mt-5 place-items-center rounded-full bg-[var(--color-brand-600)] text-white shadow-lg ring-4 ring-white transition-transform active:scale-95"
               >
                 <Camera className="size-6" aria-hidden />
-              </Link>
+              </button>
             ) : (
               <span className="size-14 -mt-5" aria-hidden />
             )}
