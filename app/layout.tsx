@@ -61,13 +61,10 @@ export const viewport: Viewport = {
   maximumScale: 5,
   userScalable: true,
   themeColor: "#0a0a0a",
-  // viewportFit:'cover' activates env(safe-area-inset-*) on notch/home-indicator
-  // devices — every fixed bottom bar in Pool (chairops office-nav, maid-shell,
-  // ledger bottom-nav) already reserves safe-area padding, so this makes that
-  // padding real instead of computing to 0. interactiveWidget keeps the on-screen
-  // keyboard from covering sticky confirm/submit bars.
-  viewportFit: "cover",
-  interactiveWidget: "resizes-content",
+  // NOTE: viewportFit:'cover' (safe-area) is HELD — it's a Pool-wide viewport
+  // change (affects chairops/clawfleet/maid bottom bars too) that needs a separate
+  // cross-module test before going live. The ready version lives in git history
+  // (commit eb092b7) to re-apply once approved. See AUDIT_ledger-mobile (Wave 2 G3).
 };
 
 export default function RootLayout({
