@@ -5,8 +5,13 @@
 "use client";
 
 import { useState } from "react";
-import { ImageOff, ExternalLink, ZoomIn, X } from "lucide-react";
+import { ImageOff, ExternalLink, ZoomIn, X, FileText } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
+
+/** A receipt stored as PDF (e-tax invoice / supplier PDF) — can't render in <img>. */
+function isPdfUrl(u: string | null | undefined): boolean {
+  return !!u && /\.pdf(\?|#|$)/i.test(u);
+}
 
 export function ReceiptThumb({
   thumbUrl,
@@ -23,6 +28,32 @@ export function ReceiptThumb({
   const [open, setOpen] = useState(false);
   const src = thumbUrl || originalUrl || null;
   const fullUrl = originalUrl || thumbUrl || null;
+
+  // PDF receipts — show a document card with an "เปิด PDF" link (no <img>/lightbox).
+  if (isPdfUrl(fullUrl) || isPdfUrl(src)) {
+    const href = fullUrl || src!;
+    return (
+      <div
+        className={cn(
+          "flex w-full flex-col items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-5 text-center",
+          className,
+        )}
+      >
+        <span className="grid size-12 place-items-center rounded-xl bg-rose-50 text-rose-600">
+          <FileText className="size-6" aria-hidden />
+        </span>
+        <span className="text-xs font-medium text-zinc-600">เอกสาร PDF</span>
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white transition active:bg-zinc-800"
+        >
+          <ExternalLink className="size-3.5" aria-hidden /> เปิด PDF
+        </a>
+      </div>
+    );
+  }
 
   if (!src || broken) {
     return (

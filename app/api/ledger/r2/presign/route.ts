@@ -28,6 +28,7 @@ function extFromContentType(ct: string): string {
     "image/webp": "webp",
     "image/heic": "heic",
     "image/gif": "gif",
+    "application/pdf": "pdf",
   };
   return map[ct.toLowerCase()] ?? "jpg";
 }
@@ -53,8 +54,12 @@ export async function POST(req: NextRequest) {
 
   const { companyId, uploadId, contentType } = body;
   if (!companyId) return NextResponse.json({ error: "missing-companyId" }, { status: 400 });
-  if (!contentType || !contentType.startsWith("image/")) {
-    return NextResponse.json({ error: "image-only" }, { status: 400 });
+  // Receipts arrive as images OR PDF (e-tax invoices / supplier PDFs). Anything
+  // else is rejected so the public bucket only ever holds receipt media.
+  const isImage = !!contentType && contentType.startsWith("image/");
+  const isPdf = contentType === "application/pdf";
+  if (!isImage && !isPdf) {
+    return NextResponse.json({ error: "image-or-pdf-only" }, { status: 400 });
   }
 
   const orgId = session.user.org_id;

@@ -151,6 +151,7 @@ export function LedgerCaptureApp({
   const [duplicate, setDuplicate] = useState(false);
   const [errMsg, setErrMsg] = useState<string>("");
   const [serverWarnings, setServerWarnings] = useState<string[]>([]);
+  const [isPdf, setIsPdf] = useState(false);
 
   // Company / branch context (the API is company-scoped).
   const [companyId, setCompanyId] = useState<string>(companies[0]?.id ?? "");
@@ -207,6 +208,7 @@ export function LedgerCaptureApp({
     setDuplicate(false);
     setErrMsg("");
     setServerWarnings([]);
+    setIsPdf(false);
     upload.current = uploadId();
     if (fileRef.current) fileRef.current.value = "";
   }
@@ -224,11 +226,18 @@ export function LedgerCaptureApp({
   async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 12 * 1024 * 1024) {
-      setErrMsg("รูปใหญ่เกินไป · ต้องไม่เกิน 12MB");
+    if (file.size > 15 * 1024 * 1024) {
+      setErrMsg("ไฟล์ใหญ่เกินไป · ต้องไม่เกิน 15MB");
       setPhase("error");
       return;
     }
+    const pdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (!file.type.startsWith("image/") && !pdf) {
+      setErrMsg("รองรับเฉพาะรูปภาพและ PDF");
+      setPhase("error");
+      return;
+    }
+    setIsPdf(pdf);
     if (!companyId) {
       setErrMsg("เลือกบริษัทก่อนถ่ายใบเสร็จ");
       setPhase("error");
@@ -479,15 +488,24 @@ export function LedgerCaptureApp({
         </div>
       )}
 
-      {/* Receipt preview */}
+      {/* Receipt preview (PDF → document card; images can't render a PDF) */}
       {preview && (
         <div className="mb-4 overflow-hidden rounded-2xl bg-white ring-1 ring-zinc-200">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={preview}
-            alt="รูปใบเสร็จที่ถ่าย"
-            className="max-h-64 w-full bg-zinc-100 object-contain"
-          />
+          {isPdf ? (
+            <div className="flex flex-col items-center justify-center gap-2 bg-zinc-50 px-4 py-8 text-center">
+              <span className="text-4xl" aria-hidden>📄</span>
+              <span className="text-sm font-medium text-zinc-600">ไฟล์ PDF</span>
+            </div>
+          ) : (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={preview}
+                alt="รูปใบเสร็จที่ถ่าย"
+                className="max-h-64 w-full bg-zinc-100 object-contain"
+              />
+            </>
+          )}
         </div>
       )}
 
@@ -501,8 +519,8 @@ export function LedgerCaptureApp({
             className="flex h-40 w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[var(--color-brand-300)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)] transition active:scale-[0.99] active:bg-[var(--color-brand-100)]"
           >
             <span className="text-4xl" aria-hidden>📷</span>
-            <span className="text-base font-semibold">แตะเพื่อถ่าย / เลือกรูป</span>
-            <span className="text-xs text-[var(--color-brand-600)]/80">รองรับใบเสร็จ · บิล · สลิป</span>
+            <span className="text-base font-semibold">แตะเพื่อถ่าย / เลือกรูป · PDF</span>
+            <span className="text-xs text-[var(--color-brand-600)]/80">รองรับใบเสร็จ · บิล · สลิป · ไฟล์ PDF</span>
           </button>
           <p className="px-1 text-center text-[11px] text-zinc-400">
             เคล็ดลับ: ปิด Live Photo บน iPhone เพื่อให้ AI อ่านแม่นขึ้น
@@ -786,11 +804,12 @@ export function LedgerCaptureApp({
         </div>
       )}
 
+      {/* รับรูปภาพ + PDF · ไม่ใส่ capture เพื่อให้เลือกไฟล์/PDF จากเครื่องได้
+          (OS ยังเสนอกล้องให้อยู่) */}
       <input
         ref={fileRef}
         type="file"
-        accept="image/*"
-        capture="environment"
+        accept="image/*,application/pdf"
         className="hidden"
         onChange={onPick}
       />

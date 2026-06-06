@@ -1,17 +1,17 @@
-// Ledger · ตั้งค่า — หมวดค่าใช้จ่าย (CRUD), ผูกกลุ่ม LINE (stub), export config.
-// admin tier only (nav item is adminOnly); we also re-gate here.
+// Ledger · ตั้งค่า (หน้ารวม) — a tappable hub that drills into focused sub-pages
+// (หมวดหมู่ · สมาชิก · สิทธิ์ · สาขา · กลุ่ม LINE · ส่งออก). Replaces the old
+// one-long-scroll. admin tier only (nav item is adminOnly); we also re-gate here.
 import { requireRole } from "@/lib/auth/session";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
-import { listCategories, getLineChannel, listBranches, listInvites, listLedgerMembers, listLedgerGroups } from "../_data";
-import { CategoryManager } from "./_components/CategoryManager";
-import { LineChannelCard } from "./_components/LineChannelCard";
-import { ExportConfigCard } from "./_components/ExportConfigCard";
-import { RichMenuButton } from "./_components/RichMenuButton";
-import { InviteManager } from "./_components/InviteManager";
-import { MemberManager } from "./_components/MemberManager";
-import { GroupBranchManager } from "./_components/GroupBranchManager";
-import { IdentityClaimCard } from "./_components/IdentityClaimCard";
+import {
+  listCategories,
+  getLineChannel,
+  listInvites,
+  listLedgerMembers,
+  listLedgerGroups,
+} from "../_data";
+import { SettingsHub, type HubCounts } from "./_components/SettingsHub";
 
 export const dynamic = "force-dynamic";
 
@@ -33,68 +33,32 @@ export default async function LedgerSettingsPage({
     );
   }
 
-  const [categories, lineChannel, branches, invites, members, groups] = await Promise.all([
+  const [categories, members, groups, invites, lineChannel] = await Promise.all([
     listCategories(scope.orgId, scope.companyId),
-    getLineChannel(scope.orgId, scope.companyId),
-    listBranches(scope.orgId, scope.companyId),
-    listInvites(scope.orgId, scope.companyId),
     listLedgerMembers(scope.orgId, scope.companyId),
     listLedgerGroups(scope.orgId, scope.companyId),
+    listInvites(scope.orgId, scope.companyId),
+    getLineChannel(scope.orgId, scope.companyId),
   ]);
 
+  const counts: HubCounts = {
+    categories: categories.length,
+    members: members.length,
+    pendingMembers: members.filter((m) => m.pendingBranchId).length,
+    invites: invites.length,
+    branches: scope.branches.length,
+    groups: groups.length,
+    lineConnected: !!lineChannel?.hasAccessToken,
+  };
+
   return (
-    <div className="p-4 sm:p-6">
+    <div className="p-4 pb-24 sm:p-6 lg:pb-6">
       <LedgerHeader
         title="ตั้งค่า"
-        subtitle="หมวดค่าใช้จ่าย · กลุ่ม LINE · การส่งออก"
+        subtitle="จัดการระบบบัญชี · ทีม · การเชื่อมต่อ LINE"
         scope={scope}
       />
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <IdentityClaimCard companyId={scope.companyId} />
-        <div className="lg:col-span-2">
-          <CategoryManager
-            companyId={scope.companyId}
-            categories={categories.map((c) => ({
-              id: c.id,
-              name: c.name,
-              color: c.color,
-              trcloudAccCode: c.trcloudAccCode ?? null,
-              sort: c.sort,
-              active: true,
-            }))}
-          />
-        </div>
-        <LineChannelCard
-          companyId={scope.companyId}
-          companyName={scope.companies.find((c) => c.id === scope.companyId)?.name ?? ""}
-          channel={lineChannel}
-          branches={branches.map((b) => ({ id: b.id, code: b.code, name: b.name }))}
-        />
-        <RichMenuButton
-          companyId={scope.companyId}
-          connected={!!lineChannel?.hasAccessToken}
-          alreadySet={!!lineChannel?.richMenuId}
-        />
-        <GroupBranchManager
-          companyId={scope.companyId}
-          groups={groups}
-          branches={branches.map((b) => ({ id: b.id, code: b.code, name: b.name }))}
-        />
-        <InviteManager
-          companyId={scope.companyId}
-          branches={branches.map((b) => ({ id: b.id, code: b.code, name: b.name }))}
-          invites={invites}
-        />
-        <MemberManager
-          companyId={scope.companyId}
-          branches={branches.map((b) => ({ id: b.id, code: b.code, name: b.name }))}
-          members={members}
-          myUserId={session.user.id}
-          myLineLinked={!!session.user.line_user_id}
-        />
-        <ExportConfigCard companyId={scope.companyId} />
-      </div>
+      <SettingsHub companyId={scope.companyId} counts={counts} />
     </div>
   );
 }
