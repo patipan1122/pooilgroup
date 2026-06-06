@@ -31,6 +31,10 @@ export type LedgerActor = {
   scopeBranchIds: string[];
   allBranches: boolean;
   canConfirm: boolean;
+  /** Company the actor belongs to (LedgerExpense is company-scoped, NOT just org).
+   *  Set for member actors. Undefined for admin/accountant/staff who may span
+   *  companies — callers must resolve a default/active company in that case. */
+  companyId?: string | null;
 };
 
 export async function resolveLedgerActor(): Promise<LedgerActor | null> {
@@ -69,7 +73,7 @@ export async function resolveLedgerActor(): Promise<LedgerActor | null> {
         ...(lineUserId ? [{ lineUserId }] : []),
       ],
     },
-    select: { role: true, scopeBranchIds: true },
+    select: { role: true, scopeBranchIds: true, companyId: true },
   });
   if (member) {
     const [allBranches, canConfirm] = await Promise.all([
@@ -84,6 +88,7 @@ export async function resolveLedgerActor(): Promise<LedgerActor | null> {
       scopeBranchIds: member.scopeBranchIds ?? [],
       allBranches,
       canConfirm,
+      companyId: member.companyId,
     };
   }
 

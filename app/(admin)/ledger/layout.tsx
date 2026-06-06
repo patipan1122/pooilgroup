@@ -10,6 +10,7 @@
 // each page header (LedgerHeader) because Next layouts don't receive
 // searchParams — the picker is URL-driven (?company=&branch=).
 
+import { Suspense } from "react";
 import { assertModuleEnabled } from "@/lib/auth/module-access";
 import { getSession } from "@/lib/auth/session";
 import { LedgerBottomNav } from "@/components/ledger/LedgerBottomNav";
@@ -31,7 +32,12 @@ export default async function LedgerLayout({
     // the Pool sidebar so no bottom bar + no spacer.
     <div className="ledger-scope pb-[calc(64px+env(safe-area-inset-bottom))] lg:pb-0">
       {children}
-      {session ? <LedgerBottomNav role={session.user.role} /> : null}
+      {/* Suspense: LedgerBottomNav reads useSearchParams (?selected collision guard). */}
+      {session ? (
+        <Suspense fallback={null}>
+          <LedgerBottomNav role={session.user.role} />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

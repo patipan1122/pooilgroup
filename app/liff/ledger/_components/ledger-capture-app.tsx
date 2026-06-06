@@ -234,7 +234,11 @@ export function LedgerCaptureApp({
       setPhase("error");
       return;
     }
-    setPreview(URL.createObjectURL(file));
+    // Revoke any previous preview blob before overwriting (retake → no leak).
+    setPreview((p) => {
+      if (p) URL.revokeObjectURL(p);
+      return URL.createObjectURL(file);
+    });
     setPhase("parsing");
     setErrMsg("");
     setServerWarnings([]);

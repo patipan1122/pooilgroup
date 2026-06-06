@@ -76,12 +76,14 @@ export function UploadReceiptButton({
   // the FAB navigates here instead, where this visible button is the next tap.
   useEffect(() => {
     const open = () => {
+      // Don't open while an upload is in-flight or before a company is picked.
+      if (busy || !companyId) return;
       setErr(null);
       inputRef.current?.click();
     };
     window.addEventListener("ledger:open-upload", open);
     return () => window.removeEventListener("ledger:open-upload", open);
-  }, []);
+  }, [busy, companyId]);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];

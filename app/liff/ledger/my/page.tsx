@@ -16,6 +16,7 @@ import type { Prisma } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth/session";
 import { resolveLedgerActor } from "@/lib/ledger/liff-auth";
+import { resolveScope } from "@/app/(admin)/ledger/_scope";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
 import { LedgerMascot } from "@/components/ledger/Brand";
 
@@ -47,9 +48,24 @@ export default async function LedgerLiffMyPage() {
     );
   }
 
-  // Tenant + actor scope. allBranches (admin/accountant) → org-wide recent.
+  // COMPANY scope first — LedgerExpense is company-scoped (Pooil Oil + JP Sync are
+  // separate legal entities/VAT under one org). Members carry their company; admin/
+  // accountant/staff resolve the active/default company (same contract as getExpense
+  // + every other ledger query). NEVER fall back to org-wide = cross-company leak.
+  const companyId = actor.companyId ?? (await resolveScope(actor.orgId, {})).companyId;
+  if (!companyId) {
+    return (
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
+        <LedgerMascot size={88} pose="sleepy" priority />
+        <p className="text-base font-semibold text-zinc-800">ยังไม่ได้ตั้งค่าบริษัท</p>
+        <p className="text-sm text-zinc-500">แจ้งผู้ดูแลให้ตั้งค่าบริษัทในระบบบัญชีก่อน</p>
+      </div>
+    );
+  }
+
+  // Within the company: allBranches (admin/accountant) → company-wide recent.
   // member → own submissions OR their scoped branches only.
-  const where: Prisma.LedgerExpenseWhereInput = { orgId: actor.orgId };
+  const where: Prisma.LedgerExpenseWhereInput = { orgId: actor.orgId, companyId };
   if (!actor.allBranches) {
     where.OR = [
       { createdBy: actor.userId },
@@ -99,7 +115,15 @@ export default async function LedgerLiffMyPage() {
               >
                 {r.thumbUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={r.thumbUrl} alt="" className="size-12 shrink-0 rounded-lg object-cover" />
+                  <img
+                    src={r.thumbUrl}
+                    alt=""
+                    width={48}
+                    height={48}
+                    loading="lazy"
+                    decoding="async"
+                    className="size-12 shrink-0 rounded-lg object-cover"
+                  />
                 ) : (
                   <div className="grid size-12 shrink-0 place-items-center rounded-lg bg-zinc-100 text-lg">🧾</div>
                 )}

@@ -19,7 +19,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard,
   Receipt,
@@ -69,7 +69,7 @@ const ADMIN: ReadonlyArray<Role> = ["super_admin", "org_admin", "admin"];
 
 // Two primary cells on each side of the center capture FAB.
 const LEFT: ReadonlyArray<NavItem> = [
-  { href: "/ledger", label: "ภาพรวม", icon: LayoutDashboard, match: "/ledger", exact: true },
+  { href: "/ledger", label: "ภาพรวม", icon: LayoutDashboard, match: "/ledger", exact: true, roles: FINANCIAL },
   { href: "/ledger/expenses", label: "รายการ", icon: Receipt, match: "/ledger/expenses", roles: FINANCIAL },
 ];
 const RIGHT: ReadonlyArray<NavItem> = [
@@ -112,11 +112,14 @@ function Cell({ item, pathname }: { item: NavItem; pathname: string }) {
 export function LedgerBottomNav({ role }: { role: Role }) {
   const pathname = usePathname() ?? "/ledger";
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  // Collision guard — never stack under the single-receipt edit/admin surfaces.
-  if (pathname.startsWith("/ledger/settings")) {
-    // settings still reachable from the overflow sheet; keep bar but it's fine.
+  // Collision guard — hide on the mobile single-receipt review (master-detail).
+  // ExpenseReviewPane has its OWN sticky confirm/save bar that this fixed nav would
+  // otherwise cover (you couldn't submit). "← กลับไปรายการ" is the way back.
+  if (pathname.startsWith("/ledger/expenses") && searchParams.get("selected")) {
+    return null;
   }
 
   const left = visible(LEFT, role);
@@ -124,6 +127,9 @@ export function LedgerBottomNav({ role }: { role: Role }) {
   const overflow = visible(OVERFLOW, role);
   const canCapture = FINANCIAL.includes(role);
   const overflowActive = overflow.some((o) => isActive(pathname, o));
+
+  // No working cells for this role → render nothing (no empty/dead strip).
+  if (!left.length && !right.length && !overflow.length && !canCapture) return null;
 
   return (
     <>
@@ -224,7 +230,9 @@ export function LedgerBottomNav({ role }: { role: Role }) {
             ) : (
               <span className="size-14 -mt-5" aria-hidden />
             )}
-            <span className="mt-0.5 text-[11px] font-medium text-zinc-500">ถ่าย</span>
+            {canCapture && (
+              <span className="mt-0.5 text-[11px] font-medium text-zinc-500">ถ่าย</span>
+            )}
           </div>
 
           {/* right cells + เพิ่มเติม */}
