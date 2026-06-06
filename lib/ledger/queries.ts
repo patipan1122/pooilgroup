@@ -30,6 +30,12 @@ function attachmentsOf(v: unknown): ExpenseAttachment[] {
   );
 }
 
+/** Coerce the jsonb completeness_missing column → string[] | null (tolerant). */
+function missingOf(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null;
+  return v.filter((s): s is string => typeof s === "string");
+}
+
 // ---- Decimal/Date serialization (RSC-safe) ----
 type DecimalLike = { toNumber: () => number } | number | null | undefined;
 
@@ -107,6 +113,21 @@ export function serializeExpense(row: ExpenseRow): Expense {
     trcloudDocNo: row.trcloudDocNo,
     trcloudPushedAt: iso(row.trcloudPushedAt),
     trcloudError: row.trcloudError,
+    // — Input-VAT claimability (ภาษีซื้อ) —
+    buyerTaxIdSnapshot: row.buyerTaxIdSnapshot,
+    buyerNameSnapshot: row.buyerNameSnapshot,
+    buyerTaxIdOnDoc: row.buyerTaxIdOnDoc,
+    buyerMatchStatus: (row.buyerMatchStatus as Expense["buyerMatchStatus"]) ?? "undecided",
+    completenessStatus: (row.completenessStatus as Expense["completenessStatus"]) ?? "undecided",
+    completenessMissing: missingOf(row.completenessMissing),
+    completenessCheckedAt: iso(row.completenessCheckedAt),
+    inputVatClaimable: row.inputVatClaimable,
+    inputVatBlockReason: (row.inputVatBlockReason as Expense["inputVatBlockReason"]) ?? null,
+    replacementOfId: row.replacementOfId,
+    replacedById: row.replacedById,
+    overrideBy: row.overrideBy,
+    overrideAt: iso(row.overrideAt),
+    overrideReason: row.overrideReason,
     createdAt: iso(row.createdAt)!,
     updatedAt: iso(row.updatedAt)!,
     items: row.items.map(serializeItem),
@@ -129,10 +150,19 @@ export interface ExpenseListFilter {
   needsReview?: boolean;
   /** true = ส่ง TRCloud แล้ว · false = ยังไม่ส่ง · undefined = ทั้งหมด */
   trcloudPushed?: boolean;
+  /** filter ตามสถานะสีภาษีซื้อ: green=ขอคืนได้ · yellow=ขอใบใหม่ · red=ขอคืนไม่ได้. */
+  completeness?: "green" | "yellow" | "red";
   search?: string | null;
   take?: number;
   skip?: number;
 }
+
+/** Map a color filter token → the completeness_status column value. */
+const COMPLETENESS_STATUS_BY_FILTER = {
+  green: "green_full",
+  yellow: "yellow_partial",
+  red: "red_invalid",
+} as const;
 
 function buildWhere(f: ExpenseListFilter): Prisma.LedgerExpenseWhereInput {
   const where: Prisma.LedgerExpenseWhereInput = {
@@ -147,6 +177,9 @@ function buildWhere(f: ExpenseListFilter): Prisma.LedgerExpenseWhereInput {
   if (f.needsReview !== undefined) where.needsReview = f.needsReview;
   if (f.trcloudPushed !== undefined) {
     where.trcloudDocId = f.trcloudPushed ? { not: null } : null;
+  }
+  if (f.completeness) {
+    where.completenessStatus = COMPLETENESS_STATUS_BY_FILTER[f.completeness];
   }
   if (f.period) {
     const [y, m] = f.period.split("-").map(Number);
@@ -229,6 +262,21 @@ const EXPENSE_SUMMARY_SELECT = {
   trcloudDocNo: true,
   trcloudPushedAt: true,
   trcloudError: true,
+  // — Input-VAT claimability (ภาษีซื้อ) — the list dots + claimable filter read these —
+  buyerTaxIdSnapshot: true,
+  buyerNameSnapshot: true,
+  buyerTaxIdOnDoc: true,
+  buyerMatchStatus: true,
+  completenessStatus: true,
+  completenessMissing: true,
+  completenessCheckedAt: true,
+  inputVatClaimable: true,
+  inputVatBlockReason: true,
+  replacementOfId: true,
+  replacedById: true,
+  overrideBy: true,
+  overrideAt: true,
+  overrideReason: true,
   createdAt: true,
   updatedAt: true,
   category: { select: { name: true } },
@@ -284,6 +332,21 @@ function serializeExpenseSummary(row: ExpenseSummaryRow): Expense {
     trcloudDocNo: row.trcloudDocNo,
     trcloudPushedAt: iso(row.trcloudPushedAt),
     trcloudError: row.trcloudError,
+    // — Input-VAT claimability (ภาษีซื้อ) —
+    buyerTaxIdSnapshot: row.buyerTaxIdSnapshot,
+    buyerNameSnapshot: row.buyerNameSnapshot,
+    buyerTaxIdOnDoc: row.buyerTaxIdOnDoc,
+    buyerMatchStatus: (row.buyerMatchStatus as Expense["buyerMatchStatus"]) ?? "undecided",
+    completenessStatus: (row.completenessStatus as Expense["completenessStatus"]) ?? "undecided",
+    completenessMissing: missingOf(row.completenessMissing),
+    completenessCheckedAt: iso(row.completenessCheckedAt),
+    inputVatClaimable: row.inputVatClaimable,
+    inputVatBlockReason: (row.inputVatBlockReason as Expense["inputVatBlockReason"]) ?? null,
+    replacementOfId: row.replacementOfId,
+    replacedById: row.replacedById,
+    overrideBy: row.overrideBy,
+    overrideAt: iso(row.overrideAt),
+    overrideReason: row.overrideReason,
     createdAt: iso(row.createdAt)!,
     updatedAt: iso(row.updatedAt)!,
     items: [], // list UI never reads items — skipped to avoid the join
@@ -413,4 +476,54 @@ export async function spendByCategory(opts: {
     total: dec(g._sum.total),
     count: g._count._all,
   }));
+}
+
+// ---- Completeness summary (สถานะสีภาษีซื้อ) ----
+export interface CompletenessSummary {
+  /** count per สถานะสี (รวม undecided ที่ยังไม่ตรวจ). */
+  counts: {
+    green_full: number;
+    yellow_partial: number;
+    red_invalid: number;
+    undecided: number;
+  };
+  /** ยอด VAT ที่ยัง "ติด" (claimable = false หรือ null) — ภาษีซื้อที่ยังกู้ไม่ได้. */
+  blockedVat: number;
+}
+
+/**
+ * Summarize the color-status mix for the summary strip: count per completeness
+ * status + the total VAT still blocked (claimable=false OR null). Same scoping/
+ * filtering as listExpenses (org+company [+branch/period/...]) so the strip matches
+ * whatever the list is showing. groupBy mirrors spendByCategory's pattern.
+ */
+export async function summarizeCompleteness(
+  f: ExpenseListFilter,
+): Promise<CompletenessSummary> {
+  const where = buildWhere(f);
+
+  const [grouped, blocked] = await Promise.all([
+    prisma.ledgerExpense.groupBy({
+      by: ["completenessStatus"],
+      where,
+      _count: { _all: true },
+    }),
+    prisma.ledgerExpense.aggregate({
+      where: { ...where, OR: [{ inputVatClaimable: false }, { inputVatClaimable: null }] },
+      _sum: { vat: true },
+    }),
+  ]);
+
+  const counts = {
+    green_full: 0,
+    yellow_partial: 0,
+    red_invalid: 0,
+    undecided: 0,
+  };
+  for (const g of grouped) {
+    const key = g.completenessStatus as keyof typeof counts;
+    if (key in counts) counts[key] = g._count._all;
+  }
+
+  return { counts, blockedVat: dec(blocked._sum.vat) };
 }

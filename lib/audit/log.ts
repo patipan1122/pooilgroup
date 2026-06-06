@@ -133,7 +133,13 @@ export type AuditAction =
   // LIFF admin console (GAP 5) — money-capability permission toggle + branch/org edits via mobile.
   | "LEDGER_PERMISSION_UPDATED"
   | "LEDGER_BRANCH_UPDATED"
-  | "LEDGER_ORG_UPDATED";
+  | "LEDGER_ORG_UPDATED"
+  // Input-VAT claimability (ภาษีซื้อ) — attach a full replacement invoice, accountant
+  // override of the claimable flag, and a deterministic completeness re-grade. Audited
+  // because each one changes whether VAT may be claimed (สรรพากร trail).
+  | "LEDGER_EXPENSE_REPLACEMENT_ATTACHED"
+  | "LEDGER_EXPENSE_VAT_OVERRIDDEN"
+  | "LEDGER_EXPENSE_RECHECKED";
 
 export interface AuditEntry {
   orgId: string;

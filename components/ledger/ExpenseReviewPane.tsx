@@ -27,17 +27,28 @@ import {
   Wallet,
   StickyNote,
   ExternalLink,
+  ReceiptText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
 import { ReceiptThumb } from "./ReceiptThumb";
 import { VoucherMenu } from "./VoucherMenu";
 import { SendToTrcloudButton } from "./SendToTrcloudButton";
+import { AttachReplacementButton } from "./AttachReplacementButton";
+import type { AttachReplacementAction } from "./AttachReplacementButton";
 import { StatusBadge } from "./_kit/StatusBadge";
 import { ConfidenceTag } from "./_kit/ConfidenceTag";
+import { CompletenessDot, missingLabel } from "./_kit/CompletenessDot";
 import { AmountInput } from "./_kit/AmountInput";
 import type { ExpenseRow, CategoryOption, BranchOption } from "./_kit/types";
-import type { ExpenseItem, ExpenseDocType, PaymentStatus } from "@/lib/ledger/types";
+import type {
+  ExpenseItem,
+  ExpenseDocType,
+  PaymentStatus,
+  CompletenessStatus,
+  BuyerMatchStatus,
+  InputVatBlockReason,
+} from "@/lib/ledger/types";
 
 export type ExpenseDraft = {
   vendor: string;
@@ -61,6 +72,9 @@ export type ExpenseDraft = {
   claimantName: string;
   bankDetail: string;
   isRecurring: boolean;
+  // — Input-VAT claimability (ภาษีซื้อ) — นักบัญชีปรับ "ขอคืนได้?" + เหตุผล —
+  inputVatClaimable: boolean | null;
+  inputVatBlockReason: InputVatBlockReason | null;
   items: ExpenseItem[];
 };
 
@@ -109,6 +123,71 @@ export type ConfirmExpenseAction = (
   patch: ExpenseDraft,
 ) => Promise<LedgerActionResult>;
 export type VoidExpenseAction = (id: string) => Promise<LedgerActionResult>;
+/** Accountant override of "ขอคืนได้?" + เหตุผล — wired to overrideClaimability action. */
+export type OverrideClaimabilityAction = (raw: {
+  expenseId: string;
+  claimable: boolean;
+  reason?: InputVatBlockReason;
+}) => Promise<LedgerActionResult>;
+
+// ── ภาษีซื้อ copy maps (deterministic, ไม่ใช้ AI) ──
+const COMPLETENESS_META: Record<
+  CompletenessStatus,
+  { title: string; verdict: string; cls: string; chip: string }
+> = {
+  green_full: {
+    title: "ใบกำกับเต็มรูป — ขอคืนภาษีซื้อได้",
+    verdict: "ขอคืนได้",
+    cls: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    chip: "bg-emerald-600 text-white",
+  },
+  yellow_partial: {
+    title: "ใบยังไม่สมบูรณ์ — ยังขอคืนไม่ได้",
+    verdict: "ลงค่าใช้จ่ายได้ · ขอคืน VAT ไม่ได้ (ต้องขอใบใหม่)",
+    cls: "border-amber-200 bg-amber-50 text-amber-800",
+    chip: "bg-amber-500 text-white",
+  },
+  red_invalid: {
+    title: "ใบไม่ถูกต้อง — ขอคืนภาษีซื้อไม่ได้",
+    verdict: "ขอคืนไม่ได้จนกว่าจะแก้ใบให้ถูก",
+    cls: "border-rose-200 bg-rose-50 text-rose-800",
+    chip: "bg-rose-600 text-white",
+  },
+  undecided: {
+    title: "ยังไม่ได้ตรวจสถานะใบกำกับ",
+    verdict: "กดบันทึก/ยืนยันเพื่อให้ระบบตรวจให้",
+    cls: "border-zinc-200 bg-zinc-50 text-zinc-700",
+    chip: "bg-zinc-400 text-white",
+  },
+};
+
+const BUYER_MATCH_LABEL: Record<BuyerMatchStatus, string> = {
+  matched: "ผู้ซื้อตรง (เลขภาษีเจพีซิ้งค์)",
+  mismatch: "ผู้ซื้อไม่ตรง — ใบออกผิดบริษัท/เลขผิด",
+  not_found_on_doc: "ไม่เจอเลขภาษีผู้ซื้อบนใบ",
+  undecided: "ยังไม่ตรวจผู้ซื้อ",
+};
+
+const BLOCK_REASON_LABEL: Record<InputVatBlockReason, string> = {
+  abbreviated_86_6: "ใบกำกับอย่างย่อ (ม.86/6)",
+  buyer_mismatch: "ผู้ซื้อไม่ตรง / เลขผิด",
+  wrong_entity: "ออกผิดบริษัทในเครือ",
+  incomplete_invoice: "ใบไม่ครบองค์ประกอบ (ม.86/4)",
+  entertainment: "ค่ารับรอง",
+  passenger_car: "รถยนต์นั่ง ≤10 ที่นั่ง",
+  other: "อื่น ๆ",
+};
+
+/** เหตุผลที่ให้นักบัญชีเลือกตอนตั้ง "ขอคืนไม่ได้". */
+const BLOCK_REASON_OPTIONS: InputVatBlockReason[] = [
+  "abbreviated_86_6",
+  "buyer_mismatch",
+  "wrong_entity",
+  "incomplete_invoice",
+  "entertainment",
+  "passenger_car",
+  "other",
+];
 
 const PAYMENT_METHODS = [
   "เงินสด",
@@ -168,25 +247,37 @@ function FieldLabel({
 
 export function ExpenseReviewPane({
   expense,
+  replacement,
   categories,
   branches,
   onSave,
   onConfirm,
   onVoid,
+  onOverrideClaimability,
+  onAttachReplacement,
   readOnly = false,
   canConfirm = true,
+  canEditClaimability = false,
   showTrcloud = true,
 }: {
   expense: ExpenseRow;
+  /** ใบทดแทน (ถ้ามี) — โชว์ 2 รูปคู่กัน. */
+  replacement?: ExpenseRow | null;
   categories: CategoryOption[];
   branches: BranchOption[];
   onSave: SaveExpenseAction;
   onConfirm: ConfirmExpenseAction;
   onVoid: VoidExpenseAction;
+  /** นักบัญชีตั้ง "ขอคืนได้?" + เหตุผล (overrideClaimability action). */
+  onOverrideClaimability?: OverrideClaimabilityAction;
+  /** แนบใบใหม่ทดแทน (attachReplacementInvoice action). */
+  onAttachReplacement?: AttachReplacementAction;
   /** locked/void → ดูอย่างเดียว */
   readOnly?: boolean;
   /** false = staff ที่ยังไม่มีสิทธิ์ยืนยัน → กดได้แค่ "บันทึกร่าง" */
   canConfirm?: boolean;
+  /** true = นักบัญชี/แอดมิน → ปรับ "ขอคืนได้?" + override + แนบใบทดแทนได้. */
+  canEditClaimability?: boolean;
   /** false = ซ่อนปุ่ม "ส่งเข้า TRCloud" (LIFF/สมาชิก — ส่งเป็นงานบัญชีฝั่งเว็บ) */
   showTrcloud?: boolean;
 }) {
@@ -211,6 +302,8 @@ export function ExpenseReviewPane({
     claimantName: expense.claimantName ?? "",
     bankDetail: expense.bankDetail ?? "",
     isRecurring: expense.isRecurring ?? false,
+    inputVatClaimable: expense.inputVatClaimable ?? null,
+    inputVatBlockReason: expense.inputVatBlockReason ?? null,
     items: expense.items ?? [],
   });
   const [pending, startTransition] = useTransition();
@@ -244,6 +337,40 @@ export function ExpenseReviewPane({
   const findings = useMemo(() => runRecheck(draft), [draft]);
   const hasError = findings.some((f) => f.level === "error");
   const locked = readOnly || expense.status === "locked" || expense.status === "void";
+
+  // ── ภาษีซื้อ (input-VAT) — สถานะสี + override "ขอคืนได้?" ──
+  const completeness = (expense.completenessStatus ?? "undecided") as CompletenessStatus;
+  const ccMeta = COMPLETENESS_META[completeness] ?? COMPLETENESS_META.undecided;
+  const ccMissing = expense.completenessMissing ?? [];
+  const isGreen = completeness === "green_full";
+  // local claimable state (mirrors persisted; updated optimistically after override).
+  const [claimable, setClaimable] = useState<boolean | null>(expense.inputVatClaimable ?? null);
+  const [blockReason, setBlockReason] = useState<InputVatBlockReason>(
+    expense.inputVatBlockReason ?? "other",
+  );
+  const [vatPending, setVatPending] = useState(false);
+  const [vatMsg, setVatMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  // เรียก overrideClaimability action จริง (เฉพาะนักบัญชี/แอดมิน).
+  function applyClaimability(next: boolean, reason?: InputVatBlockReason) {
+    if (!onOverrideClaimability) return;
+    setVatPending(true);
+    setVatMsg(null);
+    startTransition(async () => {
+      const res = await onOverrideClaimability({
+        expenseId: expense.id,
+        claimable: next,
+        reason: next ? undefined : reason ?? blockReason,
+      });
+      setVatPending(false);
+      if (res.ok) {
+        setClaimable(next);
+        setVatMsg({ kind: "ok", text: next ? "ตั้งเป็น 'ขอคืนได้' แล้ว" : "ตั้งเป็น 'ขอคืนไม่ได้' แล้ว" });
+      } else {
+        setVatMsg({ kind: "err", text: res.error ?? "ปรับสิทธิ์ขอคืนไม่สำเร็จ" });
+      }
+    });
+  }
 
   // Overall AI confidence = mean of per-field scores (null if AI didn't read it).
   const overallConf = useMemo(() => {
@@ -381,14 +508,89 @@ export function ExpenseReviewPane({
         </div>
       )}
 
+      {/* ── สถานะใบกำกับ — ผิดตรงไหน (ภาษีซื้อ) ── */}
+      {completeness !== "undecided" && (
+        <div className={cn("rounded-xl border p-3", ccMeta.cls)}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <CompletenessDot status={completeness} />
+              <h3 className="text-sm font-bold">{ccMeta.title}</h3>
+            </div>
+            <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", ccMeta.chip)}>
+              {ccMeta.verdict}
+            </span>
+          </div>
+
+          {/* ผลตรวจผู้ซื้อ (เลขภาษี 13 หลักเป๊ะ — ไม่ใช้ชื่อ) */}
+          <p className="mt-1.5 text-xs opacity-90">
+            {BUYER_MATCH_LABEL[(expense.buyerMatchStatus ?? "undecided") as BuyerMatchStatus]}
+            {expense.buyerTaxIdOnDoc ? ` · เลขบนใบ ${expense.buyerTaxIdOnDoc}` : ""}
+          </p>
+
+          {/* รายการ "ขาดตรงไหน" เป็นภาษาไทย */}
+          {ccMissing.length > 0 && (
+            <ul className="mt-2 ml-4 list-disc space-y-0.5 text-xs">
+              {ccMissing.map((m) => (
+                <li key={m}>{missingLabel(m)}</li>
+              ))}
+            </ul>
+          )}
+          {expense.inputVatBlockReason && (
+            <p className="mt-2 text-xs font-medium">
+              เหตุผล: {BLOCK_REASON_LABEL[expense.inputVatBlockReason as InputVatBlockReason]}
+            </p>
+          )}
+
+          {/* ปุ่มแนบใบใหม่ทดแทน — โชว์เมื่อยังไม่เขียว + มี action + มีสิทธิ์ */}
+          {!isGreen && !locked && canEditClaimability && onAttachReplacement && !expense.replacedById && (
+            <div className="mt-3 border-t border-current/15 pt-3">
+              <AttachReplacementButton
+                expenseId={expense.id}
+                onAttach={onAttachReplacement}
+              />
+            </div>
+          )}
+          {expense.replacedById && (
+            <p className="mt-3 flex items-center gap-1 border-t border-current/15 pt-3 text-xs font-medium">
+              <CheckCircle2 className="size-3.5 shrink-0" aria-hidden />
+              มีใบทดแทนแล้ว — ดูรูปทั้ง 2 ใบด้านล่าง
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
-        {/* รูปใบเสร็จ (sticky บนจอใหญ่ — เลื่อนฟอร์มแล้วรูปยังอยู่) */}
-        <div className="lg:sticky lg:top-20 lg:self-start">
-          <ReceiptThumb
-            thumbUrl={expense.thumbUrl}
-            originalUrl={expense.originalUrl}
-            alt={`ใบเสร็จ ${expense.docCode}`}
-          />
+        {/* รูปใบเสร็จ (sticky บนจอใหญ่ — เลื่อนฟอร์มแล้วรูปยังอยู่).
+            ถ้ามีใบทดแทน → โชว์ 2 รูปคู่กัน (ใบเดิม + ใบใหม่). */}
+        <div className="space-y-2 lg:sticky lg:top-20 lg:self-start">
+          {replacement ? (
+            <>
+              <div>
+                <p className="mb-1 text-[11px] font-semibold text-zinc-500">ใบเดิม</p>
+                <ReceiptThumb
+                  thumbUrl={expense.thumbUrl}
+                  originalUrl={expense.originalUrl}
+                  alt={`ใบเสร็จเดิม ${expense.docCode}`}
+                />
+              </div>
+              <div>
+                <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+                  <ReceiptText className="size-3.5" aria-hidden /> ใบทดแทน (ใหม่)
+                </p>
+                <ReceiptThumb
+                  thumbUrl={replacement.thumbUrl}
+                  originalUrl={replacement.originalUrl}
+                  alt={`ใบทดแทน ${replacement.docCode}`}
+                />
+              </div>
+            </>
+          ) : (
+            <ReceiptThumb
+              thumbUrl={expense.thumbUrl}
+              originalUrl={expense.originalUrl}
+              alt={`ใบเสร็จ ${expense.docCode}`}
+            />
+          )}
         </div>
 
         {/* ฟอร์มแก้ — 4 ส่วนแบบ Bainy */}
@@ -627,6 +829,86 @@ export function ExpenseReviewPane({
                 <AmountInput value={draft.total} disabled={locked} ariaLabel="ยอดรวม" onValueChange={(v) => set("total", v)} className="border-zinc-300 font-semibold" />
               </div>
             </div>
+
+            {/* ภาษีซื้อ — "ขอคืนได้?" + เหตุผล (เฉพาะนักบัญชี/แอดมิน · เรียก override action จริง) */}
+            {canEditClaimability && onOverrideClaimability && (
+              <div className="rounded-xl border border-zinc-200 bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-zinc-700">ภาษีซื้อ (VAT) นี้ขอคืนได้?</p>
+                    <p className="text-[11px] text-zinc-400">
+                      ระบบแนะนำจากสถานะสี — ปรับเองได้ บันทึกไว้ใครเปลี่ยน/เมื่อไหร่
+                    </p>
+                  </div>
+                  {/* 2-state segmented toggle → override action */}
+                  <div className="inline-flex overflow-hidden rounded-lg border border-zinc-200">
+                    <button
+                      type="button"
+                      onClick={() => applyClaimability(true)}
+                      disabled={vatPending}
+                      aria-pressed={claimable === true}
+                      className={cn(
+                        "px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50",
+                        claimable === true
+                          ? "bg-emerald-600 text-white"
+                          : "bg-white text-zinc-600 hover:bg-zinc-50",
+                      )}
+                    >
+                      ขอคืนได้
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyClaimability(false)}
+                      disabled={vatPending}
+                      aria-pressed={claimable === false}
+                      className={cn(
+                        "border-l border-zinc-200 px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50",
+                        claimable === false
+                          ? "bg-rose-600 text-white"
+                          : "bg-white text-zinc-600 hover:bg-zinc-50",
+                      )}
+                    >
+                      ขอคืนไม่ได้
+                    </button>
+                  </div>
+                </div>
+
+                {/* เหตุผล — จำเป็นเมื่อ "ขอคืนไม่ได้" */}
+                {claimable === false && (
+                  <div className="mt-2.5">
+                    <label className="mb-1 block text-xs font-semibold text-zinc-600">
+                      เหตุผลที่ขอคืนไม่ได้
+                    </label>
+                    <select
+                      aria-label="เหตุผลที่ขอคืนไม่ได้"
+                      className={inputCls}
+                      value={blockReason}
+                      disabled={vatPending}
+                      onChange={(e) => {
+                        const r = e.target.value as InputVatBlockReason;
+                        setBlockReason(r);
+                        applyClaimability(false, r);
+                      }}
+                    >
+                      {BLOCK_REASON_OPTIONS.map((r) => (
+                        <option key={r} value={r}>{BLOCK_REASON_LABEL[r]}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {vatPending && (
+                  <p className="mt-2 flex items-center gap-1 text-[11px] text-zinc-400">
+                    <Loader2 className="size-3 animate-spin" aria-hidden /> กำลังบันทึก…
+                  </p>
+                )}
+                {vatMsg && (
+                  <p className={cn("mt-2 text-[11px]", vatMsg.kind === "ok" ? "text-emerald-700" : "text-rose-600")}>
+                    {vatMsg.text}
+                  </p>
+                )}
+              </div>
+            )}
           </section>
 
           {/* 3 · การชำระเงิน & ผู้เบิก */}

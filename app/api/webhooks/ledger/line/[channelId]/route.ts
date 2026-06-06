@@ -471,6 +471,8 @@ export async function POST(
           vendor: parsed?.vendor ?? null,
           docType: parsed?.docType ?? undefined, // AI-classified (falls back tax_invoice)
           vendorTaxId: parsed?.vendorTaxId ?? null,
+          buyerTaxIdOnDoc: parsed?.buyerTaxIdOnDoc ?? null, // ภาษีซื้อ: เลขผู้ซื้อบนใบ (verify)
+          rawText: parsed?.raw ?? null, // ใช้ heuristic ใบกำกับอย่างย่อ ม.86/6
           vendorDocNumber: parsed?.vendorDocNumber ?? null,
           vendorAddress: parsed?.vendorAddress ?? null,
           docDate: parsed?.docDate ?? null,

@@ -37,9 +37,11 @@ export function LiffBootstrap({
       }
     }
     if (inv) {
-      // Remove liff.state → liff.init() inside JoinClient won't auto-redirect.
+      // Strip liff.state (keep the invite) so liff.init() inside JoinClient won't
+      // auto-redirect to the buried path. Stay on the capture page we already loaded
+      // — JoinClient renders inline over it; no sub-path navigation.
       try {
-        window.history.replaceState(null, "", `/liff/ledger/join?invite=${encodeURIComponent(inv)}`);
+        window.history.replaceState(null, "", `/liff/ledger?invite=${encodeURIComponent(inv)}`);
       } catch {
         /* history API may be unavailable in some webviews */
       }

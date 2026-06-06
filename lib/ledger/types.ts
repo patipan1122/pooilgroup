@@ -15,6 +15,30 @@ export type ExpenseDocType =
   | "other"; // อื่น ๆ
 export type PaymentStatus = "paid" | "unpaid" | "partial";
 
+// — Input-VAT claimability (ภาษีซื้อ) — enums kept as TS unions; the DB columns are
+//   plain text (module convention). The buyer match is decided on the 13-digit tax id
+//   EXACTLY (never the name / OCR confidence). See lib/ledger/recheck.ts.
+export type BuyerMatchStatus =
+  | "matched" // เลขภาษีบนใบ === ผู้ซื้อ (เจพีซิ้งค์)
+  | "mismatch" // คนละเลข (บริษัทเครืออื่น / นอกเครือ / ผิด 1 หลัก)
+  | "not_found_on_doc" // ไม่เจอเลข 13 หลักบนใบ
+  | "undecided"; // ยังไม่ตรวจ
+
+export type CompletenessStatus =
+  | "green_full" // เต็มรูป + ผู้ซื้อตรง + VAT แยก → ขอคืนได้
+  | "yellow_partial" // ใบย่อ ม.86/6 / ขาด element รอง → ขอใบใหม่
+  | "red_invalid" // ขาดของบังคับ / ผู้ซื้อผิด → ขอคืนไม่ได้
+  | "undecided"; // ยังไม่ตรวจ
+
+export type InputVatBlockReason =
+  | "abbreviated_86_6" // ใบกำกับอย่างย่อ ม.86/6
+  | "buyer_mismatch" // ผู้ซื้อ = นอกเครือ / ผิด 1 หลัก
+  | "wrong_entity" // ผู้ซื้อ = บริษัทอื่นในเครือ
+  | "incomplete_invoice" // ขาดองค์ประกอบ ม.86/4 (เลขผู้ขาย / บรรทัด VAT / ฯลฯ)
+  | "entertainment" // ค่ารับรอง (v2)
+  | "passenger_car" // รถยนต์นั่ง ≤10 ที่นั่ง (v2)
+  | "other";
+
 /** One line item read off a receipt. */
 export interface ExpenseItem {
   id?: string;
@@ -80,6 +104,21 @@ export interface Expense {
   trcloudDocNo: string | null;
   trcloudPushedAt: string | null;
   trcloudError: string | null;
+  // — Input-VAT claimability (ภาษีซื้อ) — สถานะสี + ผลตรวจผู้ซื้อ + ใบทดแทน —
+  buyerTaxIdSnapshot: string | null;
+  buyerNameSnapshot: string | null;
+  buyerTaxIdOnDoc: string | null;
+  buyerMatchStatus: BuyerMatchStatus;
+  completenessStatus: CompletenessStatus;
+  completenessMissing: string[] | null;
+  completenessCheckedAt: string | null;
+  inputVatClaimable: boolean | null;
+  inputVatBlockReason: InputVatBlockReason | null;
+  replacementOfId: string | null;
+  replacedById: string | null;
+  overrideBy: string | null;
+  overrideAt: string | null;
+  overrideReason: string | null;
   createdAt: string;
   updatedAt: string;
   items: ExpenseItem[];
@@ -110,6 +149,7 @@ export interface ParsedReceipt {
   vendor: string | null;
   docType?: ExpenseDocType | null; // ประเภทเอกสาร (AI-classified from the header)
   vendorTaxId: string | null;
+  buyerTaxIdOnDoc: string | null; // เลขภาษีผู้ซื้อที่ AI อ่านได้บนใบ (13 หลัก หรือ null — ห้ามเดา)
   vendorDocNumber?: string | null; // เลขที่เอกสารของผู้ขาย (invoice no.)
   vendorAddress?: string | null; // ที่อยู่ผู้ขาย
   docDate: string | null; // YYYY-MM-DD
