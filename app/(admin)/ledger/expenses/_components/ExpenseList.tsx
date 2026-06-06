@@ -387,8 +387,9 @@ export function ExpenseList({
             const isDraft = r.status === "draft";
             const isSendable = sendableSet.has(r.id);
             const selectable = isDraft || isSendable;
-            const pushed = !!r.trcloudDocId;
-            const pushErr = !pushed && !!r.trcloudError;
+            const isPending = r.trcloudDocId === "pending";
+            const pushed = !!r.trcloudDocId && !isPending;
+            const pushErr = !pushed && !isPending && !!r.trcloudError;
             // D1 surfacing — show legacy/incomplete rows missing สาขา/หมวด so they
             // can be remediated (some were confirmed before the gate existed).
             const gate = expenseConfirmability({
@@ -477,12 +478,21 @@ export function ExpenseList({
                     )}
 
                     {/* TRCloud send state */}
+                    {isPending && (
+                      <span
+                        className="inline-flex items-center gap-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+                        title="กำลังส่งเข้า TRCloud..."
+                      >
+                        <Loader2 className="size-3 animate-spin" /> กำลังส่ง TRCloud
+                      </span>
+                    )}
                     {pushed && (
                       <span
                         className="inline-flex items-center gap-0.5 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700"
                         title={r.trcloudDocNo ? `TRCloud: ${r.trcloudDocNo}` : "ส่งเข้า TRCloud แล้ว"}
                       >
-                        <CloudCheck className="size-3" /> ส่ง TRCloud แล้ว
+                        <CloudCheck className="size-3" />
+                        {r.trcloudDocNo ? `TRCloud ${r.trcloudDocNo}` : "ส่ง TRCloud แล้ว"}
                       </span>
                     )}
                     {pushErr && (

@@ -309,6 +309,11 @@ export function CategoryManager({
                         VAT ขอคืนไม่ได้
                       </Badge>
                     )}
+                    {c.active && !c.trcloudAccCode && !c.trcloudProductCode && (
+                      <Badge tone="warning" className="ml-1 text-[10px]">
+                        ยังไม่ผูก TRCloud
+                      </Badge>
+                    )}
                     {!c.active && (
                       <Badge tone="neutral" className="ml-2 text-[10px]">
                         ปิดใช้งาน

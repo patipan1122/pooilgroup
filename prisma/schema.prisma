@@ -5378,6 +5378,7 @@ model LedgerExpense {
   @@index([captureBatchId])
   @@index([replacementOfId])
   @@index([orgId, companyId, completenessStatus])
+  @@index([orgId, companyId, trcloudDocId]) // "not-yet-pushed confirmed" filter in listExpenses
   @@map("ledger_expense")
   @@schema("public")
 }

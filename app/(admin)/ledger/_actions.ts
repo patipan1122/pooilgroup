@@ -1341,55 +1341,60 @@ async function recordPushResult(
   res: { ok: true; docId: string | null; docNo: string | null } | { ok: false; error: string },
   meta?: PushMeta,
 ): Promise<void> {
+  // DB write + audit are independent — run them in parallel to save ~20-50ms per push.
   if (res.ok) {
-    await prisma.ledgerExpense.updateMany({
-      where: { id, orgId, companyId },
-      data: {
-        trcloudDocId: res.docId ?? "sent",
-        trcloudDocNo: res.docNo,
-        trcloudPushedAt: new Date(),
-        trcloudError: null,
-      },
-    });
-    await audit({
-      orgId,
-      userId,
-      action: "LEDGER_EXPENSE_PUSHED_TRCLOUD",
-      resourceType: "ledger_expense",
-      resourceId: id,
-      diff: {
-        new: {
+    await Promise.all([
+      prisma.ledgerExpense.updateMany({
+        where: { id, orgId, companyId },
+        data: {
+          trcloudDocId: res.docId ?? "sent",
           trcloudDocNo: res.docNo,
-          trcloudDocId: res.docId,
-          // Revenue Dept required fields for input-VAT audit trail
-          ...(meta?.vendor !== undefined && { vendor: meta.vendor }),
-          ...(meta?.total !== undefined && { total: meta.total }),
-          ...(meta?.vendorTaxId !== undefined && { vendorTaxId: meta.vendorTaxId }),
-          ...(meta?.docCode !== undefined && { docCode: meta.docCode }),
+          trcloudPushedAt: new Date(),
+          trcloudError: null,
         },
-      },
-    });
+      }),
+      audit({
+        orgId,
+        userId,
+        action: "LEDGER_EXPENSE_PUSHED_TRCLOUD",
+        resourceType: "ledger_expense",
+        resourceId: id,
+        diff: {
+          new: {
+            trcloudDocNo: res.docNo,
+            trcloudDocId: res.docId,
+            // Revenue Dept required fields for input-VAT audit trail
+            ...(meta?.vendor !== undefined && { vendor: meta.vendor }),
+            ...(meta?.total !== undefined && { total: meta.total }),
+            ...(meta?.vendorTaxId !== undefined && { vendorTaxId: meta.vendorTaxId }),
+            ...(meta?.docCode !== undefined && { docCode: meta.docCode }),
+          },
+        },
+      }),
+    ]);
   } else {
-    await prisma.ledgerExpense.updateMany({
-      where: { id, orgId, companyId },
-      // Clear "pending" sentinel so the expense can be retried after a failure.
-      data: { trcloudDocId: null, trcloudError: res.error.slice(0, 500) },
-    });
-    await audit({
-      orgId,
-      userId,
-      action: "LEDGER_EXPENSE_PUSH_FAILED",
-      resourceType: "ledger_expense",
-      resourceId: id,
-      diff: {
-        new: {
-          error: res.error.slice(0, 500),
-          ...(meta?.vendor !== undefined && { vendor: meta.vendor }),
-          ...(meta?.total !== undefined && { total: meta.total }),
-          ...(meta?.docCode !== undefined && { docCode: meta.docCode }),
+    await Promise.all([
+      prisma.ledgerExpense.updateMany({
+        where: { id, orgId, companyId },
+        // Clear "pending" sentinel so the expense can be retried after a failure.
+        data: { trcloudDocId: null, trcloudError: res.error.slice(0, 500) },
+      }),
+      audit({
+        orgId,
+        userId,
+        action: "LEDGER_EXPENSE_PUSH_FAILED",
+        resourceType: "ledger_expense",
+        resourceId: id,
+        diff: {
+          new: {
+            error: res.error.slice(0, 500),
+            ...(meta?.vendor !== undefined && { vendor: meta.vendor }),
+            ...(meta?.total !== undefined && { total: meta.total }),
+            ...(meta?.docCode !== undefined && { docCode: meta.docCode }),
+          },
         },
-      },
-    });
+      }),
+    ]);
   }
 }
 
