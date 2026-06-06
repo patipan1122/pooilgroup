@@ -4,6 +4,7 @@
 // LINE member (field staff) can edit a draft and (if their role allows) confirm,
 // instead of hitting the Pool-admin "ไม่มีสิทธิ์" wall. canConfirm comes from the
 // server (the ledger_permission matrix). TRCloud push stays a web/accountant job.
+import { useRouter } from "next/navigation";
 import { ExpenseReviewPane } from "@/components/ledger/ExpenseReviewPane";
 import type { ExpenseDraft, LedgerActionResult } from "@/components/ledger/ExpenseReviewPane";
 import type { ExpenseRow, CategoryOption, BranchOption } from "@/components/ledger/_kit/types";
@@ -22,6 +23,7 @@ export function LiffExpensePane({
   branches,
   canConfirm,
   currentUserId,
+  backHref,
 }: {
   expense: ExpenseRow;
   replacement?: ExpenseRow | null;
@@ -30,7 +32,10 @@ export function LiffExpensePane({
   canConfirm: boolean;
   /** Pool user id ของ actor (actor.userId) — ใช้ตัดสิน self-delete (ลบเอง) vs ขอลบ. */
   currentUserId?: string | null;
+  /** หน้าที่จะเด้งกลับหลังยืนยัน/ลบสำเร็จ (รายการ "ใบของฉัน"). */
+  backHref: string;
 }) {
+  const router = useRouter();
   return (
     <ExpenseReviewPane
       expense={expense}
@@ -50,6 +55,11 @@ export function LiffExpensePane({
       // LIFF (สมาชิก/หน้างาน) เห็นสถานะสี "ผิดตรงไหน" อ่านอย่างเดียว — ไม่โชว์ปุ่มแก้.
       canEditClaimability={false}
       showTrcloud={false}
+      // หลังยืนยัน/ลบสำเร็จ → เด้งกลับหน้ารายการ (แก้ "กดยืนยันแล้วไม่ไปต่อ").
+      onAfterFinish={() => {
+        router.push(backHref);
+        router.refresh();
+      }}
     />
   );
 }

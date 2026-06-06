@@ -137,6 +137,7 @@ export default async function LedgerLiffExpensePage({
         branches={scope.branches}
         canConfirm={actor.canConfirm}
         currentUserId={actor.userId}
+        backHref={`/liff/ledger/my${sp.company ? `?company=${encodeURIComponent(sp.company)}` : ""}`}
       />
     </div>
   );

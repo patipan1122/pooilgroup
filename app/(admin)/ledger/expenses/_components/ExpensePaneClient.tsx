@@ -2,6 +2,7 @@
 
 // Binds the server actions to ExpenseReviewPane. Kept as a thin client wrapper
 // so the page (server component) can pass the serialised expense + options.
+import { useRouter } from "next/navigation";
 import { ExpenseReviewPane } from "@/components/ledger/ExpenseReviewPane";
 import type {
   ExpenseDraft,
@@ -36,6 +37,7 @@ export function ExpensePaneClient({
   /** Pool user id ของคนที่ล็อกอิน — ใช้ตัดสิน self-delete (ลบเอง) vs ขอลบ. */
   currentUserId?: string | null;
 }) {
+  const router = useRouter();
   return (
     <ExpenseReviewPane
       expense={expense}
@@ -58,6 +60,8 @@ export function ExpensePaneClient({
       }
       onEnsureCentralBranch={(companyId: string) => ensureCentralBranch(companyId)}
       currentUserId={currentUserId}
+      // เว็บ (master-detail) — refresh ให้รายการอัปเดตสถานะหลังยืนยัน/ลบ.
+      onAfterFinish={() => router.refresh()}
     />
   );
 }

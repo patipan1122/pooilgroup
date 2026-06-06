@@ -286,6 +286,7 @@ export function ExpenseReviewPane({
   canConfirm = true,
   canEditClaimability = false,
   showTrcloud = true,
+  onAfterFinish,
 }: {
   expense: ExpenseRow;
   /** ใบทดแทน (ถ้ามี) — โชว์ 2 รูปคู่กัน. */
@@ -315,6 +316,9 @@ export function ExpenseReviewPane({
   canEditClaimability?: boolean;
   /** false = ซ่อนปุ่ม "ส่งเข้า TRCloud" (LIFF/สมาชิก — ส่งเป็นงานบัญชีฝั่งเว็บ) */
   showTrcloud?: boolean;
+  /** เรียกหลังทำรายการ "เสร็จ" (ยืนยัน/ยกเลิก/ลบสำเร็จ) — LIFF เด้งกลับหน้ารายการ,
+   *  เว็บ refresh. ไม่ส่งมา = อยู่หน้าเดิม (พฤติกรรมเดิม). */
+  onAfterFinish?: () => void;
 }) {
   const [draft, setDraft] = useState<ExpenseDraft>({
     vendor: expense.vendor ?? "",
@@ -528,6 +532,7 @@ export function ExpenseReviewPane({
     startTransition(async () => {
       const res = await onSelfDelete(expense.id);
       setDelPending(false);
+      if (res.ok) onAfterFinish?.();
       setMsg(
         res.ok
           ? { kind: "ok", text: "ลบรายการแล้ว (ขึ้นเป็น 'ยกเลิก')" }
@@ -556,6 +561,7 @@ export function ExpenseReviewPane({
   function handle(
     action: SaveExpenseAction | ConfirmExpenseAction,
     successText: string,
+    finishOnOk = false,
   ) {
     setMsg(null);
     startTransition(async () => {
@@ -565,6 +571,8 @@ export function ExpenseReviewPane({
           ? { kind: "ok", text: successText }
           : { kind: "err", text: res.error ?? "บันทึกไม่สำเร็จ" },
       );
+      // หลังยืนยันสำเร็จ → "ไปต่อ" (LIFF เด้งกลับรายการ · เว็บ refresh).
+      if (res.ok && finishOnOk) onAfterFinish?.();
     });
   }
 
@@ -573,6 +581,7 @@ export function ExpenseReviewPane({
     setMsg(null);
     startTransition(async () => {
       const res = await onVoid(expense.id);
+      if (res.ok) onAfterFinish?.();
       setMsg(
         res.ok
           ? { kind: "ok", text: "ยกเลิกแล้ว" }
@@ -1291,7 +1300,7 @@ export function ExpenseReviewPane({
             <Button
               variant="primary"
               disabled={pending || hasError || !canConfirm || !gate.ok}
-              onClick={() => handle(onConfirm, "ยืนยันแล้ว · บันทึกเป็น 'ยืนยันแล้ว'")}
+              onClick={() => handle(onConfirm, "ยืนยันแล้ว · บันทึกเป็น 'ยืนยันแล้ว'", true)}
               title={
                 !canConfirm
                   ? "เฉพาะบัญชี/ผู้ดูแลยืนยันได้ — คุณกดบันทึกร่างได้"
