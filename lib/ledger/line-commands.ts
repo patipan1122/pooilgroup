@@ -5,6 +5,9 @@
 // /setting · /link          → admin only: show this group's branch binding + how to set
 // /setting สาขา <code>      → bind THIS group ↔ a branch (group = branch auto-tag)
 // /setting จ่าย <วิธี>       → set the group's default payment method
+// /setting สลิป [เปิด|ปิด]   → admin only: make THIS group a "slip-intake" group
+//                              (images = payment slips → QR dedup + AI amount +
+//                              auto-match an unpaid bill). No web / no LIFF needed.
 // /members · /สมาชิก         → admin only: list members + the branch each oversees
 //
 // Admin gate: the sender's LINE userId must map to a Pool user with admin-tier
@@ -14,6 +17,7 @@
 import { prisma } from "@/lib/prisma";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { getLedgerDriveFolderLink } from "@/lib/ledger/drive";
+import { refreshLedgerGroupMeta } from "@/lib/ledger/line-group";
 
 const PAYMENT_WORDS: Record<string, string> = {
   เงินสด: "cash", สด: "cash",
@@ -31,6 +35,9 @@ export interface CommandCtx {
    *  branch binding (B3 multi-group): /setting สาขา in a group pins THAT group. */
   groupId: string | null;
   senderLineUserId: string | null;
+  /** Channel access token — lets /setting fetch the group's real name + member
+   *  count from the LINE API and snapshot them (best-effort). Omit in 1:1. */
+  accessToken?: string | null;
 }
 
 const HELP = [
@@ -46,6 +53,7 @@ const HELP = [
   "⚙️ คำสั่งแอดมิน:",
   "• /จัดการ — เปิดหน้าจัดการทีม/สิทธิ์/สาขา (มือถือ)",
   "• /link (หรือ /setting) — ผูกกลุ่มนี้กับสาขา",
+  "• /setting สลิป — ตั้งกลุ่มนี้เป็น 'กลุ่มส่งสลิป' 💸",
   "• /members — ดูว่าใครดูแลสาขาไหน",
   "• /drive — ลิงก์โฟลเดอร์ Google Drive (หลักฐานให้สำนักงานบัญชี)",
 ].join("\n");
@@ -309,6 +317,16 @@ export async function handleLedgerCommand(
             branchId: branch.id,
           },
         });
+        // Snapshot the group's real name + member count so the web list shows
+        // "ชื่อกลุ่มจริง · N คน" instead of an id tail (best-effort).
+        if (ctx.accessToken) {
+          await refreshLedgerGroupMeta({
+            orgId: ctx.orgId,
+            companyId: ctx.companyId,
+            groupId: ctx.groupId,
+            accessToken: ctx.accessToken,
+          });
+        }
       } else {
         // 1:1 / no group context → set the channel's default branch (unchanged).
         await prisma.ledgerLineChannel.update({
@@ -317,6 +335,51 @@ export async function handleLedgerCommand(
         });
       }
       return `✅ ผูกกลุ่มนี้กับสาขา "${branch.name}" แล้ว · รายจ่ายในกลุ่มนี้จะลงสาขานี้อัตโนมัติ`;
+    }
+
+    // /setting สลิป [เปิด|ปิด] — ตั้ง/ปิด "กลุ่มส่งสลิป" จากใน LINE โดยตรง (ไม่ต้องเข้าเว็บ).
+    // เปิด = รูปทุกใบในกลุ่มนี้ถือเป็น "สลิปจ่ายเงิน" → อ่าน QR กันจ่ายซ้ำ + AI อ่านยอด → จับคู่บิล.
+    const slipMatch = arg.match(/^(?:สลิป|slip)\s*(.*)$/i);
+    if (slipMatch) {
+      if (!ctx.groupId) {
+        return "ตั้งกลุ่มส่งสลิปได้เฉพาะ 'ในกลุ่ม LINE' เท่านั้น · เข้าไปในกลุ่มที่จะใช้ส่งสลิป แล้วพิมพ์ /setting สลิป";
+      }
+      const w = slipMatch[1].trim().toLowerCase();
+      const turnOff = ["ปิด", "off", "ยกเลิก", "เลิก", "0", "false"].includes(w);
+      // The group must be bound to a branch first (the upsert key needs a row).
+      const existing = await prisma.ledgerLineGroup.findFirst({
+        where: { orgId: ctx.orgId, companyId: ctx.companyId, groupId: ctx.groupId },
+        select: { id: true },
+      });
+      if (!existing) {
+        return [
+          "ยังตั้งกลุ่มส่งสลิปไม่ได้ — กลุ่มนี้ยังไม่ผูกสาขา",
+          "",
+          "พิมพ์  /setting สาขา <รหัสสาขา>  ก่อน แล้วค่อยพิมพ์  /setting สลิป",
+        ].join("\n");
+      }
+      await prisma.ledgerLineGroup.update({
+        where: { id: existing.id },
+        data: { isSlipIntake: !turnOff, active: true },
+      });
+      if (ctx.accessToken) {
+        await refreshLedgerGroupMeta({
+          orgId: ctx.orgId,
+          companyId: ctx.companyId,
+          groupId: ctx.groupId,
+          accessToken: ctx.accessToken,
+        });
+      }
+      return turnOff
+        ? "✅ ปิดโหมดกลุ่มส่งสลิปแล้ว · รูปในกลุ่มนี้จะถือเป็นใบเสร็จตามปกติ"
+        : [
+            "✅ ตั้งกลุ่มนี้เป็น 'กลุ่มส่งสลิป' แล้ว 💸",
+            "",
+            "รูปทุกใบที่ส่งในกลุ่มนี้ = สลิปจ่ายเงิน",
+            "ระบบจะอ่าน QR กันจ่ายซ้ำ + AI อ่านยอด แล้วจับคู่บิลที่ยังไม่จ่ายให้อัตโนมัติ",
+            "",
+            "ปิดโหมดนี้: พิมพ์  /setting สลิป ปิด",
+          ].join("\n");
     }
 
     // /setting จ่าย <วิธี>
@@ -340,14 +403,27 @@ export async function handleLedgerCommand(
       take: 30,
     });
     let bound = "ยังไม่ผูกสาขา (เป็นกลุ่มกลาง — ระบุสาขาทีหลังได้)";
+    let slipLine: string | null = null;
     // Prefer this group's own binding (B3); fall back to the channel default.
     let boundBranchId = ctx.branchId;
     if (ctx.groupId) {
       const gm = await prisma.ledgerLineGroup.findFirst({
         where: { orgId: ctx.orgId, companyId: ctx.companyId, groupId: ctx.groupId, active: true },
-        select: { branchId: true },
+        select: { branchId: true, isSlipIntake: true },
       });
       if (gm?.branchId) boundBranchId = gm.branchId;
+      slipLine = gm?.isSlipIntake
+        ? "💸 กลุ่มส่งสลิป: เปิดอยู่ (รูป = สลิปจ่ายเงิน)"
+        : "💸 กลุ่มส่งสลิป: ปิด · เปิดด้วย /setting สลิป";
+      // Refresh this group's name + member count while the admin is configuring.
+      if (ctx.accessToken) {
+        await refreshLedgerGroupMeta({
+          orgId: ctx.orgId,
+          companyId: ctx.companyId,
+          groupId: ctx.groupId,
+          accessToken: ctx.accessToken,
+        });
+      }
     }
     if (boundBranchId) {
       const b = await prisma.branch.findUnique({ where: { id: boundBranchId }, select: { name: true } });
@@ -359,9 +435,11 @@ export async function handleLedgerCommand(
     return [
       "⚙️ ตั้งค่ากลุ่ม LINE นี้",
       bound,
+      ...(slipLine ? [slipLine] : []),
       "",
       'ผูกสาขา: พิมพ์  /setting สาขา <รหัสสาขา>',
       'ตั้งวิธีจ่าย: พิมพ์  /setting จ่าย โอน',
+      'ตั้งกลุ่มส่งสลิป: พิมพ์  /setting สลิป',
       ...(adminConsoleUrl()
         ? ["", `🛠️ จัดการทีม/สิทธิ์/สาขาแบบเต็ม: ${adminConsoleUrl()}`]
         : []),

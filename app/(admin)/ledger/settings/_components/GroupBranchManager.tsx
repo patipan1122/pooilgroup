@@ -81,7 +81,13 @@ function GroupRow({ row, branches }: { row: LedgerGroupRow; branches: BranchOpt[
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-zinc-800">{groupTitle(row)}</p>
-          <p className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-zinc-500">
+          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-zinc-500">
+            {typeof row.memberCount === "number" && (
+              <span className="inline-flex items-center gap-0.5 rounded-full bg-zinc-100 px-1.5 py-0.5 font-medium text-zinc-600">
+                <Users className="size-3" aria-hidden />
+                {row.memberCount} คน
+              </span>
+            )}
             {row.label?.trim() && (
               <span className="truncate font-mono text-zinc-400">id …{row.groupId.slice(-8)}</span>
             )}
@@ -181,6 +187,11 @@ export function GroupBranchManager({
       <p className="mb-3 text-xs text-zinc-500">
         บอทตัวเดียวรับได้หลายกลุ่ม · แต่ละกลุ่มลงคนละสาขาได้ — เข้าไปในกลุ่มสาขานั้นแล้วพิมพ์{" "}
         <span className="font-mono">/setting สาขา &lt;ชื่อสาขา&gt;</span> · กลุ่มที่ผูกแล้วจะมาโผล่ที่นี่ให้ปรับ/พักได้
+        <br />
+        <span className="text-zinc-400">
+          ตั้งกลุ่มส่งสลิปได้จากใน LINE เลย — พิมพ์{" "}
+          <span className="font-mono">/setting สลิป</span> ในกลุ่มนั้น (หรือกดปุ่มด้านล่าง)
+        </span>
       </p>
 
       {groups.length === 0 ? (

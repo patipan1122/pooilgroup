@@ -263,6 +263,7 @@ export async function POST(
               branchId: ch.branchId,
               groupId: ev.source?.groupId ?? null,
               senderLineUserId: ev.source?.userId ?? null,
+              accessToken,
             });
             if (cmdReply !== null) {
               if (ev.replyToken && accessToken)
