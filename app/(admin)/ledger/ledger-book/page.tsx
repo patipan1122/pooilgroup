@@ -26,12 +26,15 @@ import {
 } from "@/lib/ledger/spend-analytics";
 import { ledgerAnalyticsV1 } from "@/lib/ledger/flags";
 import { currentPeriodBangkok } from "@/lib/ledger/dashboard";
+import { listSavedBooks, bookConfigToQuery, type SavedBookConfig } from "@/lib/ledger/saved-books";
+import { isAdminTier } from "@/lib/auth/role-guards";
 import { resolveScope, type LedgerScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
 import { Sparkline, TrendChart } from "../categories/_components/TrendChart";
 import { LedgerEmptyState } from "@/components/ledger/Brand";
 import { AnalyticsControls } from "./_components/AnalyticsControls";
 import { PivotTable } from "./_components/PivotTable";
+import { SavedBooks, type SavedBookChip } from "./_components/SavedBooks";
 
 export const dynamic = "force-dynamic";
 
@@ -127,6 +130,29 @@ export default async function LedgerBookPage({
     select: { id: true, name: true },
   });
 
+  // "เซฟเล่ม" shelf — shared per company. Precompute each book's open-link here so
+  // the client island never imports the prisma-backed saved-books lib.
+  const savedBooks = await listSavedBooks(scope.orgId, scope.companyId);
+  const currentUserId = session.user.id;
+  const canManageAll = isAdminTier(session.user.role);
+  const bookChips: SavedBookChip[] = savedBooks.map((b) => {
+    const qs = bookConfigToQuery(b.config, scope.companyId);
+    return {
+      id: b.id,
+      name: b.name,
+      href: qs ? `/ledger/ledger-book?${qs}` : "/ledger/ledger-book",
+      canManage: canManageAll || b.createdBy === currentUserId,
+    };
+  });
+  const currentConfig: SavedBookConfig = {
+    axis,
+    categoryId,
+    branchId: branchFilter,
+    grain,
+    basis,
+    q: search || null,
+  };
+
   return (
     <div className="p-4 sm:p-6 pb-24 lg:pb-6">
       <LedgerHeader
@@ -134,6 +160,8 @@ export default async function LedgerBookPage({
         subtitle="ดูค่าใช้จ่ายย้อนหลัง · เทียบเดือน/ปี · ตามหมวด/สาขา/ผู้ขาย"
         scope={scope}
       />
+
+      <SavedBooks books={bookChips} companyId={scope.companyId} currentConfig={currentConfig} />
 
       <AnalyticsControls
         axis={axis}
