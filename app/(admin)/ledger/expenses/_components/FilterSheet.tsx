@@ -1,19 +1,31 @@
 "use client";
 
-// FilterSheet — the status / TRCloud-send / VAT-colour / category filter controls
-// for the รายจ่าย list, rendered in TWO layouts that share ONE source of truth:
-//   • desktop (lg+): an inline single row of chip-groups + the category select.
-//   • mobile (<lg):  a single "ตัวกรอง (n)" trigger that opens a bottom-sheet
-//     holding the exact same controls — so a phone never stacks 4 dropdowns.
-// It owns NO URL state: the parent (ExpenseList) passes the active values plus the
-// shared `onSet(key, value)` (the existing setParam URL pattern), so every change
-// still routes through the one server-driven GET round-trip.
-import { useState, type ReactNode } from "react";
+// FilterSheet — the "ตัวกรอง" control for the รายจ่าย list.
+// Redesign 2026-06-07 (CEO "filter รก"): ONE single "ตัวกรอง (n)" button on EVERY
+// breakpoint that opens a popover (desktop: centered card · mobile: bottom-sheet)
+// holding ALL the secondary filters — แหล่งที่มา / การส่ง TRCloud / สถานะใบกำกับ /
+// หมวด / สถานะเอกสาร. The PRIMARY status switch (รอยืนยัน/ยืนยันแล้ว/ส่งแล้ว) is a
+// prominent segmented strip rendered by the parent (ExpenseList) — NOT here. This
+// stops the desktop header from stacking 5 chip-groups.
+// It owns NO URL state: the parent passes the active values + the shared
+// `onSet(key, value)` (the existing setParam URL pattern) + `onClear`.
+import { useState, useEffect, type ReactNode } from "react";
 import { SlidersHorizontal, X } from "lucide-react";
 import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
+import type { ExpenseTab } from "../page";
 
+// แหล่งที่มาของใบ (?tab=) — ย้ายจากแถบแท็บด้านบนเข้ามาในตัวกรอง (declutter).
+const SOURCE_TABS: Array<{ value: ExpenseTab; label: string }> = [
+  { value: "all", label: "ทุกแหล่ง" },
+  { value: "line", label: "สแกนจาก LINE" },
+  { value: "email", label: "อีเมล" },
+  { value: "web", label: "เพิ่มเอง" },
+  { value: "mine", label: "ส่วนตัว" },
+];
+
+// สถานะเอกสารเพิ่มเติม (ล็อก/ยกเลิก) — ของหลัก (ร่าง/ยืนยัน/ส่งแล้ว) อยู่บนแถบ primary แล้ว.
 const STATUS_TABS: Array<{ value: LedgerStatusValue | ""; label: string }> = [
-  { value: "", label: "ทั้งหมด" },
+  { value: "", label: "ทุกสถานะ" },
   { value: "draft", label: "รอยืนยัน" },
   { value: "confirmed", label: "ยืนยันแล้ว" },
   { value: "locked", label: "ล็อก" },
@@ -41,31 +53,34 @@ export interface FilterSheetProps {
   cc?: "green" | "yellow" | "red";
   categoryId?: string;
   categories: Array<{ id: string; name: string; color: string | null; sort: number }>;
+  /** แหล่งที่มา (?tab=) — moved into the popover (was a top tab strip). */
+  tab?: ExpenseTab;
   /** Shared URL setter from the parent (setParam) — key/value, '' clears. */
   onSet: (key: string, value: string) => void;
-  /** Clears status+tr+cc+category in ONE router push (sequential onSet calls
+  /** Clears status+tr+cc+category+tab in ONE router push (sequential onSet calls
    *  would each re-push from the same baseParams snapshot — only the last wins). */
   onClear: () => void;
-  /** Shortcut actions (ไม่มีใบเสร็จ · สลิปรอจับคู่) shown at the top of the mobile
-   *  sheet — moved off the cramped page header (CEO 2026-06-06 "ยุบเข้าตัวกรอง"). */
+  /** Shortcut actions (ไม่มีใบเสร็จ · สลิปรอจับคู่) shown at the top of the sheet —
+   *  moved off the cramped page header (CEO 2026-06-06 "ยุบเข้าตัวกรอง"). */
   extraActions?: ReactNode;
 }
 
-/** How many filters are non-default (drives the "ตัวกรอง (n)" badge). cc lives in the
- *  SummaryStrip above too, but it's part of the same filter set so we count it here. */
+/** How many filters are non-default (drives the "ตัวกรอง (n)" badge). Status is the
+ *  primary strip's job, so it's NOT counted here — only the secondary filters are. */
 function activeCount(p: FilterSheetProps): number {
   let n = 0;
-  if (p.status) n += 1;
+  if (p.tab && p.tab !== "all") n += 1;
   if (p.tr) n += 1;
   if (p.cc) n += 1;
   if (p.categoryId) n += 1;
+  if (p.status === "locked" || p.status === "void") n += 1;
   return n;
 }
 
 const chipBase =
   "rounded-full px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-300)]";
 
-/** One filter row as a WAI-ARIA tablist (shared by inline + sheet layouts). */
+/** One filter row as a WAI-ARIA tablist. */
 function ChipTablist<T extends string>({
   label,
   tabs,
@@ -108,29 +123,18 @@ function ChipTablist<T extends string>({
   );
 }
 
-/** The actual controls — reused verbatim inline (desktop) and inside the sheet (mobile). */
-function FilterControls({ status, tr, cc, categoryId, categories, onSet }: FilterSheetProps) {
+/** The actual controls inside the popover/sheet. */
+function FilterControls({ status, tr, cc, categoryId, categories, tab, onSet }: FilterSheetProps) {
   return (
     <>
       <div className="space-y-1">
-        <p className="text-[11px] font-semibold text-zinc-500">สถานะ</p>
+        <p className="text-[11px] font-semibold text-zinc-500">แหล่งที่มา</p>
         <ChipTablist
-          label="กรองตามสถานะ"
-          tabs={STATUS_TABS}
-          active={status ?? ""}
-          paramKey="status"
+          label="กรองตามแหล่งที่มา"
+          tabs={SOURCE_TABS.map((t) => ({ value: t.value === "all" ? "" : t.value, label: t.label }))}
+          active={!tab || tab === "all" ? "" : tab}
+          paramKey="tab"
           activeClass="bg-[var(--color-brand-600)] text-white"
-          onSet={onSet}
-        />
-      </div>
-      <div className="space-y-1">
-        <p className="text-[11px] font-semibold text-zinc-500">การส่ง TRCloud</p>
-        <ChipTablist
-          label="กรองตามการส่ง TRCloud"
-          tabs={TR_TABS}
-          active={tr ?? ""}
-          paramKey="tr"
-          activeClass="bg-blue-600 text-white"
           onSet={onSet}
         />
       </div>
@@ -146,12 +150,34 @@ function FilterControls({ status, tr, cc, categoryId, categories, onSet }: Filte
         />
       </div>
       <div className="space-y-1">
+        <p className="text-[11px] font-semibold text-zinc-500">การส่ง TRCloud</p>
+        <ChipTablist
+          label="กรองตามการส่ง TRCloud"
+          tabs={TR_TABS}
+          active={tr ?? ""}
+          paramKey="tr"
+          activeClass="bg-blue-600 text-white"
+          onSet={onSet}
+        />
+      </div>
+      <div className="space-y-1">
+        <p className="text-[11px] font-semibold text-zinc-500">สถานะเอกสาร</p>
+        <ChipTablist
+          label="กรองตามสถานะเอกสาร"
+          tabs={STATUS_TABS}
+          active={status ?? ""}
+          paramKey="status"
+          activeClass="bg-[var(--color-brand-600)] text-white"
+          onSet={onSet}
+        />
+      </div>
+      <div className="space-y-1">
         <p className="text-[11px] font-semibold text-zinc-500">หมวดหมู่</p>
         <select
           aria-label="กรองตามหมวด"
           value={categoryId ?? ""}
           onChange={(e) => onSet("category", e.target.value)}
-          className="h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]"
+          className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]"
         >
           <option value="">ทุกหมวด</option>
           {categories.map((c) => (
@@ -169,42 +195,50 @@ export function FilterSheet(props: FilterSheetProps) {
   const [open, setOpen] = useState(false);
   const n = activeCount(props);
 
+  // Close on Escape (a11y) for both desktop popover + mobile sheet.
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
   return (
     <>
-      {/* DESKTOP (lg+): inline single row of chip-groups + category select. */}
-      <div className="hidden flex-col gap-2 lg:flex">
-        <FilterControls {...props} />
-      </div>
+      {/* ONE trigger button on every breakpoint (declutter). */}
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+      >
+        <SlidersHorizontal className="size-4" />
+        ตัวกรอง
+        {n > 0 && (
+          <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--color-brand-600)] px-1.5 text-[11px] font-semibold text-white">
+            {n}
+          </span>
+        )}
+      </button>
 
-      {/* MOBILE (<lg): one trigger button — opens the bottom-sheet below. */}
-      <div className="lg:hidden">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-          aria-haspopup="dialog"
-          aria-expanded={open}
-        >
-          <SlidersHorizontal className="size-4" />
-          ตัวกรอง
-          {n > 0 && (
-            <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--color-brand-600)] px-1.5 text-[11px] font-semibold text-white">
-              {n}
-            </span>
-          )}
-        </button>
-      </div>
-
-      {/* Bottom-sheet (mobile only) */}
+      {/* Overlay panel — bottom-sheet on mobile, centered card on desktop. */}
       {open && (
-        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="ตัวกรอง">
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="ตัวกรอง"
+        >
           <button
             type="button"
             aria-label="ปิดตัวกรอง"
             onClick={() => setOpen(false)}
             className="absolute inset-0 bg-black/30"
           />
-          <div className="absolute inset-x-0 bottom-0 max-h-[85dvh] overflow-y-auto rounded-t-2xl border-t border-zinc-200 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl">
+          <div className="relative max-h-[85dvh] w-full overflow-y-auto rounded-t-2xl border-t border-zinc-200 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl sm:max-w-md sm:rounded-2xl sm:border">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-zinc-800">
                 ตัวกรอง{n > 0 ? ` (${n})` : ""}

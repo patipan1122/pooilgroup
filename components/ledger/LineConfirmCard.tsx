@@ -438,14 +438,18 @@ export function buildConfirmBubble(input: LedgerConfirmCardInput): FlexBubble {
         displayText: "ยืนยันใบเสร็จนี้",
       }
     : { type: "uri", label: "ยืนยัน", uri: deepLink };
+  // ยังขาด หมวด/สาขา (จำเป็นก่อนยืนยัน) → ชี้ปุ่ม "แก้ไข" ให้ชัดว่าต้องใส่อะไร
+  // (redesign 2026-06-07 · ลดงานที่ค้างเพราะใบไม่ครบ — ใช้ flow แก้ไขเดิม ไม่เพิ่ม postback).
+  const needsClassify = !ocrFailed && (!categoryName || !branchName);
+  const editLabel = needsClassify ? "ใส่หมวด/สาขา" : "แก้ไข";
   const editAction: FlexAction = usePostback
     ? {
         type: "postback",
-        label: "แก้ไข",
+        label: editLabel,
         data: `ledger:edit:${expenseId}`,
         displayText: "ขอแก้ไขใบเสร็จนี้",
       }
-    : { type: "uri", label: "แก้ไข", uri: deepLink };
+    : { type: "uri", label: editLabel, uri: deepLink };
 
   const bodyContents: FlexComponent[] = [
     // Big amount line.
@@ -544,6 +548,31 @@ export function buildConfirmBubble(input: LedgerConfirmCardInput): FlexBubble {
         {
           type: "text",
           text: "👀 AI ไม่ค่อยมั่นใจบางช่อง — ลองตรวจก่อนยืนยัน",
+          size: "sm",
+          weight: "bold",
+          color: COLOR.warn,
+          wrap: true,
+        },
+      ],
+    });
+  }
+
+  // ยังไม่ครบ หมวด/สาขา — เตือนชัดบนการ์ด (จำเป็นก่อนยืนยัน · ใช้ปุ่ม "ใส่หมวด/สาขา").
+  if (needsClassify) {
+    const miss = [!categoryName && "หมวด", !branchName && "สาขา"]
+      .filter(Boolean)
+      .join(" + ");
+    bodyContents.push({
+      type: "box",
+      layout: "vertical",
+      margin: "lg",
+      paddingAll: "10px",
+      cornerRadius: "8px",
+      backgroundColor: COLOR.warnBg,
+      contents: [
+        {
+          type: "text",
+          text: `🏷️ ยังไม่ได้ตั้ง ${miss} — กด "ใส่หมวด/สาขา" ให้ครบก่อนยืนยัน`,
           size: "sm",
           weight: "bold",
           color: COLOR.warn,

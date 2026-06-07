@@ -42,20 +42,26 @@ import type { ExpenseTab } from "../page";
 import { FilterSheet } from "./FilterSheet";
 import type { ExpenseRow, LedgerStatusValue } from "@/components/ledger/_kit/types";
 
-// D4 source tabs — where did the receipt come from? Driven by ?tab=. Counts are
-// DB-accurate (computed server-side in page.tsx, passed via tabCounts), not the
-// 300-row cap, so the badges never under-report.
-const SOURCE_TABS: Array<{ value: ExpenseTab; label: string }> = [
-  { value: "all", label: "ทั้งหมด" },
-  { value: "line", label: "สแกนจาก LINE" },
-  { value: "email", label: "อีเมล" },
-  { value: "web", label: "เพิ่มเอง" },
-  { value: "mine", label: "ส่วนตัว" },
+// PRIMARY status strip (redesign 2026-06-07) — the accountant's daily axis: triage
+// รอยืนยัน → ยืนยันแล้ว → ส่ง TRCloud. "ส่งแล้ว" is the ?tr=sent filter (not a status),
+// the rest drive ?status=. Source (LINE/email/…) moved into the ตัวกรอง popover.
+const PRIMARY_TABS: Array<{ id: "all" | "draft" | "confirmed" | "sent"; label: string }> = [
+  { id: "all", label: "ทั้งหมด" },
+  { id: "draft", label: "รอยืนยัน" },
+  { id: "confirmed", label: "ยืนยันแล้ว" },
+  { id: "sent", label: "ส่งแล้ว" },
 ];
 
 function baht(n: number) {
   return `${Math.round(n).toLocaleString("en-US")} ฿`;
 }
+
+// แหล่งที่มา — จุดสีจิ๋วข้างชื่อร้าน (LINE เขียว · อีเมลฟ้า · เพิ่มเองเทา) เหมือนดีไซน์.
+const SOURCE_DOT: Record<string, { cls: string; label: string }> = {
+  line: { cls: "bg-[#06c755]", label: "จาก LINE" },
+  email: { cls: "bg-sky-500", label: "จากอีเมล" },
+  web: { cls: "bg-zinc-400", label: "เพิ่มเอง" },
+};
 
 export function ExpenseList({
   rows,
@@ -71,7 +77,8 @@ export function ExpenseList({
   sendableIds,
   companyId,
   tab,
-  tabCounts,
+  sort,
+  statusCounts,
   listActions,
   payreqEnabled,
   branches,
@@ -93,10 +100,12 @@ export function ExpenseList({
   sendableIds: string[];
   /** Active company scope — passed to bulk actions so they can't cross companies. */
   companyId: string;
-  /** D4 source tab (?tab=) — all | line | web | mine. */
+  /** D4 source tab (?tab=) — all | line | web | mine (now lives inside ตัวกรอง). */
   tab: ExpenseTab;
-  /** DB-accurate per-tab counts (from page.tsx) for the badge on each source tab. */
-  tabCounts: Record<ExpenseTab, number>;
+  /** เรียงลำดับปัจจุบัน (?sort=) — undefined = ใหม่→เก่า (ค่าเริ่มต้น). */
+  sort?: "date-asc" | "amount-desc" | "amount-asc";
+  /** DB-accurate counts for the PRIMARY status strip (ทั้งหมด/รอยืนยัน/ยืนยันแล้ว/ส่งแล้ว). */
+  statusCounts: { all: number; draft: number; confirmed: number; sent: number };
   /** Shortcut actions (ไม่มีใบเสร็จ · สลิปรอจับคู่) — rendered inside the mobile
    *  ตัวกรอง sheet so they're off the page header. */
   listActions?: React.ReactNode;
@@ -163,7 +172,7 @@ export function ExpenseList({
     router.push(`${pathname}?${sp.toString()}`);
   }
 
-  // Clear all four list filters in ONE push (sequential setParam calls each re-push
+  // Clear all secondary filters in ONE push (sequential setParam calls each re-push
   // from the same baseParams snapshot, so only the last would actually apply).
   function clearFilters() {
     const sp = new URLSearchParams(baseParams);
@@ -171,6 +180,30 @@ export function ExpenseList({
     sp.delete("tr");
     sp.delete("cc");
     sp.delete("category");
+    sp.delete("tab");
+    if (selectedId) sp.set("selected", selectedId);
+    router.push(`${pathname}?${sp.toString()}`);
+  }
+
+  // PRIMARY status strip — sets status/tr atomically (selecting one clears the other)
+  // so the segmented control behaves like a single tab group.
+  const activePrimary: "all" | "draft" | "confirmed" | "sent" | null =
+    tr === "sent"
+      ? "sent"
+      : status === "draft"
+        ? "draft"
+        : status === "confirmed"
+          ? "confirmed"
+          : !status && !tr
+            ? "all"
+            : null; // locked/void are set via the ตัวกรอง popover → no primary highlight
+  function setPrimaryTab(id: "all" | "draft" | "confirmed" | "sent") {
+    const sp = new URLSearchParams(baseParams);
+    sp.delete("status");
+    sp.delete("tr");
+    if (id === "draft") sp.set("status", "draft");
+    else if (id === "confirmed") sp.set("status", "confirmed");
+    else if (id === "sent") sp.set("tr", "sent");
     if (selectedId) sp.set("selected", selectedId);
     router.push(`${pathname}?${sp.toString()}`);
   }
@@ -229,6 +262,27 @@ export function ExpenseList({
     setMsg(null);
     setPayeeOpen(true);
     const vendor = checkedVendors[0];
+    if (!vendor) return;
+    lastPayeeForVendor(vendor, companyId)
+      .then((p) => {
+        if (!p) return;
+        setPayee((cur) => ({
+          acctName: cur.acctName || p.acctName || "",
+          bankCode: cur.bankCode || p.bankCode || "",
+          acctNo: cur.acctNo || p.acctNo || "",
+          promptpay: cur.promptpay || p.promptpay || "",
+        }));
+      })
+      .catch(() => {});
+  }
+
+  // Per-row "ขอโอน" (hover) — tick just this row + open the payee dialog prefilled
+  // from the vendor's last payee. Same single createPaymentRequestAction path.
+  function openPayeeForRow(r: ExpenseRow) {
+    setMsg(null);
+    setChecked(new Set([r.id]));
+    setPayeeOpen(true);
+    const vendor = (r.vendor ?? "").trim();
     if (!vendor) return;
     lastPayeeForVendor(vendor, companyId)
       .then((p) => {
@@ -308,84 +362,96 @@ export function ExpenseList({
     <div className="rounded-2xl border border-zinc-200 bg-white">
       {/* Sticky filter header */}
       <div className="sticky top-14 z-20 space-y-2 rounded-t-2xl border-b border-zinc-200 bg-white p-3 sm:top-16">
-        {/* D4 source tabs — ทั้งหมด / สแกนจาก LINE / เพิ่มเอง / ส่วนตัว, with
-            DB-accurate count badges. WAI-ARIA tablist per project convention. */}
+        {/* PRIMARY status strip — รอยืนยัน → ยืนยันแล้ว → ส่งแล้ว (accountant triage axis).
+            "ส่งแล้ว" = ?tr=sent, the rest = ?status=. Source/cc/หมวด live in ตัวกรอง. */}
         <div
           className="flex flex-wrap gap-1"
           role="tablist"
-          aria-label="กรองตามที่มาของใบเสร็จ"
+          aria-label="กรองตามสถานะ"
         >
-          {SOURCE_TABS.map((t) => {
-            const active = tab === t.value;
-            const count = tabCounts[t.value];
+          {PRIMARY_TABS.map((t) => {
+            const active = activePrimary === t.id;
+            const count = statusCounts[t.id];
             return (
               <button
-                key={t.value}
+                key={t.id}
                 type="button"
                 role="tab"
                 aria-selected={active}
-                onClick={() => setParam("tab", t.value === "all" ? "" : t.value)}
+                onClick={() => setPrimaryTab(t.id)}
                 className={
-                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-300)] " +
+                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-300)] " +
                   (active
                     ? "bg-[var(--color-brand-600)] text-white"
                     : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200")
                 }
               >
                 {t.label}
-                <span
-                  className={
-                    "inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums " +
-                    (active ? "bg-white/25 text-white" : "bg-white text-zinc-500")
-                  }
-                >
-                  {count}
-                </span>
+                {count > 0 && (
+                  <span
+                    className={
+                      "inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums " +
+                      (active ? "bg-white/25 text-white" : "bg-white text-zinc-500")
+                    }
+                  >
+                    {count}
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
 
-        {/* S2 — status / TRCloud / VAT-colour / category filters. Inline on lg+;
-            on a phone they collapse into one "ตัวกรอง (n)" bottom-sheet so the
-            list never stacks 4 dropdowns. cc (VAT 🟢🟡🔴) also lives in the
-            SummaryStrip above, but stays reachable here too. */}
-        <FilterSheet
-          status={status}
-          tr={tr}
-          cc={cc}
-          categoryId={categoryId}
-          categories={categories}
-          onSet={setParam}
-          onClear={clearFilters}
-          extraActions={listActions}
-        />
-
-        {/* Search (GET form to keep it simple/server-driven) */}
-        <form method="GET" className="flex gap-2">
-          {baseParams
-            .split("&")
-            .filter(Boolean)
-            .map((kv) => {
-              const [k, v] = kv.split("=");
-              if (k === "q") return null;
-              return <input key={k} type="hidden" name={k} value={decodeURIComponent(v ?? "")} />;
-            })}
-          {selectedId && <input type="hidden" name="selected" value={selectedId} />}
-          <input
-            type="search"
-            name="q"
-            defaultValue={q ?? ""}
-            placeholder="ค้นหา ผู้ขาย / เลขที่ / เลขภาษี"
-            className="h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]"
-          />
-          <button
-            type="submit"
-            className="h-9 shrink-0 rounded-lg bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-800"
+        {/* Toolbar: search + เรียงลำดับ + the single "ตัวกรอง" button (source/TRCloud/VAT/
+            หมวด/สถานะ collapse into ONE popover — no more 5 stacked groups · "filter รก"). */}
+        <div className="flex flex-wrap gap-2">
+          <form method="GET" className="flex min-w-[180px] flex-1 gap-2">
+            {baseParams
+              .split("&")
+              .filter(Boolean)
+              .map((kv) => {
+                const [k, v] = kv.split("=");
+                if (k === "q") return null;
+                return <input key={k} type="hidden" name={k} value={decodeURIComponent(v ?? "")} />;
+              })}
+            {selectedId && <input type="hidden" name="selected" value={selectedId} />}
+            <input
+              type="search"
+              name="q"
+              defaultValue={q ?? ""}
+              placeholder="ค้นหา ผู้ขาย / เลขที่ / เลขภาษี"
+              className="h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]"
+            />
+            <button
+              type="submit"
+              className="h-9 shrink-0 rounded-lg bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-800"
+            >
+              ค้นหา
+            </button>
+          </form>
+          <select
+            aria-label="เรียงลำดับ"
+            value={sort ?? "date-desc"}
+            onChange={(e) => setParam("sort", e.target.value === "date-desc" ? "" : e.target.value)}
+            className="h-9 shrink-0 rounded-lg border border-zinc-200 bg-white px-2 text-sm text-zinc-700 outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]"
           >
-            ค้นหา
-          </button>
-        </form>
+            <option value="date-desc">ใหม่ → เก่า</option>
+            <option value="date-asc">เก่า → ใหม่</option>
+            <option value="amount-desc">ยอดมาก → น้อย</option>
+            <option value="amount-asc">ยอดน้อย → มาก</option>
+          </select>
+          <FilterSheet
+            status={status}
+            tr={tr}
+            cc={cc}
+            categoryId={categoryId}
+            categories={categories}
+            tab={tab}
+            onSet={setParam}
+            onClear={clearFilters}
+            extraActions={listActions}
+          />
+        </div>
 
         {/* Context-aware bulk bar — appears when there are actionable rows */}
         {actionableIds.length > 0 && (
@@ -708,7 +774,7 @@ export function ExpenseList({
             });
             const confirmedByAcct = !!r.confirmedBy;
             return (
-              <li key={r.id} className="flex items-stretch">
+              <li key={r.id} className="group flex items-stretch">
                 {selectable && (
                   <label className="flex shrink-0 items-center pl-3">
                     <input
@@ -751,6 +817,13 @@ export function ExpenseList({
                         <span className="truncate text-sm font-medium text-zinc-800">
                           {r.vendor || "ไม่ระบุผู้ขาย"}
                         </span>
+                        {SOURCE_DOT[r.source] && (
+                          <span
+                            className={"size-1.5 shrink-0 rounded-full " + SOURCE_DOT[r.source].cls}
+                            title={SOURCE_DOT[r.source].label}
+                            aria-hidden
+                          />
+                        )}
                       </div>
                       <div className="flex items-center gap-1.5 truncate text-xs text-zinc-400">
                         <span className="font-mono">{r.docCode}</span>
@@ -851,6 +924,19 @@ export function ExpenseList({
                       >
                         {r.categoryName}
                       </Link>
+                    )}
+
+                    {/* Per-row ขอโอน — appears on hover (desktop); mobile uses the
+                        detail-pane button. Only when classifiable (gate.ok). */}
+                    {payreqEnabled && gate.ok && (
+                      <button
+                        type="button"
+                        onClick={() => openPayeeForRow(r)}
+                        title="ขอโอนเงินใบนี้"
+                        className="ml-auto hidden h-6 shrink-0 items-center gap-1 rounded-md border border-[var(--color-brand-200)] bg-[var(--color-brand-50)] px-1.5 text-[10px] font-semibold text-[var(--color-brand-700)] hover:bg-[var(--color-brand-100)] group-hover:inline-flex"
+                      >
+                        <Banknote className="size-3" /> ขอโอน
+                      </button>
                     )}
                   </div>
                 </div>

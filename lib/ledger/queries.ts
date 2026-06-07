@@ -167,6 +167,8 @@ export interface ExpenseListFilter {
    *  because it avoids the expensive SQL OFFSET scan. When cursor is given, skip
    *  is ignored. */
   cursor?: string;
+  /** Sort order for the list pane (redesign 2026-06-07). Default = date-desc. */
+  sort?: "date-desc" | "date-asc" | "amount-desc" | "amount-asc";
 }
 
 /** Map a color filter token → the completeness_status column value. */
@@ -427,11 +429,21 @@ function serializeExpenseSummary(row: ExpenseSummaryRow): Expense {
  */
 export async function listExpensesSummary(f: ExpenseListFilter): Promise<ExpenseListResult> {
   const limit = f.take ?? 100;
+  // Sort order (redesign 2026-06-07) — default newest doc first; supports เก่า→ใหม่
+  // and ยอดมาก/น้อย for the list "เรียงลำดับ" control.
+  const orderBy: Prisma.LedgerExpenseOrderByWithRelationInput[] =
+    f.sort === "date-asc"
+      ? [{ docDate: "asc" }, { createdAt: "asc" }]
+      : f.sort === "amount-desc"
+        ? [{ total: "desc" }, { createdAt: "desc" }]
+        : f.sort === "amount-asc"
+          ? [{ total: "asc" }, { createdAt: "desc" }]
+          : [{ docDate: "desc" }, { createdAt: "desc" }];
   // Fetch one extra row to detect whether more pages exist.
   const rows = await prisma.ledgerExpense.findMany({
     where: buildWhere(f),
     select: EXPENSE_SUMMARY_SELECT,
-    orderBy: [{ docDate: "desc" }, { createdAt: "desc" }],
+    orderBy,
     take: limit + 1,
     // When cursor is used, skip is irrelevant (cursor already positions the scan).
     skip: f.cursor ? 0 : (f.skip ?? 0),

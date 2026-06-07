@@ -1,7 +1,19 @@
 // Ledger home — KPI summary (ภาพรวมเร็ว) + ทางลัดไปยังรายจ่ายที่รอยืนยัน.
 // Real data, org+company(+branch) scoped, current month.
 import Link from "next/link";
-import { Receipt, FileClock, CheckCircle2, Wallet, BookOpen, ChevronRight } from "lucide-react";
+import {
+  Receipt,
+  FileClock,
+  CheckCircle2,
+  Wallet,
+  BookOpen,
+  ChevronRight,
+  ListChecks,
+  Tags,
+  AlertTriangle,
+  Send,
+} from "lucide-react";
+import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
 import { resolveScope } from "./_scope";
 import { LedgerHeader, NoCompanyState } from "./_components/LedgerHeader";
@@ -59,6 +71,30 @@ export default async function LedgerHomePage({
     expenseSummary(filter),
     listExpensesSummary({ ...filter, status: "draft", take: 6 }).then((r) => r.expenses),
     spendByCategory(filter),
+  ]);
+
+  // "งานที่ต้องทำ" (redesign 2026-06-07) — actionable backlog counts, company-scoped
+  // (not period-limited; tasks are "do now"): ใบร่างขาดหมวด/สาขา · ขอคืน VAT ไม่ได้ (แดง) ·
+  // ยืนยันแล้วรอส่ง TRCloud. companyId filter ติดไว้เสมอ (กันรั่วข้ามนิติบุคคล).
+  const taskBase = {
+    orgId: scope.orgId,
+    companyId: scope.companyId,
+    ...(scope.branchId ? { branchId: scope.branchId } : {}),
+  };
+  const [needClassify, vatBlocked, pendingTrcloud] = await Promise.all([
+    prisma.ledgerExpense.count({
+      where: { ...taskBase, status: "draft", OR: [{ branchId: null }, { categoryId: null }] },
+    }),
+    prisma.ledgerExpense.count({
+      where: {
+        ...taskBase,
+        status: { in: ["draft", "confirmed", "locked"] },
+        completenessStatus: "red_invalid",
+      },
+    }),
+    prisma.ledgerExpense.count({
+      where: { ...taskBase, status: "confirmed", trcloudDocId: null },
+    }),
   ]);
 
   // "ค่าใช้จ่ายประจำ" teaser → surfaces สมุดค่าใช้จ่าย on the home page so the CEO
@@ -130,6 +166,38 @@ export default async function LedgerHomePage({
     blue: "ring-blue-200 text-blue-700",
     zinc: "ring-zinc-200 text-zinc-700",
   };
+
+  const taskTone: Record<string, string> = {
+    amber: "bg-amber-50 text-amber-600",
+    rose: "bg-rose-50 text-rose-600",
+    blue: "bg-blue-50 text-blue-600",
+  };
+  const tasks = [
+    {
+      icon: Tags,
+      tone: "amber",
+      label: "ใบร่างยังไม่ครบ หมวด/สาขา",
+      count: needClassify,
+      cta: "เติม",
+      href: "/ledger/expenses?status=draft",
+    },
+    {
+      icon: AlertTriangle,
+      tone: "rose",
+      label: "ใบขอคืนภาษีซื้อไม่ได้",
+      count: vatBlocked,
+      cta: "ดู",
+      href: "/ledger/expenses?cc=red",
+    },
+    {
+      icon: Send,
+      tone: "blue",
+      label: "ใบยืนยันแล้ว รอส่ง TRCloud",
+      count: pendingTrcloud,
+      cta: "ส่ง",
+      href: "/ledger/expenses?status=confirmed&tr=unsent",
+    },
+  ].filter((t) => t.count > 0);
 
   const topCat = byCategory.slice(0, 5);
   const maxCat = Math.max(1, ...topCat.map((c) => c.total));
@@ -208,6 +276,46 @@ export default async function LedgerHomePage({
           );
         })}
       </div>
+
+      {/* งานที่ต้องทำ — actionable backlog (redesign 2026-06-07): สิ่งที่บัญชีต้อง
+          จัดการก่อน · กดเข้าหน้ารายจ่ายที่กรองไว้ให้แล้ว. ซ่อนเองถ้าเคลียร์หมด. */}
+      {tasks.length > 0 && (
+        <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <ListChecks className="size-4 text-[var(--color-brand-600)]" aria-hidden />
+            <h2 className="text-sm font-bold text-zinc-800">งานที่ต้องทำ</h2>
+          </div>
+          <ul className="divide-y divide-zinc-100">
+            {tasks.map((t) => {
+              const Icon = t.icon;
+              return (
+                <li key={t.label}>
+                  <Link
+                    href={buildHref(t.href)}
+                    className="flex items-center gap-3 py-2.5 transition-colors hover:bg-zinc-50"
+                  >
+                    <span
+                      className={`grid size-9 shrink-0 place-items-center rounded-xl ${taskTone[t.tone]}`}
+                    >
+                      <Icon className="size-4" aria-hidden />
+                    </span>
+                    <span className="min-w-0 flex-1 text-sm font-medium text-zinc-800">
+                      {t.label}
+                    </span>
+                    <span className="shrink-0 text-sm font-bold tabular-nums text-zinc-900">
+                      {t.count}
+                      <span className="ml-0.5 text-xs font-normal text-zinc-400">ใบ</span>
+                    </span>
+                    <span className="shrink-0 rounded-lg bg-[var(--color-brand-50)] px-2.5 py-1 text-xs font-semibold text-[var(--color-brand-700)]">
+                      {t.cta}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {/* ค่าใช้จ่ายประจำ — entry to สมุดค่าใช้จ่าย (ดูย้อนหลัง/เทียบเดือน) */}
       <Link

@@ -13,7 +13,6 @@ import { ledgerWebCanForRole } from "@/lib/ledger/liff-auth";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
 import { listExpensesSummary, getExpense, listCategories, summarizeCompleteness } from "../_data";
-import type { ComponentProps, FC } from "react";
 import { ExpenseList } from "./_components/ExpenseList";
 import { CompletenessSummaryStrip } from "./_components/CompletenessSummaryStrip";
 import { ExpensePaneClient } from "./_components/ExpensePaneClient";
@@ -32,23 +31,6 @@ const STATUS_VALUES: LedgerStatusValue[] = ["draft", "confirmed", "locked", "voi
 export type ExpenseTab = "all" | "line" | "email" | "web" | "mine";
 const TAB_VALUES: ExpenseTab[] = ["all", "line", "email", "web", "mine"];
 
-// CONTRACT for the UI agent (C1) that owns ExpenseList: add these two props to the
-// ExpenseList signature (import the types from this page) so the source-tab strip
-// renders. `tab` = active tab · `tabCounts` = DB-accurate badge counts per tab.
-export interface ExpenseListTabProps {
-  tab: ExpenseTab;
-  tabCounts: Record<ExpenseTab, number>;
-}
-
-// Until the C1 UI agent widens ExpenseList's own signature with ExpenseListTabProps,
-// reference it through a typed alias that ADDS the two source-tab props. This keeps
-// the page compiling AND hands the UI agent an exact, importable prop contract — no
-// `any`, no `@ts-ignore`. When ExpenseList declares the props itself, this alias is
-// a harmless no-op (structurally identical) and can be inlined back to <ExpenseList>.
-const ExpenseListWithTabs = ExpenseList as FC<
-  ComponentProps<typeof ExpenseList> & ExpenseListTabProps
->;
-
 export default async function ExpensesPage({
   searchParams,
 }: {
@@ -63,6 +45,7 @@ export default async function ExpensesPage({
     cc?: string; // ภาษีซื้อ color filter: "green" | "yellow" | "red"
     dt?: string; // docType filter: "quotation" (แท็บ "รอใบกำกับ" · D1)
     tab?: string; // source tab: "all" | "line" | "web" | "mine"
+    sort?: string; // เรียงลำดับ: date-desc(ค่าเริ่มต้น) | date-asc | amount-desc | amount-asc
   }>;
 }) {
   // Page-level role gate. This review workspace exposes the FULL company-wide
@@ -112,6 +95,11 @@ export default async function ExpensesPage({
   const slipOn = ledgerSlipV1();
   const tab: ExpenseTab =
     sp.tab && TAB_VALUES.includes(sp.tab as ExpenseTab) ? (sp.tab as ExpenseTab) : "all";
+  // เรียงลำดับ — date-desc เป็นค่าเริ่มต้น (undefined) จึงเก็บเฉพาะค่าที่ไม่ใช่ค่าเริ่มต้น.
+  const sort =
+    sp.sort === "date-asc" || sp.sort === "amount-desc" || sp.sort === "amount-asc"
+      ? sp.sort
+      : undefined;
 
   // ภาษีซื้อ summary uses the SAME scope (+ status/category/tr/search) so the strip
   // counts match the list — but NOT the cc filter itself (the strip shows the full mix).
@@ -137,12 +125,13 @@ export default async function ExpensesPage({
       ...summaryFilter,
       completeness: cc,
       docType,
+      sort,
       take: 300,
     }),
     listCategories(scope.orgId, scope.companyId),
     summarizeCompleteness(summaryFilter),
   ]);
-  const { expenses: allRows, hasMore: expensesHasMore } = expensesResult;
+  const { expenses: allRows } = expensesResult;
 
   // D4 source tabs — narrow the SCOPE rows by the active tab's source/owner
   // predicate (rows already carry `source` + `createdBy` from the summary select).
@@ -155,24 +144,25 @@ export default async function ExpensesPage({
   };
   const rows = allRows.filter(matchesTab);
 
-  // Per-tab badge counts — DB-accurate (NOT the 300-capped row list), using the
-  // SAME company+actor+filter scope MINUS the tab predicate so badges never
-  // miscount. completeness(cc) is part of the shared scope, so counts respect it.
-  const tabCountWhere: Prisma.LedgerExpenseWhereInput = {
+  // PRIMARY status-strip counts — DB-accurate (NOT the 300-capped list). Scope =
+  // company + branch + the active source(tab)/หมวด/ภาษีซื้อ/ค้นหา filters, MINUS the
+  // status & tr axes so each tab counts its own slice. VISIBLE = non-void default set.
+  const VISIBLE_STATUSES: LedgerStatusValue[] = ["draft", "confirmed", "locked"];
+  const statusCountWhere: Prisma.LedgerExpenseWhereInput = {
     orgId: scope.orgId,
     companyId: scope.companyId,
     ...(scope.branchId ? { branchId: scope.branchId } : {}),
-    ...(status ? { status } : {}),
     ...(categoryId ? { categoryId } : {}),
-    ...(trcloudPushed !== undefined
-      ? { trcloudDocId: trcloudPushed ? { not: null } : null }
-      : {}),
     ...(cc
       ? {
           completenessStatus:
             cc === "green" ? "green_full" : cc === "yellow" ? "yellow_partial" : "red_invalid",
         }
       : {}),
+    ...(tab === "line" ? { source: "line" } : {}),
+    ...(tab === "email" ? { source: "email" } : {}),
+    ...(tab === "web" ? { source: "web" } : {}),
+    ...(tab === "mine" ? { createdBy: session.user.id } : {}),
     ...(q
       ? {
           OR: [
@@ -183,20 +173,15 @@ export default async function ExpensesPage({
         }
       : {}),
   };
-  const [countAll, countLine, countEmail, countWeb, countMine] = await Promise.all([
-    prisma.ledgerExpense.count({ where: tabCountWhere }),
-    prisma.ledgerExpense.count({ where: { ...tabCountWhere, source: "line" } }),
-    prisma.ledgerExpense.count({ where: { ...tabCountWhere, source: "email" } }),
-    prisma.ledgerExpense.count({ where: { ...tabCountWhere, source: "web" } }),
-    prisma.ledgerExpense.count({ where: { ...tabCountWhere, createdBy: session.user.id } }),
+  const [scAll, scDraft, scConfirmed, scSent] = await Promise.all([
+    prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: { in: VISIBLE_STATUSES } } }),
+    prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "draft" } }),
+    prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "confirmed" } }),
+    prisma.ledgerExpense.count({
+      where: { ...statusCountWhere, status: { in: VISIBLE_STATUSES }, trcloudDocId: { not: null } },
+    }),
   ]);
-  const tabCounts: Record<ExpenseTab, number> = {
-    all: countAll,
-    line: countLine,
-    email: countEmail,
-    web: countWeb,
-    mine: countMine,
-  };
+  const statusCounts = { all: scAll, draft: scDraft, confirmed: scConfirmed, sent: scSent };
 
   const selectedExpense = selected
     ? await getExpense({
@@ -253,6 +238,7 @@ export default async function ExpensesPage({
   if (docType) baseParams.set("dt", docType);
   if (q) baseParams.set("q", q);
   if (tab !== "all") baseParams.set("tab", tab);
+  if (sort) baseParams.set("sort", sort);
 
   // ลิงก์สลับแท็บ "รอใบกำกับ" — คงพารามิเตอร์ scope เดิมไว้ (company/branch) เท่านั้น.
   const quotationOnParams = new URLSearchParams();
@@ -344,7 +330,7 @@ export default async function ExpensesPage({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
         {/* LEFT — list + filters + bulk-confirm. Mobile master-detail: hide list when a receipt is open (?selected). */}
         <div className={selected ? "hidden lg:block" : "block"}>
-        <ExpenseListWithTabs
+        <ExpenseList
           rows={rows}
           categories={categories.map((c) => ({
             id: c.id,
@@ -365,7 +351,8 @@ export default async function ExpensesPage({
           payreqEnabled={ledgerPayreqV1()}
           branches={scope.branches}
           tab={tab}
-          tabCounts={tabCounts}
+          sort={sort}
+          statusCounts={statusCounts}
           listActions={
             <>
               {slipOn && (
@@ -414,6 +401,7 @@ export default async function ExpensesPage({
               branches={scope.branches}
               canEditClaimability={canEditClaimability}
               currentUserId={session.user.id}
+              payreqEnabled={ledgerPayreqV1()}
             />
           ) : null}
           {canStockIn && selectedExpense && (

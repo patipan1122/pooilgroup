@@ -31,6 +31,7 @@ import {
   ChevronDown,
   Building2,
   ListTree,
+  Banknote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
@@ -290,6 +291,7 @@ export function ExpenseReviewPane({
   onSelfDelete,
   onRequestDelete,
   onEnsureCentralBranch,
+  onRequestPayout,
   currentUserId,
   readOnly = false,
   canConfirm = true,
@@ -315,6 +317,9 @@ export function ExpenseReviewPane({
   onRequestDelete?: RequestDeleteAction;
   /** D1 · สร้าง/หา "สำนักงาน (ส่วนกลาง)" เมื่อผู้ใช้เลือกตั้งใจ (ensureCentralBranch). */
   onEnsureCentralBranch?: EnsureCentralBranchAction;
+  /** ขอโอนเงินใบนี้ (createPaymentRequestAction) — server หาเลขบัญชีจากบิล/ผู้ขายเดิมให้เอง.
+   *  ไม่ส่งมา = ไม่โชว์ปุ่มขอโอน (LIFF/ปิด flag LEDGER_PAYREQ_V1). */
+  onRequestPayout?: () => Promise<LedgerActionResult>;
   /** id ของผู้ใช้ปัจจุบัน — ใช้เช็คว่ารายการนี้ "ของฉัน" ไหม (UX gate; server re-checks). */
   currentUserId?: string | null;
   /** locked/void → ดูอย่างเดียว */
@@ -606,6 +611,21 @@ export function ExpenseReviewPane({
     });
   }
 
+  // ขอโอนเงินใบนี้ (redesign 2026-06-07) — บอทเด้งการ์ดเข้ากลุ่มผู้บริหารให้กดโอน.
+  // server หาเลขบัญชีจากบิล/ผู้ขายเดิม + กันขอซ้ำ (1-open-req/bill) + ตรวจ companyId เอง.
+  function handleRequestPayout() {
+    if (!onRequestPayout) return;
+    setMsg(null);
+    startTransition(async () => {
+      const res = await onRequestPayout();
+      setMsg(
+        res.ok
+          ? { kind: "ok", text: "ส่งคำขอโอนเข้ากลุ่มผู้บริหารแล้ว ✅" }
+          : { kind: "err", text: res.error ?? "ขอโอนไม่สำเร็จ" },
+      );
+    });
+  }
+
   const inputCls =
     // h-11/text-base on mobile = ≥44px touch target + 16px (no iOS zoom); sm: keeps the dense desktop form.
     "h-11 w-full rounded-lg border border-zinc-200 bg-white px-2 text-base outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-50 disabled:text-zinc-500 sm:h-9 sm:text-sm";
@@ -773,9 +793,74 @@ export function ExpenseReviewPane({
 
         {/* ฟอร์มแก้ — 4 ส่วนแบบ Bainy */}
         <div className="space-y-5">
-          {/* 1 · ข้อมูลร้านค้า & เอกสาร */}
+          {/* 1 · ลงบัญชี (จำเป็น) — หมวด + สาขา ต้องครบก่อนยืนยัน (ยกขึ้นบนสุดตามดีไซน์
+              ใหม่ 2026-06-07: ฟิลด์บังคับเห็นก่อน ลดการเลื่อนหา). */}
           <section className="space-y-3 rounded-2xl border border-zinc-100 p-3">
-            <SectionTitle n={1} icon={<FileText className="size-4" aria-hidden />}>
+            <SectionTitle n={1} icon={<Building2 className="size-4" aria-hidden />}>
+              ลงบัญชี
+            </SectionTitle>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <FieldLabel confidence={conf.suggested_category ?? conf.category}>
+                  ประเภทค่าใช้จ่าย
+                </FieldLabel>
+                <select
+                  className={cn(inputCls, gateMissingCategory && "border-amber-300 ring-1 ring-amber-200")}
+                  aria-label="ประเภทค่าใช้จ่าย"
+                  value={draft.categoryId}
+                  disabled={locked}
+                  onChange={(e) => set("categoryId", e.target.value)}
+                >
+                  <option value="">— เลือกหมวด —</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                {gateMissingCategory && (
+                  <p className="mt-1 text-[11px] text-amber-700">ต้องระบุหมวดหมู่ค่าใช้จ่าย</p>
+                )}
+              </div>
+              <div>
+                <FieldLabel>สาขา (ของเรา)</FieldLabel>
+                <BranchPicker
+                  branches={branches}
+                  value={draft.branchId}
+                  onChange={pickBranch}
+                  placeholder="— ไม่ระบุ —"
+                  disabled={locked || centralPending}
+                  className={gateMissingBranch ? "ring-1 ring-amber-200" : undefined}
+                />
+                {/* "สำนักงาน (ส่วนกลาง)" — เสนอเมื่อยังไม่มีในลิสต์ + มี action สร้างให้. */}
+                {onEnsureCentralBranch && !centralBranch && (
+                  <button
+                    type="button"
+                    disabled={locked || centralPending}
+                    onClick={() => pickBranch(CENTRAL_OPTION)}
+                    className="mt-1 text-[11px] text-[var(--color-brand-600)] underline disabled:opacity-50"
+                  >
+                    {centralPending ? (
+                      <span className="flex items-center gap-1">
+                        <Loader2 className="size-3 animate-spin" aria-hidden />
+                        กำลังตั้งสาขาสำนักงาน…
+                      </span>
+                    ) : (
+                      "ไม่รู้สาขา → เลือกสำนักงาน (ส่วนกลาง)"
+                    )}
+                  </button>
+                )}
+                {gateMissingBranch && !centralPending && (
+                  <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-700">
+                    <Building2 className="size-3" aria-hidden />
+                    ต้องระบุสาขา
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* 2 · ข้อมูลร้านค้า & เอกสาร */}
+          <section className="space-y-3 rounded-2xl border border-zinc-100 p-3">
+            <SectionTitle n={2} icon={<FileText className="size-4" aria-hidden />}>
               ข้อมูลร้านค้า & เอกสาร
             </SectionTitle>
             <div>
@@ -866,68 +951,11 @@ export function ExpenseReviewPane({
             </div>
           </section>
 
-          {/* 2 · รายการ & ยอดเงิน */}
+          {/* 3 · รายการ & ยอดเงิน */}
           <section className="space-y-3 rounded-2xl border border-zinc-100 p-3">
-            <SectionTitle n={2} icon={<Wallet className="size-4" aria-hidden />}>
+            <SectionTitle n={3} icon={<Wallet className="size-4" aria-hidden />}>
               รายการ & ยอดเงิน
             </SectionTitle>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <FieldLabel confidence={conf.suggested_category ?? conf.category}>
-                  ประเภทค่าใช้จ่าย
-                </FieldLabel>
-                <select
-                  className={cn(inputCls, gateMissingCategory && "border-amber-300 ring-1 ring-amber-200")}
-                  aria-label="ประเภทค่าใช้จ่าย"
-                  value={draft.categoryId}
-                  disabled={locked}
-                  onChange={(e) => set("categoryId", e.target.value)}
-                >
-                  <option value="">— เลือกหมวด —</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-                {gateMissingCategory && (
-                  <p className="mt-1 text-[11px] text-amber-700">ต้องระบุหมวดหมู่ค่าใช้จ่าย</p>
-                )}
-              </div>
-              <div>
-                <FieldLabel>สาขา (ของเรา)</FieldLabel>
-                <BranchPicker
-                  branches={branches}
-                  value={draft.branchId}
-                  onChange={pickBranch}
-                  placeholder="— ไม่ระบุ —"
-                  disabled={locked || centralPending}
-                  className={gateMissingBranch ? "ring-1 ring-amber-200" : undefined}
-                />
-                {/* "สำนักงาน (ส่วนกลาง)" — เสนอเมื่อยังไม่มีในลิสต์ + มี action สร้างให้. */}
-                {onEnsureCentralBranch && !centralBranch && (
-                  <button
-                    type="button"
-                    disabled={locked || centralPending}
-                    onClick={() => pickBranch(CENTRAL_OPTION)}
-                    className="mt-1 text-[11px] text-[var(--color-brand-600)] underline disabled:opacity-50"
-                  >
-                    {centralPending ? (
-                      <span className="flex items-center gap-1">
-                        <Loader2 className="size-3 animate-spin" aria-hidden />
-                        กำลังตั้งสาขาสำนักงาน…
-                      </span>
-                    ) : (
-                      "ไม่รู้สาขา → เลือกสำนักงาน (ส่วนกลาง)"
-                    )}
-                  </button>
-                )}
-                {gateMissingBranch && !centralPending && (
-                  <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-700">
-                    <Building2 className="size-3" aria-hidden />
-                    ต้องระบุสาขา
-                  </p>
-                )}
-              </div>
-            </div>
 
             {/* แยกรายการ — line items (M2: มือถือ default ยุบไว้ใต้ accordion · ≥768px
                 stack เป็นการ์ดต่อรายการ เพื่อไม่ให้ grid ล้นจอ 375px เวลายอด 5+ หลัก). */}
@@ -1148,9 +1176,9 @@ export function ExpenseReviewPane({
             )}
           </section>
 
-          {/* 3 · การชำระเงิน & ผู้เบิก */}
+          {/* 4 · การชำระเงิน & ผู้เบิก */}
           <section className="space-y-3 rounded-2xl border border-zinc-100 p-3">
-            <SectionTitle n={3} icon={<Wallet className="size-4" aria-hidden />}>
+            <SectionTitle n={4} icon={<Wallet className="size-4" aria-hidden />}>
               การชำระเงิน & ผู้เบิก
             </SectionTitle>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1221,9 +1249,9 @@ export function ExpenseReviewPane({
             </label>
           </section>
 
-          {/* 4 · หมายเหตุ & หลักฐาน */}
+          {/* 5 · หมายเหตุ & หลักฐาน */}
           <section className="space-y-3 rounded-2xl border border-zinc-100 p-3">
-            <SectionTitle n={4} icon={<StickyNote className="size-4" aria-hidden />}>
+            <SectionTitle n={5} icon={<StickyNote className="size-4" aria-hidden />}>
               หมายเหตุ & หลักฐาน
             </SectionTitle>
             <div>
@@ -1348,6 +1376,21 @@ export function ExpenseReviewPane({
               <Save className="size-4" aria-hidden />
               บันทึกร่าง
             </Button>
+
+            {/* ขอโอน — ส่งคำขอเข้ากลุ่มผู้บริหาร (ปุ่มหลักของมือถือ; เดสก์ท็อปมีบนแถวด้วย).
+                ต้องระบุสาขา+หมวดก่อน (server กันซ้ำ/ตรวจ companyId เอง). */}
+            {onRequestPayout && (
+              <Button
+                variant="outline"
+                disabled={pending || !gate.ok}
+                onClick={handleRequestPayout}
+                title={!gate.ok ? "ระบุสาขา + หมวด ก่อนขอโอน" : "ส่งคำขอโอนเข้ากลุ่มผู้บริหาร"}
+                className="border-[var(--color-brand-200)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)] hover:bg-[var(--color-brand-100)]"
+              >
+                <Banknote className="size-4" aria-hidden />
+                ขอโอน
+              </Button>
+            )}
 
             {/* ลบรายการ (D2) — ลบเองได้ภายใน 5 นาที (ของฉัน+ร่าง+ยังไม่ส่ง) ·
                 นอกนั้นเป็น "ขอลบ" ส่งให้บัญชี. server ตรวจซ้ำทุกกรณี. */}

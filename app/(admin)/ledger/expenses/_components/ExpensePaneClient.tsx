@@ -18,6 +18,7 @@ import {
   selfDeleteExpense,
   requestDeleteExpense,
   ensureCentralBranch,
+  createPaymentRequestAction,
 } from "../../_actions";
 
 export function ExpensePaneClient({
@@ -27,6 +28,7 @@ export function ExpensePaneClient({
   branches,
   canEditClaimability = false,
   currentUserId,
+  payreqEnabled = false,
 }: {
   expense: ExpenseRow;
   replacement?: ExpenseRow | null;
@@ -36,6 +38,8 @@ export function ExpensePaneClient({
   canEditClaimability?: boolean;
   /** Pool user id ของคนที่ล็อกอิน — ใช้ตัดสิน self-delete (ลบเอง) vs ขอลบ. */
   currentUserId?: string | null;
+  /** LEDGER_PAYREQ_V1 — โชว์ปุ่ม "ขอโอน" ในแถบล่างของแผงรายละเอียด. */
+  payreqEnabled?: boolean;
 }) {
   const router = useRouter();
   return (
@@ -59,6 +63,11 @@ export function ExpensePaneClient({
         requestDeleteExpense(id, reason)
       }
       onEnsureCentralBranch={(companyId: string) => ensureCentralBranch(companyId)}
+      onRequestPayout={
+        payreqEnabled
+          ? (): Promise<LedgerActionResult> => createPaymentRequestAction([expense.id], {})
+          : undefined
+      }
       currentUserId={currentUserId}
       // เว็บ (master-detail) — refresh ให้รายการอัปเดตสถานะหลังยืนยัน/ลบ.
       onAfterFinish={() => router.refresh()}
