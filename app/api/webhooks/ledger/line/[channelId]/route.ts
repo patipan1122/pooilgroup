@@ -496,6 +496,11 @@ export async function POST(
           }
           parsed = null;
         }
+        // Treat a "blank parse" (Gemini succeeded but returned all nulls — image
+        // was unreadable, blurry, non-receipt, or HEIC-format) the same as a hard
+        // failure: flag it so the card shows the clear error message to staff.
+        const ocrReadNothing =
+          !!parsed && parsed.total === null && parsed.vendor === null && parsed.docDate === null;
 
         // 3. Group this photo into a capture batch (so a burst of 4-5 receipts
         //    becomes ONE carousel). groupKey = where to send the summary.
@@ -579,8 +584,8 @@ export async function POST(
               categoryName: null, // accountant picks the category on the web pane
               paymentMethod: parsed?.paymentMethod ?? null,
               confidence: parsed?.confidence ?? null,
-              needsReview: !!parsed && res.data.duplicate,
-              ocrFailed: !parsed,
+              needsReview: !!parsed && !ocrReadNothing && res.data.duplicate,
+              ocrFailed: !parsed || ocrReadNothing,
               baseUrl,
               liffId: ledgerLiffId,
             });

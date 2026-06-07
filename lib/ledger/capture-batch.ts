@@ -226,8 +226,10 @@ export async function flushBatchAfterQuiet(
       branchName: r.branch?.name ?? null,
       paymentMethod: r.paymentMethod,
       confidence: (r.ocrConfidence as Record<string, number> | null) ?? null,
-      needsReview: r.needsReview && r.ocrModel !== null,
-      ocrFailed: r.ocrModel === null,
+      // ocrFailed = hard failure (Gemini never ran → no ocrModel) OR blank parse
+      // (Gemini ran but returned all nulls = unreadable image).
+      ocrFailed: r.ocrModel === null || (r.vendor === null && r.docDate === null && Number(r.total) === 0),
+      needsReview: !!(r.needsReview && r.ocrModel !== null && (r.vendor !== null || Number(r.total) !== 0)),
       baseUrl: deps.baseUrl,
       liffId: deps.liffId,
     }));
