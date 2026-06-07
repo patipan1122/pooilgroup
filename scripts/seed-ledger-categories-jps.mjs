@@ -11,7 +11,8 @@
  * Env required: DATABASE_URL (Supabase direct-connection URL with pooler 6543)
  */
 
-import { PrismaClient } from "@prisma/client";
+import pkg from "@prisma/client";
+const { PrismaClient } = pkg;
 
 const prisma = new PrismaClient();
 
