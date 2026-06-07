@@ -459,7 +459,7 @@ export const listBranches = cache(async (orgId: string, companyId: string) => {
   return prisma.branch.findMany({
     where: { orgId, companyId, isActive: true },
     orderBy: { code: "asc" },
-    select: { id: true, code: true, name: true, settings: true },
+    select: { id: true, code: true, name: true, businessType: true, settings: true },
   });
 });
 

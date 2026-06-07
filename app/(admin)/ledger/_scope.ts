@@ -12,7 +12,7 @@ export type LedgerScope = {
   companyId: string | null;
   branchId: string | null;
   companies: Array<{ id: string; code: string; name: string }>;
-  branches: Array<{ id: string; code: string; name: string }>;
+  branches: Array<{ id: string; code: string; name: string; businessType: string }>;
 };
 
 export async function resolveScope(

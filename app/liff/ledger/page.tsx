@@ -44,7 +44,7 @@ export default async function LedgerLiffPage() {
 
   // Resolve companies (+ default company's branches & categories) for the picker.
   let companies: Array<{ id: string; code: string; name: string }> = [];
-  let branches: Array<{ id: string; code: string; name: string }> = [];
+  let branches: Array<{ id: string; code: string; name: string; businessType: string }> = [];
   let categories: Array<{ id: string; name: string; color: string | null }> = [];
   try {
     companies = await listCompanies(orgId);

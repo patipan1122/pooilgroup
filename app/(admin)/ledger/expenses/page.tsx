@@ -260,7 +260,7 @@ export default async function ExpensesPage({
                 companyId={scope.companyId}
                 branchId={scope.branchId}
                 categories={categories.map((c) => ({ id: c.id, name: c.name }))}
-                branches={scope.branches.map((b) => ({ id: b.id, name: b.name }))}
+                branches={scope.branches}
               />
             </span>
             {/* On phones the bottom-nav camera FAB fires open-upload; hide the
@@ -346,7 +346,7 @@ export default async function ExpensesPage({
                 companyId={scope.companyId}
                 branchId={scope.branchId}
                 categories={categories.map((c) => ({ id: c.id, name: c.name }))}
-                branches={scope.branches.map((b) => ({ id: b.id, name: b.name }))}
+                branches={scope.branches}
               />
             </>
           }

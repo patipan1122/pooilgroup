@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { LedgerLogo, LedgerMascot } from "@/components/ledger/Brand";
+import { BranchPicker } from "@/app/(admin)/ledger/_components/BranchPicker";
 
 type Phase = "capture" | "parsing" | "review" | "saving" | "done" | "error";
 
@@ -33,6 +34,7 @@ interface BranchOpt {
   id: string;
   code: string;
   name: string;
+  businessType: string;
 }
 interface CategoryOpt {
   id: string;
@@ -720,22 +722,15 @@ export function LedgerCaptureApp({
               ))}
             </select>
           </label>
-          <label className="block">
+          <div>
             <span className="mb-1 block text-xs font-medium text-zinc-500">สาขา (ถ้ามี)</span>
-            <select
+            <BranchPicker
+              branches={branches}
               value={branchId}
-              onChange={(e) => setBranchId(e.target.value)}
-              disabled={branches.length === 0}
-              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-medium text-zinc-900 outline-none focus:border-[var(--color-brand-500)] disabled:bg-zinc-50 disabled:text-zinc-400"
-            >
-              <option value="">— ทั้งบริษัท —</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              onChange={setBranchId}
+              placeholder="— ทั้งบริษัท —"
+            />
+          </div>
         </div>
       )}
 

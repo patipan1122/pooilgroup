@@ -42,7 +42,13 @@ export async function GET(req: NextRequest) {
       name: c.name,
       color: c.color,
     }));
-    return NextResponse.json({ branches, categories });
+    const branchesOut = branches.map((b) => ({
+      id: b.id,
+      code: b.code,
+      name: b.name,
+      businessType: b.businessType,
+    }));
+    return NextResponse.json({ branches: branchesOut, categories });
   } catch (err) {
     console.error("[ledger:meta] failed", err);
     return NextResponse.json({ error: "โหลดข้อมูลไม่สำเร็จ" }, { status: 500 });

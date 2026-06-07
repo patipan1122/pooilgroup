@@ -9,6 +9,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FilePlus2, X, Loader2 } from "lucide-react";
 import { createNoReceiptExpense } from "../../_actions";
+import { BranchPicker } from "../../_components/BranchPicker";
 
 type Opt = { id: string; name: string };
 
@@ -21,7 +22,7 @@ export function NoReceiptButton({
   companyId: string;
   branchId: string | null;
   categories: Opt[];
-  branches: Array<{ id: string; name: string }>;
+  branches: Array<{ id: string; code: string; name: string; businessType: string }>;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -149,16 +150,12 @@ export function NoReceiptButton({
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-600">สาขา</label>
-                  <select
+                  <BranchPicker
+                    branches={branches}
                     value={branch}
-                    onChange={(e) => setBranch(e.target.value)}
-                    className="h-11 w-full rounded-lg border border-zinc-200 px-2 text-sm focus:border-[var(--color-brand-400)] focus:outline-none"
-                  >
-                    <option value="">— เลือก —</option>
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </select>
+                    onChange={setBranch}
+                    placeholder="— เลือกสาขา —"
+                  />
                 </div>
               </div>
               <div>
