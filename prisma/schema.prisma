@@ -5688,6 +5688,26 @@ model LedgerLineGroup {
   @@schema("public")
 }
 
+// "เซฟเล่ม" — a saved filter set for the /ledger/ledger-book analytics view
+// (LEDGER_ANALYTICS_V1). Shared per company (everyone in the company sees the
+// same shelf). Stores the FILTER set, not a number snapshot → reopening recomputes
+// live from real receipts. config = { axis, categoryId, branchId, grain, basis, q }.
+model LedgerSavedBook {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  name      String
+  config    Json
+  createdBy String?  @map("created_by") @db.Uuid
+  sort      Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([orgId, companyId])
+  @@map("ledger_saved_book")
+  @@schema("public")
+}
+
 // ใครส่งใบเสร็จผ่าน LINE ได้ + ขอบเขต (สาขา/หมวดที่ดูแล) — จากลิงก์เชิญ
 model LedgerLineMember {
   id                   String   @id @default(uuid()) @db.Uuid

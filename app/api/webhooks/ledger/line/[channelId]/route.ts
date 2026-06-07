@@ -30,7 +30,7 @@ import { decodeSlipQr } from "@/lib/ledger/slip-qr";
 import { checkSlipDuplicate } from "@/lib/ledger/slip-match";
 import { recordSlipPayment, findAutoMatchBill } from "@/lib/ledger/payments";
 import { matchSlipToRequest } from "@/lib/ledger/payment-request";
-import { paymentRequestPaidText } from "@/lib/ledger/payment-request-card";
+import { paymentRequestPaidText, buildSlipMismatchCard } from "@/lib/ledger/payment-request-card";
 import {
   buildLineConfirmCard,
   buildLedgerWelcomeCard,
@@ -440,6 +440,10 @@ export async function POST(
             ev.replyToken
               ? replyText(accessToken, ev.replyToken, text).catch(() => {})
               : Promise.resolve(),
+          replyCard: (msg: LineFlexMessage) =>
+            ev.replyToken
+              ? replyFlex(accessToken, ev.replyToken, msg).then(() => {}).catch(() => {})
+              : Promise.resolve(),
         }).catch((e) => console.error("[ledger:line-webhook] slip handling failed", e));
         continue;
       }
@@ -732,8 +736,9 @@ async function handleSlipImage(opts: {
   ch: { id: string; orgId: string; companyId: string };
   accessToken: string;
   reply: (text: string) => Promise<void>;
+  replyCard: (msg: LineFlexMessage) => Promise<void>;
 }): Promise<void> {
-  const { ev, ch, accessToken, reply } = opts;
+  const { ev, ch, accessToken, reply, replyCard } = opts;
   const messageId = ev.message?.id;
   if (!messageId) return;
 
@@ -790,9 +795,13 @@ async function handleSlipImage(opts: {
   // parseReceipt (20+ fields) — a payment slip never has tax IDs / line items.
   // This cuts output tokens from ~400 to ~60 per slip.
   let amount: number | null = null;
+  let recipientName: string | null = null;
+  let recipientAcct: string | null = null;
   try {
     const slipParsed = await parseSlipImage(att.url, /*userId*/ null, ch.orgId);
     amount = slipParsed.amount;
+    recipientName = slipParsed.recipientName;
+    recipientAcct = slipParsed.recipientAcct;
   } catch (e) {
     if (e instanceof AiBudgetError) console.warn("[ledger:line-webhook] slip AI budget exceeded");
     else console.error("[ledger:line-webhook] slip OCR failed", e);
@@ -815,6 +824,9 @@ async function handleSlipImage(opts: {
       qrRaw: qr.rawPayload,
       qrDecoded: qr.decoded,
       paidByLineUserId: ev.source?.userId ?? null,
+      groupId: ev.source?.groupId ?? null,
+      recipientName,
+      recipientAcct,
     });
     if (reqMatch.matched) {
       await reply(
@@ -828,6 +840,42 @@ async function handleSlipImage(opts: {
     }
     if (reqMatch.reason === "duplicate") {
       await reply("⚠️ สลิปนี้ถูกบันทึกไปแล้ว (กันจ่ายซ้ำ)");
+      return;
+    }
+    // CEO 2026-06-07 — slip hit a request but didn't verify (ยอดไม่ตรง / บัญชีไม่ตรง):
+    // KEEP the slip as a floating payment (เงินโอนจริง ห้ามหาย · NOT auto-matched to a
+    // random same-amount bill) and REPLY the warning card into the group. Bills stay open.
+    if (reqMatch.reason === "amount_mismatch" || reqMatch.reason === "payee_mismatch") {
+      await recordSlipPayment({
+        orgId: ch.orgId,
+        companyId: ch.companyId,
+        matchedExpenseId: null,
+        amount,
+        method: "transfer",
+        sendingBank: qr.sendingBank,
+        transRef: qr.transRef,
+        slipSha256: sha256,
+        slipUrl: att.url,
+        slipThumbUrl: att.url,
+        qrRaw: qr.rawPayload,
+        qrDecoded: qr.decoded,
+        markedBy: null,
+      }).catch((e) => console.error("[ledger:line-webhook] float-on-mismatch failed", e));
+      const d = reqMatch.detail;
+      await replyCard(
+        buildSlipMismatchCard({
+          kind: reqMatch.reason === "payee_mismatch" ? "payee" : d.diff > 0 ? "over" : "under",
+          vendor: d.vendor,
+          expected: d.expected,
+          slipAmount: d.slipAmount,
+          diff: d.diff,
+          payeeName: d.payeeName,
+          payeeAcct: d.payeeAcct,
+          slipRecipientName: d.slipRecipientName,
+          slipRecipientAcct: d.slipRecipientAcct,
+          slipUrl: att.url,
+        }),
+      );
       return;
     }
     // no_request / ambiguous / error → legacy bill matcher (floats if unsure).

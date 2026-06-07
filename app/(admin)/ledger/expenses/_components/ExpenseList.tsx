@@ -4,16 +4,23 @@
 // scrollable receipt list, and a context-aware bulk bar (ยืนยันร่าง · ส่งเข้า TRCloud).
 // All filters are URL-driven (GET form / router.push) so the server page re-reads
 // scope on every change.
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2, Banknote } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2, Banknote, Tags } from "lucide-react";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
 import { CompletenessDot } from "@/components/ledger/_kit/CompletenessDot";
 import { DocTag, PaymentTag } from "@/components/ledger/_kit/StatusTags";
 import { LedgerEmptyState } from "@/components/ledger/Brand";
 import { expenseConfirmability } from "@/lib/ledger/confirmability";
-import { bulkConfirm, bulkVoid, sendExpensesToTrcloud, createPaymentRequestAction } from "../../_actions";
+import {
+  bulkConfirm,
+  bulkVoid,
+  sendExpensesToTrcloud,
+  createPaymentRequestAction,
+  bulkClassify,
+  lastPayeeForVendor,
+} from "../../_actions";
 
 /** Common Thai banks for the ขอโอนเงิน payee form (code → short name). */
 const BANKS: { code: string; name: string }[] = [
@@ -67,9 +74,12 @@ export function ExpenseList({
   tabCounts,
   listActions,
   payreqEnabled,
+  branches,
 }: {
   rows: ExpenseRow[];
   categories: Array<{ id: string; name: string; color: string | null; sort: number }>;
+  /** สาขา (for the quick-classify dialog — audit P0). */
+  branches?: Array<{ id: string; name: string; code?: string | null }>;
   selectedId?: string;
   baseParams: string;
   status?: LedgerStatusValue;
@@ -104,6 +114,18 @@ export function ExpenseList({
   // ขอโอนเงิน — payee dialog (LEDGER_PAYREQ_V1).
   const [payeeOpen, setPayeeOpen] = useState(false);
   const [payee, setPayee] = useState({ acctName: "", bankCode: "", acctNo: "", promptpay: "" });
+  // #1 quick-classify (audit P0) — set สาขา/หมวด for the ticked bills in one dialog.
+  const [classifyOpen, setClassifyOpen] = useState(false);
+  const [classify, setClassify] = useState({ branchId: "", categoryId: "" });
+  // a11y (bug-hunt P2) — close the payee dialog on Escape.
+  useEffect(() => {
+    if (!payeeOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !pending) setPayeeOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [payeeOpen, pending]);
 
   const draftSet = new Set(draftIds);
   const sendableSet = new Set(sendableIds);
@@ -197,6 +219,45 @@ export function ExpenseList({
         router.refresh();
       } else {
         setMsg({ kind: "err", text: res.error ?? "ส่งเข้า TRCloud ไม่สำเร็จ" });
+      }
+    });
+  }
+
+  // #2 payee autofill (audit P1) — open the dialog + prefill from the vendor's last
+  // request payee (fallback: bill.bankDetail). Reduces re-typing → fewer wrong accounts.
+  function openPayeeDialog() {
+    setMsg(null);
+    setPayeeOpen(true);
+    const vendor = checkedVendors[0];
+    if (!vendor) return;
+    lastPayeeForVendor(vendor, companyId)
+      .then((p) => {
+        if (!p) return;
+        setPayee((cur) => ({
+          acctName: cur.acctName || p.acctName || "",
+          bankCode: cur.bankCode || p.bankCode || "",
+          acctNo: cur.acctNo || p.acctNo || "",
+          promptpay: cur.promptpay || p.promptpay || "",
+        }));
+      })
+      .catch(() => {});
+  }
+
+  // #1 quick-classify — apply สาขา/หมวด to the bills that need it (or all ticked).
+  function runBulkClassify() {
+    const needIds = checkedNeedFix.map((r) => r.id);
+    const targetIds = needIds.length > 0 ? needIds : [...checked];
+    if (targetIds.length === 0 || (!classify.branchId && !classify.categoryId)) return;
+    setMsg(null);
+    startTransition(async () => {
+      const res = await bulkClassify(targetIds, classify.branchId, classify.categoryId, companyId);
+      if (res.ok) {
+        setMsg({ kind: "ok", text: `ตั้งสาขา/หมวดให้ ${res.updated ?? 0} ใบแล้ว — ขอโอนต่อได้เลย` });
+        setClassifyOpen(false);
+        setClassify({ branchId: "", categoryId: "" });
+        router.refresh();
+      } else {
+        setMsg({ kind: "err", text: res.error ?? "ตั้งสาขา/หมวดไม่สำเร็จ" });
       }
     });
   }
@@ -373,13 +434,24 @@ export function ExpenseList({
               {payreqEnabled && checked.size > 0 && (
                 <button
                   type="button"
-                  onClick={() => { setMsg(null); setPayeeOpen(true); }}
+                  onClick={openPayeeDialog}
                   disabled={pending || multiVendor}
                   title={multiVendor ? "เลือกบิลผู้ขายเดียวกันเท่านั้น" : undefined}
-                  className="inline-flex h-7 items-center gap-1 rounded-lg bg-violet-600 px-2 text-xs font-semibold text-white hover:bg-violet-700 disabled:bg-zinc-300"
+                  className="inline-flex h-7 items-center gap-1 rounded-lg bg-[var(--color-brand-600)] px-2 text-xs font-semibold text-white hover:bg-[var(--color-brand-700)] disabled:bg-zinc-300"
                 >
                   <Banknote className="size-3.5" />
                   ขอโอนเงิน ({checked.size})
+                </button>
+              )}
+              {payreqEnabled && checkedNeedFix.length > 0 && branches && branches.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setMsg(null); setClassifyOpen(true); }}
+                  disabled={pending}
+                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                >
+                  <Tags className="size-3.5" />
+                  ตั้งสาขา/หมวด ({checkedNeedFix.length})
                 </button>
               )}
             </div>
@@ -451,17 +523,28 @@ export function ExpenseList({
         >
           <div
             className="w-full max-w-md rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="payee-dlg-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-sm font-bold text-zinc-900">ขอโอนเงิน · {checked.size} ใบ</h3>
+            <h3 id="payee-dlg-title" className="text-sm font-bold text-zinc-900">ขอโอนเงิน · {checked.size} ใบ</h3>
             <p className="mt-0.5 text-[11px] text-zinc-500">
               ระบบจะส่งการ์ดเข้ากลุ่มผู้บริหารให้กดโอน · ใส่บัญชีผู้รับให้ครบ ผู้บริหารจะจ่ายได้เร็วขึ้น
             </p>
             {checkedNeedFix.length > 0 && (
-              <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
-                ⚠️ มี {checkedNeedFix.length} ใบยังไม่ได้ระบุ <b>สาขา/หมวด</b> — เปิดใบนั้นแล้วระบุก่อน
-                จึงจะขอโอนได้ (ขอโอนได้เฉพาะใบที่ระบุครบ)
-              </p>
+              <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+                ⚠️ มี {checkedNeedFix.length} ใบยังไม่ได้ระบุ <b>สาขา/หมวด</b> — ขอโอนได้เฉพาะใบที่ระบุครบ
+                {branches && branches.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setPayeeOpen(false); setClassifyOpen(true); }}
+                    className="ml-1 inline-flex items-center gap-1 rounded-md bg-amber-600 px-2 py-0.5 font-semibold text-white hover:bg-amber-700"
+                  >
+                    <Tags className="size-3" /> ตั้งให้เลย
+                  </button>
+                )}
+              </div>
             )}
             <div className="mt-3 space-y-2">
               <input
@@ -520,6 +603,72 @@ export function ExpenseList({
               >
                 {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Banknote className="size-3.5" />}
                 ส่งคำขอโอน
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* #1 quick-classify dialog — set สาขา/หมวด for the ticked bills in one place */}
+      {classifyOpen && branches && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+          onClick={() => { if (!pending) setClassifyOpen(false); }}
+        >
+          <div
+            className="w-full max-w-md rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="ตั้งสาขาและหมวด"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-bold text-zinc-900">
+              ตั้งสาขา/หมวด · {checkedNeedFix.length > 0 ? `${checkedNeedFix.length} ใบที่ยังขาด` : `${checked.size} ใบ`}
+            </h3>
+            <p className="mt-0.5 text-[11px] text-zinc-500">
+              ตั้งทีเดียวให้ทุกใบที่เลือก (ผู้ขายเดียวกันมักสาขาเดียวกัน) แล้วขอโอนต่อได้เลย
+            </p>
+            <div className="mt-3 space-y-2">
+              <select
+                value={classify.branchId}
+                onChange={(e) => setClassify((c) => ({ ...c, branchId: e.target.value }))}
+                aria-label="สาขา"
+                className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-amber-200"
+              >
+                <option value="">— เลือกสาขา —</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.code ? `${b.code} · ${b.name}` : b.name}</option>
+                ))}
+              </select>
+              <select
+                value={classify.categoryId}
+                onChange={(e) => setClassify((c) => ({ ...c, categoryId: e.target.value }))}
+                aria-label="หมวดค่าใช้จ่าย"
+                className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-amber-200"
+              >
+                <option value="">— เลือกหมวด —</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setClassifyOpen(false)}
+                disabled={pending}
+                className="inline-flex h-9 items-center rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={runBulkClassify}
+                disabled={pending || (!classify.branchId && !classify.categoryId)}
+                className="inline-flex h-9 items-center gap-1 rounded-lg bg-amber-600 px-4 text-xs font-semibold text-white hover:bg-amber-700 disabled:bg-zinc-300"
+              >
+                {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Tags className="size-3.5" />}
+                ตั้งให้ทุกใบ
               </button>
             </div>
           </div>

@@ -278,6 +278,24 @@ async function loadScoped(
   return { row };
 }
 
+/** P0 (bug-hunt C) — a bill sitting in an ACTIVE "ขอโอนเงิน" request must not be
+ *  voided/deleted: it would leave the request's per-bill lock dangling AND the
+ *  incoming slip would still flip the voided bill to paid. Cancel the request first. */
+async function billInActiveRequest(
+  orgId: string,
+  companyId: string,
+  expenseId: string,
+): Promise<boolean> {
+  const r = await prisma.ledgerPaymentRequestBill
+    .findFirst({
+      where: { expenseId, orgId, companyId, active: true },
+      select: { id: true },
+    })
+    .catch(() => null);
+  return r != null;
+}
+const IN_ACTIVE_REQUEST_MSG = "บิลนี้มีคำขอโอนค้างอยู่ — ยกเลิกคำขอโอนก่อนจึงจะลบ/ยกเลิกได้";
+
 /** Save edits to a draft (stays draft). Any ledger member may edit a draft. */
 export async function saveExpense(
   id: string,
@@ -298,6 +316,17 @@ export async function saveExpense(
   // two systems. To change it, delete the AP in TRCloud first (re-opens editing).
   if (row.trcloudPushedAt)
     return { ok: false, error: "ส่งเข้า TRCloud แล้ว แก้ไขไม่ได้ — ถ้าต้องแก้ ให้ลบใบใน TRCloud ก่อน" };
+  // P1 (bug-hunt E) — a bill inside an ACTIVE "ขอโอนเงิน" request must not be edited:
+  // the request froze billsGross/expectedTransfer, so changing total here would make
+  // the incoming slip pay a stale amount (evidence ≠ ledger). Cancel the request first.
+  {
+    const inActiveReq = await prisma.ledgerPaymentRequestBill.findFirst({
+      where: { expenseId: id, orgId: session.user.org_id, companyId: row.companyId, active: true },
+      select: { id: true },
+    });
+    if (inActiveReq)
+      return { ok: false, error: "บิลนี้มีคำขอโอนค้างอยู่ — ยกเลิกคำขอก่อนจึงจะแก้ได้" };
+  }
 
   // P1#21 ROLE CHECK — only the creator OR an admin/accountant may edit a draft.
   // Staff who didn't create the record cannot silently overwrite another user's entry.
@@ -489,6 +518,8 @@ export async function voidExpense(id: string): Promise<ActionResult> {
   if (!row) return { ok: false, error: "ไม่พบรายการ" };
   if (row.status === "locked")
     return { ok: false, error: "รายการถูกล็อก ยกเลิกไม่ได้" };
+  if (await billInActiveRequest(session.user.org_id, row.companyId, id))
+    return { ok: false, error: IN_ACTIVE_REQUEST_MSG };
 
   await prisma.ledgerExpense.updateMany({
     where: { id, orgId: session.user.org_id, companyId: row.companyId },
@@ -610,6 +641,58 @@ export async function bulkConfirm(
  *  same weight as confirm. companyId-scoped for the same cross-company reason as
  *  bulkConfirm (client-supplied ids). Locked rows are skipped, never force-voided.
  *  The UI gates this behind a type-"ลบ" confirmation; the server re-checks the role. */
+/** Quick-classify (audit P0) — set สาขา+หมวด on a batch of bills in ONE action so a
+ *  backlog of unclassified bills can be classified-then-requested without opening each
+ *  one. Validates branch+category belong to org+company; skips locked/void. Bills stay
+ *  draft (classifying ≠ confirming). Accountant/admin-tier (same gate as bulkConfirm). */
+export async function bulkClassify(
+  ids: string[],
+  branchId: string,
+  categoryId: string,
+  companyId: string,
+): Promise<ActionResult & { updated?: number }> {
+  if (!Array.isArray(ids) || ids.length === 0) return { ok: false, error: "ไม่ได้เลือกรายการ" };
+  if (!companyId) return { ok: false, error: "ไม่ได้ระบุบริษัท" };
+  if (!branchId && !categoryId)
+    return { ok: false, error: "เลือกสาขาหรือหมวดอย่างน้อยหนึ่งอย่าง" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  const orgId = session.user.org_id;
+  if (!(await ledgerWebCanForRole(orgId, session.user.role, "expense.confirm"))) {
+    return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลตั้งสาขา/หมวดได้" };
+  }
+  const company = await prisma.company.findFirst({ where: { id: companyId, orgId }, select: { id: true } });
+  if (!company) return { ok: false, error: "ไม่พบบริษัท" };
+  // Validate the branch/category belong to this org+company (no cross-company smuggle).
+  if (branchId) {
+    const b = await prisma.branch.findFirst({ where: { id: branchId, orgId }, select: { id: true } });
+    if (!b) return { ok: false, error: "ไม่พบสาขา" };
+  }
+  if (categoryId) {
+    const c = await prisma.ledgerCategory.findFirst({
+      where: { id: categoryId, orgId, companyId },
+      select: { id: true },
+    });
+    if (!c) return { ok: false, error: "ไม่พบหมวดในบริษัทนี้" };
+  }
+  const data: { branchId?: string; categoryId?: string } = {};
+  if (branchId) data.branchId = branchId;
+  if (categoryId) data.categoryId = categoryId;
+  const res = await prisma.ledgerExpense.updateMany({
+    where: { id: { in: ids }, orgId, companyId, status: { notIn: ["locked", "void"] } },
+    data,
+  });
+  await audit({
+    orgId, userId: session.user.id,
+    action: "LEDGER_EXPENSE_UPDATED",
+    resourceType: "ledger_expense",
+    diff: { new: { bulkClassify: true, branchId: branchId || null, categoryId: categoryId || null, count: res.count } },
+  });
+  revalidatePath("/ledger/expenses");
+  return { ok: true, updated: res.count };
+}
+
 export async function bulkVoid(
   ids: string[],
   companyId: string,
@@ -642,7 +725,20 @@ export async function bulkVoid(
   });
   if (rows.length === 0) return { ok: false, error: "ไม่มีรายการที่ลบได้ (อาจถูกล็อกแล้ว)" };
 
-  const voidIds = rows.map((r) => r.id);
+  // P0 (bug-hunt C) — exclude bills sitting in an ACTIVE "ขอโอนเงิน" request; voiding
+  // them would leave the request's per-bill lock dangling + let the slip pay a void bill.
+  const voidableIds = rows.map((r) => r.id);
+  const inReq = await prisma.ledgerPaymentRequestBill.findMany({
+    where: { expenseId: { in: voidableIds }, orgId: session.user.org_id, companyId, active: true },
+    select: { expenseId: true },
+  });
+  const blocked = new Set(inReq.map((r) => r.expenseId));
+  const voidIds = voidableIds.filter((id) => !blocked.has(id));
+  if (voidIds.length === 0)
+    return {
+      ok: false,
+      error: blocked.size > 0 ? "บิลที่เลือกมีคำขอโอนค้างอยู่ — ยกเลิกคำขอโอนก่อน" : "ไม่มีรายการที่ลบได้ (อาจถูกล็อกแล้ว)",
+    };
   await prisma.ledgerExpense.updateMany({
     where: { id: { in: voidIds }, orgId: session.user.org_id, companyId },
     data: { status: "void", needsReview: false },
@@ -1847,6 +1943,8 @@ export async function liffVoidExpense(id: string): Promise<ActionResult> {
   if (!row) return { ok: false, error: "ไม่พบรายการ" };
   if (!actorCanReachBranch(actor, row.branchId)) return { ok: false, error: "ไม่มีสิทธิ์ในสาขานี้" };
   if (row.status === "locked") return { ok: false, error: "รายการถูกล็อก ยกเลิกไม่ได้" };
+  if (await billInActiveRequest(actor.orgId, row.companyId, id))
+    return { ok: false, error: IN_ACTIVE_REQUEST_MSG };
 
   await prisma.ledgerExpense.updateMany({
     where: { id, orgId: actor.orgId, companyId: row.companyId },
@@ -1907,6 +2005,8 @@ export async function liffSelfDeleteExpense(id: string): Promise<ActionResult> {
   // Server-side clock — never trust a client timestamp for the window.
   if (Date.now() - row.createdAt.getTime() >= SELF_DELETE_WINDOW_MS)
     return { ok: false, error: "เกิน 5 นาทีแล้ว ลบเองไม่ได้ · กดขอลบให้บัญชีลบแทน" };
+  if (await billInActiveRequest(actor.orgId, row.companyId, id))
+    return { ok: false, error: IN_ACTIVE_REQUEST_MSG };
 
   // Soft delete = void (same semantics as web). companyId-scoped, never hard-delete.
   await prisma.ledgerExpense.updateMany({
@@ -2914,6 +3014,10 @@ export async function createPaymentRequestAction(
       where: { id: { in: ids }, orgId, companyId: res.companyId },
       select: { docCode: true, total: true },
     });
+    // LIFF deep-link to the detail page. Endpoint = /liff/ledger, so the path after
+    // the LIFF id is /payreq/<id> (concatenate rule — see line-liff-deeplink memory).
+    const liffId = process.env.NEXT_PUBLIC_LEDGER_LIFF_ID;
+    const detailUrl = liffId ? `https://liff.line.me/${liffId}/payreq/${res.requestId}` : null;
     const card = buildPaymentRequestCard({
       vendor: res.vendor ?? null,
       billsGross: res.billsGross ?? 0,
@@ -2921,6 +3025,7 @@ export async function createPaymentRequestAction(
       expectedTransfer: res.expectedTransfer ?? 0,
       payee: payee.data,
       bills: billRows.map((b) => ({ docCode: b.docCode, amount: Number(b.total) })),
+      detailUrl,
     });
     const push = await pushFlexToSlipGroup(orgId, res.companyId, card);
     if (push.ok) {
@@ -3011,6 +3116,42 @@ export async function assignSlipToRequestAction(
   });
   revalidatePath("/ledger/reconcile");
   return { ok: true };
+}
+
+/** Autofill (audit P1) — the payee last used for this vendor (so ops/exec don't
+ *  re-type the account number every time → fewer wrong-account transfers). Reads the
+ *  most-recent request's payee snapshot; falls back to the bill's free-text bankDetail. */
+export async function lastPayeeForVendor(
+  vendor: string,
+  companyId: string,
+): Promise<{ acctName?: string | null; bankCode?: string | null; acctNo?: string | null; promptpay?: string | null } | null> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return null;
+  const { session } = access;
+  const orgId = session.user.org_id;
+  const v = (vendor ?? "").trim();
+  if (!v || !companyId) return null;
+  const last = await prisma.ledgerPaymentRequest.findFirst({
+    where: { orgId, companyId, vendor: v, payeeAcctNo: { not: null } },
+    orderBy: { requestedAt: "desc" },
+    select: { payeeAcctName: true, payeeBankCode: true, payeeAcctNo: true, payeePromptpay: true },
+  });
+  if (last) {
+    return {
+      acctName: last.payeeAcctName,
+      bankCode: last.payeeBankCode,
+      acctNo: last.payeeAcctNo,
+      promptpay: last.payeePromptpay,
+    };
+  }
+  // Fallback — the most recent bill's bankDetail free-text (surface as an acctNo hint).
+  const bill = await prisma.ledgerExpense.findFirst({
+    where: { orgId, companyId, vendor: v, bankDetail: { not: null } },
+    orderBy: { createdAt: "desc" },
+    select: { bankDetail: true },
+  });
+  if (bill?.bankDetail) return { acctNo: bill.bankDetail };
+  return null;
 }
 
 // ── Permission matrix (GAP 5 · LIFF "สิทธิ์" tab) ────────────────────────────
@@ -3279,6 +3420,8 @@ export async function selfDeleteExpense(id: string): Promise<ActionResult> {
   // Server-side clock — never trust a client timestamp for the window.
   if (Date.now() - row.createdAt.getTime() >= SELF_DELETE_WINDOW_MS)
     return { ok: false, error: "เกิน 5 นาทีแล้ว ลบเองไม่ได้ · แจ้งบัญชีให้ลบแทน" };
+  if (await billInActiveRequest(session.user.org_id, row.companyId, id))
+    return { ok: false, error: IN_ACTIVE_REQUEST_MSG };
 
   // Soft delete = void (reuse the same void semantics; the row stays visible).
   await prisma.ledgerExpense.updateMany({

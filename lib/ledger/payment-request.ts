@@ -113,6 +113,28 @@ export async function createPaymentRequest(
   if (bills.some((b) => b.status === "void"))
     return { ok: false, error: "มีบิลที่ถูกยกเลิกอยู่ในรายการ" };
 
+  // 2.5) P0 (bug-hunt B) — reject bills that are ALREADY settled. Without this the
+  // force-unpaid updateMany below would REOPEN a paid bill → executive pays it twice.
+  // paymentStatus alone is NOT a reliable signal (it DEFAULTS to 'paid' on every bill),
+  // so we look for real evidence: a ledger_payment row matched to the bill, OR
+  // membership in a request that already closed 'paid'.
+  const [directPaid, reqPaid] = await Promise.all([
+    prisma.ledgerPayment.findMany({
+      where: { orgId, companyId, matchedExpenseId: { in: ids } },
+      select: { matchedExpenseId: true },
+    }),
+    prisma.ledgerPaymentRequestBill.findMany({
+      where: { orgId, companyId, expenseId: { in: ids }, request: { state: "paid" } },
+      select: { expenseId: true },
+    }),
+  ]);
+  const settled = new Set<string>([
+    ...directPaid.map((p) => p.matchedExpenseId).filter((x): x is string => !!x),
+    ...reqPaid.map((r) => r.expenseId),
+  ]);
+  if (settled.size > 0)
+    return { ok: false, error: `มีบิลที่จ่ายเงินไปแล้ว ${settled.size} ใบ — ขอโอนซ้ำไม่ได้` };
+
   // 3) Each bill classifiable (branch + category present) — D6 gate (status may be draft).
   for (const b of bills) {
     const c = expenseConfirmability({ branchId: b.branchId, categoryId: b.categoryId });
@@ -189,6 +211,28 @@ export interface MatchSlipToRequestInput {
   qrDecoded: boolean;
   /** LINE userId of the executive who sent the slip (D2 audit: who paid). */
   paidByLineUserId?: string | null;
+  /** LINE group the slip arrived in — anchors candidate requests to THIS group
+   *  (pushedGroupId) so we can name the right request even when the amount is off. */
+  groupId?: string | null;
+  /** Recipient name read off the slip (verify โอนถูกคนไหม). */
+  recipientName?: string | null;
+  /** Recipient account/promptpay as seen on the slip (may be masked). */
+  recipientAcct?: string | null;
+}
+
+/** Detail for a slip that hit a request but did NOT match exactly — the webhook
+ *  turns this into the in-group warning card (โอนเกิน/โอนขาด/บัญชีไม่ตรง). */
+export interface SlipMismatchDetail {
+  vendor: string | null;
+  /** the NET the request expected (expectedTransfer − already-paid). */
+  expected: number;
+  slipAmount: number;
+  /** slip − expected: positive = โอนเกิน, negative = โอนขาด. */
+  diff: number;
+  payeeName: string | null;
+  payeeAcct: string | null;
+  slipRecipientName: string | null;
+  slipRecipientAcct: string | null;
 }
 
 export type MatchSlipResult =
@@ -200,40 +244,106 @@ export type MatchSlipResult =
       paidTotal: number;
       paymentId: string;
     }
+  // Found the request but the amount is off (exact-to-the-baht required) — DON'T close.
+  | { matched: false; reason: "amount_mismatch"; detail: SlipMismatchDetail }
+  // Found a request but it pays a DIFFERENT account/name than the slip — DON'T close.
+  | { matched: false; reason: "payee_mismatch"; detail: SlipMismatchDetail }
   | { matched: false; reason: "no_request" | "ambiguous" | "duplicate" | "error" };
 
+/** digits only (drops the masking x/* and separators). */
+const onlyDigits = (s: string | null | undefined): string => (s ?? "").replace(/\D/g, "");
+/** longest contiguous run of digits in a (possibly masked) account string. */
+function longestDigitRun(s: string | null | undefined): string {
+  return (String(s ?? "").match(/\d+/g) ?? []).reduce((a, b) => (b.length > a.length ? b : a), "");
+}
+/** loose Thai name compare — drop spaces / company suffixes / titles, then substring. */
+function normName(s: string | null | undefined): string {
+  return String(s ?? "")
+    .toLowerCase()
+    .replace(/บริษัท|บมจ\.?|บจก\.?|หจก\.?|ห้างหุ้นส่วนจำกัด|จำกัด\(มหาชน\)|จำกัด|มหาชน|company|limited|ltd\.?|co\.?|นาย|นางสาว|นาง|น\.ส\.|mr\.?|mrs\.?|ms\.?/g, "")
+    .replace(/[\s().,\-_/]/g, "");
+}
+function nameSimilar(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = normName(a), y = normName(b);
+  if (x.length < 3 || y.length < 3) return false;
+  return x === y || x.includes(y) || y.includes(x);
+}
+/** does the slip's visible account run appear inside the payee account / promptpay? */
+function acctSeen(slipAcct: string | null | undefined, payeeAcctNo: string | null, payeePromptpay: string | null): boolean {
+  const run = longestDigitRun(slipAcct);
+  if (run.length < 3) return false; // nothing usable read off the slip
+  const a = onlyDigits(payeeAcctNo), p = onlyDigits(payeePromptpay);
+  return (a.length >= 3 && a.includes(run)) || (p.length >= 3 && p.includes(run));
+}
+
 /**
- * Try to match an incoming slip to exactly ONE open/partial request by the NET
- * amount (expectedTransfer − already-paid, within a bank-fee tolerance). On a
- * unique match: create the payment row linked to the request + flip every bill
- * to paid + close the request, ALL in one transaction. Otherwise returns
- * matched=false so the webhook falls through to the legacy bill auto-matcher /
- * floating queue — this is purely ADDITIVE, it never closes the wrong thing.
+ * Match an incoming slip to ONE open/partial request, then VERIFY it (CEO 2026-06-07):
+ *  1. IDENTIFY which request the slip pays — by recipient NAME, then visible account
+ *     run, then exact amount, then a lone open request in the group. Group-anchored
+ *     (pushedGroupId) so the right vendor is named even when the amount is wrong.
+ *  2. VERIFY amount EXACT to the baht ("ตรงเป๊ะทุกบาท") → off = amount_mismatch
+ *     (โอนเกิน/โอนขาด), and recipient name/account → wrong = payee_mismatch.
+ *  3. Only on exact+correct: create the payment + flip every bill paid + close, all
+ *     in ONE transaction. On any mismatch it returns matched=false WITH detail so the
+ *     webhook keeps the slip as a floating payment and warns the group — never closes
+ *     the wrong thing.
  */
 export async function matchSlipToRequest(
   input: MatchSlipToRequestInput,
 ): Promise<MatchSlipResult> {
-  const { orgId, companyId, slipAmount } = input;
+  const { orgId, companyId, slipAmount, groupId, recipientName, recipientAcct } = input;
   if (slipAmount == null || !(slipAmount > 0)) return { matched: false, reason: "no_request" };
 
-  const open = await prisma.ledgerPaymentRequest.findMany({
+  const openAll = await prisma.ledgerPaymentRequest.findMany({
     where: { orgId, companyId, state: { in: ["open", "partial"] } },
-    select: { id: true, vendor: true, expectedTransfer: true, paidTotal: true },
+    select: {
+      id: true, vendor: true, expectedTransfer: true, paidTotal: true,
+      payeeAcctName: true, payeeAcctNo: true, payeePromptpay: true, pushedGroupId: true,
+    },
     take: 200,
   });
-  if (open.length === 0) return { matched: false, reason: "no_request" };
+  if (openAll.length === 0) return { matched: false, reason: "no_request" };
+  // Prefer requests pushed to THIS group; fall back to entity-wide if none are tagged.
+  const inGroup = groupId ? openAll.filter((r) => r.pushedGroupId === groupId) : [];
+  const open = inGroup.length > 0 ? inGroup : openAll;
+  type OpenReq = (typeof openAll)[number];
+  const remainingOf = (r: OpenReq) => round2(Number(r.expectedTransfer) - Number(r.paidTotal));
 
-  // A slip COMPLETES a request when it covers the remaining net (allowing a small
-  // cross-bank fee over). Match only when EXACTLY ONE request is completable —
-  // never guess between two same-amount requests.
-  const completable = open.filter((r) => {
-    const remaining = round2(Number(r.expectedTransfer) - Number(r.paidTotal));
-    return slipAmount >= remaining - 0.01 && slipAmount <= remaining + MATCH_TOLERANCE_BAHT;
-  });
-  if (completable.length !== 1) {
-    return { matched: false, reason: completable.length > 1 ? "ambiguous" : "no_request" };
+  // 1. IDENTIFY the target — strongest signal first; never guess between two.
+  const byName = recipientName ? open.filter((r) => nameSimilar(r.payeeAcctName, recipientName)) : [];
+  const byAcct = recipientAcct ? open.filter((r) => acctSeen(recipientAcct, r.payeeAcctNo, r.payeePromptpay)) : [];
+  const byAmount = open.filter((r) => Math.abs(slipAmount - remainingOf(r)) <= 0.01);
+  let target: OpenReq | undefined;
+  if (byName.length === 1) target = byName[0];
+  else if (byAcct.length === 1) target = byAcct[0];
+  else if (byAmount.length === 1) target = byAmount[0];
+  else if (open.length === 1) target = open[0];
+  if (!target) return { matched: false, reason: open.length > 1 ? "ambiguous" : "no_request" };
+
+  const remaining = remainingOf(target);
+  const diff = round2(slipAmount - remaining);
+  const detail: SlipMismatchDetail = {
+    vendor: target.vendor,
+    expected: remaining,
+    slipAmount,
+    diff,
+    payeeName: target.payeeAcctName,
+    payeeAcct: target.payeeAcctNo ?? target.payeePromptpay,
+    slipRecipientName: recipientName ?? null,
+    slipRecipientAcct: recipientAcct ?? null,
+  };
+
+  // 2a. VERIFY amount — exact to the baht (only satang slack). Off → don't close.
+  if (Math.abs(diff) > 0.01) return { matched: false, reason: "amount_mismatch", detail };
+
+  // 2b. VERIFY payee — only when the slip actually gave readable recipient info AND it
+  //     matches NEITHER the payee name NOR the payee account (lenient: masked + fuzzy).
+  const haveRecipientInfo = !!(recipientName || longestDigitRun(recipientAcct).length >= 3);
+  if (haveRecipientInfo) {
+    const nameOk = recipientName ? nameSimilar(target.payeeAcctName, recipientName) : false;
+    const acctOk = recipientAcct ? acctSeen(recipientAcct, target.payeeAcctNo, target.payeePromptpay) : false;
+    if (!nameOk && !acctOk) return { matched: false, reason: "payee_mismatch", detail };
   }
-  const target = completable[0];
 
   try {
     const out = await prisma.$transaction(async (tx) => {
@@ -270,15 +380,13 @@ export async function matchSlipToRequest(
         select: { expenseId: true },
       });
       const billIds = billRows.map((b) => b.expenseId);
-      if (billIds.length > 0) {
-        await tx.ledgerExpense.updateMany({
-          where: { id: { in: billIds }, orgId, companyId },
-          data: { paymentStatus: "paid" },
-        });
-      }
-      // Close the request + free the per-bill guard.
-      await tx.ledgerPaymentRequest.update({
-        where: { id: req.id },
+      // P0 (bug-hunt A) — CLOSE FIRST with a CONDITIONAL updateMany gated on state.
+      // updateMany row-locks the request row: two concurrent same-amount slips both
+      // pass the findFirst re-read, but the 2nd's updateMany blocks on the lock, then
+      // re-evaluates state→already 'paid'→count 0→throw→whole tx (incl. its payment
+      // row) rolls back. Prevents the silent double-pay. Scoped by org+company (B-018).
+      const closed = await tx.ledgerPaymentRequest.updateMany({
+        where: { id: req.id, orgId, companyId, state: { in: ["open", "partial"] } },
         data: {
           state: "paid",
           paidTotal: newPaid,
@@ -286,8 +394,16 @@ export async function matchSlipToRequest(
           paidBy: input.paidByLineUserId ?? null,
         },
       });
+      if (closed.count !== 1) throw Object.assign(new Error("RACE"), { code: "REQ_GONE" });
+      if (billIds.length > 0) {
+        await tx.ledgerExpense.updateMany({
+          // status:not void → never flip a voided bill to paid (defense-in-depth).
+          where: { id: { in: billIds }, orgId, companyId, status: { not: "void" } },
+          data: { paymentStatus: "paid" },
+        });
+      }
       await tx.ledgerPaymentRequestBill.updateMany({
-        where: { requestId: req.id },
+        where: { requestId: req.id, orgId, companyId },
         data: { active: false },
       });
       return { paymentId: payment.id, vendor: req.vendor, billCount: billIds.length, paidTotal: newPaid };
@@ -334,29 +450,40 @@ export async function cancelPaymentRequest(opts: {
     return { ok: false, error: "คำขอนี้จ่ายแล้ว — ยกเลิกไม่ได้ (ต้องทำรายการคืน)" };
   if (req.state === "cancelled") return { ok: true };
 
-  await prisma.$transaction(async (tx) => {
-    const billRows = await tx.ledgerPaymentRequestBill.findMany({
-      where: { requestId, active: true },
-      select: { expenseId: true },
-    });
-    await tx.ledgerPaymentRequest.update({
-      where: { id: requestId },
-      data: { state: "cancelled", cancelledBy, cancelledAt: new Date() },
-    });
-    await tx.ledgerPaymentRequestBill.updateMany({
-      where: { requestId },
-      data: { active: false },
-    });
-    // Bills go back to "unpaid" (still owed) — they were forced unpaid on request.
-    const ids = billRows.map((b) => b.expenseId);
-    if (ids.length > 0) {
-      await tx.ledgerExpense.updateMany({
-        where: { id: { in: ids }, orgId, companyId, paymentStatus: { not: "paid" } },
-        data: { paymentStatus: "unpaid" },
+  try {
+    await prisma.$transaction(async (tx) => {
+      // P1 (bug-hunt F) — CONDITIONAL cancel gated on state (row-lock). If a racing
+      // slip closed the request to 'paid' between the pre-check and here, count 0 →
+      // throw → abort (don't release a bill that was actually just paid).
+      const cancelled = await tx.ledgerPaymentRequest.updateMany({
+        where: { id: requestId, orgId, companyId, state: { in: ["open", "partial", "abnormal"] } },
+        data: { state: "cancelled", cancelledBy, cancelledAt: new Date() },
       });
-    }
-  });
-  return { ok: true };
+      if (cancelled.count !== 1) throw Object.assign(new Error("GONE"), { code: "REQ_GONE" });
+      const billRows = await tx.ledgerPaymentRequestBill.findMany({
+        where: { requestId, active: true },
+        select: { expenseId: true },
+      });
+      await tx.ledgerPaymentRequestBill.updateMany({
+        where: { requestId, orgId, companyId },
+        data: { active: false },
+      });
+      // Bills go back to "unpaid" (still owed) — they were forced unpaid on request.
+      const ids = billRows.map((b) => b.expenseId);
+      if (ids.length > 0) {
+        await tx.ledgerExpense.updateMany({
+          where: { id: { in: ids }, orgId, companyId, paymentStatus: { not: "paid" } },
+          data: { paymentStatus: "unpaid" },
+        });
+      }
+    });
+    return { ok: true };
+  } catch (e) {
+    if (errCode(e) === "REQ_GONE")
+      return { ok: false, error: "คำขอถูกปิด/จ่ายไปแล้ว ยกเลิกไม่ได้" };
+    console.error("[ledger:cancelPaymentRequest] failed", e);
+    return { ok: false, error: "ยกเลิกคำขอไม่สำเร็จ" };
+  }
 }
 
 /**
@@ -387,42 +514,60 @@ export async function assignSlipToRequest(opts: {
         select: { id: true, expectedTransfer: true, paidTotal: true },
       });
       if (!req) throw Object.assign(new Error("GONE"), { code: "REQ_GONE" });
+      const expected = round2(Number(req.expectedTransfer));
       const newPaid = round2(Number(req.paidTotal) + Number(payment.amount));
-      const fullyPaid = newPaid >= round2(Number(req.expectedTransfer)) - 0.01;
+      const fullyPaid = newPaid >= expected - 0.01;
+      // P2 (bug-hunt) — manual assign lacked the over-pay guard the auto path has.
+      const overpay = newPaid > expected + MATCH_TOLERANCE_BAHT;
 
-      await tx.ledgerPayment.update({
-        where: { id: paymentId },
+      // P1 (bug-hunt D) — CLAIM the slip atomically (row-lock): two accountants
+      // assigning the SAME floating slip concurrently → only the 1st claim wins
+      // (paymentRequestId:null in the where); the 2nd gets count 0 → throw → abort,
+      // so paidTotal isn't double-counted.
+      const claimed = await tx.ledgerPayment.updateMany({
+        where: { id: paymentId, orgId, companyId, paymentRequestId: null, matchedExpenseId: null },
         data: { paymentRequestId: req.id, markedBy },
       });
-      if (fullyPaid) {
+      if (claimed.count !== 1) throw Object.assign(new Error("TAKEN"), { code: "SLIP_TAKEN" });
+
+      if (overpay) {
+        // Slip far exceeds the expected net (wrong pair / batched transfer) → flag,
+        // don't auto-close the bills; the accountant resolves the abnormal.
+        await tx.ledgerPaymentRequest.updateMany({
+          where: { id: req.id, orgId, companyId, state: { in: ["open", "partial", "abnormal"] } },
+          data: { state: "abnormal", paidTotal: newPaid, abnormalReason: "สลิปเกินยอดที่คาด" },
+        });
+      } else if (fullyPaid) {
         const billRows = await tx.ledgerPaymentRequestBill.findMany({
           where: { requestId: req.id, active: true },
           select: { expenseId: true },
         });
+        const closed = await tx.ledgerPaymentRequest.updateMany({
+          where: { id: req.id, orgId, companyId, state: { in: ["open", "partial", "abnormal"] } },
+          data: { state: "paid", paidTotal: newPaid, paidAt: new Date() },
+        });
+        if (closed.count !== 1) throw Object.assign(new Error("RACE"), { code: "REQ_GONE" });
         const ids = billRows.map((b) => b.expenseId);
         if (ids.length > 0) {
           await tx.ledgerExpense.updateMany({
-            where: { id: { in: ids }, orgId, companyId },
+            where: { id: { in: ids }, orgId, companyId, status: { not: "void" } },
             data: { paymentStatus: "paid" },
           });
         }
-        await tx.ledgerPaymentRequest.update({
-          where: { id: req.id },
-          data: { state: "paid", paidTotal: newPaid, paidAt: new Date() },
-        });
         await tx.ledgerPaymentRequestBill.updateMany({
-          where: { requestId: req.id },
+          where: { requestId: req.id, orgId, companyId },
           data: { active: false },
         });
       } else {
-        await tx.ledgerPaymentRequest.update({
-          where: { id: req.id },
+        await tx.ledgerPaymentRequest.updateMany({
+          where: { id: req.id, orgId, companyId, state: { in: ["open", "partial"] } },
           data: { state: "partial", paidTotal: newPaid },
         });
       }
     });
     return { ok: true };
   } catch (e) {
+    if (errCode(e) === "SLIP_TAKEN") return { ok: false, error: "สลิปนี้ถูกจับคู่ไปแล้ว" };
     if (errCode(e) === "REQ_GONE") return { ok: false, error: "คำขอนี้ปิดไปแล้ว" };
     console.error("[ledger:assignSlipToRequest] failed", e);
     return { ok: false, error: "จับคู่สลิปกับคำขอไม่สำเร็จ" };

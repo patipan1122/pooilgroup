@@ -8,7 +8,9 @@
 // expectedTransfer big · bill count, expandable to bill docCodes) + a status pill.
 
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
+  Ban,
   Banknote,
   ChevronDown,
   ChevronRight,
@@ -18,7 +20,7 @@ import {
   ReceiptText,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { assignSlipToRequestAction } from "../../_actions";
+import { assignSlipToRequestAction, cancelPaymentRequestAction } from "../../_actions";
 import type {
   ReconcileRequestRow,
   ReconcileFloatingSlip,
@@ -54,8 +56,27 @@ const TABS: Array<{ key: BucketKey; label: string }> = [
   { key: "abnormal", label: "ต้องตรวจ" },
 ];
 
-function RequestRow({ req }: { req: ReconcileRequestRow }) {
+function RequestRow({ req, canCancel }: { req: ReconcileRequestRow; canCancel: boolean }) {
   const [open, setOpen] = useState(false);
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState(false);
+  // Cancel only makes sense before the request is paid/cancelled.
+  const cancellable = ["open", "partial", "abnormal"].includes(req.state);
+
+  function doCancel() {
+    setErr(null);
+    start(async () => {
+      const res = await cancelPaymentRequestAction(req.id);
+      if (res.ok) router.refresh();
+      else {
+        setErr(res.error ?? "ยกเลิกไม่สำเร็จ");
+        setConfirm(false);
+      }
+    });
+  }
+
   return (
     <li className="rounded-xl border border-zinc-200 bg-white">
       <button
@@ -122,7 +143,63 @@ function RequestRow({ req }: { req: ReconcileRequestRow }) {
             <span>รวมก่อนหัก {baht(req.billsGross)}</span>
             <span className="tabular-nums">ต้องโอน {baht(req.expectedTransfer)}</span>
           </li>
+          {/* audit-trail + slip evidence (audit P1/P3) */}
+          {(req.requestedByName || req.paidBy || req.transRef || req.slipUrl) && (
+            <li className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-zinc-100 pt-1.5 text-[11px] text-zinc-500">
+              {req.requestedByName && <span>ผู้ขอ: {req.requestedByName}</span>}
+              {req.paidBy && <span>จ่าย: {req.paidBy.slice(0, 10)}…</span>}
+              {req.transRef && <span className="font-mono">อ้างอิง {req.transRef}</span>}
+              {req.slipUrl && (
+                <a
+                  href={req.slipUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-[var(--color-brand-600)] hover:underline"
+                >
+                  <ReceiptText className="size-3.5" aria-hidden />
+                  ดูสลิป
+                </a>
+              )}
+            </li>
+          )}
         </ul>
+      )}
+      {open && canCancel && cancellable && (
+        <div className="border-t border-zinc-100 px-3 py-2">
+          {confirm ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-rose-600">ยกเลิกคำขอ? บิลจะกลับเป็น &ldquo;ยังไม่จ่าย&rdquo;</span>
+              <button
+                type="button"
+                onClick={doCancel}
+                disabled={pending}
+                className="inline-flex h-7 items-center gap-1 rounded-lg bg-rose-600 px-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Ban className="size-3.5" aria-hidden />}
+                ยืนยันยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirm(false)}
+                disabled={pending}
+                className="inline-flex h-7 items-center rounded-lg border border-zinc-200 px-2 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+              >
+                ไม่
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirm(true)}
+              disabled={pending}
+              className="inline-flex h-7 items-center gap-1 rounded-lg text-xs font-medium text-rose-600 hover:bg-rose-50"
+            >
+              <Ban className="size-3.5" aria-hidden />
+              ยกเลิกคำขอ
+            </button>
+          )}
+          {err && <p className="mt-1 text-xs text-rose-600">{err}</p>}
+        </div>
       )}
     </li>
   );
@@ -131,9 +208,11 @@ function RequestRow({ req }: { req: ReconcileRequestRow }) {
 function RequestList({
   rows,
   emptyHint,
+  canCancel,
 }: {
   rows: ReconcileRequestRow[];
   emptyHint: string;
+  canCancel: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -145,7 +224,7 @@ function RequestList({
   return (
     <ul className="grid grid-cols-1 gap-2 lg:grid-cols-2">
       {rows.map((r) => (
-        <RequestRow key={r.id} req={r} />
+        <RequestRow key={r.id} req={r} canCancel={canCancel} />
       ))}
     </ul>
   );
@@ -171,6 +250,7 @@ function FloatingSlipCard({
     return [...near, ...rest];
   }, [openRequests, slip.amount]);
 
+  const router = useRouter();
   const [requestId, setRequestId] = useState(sorted[0]?.id ?? "");
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
@@ -181,8 +261,11 @@ function FloatingSlipCard({
     setErr(null);
     start(async () => {
       const res = await assignSlipToRequestAction(slip.id, requestId);
-      if (res.ok) setDone(true);
-      else setErr(res.error ?? "จับคู่ไม่สำเร็จ");
+      if (res.ok) {
+        setDone(true);
+        // P2 (bug-hunt) — refresh so buckets/counts/totals reflect the close.
+        router.refresh();
+      } else setErr(res.error ?? "จับคู่ไม่สำเร็จ");
     });
   }
 
@@ -343,13 +426,13 @@ export function ReconcileBoard({
       </p>
 
       {tab === "awaiting" && (
-        <RequestList rows={awaiting} emptyHint="ไม่มีคำขอที่รอโอน — เคลียร์หมดแล้ว 🎉" />
+        <RequestList rows={awaiting} canCancel={canMatch} emptyHint="ไม่มีคำขอที่รอโอน — เคลียร์หมดแล้ว 🎉" />
       )}
       {tab === "partial" && (
-        <RequestList rows={partial} emptyHint="ไม่มีคำขอที่จ่ายบางส่วน" />
+        <RequestList rows={partial} canCancel={canMatch} emptyHint="ไม่มีคำขอที่จ่ายบางส่วน" />
       )}
       {tab === "paid" && (
-        <RequestList rows={paid} emptyHint="ยังไม่มีคำขอที่จ่ายแล้วใน 90 วันล่าสุด" />
+        <RequestList rows={paid} canCancel={canMatch} emptyHint="ยังไม่มีคำขอที่จ่ายแล้วใน 90 วันล่าสุด" />
       )}
       {tab === "abnormal" && (
         <div className="space-y-4">
@@ -357,7 +440,7 @@ export function ReconcileBoard({
             <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
               คำขอที่ผิดปกติ
             </h3>
-            <RequestList rows={abnormal} emptyHint="ไม่มีคำขอที่ต้องตรวจ" />
+            <RequestList rows={abnormal} canCancel={canMatch} emptyHint="ไม่มีคำขอที่ต้องตรวจ" />
           </div>
           <div>
             <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">

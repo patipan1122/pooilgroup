@@ -42,6 +42,12 @@ export interface ReconcileRequestRow {
   expectedTransfer: number;
   paidTotal: number;
   abnormalReason: string | null;
+  // audit-trail (audit P1) — who requested / who paid + the slip evidence.
+  requestedByName: string | null;
+  paidBy: string | null; // LINE userId of the payer (from the slip)
+  transRef: string | null; // bank slip reference (for manual bank-rec)
+  slipUrl: string | null;
+  slipThumbUrl: string | null;
   requestedAt: string;
   paidAt: string | null;
   bills: ReconcileBill[];
@@ -127,10 +133,15 @@ function mapRequestRow(
     abnormalReason: string | null;
     requestedAt: Date;
     paidAt: Date | null;
+    requestedBy: string | null;
+    paidBy: string | null;
     bills: Array<{ expenseId: string; billAmount: unknown; billWht: unknown }>;
   },
   docCodeByExpense: Map<string, string>,
+  userName: Map<string, string>,
+  slipByReq: Map<string, { transRef: string | null; slipUrl: string | null; slipThumbUrl: string | null }>,
 ): ReconcileRequestRow {
+  const slip = slipByReq.get(r.id);
   return {
     id: r.id,
     state: r.state,
@@ -143,6 +154,11 @@ function mapRequestRow(
     abnormalReason: r.abnormalReason,
     requestedAt: r.requestedAt.toISOString(),
     paidAt: r.paidAt ? r.paidAt.toISOString() : null,
+    requestedByName: r.requestedBy ? userName.get(r.requestedBy) ?? null : null,
+    paidBy: r.paidBy,
+    transRef: slip?.transRef ?? null,
+    slipUrl: slip?.slipUrl ?? null,
+    slipThumbUrl: slip?.slipThumbUrl ?? null,
     bills: r.bills.map((b) => ({
       expenseId: b.expenseId,
       docCode: docCodeByExpense.get(b.expenseId) ?? "—",
@@ -164,6 +180,8 @@ const REQUEST_SELECT = {
   abnormalReason: true,
   requestedAt: true,
   paidAt: true,
+  requestedBy: true,
+  paidBy: true,
   bills: {
     select: { expenseId: true, billAmount: true, billWht: true },
   },
@@ -247,10 +265,39 @@ export async function listReconcile(
     for (const c of codes) docCodeByExpense.set(c.id, c.docCode);
   }
 
-  const awaiting = awaitingRaw.map((r) => mapRequestRow(r, docCodeByExpense));
-  const partial = partialRaw.map((r) => mapRequestRow(r, docCodeByExpense));
-  const paid = paidRaw.map((r) => mapRequestRow(r, docCodeByExpense));
-  const abnormal = abnormalRaw.map((r) => mapRequestRow(r, docCodeByExpense));
+  // audit-trail (audit P1) — resolve requester names + the slip evidence (transRef +
+  // url) per request, both in ONE scoped query each (no N+1). Used by the board + CSV.
+  const allReqRows = [...awaitingRaw, ...partialRaw, ...paidRaw, ...abnormalRaw];
+  const reqIds = allReqRows.map((r) => r.id);
+  const userName = new Map<string, string>();
+  const requesterIds = Array.from(
+    new Set(allReqRows.map((r) => r.requestedBy).filter((x): x is string => !!x)),
+  );
+  if (requesterIds.length > 0) {
+    const users = await prisma.user
+      .findMany({ where: { id: { in: requesterIds }, orgId }, select: { id: true, name: true } })
+      .catch(() => [] as { id: string; name: string }[]);
+    for (const u of users) userName.set(u.id, u.name);
+  }
+  const slipByReq = new Map<string, { transRef: string | null; slipUrl: string | null; slipThumbUrl: string | null }>();
+  if (reqIds.length > 0) {
+    const pays = await prisma.ledgerPayment
+      .findMany({
+        where: { orgId, companyId, paymentRequestId: { in: reqIds } },
+        orderBy: { createdAt: "asc" },
+        select: { paymentRequestId: true, transRef: true, slipUrl: true, slipThumbUrl: true },
+      })
+      .catch(() => [] as { paymentRequestId: string | null; transRef: string | null; slipUrl: string | null; slipThumbUrl: string | null }[]);
+    for (const p of pays) {
+      if (!p.paymentRequestId || slipByReq.has(p.paymentRequestId)) continue; // first slip per request
+      slipByReq.set(p.paymentRequestId, { transRef: p.transRef, slipUrl: p.slipUrl, slipThumbUrl: p.slipThumbUrl });
+    }
+  }
+
+  const awaiting = awaitingRaw.map((r) => mapRequestRow(r, docCodeByExpense, userName, slipByReq));
+  const partial = partialRaw.map((r) => mapRequestRow(r, docCodeByExpense, userName, slipByReq));
+  const paid = paidRaw.map((r) => mapRequestRow(r, docCodeByExpense, userName, slipByReq));
+  const abnormal = abnormalRaw.map((r) => mapRequestRow(r, docCodeByExpense, userName, slipByReq));
   const floatingSlips: ReconcileFloatingSlip[] = floatingRaw.map((s) => ({
     id: s.id,
     amount: round2(Number(s.amount)),
@@ -284,5 +331,69 @@ export async function listReconcile(
         ),
       },
     },
+  };
+}
+
+// ─── #4 LIFF detail page (ดูรายละเอียด/จ่าย) ──────────────────────────────────
+export interface PaymentRequestDetail {
+  id: string;
+  state: string;
+  vendor: string | null;
+  billsGross: number;
+  whtTotal: number;
+  expectedTransfer: number;
+  paidTotal: number;
+  payeeAcctName: string | null;
+  payeeBankCode: string | null;
+  payeeAcctNo: string | null;
+  payeePromptpay: string | null;
+  requestedAt: string;
+  bills: { docCode: string; amount: number; wht: number }[];
+}
+
+/** Read one request (read-only) for the LIFF detail page. Scoped by orgId; the
+ *  caller (the LIFF page) resolves orgId from the verified ledger actor. */
+export async function getPaymentRequestDetail(
+  orgId: string,
+  id: string,
+): Promise<PaymentRequestDetail | null> {
+  const r = await prisma.ledgerPaymentRequest.findFirst({
+    where: { id, orgId },
+    select: {
+      id: true, state: true, vendor: true, companyId: true,
+      billsGross: true, whtTotal: true, expectedTransfer: true, paidTotal: true,
+      payeeAcctName: true, payeeBankCode: true, payeeAcctNo: true, payeePromptpay: true,
+      requestedAt: true,
+      bills: { select: { expenseId: true, billAmount: true, billWht: true } },
+    },
+  });
+  if (!r) return null;
+  const ids = r.bills.map((b) => b.expenseId);
+  const codeMap = new Map<string, string>();
+  if (ids.length > 0) {
+    const codes = await prisma.ledgerExpense.findMany({
+      where: { id: { in: ids }, orgId, companyId: r.companyId },
+      select: { id: true, docCode: true },
+    });
+    for (const c of codes) codeMap.set(c.id, c.docCode);
+  }
+  return {
+    id: r.id,
+    state: r.state,
+    vendor: r.vendor,
+    billsGross: round2(Number(r.billsGross)),
+    whtTotal: round2(Number(r.whtTotal)),
+    expectedTransfer: round2(Number(r.expectedTransfer)),
+    paidTotal: round2(Number(r.paidTotal)),
+    payeeAcctName: r.payeeAcctName,
+    payeeBankCode: r.payeeBankCode,
+    payeeAcctNo: r.payeeAcctNo,
+    payeePromptpay: r.payeePromptpay,
+    requestedAt: r.requestedAt.toISOString(),
+    bills: r.bills.map((b) => ({
+      docCode: codeMap.get(b.expenseId) ?? "—",
+      amount: round2(Number(b.billAmount)),
+      wht: round2(Number(b.billWht)),
+    })),
   };
 }

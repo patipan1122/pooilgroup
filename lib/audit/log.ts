@@ -160,7 +160,10 @@ export type AuditAction =
   | "LEDGER_PAYMENT_REQUESTED"
   | "LEDGER_PAYMENT_REQ_CANCELLED"
   | "LEDGER_SLIP_ASSIGNED_REQUEST"
-  | "LEDGER_RECONCILE_EXPORTED";
+  | "LEDGER_RECONCILE_EXPORTED"
+  // "เซฟเล่ม" (saved analytics books · LEDGER_ANALYTICS_V1): deleting a SHARED book
+  // affects everyone in the company → audited (creator/admin only).
+  | "LEDGER_SAVED_BOOK_DELETED";
 
 export interface AuditEntry {
   orgId: string;

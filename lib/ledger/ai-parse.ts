@@ -341,12 +341,16 @@ const SLIP_PROMPT = `คุณเป็นผู้อ่านสลิปโ�
   "amount": <ยอดโอน เป็น number ไม่มีคอมม่า หรือ null>,
   "bank": "<ชื่อธนาคารผู้โอน เช่น กสิกร, กรุงเทพ, SCB, ออมสิน หรือ null>",
   "transaction_ref": "<เลขอ้างอิงธุรกรรม/เลขที่รายการ หรือ null>",
-  "date": "<วันที่โอน YYYY-MM-DD หรือ null>"
+  "date": "<วันที่โอน YYYY-MM-DD หรือ null>",
+  "recipient_name": "<ชื่อบัญชีผู้รับเงิน/ปลายทาง (คนละคนกับผู้โอน) หรือ null>",
+  "recipient_account": "<เลขบัญชี/พร้อมเพย์ของผู้รับ ตามที่เห็นจริงในสลิป — คงเครื่องหมาย x ที่ปิดหลักไว้ ห้ามเดาหลักที่ถูกปิด หรือ null>"
 }
 
 กฎสำคัญ:
 - ฟิลด์ไหนอ่านไม่ออก → คืน null ห้ามเดา
 - amount เป็น number ตรง ๆ ไม่มีสัญลักษณ์
+- recipient_name = ชื่อ "ผู้รับเงิน/ปลายทาง" เท่านั้น (มักอยู่ใต้คำว่า "ไปยัง/ผู้รับ/เข้าบัญชี") ไม่ใช่ชื่อผู้โอน
+- recipient_account = เลขที่เห็นจริงเท่านั้น เก็บ x/* ที่ปิดหลักไว้ตามเดิม ห้ามแต่งเลขที่ถูกปิด
 - ถ้าภาพไม่ใช่สลิปโอนเงิน → คืนทุกฟิลด์เป็น null`;
 
 interface RawSlip {
@@ -354,6 +358,8 @@ interface RawSlip {
   bank?: string | null;
   transaction_ref?: string | null;
   date?: string | null;
+  recipient_name?: string | null;
+  recipient_account?: string | null;
 }
 
 export interface ParsedSlip {
@@ -361,6 +367,10 @@ export interface ParsedSlip {
   bank: string | null;
   transactionRef: string | null;
   date: string | null;
+  /** ชื่อผู้รับเงินที่อ่านได้จากสลิป (verify ว่าโอนถูกคนไหม). */
+  recipientName: string | null;
+  /** เลขบัญชี/พร้อมเพย์ผู้รับตามที่เห็น (อาจถูกปิดบางหลัก) — verify บัญชีปลายทาง. */
+  recipientAcct: string | null;
   ocrModel: string;
 }
 
@@ -463,6 +473,8 @@ export async function parseSlipImage(
     bank: parsed.bank?.trim() || null,
     transactionRef: parsed.transaction_ref?.trim() || null,
     date: parsed.date?.trim() || null,
+    recipientName: parsed.recipient_name?.trim() || null,
+    recipientAcct: parsed.recipient_account?.trim() || null,
     ocrModel: PRIMARY_MODEL,
   };
 }
