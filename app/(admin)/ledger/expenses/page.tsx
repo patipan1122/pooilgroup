@@ -232,8 +232,8 @@ export default async function ExpensesPage({
         orderBy: [{ businessGroup: "asc" }, { productId: "asc" }],
         take: 500,
       }),
-      prisma.ledgerExpense.findUnique({
-        where: { id: selected },
+      prisma.ledgerExpense.findFirst({
+        where: { id: selected, orgId: scope.orgId, companyId: scope.companyId },
         select: { trcloudStockinNo: true, trcloudStockinDocId: true },
       }),
     ]);

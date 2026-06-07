@@ -1,12 +1,14 @@
 // Ledger home — KPI summary (ภาพรวมเร็ว) + ทางลัดไปยังรายจ่ายที่รอยืนยัน.
 // Real data, org+company(+branch) scoped, current month.
 import Link from "next/link";
-import { Receipt, FileClock, CheckCircle2, Wallet } from "lucide-react";
+import { Receipt, FileClock, CheckCircle2, Wallet, BookOpen, ChevronRight } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { resolveScope } from "./_scope";
 import { LedgerHeader, NoCompanyState } from "./_components/LedgerHeader";
 import { expenseSummary, listExpensesSummary, spendByCategory } from "./_data";
 import { currentPeriodBangkok } from "@/lib/ledger/dashboard";
+import { resolveLedgerActor } from "@/lib/ledger/liff-auth";
+import { categoryBookIndex } from "@/lib/ledger/category-ledger";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
 import { LedgerEmptyState, LedgerMascot } from "@/components/ledger/Brand";
 
@@ -58,6 +60,31 @@ export default async function LedgerHomePage({
     listExpensesSummary({ ...filter, status: "draft", take: 6 }).then((r) => r.expenses),
     spendByCategory(filter),
   ]);
+
+  // "ค่าใช้จ่ายประจำ" teaser → surfaces สมุดค่าใช้จ่าย on the home page so the CEO
+  // actually finds it (workshop 2026-06-07: he never found it buried in the nav).
+  // Reuses categoryBookIndex (already deployed) — top categories this month + Δ%.
+  const actor = await resolveLedgerActor();
+  const recurring = await categoryBookIndex({
+    orgId: scope.orgId,
+    companyId: scope.companyId,
+    actorScope: {
+      allBranches: actor?.allBranches ?? true,
+      scopeBranchIds: actor?.scopeBranchIds ?? [],
+    },
+    months: 2,
+    anchorPeriod: period,
+  });
+  const topRecurring = [...recurring]
+    .filter((e) => e.latestTotal > 0)
+    .sort((a, b) => b.latestTotal - a.latestTotal)
+    .slice(0, 3)
+    .map((e) => {
+      const cur = e.spark[e.spark.length - 1] ?? 0;
+      const prev = e.spark[e.spark.length - 2] ?? 0;
+      const deltaPct = prev > 0 ? ((cur - prev) / prev) * 100 : null;
+      return { categoryId: e.categoryId, name: e.categoryName, latest: e.latestTotal, deltaPct };
+    });
 
   const tiles = [
     {
@@ -181,6 +208,47 @@ export default async function LedgerHomePage({
           );
         })}
       </div>
+
+      {/* ค่าใช้จ่ายประจำ — entry to สมุดค่าใช้จ่าย (ดูย้อนหลัง/เทียบเดือน) */}
+      <Link
+        href={buildHref("/ledger/ledger-book")}
+        className="mt-6 flex items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-4 transition-all hover:border-[var(--color-brand-200)] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-400)]"
+      >
+        <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-[var(--color-brand-50)] text-[var(--color-brand-600)] ring-1 ring-[var(--color-brand-100)]">
+          <BookOpen className="size-5" aria-hidden />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-bold text-zinc-900">สมุดค่าใช้จ่าย — ดูย้อนหลัง</span>
+            <ChevronRight className="size-4 shrink-0 text-zinc-300" aria-hidden />
+          </div>
+          {topRecurring.length > 0 ? (
+            <ul className="mt-2 space-y-1">
+              {topRecurring.map((r) => (
+                <li key={r.categoryId} className="flex items-center justify-between gap-2 text-[13px]">
+                  <span className="truncate text-zinc-600">{r.name}</span>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <span className="font-semibold tabular-nums text-zinc-800">{baht(r.latest)}</span>
+                    {r.deltaPct !== null && Math.abs(r.deltaPct) >= 1 && (
+                      <span
+                        className={`text-[11px] font-semibold tabular-nums ${
+                          r.deltaPct > 0 ? "text-red-600" : "text-emerald-600"
+                        }`}
+                      >
+                        {r.deltaPct > 0 ? "▲" : "▼"} {Math.abs(Math.round(r.deltaPct))}%
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-0.5 text-sm text-zinc-500">
+              เทียบค่าไฟ/ค่าน้ำ/ค่าใช้จ่ายแต่ละหมวด ย้อนหลังรายเดือน-รายปี
+            </p>
+          )}
+        </div>
+      </Link>
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* รอยืนยัน */}

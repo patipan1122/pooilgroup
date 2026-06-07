@@ -81,7 +81,7 @@ export function InventoryManager({
     const next = !(local[sku.id]?.stockTracked ?? sku.stockTracked);
     setLocal((p) => ({ ...p, [sku.id]: { ...p[sku.id], stockTracked: next } }));
     start(async () => {
-      const res = await toggleSkuStockTracked(sku.id, next);
+      const res = await toggleSkuStockTracked(sku.id, companyId, next);
       if (!res.ok) {
         setLocal((p) => ({ ...p, [sku.id]: { ...p[sku.id], stockTracked: !next } }));
         setMsg({ kind: "err", text: res.error ?? "ทำรายการไม่สำเร็จ" });
@@ -93,13 +93,13 @@ export function InventoryManager({
     if (!(f > 0)) return;
     setLocal((p) => ({ ...p, [sku.id]: { ...p[sku.id], packFactor: f } }));
     start(async () => {
-      const res = await setSkuPackFactor(sku.id, f);
+      const res = await setSkuPackFactor(sku.id, companyId, f);
       if (!res.ok) setMsg({ kind: "err", text: res.error ?? "บันทึกไม่สำเร็จ" });
     });
   }
   function delAlias(id: string) {
     start(async () => {
-      const res = await deleteSkuAlias(id);
+      const res = await deleteSkuAlias(id, companyId);
       if (!res.ok) setMsg({ kind: "err", text: res.error ?? "ลบไม่สำเร็จ" });
     });
   }

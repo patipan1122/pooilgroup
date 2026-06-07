@@ -229,6 +229,11 @@ function buildWhere(f: ExpenseListFilter): Prisma.LedgerExpenseWhereInput {
       { vendor: { contains: f.search, mode: "insensitive" } },
       { docCode: { contains: f.search, mode: "insensitive" } },
       { vendorTaxId: { contains: f.search } },
+      { note: { contains: f.search, mode: "insensitive" } },
+      // Search line-item descriptions too — where "น้ำแข็ง" actually lives
+      // (workshop 2026-06-07). Lets the expenses list find a receipt by what was
+      // bought, not just the shop name.
+      { items: { some: { description: { contains: f.search, mode: "insensitive" } } } },
     ];
   }
   return where;
