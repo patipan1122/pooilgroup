@@ -42,12 +42,14 @@ export function BranchPicker({
   onChange,
   className = "",
   placeholder = "— เลือกสาขา —",
+  disabled = false,
 }: {
   branches: BranchOpt[];
   value: string;
   onChange: (id: string) => void;
   className?: string;
   placeholder?: string;
+  disabled?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [activeType, setActiveType] = useState<string>(""); // "" = ทั้งหมด
@@ -102,9 +104,10 @@ export function BranchPicker({
     return (
       <select
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         className={
-          "h-11 w-full rounded-lg border border-zinc-200 px-2 text-sm focus:border-[var(--color-brand-400)] focus:outline-none " +
+          "h-11 w-full rounded-lg border border-zinc-200 px-2 text-sm focus:border-[var(--color-brand-400)] focus:outline-none disabled:opacity-50 " +
           className
         }
       >
@@ -114,7 +117,7 @@ export function BranchPicker({
   }
 
   return (
-    <div className={className}>
+    <div className={disabled ? "pointer-events-none opacity-50 " + className : className}>
       {/* Type chip rail — only show when >1 type exists */}
       {types.length > 1 && !search && (
         <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1">
@@ -192,6 +195,7 @@ export function BranchPicker({
       ) : (
         <select
           value={value}
+          disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
           className="h-11 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm focus:border-[var(--color-brand-400)] focus:outline-none"
         >
