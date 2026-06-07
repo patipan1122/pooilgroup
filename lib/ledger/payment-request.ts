@@ -211,6 +211,28 @@ export interface MatchSlipToRequestInput {
   qrDecoded: boolean;
   /** LINE userId of the executive who sent the slip (D2 audit: who paid). */
   paidByLineUserId?: string | null;
+  /** LINE group the slip arrived in — anchors candidate requests to THIS group
+   *  (pushedGroupId) so we can name the right request even when the amount is off. */
+  groupId?: string | null;
+  /** Recipient name read off the slip (verify โอนถูกคนไหม). */
+  recipientName?: string | null;
+  /** Recipient account/promptpay as seen on the slip (may be masked). */
+  recipientAcct?: string | null;
+}
+
+/** Detail for a slip that hit a request but did NOT match exactly — the webhook
+ *  turns this into the in-group warning card (โอนเกิน/โอนขาด/บัญชีไม่ตรง). */
+export interface SlipMismatchDetail {
+  vendor: string | null;
+  /** the NET the request expected (expectedTransfer − already-paid). */
+  expected: number;
+  slipAmount: number;
+  /** slip − expected: positive = โอนเกิน, negative = โอนขาด. */
+  diff: number;
+  payeeName: string | null;
+  payeeAcct: string | null;
+  slipRecipientName: string | null;
+  slipRecipientAcct: string | null;
 }
 
 export type MatchSlipResult =
@@ -222,40 +244,106 @@ export type MatchSlipResult =
       paidTotal: number;
       paymentId: string;
     }
+  // Found the request but the amount is off (exact-to-the-baht required) — DON'T close.
+  | { matched: false; reason: "amount_mismatch"; detail: SlipMismatchDetail }
+  // Found a request but it pays a DIFFERENT account/name than the slip — DON'T close.
+  | { matched: false; reason: "payee_mismatch"; detail: SlipMismatchDetail }
   | { matched: false; reason: "no_request" | "ambiguous" | "duplicate" | "error" };
 
+/** digits only (drops the masking x/* and separators). */
+const onlyDigits = (s: string | null | undefined): string => (s ?? "").replace(/\D/g, "");
+/** longest contiguous run of digits in a (possibly masked) account string. */
+function longestDigitRun(s: string | null | undefined): string {
+  return (String(s ?? "").match(/\d+/g) ?? []).reduce((a, b) => (b.length > a.length ? b : a), "");
+}
+/** loose Thai name compare — drop spaces / company suffixes / titles, then substring. */
+function normName(s: string | null | undefined): string {
+  return String(s ?? "")
+    .toLowerCase()
+    .replace(/บริษัท|บมจ\.?|บจก\.?|หจก\.?|ห้างหุ้นส่วนจำกัด|จำกัด\(มหาชน\)|จำกัด|มหาชน|company|limited|ltd\.?|co\.?|นาย|นางสาว|นาง|น\.ส\.|mr\.?|mrs\.?|ms\.?/g, "")
+    .replace(/[\s().,\-_/]/g, "");
+}
+function nameSimilar(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = normName(a), y = normName(b);
+  if (x.length < 3 || y.length < 3) return false;
+  return x === y || x.includes(y) || y.includes(x);
+}
+/** does the slip's visible account run appear inside the payee account / promptpay? */
+function acctSeen(slipAcct: string | null | undefined, payeeAcctNo: string | null, payeePromptpay: string | null): boolean {
+  const run = longestDigitRun(slipAcct);
+  if (run.length < 3) return false; // nothing usable read off the slip
+  const a = onlyDigits(payeeAcctNo), p = onlyDigits(payeePromptpay);
+  return (a.length >= 3 && a.includes(run)) || (p.length >= 3 && p.includes(run));
+}
+
 /**
- * Try to match an incoming slip to exactly ONE open/partial request by the NET
- * amount (expectedTransfer − already-paid, within a bank-fee tolerance). On a
- * unique match: create the payment row linked to the request + flip every bill
- * to paid + close the request, ALL in one transaction. Otherwise returns
- * matched=false so the webhook falls through to the legacy bill auto-matcher /
- * floating queue — this is purely ADDITIVE, it never closes the wrong thing.
+ * Match an incoming slip to ONE open/partial request, then VERIFY it (CEO 2026-06-07):
+ *  1. IDENTIFY which request the slip pays — by recipient NAME, then visible account
+ *     run, then exact amount, then a lone open request in the group. Group-anchored
+ *     (pushedGroupId) so the right vendor is named even when the amount is wrong.
+ *  2. VERIFY amount EXACT to the baht ("ตรงเป๊ะทุกบาท") → off = amount_mismatch
+ *     (โอนเกิน/โอนขาด), and recipient name/account → wrong = payee_mismatch.
+ *  3. Only on exact+correct: create the payment + flip every bill paid + close, all
+ *     in ONE transaction. On any mismatch it returns matched=false WITH detail so the
+ *     webhook keeps the slip as a floating payment and warns the group — never closes
+ *     the wrong thing.
  */
 export async function matchSlipToRequest(
   input: MatchSlipToRequestInput,
 ): Promise<MatchSlipResult> {
-  const { orgId, companyId, slipAmount } = input;
+  const { orgId, companyId, slipAmount, groupId, recipientName, recipientAcct } = input;
   if (slipAmount == null || !(slipAmount > 0)) return { matched: false, reason: "no_request" };
 
-  const open = await prisma.ledgerPaymentRequest.findMany({
+  const openAll = await prisma.ledgerPaymentRequest.findMany({
     where: { orgId, companyId, state: { in: ["open", "partial"] } },
-    select: { id: true, vendor: true, expectedTransfer: true, paidTotal: true },
+    select: {
+      id: true, vendor: true, expectedTransfer: true, paidTotal: true,
+      payeeAcctName: true, payeeAcctNo: true, payeePromptpay: true, pushedGroupId: true,
+    },
     take: 200,
   });
-  if (open.length === 0) return { matched: false, reason: "no_request" };
+  if (openAll.length === 0) return { matched: false, reason: "no_request" };
+  // Prefer requests pushed to THIS group; fall back to entity-wide if none are tagged.
+  const inGroup = groupId ? openAll.filter((r) => r.pushedGroupId === groupId) : [];
+  const open = inGroup.length > 0 ? inGroup : openAll;
+  type OpenReq = (typeof openAll)[number];
+  const remainingOf = (r: OpenReq) => round2(Number(r.expectedTransfer) - Number(r.paidTotal));
 
-  // A slip COMPLETES a request when it covers the remaining net (allowing a small
-  // cross-bank fee over). Match only when EXACTLY ONE request is completable —
-  // never guess between two same-amount requests.
-  const completable = open.filter((r) => {
-    const remaining = round2(Number(r.expectedTransfer) - Number(r.paidTotal));
-    return slipAmount >= remaining - 0.01 && slipAmount <= remaining + MATCH_TOLERANCE_BAHT;
-  });
-  if (completable.length !== 1) {
-    return { matched: false, reason: completable.length > 1 ? "ambiguous" : "no_request" };
+  // 1. IDENTIFY the target — strongest signal first; never guess between two.
+  const byName = recipientName ? open.filter((r) => nameSimilar(r.payeeAcctName, recipientName)) : [];
+  const byAcct = recipientAcct ? open.filter((r) => acctSeen(recipientAcct, r.payeeAcctNo, r.payeePromptpay)) : [];
+  const byAmount = open.filter((r) => Math.abs(slipAmount - remainingOf(r)) <= 0.01);
+  let target: OpenReq | undefined;
+  if (byName.length === 1) target = byName[0];
+  else if (byAcct.length === 1) target = byAcct[0];
+  else if (byAmount.length === 1) target = byAmount[0];
+  else if (open.length === 1) target = open[0];
+  if (!target) return { matched: false, reason: open.length > 1 ? "ambiguous" : "no_request" };
+
+  const remaining = remainingOf(target);
+  const diff = round2(slipAmount - remaining);
+  const detail: SlipMismatchDetail = {
+    vendor: target.vendor,
+    expected: remaining,
+    slipAmount,
+    diff,
+    payeeName: target.payeeAcctName,
+    payeeAcct: target.payeeAcctNo ?? target.payeePromptpay,
+    slipRecipientName: recipientName ?? null,
+    slipRecipientAcct: recipientAcct ?? null,
+  };
+
+  // 2a. VERIFY amount — exact to the baht (only satang slack). Off → don't close.
+  if (Math.abs(diff) > 0.01) return { matched: false, reason: "amount_mismatch", detail };
+
+  // 2b. VERIFY payee — only when the slip actually gave readable recipient info AND it
+  //     matches NEITHER the payee name NOR the payee account (lenient: masked + fuzzy).
+  const haveRecipientInfo = !!(recipientName || longestDigitRun(recipientAcct).length >= 3);
+  if (haveRecipientInfo) {
+    const nameOk = recipientName ? nameSimilar(target.payeeAcctName, recipientName) : false;
+    const acctOk = recipientAcct ? acctSeen(recipientAcct, target.payeeAcctNo, target.payeePromptpay) : false;
+    if (!nameOk && !acctOk) return { matched: false, reason: "payee_mismatch", detail };
   }
-  const target = completable[0];
 
   try {
     const out = await prisma.$transaction(async (tx) => {

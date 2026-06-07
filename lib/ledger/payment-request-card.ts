@@ -17,6 +17,8 @@ const COLOR = {
   brand: "#2563EB",
   good: "#16A34A",
   warn: "#D97706",
+  bad: "#DC2626",
+  badBg: "#FEF2F2",
   line: "#E4E4E7",
   amtBg: "#EFF4FF",
 } as const;
@@ -192,6 +194,144 @@ export function buildPaymentRequestCard(input: PaymentRequestCardInput): LineFle
   return {
     type: "flex",
     altText: `คำขอโอนเงิน ${vendor || ""} ${fmtTHB(expectedTransfer)}`.trim(),
+    contents: bubble,
+  };
+}
+
+export interface SlipMismatchCardInput {
+  /** over = โอนเกิน · under = โอนขาด · payee = บัญชี/ชื่อผู้รับไม่ตรง. */
+  kind: "over" | "under" | "payee";
+  vendor: string | null;
+  expected: number;
+  slipAmount: number;
+  /** slip − expected (signed). */
+  diff: number;
+  payeeName: string | null;
+  payeeAcct: string | null;
+  slipRecipientName: string | null;
+  slipRecipientAcct: string | null;
+  /** link to the slip image (ปุ่ม "ดูสลิป"). */
+  slipUrl?: string | null;
+}
+
+/**
+ * Warning card replied INTO the group when a slip hit a request but didn't verify
+ * (CEO 2026-06-07): amount off → "โอนเกิน/โอนขาด X ฿", payee off → "บัญชีผู้รับไม่ตรง".
+ * The slip is kept as a floating payment; the bill is NOT closed. Sent via reply
+ * (not push) so it costs nothing.
+ */
+export function buildSlipMismatchCard(input: SlipMismatchCardInput): LineFlexMessage {
+  const { kind, vendor, expected, slipAmount, diff, payeeName, payeeAcct, slipRecipientName, slipRecipientAcct, slipUrl } = input;
+  const isPayee = kind === "payee";
+  const title = isPayee ? "⚠️ บัญชีผู้รับไม่ตรง" : "⚠️ ยอดโอนไม่ตรง";
+  const absDiff = Math.abs(diff);
+
+  const rows: FlexComponent[] = [];
+  const kv = (label: string, value: string, valueColor: string = COLOR.ink): FlexComponent => ({
+    type: "box",
+    layout: "horizontal",
+    contents: [
+      { type: "text", text: label, size: "xs", color: COLOR.sub, flex: 4, wrap: true },
+      { type: "text", text: value, size: "xs", color: valueColor, align: "end", flex: 6, wrap: true },
+    ],
+  });
+
+  if (isPayee) {
+    rows.push(kv("สลิปโอนเข้า", slipRecipientName || slipRecipientAcct || "— อ่านไม่ได้ —", COLOR.bad));
+    rows.push(kv("คำขอให้โอนเข้า", payeeName || payeeAcct || "—", COLOR.ink));
+    rows.push(kv("ยอดที่ต้องโอน", fmtTHB(expected)));
+  } else {
+    rows.push(kv("ยอดในสลิป", fmtTHB(slipAmount), COLOR.ink));
+    rows.push(kv("ยอดที่ต้องโอน", fmtTHB(expected), COLOR.ink));
+  }
+
+  const badge: FlexComponent = isPayee
+    ? {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: COLOR.badBg,
+        cornerRadius: "md",
+        paddingAll: "10px",
+        margin: "md",
+        contents: [
+          { type: "text", text: "โอนเข้าบัญชีไม่ตรงกับที่ขอ", size: "sm", weight: "bold", color: COLOR.bad, align: "center", wrap: true },
+        ],
+      }
+    : {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: COLOR.badBg,
+        cornerRadius: "md",
+        paddingAll: "10px",
+        margin: "md",
+        contents: [
+          {
+            type: "text",
+            text: `${kind === "over" ? "โอนเกิน" : "โอนขาด"} ${fmtTHB(absDiff)}`,
+            size: "lg",
+            weight: "bold",
+            color: COLOR.bad,
+            align: "center",
+          },
+        ],
+      };
+
+  const bubble: FlexBubble = {
+    type: "bubble",
+    size: "kilo",
+    header: {
+      type: "box",
+      layout: "vertical",
+      paddingAll: "16px",
+      backgroundColor: COLOR.badBg,
+      contents: [
+        { type: "text", text: title, size: "sm", weight: "bold", color: COLOR.bad },
+        { type: "text", text: vendor || "ไม่ระบุผู้ขาย", size: "md", weight: "bold", color: COLOR.ink, wrap: true, margin: "xs" },
+      ],
+    },
+    body: {
+      type: "box",
+      layout: "vertical",
+      paddingAll: "16px",
+      spacing: "sm",
+      contents: [
+        ...rows,
+        badge,
+        { type: "separator", margin: "md", color: COLOR.line },
+        {
+          type: "text",
+          text: "เก็บสลิปไว้แล้ว · ยังไม่ปิดบิล — บัญชีจะตรวจ/กระทบยอดอีกที",
+          size: "xs",
+          color: COLOR.sub,
+          wrap: true,
+          margin: "sm",
+        },
+      ],
+    },
+    ...(slipUrl
+      ? ({
+          footer: {
+            type: "box",
+            layout: "vertical",
+            paddingAll: "12px",
+            contents: [
+              {
+                type: "button",
+                style: "secondary",
+                height: "sm",
+                action: { type: "uri", label: "ดูสลิป", uri: slipUrl },
+              },
+            ],
+          },
+        } as Pick<FlexBubble, "footer">)
+      : {}),
+  };
+
+  return {
+    type: "flex",
+    altText: isPayee
+      ? `บัญชีผู้รับไม่ตรง ${vendor || ""}`.trim()
+      : `${kind === "over" ? "โอนเกิน" : "โอนขาด"} ${fmtTHB(absDiff)} ${vendor || ""}`.trim(),
     contents: bubble,
   };
 }
