@@ -14,6 +14,7 @@ import {
   listLedgerGroups,
 } from "../_data";
 import { SettingsHub, type HubCounts } from "./_components/SettingsHub";
+import { ledgerStockinV1 } from "@/lib/ledger/flags";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,7 @@ export default async function LedgerSettingsPage({
         subtitle="จัดการระบบบัญชี · ทีม · การเชื่อมต่อ LINE"
         scope={scope}
       />
-      <SettingsHub companyId={scope.companyId} counts={counts} />
+      <SettingsHub companyId={scope.companyId} counts={counts} stockinOn={ledgerStockinV1()} />
     </div>
   );
 }

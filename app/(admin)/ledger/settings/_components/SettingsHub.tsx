@@ -13,6 +13,7 @@ import {
   MapPin,
   MessageSquare,
   CloudUpload,
+  Boxes,
   ChevronRight,
   Check,
 } from "lucide-react";
@@ -103,9 +104,11 @@ function SettingRow({ row }: { row: Row }) {
 export function SettingsHub({
   companyId,
   counts,
+  stockinOn = false,
 }: {
   companyId: string;
   counts: HubCounts;
+  stockinOn?: boolean;
 }) {
   const qs = `?company=${encodeURIComponent(companyId)}`;
 
@@ -121,6 +124,17 @@ export function SettingsHub({
           subtitle: "จัดกลุ่ม · สี · ผูกรหัสบัญชี",
           count: counts.categories,
         },
+        ...(stockinOn
+          ? [
+              {
+                href: `/ledger/settings/inventory${qs}`,
+                icon: Boxes,
+                tone: "amber" as const,
+                title: "คลังสินค้า / SKU",
+                subtitle: "สินค้าซื้อมาขาย — รับเข้าสต๊อก TRCloud",
+              },
+            ]
+          : []),
         {
           href: `/ledger/settings/export${qs}`,
           icon: FileSpreadsheet,

@@ -5356,6 +5356,11 @@ model LedgerExpense {
   trcloudDocNo          String?             @map("trcloud_doc_no") // เลขที่เอกสาร AP
   trcloudPushedAt       DateTime?           @map("trcloud_pushed_at") @db.Timestamptz(6)
   trcloudError          String?             @map("trcloud_error")
+  // — Inventory STOCK-IN (รับเข้าสต๊อก, LEDGER_STOCKIN_V1) — แยกจาก AP-expense push.
+  trcloudStockinDocId   String?             @map("trcloud_stockin_doc_id")
+  trcloudStockinNo      String?             @map("trcloud_stockin_no")
+  trcloudStockinAt      DateTime?           @map("trcloud_stockin_at") @db.Timestamptz(6)
+  trcloudStockinError   String?             @map("trcloud_stockin_error")
   // — Input-VAT claimability (ภาษีซื้อ) — ตัดสินด้วยเลขภาษี 13 หลักเป๊ะ (ไม่เดาชื่อ).
   //   buyer = ผู้ซื้อ (เจพีซิ้งค์); สถานะสี = deterministic จาก recheck.ts; never-auto-post.
   buyerTaxIdSnapshot    String?             @map("buyer_tax_id_snapshot") // เลขภาษีผู้ซื้อ ณ เวลาบันทึก จาก master (ไม่ใช่ OCR)
@@ -5804,5 +5809,51 @@ model LedgerTrcloudProduct {
 
   @@unique([orgId, companyId, nameKey])
   @@map("ledger_trcloud_product")
+  @@schema("public")
+}
+
+// Cache ของ SKU จาก TRCloud (mirror inventory/search ต่อธุรกิจ) — สำหรับ stock-IN.
+// ไม่สร้าง SKU เอง · stock_tracked = admin เลือกว่าตัวไหนรับเข้าสต๊อก (LEDGER_STOCKIN_V1).
+model LedgerTrcloudSku {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  companyId     String   @map("company_id") @db.Uuid
+  productId     String   @map("product_id") // TRCloud SKU code (OIL_G95/LUB-0004/H_S0001)
+  productName   String?  @map("product_name")
+  businessGroup String?  @map("business_group") // TRCloud category field (business-line)
+  unit          String?
+  packFactor    Decimal  @default(1) @map("pack_factor") @db.Decimal(15, 4) // 1 ลัง = N ขวด
+  stockTracked  Boolean  @default(false) @map("stock_tracked")
+  status        String?
+  balanceCached Decimal? @map("balance_cached") @db.Decimal(15, 4)
+  costCached    Decimal? @map("cost_cached") @db.Decimal(15, 4)
+  syncedAt      DateTime? @map("synced_at") @db.Timestamptz(6)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  aliases LedgerSkuAlias[]
+
+  @@unique([orgId, companyId, productId])
+  @@index([orgId, companyId, businessGroup, stockTracked])
+  @@map("ledger_trcloud_sku")
+  @@schema("public")
+}
+
+// จับคู่ชื่อสินค้าบนใบเสร็จ → SKU. exact จำได้ · ครั้งแรก admin map · ไม่เจอ=flag.
+model LedgerSkuAlias {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  skuId     String   @map("sku_id") @db.Uuid
+  aliasKey  String   @map("alias_key") // normalized receipt text
+  source    String   @default("admin") // admin | auto
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  sku LedgerTrcloudSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, companyId, aliasKey])
+  @@index([orgId, companyId, skuId])
+  @@map("ledger_sku_alias")
   @@schema("public")
 }
