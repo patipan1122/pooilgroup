@@ -7,9 +7,16 @@
 // transfer slip — vendor, tax id, doc date, subtotal/VAT/WHT/total, line items,
 // payment method, a suggested category, AND a per-field confidence score.
 //
-// Model: gemini-2.0-flash-lite (primary, cheapest). On budget exhaustion or a
-// hard Gemini failure the caller may escalate to Claude — kept as a thin
-// fallback here (TODO[ledger-secret] for a dedicated Claude key/route in M3).
+// Model: gemini-3.1-flash-lite (primary). Chosen via 3 LIVE SPIKES on real JP
+// Link receipts (2026-06-02, memory thai-receipt-ocr-research): fastest (~2s),
+// cheapest, and the most accurate on the king field (total amount) — beat even
+// gemini-2.5-pro. On a hard failure we fall back to FALLBACK_MODEL.
+//
+// ⚠️ DO NOT downgrade to gemini-2.0-* — Google RETIRED all 2.0 models on
+// 2026-06-01 (the 84-fixes commit 392c2d6 wrongly set 2.0-flash-lite thinking
+// 3.1 "didn't exist" → broke OCR in prod, every receipt read ฿0.00). 3.1-flash-
+// lite GA'd 2026-05-07, earliest shutdown 2027-05-07. Verify model names against
+// https://ai.google.dev/gemini-api/docs/deprecations before ever changing this.
 //
 // NEVER guesses: the prompt forces null for unreadable fields. recheck.ts then
 // re-adds the numbers; a human always confirms (no auto-post).
@@ -17,7 +24,11 @@
 import { checkAiBudget, recordAiUsage } from "@/lib/ai/cost-cap";
 import type { ParsedReceipt, FieldConfidence, ExpenseItem, ExpenseDocType } from "./types";
 
-const PRIMARY_MODEL = "gemini-2.0-flash-lite";
+const PRIMARY_MODEL = "gemini-3.1-flash-lite";
+// Same-accuracy backup (spike #3: 3.5-flash tied 3.1 at 12/10/8) for the rare
+// case the primary errors/returns blank — keeps OCR working through a model
+// hiccup instead of silently posting ฿0.00.
+const FALLBACK_MODEL = "gemini-2.5-flash-lite";
 
 // Gemini Vision cost is dominated by the image (~1290 input tokens/รูป) plus a
 // small JSON output. We log fixed estimates like CashHub does — exact token
@@ -160,18 +171,15 @@ function safeParseJson(raw: string): RawParsed {
   }
 }
 
-async function callGemini(
+/** One generateContent call against a given model id. Returns the raw text. */
+async function callGeminiModel(
+  ai: import("@google/genai").GoogleGenAI,
+  model: string,
   base64: string,
   mimeType: string,
-): Promise<{ parsed: RawParsed; raw: string }> {
-  const { GoogleGenAI } = await import("@google/genai");
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-
-  const imgSizeKb = Math.round((base64.length * 3) / 4 / 1024);
-  console.log(`[ledger:ocr] calling Gemini model=${PRIMARY_MODEL} mimeType=${mimeType} imgSize≈${imgSizeKb}KB`);
-
+): Promise<{ raw: string; finishReason: string | undefined; ok: boolean }> {
   const result = await ai.models.generateContent({
-    model: PRIMARY_MODEL,
+    model,
     contents: [
       {
         role: "user",
@@ -187,17 +195,43 @@ async function callGemini(
       responseMimeType: "application/json",
     },
   });
-
-  // Log finish reason so we can diagnose safety blocks / empty responses.
-  const candidate = result.candidates?.[0];
-  const finishReason = candidate?.finishReason;
+  const finishReason = result.candidates?.[0]?.finishReason;
   const raw = result.text ?? "";
-  if (!raw || raw.length < 5) {
-    console.warn(`[ledger:ocr] Gemini returned empty/blank text. finishReason=${finishReason} candidateCount=${result.candidates?.length ?? 0} promptFeedback=${JSON.stringify(result.promptFeedback)}`);
+  const ok = raw.length >= 5;
+  if (!ok) {
+    console.warn(`[ledger:ocr] model=${model} returned empty/blank. finishReason=${finishReason} candidateCount=${result.candidates?.length ?? 0} promptFeedback=${JSON.stringify(result.promptFeedback)}`);
   } else {
-    console.log(`[ledger:ocr] Gemini responded OK finishReason=${finishReason} rawLen=${raw.length}`);
+    console.log(`[ledger:ocr] model=${model} responded OK finishReason=${finishReason} rawLen=${raw.length}`);
   }
-  return { parsed: safeParseJson(raw), raw };
+  return { raw, finishReason, ok };
+}
+
+async function callGemini(
+  base64: string,
+  mimeType: string,
+): Promise<{ parsed: RawParsed; raw: string; modelUsed: string }> {
+  const { GoogleGenAI } = await import("@google/genai");
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+
+  const imgSizeKb = Math.round((base64.length * 3) / 4 / 1024);
+  console.log(`[ledger:ocr] calling Gemini model=${PRIMARY_MODEL} mimeType=${mimeType} imgSize≈${imgSizeKb}KB`);
+
+  // Try the primary model; on a thrown error OR a blank response, fall back to
+  // FALLBACK_MODEL once (covers a retired/overloaded primary or a one-off block).
+  let raw = "";
+  let modelUsed = PRIMARY_MODEL;
+  try {
+    const r = await callGeminiModel(ai, PRIMARY_MODEL, base64, mimeType);
+    raw = r.raw;
+    if (!r.ok) throw new Error(`primary ${PRIMARY_MODEL} blank (finishReason=${r.finishReason})`);
+  } catch (e) {
+    console.warn(`[ledger:ocr] primary failed (${e instanceof Error ? e.message : e}) → trying ${FALLBACK_MODEL}`);
+    const r = await callGeminiModel(ai, FALLBACK_MODEL, base64, mimeType);
+    raw = r.raw;
+    modelUsed = FALLBACK_MODEL;
+  }
+
+  return { parsed: safeParseJson(raw), raw, modelUsed };
 }
 
 /** Normalize a base64 data URL or raw base64 string → { base64, mimeType }. */
@@ -258,8 +292,8 @@ export async function parseReceipt(
     ({ base64, mimeType } = decodeImageInput(imageUrlOrBase64));
   }
 
-  // 3. Call Gemini.
-  const { parsed, raw } = await callGemini(base64, mimeType);
+  // 3. Call Gemini (primary → fallback on blank/error).
+  const { parsed, raw, modelUsed } = await callGemini(base64, mimeType);
 
   // 4. Record usage (reuse cost-cap; model id drives accurate pricing).
   await recordAiUsage({
@@ -267,7 +301,7 @@ export async function parseReceipt(
     orgId,
     endpoint: "ledger.ocr-receipt",
     provider: "gemini-flash",
-    model: PRIMARY_MODEL,
+    model: modelUsed,
     moduleName: "ledger",
     inputTokens: EST_INPUT_TOKENS,
     outputTokens: EST_OUTPUT_TOKENS,
@@ -291,7 +325,7 @@ export async function parseReceipt(
     suggestedCategory: parsed.suggested_category?.trim() || null,
     items: normalizeItems(parsed.items),
     confidence: normalizeConfidence(parsed.confidence),
-    ocrModel: PRIMARY_MODEL,
+    ocrModel: modelUsed,
     raw,
   };
 }
