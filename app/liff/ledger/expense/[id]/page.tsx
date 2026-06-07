@@ -14,6 +14,7 @@
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { getSession } from "@/lib/auth/session";
+import { isAdminTier } from "@/lib/auth/role-guards";
 import { resolveScope } from "@/app/(admin)/ledger/_scope";
 import { getExpense, listCategories } from "@/app/(admin)/ledger/_data";
 import { resolveLedgerActor } from "@/lib/ledger/liff-auth";
@@ -97,12 +98,20 @@ export default async function LedgerLiffExpensePage({
     );
   }
 
+  // Admin/super_admin have the full web back-office (with the 5-tab bottom nav) —
+  // send them back THERE (the "หน้าหลัก" CEO means), not the stripped LIFF list.
+  // A field member (no web access) stays on the LIFF "ใบของฉัน" list.
+  const companyQs = sp.company ? `?company=${encodeURIComponent(sp.company)}` : "";
+  const backHref = isAdminTier(session.user.role)
+    ? `/ledger/expenses${companyQs}`
+    : `/liff/ledger/my${companyQs}`;
+
   return (
     <div className="mx-auto w-full max-w-md px-3 pb-10">
       {/* Mobile header — back to list + น้องใบเสร็จ + context. Anchored Bainy-style. */}
       <header className="sticky top-0 z-10 -mx-3 mb-3 flex items-center gap-2 border-b border-zinc-200 bg-white/95 px-3 py-3 backdrop-blur">
         <Link
-          href={`/liff/ledger/my${sp.company ? `?company=${encodeURIComponent(sp.company)}` : ""}`}
+          href={backHref}
           aria-label="กลับไปหน้ารายการ"
           className="grid size-9 shrink-0 place-items-center rounded-lg text-zinc-500 active:bg-zinc-100"
         >
@@ -137,7 +146,7 @@ export default async function LedgerLiffExpensePage({
         branches={scope.branches}
         canConfirm={actor.canConfirm}
         currentUserId={actor.userId}
-        backHref={`/liff/ledger/my${sp.company ? `?company=${encodeURIComponent(sp.company)}` : ""}`}
+        backHref={backHref}
       />
     </div>
   );

@@ -17,6 +17,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth/session";
+import { isAdminTier } from "@/lib/auth/role-guards";
 import { resolveLedgerActor, isLedgerAdminActor } from "@/lib/ledger/liff-auth";
 import { listCompanies, listCategories } from "@/lib/ledger/queries";
 import {
@@ -154,6 +155,11 @@ export default async function LedgerLiffAdminPage({
       permissionMatrix={permissionMatrix}
       myUserId={session.user.id}
       myLineLinked={!!session.user.line_user_id}
+      homeHref={
+        isAdminTier(session.user.role)
+          ? `/ledger?company=${encodeURIComponent(companyId)}`
+          : `/liff/ledger/my?company=${encodeURIComponent(companyId)}`
+      }
     />
   );
 }

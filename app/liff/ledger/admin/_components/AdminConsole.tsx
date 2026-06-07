@@ -50,6 +50,7 @@ export function AdminConsole({
   permissionMatrix,
   myUserId,
   myLineLinked,
+  homeHref,
 }: {
   companyId: string;
   companyName: string;
@@ -64,6 +65,8 @@ export function AdminConsole({
   permissionMatrix: Record<LedgerRole, Record<LedgerCapability, boolean>>;
   myUserId: string;
   myLineLinked: boolean;
+  /** Where the ← button goes — web "หน้าหลัก" for Pool admins, LIFF list otherwise. */
+  homeHref: string;
 }) {
   const [tab, setTab] = useState<Tab>("member");
   const pendingCount = members.filter((m) => m.pendingBranchId).length;
@@ -79,8 +82,8 @@ export function AdminConsole({
       <header className="sticky top-0 z-20 border-b border-zinc-200 bg-white px-4 pb-2 pt-3">
         <div className="flex items-center gap-1.5">
           <Link
-            href={`/liff/ledger/my?company=${encodeURIComponent(companyId)}`}
-            aria-label="กลับไปหน้ารายการ"
+            href={homeHref}
+            aria-label="กลับไปหน้าหลัก"
             className="-ml-1 grid size-9 shrink-0 place-items-center rounded-lg text-zinc-500 active:bg-zinc-100"
           >
             <ChevronLeft className="size-5" aria-hidden />
