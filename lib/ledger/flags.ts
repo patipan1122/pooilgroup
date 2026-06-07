@@ -31,3 +31,10 @@ export function ledgerSlipV1(): boolean {
 export function ledgerPayreqV1(): boolean {
   return flagOn("LEDGER_PAYREQ_V1");
 }
+
+//   LEDGER_STOCKIN_V1 — resale-goods inventory: sync SKUs from TRCloud per business,
+//                       map receipt line → SKU (alias), push stock-IN AP (รับเข้าคลัง).
+//                       POS does stock-OUT. Separate from the expense-AP push.
+export function ledgerStockinV1(): boolean {
+  return flagOn("LEDGER_STOCKIN_V1");
+}

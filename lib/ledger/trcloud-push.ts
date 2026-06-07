@@ -112,7 +112,7 @@ function round2(n: number): number {
 
 // ── vendor (contact) resolution ──────────────────────────────────────────────
 type Scope = { orgId: string; companyId: string };
-type ContactRef = { contactId: string; codeNumber: string | null };
+export type ContactRef = { contactId: string; codeNumber: string | null };
 
 async function searchContactByTaxId(taxId: string): Promise<ContactRef | null> {
   const r = await post("contact/search.php", { keyword: taxId, group_code: "S", limit: "20" });
@@ -154,7 +154,7 @@ async function createContact(input: {
   return { ok: true, ref: { contactId, codeNumber } };
 }
 
-async function resolveContactId(
+export async function resolveContactId(
   scope: Scope,
   v: { vendor: string | null; vendorTaxId: string | null; vendorAddress: string | null },
 ): Promise<{ ok: true; ref: ContactRef } | { ok: false; error: string }> {
