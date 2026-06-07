@@ -4,7 +4,7 @@
 // scrollable receipt list, and a context-aware bulk bar (ยืนยันร่าง · ส่งเข้า TRCloud).
 // All filters are URL-driven (GET form / router.push) so the server page re-reads
 // scope on every change.
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2, Banknote } from "lucide-react";
@@ -104,6 +104,15 @@ export function ExpenseList({
   // ขอโอนเงิน — payee dialog (LEDGER_PAYREQ_V1).
   const [payeeOpen, setPayeeOpen] = useState(false);
   const [payee, setPayee] = useState({ acctName: "", bankCode: "", acctNo: "", promptpay: "" });
+  // a11y (bug-hunt P2) — close the payee dialog on Escape.
+  useEffect(() => {
+    if (!payeeOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !pending) setPayeeOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [payeeOpen, pending]);
 
   const draftSet = new Set(draftIds);
   const sendableSet = new Set(sendableIds);
@@ -451,9 +460,12 @@ export function ExpenseList({
         >
           <div
             className="w-full max-w-md rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="payee-dlg-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-sm font-bold text-zinc-900">ขอโอนเงิน · {checked.size} ใบ</h3>
+            <h3 id="payee-dlg-title" className="text-sm font-bold text-zinc-900">ขอโอนเงิน · {checked.size} ใบ</h3>
             <p className="mt-0.5 text-[11px] text-zinc-500">
               ระบบจะส่งการ์ดเข้ากลุ่มผู้บริหารให้กดโอน · ใส่บัญชีผู้รับให้ครบ ผู้บริหารจะจ่ายได้เร็วขึ้น
             </p>

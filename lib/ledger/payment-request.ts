@@ -113,6 +113,28 @@ export async function createPaymentRequest(
   if (bills.some((b) => b.status === "void"))
     return { ok: false, error: "มีบิลที่ถูกยกเลิกอยู่ในรายการ" };
 
+  // 2.5) P0 (bug-hunt B) — reject bills that are ALREADY settled. Without this the
+  // force-unpaid updateMany below would REOPEN a paid bill → executive pays it twice.
+  // paymentStatus alone is NOT a reliable signal (it DEFAULTS to 'paid' on every bill),
+  // so we look for real evidence: a ledger_payment row matched to the bill, OR
+  // membership in a request that already closed 'paid'.
+  const [directPaid, reqPaid] = await Promise.all([
+    prisma.ledgerPayment.findMany({
+      where: { orgId, companyId, matchedExpenseId: { in: ids } },
+      select: { matchedExpenseId: true },
+    }),
+    prisma.ledgerPaymentRequestBill.findMany({
+      where: { orgId, companyId, expenseId: { in: ids }, request: { state: "paid" } },
+      select: { expenseId: true },
+    }),
+  ]);
+  const settled = new Set<string>([
+    ...directPaid.map((p) => p.matchedExpenseId).filter((x): x is string => !!x),
+    ...reqPaid.map((r) => r.expenseId),
+  ]);
+  if (settled.size > 0)
+    return { ok: false, error: `มีบิลที่จ่ายเงินไปแล้ว ${settled.size} ใบ — ขอโอนซ้ำไม่ได้` };
+
   // 3) Each bill classifiable (branch + category present) — D6 gate (status may be draft).
   for (const b of bills) {
     const c = expenseConfirmability({ branchId: b.branchId, categoryId: b.categoryId });
@@ -270,15 +292,13 @@ export async function matchSlipToRequest(
         select: { expenseId: true },
       });
       const billIds = billRows.map((b) => b.expenseId);
-      if (billIds.length > 0) {
-        await tx.ledgerExpense.updateMany({
-          where: { id: { in: billIds }, orgId, companyId },
-          data: { paymentStatus: "paid" },
-        });
-      }
-      // Close the request + free the per-bill guard.
-      await tx.ledgerPaymentRequest.update({
-        where: { id: req.id },
+      // P0 (bug-hunt A) — CLOSE FIRST with a CONDITIONAL updateMany gated on state.
+      // updateMany row-locks the request row: two concurrent same-amount slips both
+      // pass the findFirst re-read, but the 2nd's updateMany blocks on the lock, then
+      // re-evaluates state→already 'paid'→count 0→throw→whole tx (incl. its payment
+      // row) rolls back. Prevents the silent double-pay. Scoped by org+company (B-018).
+      const closed = await tx.ledgerPaymentRequest.updateMany({
+        where: { id: req.id, orgId, companyId, state: { in: ["open", "partial"] } },
         data: {
           state: "paid",
           paidTotal: newPaid,
@@ -286,8 +306,16 @@ export async function matchSlipToRequest(
           paidBy: input.paidByLineUserId ?? null,
         },
       });
+      if (closed.count !== 1) throw Object.assign(new Error("RACE"), { code: "REQ_GONE" });
+      if (billIds.length > 0) {
+        await tx.ledgerExpense.updateMany({
+          // status:not void → never flip a voided bill to paid (defense-in-depth).
+          where: { id: { in: billIds }, orgId, companyId, status: { not: "void" } },
+          data: { paymentStatus: "paid" },
+        });
+      }
       await tx.ledgerPaymentRequestBill.updateMany({
-        where: { requestId: req.id },
+        where: { requestId: req.id, orgId, companyId },
         data: { active: false },
       });
       return { paymentId: payment.id, vendor: req.vendor, billCount: billIds.length, paidTotal: newPaid };
@@ -334,29 +362,40 @@ export async function cancelPaymentRequest(opts: {
     return { ok: false, error: "คำขอนี้จ่ายแล้ว — ยกเลิกไม่ได้ (ต้องทำรายการคืน)" };
   if (req.state === "cancelled") return { ok: true };
 
-  await prisma.$transaction(async (tx) => {
-    const billRows = await tx.ledgerPaymentRequestBill.findMany({
-      where: { requestId, active: true },
-      select: { expenseId: true },
-    });
-    await tx.ledgerPaymentRequest.update({
-      where: { id: requestId },
-      data: { state: "cancelled", cancelledBy, cancelledAt: new Date() },
-    });
-    await tx.ledgerPaymentRequestBill.updateMany({
-      where: { requestId },
-      data: { active: false },
-    });
-    // Bills go back to "unpaid" (still owed) — they were forced unpaid on request.
-    const ids = billRows.map((b) => b.expenseId);
-    if (ids.length > 0) {
-      await tx.ledgerExpense.updateMany({
-        where: { id: { in: ids }, orgId, companyId, paymentStatus: { not: "paid" } },
-        data: { paymentStatus: "unpaid" },
+  try {
+    await prisma.$transaction(async (tx) => {
+      // P1 (bug-hunt F) — CONDITIONAL cancel gated on state (row-lock). If a racing
+      // slip closed the request to 'paid' between the pre-check and here, count 0 →
+      // throw → abort (don't release a bill that was actually just paid).
+      const cancelled = await tx.ledgerPaymentRequest.updateMany({
+        where: { id: requestId, orgId, companyId, state: { in: ["open", "partial", "abnormal"] } },
+        data: { state: "cancelled", cancelledBy, cancelledAt: new Date() },
       });
-    }
-  });
-  return { ok: true };
+      if (cancelled.count !== 1) throw Object.assign(new Error("GONE"), { code: "REQ_GONE" });
+      const billRows = await tx.ledgerPaymentRequestBill.findMany({
+        where: { requestId, active: true },
+        select: { expenseId: true },
+      });
+      await tx.ledgerPaymentRequestBill.updateMany({
+        where: { requestId, orgId, companyId },
+        data: { active: false },
+      });
+      // Bills go back to "unpaid" (still owed) — they were forced unpaid on request.
+      const ids = billRows.map((b) => b.expenseId);
+      if (ids.length > 0) {
+        await tx.ledgerExpense.updateMany({
+          where: { id: { in: ids }, orgId, companyId, paymentStatus: { not: "paid" } },
+          data: { paymentStatus: "unpaid" },
+        });
+      }
+    });
+    return { ok: true };
+  } catch (e) {
+    if (errCode(e) === "REQ_GONE")
+      return { ok: false, error: "คำขอถูกปิด/จ่ายไปแล้ว ยกเลิกไม่ได้" };
+    console.error("[ledger:cancelPaymentRequest] failed", e);
+    return { ok: false, error: "ยกเลิกคำขอไม่สำเร็จ" };
+  }
 }
 
 /**
@@ -387,42 +426,60 @@ export async function assignSlipToRequest(opts: {
         select: { id: true, expectedTransfer: true, paidTotal: true },
       });
       if (!req) throw Object.assign(new Error("GONE"), { code: "REQ_GONE" });
+      const expected = round2(Number(req.expectedTransfer));
       const newPaid = round2(Number(req.paidTotal) + Number(payment.amount));
-      const fullyPaid = newPaid >= round2(Number(req.expectedTransfer)) - 0.01;
+      const fullyPaid = newPaid >= expected - 0.01;
+      // P2 (bug-hunt) — manual assign lacked the over-pay guard the auto path has.
+      const overpay = newPaid > expected + MATCH_TOLERANCE_BAHT;
 
-      await tx.ledgerPayment.update({
-        where: { id: paymentId },
+      // P1 (bug-hunt D) — CLAIM the slip atomically (row-lock): two accountants
+      // assigning the SAME floating slip concurrently → only the 1st claim wins
+      // (paymentRequestId:null in the where); the 2nd gets count 0 → throw → abort,
+      // so paidTotal isn't double-counted.
+      const claimed = await tx.ledgerPayment.updateMany({
+        where: { id: paymentId, orgId, companyId, paymentRequestId: null, matchedExpenseId: null },
         data: { paymentRequestId: req.id, markedBy },
       });
-      if (fullyPaid) {
+      if (claimed.count !== 1) throw Object.assign(new Error("TAKEN"), { code: "SLIP_TAKEN" });
+
+      if (overpay) {
+        // Slip far exceeds the expected net (wrong pair / batched transfer) → flag,
+        // don't auto-close the bills; the accountant resolves the abnormal.
+        await tx.ledgerPaymentRequest.updateMany({
+          where: { id: req.id, orgId, companyId, state: { in: ["open", "partial", "abnormal"] } },
+          data: { state: "abnormal", paidTotal: newPaid, abnormalReason: "สลิปเกินยอดที่คาด" },
+        });
+      } else if (fullyPaid) {
         const billRows = await tx.ledgerPaymentRequestBill.findMany({
           where: { requestId: req.id, active: true },
           select: { expenseId: true },
         });
+        const closed = await tx.ledgerPaymentRequest.updateMany({
+          where: { id: req.id, orgId, companyId, state: { in: ["open", "partial", "abnormal"] } },
+          data: { state: "paid", paidTotal: newPaid, paidAt: new Date() },
+        });
+        if (closed.count !== 1) throw Object.assign(new Error("RACE"), { code: "REQ_GONE" });
         const ids = billRows.map((b) => b.expenseId);
         if (ids.length > 0) {
           await tx.ledgerExpense.updateMany({
-            where: { id: { in: ids }, orgId, companyId },
+            where: { id: { in: ids }, orgId, companyId, status: { not: "void" } },
             data: { paymentStatus: "paid" },
           });
         }
-        await tx.ledgerPaymentRequest.update({
-          where: { id: req.id },
-          data: { state: "paid", paidTotal: newPaid, paidAt: new Date() },
-        });
         await tx.ledgerPaymentRequestBill.updateMany({
-          where: { requestId: req.id },
+          where: { requestId: req.id, orgId, companyId },
           data: { active: false },
         });
       } else {
-        await tx.ledgerPaymentRequest.update({
-          where: { id: req.id },
+        await tx.ledgerPaymentRequest.updateMany({
+          where: { id: req.id, orgId, companyId, state: { in: ["open", "partial"] } },
           data: { state: "partial", paidTotal: newPaid },
         });
       }
     });
     return { ok: true };
   } catch (e) {
+    if (errCode(e) === "SLIP_TAKEN") return { ok: false, error: "สลิปนี้ถูกจับคู่ไปแล้ว" };
     if (errCode(e) === "REQ_GONE") return { ok: false, error: "คำขอนี้ปิดไปแล้ว" };
     console.error("[ledger:assignSlipToRequest] failed", e);
     return { ok: false, error: "จับคู่สลิปกับคำขอไม่สำเร็จ" };
