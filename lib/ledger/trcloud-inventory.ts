@@ -105,29 +105,35 @@ export type TrcloudSku = {
   cost: number | null;
 };
 
-/** Read SKUs from TRCloud. keyword/businessGroup optional (category filter). */
-export async function fetchSkusFromTrcloud(opts: { keyword?: string; category?: string; limit?: number }): Promise<TrcloudSku[]> {
+/** Read SKUs from TRCloud, PAGINATED (the API caps a page at 100 → loop with `start`
+ *  until a short page or a hard safety cap, so a >100-SKU business isn't silently truncated). */
+export async function fetchSkusFromTrcloud(opts: { keyword?: string; category?: string }): Promise<TrcloudSku[]> {
   if (!stockInConfigured()) return [];
-  const payload: Json = { limit: String(opts.limit ?? 100) };
-  if (opts.keyword) payload.keyword = opts.keyword;
-  if (opts.category) payload.category = opts.category;
-  const r = await post("inventory/search.php", payload);
-  const rows = asArr(r.data?.result) ?? asArr(r.data?.data) ?? asArr(r.data?.body) ?? [];
+  const PAGE = 100;
+  const MAX = 2000; // safety ceiling
   const out: TrcloudSku[] = [];
-  for (const row of rows) {
-    const o = asObj(row);
-    if (!o) continue;
-    const productId = pick(o, "product_id", "code");
-    if (!productId) continue;
-    out.push({
-      productId,
-      productName: pick(o, "product_name", "name"),
-      businessGroup: pick(o, "category"),
-      unit: pick(o, "unit"),
-      status: pick(o, "status"),
-      balance: num(o.balance),
-      cost: num(o.cost_price) ?? num(o.ma) ?? num(o.last_cost_price),
-    });
+  for (let start = 0; start < MAX; start += PAGE) {
+    const payload: Json = { limit: String(PAGE), start: String(start) };
+    if (opts.keyword) payload.keyword = opts.keyword;
+    if (opts.category) payload.category = opts.category;
+    const r = await post("inventory/search.php", payload);
+    const rows = asArr(r.data?.result) ?? asArr(r.data?.data) ?? asArr(r.data?.body) ?? [];
+    for (const row of rows) {
+      const o = asObj(row);
+      if (!o) continue;
+      const productId = pick(o, "product_id", "code");
+      if (!productId) continue;
+      out.push({
+        productId,
+        productName: pick(o, "product_name", "name"),
+        businessGroup: pick(o, "category"),
+        unit: pick(o, "unit"),
+        status: pick(o, "status"),
+        balance: num(o.balance),
+        cost: num(o.cost_price) ?? num(o.ma) ?? num(o.last_cost_price),
+      });
+    }
+    if (rows.length < PAGE) break; // last page
   }
   return out;
 }
@@ -186,9 +192,11 @@ export function normalizeAlias(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 200);
 }
 
-export type SkuMatch = { skuId: string; productId: string; productName: string | null; unit: string | null; packFactor: number };
+export type SkuMatch = { skuId: string; productId: string; productName: string | null; unit: string | null; packFactor: number; stockTracked: boolean };
 
-/** Resolve a receipt line text to a stock-tracked SKU via the alias table (exact only). */
+/** Resolve a receipt line text to a SKU via the alias table (exact only). Returns the
+ *  match even if the SKU isn't stock-tracked (caller distinguishes "no alias" from
+ *  "alias→untracked SKU" → avoids an infinite re-map loop). null = no alias at all. */
 export async function resolveSku(orgId: string, companyId: string, text: string): Promise<SkuMatch | null> {
   const key = normalizeAlias(text);
   if (!key) return null;
@@ -196,19 +204,21 @@ export async function resolveSku(orgId: string, companyId: string, text: string)
     where: { orgId_companyId_aliasKey: { orgId, companyId, aliasKey: key } },
     include: { sku: true },
   });
-  if (!alias || !alias.sku.stockTracked) return null;
+  if (!alias) return null;
   return {
     skuId: alias.sku.id,
     productId: alias.sku.productId,
     productName: alias.sku.productName,
     unit: alias.sku.unit,
     packFactor: Number(alias.sku.packFactor) || 1,
+    stockTracked: alias.sku.stockTracked,
   };
 }
 
 // ── stock-IN push ─────────────────────────────────────────────────────────────
 
-export type StockInLine = { productId: string; productName: string; quantity: number; unitCost: number };
+// unitCost = NET (VAT-exclusive) cost per base unit; vatRatePercent = "7" | "0".
+export type StockInLine = { productId: string; productName: string; quantity: number; unitCost: number; vatRatePercent: string };
 
 /** Push a stock-IN AP into TRCloud (JPS_AP + stock products). Stock increases on
  *  create. Returns the doc id/no. Idempotency + the confirmed-only gate are the
@@ -225,11 +235,30 @@ export async function pushStockIn(args: {
   project: string | null; // สาขา
   department: string | null; // BU code
   paymentStatus: string | null;
+  /** input VAT claimable → tax_report (เข้า ภ.พ.30). false for non-tax-invoice/non-registered. */
+  taxReport: boolean;
   lines: StockInLine[];
 }): Promise<{ ok: true; docId: string | null; docNo: string | null } | { ok: false; error: string }> {
   if (!stockInConfigured()) return { ok: false, error: "ยังไม่ได้ตั้งค่า TRCloud (env TRCLOUD_JPS_*)" };
   if (args.lines.length === 0) return { ok: false, error: "ไม่มีรายการสินค้าให้รับเข้าคลัง" };
   if (!args.project) return { ok: false, error: "ยังไม่ได้ตั้งรหัสโครงการ (สาขา) ของใบนี้ใน TRCloud" };
+
+  // Idempotent dedup (timeout-retry guard): a previous push may have timed out AFTER
+  // TRCloud created the doc + moved stock. Search by reference BEFORE creating a 2nd
+  // one (mirrors pushExpenseToTrcloud) — else a retry double-receives stock.
+  {
+    const sr = await post("ap/search.php", { keyword: args.reference, limit: "5" });
+    const list = asArr(sr.data?.result) ?? asArr(sr.data?.data) ?? asArr(sr.data?.body) ?? [];
+    for (const row of list) {
+      const o = asObj(row);
+      const ref = pick(o, "reference", "ref");
+      if (ref && ref.trim() === args.reference.trim()) {
+        const docId = pick(o, "expense_id", "id", "document_id");
+        const docNo = pick(o, "document_number", "no", "title");
+        if (docId || docNo) return { ok: true, docId, docNo };
+      }
+    }
+  }
 
   const contact = await resolveContactId(
     { orgId: args.orgId, companyId: args.companyId },
@@ -249,8 +278,11 @@ export async function pushStockIn(args: {
     reference: args.reference,
     discount: "0",
     wht: "0",
-    tax_option: "in",
-    tax_report: "1",
+    // tax_option="ex": our line prices are NET (VAT-exclusive — items sum to subtotal/
+    // pre-VAT, per recheck.ts). TRCloud adds VAT on top → inventory cost = net (correct,
+    // claimable VAT separated to 1432000, NOT capitalised into stock). vat rate is per-line.
+    tax_option: "ex",
+    tax_report: args.taxReport ? "1" : "0",
     type: apType,
     approve_status: "wait", // draft for the accountant to approve/post; stock moves on create
     department: args.department ?? "",
@@ -273,9 +305,9 @@ export async function pushStockIn(args: {
     product: args.lines.map((l) => ({
       product_id: l.productId,
       product: l.productName,
-      price: String(l.unitCost),
+      price: String(Math.round(l.unitCost * 10000) / 10000), // net cost/base unit, 4dp
       quantity: String(l.quantity),
-      vat: "0",
+      vat: l.vatRatePercent, // "7" | "0" — the RATE, so TRCloud separates input VAT
     })),
   };
 

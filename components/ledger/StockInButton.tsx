@@ -6,7 +6,7 @@
 
 import { useState, useTransition } from "react";
 import { Boxes, Loader2, CheckCircle2, AlertTriangle, Link2 } from "lucide-react";
-import { sendExpenseStockIn, mapSkuAlias } from "@/app/(admin)/ledger/_stockin-actions";
+import { sendExpenseStockIn, mapSkuAlias, resetExpenseStockIn } from "@/app/(admin)/ledger/_stockin-actions";
 
 type SkuOpt = { id: string; productId: string; productName: string | null; businessGroup: string | null };
 
@@ -50,6 +50,19 @@ export function StockInButton({
         setMsg({ kind: "err", text: "มีสินค้าที่ยังไม่จับคู่ SKU — เลือก SKU ให้ครบแล้วกดส่งอีกครั้ง" });
       } else {
         setMsg({ kind: "err", text: res.error ?? "รับเข้าคลังไม่สำเร็จ" });
+      }
+    });
+  }
+
+  function reset() {
+    setMsg(null);
+    start(async () => {
+      const res = await resetExpenseStockIn(expenseId);
+      if (res.ok) {
+        setUnmatched(null);
+        setMsg({ kind: "ok", text: "รีเซ็ตแล้ว · กดรับเข้าคลังใหม่ได้" });
+      } else {
+        setMsg({ kind: "err", text: res.error ?? "รีเซ็ตไม่สำเร็จ" });
       }
     });
   }
@@ -140,10 +153,22 @@ export function StockInButton({
       )}
 
       {msg && (
-        <p className={"mt-2 inline-flex items-center gap-1 text-xs " + (msg.kind === "ok" ? "text-emerald-700" : "text-rose-700")}>
-          {msg.kind === "ok" ? <CheckCircle2 className="size-3.5" /> : <AlertTriangle className="size-3.5" />}
-          {msg.text}
-        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <p className={"inline-flex items-center gap-1 text-xs " + (msg.kind === "ok" ? "text-emerald-700" : "text-rose-700")}>
+            {msg.kind === "ok" ? <CheckCircle2 className="size-3.5" /> : <AlertTriangle className="size-3.5" />}
+            {msg.text}
+          </p>
+          {msg.kind === "err" && !unmatched && (
+            <button
+              type="button"
+              onClick={reset}
+              disabled={pending}
+              className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              รีเซ็ต/ลองใหม่
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
