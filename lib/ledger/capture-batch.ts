@@ -27,6 +27,8 @@ import {
 
 const BATCH_WINDOW_MS = 12_000; // append to an open batch created within this window
 const QUIET_MS = 3_300; // flush after this much silence (no new photo)
+// P1#1 — dedup window: ถ้า user สร้าง batch ซ้อนกันใน 2 นาที ให้ reuse batch เดิม
+const DEDUP_WINDOW_MS = 2 * 60 * 1000; // 2 minutes
 
 export interface OpenBatchInput {
   orgId: string;
@@ -35,6 +37,8 @@ export interface OpenBatchInput {
   groupKey: string; // groupId (group) or userId (1:1) — where to push
   sourceType: "group" | "user";
   replyToken: string | null;
+  /** P1#1 — userId ของผู้ส่งรูป ใช้ dedup batch ภายใน 2 นาที */
+  createdBy?: string | null;
 }
 
 /**
@@ -47,6 +51,43 @@ export interface OpenBatchInput {
 export async function openOrAppendBatch(
   input: OpenBatchInput,
 ): Promise<{ batchId: string; isFirst: boolean }> {
+  // P1#1 — BATCH DEDUP: ถ้ามี OPEN batch ของ user+org+company คนเดียวกัน
+  // ที่สร้างภายใน 2 นาที → reuse แทนสร้างใหม่ (ป้องกัน double-tap / webhook retry)
+  //
+  // MIGRATION REQUIRED: เพิ่มคอลัมน์ created_by บน ledger_capture_batch:
+  //   ALTER TABLE ledger_capture_batch ADD COLUMN created_by TEXT;
+  //   CREATE INDEX ON ledger_capture_batch (org_id, company_id, created_by, status, created_at)
+  //     WHERE status = 'open';
+  // จนกว่า migration จะ apply → dedup block นี้จะ skip (input.createdBy guard)
+  if (input.createdBy) {
+    const dedupSince = new Date(Date.now() - DEDUP_WINDOW_MS);
+    const dedupBatch = await (prisma.ledgerCaptureBatch as unknown as {
+      findFirst: (args: unknown) => Promise<{ id: string } | null>
+    }).findFirst({
+      where: {
+        orgId: input.orgId,
+        companyId: input.companyId,
+        // createdBy field requires migration (see note above)
+        createdBy: input.createdBy,
+        status: "open",
+        createdAt: { gte: dedupSince },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (dedupBatch) {
+      await prisma.ledgerCaptureBatch.update({
+        where: { id: dedupBatch.id },
+        data: {
+          lastEventAt: new Date(),
+          count: { increment: 1 },
+          replyToken: input.replyToken ?? undefined,
+        },
+      });
+      return { batchId: dedupBatch.id, isFirst: false };
+    }
+  }
+
   const since = new Date(Date.now() - BATCH_WINDOW_MS);
   const existing = await prisma.ledgerCaptureBatch.findFirst({
     where: {
@@ -72,18 +113,22 @@ export async function openOrAppendBatch(
     return { batchId: existing.id, isFirst: false };
   }
 
-  const created = await prisma.ledgerCaptureBatch.create({
-    data: {
-      orgId: input.orgId,
-      companyId: input.companyId,
-      channelRowId: input.channelRowId,
-      groupKey: input.groupKey,
-      sourceType: input.sourceType,
-      replyToken: input.replyToken,
-      status: "open",
-      count: 1,
-      lastEventAt: new Date(),
-    },
+  // P1#1 — include createdBy in the create payload so the dedup query works after migration.
+  // Cast via unknown to avoid TS error until schema is updated (see migration note above).
+  const createData = {
+    orgId: input.orgId,
+    companyId: input.companyId,
+    channelRowId: input.channelRowId,
+    groupKey: input.groupKey,
+    sourceType: input.sourceType,
+    replyToken: input.replyToken,
+    status: "open" as const,
+    count: 1,
+    lastEventAt: new Date(),
+    ...(input.createdBy ? { createdBy: input.createdBy } : {}),
+  };
+  const created = await (prisma.ledgerCaptureBatch.create as (args: unknown) => Promise<{ id: string }>)({
+    data: createData,
     select: { id: true },
   });
   return { batchId: created.id, isFirst: true };

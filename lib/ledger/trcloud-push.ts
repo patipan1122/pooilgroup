@@ -176,6 +176,15 @@ async function resolveContactId(
       update: { contactId: ref.contactId, codeNumber: ref.codeNumber, name },
       create: { ...where, contactId: ref.contactId, codeNumber: ref.codeNumber, name },
     });
+    // P0#12 / P1#10 FIX — concurrent race: two requests both miss the cache and both
+    // call createContact before either upsert commits.  The upsert above resolves the
+    // DB row but `ref` still holds whichever TRCloud contact_id this request created
+    // (the other request may have won with a different contact_id).  Re-read the
+    // canonical row from the DB so both requests converge on the same contact_id.
+    const canonical = await prisma.ledgerTrcloudContact.findUnique({ where: { orgId_companyId_taxId: where } });
+    if (canonical) {
+      ref = { contactId: canonical.contactId, codeNumber: canonical.codeNumber };
+    }
   }
   return { ok: true, ref };
 }
@@ -223,6 +232,7 @@ export type PushableExpense = {
   orgId: string;
   companyId: string;
   docCode: string;
+  docType?: string | null;             // 'quotation' → tax_report forced to "0" (P1#24)
   vendor: string | null;
   vendorTaxId: string | null;
   vendorAddress: string | null;
@@ -269,10 +279,23 @@ async function buildLines(
   const skuResult = await resolveFixedSku(scope, productCode);
   if (!skuResult.ok) return skuResult;
 
+  // P0#11 FIX — discount double-counting:
+  // TRCloud applies header-level "discount" on top of line subtotals, so sending
+  // both header discount AND lines built from e.subtotal (pre-discount) deducts
+  // the discount twice.  Fix: embed discount into the line amount and send
+  // header discount="0".  The caller must set payload.discount="0" accordingly.
+  //
+  // Net base = e.subtotal - e.discount (what TRCloud should see before VAT).
+  const netBase = round2(e.subtotal - (e.discount > 0 ? e.discount : 0));
+
   // For tax_option="in": line price = VAT-inclusive = base + VAT
-  // Use items if they sum to subtotal, else one summary line
+  // Use items if they sum to subtotal, else one summary line.
+  // When a header discount exists, bypass per-item breakdown and use one net line
+  // to avoid complex per-item discount splitting.
   const itemsSum = round2(e.items.reduce((s, it) => s + (it.amount || 0), 0));
-  const useItems = e.items.length > 0 && Math.abs(itemsSum - e.subtotal) < 0.05;
+  const useItems = e.items.length > 0
+    && Math.abs(itemsSum - e.subtotal) < 0.05
+    && e.discount === 0;  // if there's a discount, use single net-base line
 
   const rows = useItems
     ? e.items.map((it) => ({
@@ -282,7 +305,7 @@ async function buildLines(
       }))
     : [{
         desc: e.categoryName ? `${e.categoryName}${e.vendor ? ` - ${e.vendor}` : ""}` : (e.vendor || "ค่าใช้จ่าย"),
-        baseAmount: round2(e.subtotal),
+        baseAmount: netBase,
         qty: 1,
       }];
 
@@ -357,6 +380,24 @@ export async function pushExpenseToTrcloud(
   if (!built.ok) return { ok: false, error: `สินค้า: ${built.error}` };
 
   // 3) create AP
+  // P1#19 FIX — idempotent AP push (timeout + retry dedup):
+  // If a previous push timed out TRCloud may have already created the AP.
+  // Search by reference (e.docCode) before creating; if found, return it directly.
+  {
+    const searchR = await post("ap/search.php", { keyword: e.docCode, limit: "5" });
+    const searchList = asArr(searchR.data?.data) ?? asArr(searchR.data?.result) ?? asArr(searchR.data?.body) ?? [];
+    for (const row of searchList) {
+      const o = asObj(row);
+      if (!o) continue;
+      const ref = pick(o, "reference", "ref");
+      if (ref && ref.trim() === e.docCode.trim()) {
+        const docId = pick(o, "id", "document_id");
+        const docNo = pick(o, "document_number", "no");
+        return { ok: true, docId, docNo };
+      }
+    }
+  }
+
   const issue = toIsoDate(e.docDate);
   const apType = (e.paymentStatus ?? "paid") === "paid" ? AP_TYPE_CASH : AP_TYPE_CREDIT;
   const payload: Json = {
@@ -367,7 +408,9 @@ export async function pushExpenseToTrcloud(
     document_number: "",        // autorun
     payment_term: "0",
     reference: e.docCode,
-    discount: String(round2(e.discount)),
+    // P0#11 FIX — discount already embedded into line baseAmount inside buildLines().
+    // Sending a non-zero header discount here would deduct it a second time in TRCloud.
+    discount: "0",
     wht: String(round2(e.wht)),
     tax_option: "in",           // VAT-inclusive (matches live JPS AP docs)
     tax_report: e.inputVatClaimable ? "1" : "0", // 0 = ไม่เข้า ภ.พ.30
@@ -394,6 +437,13 @@ export async function pushExpenseToTrcloud(
     },
     product: built.lines,
   };
+
+  // P1#24 FIX — quotation tax_report must be "0":
+  // Quotations are not confirmed invoices; VAT cannot be claimed yet.
+  // Override tax_report to "0" regardless of inputVatClaimable flag.
+  if (e.docType === "quotation") {
+    payload.tax_report = "0";
+  }
 
   const r = await post("ap/create.php", payload);
   if (!isSuccess(r.data)) return { ok: false, error: errMsg(r) };

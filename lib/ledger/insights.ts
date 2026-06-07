@@ -7,7 +7,7 @@
 //   1. DETERMINISTIC bullets computed from the dashboard snapshot (anomaly,
 //      VAT-due reminder, top categories, MoM trend). These are FREE, always
 //      returned, and never wrong — they read the real aggregates.
-//   2. An OPTIONAL LLM narrative summary on top (gemini-3.1-flash-lite via the
+//   2. An OPTIONAL LLM narrative summary on top (gemini-2.0-flash-lite via the
 //      cost-cap budget guard). If budget is exhausted or the key is missing we
 //      still return the deterministic bullets — AI is additive, never blocking.
 //
@@ -25,7 +25,7 @@ import {
   type CategorySpend,
 } from "./dashboard";
 
-const INSIGHT_MODEL = "gemini-3.1-flash-lite";
+const INSIGHT_MODEL = "gemini-2.0-flash-lite";
 const EST_INPUT_TOKENS = 700;
 const EST_OUTPUT_TOKENS = 350;
 

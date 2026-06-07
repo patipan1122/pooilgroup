@@ -276,7 +276,10 @@ function totalsBlock(e: Expense): string {
 
 /** Double-entry preview for the JV (สมุดรายวันทั่วไป). Display-only — no posting. */
 function journalBlock(e: Expense, categoryName?: string | null): string {
-  const expenseDr = e.subtotal + e.vat; // ค่าใช้จ่าย + ภาษีซื้อ debit side (preview)
+  const discount = e.discount ?? 0;
+  // net expense debit = subtotal − discount (PAE 102: debit ≡ credit when discount present)
+  const netExpense = e.subtotal - discount;
+  const expenseDr = netExpense + e.vat;
   return `
     <table class="items journal">
       <thead>
@@ -288,8 +291,8 @@ function journalBlock(e: Expense, categoryName?: string | null): string {
       </thead>
       <tbody>
         <tr>
-          <td class="c-desc">${esc(categoryName) || "ค่าใช้จ่าย"}</td>
-          <td class="c-amt">${money(e.subtotal)}</td>
+          <td class="c-desc">${esc(categoryName) || "ค่าใช้จ่าย"}${discount > 0 ? " (หลังหักส่วนลด)" : ""}</td>
+          <td class="c-amt">${money(netExpense)}</td>
           <td class="c-amt"></td>
         </tr>
         ${e.vat > 0 ? `<tr><td class="c-desc">ภาษีซื้อ (VAT)</td><td class="c-amt">${money(e.vat)}</td><td class="c-amt"></td></tr>` : ""}

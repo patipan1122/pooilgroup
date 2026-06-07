@@ -49,6 +49,8 @@ export async function buildLedgerDigest(
 
   const [company, capturedToday, pendingDrafts, monthAgg, budgets] = await Promise.all([
     prisma.company.findFirst({ where: { id: companyId, orgId }, select: { name: true } }),
+    // NEEDS: @@index([orgId, companyId, createdAt]) on LedgerExpense — see migration 20260607200000
+    // Without this composite index, the createdAt range scan touches the full table.
     prisma.ledgerExpense.count({ where: { orgId, companyId, createdAt: { gte: todayStart } } }),
     prisma.ledgerExpense.count({ where: { orgId, companyId, status: "draft" } }),
     prisma.ledgerExpense.aggregate({

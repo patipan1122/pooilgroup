@@ -54,13 +54,25 @@ export async function startLedgerGmailConnect(
 export async function startLedgerDriveConnect(
   companyId: string,
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
-  await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin");
   if (!isDriveOAuthConfigured()) {
     return {
       ok: false,
       error: "ยังไม่ได้ตั้งค่า GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET ใน Vercel",
     };
   }
+  if (!companyId) return { ok: false, error: "ไม่พบบริษัทที่จะเชื่อม" };
+
+  // P1#40 DRIVE CONNECT COMPANY CHECK — verify the companyId belongs to the
+  // session's org before embedding it in the OAuth state cookie. Without this,
+  // a caller who guesses another org's companyId could link Drive storage to
+  // a company they don't own (cross-org Drive connection via forged callback).
+  const company = await prisma.company.findFirst({
+    where: { id: companyId, orgId: session.user.org_id },
+    select: { id: true },
+  });
+  if (!company) return { ok: false, error: "บริษัทไม่ถูกต้อง" };
+
   const nonce = crypto.randomBytes(16).toString("hex");
   const jar = await cookies();
   jar.set(DRIVE_OAUTH_STATE_COOKIE, `${nonce}:${companyId ?? ""}`, {

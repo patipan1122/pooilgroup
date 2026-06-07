@@ -61,8 +61,8 @@ export async function GET(req: NextRequest) {
   };
 
   try {
-    const expenses = await listExpenses(filter);
-    return NextResponse.json({ expenses });
+    const { expenses, hasMore } = await listExpenses(filter);
+    return NextResponse.json({ expenses, hasMore });
   } catch (err) {
     console.error("[ledger:expenses:GET] failed", err);
     return NextResponse.json({ error: "โหลดรายการไม่สำเร็จ" }, { status: 500 });

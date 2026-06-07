@@ -157,8 +157,16 @@ export interface ExpenseListFilter {
   /** filter ตามสถานะสีภาษีซื้อ: green=ขอคืนได้ · yellow=ขอใบใหม่ · red=ขอคืนไม่ได้. */
   completeness?: "green" | "yellow" | "red";
   search?: string | null;
+  /** P2#10/P2#30: Max rows to return. Default 100. Callers may pass up to 300.
+   *  If the DB returns take+1 rows, hasMore=true is signalled (see list functions). */
   take?: number;
+  /** P2#10: Offset-based pagination — page * take. Use for small paginated tables. */
   skip?: number;
+  /** P2#14: Cursor-based pagination — id of the last seen expense. When provided,
+   *  returns rows with id > cursor (no skip/offset). Preferred for large datasets
+   *  because it avoids the expensive SQL OFFSET scan. When cursor is given, skip
+   *  is ignored. */
+  cursor?: string;
 }
 
 /** Map a color filter token → the completeness_status column value. */
@@ -173,6 +181,11 @@ function buildWhere(f: ExpenseListFilter): Prisma.LedgerExpenseWhereInput {
     orgId: f.orgId,
     companyId: f.companyId,
   };
+  // P2#14: Cursor-based pagination — when cursor is given, filter id > cursor so
+  // Postgres can use the primary-key index instead of a costly OFFSET scan.
+  if (f.cursor) {
+    where.id = { gt: f.cursor };
+  }
   if (f.branchId !== undefined && f.branchId !== null) where.branchId = f.branchId;
   if (f.status) {
     where.status = Array.isArray(f.status) ? { in: f.status } : f.status;
@@ -208,6 +221,10 @@ function buildWhere(f: ExpenseListFilter): Prisma.LedgerExpenseWhereInput {
     }
   }
   if (f.search) {
+    // NEEDS: CREATE INDEX idx_ledger_expense_vendor_gin ON ledger_expense
+    //   USING gin(to_tsvector('simple', coalesce(vendor,'')))
+    //   — see migration 20260607200000
+    // Without this GIN index, vendor ILIKE scans the whole table on every keystroke.
     where.OR = [
       { vendor: { contains: f.search, mode: "insensitive" } },
       { docCode: { contains: f.search, mode: "insensitive" } },
@@ -217,16 +234,38 @@ function buildWhere(f: ExpenseListFilter): Prisma.LedgerExpenseWhereInput {
   return where;
 }
 
-/** List expenses (newest first). Always org+company scoped. */
-export async function listExpenses(f: ExpenseListFilter): Promise<Expense[]> {
+export interface ExpenseListResult {
+  expenses: Expense[];
+  /** P2#30: true when more rows exist beyond the current page/cursor window.
+   *  UI can display "แสดง N ล่าสุด — มีรายการเก่ากว่านี้" when this is true. */
+  hasMore: boolean;
+}
+
+/**
+ * List expenses (newest first). Always org+company scoped.
+ *
+ * P2#10: ALL filter conditions are applied in the WHERE clause (via buildWhere)
+ *   — no post-fetch JS filtering. take/skip are passed to Prisma.
+ * P2#14: Pass cursor=<lastId> to use cursor-based pagination instead of skip.
+ * P2#30: Default take=100. Always returns hasMore so the UI can warn the user
+ *   when the list is truncated ("แสดง 100 ล่าสุด — มีรายการเก่ากว่านี้").
+ */
+export async function listExpenses(f: ExpenseListFilter): Promise<ExpenseListResult> {
+  const limit = f.take ?? 100;
+  // Fetch one extra row to detect whether more pages exist.
   const rows = await prisma.ledgerExpense.findMany({
     where: buildWhere(f),
     include: EXPENSE_INCLUDE,
     orderBy: [{ docDate: "desc" }, { createdAt: "desc" }],
-    take: f.take ?? 100,
-    skip: f.skip ?? 0,
+    take: limit + 1,
+    // When cursor is used, skip is irrelevant (cursor already positions the scan).
+    skip: f.cursor ? 0 : (f.skip ?? 0),
   });
-  return rows.map(serializeExpense);
+  const hasMore = rows.length > limit;
+  return {
+    expenses: rows.slice(0, limit).map(serializeExpense),
+    hasMore,
+  };
 }
 
 export async function countExpenses(f: ExpenseListFilter): Promise<number> {
@@ -376,16 +415,27 @@ function serializeExpenseSummary(row: ExpenseSummaryRow): Expense {
  * as listExpenses() but WITHOUT the line-item join — use for the list pane /
  * home drafts where `items` is never rendered. Use listExpenses() (full include)
  * for the detail pane / exports that need line items.
+ *
+ * P2#10: ALL filter conditions applied in SQL WHERE via buildWhere (no post-fetch JS).
+ * P2#14: Supports cursor-based pagination — pass cursor=<lastId>.
+ * P2#30: Default take=100. Returns hasMore so UI can show truncation notice.
  */
-export async function listExpensesSummary(f: ExpenseListFilter): Promise<Expense[]> {
+export async function listExpensesSummary(f: ExpenseListFilter): Promise<ExpenseListResult> {
+  const limit = f.take ?? 100;
+  // Fetch one extra row to detect whether more pages exist.
   const rows = await prisma.ledgerExpense.findMany({
     where: buildWhere(f),
     select: EXPENSE_SUMMARY_SELECT,
     orderBy: [{ docDate: "desc" }, { createdAt: "desc" }],
-    take: f.take ?? 100,
-    skip: f.skip ?? 0,
+    take: limit + 1,
+    // When cursor is used, skip is irrelevant (cursor already positions the scan).
+    skip: f.cursor ? 0 : (f.skip ?? 0),
   });
-  return rows.map(serializeExpenseSummary);
+  const hasMore = rows.length > limit;
+  return {
+    expenses: rows.slice(0, limit).map(serializeExpenseSummary),
+    hasMore,
+  };
 }
 
 /** Single expense — org+company scoped (returns null if not in tenant). */

@@ -91,13 +91,26 @@ export async function recordSlipPayment(input: RecordSlipInput): Promise<RecordS
 
       let marked = false;
       if (matchedExpenseId) {
+        // P1#3 — ATOMIC PAYMENT MATCH: SELECT unpaid first INSIDE the transaction,
+        // then UPDATE only if we hold the row. If another slip grabbed it between
+        // findFirst and updateMany, findFirst returns null here and we throw →
+        // the whole transaction rolls back (payment row not created either).
+        // This prevents two concurrent slips from double-marking the same bill.
+        const unpaidBill = await tx.ledgerExpense.findFirst({
+          where: { id: matchedExpenseId, orgId, companyId, paymentStatus: "unpaid" },
+          select: { id: true },
+        });
+        if (!unpaidBill) {
+          // Bill already paid (race) or never existed — rollback the payment insert.
+          throw Object.assign(new Error("ALREADY_PAID"), { code: "BILL_ALREADY_PAID" });
+        }
         // Scope the flip by org+company so a client-supplied id can't pay a bill
-        // in another company/tenant. Only an unpaid/partial bill flips (idempotent).
-        const upd = await tx.ledgerExpense.updateMany({
-          where: { id: matchedExpenseId, orgId, companyId },
+        // in another company/tenant.
+        await tx.ledgerExpense.update({
+          where: { id: matchedExpenseId },
           data: { paymentStatus: "paid" },
         });
-        marked = upd.count > 0;
+        marked = true;
       }
       return { paymentId: payment.id, marked };
     });
@@ -107,6 +120,10 @@ export async function recordSlipPayment(input: RecordSlipInput): Promise<RecordS
     if (errCode(e) === "P2002") {
       return { ok: false, duplicate: true, error: "สลิปนี้ถูกบันทึกไปแล้ว (กันจ่ายซ้ำ)" };
     }
+    // P1#3 — ATOMIC MATCH race: another slip grabbed the bill first → rollback ok.
+    if ((e as { code?: string })?.code === "BILL_ALREADY_PAID") {
+      return { ok: false, error: "บิลนี้ถูกจ่ายไปแล้ว (สลิปอื่นจับคู่ก่อน)" };
+    }
     console.error("[ledger:recordSlipPayment] failed", e);
     return { ok: false, error: "บันทึกสลิปไม่สำเร็จ" };
   }
@@ -115,13 +132,20 @@ export async function recordSlipPayment(input: RecordSlipInput): Promise<RecordS
 export type AutoMatchResult =
   | { kind: "matched"; expenseId: string; docCode: string; vendor: string | null }
   | { kind: "none" }
-  | { kind: "ambiguous"; count: number };
+  | { kind: "ambiguous"; count: number }
+  /** P2#18 — slip amount matches bill MINUS WHT (vendor paid before deduction). */
+  | { kind: "wht_mismatch"; expenseId: string; docCode: string; vendor: string | null; slipAmount: number; billTotal: number; wht: number };
 
 /**
  * Find the single unpaid bill whose total equals the slip amount within the
  * recent window. Exactly one → matched; zero → none; more than one → ambiguous
  * (the human decides — we never guess). Quotations count (they are real unpaid
  * spend and a slip legitimately pays them).
+ *
+ * P2#18 — WHT HANDLING: if the slip amount doesn't match bill.total exactly but
+ * matches bill.total - bill.wht (vendor paid after WHT deduction on their end),
+ * return kind="wht_mismatch" with a warning so the accountant can review instead
+ * of silently failing to match.
  */
 export async function findAutoMatchBill(opts: {
   orgId: string;
@@ -132,6 +156,8 @@ export async function findAutoMatchBill(opts: {
   if (amount == null || !(amount > 0)) return { kind: "none" };
 
   const since = new Date(Date.now() - AUTO_MATCH_WINDOW_DAYS * 24 * 3600 * 1000);
+
+  // Primary search: exact total match.
   const candidates = await prisma.ledgerExpense.findMany({
     where: {
       orgId,
@@ -141,12 +167,52 @@ export async function findAutoMatchBill(opts: {
       total: amount, // Prisma accepts number for a Decimal filter
       createdAt: { gte: since },
     },
-    select: { id: true, docCode: true, vendor: true },
+    select: { id: true, docCode: true, vendor: true, wht: true },
     orderBy: { createdAt: "desc" },
     take: 2,
   });
 
-  if (candidates.length === 0) return { kind: "none" };
+  if (candidates.length === 0) {
+    // P2#18 — WHT fallback: look for bills where (total - wht) == slipAmount.
+    // This handles the common Thai accounting case where the vendor deducts WHT
+    // themselves and remits only the net amount (total − WHT).
+    // We look for a SINGLE such bill; ambiguous (multiple) → still "none" so the
+    // human pairs it manually (safer than a wrong auto-match).
+    const whtCandidates = await prisma.ledgerExpense.findMany({
+      where: {
+        orgId,
+        companyId,
+        status: { in: ["confirmed", "locked"] },
+        paymentStatus: "unpaid",
+        wht: { gt: 0 }, // only bills that have WHT recorded
+        createdAt: { gte: since },
+      },
+      select: { id: true, docCode: true, vendor: true, total: true, wht: true },
+      orderBy: { createdAt: "desc" },
+      take: 50, // reasonable upper bound for WHT scan
+    });
+
+    // Filter in JS: total - wht === slipAmount (using rounded comparison to avoid
+    // Decimal float drift — both are stored as Decimal(15,2) so 2dp is enough).
+    const netMatch = whtCandidates.filter((r) => {
+      const netAmount = Math.round((Number(r.total) - Number(r.wht)) * 100) / 100;
+      return Math.abs(netAmount - amount) < 0.005; // ±½ สตางค์
+    });
+
+    if (netMatch.length === 1) {
+      return {
+        kind: "wht_mismatch",
+        expenseId: netMatch[0].id,
+        docCode: netMatch[0].docCode,
+        vendor: netMatch[0].vendor,
+        slipAmount: amount,
+        billTotal: Number(netMatch[0].total),
+        wht: Number(netMatch[0].wht),
+      };
+    }
+    return { kind: "none" };
+  }
+
   if (candidates.length > 1) return { kind: "ambiguous", count: candidates.length };
   return {
     kind: "matched",

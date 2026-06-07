@@ -173,7 +173,7 @@ export async function exportConfirmedExpenses(
     ? (["confirmed"] as const)
     : (["confirmed", "locked"] as const);
 
-  const expenses = await listExpenses({
+  const { expenses } = await listExpenses({
     orgId: opts.orgId,
     companyId: opts.companyId,
     branchId: opts.branchId ?? undefined,

@@ -107,16 +107,24 @@ export async function storeReceiptImage(opts: {
 }
 
 /**
- * Best-effort thumbnail (max 480px). Uses `sharp` if present in the runtime,
- * otherwise returns null so the caller falls back to the original image.
- * Dynamic import keeps this from becoming a hard build dependency.
+ * Best-effort thumbnail at 480px width (P2#16+P2#17). Uses `sharp` (installed,
+ * ^0.34.5). Dynamic import keeps the module lazy so a future removal can't cause a
+ * hard build failure. Returns null on any error → caller falls back to the original.
+ * Never throws — all errors are swallowed and logged.
  */
-// Thumbnail via `sharp` is deferred: `sharp` is a native dep NOT in package.json,
-// so a static import breaks the Vercel build. Return null → caller falls back to
-// the original image (list thumbnails are lazy-loaded, so this is fine). To
-// re-enable: `npm i sharp` then restore a resize pipeline here. TODO[ledger].
-async function makeThumbnail(_buffer: Buffer): Promise<Buffer | null> {
-  return null;
+async function makeThumbnail(buffer: Buffer): Promise<Buffer | null> {
+  try {
+    // dynamic import so a version mismatch / native binding error stays non-fatal
+    const sharp = (await import("sharp")).default;
+    const thumb = await sharp(buffer)
+      .resize(480, undefined, { withoutEnlargement: true }) // 480px wide, keep aspect ratio, never upscale
+      .jpeg({ quality: 80 })
+      .toBuffer();
+    return thumb;
+  } catch (err) {
+    console.error("[ledger:storage] sharp thumbnail failed, falling back to original", err);
+    return null;
+  }
 }
 
 // =============================================================

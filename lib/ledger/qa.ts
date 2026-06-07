@@ -5,7 +5,7 @@
 //
 // CHEAP-FIRST: a deterministic keyword router handles the common questions with
 // ZERO AI cost (so the LINE bot is free to chat). Only when keyword routing is
-// unsure do we fall back to a light LLM intent-parse (gemini-3.1-flash-lite via
+// unsure do we fall back to a light LLM intent-parse (gemini-2.0-flash-lite via
 // the cost-cap budget guard) that maps the question to one of our known intents
 // — we still answer from real DB numbers, never let the LLM invent figures.
 //
@@ -23,7 +23,7 @@ import {
 } from "./dashboard";
 import { prisma } from "@/lib/prisma";
 
-const INTENT_MODEL = "gemini-3.1-flash-lite";
+const INTENT_MODEL = "gemini-2.0-flash-lite";
 const EST_INPUT_TOKENS = 250;
 const EST_OUTPUT_TOKENS = 30;
 

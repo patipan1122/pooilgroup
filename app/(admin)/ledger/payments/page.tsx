@@ -62,7 +62,7 @@ export default async function PaymentsPage({
       status: ["confirmed", "locked"],
       paymentStatus: "unpaid",
       take: 300,
-    }),
+    }).then((r) => r.expenses),
   ]);
 
   return (

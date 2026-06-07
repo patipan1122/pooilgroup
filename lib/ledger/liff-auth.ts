@@ -31,10 +31,21 @@ export type LedgerActor = {
   scopeBranchIds: string[];
   allBranches: boolean;
   canConfirm: boolean;
-  /** Company the actor belongs to (LedgerExpense is company-scoped, NOT just org).
-   *  Set for member actors. Undefined for admin/accountant/staff who may span
-   *  companies — callers must resolve a default/active company in that case. */
-  companyId?: string | null;
+  /**
+   * Company the actor belongs to (LedgerExpense is company-scoped, NOT just org).
+   *
+   * SECURITY CONTRACT — P0#2 / P1#20 / P1#39:
+   * - `string`  → actor is pinned to this company; use directly in every query.
+   * - `null`    → actor spans companies (admin / accountant / staff pool roles).
+   *               Callers MUST call requireActorCompanyId() (or resolve the active
+   *               company via resolveScope) BEFORE querying expense data.
+   *               NEVER fall back to an org-wide query — that leaks across legal
+   *               entities (Pooil Oil ≠ JP Sync, both share the same org_id).
+   *
+   * The field is REQUIRED (not optional `?`) so TypeScript forces every actor
+   * construction path to set it explicitly — there is no silent `undefined`.
+   */
+  companyId: string | null;
 };
 
 export async function resolveLedgerActor(): Promise<LedgerActor | null> {
@@ -48,17 +59,21 @@ export async function resolveLedgerActor(): Promise<LedgerActor | null> {
   // Pool admin tier = full rights, ALWAYS. This is the super_admin escape-hatch:
   // once a Pool session exists, an admin-tier user passes every ledger gate with
   // no dependency on the fragile LINE-id binding (audit 2026-06-05, CEO req 1).
+  // companyId=null: admin spans companies — callers MUST resolve via requireActorCompanyId
+  // or resolveScope before querying expense data (P0#2, P1#20).
   if (isAdminTier(role)) {
-    return { orgId, userId, kind: "pool", role: "admin", scopeBranchIds: [], allBranches: true, canConfirm: true };
+    return { orgId, userId, kind: "pool", role: "admin", scopeBranchIds: [], allBranches: true, canConfirm: true, companyId: null };
   }
   // Pool viewer = the office accountant. Map to the ledger "accountant" role so the
   // admin's สิทธิ์ toggles (ledger_permission) actually govern them on web + LIFF.
+  // companyId=null: accountant spans companies — callers MUST resolve via
+  // requireActorCompanyId or resolveScope before querying (P1#39, P0#2).
   if (role === "viewer") {
     const [allBranches, canConfirm] = await Promise.all([
       can(orgId, "accountant", "scope.all_branches"),
       can(orgId, "accountant", "expense.confirm"),
     ]);
-    return { orgId, userId, kind: "pool", role: "accountant", scopeBranchIds: [], allBranches, canConfirm };
+    return { orgId, userId, kind: "pool", role: "accountant", scopeBranchIds: [], allBranches, canConfirm, companyId: null };
   }
 
   // Any other identity: find this person's ledger member row — by the canonical
@@ -93,8 +108,11 @@ export async function resolveLedgerActor(): Promise<LedgerActor | null> {
   }
 
   // A non-admin Pool user who still holds the ledger module grant → staff-level.
+  // companyId=null: this fallback actor has no member row and therefore no pinned
+  // company. Callers MUST resolve via requireActorCompanyId before querying expense
+  // data — NEVER allow an org-wide fallback query (P1#20, P0#2).
   if (await userHasModuleAccess(session.user, "ledger")) {
-    return { orgId, userId, kind: "pool", role: "staff", scopeBranchIds: [], allBranches: true, canConfirm: false };
+    return { orgId, userId, kind: "pool", role: "staff", scopeBranchIds: [], allBranches: true, canConfirm: false, companyId: null };
   }
   return null;
 }
@@ -137,4 +155,33 @@ export function actorCanReachBranch(actor: LedgerActor, branchId: string | null)
   if (actor.allBranches) return true;
   if (!branchId) return true; // unbranched/central capture — allow (branch tagged later)
   return actor.scopeBranchIds.includes(branchId);
+}
+
+/**
+ * SECURITY GUARD — P0#2 / P1#20 / P1#39
+ *
+ * Call this BEFORE any LedgerExpense / LedgerPayment / LedgerBudget query when
+ * the actor might be a pool admin, accountant, or fallback staff (companyId=null).
+ *
+ * Returns `{ ok: true, companyId }` when a company is pinned to the actor or
+ * the caller supplies a resolved `fallbackCompanyId` (from resolveScope).
+ *
+ * Returns `{ ok: false, error }` when neither is available — the caller MUST
+ * abort and return a 403 / "ไม่ระบุบริษัท" response. NEVER fall through to an
+ * org-wide query: that would expose data from every legal entity in the org.
+ *
+ * Usage:
+ *   const cid = requireActorCompanyId(actor, scope.companyId);
+ *   if (!cid.ok) return { ok: false, error: cid.error };
+ *   // now use cid.companyId safely
+ */
+export function requireActorCompanyId(
+  actor: LedgerActor,
+  fallbackCompanyId?: string | null,
+): { ok: true; companyId: string } | { ok: false; error: string } {
+  const companyId = actor.companyId ?? fallbackCompanyId ?? null;
+  if (!companyId) {
+    return { ok: false, error: "ไม่ระบุบริษัท — กรุณาเลือกบริษัทก่อนดำเนินการ" };
+  }
+  return { ok: true, companyId };
 }

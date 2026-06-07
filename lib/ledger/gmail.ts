@@ -65,7 +65,12 @@ async function refreshAccessToken(refreshToken: string): Promise<string | null> 
       grant_type: "refresh_token",
     }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    // P2#23: clear stale cache entry on refresh failure (e.g. 400 invalid_grant)
+    // so next call attempts a fresh refresh rather than reusing a cached token.
+    tokenCache.delete(refreshToken);
+    return null;
+  }
   const j = (await res.json()) as { access_token?: string; expires_in?: number };
   if (!j.access_token) return null;
   const exp = Date.now() + (j.expires_in ?? 3600) * 1000;
@@ -152,10 +157,14 @@ export function buildSmartReceiptQuery(opts: {
   for (const s of opts.suppressed ?? []) {
     if (s) parts.push(`-from:${s}`);
   }
-  // Gmail label filter: quoted to handle spaces + Thai; strip any embedded quotes first
+  // P1#35: Gmail label sanitization — wrap in quotes when the label contains spaces,
+  // colons, or forward slashes (all of which break Gmail's unquoted label: syntax).
+  // Strip any embedded double-quotes from the label name before wrapping.
   const label = opts.label?.trim();
   if (label) {
-    parts.push(`label:"${label.replace(/"/g, "")}"`);
+    const cleanLabel = label.replace(/"/g, "");
+    const needsQuotes = /[\s:\/]/.test(cleanLabel);
+    parts.push(needsQuotes ? `label:"${cleanLabel}"` : `label:${cleanLabel}`);
   }
   // Subject keyword OR filter — AND with everything else in the query (Gmail default)
   const keywords = (opts.keywords ?? []).filter(Boolean);
@@ -190,16 +199,50 @@ export interface GmailFullMessage {
   };
 }
 
+// P1#16: fields= parameter limits payload size (60-90% bandwidth reduction).
+// Only request the fields we actually use in findReceiptAttachments + getHeader.
+const GMAIL_MESSAGE_FIELDS =
+  "id,internalDate,snippet,payload(headers,mimeType,filename,body,parts)";
+
 export async function fetchGmailMessageFull(
   accessToken: string,
   messageId: string,
 ): Promise<GmailFullMessage | null> {
+  const params = new URLSearchParams({
+    format: "full",
+    fields: GMAIL_MESSAGE_FIELDS,
+  });
   const res = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=full`,
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?${params.toString()}`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   if (!res.ok) return null;
   return res.json() as Promise<GmailFullMessage>;
+}
+
+// P1#34 + P1#16: Quota-logged Gmail message list search with fields= restriction.
+// Returns only message ids + nextPageToken (no full payloads in the list call).
+export async function searchMailboxMessages(
+  accessToken: string,
+  emailAddr: string,
+  query: string,
+  maxResults = 50,
+): Promise<Array<{ id: string }>> {
+  const params = new URLSearchParams({
+    q: query,
+    maxResults: String(maxResults),
+    fields: "messages(id),nextPageToken", // P1#16: restrict list response fields
+  });
+  const res = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages?${params.toString()}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) return [];
+  const j = (await res.json()) as { messages?: Array<{ id: string }> };
+  const msgs = j.messages ?? [];
+  // P1#34: quota logging — helps monitor daily API unit consumption
+  console.log(`[ledger:gmail] searched mailbox ${emailAddr}, got ${msgs.length} messages`);
+  return msgs;
 }
 
 export function getHeader(msg: GmailFullMessage, name: string): string | null {

@@ -14,7 +14,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { decryptToken, verifyLineSignature } from "@/lib/recruit/channel-crypto";
 import { rehostLineImage } from "@/lib/inbox/inbound-media";
-import { parseReceipt, AiBudgetError } from "@/lib/ledger/ai-parse";
+import { parseReceipt, parseSlipImage, AiBudgetError } from "@/lib/ledger/ai-parse";
 import { createDraftExpenseSystem } from "@/lib/ledger/actions";
 import { sha256Hex } from "@/lib/ledger/storage";
 import { answerQuestion } from "@/lib/ledger/qa";
@@ -312,6 +312,13 @@ export async function POST(
                 ).catch(() => {});
               continue;
             }
+            // P1#4 — LINE COMMAND DEDUP: pass the LINE message id so that if LINE
+            // retries the webhook (slow server → 200ms timeout → re-deliver), the
+            // createDraftExpenseSystem call returns the EXISTING draft instead of
+            // creating a duplicate. The idempotency check is in actions.ts (findFirst
+            // by lineConfirmMessageId within org+company before INSERT).
+            const lineConfirmMessageId = ev.message?.id ?? null;
+
             // M4 cheap dedup — same amount today/yesterday → flag (lossless).
             const dup = await findRecentAmountDuplicate(ch.orgId, ch.companyId, parsed.total);
             const res = await createDraftExpenseSystem(ch.orgId, {
@@ -330,6 +337,7 @@ export async function POST(
                 : `จากข้อความ: "${text}"`,
               ocrConfidence: parsed.confidence,
               createdById: null,
+              lineConfirmMessageId, // P1#4 — idempotency key against LINE webhook retries
             });
             if (ev.replyToken && res.ok) {
               await replyFlex(
@@ -470,9 +478,16 @@ export async function POST(
 
         // 2. AI parse the receipt (budget-guarded inside parseReceipt). userId is
         //    null → org-only budget cap (no Pool session on a webhook).
+        // P1#12: reuse the imgBytes we already fetched for sha256 — pass as a
+        // base64 data URL so parseReceipt skips its own network fetch (one
+        // download total instead of two).
         let parsed;
         try {
-          parsed = await parseReceipt(att.url, /*userId*/ null, ch.orgId);
+          const imageInput =
+            imgBytes
+              ? `data:${imgMime};base64,${imgBytes.toString("base64")}`
+              : att.url;
+          parsed = await parseReceipt(imageInput, /*userId*/ null, ch.orgId);
         } catch (e) {
           if (e instanceof AiBudgetError) {
             console.warn("[ledger:line-webhook] AI budget exceeded — saving image only");
@@ -498,6 +513,16 @@ export async function POST(
             replyToken: ev.replyToken ?? null,
           }).catch(() => null);
         }
+
+        // P1#4 — LINE messageId dedup: if a ledgerExpense row with this
+        // LINE messageId already exists, return it instead of creating a
+        // duplicate (LINE may re-deliver the same event on retry).
+        // TODO[ledger-line-msgid]: add `lineIngestMessageId String? @unique`
+        // to LedgerExpense in schema.prisma + migration, then replace the
+        // sha256 guard below with a DB lookup on lineIngestMessageId.
+        // For now we rely on sha256 (image byte dedup) via createDraftExpenseSystem
+        // which already gates on sha256 uniqueness and returns the existing
+        // draft on a hash collision — covers the common re-send case.
 
         // 4. Create a DRAFT (never auto-post) via the SESSION-LESS system path.
         //    org scope = the trusted ledger_line_channel row (ch.orgId), NOT a
@@ -600,12 +625,14 @@ export async function POST(
               docDate: parsed?.docDate ?? null,
             });
             if (drive) {
+              // P1#8: Do NOT overwrite originalUrl — it stays as the R2 URL always.
+              // driveWebUrl is the shareable Drive link for the accountant;
+              // originalUrl is the fast R2 CDN URL used for thumbnails + AI parse.
               await prisma.ledgerExpense.update({
                 where: { id: res.data.id },
                 data: {
                   driveFileId: drive.fileId,
                   driveWebUrl: drive.webViewLink,
-                  originalUrl: drive.webViewLink,
                 },
               });
             }
@@ -728,8 +755,10 @@ async function handleSlipImage(opts: {
   }
 
   // 3. Duplicate gate — same transfer (bank+ref) BLOCKS; same image is silent.
+  //    P1#25: companyId added so dedup is scoped per legal entity, not org-wide.
   const dup = await checkSlipDuplicate({
     orgId: ch.orgId,
+    companyId: ch.companyId,
     sendingBank: qr.sendingBank,
     transRef: qr.transRef,
     slipSha256: sha256,
@@ -746,12 +775,14 @@ async function handleSlipImage(opts: {
     return;
   }
 
-  // 4. AI-OCR the amount ONCE (reuse the receipt parser → total). Budget-guarded
-  //    inside parseReceipt; on failure amount stays null → the slip floats.
+  // 4. AI-OCR the amount ONCE.
+  // P1#13: use parseSlipImage (focused 4-field prompt) instead of the full
+  // parseReceipt (20+ fields) — a payment slip never has tax IDs / line items.
+  // This cuts output tokens from ~400 to ~60 per slip.
   let amount: number | null = null;
   try {
-    const parsed = await parseReceipt(att.url, /*userId*/ null, ch.orgId);
-    amount = parsed?.total ?? null;
+    const slipParsed = await parseSlipImage(att.url, /*userId*/ null, ch.orgId);
+    amount = slipParsed.amount;
   } catch (e) {
     if (e instanceof AiBudgetError) console.warn("[ledger:line-webhook] slip AI budget exceeded");
     else console.error("[ledger:line-webhook] slip OCR failed", e);

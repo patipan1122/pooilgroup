@@ -10,7 +10,7 @@
 import { checkAiBudget, recordAiUsage } from "@/lib/ai/cost-cap";
 import { AiBudgetError } from "./ai-parse";
 
-const MODEL = "gemini-3.1-flash-lite";
+const MODEL = "gemini-2.0-flash-lite";
 const EST_INPUT_TOKENS = 260;
 const EST_OUTPUT_TOKENS = 120;
 

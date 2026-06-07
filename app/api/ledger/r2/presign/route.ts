@@ -74,12 +74,18 @@ export async function POST(req: NextRequest) {
   const safeUpload = (uploadId ?? `${session.user.id}-${Date.now()}`)
     .replace(/[^a-zA-Z0-9._-]/g, "_")
     .slice(0, 80);
+  // P1#38: sanitize company.code before embedding in the R2 key — strip any
+  // path traversal ("..") and allow only alphanumeric, hyphen, underscore.
+  const safeCode = (company.code ?? "unknown")
+    .replace(/\.\./g, "")
+    .replace(/[^a-zA-Z0-9-_]/g, "_")
+    .slice(0, 40) || "unknown";
   const now = new Date();
   const yyyy = now.getUTCFullYear();
   const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
   const ext = extFromContentType(contentType);
   // Org-namespaced so a public-URL leak can't reveal another org's tree.
-  const key = `orgs/${orgId}/ledger/${yyyy}/${mm}/${company.code}/${safeUpload}.${ext}`;
+  const key = `orgs/${orgId}/ledger/${yyyy}/${mm}/${safeCode}/${safeUpload}.${ext}`;
 
   try {
     const { url, publicUrl } = await getUploadUrl(key, contentType);

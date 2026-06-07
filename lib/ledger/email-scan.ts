@@ -17,7 +17,6 @@ import { storeReceiptImage, sha256Hex } from "@/lib/ledger/storage";
 import {
   getMailboxAccessToken,
   buildSmartReceiptQuery,
-  searchMessages,
   fetchGmailMessageFull,
   getHeader,
   findReceiptAttachments,
@@ -26,6 +25,9 @@ import {
 
 const FIRST_SCAN_DAYS = 30; // D4: first scan looks back 30 days, then incremental
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_ATTACHMENT_BYTES = 10_000_000; // P0#14: skip attachments >10MB
+const DEBOUNCE_MS = 5 * 60 * 1000; // P1#5: skip mailbox if synced <5min ago
+const MAX_PAGINATION_EMAILS = 200; // P2#24: pagination hard cap to prevent timeout
 
 export type ScanResult =
   | { ok: false; error: string }
@@ -38,6 +40,47 @@ export type ScanResult =
       errors: number;
     };
 
+// ---------------------------------------------------------------------------
+// P2#24: Paginated Gmail search — fetches all pages up to MAX_PAGINATION_EMAILS.
+// The shared searchMessages helper only fetches one page; we call the REST API
+// directly here to handle nextPageToken across pages.
+// ---------------------------------------------------------------------------
+async function searchAllMessages(
+  accessToken: string,
+  query: string,
+  initialMaxResults: number,
+): Promise<Array<{ id: string; threadId: string }>> {
+  const all: Array<{ id: string; threadId: string }> = [];
+  let pageToken: string | undefined;
+
+  do {
+    const params = new URLSearchParams({
+      q: query,
+      maxResults: String(Math.min(initialMaxResults, 100)),
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+
+    const res = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!res.ok) {
+      console.error("[ledger:email-scan] searchMessages page failed", res.status);
+      break;
+    }
+
+    const j = (await res.json()) as {
+      messages?: Array<{ id: string; threadId: string }>;
+      nextPageToken?: string;
+    };
+
+    if (j.messages) all.push(...j.messages);
+    pageToken = j.nextPageToken;
+  } while (pageToken && all.length < MAX_PAGINATION_EMAILS);
+
+  return all.slice(0, MAX_PAGINATION_EMAILS);
+}
+
 export async function scanMailbox(
   connectionId: string,
   opts?: { maxMessages?: number },
@@ -46,6 +89,12 @@ export async function scanMailbox(
     where: { id: connectionId },
   });
   if (!conn || !conn.active) return { ok: false, error: "ไม่พบการเชื่อมต่อ หรือถูกปิดอยู่" };
+
+  // P1#5: Debounce — skip if this mailbox was synced in the last 5 minutes.
+  // Prevents cron + manual trigger from double-processing the same messages.
+  if (conn.lastSyncAt && Date.now() - conn.lastSyncAt.getTime() < DEBOUNCE_MS) {
+    return { ok: false, error: "sync ล่าสุดเกิดขึ้นเมื่อ <5 นาทีที่แล้ว — ข้ามเพื่อป้องกันการทำซ้ำ" };
+  }
 
   // filters are mandatory? v1 smart-default always drops promos + needs attachment,
   // so a scan is safe even with no sender allow-list. (Cron gating is enforced by
@@ -72,7 +121,8 @@ export async function scanMailbox(
     keywords: conn.filterKeywords,
   });
 
-  const messages = await searchMessages(token, q, opts?.maxMessages ?? 25);
+  // P2#24: Use paginated search instead of single-page searchMessages.
+  const messages = await searchAllMessages(token, q, opts?.maxMessages ?? 25);
   const scanRunId = crypto.randomUUID();
 
   let imported = 0;
@@ -112,6 +162,12 @@ export async function scanMailbox(
           note: "ไม่มีไฟล์แนบ",
         });
         skipped++;
+        // P2#5: Update lastSyncAt after each processed message so a mid-run crash
+        // doesn't re-process already-handled messages on the next run.
+        await prisma.ledgerEmailConnection.update({
+          where: { id: connectionId },
+          data: { lastSyncAt: new Date() },
+        });
         continue;
       }
 
@@ -120,6 +176,14 @@ export async function scanMailbox(
       let lastExpenseId: string | null = null;
 
       for (const att of attachments) {
+        // P0#14: SIZE GATE — skip attachments larger than 10MB before downloading.
+        if (att.sizeBytes > MAX_ATTACHMENT_BYTES) {
+          console.warn(
+            `[ledger:email-scan] attachment too large, skipping (${att.sizeBytes} bytes, file: ${att.filename})`,
+          );
+          continue;
+        }
+
         const bytes = await downloadAttachment(token, gmailMessageId, att.attachmentId);
         if (!bytes) continue;
 
@@ -141,7 +205,11 @@ export async function scanMailbox(
         let parsed: Awaited<ReturnType<typeof parseReceipt>> | null = null;
         if (!isPdf) {
           try {
-            parsed = await parseReceipt(stored.originalUrl, null, conn.orgId);
+            // P1#14: Pass in-memory bytes as a data URL directly to parseReceipt
+            // instead of re-fetching from R2. This avoids a redundant network round-
+            // trip for bytes we already have in memory.
+            const dataUrl = `data:${att.mimeType};base64,${bytes.toString("base64")}`;
+            parsed = await parseReceipt(dataUrl, null, conn.orgId);
           } catch (e) {
             if (!(e instanceof AiBudgetError)) {
               console.error("[ledger:email-scan] parse failed", e);
@@ -205,6 +273,13 @@ export async function scanMailbox(
       console.error("[ledger:email-scan] message failed", gmailMessageId, e);
       errors++;
     }
+
+    // P2#5: Checkpoint lastSyncAt after each message so crashes mid-batch
+    // don't cause already-processed messages to be re-fetched on the next run.
+    await prisma.ledgerEmailConnection.update({
+      where: { id: connectionId },
+      data: { lastSyncAt: new Date() },
+    });
   }
 
   await prisma.ledgerEmailConnection.update({

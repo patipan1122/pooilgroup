@@ -131,7 +131,7 @@ export default async function ExpensesPage({
     "expense.confirm",
   );
 
-  const [allRows, categories, completenessSummary] = await Promise.all([
+  const [expensesResult, categories, completenessSummary] = await Promise.all([
     listExpensesSummary({
       ...summaryFilter,
       completeness: cc,
@@ -141,6 +141,7 @@ export default async function ExpensesPage({
     listCategories(scope.orgId, scope.companyId),
     summarizeCompleteness(summaryFilter),
   ]);
+  const { expenses: allRows, hasMore: expensesHasMore } = expensesResult;
 
   // D4 source tabs — narrow the SCOPE rows by the active tab's source/owner
   // predicate (rows already carry `source` + `createdBy` from the summary select).

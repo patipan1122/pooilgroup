@@ -87,24 +87,7 @@ export async function GET(
     );
   }
 
-  // 5) Substitute-receipt guardrail (RD / ILikeTax).
-  if (type === "SUB") {
-    const hasTaxInvoice = !!expense.vendorTaxId && /^\d{13}$/.test(expense.vendorTaxId.replace(/\D/g, ""));
-    if (hasTaxInvoice) {
-      return NextResponse.json(
-        { error: "รายการนี้มีใบกำกับภาษี/เลขภาษีครบ — ใช้ใบเสร็จจริงแทน ไม่ต้องออกใบรับรองแทนใบเสร็จ" },
-        { status: 400 },
-      );
-    }
-    if (!reason || reason.length < 3) {
-      return NextResponse.json(
-        { error: "ใบรับรองแทนใบเสร็จต้องระบุเหตุผล (ตามกฎสรรพากร)" },
-        { status: 400 },
-      );
-    }
-  }
-
-  // 6) Header lookups — company info + category/branch labels (org scoped).
+  // 5) Header lookups — needed early for SUB guardrails (category name check).
   const [company, category, branch] = await Promise.all([
     prisma.company.findFirst({
       where: { id: companyId, orgId },
@@ -123,6 +106,59 @@ export async function GET(
         })
       : Promise.resolve(null),
   ]);
+
+  // 6) Substitute-receipt guardrails (RD / ILikeTax).
+  if (type === "SUB") {
+    // P1#22 — Category block: หมวดค่ารับรอง / รถยนต์นั่งส่วนบุคคล ไม่สามารถออก
+    //   ใบรับรองแทนใบเสร็จได้ตามกฎสรรพากร (ม.65 ตรี + พรฎ. ฉ.143).
+    //   ตรวจ categoryName ที่ resolve จาก DB แล้ว (reuse lookup จากข้อ 5 ข้างบน).
+    const resolvedCategoryName = (
+      category?.name ?? expense.categoryName ?? ""
+    ).toLowerCase();
+
+    const SUB_BLOCKED_KEYWORDS = [
+      "ค่ารับรอง",
+      "entertainment",
+      "รถยนต์นั่งส่วนบุคคล",
+      "passenger_car",
+      "รถยนต์นั่ง",
+    ];
+    const isCategoryBlocked = SUB_BLOCKED_KEYWORDS.some((kw) =>
+      resolvedCategoryName.includes(kw.toLowerCase()),
+    );
+    if (isCategoryBlocked) {
+      return NextResponse.json(
+        { error: "หมวดนี้ไม่สามารถออกใบรับรองแทนใบเสร็จได้ตามกฎหมายสรรพากร" },
+        { status: 400 },
+      );
+    }
+
+    // P1#37 — Real invoice check: ถ้ามีใบกำกับภาษีจริงอยู่แล้ว (vendorTaxId ครบ 13 หลัก
+    //   AND docType === 'tax_invoice') → ไม่ต้องออกใบรับรองแทน.
+    //   Note: เดิม route นี้บล็อกเมื่อมี vendorTaxId เพียงอย่างเดียว แต่ vendorTaxId อาจ
+    //   มาจากใบเสนอราคา/บิล (ยังรอใบกำกับจริง) → เพิ่ม docType guard เพื่อไม่บล็อกเกิน.
+    const hasValidTaxId =
+      !!expense.vendorTaxId &&
+      /^\d{13}$/.test(expense.vendorTaxId.replace(/\D/g, ""));
+    const hasRealTaxInvoice =
+      hasValidTaxId && expense.docType === "tax_invoice";
+    if (hasRealTaxInvoice) {
+      return NextResponse.json(
+        {
+          error:
+            "รายจ่ายนี้มีใบกำกับภาษีจริงอยู่แล้ว — ไม่จำเป็นต้องออกใบรับรองแทน",
+        },
+        { status: 400 },
+      );
+    }
+
+    if (!reason || reason.length < 3) {
+      return NextResponse.json(
+        { error: "ใบรับรองแทนใบเสร็จต้องระบุเหตุผล (ตามกฎสรรพากร)" },
+        { status: 400 },
+      );
+    }
+  }
 
   if (!company) {
     return NextResponse.json({ error: "ไม่พบบริษัทใน org นี้" }, { status: 404 });

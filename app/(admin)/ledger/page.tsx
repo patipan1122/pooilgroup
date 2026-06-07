@@ -55,7 +55,7 @@ export default async function LedgerHomePage({
 
   const [summary, drafts, byCategory] = await Promise.all([
     expenseSummary(filter),
-    listExpensesSummary({ ...filter, status: "draft", take: 6 }),
+    listExpensesSummary({ ...filter, status: "draft", take: 6 }).then((r) => r.expenses),
     spendByCategory(filter),
   ]);
 

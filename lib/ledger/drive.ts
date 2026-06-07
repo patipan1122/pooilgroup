@@ -85,19 +85,16 @@ async function cachedEnsureFolder(
     }
     const { id: folderId } = (await created.json()) as { id: string };
 
-    // 3. Store in DB cache — ON CONFLICT (unique) = another request beat us, keep theirs
-    await prisma.driveFolderCache.upsert({
+    // 3. Store in DB cache — ON CONFLICT (unique) = another request beat us, keep theirs.
+    // P2#8: upsert returns the resulting row directly — no second findUnique needed.
+    const row = await prisma.driveFolderCache.upsert({
       where: { orgId_parentId_name: { orgId, parentId: parent, name } },
       create: { orgId, parentId: parent, name, folderId },
       update: {}, // conflict = keep the first-inserted row; don't overwrite folderId
     });
 
-    // 4. Return the canonical folder ID (ours if we won, theirs if they won)
-    const canonical = await prisma.driveFolderCache.findUnique({
-      where: { orgId_parentId_name: { orgId, parentId: parent, name } },
-      select: { folderId: true },
-    });
-    return canonical?.folderId ?? folderId;
+    // 4. Return the canonical folder ID directly from the upsert result (saves 1 DB roundtrip).
+    return row.folderId;
   } catch (e) {
     console.error("[ledger:drive] cachedEnsureFolder error", e);
     return null;
@@ -279,10 +276,32 @@ export async function archiveExpenseToDrive(args: {
   });
   if (!drive) return { ok: false, error: "ส่งเข้า Drive ไม่สำเร็จ" };
 
-  await prisma.ledgerExpense.update({
-    where: { id: exp.id },
-    data: { driveFileId: drive.fileId, driveWebUrl: drive.webViewLink },
-  });
+  // P1#7 — DB update retry: Drive file already exists; if DB save fails we have an
+  // orphaned Drive file with no pointer back. Retry up to 3× (500ms apart) so a
+  // transient DB hiccup doesn't lose the link. After all retries fail, log a CRITICAL
+  // message so the CEO can find orphaned files via a log search.
+  let dbSaved = false;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await prisma.ledgerExpense.update({
+        where: { id: exp.id },
+        data: { driveFileId: drive.fileId, driveWebUrl: drive.webViewLink },
+      });
+      dbSaved = true;
+      break;
+    } catch (dbErr) {
+      console.error(`[ledger:drive] DB update attempt ${attempt}/3 failed for expenseId=${exp.id}`, dbErr);
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+  if (!dbSaved) {
+    console.error(
+      `[ledger:drive] CRITICAL: uploaded fileId=${drive.fileId} to Drive but DB update failed — manual recovery needed (expenseId=${exp.id})`,
+    );
+    // Still return the Drive link so the immediate caller can surface it to the user;
+    // the orphaned file can be reconciled via a /api/ledger/drive/sync call later.
+    return { ok: false, error: "บันทึก Drive link ไม่สำเร็จ — กรุณาลองซิงค์อีกครั้ง" };
+  }
   return { ok: true, driveWebUrl: drive.webViewLink };
 }
 /**

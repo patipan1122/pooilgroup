@@ -29,21 +29,25 @@ const ALG = "aes-256-gcm";
 const IV_LEN = 12;
 
 function cryptoKey(): Buffer {
+  // P0#13 / P2#25: CHAIROPS_DRIVE_CRYPTO_KEY must be an explicit 32-byte
+  // base64 value. The old DATABASE_URL / SUPABASE_SERVICE_ROLE_KEY fallback
+  // chain is REMOVED — using an unrelated secret as a crypto key silently
+  // decrypts/re-encrypts tokens with a different key on every env change,
+  // causing silent auth failures. Generate a proper key with:
+  //   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
   const raw = process.env.CHAIROPS_DRIVE_CRYPTO_KEY;
-  if (raw) {
-    const buf = Buffer.from(raw, "base64");
-    if (buf.length === 32) return buf;
+  if (!raw) {
+    throw new Error("CHAIROPS_DRIVE_CRYPTO_KEY env var is required");
   }
-  const fallback =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ??
-    process.env.NEXTAUTH_SECRET ??
-    process.env.DATABASE_URL;
-  if (!fallback) {
+  const buf = Buffer.from(raw, "base64");
+  if (buf.length !== 32) {
     throw new Error(
-      "chairops drive crypto: no key source (set CHAIROPS_DRIVE_CRYPTO_KEY)",
+      "CHAIROPS_DRIVE_CRYPTO_KEY must be a 32-byte base64 string (got " +
+        buf.length +
+        " bytes)",
     );
   }
-  return crypto.createHash("sha256").update(fallback).digest();
+  return buf;
 }
 
 export function encryptToken(plaintext: string): string {

@@ -220,6 +220,8 @@ async function loadScoped(
       buyerTaxIdOnDoc: true,
       vendorAddress: true,
       vendorBranchCode: true,
+      // — P1#21: ownership check in saveExpense —
+      createdBy: true,
     },
   });
   return { row };
@@ -240,6 +242,15 @@ export async function saveExpense(
   if (!row) return { ok: false, error: "ไม่พบรายการ" };
   if (row.status === "locked" || row.status === "void")
     return { ok: false, error: "รายการถูกล็อก/ยกเลิก แก้ไม่ได้" };
+
+  // P1#21 ROLE CHECK — only the creator OR an admin/accountant may edit a draft.
+  // Staff who didn't create the record cannot silently overwrite another user's entry.
+  const canEditOthers =
+    isAdminTier(session.user.role) ||
+    (await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.confirm"));
+  if (row.createdBy !== session.user.id && !canEditOthers) {
+    return { ok: false, error: "ไม่มีสิทธิ์แก้ไขรายการของผู้อื่น" };
+  }
 
   // Re-grade input-VAT completeness from the edited values (สถานะสีต้องตามการแก้ไข).
   const { grade: _g, ...gradeCols } = gradeColumnsFromPatch(parsed.data, row);
@@ -333,9 +344,14 @@ export async function confirmExpense(
   const { grade: _gc, ...gradeColsC } = gradeColumnsFromPatch(p, row);
   void _gc;
   let supersededQuotationId: string | null = null;
+  // P2#1 OPTIMISTIC LOCK — only update if status is still 'draft' at commit time.
+  // Two concurrent confirm requests both pass the pre-check above, but only one
+  // should win. The WHERE status='draft' condition makes the second a no-op (0 rows),
+  // which we treat as "already confirmed" to prevent double-posting.
+  let confirmedCount = 0;
   await prisma.$transaction(async (tx) => {
-    await tx.ledgerExpense.updateMany({
-      where: { id, orgId: session.user.org_id, companyId: row.companyId },
+    const res = await tx.ledgerExpense.updateMany({
+      where: { id, orgId: session.user.org_id, companyId: row.companyId, status: "draft" },
       data: {
         ...gradeColsC,
         ...toData(p),
@@ -345,6 +361,7 @@ export async function confirmExpense(
         confirmedAt: new Date(),
       },
     });
+    confirmedCount = res.count;
     await replaceItems(tx, {
       expenseId: id,
       orgId: session.user.org_id,
@@ -369,6 +386,11 @@ export async function confirmExpense(
       if (res.count > 0) supersededQuotationId = row.replacementOfId;
     }
   });
+  // P2#1 OPTIMISTIC LOCK result check — 0 rows means another request already
+  // confirmed this expense while we were running our checks; treat as idempotent.
+  if (confirmedCount === 0) {
+    return { ok: false, error: "รายการถูกยืนยันไปแล้ว" };
+  }
   await audit({
     orgId: session.user.org_id,
     userId: session.user.id,
@@ -1182,7 +1204,7 @@ export async function exportConfirmedCsv(raw: unknown): Promise<ExportResult> {
   if (!company) return { ok: false, error: "ไม่พบบริษัท" };
 
   // Only confirmed/locked rows are real spend → exportable.
-  const expenses = await listExpenses({
+  const { expenses } = await listExpenses({
     orgId,
     companyId,
     status: ["confirmed", "locked"],
@@ -1376,8 +1398,13 @@ async function recordPushResult(
     await Promise.all([
       prisma.ledgerExpense.updateMany({
         where: { id, orgId, companyId },
-        // Clear "pending" sentinel so the expense can be retried after a failure.
-        data: { trcloudDocId: null, trcloudError: res.error.slice(0, 500) },
+        // P0#8 TRCLOUD NULL→ERROR: set trcloudDocId='error' instead of null so the
+        // row cannot be claimed again by a concurrent push (alreadyPushed check =
+        // !!trcloudDocId stays true). The accountant must explicitly call
+        // deleteTrcloudApAction to clear 'error' and allow a clean retry.
+        // Previously null here = race window where a concurrent push would see
+        // trcloudDocId=null and create a second AP in TRCloud.
+        data: { trcloudDocId: "error", trcloudError: res.error.slice(0, 500) },
       }),
       audit({
         orgId,
@@ -1388,6 +1415,7 @@ async function recordPushResult(
         diff: {
           new: {
             error: res.error.slice(0, 500),
+            trcloudDocId: "error",
             ...(meta?.vendor !== undefined && { vendor: meta.vendor }),
             ...(meta?.total !== undefined && { total: meta.total }),
             ...(meta?.docCode !== undefined && { docCode: meta.docCode }),
@@ -1496,6 +1524,14 @@ export async function sendExpenseToTrcloud(
   // two concurrent requests both pass the alreadyPushed check (race condition),
   // and prevents orphaned APs if the serverless function dies after TRCloud responds
   // but before recordPushResult writes to the DB.
+  // P1#9 PENDING STUCK NOTE: 'pending' is a transient sentinel set here and resolved
+  // to a real docId (success) or 'error' (failure) by recordPushResult below. If the
+  // serverless function is killed mid-flight (cold timeout, OOM, SIGTERM), the row
+  // stays stuck at trcloudDocId='pending' forever and blocks all future pushes.
+  // TODO: a background cron (e.g. /api/cron/ledger-trcloud-reset) should run every
+  // 5 minutes and reset rows where trcloudDocId='pending' AND trcloudPushedAt IS NULL
+  // AND updatedAt < NOW() - INTERVAL '5 minutes' back to trcloudDocId=NULL so they
+  // can be re-claimed. The 5-minute window exceeds the Vercel serverless max duration.
   const claimed = await prisma.ledgerExpense.updateMany({
     where: { id, orgId, companyId: loaded.companyId, trcloudDocId: null },
     data: { trcloudDocId: "pending" },

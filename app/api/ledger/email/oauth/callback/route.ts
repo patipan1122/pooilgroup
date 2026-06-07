@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
-import { exchangeCodeForTokens, encryptToken } from "@/lib/ledger/gmail";
+import { exchangeCodeForTokens, encryptToken, GMAIL_SCOPE } from "@/lib/ledger/gmail";
 import { OAUTH_STATE_COOKIE, callbackRedirectUri } from "@/lib/ledger/gmail-oauth";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +50,30 @@ export async function GET(request: NextRequest) {
 
   const tokens = await exchangeCodeForTokens(code, await callbackRedirectUri());
   if (!tokens) return back(origin, companyId, { error: "exchange_failed" });
+
+  // P1#33: verify Google actually granted the gmail.readonly scope.
+  // Google may narrow scopes if the user deselects them on the consent screen.
+  // An access token without gmail.readonly will fail silently on every API call.
+  const grantedScopes = (tokens.scope ?? "").split(" ");
+  if (!grantedScopes.includes(GMAIL_SCOPE)) {
+    console.warn(
+      "[ledger:email] OAuth completed but gmail.readonly scope not granted. " +
+        "Granted scopes: " +
+        tokens.scope,
+    );
+    return back(origin, companyId, { error: "missing_gmail_scope" });
+  }
+
+  // P1#36: Guard against Google not returning a refresh token (happens when the
+  // user already granted consent without prompt=consent, or access_type=offline
+  // was missing). Storing an empty token would break future email scans silently.
+  if (!tokens.refreshToken || tokens.refreshToken.trim() === "") {
+    console.error("[ledger:email] Google did not return a refresh token — user must revoke and re-connect");
+    return back(origin, companyId, {
+      error: "no_refresh_token",
+      hint: "Gmail ไม่คืน refresh token — กรุณาลองใหม่หรือ revoke access ก่อน",
+    });
+  }
 
   // The connected Gmail address is both display + the per-company unique key.
   let gmailEmail: string | null = null;

@@ -46,6 +46,12 @@ function num(v: number | null | undefined): number {
  *  2. subtotal + vat - wht = total   (tolerance < 1 บาท)
  *  3. vat ≈ 7% of subtotal           (sanity — warn only, vendors vary)
  *  4. sum(items.amount) = subtotal    (if items were read)
+ *  5. WHT rate is one of the valid Thai rates (warn only)
+ *  6. vat > 0 but tax base ≤ 0       (OCR mis-read — warn only)
+ *
+ * @param p.subtotal - ยอดก่อนหักส่วนลด (pre-discount) ไม่ใช่ยอดหลังหักส่วนลด
+ *   ข้อผิดพลาดที่พบบ่อย: กรอกยอดหลังหักส่วนลดลงมาใน subtotal → ยอดรวมจะไม่ตรง
+ *   สูตร: total = subtotal − discount + vat − wht
  */
 export function recheckReceipt(p: {
   vendorTaxId?: string | null;
@@ -104,6 +110,32 @@ export function recheckReceipt(p: {
         `ผลรวมรายการย่อย ${itemsSum.toFixed(2)} ไม่ตรงกับยอดย่อย ${subtotal.toFixed(2)}`,
       );
     }
+  }
+
+  // 5. P1#23 — WHT rate sanity.
+  //    อัตราภาษีหัก ณ ที่จ่ายที่ถูกต้องตามกฎหมายไทย: 1%, 3%, 5%, 15%, 53% (กรณีพิเศษ).
+  //    ถ้า wht > 0 แต่ rate ไม่อยู่ใน range ที่สมเหตุสมผล → แจ้งเตือน (soft warning ไม่บล็อก).
+  //    ใช้ subtotal (pre-discount) เป็นฐาน เพราะกฎ RD คำนวณ WHT บน gross ก่อนส่วนลดหักลบ.
+  if (wht > 0 && subtotal > 0) {
+    const VALID_WHT_RATES = [0.01, 0.03, 0.05, 0.15, 0.53];
+    const WHT_RATE_TOL = 0.005; // ±0.5pp — รองรับการปัดเศษ
+    const impliedWhtRate = wht / subtotal;
+    const isKnownRate = VALID_WHT_RATES.some(
+      (r) => Math.abs(impliedWhtRate - r) <= WHT_RATE_TOL,
+    );
+    if (!isKnownRate) {
+      warnings.push(
+        `อัตราภาษีหัก ณ ที่จ่ายผิดปกติ — ตรวจสอบอีกครั้ง (อ่านได้ ${(impliedWhtRate * 100).toFixed(2)}%; อัตราปกติ 1%/3%/5%/15%/53%)`,
+      );
+    }
+  }
+
+  // 6. P2#19 — VAT แต่ไม่มีฐานภาษี.
+  //    ถ้า OCR อ่าน vat มาได้แต่ taxBase (subtotal − discount) ≤ 0 → น่าจะอ่านผิด.
+  if (vat > 0 && taxBase <= 0) {
+    warnings.push(
+      `มี VAT แต่ไม่มียอดฐานภาษี — OCR อาจอ่านผิด (subtotal=${subtotal.toFixed(2)}, discount=${discount.toFixed(2)})`,
+    );
   }
 
   return { ok: warnings.length === 0, warnings };

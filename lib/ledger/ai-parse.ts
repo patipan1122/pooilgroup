@@ -7,7 +7,7 @@
 // transfer slip — vendor, tax id, doc date, subtotal/VAT/WHT/total, line items,
 // payment method, a suggested category, AND a per-field confidence score.
 //
-// Model: gemini-3.1-flash-lite (primary, cheapest). On budget exhaustion or a
+// Model: gemini-2.0-flash-lite (primary, cheapest). On budget exhaustion or a
 // hard Gemini failure the caller may escalate to Claude — kept as a thin
 // fallback here (TODO[ledger-secret] for a dedicated Claude key/route in M3).
 //
@@ -17,7 +17,7 @@
 import { checkAiBudget, recordAiUsage } from "@/lib/ai/cost-cap";
 import type { ParsedReceipt, FieldConfidence, ExpenseItem, ExpenseDocType } from "./types";
 
-const PRIMARY_MODEL = "gemini-3.1-flash-lite";
+const PRIMARY_MODEL = "gemini-2.0-flash-lite";
 
 // Gemini Vision cost is dominated by the image (~1290 input tokens/รูป) plus a
 // small JSON output. We log fixed estimates like CashHub does — exact token
@@ -282,5 +282,142 @@ export async function parseReceipt(
     confidence: normalizeConfidence(parsed.confidence),
     ocrModel: PRIMARY_MODEL,
     raw,
+  };
+}
+
+// P1#13 — slip-focused prompt (payment slip / โอนเงิน). Only extracts the 4
+// fields needed to dedup + match a bill. Far fewer tokens than RECEIPT_PROMPT
+// (~20 fields) — a PromptPay/banking slip never has line items, tax IDs, etc.
+const SLIP_PROMPT = `คุณเป็นผู้อ่านสลิปโอนเงิน/สลิปชำระเงินไทย (PromptPay, โอนธนาคาร, QR payment)
+
+จากรูป ดึงข้อมูลเป็น JSON เท่านั้น (ห้ามมีคำอธิบาย ห้าม markdown ห้าม code fence):
+
+{
+  "amount": <ยอดโอน เป็น number ไม่มีคอมม่า หรือ null>,
+  "bank": "<ชื่อธนาคารผู้โอน เช่น กสิกร, กรุงเทพ, SCB, ออมสิน หรือ null>",
+  "transaction_ref": "<เลขอ้างอิงธุรกรรม/เลขที่รายการ หรือ null>",
+  "date": "<วันที่โอน YYYY-MM-DD หรือ null>"
+}
+
+กฎสำคัญ:
+- ฟิลด์ไหนอ่านไม่ออก → คืน null ห้ามเดา
+- amount เป็น number ตรง ๆ ไม่มีสัญลักษณ์
+- ถ้าภาพไม่ใช่สลิปโอนเงิน → คืนทุกฟิลด์เป็น null`;
+
+interface RawSlip {
+  amount?: number | null;
+  bank?: string | null;
+  transaction_ref?: string | null;
+  date?: string | null;
+}
+
+export interface ParsedSlip {
+  amount: number | null;
+  bank: string | null;
+  transactionRef: string | null;
+  date: string | null;
+  ocrModel: string;
+}
+
+async function callGeminiSlip(
+  base64: string,
+  mimeType: string,
+): Promise<RawSlip> {
+  const { GoogleGenAI } = await import("@google/genai");
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+  const result = await ai.models.generateContent({
+    model: PRIMARY_MODEL,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: SLIP_PROMPT },
+          { inlineData: { mimeType, data: base64 } },
+        ],
+      },
+    ],
+    config: {
+      temperature: 0,
+      maxOutputTokens: 200, // slip response is tiny
+      responseMimeType: "application/json",
+    },
+  });
+  const raw = result.text ?? "";
+  try {
+    return JSON.parse(raw) as RawSlip;
+  } catch {
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (m) {
+      try { return JSON.parse(m[0]) as RawSlip; } catch { /* fall */ }
+    }
+    return {};
+  }
+}
+
+/**
+ * P1#13 — Parse a payment slip image with a focused minimal prompt.
+ * Only extracts: amount, bank, transactionRef, date — the full RECEIPT_PROMPT
+ * (20+ fields) is overkill for a PromptPay/transfer slip.
+ *
+ * @param imageUrlOrBase64 http(s) URL, raw base64, or data URL.
+ * @param userId           null for webhook / system ingest.
+ * @param orgId            for budget cap.
+ */
+export async function parseSlipImage(
+  imageUrlOrBase64: string,
+  userId: string | null,
+  orgId: string,
+): Promise<ParsedSlip> {
+  const budget = await checkAiBudget({
+    userId,
+    orgId,
+    endpoint: "ledger.ocr-slip",
+  });
+  if (!budget.allowed) {
+    throw new AiBudgetError(budget.reason ?? "เกิน budget AI (slip)");
+  }
+
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error("GEMINI_API_KEY not configured");
+  }
+
+  let base64: string;
+  let mimeType: string;
+  if (/^https?:\/\//.test(imageUrlOrBase64)) {
+    const resp = await fetch(imageUrlOrBase64, { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) throw new Error(`fetch slip image failed: ${resp.status}`);
+    const buf = Buffer.from(await resp.arrayBuffer());
+    base64 = buf.toString("base64");
+    mimeType = resp.headers.get("content-type") ?? "image/jpeg";
+  } else {
+    const dataUrl = imageUrlOrBase64.match(/^data:(.+?);base64,([\s\S]*)$/);
+    if (dataUrl) {
+      mimeType = dataUrl[1];
+      base64 = dataUrl[2];
+    } else {
+      mimeType = "image/jpeg";
+      base64 = imageUrlOrBase64;
+    }
+  }
+
+  const parsed = await callGeminiSlip(base64, mimeType);
+
+  await recordAiUsage({
+    userId,
+    orgId,
+    endpoint: "ledger.ocr-slip",
+    provider: "gemini-flash",
+    model: PRIMARY_MODEL,
+    moduleName: "ledger",
+    inputTokens: 1500, // still image-dominated
+    outputTokens: 60,  // tiny JSON output
+  });
+
+  return {
+    amount: numOrNull(parsed.amount),
+    bank: parsed.bank?.trim() || null,
+    transactionRef: parsed.transaction_ref?.trim() || null,
+    date: parsed.date?.trim() || null,
+    ocrModel: PRIMARY_MODEL,
   };
 }

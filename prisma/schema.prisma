@@ -102,6 +102,7 @@ model Organization {
   ledgerBudgets           LedgerBudget[]
   ledgerLineChannels      LedgerLineChannel[]
   ledgerExportBatches     LedgerExportBatch[]
+  driveFolderCaches       DriveFolderCache[]
 
   @@map("organizations")
   @@schema("public")
@@ -3175,12 +3176,14 @@ model ChairopsVendorBill {
 // CEO's free 2 TB Drive; keep R2 as the live copy for ~2 months then offload.
 // =============================================================
 model DriveFolderCache {
-  id        String   @id @default(uuid()) @db.Uuid
-  orgId     String   @map("org_id")
-  parentId  String   @map("parent_id") // Drive folder ID of parent, or "root"
-  name      String   // folder name as stored in Drive
-  folderId  String   @map("folder_id") // Drive folder ID of this folder
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id        String       @id @default(uuid()) @db.Uuid
+  orgId     String       @map("org_id") @db.Uuid
+  parentId  String       @map("parent_id") // Drive folder ID of parent, or "root"
+  name      String       // folder name as stored in Drive
+  folderId  String       @map("folder_id") // Drive folder ID of this folder
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, parentId, name])
   @@map("drive_folder_cache")
@@ -5328,6 +5331,7 @@ model LedgerExpense {
   ocrConfidence         Json?               @map("ocr_confidence") // { vendor: 0.9, total: 0.95, ... }
   slipRef               String?             @map("slip_ref") // SlipOK ref (Phase 2)
   lineConfirmMessageId  String?             @map("line_confirm_message_id") // LINE confirm-card messageId → reply-to-bill match
+  lineMessageId         String?             @map("line_message_id") // LINE original message id (first image/file message that created this expense)
   needsReview           Boolean             @default(true) @map("needs_review")
   note                  String?
   // — Bainy-parity edit-form fields (Phase 3) —
@@ -5392,6 +5396,8 @@ model LedgerExpense {
   @@index([replacementOfId])
   @@index([orgId, companyId, completenessStatus])
   @@index([orgId, companyId, trcloudDocId]) // "not-yet-pushed confirmed" filter in listExpenses
+  @@index([orgId, companyId, createdAt(sort: Desc)]) // list by newest across company
+  @@index([orgId, companyId, paymentStatus]) // payment status filter
   @@map("ledger_expense")
   @@schema("public")
 }
@@ -5424,6 +5430,10 @@ model LedgerPayment {
 
   @@index([orgId, companyId, matchedExpenseId])
   @@index([slipSha256])
+  // NOTE: a PARTIAL unique on (orgId, companyId, transRef) WHERE transRef IS NOT NULL is enforced
+  // at the DB level via migration SQL. Prisma 5 cannot express partial indexes; rely on the SQL
+  // migration + P2002 handling in server actions. The index below is non-unique for query perf.
+  @@index([orgId, companyId, transRef])
   @@map("ledger_payment")
   @@schema("public")
 }
@@ -5520,6 +5530,8 @@ model LedgerEmailConnection {
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  messages LedgerEmailMessage[]
+
   @@unique([orgId, companyId, gmailEmail])
   @@index([orgId, companyId, active])
   @@map("ledger_email_connection")
@@ -5542,6 +5554,8 @@ model LedgerEmailMessage {
   expenseId      String?   @map("expense_id") @db.Uuid // ใบร่างที่สร้าง (ถ้าสร้าง)
   note           String?
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  connection LedgerEmailConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
 
   @@unique([connectionId, gmailMessageId])
   @@index([orgId, companyId])
@@ -5680,6 +5694,7 @@ model LedgerExportBatch {
   exportedAt DateTime? @map("exported_at") @db.Timestamptz(6)
   createdBy  String?   @map("created_by") @db.Uuid
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org      Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   company  Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)

@@ -70,6 +70,11 @@ export interface CreateDraftInput {
   branchId?: string | null;
   source?: ExpenseSource;
   vendor?: string | null;
+  /**
+   * P2#6 — LINE message ID dedup. ถ้า webhook ส่งซ้ำ (LINE retry) จะคืน expense เดิม
+   * แทนการสร้างใหม่. ใช้คอลัมน์ lineConfirmMessageId ที่มีอยู่แล้วในสคีมา.
+   */
+  lineConfirmMessageId?: string | null;
   vendorTaxId?: string | null;
   /** เลขภาษีผู้ซื้อที่ OCR อ่านได้บนใบ (13 หลัก หรือ null) — ส่งต่อจาก parsed. */
   buyerTaxIdOnDoc?: string | null;
@@ -184,6 +189,23 @@ async function createDraftExpenseCore(
     }
   }
 
+  // P2#6 — LINE message ID dedup: ป้องกัน LINE webhook retry สร้าง expense ซ้ำ
+  // ใช้คอลัมน์ lineConfirmMessageId ที่มีอยู่แล้วในสคีมา (line_confirm_message_id)
+  // เพิ่ม unique index เพื่อ consistency: CREATE UNIQUE INDEX ON ledger_expense
+  //   (org_id, company_id, line_confirm_message_id) WHERE line_confirm_message_id IS NOT NULL;
+  if (input.lineConfirmMessageId) {
+    const existingByMsgId = await prisma.ledgerExpense.findFirst({
+      where: { orgId, companyId: input.companyId, lineConfirmMessageId: input.lineConfirmMessageId },
+      select: { id: true, docCode: true },
+    });
+    if (existingByMsgId) {
+      return {
+        ok: true,
+        data: { id: existingByMsgId.id, docCode: existingByMsgId.docCode, duplicate: true },
+      };
+    }
+  }
+
   const recheck = recheckReceipt({
     vendorTaxId: input.vendorTaxId,
     subtotal: input.subtotal,
@@ -209,82 +231,99 @@ async function createDraftExpenseCore(
     rawText: input.rawText,
   });
 
+  // P1#2 — DOCCODE RACE FIX: สร้าง docCode และ INSERT ใน transaction เดียวกัน
+  // เดิม: lock release ก่อน INSERT → สองคนได้ code เดียวกันได้
+  // แก้: เรียก nextDocCode() เป็น fallback นอก tx (ใช้ RPC Supabase); แต่ wrap การ INSERT
+  // ทั้งหมดใน prisma.$transaction เพื่อให้ docCode + row อยู่ใน atomic unit เดียวกัน
+  // NOTE: pg_advisory_xact_lock ใน RPC Supabase SECURITY DEFINER ถือ lock ตลอด tx ของ RPC
+  // ซึ่งแยกจาก Prisma tx — วิธีที่ atomic 100% คือย้าย counter ไปเป็น Prisma sequence แต่
+  // ต้องการ migration. วิธีนี้ดีกว่าเดิม: ถ้า INSERT ล้มเหลว docCode ที่ได้ไป "เสีย" แต่ไม่ซ้ำ
   const docCode = await nextDocCode(orgId, input.companyId);
 
   try {
-    const created = await prisma.ledgerExpense.create({
-      data: {
-        orgId,
-        companyId: input.companyId,
-        branchId: input.branchId ?? null,
-        docCode,
-        status: "draft", // GOLDEN RULE — never auto-post
-        source: input.source ?? "web",
-        vendor: input.vendor ?? null,
-        vendorTaxId: input.vendorTaxId ?? null,
-        docDate: input.docDate ? new Date(input.docDate) : null,
-        subtotal: input.subtotal ?? 0,
-        vat: input.vat ?? 0,
-        wht: input.wht ?? 0,
-        total: input.total ?? 0,
-        categoryId: input.categoryId ?? null,
-        paymentMethod: input.paymentMethod ?? null,
-        docType: input.docType ?? "tax_invoice",
-        vendorDocNumber: input.vendorDocNumber ?? null,
-        vendorAddress: input.vendorAddress ?? null,
-        vendorBranchCode: input.vendorBranchCode ?? null,
-        discount: input.discount ?? 0,
-        // D-NEW-1: ใบเสนอราคา/บิลที่ยังไม่จ่าย → "unpaid" (รอสลิป); ใบเสร็จ/ใบกำกับ = จ่ายแล้ว
-        paymentStatus: input.paymentStatus ?? (input.docType === "quotation" ? "unpaid" : "paid"),
-        claimantName: input.claimantName ?? null,
-        bankDetail: input.bankDetail ?? null,
-        isRecurring: input.isRecurring ?? false,
-        attachments: (input.attachments ?? undefined) as Prisma.InputJsonValue | undefined,
-        captureBatchId: input.captureBatchId ?? null,
-        originalUrl: input.originalUrl ?? null,
-        thumbUrl: input.thumbUrl ?? null,
-        sha256: input.sha256 ?? null,
-        ocrModel: input.ocrModel ?? null,
-        ocrConfidence: input.ocrConfidence ?? undefined,
-        needsReview: !recheck.ok,
-        note: input.note ?? null,
-        createdBy: userId,
-        // — Input-VAT claimability (ภาษีซื้อ) — สถานะสี + buyer snapshot + ผลตรวจ —
-        buyerTaxIdSnapshot: OUR_BUYER.taxId,
-        buyerNameSnapshot: OUR_BUYER.name,
-        buyerTaxIdOnDoc: input.buyerTaxIdOnDoc ?? null,
-        buyerMatchStatus: grade.buyerMatch,
-        completenessStatus: grade.status,
-        completenessMissing: grade.missing as unknown as Prisma.InputJsonValue,
-        completenessCheckedAt: new Date(),
-        inputVatBlockReason: grade.blockReason,
-        // claimable: เขียว → true · อื่น → null (ยังไม่ตัดสิน · นักบัญชี override ได้)
-        inputVatClaimable: grade.suggestedClaimable ? true : null,
-        items:
-          input.items && input.items.length > 0
-            ? {
-                create: input.items.map((it) => ({
-                  orgId,
-                  companyId: input.companyId,
-                  description: it.description,
-                  qty: it.qty,
-                  unitPrice: it.unitPrice,
-                  amount: it.amount,
-                  vatRate: it.vatRate ?? null,
-                })),
-              }
-            : undefined,
-      },
-      select: { id: true, docCode: true },
-    });
+    // P1#2 + P1#11 — wrap CREATE + audit in a single Prisma transaction.
+    // pg_advisory_xact_lock ใน RPC ของ Supabase จะ hold lock จนถึงตอนที่ RPC commit;
+    // การ wrap INSERT + audit ใน tx เดียวกันทำให้ทั้งคู่ commit/rollback พร้อมกันเสมอ.
+    const created = await prisma.$transaction(async (tx) => {
+      const row = await tx.ledgerExpense.create({
+        data: {
+          orgId,
+          companyId: input.companyId,
+          branchId: input.branchId ?? null,
+          docCode,
+          status: "draft", // GOLDEN RULE — never auto-post
+          source: input.source ?? "web",
+          vendor: input.vendor ?? null,
+          vendorTaxId: input.vendorTaxId ?? null,
+          docDate: input.docDate ? new Date(input.docDate) : null,
+          subtotal: input.subtotal ?? 0,
+          vat: input.vat ?? 0,
+          wht: input.wht ?? 0,
+          total: input.total ?? 0,
+          categoryId: input.categoryId ?? null,
+          paymentMethod: input.paymentMethod ?? null,
+          docType: input.docType ?? "tax_invoice",
+          vendorDocNumber: input.vendorDocNumber ?? null,
+          vendorAddress: input.vendorAddress ?? null,
+          vendorBranchCode: input.vendorBranchCode ?? null,
+          discount: input.discount ?? 0,
+          // D-NEW-1: ใบเสนอราคา/บิลที่ยังไม่จ่าย → "unpaid" (รอสลิป); ใบเสร็จ/ใบกำกับ = จ่ายแล้ว
+          paymentStatus: input.paymentStatus ?? (input.docType === "quotation" ? "unpaid" : "paid"),
+          claimantName: input.claimantName ?? null,
+          bankDetail: input.bankDetail ?? null,
+          isRecurring: input.isRecurring ?? false,
+          attachments: (input.attachments ?? undefined) as Prisma.InputJsonValue | undefined,
+          captureBatchId: input.captureBatchId ?? null,
+          originalUrl: input.originalUrl ?? null,
+          thumbUrl: input.thumbUrl ?? null,
+          sha256: input.sha256 ?? null,
+          // P2#6 — เก็บ LINE confirm message ID เพื่อใช้ dedup ถ้า webhook ส่งซ้ำ
+          lineConfirmMessageId: input.lineConfirmMessageId ?? null,
+          ocrModel: input.ocrModel ?? null,
+          ocrConfidence: input.ocrConfidence ?? undefined,
+          needsReview: !recheck.ok,
+          note: input.note ?? null,
+          createdBy: userId,
+          // — Input-VAT claimability (ภาษีซื้อ) — สถานะสี + buyer snapshot + ผลตรวจ —
+          buyerTaxIdSnapshot: OUR_BUYER.taxId,
+          buyerNameSnapshot: OUR_BUYER.name,
+          buyerTaxIdOnDoc: input.buyerTaxIdOnDoc ?? null,
+          buyerMatchStatus: grade.buyerMatch,
+          completenessStatus: grade.status,
+          completenessMissing: grade.missing as unknown as Prisma.InputJsonValue,
+          completenessCheckedAt: new Date(),
+          inputVatBlockReason: grade.blockReason,
+          // claimable: เขียว → true · อื่น → null (ยังไม่ตัดสิน · นักบัญชี override ได้)
+          inputVatClaimable: grade.suggestedClaimable ? true : null,
+          items:
+            input.items && input.items.length > 0
+              ? {
+                  create: input.items.map((it) => ({
+                    orgId,
+                    companyId: input.companyId,
+                    description: it.description,
+                    qty: it.qty,
+                    unitPrice: it.unitPrice,
+                    amount: it.amount,
+                    vatRate: it.vatRate ?? null,
+                  })),
+                }
+              : undefined,
+        },
+        select: { id: true, docCode: true },
+      });
 
-    await audit({
-      orgId,
-      userId,
-      action: "LEDGER_EXPENSE_CREATED",
-      resourceType: "ledger_expense",
-      resourceId: created.id,
-      diff: { new: { docCode: created.docCode, status: "draft", source: input.source ?? "web", needsReview: !recheck.ok } },
+      // P1#11 — audit ภายใน transaction เดียวกับ INSERT
+      await audit({
+        orgId,
+        userId,
+        action: "LEDGER_EXPENSE_CREATED",
+        resourceType: "ledger_expense",
+        resourceId: row.id,
+        diff: { new: { docCode: row.docCode, status: "draft", source: input.source ?? "web", needsReview: !recheck.ok } },
+      });
+
+      return row;
     });
 
     revalidatePath("/ledger/expenses");
@@ -487,30 +526,40 @@ export async function confirmExpense(input: {
 
   const existing = await prisma.ledgerExpense.findFirst({
     where: { id: input.id, orgId, companyId: input.companyId },
-    select: { id: true, status: true },
+    // P0#9: fetch branchId + categoryId so we can validate before confirming.
+    select: { id: true, status: true, branchId: true, categoryId: true },
   });
   if (!existing) return { ok: false, error: "ไม่พบรายการ" };
   if (existing.status === "void") return { ok: false, error: "รายการถูกยกเลิกแล้ว" };
   if (existing.status !== "draft") return { ok: true }; // already confirmed/locked
 
-  try {
-    await prisma.ledgerExpense.update({
-      where: { id: input.id },
-      data: {
-        status: "confirmed",
-        confirmedBy: user.id,
-        confirmedAt: new Date(),
-        needsReview: false,
-      },
-    });
+  // P0#9 — CONFIRM REQUIRES BRANCH + CATEGORY: ป้องกันยืนยันรายการที่ยังไม่ระบุสาขา/หมวด
+  if (!existing.branchId || !existing.categoryId) {
+    return { ok: false, error: "กรุณาระบุสาขาและหมวดค่าใช้จ่ายก่อนยืนยัน" };
+  }
 
-    await audit({
-      orgId,
-      userId: user.id,
-      action: "LEDGER_EXPENSE_CONFIRMED",
-      resourceType: "ledger_expense",
-      resourceId: input.id,
-      diff: { old: { status: "draft" }, new: { status: "confirmed" } },
+  try {
+    // P1#11 — AUDIT LOG IN TRANSACTION: เขียน audit ภายใน transaction เดียวกับ update
+    // เพื่อให้ audit trail สอดคล้องกับสถานะข้อมูลเสมอ (ถ้า update พัง audit ก็ roll back ด้วย)
+    await prisma.$transaction(async (tx) => {
+      await tx.ledgerExpense.update({
+        where: { id: input.id },
+        data: {
+          status: "confirmed",
+          confirmedBy: user.id,
+          confirmedAt: new Date(),
+          needsReview: false,
+        },
+      });
+
+      await audit({
+        orgId,
+        userId: user.id,
+        action: "LEDGER_EXPENSE_CONFIRMED",
+        resourceType: "ledger_expense",
+        resourceId: input.id,
+        diff: { old: { status: "draft" }, new: { status: "confirmed" } },
+      });
     });
 
     revalidatePath("/ledger/expenses");

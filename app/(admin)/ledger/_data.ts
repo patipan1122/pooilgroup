@@ -98,6 +98,13 @@ export const expenseByBranch = cache(
       where,
       _sum: { total: true },
     });
+    // P2#15: Two separate queries — one groupBy on ledger_expense, one findMany on
+    // branch — because Prisma's groupBy() does not support JOINs. If branch count
+    // ever exceeds ~100, consolidate with a single $queryRaw JOIN query instead:
+    //   SELECT b.id, b.name, COALESCE(SUM(e.total),0) AS total
+    //   FROM branch b LEFT JOIN ledger_expense e ON ...
+    //   GROUP BY b.id, b.name
+    // to avoid the separate round-trip. Current setup is fine for ≤100 branches.
     const branches = await prisma.branch.findMany({
       where: { orgId: opts.orgId, companyId: opts.companyId },
       select: { id: true, name: true },
@@ -116,7 +123,11 @@ export const expenseByBranch = cache(
 /** Monthly confirmed-spend trend (last N months) — for dashboard bars.
  *  Anchored on the Asia/Bangkok current month so the highlighted "current"
  *  bar and bucket labels match the period the dashboard page shows (avoids the
- *  UTC vs +07:00 off-by-one near the 1st of the month). */
+ *  UTC vs +07:00 off-by-one near the 1st of the month).
+ *
+ *  P2#9 FIX: Aggregation is now done in SQL via $queryRaw GROUP BY + SUM instead
+ *  of fetching raw rows and summing in JavaScript. This avoids pulling potentially
+ *  thousands of rows across the wire when the dataset grows. */
 export const expenseByMonth = cache(
   async (
     orgId: string,
@@ -128,24 +139,33 @@ export const expenseByMonth = cache(
     const [sy, sm] = startPeriod.split("-").map(Number);
     const start = new Date(Date.UTC(sy, sm - 1, 1));
 
-    const rows = await prisma.ledgerExpense.findMany({
-      where: {
-        orgId,
-        companyId,
-        status: { in: ["confirmed", "locked"] },
-        docDate: { gte: start },
-      },
-      select: { docDate: true, total: true },
-    });
+    // SQL GROUP BY + SUM — lets Postgres do the aggregation rather than pulling
+    // raw rows into JS. to_char(..., 'YYYY-MM') uses the UTC date stored in the
+    // column (doc_date is DATE stored as midnight UTC, consistent with how
+    // shiftPeriod buckets are computed above).
+    type RawRow = { period: string; total: string };
+    const sqlRows = await prisma.$queryRaw<RawRow[]>`
+      SELECT
+        to_char(doc_date, 'YYYY-MM') AS period,
+        COALESCE(SUM(total), 0)::text AS total
+      FROM ledger_expense
+      WHERE
+        org_id        = ${orgId}
+        AND company_id = ${companyId}
+        AND status     IN ('confirmed', 'locked')
+        AND doc_date  >= ${start}
+      GROUP BY to_char(doc_date, 'YYYY-MM')
+    `;
+
+    // Build the ordered bucket map (fill months with no rows as 0).
     const buckets = new Map<string, number>();
     for (let i = 0; i < months; i++) {
       buckets.set(shiftPeriod(startPeriod, i), 0);
     }
-    for (const r of rows) {
-      if (!r.docDate) continue;
-      const key = `${r.docDate.getUTCFullYear()}-${String(r.docDate.getUTCMonth() + 1).padStart(2, "0")}`;
-      if (buckets.has(key))
-        buckets.set(key, (buckets.get(key) ?? 0) + dec(r.total));
+    for (const r of sqlRows) {
+      if (buckets.has(r.period)) {
+        buckets.set(r.period, parseFloat(r.total) || 0);
+      }
     }
     return Array.from(buckets.entries()).map(([period, total]) => ({
       period,
@@ -313,6 +333,9 @@ export const listLedgerMembers = cache(async function listLedgerMembers(orgId: s
       createdAt: true,
     },
   });
+  // P2#15: Two-query pattern — fetch members first, then resolve branch names in
+  // a second round-trip. Prisma does not support JOINs in findMany + select, so
+  // this is intentional. If branch count > 100, consolidate via $queryRaw JOIN.
   const ids = Array.from(
     new Set(
       rows.flatMap((r) =>
