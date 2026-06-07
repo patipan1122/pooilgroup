@@ -83,7 +83,16 @@ async function post(
 
 function isSuccess(d: Json | null): boolean {
   if (!d) return false;
+  // The `success` flag is TRCloud's REAL operation result. Trust it absolutely.
   if (d.success === 1 || d.success === "1" || d.success === true) return true;
+  // CRITICAL (2026-06-07): TRCloud puts `"HTTP":"200 Success"` in EVERY response —
+  // including FAILURES that carry `success:0`. The old code returned true whenever
+  // HTTP started with "2", so a failed ap/create.php (success:0) was marked "sent"
+  // even though no AP was created (e.g. EXP-202606-0024 → false "sent"). So an
+  // EXPLICIT success:0/false is ALWAYS a failure — never fall back to the HTTP field.
+  if (d.success === 0 || d.success === "0" || d.success === false) return false;
+  // Only when there is NO `success` flag at all do we fall back to the HTTP status
+  // (some lightweight endpoints omit it).
   const http = pick(d, "HTTP");
   if (http && http.startsWith("2")) return true;
   return false;
@@ -450,6 +459,12 @@ export async function pushExpenseToTrcloud(
   const inner = asObj(r.data?.data) ?? asObj(r.data?.head) ?? r.data;
   const docId = pick(inner, "id", "document_id") ?? pick(r.data, "id", "document_id");
   const docNo = pick(inner, "document_number", "no") ?? pick(r.data, "document_number", "no");
+  // Defence-in-depth: a genuine create ALWAYS returns a document id/number. If we
+  // get neither, treat it as a failure rather than stamping a phantom "sent" — the
+  // accountant should re-push, not believe a row reached TRCloud when it didn't.
+  if (!docId && !docNo) {
+    return { ok: false, error: `TRCloud ไม่คืนเลขเอกสาร — ส่งไม่สำเร็จ (${errMsg(r)})` };
+  }
   return { ok: true, docId, docNo };
 }
 
