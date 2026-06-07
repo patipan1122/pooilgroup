@@ -4,6 +4,15 @@
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
+## ✅ FULL VERIFY (2026-06-07 — "ทุกฟีเจอร์ไปด้วยกันได้ไหม")
+
+- **tsc: สะอาด 100%** ทั้ง codebase (หลัง `prisma generate` — driveFolderCache เป็น false alarm เพราะ client ไม่ได้ regenerate)
+- **next build: compile ผ่าน** ("✓ Compiled successfully"); local build error = เครื่อง sandbox ขาด prod secrets (DATABASE_URL/SUPABASE_*) ที่ Vercel มี → **ไม่ใช่บั๊ก** (พิสูจน์: Vercel deploy ทุก commit สำเร็จทั้ง session + OCR live).
+- **Integration audit (2 ทีม): ไม่มี P0.** ปลอดภัยยืนยันแล้ว: ไม่มี cross-company leak (companyId scope ครบ), LINE webhook แยก OA ต่อ module (ไม่ชนกัน), module gating ถูก, Drive folder ไม่ชน, channel crypto consistent.
+- **ความเสี่ยงที่รู้ (ไม่บล็อก · ต้องรู้ไว้):** P1 TRCloud push จะ error ถ้ายังไม่ apply migration (gate หลัง env+admin) · P1 AI budget = pool เดียว $200/เดือนทุก module (OCR burst อาจบล็อก AI module อื่นชั่วคราว) · P2 staff ที่อยู่ทั้ง Pooil+JP Sync ถูก pin บริษัทแรก · P2 Drive ใช้ร่วม ChairOps (by design) · P2 /liff/ledger โชว์ UI ให้คนไม่มีสิทธิ์ (API บล็อกอยู่ ไม่รั่ว).
+- **พบ parallel session กำลังแก้ trcloud-push.ts** (EXP-0024 ขึ้น "ส่งแล้ว" ทั้งที่ fail — TRCloud คืน HTTP 200 แม้ success:0) — ผมไม่แตะ กัน entangle.
+- safeDocDate fix หลุด stage ใน 66c93e4 → commit เพิ่ม 6846bcd.
+
 ## 🔥 HOTFIX (2026-06-07 — OCR ฿0.00 — RETIRED Gemini model · DEPLOYED df65edf)
 
 **อาการ:** ส่งรูปใบเสร็จใน LINE → การ์ดขึ้น ฿0.00 ทุกช่อง (ร้าน/วันที่/ยอด ว่างหมด).
