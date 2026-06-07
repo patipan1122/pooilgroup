@@ -69,13 +69,15 @@ export interface PaymentRequestCardInput {
   };
   /** the bills in this request (docCode + amount) — shown compact. */
   bills: { docCode: string; amount: number }[];
+  /** LIFF deep-link to the request detail page (ดูรายละเอียด/จ่าย). */
+  detailUrl?: string | null;
 }
 
 const MAX_BILLS_ON_CARD = 4;
 
 /** Build the request card. Pushed to the executive group on "ขอโอนเงิน". */
 export function buildPaymentRequestCard(input: PaymentRequestCardInput): LineFlexMessage {
-  const { vendor, billsGross, whtTotal, expectedTransfer, payee, bills } = input;
+  const { vendor, billsGross, whtTotal, expectedTransfer, payee, bills, detailUrl } = input;
   const shown = bills.slice(0, MAX_BILLS_ON_CARD);
   const overflow = bills.length - shown.length;
 
@@ -88,11 +90,14 @@ export function buildPaymentRequestCard(input: PaymentRequestCardInput): LineFle
     payeeLines.push({ type: "text", text: bank, size: "xs", color: COLOR.sub, wrap: true });
   }
   if (payee.acctNo) {
-    // SELECTABLE — long-press to copy (D8: no native copy button on LINE).
-    payeeLines.push({ type: "text", text: `เลขบัญชี ${payee.acctNo}`, size: "md", weight: "bold", color: COLOR.brand, wrap: true, margin: "xs" });
+    // Audit P1 — number on its OWN line (label above) so long-press selects clean
+    // digits, not "เลขบัญชี 123…". Selectable = copy (LINE flex has no copy button).
+    payeeLines.push({ type: "text", text: "เลขบัญชี", size: "xs", color: COLOR.sub, margin: "xs" });
+    payeeLines.push({ type: "text", text: payee.acctNo, size: "lg", weight: "bold", color: COLOR.brand, wrap: true });
   }
   if (payee.promptpay) {
-    payeeLines.push({ type: "text", text: `พร้อมเพย์ ${payee.promptpay}`, size: "sm", weight: "bold", color: COLOR.brand, wrap: true });
+    payeeLines.push({ type: "text", text: "พร้อมเพย์", size: "xs", color: COLOR.sub, margin: "xs" });
+    payeeLines.push({ type: "text", text: payee.promptpay, size: "md", weight: "bold", color: COLOR.brand, wrap: true });
   }
   if (payeeLines.length === 0) {
     payeeLines.push({ type: "text", text: "— ยังไม่ระบุบัญชีผู้รับ —", size: "xs", color: COLOR.sub, wrap: true });
@@ -163,6 +168,25 @@ export function buildPaymentRequestCard(input: PaymentRequestCardInput): LineFle
         },
       ],
     },
+    // "ดูรายละเอียด / จ่าย" — opens the LIFF detail page (full bills + payee copy + QR).
+    ...(detailUrl
+      ? ({
+          footer: {
+            type: "box",
+            layout: "vertical",
+            paddingAll: "12px",
+            contents: [
+              {
+                type: "button",
+                style: "primary",
+                height: "sm",
+                color: COLOR.brand,
+                action: { type: "uri", label: "ดูรายละเอียด / จ่าย", uri: detailUrl },
+              },
+            ],
+          },
+        } as Pick<FlexBubble, "footer">)
+      : {}),
   };
 
   return {

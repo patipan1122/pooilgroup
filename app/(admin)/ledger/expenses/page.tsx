@@ -363,6 +363,7 @@ export default async function ExpensesPage({
           sendableIds={sendableIds}
           companyId={scope.companyId}
           payreqEnabled={ledgerPayreqV1()}
+          branches={scope.branches}
           tab={tab}
           tabCounts={tabCounts}
           listActions={

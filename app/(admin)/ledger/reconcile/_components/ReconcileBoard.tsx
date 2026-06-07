@@ -143,6 +143,25 @@ function RequestRow({ req, canCancel }: { req: ReconcileRequestRow; canCancel: b
             <span>รวมก่อนหัก {baht(req.billsGross)}</span>
             <span className="tabular-nums">ต้องโอน {baht(req.expectedTransfer)}</span>
           </li>
+          {/* audit-trail + slip evidence (audit P1/P3) */}
+          {(req.requestedByName || req.paidBy || req.transRef || req.slipUrl) && (
+            <li className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-zinc-100 pt-1.5 text-[11px] text-zinc-500">
+              {req.requestedByName && <span>ผู้ขอ: {req.requestedByName}</span>}
+              {req.paidBy && <span>จ่าย: {req.paidBy.slice(0, 10)}…</span>}
+              {req.transRef && <span className="font-mono">อ้างอิง {req.transRef}</span>}
+              {req.slipUrl && (
+                <a
+                  href={req.slipUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-[var(--color-brand-600)] hover:underline"
+                >
+                  <ReceiptText className="size-3.5" aria-hidden />
+                  ดูสลิป
+                </a>
+              )}
+            </li>
+          )}
         </ul>
       )}
       {open && canCancel && cancellable && (

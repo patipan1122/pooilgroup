@@ -641,6 +641,58 @@ export async function bulkConfirm(
  *  same weight as confirm. companyId-scoped for the same cross-company reason as
  *  bulkConfirm (client-supplied ids). Locked rows are skipped, never force-voided.
  *  The UI gates this behind a type-"ลบ" confirmation; the server re-checks the role. */
+/** Quick-classify (audit P0) — set สาขา+หมวด on a batch of bills in ONE action so a
+ *  backlog of unclassified bills can be classified-then-requested without opening each
+ *  one. Validates branch+category belong to org+company; skips locked/void. Bills stay
+ *  draft (classifying ≠ confirming). Accountant/admin-tier (same gate as bulkConfirm). */
+export async function bulkClassify(
+  ids: string[],
+  branchId: string,
+  categoryId: string,
+  companyId: string,
+): Promise<ActionResult & { updated?: number }> {
+  if (!Array.isArray(ids) || ids.length === 0) return { ok: false, error: "ไม่ได้เลือกรายการ" };
+  if (!companyId) return { ok: false, error: "ไม่ได้ระบุบริษัท" };
+  if (!branchId && !categoryId)
+    return { ok: false, error: "เลือกสาขาหรือหมวดอย่างน้อยหนึ่งอย่าง" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  const orgId = session.user.org_id;
+  if (!(await ledgerWebCanForRole(orgId, session.user.role, "expense.confirm"))) {
+    return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลตั้งสาขา/หมวดได้" };
+  }
+  const company = await prisma.company.findFirst({ where: { id: companyId, orgId }, select: { id: true } });
+  if (!company) return { ok: false, error: "ไม่พบบริษัท" };
+  // Validate the branch/category belong to this org+company (no cross-company smuggle).
+  if (branchId) {
+    const b = await prisma.branch.findFirst({ where: { id: branchId, orgId }, select: { id: true } });
+    if (!b) return { ok: false, error: "ไม่พบสาขา" };
+  }
+  if (categoryId) {
+    const c = await prisma.ledgerCategory.findFirst({
+      where: { id: categoryId, orgId, companyId },
+      select: { id: true },
+    });
+    if (!c) return { ok: false, error: "ไม่พบหมวดในบริษัทนี้" };
+  }
+  const data: { branchId?: string; categoryId?: string } = {};
+  if (branchId) data.branchId = branchId;
+  if (categoryId) data.categoryId = categoryId;
+  const res = await prisma.ledgerExpense.updateMany({
+    where: { id: { in: ids }, orgId, companyId, status: { notIn: ["locked", "void"] } },
+    data,
+  });
+  await audit({
+    orgId, userId: session.user.id,
+    action: "LEDGER_EXPENSE_UPDATED",
+    resourceType: "ledger_expense",
+    diff: { new: { bulkClassify: true, branchId: branchId || null, categoryId: categoryId || null, count: res.count } },
+  });
+  revalidatePath("/ledger/expenses");
+  return { ok: true, updated: res.count };
+}
+
 export async function bulkVoid(
   ids: string[],
   companyId: string,
@@ -2962,6 +3014,10 @@ export async function createPaymentRequestAction(
       where: { id: { in: ids }, orgId, companyId: res.companyId },
       select: { docCode: true, total: true },
     });
+    // LIFF deep-link to the detail page. Endpoint = /liff/ledger, so the path after
+    // the LIFF id is /payreq/<id> (concatenate rule — see line-liff-deeplink memory).
+    const liffId = process.env.NEXT_PUBLIC_LEDGER_LIFF_ID;
+    const detailUrl = liffId ? `https://liff.line.me/${liffId}/payreq/${res.requestId}` : null;
     const card = buildPaymentRequestCard({
       vendor: res.vendor ?? null,
       billsGross: res.billsGross ?? 0,
@@ -2969,6 +3025,7 @@ export async function createPaymentRequestAction(
       expectedTransfer: res.expectedTransfer ?? 0,
       payee: payee.data,
       bills: billRows.map((b) => ({ docCode: b.docCode, amount: Number(b.total) })),
+      detailUrl,
     });
     const push = await pushFlexToSlipGroup(orgId, res.companyId, card);
     if (push.ok) {
@@ -3059,6 +3116,42 @@ export async function assignSlipToRequestAction(
   });
   revalidatePath("/ledger/reconcile");
   return { ok: true };
+}
+
+/** Autofill (audit P1) — the payee last used for this vendor (so ops/exec don't
+ *  re-type the account number every time → fewer wrong-account transfers). Reads the
+ *  most-recent request's payee snapshot; falls back to the bill's free-text bankDetail. */
+export async function lastPayeeForVendor(
+  vendor: string,
+  companyId: string,
+): Promise<{ acctName?: string | null; bankCode?: string | null; acctNo?: string | null; promptpay?: string | null } | null> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return null;
+  const { session } = access;
+  const orgId = session.user.org_id;
+  const v = (vendor ?? "").trim();
+  if (!v || !companyId) return null;
+  const last = await prisma.ledgerPaymentRequest.findFirst({
+    where: { orgId, companyId, vendor: v, payeeAcctNo: { not: null } },
+    orderBy: { requestedAt: "desc" },
+    select: { payeeAcctName: true, payeeBankCode: true, payeeAcctNo: true, payeePromptpay: true },
+  });
+  if (last) {
+    return {
+      acctName: last.payeeAcctName,
+      bankCode: last.payeeBankCode,
+      acctNo: last.payeeAcctNo,
+      promptpay: last.payeePromptpay,
+    };
+  }
+  // Fallback — the most recent bill's bankDetail free-text (surface as an acctNo hint).
+  const bill = await prisma.ledgerExpense.findFirst({
+    where: { orgId, companyId, vendor: v, bankDetail: { not: null } },
+    orderBy: { createdAt: "desc" },
+    select: { bankDetail: true },
+  });
+  if (bill?.bankDetail) return { acctNo: bill.bankDetail };
+  return null;
 }
 
 // ── Permission matrix (GAP 5 · LIFF "สิทธิ์" tab) ────────────────────────────

@@ -132,12 +132,12 @@ export async function exportReconcileCsv(
     "ยอดจ่ายแล้ว",
     "สถานะ",
     "เลขอ้างอิงสลิป",
+    "ผู้ขอ",
     "วันที่จ่าย",
   ];
 
-  // Slip transRef per request (for the "เลขอ้างอิงสลิป" column) — best-effort: a
-  // request may have 1+ slips; we don't re-query payments here to keep the export
-  // light. The accountant cross-references the slip in "ต้องตรวจ" if needed.
+  // transRef + requester now come from listReconcile (joined from the linked payment)
+  // so the accountant can bank-reconcile + audit straight from the CSV (audit P1).
   const lines: string[] = [header.map(csvCell).join(",")];
   let rowCount = 0;
   for (const req of allRequests) {
@@ -157,7 +157,8 @@ export async function exportReconcileCsv(
           baht(req.expectedTransfer),
           baht(req.paidTotal),
           stateLabel,
-          "",
+          req.transRef ?? "",
+          req.requestedByName ?? "",
           paidDate,
         ]
           .map(csvCell)
@@ -178,7 +179,8 @@ export async function exportReconcileCsv(
           baht(req.expectedTransfer),
           baht(req.paidTotal),
           stateLabel,
-          "",
+          req.transRef ?? "",
+          req.requestedByName ?? "",
           paidDate,
         ]
           .map(csvCell)
