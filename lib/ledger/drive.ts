@@ -52,57 +52,54 @@ async function getAccessToken(orgId: string): Promise<string | null> {
   }
 }
 
-const DRIVE_Q = (name: string, parent: string) =>
-  `name='${name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parent}' in parents`;
-
-/** Find or create a folder under `parent` ("root" allowed); returns its id.
- *  orderBy=createdTime+asc ensures we always pick the OLDEST folder when duplicates
- *  exist (created by concurrent serverless invocations). If create fails we retry
- *  the search — another request may have won the race. */
-async function ensureFolder(
+/** DB-backed folder cache — avoids Drive API search on every upload and prevents
+ *  duplicate folders from concurrent requests (DB UNIQUE constraint is the lock). */
+async function cachedEnsureFolder(
   token: string,
+  orgId: string,
   name: string,
   parent: string,
 ): Promise<string | null> {
-  const q = encodeURIComponent(DRIVE_Q(name, parent));
-  // always pick oldest so concurrent requests consistently land in the same folder
-  const searchUrl = `${FILES_URL}?q=${q}&fields=files(id)&pageSize=1&orderBy=createdTime+asc`;
+  // 1. DB cache hit (fast path — ~0.1ms, no Drive API call)
+  const cached = await prisma.driveFolderCache.findUnique({
+    where: { orgId_parentId_name: { orgId, parentId: parent, name } },
+    select: { folderId: true },
+  });
+  if (cached) return cached.folderId;
 
-  const search = async (): Promise<string | null> => {
-    try {
-      const r = await fetch(searchUrl, {
-        headers: { authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!r.ok) return null;
-      const j = (await r.json()) as { files?: Array<{ id: string }> };
-      return j.files?.[0]?.id ?? null;
-    } catch {
-      return null;
-    }
-  };
-
+  // 2. Cache miss — create folder in Drive
   try {
-    const existing = await search();
-    if (existing) return existing;
-
     const created = await fetch(`${FILES_URL}?fields=id`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        name,
-        mimeType: "application/vnd.google-apps.folder",
-        parents: [parent],
-      }),
+      body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder", parents: [parent] }),
       signal: AbortSignal.timeout(8000),
     });
     if (!created.ok) {
-      // concurrent request may have created it first — retry search
-      return await search();
+      // Drive create failed — another concurrent request may have won; check cache again
+      const retry = await prisma.driveFolderCache.findUnique({
+        where: { orgId_parentId_name: { orgId, parentId: parent, name } },
+        select: { folderId: true },
+      });
+      return retry?.folderId ?? null;
     }
-    return ((await created.json()) as { id: string }).id;
+    const { id: folderId } = (await created.json()) as { id: string };
+
+    // 3. Store in DB cache — ON CONFLICT (unique) = another request beat us, keep theirs
+    await prisma.driveFolderCache.upsert({
+      where: { orgId_parentId_name: { orgId, parentId: parent, name } },
+      create: { orgId, parentId: parent, name, folderId },
+      update: {}, // conflict = keep the first-inserted row; don't overwrite folderId
+    });
+
+    // 4. Return the canonical folder ID (ours if we won, theirs if they won)
+    const canonical = await prisma.driveFolderCache.findUnique({
+      where: { orgId_parentId_name: { orgId, parentId: parent, name } },
+      select: { folderId: true },
+    });
+    return canonical?.folderId ?? folderId;
   } catch (e) {
-    console.error("[ledger:drive] ensureFolder error", e);
+    console.error("[ledger:drive] cachedEnsureFolder error", e);
     return null;
   }
 }
@@ -111,10 +108,11 @@ async function ensureFolderPath(
   token: string,
   segments: string[],
   rootId: string,
+  orgId: string,
 ): Promise<string | null> {
   let parent = rootId;
   for (const seg of segments) {
-    const id = await ensureFolder(token, seg.slice(0, 120) || "ไม่ระบุ", parent);
+    const id = await cachedEnsureFolder(token, orgId, seg.slice(0, 120) || "ไม่ระบุ", parent);
     if (!id) return null;
     parent = id;
   }
@@ -157,7 +155,7 @@ export async function archiveReceiptToDrive(
   // App-owned root (drive.file scope can't reuse a hand-made folder). Optional
   // LEDGER_DRIVE_ROOT_FOLDER_ID pins an explicit folder id if ever shared to the app.
   const explicitRoot = process.env.LEDGER_DRIVE_ROOT_FOLDER_ID;
-  const baseId = explicitRoot || (await ensureFolder(token, ROOT_NAME, "root"));
+  const baseId = explicitRoot || (await cachedEnsureFolder(token, input.orgId, ROOT_NAME, "root"));
   if (!baseId) return null;
 
   const folderId = await ensureFolderPath(
@@ -169,6 +167,7 @@ export async function archiveReceiptToDrive(
       sanitize(input.categoryName, "ยังไม่จัดหมวด"), // ประเภทค่าใช้จ่าย
     ],
     baseId,
+    input.orgId,
   );
   if (!folderId) return null;
 
@@ -297,7 +296,7 @@ export async function getLedgerDriveFolderLink(orgId: string): Promise<string | 
   const token = await getAccessToken(orgId);
   if (!token) return null;
   const explicitRoot = process.env.LEDGER_DRIVE_ROOT_FOLDER_ID;
-  const baseId = explicitRoot || (await ensureFolder(token, ROOT_NAME, "root"));
+  const baseId = explicitRoot || (await cachedEnsureFolder(token, orgId, ROOT_NAME, "root"));
   if (!baseId) return null;
   return `https://drive.google.com/drive/folders/${baseId}`;
 }
