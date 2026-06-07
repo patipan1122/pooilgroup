@@ -4,6 +4,19 @@
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
+## 🔥 HOTFIX (2026-06-07 — OCR ฿0.00 — RETIRED Gemini model · DEPLOYED df65edf)
+
+**อาการ:** ส่งรูปใบเสร็จใน LINE → การ์ดขึ้น ฿0.00 ทุกช่อง (ร้าน/วันที่/ยอด ว่างหมด).
+**Root cause:** commit 84-fixes (392c2d6) เปลี่ยน OCR model `gemini-3.1-flash-lite` → `gemini-2.0-flash-lite` จากการเดาผิดว่า "3.1 ไม่มีจริง". แต่ Google **ปลด (retired) gemini-2.0-* ทั้งหมด 2026-06-01** → OCR call พังทุกครั้ง = ฿0.00 เงียบ ๆ. (3.1-flash-lite คือตัวที่เทสต์เลือกไว้ 3 รอบ memory thai-receipt-ocr-research.)
+**Fix (commits f18d3a9 · 7ad4307 · 2785201 · df65edf, pushed setup):**
+- คืน `gemini-3.1-flash-lite` + เพิ่ม fallback `gemini-2.5-flash-lite` (พังตัวนึง→สลับอัตโนมัติ ไม่ ฿0.00)
+- การ์ด LINE: OCR fail → ขึ้น "📷 อ่านภาพไม่ได้ — กดแก้ไขกรอกเอง" สีแดงแทน ฿0.00 เงียบ
+- เพิ่ม diagnostic log `[ledger:ocr]` (model/finishReason/size) ไว้ debug
+- จับ blank-parse (Gemini ตอบ null หมด) เป็น OCR-fail ด้วย
+**บั๊กที่ 2 (เจอหลัง OCR กลับมา): การ์ดโชว์ ฿11,500 แต่กดแก้ไขฟอร์มว่าง.** สาเหตุ = dedup (sha256/lineMsgId) คืน draft เก่าที่ว่าง (สร้างตอน OCR พัง) โดยไม่เขียนข้อมูล OCR ใหม่ทับ → การ์ดโชว์จาก OCR สด แต่ draft ใน DB ยังว่าง. Fixed 6bc4ae5: `maybeBackfillEmptyDraft` เติมข้อมูลใหม่ลง draft ว่างตอน resend (เฉพาะ draft + ว่างจริง + ไม่แตะ confirmed/locked/void).
+**บั๊กที่ 3: กดยืนยัน/บันทึก แล้วขึ้น "ข้อมูลไม่ถูกต้อง" ไม่บอกเหตุผล (EXP-0028).** สาเหตุ = `patchSchema` docType enum ขาด "quotation" (ทั้งที่ ExpenseDocType + OCR มี) → ใบเสนอราคาทุกใบ save/confirm ไม่ได้. Fixed d08d979: เพิ่ม quotation เข้า enum + `zodErrorMessage()` บอกชื่อช่องที่ผิด (แทน 5 จุดที่เคยขึ้น generic).
+**รอ:** CEO ส่งรูปทดสอบหลัง deploy ~2 นาที — ส่งรูป**เดิมซ้ำ** (จะ backfill draft ว่าง) หรือถ่าย**รูปใหม่** ก็ได้ แล้วลองกด "ยืนยัน/บันทึกร่าง".
+
 ## 🆕 Update (2026-06-07 — LedgerLine TRCloud v2 — 5 skills complete · ⏳ รอ CEO deploy)
 
 ### 2026-06-07 · LedgerLine TRCloud v2 — 5-skill sprint COMPLETE (commits 1ed0e38 + c08350e)
