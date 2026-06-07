@@ -65,6 +65,112 @@ async function nextDocCode(orgId: string, companyId: string): Promise<string> {
   return data as string;
 }
 
+// Fields needed to decide whether a deduped draft should be backfilled.
+const DEDUP_SELECT = {
+  id: true,
+  docCode: true,
+  status: true,
+  total: true,
+  vendor: true,
+  ocrModel: true,
+} satisfies Prisma.LedgerExpenseSelect;
+
+type DedupRow = {
+  id: string;
+  docCode: string;
+  status: string;
+  total: Prisma.Decimal | number;
+  vendor: string | null;
+  ocrModel: string | null;
+};
+
+/**
+ * When a re-sent image (sha256 / LINE msg id) matches an EXISTING draft that is
+ * still EMPTY — created when OCR had failed (total=0, vendor=null) — backfill it
+ * with the fresh OCR data from this resend so the edit form isn't blank. This is
+ * what fixes "การ์ดโชว์ยอด แต่กดแก้ไขแล้วฟอร์มว่าง": the dedup used to return the
+ * stale empty draft and silently drop the new OCR result.
+ *
+ * Safety: ONLY touches a row whose status is still "draft" AND that looks empty.
+ * Never overwrites a confirmed/locked/void row, nor a draft a human already
+ * filled in (vendor set or total > 0). Returns true iff it backfilled.
+ */
+async function maybeBackfillEmptyDraft(
+  orgId: string,
+  userId: string | null,
+  existing: DedupRow,
+  input: CreateDraftInput,
+  recheck: ReturnType<typeof recheckReceipt>,
+  grade: ReturnType<typeof gradeCompleteness>,
+): Promise<boolean> {
+  const existingTotal =
+    typeof existing.total === "number" ? existing.total : Number(existing.total);
+  const existingIsEmpty = existing.status === "draft" && existingTotal === 0 && existing.vendor == null;
+  const incomingHasData =
+    (input.total ?? 0) > 0 || !!input.vendor || !!input.docDate || (input.items?.length ?? 0) > 0;
+  if (!existingIsEmpty || !incomingHasData) return false;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.ledgerExpense.update({
+        where: { id: existing.id },
+        data: {
+          vendor: input.vendor ?? null,
+          vendorTaxId: input.vendorTaxId ?? null,
+          docDate: input.docDate ? new Date(input.docDate) : null,
+          subtotal: input.subtotal ?? 0,
+          vat: input.vat ?? 0,
+          wht: input.wht ?? 0,
+          total: input.total ?? 0,
+          discount: input.discount ?? 0,
+          paymentMethod: input.paymentMethod ?? null,
+          docType: input.docType ?? "tax_invoice",
+          vendorDocNumber: input.vendorDocNumber ?? null,
+          vendorAddress: input.vendorAddress ?? null,
+          vendorBranchCode: input.vendorBranchCode ?? null,
+          branchId: input.branchId ?? undefined, // keep prior branch if none parsed
+          ocrModel: input.ocrModel ?? null,
+          ocrConfidence: (input.ocrConfidence ?? undefined) as Prisma.InputJsonValue | undefined,
+          needsReview: !recheck.ok,
+          buyerTaxIdOnDoc: input.buyerTaxIdOnDoc ?? null,
+          buyerMatchStatus: grade.buyerMatch,
+          completenessStatus: grade.status,
+          completenessMissing: grade.missing as unknown as Prisma.InputJsonValue,
+          completenessCheckedAt: new Date(),
+          inputVatBlockReason: grade.blockReason,
+          inputVatClaimable: grade.suggestedClaimable ? true : null,
+          // Replace the (empty) item list with the freshly parsed lines.
+          items: {
+            deleteMany: {},
+            create: (input.items ?? []).map((it) => ({
+              orgId,
+              companyId: input.companyId,
+              description: it.description,
+              qty: it.qty,
+              unitPrice: it.unitPrice,
+              amount: it.amount,
+              vatRate: it.vatRate ?? null,
+            })),
+          },
+        },
+      });
+      await audit({
+        orgId,
+        userId,
+        action: "LEDGER_EXPENSE_UPDATED",
+        resourceType: "ledger_expense",
+        resourceId: existing.id,
+        diff: { new: { backfilledFromOcr: true, total: input.total ?? 0, vendor: input.vendor ?? null } },
+      });
+    });
+    revalidatePath("/ledger/expenses");
+    return true;
+  } catch (e) {
+    console.error("[ledger:backfillEmptyDraft] failed", e);
+    return false;
+  }
+}
+
 export interface CreateDraftInput {
   companyId: string;
   branchId?: string | null;
@@ -122,7 +228,7 @@ export interface CreateDraftInput {
  */
 export async function createDraftExpense(
   input: CreateDraftInput,
-): Promise<Result<{ id: string; docCode: string; duplicate: boolean }>> {
+): Promise<Result<{ id: string; docCode: string; duplicate: boolean; backfilled?: boolean }>> {
   let orgId: string;
   let userId: string | null;
   try {
@@ -155,7 +261,7 @@ export async function createDraftExpense(
 export async function createDraftExpenseSystem(
   orgId: string,
   input: CreateDraftInput,
-): Promise<Result<{ id: string; docCode: string; duplicate: boolean }>> {
+): Promise<Result<{ id: string; docCode: string; duplicate: boolean; backfilled?: boolean }>> {
   if (!orgId) return { ok: false, error: "missing-org" };
   return createDraftExpenseCore(orgId, input.createdById ?? null, input);
 }
@@ -170,40 +276,9 @@ async function createDraftExpenseCore(
   orgId: string,
   userId: string | null,
   input: CreateDraftInput,
-): Promise<Result<{ id: string; docCode: string; duplicate: boolean }>> {
+): Promise<Result<{ id: string; docCode: string; duplicate: boolean; backfilled?: boolean }>> {
   if (!(await assertCompanyInOrg(orgId, input.companyId))) {
     return { ok: false, error: "ไม่พบบริษัทใน org นี้" };
-  }
-
-  // Dedup by image hash.
-  if (input.sha256) {
-    const existing = await prisma.ledgerExpense.findFirst({
-      where: { orgId, companyId: input.companyId, sha256: input.sha256 },
-      select: { id: true, docCode: true },
-    });
-    if (existing) {
-      return {
-        ok: true,
-        data: { id: existing.id, docCode: existing.docCode, duplicate: true },
-      };
-    }
-  }
-
-  // P2#6 — LINE message ID dedup: ป้องกัน LINE webhook retry สร้าง expense ซ้ำ
-  // ใช้คอลัมน์ lineConfirmMessageId ที่มีอยู่แล้วในสคีมา (line_confirm_message_id)
-  // เพิ่ม unique index เพื่อ consistency: CREATE UNIQUE INDEX ON ledger_expense
-  //   (org_id, company_id, line_confirm_message_id) WHERE line_confirm_message_id IS NOT NULL;
-  if (input.lineConfirmMessageId) {
-    const existingByMsgId = await prisma.ledgerExpense.findFirst({
-      where: { orgId, companyId: input.companyId, lineConfirmMessageId: input.lineConfirmMessageId },
-      select: { id: true, docCode: true },
-    });
-    if (existingByMsgId) {
-      return {
-        ok: true,
-        data: { id: existingByMsgId.id, docCode: existingByMsgId.docCode, duplicate: true },
-      };
-    }
   }
 
   const recheck = recheckReceipt({
@@ -230,6 +305,37 @@ async function createDraftExpenseCore(
     buyerTaxIdOnDoc: input.buyerTaxIdOnDoc,
     rawText: input.rawText,
   });
+
+  // Dedup by image hash. If the SAME image was sent before, return that draft
+  // instead of creating a duplicate. BUT: if the prior draft is still empty
+  // (created when OCR failed → ฿0.00, vendor=null) and this re-send carries real
+  // OCR data, BACKFILL the existing draft so the edit form isn't blank. Never
+  // touch a confirmed/locked/void row or one a human already filled in.
+  if (input.sha256) {
+    const existing = await prisma.ledgerExpense.findFirst({
+      where: { orgId, companyId: input.companyId, sha256: input.sha256 },
+      select: DEDUP_SELECT,
+    });
+    if (existing) {
+      const backfilled = await maybeBackfillEmptyDraft(orgId, userId, existing, input, recheck, grade);
+      return { ok: true, data: { id: existing.id, docCode: existing.docCode, duplicate: true, backfilled } };
+    }
+  }
+
+  // P2#6 — LINE message ID dedup: ป้องกัน LINE webhook retry สร้าง expense ซ้ำ
+  // ใช้คอลัมน์ lineConfirmMessageId ที่มีอยู่แล้วในสคีมา (line_confirm_message_id)
+  // เพิ่ม unique index เพื่อ consistency: CREATE UNIQUE INDEX ON ledger_expense
+  //   (org_id, company_id, line_confirm_message_id) WHERE line_confirm_message_id IS NOT NULL;
+  if (input.lineConfirmMessageId) {
+    const existingByMsgId = await prisma.ledgerExpense.findFirst({
+      where: { orgId, companyId: input.companyId, lineConfirmMessageId: input.lineConfirmMessageId },
+      select: DEDUP_SELECT,
+    });
+    if (existingByMsgId) {
+      const backfilled = await maybeBackfillEmptyDraft(orgId, userId, existingByMsgId, input, recheck, grade);
+      return { ok: true, data: { id: existingByMsgId.id, docCode: existingByMsgId.docCode, duplicate: true, backfilled } };
+    }
+  }
 
   // P1#2 — DOCCODE RACE FIX: สร้าง docCode และ INSERT ใน transaction เดียวกัน
   // เดิม: lock release ก่อน INSERT → สองคนได้ code เดียวกันได้

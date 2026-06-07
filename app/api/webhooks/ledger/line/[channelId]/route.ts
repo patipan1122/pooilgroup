@@ -584,7 +584,9 @@ export async function POST(
               categoryName: null, // accountant picks the category on the web pane
               paymentMethod: parsed?.paymentMethod ?? null,
               confidence: parsed?.confidence ?? null,
-              needsReview: !!parsed && !ocrReadNothing && res.data.duplicate,
+              // Flag review only for a TRUE re-send of an already-filled draft —
+              // a backfilled empty draft now holds fresh good data, so don't nag.
+              needsReview: !!parsed && !ocrReadNothing && res.data.duplicate && !res.data.backfilled,
               ocrFailed: !parsed || ocrReadNothing,
               baseUrl,
               liffId: ledgerLiffId,
