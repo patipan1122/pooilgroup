@@ -14,6 +14,7 @@ import {
   Settings,
   UserCircle,
   Home,
+  LayoutGrid,
   Check,
   Building2,
   Inbox,
@@ -36,6 +37,7 @@ import {
 import { NotificationBell } from "./notification-bell";
 import { QuickApproveBar } from "./quick-approve-bar";
 import { CompanySwitcher } from "./company-switcher";
+import { HubBottomNav } from "./hub-bottom-nav";
 
 // Lazy-mount AiChat: the floating launcher button below is plain HTML, so
 // every admin route renders without paying for the 15-25 KB AiChat bundle.
@@ -45,7 +47,7 @@ const AiChat = dynamic(
   { ssr: false },
 );
 
-function AiChatLauncher() {
+function AiChatLauncher({ liftMobile = false }: { liftMobile?: boolean }) {
   const [mounted, setMounted] = useState(false);
   if (mounted) {
     return <AiChat defaultOpen />;
@@ -54,7 +56,11 @@ function AiChatLauncher() {
     <button
       type="button"
       onClick={() => setMounted(true)}
-      className="fixed bottom-4 right-4 z-30 size-11 rounded-xl shadow-blue flex items-center justify-center transition-transform hover:scale-105 bg-[var(--color-brand-600)] text-white"
+      className={cn(
+        "fixed right-4 z-30 size-11 rounded-xl shadow-blue flex items-center justify-center transition-transform hover:scale-105 bg-[var(--color-brand-600)] text-white",
+        // Lift above the mobile bottom-nav (h≈64px) when it's shown; desktop keeps bottom-4
+        liftMobile ? "bottom-20 lg:bottom-4" : "bottom-4",
+      )}
       aria-label="ถาม AI"
       title="ถาม AI Assistant"
     >
@@ -141,6 +147,11 @@ export function AdminShell({
     user.role === "super_admin" ||
     user.role === "org_admin" ||
     user.role === "admin";
+  // The mobile hub bottom-nav is for the launcher audience only (the same roles
+  // that land on /home). Field roles (staff/driver/managers) live inside one
+  // module and are redirected away from /home, so they don't get the hub nav.
+  const isHubAudience =
+    isAdmin || user.role === "viewer" || user.role === "program_admin";
   const activeModuleSlug = getModuleFromPath(pathname);
   const activeModule = activeModuleSlug ? MODULES[activeModuleSlug] : null;
   const isHome = pathname === "/home" || pathname === "/";
@@ -438,15 +449,31 @@ export function AdminShell({
           </div>
         )}
 
-        {/* Content — pb-20 leaves room below content so the floating AI
-            button doesn't cover the last row / row-action menus */}
-        <main className="flex-1 min-w-0 pb-20">{children}</main>
+        {/* Content — bottom padding leaves room for the floating AI button and,
+            on mobile for the hub audience, the fixed bottom-nav (~64px). */}
+        <main
+          className={cn(
+            "flex-1 min-w-0",
+            isHubAudience ? "pb-24 lg:pb-20" : "pb-20",
+          )}
+        >
+          {children}
+        </main>
       </div>
 
       {/* Global floating AI Assistant — available to every signed-in user
           (admins for analysis, branch managers for how-to + their own data).
           Lazy-mounted on first click via AiChatLauncher. */}
-      <AiChatLauncher />
+      <AiChatLauncher liftMobile={isHubAudience} />
+
+      {/* Mobile hub bottom-nav — launcher tabs for owner/admin/program-admin.
+          Hidden ≥lg (desktop uses the sidebar). */}
+      {isHubAudience && (
+        <HubBottomNav
+          isAdmin={isAdmin}
+          pendingCount={navCounts.pendingRegisterRequests ?? 0}
+        />
+      )}
     </div>
   );
 }
@@ -477,12 +504,19 @@ function SidebarBody({
   const activeModule = activeModuleSlug ? MODULES[activeModuleSlug] : null;
   return (
     <div className="py-3 flex flex-col">
-      {/* Zone 1: Home */}
-      <div className="px-3 mb-3">
+      {/* Zone 1: Home + all-programs directory */}
+      <div className="px-3 mb-3 space-y-0.5">
         <SidebarLink
           href="/home"
           icon={Home}
           label="หน้าหลัก"
+          pathname={pathname}
+          onNavigate={onNavigate}
+        />
+        <SidebarLink
+          href="/programs"
+          icon={LayoutGrid}
+          label="โปรแกรมทั้งหมด"
           pathname={pathname}
           onNavigate={onNavigate}
         />
