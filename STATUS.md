@@ -32,12 +32,14 @@
 - `recordPushResult`: DB write + audit now run in `Promise.all` (−20-50ms per push)
 - Schema + migration: composite index `(org_id, company_id, trcloud_doc_id)` added
 
-**⚠️ PENDING CEO ACTIONS before go-live:**
-1. Apply migration `20260606_ledger_trcloud_v2.sql` in Supabase Dashboard SQL editor
-2. Run seed: `node scripts/seed-ledger-categories-jps.mjs` (21 JP Sync categories with GL+SKU)
-3. Set `trcloudProject` + `trcloudDepartment` per branch in Settings → สาขา
-4. Deploy: push `setup` branch to Vercel (per-request approval required)
-5. Verify: push 1 confirmed expense → TRCloud → check blue "TRCloud AP-XXXXXX" badge
+**🚀 DEPLOYED 2026-06-07 (setup 1366dfd):**
+- Migration applied: `trcloud_product_code` + `vat_claimable` + index ✅
+- Seed: 21 JP Sync categories GL+SKU (19 created, 2 updated) ✅
+- Code pushed → Vercel auto-deploy triggered ✅
+
+**⚠️ ยังต้องทำ (CEO ตั้งในหน้าเว็บ):**
+- ตั้ง `trcloudProject` + `trcloudDepartment` ต่อสาขา: `/ledger/settings` → สาขา
+- ทดสอบ end-to-end: กด "ส่งเข้า TRCloud" บนรายการยืนยันแล้ว → ดูชิปสีฟ้า "TRCloud AP-XXXXXX"
 
 ---
 
