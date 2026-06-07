@@ -167,6 +167,9 @@ async function callGemini(
   const { GoogleGenAI } = await import("@google/genai");
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
+  const imgSizeKb = Math.round((base64.length * 3) / 4 / 1024);
+  console.log(`[ledger:ocr] calling Gemini model=${PRIMARY_MODEL} mimeType=${mimeType} imgSize≈${imgSizeKb}KB`);
+
   const result = await ai.models.generateContent({
     model: PRIMARY_MODEL,
     contents: [
@@ -185,7 +188,15 @@ async function callGemini(
     },
   });
 
+  // Log finish reason so we can diagnose safety blocks / empty responses.
+  const candidate = result.candidates?.[0];
+  const finishReason = candidate?.finishReason;
   const raw = result.text ?? "";
+  if (!raw || raw.length < 5) {
+    console.warn(`[ledger:ocr] Gemini returned empty/blank text. finishReason=${finishReason} candidateCount=${result.candidates?.length ?? 0} promptFeedback=${JSON.stringify(result.promptFeedback)}`);
+  } else {
+    console.log(`[ledger:ocr] Gemini responded OK finishReason=${finishReason} rawLen=${raw.length}`);
+  }
   return { parsed: safeParseJson(raw), raw };
 }
 
