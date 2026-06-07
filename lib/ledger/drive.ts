@@ -55,22 +55,37 @@ async function getAccessToken(orgId: string): Promise<string | null> {
 const DRIVE_Q = (name: string, parent: string) =>
   `name='${name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parent}' in parents`;
 
-/** Find or create a folder under `parent` ("root" allowed); returns its id. */
+/** Find or create a folder under `parent` ("root" allowed); returns its id.
+ *  orderBy=createdTime+asc ensures we always pick the OLDEST folder when duplicates
+ *  exist (created by concurrent serverless invocations). If create fails we retry
+ *  the search — another request may have won the race. */
 async function ensureFolder(
   token: string,
   name: string,
   parent: string,
 ): Promise<string | null> {
-  try {
-    const q = encodeURIComponent(DRIVE_Q(name, parent));
-    const found = await fetch(`${FILES_URL}?q=${q}&fields=files(id)&pageSize=1`, {
-      headers: { authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (found.ok) {
-      const j = (await found.json()) as { files?: Array<{ id: string }> };
-      if (j.files?.[0]?.id) return j.files[0].id;
+  const q = encodeURIComponent(DRIVE_Q(name, parent));
+  // always pick oldest so concurrent requests consistently land in the same folder
+  const searchUrl = `${FILES_URL}?q=${q}&fields=files(id)&pageSize=1&orderBy=createdTime+asc`;
+
+  const search = async (): Promise<string | null> => {
+    try {
+      const r = await fetch(searchUrl, {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!r.ok) return null;
+      const j = (await r.json()) as { files?: Array<{ id: string }> };
+      return j.files?.[0]?.id ?? null;
+    } catch {
+      return null;
     }
+  };
+
+  try {
+    const existing = await search();
+    if (existing) return existing;
+
     const created = await fetch(`${FILES_URL}?fields=id`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -81,7 +96,10 @@ async function ensureFolder(
       }),
       signal: AbortSignal.timeout(8000),
     });
-    if (!created.ok) return null;
+    if (!created.ok) {
+      // concurrent request may have created it first — retry search
+      return await search();
+    }
     return ((await created.json()) as { id: string }).id;
   } catch (e) {
     console.error("[ledger:drive] ensureFolder error", e);
