@@ -31,3 +31,12 @@ export function ledgerSlipV1(): boolean {
 export function ledgerPayreqV1(): boolean {
   return flagOn("LEDGER_PAYREQ_V1");
 }
+
+//   LEDGER_ANALYTICS_V1 — "สมุดค่าใช้จ่าย" spend-analytics: faceted pivot
+//                         (rows=สาขา/หมวด/ผู้ขาย/ผู้บันทึก × cols=เดือน/ปี) + tick
+//                         filters + keyword "ราคาล่าสุด" search. OFF = the existing
+//                         category-card index (byte-equivalent). Read-only, no
+//                         migration. (Distinct from the AI insights.ts narrative.)
+export function ledgerAnalyticsV1(): boolean {
+  return flagOn("LEDGER_ANALYTICS_V1");
+}

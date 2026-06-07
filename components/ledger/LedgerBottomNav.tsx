@@ -75,12 +75,14 @@ const LEFT: ReadonlyArray<NavItem> = [
   { href: "/ledger/expenses", label: "รายการ", icon: Receipt, match: "/ledger/expenses", roles: FINANCIAL },
 ];
 const RIGHT: ReadonlyArray<NavItem> = [
+  // "สมุดค่าใช้จ่าย" promoted out of the overflow sheet to a primary cell — the
+  // CEO never found it buried in "เพิ่มเติม" (workshop 2026-06-07, discoverability P0).
+  { href: "/ledger/ledger-book", label: "สมุด", icon: BookOpen, match: "/ledger/ledger-book", roles: FINANCIAL },
   { href: "/ledger/budgets", label: "งบ", icon: Wallet2, match: "/ledger/budgets", roles: BUDGET },
 ];
 // "เพิ่มเติม" overflow sheet — flat, one level deep.
 const OVERFLOW: ReadonlyArray<NavItem> = [
   { href: "/ledger/reconcile", label: "กระทบยอดจ่าย", icon: HandCoins, match: "/ledger/reconcile", roles: FINANCIAL },
-  { href: "/ledger/ledger-book", label: "สมุดค่าใช้จ่าย", icon: BookOpen, match: "/ledger/ledger-book", roles: FINANCIAL },
   { href: "/ledger/dashboard", label: "Dashboard", icon: BarChart3, match: "/ledger/dashboard", roles: FINANCIAL },
   { href: "/ledger/settings", label: "ตั้งค่า", icon: Settings, match: "/ledger/settings", roles: ADMIN },
 ];
