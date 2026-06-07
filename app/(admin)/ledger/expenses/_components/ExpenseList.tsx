@@ -119,6 +119,12 @@ export function ExpenseList({
     new Set(checkedRows.map((r) => (r.vendor ?? "").trim()).filter((v) => v.length > 0)),
   );
   const multiVendor = checkedVendors.length > 1;
+  // ขอโอน requires each bill be classifiable (สาขา+หมวด · D6) — surface it in the
+  // dialog so a request can't be silently rejected by the server (then look frozen).
+  const checkedNeedFix = checkedRows.filter(
+    (r) => !expenseConfirmability({ branchId: r.branchId, categoryId: r.categoryId }).ok,
+  );
+  const canRequest = checkedRows.length > 0 && !multiVendor && checkedNeedFix.length === 0;
 
   // Build a link to a row keeping company/branch/filter context.
   function rowHref(id: string) {
@@ -367,7 +373,7 @@ export function ExpenseList({
               {payreqEnabled && checked.size > 0 && (
                 <button
                   type="button"
-                  onClick={() => setPayeeOpen(true)}
+                  onClick={() => { setMsg(null); setPayeeOpen(true); }}
                   disabled={pending || multiVendor}
                   title={multiVendor ? "เลือกบิลผู้ขายเดียวกันเท่านั้น" : undefined}
                   className="inline-flex h-7 items-center gap-1 rounded-lg bg-violet-600 px-2 text-xs font-semibold text-white hover:bg-violet-700 disabled:bg-zinc-300"
@@ -451,6 +457,12 @@ export function ExpenseList({
             <p className="mt-0.5 text-[11px] text-zinc-500">
               ระบบจะส่งการ์ดเข้ากลุ่มผู้บริหารให้กดโอน · ใส่บัญชีผู้รับให้ครบ ผู้บริหารจะจ่ายได้เร็วขึ้น
             </p>
+            {checkedNeedFix.length > 0 && (
+              <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+                ⚠️ มี {checkedNeedFix.length} ใบยังไม่ได้ระบุ <b>สาขา/หมวด</b> — เปิดใบนั้นแล้วระบุก่อน
+                จึงจะขอโอนได้ (ขอโอนได้เฉพาะใบที่ระบุครบ)
+              </p>
+            )}
             <div className="mt-3 space-y-2">
               <input
                 value={payee.acctName}
@@ -485,6 +497,11 @@ export function ExpenseList({
                 className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm outline-none focus:ring-2 focus:ring-violet-200"
               />
             </div>
+            {/* Error shows INSIDE the dialog (the list-level msg is hidden behind this
+                overlay — otherwise a rejected request looks like a frozen dialog). */}
+            {msg && msg.kind === "err" && (
+              <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{msg.text}</p>
+            )}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
@@ -497,7 +514,8 @@ export function ExpenseList({
               <button
                 type="button"
                 onClick={runRequestTransfer}
-                disabled={pending}
+                disabled={pending || !canRequest}
+                title={!canRequest ? "ต้องระบุสาขา+หมวดทุกใบ + ผู้ขายเดียวกัน ก่อนขอโอน" : undefined}
                 className="inline-flex h-9 items-center gap-1 rounded-lg bg-violet-600 px-4 text-xs font-semibold text-white hover:bg-violet-700 disabled:bg-zinc-300"
               >
                 {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Banknote className="size-3.5" />}

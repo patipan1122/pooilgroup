@@ -384,7 +384,14 @@ export function ExpenseReviewPane({
   const conf = useMemo(() => expense.ocrConfidence ?? {}, [expense.ocrConfidence]);
   const findings = useMemo(() => runRecheck(draft), [draft]);
   const hasError = findings.some((f) => f.level === "error");
-  const locked = readOnly || expense.status === "locked" || expense.status === "void";
+  // CEO 2026-06-07: confirmed bills stay EDITABLE — only lock after the bill is pushed
+  // to TRCloud (trcloudDocId set) or formally locked/void. So "ยืนยันแล้ว" can still be
+  // edited (บันทึกร่าง); once it's in TRCloud the form is read-only (server enforces too).
+  const locked =
+    readOnly ||
+    expense.status === "locked" ||
+    expense.status === "void" ||
+    expense.trcloudDocId != null;
 
   // ── ภาษีซื้อ (input-VAT) — สถานะสี + override "ขอคืนได้?" ──
   const completeness = (expense.completenessStatus ?? "undecided") as CompletenessStatus;

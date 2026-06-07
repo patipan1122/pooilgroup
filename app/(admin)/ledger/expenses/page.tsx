@@ -20,7 +20,8 @@ import { ExpensePaneClient } from "./_components/ExpensePaneClient";
 import { UploadReceiptButton } from "./_components/UploadReceiptButton";
 import { NoReceiptButton } from "./_components/NoReceiptButton";
 import { ExportButton } from "./_components/ExportButton";
-import { ledgerQuotationV1, ledgerSlipV1, ledgerPayreqV1 } from "@/lib/ledger/flags";
+import { ledgerQuotationV1, ledgerSlipV1, ledgerPayreqV1, ledgerStockinV1 } from "@/lib/ledger/flags";
+import { StockInButton } from "@/components/ledger/StockInButton";
 import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
 
 export const dynamic = "force-dynamic";
@@ -214,6 +215,33 @@ export default async function ExpensesPage({
       })
     : null;
 
+  // Stock-IN (LEDGER_STOCKIN_V1) — for a selected confirmed resale expense, load the
+  // stock-tracked SKU options (for inline mapping) + whether it was already received.
+  const stockinOn = ledgerStockinV1();
+  let stockSkus: Array<{ id: string; productId: string; productName: string | null; businessGroup: string | null }> = [];
+  let stockinNo: string | null = null;
+  const canStockIn =
+    stockinOn &&
+    !!selectedExpense &&
+    (selectedExpense.status === "confirmed" || selectedExpense.status === "locked");
+  if (canStockIn && selected) {
+    const [skuRows, expRow] = await Promise.all([
+      prisma.ledgerTrcloudSku.findMany({
+        where: { orgId: scope.orgId, companyId: scope.companyId, stockTracked: true },
+        select: { id: true, productId: true, productName: true, businessGroup: true },
+        orderBy: [{ businessGroup: "asc" }, { productId: "asc" }],
+        take: 500,
+      }),
+      prisma.ledgerExpense.findUnique({
+        where: { id: selected },
+        select: { trcloudStockinNo: true, trcloudStockinDocId: true },
+      }),
+    ]);
+    stockSkus = skuRows;
+    const did = expRow?.trcloudStockinDocId;
+    stockinNo = expRow?.trcloudStockinNo ?? (did && did !== "pending" && did !== "error" ? "sent" : null);
+  }
+
   // Preserve scope params on links from the list.
   const baseParams = new URLSearchParams();
   if (sp.company) baseParams.set("company", sp.company);
@@ -386,7 +414,16 @@ export default async function ExpensesPage({
               canEditClaimability={canEditClaimability}
               currentUserId={session.user.id}
             />
-          ) : (
+          ) : null}
+          {canStockIn && selectedExpense && (
+            <StockInButton
+              expenseId={selectedExpense.id}
+              companyId={scope.companyId}
+              alreadyStockedNo={stockinNo}
+              stockSkus={stockSkus}
+            />
+          )}
+          {!selectedExpense && (
             <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 px-6 text-center">
               <div className="grid size-16 place-items-center rounded-2xl bg-[var(--color-brand-50)] text-3xl">
                 🧾
