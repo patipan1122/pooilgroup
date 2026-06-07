@@ -155,6 +155,10 @@ export function AdminShell({
   const activeModuleSlug = getModuleFromPath(pathname);
   const activeModule = activeModuleSlug ? MODULES[activeModuleSlug] : null;
   const isHome = pathname === "/home" || pathname === "/";
+  // Hub bottom-nav shows ONLY on core/hub pages (no active module). Inside a
+  // module (e.g. /ledger) the module has its OWN nav/top-bar switcher, so the
+  // hub nav must disappear — otherwise it stacks on / hides the module's menu.
+  const showHubNav = isHubAudience && !activeModuleSlug;
 
   const moduleNav = useMemo(() => {
     if (!activeModule) return [];
@@ -454,7 +458,7 @@ export function AdminShell({
         <main
           className={cn(
             "flex-1 min-w-0",
-            isHubAudience ? "pb-24 lg:pb-20" : "pb-20",
+            showHubNav ? "pb-24 lg:pb-20" : "pb-20",
           )}
         >
           {children}
@@ -464,11 +468,12 @@ export function AdminShell({
       {/* Global floating AI Assistant — available to every signed-in user
           (admins for analysis, branch managers for how-to + their own data).
           Lazy-mounted on first click via AiChatLauncher. */}
-      <AiChatLauncher liftMobile={isHubAudience} />
+      <AiChatLauncher liftMobile={showHubNav} />
 
       {/* Mobile hub bottom-nav — launcher tabs for owner/admin/program-admin.
-          Hidden ≥lg (desktop uses the sidebar). */}
-      {isHubAudience && (
+          Hidden ≥lg (desktop uses the sidebar) AND hidden inside any module
+          (the module supplies its own nav). */}
+      {showHubNav && (
         <HubBottomNav
           isAdmin={isAdmin}
           pendingCount={navCounts.pendingRegisterRequests ?? 0}
