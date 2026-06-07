@@ -80,6 +80,12 @@ export interface LedgerConfirmCardInput {
   /** True when Recheck flagged a math/format mismatch (subtotal+vat≠total, bad taxid…). */
   needsReview?: boolean;
   /**
+   * True when the AI/Gemini OCR step failed entirely (parsed = null). The card still
+   * saves the image as a draft but all numeric fields are zero. Show a distinct
+   * message so staff know to fill in the amount manually — ฿0.00 must not look real.
+   */
+  ocrFailed?: boolean;
+  /**
    * Base URL of the deploy (e.g. https://pooilgroup.vercel.app) so the buttons
    * deep-link into the web review pane. Defaults to relative when omitted (LINE
    * requires absolute https URIs, so the webhook should always pass this).
@@ -383,6 +389,7 @@ export function buildConfirmBubble(input: LedgerConfirmCardInput): FlexBubble {
     items,
     confidence,
     needsReview,
+    ocrFailed,
     baseUrl = "",
     liffId,
     usePostback = false,
@@ -447,13 +454,13 @@ export function buildConfirmBubble(input: LedgerConfirmCardInput): FlexBubble {
       layout: "vertical",
       spacing: "none",
       contents: [
-        { type: "text", text: "ยอดที่อ่านได้", size: "xs", color: COLOR.sub },
+        { type: "text", text: ocrFailed ? "ยอด (อ่านไม่ได้)" : "ยอดที่อ่านได้", size: "xs", color: ocrFailed ? COLOR.bad : COLOR.sub },
         {
           type: "text",
-          text: fmtTHB(total),
+          text: ocrFailed ? "? — กรอกเอง" : fmtTHB(total),
           size: "xxl",
           weight: "bold",
-          color: confidenceColor(confidence?.total),
+          color: ocrFailed ? COLOR.bad : confidenceColor(confidence?.total),
         },
       ],
     },
@@ -485,8 +492,27 @@ export function buildConfirmBubble(input: LedgerConfirmCardInput): FlexBubble {
     ...(items && items.length > 0 ? [itemsBlock(items)] : []),
   ];
 
-  // Recheck / low-confidence banner.
-  if (needsReview) {
+  // Recheck / low-confidence / OCR-failure banner.
+  if (ocrFailed) {
+    bodyContents.push({
+      type: "box",
+      layout: "vertical",
+      margin: "lg",
+      paddingAll: "10px",
+      cornerRadius: "8px",
+      backgroundColor: "#FEE2E2",
+      contents: [
+        {
+          type: "text",
+          text: "📷 อ่านภาพใบเสร็จไม่ได้ — รูปบันทึกแล้ว กด \"แก้ไข\" แล้วกรอกยอดเองนะครับ",
+          size: "sm",
+          weight: "bold",
+          color: COLOR.bad,
+          wrap: true,
+        },
+      ],
+    });
+  } else if (needsReview) {
     bodyContents.push({
       type: "box",
       layout: "vertical",

@@ -192,6 +192,7 @@ export async function flushBatchAfterQuiet(
         note: true,
         paymentMethod: true,
         ocrConfidence: true,
+        ocrModel: true,
         needsReview: true,
         category: { select: { name: true } },
         branch: { select: { name: true } },
@@ -225,7 +226,8 @@ export async function flushBatchAfterQuiet(
       branchName: r.branch?.name ?? null,
       paymentMethod: r.paymentMethod,
       confidence: (r.ocrConfidence as Record<string, number> | null) ?? null,
-      needsReview: r.needsReview,
+      needsReview: r.needsReview && r.ocrModel !== null,
+      ocrFailed: r.ocrModel === null,
       baseUrl: deps.baseUrl,
       liffId: deps.liffId,
     }));

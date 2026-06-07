@@ -579,7 +579,8 @@ export async function POST(
               categoryName: null, // accountant picks the category on the web pane
               paymentMethod: parsed?.paymentMethod ?? null,
               confidence: parsed?.confidence ?? null,
-              needsReview: !parsed || res.data.duplicate,
+              needsReview: !!parsed && res.data.duplicate,
+              ocrFailed: !parsed,
               baseUrl,
               liffId: ledgerLiffId,
             });
