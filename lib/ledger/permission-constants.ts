@@ -24,6 +24,7 @@ export const LEDGER_CAPABILITIES = [
   "report.view_pnl", // ดูภาพรวมการเงิน (กำไร-ขาดทุน)
   "scope.all_branches", // เห็นทุกสาขา (ไม่งั้นเฉพาะสาขาที่ดูแล)
   "expense.edit_others", // แก้ไข/ลบรายการของคนอื่น
+  "payment.request", // ขอโอนเงิน (เลือกบิล → ส่งคำขอเข้ากลุ่มผู้บริหาร)
 ] as const;
 export type LedgerCapability = (typeof LEDGER_CAPABILITIES)[number];
 
@@ -73,6 +74,10 @@ export const CAPABILITY_LABEL: Record<
     title: "แก้/ลบรายการคนอื่น",
     desc: "แก้ไขหรือลบรายจ่ายที่คนอื่นบันทึก",
   },
+  "payment.request": {
+    title: "ขอโอนเงิน",
+    desc: "เลือกบิลแล้วส่งคำขอโอนเข้ากลุ่มผู้บริหาร",
+  },
 };
 
 /** Code defaults — used when no DB override row exists for (org, role, cap). */
@@ -86,6 +91,7 @@ export const PERMISSION_DEFAULTS: Record<
     "report.view_pnl": false,
     "scope.all_branches": false,
     "expense.edit_others": false,
+    "payment.request": true, // ops requests transfers — the core daily action
   },
   accountant: {
     "expense.confirm": true,
@@ -93,6 +99,7 @@ export const PERMISSION_DEFAULTS: Record<
     "report.view_pnl": true,
     "scope.all_branches": true,
     "expense.edit_others": true,
+    "payment.request": true,
   },
   admin: {
     "expense.confirm": true,
@@ -100,6 +107,7 @@ export const PERMISSION_DEFAULTS: Record<
     "report.view_pnl": true,
     "scope.all_branches": true,
     "expense.edit_others": true,
+    "payment.request": true,
   },
   external_accountant: {
     "expense.confirm": false,
@@ -107,6 +115,7 @@ export const PERMISSION_DEFAULTS: Record<
     "report.view_pnl": true,
     "scope.all_branches": true,
     "expense.edit_others": false,
+    "payment.request": false, // external accountant doesn't initiate payments
   },
 };
 

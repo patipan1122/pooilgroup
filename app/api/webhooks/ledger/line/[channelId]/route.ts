@@ -25,10 +25,12 @@ import { ensureLedgerMember } from "@/lib/ledger/members";
 import { refreshLedgerGroupMeta } from "@/lib/ledger/line-group";
 import { can } from "@/lib/ledger/permissions";
 import { archiveReceiptToDrive, isDriveConfigured } from "@/lib/ledger/drive";
-import { ledgerSlipV1 } from "@/lib/ledger/flags";
+import { ledgerSlipV1, ledgerPayreqV1 } from "@/lib/ledger/flags";
 import { decodeSlipQr } from "@/lib/ledger/slip-qr";
 import { checkSlipDuplicate } from "@/lib/ledger/slip-match";
 import { recordSlipPayment, findAutoMatchBill } from "@/lib/ledger/payments";
+import { matchSlipToRequest } from "@/lib/ledger/payment-request";
+import { paymentRequestPaidText } from "@/lib/ledger/payment-request-card";
 import {
   buildLineConfirmCard,
   buildLedgerWelcomeCard,
@@ -794,6 +796,41 @@ async function handleSlipImage(opts: {
   } catch (e) {
     if (e instanceof AiBudgetError) console.warn("[ledger:line-webhook] slip AI budget exceeded");
     else console.error("[ledger:line-webhook] slip OCR failed", e);
+  }
+
+  // 4.5 — ขอโอนเงิน (LEDGER_PAYREQ_V1): try to close an OPEN payment-request FIRST
+  //       (request-anchored, matched on the NET-of-WHT amount), before the legacy
+  //       amount-guess against all bills. On a unique match the payment row + every
+  //       bill in the request flip to paid atomically (matchSlipToRequest). Additive:
+  //       on no/ambiguous match we fall through to the legacy bill matcher below.
+  if (ledgerPayreqV1()) {
+    const reqMatch = await matchSlipToRequest({
+      orgId: ch.orgId,
+      companyId: ch.companyId,
+      slipAmount: amount,
+      sendingBank: qr.sendingBank,
+      transRef: qr.transRef,
+      slipSha256: sha256,
+      slipUrl: att.url,
+      qrRaw: qr.rawPayload,
+      qrDecoded: qr.decoded,
+      paidByLineUserId: ev.source?.userId ?? null,
+    });
+    if (reqMatch.matched) {
+      await reply(
+        paymentRequestPaidText({
+          vendor: reqMatch.vendor,
+          billCount: reqMatch.billCount,
+          amount: reqMatch.paidTotal,
+        }),
+      );
+      return;
+    }
+    if (reqMatch.reason === "duplicate") {
+      await reply("⚠️ สลิปนี้ถูกบันทึกไปแล้ว (กันจ่ายซ้ำ)");
+      return;
+    }
+    // no_request / ambiguous / error → legacy bill matcher (floats if unsure).
   }
 
   // 5. Auto-match: amount → exactly ONE recent unpaid bill?

@@ -5409,6 +5409,7 @@ model LedgerPayment {
   orgId             String    @map("org_id") @db.Uuid
   companyId         String    @map("company_id") @db.Uuid
   matchedExpenseId  String?   @map("matched_expense_id") @db.Uuid
+  paymentRequestId  String?   @map("payment_request_id") @db.Uuid // ขอโอนเงิน: สลิปนี้จ่ายตามคำขอไหน
   amount            Decimal   @default(0) @db.Decimal(15, 2)
   currency          String    @default("THB")
   method            String    @default("transfer") // transfer | cash | qr
@@ -5426,15 +5427,80 @@ model LedgerPayment {
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  matchedExpense LedgerExpense? @relation("ExpensePayments", fields: [matchedExpenseId], references: [id], onDelete: SetNull)
+  matchedExpense LedgerExpense?         @relation("ExpensePayments", fields: [matchedExpenseId], references: [id], onDelete: SetNull)
+  paymentRequest LedgerPaymentRequest? @relation("RequestPayments", fields: [paymentRequestId], references: [id], onDelete: SetNull)
 
   @@index([orgId, companyId, matchedExpenseId])
+  @@index([orgId, companyId, paymentRequestId])
   @@index([slipSha256])
   // NOTE: a PARTIAL unique on (orgId, companyId, transRef) WHERE transRef IS NOT NULL is enforced
   // at the DB level via migration SQL. Prisma 5 cannot express partial indexes; rely on the SQL
   // migration + P2002 handling in server actions. The index below is non-unique for query perf.
   @@index([orgId, companyId, transRef])
   @@map("ledger_payment")
+  @@schema("public")
+}
+
+// คำขอโอนเงิน (ขอโอนเงิน) — operation เลือกบิล 1+ ใบ → ขอโอน → การ์ดเด้งกลุ่มผู้บริหาร
+// → ผู้บริหารโอน+ส่งสลิป → จับคู่ "สลิป ↔ คำขอ" (ไม่เดายอด) → ปิดทุกบิลในคำขอ.
+// 3 ยอด snapshot (gross/wht/expected) freeze ณ เวลาขอ; จับคู่สลิปกับ expected (net-of-WHT).
+model LedgerPaymentRequest {
+  id              String    @id @default(uuid()) @db.Uuid
+  orgId           String    @map("org_id") @db.Uuid
+  companyId       String    @map("company_id") @db.Uuid
+  branchId        String?   @map("branch_id") @db.Uuid
+  vendor          String?
+  // payee snapshot (D4) — frozen ณ เวลาขอ (immutable evidence)
+  payeeAcctName   String?   @map("payee_acct_name")
+  payeeBankCode   String?   @map("payee_bank_code")
+  payeeAcctNo     String?   @map("payee_acct_no")
+  payeePromptpay  String?   @map("payee_promptpay")
+  payeeQrPayload  String?   @map("payee_qr_payload")
+  billsGross      Decimal   @default(0) @map("bills_gross") @db.Decimal(15, 2)
+  whtTotal        Decimal   @default(0) @map("wht_total") @db.Decimal(15, 2)
+  expectedTransfer Decimal  @default(0) @map("expected_transfer") @db.Decimal(15, 2) // gross - wht
+  paidTotal       Decimal   @default(0) @map("paid_total") @db.Decimal(15, 2)        // Σ matched slips
+  state           String    @default("open") // open|partial|paid|cancelled|abnormal|reversed
+  abnormalReason  String?   @map("abnormal_reason")
+  requestedBy     String?   @map("requested_by") @db.Uuid
+  requestedAt     DateTime  @default(now()) @map("requested_at") @db.Timestamptz(6)
+  pushedGroupId   String?   @map("pushed_group_id")
+  pushedMessageId String?   @map("pushed_message_id")
+  paidBy          String?   @map("paid_by")           // LINE userId of payer (from slip)
+  slipUploadedBy  String?   @map("slip_uploaded_by") @db.Uuid
+  paidAt          DateTime? @map("paid_at") @db.Timestamptz(6)
+  cancelledBy     String?   @map("cancelled_by") @db.Uuid
+  cancelledAt     DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  bills    LedgerPaymentRequestBill[]
+  payments LedgerPayment[]            @relation("RequestPayments")
+
+  @@index([orgId, companyId, state])
+  @@index([orgId, companyId, requestedAt(sort: Desc)])
+  @@map("ledger_payment_request")
+  @@schema("public")
+}
+
+// 1 คำขอ : N บิล (D3 รวมจ่าย). `active=false` เมื่อคำขอปิด/ยกเลิก → ปลดบิลให้ขอใหม่ได้.
+// partial-unique (org,company,expense_id) WHERE active = กัน 1 บิลอยู่ 2 คำขอ active (กันจ่ายซ้ำ).
+model LedgerPaymentRequestBill {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  companyId  String   @map("company_id") @db.Uuid
+  requestId  String   @map("request_id") @db.Uuid
+  expenseId  String   @map("expense_id") @db.Uuid
+  billAmount Decimal  @default(0) @map("bill_amount") @db.Decimal(15, 2)
+  billWht    Decimal  @default(0) @map("bill_wht") @db.Decimal(15, 2)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  request LedgerPaymentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, companyId, requestId])
+  @@index([orgId, companyId, expenseId])
+  @@map("ledger_payment_request_bill")
   @@schema("public")
 }
 

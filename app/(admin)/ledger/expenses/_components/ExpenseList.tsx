@@ -7,13 +7,30 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2 } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2, Banknote } from "lucide-react";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
 import { CompletenessDot } from "@/components/ledger/_kit/CompletenessDot";
 import { DocTag, PaymentTag } from "@/components/ledger/_kit/StatusTags";
 import { LedgerEmptyState } from "@/components/ledger/Brand";
 import { expenseConfirmability } from "@/lib/ledger/confirmability";
-import { bulkConfirm, bulkVoid, sendExpensesToTrcloud } from "../../_actions";
+import { bulkConfirm, bulkVoid, sendExpensesToTrcloud, createPaymentRequestAction } from "../../_actions";
+
+/** Common Thai banks for the ขอโอนเงิน payee form (code → short name). */
+const BANKS: { code: string; name: string }[] = [
+  { code: "", name: "เลือกธนาคาร" },
+  { code: "002", name: "กรุงเทพ" },
+  { code: "004", name: "กสิกรไทย" },
+  { code: "006", name: "กรุงไทย" },
+  { code: "011", name: "ทหารไทยธนชาต" },
+  { code: "014", name: "ไทยพาณิชย์" },
+  { code: "025", name: "กรุงศรีอยุธยา" },
+  { code: "030", name: "ออมสิน" },
+  { code: "022", name: "ซีไอเอ็มบี ไทย" },
+  { code: "024", name: "ยูโอบี" },
+  { code: "069", name: "เกียรตินาคินภัทร" },
+  { code: "067", name: "ทิสโก้" },
+  { code: "073", name: "แลนด์ แอนด์ เฮ้าส์" },
+];
 import type { ExpenseTab } from "../page";
 import { FilterSheet } from "./FilterSheet";
 import type { ExpenseRow, LedgerStatusValue } from "@/components/ledger/_kit/types";
@@ -49,6 +66,7 @@ export function ExpenseList({
   tab,
   tabCounts,
   listActions,
+  payreqEnabled,
 }: {
   rows: ExpenseRow[];
   categories: Array<{ id: string; name: string; color: string | null; sort: number }>;
@@ -72,6 +90,8 @@ export function ExpenseList({
   /** Shortcut actions (ไม่มีใบเสร็จ · สลิปรอจับคู่) — rendered inside the mobile
    *  ตัวกรอง sheet so they're off the page header. */
   listActions?: React.ReactNode;
+  /** LEDGER_PAYREQ_V1 — show the "ขอโอนเงิน" bulk action (request a transfer). */
+  payreqEnabled?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -81,12 +101,24 @@ export function ExpenseList({
   // Bulk-delete two-step guard: open a confirm sheet, require typing "ลบ".
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteText, setDeleteText] = useState("");
+  // ขอโอนเงิน — payee dialog (LEDGER_PAYREQ_V1).
+  const [payeeOpen, setPayeeOpen] = useState(false);
+  const [payee, setPayee] = useState({ acctName: "", bankCode: "", acctNo: "", promptpay: "" });
 
   const draftSet = new Set(draftIds);
   const sendableSet = new Set(sendableIds);
   const selDrafts = [...checked].filter((id) => draftSet.has(id));
   const selSendable = [...checked].filter((id) => sendableSet.has(id));
   const actionableIds = [...draftIds, ...sendableIds];
+
+  // Request-transfer selection guards: bills must share ONE vendor (the payee is
+  // a single account). The list is already company-scoped, so cross-company can't
+  // happen here; the server re-validates company + vendor anyway.
+  const checkedRows = rows.filter((r) => checked.has(r.id));
+  const checkedVendors = Array.from(
+    new Set(checkedRows.map((r) => (r.vendor ?? "").trim()).filter((v) => v.length > 0)),
+  );
+  const multiVendor = checkedVendors.length > 1;
 
   // Build a link to a row keeping company/branch/filter context.
   function rowHref(id: string) {
@@ -159,6 +191,29 @@ export function ExpenseList({
         router.refresh();
       } else {
         setMsg({ kind: "err", text: res.error ?? "ส่งเข้า TRCloud ไม่สำเร็จ" });
+      }
+    });
+  }
+
+  function runRequestTransfer() {
+    const ids = [...checked];
+    if (ids.length === 0) return;
+    setMsg(null);
+    startTransition(async () => {
+      const res = await createPaymentRequestAction(ids, {
+        acctName: payee.acctName.trim() || undefined,
+        bankCode: payee.bankCode || undefined,
+        acctNo: payee.acctNo.trim() || undefined,
+        promptpay: payee.promptpay.trim() || undefined,
+      });
+      if (res.ok) {
+        setMsg({ kind: "ok", text: "ส่งคำขอโอนเข้ากลุ่มผู้บริหารแล้ว ✅" });
+        setChecked(new Set());
+        setPayeeOpen(false);
+        setPayee({ acctName: "", bankCode: "", acctNo: "", promptpay: "" });
+        router.refresh();
+      } else {
+        setMsg({ kind: "err", text: res.error ?? "ขอโอนไม่สำเร็จ" });
       }
     });
   }
@@ -309,8 +364,25 @@ export function ExpenseList({
                   ลบ ({checked.size})
                 </button>
               )}
+              {payreqEnabled && checked.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPayeeOpen(true)}
+                  disabled={pending || multiVendor}
+                  title={multiVendor ? "เลือกบิลผู้ขายเดียวกันเท่านั้น" : undefined}
+                  className="inline-flex h-7 items-center gap-1 rounded-lg bg-violet-600 px-2 text-xs font-semibold text-white hover:bg-violet-700 disabled:bg-zinc-300"
+                >
+                  <Banknote className="size-3.5" />
+                  ขอโอนเงิน ({checked.size})
+                </button>
+              )}
             </div>
           </div>
+        )}
+        {payreqEnabled && multiVendor && checked.size > 0 && (
+          <p className="px-2 text-[11px] text-amber-600">
+            * ขอโอนได้ทีละผู้ขาย — ตอนนี้เลือกหลายผู้ขายอยู่ ({checkedVendors.length})
+          </p>
         )}
         {/* Type-"ลบ" guard — bulk delete is destructive, so it needs a deliberate
             second step (CEO: "พิมคำว่าลบอีก กันลบโง่ๆ"). */}
@@ -364,6 +436,77 @@ export function ExpenseList({
           </p>
         )}
       </div>
+
+      {/* ขอโอนเงิน — payee dialog (bottom-sheet on mobile, centered on desktop) */}
+      {payeeOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+          onClick={() => { if (!pending) setPayeeOpen(false); }}
+        >
+          <div
+            className="w-full max-w-md rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-bold text-zinc-900">ขอโอนเงิน · {checked.size} ใบ</h3>
+            <p className="mt-0.5 text-[11px] text-zinc-500">
+              ระบบจะส่งการ์ดเข้ากลุ่มผู้บริหารให้กดโอน · ใส่บัญชีผู้รับให้ครบ ผู้บริหารจะจ่ายได้เร็วขึ้น
+            </p>
+            <div className="mt-3 space-y-2">
+              <input
+                value={payee.acctName}
+                onChange={(e) => setPayee((p) => ({ ...p, acctName: e.target.value }))}
+                placeholder="ชื่อบัญชีผู้รับ"
+                className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm outline-none focus:ring-2 focus:ring-violet-200"
+              />
+              <div className="flex gap-2">
+                <select
+                  value={payee.bankCode}
+                  onChange={(e) => setPayee((p) => ({ ...p, bankCode: e.target.value }))}
+                  aria-label="ธนาคารผู้รับเงิน"
+                  className="h-10 w-36 rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-violet-200"
+                >
+                  {BANKS.map((b) => (
+                    <option key={b.code} value={b.code}>{b.name}</option>
+                  ))}
+                </select>
+                <input
+                  value={payee.acctNo}
+                  onChange={(e) => setPayee((p) => ({ ...p, acctNo: e.target.value }))}
+                  placeholder="เลขบัญชี"
+                  inputMode="numeric"
+                  className="h-10 flex-1 rounded-lg border border-zinc-200 px-3 text-sm outline-none focus:ring-2 focus:ring-violet-200"
+                />
+              </div>
+              <input
+                value={payee.promptpay}
+                onChange={(e) => setPayee((p) => ({ ...p, promptpay: e.target.value }))}
+                placeholder="พร้อมเพย์ (ถ้ามี — เบอร์/เลขภาษี)"
+                inputMode="numeric"
+                className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm outline-none focus:ring-2 focus:ring-violet-200"
+              />
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPayeeOpen(false)}
+                disabled={pending}
+                className="inline-flex h-9 items-center rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={runRequestTransfer}
+                disabled={pending}
+                className="inline-flex h-9 items-center gap-1 rounded-lg bg-violet-600 px-4 text-xs font-semibold text-white hover:bg-violet-700 disabled:bg-zinc-300"
+              >
+                {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Banknote className="size-3.5" />}
+                ส่งคำขอโอน
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* List */}
       <ul className="max-h-[calc(100dvh-23rem)] divide-y divide-zinc-100 overflow-y-auto">

@@ -33,6 +33,14 @@ import { OUR_BUYER } from "@/lib/ledger/group-identity";
 import { setPermission, isLedgerRole, isLedgerCapability } from "@/lib/ledger/permissions";
 import { listExpenses } from "@/lib/ledger/queries";
 import { recordSlipPayment } from "@/lib/ledger/payments";
+import { ledgerPayreqV1 } from "@/lib/ledger/flags";
+import {
+  createPaymentRequest,
+  cancelPaymentRequest,
+  assignSlipToRequest,
+} from "@/lib/ledger/payment-request";
+import { buildPaymentRequestCard } from "@/lib/ledger/payment-request-card";
+import { pushFlexToSlipGroup, pushTextToSlipGroup } from "@/lib/ledger/line-push";
 import { parseReceipt } from "@/lib/ledger/ai-parse";
 import { storeReceiptImage } from "@/lib/ledger/storage";
 import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
@@ -2855,6 +2863,146 @@ export async function markBillPaidCash(expenseId: string): Promise<ActionResult>
     diff: { old: { paymentStatus: bill.paymentStatus }, new: { paymentStatus: "paid", method: "cash" } },
   });
   revalidatePath("/ledger/expenses");
+  return { ok: true };
+}
+
+// ── ขอโอนเงิน (payment request) — LEDGER_PAYREQ_V1 ───────────────────────────
+const zPayee = z.object({
+  acctName: z.string().trim().max(120).optional(),
+  bankCode: z.string().trim().max(8).optional(),
+  acctNo: z.string().trim().max(40).optional(),
+  promptpay: z.string().trim().max(40).optional(),
+  qrPayload: z.string().trim().max(1024).optional(),
+});
+
+/** Operation selects bills → "ขอโอนเงิน" → create the request + push the card to
+ *  the executive (slip-intake) group. Single-company / classifiable bills only. */
+export async function createPaymentRequestAction(
+  billIds: string[],
+  payeeRaw: unknown,
+): Promise<ActionResult & { requestId?: string }> {
+  if (!ledgerPayreqV1()) return { ok: false, error: "ระบบขอโอนเงินยังไม่เปิดใช้" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  const orgId = session.user.org_id;
+  if (!(await ledgerWebCanForRole(orgId, session.user.role, "payment.request"))) {
+    return { ok: false, error: "ไม่มีสิทธิ์ขอโอนเงิน" };
+  }
+  const ids = Array.isArray(billIds) ? billIds.filter((x) => typeof x === "string") : [];
+  const payee = zPayee.safeParse(payeeRaw ?? {});
+  if (!payee.success) return { ok: false, error: "ข้อมูลบัญชีผู้รับไม่ถูกต้อง" };
+
+  const res = await createPaymentRequest({
+    orgId, billIds: ids, payee: payee.data, requestedBy: session.user.id,
+  });
+  if (!res.ok || !res.requestId || !res.companyId) {
+    return { ok: false, error: res.error ?? "สร้างคำขอโอนไม่สำเร็จ" };
+  }
+
+  // Push the request card to the executive (slip-intake) group — best-effort:
+  // a LINE outage must not undo the request that's already in the DB.
+  try {
+    const billRows = await prisma.ledgerExpense.findMany({
+      where: { id: { in: ids }, orgId, companyId: res.companyId },
+      select: { docCode: true, total: true },
+    });
+    const card = buildPaymentRequestCard({
+      vendor: res.vendor ?? null,
+      billsGross: res.billsGross ?? 0,
+      whtTotal: res.whtTotal ?? 0,
+      expectedTransfer: res.expectedTransfer ?? 0,
+      payee: payee.data,
+      bills: billRows.map((b) => ({ docCode: b.docCode, amount: Number(b.total) })),
+    });
+    const push = await pushFlexToSlipGroup(orgId, res.companyId, card);
+    if (push.ok) {
+      await prisma.ledgerPaymentRequest
+        .update({
+          where: { id: res.requestId },
+          data: { pushedGroupId: push.groupId ?? null, pushedMessageId: push.messageId ?? null },
+        })
+        .catch(() => {});
+    }
+  } catch (e) {
+    console.error("[ledger:createPaymentRequestAction] push failed", e);
+  }
+
+  await audit({
+    orgId, userId: session.user.id,
+    action: "LEDGER_PAYMENT_REQUESTED",
+    resourceType: "ledger_payment_request",
+    resourceId: res.requestId,
+    diff: { new: { vendor: res.vendor, expectedTransfer: res.expectedTransfer, billCount: res.billCount } },
+  });
+  revalidatePath("/ledger/expenses");
+  revalidatePath("/ledger/reconcile");
+  return { ok: true, requestId: res.requestId };
+}
+
+/** Cancel a request before pay (releases the per-bill guard). Requester or accountant. */
+export async function cancelPaymentRequestAction(requestId: string): Promise<ActionResult> {
+  if (!requestId) return { ok: false, error: "ไม่ได้ระบุคำขอ" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  const orgId = session.user.org_id;
+  const req = await prisma.ledgerPaymentRequest.findFirst({
+    where: { id: requestId, orgId },
+    select: { id: true, companyId: true, requestedBy: true, vendor: true },
+  });
+  if (!req) return { ok: false, error: "ไม่พบคำขอโอน" };
+  const isOwner = req.requestedBy === session.user.id;
+  if (!isOwner && !(await ledgerWebCanForRole(orgId, session.user.role, "expense.confirm"))) {
+    return { ok: false, error: "เฉพาะผู้ขอ หรือบัญชี/ผู้ดูแล ยกเลิกได้" };
+  }
+  const res = await cancelPaymentRequest({
+    orgId, companyId: req.companyId, requestId, cancelledBy: session.user.id,
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+  await pushTextToSlipGroup(
+    orgId, req.companyId,
+    `🚫 ยกเลิกคำขอโอน${req.vendor ? ` ${req.vendor}` : ""} แล้ว — ยังไม่ต้องโอนนะครับ`,
+  ).catch(() => {});
+  await audit({
+    orgId, userId: session.user.id,
+    action: "LEDGER_PAYMENT_REQ_CANCELLED",
+    resourceType: "ledger_payment_request", resourceId: requestId,
+  });
+  revalidatePath("/ledger/expenses");
+  revalidatePath("/ledger/reconcile");
+  return { ok: true };
+}
+
+/** Accountant manually pairs a floating slip to an open request (reconcile safety net). */
+export async function assignSlipToRequestAction(
+  paymentId: string,
+  requestId: string,
+): Promise<ActionResult> {
+  if (!paymentId || !requestId) return { ok: false, error: "ข้อมูลไม่ครบ" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  const orgId = session.user.org_id;
+  if (!(await ledgerWebCanForRole(orgId, session.user.role, "expense.confirm"))) {
+    return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลจับคู่สลิปได้" };
+  }
+  const payment = await prisma.ledgerPayment.findFirst({
+    where: { id: paymentId, orgId },
+    select: { companyId: true },
+  });
+  if (!payment) return { ok: false, error: "ไม่พบสลิป" };
+  const res = await assignSlipToRequest({
+    orgId, companyId: payment.companyId, paymentId, requestId, markedBy: session.user.id,
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+  await audit({
+    orgId, userId: session.user.id,
+    action: "LEDGER_SLIP_ASSIGNED_REQUEST",
+    resourceType: "ledger_payment", resourceId: paymentId,
+    diff: { new: { paymentRequestId: requestId } },
+  });
+  revalidatePath("/ledger/reconcile");
   return { ok: true };
 }
 

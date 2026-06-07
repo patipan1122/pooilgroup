@@ -23,3 +23,11 @@ export function ledgerQuotationV1(): boolean {
 export function ledgerSlipV1(): boolean {
   return flagOn("LEDGER_SLIP_V1");
 }
+
+//   LEDGER_PAYREQ_V1 — "ขอโอนเงิน" request flow: select bills → request card to the
+//                      executive group → match slip↔request (net-of-WHT) → close all
+//                      bills → /ledger/reconcile. Separate from SLIP_V1 (don't disturb
+//                      the smoke-tested slip-intake path).
+export function ledgerPayreqV1(): boolean {
+  return flagOn("LEDGER_PAYREQ_V1");
+}

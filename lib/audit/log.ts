@@ -152,7 +152,13 @@ export type AuditAction =
   // bill, and a bill marked paid by cash. Each moves money state → audited.
   | "LEDGER_QUOTATION_SUPERSEDED"
   | "LEDGER_SLIP_MATCHED"
-  | "LEDGER_BILL_PAID_CASH";
+  | "LEDGER_BILL_PAID_CASH"
+  // Payment-request ("ขอโอนเงิน" · LEDGER_PAYREQ_V1): a transfer requested, a request
+  // cancelled before pay, and a floating slip manually assigned to a request.
+  | "LEDGER_PAYMENT_REQUESTED"
+  | "LEDGER_PAYMENT_REQ_CANCELLED"
+  | "LEDGER_SLIP_ASSIGNED_REQUEST"
+  | "LEDGER_RECONCILE_EXPORTED";
 
 export interface AuditEntry {
   orgId: string;

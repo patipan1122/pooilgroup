@@ -20,7 +20,7 @@ import { ExpensePaneClient } from "./_components/ExpensePaneClient";
 import { UploadReceiptButton } from "./_components/UploadReceiptButton";
 import { NoReceiptButton } from "./_components/NoReceiptButton";
 import { ExportButton } from "./_components/ExportButton";
-import { ledgerQuotationV1, ledgerSlipV1 } from "@/lib/ledger/flags";
+import { ledgerQuotationV1, ledgerSlipV1, ledgerPayreqV1 } from "@/lib/ledger/flags";
 import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
 
 export const dynamic = "force-dynamic";
@@ -334,6 +334,7 @@ export default async function ExpensesPage({
           draftIds={draftIds}
           sendableIds={sendableIds}
           companyId={scope.companyId}
+          payreqEnabled={ledgerPayreqV1()}
           tab={tab}
           tabCounts={tabCounts}
           listActions={

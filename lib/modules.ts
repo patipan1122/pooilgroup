@@ -43,6 +43,7 @@ import {
   Layers,
   Bell,
   BarChart3,
+  HandCoins,
   CalendarRange,
   Workflow,
   History,
@@ -890,6 +891,15 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         // Financial-view tier — must match the page-level requireRole gate in
         // app/(admin)/ledger/expenses/page.tsx. Staff capture is LIFF-only, so
         // staff/driver/branch_manager are excluded from this web review pane.
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        href: "/ledger/reconcile",
+        label: "กระทบยอดจ่าย",
+        icon: HandCoins,
+        // ขอโอนเงิน → จ่าย → สลิป → reconcile (LEDGER_PAYREQ_V1). Accountant-facing;
+        // financial-view tier (matches the page-level gate). When the flag is off the
+        // page shows a friendly "ยังไม่เปิดใช้" message (not a dead route).
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {

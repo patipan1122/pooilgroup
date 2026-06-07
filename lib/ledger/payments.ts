@@ -157,6 +157,16 @@ export async function findAutoMatchBill(opts: {
 
   const since = new Date(Date.now() - AUTO_MATCH_WINDOW_DAYS * 24 * 3600 * 1000);
 
+  // Bills that are already inside an ACTIVE payment-request ("ขอโอนเงิน") must not be
+  // grabbed by this legacy amount-matcher — their slip is matched to the REQUEST
+  // (matchSlipToRequest runs first in the webhook). Excluding them keeps a stray
+  // same-amount slip from closing the wrong (already-requested) bill. With no
+  // requests this is `notIn: []` → behaviour is identical to before (byte-safe).
+  const activeReq = await prisma.ledgerPaymentRequestBill
+    .findMany({ where: { orgId, companyId, active: true }, select: { expenseId: true } })
+    .catch(() => [] as { expenseId: string }[]);
+  const excludedBillIds = activeReq.map((r) => r.expenseId);
+
   // Primary search: exact total match.
   const candidates = await prisma.ledgerExpense.findMany({
     where: {
@@ -166,6 +176,7 @@ export async function findAutoMatchBill(opts: {
       paymentStatus: "unpaid",
       total: amount, // Prisma accepts number for a Decimal filter
       createdAt: { gte: since },
+      ...(excludedBillIds.length > 0 ? { id: { notIn: excludedBillIds } } : {}),
     },
     select: { id: true, docCode: true, vendor: true, wht: true },
     orderBy: { createdAt: "desc" },
@@ -186,6 +197,7 @@ export async function findAutoMatchBill(opts: {
         paymentStatus: "unpaid",
         wht: { gt: 0 }, // only bills that have WHT recorded
         createdAt: { gte: since },
+        ...(excludedBillIds.length > 0 ? { id: { notIn: excludedBillIds } } : {}),
       },
       select: { id: true, docCode: true, vendor: true, total: true, wht: true },
       orderBy: { createdAt: "desc" },

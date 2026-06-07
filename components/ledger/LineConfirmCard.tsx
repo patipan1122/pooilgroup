@@ -113,7 +113,7 @@ export interface LedgerConfirmCardInput {
 // ── LINE flex primitives (the subset we emit) ───────────────────────────────
 // Typed locally so we don't depend on @line/bot-sdk; matches LINE's documented
 // flex JSON schema. The webhook only needs these to satisfy `messages: unknown[]`.
-type FlexText = {
+export type FlexText = {
   type: "text";
   text: string;
   size?: string;
@@ -124,7 +124,7 @@ type FlexText = {
   wrap?: boolean;
   margin?: string;
 };
-type FlexBox = {
+export type FlexBox = {
   type: "box";
   layout: "vertical" | "horizontal" | "baseline";
   contents: FlexComponent[];
@@ -136,7 +136,7 @@ type FlexBox = {
   alignItems?: "flex-start" | "center" | "flex-end";
   flex?: number;
 };
-type FlexImage = {
+export type FlexImage = {
   type: "image";
   url: string;
   size?: string;
@@ -145,19 +145,19 @@ type FlexImage = {
   flex?: number;
   align?: "start" | "end" | "center";
 };
-type FlexAction =
+export type FlexAction =
   | { type: "uri"; label: string; uri: string }
   | { type: "postback"; label: string; data: string; displayText?: string }
   | { type: "message"; label: string; text: string };
-type FlexButton = {
+export type FlexButton = {
   type: "button";
   style: "primary" | "secondary" | "link";
   height?: "sm" | "md";
   color?: string;
   action: FlexAction;
 };
-type FlexSeparator = { type: "separator"; margin?: string; color?: string };
-type FlexComponent = FlexText | FlexBox | FlexButton | FlexSeparator | FlexImage;
+export type FlexSeparator = { type: "separator"; margin?: string; color?: string };
+export type FlexComponent = FlexText | FlexBox | FlexButton | FlexSeparator | FlexImage;
 
 // Brand art lives in public/ledger/brand/mascot/ (CEO-swappable). LINE needs
 // ABSOLUTE https URLs for flex images, built from the webhook's baseUrl; we only
