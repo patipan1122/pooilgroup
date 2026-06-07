@@ -327,6 +327,13 @@ export default async function HomePage() {
                 landingPath="/fuelos/dashboard"
               />
             )}
+            {canSee("ledger") && (
+              <ModuleCard
+                slug="ledger"
+                enabled={moduleEnabled.ledger ?? true}
+                landingPath="/ledger"
+              />
+            )}
           </div>
         </Section>
 
