@@ -20,6 +20,7 @@ import { categoryBookIndex } from "@/lib/ledger/category-ledger";
 import {
   spendPivot,
   searchPurchases,
+  listTopVendors,
   type RowAxis,
   type TimeGrain,
   type AmountBasis,
@@ -60,18 +61,31 @@ function dayLabel(d: string | null): string {
 }
 
 const AXES: ReadonlyArray<RowAxis> = ["branch", "category", "vendor", "person"];
-function parseAxis(v: string | undefined): RowAxis | null {
-  return v && (AXES as readonly string[]).includes(v) ? (v as RowAxis) : null;
+function parseAxis(v: string | string[] | undefined): RowAxis | null {
+  const s = Array.isArray(v) ? v[0] : v;
+  return s && (AXES as readonly string[]).includes(s) ? (s as RowAxis) : null;
+}
+
+/** Repeated query params (?cat=a&cat=b) arrive as string[]; a single one as a
+ *  string. Normalise to a de-duped, blank-free array. */
+function asArray(v: string | string[] | undefined): string[] {
+  const raw = v == null ? [] : Array.isArray(v) ? v : [v];
+  return [...new Set(raw.map((s) => s.trim()).filter(Boolean))];
+}
+function firstStr(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
 }
 
 interface LedgerBookSearchParams {
-  company?: string;
-  branch?: string;
-  ax?: string;
-  cat?: string;
-  grain?: string;
-  basis?: string;
-  q?: string;
+  company?: string | string[];
+  branch?: string | string[];
+  ax?: string | string[];
+  cat?: string | string[];
+  b?: string | string[];
+  ven?: string | string[];
+  grain?: string | string[];
+  basis?: string | string[];
+  q?: string | string[];
 }
 
 export default async function LedgerBookPage({
@@ -87,7 +101,10 @@ export default async function LedgerBookPage({
     "viewer",
   );
   const sp = await searchParams;
-  const scope = await resolveScope(session.user.org_id, sp);
+  const scope = await resolveScope(session.user.org_id, {
+    company: firstStr(sp.company),
+    branch: firstStr(sp.branch),
+  });
 
   if (!scope.companyId) {
     return (
@@ -109,26 +126,59 @@ export default async function LedgerBookPage({
     return <BookIndex scope={scope} sp={sp} actorScope={actorScope} />;
   }
 
-  // FLAG ON → faceted spend-analytics.
-  const baseParams = new URLSearchParams();
-  if (sp.company) baseParams.set("company", sp.company);
-  if (sp.branch) baseParams.set("branch", sp.branch);
-  const baseQs = baseParams.toString();
+  // FLAG ON → faceted spend-analytics (multi-select ticks, all AND-combined).
+  const grain: TimeGrain = firstStr(sp.grain) === "year" ? "year" : "month";
+  const basis: AmountBasis = firstStr(sp.basis) === "gross" ? "gross" : "net";
+  const search = (firstStr(sp.q) ?? "").trim();
 
-  const categoryId = sp.cat || null;
-  const grain: TimeGrain = sp.grain === "year" ? "year" : "month";
-  const basis: AmountBasis = sp.basis === "gross" ? "gross" : "net";
-  const search = (sp.q ?? "").trim();
+  // Ticked facets (repeated params). Branch comes from the filter panel (?b=…);
+  // a legacy single ?branch (header picker / old saved book) is folded in.
+  const categoryIds = asArray(sp.cat);
+  const vendors = asArray(sp.ven);
+  const bParam = asArray(sp.b);
+  const legacyBranch = firstStr(sp.branch);
+  const branchIds = bParam.length
+    ? bParam
+    : legacyBranch
+      ? [legacyBranch]
+      : [];
+
   // Default axis: a chosen category → branch breakdown (the CEO's sheet); else a
   // category overview. Explicit ?ax always wins.
-  const axis: RowAxis = parseAxis(sp.ax) ?? (categoryId ? "branch" : "category");
-  const branchFilter = scope.branchId; // header branch picker = the branch facet
+  const axis: RowAxis = parseAxis(sp.ax) ?? (categoryIds.length ? "branch" : "category");
 
+  // Drill base scope: company always; a single ticked branch carries through so
+  // the receipt-level drill stays scoped (multi-branch drills company-wide).
+  const baseParams = new URLSearchParams();
+  if (scope.companyId) baseParams.set("company", scope.companyId);
+  if (branchIds.length === 1) baseParams.set("branch", branchIds[0]);
+  const baseQs = baseParams.toString();
+
+  // Option lists for the tick pickers.
   const categories = await prisma.ledgerCategory.findMany({
     where: { orgId: scope.orgId, companyId: scope.companyId, active: true },
     orderBy: [{ sort: "asc" }, { name: "asc" }],
     select: { id: true, name: true },
   });
+  // Branches the actor may pick (scoped member sees only their reach).
+  const branchList = await prisma.branch.findMany({
+    where: {
+      orgId: scope.orgId,
+      companyId: scope.companyId,
+      ...(actorScope.allBranches ? {} : { id: { in: actorScope.scopeBranchIds } }),
+    },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
+  // Vendors that actually appear in this company's confirmed spend, ranked.
+  const vendorOptions = (
+    await listTopVendors({
+      orgId: scope.orgId,
+      companyId: scope.companyId,
+      actorScope,
+      limit: 60,
+    })
+  ).map((v) => v.vendor);
 
   // "เซฟเล่ม" shelf — shared per company. Precompute each book's open-link here so
   // the client island never imports the prisma-backed saved-books lib.
@@ -146,8 +196,9 @@ export default async function LedgerBookPage({
   });
   const currentConfig: SavedBookConfig = {
     axis,
-    categoryId,
-    branchId: branchFilter,
+    categoryIds,
+    branchIds,
+    vendors,
     grain,
     basis,
     q: search || null,
@@ -165,11 +216,15 @@ export default async function LedgerBookPage({
 
       <AnalyticsControls
         axis={axis}
-        categoryId={categoryId}
+        categoryIds={categoryIds}
+        branchIds={branchIds}
+        vendors={vendors}
         grain={grain}
         basis={basis}
         search={search}
         categories={categories}
+        branches={branchList}
+        vendorOptions={vendorOptions}
       />
 
       {search ? (
@@ -178,7 +233,7 @@ export default async function LedgerBookPage({
           companyId={scope.companyId}
           actorScope={actorScope}
           term={search}
-          branchId={branchFilter}
+          branchIds={branchIds}
           basis={basis}
           baseQs={baseQs}
         />
@@ -188,8 +243,9 @@ export default async function LedgerBookPage({
           companyId={scope.companyId}
           actorScope={actorScope}
           axis={axis}
-          categoryId={categoryId}
-          branchId={branchFilter}
+          categoryIds={categoryIds}
+          branchIds={branchIds}
+          vendors={vendors}
           grain={grain}
           basis={basis}
           baseQs={baseQs}
@@ -208,14 +264,15 @@ export default async function LedgerBookPage({
 // FLAG ON · pivot section (server-computed → handed to the client PivotTable)
 // --------------------------------------------------------------------------
 async function PivotSection({
-  orgId, companyId, actorScope, axis, categoryId, branchId, grain, basis, baseQs,
+  orgId, companyId, actorScope, axis, categoryIds, branchIds, vendors, grain, basis, baseQs,
 }: {
   orgId: string;
   companyId: string;
   actorScope: { allBranches: boolean; scopeBranchIds: string[] };
   axis: RowAxis;
-  categoryId: string | null;
-  branchId: string | null;
+  categoryIds: string[];
+  branchIds: string[];
+  vendors: string[];
   grain: TimeGrain;
   basis: AmountBasis;
   baseQs: string;
@@ -225,8 +282,9 @@ async function PivotSection({
     companyId,
     actorScope,
     rowAxis: axis,
-    categoryId,
-    branchId,
+    categoryIds,
+    branchIds,
+    vendors,
     grain,
     span: grain === "year" ? 3 : 12,
     anchorPeriod: currentPeriodBangkok(),
@@ -248,7 +306,7 @@ async function PivotSection({
           * ปีปัจจุบันยังไม่ครบปี — เทียบยอดสะสมถึงเดือนล่าสุดเท่านั้น
         </p>
       )}
-      <PivotTable pivot={pivot} axis={axis} categoryId={categoryId} baseQs={baseQs} />
+      <PivotTable pivot={pivot} axis={axis} categoryIds={categoryIds} baseQs={baseQs} />
     </>
   );
 }
@@ -257,18 +315,18 @@ async function PivotSection({
 // FLAG ON · keyword search results ("ล่าสุดซื้อ X กี่บาท")
 // --------------------------------------------------------------------------
 async function SearchResults({
-  orgId, companyId, actorScope, term, branchId, basis, baseQs,
+  orgId, companyId, actorScope, term, branchIds, basis, baseQs,
 }: {
   orgId: string;
   companyId: string;
   actorScope: { allBranches: boolean; scopeBranchIds: string[] };
   term: string;
-  branchId: string | null;
+  branchIds: string[];
   basis: AmountBasis;
   baseQs: string;
 }) {
   const res = await searchPurchases({
-    orgId, companyId, actorScope, term, branchId, basis, limit: 12,
+    orgId, companyId, actorScope, term, branchIds, basis, limit: 12,
   });
 
   if (res.hits.length === 0) {
@@ -360,8 +418,10 @@ async function BookIndex({
   });
 
   const linkParams = new URLSearchParams();
-  if (sp.company) linkParams.set("company", sp.company);
-  if (sp.branch) linkParams.set("branch", sp.branch);
+  const lpCompany = firstStr(sp.company);
+  const lpBranch = firstStr(sp.branch);
+  if (lpCompany) linkParams.set("company", lpCompany);
+  if (lpBranch) linkParams.set("branch", lpBranch);
   const linkSuffix = linkParams.toString() ? `?${linkParams.toString()}` : "";
 
   const sorted = [...entries].sort((a, b) => {

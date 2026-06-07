@@ -57,10 +57,12 @@ export interface PivotInput {
   companyId: string;
   actorScope: AnalyticsActorScope;
   rowAxis: RowAxis;
-  /** Faceted filters (tick to narrow) — all optional, all AND-combined. */
-  categoryId?: string | null;
-  branchId?: string | null;
-  vendor?: string | null;
+  /** Faceted filters (tick MANY to narrow) — all optional, all AND-combined.
+   *  Multi-select: within a facet the values are OR'd ({ in: [...] }); across
+   *  facets they're AND'd (หมวด∈{...} AND สาขา∈{...} AND ผู้ขาย∈{...}). */
+  categoryIds?: string[];
+  branchIds?: string[];
+  vendors?: string[];
   /** Keyword over line-item description + vendor (the "น้ำแข็ง" filter). */
   search?: string | null;
   grain: TimeGrain;
@@ -133,7 +135,7 @@ function buildPeriods(
  */
 export async function spendPivot(input: PivotInput): Promise<PivotResult> {
   const {
-    orgId, companyId, actorScope, rowAxis, categoryId, vendor, search,
+    orgId, companyId, actorScope, rowAxis, categoryIds, vendors, search,
     grain, span, anchorPeriod, basis,
   } = input;
 
@@ -151,12 +153,12 @@ export async function spendPivot(input: PivotInput): Promise<PivotResult> {
     replacedById: null, // exclude superseded (quotation→real invoice) — no double count
     docDate: { gte: start },
   };
-  if (categoryId) where.categoryId = categoryId;
-  if (vendor) where.vendor = vendor;
+  if (categoryIds && categoryIds.length) where.categoryId = { in: categoryIds };
+  if (vendors && vendors.length) where.vendor = { in: vendors };
 
   // Branch scope: an explicit branch filter must still respect the actor's reach;
   // a scoped member with no reachable branch gets an empty pivot (never a leak).
-  const branchFilter = resolveBranchFilter(input.branchId ?? null, actorScope);
+  const branchFilter = resolveBranchFilter(input.branchIds ?? [], actorScope);
   if (branchFilter === "deny") return empty;
   if (branchFilter !== null) where.branchId = branchFilter;
 
@@ -308,20 +310,23 @@ async function resolveLabels(
 }
 
 /**
- * Branch where-clause honouring the actor's reach.
- *   • admin/accountant (allBranches): the explicit filter as-is (or none).
- *   • scoped member: intersect the filter with their branches; no reach → "deny".
+ * Branch where-clause honouring the actor's reach (multi-select aware).
+ *   • admin/accountant (allBranches): the ticked branches as-is (or none = all).
+ *   • scoped member: intersect the ticked branches with their reach; if they tick
+ *     none → their whole reach; if the intersection is empty → "deny" (never a leak).
  */
 function resolveBranchFilter(
-  filterBranchId: string | null,
+  filterBranchIds: string[],
   actorScope: AnalyticsActorScope,
-): Prisma.StringNullableFilter | string | "deny" | null {
+): Prisma.StringNullableFilter | "deny" | null {
+  const ticked = filterBranchIds.filter((b) => b && b.trim());
   if (actorScope.allBranches) {
-    return filterBranchId ? filterBranchId : null;
+    return ticked.length ? { in: ticked } : null;
   }
   if (actorScope.scopeBranchIds.length === 0) return "deny";
-  if (filterBranchId) {
-    return actorScope.scopeBranchIds.includes(filterBranchId) ? filterBranchId : "deny";
+  if (ticked.length) {
+    const allowed = ticked.filter((b) => actorScope.scopeBranchIds.includes(b));
+    return allowed.length ? { in: allowed } : "deny";
   }
   return { in: actorScope.scopeBranchIds };
 }
@@ -357,7 +362,7 @@ export interface PurchaseSearchInput {
   companyId: string;
   actorScope: AnalyticsActorScope;
   term: string;
-  branchId?: string | null;
+  branchIds?: string[];
   basis: AmountBasis;
   /** Max hits to list (default 12). */
   limit?: number;
@@ -388,7 +393,7 @@ export async function searchPurchases(
       { items: { some: { description: { contains: term, mode: "insensitive" } } } },
     ],
   };
-  const branchFilter = resolveBranchFilter(input.branchId ?? null, actorScope);
+  const branchFilter = resolveBranchFilter(input.branchIds ?? [], actorScope);
   if (branchFilter === "deny") return empty;
   if (branchFilter !== null) where.branchId = branchFilter;
 
@@ -454,4 +459,58 @@ export async function searchPurchases(
     .map(([period, total]) => ({ period, total }));
 
   return { term, hits, trend, truncated };
+}
+
+// ---------------------------------------------------------------------------
+// Vendor options for the multi-select tick filter.
+// ---------------------------------------------------------------------------
+
+export interface VendorOption {
+  vendor: string;
+  total: number;
+}
+
+/**
+ * Distinct vendors that actually appear in this company's confirmed spend
+ * (actor-branch-narrowed), ranked by total so the most-used sit on top of the
+ * tick list. Capped at `limit` (default 60) — the picker has its own search box
+ * for the long tail. Real spend only (confirmed+locked, non-superseded).
+ */
+export async function listTopVendors(input: {
+  orgId: string;
+  companyId: string;
+  actorScope: AnalyticsActorScope;
+  limit?: number;
+}): Promise<VendorOption[]> {
+  const { orgId, companyId, actorScope } = input;
+  const limit = input.limit ?? 60;
+
+  const where: Prisma.LedgerExpenseWhereInput = {
+    orgId,
+    companyId,
+    status: { in: [...SPEND_STATUS] },
+    replacedById: null,
+    vendor: { not: null },
+  };
+  const branchFilter = resolveBranchFilter([], actorScope);
+  if (branchFilter === "deny") return [];
+  if (branchFilter !== null) where.branchId = branchFilter;
+
+  const rows = await prisma.ledgerExpense.findMany({
+    where,
+    select: { vendor: true, subtotal: true },
+    take: READ_CAP + 1,
+  });
+  const data = rows.length > READ_CAP ? rows.slice(0, READ_CAP) : rows;
+
+  const byVendor = new Map<string, number>();
+  for (const r of data) {
+    const v = r.vendor?.trim();
+    if (!v) continue;
+    byVendor.set(v, (byVendor.get(v) ?? 0) + dec(r.subtotal));
+  }
+  return [...byVendor.entries()]
+    .map(([vendor, total]) => ({ vendor, total }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, limit);
 }

@@ -54,16 +54,18 @@ function DeltaPill({ pct }: { pct: number | null }) {
 export function PivotTable({
   pivot,
   axis,
-  categoryId,
+  categoryIds,
   baseQs,
 }: {
   pivot: PivotResult;
   axis: RowAxis;
-  /** Selected category filter (enables branch-row drill into the rich page). */
-  categoryId: string | null;
+  /** Ticked category filter(s). A branch-row drill into the rich category page
+   *  is only unambiguous when exactly ONE category is ticked. */
+  categoryIds: string[];
   /** Scope query string (company=..&branch=..) without leading "?". */
   baseQs: string;
 }) {
+  const soleCategoryId = categoryIds.length === 1 ? categoryIds[0] : null;
   const [showFull, setShowFull] = useState(false);
   const [open, setOpen] = useState<Set<string>>(new Set());
 
@@ -85,10 +87,10 @@ export function PivotTable({
     if (axis === "category") {
       return `/ledger/categories/${key}${qp.toString() ? `?${qp}` : ""}`;
     }
-    if (axis === "branch" && categoryId) {
+    if (axis === "branch" && soleCategoryId) {
       qp.set("axis", "branch");
       qp.set("b", key);
-      return `/ledger/categories/${categoryId}?${qp}`;
+      return `/ledger/categories/${soleCategoryId}?${qp}`;
     }
     return null;
   };

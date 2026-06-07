@@ -7,11 +7,13 @@
 import { prisma } from "@/lib/prisma";
 import type { RowAxis, TimeGrain, AmountBasis } from "@/lib/ledger/spend-analytics";
 
-/** The saved filter set (the URL params of the analytics view). */
+/** The saved filter set (the URL params of the analytics view).
+ *  Multi-select facets are arrays (a book can pin several สาขา/หมวด/ผู้ขาย). */
 export interface SavedBookConfig {
   axis: RowAxis;
-  categoryId: string | null;
-  branchId: string | null;
+  categoryIds: string[];
+  branchIds: string[];
+  vendors: string[];
   grain: TimeGrain;
   basis: AmountBasis;
   q: string | null;
@@ -26,7 +28,9 @@ export interface SavedBook {
 
 const AXES: ReadonlyArray<RowAxis> = ["branch", "category", "vendor", "person"];
 
-/** Coerce arbitrary JSON (or raw input) into a safe SavedBookConfig. */
+/** Coerce arbitrary JSON (or raw input) into a safe SavedBookConfig.
+ *  Backward-compatible: books saved before multi-select stored single
+ *  `categoryId`/`branchId` strings → folded into the arrays. */
 export function normalizeBookConfig(raw: unknown): SavedBookConfig {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const axis = typeof o.axis === "string" && (AXES as readonly string[]).includes(o.axis)
@@ -34,10 +38,25 @@ export function normalizeBookConfig(raw: unknown): SavedBookConfig {
     : "category";
   const str = (v: unknown): string | null =>
     typeof v === "string" && v.trim() ? v.trim() : null;
+  // Accept an array of strings OR a single legacy string; de-dupe, drop blanks.
+  const arr = (v: unknown, legacy?: unknown): string[] => {
+    const out: string[] = [];
+    if (Array.isArray(v)) {
+      for (const x of v) if (typeof x === "string" && x.trim()) out.push(x.trim());
+    } else if (typeof v === "string" && v.trim()) {
+      out.push(v.trim());
+    }
+    if (out.length === 0) {
+      const l = str(legacy);
+      if (l) out.push(l);
+    }
+    return [...new Set(out)];
+  };
   return {
     axis,
-    categoryId: str(o.categoryId),
-    branchId: str(o.branchId),
+    categoryIds: arr(o.categoryIds, o.categoryId),
+    branchIds: arr(o.branchIds, o.branchId),
+    vendors: arr(o.vendors),
     grain: o.grain === "year" ? "year" : "month",
     basis: o.basis === "gross" ? "gross" : "net",
     q: str(o.q),
@@ -73,9 +92,14 @@ export function bookConfigToQuery(
 ): string {
   const p = new URLSearchParams();
   if (company) p.set("company", company);
-  if (config.branchId) p.set("branch", config.branchId);
-  if (config.axis && config.axis !== "category") p.set("ax", config.axis);
-  if (config.categoryId) p.set("cat", config.categoryId);
+  // Multi-select facets → repeated params (cat=a&cat=b) so vendor names with
+  // commas/special chars never break a CSV split.
+  for (const c of config.categoryIds) p.append("cat", c);
+  for (const b of config.branchIds) p.append("b", b);
+  for (const v of config.vendors) p.append("ven", v);
+  // Always pin the axis explicitly so reopening restores the exact view (the page
+  // would otherwise default a category-filtered book to the branch breakdown).
+  p.set("ax", config.axis);
   if (config.grain === "year") p.set("grain", "year");
   if (config.basis === "gross") p.set("basis", "gross");
   if (config.q) p.set("q", config.q);
