@@ -171,4 +171,12 @@ export interface ParsedReceipt {
 export interface RecheckResult {
   ok: boolean;
   warnings: string[];
+  /**
+   * True when the additive identity (subtotal − discount + vat − wht = total)
+   * is off by more than the rounding tolerance. This is the ONLY finding that
+   * BLOCKS a human confirm — surfaced as a structured flag so callers don't have
+   * to string-match the Thai warning text (which would silently stop blocking if
+   * the wording ever changed).
+   */
+  blockingMathError: boolean;
 }

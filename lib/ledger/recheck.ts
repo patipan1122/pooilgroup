@@ -63,6 +63,7 @@ export function recheckReceipt(p: {
   items?: ExpenseItem[];
 }): RecheckResult {
   const warnings: string[] = [];
+  let blockingMathError = false;
 
   // 1. Tax id format
   if (p.vendorTaxId && !isValidTaxId(p.vendorTaxId)) {
@@ -86,6 +87,7 @@ export function recheckReceipt(p: {
       warnings.push(
         `ยอดรวมไม่ตรง: ยอดย่อย ${subtotal.toFixed(2)}${discPart} + VAT ${vat.toFixed(2)} − หัก ณ ที่จ่าย ${wht.toFixed(2)} = ${expectedTotal.toFixed(2)} แต่ยอดรวมที่อ่านได้ = ${total.toFixed(2)}`,
       );
+      blockingMathError = true; // structured flag — the ONLY thing that blocks confirm
     }
   }
 
@@ -138,7 +140,7 @@ export function recheckReceipt(p: {
     );
   }
 
-  return { ok: warnings.length === 0, warnings };
+  return { ok: warnings.length === 0, warnings, blockingMathError };
 }
 
 /** Convenience: run recheck directly on a ParsedReceipt from ai-parse. */

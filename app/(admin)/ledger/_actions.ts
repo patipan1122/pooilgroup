@@ -136,6 +136,7 @@ const FIELD_LABEL_TH: Record<string, string> = {
   docType: "ประเภทเอกสาร",
   vendorDocNumber: "เลขที่เอกสาร",
   vendorAddress: "ที่อยู่ผู้ขาย",
+  vendorBranchCode: "รหัสสาขาผู้ขาย",
   discount: "ส่วนลด",
   paymentStatus: "สถานะการชำระเงิน",
   claimantName: "ผู้จ่าย/เบิก",
@@ -357,10 +358,12 @@ export async function confirmExpense(
       vatRate: it.vatRate ?? null,
     })),
   });
-  // Only hard math errors block; soft warnings (tax id / vat%) are advisory.
-  const blocking = rc.warnings.filter((w) => w.includes("ยอดรวม") || w.toLowerCase().includes("total"));
-  if (blocking.length > 0) {
-    return { ok: false, error: `ยอดไม่ตรง: ${blocking.join(" · ")}` };
+  // Only the additive total-identity mismatch blocks confirm; soft warnings
+  // (tax id / vat% / wht%) are advisory. Use the STRUCTURED flag, never a Thai
+  // substring match (which would silently stop blocking if wording changed).
+  if (rc.blockingMathError) {
+    const detail = rc.warnings.find((w) => w.includes("ยอดรวม")) ?? "ยอดย่อย + VAT − หัก ณ ที่จ่าย ไม่เท่ายอดรวม";
+    return { ok: false, error: `ยอดไม่ตรง: ${detail}` };
   }
 
   const { row } = await loadScoped(session, id);
@@ -1703,7 +1706,11 @@ export async function sendExpensesToTrcloud(
 async function loadScopedByOrg(orgId: string, id: string) {
   return prisma.ledgerExpense.findFirst({
     where: { id, orgId },
-    select: { id: true, companyId: true, branchId: true, status: true },
+    select: {
+      id: true, companyId: true, branchId: true, status: true,
+      // needed by gradeColumnsFromPatch so a LIFF edit re-grades สถานะสี too.
+      buyerTaxIdOnDoc: true, vendorAddress: true, vendorBranchCode: true,
+    },
   });
 }
 
@@ -1719,10 +1726,14 @@ export async function liffSaveExpense(id: string, raw: unknown): Promise<ActionR
   if (row.status === "locked" || row.status === "void")
     return { ok: false, error: "รายการถูกล็อก/ยกเลิก แก้ไม่ได้" };
 
+  // Re-grade สถานะสี (ภาษีซื้อ) from the edited values — same as web saveExpense,
+  // so a LIFF member's edit doesn't leave a stale green/red verdict on the row.
+  const { grade: _gl, ...gradeColsLiff } = gradeColumnsFromPatch(parsed.data, row);
+  void _gl;
   await prisma.$transaction(async (tx) => {
     await tx.ledgerExpense.updateMany({
       where: { id, orgId: actor.orgId, companyId: row.companyId },
-      data: { ...toData(parsed.data), needsReview: true },
+      data: { ...gradeColsLiff, ...toData(parsed.data), needsReview: true },
     });
     await replaceItems(tx, {
       expenseId: id,
@@ -1768,8 +1779,10 @@ export async function liffConfirmExpense(id: string, raw: unknown): Promise<Acti
       vatRate: it.vatRate ?? null,
     })),
   });
-  const blocking = rc.warnings.filter((w) => w.includes("ยอดรวม") || w.toLowerCase().includes("total"));
-  if (blocking.length > 0) return { ok: false, error: `ยอดไม่ตรง: ${blocking.join(" · ")}` };
+  if (rc.blockingMathError) {
+    const detail = rc.warnings.find((w) => w.includes("ยอดรวม")) ?? "ยอดย่อย + VAT − หัก ณ ที่จ่าย ไม่เท่ายอดรวม";
+    return { ok: false, error: `ยอดไม่ตรง: ${detail}` };
+  }
 
   const row = await loadScopedByOrg(actor.orgId, id);
   if (!row) return { ok: false, error: "ไม่พบรายการ" };

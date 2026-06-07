@@ -87,10 +87,15 @@ export type ExpenseDraft = {
   items: ExpenseItem[];
 };
 
+// MUST mirror ExpenseDocType (lib/ledger/types.ts) + patchSchema docType enum.
+// "quotation" was missing → a quotation draft showed a BLANK docType select and
+// touching it silently reclassified the doc (losing the ใบเสนอราคา → can't-claim
+// rule). Keep all three in sync.
 const DOC_TYPES: { value: ExpenseDocType; label: string }[] = [
   { value: "tax_invoice", label: "ใบกำกับภาษี" },
   { value: "receipt", label: "ใบเสร็จรับเงิน" },
   { value: "cash_bill", label: "บิลเงินสด" },
+  { value: "quotation", label: "ใบเสนอราคา / ใบแจ้งหนี้" },
   { value: "delivery_note", label: "ใบส่งของ" },
   { value: "other", label: "อื่น ๆ" },
 ];
@@ -232,7 +237,10 @@ export function runRecheck(d: ExpenseDraft): RecheckFinding[] {
     });
   }
   const computed = d.subtotal - (d.discount ?? 0) + d.vat - d.wht;
-  if (d.total > 0 && Math.abs(computed - d.total) >= 1) {
+  // Tolerance MUST match the server (recheck.ts MONEY_TOL: blocks when diff > 1,
+  // i.e. a diff of exactly 1.00 baht is allowed). Using >= 1 here blocked the
+  // button on a 1.00-baht rounding receipt the server would have accepted.
+  if (d.total > 0 && Math.abs(computed - d.total) > 1) {
     const discPart = (d.discount ?? 0) > 0 ? ` − ส่วนลด ${d.discount.toLocaleString()}` : "";
     out.push({
       field: "total",
