@@ -48,6 +48,7 @@ import { ConfidenceTag } from "./_kit/ConfidenceTag";
 import { missingLabel } from "./_kit/CompletenessDot";
 import { DocTag, PaymentTag } from "./_kit/StatusTags";
 import { AmountInput } from "./_kit/AmountInput";
+import { BranchPicker } from "@/app/(admin)/ledger/_components/BranchPicker";
 import type { ExpenseRow, CategoryOption, BranchOption } from "./_kit/types";
 import type {
   ExpenseItem,
@@ -878,31 +879,36 @@ export function ExpenseReviewPane({
               </div>
               <div>
                 <FieldLabel>สาขา (ของเรา)</FieldLabel>
-                <select
-                  className={cn(inputCls, gateMissingBranch && "border-amber-300 ring-1 ring-amber-200")}
-                  aria-label="สาขา"
+                <BranchPicker
+                  branches={branches}
                   value={draft.branchId}
+                  onChange={pickBranch}
+                  placeholder="— ไม่ระบุ —"
                   disabled={locked || centralPending}
-                  onChange={(e) => pickBranch(e.target.value)}
-                >
-                  <option value="">— ไม่ระบุ —</option>
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>{b.code} · {b.name}</option>
-                  ))}
-                  {/* เลือก "สำนักงาน (ส่วนกลาง)" อย่างตั้งใจเมื่อไม่รู้สาขา —
-                      ถ้ายังไม่มีในลิสต์ เสนอเป็นตัวเลือกพิเศษ (เรียก ensureCentralBranch). */}
-                  {onEnsureCentralBranch && !centralBranch && (
-                    <option value={CENTRAL_OPTION}>สำนักงาน (ส่วนกลาง)</option>
-                  )}
-                </select>
-                {gateMissingBranch && (
-                  <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-700">
+                  className={gateMissingBranch ? "ring-1 ring-amber-200" : undefined}
+                />
+                {/* "สำนักงาน (ส่วนกลาง)" — เสนอเมื่อยังไม่มีในลิสต์ + มี action สร้างให้. */}
+                {onEnsureCentralBranch && !centralBranch && (
+                  <button
+                    type="button"
+                    disabled={locked || centralPending}
+                    onClick={() => pickBranch(CENTRAL_OPTION)}
+                    className="mt-1 text-[11px] text-[var(--color-brand-600)] underline disabled:opacity-50"
+                  >
                     {centralPending ? (
-                      <Loader2 className="size-3 animate-spin" aria-hidden />
+                      <span className="flex items-center gap-1">
+                        <Loader2 className="size-3 animate-spin" aria-hidden />
+                        กำลังตั้งสาขาสำนักงาน…
+                      </span>
                     ) : (
-                      <Building2 className="size-3" aria-hidden />
+                      "ไม่รู้สาขา → เลือกสำนักงาน (ส่วนกลาง)"
                     )}
-                    {centralPending ? "กำลังตั้งสาขาสำนักงาน…" : "ต้องระบุสาขา — ไม่รู้สาขาเลือก “สำนักงาน (ส่วนกลาง)”"}
+                  </button>
+                )}
+                {gateMissingBranch && !centralPending && (
+                  <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-700">
+                    <Building2 className="size-3" aria-hidden />
+                    ต้องระบุสาขา
                   </p>
                 )}
               </div>

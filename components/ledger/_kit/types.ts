@@ -26,6 +26,7 @@ export type BranchOption = {
   id: string;
   code: string;
   name: string;
+  businessType: string;
 };
 
 export type CompanyOption = {

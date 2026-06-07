@@ -95,6 +95,9 @@ export default async function ExpensesPage({
     sp.status && STATUS_VALUES.includes(sp.status as LedgerStatusValue)
       ? (sp.status as LedgerStatusValue)
       : undefined;
+  // Default: hide void/cancelled rows — show only when explicitly filtered.
+  const statusFilter: LedgerStatusValue | LedgerStatusValue[] =
+    status ?? (["draft", "confirmed", "locked"] as LedgerStatusValue[]);
   const categoryId = sp.category || undefined;
   const q = sp.q?.trim() || undefined;
   const selected = sp.selected?.trim() || undefined;
@@ -115,7 +118,7 @@ export default async function ExpensesPage({
     orgId: scope.orgId,
     companyId: scope.companyId,
     branchId: scope.branchId,
-    status,
+    status: statusFilter,
     categoryId,
     trcloudPushed,
     search: q,

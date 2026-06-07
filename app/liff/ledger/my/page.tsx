@@ -66,7 +66,11 @@ export default async function LedgerLiffMyPage() {
 
   // Within the company: allBranches (admin/accountant) → company-wide recent.
   // member → own submissions OR their scoped branches only.
-  const where: Prisma.LedgerExpenseWhereInput = { orgId: actor.orgId, companyId };
+  const where: Prisma.LedgerExpenseWhereInput = {
+    orgId: actor.orgId,
+    companyId,
+    status: { not: "void" }, // ซ่อนรายการยกเลิกจากหน้า "ใบของฉัน"
+  };
   if (!actor.allBranches) {
     where.OR = [
       { createdBy: actor.userId },
