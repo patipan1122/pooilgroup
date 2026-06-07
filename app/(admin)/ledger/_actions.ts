@@ -263,6 +263,8 @@ async function loadScoped(
       id: true,
       companyId: true,
       status: true,
+      // — แก้ไขได้จนกว่าจะ "ส่งเข้า TRCloud" (CEO: ยืนยันแล้วยังแก้ได้ · ล็อกเมื่อ push แล้ว) —
+      trcloudPushedAt: true,
       // — supersede: ใบนี้มาแทนใบไหน (ใช้ void ใบเสนอราคาเดิมตอน confirm) —
       replacementOfId: true,
       // — for re-grading input-VAT completeness on save/confirm —
@@ -291,6 +293,11 @@ export async function saveExpense(
   if (!row) return { ok: false, error: "ไม่พบรายการ" };
   if (row.status === "locked" || row.status === "void")
     return { ok: false, error: "รายการถูกล็อก/ยกเลิก แก้ไม่ได้" };
+  // CEO rule (2026-06-07): a CONFIRMED bill stays editable; it only locks AFTER it's
+  // been pushed to TRCloud (the book of record) — editing past that would desync the
+  // two systems. To change it, delete the AP in TRCloud first (re-opens editing).
+  if (row.trcloudPushedAt)
+    return { ok: false, error: "ส่งเข้า TRCloud แล้ว แก้ไขไม่ได้ — ถ้าต้องแก้ ให้ลบใบใน TRCloud ก่อน" };
 
   // P1#21 ROLE CHECK — only the creator OR an admin/accountant may edit a draft.
   // Staff who didn't create the record cannot silently overwrite another user's entry.
