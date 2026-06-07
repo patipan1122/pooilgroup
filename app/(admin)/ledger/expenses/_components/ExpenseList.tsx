@@ -498,7 +498,6 @@ export function ExpenseList({
                     {pushErr && (
                       <span
                         className="inline-flex items-center gap-0.5 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700"
-                        title={r.trcloudError ?? "ส่ง TRCloud ไม่สำเร็จ"}
                       >
                         <AlertTriangle className="size-3" /> ส่ง TRCloud พลาด
                       </span>
@@ -521,6 +520,13 @@ export function ExpenseList({
                           : gate.missing.includes("branch")
                             ? "ต้องระบุสาขา"
                             : "ต้องระบุหมวด"}
+                      </span>
+                    )}
+
+                    {/* Inline TRCloud error — visible always (not just hover) */}
+                    {pushErr && r.trcloudError && (
+                      <span className="w-full text-[10px] text-rose-600 mt-0.5">
+                        {r.trcloudError}
                       </span>
                     )}
 
