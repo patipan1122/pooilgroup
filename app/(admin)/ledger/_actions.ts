@@ -100,7 +100,10 @@ const patchSchema = z.object({
   total: z.coerce.number().min(0),
   note: z.string().trim().max(1000),
   // — Bainy-parity fields (optional so older callers still validate) —
-  docType: z.enum(["tax_invoice", "receipt", "cash_bill", "delivery_note", "other"]).optional(),
+  // MUST mirror ExpenseDocType in lib/ledger/types.ts — "quotation" was added for
+  // D1 (ใบเสนอราคา) and the OCR classifies into it; omitting it here made every
+  // quotation draft fail save/confirm with a generic "ข้อมูลไม่ถูกต้อง".
+  docType: z.enum(["tax_invoice", "receipt", "cash_bill", "delivery_note", "quotation", "other"]).optional(),
   vendorDocNumber: z.string().trim().max(60).optional(),
   vendorAddress: z.string().trim().max(300).optional(),
   vendorBranchCode: z.string().trim().max(20).optional(),
@@ -116,6 +119,43 @@ const patchSchema = z.object({
   items: z.array(itemSchema).max(100).optional(),
 });
 export type ExpensePatch = z.infer<typeof patchSchema>;
+
+/** Thai field labels for patchSchema keys — so a validation error names the field. */
+const FIELD_LABEL_TH: Record<string, string> = {
+  vendor: "ชื่อร้านค้า",
+  vendorTaxId: "เลขผู้เสียภาษี",
+  docDate: "วันที่เอกสาร",
+  categoryId: "หมวด",
+  branchId: "สาขา",
+  paymentMethod: "วิธีชำระเงิน",
+  subtotal: "ยอดก่อน VAT",
+  vat: "VAT",
+  wht: "หัก ณ ที่จ่าย",
+  total: "ยอดรวม",
+  note: "หมายเหตุ",
+  docType: "ประเภทเอกสาร",
+  vendorDocNumber: "เลขที่เอกสาร",
+  vendorAddress: "ที่อยู่ผู้ขาย",
+  discount: "ส่วนลด",
+  paymentStatus: "สถานะการชำระเงิน",
+  claimantName: "ผู้จ่าย/เบิก",
+  bankDetail: "ธนาคาร/รายละเอียด",
+  items: "รายการสินค้า",
+};
+
+/**
+ * Turn a Zod failure into a Thai message that NAMES the offending field, instead
+ * of a blanket "ข้อมูลไม่ถูกต้อง" the user can't act on. CEO 2026-06-07: "บอกด้วยสิ
+ * ว่าอะไรไม่ถูกต้อง". Logs the raw issue for engineers.
+ */
+function zodErrorMessage(err: z.ZodError): string {
+  const issue = err.issues[0];
+  if (!issue) return "ข้อมูลไม่ถูกต้อง";
+  const key = issue.path[0];
+  const label = typeof key === "string" ? FIELD_LABEL_TH[key] ?? key : "ข้อมูล";
+  console.warn("[ledger:validation]", JSON.stringify(err.issues.slice(0, 5)));
+  return `ช่อง "${label}" ไม่ถูกต้อง — ${issue.message}`;
+}
 
 function toData(p: ExpensePatch) {
   return {
@@ -237,7 +277,7 @@ export async function saveExpense(
   const { session } = access;
 
   const parsed = patchSchema.safeParse(raw);
-  if (!parsed.success) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" };
+  if (!parsed.success) return { ok: false, error: zodErrorMessage(parsed.error) };
   const { row } = await loadScoped(session, id);
   if (!row) return { ok: false, error: "ไม่พบรายการ" };
   if (row.status === "locked" || row.status === "void")
@@ -298,7 +338,7 @@ export async function confirmExpense(
   }
 
   const parsed = patchSchema.safeParse(raw);
-  if (!parsed.success) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" };
+  if (!parsed.success) return { ok: false, error: zodErrorMessage(parsed.error) };
   const p = parsed.data;
 
   // Golden rule: recheck math BEFORE allowing a human confirm.
@@ -641,7 +681,7 @@ export async function overrideClaimability(
     return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลปรับสิทธิ์ขอคืนภาษีได้" };
   }
   const parsed = overrideSchema.safeParse(raw);
-  if (!parsed.success) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" };
+  if (!parsed.success) return { ok: false, error: zodErrorMessage(parsed.error) };
   const { expenseId, claimable, reason } = parsed.data;
 
   const { row } = await loadScoped(session, expenseId);
@@ -1672,7 +1712,7 @@ export async function liffSaveExpense(id: string, raw: unknown): Promise<ActionR
   const actor = await resolveLedgerActor();
   if (!actor) return { ok: false, error: "บัญชียังไม่เปิดใช้งานสำหรับคุณ · ติดต่อออฟฟิศ" };
   const parsed = patchSchema.safeParse(raw);
-  if (!parsed.success) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" };
+  if (!parsed.success) return { ok: false, error: zodErrorMessage(parsed.error) };
   const row = await loadScopedByOrg(actor.orgId, id);
   if (!row) return { ok: false, error: "ไม่พบรายการ" };
   if (!actorCanReachBranch(actor, row.branchId)) return { ok: false, error: "ไม่มีสิทธิ์ในสาขานี้" };
@@ -1709,7 +1749,7 @@ export async function liffConfirmExpense(id: string, raw: unknown): Promise<Acti
   if (!actor) return { ok: false, error: "บัญชียังไม่เปิดใช้งานสำหรับคุณ · ติดต่อออฟฟิศ" };
   if (!actor.canConfirm) return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลยืนยันได้ — กดบันทึกร่างได้" };
   const parsed = patchSchema.safeParse(raw);
-  if (!parsed.success) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" };
+  if (!parsed.success) return { ok: false, error: zodErrorMessage(parsed.error) };
   const p = parsed.data;
 
   // Same recheck gate as the web confirm — only hard total mismatches block.
