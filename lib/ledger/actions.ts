@@ -50,6 +50,18 @@ async function assertCompanyInOrg(orgId: string, companyId: string): Promise<boo
   return !!c;
 }
 
+/**
+ * Parse a "YYYY-MM-DD" docDate to a Date, or null. Guards against a malformed
+ * string (e.g. OCR returned a Buddhist-year date or "2026-13-45") that would
+ * otherwise become an Invalid Date and make Prisma THROW on insert — losing the
+ * whole draft (and the receipt image) instead of just leaving docDate blank.
+ */
+function safeDocDate(s: string | null | undefined): Date | null {
+  if (!s) return null;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 async function nextDocCode(orgId: string, companyId: string): Promise<string> {
   // RPC (SECURITY DEFINER) does the per-company monthly counter atomically.
   const admin = adminClient();
@@ -117,7 +129,7 @@ async function maybeBackfillEmptyDraft(
         data: {
           vendor: input.vendor ?? null,
           vendorTaxId: input.vendorTaxId ?? null,
-          docDate: input.docDate ? new Date(input.docDate) : null,
+          docDate: safeDocDate(input.docDate),
           subtotal: input.subtotal ?? 0,
           vat: input.vat ?? 0,
           wht: input.wht ?? 0,
@@ -361,7 +373,7 @@ async function createDraftExpenseCore(
           source: input.source ?? "web",
           vendor: input.vendor ?? null,
           vendorTaxId: input.vendorTaxId ?? null,
-          docDate: input.docDate ? new Date(input.docDate) : null,
+          docDate: safeDocDate(input.docDate),
           subtotal: input.subtotal ?? 0,
           vat: input.vat ?? 0,
           wht: input.wht ?? 0,
