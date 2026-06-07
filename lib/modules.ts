@@ -43,6 +43,7 @@ import {
   Layers,
   Bell,
   BarChart3,
+  BookOpen,
   HandCoins,
   CalendarRange,
   Workflow,
@@ -891,6 +892,16 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         // Financial-view tier — must match the page-level requireRole gate in
         // app/(admin)/ledger/expenses/page.tsx. Staff capture is LIFF-only, so
         // staff/driver/branch_manager are excluded from this web review pane.
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        // "สมุดค่าใช้จ่าย" — retrospective spend-analytics (pivot สาขา×เดือน, ค้นราคา
+        // ล่าสุด, เซฟเล่ม). Desktop sidebar twin of the mobile LedgerBottomNav entry;
+        // without it the page was reachable only via the /ledger overview card on web.
+        // Same financial-view tier as รายจ่าย/Dashboard.
+        href: "/ledger/ledger-book",
+        label: "สมุดค่าใช้จ่าย",
+        icon: BookOpen,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {
