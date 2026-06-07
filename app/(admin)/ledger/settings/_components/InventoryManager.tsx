@@ -31,10 +31,12 @@ export function InventoryManager({
   companyId,
   skus,
   aliases,
+  showSync = true,
 }: {
   companyId: string;
   skus: Sku[];
   aliases: Alias[];
+  showSync?: boolean;
 }) {
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -109,6 +111,7 @@ export function InventoryManager({
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       {/* Sync card */}
+      {showSync && (
       <div className="rounded-2xl border border-zinc-200 bg-white p-4">
         <div className="mb-2 flex items-center gap-2">
           <Boxes className="size-4 text-[var(--color-brand-600,#2563EB)]" aria-hidden />
@@ -138,6 +141,7 @@ export function InventoryManager({
           </button>
         </div>
       </div>
+      )}
 
       {msg && (
         <p className={"text-xs " + (msg.kind === "ok" ? "text-emerald-700" : "text-rose-700")} role="status">

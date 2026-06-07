@@ -2,6 +2,10 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { resolveContactId } from "@/lib/ledger/trcloud-push";
+import { normalizeAlias, parsePackUnits, type PackUnit } from "@/lib/ledger/sku-match";
+
+// re-export so existing importers (_stockin-actions) keep their import path stable.
+export { normalizeAlias };
 
 // LedgerLine → TRCloud Inventory STOCK-IN (รับเข้าสต๊อก สินค้าซื้อมาขาย).
 //
@@ -145,15 +149,16 @@ export async function syncSkuCache(args: {
   companyId: string;
   keyword?: string;
   category?: string;
-}): Promise<{ ok: true; synced: number } | { ok: false; error: string }> {
+}): Promise<{ ok: true; synced: number; seeded: number } | { ok: false; error: string }> {
   if (!stockInConfigured()) return { ok: false, error: "ยังไม่ได้ตั้งค่า TRCloud (env TRCLOUD_JPS_*)" };
   const skus = await fetchSkusFromTrcloud({ keyword: args.keyword, category: args.category });
   if (skus.length === 0) return { ok: false, error: "ไม่พบสินค้าจาก TRCloud (ลองคำค้น/หมวดอื่น)" };
   const now = new Date();
   let synced = 0;
+  let seeded = 0;
   for (const s of skus) {
     try {
-      await prisma.ledgerTrcloudSku.upsert({
+      const rec = await prisma.ledgerTrcloudSku.upsert({
         where: { orgId_companyId_productId: { orgId: args.orgId, companyId: args.companyId, productId: s.productId } },
         update: {
           productName: s.productName,
@@ -176,23 +181,49 @@ export async function syncSkuCache(args: {
           costCached: s.cost ?? undefined,
           syncedAt: now,
         },
+        select: { id: true },
       });
       synced++;
+
+      // Auto-seed an alias from the TRCloud product name (exact match only → safe).
+      // Create-if-absent so a manual alias is never overwritten; UNIQUE(aliasKey) makes
+      // the first SKU win on a name clash. Lets receipts whose text == TRCloud name
+      // match with zero teaching.
+      const nameKey = s.productName ? normalizeAlias(s.productName) : "";
+      if (nameKey) {
+        const exists = await prisma.ledgerSkuAlias.findUnique({
+          where: { orgId_companyId_aliasKey: { orgId: args.orgId, companyId: args.companyId, aliasKey: nameKey } },
+          select: { id: true },
+        });
+        if (!exists) {
+          try {
+            await prisma.ledgerSkuAlias.create({
+              data: { orgId: args.orgId, companyId: args.companyId, aliasKey: nameKey, skuId: rec.id, source: "auto" },
+            });
+            seeded++;
+          } catch {
+            /* concurrent insert / clash — fine, skip */
+          }
+        }
+      }
     } catch {
       /* skip a bad row, keep going */
     }
   }
-  return { ok: true, synced };
+  return { ok: true, synced, seeded };
 }
 
 // ── alias matching (receipt text → SKU) ──────────────────────────────────────
 
-/** Normalize receipt line text into a stable alias key (lower/trim/collapse-space). */
-export function normalizeAlias(s: string): string {
-  return s.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 200);
-}
-
-export type SkuMatch = { skuId: string; productId: string; productName: string | null; unit: string | null; packFactor: number; stockTracked: boolean };
+export type SkuMatch = {
+  skuId: string;
+  productId: string;
+  productName: string | null;
+  unit: string | null;
+  packFactor: number;
+  packUnits: PackUnit[];
+  stockTracked: boolean;
+};
 
 /** Resolve a receipt line text to a SKU via the alias table (exact only). Returns the
  *  match even if the SKU isn't stock-tracked (caller distinguishes "no alias" from
@@ -211,8 +242,31 @@ export async function resolveSku(orgId: string, companyId: string, text: string)
     productName: alias.sku.productName,
     unit: alias.sku.unit,
     packFactor: Number(alias.sku.packFactor) || 1,
+    packUnits: parsePackUnits(alias.sku.packUnits),
     stockTracked: alias.sku.stockTracked,
   };
+}
+
+/** Branch-scope check input: which SKUs are restricted to which branches.
+ *  Returns the set of skuIds that HAVE at least one branch assignment (i.e. are
+ *  branch-restricted), plus a (skuId→branchIds) map for the actual guard. */
+export async function loadSkuBranchScope(
+  orgId: string,
+  companyId: string,
+  skuIds: string[],
+): Promise<Map<string, Set<string>>> {
+  const map = new Map<string, Set<string>>();
+  if (skuIds.length === 0) return map;
+  const links = await prisma.ledgerSkuBranch.findMany({
+    where: { orgId, companyId, skuId: { in: skuIds } },
+    select: { skuId: true, branchId: true },
+  });
+  for (const l of links) {
+    const set = map.get(l.skuId) ?? new Set<string>();
+    set.add(l.branchId);
+    map.set(l.skuId, set);
+  }
+  return map;
 }
 
 // ── stock-IN push ─────────────────────────────────────────────────────────────

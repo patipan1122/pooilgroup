@@ -328,6 +328,7 @@ model Branch {
   // Ledger module
   ledgerExpenses   LedgerExpense[]
   ledgerBudgets    LedgerBudget[]
+  ledgerSkuBranches LedgerSkuBranch[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -5822,7 +5823,8 @@ model LedgerTrcloudSku {
   productName   String?  @map("product_name")
   businessGroup String?  @map("business_group") // TRCloud category field (business-line)
   unit          String?
-  packFactor    Decimal  @default(1) @map("pack_factor") @db.Decimal(15, 4) // 1 ลัง = N ขวด
+  packFactor    Decimal  @default(1) @map("pack_factor") @db.Decimal(15, 4) // legacy default; 1 ลัง = N ขวด
+  packUnits     Json     @default("[]") @map("pack_units") // [{name,factor}] หลายหน่วยซื้อ เช่น โหล=12, ลัง=24
   stockTracked  Boolean  @default(false) @map("stock_tracked")
   status        String?
   balanceCached Decimal? @map("balance_cached") @db.Decimal(15, 4)
@@ -5831,11 +5833,32 @@ model LedgerTrcloudSku {
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  aliases LedgerSkuAlias[]
+  aliases     LedgerSkuAlias[]
+  branchLinks LedgerSkuBranch[]
 
   @@unique([orgId, companyId, productId])
   @@index([orgId, companyId, businessGroup, stockTracked])
   @@map("ledger_trcloud_sku")
+  @@schema("public")
+}
+
+// ผูก SKU กับสาขาที่ใช้จริง. ว่าง=ทุกสาขา · มีรายการ=รับเข้าจากสาขานอกรายการ=flag.
+model LedgerSkuBranch {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  skuId     String   @map("sku_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  sku    LedgerTrcloudSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  branch Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([skuId, branchId])
+  @@index([orgId, companyId, branchId])
+  @@index([skuId])
+  @@map("ledger_sku_branch")
   @@schema("public")
 }
 
