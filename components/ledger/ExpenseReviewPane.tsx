@@ -40,7 +40,9 @@ import {
   confirmabilityMessage,
 } from "@/lib/ledger/confirmability";
 import { ReceiptThumb } from "./ReceiptThumb";
+import { PriceLookupDialog } from "./PriceLookupDialog";
 import { VoucherMenu } from "./VoucherMenu";
+import { Clock } from "lucide-react";
 import { SendToTrcloudButton } from "./SendToTrcloudButton";
 import { AttachReplacementButton } from "./AttachReplacementButton";
 import type { AttachReplacementAction } from "./AttachReplacementButton";
@@ -363,6 +365,8 @@ export function ExpenseReviewPane({
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
     null,
   );
+  // ดูราคา/ประวัติการซื้อ popup (รายสินค้า หรือ ผู้ขาย) — null = ปิด.
+  const [priceTerm, setPriceTerm] = useState<string | null>(null);
   // Drive sync (manual "ส่งเข้า Google Drive") — separate from the save/confirm tx.
   const [driveUrl, setDriveUrl] = useState<string | null>(expense.driveWebUrl ?? null);
   const [driveBusy, setDriveBusy] = useState(false);
@@ -810,6 +814,15 @@ export function ExpenseReviewPane({
             <SectionTitle n={2} icon={<FileText className="size-4" aria-hidden />}>
               ข้อมูลร้านค้า & เอกสาร
             </SectionTitle>
+            {draft.vendor.trim() && (
+              <button
+                type="button"
+                onClick={() => setPriceTerm(draft.vendor.trim())}
+                className="-mt-1 inline-flex items-center gap-1 self-start rounded-lg border border-[var(--color-brand-200)] bg-[var(--color-brand-50)] px-2.5 py-1 text-xs font-medium text-[var(--color-brand-700)] hover:bg-[var(--color-brand-100)]"
+              >
+                <Clock className="size-3.5" aria-hidden /> ประวัติผู้ขายรายนี้ · ดูราคาที่เคยซื้อ
+              </button>
+            )}
             <div>
               <FieldLabel confidence={conf.vendor}>ชื่อร้านค้า / ผู้รับเงิน</FieldLabel>
               <input
@@ -1513,6 +1526,13 @@ export function ExpenseReviewPane({
           </p>
         </div>
       )}
+
+      {/* ดูราคา/ประวัติการซื้อ popup (รายสินค้า/ผู้ขาย) — อ่านอย่างเดียว */}
+      <PriceLookupDialog
+        companyId={expense.companyId}
+        term={priceTerm}
+        onClose={() => setPriceTerm(null)}
+      />
     </div>
   );
 }

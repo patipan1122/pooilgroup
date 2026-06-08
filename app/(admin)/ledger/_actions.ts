@@ -54,6 +54,7 @@ import {
   type PushableExpense,
 } from "@/lib/ledger/trcloud-push";
 import { resolveLedgerActor, actorCanReachBranch, ledgerWebCanForRole } from "@/lib/ledger/liff-auth";
+import { searchPurchases } from "@/lib/ledger/spend-analytics";
 import { audit } from "@/lib/audit/log";
 import { encryptToken, decryptToken } from "@/lib/recruit/channel-crypto";
 import {
@@ -2971,6 +2972,40 @@ export async function markBillPaidCash(expenseId: string): Promise<ActionResult>
   });
   revalidatePath("/ledger/expenses");
   return { ok: true };
+}
+
+// ── ดูราคา/ประวัติผู้ขาย (popup ในใบ) — read-only price lookup ────────────────
+// กดชิป "ดูราคา" รายสินค้า หรือ "ประวัติผู้ขาย" → ค้นการซื้อย้อนหลัง (ชื่อสินค้า/ผู้ขาย)
+// reuse searchPurchases (engine เดียวกับ "สมุดค่าใช้จ่าย"). companyId verify ใน org.
+export async function lookupPurchaseHistoryAction(
+  term: string,
+  companyId: string,
+): Promise<{
+  ok: boolean;
+  hits: Awaited<ReturnType<typeof searchPurchases>>["hits"];
+  trend: Awaited<ReturnType<typeof searchPurchases>>["trend"];
+}> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return { ok: false, hits: [], trend: [] };
+  const orgId = access.session.user.org_id;
+  const co = await prisma.company.findFirst({
+    where: { id: companyId, orgId },
+    select: { id: true },
+  });
+  if (!co || !term.trim()) return { ok: false, hits: [], trend: [] };
+  const actor = await resolveLedgerActor();
+  const res = await searchPurchases({
+    orgId,
+    companyId,
+    actorScope: {
+      allBranches: actor?.allBranches ?? true,
+      scopeBranchIds: actor?.scopeBranchIds ?? [],
+    },
+    term: term.trim(),
+    basis: "net",
+    limit: 10,
+  });
+  return { ok: true, hits: res.hits, trend: res.trend };
 }
 
 // ── ขอโอนเงิน (payment request) — LEDGER_PAYREQ_V1 ───────────────────────────
