@@ -43,6 +43,8 @@ export interface PayeeSnapshot {
   acctNo?: string | null;
   promptpay?: string | null;
   qrPayload?: string | null;
+  /** Uploaded QR image URL (R2) — exec scans it straight from the LINE card. */
+  qrImageUrl?: string | null;
 }
 
 export interface CreatePaymentRequestInput {
@@ -165,6 +167,7 @@ export async function createPaymentRequest(
           payeeAcctNo: payee.acctNo ?? null,
           payeePromptpay: payee.promptpay ?? null,
           payeeQrPayload: payee.qrPayload ?? null,
+          payeeQrImageUrl: payee.qrImageUrl ?? null,
           billsGross, whtTotal, expectedTransfer, paidTotal: 0,
           state: "open",
           requestedBy,

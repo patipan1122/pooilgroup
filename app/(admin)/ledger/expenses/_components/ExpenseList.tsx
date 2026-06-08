@@ -7,7 +7,7 @@
 import { useState, useTransition, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2, Banknote, Tags } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2, Banknote, Tags, Upload, QrCode } from "lucide-react";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
 import { CompletenessDot } from "@/components/ledger/_kit/CompletenessDot";
 import { DocTag, PaymentTag } from "@/components/ledger/_kit/StatusTags";
@@ -128,7 +128,8 @@ export function ExpenseList({
   const [deleteText, setDeleteText] = useState("");
   // ขอโอนเงิน — payee dialog (LEDGER_PAYREQ_V1).
   const [payeeOpen, setPayeeOpen] = useState(false);
-  const [payee, setPayee] = useState({ acctName: "", bankCode: "", acctNo: "", promptpay: "" });
+  const [payee, setPayee] = useState({ acctName: "", bankCode: "", acctNo: "", promptpay: "", qrImageUrl: "" });
+  const [qrUploading, setQrUploading] = useState(false);
   // #1 quick-classify (audit P0) — set สาขา/หมวด for the ticked bills in one dialog.
   const [classifyOpen, setClassifyOpen] = useState(false);
   const [classify, setClassify] = useState({ branchId: "", categoryId: "" });
@@ -290,6 +291,7 @@ export function ExpenseList({
           bankCode: cur.bankCode || p.bankCode || "",
           acctNo: cur.acctNo || p.acctNo || "",
           promptpay: cur.promptpay || p.promptpay || "",
+          qrImageUrl: cur.qrImageUrl || "",
         }));
       })
       .catch(() => {});
@@ -311,6 +313,7 @@ export function ExpenseList({
           bankCode: cur.bankCode || p.bankCode || "",
           acctNo: cur.acctNo || p.acctNo || "",
           promptpay: cur.promptpay || p.promptpay || "",
+          qrImageUrl: cur.qrImageUrl || "",
         }));
       })
       .catch(() => {});
@@ -335,6 +338,33 @@ export function ExpenseList({
     });
   }
 
+  // แนบรูป QR (พร้อมเพย์/ธนาคาร) → presign → PUT R2 → เก็บ publicUrl ไว้ส่งกับคำขอ
+  // (LINE การ์ดจะโชว์รูปนี้ให้ผู้บริหารสแกนจ่ายได้เลย).
+  async function uploadQr(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setMsg({ kind: "err", text: "แนบได้เฉพาะรูปภาพ QR" });
+      return;
+    }
+    setQrUploading(true);
+    setMsg(null);
+    try {
+      const pres = await fetch("/api/ledger/r2/presign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId, contentType: file.type }),
+      });
+      const pj = (await pres.json()) as { url?: string; publicUrl?: string; error?: string };
+      if (!pres.ok || !pj.url || !pj.publicUrl) throw new Error(pj.error ?? "presign");
+      const put = await fetch(pj.url, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
+      if (!put.ok) throw new Error("upload");
+      setPayee((p) => ({ ...p, qrImageUrl: pj.publicUrl as string }));
+    } catch {
+      setMsg({ kind: "err", text: "อัปโหลด QR ไม่สำเร็จ — ลองใหม่" });
+    } finally {
+      setQrUploading(false);
+    }
+  }
+
   function runRequestTransfer() {
     const ids = [...checked];
     if (ids.length === 0) return;
@@ -345,12 +375,13 @@ export function ExpenseList({
         bankCode: payee.bankCode || undefined,
         acctNo: payee.acctNo.trim() || undefined,
         promptpay: payee.promptpay.trim() || undefined,
+        qrImageUrl: payee.qrImageUrl || undefined,
       });
       if (res.ok) {
         setMsg({ kind: "ok", text: "ส่งคำขอโอนเข้ากลุ่มผู้บริหารแล้ว ✅" });
         setChecked(new Set());
         setPayeeOpen(false);
-        setPayee({ acctName: "", bankCode: "", acctNo: "", promptpay: "" });
+        setPayee({ acctName: "", bankCode: "", acctNo: "", promptpay: "", qrImageUrl: "" });
         router.refresh();
       } else {
         setMsg({ kind: "err", text: res.error ?? "ขอโอนไม่สำเร็จ" });
@@ -667,6 +698,41 @@ export function ExpenseList({
               <p className="text-[11px] text-zinc-400">
                 💡 ใส่พร้อมเพย์ (เบอร์/บัตรปชช) เพื่อให้ผู้บริหารสแกน QR จ่ายได้เลย · เลขบัญชีเฉย ๆ จะมีปุ่มคัดลอกให้แทน
               </p>
+              {/* แนบรูป QR (พร้อมเพย์/ธนาคาร) — โชว์บนการ์ด LINE ให้ผู้บริหารสแกนจ่าย */}
+              <div>
+                <p className="mb-1 inline-flex items-center gap-1 text-[11px] font-medium text-zinc-500">
+                  <QrCode className="size-3" aria-hidden /> รูป QR (ถ้ามี) — ผู้บริหารสแกนจ่ายจากการ์ดได้เลย
+                </p>
+                {payee.qrImageUrl ? (
+                  <div className="flex items-center gap-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={payee.qrImageUrl} alt="QR" className="size-16 rounded-lg border border-zinc-200 object-contain" />
+                    <button
+                      type="button"
+                      onClick={() => setPayee((p) => ({ ...p, qrImageUrl: "" }))}
+                      className="text-xs font-medium text-rose-600 hover:underline"
+                    >
+                      ลบรูป
+                    </button>
+                  </div>
+                ) : (
+                  <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
+                    {qrUploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                    {qrUploading ? "กำลังอัปโหลด…" : "แนบรูป QR"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={qrUploading}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) uploadQr(f);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
             </div>
             {/* Error shows INSIDE the dialog (the list-level msg is hidden behind this
                 overlay — otherwise a rejected request looks like a frozen dialog). */}

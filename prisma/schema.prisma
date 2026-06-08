@@ -5462,6 +5462,8 @@ model LedgerPaymentRequest {
   payeeAcctNo     String?   @map("payee_acct_no")
   payeePromptpay  String?   @map("payee_promptpay")
   payeeQrPayload  String?   @map("payee_qr_payload")
+  payeeQrImageUrl String?   @map("payee_qr_image_url") // uploaded QR image (R2) — scan from card
+
   billsGross      Decimal   @default(0) @map("bills_gross") @db.Decimal(15, 2)
   whtTotal        Decimal   @default(0) @map("wht_total") @db.Decimal(15, 2)
   expectedTransfer Decimal  @default(0) @map("expected_transfer") @db.Decimal(15, 2) // gross - wht

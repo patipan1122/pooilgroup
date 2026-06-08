@@ -347,6 +347,7 @@ export interface PaymentRequestDetail {
   payeeBankCode: string | null;
   payeeAcctNo: string | null;
   payeePromptpay: string | null;
+  payeeQrImageUrl: string | null;
   requestedAt: string;
   bills: { docCode: string; amount: number; wht: number }[];
 }
@@ -363,6 +364,7 @@ export async function getPaymentRequestDetail(
       id: true, state: true, vendor: true, companyId: true,
       billsGross: true, whtTotal: true, expectedTransfer: true, paidTotal: true,
       payeeAcctName: true, payeeBankCode: true, payeeAcctNo: true, payeePromptpay: true,
+      payeeQrImageUrl: true,
       requestedAt: true,
       bills: { select: { expenseId: true, billAmount: true, billWht: true } },
     },
@@ -389,6 +391,7 @@ export async function getPaymentRequestDetail(
     payeeBankCode: r.payeeBankCode,
     payeeAcctNo: r.payeeAcctNo,
     payeePromptpay: r.payeePromptpay,
+    payeeQrImageUrl: r.payeeQrImageUrl,
     requestedAt: r.requestedAt.toISOString(),
     bills: r.bills.map((b) => ({
       docCode: codeMap.get(b.expenseId) ?? "—",

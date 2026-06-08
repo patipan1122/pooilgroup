@@ -2980,6 +2980,7 @@ const zPayee = z.object({
   acctNo: z.string().trim().max(40).optional(),
   promptpay: z.string().trim().max(40).optional(),
   qrPayload: z.string().trim().max(1024).optional(),
+  qrImageUrl: z.string().trim().max(2048).optional(),
 });
 
 /** Operation selects bills → "ขอโอนเงิน" → create the request + push the card to

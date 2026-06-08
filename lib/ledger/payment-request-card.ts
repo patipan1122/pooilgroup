@@ -8,6 +8,7 @@
 import type {
   FlexBubble,
   FlexComponent,
+  FlexImage,
   LineFlexMessage,
 } from "@/components/ledger/LineConfirmCard";
 
@@ -68,6 +69,8 @@ export interface PaymentRequestCardInput {
     bankCode?: string | null;
     acctNo?: string | null;
     promptpay?: string | null;
+    /** Uploaded QR image (R2) — shown in the card so the exec scans to pay. */
+    qrImageUrl?: string | null;
   };
   /** the bills in this request (docCode + amount) — shown compact. */
   bills: { docCode: string; amount: number }[];
@@ -149,6 +152,22 @@ export function buildPaymentRequestCard(input: PaymentRequestCardInput): LineFle
                 color: COLOR.warn,
                 wrap: true,
               },
+            ] as FlexComponent[])
+          : []),
+        // QR image (uploaded) — exec scans straight from the card to pay.
+        ...(payee.qrImageUrl
+          ? ([
+              { type: "separator", margin: "md", color: COLOR.line },
+              { type: "text", text: "สแกน QR เพื่อจ่าย", size: "xs", color: COLOR.sub, margin: "sm" },
+              {
+                type: "image",
+                url: payee.qrImageUrl,
+                size: "full",
+                aspectRatio: "1:1",
+                aspectMode: "fit",
+                margin: "sm",
+                backgroundColor: "#ffffff",
+              } as FlexImage,
             ] as FlexComponent[])
           : []),
         { type: "separator", margin: "md", color: COLOR.line },
