@@ -829,8 +829,8 @@ export function ExpenseList({
         </div>
       )}
 
-      {/* List */}
-      <ul className="max-h-[calc(100dvh-23rem)] divide-y divide-zinc-100 overflow-y-auto">
+      {/* List — card-per-row (friendly, scannable on mobile · matches design MCard) */}
+      <ul className="max-h-[calc(100dvh-23rem)] space-y-2 overflow-y-auto p-2">
         {rows.length === 0 ? (
           <li>
             {q || status || categoryId || tr || cc || tab !== "all" ? (
@@ -862,7 +862,15 @@ export function ExpenseList({
             });
             const confirmedByAcct = !!r.confirmedBy;
             return (
-              <li key={r.id} className="group flex items-stretch">
+              <li
+                key={r.id}
+                className={
+                  "group flex items-stretch overflow-hidden rounded-xl border bg-white transition " +
+                  (active
+                    ? "border-[var(--color-brand-300)] shadow-sm"
+                    : "border-zinc-100 hover:border-zinc-200 hover:shadow-sm")
+                }
+              >
                 {selectable && (
                   <label className="flex shrink-0 items-center pl-3">
                     <input
