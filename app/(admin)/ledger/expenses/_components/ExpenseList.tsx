@@ -415,7 +415,7 @@ export function ExpenseList({
         {/* PRIMARY status strip — รอยืนยัน → ยืนยันแล้ว → ส่งแล้ว (accountant triage axis).
             "ส่งแล้ว" = ?tr=sent, the rest = ?status=. Source/cc/หมวด live in ตัวกรอง. */}
         <div
-          className="flex flex-wrap gap-1"
+          className="-mx-1 flex gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           role="tablist"
           aria-label="กรองตามสถานะ"
         >
@@ -430,7 +430,7 @@ export function ExpenseList({
                 aria-selected={active}
                 onClick={() => setPrimaryTab(t.id)}
                 className={
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-300)] " +
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-300)] " +
                   (active
                     ? "bg-[var(--color-brand-600)] text-white"
                     : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200")

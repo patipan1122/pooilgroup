@@ -18,15 +18,20 @@ export function LedgerHeader({
   right?: ReactNode;
 }) {
   return (
-    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mb-3 flex flex-col gap-2 sm:mb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
       <div className="min-w-0">
-        {/* Small JP Sync Group logo above the page title — quiet brand presence. */}
-        <LedgerLogo height={22} className="mb-1.5 opacity-90" priority />
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
-          {title}
-        </h1>
+        {/* JP Sync Group logo — desktop only (กินที่บนมือถือ · CEO 2026-06-08 "เอา logo ออก"). */}
+        <LedgerLogo height={22} className="mb-1.5 hidden opacity-90 sm:block" priority />
+        <div className="flex items-baseline gap-2">
+          <h1 className="text-xl font-bold tracking-tight text-zinc-900 sm:text-2xl">
+            {title}
+          </h1>
+          {subtitle && (
+            <p className="truncate text-xs text-zinc-400 sm:hidden">{subtitle}</p>
+          )}
+        </div>
         {subtitle && (
-          <p className="mt-0.5 text-sm text-zinc-500">{subtitle}</p>
+          <p className="mt-0.5 hidden text-sm text-zinc-500 sm:block">{subtitle}</p>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
