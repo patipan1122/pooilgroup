@@ -122,6 +122,19 @@ function RequestRow({ req, canCancel }: { req: ReconcileRequestRow; canCancel: b
             {baht(req.expectedTransfer)}
           </div>
           <div className="text-[11px] text-zinc-400">ยอดที่ต้องโอน</div>
+          {req.paidTotal > 0 && Math.abs(req.paidTotal - req.expectedTransfer) > 0.01 && (
+            <span
+              className={
+                "mt-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums " +
+                (req.paidTotal > req.expectedTransfer
+                  ? "bg-amber-100 text-amber-700"
+                  : "bg-rose-100 text-rose-700")
+              }
+            >
+              {req.paidTotal > req.expectedTransfer ? "โอนเกิน" : "โอนขาด"}{" "}
+              {baht(Math.abs(req.paidTotal - req.expectedTransfer))}
+            </span>
+          )}
         </div>
       </button>
 
@@ -151,6 +164,37 @@ function RequestRow({ req, canCancel }: { req: ReconcileRequestRow; canCancel: b
             <span>รวมก่อนหัก {baht(req.billsGross)}</span>
             <span className="tabular-nums">ต้องโอน {baht(req.expectedTransfer)}</span>
           </li>
+          {/* ยอดขอโอน vs ยอดในสลิปจริง + ผลต่าง (โอนเกิน/ขาด) — derive จาก paidTotal */}
+          {req.paidTotal > 0 && (
+            <>
+              <li className="mt-0.5 flex items-center justify-between text-xs text-zinc-600">
+                <span>ยอดในสลิป (ที่โอนจริง)</span>
+                <span className="tabular-nums font-medium">{baht(req.paidTotal)}</span>
+              </li>
+              {Math.abs(req.paidTotal - req.expectedTransfer) > 0.01 ? (
+                <li
+                  className={
+                    "mt-1 flex items-center justify-between rounded-md px-2 py-1 text-xs font-bold " +
+                    (req.paidTotal > req.expectedTransfer
+                      ? "bg-amber-50 text-amber-700"
+                      : "bg-rose-50 text-rose-700")
+                  }
+                >
+                  <span>
+                    {req.paidTotal > req.expectedTransfer ? "โอนเกิน" : "โอนขาด"}
+                  </span>
+                  <span className="tabular-nums">
+                    {baht(Math.abs(req.paidTotal - req.expectedTransfer))} ฿
+                  </span>
+                </li>
+              ) : (
+                <li className="mt-1 flex items-center justify-between rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+                  <span>ยอดตรงพอดี</span>
+                  <span className="tabular-nums">✓</span>
+                </li>
+              )}
+            </>
+          )}
           {/* audit-trail + slip evidence (audit P1/P3) */}
           {(req.requestedByName || req.paidBy || req.transRef || req.slipUrl) && (
             <li className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-zinc-100 pt-1.5 text-[11px] text-zinc-500">
@@ -373,7 +417,7 @@ export function ReconcileBoard({
   summary: Record<BucketKey, { count: number; expectedTotal: number }>;
   canMatch: boolean;
 }) {
-  const [tab, setTab] = useState<BucketKey>("awaiting");
+  const [tab, setTab] = useState<BucketKey | "diff">("awaiting");
 
   // Open/partial requests are the valid targets for pairing a floating slip.
   const openTargets = useMemo(
@@ -386,6 +430,28 @@ export function ReconcileBoard({
     [awaiting, partial],
   );
 
+  // "มีผลต่าง" — ใบที่มีสลิปแล้วแต่ยอดโอนไม่ตรง (โอนเกิน/ขาด). derive ฝั่ง client,
+  // ไม่ query เพิ่ม: diff = ยอดในสลิป(paidTotal) − ยอดต้องโอนสุทธิ(expectedTransfer).
+  const diffRows = useMemo(() => {
+    const all = [...partial, ...paid, ...abnormal];
+    const seen = new Set<string>();
+    return all
+      .filter((r) => {
+        if (seen.has(r.id)) return false;
+        seen.add(r.id);
+        return r.paidTotal > 0 && Math.abs(r.paidTotal - r.expectedTransfer) > 0.01;
+      })
+      .sort(
+        (a, b) =>
+          Math.abs(b.paidTotal - b.expectedTransfer) -
+          Math.abs(a.paidTotal - a.expectedTransfer),
+      );
+  }, [partial, paid, abnormal]);
+  const diffNet = useMemo(
+    () => diffRows.reduce((s, r) => s + (r.paidTotal - r.expectedTransfer), 0),
+    [diffRows],
+  );
+
   return (
     <div>
       {/* KPI cards — 4 buckets (count + total), click to filter. The cards ARE the
@@ -393,7 +459,7 @@ export function ReconcileBoard({
       <div
         role="tablist"
         aria-label="กลุ่มสถานะการจ่าย"
-        className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4"
+        className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5"
       >
         {TABS.map((t) => {
           const active = tab === t.key;
@@ -422,6 +488,39 @@ export function ReconcileBoard({
             </button>
           );
         })}
+        {/* การ์ดที่ 5 — "มีผลต่าง" (โอนเกิน/ขาด) คำนวณฝั่ง client */}
+        {(() => {
+          const diffActive = tab === "diff";
+          return (
+        <button
+          role="tab"
+          aria-selected={diffActive}
+          type="button"
+          onClick={() => setTab("diff")}
+          className={
+            "flex flex-col gap-0.5 rounded-2xl border bg-white p-3 text-left transition " +
+            (diffActive
+              ? "border-orange-300 ring-2 ring-orange-200"
+              : "border-zinc-200 hover:shadow-md")
+          }
+        >
+          <span className="text-xs font-semibold text-zinc-500">มีผลต่าง</span>
+          <span className="text-2xl font-extrabold tabular-nums text-zinc-900">
+            {diffRows.length}
+            <span className="ml-1 text-sm font-medium text-zinc-400">รายการ</span>
+          </span>
+          <span
+            className={
+              "text-[11px] font-medium tabular-nums " +
+              (diffNet >= 0 ? "text-amber-600" : "text-rose-600")
+            }
+          >
+            {diffNet >= 0 ? "เกินรวม " : "ขาดรวม "}
+            {baht(Math.abs(diffNet))} ฿
+          </span>
+        </button>
+          );
+        })()}
       </div>
 
       {tab === "awaiting" && (
@@ -462,6 +561,21 @@ export function ReconcileBoard({
               </ul>
             )}
           </div>
+        </div>
+      )}
+      {tab === "diff" && (
+        <div className="space-y-2">
+          {diffRows.length > 0 && (
+            <p className="rounded-xl bg-orange-50 px-3 py-2 text-xs text-orange-700">
+              ใบที่มีสลิปแล้วแต่ยอดโอน <b>ไม่ตรง</b> กับยอดที่ขอ — กดแต่ละใบเพื่อดู
+              ยอดต้องโอน · ยอดในสลิป · ผลต่าง (โอนเกิน/ขาด)
+            </p>
+          )}
+          <RequestList
+            rows={diffRows}
+            canCancel={canMatch}
+            emptyHint="ไม่มีใบที่โอนเกิน/ขาด — ทุกใบที่จ่ายแล้วยอดตรงพอดี 🎉"
+          />
         </div>
       )}
     </div>

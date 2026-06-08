@@ -349,11 +349,24 @@ export interface PurchaseHit {
   itemUnitPrice: number | null;
 }
 
+/** Per-vendor price summary for the SAME item — "ใครขายถูกสุด". */
+export interface VendorPriceCompare {
+  vendor: string;
+  /** Unit price of this vendor's most recent matching purchase. */
+  latestUnitPrice: number | null;
+  /** Lowest unit price this vendor ever charged for the item. */
+  minUnitPrice: number | null;
+  lastDate: string | null;
+  count: number;
+}
+
 export interface PurchaseSearchResult {
   term: string;
   hits: PurchaseHit[];
   /** Monthly totals of the matched set, oldest→newest, for a mini trend. */
   trend: { period: string; total: number }[];
+  /** Same item across vendors, cheapest min-price first. */
+  vendorCompare: VendorPriceCompare[];
   truncated: boolean;
 }
 
@@ -379,7 +392,13 @@ export async function searchPurchases(
   const { orgId, companyId, actorScope, basis } = input;
   const term = input.term.trim();
   const limit = input.limit ?? 12;
-  const empty: PurchaseSearchResult = { term, hits: [], trend: [], truncated: false };
+  const empty: PurchaseSearchResult = {
+    term,
+    hits: [],
+    trend: [],
+    vendorCompare: [],
+    truncated: false,
+  };
   if (!term) return empty;
 
   const where: Prisma.LedgerExpenseWhereInput = {
@@ -458,7 +477,39 @@ export async function searchPurchases(
     .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
     .map(([period, total]) => ({ period, total }));
 
-  return { term, hits, trend, truncated };
+  // Cross-vendor compare: group the matched line item's unit price by vendor.
+  // `data` is ordered docDate desc → the first row seen per vendor is its latest.
+  const vmap = new Map<
+    string,
+    { latest: number | null; min: number; lastDate: string | null; count: number }
+  >();
+  for (const r of data) {
+    const it = r.items[0];
+    if (!it || it.unitPrice == null) continue;
+    const price = dec(it.unitPrice);
+    if (!(price > 0)) continue;
+    const vendor = r.vendor?.trim() || "ไม่ระบุผู้ขาย";
+    const date = r.docDate ? r.docDate.toISOString().slice(0, 10) : null;
+    const cur = vmap.get(vendor) ?? { latest: null, min: price, lastDate: null, count: 0 };
+    cur.count += 1;
+    cur.min = Math.min(cur.min, price);
+    if (cur.latest === null) {
+      cur.latest = price;
+      cur.lastDate = date;
+    }
+    vmap.set(vendor, cur);
+  }
+  const vendorCompare: VendorPriceCompare[] = [...vmap.entries()]
+    .map(([vendor, v]) => ({
+      vendor,
+      latestUnitPrice: v.latest,
+      minUnitPrice: v.min,
+      lastDate: v.lastDate,
+      count: v.count,
+    }))
+    .sort((a, b) => (a.minUnitPrice ?? Infinity) - (b.minUnitPrice ?? Infinity));
+
+  return { term, hits, trend, vendorCompare, truncated };
 }
 
 // ---------------------------------------------------------------------------

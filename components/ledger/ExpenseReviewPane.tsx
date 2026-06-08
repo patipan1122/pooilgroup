@@ -42,7 +42,7 @@ import {
 import { ReceiptThumb } from "./ReceiptThumb";
 import { PriceLookupDialog } from "./PriceLookupDialog";
 import { VoucherMenu } from "./VoucherMenu";
-import { Clock } from "lucide-react";
+import { Clock, Tag } from "lucide-react";
 import { SendToTrcloudButton } from "./SendToTrcloudButton";
 import { AttachReplacementButton } from "./AttachReplacementButton";
 import type { AttachReplacementAction } from "./AttachReplacementButton";
@@ -367,6 +367,7 @@ export function ExpenseReviewPane({
   );
   // ดูราคา/ประวัติการซื้อ popup (รายสินค้า หรือ ผู้ขาย) — null = ปิด.
   const [priceTerm, setPriceTerm] = useState<string | null>(null);
+  const [priceTab, setPriceTab] = useState<"history" | "vendors">("history");
   // Drive sync (manual "ส่งเข้า Google Drive") — separate from the save/confirm tx.
   const [driveUrl, setDriveUrl] = useState<string | null>(expense.driveWebUrl ?? null);
   const [driveBusy, setDriveBusy] = useState(false);
@@ -817,7 +818,10 @@ export function ExpenseReviewPane({
             {draft.vendor.trim() && (
               <button
                 type="button"
-                onClick={() => setPriceTerm(draft.vendor.trim())}
+                onClick={() => {
+                  setPriceTab("history");
+                  setPriceTerm(draft.vendor.trim());
+                }}
                 className="-mt-1 inline-flex items-center gap-1 self-start rounded-lg border border-[var(--color-brand-200)] bg-[var(--color-brand-50)] px-2.5 py-1 text-xs font-medium text-[var(--color-brand-700)] hover:bg-[var(--color-brand-100)]"
               >
                 <Clock className="size-3.5" aria-hidden /> ประวัติผู้ขายรายนี้ · ดูราคาที่เคยซื้อ
@@ -959,14 +963,30 @@ export function ExpenseReviewPane({
                           key={i}
                           className="rounded-lg border border-zinc-200 bg-white p-2 md:grid md:grid-cols-[minmax(0,1fr)_56px_80px_88px_28px] md:items-center md:gap-1.5 md:rounded-md md:border-0 md:bg-transparent md:p-0"
                         >
-                          {/* ชื่อรายการ — กว้างเต็มบนมือถือ */}
-                          <input
-                            className="h-11 w-full rounded-md border border-zinc-200 bg-white px-2 text-base outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 md:h-8 md:text-xs"
-                            value={it.description}
-                            disabled={locked}
-                            onChange={(e) => updateItem(i, { description: e.target.value })}
-                            placeholder="ชื่อสินค้า/บริการ"
-                          />
+                          {/* ชื่อรายการ — กว้างเต็มบนมือถือ + ปุ่มดูราคา/เทียบผู้ขาย */}
+                          <div className="relative">
+                            <input
+                              className="h-11 w-full rounded-md border border-zinc-200 bg-white px-2 pr-9 text-base outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 md:h-8 md:text-xs"
+                              value={it.description}
+                              disabled={locked}
+                              onChange={(e) => updateItem(i, { description: e.target.value })}
+                              placeholder="ชื่อสินค้า/บริการ"
+                            />
+                            {it.description.trim() && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPriceTab("vendors");
+                                  setPriceTerm(it.description.trim());
+                                }}
+                                aria-label={`ดูราคาและเทียบผู้ขายของ ${it.description.trim()}`}
+                                title="ดูราคา · เทียบผู้ขาย"
+                                className="absolute right-1 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-md text-[var(--color-brand-600)] hover:bg-[var(--color-brand-50)] md:size-6"
+                              >
+                                <Tag className="size-4 md:size-3.5" aria-hidden />
+                              </button>
+                            )}
+                          </div>
                           {/* จำนวน · ราคา/หน่วย · ยอดรวม — มือถือ stack เป็น 3 ช่องมีป้ายกำกับ */}
                           <div className="mt-2 grid grid-cols-3 gap-1.5 md:mt-0 md:contents">
                             <label className="block md:contents">
@@ -1531,6 +1551,7 @@ export function ExpenseReviewPane({
       <PriceLookupDialog
         companyId={expense.companyId}
         term={priceTerm}
+        defaultTab={priceTab}
         onClose={() => setPriceTerm(null)}
       />
     </div>

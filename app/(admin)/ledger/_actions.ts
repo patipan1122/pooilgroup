@@ -2984,15 +2984,16 @@ export async function lookupPurchaseHistoryAction(
   ok: boolean;
   hits: Awaited<ReturnType<typeof searchPurchases>>["hits"];
   trend: Awaited<ReturnType<typeof searchPurchases>>["trend"];
+  vendorCompare: Awaited<ReturnType<typeof searchPurchases>>["vendorCompare"];
 }> {
   const access = await requireLedgerAccess();
-  if (!access.ok) return { ok: false, hits: [], trend: [] };
+  if (!access.ok) return { ok: false, hits: [], trend: [], vendorCompare: [] };
   const orgId = access.session.user.org_id;
   const co = await prisma.company.findFirst({
     where: { id: companyId, orgId },
     select: { id: true },
   });
-  if (!co || !term.trim()) return { ok: false, hits: [], trend: [] };
+  if (!co || !term.trim()) return { ok: false, hits: [], trend: [], vendorCompare: [] };
   const actor = await resolveLedgerActor();
   const res = await searchPurchases({
     orgId,
@@ -3003,9 +3004,9 @@ export async function lookupPurchaseHistoryAction(
     },
     term: term.trim(),
     basis: "net",
-    limit: 10,
+    limit: 20,
   });
-  return { ok: true, hits: res.hits, trend: res.trend };
+  return { ok: true, hits: res.hits, trend: res.trend, vendorCompare: res.vendorCompare };
 }
 
 // ── ขอโอนเงิน (payment request) — LEDGER_PAYREQ_V1 ───────────────────────────
