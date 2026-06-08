@@ -11,11 +11,15 @@ export function LedgerHeader({
   subtitle,
   scope,
   right,
+  scopeInFilter = false,
 }: {
   title: string;
   subtitle?: string;
   scope: LedgerScope;
   right?: ReactNode;
+  /** LeanUX: when the page moves บริษัท/สาขา into its ตัวกรอง popover (mobile),
+   *  hide the header picker on mobile (kept on desktop where space is free). */
+  scopeInFilter?: boolean;
 }) {
   return (
     <div className="mb-3 flex flex-col gap-2 sm:mb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
@@ -35,12 +39,14 @@ export function LedgerHeader({
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <CompanyBranchPicker
-          companies={scope.companies}
-          branches={scope.branches}
-          companyId={scope.companyId ?? ""}
-          branchId={scope.branchId ?? ""}
-        />
+        <div className={scopeInFilter ? "hidden sm:flex sm:flex-wrap sm:items-center sm:gap-2" : "contents"}>
+          <CompanyBranchPicker
+            companies={scope.companies}
+            branches={scope.branches}
+            companyId={scope.companyId ?? ""}
+            branchId={scope.branchId ?? ""}
+          />
+        </div>
         {right}
       </div>
     </div>

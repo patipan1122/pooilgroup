@@ -12,6 +12,7 @@ import type { Prisma } from "@/lib/generated/prisma/client";
 import { ledgerWebCanForRole } from "@/lib/ledger/liff-auth";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
+import { CompanyBranchPicker } from "../_components/CompanyBranchPicker";
 import { listExpensesSummary, getExpense, listCategories, summarizeCompleteness } from "../_data";
 import { ExpenseList } from "./_components/ExpenseList";
 import { CompletenessSummaryStrip } from "./_components/CompletenessSummaryStrip";
@@ -271,6 +272,7 @@ export default async function ExpensesPage({
         title="รายจ่าย"
         subtitle={`${rows.length} รายการ`}
         scope={scope}
+        scopeInFilter
         right={
           <>
             {/* สลิปรอจับคู่ + CSV + ไม่มีใบเสร็จ = desktop header only (lg+); below lg
@@ -366,6 +368,14 @@ export default async function ExpensesPage({
           sort={sort}
           nr={nr}
           statusCounts={statusCounts}
+          scopePicker={
+            <CompanyBranchPicker
+              companies={scope.companies}
+              branches={scope.branches}
+              companyId={scope.companyId ?? ""}
+              branchId={scope.branchId ?? ""}
+            />
+          }
           listActions={
             <>
               {slipOn && (
