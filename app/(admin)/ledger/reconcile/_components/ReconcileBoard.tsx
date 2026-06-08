@@ -56,6 +56,14 @@ const TABS: Array<{ key: BucketKey; label: string }> = [
   { key: "abnormal", label: "ต้องตรวจ" },
 ];
 
+// KPI card tone per bucket (redesign 2026-06-08 — prominent cards like the design).
+const TONE: Record<BucketKey, { ring: string; num: string }> = {
+  awaiting: { ring: "border-amber-300 ring-2 ring-amber-200", num: "text-amber-600" },
+  partial: { ring: "border-blue-300 ring-2 ring-blue-200", num: "text-blue-600" },
+  paid: { ring: "border-emerald-300 ring-2 ring-emerald-200", num: "text-emerald-600" },
+  abnormal: { ring: "border-rose-300 ring-2 ring-rose-200", num: "text-rose-600" },
+};
+
 function RequestRow({ req, canCancel }: { req: ReconcileRequestRow; canCancel: boolean }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
@@ -380,15 +388,17 @@ export function ReconcileBoard({
 
   return (
     <div>
-      {/* Chip rail — 4 buckets with counts. */}
+      {/* KPI cards — 4 buckets (count + total), click to filter. The cards ARE the
+          tab selector (redesign 2026-06-08 to match the design's prominent cards). */}
       <div
         role="tablist"
         aria-label="กลุ่มสถานะการจ่าย"
-        className="mb-3 flex flex-wrap gap-2"
+        className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4"
       >
         {TABS.map((t) => {
           const active = tab === t.key;
           const s = summary[t.key];
+          const tone = TONE[t.key];
           return (
             <button
               key={t.key}
@@ -397,33 +407,22 @@ export function ReconcileBoard({
               type="button"
               onClick={() => setTab(t.key)}
               className={
-                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition " +
-                (active
-                  ? "border-[var(--color-brand-600)] bg-[var(--color-brand-600)] text-white"
-                  : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50")
+                "flex flex-col gap-0.5 rounded-2xl border bg-white p-3 text-left transition " +
+                (active ? tone.ring : "border-zinc-200 hover:shadow-md")
               }
             >
-              {t.label}
-              <span
-                className={
-                  "inline-flex min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold " +
-                  (active ? "bg-white/25 text-white" : "bg-zinc-100 text-zinc-500")
-                }
-              >
+              <span className="text-xs font-semibold text-zinc-500">{t.label}</span>
+              <span className="text-2xl font-extrabold tabular-nums text-zinc-900">
                 {s.count}
+                <span className="ml-1 text-sm font-medium text-zinc-400">รายการ</span>
+              </span>
+              <span className={"text-[11px] font-medium tabular-nums " + tone.num}>
+                {baht(s.expectedTotal)} ฿
               </span>
             </button>
           );
         })}
       </div>
-
-      {/* Bucket total (the money in the active bucket). */}
-      <p className="mb-2 text-xs text-zinc-500">
-        รวมยอดที่ต้องโอนในกลุ่มนี้:{" "}
-        <span className="font-semibold tabular-nums text-zinc-700">
-          {baht(summary[tab].expectedTotal)} บาท
-        </span>
-      </p>
 
       {tab === "awaiting" && (
         <RequestList rows={awaiting} canCancel={canMatch} emptyHint="ไม่มีคำขอที่รอโอน — เคลียร์หมดแล้ว 🎉" />
