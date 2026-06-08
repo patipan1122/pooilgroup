@@ -65,6 +65,12 @@ export async function POST(
 
   const appSecret = decryptToken(channel.webhookSecret);
   if (!appSecret) {
+    // LOUD + distinguish empty vs DECRYPT FAILURE (key changed → re-save needed).
+    console.error(
+      channel.webhookSecret
+        ? `[fb-webhook] channel ${channel.id}: App Secret present but DECRYPT FAILED (encryption key changed?). Re-save the secret. Event dropped before ingest.`
+        : `[fb-webhook] channel ${channel.id}: App Secret not set. Event dropped before ingest.`,
+    );
     await prisma.inboxChannel
       .update({ where: { id: channel.id }, data: { lastEventAt: new Date(), status: "setup" } })
       .catch(() => {});

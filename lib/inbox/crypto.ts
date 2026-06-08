@@ -1,55 +1,80 @@
 // Inbox channel crypto — self-contained (envelope AES-256-GCM + webhook HMAC).
-// Decoupled from the Recruit env: key source order is
-//   RECRUIT_CHANNEL_KEY (base64 of 32 bytes)  → preferred if ever set
-//   SUPABASE_SERVICE_ROLE_KEY                  → always present in prod (sha256→32B)
-//   NEXTAUTH_SECRET / AUTH_SECRET / DATABASE_URL → dev fallbacks
-// Encrypt + decrypt run in the same deployment env, so tokens round-trip fine.
+// RULE J (D-021): this module OWNS its key `INBOX_CHANNEL_KEY`, so another
+// program's env change (e.g. adding RECRUIT_CHANNEL_KEY) can never flip inbox's
+// key and brick its stored tokens again.
+//
+// Backward-compatible BY DESIGN — this is what guarantees no other channel/bot
+// breaks: ENCRYPT always uses the preferred key, but DECRYPT tries EVERY
+// candidate key in order until one verifies. So a secret written under an older
+// key (RECRUIT_CHANNEL_KEY, or the SUPABASE-derived fallback) STILL decrypts —
+// nothing already working breaks, and a secret stranded by a past key change is
+// recovered automatically (no re-save needed). AES-GCM's auth tag guarantees
+// only the correct key yields valid plaintext, so trying several is safe.
+//
+// Candidate order (ENCRYPT uses [0]; DECRYPT tries all):
+//   1. INBOX_CHANNEL_KEY (base64 32B)            → this module's own key (preferred)
+//   2. RECRUIT_CHANNEL_KEY (base64 32B)          → legacy shared key (decrypt compat)
+//   3. sha256(SUPABASE_SERVICE_ROLE_KEY ?? NEXTAUTH_SECRET ?? AUTH_SECRET ?? DATABASE_URL)
+//                                                → derived fallback (decrypt compat)
 
 import crypto from "node:crypto";
 
 const ALG = "aes-256-gcm";
 const IV_LEN = 12; // GCM standard
 
-let warnedFallback = false;
+let warnedNoOwnKey = false;
 
-function getKey(): Buffer {
-  const raw = process.env.RECRUIT_CHANNEL_KEY;
-  if (raw) {
-    const buf = Buffer.from(raw, "base64");
-    if (buf.length === 32) return buf;
-  }
-  const fallback =
+function b64Key32(v: string | undefined): Buffer | null {
+  if (!v) return null;
+  const buf = Buffer.from(v, "base64");
+  return buf.length === 32 ? buf : null;
+}
+
+// Every key this deployment can use, most-preferred first. ENCRYPT uses the
+// first; DECRYPT tries each so older ciphertext still opens (no breakage).
+function candidateKeys(): Buffer[] {
+  const keys: Buffer[] = [];
+  const own = b64Key32(process.env.INBOX_CHANNEL_KEY);
+  if (own) keys.push(own);
+  const shared = b64Key32(process.env.RECRUIT_CHANNEL_KEY);
+  if (shared) keys.push(shared);
+  const derivedSrc =
     process.env.SUPABASE_SERVICE_ROLE_KEY ??
     process.env.NEXTAUTH_SECRET ??
     process.env.AUTH_SECRET ??
     process.env.DATABASE_URL;
-  if (!fallback) {
-    throw new Error(
-      "inbox crypto: no key source (set RECRUIT_CHANNEL_KEY or SUPABASE_SERVICE_ROLE_KEY)",
-    );
+  if (derivedSrc) {
+    keys.push(crypto.createHash("sha256").update(derivedSrc).digest());
   }
-  // Audit CH-001: deriving the encryption key from a rotatable secret
-  // (service-role / DATABASE_URL) means rotating that secret bricks every
-  // encrypted channel token.  Warn once per process so observability is
-  // honest — don't hard-fail in prod since that would lock CEO out of an
-  // inbox that's already serving customers (43 FB channels imported).
+
+  // Honest observability (CH-001): note when inbox isn't yet on its own key.
   if (
-    !warnedFallback &&
+    !warnedNoOwnKey &&
     process.env.NODE_ENV === "production" &&
-    !process.env.RECRUIT_CHANNEL_KEY
+    !process.env.INBOX_CHANNEL_KEY
   ) {
-    warnedFallback = true;
+    warnedNoOwnKey = true;
     console.warn(
-      "[inbox crypto] RECRUIT_CHANNEL_KEY missing in prod — using derived key fallback. " +
-        "Rotating SUPABASE_SERVICE_ROLE_KEY/DATABASE_URL will brick every encrypted token.",
+      "[inbox crypto] INBOX_CHANNEL_KEY not set — new secrets encrypt under a " +
+        "shared/derived key. Set INBOX_CHANNEL_KEY (base64 32B) so inbox owns its key (RULE J).",
     );
   }
-  return crypto.createHash("sha256").update(fallback).digest();
+  return keys;
+}
+
+function encryptKey(): Buffer {
+  const [preferred] = candidateKeys();
+  if (!preferred) {
+    throw new Error(
+      "inbox crypto: no key source (set INBOX_CHANNEL_KEY or SUPABASE_SERVICE_ROLE_KEY)",
+    );
+  }
+  return preferred;
 }
 
 export function encryptToken(plaintext: string): string {
   if (!plaintext) return "";
-  const key = getKey();
+  const key = encryptKey();
   const iv = crypto.randomBytes(IV_LEN);
   const cipher = crypto.createCipheriv(ALG, key, iv);
   const enc = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
@@ -61,21 +86,29 @@ export function decryptToken(stored: string | null | undefined): string | null {
   if (!stored) return null;
   // Backwards-compat: rows written before encryption stored raw token.
   if (!stored.includes(":")) return stored;
-  try {
-    const [ivHex, encB64, tagHex] = stored.split(":");
-    if (!ivHex || !encB64 || !tagHex) return null;
-    const key = getKey();
-    const iv = Buffer.from(ivHex, "hex");
-    const enc = Buffer.from(encB64, "base64");
-    const tag = Buffer.from(tagHex, "hex");
-    const decipher = crypto.createDecipheriv(ALG, key, iv);
-    decipher.setAuthTag(tag);
-    const dec = Buffer.concat([decipher.update(enc), decipher.final()]);
-    return dec.toString("utf8");
-  } catch (e) {
-    console.error("[inbox crypto] decrypt failed", e);
-    return null;
+  const [ivHex, encB64, tagHex] = stored.split(":");
+  if (!ivHex || !encB64 || !tagHex) return null;
+  const iv = Buffer.from(ivHex, "hex");
+  const enc = Buffer.from(encB64, "base64");
+  const tag = Buffer.from(tagHex, "hex");
+  // Try every candidate key — only the one it was encrypted under passes the
+  // GCM auth tag; wrong keys throw and are skipped. This is why deploying a new
+  // key never breaks already-stored secrets.
+  for (const key of candidateKeys()) {
+    try {
+      const decipher = crypto.createDecipheriv(ALG, key, iv);
+      decipher.setAuthTag(tag);
+      const dec = Buffer.concat([decipher.update(enc), decipher.final()]);
+      return dec.toString("utf8");
+    } catch {
+      /* wrong key — try the next candidate */
+    }
   }
+  console.error(
+    "[inbox crypto] decrypt failed under ALL candidate keys — secret was encrypted " +
+      "under a key this deployment no longer has. Re-save the channel secret.",
+  );
+  return null;
 }
 
 /** LINE: base64 HMAC-SHA256 in X-Line-Signature. */

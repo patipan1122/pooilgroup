@@ -195,14 +195,32 @@ export async function checkChannelHealth(id: string): Promise<ChannelHealth> {
       platform: true,
       externalId: true,
       accessTokenEnc: true,
+      webhookSecret: true,
     },
   });
   if (!c) throw new Error("ไม่พบช่องทาง");
   if (c.orgId !== session.user.org_id) throw new Error("ไม่มีสิทธิ์");
 
+  // RULE J: a secret that's STORED but won't decrypt means the encryption key
+  // changed (an env var feeding it was added/rotated) — distinct from "not
+  // entered". Point the CEO at the right button instead of a misleading message.
+  const secret = decryptToken(c.webhookSecret);
+  if (!secret && c.webhookSecret) {
+    return {
+      tokenValid: false,
+      detail:
+        'เปิดรหัสลับที่บันทึกไว้ไม่ได้ (กุญแจเข้ารหัสถูกเปลี่ยน) — กด "แก้ไข / ใส่ secret" แล้ววาง Channel Secret + Access Token ใหม่ บอทจะกลับมาทำงาน',
+    };
+  }
+
   const token = decryptToken(c.accessTokenEnc);
   if (!token) {
-    return { tokenValid: false, detail: "ยังไม่ได้ใส่ Access Token — ใส่ก่อนถึงจะรับข้อความได้" };
+    return {
+      tokenValid: false,
+      detail: c.accessTokenEnc
+        ? 'เปิด Access Token ที่บันทึกไว้ไม่ได้ (กุญแจเข้ารหัสถูกเปลี่ยน) — กด "แก้ไข / ใส่ secret" แล้ววางใหม่'
+        : "ยังไม่ได้ใส่ Access Token — ใส่ก่อนถึงจะรับข้อความได้",
+    };
   }
 
   try {

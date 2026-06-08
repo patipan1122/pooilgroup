@@ -59,6 +59,15 @@ export async function POST(
 
   const channelSecret = decryptToken(channel.webhookSecret);
   if (!channelSecret) {
+    // LOUD so "bot went silent" is diagnosable in hours, not days. Distinguish
+    // a genuinely-empty secret from a DECRYPT FAILURE (key mismatch) — the
+    // latter means the encryption key changed (e.g. an env var that feeds it
+    // was added/rotated) and EVERY stored secret needs re-saving (RULE J).
+    console.error(
+      channel.webhookSecret
+        ? `[line-webhook] channel ${channel.id}: Channel Secret present but DECRYPT FAILED (encryption key changed?). Re-save the secret. Event dropped before ingest — bot will not reply.`
+        : `[line-webhook] channel ${channel.id}: Channel Secret not set. Event dropped before ingest.`,
+    );
     await prisma.inboxChannel
       .update({ where: { id: channel.id }, data: { lastEventAt: new Date(), status: "setup" } })
       .catch(() => {});
