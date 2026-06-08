@@ -701,61 +701,8 @@ export function ExpenseReviewPane({
         </div>
       )}
 
-      {/* ── สถานะใบกำกับ — ผิดตรงไหน (ภาษีซื้อ) ── */}
-      {completeness !== "undecided" && (
-        <div className={cn("rounded-xl border p-3", ccMeta.cls)}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <DocTag
-                docType={expense.docType}
-                vat={expense.vat}
-                completenessStatus={completeness}
-              />
-              <PaymentTag status={expense.paymentStatus} />
-              <h3 className="text-sm font-bold">{ccMeta.title}</h3>
-            </div>
-            <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", ccMeta.chip)}>
-              {ccMeta.verdict}
-            </span>
-          </div>
-
-          {/* ผลตรวจผู้ซื้อ (เลขภาษี 13 หลักเป๊ะ — ไม่ใช้ชื่อ) */}
-          <p className="mt-1.5 text-xs opacity-90">
-            {BUYER_MATCH_LABEL[(expense.buyerMatchStatus ?? "undecided") as BuyerMatchStatus]}
-            {expense.buyerTaxIdOnDoc ? ` · เลขบนใบ ${expense.buyerTaxIdOnDoc}` : ""}
-          </p>
-
-          {/* รายการ "ขาดตรงไหน" เป็นภาษาไทย */}
-          {ccMissing.length > 0 && (
-            <ul className="mt-2 ml-4 list-disc space-y-0.5 text-xs">
-              {ccMissing.map((m) => (
-                <li key={m}>{missingLabel(m)}</li>
-              ))}
-            </ul>
-          )}
-          {expense.inputVatBlockReason && (
-            <p className="mt-2 text-xs font-medium">
-              เหตุผล: {BLOCK_REASON_LABEL[expense.inputVatBlockReason as InputVatBlockReason]}
-            </p>
-          )}
-
-          {/* ปุ่มแนบใบใหม่ทดแทน — โชว์เมื่อยังไม่เขียว + มี action + มีสิทธิ์ */}
-          {!isGreen && !locked && canEditClaimability && onAttachReplacement && !expense.replacedById && (
-            <div className="mt-3 border-t border-current/15 pt-3">
-              <AttachReplacementButton
-                expenseId={expense.id}
-                onAttach={onAttachReplacement}
-              />
-            </div>
-          )}
-          {expense.replacedById && (
-            <p className="mt-3 flex items-center gap-1 border-t border-current/15 pt-3 text-xs font-medium">
-              <CheckCircle2 className="size-3.5 shrink-0" aria-hidden />
-              มีใบทดแทนแล้ว — ดูรูปทั้ง 2 ใบด้านล่าง
-            </p>
-          )}
-        </div>
-      )}
+      {/* สถานะใบกำกับ (ภาษีซื้อ) — ย้ายลงไปไว้ใกล้ปุ่มด้านล่าง (CEO 2026-06-08:
+          คำเตือนแดงอยู่ข้างล่าง กระชับ ติดแถบ action ที่ scroll ตาม). ดู CompletenessBanner. */}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
         {/* รูปใบเสร็จ (sticky บนจอใหญ่ — เลื่อนฟอร์มแล้วรูปยังอยู่).
@@ -1265,24 +1212,77 @@ export function ExpenseReviewPane({
                 rows={2}
               />
             </div>
-            <div className="space-y-1.5">
-              <span className="text-xs font-semibold text-zinc-600">หลักฐานแนบ & ต้นฉบับ</span>
-              {driveUrl ? (
-                <a href={driveUrl} target="_blank" rel="noreferrer"
-                   className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100">
-                  <ExternalLink className="size-3.5" aria-hidden /> เปิดต้นฉบับใน Google Drive (แชร์ให้สำนักงานบัญชีได้)
-                </a>
-              ) : (expense.thumbUrl || expense.originalUrl) ? (
-                <button
-                  type="button"
-                  onClick={syncDrive}
-                  disabled={driveBusy}
-                  className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-                >
-                  {driveBusy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <ExternalLink className="size-3.5 text-zinc-400" aria-hidden />}
-                  ส่งต้นฉบับเข้า Google Drive (เดือน/สาขา/หมวด)
-                </button>
-              ) : null}
+            {/* หลักฐาน & ไฟล์แนบ — 3 ช่อง (CEO 2026-06-08): ใบเสร็จต้นฉบับ (+ลิงก์ Drive) /
+                สลิปโอนเงิน / ใบกำกับใหม่ทดแทน. แนบสลิปจริงทำผ่านกลุ่มขอโอน → ที่นี่ลิงก์ไปกระทบยอด. */}
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-zinc-600">หลักฐาน & ไฟล์แนบ</span>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {/* 1 · ใบเสร็จต้นฉบับ + ลิงก์ Google Drive */}
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-medium text-zinc-500">ใบเสร็จต้นฉบับ</p>
+                  {expense.thumbUrl || expense.originalUrl ? (
+                    <ReceiptThumb
+                      thumbUrl={expense.thumbUrl}
+                      originalUrl={expense.originalUrl}
+                      alt={`ใบเสร็จ ${expense.docCode}`}
+                    />
+                  ) : (
+                    <div className="grid h-28 place-items-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50 text-[11px] text-zinc-400">
+                      ไม่มีรูปต้นฉบับ
+                    </div>
+                  )}
+                  {driveUrl ? (
+                    <a
+                      href={driveUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[11px] font-medium text-emerald-800 hover:bg-emerald-100"
+                    >
+                      <ExternalLink className="size-3.5" aria-hidden /> เปิดต้นฉบับใน Google Drive
+                    </a>
+                  ) : expense.thumbUrl || expense.originalUrl ? (
+                    <button
+                      type="button"
+                      onClick={syncDrive}
+                      disabled={driveBusy}
+                      className="flex w-full items-center justify-center gap-1 rounded-lg border border-zinc-200 px-2 py-1.5 text-[11px] font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                    >
+                      {driveBusy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <ExternalLink className="size-3.5 text-zinc-400" aria-hidden />}
+                      ส่งเข้า Google Drive
+                    </button>
+                  ) : null}
+                </div>
+                {/* 2 · สลิปโอนเงิน — แนบอัตโนมัติจากกลุ่มขอโอน */}
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-medium text-zinc-500">สลิปโอนเงิน</p>
+                  <div className="grid h-28 place-items-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-2 text-center text-[11px] text-zinc-400">
+                    แนบอัตโนมัติจากกลุ่มขอโอน
+                  </div>
+                  <a
+                    href="/ledger/reconcile"
+                    className="block text-center text-[11px] font-medium text-[var(--color-brand-600)] hover:underline"
+                  >
+                    ดูที่ โอนเงิน &amp; กระทบยอด →
+                  </a>
+                </div>
+                {/* 3 · ใบกำกับใหม่ทดแทน */}
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-medium text-zinc-500">ใบกำกับใหม่ทดแทน</p>
+                  {replacement ? (
+                    <ReceiptThumb
+                      thumbUrl={replacement.thumbUrl}
+                      originalUrl={replacement.originalUrl}
+                      alt={`ใบทดแทน ${replacement.docCode}`}
+                    />
+                  ) : !isGreen && !locked && canEditClaimability && onAttachReplacement ? (
+                    <AttachReplacementButton expenseId={expense.id} onAttach={onAttachReplacement} />
+                  ) : (
+                    <div className="grid h-28 place-items-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50 text-[11px] text-zinc-400">
+                      — ไม่มี —
+                    </div>
+                  )}
+                </div>
+              </div>
               {driveErr && <p className="text-[11px] text-amber-600">{driveErr}</p>}
               {(expense.attachments ?? []).map((a, i) => (
                 <a key={i} href={a.url} target="_blank" rel="noreferrer"
@@ -1341,10 +1341,46 @@ export function ExpenseReviewPane({
         </div>
       )}
 
+      {/* สถานะใบกำกับ (ภาษีซื้อ) — ย้ายมาล่างติดแถบปุ่ม (CEO 2026-06-08: คำเตือนแดงอยู่
+          ข้างล่าง กระชับ ให้รู้ว่าบรรทัดไหนทำให้ยืนยัน/ขอโอนไม่ได้). */}
+      {completeness !== "undecided" && (
+        <div className={cn("rounded-xl border px-3 py-2 text-xs", ccMeta.cls)}>
+          <div className="flex flex-wrap items-center gap-2">
+            <DocTag docType={expense.docType} vat={expense.vat} completenessStatus={completeness} />
+            <PaymentTag status={expense.paymentStatus} />
+            <span className="text-sm font-bold">{ccMeta.title}</span>
+            <span className={cn("ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold", ccMeta.chip)}>
+              {ccMeta.verdict}
+            </span>
+          </div>
+          <p className="mt-1 opacity-90">
+            {BUYER_MATCH_LABEL[(expense.buyerMatchStatus ?? "undecided") as BuyerMatchStatus]}
+            {expense.buyerTaxIdOnDoc ? ` · เลขบนใบ ${expense.buyerTaxIdOnDoc}` : ""}
+          </p>
+          {ccMissing.length > 0 && (
+            <ul className="mt-1 ml-4 list-disc space-y-0.5">
+              {ccMissing.map((m) => (
+                <li key={m}>{missingLabel(m)}</li>
+              ))}
+            </ul>
+          )}
+          {expense.inputVatBlockReason && (
+            <p className="mt-1 font-medium">
+              เหตุผล: {BLOCK_REASON_LABEL[expense.inputVatBlockReason as InputVatBlockReason]}
+            </p>
+          )}
+          {expense.replacedById && (
+            <p className="mt-1 flex items-center gap-1 font-medium">
+              <CheckCircle2 className="size-3.5 shrink-0" aria-hidden /> มีใบทดแทนแล้ว — ดูในช่องหลักฐานด้านบน
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Actions — ห้าม auto-post: ต้องกดยืนยันเอง.
           Sticky bottom bar so the confirm button is always reachable on phones. */}
       {!locked && (
-        <div className="sticky bottom-0 -mx-4 border-t border-zinc-100 bg-white/95 px-4 pb-1 pt-3 backdrop-blur sm:-mx-6 sm:px-6">
+        <div className="sticky bottom-0 z-10 -mx-4 border-t border-zinc-100 bg-white/95 px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-4px_12px_rgba(15,23,42,0.06)] backdrop-blur sm:-mx-6 sm:px-6">
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="primary"
@@ -1460,12 +1496,19 @@ export function ExpenseReviewPane({
             </div>
           )}
 
-          <p className="mt-2 flex items-center gap-1 text-[11px] text-zinc-400">
+          <p
+            className={cn(
+              "mt-2 flex items-center gap-1 text-[11px]",
+              hasError || (!gate.ok && canConfirm)
+                ? "font-semibold text-rose-600"
+                : "text-zinc-400",
+            )}
+          >
             <ShieldCheck className="size-3.5" aria-hidden />
             {hasError
               ? "ยอดไม่ตรง — แก้ให้ถูกก่อนจึงจะกด “ยืนยัน” ได้"
               : !gate.ok && canConfirm
-                ? confirmabilityMessage(gate.missing)
+                ? confirmabilityMessage(gate.missing) + " — บรรทัดที่ขาดเป็นสีแดง"
                 : "ระบบไม่บันทึกอัตโนมัติ — รายการเป็น “ร่าง” จนกว่าจะกดยืนยันเอง"}
           </p>
         </div>

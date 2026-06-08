@@ -45,11 +45,14 @@ import type { ExpenseRow, LedgerStatusValue } from "@/components/ledger/_kit/typ
 // PRIMARY status strip (redesign 2026-06-07) — the accountant's daily axis: triage
 // รอยืนยัน → ยืนยันแล้ว → ส่ง TRCloud. "ส่งแล้ว" is the ?tr=sent filter (not a status),
 // the rest drive ?status=. Source (LINE/email/…) moved into the ตัวกรอง popover.
-const PRIMARY_TABS: Array<{ id: "all" | "draft" | "confirmed" | "sent"; label: string }> = [
-  { id: "all", label: "ทั้งหมด" },
+// 5 tabs matching the design (รอตรวจ = draft AI ยังไม่ชัวร์/needsReview · รอยืนยัน =
+// draft ตรวจแล้วรอบัญชียืนยัน · ยืนยันแล้ว = confirmed · ส่ง TRCloud = tr=sent · ทั้งหมด).
+const PRIMARY_TABS: Array<{ id: "review" | "draft" | "confirmed" | "sent" | "all"; label: string }> = [
+  { id: "review", label: "รอตรวจ" },
   { id: "draft", label: "รอยืนยัน" },
   { id: "confirmed", label: "ยืนยันแล้ว" },
-  { id: "sent", label: "ส่งแล้ว" },
+  { id: "sent", label: "ส่ง TRCloud" },
+  { id: "all", label: "ทั้งหมด" },
 ];
 
 function baht(n: number) {
@@ -78,6 +81,7 @@ export function ExpenseList({
   companyId,
   tab,
   sort,
+  nr,
   statusCounts,
   listActions,
   payreqEnabled,
@@ -104,8 +108,10 @@ export function ExpenseList({
   tab: ExpenseTab;
   /** เรียงลำดับปัจจุบัน (?sort=) — undefined = ใหม่→เก่า (ค่าเริ่มต้น). */
   sort?: "date-asc" | "amount-desc" | "amount-asc";
-  /** DB-accurate counts for the PRIMARY status strip (ทั้งหมด/รอยืนยัน/ยืนยันแล้ว/ส่งแล้ว). */
-  statusCounts: { all: number; draft: number; confirmed: number; sent: number };
+  /** needsReview filter (?nr=) — true=รอตรวจ · false=รอยืนยัน · undefined=ไม่กรอง. */
+  nr?: boolean;
+  /** DB-accurate counts for the 5 PRIMARY tabs (รอตรวจ/รอยืนยัน/ยืนยันแล้ว/ส่ง/ทั้งหมด). */
+  statusCounts: { all: number; review: number; draft: number; confirmed: number; sent: number };
   /** Shortcut actions (ไม่มีใบเสร็จ · สลิปรอจับคู่) — rendered inside the mobile
    *  ตัวกรอง sheet so they're off the page header. */
   listActions?: React.ReactNode;
@@ -181,29 +187,42 @@ export function ExpenseList({
     sp.delete("cc");
     sp.delete("category");
     sp.delete("tab");
+    sp.delete("nr");
     if (selectedId) sp.set("selected", selectedId);
     router.push(`${pathname}?${sp.toString()}`);
   }
 
-  // PRIMARY status strip — sets status/tr atomically (selecting one clears the other)
-  // so the segmented control behaves like a single tab group.
-  const activePrimary: "all" | "draft" | "confirmed" | "sent" | null =
+  // PRIMARY status strip — sets status/tr/nr atomically (selecting one clears others)
+  // so the 5 segmented tabs behave like a single tab group. รอตรวจ/รอยืนยัน both =
+  // draft, split by needsReview (?nr=1 / ?nr=0).
+  const activePrimary: "review" | "draft" | "confirmed" | "sent" | "all" | null =
     tr === "sent"
       ? "sent"
-      : status === "draft"
-        ? "draft"
-        : status === "confirmed"
-          ? "confirmed"
-          : !status && !tr
-            ? "all"
-            : null; // locked/void are set via the ตัวกรอง popover → no primary highlight
-  function setPrimaryTab(id: "all" | "draft" | "confirmed" | "sent") {
+      : status === "confirmed"
+        ? "confirmed"
+        : status === "draft" && nr === true
+          ? "review"
+          : status === "draft" && nr === false
+            ? "draft"
+            : !status && !tr
+              ? "all"
+              : null; // locked/void via the ตัวกรอง popover → no primary highlight
+  function setPrimaryTab(id: "review" | "draft" | "confirmed" | "sent" | "all") {
     const sp = new URLSearchParams(baseParams);
     sp.delete("status");
     sp.delete("tr");
-    if (id === "draft") sp.set("status", "draft");
-    else if (id === "confirmed") sp.set("status", "confirmed");
-    else if (id === "sent") sp.set("tr", "sent");
+    sp.delete("nr");
+    if (id === "review") {
+      sp.set("status", "draft");
+      sp.set("nr", "1");
+    } else if (id === "draft") {
+      sp.set("status", "draft");
+      sp.set("nr", "0");
+    } else if (id === "confirmed") {
+      sp.set("status", "confirmed");
+    } else if (id === "sent") {
+      sp.set("tr", "sent");
+    }
     if (selectedId) sp.set("selected", selectedId);
     router.push(`${pathname}?${sp.toString()}`);
   }

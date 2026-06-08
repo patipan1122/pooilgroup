@@ -46,6 +46,7 @@ export default async function ExpensesPage({
     dt?: string; // docType filter: "quotation" (แท็บ "รอใบกำกับ" · D1)
     tab?: string; // source tab: "all" | "line" | "web" | "mine"
     sort?: string; // เรียงลำดับ: date-desc(ค่าเริ่มต้น) | date-asc | amount-desc | amount-asc
+    nr?: string; // needsReview split: "1"=รอตรวจ · "0"=รอยืนยัน (ใช้กับ status=draft)
   }>;
 }) {
   // Page-level role gate. This review workspace exposes the FULL company-wide
@@ -100,6 +101,8 @@ export default async function ExpensesPage({
     sp.sort === "date-asc" || sp.sort === "amount-desc" || sp.sort === "amount-asc"
       ? sp.sort
       : undefined;
+  // รอตรวจ vs รอยืนยัน split (both are draft) — only meaningful when status=draft.
+  const nr = sp.nr === "1" ? true : sp.nr === "0" ? false : undefined;
 
   // ภาษีซื้อ summary uses the SAME scope (+ status/category/tr/search) so the strip
   // counts match the list — but NOT the cc filter itself (the strip shows the full mix).
@@ -126,6 +129,7 @@ export default async function ExpensesPage({
       completeness: cc,
       docType,
       sort,
+      needsReview: nr,
       take: 300,
     }),
     listCategories(scope.orgId, scope.companyId),
@@ -173,15 +177,22 @@ export default async function ExpensesPage({
         }
       : {}),
   };
-  const [scAll, scDraft, scConfirmed, scSent] = await Promise.all([
+  const [scAll, scReview, scDraft, scConfirmed, scSent] = await Promise.all([
     prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: { in: VISIBLE_STATUSES } } }),
-    prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "draft" } }),
+    prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "draft", needsReview: true } }),
+    prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "draft", needsReview: false } }),
     prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "confirmed" } }),
     prisma.ledgerExpense.count({
       where: { ...statusCountWhere, status: { in: VISIBLE_STATUSES }, trcloudDocId: { not: null } },
     }),
   ]);
-  const statusCounts = { all: scAll, draft: scDraft, confirmed: scConfirmed, sent: scSent };
+  const statusCounts = {
+    all: scAll,
+    review: scReview,
+    draft: scDraft,
+    confirmed: scConfirmed,
+    sent: scSent,
+  };
 
   const selectedExpense = selected
     ? await getExpense({
@@ -239,6 +250,7 @@ export default async function ExpensesPage({
   if (q) baseParams.set("q", q);
   if (tab !== "all") baseParams.set("tab", tab);
   if (sort) baseParams.set("sort", sort);
+  if (nr !== undefined) baseParams.set("nr", nr ? "1" : "0");
 
   // ลิงก์สลับแท็บ "รอใบกำกับ" — คงพารามิเตอร์ scope เดิมไว้ (company/branch) เท่านั้น.
   const quotationOnParams = new URLSearchParams();
@@ -352,6 +364,7 @@ export default async function ExpensesPage({
           branches={scope.branches}
           tab={tab}
           sort={sort}
+          nr={nr}
           statusCounts={statusCounts}
           listActions={
             <>
