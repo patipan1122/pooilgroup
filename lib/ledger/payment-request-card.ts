@@ -183,7 +183,7 @@ export function buildPaymentRequestCard(input: PaymentRequestCardInput): LineFle
                 style: "primary",
                 height: "sm",
                 color: COLOR.brand,
-                action: { type: "uri", label: "ดูรายละเอียด / จ่าย", uri: detailUrl },
+                action: { type: "uri", label: "ดู QR / คัดลอกบัญชี · จ่าย", uri: detailUrl },
               },
             ],
           },

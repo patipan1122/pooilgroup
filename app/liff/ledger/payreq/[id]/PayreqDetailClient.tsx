@@ -89,6 +89,20 @@ export function PayreqDetailClient({
         </div>
       )}
 
+      {/* No QR (paid to a plain bank account) — explain + point to the copy button.
+          A PromptPay QR can only be built from a พร้อมเพย์ id (เบอร์/บัตรปชช), not a
+          bank account number — so we guide the exec to copy + transfer instead. */}
+      {!qrUrl && (req.payeeAcctNo || req.payeePromptpay) && (
+        <div className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 p-3 text-center">
+          <p className="text-xs font-medium text-zinc-600">
+            ใบนี้ไม่มี QR — กดปุ่ม <span className="font-bold text-[var(--color-brand-700)]">คัดลอก</span> ด้านล่าง แล้วโอนในแอปธนาคาร
+          </p>
+          <p className="mt-0.5 text-[11px] text-zinc-400">
+            อยากให้สแกน QR จ่ายได้? ใส่ &ldquo;พร้อมเพย์&rdquo; (เบอร์/บัตรปชช) ตอนขอโอน
+          </p>
+        </div>
+      )}
+
       {/* Payee (copyable) */}
       <div className="space-y-2">
         <p className="text-xs font-semibold text-zinc-500">โอนเข้าบัญชี</p>

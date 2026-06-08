@@ -645,6 +645,9 @@ export function ExpenseList({
                 inputMode="numeric"
                 className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm outline-none focus:ring-2 focus:ring-violet-200"
               />
+              <p className="text-[11px] text-zinc-400">
+                💡 ใส่พร้อมเพย์ (เบอร์/บัตรปชช) เพื่อให้ผู้บริหารสแกน QR จ่ายได้เลย · เลขบัญชีเฉย ๆ จะมีปุ่มคัดลอกให้แทน
+              </p>
             </div>
             {/* Error shows INSIDE the dialog (the list-level msg is hidden behind this
                 overlay — otherwise a rejected request looks like a frozen dialog). */}
