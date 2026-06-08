@@ -15,7 +15,7 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, X, ChevronDown, Check } from "lucide-react";
+import { Search, X, ChevronDown, Check, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import type { RowAxis, TimeGrain, AmountBasis } from "@/lib/ledger/spend-analytics";
 
@@ -58,6 +58,10 @@ export function AnalyticsControls({
   const sp = useSearchParams();
   const [term, setTerm] = useState(search);
   const [openPicker, setOpenPicker] = useState<string | null>(null);
+  // LeanUX (CEO 2026-06-08 "ดูตาม กับ กรอง ซ้ำ — เหลือแค่กรองพอ"): ยุบ 3 ตัวเลือก
+  // (หมวด/สาขา/ผู้ขาย) ไว้หลังปุ่ม "ตัวกรอง" เดียว · คง "ดูตาม" (แกน pivot) ไว้เด่น.
+  const filterCount = categoryIds.length + branchIds.length + vendors.length;
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // single-value params (grain/basis/ax/q)
   const setParam = (next: Record<string, string | null>) => {
@@ -169,36 +173,28 @@ export function AnalyticsControls({
         </div>
       </div>
 
-      {/* multi-select tick filters: หมวด · สาขา · ผู้ขาย */}
+      {/* toolbar: ปุ่ม "ตัวกรอง" (ยุบ 3 ตัวเลือก) + ช่วงเวลา + ฐานยอด (view toggles) */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-semibold text-zinc-500">กรอง</span>
-        <MultiPicker
-          label="หมวด"
-          options={categories}
-          selected={categoryIds}
-          isOpen={openPicker === "cat"}
-          onOpenToggle={() => setOpenPicker((p) => (p === "cat" ? null : "cat"))}
-          onToggle={(v) => toggleValue("cat", v, categoryIds)}
-          onClear={() => setMultiParam("cat", [])}
-        />
-        <MultiPicker
-          label="สาขา"
-          options={branches}
-          selected={branchIds}
-          isOpen={openPicker === "b"}
-          onOpenToggle={() => setOpenPicker((p) => (p === "b" ? null : "b"))}
-          onToggle={(v) => toggleValue("b", v, branchIds)}
-          onClear={() => setMultiParam("b", [])}
-        />
-        <MultiPicker
-          label="ผู้ขาย"
-          options={vendorOptions.map((v) => ({ id: v, name: v }))}
-          selected={vendors}
-          isOpen={openPicker === "ven"}
-          onOpenToggle={() => setOpenPicker((p) => (p === "ven" ? null : "ven"))}
-          onToggle={(v) => toggleValue("ven", v, vendors)}
-          onClear={() => setMultiParam("ven", [])}
-        />
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((o) => !o)}
+          aria-expanded={filtersOpen}
+          className={cn(
+            "inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border px-2.5 text-sm font-medium transition-colors",
+            filterCount > 0
+              ? "border-[var(--color-brand-300)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)]"
+              : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300",
+          )}
+        >
+          <SlidersHorizontal className="size-4" aria-hidden />
+          ตัวกรอง
+          {filterCount > 0 && (
+            <span className="grid min-w-[18px] place-items-center rounded-full bg-[var(--color-brand-600)] px-1 text-[11px] font-bold text-white">
+              {filterCount}
+            </span>
+          )}
+          <ChevronDown className={cn("size-3.5 opacity-60 transition-transform", filtersOpen && "rotate-180")} aria-hidden />
+        </button>
 
         {/* grain toggle */}
         <Segmented
@@ -222,6 +218,39 @@ export function AnalyticsControls({
           onSelect={(v) => setParam({ basis: v === "net" ? null : v })}
         />
       </div>
+
+      {/* multi-select tick filters: หมวด · สาขา · ผู้ขาย — ซ่อนใต้ "ตัวกรอง" */}
+      {filtersOpen && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-100 bg-zinc-50/60 p-2">
+          <MultiPicker
+            label="หมวด"
+            options={categories}
+            selected={categoryIds}
+            isOpen={openPicker === "cat"}
+            onOpenToggle={() => setOpenPicker((p) => (p === "cat" ? null : "cat"))}
+            onToggle={(v) => toggleValue("cat", v, categoryIds)}
+            onClear={() => setMultiParam("cat", [])}
+          />
+          <MultiPicker
+            label="สาขา"
+            options={branches}
+            selected={branchIds}
+            isOpen={openPicker === "b"}
+            onOpenToggle={() => setOpenPicker((p) => (p === "b" ? null : "b"))}
+            onToggle={(v) => toggleValue("b", v, branchIds)}
+            onClear={() => setMultiParam("b", [])}
+          />
+          <MultiPicker
+            label="ผู้ขาย"
+            options={vendorOptions.map((v) => ({ id: v, name: v }))}
+            selected={vendors}
+            isOpen={openPicker === "ven"}
+            onOpenToggle={() => setOpenPicker((p) => (p === "ven" ? null : "ven"))}
+            onToggle={(v) => toggleValue("ven", v, vendors)}
+            onClear={() => setMultiParam("ven", [])}
+          />
+        </div>
+      )}
 
       {/* active selections — the AND-combination, each removable */}
       {chips.length > 0 && (
