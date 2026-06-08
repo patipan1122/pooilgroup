@@ -47,6 +47,18 @@ const CC_TABS: Array<{ value: "" | "green" | "yellow" | "red"; label: string; do
   { value: "red", label: "ขอคืนไม่ได้", dot: "bg-rose-500" },
 ];
 
+// เรียงลำดับ (?sort=) — "" = default (ใหม่→เก่า ตามวันเอกสาร).
+const SORT_TABS: Array<{
+  value: "" | "date-asc" | "amount-desc" | "amount-asc" | "created-desc";
+  label: string;
+}> = [
+  { value: "", label: "ใหม่→เก่า (วันเอกสาร)" },
+  { value: "created-desc", label: "ล่าสุดที่บันทึก" },
+  { value: "date-asc", label: "เก่า→ใหม่" },
+  { value: "amount-desc", label: "ยอดมาก→น้อย" },
+  { value: "amount-asc", label: "ยอดน้อย→มาก" },
+];
+
 export interface FilterSheetProps {
   status?: LedgerStatusValue;
   tr?: "sent" | "unsent";
@@ -55,6 +67,9 @@ export interface FilterSheetProps {
   categories: Array<{ id: string; name: string; color: string | null; sort: number }>;
   /** แหล่งที่มา (?tab=) — moved into the popover (was a top tab strip). */
   tab?: ExpenseTab;
+  /** เรียงลำดับ (?sort=) — moved into the popover (LeanUX · was a top select).
+   *  "" = default (ใหม่→เก่า ตามวันเอกสาร). */
+  sort?: "date-asc" | "amount-desc" | "amount-asc" | "created-desc";
   /** Shared URL setter from the parent (setParam) — key/value, '' clears. */
   onSet: (key: string, value: string) => void;
   /** Clears status+tr+cc+category+tab in ONE router push (sequential onSet calls
@@ -127,9 +142,20 @@ function ChipTablist<T extends string>({
 }
 
 /** The actual controls inside the popover/sheet. */
-function FilterControls({ status, tr, cc, categoryId, categories, tab, onSet }: FilterSheetProps) {
+function FilterControls({ status, tr, cc, categoryId, categories, tab, sort, onSet }: FilterSheetProps) {
   return (
     <>
+      <div className="space-y-1">
+        <p className="text-[11px] font-semibold text-zinc-500">เรียงลำดับ</p>
+        <ChipTablist
+          label="เรียงลำดับ"
+          tabs={SORT_TABS}
+          active={sort ?? ""}
+          paramKey="sort"
+          activeClass="bg-[var(--color-brand-600)] text-white"
+          onSet={onSet}
+        />
+      </div>
       <div className="space-y-1">
         <p className="text-[11px] font-semibold text-zinc-500">แหล่งที่มา</p>
         <ChipTablist

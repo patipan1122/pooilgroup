@@ -167,8 +167,9 @@ export interface ExpenseListFilter {
    *  because it avoids the expensive SQL OFFSET scan. When cursor is given, skip
    *  is ignored. */
   cursor?: string;
-  /** Sort order for the list pane (redesign 2026-06-07). Default = date-desc. */
-  sort?: "date-desc" | "date-asc" | "amount-desc" | "amount-asc";
+  /** Sort order for the list pane (redesign 2026-06-07). Default = date-desc.
+   *  created-desc = เรียงตามวันที่บันทึกเข้าระบบ (วันอัพ) · date-* = วันที่บนเอกสาร. */
+  sort?: "date-desc" | "date-asc" | "amount-desc" | "amount-asc" | "created-desc";
 }
 
 /** Map a color filter token → the completeness_status column value. */
@@ -438,7 +439,9 @@ export async function listExpensesSummary(f: ExpenseListFilter): Promise<Expense
         ? [{ total: "desc" }, { createdAt: "desc" }]
         : f.sort === "amount-asc"
           ? [{ total: "asc" }, { createdAt: "desc" }]
-          : [{ docDate: "desc" }, { createdAt: "desc" }];
+          : f.sort === "created-desc"
+            ? [{ createdAt: "desc" }]
+            : [{ docDate: "desc" }, { createdAt: "desc" }];
   // Fetch one extra row to detect whether more pages exist.
   const rows = await prisma.ledgerExpense.findMany({
     where: buildWhere(f),

@@ -13,6 +13,7 @@ import { ledgerWebCanForRole } from "@/lib/ledger/liff-auth";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
 import { CompanyBranchPicker } from "../_components/CompanyBranchPicker";
+import { ExpenseSearch } from "./_components/ExpenseSearch";
 import { listExpensesSummary, getExpense, listCategories, summarizeCompleteness } from "../_data";
 import { ExpenseList } from "./_components/ExpenseList";
 import { CompletenessSummaryStrip } from "./_components/CompletenessSummaryStrip";
@@ -99,7 +100,10 @@ export default async function ExpensesPage({
     sp.tab && TAB_VALUES.includes(sp.tab as ExpenseTab) ? (sp.tab as ExpenseTab) : "all";
   // เรียงลำดับ — date-desc เป็นค่าเริ่มต้น (undefined) จึงเก็บเฉพาะค่าที่ไม่ใช่ค่าเริ่มต้น.
   const sort =
-    sp.sort === "date-asc" || sp.sort === "amount-desc" || sp.sort === "amount-asc"
+    sp.sort === "date-asc" ||
+    sp.sort === "amount-desc" ||
+    sp.sort === "amount-asc" ||
+    sp.sort === "created-desc"
       ? sp.sort
       : undefined;
   // รอตรวจ vs รอยืนยัน split (both are draft) — only meaningful when status=draft.
@@ -275,6 +279,8 @@ export default async function ExpensesPage({
         scopeInFilter
         right={
           <>
+            {/* ค้นหา — อยู่ข้างหัว "รายจ่าย" (LeanUX · มือถือ = แถวบนสุด) */}
+            <ExpenseSearch baseParams={baseParams.toString()} q={q} selectedId={selected} />
             {/* สลิปรอจับคู่ + CSV + ไม่มีใบเสร็จ = desktop header only (lg+); below lg
                 they move INTO the ตัวกรอง sheet (listActions) — CEO declutter.
                 Breakpoint matches FilterSheet's lg:hidden so they never double up. */}
@@ -307,17 +313,19 @@ export default async function ExpensesPage({
         }
       />
 
-      {/* ภาษีซื้อ — แถบสรุปสถานะสี (เขียว/เหลือง/แดง) + ยอด VAT ที่ยังติด */}
-      <CompletenessSummaryStrip
-        summary={completenessSummary}
-        baseParams={baseParams.toString()}
-        selectedId={selected}
-        cc={cc}
-      />
+      {/* ภาษีซื้อ — แถบสรุป VAT. LeanUX: เดสก์ท็อปเท่านั้น (มือถือ=กินที่ · ดูใน Dashboard/ตัวกรองสี). */}
+      <div className="hidden sm:block">
+        <CompletenessSummaryStrip
+          summary={completenessSummary}
+          baseParams={baseParams.toString()}
+          selectedId={selected}
+          cc={cc}
+        />
+      </div>
 
-      {/* แท็บ "รอใบกำกับ" (D1) — ใบเสนอราคา/บิลที่นับเป็นค่าใช้จ่ายแล้วแต่ยังรอใบกำกับจริง */}
+      {/* แท็บ "รอใบกำกับ" (D1) — เดสก์ท็อปเท่านั้น (มือถือยุบเข้าตัวกรอง · LeanUX). */}
       {quotationTabOn && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+        <div className="mb-3 hidden flex-wrap items-center gap-2 text-sm sm:flex">
           <Link
             href={`/ledger/expenses?${quotationOffParams.toString()}`}
             className={`inline-flex min-h-[36px] items-center rounded-full border px-3 font-medium ${

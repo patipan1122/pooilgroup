@@ -7,7 +7,7 @@
 import { useState, useTransition, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2, Banknote, Tags, Upload, QrCode, Search } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2, Banknote, Tags, Upload, QrCode } from "lucide-react";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
 import { CompletenessDot } from "@/components/ledger/_kit/CompletenessDot";
 import { DocTag, PaymentTag } from "@/components/ledger/_kit/StatusTags";
@@ -108,7 +108,7 @@ export function ExpenseList({
   /** D4 source tab (?tab=) — all | line | web | mine (now lives inside ตัวกรอง). */
   tab: ExpenseTab;
   /** เรียงลำดับปัจจุบัน (?sort=) — undefined = ใหม่→เก่า (ค่าเริ่มต้น). */
-  sort?: "date-asc" | "amount-desc" | "amount-asc";
+  sort?: "date-asc" | "amount-desc" | "amount-asc" | "created-desc";
   /** needsReview filter (?nr=) — true=รอตรวจ · false=รอยืนยัน · undefined=ไม่กรอง. */
   nr?: boolean;
   /** DB-accurate counts for the 5 PRIMARY tabs (รอตรวจ/รอยืนยัน/ยืนยันแล้ว/ส่ง/ทั้งหมด). */
@@ -415,100 +415,61 @@ export function ExpenseList({
     <div className="rounded-2xl border border-zinc-200 bg-white">
       {/* Sticky filter header */}
       <div className="sticky top-14 z-20 space-y-2 rounded-t-2xl border-b border-zinc-200 bg-white p-3 sm:top-16">
-        {/* PRIMARY status strip — รอยืนยัน → ยืนยันแล้ว → ส่งแล้ว (accountant triage axis).
-            "ส่งแล้ว" = ?tr=sent, the rest = ?status=. Source/cc/หมวด live in ตัวกรอง. */}
-        <div
-          className="-mx-1 flex gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          role="tablist"
-          aria-label="กรองตามสถานะ"
-        >
-          {PRIMARY_TABS.map((t) => {
-            const active = activePrimary === t.id;
-            const count = statusCounts[t.id];
-            return (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setPrimaryTab(t.id)}
-                className={
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-300)] " +
-                  (active
-                    ? "bg-[var(--color-brand-600)] text-white"
-                    : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200")
-                }
-              >
-                {t.label}
-                {count > 0 && (
-                  <span
-                    className={
-                      "inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums " +
-                      (active ? "bg-white/25 text-white" : "bg-white text-zinc-500")
-                    }
-                  >
-                    {count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Toolbar: search + เรียงลำดับ + the single "ตัวกรอง" button (source/TRCloud/VAT/
-            หมวด/สถานะ collapse into ONE popover — no more 5 stacked groups · "filter รก"). */}
-        <div className="flex flex-wrap gap-2">
-          <form method="GET" className="flex min-w-[180px] flex-1 gap-2">
-            {baseParams
-              .split("&")
-              .filter(Boolean)
-              .map((kv) => {
-                const [k, v] = kv.split("=");
-                if (k === "q") return null;
-                return <input key={k} type="hidden" name={k} value={decodeURIComponent(v ?? "")} />;
-              })}
-            {selectedId && <input type="hidden" name="selected" value={selectedId} />}
-            <div className="relative min-w-0 flex-1">
-              <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
-              <input
-                type="search"
-                name="q"
-                defaultValue={q ?? ""}
-                placeholder="ค้นหา ผู้ขาย / เลขที่"
-                className="h-9 w-full rounded-lg border border-zinc-200 bg-white pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]"
-              />
-            </div>
-            <button
-              type="submit"
-              aria-label="ค้นหา"
-              className="grid size-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-white hover:bg-zinc-800"
-            >
-              <Search className="size-4" aria-hidden />
-            </button>
-          </form>
-          <select
-            aria-label="เรียงลำดับ"
-            value={sort ?? "date-desc"}
-            onChange={(e) => setParam("sort", e.target.value === "date-desc" ? "" : e.target.value)}
-            className="h-9 shrink-0 rounded-lg border border-zinc-200 bg-white px-2 text-sm text-zinc-700 outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]"
+        {/* LeanUX (CEO 2026-06-08 "filter ควร ~10% ของจอ"): แท็บสถานะ (เลื่อนแนวนอน) +
+            ปุ่ม "ตัวกรอง" อยู่แถวเดียว. ค้นหา=ข้างหัว(header) · เรียงลำดับ+source/VAT/หมวด=ในตัวกรอง. */}
+        <div className="flex items-center gap-2">
+          <div
+            className="-mx-1 flex flex-1 gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            role="tablist"
+            aria-label="กรองตามสถานะ"
           >
-            <option value="date-desc">ใหม่ → เก่า</option>
-            <option value="date-asc">เก่า → ใหม่</option>
-            <option value="amount-desc">ยอดมาก → น้อย</option>
-            <option value="amount-asc">ยอดน้อย → มาก</option>
-          </select>
-          <FilterSheet
-            status={status}
-            tr={tr}
-            cc={cc}
-            categoryId={categoryId}
-            categories={categories}
-            tab={tab}
-            onSet={setParam}
-            onClear={clearFilters}
-            extraActions={listActions}
-            scopePicker={scopePicker}
-          />
+            {PRIMARY_TABS.map((t) => {
+              const active = activePrimary === t.id;
+              const count = statusCounts[t.id];
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setPrimaryTab(t.id)}
+                  className={
+                    "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-300)] " +
+                    (active
+                      ? "bg-[var(--color-brand-600)] text-white"
+                      : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200")
+                  }
+                >
+                  {t.label}
+                  {count > 0 && (
+                    <span
+                      className={
+                        "inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums " +
+                        (active ? "bg-white/25 text-white" : "bg-white text-zinc-500")
+                      }
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <div className="shrink-0">
+            <FilterSheet
+              status={status}
+              tr={tr}
+              cc={cc}
+              categoryId={categoryId}
+              categories={categories}
+              tab={tab}
+              sort={sort}
+              onSet={setParam}
+              onClear={clearFilters}
+              extraActions={listActions}
+              scopePicker={scopePicker}
+            />
+          </div>
         </div>
 
         {/* Context-aware bulk bar — appears when there are actionable rows */}
