@@ -23,6 +23,7 @@ import { NoReceiptButton } from "./_components/NoReceiptButton";
 import { ExportButton } from "./_components/ExportButton";
 import { ledgerQuotationV1, ledgerSlipV1, ledgerPayreqV1, ledgerStockinV1 } from "@/lib/ledger/flags";
 import { StockInButton } from "@/components/ledger/StockInButton";
+import { expenseConfirmability } from "@/lib/ledger/confirmability";
 import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +50,7 @@ export default async function ExpensesPage({
     tab?: string; // source tab: "all" | "line" | "web" | "mine"
     sort?: string; // เรียงลำดับ: date-desc(ค่าเริ่มต้น) | date-asc | amount-desc | amount-asc
     nr?: string; // needsReview split: "1"=รอตรวจ · "0"=รอยืนยัน (ใช้กับ status=draft)
+    pay?: string; // payment tab: "eligible"=ขอโอนได้ · "requested"=รอโอน · "paid"=โอนแล้ว
   }>;
 }) {
   // Page-level role gate. This review workspace exposes the FULL company-wide
@@ -108,6 +110,9 @@ export default async function ExpensesPage({
       : undefined;
   // รอตรวจ vs รอยืนยัน split (both are draft) — only meaningful when status=draft.
   const nr = sp.nr === "1" ? true : sp.nr === "0" ? false : undefined;
+  // สถานะการโอน (?pay=) — eligible=ขอโอนได้ · requested=รอโอน(มีคำขอเปิด) · paid=โอนแล้ว.
+  const pay =
+    sp.pay === "eligible" || sp.pay === "requested" || sp.pay === "paid" ? sp.pay : undefined;
 
   // ภาษีซื้อ summary uses the SAME scope (+ status/category/tr/search) so the strip
   // counts match the list — but NOT the cc filter itself (the strip shows the full mix).
@@ -136,6 +141,7 @@ export default async function ExpensesPage({
       sort,
       needsReview: nr,
       take: 300,
+      withPayState: ledgerPayreqV1(),
     }),
     listCategories(scope.orgId, scope.companyId),
     summarizeCompleteness(summaryFilter),
@@ -151,7 +157,23 @@ export default async function ExpensesPage({
     if (tab === "mine") return r.createdBy === session.user.id;
     return true; // "all"
   };
-  const rows = allRows.filter(matchesTab);
+
+  // สถานะการโอนต่อใบ (payState จาก query + gate หมวด/สาขา): eligible=ขอโอนได้(เขียว) ·
+  // blocked=ขอไม่ได้(แดง · ขาดสาขา/หมวด) · requested=รอโอน · paid=โอนแล้ว.
+  const payOf = (r: (typeof allRows)[number]): "paid" | "requested" | "eligible" | "blocked" => {
+    if (r.payState === "paid") return "paid";
+    if (r.payState === "requested") return "requested";
+    return expenseConfirmability({ branchId: r.branchId, categoryId: r.categoryId }).ok
+      ? "eligible"
+      : "blocked";
+  };
+  const tabRows = allRows.filter(matchesTab);
+  const rows = pay ? tabRows.filter((r) => payOf(r) === pay) : tabRows;
+  const payCounts = { eligible: 0, requested: 0, paid: 0 };
+  for (const r of tabRows) {
+    const p = payOf(r);
+    if (p !== "blocked") payCounts[p] += 1;
+  }
 
   // PRIMARY status-strip counts — DB-accurate (NOT the 300-capped list). Scope =
   // company + branch + the active source(tab)/หมวด/ภาษีซื้อ/ค้นหา filters, MINUS the
@@ -197,6 +219,11 @@ export default async function ExpensesPage({
     draft: scDraft,
     confirmed: scConfirmed,
     sent: scSent,
+    // pay-tab counts from the 300-window (payState lives on the fetched rows, not a
+    // cheap DB count — acceptable like the source tabs; capped at the list window).
+    eligible: payCounts.eligible,
+    requested: payCounts.requested,
+    paid: payCounts.paid,
   };
 
   const selectedExpense = selected
@@ -256,6 +283,7 @@ export default async function ExpensesPage({
   if (tab !== "all") baseParams.set("tab", tab);
   if (sort) baseParams.set("sort", sort);
   if (nr !== undefined) baseParams.set("nr", nr ? "1" : "0");
+  if (pay) baseParams.set("pay", pay);
 
   // ลิงก์สลับแท็บ "รอใบกำกับ" — คงพารามิเตอร์ scope เดิมไว้ (company/branch) เท่านั้น.
   const quotationOnParams = new URLSearchParams();
@@ -375,6 +403,7 @@ export default async function ExpensesPage({
           tab={tab}
           sort={sort}
           nr={nr}
+          pay={pay}
           statusCounts={statusCounts}
           scopePicker={
             <CompanyBranchPicker

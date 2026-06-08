@@ -47,11 +47,17 @@ import type { ExpenseRow, LedgerStatusValue } from "@/components/ledger/_kit/typ
 // the rest drive ?status=. Source (LINE/email/…) moved into the ตัวกรอง popover.
 // 5 tabs matching the design (รอตรวจ = draft AI ยังไม่ชัวร์/needsReview · รอยืนยัน =
 // draft ตรวจแล้วรอบัญชียืนยัน · ยืนยันแล้ว = confirmed · ส่ง TRCloud = tr=sent · ทั้งหมด).
-const PRIMARY_TABS: Array<{ id: "review" | "draft" | "confirmed" | "sent" | "all"; label: string }> = [
+// CEO 2026-06-08: status set = รอตรวจ/รอยืนยัน/ยืนยันแล้ว/ขอโอน/รอโอน/โอนแล้ว/ทั้งหมด.
+// pay tabs (eligible/requested/paid) แสดงเมื่อ payreqEnabled · "ส่ง TRCloud" ย้ายเข้าตัวกรอง (tr).
+type PrimaryTabId =
+  | "review" | "draft" | "confirmed" | "eligible" | "requested" | "paid" | "all";
+const PRIMARY_TABS: Array<{ id: PrimaryTabId; label: string; pay?: boolean }> = [
   { id: "review", label: "รอตรวจ" },
   { id: "draft", label: "รอยืนยัน" },
   { id: "confirmed", label: "ยืนยันแล้ว" },
-  { id: "sent", label: "ส่ง TRCloud" },
+  { id: "eligible", label: "ขอโอน", pay: true },
+  { id: "requested", label: "รอโอน", pay: true },
+  { id: "paid", label: "โอนแล้ว", pay: true },
   { id: "all", label: "ทั้งหมด" },
 ];
 
@@ -82,6 +88,7 @@ export function ExpenseList({
   tab,
   sort,
   nr,
+  pay,
   statusCounts,
   listActions,
   scopePicker,
@@ -111,8 +118,13 @@ export function ExpenseList({
   sort?: "date-asc" | "amount-desc" | "amount-asc" | "created-desc";
   /** needsReview filter (?nr=) — true=รอตรวจ · false=รอยืนยัน · undefined=ไม่กรอง. */
   nr?: boolean;
-  /** DB-accurate counts for the 5 PRIMARY tabs (รอตรวจ/รอยืนยัน/ยืนยันแล้ว/ส่ง/ทั้งหมด). */
-  statusCounts: { all: number; review: number; draft: number; confirmed: number; sent: number };
+  /** payment-flow tab (?pay=) — eligible=ขอโอนได้ · requested=รอโอน · paid=โอนแล้ว. */
+  pay?: "eligible" | "requested" | "paid";
+  /** Counts for the PRIMARY tabs. status counts = DB; pay counts = list-window. */
+  statusCounts: {
+    all: number; review: number; draft: number; confirmed: number; sent: number;
+    eligible: number; requested: number; paid: number;
+  };
   /** Shortcut actions (ไม่มีใบเสร็จ · สลิปรอจับคู่) — rendered inside the mobile
    *  ตัวกรอง sheet so they're off the page header. */
   listActions?: React.ReactNode;
@@ -199,23 +211,28 @@ export function ExpenseList({
   // PRIMARY status strip — sets status/tr/nr atomically (selecting one clears others)
   // so the 5 segmented tabs behave like a single tab group. รอตรวจ/รอยืนยัน both =
   // draft, split by needsReview (?nr=1 / ?nr=0).
-  const activePrimary: "review" | "draft" | "confirmed" | "sent" | "all" | null =
-    tr === "sent"
-      ? "sent"
-      : status === "confirmed"
-        ? "confirmed"
-        : status === "draft" && nr === true
-          ? "review"
-          : status === "draft" && nr === false
-            ? "draft"
-            : !status && !tr
-              ? "all"
-              : null; // locked/void via the ตัวกรอง popover → no primary highlight
-  function setPrimaryTab(id: "review" | "draft" | "confirmed" | "sent" | "all") {
+  const activePrimary: PrimaryTabId | null =
+    pay === "eligible"
+      ? "eligible"
+      : pay === "requested"
+        ? "requested"
+        : pay === "paid"
+          ? "paid"
+          : status === "confirmed"
+            ? "confirmed"
+            : status === "draft" && nr === true
+              ? "review"
+              : status === "draft" && nr === false
+                ? "draft"
+                : !status && !tr && !pay
+                  ? "all"
+                  : null; // locked/void/tr=sent via the ตัวกรอง popover → no primary highlight
+  function setPrimaryTab(id: PrimaryTabId) {
     const sp = new URLSearchParams(baseParams);
     sp.delete("status");
     sp.delete("tr");
     sp.delete("nr");
+    sp.delete("pay");
     if (id === "review") {
       sp.set("status", "draft");
       sp.set("nr", "1");
@@ -224,8 +241,8 @@ export function ExpenseList({
       sp.set("nr", "0");
     } else if (id === "confirmed") {
       sp.set("status", "confirmed");
-    } else if (id === "sent") {
-      sp.set("tr", "sent");
+    } else if (id === "eligible" || id === "requested" || id === "paid") {
+      sp.set("pay", id);
     }
     if (selectedId) sp.set("selected", selectedId);
     router.push(`${pathname}?${sp.toString()}`);
@@ -423,7 +440,7 @@ export function ExpenseList({
             role="tablist"
             aria-label="กรองตามสถานะ"
           >
-            {PRIMARY_TABS.map((t) => {
+            {PRIMARY_TABS.filter((t) => payreqEnabled || !t.pay).map((t) => {
               const active = activePrimary === t.id;
               const count = statusCounts[t.id];
               return (
@@ -962,13 +979,19 @@ export function ExpenseList({
                         (เปิด dialog ตั้งสาขา/หมวด เฉพาะใบนี้) สำหรับคนที่มีสิทธิ์แก้ —
                         usability win ตามดีไซน์ (chip ที่กดได้ ไม่ใช่แค่ป้ายเตือน). */}
                     {!gate.ok &&
+                      r.payState == null &&
                       (() => {
-                        const label =
+                        const fix =
                           gate.missing.includes("branch") && gate.missing.includes("category")
                             ? "ตั้งสาขา/หมวด"
                             : gate.missing.includes("branch")
                               ? "ตั้งสาขา"
                               : "ตั้งหมวด";
+                        // payreq ON → ป้ายแดง "ขอโอนไม่ได้" (CEO: ขอไม่ได้=แดง) ที่กดแล้วไปตั้งให้ครบ.
+                        const label = payreqEnabled ? `ขอโอนไม่ได้ · ${fix}` : fix;
+                        const tone = payreqEnabled
+                          ? "bg-rose-100 text-rose-700 hover:bg-rose-200"
+                          : "bg-amber-100 text-amber-800 hover:bg-amber-200";
                         return selectable ? (
                           <button
                             type="button"
@@ -978,13 +1001,21 @@ export function ExpenseList({
                               setClassify({ branchId: "", categoryId: "" });
                               setClassifyOpen(true);
                             }}
-                            className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 transition hover:bg-amber-200 active:scale-95"
+                            className={
+                              "ml-auto inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-bold transition active:scale-95 " +
+                              tone
+                            }
                           >
                             <AlertTriangle className="size-3" />
                             {label} →
                           </button>
                         ) : (
-                          <span className="inline-flex items-center gap-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                          <span
+                            className={
+                              "ml-auto inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-bold " +
+                              (payreqEnabled ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-800")
+                            }
+                          >
                             <AlertTriangle className="size-3" />
                             {label}
                           </span>
@@ -1011,18 +1042,27 @@ export function ExpenseList({
                       </Link>
                     )}
 
-                    {/* Per-row ขอโอน — appears on hover (desktop); mobile uses the
-                        detail-pane button. Only when classifiable (gate.ok). */}
-                    {payreqEnabled && gate.ok && (
-                      <button
-                        type="button"
-                        onClick={() => openPayeeForRow(r)}
-                        title="ขอโอนเงินใบนี้"
-                        className="ml-auto hidden h-6 shrink-0 items-center gap-1 rounded-md border border-[var(--color-brand-200)] bg-[var(--color-brand-50)] px-1.5 text-[10px] font-semibold text-[var(--color-brand-700)] hover:bg-[var(--color-brand-100)] group-hover:inline-flex"
-                      >
-                        <Banknote className="size-3" /> ขอโอน
-                      </button>
-                    )}
+                    {/* สถานะการโอนต่อใบ (CEO 2026-06-08): โอนแล้ว(เขียวเข้ม) · รอโอน(ฟ้า) ·
+                        ขอโอน(เขียว=ขอได้ กดเพื่อขอ) · ขอไม่ได้(แดง=ขาดสาขา/หมวด → ป้าย classify). */}
+                    {payreqEnabled &&
+                      (r.payState === "paid" ? (
+                        <span className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-emerald-100 px-1.5 text-[10px] font-bold text-emerald-700">
+                          <CheckCircle2 className="size-3" /> โอนแล้ว
+                        </span>
+                      ) : r.payState === "requested" ? (
+                        <span className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-blue-100 px-1.5 text-[10px] font-bold text-blue-700">
+                          <Banknote className="size-3" /> รอโอน
+                        </span>
+                      ) : gate.ok ? (
+                        <button
+                          type="button"
+                          onClick={() => openPayeeForRow(r)}
+                          title="ขอโอนเงินใบนี้"
+                          className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-1.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
+                        >
+                          <Banknote className="size-3" /> ขอโอน
+                        </button>
+                      ) : null)}
                   </div>
                 </div>
               </li>

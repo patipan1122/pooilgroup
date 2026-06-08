@@ -83,6 +83,10 @@ export interface Expense {
   vendorBranchCode: string | null;
   discount: number;
   paymentStatus: PaymentStatus;
+  /** Payment-flow state for the list chip (LEDGER_PAYREQ_V1, derived in
+   *  listExpensesSummary): "requested"=มีคำขอโอนเปิดอยู่(รอโอน) · "paid"=โอนแล้ว ·
+   *  null/undefined=ยังไม่ขอโอน (chip = ขอโอน ได้/ไม่ได้ ตาม gate). */
+  payState?: "requested" | "paid" | null;
   claimantName: string | null;
   bankDetail: string | null;
   isRecurring: boolean;

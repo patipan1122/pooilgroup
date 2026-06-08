@@ -170,6 +170,9 @@ export interface ExpenseListFilter {
   /** Sort order for the list pane (redesign 2026-06-07). Default = date-desc.
    *  created-desc = เรียงตามวันที่บันทึกเข้าระบบ (วันอัพ) · date-* = วันที่บนเอกสาร. */
   sort?: "date-desc" | "date-asc" | "amount-desc" | "amount-asc" | "created-desc";
+  /** Derive per-row payment-flow state (ขอโอน/รอโอน/โอนแล้ว) — 3 batched queries over
+   *  the page's expense ids. Set by the page only when LEDGER_PAYREQ_V1 is on. */
+  withPayState?: boolean;
 }
 
 /** Map a color filter token → the completeness_status column value. */
@@ -452,10 +455,45 @@ export async function listExpensesSummary(f: ExpenseListFilter): Promise<Expense
     skip: f.cursor ? 0 : (f.skip ?? 0),
   });
   const hasMore = rows.length > limit;
-  return {
-    expenses: rows.slice(0, limit).map(serializeExpenseSummary),
-    hasMore,
-  };
+  const page = rows.slice(0, limit);
+  let expenses = page.map(serializeExpenseSummary);
+
+  // Payment-flow state per row (LEDGER_PAYREQ_V1) — ขอโอน/รอโอน/โอนแล้ว without N+1:
+  // 3 batched companyId-scoped queries over the page ids (active=true ⇒ ≤1 request/bill
+  // by the partial-unique guard; paid = closed request OR a direct slip match).
+  if (f.withPayState && page.length > 0) {
+    const ids = page.map((r) => r.id);
+    const [activeBills, paidBills, directPaid] = await Promise.all([
+      prisma.ledgerPaymentRequestBill.findMany({
+        where: { orgId: f.orgId, companyId: f.companyId, expenseId: { in: ids }, active: true },
+        select: { expenseId: true },
+      }),
+      prisma.ledgerPaymentRequestBill.findMany({
+        where: {
+          orgId: f.orgId,
+          companyId: f.companyId,
+          expenseId: { in: ids },
+          request: { state: "paid" },
+        },
+        select: { expenseId: true },
+      }),
+      prisma.ledgerPayment.findMany({
+        where: { orgId: f.orgId, companyId: f.companyId, matchedExpenseId: { in: ids } },
+        select: { matchedExpenseId: true },
+      }),
+    ]);
+    const paidSet = new Set<string>([
+      ...paidBills.map((b) => b.expenseId),
+      ...directPaid.map((p) => p.matchedExpenseId).filter((x): x is string => !!x),
+    ]);
+    const requestedSet = new Set(activeBills.map((b) => b.expenseId));
+    expenses = expenses.map((r) => ({
+      ...r,
+      payState: paidSet.has(r.id) ? "paid" : requestedSet.has(r.id) ? "requested" : null,
+    }));
+  }
+
+  return { expenses, hasMore };
 }
 
 /** Single expense — org+company scoped (returns null if not in tenant). */
