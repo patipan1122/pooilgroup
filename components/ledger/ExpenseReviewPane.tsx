@@ -545,6 +545,9 @@ export function ExpenseReviewPane({
 
   const [delConfirm, setDelConfirm] = useState(false); // 2-step self-delete กันกดพลาด
   const [delPending, setDelPending] = useState(false);
+  // "ขอลบ" แบบ inline (เลิกใช้ prompt() — มันล้มเงียบใน LINE webview).
+  const [reqDelOpen, setReqDelOpen] = useState(false);
+  const [reqDelReason, setReqDelReason] = useState("");
 
   function handleSelfDelete() {
     if (!onSelfDelete) return;
@@ -567,14 +570,16 @@ export function ExpenseReviewPane({
     });
   }
 
-  function handleRequestDelete() {
+  function doRequestDelete() {
     if (!onRequestDelete) return;
-    const reason = prompt("เหตุผลที่ขอลบ (ไม่ใส่ก็ได้):") ?? undefined;
+    const reason = reqDelReason.trim() || undefined;
+    setReqDelOpen(false);
     setDelPending(true);
     setMsg(null);
     startTransition(async () => {
       const res = await onRequestDelete(expense.id, reason);
       setDelPending(false);
+      setReqDelReason("");
       // requestDeleteExpense ตอบ ok:true เสมอ — .error เป็น hint (ยังไม่เชื่อม LINE).
       setMsg(
         res.error
@@ -1489,8 +1494,11 @@ export function ExpenseReviewPane({
               <Button
                 variant="ghost"
                 disabled={pending || delPending}
-                onClick={handleRequestDelete}
-                className="ml-auto text-rose-600 hover:bg-rose-50"
+                onClick={() => setReqDelOpen((v) => !v)}
+                className={cn(
+                  "ml-auto hover:bg-rose-50",
+                  reqDelOpen ? "bg-rose-50 text-rose-700" : "text-rose-600",
+                )}
                 title="ส่งคำขอให้บัญชีลบให้ (เกิน 5 นาที / ไม่ใช่ของคุณ / ยืนยันแล้ว)"
               >
                 {delPending ? (
@@ -1514,6 +1522,45 @@ export function ExpenseReviewPane({
               )
             )}
           </div>
+
+          {/* "ขอลบ" inline — กรอกเหตุผล (ไม่บังคับ) แล้วยืนยัน. แทน prompt() ที่ล้มใน LINE */}
+          {reqDelOpen && onRequestDelete && (
+            <div className="mt-2 rounded-xl border border-rose-200 bg-rose-50/60 p-3">
+              <label className="mb-1 block text-xs font-medium text-rose-700">
+                เหตุผลที่ขอลบ (ไม่ใส่ก็ได้)
+              </label>
+              <textarea
+                value={reqDelReason}
+                onChange={(e) => setReqDelReason(e.target.value)}
+                rows={2}
+                placeholder="เช่น คีย์ซ้ำ / ใบผิด"
+                className="w-full rounded-lg border border-rose-200 bg-white px-2 py-1.5 text-base outline-none focus:ring-2 focus:ring-rose-200 sm:text-sm"
+              />
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={doRequestDelete}
+                  disabled={delPending}
+                  className="inline-flex h-9 items-center gap-1 rounded-lg bg-rose-600 px-3 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+                >
+                  {delPending ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                  ) : (
+                    <Trash2 className="size-4" aria-hidden />
+                  )}
+                  ยืนยันขอลบ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReqDelOpen(false)}
+                  disabled={delPending}
+                  className="inline-flex h-9 items-center rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+                >
+                  ไม่
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ถ้ามีปุ่มลบใหม่ + ผู้ใช้เป็นบัญชี → ยังให้ "ยกเลิก" แยกไว้ (void ของบัญชี). */}
           {(onSelfDelete || onRequestDelete) && canConfirm && (

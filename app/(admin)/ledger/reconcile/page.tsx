@@ -10,7 +10,7 @@ import { ledgerWebCanForRole } from "@/lib/ledger/liff-auth";
 import { ledgerPayreqV1 } from "@/lib/ledger/flags";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
-import { listReconcile } from "@/lib/ledger/payment-request-queries";
+import { listReconcile, listReconcileVendors } from "@/lib/ledger/payment-request-queries";
 import { ReconcileBoard } from "./_components/ReconcileBoard";
 import { ReconcileFilterBar } from "./_components/ReconcileFilterBar";
 import { ReconcileExportButton } from "./_components/ReconcileExportButton";
@@ -58,15 +58,21 @@ export default async function ReconcilePage({
   }
 
   const month = typeof sp.month === "string" ? sp.month : "";
-  const vendor = typeof sp.vendor === "string" ? sp.vendor : "";
+  // ?vendor= รองรับหลายชื่อ คั่นด้วย comma (multi-select tick filter).
+  const vendorParam = typeof sp.vendor === "string" ? sp.vendor : "";
+  const vendors = vendorParam
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
 
-  const [data, canMatch] = await Promise.all([
+  const [data, canMatch, vendorOptions] = await Promise.all([
     listReconcile(scope.orgId, scope.companyId, {
       branchId: scope.branchId,
       month: month || null,
-      vendor: vendor || null,
+      vendors: vendors.length ? vendors : null,
     }),
     ledgerWebCanForRole(scope.orgId, session.user.role, "expense.confirm"),
+    listReconcileVendors(scope.orgId, scope.companyId, scope.branchId),
   ]);
 
   const totalCount =
@@ -86,7 +92,7 @@ export default async function ReconcilePage({
             companyId={scope.companyId}
             branchId={scope.branchId ?? ""}
             month={month}
-            vendor={vendor}
+            vendors={vendors}
           />
         }
       />
@@ -95,7 +101,8 @@ export default async function ReconcilePage({
         branches={scope.branches.map((b) => ({ id: b.id, code: b.code, name: b.name }))}
         branchId={scope.branchId ?? ""}
         month={month}
-        vendor={vendor}
+        vendorOptions={vendorOptions}
+        selectedVendors={vendors}
       />
 
       <ReconcileBoard

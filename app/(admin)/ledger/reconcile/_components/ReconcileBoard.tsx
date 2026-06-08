@@ -452,6 +452,16 @@ export function ReconcileBoard({
     [diffRows],
   );
 
+  // เรียงลำดับ (client-side; default = ลำดับจาก server = ล่าสุด).
+  const [sort, setSort] = useState<"recent" | "amount-desc" | "amount-asc">("recent");
+  const applySort = (rows: ReconcileRequestRow[]) => {
+    if (sort === "amount-desc")
+      return [...rows].sort((a, b) => b.expectedTransfer - a.expectedTransfer);
+    if (sort === "amount-asc")
+      return [...rows].sort((a, b) => a.expectedTransfer - b.expectedTransfer);
+    return rows;
+  };
+
   return (
     <div>
       {/* KPI cards — 4 buckets (count + total), click to filter. The cards ARE the
@@ -523,14 +533,34 @@ export function ReconcileBoard({
         })()}
       </div>
 
+      {tab !== "abnormal" && (
+        <div className="mb-3 flex items-center justify-end gap-2">
+          <label htmlFor="reconcile-sort" className="text-xs text-zinc-500">
+            เรียง
+          </label>
+          <select
+            id="reconcile-sort"
+            value={sort}
+            onChange={(e) =>
+              setSort(e.target.value as "recent" | "amount-desc" | "amount-asc")
+            }
+            className="h-8 rounded-lg border border-zinc-200 bg-white px-2 text-xs outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]"
+          >
+            <option value="recent">ล่าสุด</option>
+            <option value="amount-desc">ยอดมาก → น้อย</option>
+            <option value="amount-asc">ยอดน้อย → มาก</option>
+          </select>
+        </div>
+      )}
+
       {tab === "awaiting" && (
-        <RequestList rows={awaiting} canCancel={canMatch} emptyHint="ไม่มีคำขอที่รอโอน — เคลียร์หมดแล้ว 🎉" />
+        <RequestList rows={applySort(awaiting)} canCancel={canMatch} emptyHint="ไม่มีคำขอที่รอโอน — เคลียร์หมดแล้ว 🎉" />
       )}
       {tab === "partial" && (
-        <RequestList rows={partial} canCancel={canMatch} emptyHint="ไม่มีคำขอที่จ่ายบางส่วน" />
+        <RequestList rows={applySort(partial)} canCancel={canMatch} emptyHint="ไม่มีคำขอที่จ่ายบางส่วน" />
       )}
       {tab === "paid" && (
-        <RequestList rows={paid} canCancel={canMatch} emptyHint="ยังไม่มีคำขอที่จ่ายแล้วใน 90 วันล่าสุด" />
+        <RequestList rows={applySort(paid)} canCancel={canMatch} emptyHint="ยังไม่มีคำขอที่จ่ายแล้วใน 90 วันล่าสุด" />
       )}
       {tab === "abnormal" && (
         <div className="space-y-4">
@@ -572,7 +602,7 @@ export function ReconcileBoard({
             </p>
           )}
           <RequestList
-            rows={diffRows}
+            rows={applySort(diffRows)}
             canCancel={canMatch}
             emptyHint="ไม่มีใบที่โอนเกิน/ขาด — ทุกใบที่จ่ายแล้วยอดตรงพอดี 🎉"
           />

@@ -35,6 +35,7 @@ export interface ExportReconcileInput {
   branchId?: string | null;
   month?: string | null;
   vendor?: string | null;
+  vendors?: string[] | null;
 }
 
 /** Thai labels for the request state — same wording as the on-page pills. */
@@ -110,6 +111,7 @@ export async function exportReconcileCsv(
     branchId: input.branchId ?? null,
     month: input.month ?? null,
     vendor: input.vendor ?? null,
+    vendors: input.vendors ?? null,
   };
   const data = await listReconcile(orgId, input.companyId, filters);
 

@@ -107,7 +107,7 @@ export function BranchPicker({
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         className={
-          "h-11 w-full rounded-lg border border-zinc-200 px-2 text-sm focus:border-[var(--color-brand-400)] focus:outline-none disabled:opacity-50 " +
+          "h-11 w-full rounded-lg border border-zinc-200 px-2 text-base focus:border-[var(--color-brand-400)] focus:outline-none disabled:opacity-50 sm:text-sm " +
           className
         }
       >
@@ -163,7 +163,7 @@ export function BranchPicker({
           value={search}
           onChange={(e) => { setSearch(e.target.value); setActiveType(""); }}
           placeholder="ค้นหาสาขา..."
-          className="h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-8 text-xs outline-none focus:bg-white focus:ring-2 focus:ring-[var(--color-brand-200)]"
+          className="h-11 w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-8 text-base outline-none focus:bg-white focus:ring-2 focus:ring-[var(--color-brand-200)] sm:h-9 sm:text-sm"
         />
         {search && (
           <button
@@ -197,7 +197,7 @@ export function BranchPicker({
           value={value}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
-          className="h-11 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm focus:border-[var(--color-brand-400)] focus:outline-none"
+          className="h-11 w-full rounded-lg border border-zinc-200 bg-white px-2 text-base focus:border-[var(--color-brand-400)] focus:outline-none sm:text-sm"
         >
           <option value="">{placeholder}</option>
           {filtered.map((b) => (

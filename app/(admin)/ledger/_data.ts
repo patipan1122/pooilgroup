@@ -50,25 +50,42 @@ export const expenseSummary = cache(
         lt: new Date(Date.UTC(y, m, 1)),
       };
     }
-    const [draftCount, confirmedAgg, postedAgg, totalCount] = await Promise.all([
-      prisma.ledgerExpense.count({ where: { ...base, status: "draft" } }),
-      prisma.ledgerExpense.aggregate({
-        where: { ...base, status: "confirmed" },
-        _sum: { total: true },
-        _count: true,
-      }),
-      prisma.ledgerExpense.aggregate({
-        where: { ...base, status: { in: ["confirmed", "locked"] } },
-        _sum: { total: true },
-      }),
-      prisma.ledgerExpense.count({ where: base }),
-    ]);
+    const [draftCount, confirmedAgg, postedAgg, totalCount, vatClaimAgg, whtAgg] =
+      await Promise.all([
+        prisma.ledgerExpense.count({ where: { ...base, status: "draft" } }),
+        prisma.ledgerExpense.aggregate({
+          where: { ...base, status: "confirmed" },
+          _sum: { total: true },
+          _count: true,
+        }),
+        prisma.ledgerExpense.aggregate({
+          where: { ...base, status: { in: ["confirmed", "locked"] } },
+          _sum: { total: true },
+        }),
+        prisma.ledgerExpense.count({ where: base }),
+        // VAT ที่ "ขอคืนได้" (ภาษีซื้อ claimable=true) ของบิลที่ยืนยันแล้ว — งานภาษีรายเดือน
+        prisma.ledgerExpense.aggregate({
+          where: {
+            ...base,
+            status: { in: ["confirmed", "locked"] },
+            inputVatClaimable: true,
+          },
+          _sum: { vat: true },
+        }),
+        // หัก ณ ที่จ่าย (WHT) รวมของบิลที่ยืนยันแล้ว
+        prisma.ledgerExpense.aggregate({
+          where: { ...base, status: { in: ["confirmed", "locked"] } },
+          _sum: { wht: true },
+        }),
+      ]);
     return {
       draftCount,
       confirmedCount: confirmedAgg._count,
       confirmedTotal: dec(confirmedAgg._sum.total),
       postedTotal: dec(postedAgg._sum.total),
       totalCount,
+      vatClaimable: dec(vatClaimAgg._sum.vat),
+      whtTotal: dec(whtAgg._sum.wht),
     };
   },
 );

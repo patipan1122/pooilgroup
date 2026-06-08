@@ -90,8 +90,10 @@ export interface ReconcileFilters {
   branchId?: string | null;
   /** YYYY-MM — filter on the request's requestedAt month (Asia/Bangkok-naive UTC range). */
   month?: string | null;
-  /** case-insensitive substring on vendor. */
+  /** case-insensitive substring on vendor (single free-text search). */
   vendor?: string | null;
+  /** exact-match a set of vendors (multi-select tick filter); takes precedence over `vendor`. */
+  vendors?: string[] | null;
 }
 
 /** Build a Prisma where-clause fragment for the optional filters. Always merged
@@ -99,11 +101,14 @@ export interface ReconcileFilters {
 function buildFilterWhere(filters?: ReconcileFilters) {
   const where: {
     branchId?: string;
-    vendor?: { contains: string; mode: "insensitive" };
+    vendor?: { contains: string; mode: "insensitive" } | { in: string[] };
     requestedAt?: { gte: Date; lt: Date };
   } = {};
   if (filters?.branchId) where.branchId = filters.branchId;
-  if (filters?.vendor && filters.vendor.trim()) {
+  const picked = (filters?.vendors ?? []).map((v) => v.trim()).filter(Boolean);
+  if (picked.length > 0) {
+    where.vendor = { in: picked };
+  } else if (filters?.vendor && filters.vendor.trim()) {
     where.vendor = { contains: filters.vendor.trim(), mode: "insensitive" };
   }
   if (filters?.month && /^\d{4}-\d{2}$/.test(filters.month)) {
@@ -115,6 +120,30 @@ function buildFilterWhere(filters?: ReconcileFilters) {
     where.requestedAt = { gte, lt };
   }
   return where;
+}
+
+/** Distinct vendor names that appear on this company's payment requests — for the
+ *  multi-select tick filter. Scoped by orgId+companyId (+ optional branch). */
+export async function listReconcileVendors(
+  orgId: string,
+  companyId: string,
+  branchId?: string | null,
+): Promise<string[]> {
+  const rows = await prisma.ledgerPaymentRequest.findMany({
+    where: {
+      orgId,
+      companyId,
+      ...(branchId ? { branchId } : {}),
+      vendor: { not: null },
+    },
+    select: { vendor: true },
+    distinct: ["vendor"],
+    orderBy: { vendor: "asc" },
+    take: 300,
+  });
+  return rows
+    .map((r) => r.vendor?.trim())
+    .filter((v): v is string => Boolean(v));
 }
 
 /** Map a Prisma request row (with bills relation) → the serialisable row shape.

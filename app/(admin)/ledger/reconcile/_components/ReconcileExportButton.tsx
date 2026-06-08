@@ -12,12 +12,12 @@ export function ReconcileExportButton({
   companyId,
   branchId,
   month,
-  vendor,
+  vendors,
 }: {
   companyId: string;
   branchId: string;
   month: string;
-  vendor: string;
+  vendors: string[];
 }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
@@ -29,7 +29,7 @@ export function ReconcileExportButton({
         companyId,
         branchId: branchId || null,
         month: month || null,
-        vendor: vendor || null,
+        vendors: vendors.length ? vendors : null,
       });
       if (!res.ok) {
         setErr(res.error);
