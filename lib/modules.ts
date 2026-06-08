@@ -878,12 +878,15 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     // "ใช้งานอยู่" บน Hub รวม. ก่อนหน้านี้เป็น "beta" จึงถูกตัวกรอง status==="active" กันออก.
     status: "active",
     basePath: "/ledger",
+    // Nav grouped into 4 job-based sections (CEO 2026-06-08 "จัดหมวดหมู่ให้ทีมใช้ง่าย").
+    // Mirrors the lean mobile LedgerBottomNav. `section` renders a header before its item.
     nav: [
+      // ── งานรายวัน ──
       {
         href: "/ledger",
         label: "หน้าหลัก",
         icon: LayoutDashboard,
-        section: "บัญชี",
+        section: "งานรายวัน",
       },
       {
         href: "/ledger/expenses",
@@ -894,16 +897,7 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         // staff/driver/branch_manager are excluded from this web review pane.
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
-      {
-        // "สมุดค่าใช้จ่าย" — retrospective spend-analytics (pivot สาขา×เดือน, ค้นราคา
-        // ล่าสุด, เซฟเล่ม). Desktop sidebar twin of the mobile LedgerBottomNav entry;
-        // without it the page was reachable only via the /ledger overview card on web.
-        // Same financial-view tier as รายจ่าย/Dashboard.
-        href: "/ledger/ledger-book",
-        label: "สมุดค่าใช้จ่าย",
-        icon: BookOpen,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
-      },
+      // ── การเงิน – จ่ายเงิน ──
       {
         href: "/ledger/reconcile",
         label: "กระทบยอดจ่าย",
@@ -912,6 +906,23 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         // financial-view tier (matches the page-level gate). When the flag is off the
         // page shows a friendly "ยังไม่เปิดใช้" message (not a dead route).
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+        section: "การเงิน – จ่ายเงิน",
+      },
+      // ── ภาพรวม & รายงาน ──
+      {
+        // "สมุดค่าใช้จ่าย" — retrospective spend-analytics (pivot สาขา×เดือน, ค้นราคา
+        // ล่าสุด, เซฟเล่ม).
+        href: "/ledger/ledger-book",
+        label: "สมุดค่าใช้จ่าย",
+        icon: BookOpen,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+        section: "ภาพรวม & รายงาน",
+      },
+      {
+        href: "/ledger/dashboard",
+        label: "Dashboard",
+        icon: BarChart3,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {
         href: "/ledger/budgets",
@@ -919,18 +930,13 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: Wallet2,
         roles: ["super_admin", "org_admin", "admin", "area_manager"],
       },
-      {
-        href: "/ledger/dashboard",
-        label: "Dashboard",
-        icon: BarChart3,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
-        section: "รายงาน",
-      },
+      // ── ตั้งค่า ──
       {
         href: "/ledger/settings",
         label: "ตั้งค่า",
         icon: Settings,
         adminOnly: true,
+        section: "ตั้งค่า",
       },
     ],
   },

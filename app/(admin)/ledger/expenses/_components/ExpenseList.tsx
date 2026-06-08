@@ -981,18 +981,38 @@ export function ExpenseList({
                       </span>
                     )}
 
-                    {/* D1 confirm-gate warning — สาขา/หมวด ยังไม่ครบ (รวมใบเก่าที่
-                        ยืนยันไว้ทั้งที่ยังว่าง → เห็นเพื่อตามแก้) */}
-                    {!gate.ok && (
-                      <span className="inline-flex items-center gap-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
-                        <AlertTriangle className="size-3" />
-                        {gate.missing.includes("branch") && gate.missing.includes("category")
-                          ? "ต้องระบุสาขา/หมวด"
-                          : gate.missing.includes("branch")
-                            ? "ต้องระบุสาขา"
-                            : "ต้องระบุหมวด"}
-                      </span>
-                    )}
+                    {/* D1 confirm-gate warning — สาขา/หมวด ยังไม่ครบ. ทำให้ "แตะแก้ได้เลย"
+                        (เปิด dialog ตั้งสาขา/หมวด เฉพาะใบนี้) สำหรับคนที่มีสิทธิ์แก้ —
+                        usability win ตามดีไซน์ (chip ที่กดได้ ไม่ใช่แค่ป้ายเตือน). */}
+                    {!gate.ok &&
+                      (() => {
+                        const label =
+                          gate.missing.includes("branch") && gate.missing.includes("category")
+                            ? "ตั้งสาขา/หมวด"
+                            : gate.missing.includes("branch")
+                              ? "ตั้งสาขา"
+                              : "ตั้งหมวด";
+                        return selectable ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMsg(null);
+                              setChecked(new Set([r.id]));
+                              setClassify({ branchId: "", categoryId: "" });
+                              setClassifyOpen(true);
+                            }}
+                            className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 transition hover:bg-amber-200 active:scale-95"
+                          >
+                            <AlertTriangle className="size-3" />
+                            {label} →
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center gap-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                            <AlertTriangle className="size-3" />
+                            {label}
+                          </span>
+                        );
+                      })()}
 
                     {/* Inline TRCloud error — visible always (not just hover) */}
                     {pushErr && r.trcloudError && (

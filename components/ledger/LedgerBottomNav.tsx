@@ -56,6 +56,8 @@ interface NavItem {
   exact?: boolean;
   /** Roles allowed to see this cell. Omit = everyone. */
   roles?: ReadonlyArray<Role>;
+  /** Section header inside the "เพิ่มเติม" sheet (grouped for easy scanning). */
+  group?: string;
 }
 
 // Role tiers — kept in sync with lib/modules.ts `ledger.nav` gates.
@@ -69,22 +71,21 @@ const FINANCIAL: ReadonlyArray<Role> = [
 const BUDGET: ReadonlyArray<Role> = ["super_admin", "org_admin", "admin", "area_manager"];
 const ADMIN: ReadonlyArray<Role> = ["super_admin", "org_admin", "admin"];
 
-// Two primary cells on each side of the center capture FAB.
+// LEAN bottom bar (CEO 2026-06-08): primary = ภาพรวม · รายการ · [ถ่าย] · ตั้งค่า ·
+// เพิ่มเติม. สมุด/งบ/กระทบยอด/Dashboard ย้ายลง "เพิ่มเติม" (จัดเป็นหมวดให้สแกนง่าย).
 const LEFT: ReadonlyArray<NavItem> = [
   { href: "/ledger", label: "ภาพรวม", icon: LayoutDashboard, match: "/ledger", exact: true, roles: FINANCIAL },
   { href: "/ledger/expenses", label: "รายการ", icon: Receipt, match: "/ledger/expenses", roles: FINANCIAL },
 ];
 const RIGHT: ReadonlyArray<NavItem> = [
-  // "สมุดค่าใช้จ่าย" promoted out of the overflow sheet to a primary cell — the
-  // CEO never found it buried in "เพิ่มเติม" (workshop 2026-06-07, discoverability P0).
-  { href: "/ledger/ledger-book", label: "สมุด", icon: BookOpen, match: "/ledger/ledger-book", roles: FINANCIAL },
-  { href: "/ledger/budgets", label: "งบ", icon: Wallet2, match: "/ledger/budgets", roles: BUDGET },
-];
-// "เพิ่มเติม" overflow sheet — flat, one level deep.
-const OVERFLOW: ReadonlyArray<NavItem> = [
-  { href: "/ledger/reconcile", label: "กระทบยอดจ่าย", icon: HandCoins, match: "/ledger/reconcile", roles: FINANCIAL },
-  { href: "/ledger/dashboard", label: "Dashboard", icon: BarChart3, match: "/ledger/dashboard", roles: FINANCIAL },
   { href: "/ledger/settings", label: "ตั้งค่า", icon: Settings, match: "/ledger/settings", roles: ADMIN },
+];
+// "เพิ่มเติม" overflow sheet — grouped by job for easy scanning.
+const OVERFLOW: ReadonlyArray<NavItem> = [
+  { href: "/ledger/ledger-book", label: "สมุดค่าใช้จ่าย", icon: BookOpen, match: "/ledger/ledger-book", roles: FINANCIAL, group: "ภาพรวม & รายงาน" },
+  { href: "/ledger/dashboard", label: "Dashboard", icon: BarChart3, match: "/ledger/dashboard", roles: FINANCIAL, group: "ภาพรวม & รายงาน" },
+  { href: "/ledger/budgets", label: "งบประมาณ", icon: Wallet2, match: "/ledger/budgets", roles: BUDGET, group: "ภาพรวม & รายงาน" },
+  { href: "/ledger/reconcile", label: "กระทบยอดจ่าย", icon: HandCoins, match: "/ledger/reconcile", roles: FINANCIAL, group: "การเงิน – จ่ายเงิน" },
 ];
 
 function visible(items: ReadonlyArray<NavItem>, role: Role): NavItem[] {
@@ -168,33 +169,42 @@ export function LedgerBottomNav({ role }: { role: Role }) {
                 <X className="size-5" aria-hidden />
               </button>
             </div>
-            <ul className="grid grid-cols-3 gap-2">
-              {overflow.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(pathname, item);
-                return (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      onClick={() => setSheetOpen(false)}
-                      aria-current={active ? "page" : undefined}
-                      className={cn(
-                        "flex min-h-[72px] flex-col items-center justify-center gap-1.5 rounded-xl border px-1 py-2 text-center text-[11px] font-medium transition-colors active:bg-zinc-100",
-                        active
-                          ? "border-[var(--color-brand-200)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)]"
-                          : "border-zinc-200 bg-white text-zinc-600",
-                      )}
-                    >
-                      <Icon
-                        className={cn("h-6 w-6", active ? "text-[var(--color-brand-600)]" : "text-zinc-500")}
-                        aria-hidden
-                      />
-                      <span className="leading-tight">{item.label}</span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="space-y-4">
+              {[...new Set(overflow.map((o) => o.group ?? "อื่น ๆ"))].map((g) => (
+                <div key={g}>
+                  <h3 className="mb-1.5 px-0.5 text-[11px] font-semibold text-zinc-400">{g}</h3>
+                  <ul className="grid grid-cols-3 gap-2">
+                    {overflow
+                      .filter((o) => (o.group ?? "อื่น ๆ") === g)
+                      .map((item) => {
+                        const Icon = item.icon;
+                        const active = isActive(pathname, item);
+                        return (
+                          <li key={item.href}>
+                            <Link
+                              href={item.href}
+                              onClick={() => setSheetOpen(false)}
+                              aria-current={active ? "page" : undefined}
+                              className={cn(
+                                "flex min-h-[72px] flex-col items-center justify-center gap-1.5 rounded-xl border px-1 py-2 text-center text-[11px] font-medium transition-colors active:bg-zinc-100",
+                                active
+                                  ? "border-[var(--color-brand-200)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)]"
+                                  : "border-zinc-200 bg-white text-zinc-600",
+                              )}
+                            >
+                              <Icon
+                                className={cn("h-6 w-6", active ? "text-[var(--color-brand-600)]" : "text-zinc-500")}
+                                aria-hidden
+                              />
+                              <span className="leading-tight">{item.label}</span>
+                            </Link>
+                          </li>
+                        );
+                      })}
+                  </ul>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
