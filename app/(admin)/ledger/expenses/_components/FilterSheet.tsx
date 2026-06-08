@@ -63,6 +63,9 @@ export interface FilterSheetProps {
   /** Shortcut actions (ไม่มีใบเสร็จ · สลิปรอจับคู่) shown at the top of the sheet —
    *  moved off the cramped page header (CEO 2026-06-06 "ยุบเข้าตัวกรอง"). */
   extraActions?: ReactNode;
+  /** LeanUX (CEO 2026-06-08): บริษัท/สาขา picker — folded into the sheet on mobile
+   *  (the header hides it on mobile). Rendered sm:hidden at the very top. */
+  scopePicker?: ReactNode;
 }
 
 /** How many filters are non-default (drives the "ตัวกรอง (n)" badge). Status is the
@@ -252,6 +255,14 @@ export function FilterSheet(props: FilterSheetProps) {
                 <X className="size-5" />
               </button>
             </div>
+            {/* บริษัท/สาขา — mobile only (header shows it on desktop). LeanUX: scope
+                lives in the filter, not as always-visible top rows. */}
+            {props.scopePicker && (
+              <div className="mb-3 space-y-1 border-b border-zinc-100 pb-3 sm:hidden">
+                <p className="text-[11px] font-semibold text-zinc-500">บริษัท / สาขา</p>
+                {props.scopePicker}
+              </div>
+            )}
             {props.extraActions && (
               <div className="mb-3 flex flex-wrap gap-2 border-b border-zinc-100 pb-3">
                 {props.extraActions}

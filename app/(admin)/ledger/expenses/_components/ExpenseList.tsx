@@ -7,7 +7,7 @@
 import { useState, useTransition, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2, Banknote, Tags, Upload, QrCode } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2, Banknote, Tags, Upload, QrCode, Search } from "lucide-react";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
 import { CompletenessDot } from "@/components/ledger/_kit/CompletenessDot";
 import { DocTag, PaymentTag } from "@/components/ledger/_kit/StatusTags";
@@ -84,6 +84,7 @@ export function ExpenseList({
   nr,
   statusCounts,
   listActions,
+  scopePicker,
   payreqEnabled,
   branches,
 }: {
@@ -115,6 +116,8 @@ export function ExpenseList({
   /** Shortcut actions (ไม่มีใบเสร็จ · สลิปรอจับคู่) — rendered inside the mobile
    *  ตัวกรอง sheet so they're off the page header. */
   listActions?: React.ReactNode;
+  /** LeanUX (CEO 2026-06-08): บริษัท/สาขา picker folded into the ตัวกรอง sheet (mobile). */
+  scopePicker?: React.ReactNode;
   /** LEDGER_PAYREQ_V1 — show the "ขอโอนเงิน" bulk action (request a transfer). */
   payreqEnabled?: boolean;
 }) {
@@ -415,7 +418,7 @@ export function ExpenseList({
         {/* PRIMARY status strip — รอยืนยัน → ยืนยันแล้ว → ส่งแล้ว (accountant triage axis).
             "ส่งแล้ว" = ?tr=sent, the rest = ?status=. Source/cc/หมวด live in ตัวกรอง. */}
         <div
-          className="flex flex-wrap gap-1"
+          className="-mx-1 flex gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           role="tablist"
           aria-label="กรองตามสถานะ"
         >
@@ -430,7 +433,7 @@ export function ExpenseList({
                 aria-selected={active}
                 onClick={() => setPrimaryTab(t.id)}
                 className={
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-300)] " +
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-300)] " +
                   (active
                     ? "bg-[var(--color-brand-600)] text-white"
                     : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200")
@@ -465,18 +468,22 @@ export function ExpenseList({
                 return <input key={k} type="hidden" name={k} value={decodeURIComponent(v ?? "")} />;
               })}
             {selectedId && <input type="hidden" name="selected" value={selectedId} />}
-            <input
-              type="search"
-              name="q"
-              defaultValue={q ?? ""}
-              placeholder="ค้นหา ผู้ขาย / เลขที่ / เลขภาษี"
-              className="h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]"
-            />
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+              <input
+                type="search"
+                name="q"
+                defaultValue={q ?? ""}
+                placeholder="ค้นหา ผู้ขาย / เลขที่"
+                className="h-9 w-full rounded-lg border border-zinc-200 bg-white pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]"
+              />
+            </div>
             <button
               type="submit"
-              className="h-9 shrink-0 rounded-lg bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-800"
+              aria-label="ค้นหา"
+              className="grid size-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-white hover:bg-zinc-800"
             >
-              ค้นหา
+              <Search className="size-4" aria-hidden />
             </button>
           </form>
           <select
@@ -500,6 +507,7 @@ export function ExpenseList({
             onSet={setParam}
             onClear={clearFilters}
             extraActions={listActions}
+            scopePicker={scopePicker}
           />
         </div>
 

@@ -37,12 +37,13 @@ export function CompanyBranchPicker({
     router.push(`${pathname}?${sp.toString()}`);
   }
 
+  // มือถือ: บริษัท+สาขา อยู่แถวเดียว (ครึ่ง/ครึ่ง) ไม่ซ้อน 2 แถว — ประหยัดที่ (CEO 2026-06-08).
   const sel =
-    "h-9 rounded-lg border border-zinc-200 bg-white pl-8 pr-7 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]";
+    "h-9 w-full rounded-lg border border-zinc-200 bg-white pl-8 pr-7 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] sm:w-auto";
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="relative">
+    <div className="flex w-full items-center gap-2 sm:w-auto">
+      <div className="relative min-w-0 flex-1 sm:flex-none">
         <Building2 className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
         <select
           aria-label="เลือกบริษัท"
@@ -59,7 +60,7 @@ export function CompanyBranchPicker({
         </select>
       </div>
 
-      <div className="relative">
+      <div className="relative min-w-0 flex-1 sm:flex-none">
         <GitBranch className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
         <select
           aria-label="เลือกสาขา"
