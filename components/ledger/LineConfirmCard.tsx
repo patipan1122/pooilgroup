@@ -582,6 +582,36 @@ export function buildConfirmBubble(input: LedgerConfirmCardInput): FlexBubble {
     });
   }
 
+  // สถานะใบ (pill) — ให้เห็นชัดบนการ์ดว่าใบนี้อยู่ขั้นไหน (ตามดีไซน์ · การ์ดนี้=ฉบับร่างเสมอ).
+  const reviewState = ocrFailed || needsReview;
+  const statusPill = reviewState
+    ? { label: "🟠 รอตรวจ", bg: COLOR.warnBg, fg: COLOR.warn }
+    : { label: "🟡 รอบัญชียืนยัน", bg: "#EFF4FF", fg: COLOR.brand };
+  bodyContents.push({
+    type: "box",
+    layout: "horizontal",
+    margin: "lg",
+    contents: [
+      {
+        type: "box",
+        layout: "vertical",
+        flex: 0,
+        paddingAll: "7px",
+        cornerRadius: "999px",
+        backgroundColor: statusPill.bg,
+        contents: [
+          {
+            type: "text",
+            text: statusPill.label,
+            size: "xs",
+            weight: "bold",
+            color: statusPill.fg,
+          },
+        ],
+      },
+    ],
+  });
+
   return {
       type: "bubble",
       size: "kilo",
