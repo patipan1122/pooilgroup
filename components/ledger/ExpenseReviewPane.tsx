@@ -27,7 +27,6 @@ import {
   Wallet,
   StickyNote,
   ExternalLink,
-  ReceiptText,
   ChevronDown,
   Building2,
   ListTree,
@@ -714,40 +713,9 @@ export function ExpenseReviewPane({
       {/* สถานะใบกำกับ (ภาษีซื้อ) — ย้ายลงไปไว้ใกล้ปุ่มด้านล่าง (CEO 2026-06-08:
           คำเตือนแดงอยู่ข้างล่าง กระชับ ติดแถบ action ที่ scroll ตาม). ดู CompletenessBanner. */}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
-        {/* รูปใบเสร็จ (sticky บนจอใหญ่ — เลื่อนฟอร์มแล้วรูปยังอยู่).
-            ถ้ามีใบทดแทน → โชว์ 2 รูปคู่กัน (ใบเดิม + ใบใหม่). */}
-        <div className="space-y-2 lg:sticky lg:top-20 lg:self-start">
-          {replacement ? (
-            <>
-              <div>
-                <p className="mb-1 text-[11px] font-semibold text-zinc-500">ใบเดิม</p>
-                <ReceiptThumb
-                  thumbUrl={expense.thumbUrl}
-                  originalUrl={expense.originalUrl}
-                  alt={`ใบเสร็จเดิม ${expense.docCode}`}
-                />
-              </div>
-              <div>
-                <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
-                  <ReceiptText className="size-3.5" aria-hidden /> ใบทดแทน (ใหม่)
-                </p>
-                <ReceiptThumb
-                  thumbUrl={replacement.thumbUrl}
-                  originalUrl={replacement.originalUrl}
-                  alt={`ใบทดแทน ${replacement.docCode}`}
-                />
-              </div>
-            </>
-          ) : (
-            <ReceiptThumb
-              thumbUrl={expense.thumbUrl}
-              originalUrl={expense.originalUrl}
-              alt={`ใบเสร็จ ${expense.docCode}`}
-            />
-          )}
-        </div>
-
+      {/* LeanUX (CEO 2026-06-08): รูปใบเสร็จโชว์ครั้งเดียวใน §หลักฐาน (ใบเสร็จต้นฉบับ/ใบทดแทน)
+          — ลบรูป rail บนสุดที่ซ้ำออก ประหยัดที่. ฟอร์มเต็มความกว้าง. */}
+      <div>
         {/* ฟอร์มแก้ — 4 ส่วนแบบ Bainy */}
         <div className="space-y-5">
           {/* 1 · ลงบัญชี (จำเป็น) — หมวด + สาขา ต้องครบก่อนยืนยัน (ยกขึ้นบนสุดตามดีไซน์

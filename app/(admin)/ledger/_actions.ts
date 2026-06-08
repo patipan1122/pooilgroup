@@ -3051,10 +3051,17 @@ export async function createPaymentRequestAction(
       where: { id: { in: ids }, orgId, companyId: res.companyId },
       select: { docCode: true, total: true },
     });
-    // LIFF deep-link to the detail page. Endpoint = /liff/ledger, so the path after
-    // the LIFF id is /payreq/<id> (concatenate rule — see line-liff-deeplink memory).
+    // LIFF deep-link to the SPECIFIC request detail. The ledger LIFF endpoint is a
+    // sub-path (/liff/ledger), so the concatenation form liff.line.me/{id}/payreq/X
+    // does NOT work — LINE buries the sub-path in ?liff.state and the bootstrap drops
+    // the exec on the capture page (CEO 2026-06-08 "กดแล้วไปหน้าแนบใบเสร็จมั่ว"). Use the
+    // proven ?next= pattern (same as the edit button) so LiffBootstrap navigates after
+    // login → lands on the matching bill. See [[line-liff-deeplink-concatenate-rule]].
     const liffId = process.env.NEXT_PUBLIC_LEDGER_LIFF_ID;
-    const detailUrl = liffId ? `https://liff.line.me/${liffId}/payreq/${res.requestId}` : null;
+    const detailPath = `/liff/ledger/payreq/${encodeURIComponent(res.requestId)}`;
+    const detailUrl = liffId
+      ? `https://liff.line.me/${liffId}?next=${encodeURIComponent(detailPath)}`
+      : null;
     const card = buildPaymentRequestCard({
       vendor: res.vendor ?? null,
       billsGross: res.billsGross ?? 0,
