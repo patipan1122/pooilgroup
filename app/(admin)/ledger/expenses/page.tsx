@@ -75,7 +75,7 @@ export default async function ExpensesPage({
 
   if (!scope.companyId) {
     return (
-      <div className="p-4 sm:p-6">
+      <div className="p-4 sm:px-6 sm:pt-4 sm:pb-6">
         <LedgerHeader title="รายจ่าย" scope={scope} />
         <NoCompanyState />
       </div>
@@ -301,7 +301,7 @@ export default async function ExpensesPage({
     .map((r) => r.id);
 
   return (
-    <div className="p-4 sm:p-6">
+    <div className="p-4 sm:px-6 sm:pt-4 sm:pb-6">
       <LedgerHeader
         title="รายจ่าย"
         subtitle={`${rows.length} รายการ`}
@@ -383,7 +383,7 @@ export default async function ExpensesPage({
       {/* แท็บสถานะ — แถบเต็มกว้างด้านบน (เดสก์ท็อปเท่านั้น · CEO 2026-06-09: ย้ายจากในคอลัมน์
           รายการ 420px มาใช้พื้นที่ว่างกว้าง ๆ ตรงดีไซน์ desktopA). มือถือ render ในคอลัมน์
           รายการ (ExpenseList → ExpenseStatusTabs lg:hidden) ที่ความกว้างเต็มอยู่แล้ว. */}
-      <div className="mb-3 hidden rounded-2xl border border-zinc-200 bg-white p-2 lg:block">
+      <div className="mb-2 hidden rounded-2xl border border-zinc-200 bg-white p-2 lg:block">
         <ExpenseStatusTabs
           baseParams={baseParams.toString()}
           status={status}

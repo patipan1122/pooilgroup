@@ -4,7 +4,7 @@
 import type { ReactNode } from "react";
 import type { LedgerScope } from "../_scope";
 import { CompanyBranchPicker } from "./CompanyBranchPicker";
-import { LedgerLogo, LedgerEmptyState } from "@/components/ledger/Brand";
+import { LedgerEmptyState } from "@/components/ledger/Brand";
 
 export function LedgerHeader({
   title,
@@ -22,10 +22,10 @@ export function LedgerHeader({
   scopeInFilter?: boolean;
 }) {
   return (
-    <div className="mb-3 flex flex-col gap-2 sm:mb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
+    <div className="mb-2 flex flex-col gap-2 sm:mb-3 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
       <div className="min-w-0">
-        {/* JP Sync Group logo — desktop only (กินที่บนมือถือ · CEO 2026-06-08 "เอา logo ออก"). */}
-        <LedgerLogo height={22} className="mb-1.5 hidden opacity-90 sm:block" priority />
+        {/* JP Sync Group logo ลบออก (CEO 2026-06-09 "เอา jpsync ออก ดันทุกอย่างขึ้น · พื้นที่
+            เปลือง") — บริษัทอยู่ในตัวเลือก picker ด้านขวาอยู่แล้ว · เดิม desktop-only ยังกินที่แนวตั้ง. */}
         <div className="flex items-baseline gap-2">
           <h1 className="text-xl font-bold tracking-tight text-zinc-900 sm:text-2xl">
             {title}
