@@ -464,12 +464,72 @@ export function ReconcileBoard({
 
   return (
     <div>
-      {/* KPI cards — 4 buckets (count + total), click to filter. The cards ARE the
-          tab selector (redesign 2026-06-08 to match the design's prominent cards). */}
+      {/* MOBILE: compact pill-rail (LeanUX ③#3 — the prominent KPI cards ate the
+          mobile first-viewport; keep the cards on desktop, give phones a 1-row rail
+          driving the same tab state). CEO 2026-06-08 cards stay on sm+. */}
       <div
         role="tablist"
         aria-label="กลุ่มสถานะการจ่าย"
-        className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5"
+        className="-mx-1 mb-3 flex gap-1.5 overflow-x-auto px-1 sm:hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {TABS.map((t) => {
+          const active = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              role="tab"
+              aria-selected={active}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={
+                "inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-full border px-3 text-sm font-medium transition-colors " +
+                (active
+                  ? "border-[var(--color-brand-300)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)]"
+                  : "border-zinc-200 bg-white text-zinc-600")
+              }
+            >
+              {t.label}
+              <span
+                className={
+                  "rounded-full px-1.5 text-[11px] font-bold tabular-nums " +
+                  (active ? "bg-[var(--color-brand-600)] text-white" : "bg-zinc-100 text-zinc-500")
+                }
+              >
+                {summary[t.key].count}
+              </span>
+            </button>
+          );
+        })}
+        <button
+          role="tab"
+          aria-selected={tab === "diff"}
+          type="button"
+          onClick={() => setTab("diff")}
+          className={
+            "inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-full border px-3 text-sm font-medium transition-colors " +
+            (tab === "diff"
+              ? "border-orange-300 bg-orange-50 text-orange-700"
+              : "border-zinc-200 bg-white text-zinc-600")
+          }
+        >
+          มีผลต่าง
+          <span
+            className={
+              "rounded-full px-1.5 text-[11px] font-bold tabular-nums " +
+              (tab === "diff" ? "bg-orange-500 text-white" : "bg-zinc-100 text-zinc-500")
+            }
+          >
+            {diffRows.length}
+          </span>
+        </button>
+      </div>
+
+      {/* DESKTOP/tablet: KPI cards — 4 buckets (count + total), click to filter. The
+          cards ARE the tab selector (redesign 2026-06-08 prominent cards). */}
+      <div
+        role="tablist"
+        aria-label="กลุ่มสถานะการจ่าย"
+        className="mb-4 hidden grid-cols-2 gap-3 sm:grid lg:grid-cols-5"
       >
         {TABS.map((t) => {
           const active = tab === t.key;

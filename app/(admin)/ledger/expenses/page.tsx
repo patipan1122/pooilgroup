@@ -21,6 +21,7 @@ import { ExpensePaneClient } from "./_components/ExpensePaneClient";
 import { UploadReceiptButton } from "./_components/UploadReceiptButton";
 import { NoReceiptButton } from "./_components/NoReceiptButton";
 import { ExportButton } from "./_components/ExportButton";
+import { HeaderToolsMenu } from "./_components/HeaderToolsMenu";
 import { ledgerQuotationV1, ledgerSlipV1, ledgerPayreqV1, ledgerStockinV1 } from "@/lib/ledger/flags";
 import { StockInButton } from "@/components/ledger/StockInButton";
 import { expenseConfirmability } from "@/lib/ledger/confirmability";
@@ -309,10 +310,11 @@ export default async function ExpensesPage({
           <>
             {/* ค้นหา — อยู่ข้างหัว "รายจ่าย" (LeanUX · มือถือ = แถวบนสุด) */}
             <ExpenseSearch baseParams={baseParams.toString()} q={q} selectedId={selected} />
-            {/* สลิปรอจับคู่ + CSV + ไม่มีใบเสร็จ = desktop header only (lg+); below lg
-                they move INTO the ตัวกรอง sheet (listActions) — CEO declutter.
-                Breakpoint matches FilterSheet's lg:hidden so they never double up. */}
-            <span className="hidden lg:contents">
+            {/* สลิปรอจับคู่ + CSV + ไม่มีใบเสร็จ — secondary tools folded into a
+                "⋯ เครื่องมือ" dropdown (desktop only; LeanUX wave B2 ①#1). Below lg
+                they already move INTO the ตัวกรอง sheet (listActions), and the menu
+                is lg-only, so they never double up. */}
+            <HeaderToolsMenu>
               {slipOn && (
                 <Link
                   href={`/ledger/payments?${quotationOffParams.toString()}`}
@@ -328,7 +330,7 @@ export default async function ExpensesPage({
                 categories={categories.map((c) => ({ id: c.id, name: c.name }))}
                 branches={scope.branches}
               />
-            </span>
+            </HeaderToolsMenu>
             {/* On phones the bottom-nav camera FAB fires open-upload; hide the
                 big duplicate button (keeps the modal + listener mounted). */}
             <UploadReceiptButton
