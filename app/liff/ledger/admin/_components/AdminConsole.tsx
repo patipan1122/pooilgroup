@@ -118,7 +118,7 @@ export function AdminConsole({
       </header>
 
       {/* Tab content (scrolls; padded for the bottom-nav) */}
-      <main className="flex-1 overflow-y-auto px-3 pb-24 pt-3">
+      <main className="flex-1 overflow-y-auto px-3 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-3">
         {tab === "member" && (
           <div className="space-y-3">
             <MemberManager companyId={companyId} branches={branchOpts} members={members} myUserId={myUserId} myLineLinked={myLineLinked} />
@@ -169,7 +169,7 @@ export function AdminConsole({
       </main>
 
       {/* Bottom-nav — thumb-reachable, Bainy-style */}
-      <nav className="fixed inset-x-0 bottom-0 z-20 mx-auto flex max-w-md items-stretch border-t border-zinc-200 bg-white/95 backdrop-blur">
+      <nav className="fixed inset-x-0 bottom-0 z-20 mx-auto flex max-w-md items-stretch border-t border-zinc-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
         {TABS.map(({ key, label, Icon }) => {
           const on = tab === key;
           const showDot = key === "member" && pendingCount > 0;

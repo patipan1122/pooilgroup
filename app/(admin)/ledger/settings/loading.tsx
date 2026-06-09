@@ -1,61 +1,45 @@
-// Suspense fallback for ตั้งค่า — mirrors page.tsx (full-width category manager
-// on top + LINE channel card + export config card below) so the layout holds
-// while the org+company-scoped categories resolve.
+// Suspense fallback for ตั้งค่า — mirrors the SettingsHub tile-row layout
+// (sticky back bar + header + 3 grouped sections of short rows inside max-w-2xl)
+// so the skeleton is ~the height of the real hub and there's no layout shift
+// when the org+company-scoped counts resolve.
 import { Skeleton } from "@/components/ui/skeleton";
 import { LedgerHeaderSkeleton } from "@/components/ledger/_kit/LedgerHeaderSkeleton";
 
-export default function LedgerSettingsLoading() {
+function TileRowSkeleton() {
   return (
-    <div className="p-4 sm:p-6">
+    <div className="flex items-center gap-3 rounded-xl border border-zinc-100 bg-white p-4">
+      <Skeleton className="size-10 shrink-0 rounded-xl" />
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-3 w-44" />
+      </div>
+      <Skeleton className="h-5 w-8 rounded-full" />
+      <Skeleton className="size-4 rounded" />
+    </div>
+  );
+}
+
+export default function LedgerSettingsLoading() {
+  // group sizes mirror SettingsHub: การจดบันทึก (~2-3) · ทีมงาน & สิทธิ์ (3) · การเชื่อมต่อ (~2)
+  const groups = [2, 3, 2];
+
+  return (
+    <div className="p-4 pb-24 sm:p-6 lg:pb-6">
+      {/* sticky back bar */}
+      <div className="sticky top-0 z-20 -mx-4 mb-3 border-b border-zinc-100 bg-white/95 px-4 py-2 backdrop-blur-sm sm:-mx-6 sm:px-6">
+        <Skeleton className="h-4 w-36" />
+      </div>
+
       <LedgerHeaderSkeleton />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* Category manager (full width) */}
-        <div className="rounded-2xl border border-zinc-200 bg-white p-4 lg:col-span-2">
-          <div className="mb-3 flex items-center justify-between">
-            <Skeleton className="h-4 w-32" />
-            <Skeleton className="h-9 w-28 rounded-lg" />
-          </div>
-          <div className="divide-y divide-zinc-100">
-            {Array.from({ length: 6 }, (_, i) => (
-              <div key={i} className="flex items-center gap-3 py-3">
-                <Skeleton className="size-5 rounded-full shrink-0" />
-                <Skeleton className="h-4 flex-1" />
-                <Skeleton className="h-4 w-20" />
-                <Skeleton className="size-6 rounded-md" />
-              </div>
+      <div className="mx-auto max-w-2xl space-y-5">
+        {groups.map((rows, g) => (
+          <section key={g} className="space-y-2">
+            <Skeleton className="ml-1 h-3 w-24" />
+            {Array.from({ length: rows }, (_, i) => (
+              <TileRowSkeleton key={i} />
             ))}
-          </div>
-        </div>
-
-        {/* TRCloud branch config (full width) */}
-        <div className="rounded-2xl border border-zinc-200 bg-white p-4 lg:col-span-2">
-          <div className="mb-3 flex items-center justify-between">
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="h-4 w-24" />
-          </div>
-          <Skeleton className="mb-3 h-8 w-full rounded-lg" />
-          {Array.from({ length: 5 }, (_, i) => (
-            <div key={i} className="flex items-center gap-3 border-t border-zinc-100 py-3">
-              <Skeleton className="h-4 flex-1" />
-              <Skeleton className="h-8 w-24 rounded-lg" />
-              <Skeleton className="h-8 w-24 rounded-lg" />
-              <Skeleton className="h-8 w-14 rounded-lg" />
-            </div>
-          ))}
-        </div>
-
-        {/* LINE channel card + export config card */}
-        {Array.from({ length: 2 }, (_, i) => (
-          <div
-            key={i}
-            className="rounded-2xl border border-zinc-200 bg-white p-4"
-          >
-            <Skeleton className="mb-3 h-4 w-32" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="mt-2 h-4 w-3/4" />
-            <Skeleton className="mt-4 h-10 w-full rounded-xl" />
-          </div>
+          </section>
         ))}
       </div>
 

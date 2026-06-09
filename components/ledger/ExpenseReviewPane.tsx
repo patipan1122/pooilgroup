@@ -669,17 +669,21 @@ export function ExpenseReviewPane({
               trcloudError={expense.trcloudError}
             />
           )}
-          <VoucherMenu
-            expenseId={expense.id}
-            companyId={expense.companyId}
-            vendorTaxId={expense.vendorTaxId}
-            disabled={expense.status !== "confirmed" && expense.status !== "locked"}
-            defaultSubReason={
-              expense.note?.startsWith("[ไม่มีใบเสร็จ]")
-                ? expense.note.replace(/^\[ไม่มีใบเสร็จ\]\s*/, "")
-                : ""
-            }
-          />
+          {/* "ออกเอกสาร" = งานบัญชีฝั่งเว็บ — ปิดใน LIFF member edit (showTrcloud=false)
+              ไม่ให้รั่วเข้าหน้า task ของพนักงานในไลน์. */}
+          {showTrcloud && (
+            <VoucherMenu
+              expenseId={expense.id}
+              companyId={expense.companyId}
+              vendorTaxId={expense.vendorTaxId}
+              disabled={expense.status !== "confirmed" && expense.status !== "locked"}
+              defaultSubReason={
+                expense.note?.startsWith("[ไม่มีใบเสร็จ]")
+                  ? expense.note.replace(/^\[ไม่มีใบเสร็จ\]\s*/, "")
+                  : ""
+              }
+            />
+          )}
           <StatusBadge status={expense.status} />
         </div>
       </div>

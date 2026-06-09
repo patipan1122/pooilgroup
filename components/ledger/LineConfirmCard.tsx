@@ -437,7 +437,7 @@ export function buildConfirmBubble(input: LedgerConfirmCardInput): FlexBubble {
         data: `ledger:confirm:${expenseId}`,
         displayText: "ยืนยันใบเสร็จนี้",
       }
-    : { type: "uri", label: "ยืนยัน", uri: deepLink };
+    : { type: "uri", label: "ตรวจ & ยืนยัน", uri: deepLink };
   // ยังขาด หมวด/สาขา (จำเป็นก่อนยืนยัน) → ชี้ปุ่ม "แก้ไข" ให้ชัดว่าต้องใส่อะไร
   // (redesign 2026-06-07 · ลดงานที่ค้างเพราะใบไม่ครบ — ใช้ flow แก้ไขเดิม ไม่เพิ่ม postback).
   const needsClassify = !ocrFailed && (!categoryName || !branchName);

@@ -1033,7 +1033,7 @@ export function LedgerCaptureApp({
 
       {/* Sticky confirm bar (review phase) */}
       {phase === "review" && (
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur">
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-zinc-200 bg-white/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
           <div className="mx-auto flex max-w-md gap-2">
             <button
               type="button"

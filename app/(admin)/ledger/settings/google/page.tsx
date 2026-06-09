@@ -8,6 +8,7 @@ import { LedgerHeader, NoCompanyState } from "../../_components/LedgerHeader";
 import { listLedgerMailboxes } from "@/lib/ledger/gmail";
 import { getDriveConnection } from "@/lib/chairops/storage/drive";
 import { GoogleConnectCard } from "./_components/GoogleConnectCard";
+import { SettingsBack } from "../_components/SettingsBack";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ export default async function LedgerGoogleSettingsPage({
   if (!scope.companyId) {
     return (
       <div className="p-4 sm:p-6">
+        <SettingsBack companyId={null} />
         <LedgerHeader title="การเชื่อมต่อ Google" scope={scope} />
         <NoCompanyState />
       </div>
@@ -42,12 +44,13 @@ export default async function LedgerGoogleSettingsPage({
 
   return (
     <div className="p-4 pb-24 sm:p-6 lg:pb-6">
+      <SettingsBack companyId={scope.companyId} />
       <LedgerHeader
         title="การเชื่อมต่อ Google"
         subtitle="เชื่อม Drive (เก็บไฟล์ใบเสร็จ) และ Gmail (ดึงค่าใช้จ่ายจากอีเมล)"
         scope={scope}
       />
-      <div className="mt-4 max-w-2xl">
+      <div className="mx-auto mt-4 max-w-2xl">
         <GoogleConnectCard
           companyId={scope.companyId}
           companyName={companyName}

@@ -292,7 +292,7 @@ export function MemberManager({
   const pendingCount = members.filter((m) => m.pendingBranchId).length;
 
   return (
-    <div className="rounded-2xl border border-zinc-100 bg-white p-4 lg:col-span-2">
+    <div className="rounded-2xl border border-zinc-100 bg-white p-4">
       <div className="mb-1 flex items-center gap-2">
         <Users className="size-4 text-[var(--color-brand-600,#2563EB)]" aria-hidden />
         <h3 className="text-sm font-bold text-zinc-800">สมาชิก & สาขาที่ดูแล</h3>
