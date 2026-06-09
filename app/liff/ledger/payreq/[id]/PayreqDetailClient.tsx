@@ -12,6 +12,25 @@ import { ReceiptThumb } from "@/components/ledger/ReceiptThumb";
 const baht = (n: number) =>
   `฿${n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+// ประเภทเอกสารผู้ขาย (ใบกำกับ/วางบิล/เสนอราคา ฯลฯ) — ตรงกับ ExpenseDocType.
+const DOC_TYPE_LABEL: Record<string, string> = {
+  tax_invoice: "ใบกำกับภาษี",
+  receipt: "ใบเสร็จรับเงิน",
+  cash_bill: "บิลเงินสด",
+  delivery_note: "ใบส่งของ",
+  quotation: "ใบเสนอราคา / ใบวางบิล",
+  other: "อื่น ๆ",
+};
+const fmtDocType = (t: string): string => DOC_TYPE_LABEL[t] ?? t;
+
+// วันที่บนเอกสาร — ISO (YYYY-MM-DD) → "9 มิ.ย. 2569" (พ.ศ.).
+function fmtThaiDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+}
+
 const STATE_LABEL: Record<string, string> = {
   open: "รอโอน",
   partial: "จ่ายบางส่วน",
@@ -51,6 +70,21 @@ function CopyRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** One label→value row inside a voucher card. Hidden when the value is empty. */
+function VField({ label, value, strong }: { label: string; value: string | null; strong?: boolean }) {
+  if (!value) return null;
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="shrink-0 text-[11px] text-zinc-400">{label}</span>
+      <span
+        className={`min-w-0 text-right text-xs ${strong ? "font-semibold text-zinc-900" : "text-zinc-700"}`}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
 export function PayreqDetailClient({
   req,
   bankLabel,
@@ -63,10 +97,6 @@ export function PayreqDetailClient({
   const qrUrl = ppPayload
     ? `https://api.qrserver.com/v1/create-qr-code/?size=260x260&qzone=1&data=${encodeURIComponent(ppPayload)}`
     : null;
-
-  // Attached receipt/quotation images — "ดูเอกสารที่แนบ" (CEO 2026-06-09: the exec wants
-  // to see what they're paying for, not a send-slip button).
-  const billsWithImage = req.bills.filter((b) => b.originalUrl || b.thumbUrl);
 
   return (
     <div className="space-y-4">
@@ -133,48 +163,67 @@ export function PayreqDetailClient({
         )}
       </div>
 
-      {/* Bills */}
+      {/* ใบสำคัญจ่าย — one voucher card per bill: everything ops entered (สาขา/หมวด/
+          ประเภทเอกสาร/วันที่/VAT/หัก ณ ที่จ่าย/ผู้บันทึก) + the original document below it,
+          so the exec verifies straight here without drilling in (CEO 2026-06-09). */}
       <div>
-        <p className="mb-1.5 text-xs font-semibold text-zinc-500">รายการบิล ({req.bills.length} ใบ)</p>
-        <ul className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white">
-          {req.bills.map((b, i) => (
-            <li key={`${b.docCode}-${i}`} className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
-              <span className="flex items-center gap-1.5 truncate text-zinc-600">
-                <ReceiptText className="size-3.5 shrink-0 text-zinc-400" aria-hidden />
-                <span className="font-mono">{b.docCode}</span>
-              </span>
-              <span className="shrink-0 tabular-nums text-zinc-700">
-                {baht(b.amount)}
-                {b.wht > 0 ? <span className="text-zinc-400"> − {baht(b.wht)}</span> : null}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
+        <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-zinc-500">
+          <ReceiptText className="size-3.5 text-zinc-400" aria-hidden />
+          ใบสำคัญจ่าย ({req.bills.length} รายการ)
+        </p>
+        <div className="space-y-3">
+          {req.bills.map((b, i) => {
+            const hasImage = Boolean(b.originalUrl || b.thumbUrl);
+            return (
+              <div
+                key={`${b.docCode}-${i}`}
+                className="overflow-hidden rounded-2xl border border-zinc-200 bg-white"
+              >
+                {/* header: doc type + internal doc code */}
+                <div className="flex items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-3 py-2">
+                  <span className="rounded-md bg-[var(--color-brand-50,#EFF4FF)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-brand-700,#1d4ed8)]">
+                    {fmtDocType(b.docType)}
+                  </span>
+                  <span className="truncate font-mono text-[11px] text-zinc-400">{b.docCode}</span>
+                </div>
 
-      {/* Attached receipt/quotation images — what the exec is paying for. Reuses
-          ReceiptThumb (tap → full-screen, "เปิดต้นฉบับ", PDF-aware). */}
-      {billsWithImage.length > 0 && (
-        <div>
-          <p className="mb-1.5 text-xs font-semibold text-zinc-500">
-            เอกสารที่แนบ ({billsWithImage.length})
-          </p>
-          <div className="space-y-3">
-            {billsWithImage.map((b, i) => (
-              <div key={`doc-${b.docCode}-${i}`}>
-                {req.bills.length > 1 && (
-                  <p className="mb-1 font-mono text-[11px] text-zinc-400">{b.docCode}</p>
+                {/* voucher fields */}
+                <div className="space-y-1.5 px-3 py-2.5">
+                  <VField label="ผู้ขาย" value={b.vendor ?? req.vendor} strong />
+                  <VField label="เลขที่เอกสาร" value={b.vendorDocNumber} />
+                  <VField label="วันที่" value={fmtThaiDate(b.docDate)} />
+                  <VField label="สาขา" value={b.branchName} />
+                  <VField label="หมวด" value={b.categoryName} />
+                  {b.note && <VField label="รายละเอียด" value={b.note} />}
+
+                  <div className="my-1 border-t border-dashed border-zinc-200" />
+                  <VField label="ยอดบิล" value={baht(b.amount)} strong />
+                  {b.vat > 0 && <VField label="ภาษีมูลค่าเพิ่ม" value={baht(b.vat)} />}
+                  {b.wht > 0 && <VField label="หัก ณ ที่จ่าย" value={`− ${baht(b.wht)}`} />}
+
+                  {b.createdByName && (
+                    <p className="pt-1 text-right text-[10px] text-zinc-400">
+                      บันทึกโดย {b.createdByName}
+                    </p>
+                  )}
+                </div>
+
+                {/* original document attached — tap → full-screen, "เปิดต้นฉบับ", PDF-aware */}
+                {hasImage && (
+                  <div className="border-t border-zinc-100 px-3 py-2.5">
+                    <p className="mb-1.5 text-[11px] font-medium text-zinc-400">เอกสารต้นฉบับที่แนบ</p>
+                    <ReceiptThumb
+                      thumbUrl={b.thumbUrl}
+                      originalUrl={b.originalUrl}
+                      alt={`เอกสาร ${b.docCode}`}
+                    />
+                  </div>
                 )}
-                <ReceiptThumb
-                  thumbUrl={b.thumbUrl}
-                  originalUrl={b.originalUrl}
-                  alt={`เอกสาร ${b.docCode}`}
-                />
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
-      )}
+      </div>
 
       <p className="rounded-lg bg-emerald-50 px-3 py-2 text-center text-xs text-emerald-700">
         โอนแล้ว → ส่งสลิปกลับกลุ่มนี้ ระบบจับคู่ + ปิดบิลให้อัตโนมัติ ✅

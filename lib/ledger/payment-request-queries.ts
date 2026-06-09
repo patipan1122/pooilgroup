@@ -385,6 +385,17 @@ export interface PaymentRequestDetail {
     /** attached receipt/quotation image (R2) — ดูเอกสารที่แนบ on the detail page. */
     originalUrl: string | null;
     thumbUrl: string | null;
+    // ── ใบสำคัญจ่าย fields (CEO 2026-06-09): show everything ops entered so the exec
+    //    can verify straight from the voucher, no drill-in. All read-only from the expense.
+    vendor: string | null;
+    vendorDocNumber: string | null; // เลขที่เอกสารของผู้ขาย (บนใบจริง)
+    docType: string; // tax_invoice | receipt | cash_bill | delivery_note | quotation | other
+    docDate: string | null; // ISO (YYYY-MM-DD) — วันที่บนเอกสาร
+    branchName: string | null; // สาขา
+    categoryName: string | null; // หมวดค่าใช้จ่าย
+    vat: number; // ภาษีมูลค่าเพิ่ม (ภาษีซื้อ)
+    note: string | null; // รายละเอียด/หมายเหตุที่น้องกรอก
+    createdByName: string | null; // ผู้บันทึก
   }[];
 }
 
@@ -407,19 +418,63 @@ export async function getPaymentRequestDetail(
   });
   if (!r) return null;
   const ids = r.bills.map((b) => b.expenseId);
-  const billMap = new Map<
-    string,
-    { docCode: string; originalUrl: string | null; thumbUrl: string | null }
-  >();
+  type BillInfo = {
+    docCode: string;
+    originalUrl: string | null;
+    thumbUrl: string | null;
+    vendor: string | null;
+    vendorDocNumber: string | null;
+    docType: string;
+    docDate: string | null;
+    branchName: string | null;
+    categoryName: string | null;
+    vat: number;
+    note: string | null;
+    createdBy: string | null;
+  };
+  const billMap = new Map<string, BillInfo>();
   if (ids.length > 0) {
     const codes = await prisma.ledgerExpense.findMany({
+      // companyId-scoped so a stray id can't read another company's voucher detail.
       where: { id: { in: ids }, orgId, companyId: r.companyId },
-      select: { id: true, docCode: true, originalUrl: true, thumbUrl: true },
+      select: {
+        id: true, docCode: true, originalUrl: true, thumbUrl: true,
+        vendor: true, vendorDocNumber: true, docType: true, docDate: true,
+        vat: true, note: true, createdBy: true,
+        branch: { select: { name: true } },
+        category: { select: { name: true } },
+      },
     });
     for (const c of codes) {
-      billMap.set(c.id, { docCode: c.docCode, originalUrl: c.originalUrl, thumbUrl: c.thumbUrl });
+      billMap.set(c.id, {
+        docCode: c.docCode,
+        originalUrl: c.originalUrl,
+        thumbUrl: c.thumbUrl,
+        vendor: c.vendor,
+        vendorDocNumber: c.vendorDocNumber,
+        docType: c.docType,
+        docDate: c.docDate ? c.docDate.toISOString().slice(0, 10) : null,
+        branchName: c.branch?.name ?? null,
+        categoryName: c.category?.name ?? null,
+        vat: round2(Number(c.vat)),
+        note: c.note,
+        createdBy: c.createdBy,
+      });
     }
   }
+
+  // Resolve ผู้บันทึก (createdBy) → display name, ONE scoped query (no N+1).
+  const createdByName = new Map<string, string>();
+  const creatorIds = Array.from(
+    new Set(Array.from(billMap.values()).map((b) => b.createdBy).filter((x): x is string => !!x)),
+  );
+  if (creatorIds.length > 0) {
+    const users = await prisma.user
+      .findMany({ where: { id: { in: creatorIds }, orgId }, select: { id: true, name: true } })
+      .catch(() => [] as { id: string; name: string }[]);
+    for (const u of users) createdByName.set(u.id, u.name);
+  }
+
   return {
     id: r.id,
     state: r.state,
@@ -442,6 +497,15 @@ export async function getPaymentRequestDetail(
         wht: round2(Number(b.billWht)),
         originalUrl: info?.originalUrl ?? null,
         thumbUrl: info?.thumbUrl ?? null,
+        vendor: info?.vendor ?? null,
+        vendorDocNumber: info?.vendorDocNumber ?? null,
+        docType: info?.docType ?? "other",
+        docDate: info?.docDate ?? null,
+        branchName: info?.branchName ?? null,
+        categoryName: info?.categoryName ?? null,
+        vat: info?.vat ?? 0,
+        note: info?.note ?? null,
+        createdByName: info?.createdBy ? createdByName.get(info.createdBy) ?? null : null,
       };
     }),
   };

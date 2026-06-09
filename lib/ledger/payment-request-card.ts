@@ -1,10 +1,12 @@
 // LedgerLine — the "ขอโอนเงิน" flex card pushed to the executive (slip-intake) group.
 //
-// D8 (CEO): LINE Flex has NO clipboard action — so the account number is a big
-// SELECTABLE text line (long-press → copy in LINE) and the bank is shown as a NAME
-// (no logo image: licensing + slop risk per the workshop). The executive copies the
-// number / PromptPay id, transfers from their bank app, and drops the slip back in
-// the same group → matchSlipToRequest closes every bill.
+// D8 (CEO) UPDATED 2026-06-09: LINE *does* support a clipboard action (Messaging API
+// since Feb 2024) — so the account number / PromptPay id now has a real "📋 คัดลอก"
+// button (one tap → on the clipboard) instead of the old long-press-to-select hint.
+// The bank is still a NAME (no logo image: licensing + slop risk per the workshop).
+// CEO chose copy + QR only (NOT bank-app deep-links — undocumented & break on app
+// updates). The exec copies the number, transfers from their bank app, and drops the
+// slip back in the same group → matchSlipToRequest closes every bill.
 import type {
   FlexBubble,
   FlexComponent,
@@ -127,14 +129,26 @@ export function buildPaymentRequestCard(input: PaymentRequestCardInput): LineFle
     payeeLines.push({ type: "text", text: bank, size: "xs", color: COLOR.sub, wrap: true });
   }
   if (payee.acctNo) {
-    // Audit P1 — number on its OWN line (label above) so long-press selects clean
-    // digits, not "เลขบัญชี 123…". Selectable = copy (LINE flex has no copy button).
+    // Number on its OWN line (label above) + a real "คัดลอก" button (LINE clipboard
+    // action) so the exec copies clean digits in one tap, then pastes in their bank app.
     payeeLines.push({ type: "text", text: "เลขบัญชี", size: "xs", color: COLOR.sub, margin: "xs" });
     payeeLines.push({ type: "text", text: payee.acctNo, size: "lg", weight: "bold", color: COLOR.brand, wrap: true });
+    payeeLines.push({
+      type: "button",
+      style: "secondary",
+      height: "sm",
+      action: { type: "clipboard", label: "📋 คัดลอกเลขบัญชี", clipboardText: payee.acctNo },
+    });
   }
   if (payee.promptpay) {
     payeeLines.push({ type: "text", text: "พร้อมเพย์", size: "xs", color: COLOR.sub, margin: "xs" });
     payeeLines.push({ type: "text", text: payee.promptpay, size: "md", weight: "bold", color: COLOR.brand, wrap: true });
+    payeeLines.push({
+      type: "button",
+      style: "secondary",
+      height: "sm",
+      action: { type: "clipboard", label: "📋 คัดลอกพร้อมเพย์", clipboardText: payee.promptpay },
+    });
   }
   if (payeeLines.length === 0) {
     payeeLines.push({ type: "text", text: "— ยังไม่ระบุบัญชีผู้รับ —", size: "xs", color: COLOR.sub, wrap: true });

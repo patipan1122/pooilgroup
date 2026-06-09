@@ -148,7 +148,10 @@ export type FlexImage = {
 export type FlexAction =
   | { type: "uri"; label: string; uri: string }
   | { type: "postback"; label: string; data: string; displayText?: string }
-  | { type: "message"; label: string; text: string };
+  | { type: "message"; label: string; text: string }
+  // clipboard action (LINE Messaging API, ก.พ. 2024) — แตะปุ่มแล้วคัดลอกข้อความเข้าคลิปบอร์ด
+  // ทันที (ใช้กับปุ่ม "คัดลอกเลขบัญชี" บนการ์ดขอโอน). label ≤ 40 ตัว, clipboardText ≤ 1000.
+  | { type: "clipboard"; label: string; clipboardText: string };
 export type FlexButton = {
   type: "button";
   style: "primary" | "secondary" | "link";
