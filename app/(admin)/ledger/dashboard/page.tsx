@@ -2,6 +2,8 @@
 // Real data, org+company(+branch) scoped. Basic bar visuals (no chart lib needed).
 // Role gate matches the nav policy in lib/modules.ts (staff/driver excluded —
 // the dashboard shows org-wide P&L which front-line roles must not see).
+import Link from "next/link";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
@@ -22,6 +24,21 @@ export const dynamic = "force-dynamic";
 
 function baht(n: number) {
   return `${Math.round(n).toLocaleString("en-US")} ฿`;
+}
+
+const TH_MONTHS = [
+  "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+  "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
+];
+/** Shift a YYYY-MM period by N months (deterministic UTC math). */
+function shiftPeriod(p: string, delta: number): string {
+  const [y, m] = p.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+function thMonthLabel(p: string): string {
+  const [y, m] = p.split("-").map(Number);
+  return `${TH_MONTHS[m - 1] ?? p} ${(y + 543) % 100}`;
 }
 
 function BarRow({
@@ -105,13 +122,52 @@ export default async function LedgerDashboardPage({
   if (sp.company) scopeParams.set("company", sp.company);
   if (sp.branch) scopeParams.set("branch", sp.branch);
 
+  // Month stepper (②#6 — the dashboard was period-scoped via URL only, with no UI
+  // to change month). Next is capped at the current month (future = empty).
+  const periodHref = (p: string) => {
+    const u = new URLSearchParams(scopeParams);
+    u.set("period", p);
+    return `?${u.toString()}`;
+  };
+  const canNext = period < currentPeriodBangkok();
+
   return (
     <div className="p-4 sm:p-6">
       <LedgerHeader
         title="Dashboard"
-        subtitle={`สรุปค่าใช้จ่ายเดือน ${period}`}
+        subtitle="สรุปค่าใช้จ่ายรายเดือน"
         scope={scope}
       />
+
+      {/* Month stepper — change the dashboard's time window without editing the URL */}
+      <div className="mb-4 flex items-center gap-1">
+        <Link
+          href={periodHref(shiftPeriod(period, -1))}
+          aria-label="เดือนก่อนหน้า"
+          className="grid size-9 place-items-center rounded-lg border border-zinc-200 bg-white text-zinc-600 transition hover:bg-zinc-50"
+        >
+          <ChevronLeft className="size-4" aria-hidden />
+        </Link>
+        <span className="min-w-[5.5rem] text-center text-sm font-semibold text-zinc-800">
+          {thMonthLabel(period)}
+        </span>
+        {canNext ? (
+          <Link
+            href={periodHref(shiftPeriod(period, 1))}
+            aria-label="เดือนถัดไป"
+            className="grid size-9 place-items-center rounded-lg border border-zinc-200 bg-white text-zinc-600 transition hover:bg-zinc-50"
+          >
+            <ChevronRight className="size-4" aria-hidden />
+          </Link>
+        ) : (
+          <span
+            aria-hidden
+            className="grid size-9 place-items-center rounded-lg border border-zinc-100 bg-zinc-50 text-zinc-300"
+          >
+            <ChevronRight className="size-4" />
+          </span>
+        )}
+      </div>
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">

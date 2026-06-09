@@ -146,10 +146,13 @@ export function AnalyticsControls({
         )}
       </form>
 
-      {/* axis: ดูตาม ... */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-semibold text-zinc-500">ดูตาม</span>
-        <div role="tablist" aria-label="แกนของตาราง" className="inline-flex rounded-xl border border-zinc-200 bg-zinc-50 p-1">
+      {/* จัดกลุ่ม (axis) + ตัวกรอง + ช่วงเวลา/ฐานยอด — ONE scrollable control band.
+          LeanUX wave B (②#1): merged the old "ดูตาม" row into the toolbar to drop a
+          band; "ดูตาม"→"จัดกลุ่ม" (②#2) so grouping reads distinct from the ตัวกรอง
+          filter. Horizontal-scroll on narrow phones instead of wrapping to 2 lines. */}
+      <div className="-mx-1 flex items-center gap-2 overflow-x-auto px-1 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <span className="shrink-0 text-xs font-semibold text-zinc-500">จัดกลุ่ม</span>
+        <div role="tablist" aria-label="แกนของตาราง" className="inline-flex shrink-0 rounded-xl border border-zinc-200 bg-zinc-50 p-1">
           {AXES.map((opt) => {
             const active = axis === opt.key;
             return (
@@ -171,16 +174,15 @@ export function AnalyticsControls({
             );
           })}
         </div>
-      </div>
 
-      {/* toolbar: ปุ่ม "ตัวกรอง" (ยุบ 3 ตัวเลือก) + ช่วงเวลา + ฐานยอด (view toggles) */}
-      <div className="flex flex-wrap items-center gap-2">
+        <span className="h-5 w-px shrink-0 bg-zinc-200" aria-hidden />
+
         <button
           type="button"
           onClick={() => setFiltersOpen((o) => !o)}
           aria-expanded={filtersOpen}
           className={cn(
-            "inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border px-2.5 text-sm font-medium transition-colors",
+            "inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-sm font-medium transition-colors",
             filterCount > 0
               ? "border-[var(--color-brand-300)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)]"
               : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300",
@@ -196,7 +198,6 @@ export function AnalyticsControls({
           <ChevronDown className={cn("size-3.5 opacity-60 transition-transform", filtersOpen && "rotate-180")} aria-hidden />
         </button>
 
-        {/* grain toggle */}
         <Segmented
           ariaLabel="ช่วงเวลา"
           value={grain}
@@ -207,7 +208,6 @@ export function AnalyticsControls({
           onSelect={(v) => setParam({ grain: v === "month" ? null : v })}
         />
 
-        {/* basis toggle */}
         <Segmented
           ariaLabel="ฐานยอดเงิน"
           value={basis}
@@ -420,7 +420,7 @@ function Segmented<T extends string>({
   onSelect: (v: T) => void;
 }) {
   return (
-    <div role="tablist" aria-label={ariaLabel} className="inline-flex rounded-xl border border-zinc-200 bg-zinc-50 p-1">
+    <div role="tablist" aria-label={ariaLabel} className="inline-flex shrink-0 rounded-xl border border-zinc-200 bg-zinc-50 p-1">
       {options.map((opt) => {
         const active = value === opt.key;
         return (
