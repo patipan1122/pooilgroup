@@ -3052,8 +3052,12 @@ export async function createPaymentRequestAction(
   try {
     const billRows = await prisma.ledgerExpense.findMany({
       where: { id: { in: ids }, orgId, companyId: res.companyId },
-      select: { docCode: true, total: true },
+      select: { docCode: true, total: true, originalUrl: true, thumbUrl: true },
     });
+    // First bill with an attached image → "ดูรูปที่แนบ" button (a plain R2 https URL that
+    // opens in LINE's in-app browser; the full detail page lists every bill's image).
+    const receiptUrl =
+      billRows.map((b) => b.originalUrl ?? b.thumbUrl).find((u): u is string => !!u) ?? null;
     // LIFF deep-link to the SPECIFIC request detail. The ledger LIFF endpoint is a
     // sub-path (/liff/ledger), so the concatenation form liff.line.me/{id}/payreq/X
     // does NOT work — LINE buries the sub-path in ?liff.state and the bootstrap drops
@@ -3073,6 +3077,7 @@ export async function createPaymentRequestAction(
       payee: payee.data,
       bills: billRows.map((b) => ({ docCode: b.docCode, amount: Number(b.total) })),
       detailUrl,
+      receiptUrl,
     });
     const push = await pushFlexToSlipGroup(orgId, res.companyId, card);
     if (push.ok) {

@@ -30,7 +30,7 @@ import { decodeSlipQr } from "@/lib/ledger/slip-qr";
 import { checkSlipDuplicate } from "@/lib/ledger/slip-match";
 import { recordSlipPayment, findAutoMatchBill } from "@/lib/ledger/payments";
 import { matchSlipToRequest } from "@/lib/ledger/payment-request";
-import { paymentRequestPaidText, buildSlipMismatchCard } from "@/lib/ledger/payment-request-card";
+import { buildPaymentPaidCard, buildSlipMismatchCard } from "@/lib/ledger/payment-request-card";
 import {
   buildLineConfirmCard,
   buildLedgerWelcomeCard,
@@ -829,11 +829,22 @@ async function handleSlipImage(opts: {
       recipientAcct,
     });
     if (reqMatch.matched) {
-      await reply(
-        paymentRequestPaidText({
+      // CEO 2026-06-09 — slip matched (exact-to-the-baht): reply a green "โอนแล้ว · ยอดตรง"
+      // CARD (the design's paid state) with the slip inline + open/forward button, instead
+      // of a plain text. Deep-link uses the proven ?next= form (sub-path LIFF endpoint).
+      const liffId = process.env.NEXT_PUBLIC_LEDGER_LIFF_ID;
+      const paidDetailUrl = liffId
+        ? `https://liff.line.me/${liffId}?next=${encodeURIComponent(
+            `/liff/ledger/payreq/${reqMatch.requestId}`,
+          )}`
+        : null;
+      await replyCard(
+        buildPaymentPaidCard({
           vendor: reqMatch.vendor,
           billCount: reqMatch.billCount,
           amount: reqMatch.paidTotal,
+          slipUrl: att.url,
+          detailUrl: paidDetailUrl,
         }),
       );
       return;

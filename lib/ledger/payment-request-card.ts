@@ -17,6 +17,9 @@ const COLOR = {
   sub: "#71717A",
   brand: "#2563EB",
   good: "#16A34A",
+  goodBg: "#F0FDF4",
+  goodChipBg: "#DCFCE7",
+  goodInk: "#166534",
   warn: "#D97706",
   bad: "#DC2626",
   badBg: "#FEF2F2",
@@ -76,15 +79,44 @@ export interface PaymentRequestCardInput {
   bills: { docCode: string; amount: number }[];
   /** LIFF deep-link to the request detail page (ดูรายละเอียด/จ่าย). */
   detailUrl?: string | null;
+  /**
+   * Direct URL to the attached receipt/quotation image of the (first) bill — the
+   * "ดูรูปที่แนบ" button. A plain R2 https URL (NOT a LIFF link) so it just opens in
+   * the in-app browser — no deep-link concatenation. The exec eyeballs what they're
+   * paying for before transferring; the slip comes back naturally (no send-slip button).
+   */
+  receiptUrl?: string | null;
 }
 
 const MAX_BILLS_ON_CARD = 4;
 
 /** Build the request card. Pushed to the executive group on "ขอโอนเงิน". */
 export function buildPaymentRequestCard(input: PaymentRequestCardInput): LineFlexMessage {
-  const { vendor, billsGross, whtTotal, expectedTransfer, payee, bills, detailUrl } = input;
+  const { vendor, billsGross, whtTotal, expectedTransfer, payee, bills, detailUrl, receiptUrl } = input;
   const shown = bills.slice(0, MAX_BILLS_ON_CARD);
   const overflow = bills.length - shown.length;
+
+  // Footer actions (CEO 2026-06-09): NO "ส่งสลิป" button — the slip comes back in the
+  // chat naturally after transfer. Instead give the exec two view buttons: see the
+  // attached receipt image (what am I paying for?) + open the full detail page (pay).
+  const footerButtons: FlexComponent[] = [];
+  if (receiptUrl) {
+    footerButtons.push({
+      type: "button",
+      style: "secondary",
+      height: "sm",
+      action: { type: "uri", label: "🧾 ดูรูปที่แนบ", uri: receiptUrl },
+    });
+  }
+  if (detailUrl) {
+    footerButtons.push({
+      type: "button",
+      style: "primary",
+      height: "sm",
+      color: COLOR.brand,
+      action: { type: "uri", label: "📄 ดูรายละเอียด · จ่าย", uri: detailUrl },
+    });
+  }
 
   const payeeLines: FlexComponent[] = [];
   if (payee.acctName) {
@@ -189,22 +221,16 @@ export function buildPaymentRequestCard(input: PaymentRequestCardInput): LineFle
         },
       ],
     },
-    // "ดูรายละเอียด / จ่าย" — opens the LIFF detail page (full bills + payee copy + QR).
-    ...(detailUrl
+    // Footer: 🧾 ดูรูปที่แนบ (receipt image, direct) + 📄 ดูรายละเอียด · จ่าย (LIFF detail
+    // page: full bills + receipt images + payee copy + QR).
+    ...(footerButtons.length > 0
       ? ({
           footer: {
             type: "box",
             layout: "vertical",
             paddingAll: "12px",
-            contents: [
-              {
-                type: "button",
-                style: "primary",
-                height: "sm",
-                color: COLOR.brand,
-                action: { type: "uri", label: "ดู QR / คัดลอกบัญชี · จ่าย", uri: detailUrl },
-              },
-            ],
+            spacing: "sm",
+            contents: footerButtons,
           },
         } as Pick<FlexBubble, "footer">)
       : {}),
@@ -355,15 +381,128 @@ export function buildSlipMismatchCard(input: SlipMismatchCardInput): LineFlexMes
   };
 }
 
-/** Group notice after a slip closes a request (D10 — requester forwards the slip). */
-export function paymentRequestPaidText(opts: {
+export interface PaymentPaidCardInput {
   vendor: string | null;
   billCount: number;
   amount: number;
-}): string {
-  const v = opts.vendor ? ` ${opts.vendor}` : "";
-  return (
-    `✅ รับสลิปแล้ว · ปิดบิล ${opts.billCount} ใบ${v} ยอด ${fmtTHB(opts.amount)}\n` +
-    `สลิปแนบในกลุ่มนี้แล้ว — ฝ่ายที่ขอโอนเอาไปส่งต่อผู้ขายได้เลย`
-  );
+  /** the matched slip image (R2) — shown inline + "ดูสลิป / ดึงสลิป". */
+  slipUrl?: string | null;
+  /** LIFF deep-link to the (now closed) request detail. */
+  detailUrl?: string | null;
+}
+
+/**
+ * Green "โอนแล้ว · ปิดบิลแล้ว" card replied INTO the group when a slip matches a request
+ * (CEO 2026-06-09: "ถ้ามียอดแมชแล้วก็ให้โชว์อีกแบบ" — the design's paid state). A match
+ * means the slip verified EXACT to the baht, so it's always "ยอดตรง" here; over/under and
+ * wrong-account go to buildSlipMismatchCard instead. Shows the slip inline + a button to
+ * open/forward it (D10: the requester forwards the slip to the supplier). Replied (free).
+ */
+export function buildPaymentPaidCard(input: PaymentPaidCardInput): LineFlexMessage {
+  const { vendor, billCount, amount, slipUrl, detailUrl } = input;
+
+  const footerButtons: FlexComponent[] = [];
+  if (slipUrl) {
+    footerButtons.push({
+      type: "button",
+      style: "primary",
+      height: "sm",
+      color: COLOR.good,
+      action: { type: "uri", label: "📎 ดูสลิป / ดึงสลิป", uri: slipUrl },
+    });
+  }
+  if (detailUrl) {
+    footerButtons.push({
+      type: "button",
+      style: "secondary",
+      height: "sm",
+      action: { type: "uri", label: "ดูรายละเอียด", uri: detailUrl },
+    });
+  }
+
+  const bubble: FlexBubble = {
+    type: "bubble",
+    size: "kilo",
+    header: {
+      type: "box",
+      layout: "vertical",
+      paddingAll: "16px",
+      backgroundColor: COLOR.goodBg,
+      contents: [
+        { type: "text", text: "✅ โอนแล้ว · ปิดบิลแล้ว", size: "sm", weight: "bold", color: COLOR.good },
+        { type: "text", text: vendor || "ไม่ระบุผู้ขาย", size: "md", weight: "bold", color: COLOR.ink, wrap: true, margin: "xs" },
+      ],
+    },
+    body: {
+      type: "box",
+      layout: "vertical",
+      paddingAll: "16px",
+      spacing: "sm",
+      contents: [
+        { type: "text", text: "ยอดที่โอน", size: "xs", color: COLOR.sub },
+        { type: "text", text: fmtTHB(amount), size: "xxl", weight: "bold", color: COLOR.ink },
+        // ยอดตรง — a match is exact-to-the-baht (mismatches never reach this card).
+        {
+          type: "box",
+          layout: "vertical",
+          backgroundColor: COLOR.goodChipBg,
+          cornerRadius: "md",
+          paddingAll: "8px",
+          margin: "sm",
+          contents: [
+            {
+              type: "text",
+              text: `✓ ยอดตรง · ปิดบิล ${billCount} ใบ`,
+              size: "sm",
+              weight: "bold",
+              color: COLOR.goodInk,
+              align: "center",
+            },
+          ],
+        },
+        // The matched slip inline (the design's "📎 สลิปที่แนบ").
+        ...(slipUrl
+          ? ([
+              { type: "separator", margin: "md", color: COLOR.line },
+              { type: "text", text: "📎 สลิปที่แนบ (ระบบสแกนแล้ว)", size: "xs", color: COLOR.sub, margin: "sm" },
+              {
+                type: "image",
+                url: slipUrl,
+                size: "full",
+                aspectRatio: "9:13",
+                aspectMode: "fit",
+                margin: "sm",
+                backgroundColor: "#ffffff",
+              } as FlexImage,
+            ] as FlexComponent[])
+          : []),
+        { type: "separator", margin: "md", color: COLOR.line },
+        {
+          type: "text",
+          text: "สลิปอยู่ในกลุ่มนี้แล้ว — ฝ่ายที่ขอโอนเอาไปส่งต่อผู้ขายได้เลย",
+          size: "xs",
+          color: COLOR.sub,
+          wrap: true,
+          margin: "sm",
+        },
+      ],
+    },
+    ...(footerButtons.length > 0
+      ? ({
+          footer: {
+            type: "box",
+            layout: "vertical",
+            paddingAll: "12px",
+            spacing: "sm",
+            contents: footerButtons,
+          },
+        } as Pick<FlexBubble, "footer">)
+      : {}),
+  };
+
+  return {
+    type: "flex",
+    altText: `โอนแล้ว ${vendor || ""} ${fmtTHB(amount)} · ปิดบิล ${billCount} ใบ ยอดตรง`.trim(),
+    contents: bubble,
+  };
 }

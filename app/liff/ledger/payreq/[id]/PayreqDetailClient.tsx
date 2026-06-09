@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { Copy, Check, ReceiptText } from "lucide-react";
 import type { PaymentRequestDetail } from "@/lib/ledger/payment-request-queries";
+import { ReceiptThumb } from "@/components/ledger/ReceiptThumb";
 
 const baht = (n: number) =>
   `฿${n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -62,6 +63,10 @@ export function PayreqDetailClient({
   const qrUrl = ppPayload
     ? `https://api.qrserver.com/v1/create-qr-code/?size=260x260&qzone=1&data=${encodeURIComponent(ppPayload)}`
     : null;
+
+  // Attached receipt/quotation images — "ดูเอกสารที่แนบ" (CEO 2026-06-09: the exec wants
+  // to see what they're paying for, not a send-slip button).
+  const billsWithImage = req.bills.filter((b) => b.originalUrl || b.thumbUrl);
 
   return (
     <div className="space-y-4">
@@ -146,6 +151,30 @@ export function PayreqDetailClient({
           ))}
         </ul>
       </div>
+
+      {/* Attached receipt/quotation images — what the exec is paying for. Reuses
+          ReceiptThumb (tap → full-screen, "เปิดต้นฉบับ", PDF-aware). */}
+      {billsWithImage.length > 0 && (
+        <div>
+          <p className="mb-1.5 text-xs font-semibold text-zinc-500">
+            เอกสารที่แนบ ({billsWithImage.length})
+          </p>
+          <div className="space-y-3">
+            {billsWithImage.map((b, i) => (
+              <div key={`doc-${b.docCode}-${i}`}>
+                {req.bills.length > 1 && (
+                  <p className="mb-1 font-mono text-[11px] text-zinc-400">{b.docCode}</p>
+                )}
+                <ReceiptThumb
+                  thumbUrl={b.thumbUrl}
+                  originalUrl={b.originalUrl}
+                  alt={`เอกสาร ${b.docCode}`}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <p className="rounded-lg bg-emerald-50 px-3 py-2 text-center text-xs text-emerald-700">
         โอนแล้ว → ส่งสลิปกลับกลุ่มนี้ ระบบจับคู่ + ปิดบิลให้อัตโนมัติ ✅

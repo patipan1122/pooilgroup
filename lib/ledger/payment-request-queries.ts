@@ -378,7 +378,14 @@ export interface PaymentRequestDetail {
   payeePromptpay: string | null;
   payeeQrImageUrl: string | null;
   requestedAt: string;
-  bills: { docCode: string; amount: number; wht: number }[];
+  bills: {
+    docCode: string;
+    amount: number;
+    wht: number;
+    /** attached receipt/quotation image (R2) — ดูเอกสารที่แนบ on the detail page. */
+    originalUrl: string | null;
+    thumbUrl: string | null;
+  }[];
 }
 
 /** Read one request (read-only) for the LIFF detail page. Scoped by orgId; the
@@ -400,13 +407,18 @@ export async function getPaymentRequestDetail(
   });
   if (!r) return null;
   const ids = r.bills.map((b) => b.expenseId);
-  const codeMap = new Map<string, string>();
+  const billMap = new Map<
+    string,
+    { docCode: string; originalUrl: string | null; thumbUrl: string | null }
+  >();
   if (ids.length > 0) {
     const codes = await prisma.ledgerExpense.findMany({
       where: { id: { in: ids }, orgId, companyId: r.companyId },
-      select: { id: true, docCode: true },
+      select: { id: true, docCode: true, originalUrl: true, thumbUrl: true },
     });
-    for (const c of codes) codeMap.set(c.id, c.docCode);
+    for (const c of codes) {
+      billMap.set(c.id, { docCode: c.docCode, originalUrl: c.originalUrl, thumbUrl: c.thumbUrl });
+    }
   }
   return {
     id: r.id,
@@ -422,10 +434,15 @@ export async function getPaymentRequestDetail(
     payeePromptpay: r.payeePromptpay,
     payeeQrImageUrl: r.payeeQrImageUrl,
     requestedAt: r.requestedAt.toISOString(),
-    bills: r.bills.map((b) => ({
-      docCode: codeMap.get(b.expenseId) ?? "—",
-      amount: round2(Number(b.billAmount)),
-      wht: round2(Number(b.billWht)),
-    })),
+    bills: r.bills.map((b) => {
+      const info = billMap.get(b.expenseId);
+      return {
+        docCode: info?.docCode ?? "—",
+        amount: round2(Number(b.billAmount)),
+        wht: round2(Number(b.billWht)),
+        originalUrl: info?.originalUrl ?? null,
+        thumbUrl: info?.thumbUrl ?? null,
+      };
+    }),
   };
 }
