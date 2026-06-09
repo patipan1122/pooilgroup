@@ -1,12 +1,7 @@
-// Ledger · ตั้งค่า › สิทธิ์การใช้งาน — money-capability toggles per role.
-// Reuses the SAME PermissionPanel + getPermissionMatrix as the LINE admin console
-// so web and LINE never diverge. Permission rows are org-wide (not per-company).
-import { requireRole } from "@/lib/auth/session";
-import { resolveScope } from "../../_scope";
-import { LedgerHeader, NoCompanyState } from "../../_components/LedgerHeader";
-import { getPermissionMatrix } from "@/lib/ledger/permissions";
-import { PermissionPanel } from "@/app/liff/ledger/admin/_components/PermissionPanel";
-import { SettingsBack } from "../_components/SettingsBack";
+// LeanUX C2 (2026-06-09): "สิทธิ์การใช้งาน" merged into the combined "ทีม & สิทธิ์"
+// page (/ledger/settings/members) as the "สิทธิ์" tab — same mental model as members.
+// This route redirects so old links/bookmarks still land on the permissions tab.
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -15,33 +10,10 @@ export default async function PermissionSettingsPage({
 }: {
   searchParams: Promise<{ company?: string; branch?: string }>;
 }) {
-  const session = await requireRole("super_admin", "org_admin", "admin");
   const sp = await searchParams;
-  const scope = await resolveScope(session.user.org_id, sp);
-
-  if (!scope.companyId) {
-    return (
-      <div className="p-4 sm:p-6">
-        <SettingsBack companyId={null} />
-        <LedgerHeader title="สิทธิ์การใช้งาน" scope={scope} />
-        <NoCompanyState />
-      </div>
-    );
-  }
-
-  const matrix = await getPermissionMatrix(scope.orgId);
-
-  return (
-    <div className="p-4 pb-24 sm:p-6 lg:pb-6">
-      <SettingsBack companyId={scope.companyId} />
-      <LedgerHeader
-        title="สิทธิ์การใช้งาน"
-        subtitle="แต่ละบทบาททำอะไรได้บ้าง (ยืนยัน/ส่งออก/ดูกำไร)"
-        scope={scope}
-      />
-      <div className="mx-auto max-w-2xl">
-        <PermissionPanel matrix={matrix} />
-      </div>
-    </div>
-  );
+  const qs = new URLSearchParams();
+  if (sp.company) qs.set("company", sp.company);
+  if (sp.branch) qs.set("branch", sp.branch);
+  qs.set("tab", "permissions");
+  redirect(`/ledger/settings/members?${qs.toString()}`);
 }

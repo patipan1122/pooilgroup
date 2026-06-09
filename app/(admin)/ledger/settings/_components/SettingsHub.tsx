@@ -9,7 +9,6 @@ import {
   Tags,
   FileSpreadsheet,
   Users,
-  ShieldCheck,
   MapPin,
   MessageSquare,
   CloudUpload,
@@ -148,21 +147,16 @@ export function SettingsHub({
       label: "ทีมงาน & สิทธิ์",
       rows: [
         {
+          // LeanUX C2 (2026-06-09): merged "สมาชิก & คำเชิญ" + "สิทธิ์การใช้งาน" into
+          // one "ทีม & สิทธิ์" page (tabs) — same mental model (ใครทำอะไรได้ที่ไหน).
           href: `/ledger/settings/members${qs}`,
           icon: Users,
           tone: "sky",
-          title: "สมาชิก & คำเชิญ",
-          subtitle: "ใครเข้าใช้ระบบได้บ้าง",
+          title: "ทีม & สิทธิ์",
+          subtitle: "สมาชิก · คำเชิญ · สิทธิ์แต่ละบทบาท",
           count: counts.members,
           badge:
             counts.pendingMembers > 0 ? `${counts.pendingMembers} รออนุมัติ` : null,
-        },
-        {
-          href: `/ledger/settings/permissions${qs}`,
-          icon: ShieldCheck,
-          tone: "violet",
-          title: "สิทธิ์การใช้งาน",
-          subtitle: "ใครยืนยัน/ส่งออก/ดูกำไรได้",
         },
         {
           href: `/ledger/settings/branches${qs}`,
