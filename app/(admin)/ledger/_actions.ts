@@ -1643,7 +1643,7 @@ export async function deleteTrcloudApAction(
 /** Push ONE confirmed expense → TRCloud AP. Idempotent + accountant-tier. */
 export async function sendExpenseToTrcloud(
   id: string,
-): Promise<ActionResult & { docNo?: string | null; alreadySent?: boolean }> {
+): Promise<ActionResult & { docNo?: string | null; alreadySent?: boolean; warning?: string }> {
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
@@ -1668,12 +1668,15 @@ export async function sendExpenseToTrcloud(
   if (loaded.status !== "confirmed" && loaded.status !== "locked") {
     return { ok: false, error: "ส่งได้เฉพาะรายการที่ยืนยันแล้ว" };
   }
-  // ใบเสนอราคาไม่ใช่เอกสารทางบัญชี → ห้ามดันเข้า TRCloud (company 31 ใช้ร่วม) จนกว่า
-  // จะแนบใบกำกับ/ใบเสร็จตัวจริงมาแทนที่ (supersede). กัน double-doc ในระบบบัญชีจริง.
-  if (loaded.docType === "quotation") {
-    return { ok: false, error: "ใบเสนอราคายังส่งเข้า TRCloud ไม่ได้ — ต้องแนบใบกำกับ/ใบเสร็จตัวจริงก่อน" };
-  }
-  if (loaded.alreadyPushed) return { ok: true, alreadySent: true };
+  // CEO decision 2026-06-09: ใบเสนอราคา (quotation) "ส่งเข้า TRCloud ได้ แต่เตือน".
+  // เดิมบล็อกเด็ดขาด (กัน double-doc + ใบเสนอราคาไม่ใช่เอกสารภาษี) — เปลี่ยนเป็น
+  // เตือนแทน: ปุ่มฝั่ง client เด้ง confirm ก่อนส่ง + แนบหมายเหตุนี้กลับให้ผู้ใช้รู้ว่า
+  // ภาษีซื้อขอคืนไม่ได้จนกว่าจะมีใบกำกับ/ใบเสร็จตัวจริงมาแทนที่ (supersede).
+  const quotationWarning =
+    loaded.docType === "quotation"
+      ? "ส่งแล้ว — แต่เอกสารนี้เป็นใบเสนอราคา ภาษีซื้อ (VAT) ขอคืนไม่ได้จนกว่าจะมีใบกำกับ/ใบเสร็จตัวจริงมาแทนที่"
+      : undefined;
+  if (loaded.alreadyPushed) return { ok: true, alreadySent: true, warning: quotationWarning };
 
   // Atomically claim the row before calling TRCloud — prevents a duplicate AP if
   // two concurrent requests both pass the alreadyPushed check (race condition),
@@ -1714,7 +1717,7 @@ export async function sendExpenseToTrcloud(
   revalidatePath("/ledger/expenses");
   revalidatePath("/ledger");
   if (!res.ok) return { ok: false, error: res.error };
-  return { ok: true, docNo: res.docNo };
+  return { ok: true, docNo: res.docNo, warning: quotationWarning };
 }
 
 /** Push MANY confirmed expenses (multi-select). Company-scoped like bulkConfirm:
@@ -1722,7 +1725,7 @@ export async function sendExpenseToTrcloud(
 export async function sendExpensesToTrcloud(
   ids: string[],
   companyId: string,
-): Promise<ActionResult & { sent?: number; skipped?: number; failed?: number; firstError?: string }> {
+): Promise<ActionResult & { sent?: number; skipped?: number; failed?: number; firstError?: string; quotationsSent?: number }> {
   if (!Array.isArray(ids) || ids.length === 0) return { ok: false, error: "ไม่ได้เลือกรายการ" };
   if (!companyId) return { ok: false, error: "ไม่ได้ระบุบริษัท" };
   const access = await requireLedgerAccess();
@@ -1743,7 +1746,8 @@ export async function sendExpensesToTrcloud(
 
   let sent = 0,
     skipped = 0,
-    failed = 0;
+    failed = 0,
+    quotationsSent = 0;
   let firstError: string | undefined;
   // Sequential on purpose: each push creates/looks-up shared TRCloud masters; serial
   // avoids racing two new-vendor creates into duplicates within one batch.
@@ -1757,11 +1761,9 @@ export async function sendExpensesToTrcloud(
       skipped++;
       continue;
     }
-    if (loaded.docType === "quotation") {
-      // ใบเสนอราคา ห้ามดันเข้า TRCloud จนแนบใบจริงแทนที่ (supersede).
-      skipped++;
-      continue;
-    }
+    // CEO decision 2026-06-09: ใบเสนอราคาส่งได้ (เดิม skip) — นับแยกไว้รายงานกลับ
+    // ให้ผู้ใช้รู้ว่ามีใบเสนอราคารวมอยู่ (ภาษีซื้อขอคืนไม่ได้จนกว่าจะมีใบจริง).
+    if (loaded.docType === "quotation") quotationsSent++;
     if (loaded.alreadyPushed) {
       skipped++;
       continue;
@@ -1800,9 +1802,9 @@ export async function sendExpensesToTrcloud(
   revalidatePath("/ledger/expenses");
   revalidatePath("/ledger");
   if (sent === 0 && failed > 0) {
-    return { ok: false, error: firstError ?? "ส่งไม่สำเร็จ", sent, skipped, failed, firstError };
+    return { ok: false, error: firstError ?? "ส่งไม่สำเร็จ", sent, skipped, failed, firstError, quotationsSent };
   }
-  return { ok: true, sent, skipped, failed, firstError };
+  return { ok: true, sent, skipped, failed, firstError, quotationsSent };
 }
 
 // ===================== LIFF member actions (แก้ไข/ยืนยันจาก LINE) =====================

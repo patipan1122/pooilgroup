@@ -285,6 +285,7 @@ export function ExpenseList({
       const res = await sendExpensesToTrcloud(selSendable, companyId);
       if (res.ok) {
         const parts = [`ส่งเข้า TRCloud ${res.sent ?? 0} ใบ`];
+        if (res.quotationsSent) parts.push(`รวมใบเสนอราคา ${res.quotationsSent} (ขอคืน VAT ไม่ได้)`);
         if (res.skipped) parts.push(`ข้าม ${res.skipped}`);
         if (res.failed) parts.push(`พลาด ${res.failed}`);
         setMsg({ kind: res.failed ? "err" : "ok", text: parts.join(" · ") });

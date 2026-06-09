@@ -664,6 +664,7 @@ export function ExpenseReviewPane({
             <SendToTrcloudButton
               expenseId={expense.id}
               status={expense.status}
+              docType={expense.docType}
               trcloudDocId={expense.trcloudDocId}
               trcloudDocNo={expense.trcloudDocNo}
               trcloudError={expense.trcloudError}
