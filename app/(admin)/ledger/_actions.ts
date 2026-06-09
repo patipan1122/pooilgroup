@@ -2925,6 +2925,7 @@ export async function matchFloatingSlip(
     resourceId: payment.id,
     diff: { old: { matchedExpenseId: null }, new: { matchedExpenseId: bill.id, paymentStatus: "paid" } },
   });
+  revalidatePath("/ledger/reconcile");
   revalidatePath("/ledger/payments");
   revalidatePath("/ledger/expenses");
   return { ok: true };

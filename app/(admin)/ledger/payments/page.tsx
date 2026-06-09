@@ -1,14 +1,9 @@
-// LedgerLine PR4 (D4) — "สลิปลอย": payment slips the auto-matcher couldn't pair
-// to exactly one unpaid bill. The accountant pairs them here (the dedup already
-// ran at intake, so nothing on this page can double-pay). Flag-gated.
-import { requireRole } from "@/lib/auth/session";
-import { ledgerWebCanForRole } from "@/lib/ledger/liff-auth";
-import { resolveScope } from "../_scope";
-import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
-import { listExpensesSummary } from "../_data";
-import { listFloatingPayments } from "@/lib/ledger/payments";
-import { ledgerSlipV1 } from "@/lib/ledger/flags";
-import { FloatingSlipList } from "./_components/FloatingSlipList";
+// LeanUX C1 (2026-06-09): the floating-slip work merged into /ledger/reconcile
+// (one money home — the old standalone "สลิปจ่ายเงิน" page was an orphan with no
+// nav entry that duplicated reconcile's slip pairing). This route now redirects so
+// any old links/bookmarks still land on the right place; the slip→bill pairing UI
+// lives in reconcile (gated by LEDGER_SLIP_V1).
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -17,72 +12,10 @@ export default async function PaymentsPage({
 }: {
   searchParams: Promise<{ company?: string; branch?: string }>;
 }) {
-  const session = await requireRole(
-    "super_admin",
-    "org_admin",
-    "admin",
-    "area_manager",
-    "viewer",
-  );
   const sp = await searchParams;
-  const scope = await resolveScope(session.user.org_id, sp);
-
-  if (!scope.companyId) {
-    return (
-      <div className="p-4 sm:p-6">
-        <LedgerHeader title="สลิปจ่ายเงิน" scope={scope} />
-        <NoCompanyState />
-      </div>
-    );
-  }
-
-  if (!ledgerSlipV1()) {
-    return (
-      <div className="p-4 sm:p-6">
-        <LedgerHeader title="สลิปจ่ายเงิน" scope={scope} />
-        <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-10 text-center text-sm text-zinc-500">
-          ระบบรับสลิปอัตโนมัติยังไม่เปิดใช้ — เปิดได้ที่ Vercel (LEDGER_SLIP_V1) แล้วตั้งกลุ่มส่งสลิปในหน้า “ตั้งค่า”
-        </div>
-      </div>
-    );
-  }
-
-  const canMatch = await ledgerWebCanForRole(
-    scope.orgId,
-    session.user.role,
-    "expense.confirm",
-  );
-
-  const [floating, unpaidBills] = await Promise.all([
-    listFloatingPayments(scope.orgId, scope.companyId),
-    listExpensesSummary({
-      orgId: scope.orgId,
-      companyId: scope.companyId,
-      branchId: scope.branchId,
-      status: ["confirmed", "locked"],
-      paymentStatus: "unpaid",
-      take: 300,
-    }).then((r) => r.expenses),
-  ]);
-
-  return (
-    <div className="p-4 sm:p-6">
-      <LedgerHeader
-        title="สลิปจ่ายเงิน"
-        subtitle={`${floating.length} สลิปรอจับคู่`}
-        scope={scope}
-      />
-      <FloatingSlipList
-        slips={floating}
-        bills={unpaidBills.map((b) => ({
-          id: b.id,
-          docCode: b.docCode,
-          vendor: b.vendor,
-          total: b.total,
-          docDate: b.docDate,
-        }))}
-        canMatch={canMatch}
-      />
-    </div>
-  );
+  const qs = new URLSearchParams();
+  if (sp.company) qs.set("company", sp.company);
+  if (sp.branch) qs.set("branch", sp.branch);
+  const q = qs.toString();
+  redirect(q ? `/ledger/reconcile?${q}` : "/ledger/reconcile");
 }

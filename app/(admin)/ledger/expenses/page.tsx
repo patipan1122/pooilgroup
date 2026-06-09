@@ -317,7 +317,7 @@ export default async function ExpensesPage({
             <HeaderToolsMenu>
               {slipOn && (
                 <Link
-                  href={`/ledger/payments?${quotationOffParams.toString()}`}
+                  href={`/ledger/reconcile?${quotationOffParams.toString()}`}
                   className="inline-flex min-h-[40px] items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
                 >
                   สลิปรอจับคู่
@@ -419,7 +419,7 @@ export default async function ExpensesPage({
             <>
               {slipOn && (
                 <Link
-                  href={`/ledger/payments?${quotationOffParams.toString()}`}
+                  href={`/ledger/reconcile?${quotationOffParams.toString()}`}
                   className="inline-flex min-h-[40px] items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
                 >
                   สลิปรอจับคู่
