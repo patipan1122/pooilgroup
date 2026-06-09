@@ -40,26 +40,12 @@ const BANKS: { code: string; name: string }[] = [
 ];
 import type { ExpenseTab } from "../page";
 import { FilterSheet } from "./FilterSheet";
+import { ExpenseStatusTabs } from "./ExpenseStatusTabs";
 import type { ExpenseRow, LedgerStatusValue } from "@/components/ledger/_kit/types";
 
-// PRIMARY status strip (redesign 2026-06-07) — the accountant's daily axis: triage
-// รอยืนยัน → ยืนยันแล้ว → ส่ง TRCloud. "ส่งแล้ว" is the ?tr=sent filter (not a status),
-// the rest drive ?status=. Source (LINE/email/…) moved into the ตัวกรอง popover.
-// 5 tabs matching the design (รอตรวจ = draft AI ยังไม่ชัวร์/needsReview · รอยืนยัน =
-// draft ตรวจแล้วรอบัญชียืนยัน · ยืนยันแล้ว = confirmed · ส่ง TRCloud = tr=sent · ทั้งหมด).
-// CEO 2026-06-08: status set = รอตรวจ/รอยืนยัน/ยืนยันแล้ว/ขอโอน/รอโอน/โอนแล้ว/ทั้งหมด.
-// pay tabs (eligible/requested/paid) แสดงเมื่อ payreqEnabled · "ส่ง TRCloud" ย้ายเข้าตัวกรอง (tr).
-type PrimaryTabId =
-  | "review" | "draft" | "confirmed" | "eligible" | "requested" | "paid" | "all";
-const PRIMARY_TABS: Array<{ id: PrimaryTabId; label: string; pay?: boolean }> = [
-  { id: "review", label: "รอตรวจ" },
-  { id: "draft", label: "รอยืนยัน" },
-  { id: "confirmed", label: "ยืนยันแล้ว" },
-  { id: "eligible", label: "ขอโอน", pay: true },
-  { id: "requested", label: "รอโอน", pay: true },
-  { id: "paid", label: "โอนแล้ว", pay: true },
-  { id: "all", label: "ทั้งหมด" },
-];
+// PRIMARY status strip (รอตรวจ/รอยืนยัน/ยืนยันแล้ว/ขอโอน/รอโอน/โอนแล้ว/ทั้งหมด) moved to
+// ./ExpenseStatusTabs (CEO 2026-06-09: บนจอคอม = แถบเต็มกว้างด้านบน · มือถือ = ในคอลัมน์นี้
+// lg:hidden). The component drives ?status=/?nr=/?pay= exactly as before.
 
 function baht(n: number) {
   return `${Math.round(n).toLocaleString("en-US")} ฿`;
@@ -204,46 +190,6 @@ export function ExpenseList({
     sp.delete("category");
     sp.delete("tab");
     sp.delete("nr");
-    if (selectedId) sp.set("selected", selectedId);
-    router.push(`${pathname}?${sp.toString()}`);
-  }
-
-  // PRIMARY status strip — sets status/tr/nr atomically (selecting one clears others)
-  // so the 5 segmented tabs behave like a single tab group. รอตรวจ/รอยืนยัน both =
-  // draft, split by needsReview (?nr=1 / ?nr=0).
-  const activePrimary: PrimaryTabId | null =
-    pay === "eligible"
-      ? "eligible"
-      : pay === "requested"
-        ? "requested"
-        : pay === "paid"
-          ? "paid"
-          : status === "confirmed"
-            ? "confirmed"
-            : status === "draft" && nr === true
-              ? "review"
-              : status === "draft" && nr === false
-                ? "draft"
-                : !status && !tr && !pay
-                  ? "all"
-                  : null; // locked/void/tr=sent via the ตัวกรอง popover → no primary highlight
-  function setPrimaryTab(id: PrimaryTabId) {
-    const sp = new URLSearchParams(baseParams);
-    sp.delete("status");
-    sp.delete("tr");
-    sp.delete("nr");
-    sp.delete("pay");
-    if (id === "review") {
-      sp.set("status", "draft");
-      sp.set("nr", "1");
-    } else if (id === "draft") {
-      sp.set("status", "draft");
-      sp.set("nr", "0");
-    } else if (id === "confirmed") {
-      sp.set("status", "confirmed");
-    } else if (id === "eligible" || id === "requested" || id === "paid") {
-      sp.set("pay", id);
-    }
     if (selectedId) sp.set("selected", selectedId);
     router.push(`${pathname}?${sp.toString()}`);
   }
@@ -436,43 +382,19 @@ export function ExpenseList({
         {/* LeanUX (CEO 2026-06-08 "filter ควร ~10% ของจอ"): แท็บสถานะ (เลื่อนแนวนอน) +
             ปุ่ม "ตัวกรอง" อยู่แถวเดียว. ค้นหา=ข้างหัว(header) · เรียงลำดับ+source/VAT/หมวด=ในตัวกรอง. */}
         <div className="flex items-center gap-2">
-          <div
-            className="-mx-1 flex flex-1 gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            role="tablist"
-            aria-label="กรองตามสถานะ"
-          >
-            {PRIMARY_TABS.filter((t) => payreqEnabled || !t.pay).map((t) => {
-              const active = activePrimary === t.id;
-              const count = statusCounts[t.id];
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setPrimaryTab(t.id)}
-                  className={
-                    "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-300)] " +
-                    (active
-                      ? "bg-[var(--color-brand-600)] text-white"
-                      : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200")
-                  }
-                >
-                  {t.label}
-                  {count > 0 && (
-                    <span
-                      className={
-                        "inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums " +
-                        (active ? "bg-white/25 text-white" : "bg-white text-zinc-500")
-                      }
-                    >
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+          {/* Desktop: these tabs live in the full-width bar above the grid (page.tsx).
+              Mobile: keep them here in the list column. */}
+          <ExpenseStatusTabs
+            baseParams={baseParams}
+            status={status}
+            tr={tr}
+            nr={nr}
+            pay={pay}
+            payreqEnabled={payreqEnabled}
+            statusCounts={statusCounts}
+            selectedId={selectedId}
+            className="flex-1 lg:hidden"
+          />
           <div className="shrink-0">
             <FilterSheet
               status={status}

@@ -16,6 +16,7 @@ import { CompanyBranchPicker } from "../_components/CompanyBranchPicker";
 import { ExpenseSearch } from "./_components/ExpenseSearch";
 import { listExpensesSummary, getExpense, listCategories, summarizeCompleteness } from "../_data";
 import { ExpenseList } from "./_components/ExpenseList";
+import { ExpenseStatusTabs } from "./_components/ExpenseStatusTabs";
 import { CompletenessSummaryStrip } from "./_components/CompletenessSummaryStrip";
 import { ExpensePaneClient } from "./_components/ExpensePaneClient";
 import { UploadReceiptButton } from "./_components/UploadReceiptButton";
@@ -378,6 +379,22 @@ export default async function ExpensesPage({
           </Link>
         </div>
       )}
+
+      {/* แท็บสถานะ — แถบเต็มกว้างด้านบน (เดสก์ท็อปเท่านั้น · CEO 2026-06-09: ย้ายจากในคอลัมน์
+          รายการ 420px มาใช้พื้นที่ว่างกว้าง ๆ ตรงดีไซน์ desktopA). มือถือ render ในคอลัมน์
+          รายการ (ExpenseList → ExpenseStatusTabs lg:hidden) ที่ความกว้างเต็มอยู่แล้ว. */}
+      <div className="mb-3 hidden rounded-2xl border border-zinc-200 bg-white p-2 lg:block">
+        <ExpenseStatusTabs
+          baseParams={baseParams.toString()}
+          status={status}
+          tr={tr}
+          nr={nr}
+          pay={pay}
+          payreqEnabled={ledgerPayreqV1()}
+          statusCounts={statusCounts}
+          selectedId={selected}
+        />
+      </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
         {/* LEFT — list + filters + bulk-confirm. Mobile master-detail: hide list when a receipt is open (?selected). */}
