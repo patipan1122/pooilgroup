@@ -54,14 +54,14 @@ function SlipCard({ slip, bills, canMatch }: { slip: Slip; bills: Bill[]; canMat
 
   if (done) {
     return (
-      <li className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
-        ✅ จับคู่สลิป {baht(slip.amount)} บาทเรียบร้อย — บิลถูกตั้งเป็น “จ่ายแล้ว”
+      <li className="animate-scale-in rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-700">
+        ✅ จับคู่สลิป {baht(slip.amount)} บาทเรียบร้อย บิลถูกตั้งเป็น “จ่ายแล้ว”
       </li>
     );
   }
 
   return (
-    <li className="rounded-xl border border-zinc-200 bg-white p-3">
+    <li className="animate-fade-up rounded-xl border border-zinc-200 bg-white p-3 transition-shadow hover:shadow-sm">
       <div className="flex gap-3">
         {slip.slipThumbUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -71,7 +71,7 @@ function SlipCard({ slip, bills, canMatch }: { slip: Slip; bills: Bill[]; canMat
             className="size-16 shrink-0 rounded-lg border border-zinc-200 object-cover"
           />
         ) : (
-          <div className="grid size-16 shrink-0 place-items-center rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-300">
+          <div className="grid size-16 shrink-0 place-items-center rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-400">
             <ImageOff className="size-5" aria-hidden />
           </div>
         )}
@@ -108,14 +108,14 @@ function SlipCard({ slip, bills, canMatch }: { slip: Slip; bills: Bill[]; canMat
             type="button"
             onClick={match}
             disabled={pending || !billId}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--color-brand-600)] px-3 text-sm font-semibold text-white disabled:opacity-50"
+            className="press inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--color-brand-600)] px-3 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-brand-700)] disabled:opacity-50"
           >
             {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Link2 className="size-4" aria-hidden />}
             จับคู่ + ตั้งจ่ายแล้ว
           </button>
         </div>
       ) : (
-        <p className="mt-2 text-xs text-zinc-400">เฉพาะบัญชี/ผู้ดูแลจับคู่สลิปได้</p>
+        <p className="mt-2 text-xs text-zinc-500">เฉพาะบัญชี/ผู้ดูแลจับคู่สลิปได้</p>
       )}
       {err && <p className="mt-2 text-xs text-rose-600">{err}</p>}
     </li>
@@ -133,8 +133,8 @@ export function FloatingSlipList({
 }) {
   if (slips.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-10 text-center text-sm text-zinc-500">
-        ไม่มีสลิปลอย — ระบบจับคู่สลิปกับบิลให้อัตโนมัติเมื่อยอดตรงและเจอบิลเดียว
+      <div className="animate-fade-in rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-10 text-center text-sm text-zinc-500">
+        ไม่มีสลิปลอย ระบบจับคู่สลิปกับบิลให้อัตโนมัติเมื่อยอดตรงและเจอบิลเดียว
       </div>
     );
   }

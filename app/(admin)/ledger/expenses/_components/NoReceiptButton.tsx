@@ -90,7 +90,7 @@ export function NoReceiptButton({
           <div className="w-full max-w-md rounded-t-2xl bg-white p-5 sm:rounded-2xl">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-base font-bold text-zinc-900">เพิ่มค่าใช้จ่ายไม่มีใบเสร็จ</h2>
-              <button type="button" onClick={() => setOpen(false)} className="text-zinc-400 hover:text-zinc-600">
+              <button type="button" onClick={() => setOpen(false)} className="text-zinc-500 hover:text-zinc-600">
                 <X className="size-5" />
               </button>
             </div>

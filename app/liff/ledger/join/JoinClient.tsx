@@ -80,47 +80,50 @@ export function JoinClient({ token }: { token: string }) {
   };
 
   return (
-    <div className="flex min-h-[70vh] flex-col items-center justify-center gap-4 text-center">
+    <div className="flex min-h-[70vh] flex-col items-center justify-center gap-4 px-2 text-center">
       {state.kind === "loading" && (
-        <>
+        <div className="flex animate-fade-in flex-col items-center gap-4">
           <div className="size-12 animate-spin rounded-full border-4 border-[var(--color-brand-200)] border-t-[var(--color-brand-600)]" />
-          <p className="text-sm text-zinc-500">กำลังเข้าร่วม…</p>
-        </>
+          <p className="text-base font-semibold text-zinc-800">กำลังเข้าร่วม…</p>
+          <p className="text-sm text-zinc-500">รอสักครู่ กำลังยืนยันคำเชิญกับ LINE</p>
+        </div>
       )}
       {state.kind === "ok" && (
-        <>
+        <div className="flex animate-fade-up flex-col items-center gap-4">
           <LedgerMascot pose="celebrate" size={104} priority />
-          <div className="space-y-1">
-            <p className="text-lg font-bold text-zinc-800">ยินดีต้อนรับ! 🎉</p>
-            <p className="text-sm text-zinc-600">{state.message}</p>
-            <p className="text-xs text-zinc-400">สิทธิ์: {ROLE_LABEL[state.role] ?? state.role}</p>
+          <div className="space-y-1.5">
+            <p className="text-xl font-bold text-zinc-900">ยินดีต้อนรับ! 🎉</p>
+            <p className="text-sm leading-relaxed text-zinc-700">{state.message}</p>
+            <p className="inline-flex rounded-full bg-[var(--color-brand-50)] px-3 py-1 text-xs font-semibold text-[var(--color-brand-700)]">
+              สิทธิ์: {ROLE_LABEL[state.role] ?? state.role}
+            </p>
           </div>
-        </>
+        </div>
       )}
       {state.kind === "error" && (
-        <>
+        <div className="flex w-full animate-fade-up flex-col items-center gap-4">
           <LedgerMascot pose="confused" size={104} priority />
-          <div className="space-y-1">
-            <p className="text-base font-semibold text-zinc-800">เข้าร่วมไม่สำเร็จ</p>
-            <p className="text-sm text-rose-600">{state.message}</p>
+          <div className="space-y-1.5">
+            <p className="text-lg font-bold text-zinc-900">เข้าร่วมไม่สำเร็จ</p>
+            <p className="text-sm leading-relaxed text-red-600">{state.message}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex w-full max-w-xs flex-col gap-2">
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="rounded-xl bg-[var(--color-brand-600,#2563EB)] px-4 py-2 text-sm font-semibold text-white"
+              className="press inline-flex h-11 w-full items-center justify-center rounded-xl bg-[var(--color-brand-600,#2563EB)] px-4 text-sm font-semibold text-white active:bg-[var(--color-brand-700)]"
             >
-              ลองใหม่
+              ลองใหม่อีกครั้ง
             </button>
             <button
               type="button"
               onClick={async () => { (await getLiff(LEDGER_LIFF_ID))?.closeWindow?.(); }}
-              className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-600"
+              className="press inline-flex h-11 w-full items-center justify-center rounded-xl border border-zinc-300 px-4 text-sm font-semibold text-zinc-700 active:bg-zinc-50"
             >
-              ปิด
+              ปิดหน้านี้
             </button>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

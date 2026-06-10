@@ -50,7 +50,7 @@ export function InsightsPanel({
           type="button"
           onClick={run}
           disabled={pending}
-          className="shrink-0 rounded-xl bg-[var(--color-brand-600)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-brand-700)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="press shrink-0 rounded-xl bg-[var(--color-brand-600)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[var(--color-brand-700)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-400)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {pending ? "กำลังวิเคราะห์…" : text ? "วิเคราะห์อีกครั้ง" : "เริ่มวิเคราะห์"}
         </button>
@@ -67,20 +67,20 @@ export function InsightsPanel({
         )}
 
         {!pending && error && (
-          <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <p className="animate-fade-in rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </p>
         )}
 
         {!pending && !error && text && (
-          <div className="whitespace-pre-wrap rounded-xl bg-white/70 p-3 text-sm leading-relaxed text-zinc-700 ring-1 ring-zinc-100">
+          <div className="animate-fade-in whitespace-pre-wrap rounded-xl bg-white/70 p-3 text-sm leading-relaxed text-zinc-700 ring-1 ring-zinc-100">
             {text}
           </div>
         )}
 
         {!pending && !error && !text && (
-          <p className="py-2 text-sm text-zinc-400">
-            กดปุ่ม “เริ่มวิเคราะห์” เพื่อให้ AI สรุปค่าใช้จ่ายเดือนนี้ให้
+          <p className="py-2 text-sm text-zinc-500">
+            กดปุ่ม &ldquo;เริ่มวิเคราะห์&rdquo; เพื่อให้ AI สรุปค่าใช้จ่ายเดือนนี้ให้
           </p>
         )}
       </div>

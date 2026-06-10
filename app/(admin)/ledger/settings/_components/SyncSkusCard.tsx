@@ -31,7 +31,7 @@ export function SyncSkusCard({ companyId, skuCount }: { companyId: string; skuCo
   }
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
       <div className="mb-2 flex items-center gap-2">
         <Boxes className="size-4 text-[var(--color-brand-600,#2563EB)]" aria-hidden />
         <h3 className="text-sm font-bold text-zinc-800">ดึงสินค้าจาก TRCloud</h3>

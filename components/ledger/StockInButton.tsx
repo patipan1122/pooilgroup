@@ -156,7 +156,7 @@ export function StockInButton({
           type="button"
           onClick={loadPreview}
           disabled={pending}
-          className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-[var(--color-brand-200)] bg-[var(--color-brand-50)] px-3 text-sm font-semibold text-[var(--color-brand-700)] hover:bg-[var(--color-brand-100)] disabled:opacity-50"
+          className="press inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-[var(--color-brand-200)] bg-[var(--color-brand-50)] px-3 text-sm font-semibold text-[var(--color-brand-700)] hover:bg-[var(--color-brand-100)] disabled:opacity-50"
         >
           {pending ? <Loader2 className="size-4 animate-spin" /> : <Boxes className="size-4" />}
           รับเข้าคลัง (TRCloud)
@@ -172,12 +172,13 @@ export function StockInButton({
         <div className="rounded-2xl border border-zinc-200 bg-white p-3">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-sm font-bold text-zinc-800">ตรวจก่อนรับเข้าคลัง</p>
-            <span className="text-[11px] text-zinc-400">{preview.branchName ? `สาขา ${preview.branchName}` : "ไม่ระบุสาขา"}</span>
+            <span className="text-[11px] text-zinc-500">{preview.branchName ? `สาขา ${preview.branchName}` : "ไม่ระบุสาขา"}</span>
           </div>
 
           {preview.branchId != null && !preview.projectSet && (
-            <p className="mb-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
-              ⚠ สาขานี้ยังไม่ได้ตั้งรหัสโครงการ TRCloud — ตั้งที่ ตั้งค่า → สาขา ก่อนส่ง
+            <p className="mb-2 flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
+              <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
+              สาขานี้ยังไม่ได้ตั้งรหัสโครงการ TRCloud (ตั้งที่ ตั้งค่า → สาขา ก่อนส่ง)
             </p>
           )}
 
@@ -201,7 +202,7 @@ export function StockInButton({
                 type="button"
                 onClick={saveMappings}
                 disabled={pending}
-                className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl bg-[var(--color-brand-600,#2563EB)] px-3 text-sm font-semibold text-white disabled:opacity-50"
+                className="press inline-flex min-h-[44px] items-center gap-1.5 rounded-xl bg-[var(--color-brand-600,#2563EB)] px-3 text-sm font-semibold text-white disabled:opacity-50"
               >
                 {pending ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />}
                 บันทึกการจับคู่ + ตรวจใหม่
@@ -211,7 +212,7 @@ export function StockInButton({
                 type="button"
                 onClick={confirmSend}
                 disabled={pending || blocked}
-                className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-sm font-semibold text-white disabled:opacity-40"
+                className="press inline-flex min-h-[44px] items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-sm font-semibold text-white disabled:opacity-40"
               >
                 {pending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
                 ยืนยันรับเข้าคลัง
@@ -221,7 +222,7 @@ export function StockInButton({
               type="button"
               onClick={() => { setPreview(null); setMsg(null); onClose?.(); }}
               disabled={pending}
-              className="inline-flex min-h-[40px] items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-600 disabled:opacity-50"
+              className="press inline-flex min-h-[44px] items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-600 disabled:opacity-50"
             >
               ยกเลิก
             </button>
@@ -230,14 +231,15 @@ export function StockInButton({
               onClick={reload}
               disabled={pending}
               title="โหลดรายการใหม่"
-              className="inline-flex min-h-[40px] items-center gap-1 rounded-xl border border-zinc-200 bg-white px-2.5 text-xs font-medium text-zinc-500 disabled:opacity-50"
+              aria-label="โหลดรายการใหม่"
+              className="press inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1 rounded-xl border border-zinc-200 bg-white px-2.5 text-xs font-medium text-zinc-500 disabled:opacity-50"
             >
               <RotateCcw className="size-3.5" />
             </button>
           </div>
           {stockSkus.length === 0 && hasUnmatched && (
             <p className="mt-2 text-[11px] text-amber-700">
-              ยังไม่มี SKU ที่เปิด “เก็บสต๊อก” — ไปตั้งที่ ตั้งค่า → คลังสินค้า ก่อน
+              ยังไม่มี SKU ที่เปิด “เก็บสต๊อก” (ไปตั้งที่ ตั้งค่า → คลังสินค้า ก่อน)
             </p>
           )}
         </div>
@@ -245,7 +247,7 @@ export function StockInButton({
 
       {msg && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <p className={"inline-flex items-center gap-1 text-xs " + (msg.kind === "ok" ? "text-emerald-700" : "text-rose-700")}>
+          <p className={"inline-flex items-center gap-1 text-xs font-medium " + (msg.kind === "ok" ? "text-emerald-700" : "text-red-700")}>
             {msg.kind === "ok" ? <CheckCircle2 className="size-3.5" /> : <AlertTriangle className="size-3.5" />}
             {msg.text}
           </p>
@@ -254,7 +256,7 @@ export function StockInButton({
               type="button"
               onClick={reset}
               disabled={pending}
-              className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+              className="press inline-flex min-h-[36px] items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
             >
               รีเซ็ต/ลองใหม่
             </button>
@@ -301,14 +303,14 @@ function LineRow({
   if (line.status === "untracked") {
     return (
       <li className="rounded-xl border border-zinc-200 bg-zinc-50 p-2.5 text-xs text-zinc-600">
-        “{line.description}” → {line.sku?.productId} · ยังไม่เปิด “เก็บสต๊อก” — เปิดที่ ตั้งค่า → คลังสินค้า
+        “{line.description}” → {line.sku?.productId} · ยังไม่เปิด “เก็บสต๊อก” (เปิดที่ ตั้งค่า → คลังสินค้า)
       </li>
     );
   }
   if (line.status === "wrong_branch") {
     return (
-      <li className="rounded-xl border border-rose-200 bg-rose-50 p-2.5 text-xs text-rose-700">
-        “{line.description}” → {line.sku?.productId} · ไม่ได้กำหนดให้สาขานี้ — ไปผูกสาขาที่ ตั้งค่า → คลังสินค้า
+      <li className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">
+        “{line.description}” → {line.sku?.productId} · ไม่ได้กำหนดให้สาขานี้ (ไปผูกสาขาที่ ตั้งค่า → คลังสินค้า)
       </li>
     );
   }
@@ -322,7 +324,7 @@ function LineRow({
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-zinc-800">{line.description}</p>
-          <p className="font-mono text-[11px] text-zinc-400">{line.sku?.productId} · จำนวน {line.qty}</p>
+          <p className="font-mono text-[11px] text-zinc-500">{line.sku?.productId} · จำนวน {line.qty}</p>
         </div>
         <select
           value={factor}

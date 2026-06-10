@@ -11,10 +11,12 @@ function levelOf(score: number): Level {
   return "low";
 }
 
+// สี = ภาษาสถานะกลางของ kit: เขียว=สูง · เหลือง=ควรตรวจ · แดง=ไม่มั่นใจ
+// (red ไม่ใช่ rose ให้ตรงกับ Badge tone="danger" + CompletenessDot).
 const STYLE: Record<Level, { cls: string; label: string }> = {
   high: { cls: "bg-emerald-50 text-emerald-700 ring-emerald-200", label: "มั่นใจสูง" },
   mid: { cls: "bg-amber-50 text-amber-700 ring-amber-200", label: "ควรตรวจ" },
-  low: { cls: "bg-rose-50 text-rose-700 ring-rose-200", label: "ไม่มั่นใจ" },
+  low: { cls: "bg-red-50 text-red-700 ring-red-200", label: "ไม่มั่นใจ" },
 };
 
 export function ConfidenceTag({

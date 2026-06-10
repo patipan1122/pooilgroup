@@ -45,7 +45,7 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
 
   if (points.length === 0) {
     return (
-      <div className="flex h-[120px] items-center justify-center rounded-xl bg-zinc-50 text-sm text-zinc-400">
+      <div className="flex h-[120px] items-center justify-center rounded-xl border border-dashed border-zinc-200 bg-zinc-50/60 text-sm text-zinc-500">
         ยังไม่มีข้อมูลพอจะแสดงแนวโน้ม
       </div>
     );
@@ -75,7 +75,7 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
   );
 
   return (
-    <figure className="rounded-xl border border-zinc-100 bg-white p-3">
+    <figure className="animate-fade-in rounded-xl border border-zinc-200 bg-white p-3">
       <svg
         viewBox={`0 0 ${W} ${H}`}
         className="h-[120px] w-full"
@@ -128,7 +128,7 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
               x={x(i)}
               y={H - 6}
               textAnchor={i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}
-              className="fill-zinc-400"
+              className="fill-zinc-500"
               style={{ fontSize: 9 }}
             >
               {monthLabel(p.period)}
@@ -136,7 +136,7 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
           ) : null,
         )}
       </svg>
-      <figcaption className="mt-1 flex items-center justify-between text-[11px] text-zinc-400">
+      <figcaption className="mt-1 flex items-center justify-between text-[11px] text-zinc-500">
         <span>สูงสุด {baht(max)}</span>
         <span>{points.length} เดือน</span>
       </figcaption>

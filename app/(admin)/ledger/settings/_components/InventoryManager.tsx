@@ -112,7 +112,7 @@ export function InventoryManager({
     <div className="mx-auto max-w-3xl space-y-4">
       {/* Sync card */}
       {showSync && (
-      <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+      <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
         <div className="mb-2 flex items-center gap-2">
           <Boxes className="size-4 text-[var(--color-brand-600,#2563EB)]" aria-hidden />
           <h3 className="text-sm font-bold text-zinc-800">ดึงสินค้าจาก TRCloud</h3>
@@ -152,7 +152,7 @@ export function InventoryManager({
       {/* Search within cached SKUs */}
       {skus.length > 0 && (
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" aria-hidden />
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500" aria-hidden />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -168,7 +168,7 @@ export function InventoryManager({
         </div>
       ) : (
         groups.map(([group, list]) => (
-          <div key={group} className="rounded-2xl border border-zinc-100 bg-white p-3">
+          <div key={group} className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm">
             <h4 className="mb-2 px-1 text-xs font-bold text-zinc-700">{group} · {list.length} รายการ</h4>
             <ul className="space-y-1.5">
               {list.map((s) => {
@@ -193,7 +193,7 @@ export function InventoryManager({
                         <p className="truncate text-sm font-medium text-zinc-800">
                           {s.productName || s.productId}
                         </p>
-                        <p className="font-mono text-[11px] text-zinc-400">
+                        <p className="font-mono text-[11px] text-zinc-500">
                           {s.productId}{s.unit ? ` · ${s.unit}` : ""}{s.balance != null ? ` · คงเหลือ ${s.balance.toLocaleString()}` : ""}
                         </p>
                       </div>
@@ -213,7 +213,7 @@ export function InventoryManager({
                         </label>
                         {myAliases.length > 0 && (
                           <div className="flex flex-wrap items-center gap-1">
-                            <span className="text-[10px] text-zinc-400">ชื่อบนใบเสร็จ:</span>
+                            <span className="text-[10px] text-zinc-500">ชื่อบนใบเสร็จ:</span>
                             {myAliases.map((a) => (
                               <button
                                 key={a.id}
@@ -236,7 +236,7 @@ export function InventoryManager({
           </div>
         ))
       )}
-      <p className="px-1 text-[11px] text-zinc-400">
+      <p className="px-1 text-[11px] text-zinc-500">
         การจับคู่ “ชื่อบนใบเสร็จ → SKU” จะเพิ่มอัตโนมัติตอนรับเข้าคลังครั้งแรก (ระบบจะถามให้จับคู่) · ที่นี่ดู/ลบได้
       </p>
     </div>

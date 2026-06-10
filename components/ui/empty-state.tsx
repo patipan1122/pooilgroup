@@ -22,7 +22,7 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "rounded-2xl border-2 border-dashed border-zinc-200 bg-zinc-50/40 px-6 py-12 text-center",
+        "animate-fade-in rounded-2xl border-2 border-dashed border-zinc-200 bg-zinc-50/40 px-6 py-12 text-center",
         className,
       )}
     >

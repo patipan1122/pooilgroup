@@ -76,7 +76,7 @@ export function StatBlock({
             <span
               className={cn(
                 "inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 font-semibold tabular-num",
-                trend!.value > 0 && "bg-green-50 text-green-700",
+                trend!.value > 0 && "bg-emerald-50 text-emerald-700",
                 trend!.value < 0 && "bg-red-50 text-red-700",
                 trend!.value === 0 && "bg-zinc-50 text-zinc-700",
               )}

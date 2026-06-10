@@ -45,7 +45,7 @@ export default async function LineGroupsSettingsPage({
         subtitle="ดูกลุ่มไลน์ที่บอทอยู่ + ผูกแต่ละกลุ่มเข้าสาขา"
         scope={scope}
       />
-      <div className="mx-auto max-w-2xl space-y-4">
+      <div className="mx-auto max-w-2xl space-y-4 animate-fade-in">
         <GroupBranchManager
           companyId={scope.companyId}
           groups={groups}

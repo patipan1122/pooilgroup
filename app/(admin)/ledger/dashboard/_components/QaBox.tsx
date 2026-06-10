@@ -68,7 +68,7 @@ export function QaBox({
         <button
           type="submit"
           disabled={pending || question.trim().length < 2}
-          className="shrink-0 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+          className="press shrink-0 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {pending ? "กำลังถาม…" : "ถาม"}
         </button>
@@ -84,7 +84,7 @@ export function QaBox({
               ask(s);
             }}
             disabled={pending}
-            className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600 transition hover:bg-zinc-200 disabled:opacity-50"
+            className="press rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-200 disabled:opacity-50"
           >
             {s}
           </button>
@@ -99,12 +99,12 @@ export function QaBox({
           </div>
         )}
         {!pending && error && (
-          <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <p className="animate-fade-in rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </p>
         )}
         {!pending && !error && answer && (
-          <div className="whitespace-pre-wrap rounded-xl bg-zinc-50 p-3 text-sm leading-relaxed text-zinc-700">
+          <div className="animate-fade-in whitespace-pre-wrap rounded-xl bg-zinc-50 p-3 text-sm leading-relaxed text-zinc-700">
             {answer}
           </div>
         )}

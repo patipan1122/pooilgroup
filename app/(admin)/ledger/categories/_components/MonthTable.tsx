@@ -12,7 +12,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/utils/cn";
 import type { CategoryLedgerMonth } from "@/lib/ledger/category-ledger";
 
 function baht(n: number): string {
@@ -62,7 +61,7 @@ export function MonthTable({
     return (
       <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/60 px-6 py-12 text-center">
         <p className="text-sm font-medium text-zinc-600">ยังไม่มีค่าใช้จ่ายในหมวดนี้</p>
-        <p className="mt-1 text-xs text-zinc-400">
+        <p className="mt-1 text-xs text-zinc-500">
           พอยืนยันใบเสร็จในหมวดนี้แล้ว ประวัติรายเดือนจะขึ้นที่นี่
         </p>
       </div>
@@ -80,7 +79,7 @@ export function MonthTable({
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
       {/* header */}
-      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2.5 text-xs font-semibold text-zinc-500">
+      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-zinc-200 bg-zinc-50/80 px-4 py-2.5 text-xs font-semibold text-zinc-600">
         <span>เดือน</span>
         <span className="text-right">ยอดรวม</span>
         <span className="w-12 text-right">ใบ</span>
@@ -95,13 +94,13 @@ export function MonthTable({
                 type="button"
                 onClick={() => toggle(mo.period)}
                 aria-expanded={isOpen}
-                className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-zinc-50 active:bg-zinc-100"
+                className="press grid w-full grid-cols-[1fr_auto_auto] items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-zinc-50 active:bg-zinc-100"
               >
                 <span className="flex min-w-0 items-center gap-1.5">
                   {isOpen ? (
-                    <ChevronDown className="size-4 shrink-0 text-zinc-400" aria-hidden />
+                    <ChevronDown className="size-4 shrink-0 text-zinc-500" aria-hidden />
                   ) : (
-                    <ChevronRight className="size-4 shrink-0 text-zinc-400" aria-hidden />
+                    <ChevronRight className="size-4 shrink-0 text-zinc-500" aria-hidden />
                   )}
                   <span className="truncate text-sm font-semibold text-zinc-800">
                     {monthLabel(mo.period)}
@@ -127,7 +126,7 @@ export function MonthTable({
                           <span className="block truncate text-sm text-zinc-800">
                             {r.vendor || "ไม่ระบุผู้ขาย"}
                           </span>
-                          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-zinc-400">
+                          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-zinc-500">
                             <span className="font-mono">{r.docCode}</span>
                             <span>· {dayLabel(r.docDate)}</span>
                             {showBranch && r.branchName && (
@@ -136,15 +135,11 @@ export function MonthTable({
                               </span>
                             )}
                             {r.status === "locked" && (
-                              <span className="text-zinc-400">· ปิดงวด</span>
+                              <span className="text-zinc-500">· ปิดงวด</span>
                             )}
                           </span>
                         </span>
-                        <span
-                          className={cn(
-                            "shrink-0 text-sm font-semibold tabular-nums text-zinc-800",
-                          )}
-                        >
+                        <span className="shrink-0 text-sm font-semibold tabular-nums text-zinc-800">
                           {baht(r.total)}
                         </span>
                       </Link>

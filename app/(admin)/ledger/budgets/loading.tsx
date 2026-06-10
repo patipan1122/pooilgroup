@@ -12,8 +12,9 @@ export default function LedgerBudgetsLoading() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,340px)]">
         {/* Budget list */}
         <div className="rounded-2xl border border-zinc-200 bg-white">
-          <div className="border-b border-zinc-100 p-4">
-            <Skeleton className="h-4 w-36" />
+          <div className="flex items-baseline justify-between border-b border-zinc-100 px-4 py-3">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-3 w-14" />
           </div>
           <ul className="divide-y divide-zinc-100">
             {Array.from({ length: 5 }, (_, i) => (
@@ -33,8 +34,9 @@ export default function LedgerBudgetsLoading() {
         </div>
 
         {/* Set / edit budget form */}
-        <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-          <Skeleton className="mb-3 h-4 w-24" />
+        <div className="h-fit rounded-2xl border border-zinc-200 bg-white p-4">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="mb-3 mt-1.5 h-3 w-48" />
           <div className="space-y-3">
             {Array.from({ length: 4 }, (_, i) => (
               <div key={i}>

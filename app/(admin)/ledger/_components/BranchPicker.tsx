@@ -157,7 +157,7 @@ export function BranchPicker({
 
       {/* Search input */}
       <div className="relative mb-2">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
         <input
           type="search"
           value={search}
@@ -169,7 +169,7 @@ export function BranchPicker({
           <button
             type="button"
             onClick={clearSearch}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-600"
             aria-label="ล้างการค้นหา"
           >
             <X className="size-3.5" />
@@ -186,7 +186,7 @@ export function BranchPicker({
           <button
             type="button"
             onClick={() => { setActiveType(""); onChange(""); }}
-            className="shrink-0 text-zinc-400 hover:text-zinc-600"
+            className="shrink-0 text-zinc-500 hover:text-zinc-600"
             aria-label="เปลี่ยนสาขา"
           >
             <X className="size-3.5" />
@@ -209,7 +209,7 @@ export function BranchPicker({
       )}
 
       {filtered.length === 0 && search && (
-        <p className="mt-1 text-[11px] text-zinc-400">ไม่พบสาขาที่ค้นหา</p>
+        <p className="mt-1 text-[11px] text-zinc-500">ไม่พบสาขาที่ค้นหา</p>
       )}
     </div>
   );

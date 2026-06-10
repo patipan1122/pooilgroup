@@ -52,7 +52,7 @@ function Sparkline({ values }: { values: number[] }) {
       width={w}
       height={h}
       viewBox={`0 0 ${w} ${h}`}
-      className={up ? "text-rose-400" : "text-emerald-400"}
+      className={up ? "text-red-400" : "text-emerald-400"}
       aria-hidden
     >
       <polyline
@@ -135,25 +135,25 @@ export function PriceLookupDialog({
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+      className="animate-fade-in fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
     >
       <div
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label="ดูราคา / ประวัติการซื้อ"
-        className="max-h-[88dvh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-xl sm:rounded-2xl"
+        className="animate-slide-up-soft max-h-[88dvh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-xl sm:rounded-2xl"
       >
         <div className="mb-3 flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-[11px] text-zinc-400">ดูราคา / ประวัติการซื้อ</p>
+            <p className="text-[11px] text-zinc-500">ดูราคา / ประวัติการซื้อ</p>
             <h3 className="truncate text-sm font-bold text-zinc-900">{term}</h3>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="ปิด"
-            className="grid size-8 shrink-0 place-items-center rounded-lg text-zinc-500 hover:bg-zinc-100"
+            className="press grid size-10 shrink-0 place-items-center rounded-lg text-zinc-500 hover:bg-zinc-100"
           >
             <X className="size-5" />
           </button>
@@ -165,8 +165,8 @@ export function PriceLookupDialog({
             type="button"
             onClick={() => setTab("history")}
             className={
-              "rounded-lg py-1.5 transition " +
-              (tab === "history" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500")
+              "press min-h-[36px] rounded-lg py-1.5 transition " +
+              (tab === "history" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-600")
             }
           >
             ตามสินค้า
@@ -175,8 +175,8 @@ export function PriceLookupDialog({
             type="button"
             onClick={() => setTab("vendors")}
             className={
-              "rounded-lg py-1.5 transition " +
-              (tab === "vendors" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500")
+              "press min-h-[36px] rounded-lg py-1.5 transition " +
+              (tab === "vendors" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-600")
             }
           >
             เทียบผู้ขาย{vendors.length > 1 ? ` (${vendors.length})` : ""}
@@ -184,11 +184,11 @@ export function PriceLookupDialog({
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-sm text-zinc-400">
+          <div className="flex items-center justify-center gap-2 py-10 text-sm text-zinc-500">
             <Loader2 className="size-4 animate-spin" /> กำลังค้น…
           </div>
         ) : hits.length === 0 ? (
-          <div className="py-10 text-center text-sm text-zinc-400">
+          <div className="py-10 text-center text-sm text-zinc-500">
             ไม่พบประวัติการซื้อของ “{term}”
           </div>
         ) : tab === "history" ? (
@@ -197,7 +197,7 @@ export function PriceLookupDialog({
               <div
                 className={
                   "mb-3 rounded-xl border p-3 " +
-                  (high ? "border-rose-200 bg-rose-50" : "border-emerald-200 bg-emerald-50")
+                  (high ? "border-red-200 bg-red-50" : "border-emerald-200 bg-emerald-50")
                 }
               >
                 <div className="flex items-start justify-between gap-2">
@@ -206,7 +206,7 @@ export function PriceLookupDialog({
                     <p
                       className={
                         "text-xl font-extrabold tabular-nums " +
-                        (high ? "text-rose-600" : "text-emerald-700")
+                        (high ? "text-red-700" : "text-emerald-700")
                       }
                     >
                       {baht(latest)} ฿
@@ -223,7 +223,7 @@ export function PriceLookupDialog({
                         className={
                           "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums " +
                           (deltaPct > 0
-                            ? "bg-rose-100 text-rose-700"
+                            ? "bg-red-100 text-red-700"
                             : "bg-emerald-100 text-emerald-700")
                         }
                       >
@@ -256,7 +256,7 @@ export function PriceLookupDialog({
                     <div className="truncate font-medium text-zinc-700">
                       {h.vendor || "ไม่ระบุผู้ขาย"}
                     </div>
-                    <div className="truncate text-[11px] text-zinc-400">
+                    <div className="truncate text-[11px] text-zinc-500">
                       {h.docDate || "—"}
                       {h.branchName ? ` · ${h.branchName}` : ""}
                       {h.itemDescription ? ` · ${h.itemDescription}` : ""}
@@ -266,7 +266,7 @@ export function PriceLookupDialog({
                     {h.itemUnitPrice != null ? (
                       <span className="font-bold tabular-nums text-zinc-900">
                         {baht(h.itemUnitPrice)} ฿
-                        <span className="text-[10px] font-normal text-zinc-400">/หน่วย</span>
+                        <span className="text-[10px] font-normal text-zinc-500">/หน่วย</span>
                       </span>
                     ) : (
                       <span className="tabular-nums text-zinc-500">{baht(h.amount)} ฿</span>
@@ -280,8 +280,8 @@ export function PriceLookupDialog({
           // ── แท็บ เทียบผู้ขาย ───────────────────────────────────────────────
           <>
             {vendors.filter((v) => v.minUnitPrice != null).length === 0 ? (
-              <div className="py-10 text-center text-sm text-zinc-400">
-                ยังไม่มีราคาต่อหน่วยให้เทียบ — ลองค้นด้วย “ชื่อสินค้า” แทนชื่อร้าน
+              <div className="py-10 text-center text-sm text-zinc-500">
+                ยังไม่มีราคาต่อหน่วยให้เทียบ (ลองค้นด้วย “ชื่อสินค้า” แทนชื่อร้าน)
               </div>
             ) : (
               <>
@@ -324,7 +324,7 @@ export function PriceLookupDialog({
                               {baht(v.minUnitPrice as number)} ฿
                             </span>
                           </div>
-                          <div className="mt-0.5 flex items-center justify-between text-[11px] text-zinc-400">
+                          <div className="mt-0.5 flex items-center justify-between text-[11px] text-zinc-500">
                             <span>
                               ซื้อ {v.count} ครั้ง{v.lastDate ? ` · ล่าสุด ${v.lastDate}` : ""}
                             </span>
@@ -340,7 +340,7 @@ export function PriceLookupDialog({
                     })}
                 </ul>
                 <p className="mt-3 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700">
-                  เทียบจาก “ชื่อบนใบ” ที่พิมพ์ไว้ — อาจไม่ใช่สินค้ารุ่น/ขนาดเดียวกันเป๊ะ
+                  เทียบจาก “ชื่อบนใบ” ที่พิมพ์ไว้ (อาจไม่ใช่สินค้ารุ่น/ขนาดเดียวกันเป๊ะ)
                   ใช้ดูแนวโน้มราคาคร่าว ๆ
                 </p>
               </>

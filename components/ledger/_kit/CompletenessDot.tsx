@@ -3,11 +3,11 @@
 // สี = ผลตรวจ deterministic จาก lib/ledger/recheck.ts (ไม่ใช่ AI):
 //   green_full    = เขียว (emerald) — เต็มรูป + ผู้ซื้อตรง + VAT แยก → ขอคืนได้
 //   yellow_partial= เหลือง (amber)  — ใบย่อ/ขาด element รอง → ขอใบใหม่
-//   red_invalid   = แดง (rose)      — ขาดของบังคับ/ผู้ซื้อผิด → ขอคืนไม่ได้
+//   red_invalid   = แดง (red)       — ขาดของบังคับ/ผู้ซื้อผิด → ขอคืนไม่ได้
 //   undecided     = เทา (zinc)      — ยังไม่ตรวจ (ใบเก่าก่อนฟีเจอร์)
 //
 // pure presentational client component · tooltip สรุป missing[] เป็นภาษาไทย.
-// Reuses the same emerald/amber/rose/zinc palette as ConfidenceTag (kit-wide).
+// Reuses the same emerald/amber/red/zinc status palette as ConfidenceTag + Badge (kit-wide).
 "use client";
 
 import { cn } from "@/lib/utils/cn";
@@ -18,8 +18,8 @@ const META: Record<
   { dot: string; label: string }
 > = {
   green_full: { dot: "bg-emerald-500", label: "ขอคืนภาษีซื้อได้" },
-  yellow_partial: { dot: "bg-amber-500", label: "ยังขอคืนไม่ได้ — ต้องขอใบใหม่" },
-  red_invalid: { dot: "bg-rose-500", label: "ขอคืนไม่ได้ — ใบไม่สมบูรณ์/ผู้ซื้อผิด" },
+  yellow_partial: { dot: "bg-amber-500", label: "ยังขอคืนไม่ได้ (ต้องขอใบใหม่)" },
+  red_invalid: { dot: "bg-red-500", label: "ขอคืนไม่ได้ (ใบไม่สมบูรณ์/ผู้ซื้อผิด)" },
   undecided: { dot: "bg-zinc-300", label: "ยังไม่ตรวจสถานะใบกำกับ" },
 };
 

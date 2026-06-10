@@ -57,6 +57,14 @@
   --color-border: oklch(0.92 0.004 247);
   --color-border-strong: oklch(0.86 0.005 247);
 
+  /* Text / ink — semantic foreground. Fixes undefined --color-text-muted
+     (was referenced by .eyebrow but never defined → fell back to inherit).
+     Tuned for WCAG AA on white: text & muted clear 4.5:1, subtle is ≥3:1
+     (large text / icon use only). Faint brand-blue tint keeps ink on-brand. */
+  --color-text: oklch(0.27 0.012 264);        /* primary ink — ~zinc-900 */
+  --color-text-muted: oklch(0.52 0.010 264);  /* secondary — passes 4.5:1 */
+  --color-text-subtle: oklch(0.62 0.008 264); /* tertiary — ≥3:1, large only */
+
   /* Radius */
   --radius-xs: 6px;
   --radius-sm: 8px;
@@ -72,6 +80,11 @@
   --shadow-pop: 0 16px 64px -16px rgb(0 0 0 / 0.18);
   --shadow-blue: 0 8px 24px -8px oklch(0.50 0.25 264 / 0.30);
   --shadow-leaf: 0 8px 24px -8px oklch(0.55 0.20 148 / 0.30);
+
+  /* Motion easing — exponential ease-out (no bounce/elastic per design rules).
+     Single source so every transition decelerates the same way. */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.22, 1, 0.36, 1);
 
   /* ----------------------------------------------------------------
    * Semantic tokens (Polish Team รอบ 45 Agent C audit)
@@ -146,11 +159,17 @@ h1, h2, h3, h4 {
   font-family: var(--font-display);
   letter-spacing: -0.03em;
   font-weight: 800;
+  text-wrap: balance; /* even line lengths on headings — no lonely last word */
 }
 
 h1 { font-weight: 800; letter-spacing: -0.035em; }
 h2 { font-weight: 800; }
 h3 { font-weight: 700; }
+
+/* Long-form prose: avoid orphans without forcing ragged balance */
+p {
+  text-wrap: pretty;
+}
 
 /* Mega numbers — for stat values, dashboards, hero KPIs */
 .font-num-mega {
@@ -497,6 +516,17 @@ input:-webkit-autofill:focus {
 .hover-lift-premium:hover {
   transform: translateY(-4px);
   box-shadow: var(--shadow-blue);
+}
+
+/* Tap feedback — quick scale-down on press. Reusable on the many raw
+   <button>/<a> elements across surfaces so taps feel physical on touch.
+   prefers-reduced-motion (below) collapses the transition to instant. */
+@utility press {
+  transition: transform 0.12s var(--ease-out-expo);
+  -webkit-tap-highlight-color: transparent;
+}
+.press:active {
+  transform: scale(0.97);
 }
 
 /* ============================================================

@@ -73,11 +73,12 @@ export default async function BudgetsPage({
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,340px)]">
         {/* Budget list */}
-        <div className="rounded-2xl border border-zinc-200 bg-white">
-          <div className="border-b border-zinc-100 p-4">
-            <h2 className="text-sm font-bold text-zinc-800">
-              งบรายหมวด ({budgets.length})
-            </h2>
+        <div className="animate-fade-up rounded-2xl border border-zinc-200 bg-white">
+          <div className="flex items-baseline justify-between gap-2 border-b border-zinc-100 px-4 py-3">
+            <h2 className="text-sm font-bold text-zinc-800">งบรายหมวด</h2>
+            <span className="text-xs font-medium tabular-nums text-zinc-500">
+              {budgets.length} หมวด
+            </span>
           </div>
           {budgets.length === 0 ? (
             <LedgerEmptyState
@@ -91,25 +92,35 @@ export default async function BudgetsPage({
                 const over = b.used > b.amount;
                 const near = !over && pct >= b.alertPct;
                 const barColor = over
-                  ? "bg-rose-500"
+                  ? "bg-red-500"
                   : near
                     ? "bg-amber-500"
                     : "bg-emerald-500";
                 return (
-                  <li key={b.id} className="p-4">
-                    <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <div className="min-w-0">
+                  <li key={b.id} className="p-4 transition-colors hover:bg-zinc-50/70">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="font-medium text-zinc-800">
                           {b.categoryName ?? "ไม่ระบุหมวด"}
                         </span>
                         {b.branchName && (
-                          <span className="ml-2 text-xs text-zinc-400">
+                          <span className="text-xs text-zinc-500">
                             · {b.branchName}
                           </span>
                         )}
                         {b.recurring && (
-                          <span className="ml-2 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+                          <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
                             ทุกเดือน
+                          </span>
+                        )}
+                        {over && (
+                          <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                            เกินงบ
+                          </span>
+                        )}
+                        {near && (
+                          <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                            ใกล้เต็ม {Math.round(pct)}%
                           </span>
                         )}
                       </div>
@@ -117,25 +128,23 @@ export default async function BudgetsPage({
                     </div>
                     <div className="mb-1.5 h-2.5 overflow-hidden rounded-full bg-zinc-100">
                       <div
-                        className={`h-full rounded-full ${barColor}`}
+                        className={`h-full rounded-full ${barColor} transition-[width]`}
                         style={{ width: `${Math.min(100, pct)}%` }}
                       />
                     </div>
-                    <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center justify-between gap-2 text-xs">
                       <span
                         className={
                           over
-                            ? "font-semibold text-rose-700"
+                            ? "font-semibold tabular-nums text-red-700"
                             : near
-                              ? "font-semibold text-amber-700"
-                              : "text-zinc-500"
+                              ? "font-semibold tabular-nums text-amber-700"
+                              : "tabular-nums text-zinc-500"
                         }
                       >
                         ใช้ไป {baht(b.used)} / {baht(b.amount)}
-                        {over && " · เกินงบ!"}
-                        {near && ` · ใกล้เต็ม (${Math.round(pct)}%)`}
                       </span>
-                      <span className="text-zinc-400">
+                      <span className="shrink-0 tabular-nums text-zinc-500">
                         เตือนที่ {b.alertPct}%
                       </span>
                     </div>
@@ -147,8 +156,11 @@ export default async function BudgetsPage({
         </div>
 
         {/* Set budget */}
-        <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-          <h2 className="mb-3 text-sm font-bold text-zinc-800">ตั้ง / แก้งบ</h2>
+        <div className="animate-fade-up delay-100 h-fit rounded-2xl border border-zinc-200 bg-white p-4 lg:sticky lg:top-4">
+          <h2 className="text-sm font-bold text-zinc-800">ตั้งงบ / แก้งบ</h2>
+          <p className="mb-3 mt-0.5 text-xs text-zinc-500">
+            กำหนดเพดานต่อหมวดในงวดนี้ ระบบจะเตือนเมื่อใกล้เต็ม
+          </p>
           <BudgetForm
             companyId={scope.companyId}
             period={period}

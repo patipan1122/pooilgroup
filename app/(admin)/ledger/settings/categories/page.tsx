@@ -37,7 +37,7 @@ export default async function CategorySettingsPage({
         subtitle="จัดกลุ่ม · สี · ผูกรหัสบัญชี"
         scope={scope}
       />
-      <div className="mx-auto max-w-2xl">
+      <div className="mx-auto max-w-2xl animate-fade-in">
         <CategoryManager
           companyId={scope.companyId}
           categories={categories.map((c) => ({

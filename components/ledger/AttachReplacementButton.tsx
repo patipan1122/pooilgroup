@@ -107,7 +107,7 @@ export function AttachReplacementButton({
         type="button"
         onClick={pick}
         disabled={busy || disabled}
-        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50"
+        className="press inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50"
       >
         {busy ? (
           <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -119,13 +119,13 @@ export function AttachReplacementButton({
         {busy ? "กำลังอ่านใบใหม่…" : done ? "แนบแล้ว · กำลังอัปเดต" : "แนบใบใหม่ทดแทน"}
       </button>
       {err && (
-        <p className="flex items-center gap-1 text-xs text-rose-600" role="alert">
+        <p className="flex items-center gap-1 text-xs text-red-700" role="alert">
           <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
           {err}
         </p>
       )}
-      <p className="text-[11px] text-zinc-400">
-        ถ่าย/อัปโหลดใบกำกับเต็มรูปที่ขอใหม่จากร้าน — ระบบจะเก็บทั้ง 2 ใบ แล้วอัปสถานะให้
+      <p className="text-[11px] text-zinc-500">
+        ถ่าย/อัปโหลดใบกำกับเต็มรูปที่ขอใหม่จากร้าน ระบบจะเก็บทั้ง 2 ใบ แล้วอัปเดตสถานะให้
       </p>
     </div>
   );

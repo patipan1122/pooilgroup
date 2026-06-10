@@ -65,7 +65,7 @@ export function ReconcileFilterBar({
           type="button"
           onClick={() => setOpen((v) => !v)}
           className={
-            "inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition " +
+            "press inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition " +
             (activeCount > 0
               ? "border-[var(--color-brand-300)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)]"
               : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50")
@@ -116,11 +116,11 @@ export function ReconcileFilterBar({
             onClick={() => setOpen(false)}
             className="fixed inset-0 z-30 cursor-default"
           />
-          <div className="absolute left-0 top-full z-40 mt-1 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl">
+          <div className="animate-scale-in absolute left-0 top-full z-40 mt-1.5 w-80 max-w-[calc(100vw-2rem)] origin-top-left rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl">
             <div className="mb-3">
-              <label className="mb-1 block text-xs font-semibold text-zinc-500">สาขา</label>
+              <label className="mb-1 block text-xs font-semibold text-zinc-600">สาขา</label>
               <div className="relative">
-                <GitBranch className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+                <GitBranch className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
                 <select
                   aria-label="กรองตามสาขา"
                   value={branchId}
@@ -138,9 +138,9 @@ export function ReconcileFilterBar({
             </div>
 
             <div className="mb-3">
-              <label className="mb-1 block text-xs font-semibold text-zinc-500">เดือนที่ขอโอน</label>
+              <label className="mb-1 block text-xs font-semibold text-zinc-600">เดือนที่ขอโอน</label>
               <div className="relative">
-                <CalendarDays className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+                <CalendarDays className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
                 <input
                   type="month"
                   aria-label="กรองตามเดือนที่ขอโอน"
@@ -152,12 +152,12 @@ export function ReconcileFilterBar({
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-semibold text-zinc-500">
+              <label className="mb-1 block text-xs font-semibold text-zinc-600">
                 ผู้ขาย (เลือกได้หลายเจ้า)
               </label>
               {vendorOptions.length > 8 && (
                 <div className="relative mb-1.5">
-                  <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+                  <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
                   <input
                     type="search"
                     placeholder="ค้นหาผู้ขาย…"
@@ -168,11 +168,11 @@ export function ReconcileFilterBar({
                 </div>
               )}
               {vendorOptions.length === 0 ? (
-                <p className="py-2 text-center text-xs text-zinc-400">ยังไม่มีผู้ขายในคำขอโอน</p>
+                <p className="py-2 text-center text-xs text-zinc-500">ยังไม่มีผู้ขายในคำขอโอน</p>
               ) : (
                 <ul className="max-h-52 overflow-y-auto rounded-lg border border-zinc-100">
                   {shownVendors.length === 0 ? (
-                    <li className="px-2 py-3 text-center text-xs text-zinc-400">
+                    <li className="px-2 py-3 text-center text-xs text-zinc-500">
                       ไม่พบ “{vendorQuery}”
                     </li>
                   ) : (
@@ -225,7 +225,7 @@ function Chip({
         type="button"
         onClick={onClear}
         aria-label="ลบตัวกรองนี้"
-        className="grid size-5 place-items-center rounded-full text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600"
+        className="grid size-5 place-items-center rounded-full text-zinc-500 hover:bg-zinc-200 hover:text-zinc-600"
       >
         <X className="size-3" aria-hidden />
       </button>

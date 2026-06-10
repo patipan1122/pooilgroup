@@ -11,8 +11,8 @@ const META: Record<
 > = {
   draft: { label: "ร่าง · รอยืนยัน", tone: "warning" },
   confirmed: { label: "ยืนยันแล้ว", tone: "success" },
-  locked: { label: "ล็อก", tone: "info" },
-  void: { label: "ยกเลิก", tone: "neutral" },
+  locked: { label: "ล็อกแล้ว", tone: "info" },
+  void: { label: "ยกเลิกแล้ว", tone: "neutral" },
 };
 
 export function StatusBadge({

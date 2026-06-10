@@ -44,7 +44,7 @@ export function CompanyBranchPicker({
   return (
     <div className="flex w-full items-center gap-2 sm:w-auto">
       <div className="relative min-w-0 flex-1 sm:flex-none">
-        <Building2 className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+        <Building2 className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
         <select
           aria-label="เลือกบริษัท"
           value={companyId}
@@ -61,7 +61,7 @@ export function CompanyBranchPicker({
       </div>
 
       <div className="relative min-w-0 flex-1 sm:flex-none">
-        <GitBranch className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+        <GitBranch className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
         <select
           aria-label="เลือกสาขา"
           value={branchId}

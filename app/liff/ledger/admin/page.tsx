@@ -41,12 +41,12 @@ export default async function LedgerLiffAdminPage({
   // Not signed in yet → LiffBootstrap (in /liff layout) logs in & re-renders.
   if (!session) {
     return (
-      <div className="mx-auto flex min-h-[70vh] w-full max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-md animate-fade-in flex-col items-center justify-center gap-4 px-6 text-center">
         <div className="size-12 animate-spin rounded-full border-4 border-[var(--color-brand-200)] border-t-[var(--color-brand-600)]" />
-        <div className="space-y-1">
-          <p className="text-base font-semibold text-zinc-800">กำลังเข้าสู่ระบบ</p>
-          <p className="text-sm text-zinc-500">
-            ถ้าค้างนาน · บัญชีนี้อาจยังไม่ได้เปิดใช้ · ติดต่อออฟฟิศ
+        <div className="space-y-1.5">
+          <p className="text-base font-semibold text-zinc-800">กำลังเข้าสู่ระบบ…</p>
+          <p className="text-sm leading-relaxed text-zinc-600">
+            ถ้าค้างนาน บัญชีนี้อาจยังไม่ได้เปิดใช้งาน ติดต่อออฟฟิศได้เลย
           </p>
         </div>
       </div>
@@ -60,17 +60,17 @@ export default async function LedgerLiffAdminPage({
   const actor = await resolveLedgerActor();
   if (!isLedgerAdminActor(actor)) {
     return (
-      <div className="mx-auto flex min-h-[70vh] w-full max-w-md flex-col items-center justify-center gap-5 px-6 text-center">
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-md animate-fade-up flex-col items-center justify-center gap-5 px-6 text-center">
         <LedgerMascot size={92} pose="confused" priority />
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <h1 className="text-lg font-bold text-zinc-900">หน้านี้สำหรับผู้ดูแล</h1>
-          <p className="text-sm text-zinc-500">
-            การจัดการทีม/สิทธิ์/สาขา ทำได้เฉพาะผู้ดูแลระบบ · ถ้าต้องการสิทธิ์ ติดต่อผู้ดูแลของบริษัท
+          <p className="text-sm leading-relaxed text-zinc-600">
+            การจัดการทีม สิทธิ์ และสาขา ทำได้เฉพาะผู้ดูแลระบบ ถ้าต้องการสิทธิ์ ติดต่อผู้ดูแลของบริษัท
           </p>
         </div>
         <Link
           href="/liff/ledger"
-          className="rounded-xl bg-[var(--color-brand-600)] px-5 py-2.5 text-sm font-semibold text-white active:bg-[var(--color-brand-700)]"
+          className="press inline-flex h-11 items-center justify-center rounded-xl bg-[var(--color-brand-600)] px-5 text-sm font-semibold text-white active:bg-[var(--color-brand-700)]"
         >
           กลับไปถ่ายใบเสร็จ
         </Link>
@@ -85,12 +85,12 @@ export default async function LedgerLiffAdminPage({
   const companies = await listCompanies(orgId).catch(() => []);
   if (companies.length === 0) {
     return (
-      <div className="mx-auto flex min-h-[70vh] w-full max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-md animate-fade-up flex-col items-center justify-center gap-4 px-6 text-center">
         <LedgerMascot size={88} pose="welcome" priority />
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <p className="text-base font-semibold text-zinc-800">ยังไม่มีบริษัท</p>
-          <p className="text-sm text-zinc-500">
-            สร้างบริษัทแรกในเมนู “ตั้งค่า” ของ LedgerLine บนเว็บก่อน
+          <p className="text-sm leading-relaxed text-zinc-600">
+            สร้างบริษัทแรกในเมนู “ตั้งค่า” ของ LedgerLine บนเว็บก่อน แล้วกลับมาที่นี่
           </p>
         </div>
       </div>

@@ -3,8 +3,9 @@
 //   • PaymentTag  — สถานะจ่ายเงิน:        จ่ายแล้ว · ยังไม่จ่าย · จ่ายบางส่วน · ⚠ จ่ายซ้ำ?
 //
 // CEO D3: ใช้ "ป้ายข้อความ" (rounded rect + คำไทยสั้น + สี) ไม่ใช่จุดสีเปล่า — กัน
-// สีชนกัน + ไม่มี emoji. สร้างบน <Badge tone> (kit idiom เดียวกับ StatusBadge).
+// สีชนกัน + ไม่มี emoji (ใช้ lucide icon แทน). สร้างบน <Badge tone> (kit idiom เดียวกับ StatusBadge).
 // pure presentational — ใช้ได้ทั้ง server + client component.
+import { AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type {
   CompletenessStatus,
@@ -87,7 +88,8 @@ export function PaymentTag({
   if (dupWarning) {
     return (
       <Badge tone="danger" className={className} title="ตรวจพบสลิป/การจ่ายที่อาจซ้ำ">
-        ⚠ จ่ายซ้ำ?
+        <AlertTriangle className="size-3 shrink-0" aria-hidden />
+        จ่ายซ้ำ?
       </Badge>
     );
   }

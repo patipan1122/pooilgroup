@@ -16,7 +16,7 @@ export default async function LedgerJoinPage({
 }) {
   const { invite } = await searchParams;
   return (
-    <div className="mx-auto w-full max-w-md px-4">
+    <div className="mx-auto w-full max-w-md px-4 pb-[env(safe-area-inset-bottom)]">
       <JoinClient token={invite ?? ""} />
     </div>
   );

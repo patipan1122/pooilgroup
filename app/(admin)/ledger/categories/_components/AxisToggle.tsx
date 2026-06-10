@@ -73,7 +73,7 @@ export function AxisToggle({
               aria-selected={active}
               onClick={() => selectAxis(opt.key)}
               className={cn(
-                "min-h-[40px] rounded-lg px-4 text-sm font-medium transition-colors",
+                "press min-h-[40px] rounded-lg px-4 text-sm font-medium transition-colors",
                 active
                   ? "bg-white text-[var(--color-brand-700)] shadow-sm ring-1 ring-zinc-200"
                   : "text-zinc-500 hover:text-zinc-800",

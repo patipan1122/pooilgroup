@@ -39,7 +39,7 @@ export function ReceiptThumb({
           className,
         )}
       >
-        <span className="grid size-12 place-items-center rounded-xl bg-rose-50 text-rose-600">
+        <span className="grid size-12 place-items-center rounded-xl bg-red-50 text-red-600">
           <FileText className="size-6" aria-hidden />
         </span>
         <span className="text-xs font-medium text-zinc-600">เอกสาร PDF</span>
@@ -47,7 +47,7 @@ export function ReceiptThumb({
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white transition active:bg-zinc-800"
+          className="press inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white transition active:bg-zinc-800"
         >
           <ExternalLink className="size-3.5" aria-hidden /> เปิด PDF
         </a>
@@ -59,7 +59,7 @@ export function ReceiptThumb({
     return (
       <div
         className={cn(
-          "flex h-28 w-full flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-zinc-200 bg-zinc-50 text-zinc-400",
+          "flex h-28 w-full flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-zinc-200 bg-zinc-50 text-zinc-500",
           className,
         )}
       >
@@ -99,7 +99,7 @@ export function ReceiptThumb({
       {/* Lightbox เต็มจอ — แตะพื้นหลัง/กากบาทเพื่อปิด; แตะรูปไม่ปิด */}
       {open && (
         <div
-          className="fixed inset-0 z-[100] flex flex-col bg-black/90"
+          className="animate-fade-in fixed inset-0 z-[100] flex flex-col bg-black/90"
           role="dialog"
           aria-modal="true"
           onClick={() => setOpen(false)}
@@ -111,7 +111,7 @@ export function ReceiptThumb({
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-3 py-1.5 text-sm font-medium text-white backdrop-blur active:bg-white/25"
+                className="press inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-white/15 px-3 py-1.5 text-sm font-medium text-white backdrop-blur active:bg-white/25"
               >
                 <ExternalLink className="size-4" aria-hidden /> เปิดต้นฉบับ
               </a>
@@ -122,7 +122,7 @@ export function ReceiptThumb({
               type="button"
               onClick={() => setOpen(false)}
               aria-label="ปิด"
-              className="inline-flex size-10 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur active:bg-white/25"
+              className="press inline-flex size-10 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur active:bg-white/25"
             >
               <X className="size-5" aria-hidden />
             </button>

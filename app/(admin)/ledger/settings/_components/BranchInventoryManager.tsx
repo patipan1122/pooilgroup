@@ -96,7 +96,7 @@ export function BranchInventoryManager({
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       {/* ① เลือกสาขา */}
-      <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+      <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
         <label className="mb-1.5 flex items-center gap-2 text-sm font-bold text-zinc-800">
           <Store className="size-4 text-[var(--color-brand-600,#2563EB)]" aria-hidden /> ① เลือกสาขา
         </label>
@@ -110,7 +110,7 @@ export function BranchInventoryManager({
             <option key={b.id} value={b.id}>{b.name}{b.code ? ` (${b.code})` : ""}</option>
           ))}
         </select>
-        <p className="mt-1.5 text-[11px] text-zinc-400">
+        <p className="mt-1.5 text-[11px] text-zinc-500">
           เลือกสาขา แล้วใส่ว่าสาขานี้ขายสินค้าอะไร · ชื่อบนใบเสร็จที่สอน จะใช้ได้ทุกสาขา (ชื่อเดียว = สินค้าเดียว)
         </p>
       </div>
@@ -122,12 +122,12 @@ export function BranchInventoryManager({
       )}
 
       {/* ② เพิ่มสินค้าจาก TRCloud เข้าสาขานี้ */}
-      <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+      <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
         <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-zinc-800">
           <Plus className="size-4 text-[var(--color-brand-600,#2563EB)]" aria-hidden /> ② เพิ่มสินค้าจาก TRCloud เข้าสาขานี้
         </h3>
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" aria-hidden />
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500" aria-hidden />
           <input
             value={addQuery}
             onChange={(e) => setAddQuery(e.target.value)}
@@ -138,13 +138,13 @@ export function BranchInventoryManager({
         {addQuery.trim() && (
           <ul className="mt-2 space-y-1">
             {addCandidates.length === 0 ? (
-              <li className="px-1 py-2 text-xs text-zinc-400">ไม่พบสินค้า (ถ้ายังไม่ดึงจาก TRCloud — ไปกด “ดึง/อัปเดต” ที่หัวข้อด้านล่าง)</li>
+              <li className="px-1 py-2 text-xs text-zinc-500">ไม่พบสินค้า (ถ้ายังไม่ดึงจาก TRCloud — ไปกด “ดึง/อัปเดต” ที่หัวข้อด้านล่าง)</li>
             ) : (
               addCandidates.map((s) => (
                 <li key={s.id} className="flex items-center gap-2 rounded-lg border border-zinc-100 bg-zinc-50/60 px-2.5 py-2">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-zinc-800">{s.productName || s.productId}</p>
-                    <p className="font-mono text-[11px] text-zinc-400">{s.productId}{s.businessGroup ? ` · ${s.businessGroup}` : ""}</p>
+                    <p className="font-mono text-[11px] text-zinc-500">{s.productId}{s.businessGroup ? ` · ${s.businessGroup}` : ""}</p>
                   </div>
                   <button
                     type="button"
@@ -243,7 +243,7 @@ function SkuCard({
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-zinc-800">{sku.productName || sku.productId}</p>
-          <p className="font-mono text-[11px] text-zinc-400">
+          <p className="font-mono text-[11px] text-zinc-500">
             {sku.productId}{sku.unit ? ` · ${sku.unit}` : ""}{sku.balance != null ? ` · คงเหลือ ${sku.balance.toLocaleString()}` : ""}
           </p>
         </div>
@@ -262,7 +262,7 @@ function SkuCard({
           disabled={pending}
           onClick={() => run(() => setSkuBranchLink(sku.id, companyId, branchId, false), "เอาออกจากสาขาแล้ว")}
           title="เอาสินค้านี้ออกจากสาขานี้"
-          className="inline-flex size-7 shrink-0 items-center justify-center rounded-full text-zinc-400 hover:bg-rose-50 hover:text-rose-600"
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded-full text-zinc-500 hover:bg-rose-50 hover:text-rose-600"
         >
           <X className="size-4" />
         </button>
@@ -280,7 +280,7 @@ function SkuCard({
                 placeholder="ชื่อ เช่น ลัง"
                 className="h-6 w-16 rounded border-0 px-1 text-xs outline-none focus:ring-1 focus:ring-[var(--color-brand-200)]"
               />
-              <span className="text-[11px] text-zinc-400">=</span>
+              <span className="text-[11px] text-zinc-500">=</span>
               <input
                 type="number"
                 min={1}
@@ -322,7 +322,7 @@ function SkuCard({
               {a.aliasKey} <X className="size-3" />
             </button>
           ))}
-          {aliases.length === 0 && <span className="text-[11px] text-zinc-400">ยังไม่มี — พิมพ์สอนด้านล่าง</span>}
+          {aliases.length === 0 && <span className="text-[11px] text-zinc-500">ยังไม่มี — พิมพ์สอนด้านล่าง</span>}
         </div>
         <div className="mt-1.5 flex gap-1.5">
           <input

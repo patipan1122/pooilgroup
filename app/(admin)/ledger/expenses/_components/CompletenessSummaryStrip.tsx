@@ -37,7 +37,7 @@ export function CompletenessSummaryStrip({
         </span>
       )}
       {counts.undecided > 0 && (
-        <span className="text-[11px] text-zinc-400">
+        <span className="text-[11px] text-zinc-500">
           อีก {counts.undecided.toLocaleString("en-US")} ใบยังไม่ตรวจ (เปิดแล้วกดบันทึกจะตรวจให้)
         </span>
       )}

@@ -109,7 +109,7 @@ export function VoucherMenu({
       {open && !disabled && (
         <div
           role="menu"
-          className="absolute right-0 z-30 mt-1 w-72 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-lg"
+          className="animate-scale-in absolute right-0 z-30 mt-1 w-72 origin-top-right overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-lg"
         >
           {!subForm ? (
             ITEMS.map(({ type, label, icon: Icon, hint }) => {
@@ -122,14 +122,16 @@ export function VoucherMenu({
                   onClick={() => (type === "SUB" ? setSubForm(true) : openDoc(type))}
                   title={blocked ? "รายการนี้มีเลขภาษีครบ — ใช้ใบเสร็จจริงแทน" : undefined}
                   className={cn(
-                    "flex w-full items-start gap-2.5 px-3 py-2 text-left text-sm",
-                    blocked ? "cursor-not-allowed text-zinc-300" : "text-zinc-700 hover:bg-zinc-50",
+                    "flex w-full items-start gap-2.5 px-3 py-2.5 text-left text-sm",
+                    blocked
+                      ? "cursor-not-allowed text-zinc-400"
+                      : "press text-zinc-700 hover:bg-zinc-50",
                   )}
                 >
-                  <Icon className={cn("mt-0.5 size-4 shrink-0", blocked ? "text-zinc-300" : "text-[var(--color-brand-600)]")} aria-hidden />
+                  <Icon className={cn("mt-0.5 size-4 shrink-0", blocked ? "text-zinc-400" : "text-[var(--color-brand-600)]")} aria-hidden />
                   <span className="min-w-0">
                     <span className="block font-medium">{label}</span>
-                    <span className="block text-[11px] text-zinc-400">
+                    <span className="block text-[11px] text-zinc-500">
                       {blocked ? "มีใบกำกับภาษีแล้ว" : hint}
                     </span>
                   </span>
@@ -142,12 +144,12 @@ export function VoucherMenu({
               <button
                 type="button"
                 onClick={() => setSubForm(false)}
-                className="mb-2 inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-700"
+                className="press mb-2 inline-flex min-h-[36px] items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-700"
               >
                 <ArrowLeft className="size-3.5" /> กลับ
               </button>
               <label className="block text-sm font-medium text-zinc-800">ใบรับรองแทนใบเสร็จ</label>
-              <p className="mb-2 text-[11px] text-zinc-400">ระบุเหตุผลที่ไม่มีใบเสร็จ/ใบกำกับ (ตามกฎสรรพากร)</p>
+              <p className="mb-2 text-[11px] text-zinc-500">ระบุเหตุผลที่ไม่มีใบเสร็จ/ใบกำกับ (ตามกฎสรรพากร)</p>
               <textarea
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
@@ -160,7 +162,7 @@ export function VoucherMenu({
                 type="button"
                 onClick={issueSub}
                 disabled={reason.trim().length < 3}
-                className="mt-2 w-full rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-40"
+                className="press mt-2 inline-flex min-h-[44px] w-full items-center justify-center rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-40"
               >
                 ออกใบรับรอง
               </button>

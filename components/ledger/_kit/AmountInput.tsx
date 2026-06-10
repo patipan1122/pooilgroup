@@ -63,7 +63,7 @@ export function AmountInput({
         className,
       )}
     >
-      <span className="select-none pr-1 text-sm text-zinc-400">฿</span>
+      <span className="select-none pr-1 text-sm text-zinc-500">฿</span>
       <input
         type="text"
         inputMode="decimal"

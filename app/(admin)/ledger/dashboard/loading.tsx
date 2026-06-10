@@ -25,12 +25,12 @@ function BarsCard() {
 
 export default function LedgerDashboardLoading() {
   return (
-    <div className="p-4 sm:p-6">
+    <div className="animate-fade-in p-4 sm:p-6">
       <LedgerHeaderSkeleton />
 
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {Array.from({ length: 4 }, (_, i) => (
+      {/* KPI strip — matches the 6-tile grid */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+        {Array.from({ length: 6 }, (_, i) => (
           <div
             key={i}
             className="rounded-2xl bg-white p-4 ring-1 ring-zinc-200"

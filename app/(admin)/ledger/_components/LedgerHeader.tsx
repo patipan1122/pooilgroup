@@ -31,7 +31,7 @@ export function LedgerHeader({
             {title}
           </h1>
           {subtitle && (
-            <p className="truncate text-xs text-zinc-400 sm:hidden">{subtitle}</p>
+            <p className="truncate text-xs text-zinc-500 sm:hidden">{subtitle}</p>
           )}
         </div>
         {subtitle && (

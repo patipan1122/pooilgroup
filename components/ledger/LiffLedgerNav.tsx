@@ -28,7 +28,7 @@ export function LiffLedgerNav() {
         <Link
           href="/liff/ledger/my"
           aria-current="page"
-          className="flex min-h-[64px] flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-[var(--color-brand-600)]"
+          className="press flex min-h-[64px] flex-col items-center justify-center gap-0.5 text-[11px] font-semibold text-[var(--color-brand-700)]"
         >
           <Receipt className="size-6 text-[var(--color-brand-600)]" aria-hidden />
           ใบของฉัน
@@ -36,7 +36,7 @@ export function LiffLedgerNav() {
         <Link
           href="/liff/ledger"
           className={cn(
-            "flex min-h-[64px] flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-zinc-500",
+            "press flex min-h-[64px] flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-zinc-600",
           )}
         >
           <Camera className="size-6 text-zinc-500" aria-hidden />

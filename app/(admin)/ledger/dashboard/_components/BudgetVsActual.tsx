@@ -44,7 +44,7 @@ export function BudgetVsActual({
         </h2>
         <Link
           href={href}
-          className="shrink-0 text-xs font-medium text-[var(--color-brand-600)] hover:underline"
+          className="press shrink-0 text-xs font-medium text-[var(--color-brand-600)] hover:underline"
         >
           ตั้งงบ →
         </Link>
@@ -59,7 +59,7 @@ export function BudgetVsActual({
           action={
             <Link
               href={href}
-              className="text-sm font-medium text-[var(--color-brand-600)] hover:underline"
+              className="press text-sm font-medium text-[var(--color-brand-600)] hover:underline"
             >
               ตั้งงบรายหมวด →
             </Link>
@@ -82,7 +82,7 @@ export function BudgetVsActual({
                   <span className="truncate text-zinc-700">
                     {b.categoryName ?? "ไม่ระบุหมวด"}
                     {b.branchName && (
-                      <span className="ml-1.5 text-xs text-zinc-400">
+                      <span className="ml-1.5 text-xs text-zinc-500">
                         · {b.branchName}
                       </span>
                     )}
@@ -102,7 +102,7 @@ export function BudgetVsActual({
                 </div>
                 <div className="h-2.5 overflow-hidden rounded-full bg-zinc-100">
                   <div
-                    className={`h-full rounded-full ${barColor}`}
+                    className={`h-full rounded-full transition-[width] duration-500 ease-out ${barColor}`}
                     style={{ width: `${Math.min(100, pct)}%` }}
                   />
                 </div>

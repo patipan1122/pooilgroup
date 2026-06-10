@@ -34,7 +34,7 @@ export default async function ExportSettingsPage({
         subtitle="ตั้งค่าไฟล์ส่งบัญชี / TRCloud"
         scope={scope}
       />
-      <div className="mx-auto max-w-2xl">
+      <div className="mx-auto max-w-2xl animate-fade-in">
         <ExportConfigCard companyId={scope.companyId} />
       </div>
     </div>

@@ -152,10 +152,10 @@ export function LedgerBottomNav({ role }: { role: Role }) {
             type="button"
             aria-label="ปิดเมนู"
             onClick={() => setSheetOpen(false)}
-            className="absolute inset-0 bg-black/40"
+            className="animate-fade-in absolute inset-0 bg-black/40"
           />
           <div
-            className="absolute inset-x-0 bottom-0 rounded-t-2xl border-t border-zinc-200 bg-white p-4"
+            className="animate-slide-up-soft absolute inset-x-0 bottom-0 rounded-t-2xl border-t border-zinc-200 bg-white p-4"
             style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
           >
             <div className="mb-3 flex items-center justify-between">
@@ -172,7 +172,7 @@ export function LedgerBottomNav({ role }: { role: Role }) {
             <div className="space-y-4">
               {[...new Set(overflow.map((o) => o.group ?? "อื่น ๆ"))].map((g) => (
                 <div key={g}>
-                  <h3 className="mb-1.5 px-0.5 text-[11px] font-semibold text-zinc-400">{g}</h3>
+                  <h3 className="mb-1.5 px-0.5 text-[11px] font-semibold text-zinc-500">{g}</h3>
                   <ul className="grid grid-cols-3 gap-2">
                     {overflow
                       .filter((o) => (o.group ?? "อื่น ๆ") === g)

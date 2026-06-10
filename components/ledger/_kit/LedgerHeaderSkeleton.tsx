@@ -11,7 +11,7 @@ export function LedgerHeaderSkeleton({
   showRight?: boolean;
 }) {
   return (
-    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="animate-fade-in mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
         {/* logo strip */}
         <Skeleton className="mb-1.5 h-[22px] w-24" />

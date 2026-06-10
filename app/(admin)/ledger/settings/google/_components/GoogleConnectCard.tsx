@@ -50,7 +50,7 @@ type FilterDraft = {
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-4 sm:p-5">{children}</div>
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5">{children}</div>
   );
 }
 
@@ -66,7 +66,7 @@ function ChipList({
   colorClass?: string;
 }) {
   if (items.length === 0) {
-    return <span className="text-xs italic text-zinc-400">{emptyLabel}</span>;
+    return <span className="text-xs italic text-zinc-500">{emptyLabel}</span>;
   }
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -233,7 +233,7 @@ export function GoogleConnectCard({
 
   const filterSectionClass = "pt-2.5 space-y-2";
   const sectionLabelClass = "text-xs font-semibold text-zinc-600";
-  const sectionHintClass = "text-xs text-zinc-400 leading-relaxed";
+  const sectionHintClass = "text-xs text-zinc-500 leading-relaxed";
 
   return (
     <div className="space-y-4">
@@ -336,7 +336,7 @@ export function GoogleConnectCard({
                             {filterCount > 0 ? (
                               <span>{filterCount} ตัวกรอง</span>
                             ) : (
-                              <span className="text-zinc-400">ไม่มีตัวกรอง — สแกนทุกเมลใบเสร็จ</span>
+                              <span className="text-zinc-500">ไม่มีตัวกรอง — สแกนทุกเมลใบเสร็จ</span>
                             )}
                             {m.lastSyncAt && (
                               <span>สแกนล่าสุด {new Date(m.lastSyncAt).toLocaleDateString("th-TH")}</span>
@@ -453,7 +453,7 @@ export function GoogleConnectCard({
                                 <p>2. กด "Create a new filter" → ใส่เงื่อนไข (เช่น from:shopee.co.th) → Next</p>
                                 <p>3. เลือก "Apply the label" → สร้าง label ใหม่ ตั้งชื่อ (เช่น ใบเสร็จ-ระบบ)</p>
                                 <p>4. เลือก "Also apply to matching conversations" แล้วกด Create filter</p>
-                                <p className="text-zinc-400">จากนั้นนำชื่อ label มาใส่ช่องด้านบนได้เลย</p>
+                                <p className="text-zinc-500">จากนั้นนำชื่อ label มาใส่ช่องด้านบนได้เลย</p>
                               </div>
                             )}
                           </div>
@@ -494,7 +494,7 @@ export function GoogleConnectCard({
                               type="button"
                               onClick={() => saveFilter(m.id)}
                               disabled={filterSaving}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-50"
+                              className="press inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-brand-600)] px-3.5 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
                             >
                               {filterSaving && <Loader2 className="size-3 animate-spin" />}
                               บันทึกตัวกรอง

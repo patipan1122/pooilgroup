@@ -127,7 +127,7 @@ export default async function CategoryLedgerPage({
     <div className="p-4 sm:p-6">
       <Link
         href={backHref}
-        className="mb-2 inline-flex min-h-[44px] items-center gap-1 text-sm font-medium text-[var(--color-brand-600)]"
+        className="press -ml-1 mb-2 inline-flex min-h-[44px] items-center gap-1 rounded-lg px-1 text-sm font-medium text-[var(--color-brand-600)] transition-colors hover:text-[var(--color-brand-700)]"
       >
         <ArrowLeft className="size-4" aria-hidden />
         กลับไปสมุดค่าใช้จ่าย
@@ -142,17 +142,17 @@ export default async function CategoryLedgerPage({
 
       {/* headline totals */}
       <div className="mb-4 grid grid-cols-2 gap-3">
-        <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+        <div className="animate-fade-up rounded-2xl border border-zinc-200 bg-white p-4">
           <p className="text-xs font-semibold text-zinc-500">ยอดรวมทั้งหมด</p>
           <p className="mt-1 text-2xl font-extrabold tabular-nums text-zinc-900">
             {baht(book.grandTotal)}
           </p>
         </div>
-        <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+        <div className="animate-fade-up delay-100 rounded-2xl border border-zinc-200 bg-white p-4">
           <p className="text-xs font-semibold text-zinc-500">จำนวนใบ</p>
           <p className="mt-1 text-2xl font-extrabold tabular-nums text-zinc-900">
             {book.grandCount.toLocaleString("en-US")}
-            <span className="ml-1 text-sm font-medium text-zinc-400">ใบ</span>
+            <span className="ml-1 text-sm font-medium text-zinc-500">ใบ</span>
           </p>
         </div>
       </div>

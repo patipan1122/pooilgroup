@@ -27,9 +27,10 @@ export default async function LedgerLiffMyPage() {
   const session = await getSession();
   if (!session) {
     return (
-      <div className="mx-auto flex min-h-[70vh] w-full max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-md animate-fade-in flex-col items-center justify-center gap-4 px-6 text-center">
         <div className="size-12 animate-spin rounded-full border-4 border-[var(--color-brand-200)] border-t-[var(--color-brand-600)]" />
-        <p className="text-base font-semibold text-zinc-800">กำลังเข้าสู่ระบบ</p>
+        <p className="text-base font-semibold text-zinc-800">กำลังเข้าสู่ระบบ…</p>
+        <p className="text-sm text-zinc-500">รอสักครู่ กำลังยืนยันตัวตนจาก LINE</p>
       </div>
     );
   }
@@ -37,12 +38,12 @@ export default async function LedgerLiffMyPage() {
   const actor = await resolveLedgerActor();
   if (!actor) {
     return (
-      <div className="mx-auto flex min-h-[70vh] w-full max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-md animate-fade-up flex-col items-center justify-center gap-4 px-6 text-center">
         <LedgerMascot size={88} pose="confused" priority />
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <p className="text-base font-semibold text-zinc-800">บัญชียังไม่เปิดใช้งานสำหรับคุณ</p>
-          <p className="text-sm text-zinc-500">
-            แจ้งออฟฟิศ/ผู้ดูแลให้เพิ่มคุณเป็นสมาชิก แล้วเปิดลิงก์นี้อีกครั้ง
+          <p className="text-sm leading-relaxed text-zinc-600">
+            แจ้งออฟฟิศหรือผู้ดูแลให้เพิ่มคุณเป็นสมาชิก แล้วเปิดลิงก์นี้อีกครั้ง
           </p>
         </div>
       </div>
@@ -56,10 +57,12 @@ export default async function LedgerLiffMyPage() {
   const companyId = actor.companyId ?? (await resolveScope(actor.orgId, {})).companyId;
   if (!companyId) {
     return (
-      <div className="mx-auto flex min-h-[70vh] w-full max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-md animate-fade-up flex-col items-center justify-center gap-4 px-6 text-center">
         <LedgerMascot size={88} pose="sleepy" priority />
-        <p className="text-base font-semibold text-zinc-800">ยังไม่ได้ตั้งค่าบริษัท</p>
-        <p className="text-sm text-zinc-500">แจ้งผู้ดูแลให้ตั้งค่าบริษัทในระบบบัญชีก่อน</p>
+        <div className="space-y-1.5">
+          <p className="text-base font-semibold text-zinc-800">ยังไม่ได้ตั้งค่าบริษัท</p>
+          <p className="text-sm leading-relaxed text-zinc-600">แจ้งผู้ดูแลให้ตั้งค่าบริษัทในระบบบัญชีก่อน แล้วลองใหม่อีกครั้ง</p>
+        </div>
       </div>
     );
   }
@@ -96,13 +99,13 @@ export default async function LedgerLiffMyPage() {
   const homeHref = isAdminTier(session.user.role) ? "/ledger" : "/liff/ledger";
 
   return (
-    <div className="mx-auto w-full max-w-md px-4 pt-4 pb-[calc(76px+env(safe-area-inset-bottom))]">
+    <div className="mx-auto w-full max-w-md animate-fade-in px-4 pt-4 pb-[calc(76px+env(safe-area-inset-bottom))]">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
           <Link
             href={homeHref}
             aria-label="กลับหน้าหลัก"
-            className="grid size-9 shrink-0 place-items-center rounded-lg text-zinc-500 active:bg-zinc-100"
+            className="press grid size-11 shrink-0 place-items-center rounded-xl text-zinc-600 active:bg-zinc-100"
           >
             <Home className="size-5" aria-hidden />
           </Link>
@@ -110,25 +113,25 @@ export default async function LedgerLiffMyPage() {
         </div>
         <Link
           href="/liff/ledger"
-          className="inline-flex h-11 items-center gap-1 rounded-full bg-[var(--color-brand-600)] px-4 text-sm font-semibold text-white active:bg-[var(--color-brand-700)]"
+          className="press inline-flex h-11 items-center gap-1.5 rounded-full bg-[var(--color-brand-600)] px-4 text-sm font-semibold text-white active:bg-[var(--color-brand-700)]"
         >
           <Camera className="size-4" aria-hidden /> ถ่ายใหม่
         </Link>
       </div>
 
       {rows.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-zinc-200 bg-white px-6 py-12 text-center">
+        <div className="flex animate-fade-up flex-col items-center gap-3 rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-12 text-center">
           <LedgerMascot size={72} pose="welcome" />
-          <p className="text-sm font-medium text-zinc-700">ยังไม่มีใบที่คุณส่ง</p>
-          <p className="text-xs text-zinc-500">แตะ “ถ่ายใหม่” ด้านบน หรือปุ่มกล้องด้านล่าง เพื่อถ่ายใบแรก</p>
+          <p className="text-sm font-semibold text-zinc-800">ยังไม่มีใบที่คุณส่ง</p>
+          <p className="text-sm leading-relaxed text-zinc-600">แตะ “ถ่ายใหม่” ด้านบน หรือปุ่มกล้องด้านล่าง เพื่อถ่ายใบแรก</p>
         </div>
       ) : (
         <ul className="space-y-2">
-          {rows.map((r) => (
-            <li key={r.id}>
+          {rows.map((r, i) => (
+            <li key={r.id} className="animate-fade-up" style={i < 6 ? { animationDelay: `${i * 40}ms` } : undefined}>
               <Link
                 href={`/liff/ledger/expense/${r.id}`}
-                className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-white p-3 active:bg-zinc-50"
+                className="press flex min-h-[44px] items-center gap-3 rounded-xl border border-zinc-200 bg-white p-3 active:bg-zinc-50"
               >
                 {r.thumbUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -146,7 +149,7 @@ export default async function LedgerLiffMyPage() {
                 )}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-zinc-900">{r.vendor || "ไม่ระบุผู้ขาย"}</p>
-                  <p className="truncate font-mono text-[11px] text-zinc-400">{r.docCode}</p>
+                  <p className="truncate font-mono text-xs text-zinc-500">{r.docCode}</p>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
                   <span className="text-sm font-bold tabular-nums text-zinc-900">

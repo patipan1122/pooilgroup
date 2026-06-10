@@ -54,7 +54,7 @@ export function ExportConfigCard({ companyId }: { companyId: string }) {
   }
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
       <div className="mb-2 flex items-center gap-2">
         <span className="grid size-8 place-items-center rounded-lg bg-blue-100 text-blue-700">
           <FileSpreadsheet className="size-4" aria-hidden />

@@ -101,7 +101,7 @@ export default async function InventorySettingsPage({
         scope={scope}
       />
 
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className="mx-auto max-w-3xl space-y-4 animate-fade-in">
         <SyncSkusCard companyId={scope.companyId} skuCount={skuRows.length} />
         <BranchInventoryManager
           companyId={scope.companyId}

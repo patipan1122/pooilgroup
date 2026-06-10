@@ -153,7 +153,7 @@ export function LedgerEmptyState({
   return (
     <div
       className={[
-        "flex flex-col items-center justify-center gap-3 px-4 py-10 text-center",
+        "animate-fade-in flex flex-col items-center justify-center gap-3 px-4 py-10 text-center",
         className,
       ]
         .filter(Boolean)
@@ -161,8 +161,8 @@ export function LedgerEmptyState({
     >
       <LedgerMascot pose={pose} size={mascotSize} />
       <div className="space-y-1">
-        <p className="text-sm font-semibold text-zinc-700">{title}</p>
-        {hint && <p className="text-xs text-zinc-400">{hint}</p>}
+        <p className="text-sm font-semibold text-zinc-800">{title}</p>
+        {hint && <p className="text-xs text-zinc-500">{hint}</p>}
       </div>
       {action}
     </div>

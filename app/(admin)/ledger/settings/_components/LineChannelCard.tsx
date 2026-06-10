@@ -137,7 +137,7 @@ export function LineChannelCard({
     "h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]";
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="grid size-8 place-items-center rounded-lg bg-green-100 text-green-700">
@@ -244,7 +244,7 @@ export function LineChannelCard({
         </div>
         <div>
           <label className="mb-1 block text-xs font-semibold text-zinc-600">
-            Channel secret {connected && <span className="font-normal text-zinc-400">(ตั้งแล้ว · เว้นว่าง = ใช้ค่าเดิม)</span>}
+            Channel secret {connected && <span className="font-normal text-zinc-500">(ตั้งแล้ว · เว้นว่าง = ใช้ค่าเดิม)</span>}
           </label>
           <input
             type="password"
@@ -257,7 +257,7 @@ export function LineChannelCard({
         </div>
         <div>
           <label className="mb-1 block text-xs font-semibold text-zinc-600">
-            Channel access token {connected && <span className="font-normal text-zinc-400">(ตั้งแล้ว · เว้นว่าง = ใช้ค่าเดิม)</span>}
+            Channel access token {connected && <span className="font-normal text-zinc-500">(ตั้งแล้ว · เว้นว่าง = ใช้ค่าเดิม)</span>}
           </label>
           <input
             type="password"
@@ -270,7 +270,7 @@ export function LineChannelCard({
         </div>
         <div>
           <label className="mb-1 block text-xs font-semibold text-zinc-600">
-            Group ID <span className="font-normal text-zinc-400">(ไม่บังคับ)</span>
+            Group ID <span className="font-normal text-zinc-500">(ไม่บังคับ)</span>
           </label>
           <input
             value={groupId}

@@ -24,7 +24,7 @@ export interface SavedBookChip {
 }
 
 const chipBase =
-  "inline-flex min-h-[36px] items-center rounded-full border px-3 text-sm font-medium transition-colors";
+  "press inline-flex min-h-[36px] items-center rounded-full border px-3 text-sm font-medium transition-colors";
 
 export function SavedBooks({
   books,
@@ -122,7 +122,7 @@ export function SavedBooks({
                 type="button"
                 onClick={() => setEditingId(null)}
                 aria-label="ยกเลิก"
-                className="grid size-7 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100"
+                className="grid size-7 place-items-center rounded-full text-zinc-500 hover:bg-zinc-100"
               >
                 <X className="size-4" aria-hidden />
               </button>
@@ -145,13 +145,13 @@ export function SavedBooks({
                   onClick={() => setMenuId(menuId === b.id ? null : b.id)}
                   aria-label="จัดการเล่ม"
                   aria-expanded={menuId === b.id}
-                  className="grid min-h-[36px] w-8 place-items-center rounded-r-full border border-l-0 border-zinc-200 bg-white text-zinc-400 hover:bg-zinc-50"
+                  className="grid min-h-[36px] w-8 place-items-center rounded-r-full border border-l-0 border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50"
                 >
                   <MoreVertical className="size-4" aria-hidden />
                 </button>
               )}
               {menuId === b.id && (
-                <div className="absolute right-0 top-full z-20 mt-1 w-36 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg">
+                <div className="animate-scale-in absolute right-0 top-full z-20 mt-1 w-36 origin-top-right overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg">
                   <button
                     type="button"
                     onClick={() => {
@@ -161,7 +161,7 @@ export function SavedBooks({
                     }}
                     className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-zinc-700 hover:bg-zinc-50"
                   >
-                    <Pencil className="size-4 text-zinc-400" aria-hidden /> เปลี่ยนชื่อ
+                    <Pencil className="size-4 text-zinc-500" aria-hidden /> เปลี่ยนชื่อ
                   </button>
                   <button
                     type="button"
@@ -190,7 +190,7 @@ export function SavedBooks({
               }}
               maxLength={60}
               placeholder="ชื่อเล่ม เช่น ค่าไฟ JPSYNC"
-              className="w-40 bg-transparent text-sm outline-none placeholder:text-zinc-400"
+              className="w-40 bg-transparent text-sm outline-none placeholder:text-zinc-500"
               aria-label="ชื่อเล่มใหม่"
             />
             <button
@@ -209,7 +209,7 @@ export function SavedBooks({
                 setName("");
               }}
               aria-label="ยกเลิก"
-              className="grid size-7 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100"
+              className="grid size-7 place-items-center rounded-full text-zinc-500 hover:bg-zinc-100"
             >
               <X className="size-4" aria-hidden />
             </button>

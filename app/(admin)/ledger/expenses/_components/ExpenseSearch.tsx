@@ -25,7 +25,7 @@ export function ExpenseSearch({
           return <input key={k} type="hidden" name={k} value={decodeURIComponent(v ?? "")} />;
         })}
       {selectedId && <input type="hidden" name="selected" value={selectedId} />}
-      <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-zinc-400" aria-hidden />
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-zinc-500" aria-hidden />
       <input
         type="search"
         name="q"

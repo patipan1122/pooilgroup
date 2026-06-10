@@ -17,7 +17,7 @@ export type OrgInfo = {
 };
 
 const inputCls =
-  "h-10 w-full rounded-lg border border-zinc-200 bg-white px-2.5 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]";
+  "h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 text-base outline-none focus:border-[var(--color-brand-400)] focus:ring-2 focus:ring-[var(--color-brand-200)]";
 
 export function OrgPanel({ company }: { company: OrgInfo }) {
   const [name, setName] = useState(company.name);
@@ -48,7 +48,7 @@ export function OrgPanel({ company }: { company: OrgInfo }) {
         <Building2 className="size-4 text-[var(--color-brand-600,#2563EB)]" aria-hidden />
         <h3 className="text-sm font-bold text-zinc-800">ข้อมูลบริษัท</h3>
       </div>
-      <p className="mb-3 text-xs text-zinc-500">ใช้แสดงบนหัวเอกสารภาษี — กรอกให้ครบและถูกต้อง</p>
+      <p className="mb-3 text-xs leading-relaxed text-zinc-500">ใช้แสดงบนหัวเอกสารภาษี กรอกให้ครบและถูกต้อง</p>
 
       <div className="space-y-2.5">
         <Field label="ชื่อบริษัท">
@@ -66,7 +66,7 @@ export function OrgPanel({ company }: { company: OrgInfo }) {
       </div>
 
       {msg && (
-        <p className={"mt-2 text-xs " + (msg.kind === "ok" ? "text-emerald-700" : "text-rose-600")} role="status" aria-live="polite">
+        <p className={"mt-2 text-xs font-medium " + (msg.kind === "ok" ? "text-emerald-700" : "text-red-600")} role="status" aria-live="polite">
           {msg.text}
         </p>
       )}
@@ -74,7 +74,7 @@ export function OrgPanel({ company }: { company: OrgInfo }) {
         type="button"
         onClick={save}
         disabled={pending}
-        className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-[var(--color-brand-600,#2563EB)] px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+        className="press mt-3 inline-flex h-12 w-full items-center justify-center gap-1.5 rounded-xl bg-[var(--color-brand-600,#2563EB)] px-3 text-sm font-semibold text-white active:bg-[var(--color-brand-700)] disabled:opacity-50"
       >
         {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Check className="size-4" aria-hidden />}
         บันทึกข้อมูลบริษัท

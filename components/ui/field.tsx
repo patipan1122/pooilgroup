@@ -47,7 +47,7 @@ export function Field({
           {label}
           {required && <span className="text-[var(--color-danger)]">*</span>}
           {optional && (
-            <span className="text-zinc-400 font-normal">(ไม่บังคับ)</span>
+            <span className="text-zinc-500 font-normal">(ไม่บังคับ)</span>
           )}
           {hintImageUrl && (
             <button
