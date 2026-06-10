@@ -1337,16 +1337,17 @@ export function ExpenseReviewPane({
           role="status"
           aria-live="polite"
           className={cn(
-            "flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm",
+            // CEO 2026-06-10: ทำให้เด่นชัด (เดิมจาง → รู้สึก "กดแล้วไม่มีอะไรเปลี่ยน")
+            "flex items-center gap-2 rounded-xl border px-3.5 py-3 text-sm font-semibold shadow-sm",
             msg.kind === "ok"
-              ? "bg-emerald-50 text-emerald-800"
-              : "bg-rose-50 text-rose-800",
+              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+              : "border-rose-300 bg-rose-50 text-rose-800",
           )}
         >
           {msg.kind === "ok" ? (
-            <CheckCircle2 className="size-4" aria-hidden />
+            <CheckCircle2 className="size-5 shrink-0" aria-hidden />
           ) : (
-            <AlertTriangle className="size-4" aria-hidden />
+            <AlertTriangle className="size-5 shrink-0" aria-hidden />
           )}
           {msg.text}
         </div>
@@ -1388,40 +1389,42 @@ export function ExpenseReviewPane({
         </div>
       )}
 
-      {/* Actions — ห้าม auto-post: ต้องกดยืนยันเอง.
-          Sticky bottom bar so the confirm button is always reachable on phones. */}
+      {/* Locked notice — บอกชัดว่าทำไมแก้ไม่ได้ (CEO 2026-06-10: เดิมแถบปุ่มหายเฉย ๆ
+          เลยรู้สึกว่า "ตาย"). */}
+      {locked && (
+        <div className="-mx-4 border-t border-zinc-100 bg-zinc-50 px-4 py-3 text-sm font-medium text-zinc-600 sm:-mx-6 sm:px-6">
+          {expense.trcloudDocId != null
+            ? "✓ ส่งเข้า TRCloud แล้ว · แก้ไขไม่ได้ (ถ้าต้องแก้ ให้ลบใบใน TRCloud ก่อน)"
+            : "รายการนี้ถูกล็อก/ยกเลิก · แก้ไขไม่ได้"}
+        </div>
+      )}
+
+      {/* Actions — ปุ่ม "บันทึก" เดียว (ห้าม auto-post: คอมมิตเมื่อกดเอง).
+          Sticky bottom bar so the save button is always reachable on phones. */}
       {!locked && (
         <div className="sticky bottom-0 z-10 -mx-4 border-t border-zinc-100 bg-white/95 px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-4px_12px_rgba(15,23,42,0.06)] backdrop-blur sm:-mx-6 sm:px-6">
           <div className="flex flex-wrap items-center gap-2">
+            {/* CEO 2026-06-10: ตัดด่าน "ยืนยัน" ออก — เหลือปุ่มเดียว "บันทึก". ถ้าใบครบ
+                (สาขา+หมวด · ไม่มี error) และเป็นบัญชี/ผู้ดูแล → คอมมิตเป็น "ยืนยันแล้ว ·
+                พร้อมส่ง TRCloud" ในตัว (server confirmExpense เดิม) · ไม่งั้น (staff /
+                ยังไม่ครบ) = บันทึกร่าง. แก้ได้เรื่อย ๆ จนกว่าจะส่ง TRCloud (locked). */}
             <Button
               variant="primary"
-              disabled={pending || hasError || !canConfirm || !gate.ok}
-              onClick={() => handle(onConfirm, "ยืนยันแล้ว · บันทึกเป็น 'ยืนยันแล้ว'", true)}
-              title={
-                !canConfirm
-                  ? "เฉพาะบัญชี/ผู้ดูแลยืนยันได้ — คุณกดบันทึกร่างได้"
-                  : !gate.ok
-                    ? confirmabilityMessage(gate.missing)
-                    : hasError
-                      ? "แก้ยอดที่ไม่ตรงก่อนยืนยัน"
-                      : undefined
-              }
+              disabled={pending}
+              onClick={() => {
+                const commit =
+                  canConfirm && gate.ok && !hasError && expense.status === "draft";
+                if (commit) handle(onConfirm, "✓ บันทึกแล้ว · พร้อมส่งเข้า TRCloud", true);
+                else handle(onSave, "✓ บันทึกแล้ว");
+              }}
               className="flex-1 sm:flex-none"
             >
               {pending ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden />
               ) : (
-                <CheckCircle2 className="size-4" aria-hidden />
+                <Save className="size-4" aria-hidden />
               )}
-              ยืนยัน
-            </Button>
-            <Button
-              variant="outline"
-              disabled={pending}
-              onClick={() => handle(onSave, "บันทึกร่างแล้ว")}
-            >
-              <Save className="size-4" aria-hidden />
-              บันทึกร่าง
+              บันทึก
             </Button>
 
             {/* ขอโอน — ส่งคำขอเข้ากลุ่มผู้บริหาร (ปุ่มหลักของมือถือ; เดสก์ท็อปมีบนแถวด้วย).

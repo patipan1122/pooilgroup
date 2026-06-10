@@ -206,13 +206,17 @@ export default async function ExpensesPage({
         }
       : {}),
   };
-  const [scAll, scReview, scDraft, scConfirmed, scSent] = await Promise.all([
+  const [scAll, scReview, scDraft, scConfirmed, scSent, scUnsent] = await Promise.all([
     prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: { in: VISIBLE_STATUSES } } }),
     prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "draft", needsReview: true } }),
     prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "draft", needsReview: false } }),
     prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "confirmed" } }),
     prisma.ledgerExpense.count({
       where: { ...statusCountWhere, status: { in: VISIBLE_STATUSES }, trcloudDocId: { not: null } },
+    }),
+    // ยังไม่ส่ง TRCloud (CEO 2026-06-10 tab) — visible + ยังไม่มี trcloudDocId.
+    prisma.ledgerExpense.count({
+      where: { ...statusCountWhere, status: { in: VISIBLE_STATUSES }, trcloudDocId: null },
     }),
   ]);
   const statusCounts = {
@@ -221,6 +225,7 @@ export default async function ExpensesPage({
     draft: scDraft,
     confirmed: scConfirmed,
     sent: scSent,
+    unsent: scUnsent,
     // pay-tab counts from the 300-window (payState lives on the fetched rows, not a
     // cheap DB count — acceptable like the source tabs; capped at the list window).
     eligible: payCounts.eligible,

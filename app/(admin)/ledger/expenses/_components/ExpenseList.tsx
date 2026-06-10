@@ -108,7 +108,7 @@ export function ExpenseList({
   pay?: "eligible" | "requested" | "paid";
   /** Counts for the PRIMARY tabs. status counts = DB; pay counts = list-window. */
   statusCounts: {
-    all: number; review: number; draft: number; confirmed: number; sent: number;
+    all: number; review: number; draft: number; confirmed: number; sent: number; unsent: number;
     eligible: number; requested: number; paid: number;
   };
   /** Shortcut actions (ไม่มีใบเสร็จ · สลิปรอจับคู่) — rendered inside the mobile

@@ -7,13 +7,16 @@
 import { useRouter, usePathname } from "next/navigation";
 import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
 
+// CEO 2026-06-10: ตัดด่าน "ยืนยัน" ออก → แท็บโฟกัสที่ "ส่ง TRCloud แล้วหรือยัง" แทน
+// (ยังไม่ส่ง = trcloudDocId ว่าง · ส่งแล้ว = ส่งขึ้น TRCloud แล้ว). คง "รอตรวจ" (AI ยังไม่ชัวร์)
+// ไว้เป็น triage. draft/confirmed ไม่เป็นแท็บแล้ว (ขับด้วย ?tr= แทน ?status=).
 type PrimaryTabId =
-  | "review" | "draft" | "confirmed" | "eligible" | "requested" | "paid" | "all";
+  | "review" | "unsent" | "sent" | "eligible" | "requested" | "paid" | "all";
 
 const PRIMARY_TABS: Array<{ id: PrimaryTabId; label: string; pay?: boolean }> = [
   { id: "review", label: "รอตรวจ" },
-  { id: "draft", label: "รอยืนยัน" },
-  { id: "confirmed", label: "ยืนยันแล้ว" },
+  { id: "unsent", label: "ยังไม่ส่ง" },
+  { id: "sent", label: "ส่งแล้ว" },
   { id: "eligible", label: "ขอโอน", pay: true },
   { id: "requested", label: "รอโอน", pay: true },
   { id: "paid", label: "โอนแล้ว", pay: true },
@@ -21,8 +24,10 @@ const PRIMARY_TABS: Array<{ id: PrimaryTabId; label: string; pay?: boolean }> = 
 ];
 
 export interface ExpenseStatusCounts {
-  all: number; review: number; draft: number; confirmed: number; sent: number;
+  all: number; review: number; unsent: number; sent: number;
   eligible: number; requested: number; paid: number;
+  // legacy counts kept for callers that still pass them (unused by the tabs now).
+  draft?: number; confirmed?: number;
 }
 
 export function ExpenseStatusTabs({
@@ -56,12 +61,12 @@ export function ExpenseStatusTabs({
         ? "requested"
         : pay === "paid"
           ? "paid"
-          : status === "confirmed"
-            ? "confirmed"
-            : status === "draft" && nr === true
-              ? "review"
-              : status === "draft" && nr === false
-                ? "draft"
+          : tr === "sent"
+            ? "sent"
+            : tr === "unsent"
+              ? "unsent"
+              : status === "draft" && nr === true
+                ? "review"
                 : !status && !tr && !pay
                   ? "all"
                   : null;
@@ -75,11 +80,10 @@ export function ExpenseStatusTabs({
     if (id === "review") {
       sp.set("status", "draft");
       sp.set("nr", "1");
-    } else if (id === "draft") {
-      sp.set("status", "draft");
-      sp.set("nr", "0");
-    } else if (id === "confirmed") {
-      sp.set("status", "confirmed");
+    } else if (id === "unsent") {
+      sp.set("tr", "unsent");
+    } else if (id === "sent") {
+      sp.set("tr", "sent");
     } else if (id === "eligible" || id === "requested" || id === "paid") {
       sp.set("pay", id);
     }
