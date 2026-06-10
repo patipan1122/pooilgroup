@@ -4,9 +4,9 @@
 // (chairops/clawfleet/fuel use it), so the panel warns that edits affect every
 // module. Add via an inline form; edit name/active via a bottom sheet.
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { MapPin, Plus, Loader2, AlertTriangle, Check, X } from "lucide-react";
+import { MapPin, Plus, Loader2, AlertTriangle, Check, X, Search } from "lucide-react";
 import {
   createLedgerBranch,
   updateLedgerBranch,
@@ -54,10 +54,20 @@ export function BranchPanel({
   const [province, setProvince] = useState("");
   const [businessType, setBusinessType] = useState("massage_chair");
   const [edit, setEdit] = useState<BranchFull | null>(null);
+  const [filterText, setFilterText] = useState("");
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const router = useRouter();
+
+  // ค้นหาในรายการสาขาที่โหลดมาแล้ว (client-side) — ชื่อ หรือ รหัส
+  const filteredBranches = useMemo(() => {
+    const q = filterText.trim().toLowerCase();
+    if (!q) return branches;
+    return branches.filter(
+      (b) => b.name.toLowerCase().includes(q) || b.code.toLowerCase().includes(q),
+    );
+  }, [branches, filterText]);
 
   function create() {
     setErr(null);
@@ -76,7 +86,7 @@ export function BranchPanel({
   }
 
   return (
-    <div className="rounded-2xl border border-zinc-100 bg-white p-4">
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4">
       <div className="mb-1 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <MapPin className="size-4 text-[var(--color-brand-600,#2563EB)]" aria-hidden />
@@ -128,8 +138,24 @@ export function BranchPanel({
           ยังไม่มีสาขา — กด “เพิ่มสาขา” เพื่อสร้างสาขาแรก
         </p>
       ) : (
+        <>
+          {/* ค้นหาสาขา — กรองในรายการที่โหลดมาแล้ว */}
+          <div className="relative mb-2">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" aria-hidden />
+            <input
+              type="search"
+              placeholder="ค้นหาสาขา…"
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              aria-label="ค้นหาสาขา"
+              className="h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-3 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-[var(--color-brand-200)]"
+            />
+          </div>
+          {filteredBranches.length === 0 ? (
+            <p className="py-4 text-center text-xs text-zinc-400">ไม่พบสาขาที่ค้นหา</p>
+          ) : (
         <ul className="divide-y divide-zinc-100">
-          {branches.map((b) => (
+          {filteredBranches.map((b) => (
             <li key={b.id}>
               <button
                 type="button"
@@ -145,6 +171,8 @@ export function BranchPanel({
             </li>
           ))}
         </ul>
+          )}
+        </>
       )}
 
       {edit && (

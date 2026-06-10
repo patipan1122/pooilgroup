@@ -7,7 +7,7 @@ import { ChevronLeft } from "lucide-react";
 export function SettingsBack({ companyId }: { companyId: string | null }) {
   const qs = companyId ? `?company=${encodeURIComponent(companyId)}` : "";
   return (
-    <div className="sticky top-0 z-20 -mx-4 mb-3 border-b border-zinc-100 bg-white/95 px-4 py-2 backdrop-blur-sm sm:-mx-6 sm:px-6">
+    <div className="sticky top-0 z-20 -mx-4 mb-3 border-b border-zinc-100 bg-white px-4 py-2 sm:-mx-6 sm:px-6">
       <div className="flex items-center gap-1 text-sm font-medium text-zinc-500">
         <Link
           href={`/ledger/expenses${qs}`}

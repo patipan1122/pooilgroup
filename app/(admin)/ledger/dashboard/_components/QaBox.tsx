@@ -3,6 +3,7 @@
 // "ถาม AI" — lightweight web Q&A over the period aggregates. Optional companion
 // to the insights panel; same budget guard server-side (askLedgerQa).
 import { useState, useTransition } from "react";
+import { MessageCircle } from "lucide-react";
 import { askLedgerQa } from "../../_ai-actions";
 
 const SUGGESTIONS = [
@@ -43,8 +44,8 @@ export function QaBox({
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-4">
       <div className="mb-3 flex items-center gap-2">
-        <span className="grid size-8 place-items-center rounded-xl bg-zinc-100 text-base">
-          💬
+        <span className="grid size-8 place-items-center rounded-xl bg-zinc-100 text-zinc-600">
+          <MessageCircle className="size-4" aria-hidden />
         </span>
         <h2 className="text-sm font-bold text-zinc-800">ถาม AI เรื่องค่าใช้จ่าย</h2>
       </div>
@@ -62,7 +63,7 @@ export function QaBox({
           onChange={(e) => setQuestion(e.target.value)}
           placeholder="เช่น เดือนนี้ค่าน้ำมันเท่าไหร่"
           maxLength={500}
-          className="min-w-0 flex-1 rounded-xl border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-[var(--color-brand-500)] focus:ring-2 focus:ring-[var(--color-brand-100)]"
+          className="min-w-0 flex-1 rounded-xl border border-zinc-300 px-3 py-2 text-base outline-none focus:border-[var(--color-brand-500)] focus:ring-2 focus:ring-[var(--color-brand-100)] sm:text-sm"
         />
         <button
           type="submit"

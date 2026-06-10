@@ -19,6 +19,18 @@ function currentPeriod() {
   const d = new Date();
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
+// "2026-06" → "มิ.ย. 69" (Thai short month + 2-digit Buddhist year) — mirrors the
+// shared convention in ledger-book/page.tsx (no importable YYYY-MM helper: the
+// lib/utils thaiDateLong adds a day, which doesn't fit a month-only period).
+const TH_MONTHS = [
+  "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+  "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
+];
+function monthLabel(period: string): string {
+  const [y, m] = period.split("-").map(Number);
+  if (!y || !m) return period;
+  return `${TH_MONTHS[m - 1] ?? period} ${(y + 543) % 100}`;
+}
 
 export default async function BudgetsPage({
   searchParams,
@@ -55,7 +67,7 @@ export default async function BudgetsPage({
     <div className="p-4 sm:p-6">
       <LedgerHeader
         title="งบประมาณ"
-        subtitle={`งวด ${period}`}
+        subtitle={`งวด ${monthLabel(period)}`}
         scope={scope}
       />
 

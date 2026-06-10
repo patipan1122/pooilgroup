@@ -66,17 +66,22 @@ export function ExportConfigCard({ companyId }: { companyId: string }) {
         เริ่มจาก CSV รายเดือน
       </p>
 
-      <div className="mb-3 rounded-lg bg-zinc-50 p-3 text-xs text-zinc-600">
-        คอลัมน์ CSV:{" "}
-        <code className="font-mono">
-          doc_code, doc_date, vendor, vendor_tax_id, acc_code, subtotal, vat, wht, total, note
-        </code>
-        <div className="mt-2 text-amber-700">
-          <strong>หมายเหตุ:</strong> คอลัมน์เป็นค่าเริ่มต้น — ปรับให้ตรง template
-          ของ TRCloud ได้ (ดู <code>docs/LEDGER_SETUP.md</code>). Phase 2 จะส่งผ่าน API
-          อัตโนมัติ
+      <details className="mb-3 rounded-lg bg-zinc-50 p-3 text-xs text-zinc-600">
+        <summary className="cursor-pointer font-semibold text-zinc-700">
+          ดูคอลัมน์ (สำหรับช่างเทคนิค)
+        </summary>
+        <div className="mt-2">
+          คอลัมน์ CSV:{" "}
+          <code className="font-mono">
+            doc_code, doc_date, vendor, vendor_tax_id, acc_code, subtotal, vat, wht, total, note
+          </code>
+          <div className="mt-2 text-amber-700">
+            <strong>หมายเหตุ:</strong> คอลัมน์เป็นค่าเริ่มต้น — ปรับให้ตรง template
+            ของ TRCloud ได้ (ดู <code>docs/LEDGER_SETUP.md</code>). Phase 2 จะส่งผ่าน API
+            อัตโนมัติ
+          </div>
         </div>
-      </div>
+      </details>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
         <div className="flex-1">
@@ -84,18 +89,17 @@ export function ExportConfigCard({ companyId }: { companyId: string }) {
             htmlFor="export-period"
             className="mb-1 block text-xs font-semibold text-zinc-600"
           >
-            งวด (YYYY-MM)
+            งวด
           </label>
           <input
             id="export-period"
+            type="month"
             value={period}
             onChange={(e) => {
               setPeriod(e.target.value.trim());
               setMsg(null);
             }}
-            placeholder="2026-06"
-            inputMode="numeric"
-            className="h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]"
+            className="h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-base sm:text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]"
           />
         </div>
         <Button

@@ -437,7 +437,7 @@ async function BookIndex({
         scope={scope}
       />
 
-      <div className="mb-4 flex items-center gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-white p-4">
+      <div className="mb-4 flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
         <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-white text-[var(--color-brand-600)] ring-1 ring-blue-100">
           <BookOpen className="size-5" aria-hidden />
         </div>

@@ -168,9 +168,9 @@ export function TRCloudBranchConfig({
             <div key={b.id} className="flex flex-col gap-1.5 py-3 sm:flex-row sm:items-center">
               <div className="min-w-0 flex-1">
                 <span className="text-xs font-medium text-zinc-800">{b.name}</span>
-                <span className="ml-1 text-[10px] text-zinc-400">{b.code}</span>
+                <span className="ml-1 font-mono text-[11px] text-zinc-500">{b.code}</span>
                 {!isConfigured && (
-                  <span className="ml-1.5 inline-block rounded bg-amber-100 px-1 py-px text-[9px] font-medium text-amber-700">
+                  <span className="ml-1.5 inline-block rounded bg-amber-100 px-1 py-px text-[11px] font-medium text-amber-700">
                     ยังไม่ผูก
                   </span>
                 )}
@@ -178,7 +178,7 @@ export function TRCloudBranchConfig({
               <div className="flex flex-1 flex-col gap-1.5">
                 <div className="flex flex-col gap-1.5 sm:flex-row sm:gap-2">
                   <div className="flex-1">
-                    <label className="mb-0.5 block text-[10px] text-zinc-400">โครงการ (project)</label>
+                    <label className="mb-0.5 block text-[11px] text-zinc-500">โครงการ (project)</label>
                     <input
                       className={input}
                       placeholder="AMAZON-001-สาขาเทศบาลจักราช"
@@ -193,7 +193,7 @@ export function TRCloudBranchConfig({
                     />
                   </div>
                   <div className="flex-1">
-                    <label className="mb-0.5 block text-[10px] text-zinc-400">แผนก (department)</label>
+                    <label className="mb-0.5 block text-[11px] text-zinc-500">แผนก (department)</label>
                     <input
                       className={input}
                       placeholder="JPS_00001"
@@ -212,7 +212,7 @@ export function TRCloudBranchConfig({
                       type="button"
                       onClick={() => save(b.id)}
                       disabled={isBusy}
-                      className="flex h-8 min-w-[52px] items-center justify-center gap-1 rounded-lg bg-zinc-800 px-2.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+                      className="flex h-8 min-w-[52px] items-center justify-center gap-1 rounded-lg bg-[var(--color-brand-600)] px-2.5 text-xs font-medium text-white hover:bg-[var(--color-brand-700)] disabled:opacity-50"
                     >
                       {isBusy ? (
                         <Loader2 className="size-3 animate-spin" />
@@ -233,7 +233,7 @@ export function TRCloudBranchConfig({
         })}
       </div>
 
-      <p className="mt-3 text-[10px] text-zinc-400">
+      <p className="mt-3 text-[11px] text-zinc-500">
         สาขาที่ยังไม่ได้ผูก โครงการ+แผนก จะไม่สามารถส่งใบเสร็จเข้า TRCloud ได้
       </p>
     </div>

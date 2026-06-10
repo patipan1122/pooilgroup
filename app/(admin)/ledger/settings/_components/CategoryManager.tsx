@@ -1,9 +1,9 @@
 "use client";
 
 // จัดการหมวดค่าใช้จ่าย — เพิ่มใหม่ + เปิด/ปิดใช้งาน + ผูก GL + SKU + VAT claimable
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus, Pencil, Check, X } from "lucide-react";
+import { Loader2, Plus, Pencil, Check, X, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { createCategory, toggleCategory, updateCategoryTrcloud } from "../../_actions";
@@ -51,9 +51,31 @@ export function CategoryManager({
     vatClaimable: true,
   });
   const [accCodeError, setAccCodeError] = useState<string | null>(null);
+  const [filterText, setFilterText] = useState("");
+  const [unboundOnly, setUnboundOnly] = useState(false);
 
   const input =
     "h-9 rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]";
+
+  // ค้นหา/กรอง/เรียง ในรายการที่โหลดมาแล้ว (client-side)
+  // - ค้นหา: ชื่อหมวด หรือ รหัสบัญชี GL
+  // - กรอง "ยังไม่ผูก TRCloud": เฉพาะหมวดที่ยังไม่มีทั้ง GL และ SKU
+  // - เรียง: ใช้งานอยู่ก่อนปิดใช้งาน, ในกลุ่มเดียวกันคงลำดับ sort เดิม
+  const visibleCategories = useMemo(() => {
+    const q = filterText.trim().toLowerCase();
+    const filtered = categories.filter((c) => {
+      if (unboundOnly && (c.trcloudAccCode || c.trcloudProductCode)) return false;
+      if (!q) return true;
+      return (
+        c.name.toLowerCase().includes(q) ||
+        (c.trcloudAccCode ?? "").toLowerCase().includes(q)
+      );
+    });
+    return [...filtered].sort((a, b) => {
+      if (a.active !== b.active) return a.active ? -1 : 1;
+      return a.sort - b.sort;
+    });
+  }, [categories, filterText, unboundOnly]);
 
   function startEdit(c: Cat) {
     setEditingId(c.id);
@@ -123,8 +145,6 @@ export function CategoryManager({
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-      <h2 className="mb-3 text-sm font-bold text-zinc-800">หมวดค่าใช้จ่าย</h2>
-
       {/* Add form */}
       <div className="mb-4 flex flex-col gap-2">
         <div className="flex flex-col gap-2 sm:flex-row">
@@ -169,6 +189,36 @@ export function CategoryManager({
       </div>
       {msg && <p className="mb-2 text-xs text-rose-600">{msg}</p>}
 
+      {/* Search + filter — ทำงานบนรายการที่โหลดมาแล้ว */}
+      {categories.length > 0 && (
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" aria-hidden />
+            <input
+              type="search"
+              placeholder="ค้นหาหมวด หรือ รหัสบัญชี GL…"
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              aria-label="ค้นหาหมวดค่าใช้จ่าย"
+              className="h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-3 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-[var(--color-brand-200)]"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setUnboundOnly((v) => !v)}
+            aria-pressed={unboundOnly ? "true" : "false"}
+            className={
+              "inline-flex h-9 shrink-0 items-center justify-center rounded-lg border px-3 text-xs font-medium " +
+              (unboundOnly
+                ? "border-amber-300 bg-amber-50 text-amber-700"
+                : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50")
+            }
+          >
+            เฉพาะที่ยังไม่ผูก TRCloud
+          </button>
+        </div>
+      )}
+
       {/* List */}
       {categories.length === 0 ? (
         <LedgerEmptyState
@@ -177,9 +227,11 @@ export function CategoryManager({
           title="ยังไม่มีหมวด"
           hint="เพิ่มหมวดแรกด้านบน เช่น ค่าน้ำมัน/ขนส่ง"
         />
+      ) : visibleCategories.length === 0 ? (
+        <p className="py-4 text-center text-xs text-zinc-400">ไม่พบหมวดที่ค้นหา</p>
       ) : (
         <ul className="divide-y divide-zinc-100">
-          {categories.map((c) => (
+          {visibleCategories.map((c) => (
             <li key={c.id} className="py-2.5">
               {editingId === c.id ? (
                 /* Expanded edit panel — bordered card below the row */
@@ -215,9 +267,9 @@ export function CategoryManager({
                         }}
                       />
                       {accCodeError ? (
-                        <p className="mt-0.5 text-[10px] text-rose-600">{accCodeError}</p>
+                        <p className="mt-0.5 text-[11px] text-rose-600">{accCodeError}</p>
                       ) : (
-                        <p className="mt-0.5 text-[10px] text-zinc-400">ตัวเลข 7 หลักจาก TRCloud ผังบัญชี</p>
+                        <p className="mt-0.5 text-[11px] text-zinc-500">ตัวเลข 7 หลักจาก TRCloud ผังบัญชี</p>
                       )}
                     </div>
 
@@ -240,7 +292,7 @@ export function CategoryManager({
                           </option>
                         ))}
                       </select>
-                      <p className="mt-0.5 text-[10px] text-zinc-400">
+                      <p className="mt-0.5 text-[11px] text-zinc-500">
                         {editState.trcloudProductCode
                           ? (SKUS.find((s) => s.value === editState.trcloudProductCode)?.label ?? "")
                           : "เลือก SKU ที่ตรงกับประเภทค่าใช้จ่าย"}
@@ -278,7 +330,7 @@ export function CategoryManager({
                       type="button"
                       onClick={() => saveEdit(c.id)}
                       disabled={pending}
-                      className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                      className="flex items-center gap-1.5 rounded-lg bg-[var(--color-brand-600)] px-3 py-1.5 text-xs font-medium text-white hover:bg-[var(--color-brand-700)] disabled:opacity-50"
                     >
                       {pending ? (
                         <Loader2 className="size-3 animate-spin" />
@@ -295,14 +347,14 @@ export function CategoryManager({
                   <div className="min-w-0">
                     <span className="font-medium text-zinc-800">{c.name}</span>
                     {c.trcloudAccCode && (
-                      <Badge tone="info" className="ml-2 font-mono text-[10px]">
+                      <span className="ml-2 font-mono text-[11px] text-zinc-500">
                         {c.trcloudAccCode}
-                      </Badge>
+                      </span>
                     )}
                     {c.trcloudProductCode && (
-                      <Badge tone="neutral" className="ml-1 font-mono text-[10px]">
+                      <span className="ml-1.5 font-mono text-[11px] text-zinc-500">
                         {c.trcloudProductCode}
-                      </Badge>
+                      </span>
                     )}
                     {!c.vatClaimable && (
                       <Badge tone="warning" className="ml-1 text-[10px]">

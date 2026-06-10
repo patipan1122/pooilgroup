@@ -27,7 +27,7 @@ import { LEDGER_ROLES, ROLE_LABEL } from "@/lib/ledger/permission-constants";
 type BranchOpt = { id: string; code: string; name: string };
 
 const inputCls =
-  "h-9 rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]";
+  "h-9 rounded-lg border border-zinc-200 bg-white px-2 text-base sm:text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]";
 
 function sameSet(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
@@ -113,7 +113,7 @@ function MemberRow({
             {member.displayName?.trim() || "(ยังไม่มีชื่อ)"}
           </span>
           {!member.active && (
-            <span className="rounded bg-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-600">ปิดอยู่</span>
+            <span className="rounded bg-zinc-200 px-1.5 py-0.5 text-[11px] text-zinc-600">ปิดอยู่</span>
           )}
         </div>
         <div className="flex items-center gap-1.5">
@@ -157,7 +157,7 @@ function MemberRow({
                 type="button"
                 onClick={unlink}
                 disabled={pending}
-                className="inline-flex items-center gap-1 text-[11px] text-zinc-400 hover:text-rose-600 disabled:opacity-50"
+                className="inline-flex items-center gap-1 text-[11px] text-zinc-500 hover:text-rose-600 disabled:opacity-50"
               >
                 <Link2Off className="size-3" aria-hidden /> ยกเลิกการผูก
               </button>
@@ -237,7 +237,7 @@ function MemberRow({
         {scopeOpen && (
           <>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {branches.length === 0 && <span className="text-xs text-zinc-400">ยังไม่มีสาขา</span>}
+              {branches.length === 0 && <span className="text-xs text-zinc-500">ยังไม่มีสาขา</span>}
               {branches.map((b) => {
                 const on = scope.includes(b.id);
                 return (

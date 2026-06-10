@@ -36,17 +36,19 @@ function periodLabel(period: string): string {
 }
 
 function DeltaPill({ pct }: { pct: number | null }) {
-  if (pct === null) return <span className="text-[11px] text-zinc-300">—</span>;
+  if (pct === null) return <span className="text-[11px] text-zinc-400">—</span>;
   const up = pct > 0.5;
   const down = pct < -0.5;
+  // Near-zero change is noise — show a muted dash, not a styled "•" pill.
+  if (!up && !down) return <span className="text-[11px] text-zinc-400">—</span>;
   return (
     <span
       className={cn(
         "inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums",
-        up ? "bg-red-50 text-red-600" : down ? "bg-emerald-50 text-emerald-600" : "bg-zinc-100 text-zinc-500",
+        up ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600",
       )}
     >
-      {up ? "▲" : down ? "▼" : "•"} {Math.abs(Math.round(pct))}%
+      {up ? "▲" : "▼"} {Math.abs(Math.round(pct))}%
     </span>
   );
 }
@@ -222,7 +224,7 @@ function FullMatrix({
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr className="bg-zinc-50/80 text-xs font-semibold text-zinc-500">
-            <th className="sticky left-0 z-10 bg-zinc-50/80 px-3 py-2.5 text-left">รายการ</th>
+            <th className="sticky left-0 z-10 bg-zinc-50/80 px-3 py-2.5 text-left shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]">รายการ</th>
             {periods.map((p) => (
               <th key={p} className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">
                 {periodLabel(p)}
@@ -251,7 +253,7 @@ function FullMatrix({
                 </th>
                 {r.cells.map((v, i) => (
                   <td key={i} className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-zinc-700">
-                    {v ? baht(v) : <span className="text-zinc-300">–</span>}
+                    {v ? baht(v) : <span className="text-zinc-400">–</span>}
                   </td>
                 ))}
                 <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums text-zinc-900">

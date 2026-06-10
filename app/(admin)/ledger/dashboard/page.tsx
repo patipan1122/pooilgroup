@@ -186,7 +186,7 @@ export default async function LedgerDashboardPage({
             <span className="ml-1 text-sm font-medium text-zinc-400">ใบ</span>
           </div>
         </div>
-        <div className="rounded-2xl bg-white p-4 ring-1 ring-amber-200">
+        <div className="rounded-2xl bg-white p-4 ring-1 ring-amber-300">
           <div className="text-xs font-semibold text-zinc-500">รอยืนยัน</div>
           <div className="mt-1 text-2xl font-extrabold tabular-nums text-amber-700">
             {summary.draftCount.toLocaleString("en-US")}
@@ -194,21 +194,21 @@ export default async function LedgerDashboardPage({
           </div>
         </div>
         {/* งานภาษีรายเดือน — ภาษีซื้อขอคืนได้ + หัก ณ ที่จ่าย */}
-        <div className="rounded-2xl bg-white p-4 ring-1 ring-emerald-200">
+        <div className="rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
           <div className="text-xs font-semibold text-zinc-500">VAT ขอคืนได้</div>
           <div className="mt-1 text-2xl font-extrabold tabular-nums text-emerald-700">
             {baht(summary.vatClaimable)}
           </div>
-          <div className="mt-0.5 text-[11px] text-zinc-400">
+          <div className="mt-0.5 text-[11px] text-zinc-500">
             เฉพาะบิลที่ติ๊ก &ldquo;ขอคืนได้&rdquo; แล้ว
           </div>
         </div>
-        <div className="rounded-2xl bg-white p-4 ring-1 ring-sky-200">
+        <div className="rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
           <div className="text-xs font-semibold text-zinc-500">หัก ณ ที่จ่าย (WHT)</div>
           <div className="mt-1 text-2xl font-extrabold tabular-nums text-sky-700">
             {baht(summary.whtTotal)}
           </div>
-          <div className="mt-0.5 text-[11px] text-zinc-400">ต้องนำส่งสรรพากร</div>
+          <div className="mt-0.5 text-[11px] text-zinc-500">ต้องนำส่งสรรพากร</div>
         </div>
         <div className="rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
           <div className="text-xs font-semibold text-zinc-500">จำนวนหมวด</div>

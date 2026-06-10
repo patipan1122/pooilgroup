@@ -81,7 +81,7 @@ export function PermissionPanel({
           );
         })}
       </div>
-      <p className="mb-3 text-xs text-zinc-400">{ROLE_HINT[role]}</p>
+      <p className="mb-3 text-xs text-zinc-500">{ROLE_HINT[role]}</p>
 
       {locked && (
         <div className="mb-3 flex items-center gap-1.5 rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
@@ -100,7 +100,7 @@ export function PermissionPanel({
             <li key={cap} className="flex items-center justify-between gap-3 py-3">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-zinc-800">{label.title}</p>
-                <p className="text-xs text-zinc-400">{label.desc}</p>
+                <p className="text-xs text-zinc-500">{label.desc}</p>
               </div>
               <button
                 type="button"

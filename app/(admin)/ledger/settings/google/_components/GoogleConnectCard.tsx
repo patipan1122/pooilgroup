@@ -111,7 +111,7 @@ function ChipInput({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onAdd(); } }}
         placeholder={placeholder}
-        className="h-9 flex-1 rounded-lg border border-zinc-200 bg-white px-3 text-xs focus:border-[var(--color-brand-400)] focus:outline-none"
+        className="h-9 flex-1 rounded-lg border border-zinc-200 bg-white px-3 text-base sm:text-xs focus:border-[var(--color-brand-400)] focus:outline-none"
       />
       <button
         type="button"
@@ -431,7 +431,7 @@ export function GoogleConnectCard({
                               value={filterDraft.label}
                               onChange={(e) => setFilterDraft((d) => ({ ...d, label: e.target.value }))}
                               placeholder="เช่น Receipts หรือ ใบเสร็จ-ระบบ"
-                              className="h-9 w-full rounded-lg border border-zinc-200 bg-white px-3 text-xs focus:border-[var(--color-brand-400)] focus:outline-none"
+                              className="h-9 w-full rounded-lg border border-zinc-200 bg-white px-3 text-base sm:text-xs focus:border-[var(--color-brand-400)] focus:outline-none"
                             />
                             {filterDraft.label.trim() && (
                               <p className="text-xs text-amber-600">

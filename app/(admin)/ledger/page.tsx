@@ -160,11 +160,14 @@ export default async function LedgerHomePage({
     },
   ] as const;
 
+  // KPI tile outlines are neutral (decorative colored rings read as AI-slop and
+  // carry no real status). Semantic color lives on the icon instead. Exception:
+  // the single actionable "รอยืนยัน" tile keeps an amber ring — genuine "needs you".
   const toneRing: Record<string, string> = {
-    amber: "ring-amber-200 text-amber-700",
-    emerald: "ring-emerald-200 text-emerald-700",
-    blue: "ring-blue-200 text-blue-700",
-    zinc: "ring-zinc-200 text-zinc-700",
+    amber: "ring-amber-300 text-amber-600",
+    emerald: "ring-zinc-200 text-emerald-600",
+    blue: "ring-zinc-200 text-sky-600",
+    zinc: "ring-zinc-200 text-zinc-500",
   };
 
   const taskTone: Record<string, string> = {
@@ -227,7 +230,7 @@ export default async function LedgerHomePage({
       />
 
       {/* Welcome banner — น้องใบเสร็จ greets + nudges the draft queue (web + mobile) */}
-      <div className="mb-4 flex items-center gap-4 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-white p-4">
+      <div className="mb-4 flex items-center gap-4 rounded-2xl border border-zinc-200 bg-white p-4">
         <LedgerMascot
           pose={summary.draftCount > 0 ? "receipt" : "welcome"}
           size={72}
@@ -260,14 +263,14 @@ export default async function LedgerHomePage({
                 <span className="text-xs font-semibold text-zinc-500">
                   {t.label}
                 </span>
-                <Icon className="size-4" aria-hidden />
+                <Icon className="size-4 shrink-0" aria-hidden />
               </div>
               <div className="text-2xl font-extrabold tabular-nums text-zinc-900 sm:text-3xl">
                 {typeof t.value === "number"
                   ? t.value.toLocaleString("en-US")
                   : t.value}
                 {t.unit && (
-                  <span className="ml-1 text-sm font-medium text-zinc-400">
+                  <span className="ml-1 text-sm font-medium text-zinc-500">
                     {t.unit}
                   </span>
                 )}
@@ -304,7 +307,7 @@ export default async function LedgerHomePage({
                     </span>
                     <span className="shrink-0 text-sm font-bold tabular-nums text-zinc-900">
                       {t.count}
-                      <span className="ml-0.5 text-xs font-normal text-zinc-400">ใบ</span>
+                      <span className="ml-0.5 text-xs font-normal text-zinc-500">ใบ</span>
                     </span>
                     <span className="shrink-0 rounded-lg bg-[var(--color-brand-50)] px-2.5 py-1 text-xs font-semibold text-[var(--color-brand-700)]">
                       {t.cta}
@@ -328,7 +331,7 @@ export default async function LedgerHomePage({
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
             <span className="text-sm font-bold text-zinc-900">สมุดค่าใช้จ่าย — ดูย้อนหลัง</span>
-            <ChevronRight className="size-4 shrink-0 text-zinc-300" aria-hidden />
+            <ChevronRight className="size-4 shrink-0 text-zinc-400" aria-hidden />
           </div>
           {topRecurring.length > 0 ? (
             <ul className="mt-2 space-y-1">
@@ -389,7 +392,7 @@ export default async function LedgerHomePage({
                       <div className="truncate text-sm font-medium text-zinc-800">
                         {d.vendor || "ไม่ระบุผู้ขาย"}
                       </div>
-                      <div className="truncate font-mono text-xs text-zinc-400">
+                      <div className="truncate font-mono text-xs text-zinc-500">
                         {d.docCode}
                       </div>
                     </div>

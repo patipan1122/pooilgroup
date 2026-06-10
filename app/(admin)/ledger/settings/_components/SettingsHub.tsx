@@ -83,7 +83,7 @@ function SettingRow({ row }: { row: Row }) {
         <span
           className={cn(
             "inline-flex shrink-0 items-center gap-1 text-[11px] font-medium",
-            row.status.ok ? "text-emerald-600" : "text-zinc-400",
+            row.status.ok ? "text-emerald-600" : "text-zinc-500",
           )}
         >
           {row.status.ok && <Check className="size-3" aria-hidden />}
@@ -197,7 +197,7 @@ export function SettingsHub({
         <section key={g.label}>
           <h2
             className={cn(
-              "px-1 pb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400",
+              "px-1 pb-1.5 text-xs font-semibold text-zinc-500",
               gi === 0 ? "pt-0" : "pt-5",
             )}
           >
@@ -211,7 +211,7 @@ export function SettingsHub({
         </section>
       ))}
 
-      <p className="px-1 pt-6 text-center text-xs text-zinc-400">
+      <p className="px-1 pt-6 text-center text-xs text-zinc-500">
         ผู้ดูแลจัดการทีม/สิทธิ์/สาขาบนมือถือผ่าน LINE ได้เช่นกัน
       </p>
     </div>

@@ -3,6 +3,7 @@
 // "AI วิเคราะห์ธุรกิจ" panel — calls the generateInsights server action on demand
 // (not on page load, to respect the AI budget). Loading / empty / error states.
 import { useState, useTransition } from "react";
+import { Sparkles } from "lucide-react";
 import { generateInsights } from "../../_ai-actions";
 
 export function InsightsPanel({
@@ -32,11 +33,11 @@ export function InsightsPanel({
   }
 
   return (
-    <div className="rounded-2xl border border-[var(--color-brand-200)] bg-gradient-to-br from-[var(--color-brand-50)] to-white p-4">
+    <div className="rounded-2xl border border-[var(--color-brand-100)] bg-[var(--color-brand-50)]/40 p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-[var(--color-brand-100)] text-base">
-            ✨
+          <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-[var(--color-brand-100)] text-[var(--color-brand-700)]">
+            <Sparkles className="size-4" aria-hidden />
           </span>
           <div className="min-w-0">
             <h2 className="text-sm font-bold text-zinc-800">AI วิเคราะห์ธุรกิจ</h2>

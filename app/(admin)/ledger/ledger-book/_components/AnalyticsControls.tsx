@@ -163,7 +163,7 @@ export function AnalyticsControls({
                 aria-selected={active}
                 onClick={() => setParam({ ax: opt.key })}
                 className={cn(
-                  "min-h-[36px] rounded-lg px-3 text-sm font-medium transition-colors",
+                  "min-h-[40px] rounded-lg px-3 text-sm font-medium transition-colors",
                   active
                     ? "bg-white text-[var(--color-brand-700)] shadow-sm ring-1 ring-zinc-200"
                     : "text-zinc-500 hover:text-zinc-800",
@@ -182,7 +182,7 @@ export function AnalyticsControls({
           onClick={() => setFiltersOpen((o) => !o)}
           aria-expanded={filtersOpen}
           className={cn(
-            "inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-sm font-medium transition-colors",
+            "inline-flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-sm font-medium transition-colors",
             filterCount > 0
               ? "border-[var(--color-brand-300)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)]"
               : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300",
@@ -318,7 +318,7 @@ function MultiPicker({
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         className={cn(
-          "inline-flex min-h-[36px] items-center gap-1 rounded-xl border px-2.5 text-sm font-medium transition-colors",
+          "inline-flex min-h-[40px] items-center gap-1 rounded-xl border px-2.5 text-sm font-medium transition-colors",
           count > 0
             ? "border-[var(--color-brand-300)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)]"
             : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300",
@@ -431,7 +431,7 @@ function Segmented<T extends string>({
             aria-selected={active}
             onClick={() => onSelect(opt.key)}
             className={cn(
-              "min-h-[36px] rounded-lg px-3 text-sm font-medium transition-colors",
+              "min-h-[40px] rounded-lg px-3 text-sm font-medium transition-colors",
               active
                 ? "bg-white text-[var(--color-brand-700)] shadow-sm ring-1 ring-zinc-200"
                 : "text-zinc-500 hover:text-zinc-800",

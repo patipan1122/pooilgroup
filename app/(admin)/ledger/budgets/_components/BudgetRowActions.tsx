@@ -22,7 +22,7 @@ export function BudgetRowActions({ id }: { id: string }) {
     <button
       onClick={remove}
       disabled={pending}
-      className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg text-zinc-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+      className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-rose-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
       aria-label="ลบงบ"
     >
       {pending ? (

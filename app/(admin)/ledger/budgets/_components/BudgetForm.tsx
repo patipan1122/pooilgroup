@@ -30,7 +30,7 @@ export function BudgetForm({
   });
 
   const input =
-    "h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]";
+    "h-11 w-full rounded-lg border border-zinc-200 bg-white px-2 text-base outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]";
   const label = "mb-1 block text-xs font-semibold text-zinc-600";
 
   function submit() {
@@ -88,9 +88,10 @@ export function BudgetForm({
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={label}>งวด (YYYY-MM)</label>
+          <label className={label}>เดือนที่ตั้งงบ</label>
           <input
             className={input}
+            type="month"
             value={form.period}
             onChange={(e) => setForm({ ...form, period: e.target.value })}
             placeholder="2026-06"
