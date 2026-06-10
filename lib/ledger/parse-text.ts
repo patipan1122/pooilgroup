@@ -9,6 +9,7 @@
 
 import { checkAiBudget, recordAiUsage } from "@/lib/ai/cost-cap";
 import { AiBudgetError } from "./ai-parse";
+import { normalizePurchaseType, type PurchaseType } from "./types";
 
 const MODEL = "gemini-2.0-flash-lite";
 const EST_INPUT_TOKENS = 260;
@@ -19,6 +20,7 @@ export interface ParsedTextExpense {
   vendor: string | null;
   paymentMethod: string | null;
   suggestedCategory: string | null;
+  purchaseType: PurchaseType | null;
   docDate: string | null; // YYYY-MM-DD
   note: string | null;
   confidence: Record<string, number>;
@@ -29,6 +31,7 @@ interface RawText {
   vendor?: string | null;
   payment_method?: string | null;
   suggested_category?: string | null;
+  purchase_type?: string | null;
   doc_date?: string | null;
   note?: string | null;
   confidence?: Record<string, number>;
@@ -47,7 +50,8 @@ function prompt(today: string): string {
   "total": <จำนวนเงินเป็น number ไม่มีคอมม่า/฿ หรือ null ถ้าไม่มีตัวเลขเงินชัดเจน>,
   "vendor": "<ชื่อร้าน/สิ่งที่ซื้อ เช่น กาแฟ, ค่าอาหารกลางวัน, แท็กซี่ หรือ null>",
   "payment_method": "<cash | transfer | qr | credit_card หรือ null>",
-  "suggested_category": "<เดาหมวด เช่น ค่าน้ำมัน/ขนส่ง, ค่าวัตถุดิบ/สินค้า, ค่ารับรอง, เบ็ดเตล็ด/จิปาถะ หรือ null>",
+  "suggested_category": "<เดาหมวด ใช้ชื่อตรงผังนี้: ค่าน้ำมันยานพาหนะ, ค่าเดินทาง, ค่าไฟฟ้า, ค่าน้ำประปา, ค่าอินเทอร์เน็ต, ค่าเช่าสำนักงาน, วัสดุสิ้นเปลือง, ค่าจ้าง/บริการทั่วไป, ค่ารับรอง, ค่าใช้จ่ายเบ็ดเตล็ด หรือ null>",
+  "purchase_type": "<goods (ซื้อของ/สินค้า) | service (ค่าบริการ/ค่าจ้าง/ค่าเช่า) | construction (วัสดุก่อสร้าง/ต่อเติม) หรือ null>",
   "doc_date": "<YYYY-MM-DD แปลงจากคำเช่น 'เมื่อวาน'='${today} ลบ 1 วัน', 'วันนี้'='${today}'; ไม่ระบุ=null>",
   "note": "<ข้อความเดิมที่เหลือ หรือ null>",
   "confidence": { "total": <0..1>, "vendor": <0..1>, "category": <0..1> }
@@ -122,6 +126,7 @@ export async function parseExpenseText(
     vendor: parsed.vendor?.trim() || null,
     paymentMethod: parsed.payment_method?.trim() || null,
     suggestedCategory: parsed.suggested_category?.trim() || null,
+    purchaseType: normalizePurchaseType(parsed.purchase_type),
     docDate: parsed.doc_date ?? null,
     note: parsed.note?.trim() || null,
     confidence: clampConf(parsed.confidence),

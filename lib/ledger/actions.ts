@@ -204,6 +204,8 @@ export interface CreateDraftInput {
   wht?: number;
   total?: number;
   categoryId?: string | null;
+  /** ประเภทการซื้อที่ AI อ่านได้ (goods/service/construction) → push เลือก SKU อัตโนมัติ. */
+  purchaseType?: string | null;
   paymentMethod?: string | null;
   originalUrl?: string | null;
   thumbUrl?: string | null;
@@ -379,6 +381,7 @@ async function createDraftExpenseCore(
           wht: input.wht ?? 0,
           total: input.total ?? 0,
           categoryId: input.categoryId ?? null,
+          trcloudPurchaseType: input.purchaseType ?? null,
           paymentMethod: input.paymentMethod ?? null,
           docType: input.docType ?? "tax_invoice",
           vendorDocNumber: input.vendorDocNumber ?? null,

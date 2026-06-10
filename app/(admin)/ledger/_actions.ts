@@ -1486,6 +1486,7 @@ async function loadPushable(
       categoryAccCode: row.category?.trcloudAccCode ?? null,
       trcloudProductCode:
         (row.category?.trcloudProductCode as string | null) ?? null,
+      purchaseType: row.trcloudPurchaseType ?? null,
       inputVatClaimable: row.category?.vatClaimable ?? false,
       branchTrcloudProject:
         typeof branchSettings.trcloudProject === "string"

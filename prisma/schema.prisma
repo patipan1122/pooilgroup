@@ -5357,6 +5357,9 @@ model LedgerExpense {
   trcloudDocNo          String?             @map("trcloud_doc_no") // เลขที่เอกสาร AP
   trcloudPushedAt       DateTime?           @map("trcloud_pushed_at") @db.Timestamptz(6)
   trcloudError          String?             @map("trcloud_error")
+  // ประเภทการซื้อที่ AI อ่านจากบิล → ใช้เลือก SKU อัตโนมัติตอน push (goods=JPS-100 /
+  // service=JPS-101 / construction=JPS-103). null = ให้ push เดาจากชื่อประเภทค่าใช้จ่าย.
+  trcloudPurchaseType   String?             @map("trcloud_purchase_type")
   // — Inventory STOCK-IN (รับเข้าสต๊อก, LEDGER_STOCKIN_V1) — แยกจาก AP-expense push.
   trcloudStockinDocId   String?             @map("trcloud_stockin_doc_id")
   trcloudStockinNo      String?             @map("trcloud_stockin_no")

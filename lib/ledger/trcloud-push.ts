@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { normalizePurchaseType, type PurchaseType } from "@/lib/ledger/types";
 
 // LedgerLine → TRCloud AP push v2 (JP Sync company 45)
 //
@@ -235,6 +236,52 @@ async function resolveFixedSku(
   return { ok: true, productId: foundId };
 }
 
+// ── ประเภทการซื้อ → SKU อัตโนมัติ (CEO 2026-06-10) ────────────────────────────
+// ไม่ต้องตั้ง SKU มือต่อประเภทค่าใช้จ่าย: ถ้า trcloudProductCode ว่าง → ใช้ประเภทที่ AI
+// อ่านได้ (purchaseType) แปลงเป็น 1 ใน 3 SKU. ถ้า AI ไม่ได้ระบุ (บิลเก่า) → เดาจากชื่อ
+// ประเภทค่าใช้จ่าย. default ไม่ชัด = service (JPS-101) ตามที่ CEO เลือก "นำด้วย 101".
+// (สินค้าทำสต๊อกใช้เมนู "รับเข้าคลัง" แยกต่างหาก — ไม่เกี่ยวกับ AP push นี้.)
+const SKU_BY_TYPE: Record<PurchaseType, string> = {
+  goods: "JPS-100",
+  service: "JPS-101",
+  construction: "JPS-103",
+};
+
+/** GL สำรองเมื่อประเภทค่าใช้จ่ายยังไม่ได้ตั้งรหัสบัญชี — "รายจ่ายยังไม่ได้แยกประเภท"
+ *  (นักบัญชีไปจัดประเภทใน TRCloud ภายหลัง). push จะไม่บล็อกเพราะขาด GL อีกต่อไป. */
+const GL_FALLBACK = "5919999";
+
+/** เดาประเภทการซื้อจากชื่อประเภทค่าใช้จ่าย — ใช้เมื่อ AI ไม่ได้ระบุ (บิลเก่า).
+ *  ลำดับสำคัญ: construction → goods (จับ "น้ำมัน"/วัสดุ/สินค้า) → service.
+ *  goods ต้องมาก่อน service เพราะ "ค่าน้ำมัน..." มี "น้ำ" ที่ service จับ → จะเพี้ยนเป็นบริการ. */
+function inferPurchaseTypeFromCategory(categoryName: string | null): PurchaseType {
+  const n = (categoryName ?? "").toLowerCase();
+  if (n.includes("ก่อสร้าง") || n.includes("ต่อเติม") || n.includes("รับเหมา")) return "construction";
+  // goods ก่อน: น้ำมัน(เชื้อเพลิง)/สินค้า/วัตถุดิบ/วัสดุ/อุปกรณ์/เครื่องเขียน
+  if (
+    n.includes("น้ำมัน") || n.includes("สินค้า") || n.includes("วัตถุดิบ") ||
+    n.includes("วัสดุ") || n.includes("อุปกรณ์") || n.includes("เครื่องเขียน")
+  )
+    return "goods";
+  // service: ใช้ "ประปา" (ไม่ใช่ "น้ำ" เปล่า — กันชนน้ำมัน), ไฟ/เน็ต/โทร/เช่า/จ้าง/บริการ/วิชาชีพ ฯลฯ
+  if (
+    n.includes("บริการ") || n.includes("จ้าง") || n.includes("เช่า") || n.includes("ธรรมเนียม") ||
+    n.includes("ที่ปรึกษา") || n.includes("ซ่อม") || n.includes("ประปา") || n.includes("ไฟ") ||
+    n.includes("เน็ต") || n.includes("อินเทอร์เน็ต") || n.includes("โทรศัพท์") || n.includes("ขนส่ง") ||
+    n.includes("เดินทาง") || n.includes("โฆษณา") || n.includes("การตลาด") || n.includes("บัญชี") ||
+    n.includes("ภาษี") || n.includes("เงินเดือน") || n.includes("รับรอง")
+  )
+    return "service";
+  return "service";
+}
+
+/** SKU ที่จะใช้จริง: ตั้งมือ (ถ้ามี) > AI purchaseType > เดาจากชื่อประเภท. ไม่มีวันว่าง. */
+function resolveEffectiveSku(e: PushableExpense): string {
+  if (e.trcloudProductCode) return e.trcloudProductCode;
+  const type = normalizePurchaseType(e.purchaseType) ?? inferPurchaseTypeFromCategory(e.categoryName);
+  return SKU_BY_TYPE[type];
+}
+
 // ── AP line builder ──────────────────────────────────────────────────────────
 export type PushableExpense = {
   id: string;
@@ -255,7 +302,8 @@ export type PushableExpense = {
   note: string | null;
   categoryName: string | null;
   categoryAccCode: string | null;      // GL code e.g. "5220020"
-  trcloudProductCode: string | null;   // fixed SKU e.g. "JPS-101"
+  trcloudProductCode: string | null;   // fixed SKU e.g. "JPS-101" — null → เลือกอัตโนมัติจาก purchaseType
+  purchaseType: string | null;         // AI: goods/service/construction → เลือก SKU อัตโนมัติเมื่อ trcloudProductCode ว่าง
   inputVatClaimable: boolean;          // false → tax_report=0 (ไม่เข้า ภ.พ.30)
   branchTrcloudProject: string | null;    // TRCloud project code (สาขา)
   branchTrcloudDepartment: string | null; // TRCloud department code (นิติบุคคล)
@@ -362,21 +410,23 @@ export async function pushExpenseToTrcloud(
     return { ok: false, error: "ยังไม่ได้ตั้งค่า TRCloud (env TRCLOUD_JPS_*)" };
   }
 
-  // ── Validation gate ────────────────────────────────────────────────────────
-  if (!e.trcloudProductCode) {
-    return { ok: false, error: `หมวด "${e.categoryName}" ไม่มีรหัส SKU — ตั้งค่าใน Settings → หมวดค่าใช้จ่าย` };
-  }
-  if (!e.categoryAccCode) {
-    return { ok: false, error: `หมวด "${e.categoryName}" ไม่มีรหัสบัญชี GL — ตั้งค่าใน Settings → หมวดค่าใช้จ่าย` };
-  }
-  if (!e.branchTrcloudProject) {
+  // ── Auto-resolve SKU + GL (CEO 2026-06-10) ─────────────────────────────────
+  // SKU ไม่ต้องตั้งมือ: AI เลือก 1 ใน 3 (JPS-100/101/103) จากประเภทการซื้อ. GL ถ้าหมวด
+  // ยังไม่ได้ตั้ง → ใช้ 5919999 (ยังไม่แยกประเภท) — push ไม่บล็อกเพราะขาด SKU/GL อีกต่อไป.
+  const eff: PushableExpense = {
+    ...e,
+    trcloudProductCode: resolveEffectiveSku(e),
+    categoryAccCode: e.categoryAccCode || GL_FALLBACK,
+  };
+  // สาขายังต้องตั้ง project/department (คนละเรื่องกับ SKU/GL — ใช้รายงานรายสาขา).
+  if (!eff.branchTrcloudProject) {
     return { ok: false, error: "สาขานี้ยังไม่มีรหัสโครงการ TRCloud — ตั้งค่าใน Settings → สาขา → TRCloud" };
   }
-  if (!e.branchTrcloudDepartment) {
+  if (!eff.branchTrcloudDepartment) {
     return { ok: false, error: "สาขานี้ยังไม่มีรหัสแผนก TRCloud — ตั้งค่าใน Settings → สาขา → TRCloud" };
   }
 
-  const scope: Scope = { orgId: e.orgId, companyId: e.companyId };
+  const scope: Scope = { orgId: eff.orgId, companyId: eff.companyId };
 
   // 1) vendor → contact_id
   const contact = await resolveContactId(scope, {
@@ -384,8 +434,8 @@ export async function pushExpenseToTrcloud(
   });
   if (!contact.ok) return { ok: false, error: `คู่ค้า: ${contact.error}` };
 
-  // 2) line items (fixed SKU + acc_code)
-  const built = await buildLines(scope, e);
+  // 2) line items (fixed SKU + acc_code) — eff has SKU/GL auto-resolved
+  const built = await buildLines(scope, eff);
   if (!built.ok) return { ok: false, error: `สินค้า: ${built.error}` };
 
   // 3) create AP

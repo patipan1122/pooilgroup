@@ -158,6 +158,7 @@ export function UploadReceiptButton({
         wht?: number | null;
         total?: number | null;
         paymentMethod?: string | null;
+        purchaseType?: string | null;
         confidence?: Record<string, number>;
         ocrModel?: string;
       } = {};
@@ -191,6 +192,7 @@ export function UploadReceiptButton({
           wht: parsed.wht ?? 0,
           total: parsed.total ?? 0,
           paymentMethod: parsed.paymentMethod ?? null,
+          purchaseType: parsed.purchaseType ?? null,
           originalUrl: publicUrl,
           thumbUrl: publicUrl,
           sha256: sha,

@@ -23,6 +23,7 @@
 
 import { checkAiBudget, recordAiUsage } from "@/lib/ai/cost-cap";
 import type { ParsedReceipt, FieldConfidence, ExpenseItem, ExpenseDocType } from "./types";
+import { normalizePurchaseType } from "./types";
 
 const PRIMARY_MODEL = "gemini-3.1-flash-lite";
 // Same-accuracy backup (spike #3: 3.5-flash tied 3.1 at 12/10/8) for the rare
@@ -61,7 +62,8 @@ const RECEIPT_PROMPT = `คุณเป็นผู้เชี่ยวชา�
   "wht": <ภาษีหัก ณ ที่จ่าย เป็น number หรือ 0 ถ้าไม่มี>,
   "total": <ยอดสุทธิที่ต้องจ่าย เป็น number หรือ null>,
   "payment_method": "<cash | transfer | qr | credit_card | อื่นๆ หรือ null>",
-  "suggested_category": "<หมวดที่เดาว่าใช่ เช่น ค่าน้ำมัน/ขนส่ง, ค่าน้ำ-ไฟ-เน็ต, ค่าวัตถุดิบ/สินค้า, ค่าเช่า, เบ็ดเตล็ด/จิปาถะ หรือ null>",
+  "suggested_category": "<หมวดที่เดาว่าใช่ ใช้ชื่อให้ตรงผังนี้: ค่าน้ำมันยานพาหนะ, ค่าเดินทาง, ค่าไฟฟ้า, ค่าน้ำประปา, ค่าอินเทอร์เน็ต, ค่าโทรศัพท์, ค่าเช่าสำนักงาน, วัสดุสิ้นเปลือง, เครื่องเขียน/อุปกรณ์สำนักงาน, วัสดุก่อสร้าง, ค่าจ้าง/บริการทั่วไป, ค่าซ่อมบำรุง, ค่าโฆษณา/การตลาด, ค่ารับรอง, ค่าใช้จ่ายเบ็ดเตล็ด หรือ null>",
+  "purchase_type": "<ประเภทการซื้อ — เลือก 1 อย่าง: goods (ซื้อของ/สินค้า/วัสดุสิ้นเปลือง/อุปกรณ์) | service (ค่าบริการ/ค่าจ้าง/ค่าเช่า/ค่าน้ำ-ไฟ-เน็ต/ค่าธรรมเนียม/ที่ปรึกษา/ซ่อม) | construction (วัสดุก่อสร้าง/ต่อเติม/รับเหมา) หรือ null ถ้าไม่แน่ใจ>",
   "items": [
     { "description": "<ชื่อรายการ>", "qty": <number>, "unit_price": <number>, "amount": <number>, "vat_rate": <0.07 หรือ null> }
   ],
@@ -94,6 +96,7 @@ interface RawParsed {
   total?: number | null;
   payment_method?: string | null;
   suggested_category?: string | null;
+  purchase_type?: string | null;
   items?: Array<{
     description?: string;
     qty?: number;
@@ -323,6 +326,7 @@ export async function parseReceipt(
     total: numOrNull(parsed.total),
     paymentMethod: parsed.payment_method?.trim() || null,
     suggestedCategory: parsed.suggested_category?.trim() || null,
+    purchaseType: normalizePurchaseType(parsed.purchase_type),
     items: normalizeItems(parsed.items),
     confidence: normalizeConfidence(parsed.confidence),
     ocrModel: modelUsed,

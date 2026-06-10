@@ -333,6 +333,7 @@ export async function POST(
               wht: 0,
               total: parsed.total,
               paymentMethod: parsed.paymentMethod ?? ch.defaultPaymentMethod ?? null,
+              purchaseType: parsed.purchaseType,
               branchId: effectiveBranchId, // per-group branch (B3) → fallback channel branch
               note: dup
                 ? `จากข้อความ: "${text}" · ⚠️ ยอดอาจซ้ำกับ ${dup.docCode}`
@@ -556,6 +557,7 @@ export async function POST(
           wht: parsed?.wht ?? 0,
           total: parsed?.total ?? 0,
           paymentMethod: parsed?.paymentMethod ?? null,
+          purchaseType: parsed?.purchaseType ?? null,
           originalUrl: att.url,
           thumbUrl: att.url,
           sha256,

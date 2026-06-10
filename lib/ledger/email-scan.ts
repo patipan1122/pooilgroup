@@ -237,6 +237,7 @@ export async function scanMailbox(
           wht: parsed?.wht ?? 0,
           total: parsed?.total ?? 0,
           paymentMethod: parsed?.paymentMethod ?? null,
+          purchaseType: parsed?.purchaseType ?? null,
           originalUrl: stored.originalUrl,
           thumbUrl: stored.thumbUrl ?? stored.originalUrl,
           sha256: stored.sha256,

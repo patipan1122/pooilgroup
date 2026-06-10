@@ -165,10 +165,38 @@ export interface ParsedReceipt {
   total: number | null;
   paymentMethod: string | null;
   suggestedCategory: string | null;
+  /** AI's read of WHAT was bought → picks the fixed TRCloud SKU automatically on push. */
+  purchaseType: PurchaseType | null;
   items: ExpenseItem[];
   confidence: FieldConfidence;
   ocrModel: string;
   raw: string;
+}
+
+/**
+ * ประเภทการซื้อ — maps 1:1 to the 3 fixed TRCloud expense SKUs:
+ *   goods → JPS-100 (ซื้อสินค้า) · service → JPS-101 (ซื้อบริการ) · construction → JPS-103 (ก่อสร้าง/ต่อเติม)
+ * The AI returns this per bill so the push never has to ask the user for a SKU.
+ * (Stock-tracked resale goods are a SEPARATE flow — the "รับเข้าคลัง" button.)
+ */
+export type PurchaseType = "goods" | "service" | "construction";
+
+/** Normalize the AI's free-form purchase_type onto the enum (null if unsure). */
+export function normalizePurchaseType(raw: unknown): PurchaseType | null {
+  const v = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (!v) return null;
+  // construction first — "วัสดุก่อสร้าง" must not fall through to goods' "วัสดุ".
+  if (v === "construction" || v.includes("ก่อสร้าง") || v.includes("ต่อเติม") || v.includes("รับเหมา"))
+    return "construction";
+  if (
+    v === "service" ||
+    v.includes("บริการ") || v.includes("ค่าจ้าง") || v.includes("เช่า") ||
+    v.includes("ธรรมเนียม") || v.includes("ที่ปรึกษา") || v.includes("ซ่อม")
+  )
+    return "service";
+  if (v === "goods" || v.includes("สินค้า") || v.includes("ของ") || v.includes("วัสดุ") || v.includes("อุปกรณ์"))
+    return "goods";
+  return null;
 }
 
 /** Result of recheck() math/format validators. */

@@ -280,6 +280,7 @@ export function LedgerCaptureApp({
         total?: number | null;
         paymentMethod?: string | null;
         suggestedCategory?: string | null;
+        purchaseType?: string | null;
         confidence?: Record<string, number> | null;
       } = {};
       try {
@@ -313,6 +314,7 @@ export function LedgerCaptureApp({
           vat: parsed.vat ?? 0,
           total: parsed.total ?? 0,
           categoryId: matchCategory(parsed.suggestedCategory) || null,
+          purchaseType: parsed.purchaseType ?? null,
           paymentMethod: parsed.paymentMethod ?? null,
           originalUrl: uploadedUrl,
           thumbUrl: uploadedUrl,
