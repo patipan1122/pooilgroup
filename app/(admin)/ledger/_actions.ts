@@ -1436,6 +1436,7 @@ async function loadPushable(
       docType: string;
       companyId: string;
       alreadyPushed: boolean;
+      stalePending: boolean;
     }
   | null
 > {
@@ -1467,6 +1468,10 @@ async function loadPushable(
     docType: row.docType,
     companyId: row.companyId,
     alreadyPushed: !!row.trcloudDocId,
+    // self-heal: a 'pending' row stuck >5 min = a prior push died mid-flight → reclaimable
+    // (TRCloud push dedups by docCode, so retrying an actually-succeeded push won't dup the AP).
+    stalePending:
+      row.trcloudDocId === "pending" && row.updatedAt < new Date(Date.now() - 5 * 60 * 1000),
     pushable: {
       id: row.id,
       orgId: row.orgId,
@@ -1678,25 +1683,35 @@ export async function sendExpenseToTrcloud(
     loaded.docType === "quotation"
       ? "ส่งแล้ว — แต่เอกสารนี้เป็นใบเสนอราคา ภาษีซื้อ (VAT) ขอคืนไม่ได้จนกว่าจะมีใบกำกับ/ใบเสร็จตัวจริงมาแทนที่"
       : undefined;
-  if (loaded.alreadyPushed) return { ok: true, alreadySent: true, warning: quotationWarning };
+  if (loaded.alreadyPushed && !loaded.stalePending)
+    return { ok: true, alreadySent: true, warning: quotationWarning };
 
   // Atomically claim the row before calling TRCloud — prevents a duplicate AP if
   // two concurrent requests both pass the alreadyPushed check (race condition),
   // and prevents orphaned APs if the serverless function dies after TRCloud responds
   // but before recordPushResult writes to the DB.
-  // P1#9 PENDING STUCK NOTE: 'pending' is a transient sentinel set here and resolved
-  // to a real docId (success) or 'error' (failure) by recordPushResult below. If the
-  // serverless function is killed mid-flight (cold timeout, OOM, SIGTERM), the row
-  // stays stuck at trcloudDocId='pending' forever and blocks all future pushes.
-  // TODO: a background cron (e.g. /api/cron/ledger-trcloud-reset) should run every
-  // 5 minutes and reset rows where trcloudDocId='pending' AND trcloudPushedAt IS NULL
-  // AND updatedAt < NOW() - INTERVAL '5 minutes' back to trcloudDocId=NULL so they
-  // can be re-claimed. The 5-minute window exceeds the Vercel serverless max duration.
+  // P1#9 PENDING STUCK — SELF-HEAL (no cron needed): 'pending' is a transient claim
+  // resolved to a real docId (success) or 'error' (failure) by recordPushResult below.
+  // If the function dies mid-flight (cold timeout/OOM/SIGTERM) the row stays 'pending'.
+  // We reclaim a 'pending' row stuck > 5 min (exceeds Vercel max duration → no live push
+  // can still be running) ALONGSIDE the normal null claim. Safe vs duplicate APs: the
+  // TRCloud push dedups by docCode (a retry of an actually-succeeded push returns the
+  // existing AP, never a new one). 'error' rows are NOT reclaimed here (accountant retries
+  // explicitly via deleteTrcloudApAction).
+  const stalePendingBefore = new Date(Date.now() - 5 * 60 * 1000);
   const claimed = await prisma.ledgerExpense.updateMany({
-    where: { id, orgId, companyId: loaded.companyId, trcloudDocId: null },
+    where: {
+      id,
+      orgId,
+      companyId: loaded.companyId,
+      OR: [
+        { trcloudDocId: null },
+        { trcloudDocId: "pending", updatedAt: { lt: stalePendingBefore } },
+      ],
+    },
     data: { trcloudDocId: "pending" },
   });
-  if (claimed.count === 0) return { ok: true, alreadySent: true }; // another request won the race
+  if (claimed.count === 0) return { ok: true, alreadySent: true }; // null→race lost; fresh pending→active push
 
   // Intent audit — written BEFORE the HTTP call so that if the function dies
   // mid-push, an auditor can see the push was started (and check TRCloud).
