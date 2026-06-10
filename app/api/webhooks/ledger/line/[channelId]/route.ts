@@ -645,7 +645,7 @@ export async function POST(
               // driveWebUrl is the shareable Drive link for the accountant;
               // originalUrl is the fast R2 CDN URL used for thumbnails + AI parse.
               await prisma.ledgerExpense.update({
-                where: { id: res.data.id },
+                where: { id: res.data.id, orgId: ch.orgId, companyId: ch.companyId },
                 data: {
                   driveFileId: drive.fileId,
                   driveWebUrl: drive.webViewLink,

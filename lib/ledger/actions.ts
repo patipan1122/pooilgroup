@@ -779,7 +779,7 @@ export async function voidExpense(input: {
 
   try {
     await prisma.ledgerExpense.update({
-      where: { id: input.id },
+      where: { id: input.id, orgId, companyId: input.companyId },
       data: {
         status: "void",
         note: input.reason

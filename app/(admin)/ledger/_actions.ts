@@ -611,8 +611,8 @@ export async function bulkConfirm(
       skippedReasons.math++;
       continue;
     }
-    await prisma.ledgerExpense.update({
-      where: { id: r.id },
+    const upd = await prisma.ledgerExpense.updateMany({
+      where: { id: r.id, orgId: session.user.org_id, companyId, status: "draft" },
       data: {
         status: "confirmed",
         needsReview: false,
@@ -620,6 +620,7 @@ export async function bulkConfirm(
         confirmedAt: new Date(),
       },
     });
+    if (upd.count === 0) { skipped++; continue; } // not draft / not owned (race) — skip
     confirmed++;
     confirmedIds.push(r.id);
   }
@@ -973,7 +974,7 @@ export async function attachReplacementInvoice(
       });
       // back-link the original → flip its color to follow the (hopefully green) replacement
       await tx.ledgerExpense.update({
-        where: { id: original.id },
+        where: { id: original.id, orgId, companyId: original.companyId },
         data: {
           replacedById: repl.id,
           completenessStatus: grade.status,
@@ -1916,10 +1917,13 @@ export async function liffConfirmExpense(id: string, raw: unknown): Promise<Acti
   if (!gateLiff.ok) return { ok: false, error: confirmabilityMessage(gateLiff.missing) };
 
   await prisma.$transaction(async (tx) => {
-    await tx.ledgerExpense.updateMany({
-      where: { id, orgId: actor.orgId, companyId: row.companyId },
+    // optimistic lock on status='draft' (match the web confirm) — a LIFF double-tap /
+    // concurrent confirm gets count=0 → skip (no double-confirm, no double replaceItems).
+    const c = await tx.ledgerExpense.updateMany({
+      where: { id, orgId: actor.orgId, companyId: row.companyId, status: "draft" },
       data: { ...toData(p), status: "confirmed", needsReview: false, confirmedBy: actor.userId, confirmedAt: new Date() },
     });
+    if (c.count === 0) return;
     await replaceItems(tx, { expenseId: id, orgId: actor.orgId, companyId: row.companyId, items: p.items });
   });
   await audit({
@@ -2907,17 +2911,25 @@ export async function matchFloatingSlip(
   });
   if (!bill) return { ok: false, error: "ไม่พบบิล (หรือคนละบริษัทกับสลิป)" };
   if (bill.status === "void") return { ok: false, error: "บิลถูกยกเลิกแล้ว" };
+  if (bill.paymentStatus === "paid") return { ok: false, error: "บิลนี้จ่ายเงินไปแล้ว" };
 
-  await prisma.$transaction(async (tx) => {
-    await tx.ledgerPayment.update({
-      where: { id: payment.id },
+  const claimed = await prisma.$transaction(async (tx) => {
+    // ROW-LOCK the slip claim on matchedExpenseId=null — the pre-check above is NOT a
+    // lock; two accountants pairing the SAME floating slip could both pass it.
+    const c = await tx.ledgerPayment.updateMany({
+      where: { id: payment.id, orgId, companyId: payment.companyId, matchedExpenseId: null },
       data: { matchedExpenseId: bill.id, markedBy: session.user.id },
     });
+    if (c.count !== 1) return false; // another accountant claimed this slip first
+    // Flip the bill paid — guard paymentStatus='unpaid' so a concurrently-closed bill
+    // isn't re-flipped with mismatched evidence.
     await tx.ledgerExpense.updateMany({
-      where: { id: bill.id, orgId, companyId: payment.companyId },
+      where: { id: bill.id, orgId, companyId: payment.companyId, paymentStatus: "unpaid" },
       data: { paymentStatus: "paid" },
     });
+    return true;
   });
+  if (!claimed) return { ok: false, error: "สลิปนี้เพิ่งถูกจับคู่ไปแล้ว" };
   await audit({
     orgId,
     userId: session.user.id,

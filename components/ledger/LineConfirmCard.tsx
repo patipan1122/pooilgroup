@@ -414,12 +414,13 @@ export function buildConfirmBubble(input: LedgerConfirmCardInput): FlexBubble {
     companyId ? `?company=${encodeURIComponent(companyId)}` : ""
   }`;
   // Open THROUGH LedgerLine's own LIFF (login inside LINE, no iOS cookie-drop):
-  // liff.line.me/<id>/ledger?next=<liffEditPath>. LiffBootstrap reads ?next (top-
-  // level OR buried in ?liff.state) and redirects there after auth — robust to
-  // BOTH LIFF endpoint configs (/liff and /liff/ledger). Falls back to the plain
-  // web pane when no LIFF id is configured.
+  // liff.line.me/<id>?next=<liffEditPath>. The ledger LIFF endpoint is the SUB-PATH
+  // /liff/ledger, so we must NOT concatenate /ledger after the id — that resolves to
+  // /liff/ledger/ledger → 404 (see [[line-liff-deeplink-concatenate-rule]]; same fix
+  // as the payreq card). LiffBootstrap reads ?next (top-level OR buried in liff.state)
+  // and navigates there after auth. Falls back to the web pane when no LIFF id set.
   const deepLink = liffId
-    ? `https://liff.line.me/${liffId}/ledger?next=${encodeURIComponent(liffEditPath)}`
+    ? `https://liff.line.me/${liffId}?next=${encodeURIComponent(liffEditPath)}`
     : `${base}${webPath}`;
   // Absolute brand URLs (LINE flex images must be https). Only when baseUrl set.
   // Pose reacts to the result like a sticker — celebrate / alert / confused.

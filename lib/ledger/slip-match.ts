@@ -51,10 +51,11 @@ export async function checkSlipDuplicate(opts: {
     }
   }
 
-  // 2) same image resent → silent block.
+  // 2) same image resent → silent block (scope by company too — same slip image across
+  //    two legal entities in one org must not cross-block / leak the other's payment id).
   if (slipSha256) {
     const dup = await prisma.ledgerPayment.findFirst({
-      where: { orgId, slipSha256 },
+      where: { orgId, companyId, slipSha256 },
       select: { id: true, matchedExpenseId: true },
     });
     if (dup) {
@@ -213,9 +214,9 @@ export async function matchPaymentToExpense(opts: {
       });
       if (update.count !== 1) return false; // another slip won the race
 
-      // 3) Link the payment record to the now-paid expense.
+      // 3) Link the payment record to the now-paid expense (scope org+company).
       await tx.ledgerPayment.update({
-        where: { id: opts.paymentId },
+        where: { id: opts.paymentId, orgId: opts.orgId, companyId: opts.companyId },
         data: { matchedExpenseId: expense.id },
       });
 

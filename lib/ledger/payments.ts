@@ -104,12 +104,16 @@ export async function recordSlipPayment(input: RecordSlipInput): Promise<RecordS
           // Bill already paid (race) or never existed — rollback the payment insert.
           throw Object.assign(new Error("ALREADY_PAID"), { code: "BILL_ALREADY_PAID" });
         }
-        // Scope the flip by org+company so a client-supplied id can't pay a bill
-        // in another company/tenant.
-        await tx.ledgerExpense.update({
-          where: { id: matchedExpenseId },
+        // ROW-LOCK the flip: condition on paymentStatus='unpaid' + scope org/company.
+        // The findFirst above is NOT a lock (READ COMMITTED) — two slips for the same
+        // bill could both pass it; updateMany re-evaluates → 2nd gets count=0 → throw.
+        const flip = await tx.ledgerExpense.updateMany({
+          where: { id: matchedExpenseId, orgId, companyId, paymentStatus: "unpaid" },
           data: { paymentStatus: "paid" },
         });
+        if (flip.count !== 1) {
+          throw Object.assign(new Error("ALREADY_PAID"), { code: "BILL_ALREADY_PAID" });
+        }
         marked = true;
       }
       return { paymentId: payment.id, marked };
