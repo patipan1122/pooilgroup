@@ -7,7 +7,7 @@
 //   → บรรทัดที่ยังไม่จับคู่: เลือก SKU (ระบบเรียงตัวใกล้เคียงขึ้นก่อน) → ยืนยันรับเข้าคลัง.
 // stock เพิ่มทันทีที่ยืนยัน (verified) → บัญชี/แอดมินเท่านั้น · กันส่งซ้ำที่ server.
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Boxes, Loader2, CheckCircle2, AlertTriangle, Link2, RotateCcw } from "lucide-react";
 import { suggestSkus, LIKELY_THRESHOLD } from "@/lib/ledger/sku-match";
 import {
@@ -25,6 +25,8 @@ export function StockInButton({
   companyId,
   alreadyStockedNo,
   stockSkus,
+  autoOpen,
+  onClose,
 }: {
   expenseId: string;
   companyId: string;
@@ -32,6 +34,10 @@ export function StockInButton({
   alreadyStockedNo?: string | null;
   /** SKU ที่เปิด "เก็บสต๊อก" ไว้ — สำหรับจับคู่บรรทัดที่ยังไม่รู้จัก */
   stockSkus: SkuOpt[];
+  /** เปิด preview เองทันทีตอน mount + ซ่อนปุ่มของตัวเอง (ถูกเรียกจากปุ่มรวม "ส่ง TRCloud"). */
+  autoOpen?: boolean;
+  /** กด "ยกเลิก" ในโหมด autoOpen → แจ้งปุ่มแม่ให้กลับไปแสดงปุ่มหลัก. */
+  onClose?: () => void;
 }) {
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -39,6 +45,15 @@ export function StockInButton({
   const [unitByItem, setUnitByItem] = useState<Record<string, number>>({}); // itemId → factor
   const [picks, setPicks] = useState<Record<string, string>>({}); // itemId → skuId
   const [done, setDone] = useState(!!alreadyStockedNo);
+  // autoOpen: โหลด preview อัตโนมัติครั้งเดียวตอน mount (ปุ่มรวมตัดสินแล้วว่าเป็นสินค้าสต๊อก).
+  const autoLoaded = useRef(false);
+  useEffect(() => {
+    if (autoOpen && !autoLoaded.current && !preview && !done) {
+      autoLoaded.current = true;
+      loadPreview();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpen]);
 
   if (done) {
     return (
@@ -136,7 +151,7 @@ export function StockInButton({
 
   return (
     <div className="mt-2">
-      {!preview && (
+      {!preview && !autoOpen && (
         <button
           type="button"
           onClick={loadPreview}
@@ -146,6 +161,11 @@ export function StockInButton({
           {pending ? <Loader2 className="size-4 animate-spin" /> : <Boxes className="size-4" />}
           รับเข้าคลัง (TRCloud)
         </button>
+      )}
+      {!preview && autoOpen && pending && (
+        <p className="inline-flex items-center gap-1.5 text-sm text-zinc-500">
+          <Loader2 className="size-4 animate-spin" /> กำลังเปิดรายการสินค้า…
+        </p>
       )}
 
       {preview && (
@@ -199,7 +219,7 @@ export function StockInButton({
             )}
             <button
               type="button"
-              onClick={() => { setPreview(null); setMsg(null); }}
+              onClick={() => { setPreview(null); setMsg(null); onClose?.(); }}
               disabled={pending}
               className="inline-flex min-h-[40px] items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-600 disabled:opacity-50"
             >

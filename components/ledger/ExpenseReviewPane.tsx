@@ -298,6 +298,7 @@ export function ExpenseReviewPane({
   canConfirm = true,
   canEditClaimability = false,
   showTrcloud = true,
+  showSendToTrcloud = true,
   onAfterFinish,
 }: {
   expense: ExpenseRow;
@@ -331,6 +332,9 @@ export function ExpenseReviewPane({
   canEditClaimability?: boolean;
   /** false = ซ่อนปุ่ม "ส่งเข้า TRCloud" (LIFF/สมาชิก — ส่งเป็นงานบัญชีฝั่งเว็บ) */
   showTrcloud?: boolean;
+  /** false = ซ่อนปุ่ม "ส่งเข้า TRCloud" ในแผงนี้ (เพราะย้ายไปปุ่มรวม TrcloudButton นอกแผง)
+   *  แต่ยังโชว์ VoucherMenu ได้ — ต่างจาก showTrcloud ที่ซ่อนทั้งคู่. */
+  showSendToTrcloud?: boolean;
   /** เรียกหลังทำรายการ "เสร็จ" (ยืนยัน/ยกเลิก/ลบสำเร็จ) — LIFF เด้งกลับหน้ารายการ,
    *  เว็บ refresh. ไม่ส่งมา = อยู่หน้าเดิม (พฤติกรรมเดิม). */
   onAfterFinish?: () => void;
@@ -648,7 +652,7 @@ export function ExpenseReviewPane({
         <div className="flex items-center gap-2">
           {/* ออกเอกสาร PV/JV/PCV/ใบแทนใบเสร็จ — เปิดเอกสารพิมพ์ใน tab ใหม่.
               เปิดได้เฉพาะรายการที่ "ยืนยันแล้ว/ปิดงวด" (ร่าง/ยกเลิก ออกไม่ได้). */}
-          {showTrcloud && (
+          {showTrcloud && showSendToTrcloud && (
             <SendToTrcloudButton
               expenseId={expense.id}
               status={expense.status}

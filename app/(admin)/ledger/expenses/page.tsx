@@ -24,7 +24,7 @@ import { NoReceiptButton } from "./_components/NoReceiptButton";
 import { ExportButton } from "./_components/ExportButton";
 import { HeaderToolsMenu } from "./_components/HeaderToolsMenu";
 import { ledgerQuotationV1, ledgerSlipV1, ledgerPayreqV1, ledgerStockinV1 } from "@/lib/ledger/flags";
-import { StockInButton } from "@/components/ledger/StockInButton";
+import { TrcloudButton } from "@/components/ledger/TrcloudButton";
 import { expenseConfirmability } from "@/lib/ledger/confirmability";
 import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
 
@@ -486,14 +486,27 @@ export default async function ExpensesPage({
               canEditClaimability={canEditClaimability}
               currentUserId={session.user.id}
               payreqEnabled={ledgerPayreqV1()}
+              showSendToTrcloud={false}
             />
           ) : null}
-          {canStockIn && selectedExpense && (
-            <StockInButton
+          {/* ปุ่มเดียว "ส่งเข้า TRCloud" (CEO 2026-06-10) — ระบบแยกสินค้าสต๊อก/ค่าใช้จ่ายเอง
+              จาก SKU · กดซ้ำ 2 ทางไม่ได้ (กันต้นทุนเบิ้ล). แทนที่ทั้งปุ่มส่ง TRCloud ในแผง
+              และปุ่ม "รับเข้าคลัง" เดิม. */}
+          {selectedExpense && (
+            <TrcloudButton
               expenseId={selectedExpense.id}
               companyId={scope.companyId}
-              alreadyStockedNo={stockinNo}
+              status={selectedExpense.status}
+              docType={selectedExpense.docType}
+              trcloudDocId={selectedExpense.trcloudDocId}
+              trcloudDocNo={selectedExpense.trcloudDocNo}
+              trcloudError={selectedExpense.trcloudError}
+              stockinNo={stockinNo}
               stockSkus={stockSkus}
+              stockInEnabled={canStockIn}
+              isStockCategory={categories.some(
+                (c) => c.id === selectedExpense.categoryId && c.name === "สินค้าเพื่อขายแบบมีสต๊อก",
+              )}
             />
           )}
           {!selectedExpense && (

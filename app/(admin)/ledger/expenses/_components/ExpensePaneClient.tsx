@@ -29,6 +29,7 @@ export function ExpensePaneClient({
   canEditClaimability = false,
   currentUserId,
   payreqEnabled = false,
+  showSendToTrcloud = true,
 }: {
   expense: ExpenseRow;
   replacement?: ExpenseRow | null;
@@ -40,6 +41,8 @@ export function ExpensePaneClient({
   currentUserId?: string | null;
   /** LEDGER_PAYREQ_V1 — โชว์ปุ่ม "ขอโอน" ในแถบล่างของแผงรายละเอียด. */
   payreqEnabled?: boolean;
+  /** false = ซ่อนปุ่ม "ส่ง TRCloud" ในแผง (ใช้ปุ่มรวม TrcloudButton นอกแผงแทน). */
+  showSendToTrcloud?: boolean;
 }) {
   const router = useRouter();
   return (
@@ -49,6 +52,7 @@ export function ExpensePaneClient({
       categories={categories}
       branches={branches}
       canEditClaimability={canEditClaimability}
+      showSendToTrcloud={showSendToTrcloud}
       onSave={(id: string, patch: ExpenseDraft): Promise<LedgerActionResult> =>
         saveExpense(id, patch)
       }
