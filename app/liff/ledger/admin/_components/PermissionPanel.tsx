@@ -8,7 +8,7 @@
 // non-technical owner understands exactly what each switch grants.
 
 import { useState, useTransition } from "react";
-import { Loader2, ShieldCheck, Lock } from "lucide-react";
+import { Loader2, ShieldCheck, Lock, Check } from "lucide-react";
 import { setLedgerPermission } from "@/app/(admin)/ledger/_actions";
 import {
   LEDGER_ROLES,
@@ -19,6 +19,14 @@ import {
   type LedgerRole,
   type LedgerCapability,
 } from "@/lib/ledger/permission-constants";
+
+// คอลัมน์ในตารางสรุปแคบ → ใช้ชื่อตำแหน่งแบบสั้น (ชื่อเต็มยาวเกินสำหรับหัวตาราง)
+const ROLE_LABEL_SHORT: Record<LedgerRole, string> = {
+  staff: "พนักงาน",
+  accountant: "บัญชี",
+  admin: "ผู้ดูแล",
+  external_accountant: "บัญชีภายนอก",
+};
 
 export function PermissionPanel({
   matrix,
@@ -60,6 +68,70 @@ export function PermissionPanel({
       <p className="mb-3 text-xs text-zinc-500">
         เลือกตำแหน่ง แล้วเปิด-ปิดว่าทำอะไรได้บ้าง (เฉพาะเรื่องเงิน · อย่างอื่นทุกคนทำได้)
       </p>
+
+      {/* สรุปภาพรวม (อ่านอย่างเดียว) — ใครทำอะไรได้บ้าง ดูครบในตารางเดียว
+          แถว = สิทธิ์ · คอลัมน์ = ตำแหน่ง · เลื่อนแนวนอนได้บนมือถือ (คอลัมน์ชื่อสิทธิ์ค้างซ้าย) */}
+      <div className="mb-4">
+        <p className="mb-1.5 text-xs font-semibold text-zinc-700">ภาพรวม — ใครทำอะไรได้บ้าง</p>
+        <div className="overflow-x-auto rounded-xl border border-zinc-100">
+          <table className="w-full min-w-[420px] border-collapse text-xs">
+            <thead>
+              <tr className="bg-zinc-50">
+                <th className="sticky left-0 z-10 border-b border-zinc-100 bg-zinc-50 px-3 py-2 text-left font-semibold text-zinc-500">
+                  สิทธิ์
+                </th>
+                {LEDGER_ROLES.map((r) => (
+                  <th
+                    key={r}
+                    className="border-b border-l border-zinc-100 px-2 py-2 text-center font-semibold text-zinc-600"
+                  >
+                    <span className="inline-flex items-center justify-center gap-1">
+                      {ROLE_LABEL_SHORT[r]}
+                      {r === "admin" && <Lock className="size-3 text-zinc-400" aria-hidden />}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {LEDGER_CAPABILITIES.map((cap) => (
+                <tr key={cap} className="odd:bg-white even:bg-zinc-50/40">
+                  <th
+                    scope="row"
+                    className="sticky left-0 z-10 border-b border-zinc-100 bg-inherit px-3 py-2 text-left font-medium text-zinc-700"
+                  >
+                    {CAPABILITY_LABEL[cap].title}
+                  </th>
+                  {LEDGER_ROLES.map((r) => {
+                    // ผู้ดูแลเปิดทุกอย่างเสมอ (สอดคล้องกับตัวแก้ด้านล่างที่ล็อก ON)
+                    const on = r === "admin" ? true : state[r][cap];
+                    return (
+                      <td
+                        key={r}
+                        className="border-b border-l border-zinc-100 px-2 py-2 text-center align-middle"
+                      >
+                        {on ? (
+                          <Check
+                            className="mx-auto size-4 text-emerald-600"
+                            aria-label="ทำได้"
+                          />
+                        ) : (
+                          <span className="text-zinc-300" aria-label="ทำไม่ได้">
+                            —
+                          </span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-1.5 text-[11px] text-zinc-400">
+          ปรับสิทธิ์ได้ที่ด้านล่าง — เลือกตำแหน่งแล้วเปิด-ปิดทีละข้อ
+        </p>
+      </div>
 
       {/* Role chips */}
       <div className="mb-3 flex flex-wrap gap-1.5">

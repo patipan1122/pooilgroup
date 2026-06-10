@@ -6,7 +6,6 @@ import { prisma } from "@/lib/prisma";
 import { resolveScope } from "../../_scope";
 import { LedgerHeader, NoCompanyState } from "../../_components/LedgerHeader";
 import { BranchPanel } from "@/app/liff/ledger/admin/_components/BranchPanel";
-import { TRCloudBranchConfig } from "../_components/TRCloudBranchConfig";
 import { SettingsBack } from "../_components/SettingsBack";
 
 export const dynamic = "force-dynamic";
@@ -45,14 +44,19 @@ export default async function BranchSettingsPage({
         scope={scope}
       />
       <div className="mx-auto max-w-2xl space-y-6">
-        <BranchPanel companyId={scope.companyId} branches={branchesFull} />
-        <TRCloudBranchConfig
+        {/* รายการสาขาเดียว — แก้ชื่อ/รหัส + ผูก TRCloud (project/department) ในชีตเดียวกัน */}
+        <BranchPanel
           companyId={scope.companyId}
           branches={branchesFull.map((b) => ({
             id: b.id,
             code: b.code,
             name: b.name,
-            settings: b.settings as Record<string, unknown> | null,
+            province: b.province,
+            isActive: b.isActive,
+            settings:
+              b.settings && typeof b.settings === "object" && !Array.isArray(b.settings)
+                ? (b.settings as Record<string, unknown>)
+                : null,
           }))}
         />
       </div>

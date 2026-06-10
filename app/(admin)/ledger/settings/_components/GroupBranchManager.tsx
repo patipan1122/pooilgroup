@@ -196,7 +196,7 @@ export function GroupBranchManager({
 
       {groups.length === 0 ? (
         <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-6 text-center text-xs text-zinc-500">
-          ยังไม่มีกลุ่มที่ผูกแยกสาขา — ตอนนี้ทุกกลุ่มลงสาขาเริ่มต้น (การ์ด “กลุ่ม LINE” ด้านบน) ·
+          ยังไม่มีกลุ่มที่ผูกแยกสาขา — ตอนนี้ทุกกลุ่มลงสาขาเริ่มต้น (การ์ด “กลุ่ม LINE” ด้านล่าง) ·
           อยากแยกสาขา: เข้ากลุ่มนั้นแล้วพิมพ์ <span className="font-mono">/setting สาขา ...</span>
         </div>
       ) : (

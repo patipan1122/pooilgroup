@@ -170,8 +170,56 @@ export function LineChannelCard({
         ระบบสร้าง &quot;ร่าง&quot; ให้บัญชีตรวจ (ห้าม auto-post)
       </p>
 
+      {/* สาขาของกลุ่มนี้ — สิ่งที่เจ้าของจัดการจริง อยู่บนสุด */}
+      {connected && (
+        <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
+          <label className="mb-1 block text-xs font-semibold text-emerald-800">
+            สาขาของกลุ่มนี้
+            <span className="font-normal text-emerald-700/80"> — ใบเสร็จที่ส่งในกลุ่มจะลงสาขานี้อัตโนมัติ</span>
+          </label>
+          <select
+            value={branchId}
+            onChange={(e) => changeBranch(e.target.value)}
+            disabled={pending}
+            className={inputCls}
+          >
+            <option value="">ส่วนกลาง (เลือกสาขาเองตอนตรวจ)</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.code} — {b.name}
+              </option>
+            ))}
+          </select>
+          {branches.length === 0 && (
+            <p className="mt-1.5 text-xs text-amber-700">
+              ยังไม่มีสาขาในบริษัทนี้ — เพิ่มสาขาก่อนที่หน้า &quot;สาขา&quot;
+            </p>
+          )}
+          {branchMsg && (
+            <p
+              className={
+                "mt-1.5 text-xs " +
+                (branchMsg.kind === "ok" ? "text-emerald-700" : "text-rose-700")
+              }
+              role="status"
+              aria-live="polite"
+            >
+              {branchMsg.text}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ───── ตั้งค่าขั้นสูง — เชื่อม LINE OA (พับเก็บไว้ ไม่ให้รก) ───── */}
+      <details className="group rounded-lg border border-zinc-200 bg-zinc-50/60">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-100">
+          <span>ตั้งค่าขั้นสูง — เชื่อม LINE OA (สำหรับช่างเทคนิค)</span>
+          <span className="text-xs font-normal text-zinc-400 transition-transform group-open:rotate-180">▾</span>
+        </summary>
+        <div className="border-t border-zinc-200 p-3">
+
       {/* คำแนะนำหาค่าใน LINE Developers */}
-      <div className="mb-3 rounded-lg bg-zinc-50 p-3 text-xs text-zinc-600">
+      <div className="mb-3 rounded-lg bg-white p-3 text-xs text-zinc-600 ring-1 ring-zinc-100">
         หาได้ที่ <strong>LINE Developers</strong> → ช่อง Messaging API ของคุณ:
         <ul className="ml-4 mt-1 list-disc space-y-0.5">
           <li><strong>Channel ID</strong> · <strong>Channel secret</strong> — แท็บ Basic settings</li>
@@ -270,46 +318,6 @@ export function LineChannelCard({
         </div>
       )}
 
-      {/* สาขาของกลุ่มนี้ — ตั้งจากเว็บ (แก้ปัญหาผูกสาขาไม่ได้ใน LINE) */}
-      {connected && (
-        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
-          <label className="mb-1 block text-xs font-semibold text-emerald-800">
-            สาขาของกลุ่มนี้
-            <span className="font-normal text-emerald-700/80"> — ใบเสร็จที่ส่งในกลุ่มจะลงสาขานี้อัตโนมัติ</span>
-          </label>
-          <select
-            value={branchId}
-            onChange={(e) => changeBranch(e.target.value)}
-            disabled={pending}
-            className={inputCls}
-          >
-            <option value="">ส่วนกลาง (เลือกสาขาเองตอนตรวจ)</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.code} — {b.name}
-              </option>
-            ))}
-          </select>
-          {branches.length === 0 && (
-            <p className="mt-1.5 text-xs text-amber-700">
-              ยังไม่มีสาขาในบริษัทนี้ — เพิ่มสาขาก่อนที่หน้า &quot;สาขา&quot;
-            </p>
-          )}
-          {branchMsg && (
-            <p
-              className={
-                "mt-1.5 text-xs " +
-                (branchMsg.kind === "ok" ? "text-emerald-700" : "text-rose-700")
-              }
-              role="status"
-              aria-live="polite"
-            >
-              {branchMsg.text}
-            </p>
-          )}
-        </div>
-      )}
-
       {/* Webhook URL — โชว์ทันทีที่มี Channel ID (พิมพ์/บันทึกแล้ว) ก็คัดลอกได้เลย */}
       {webhookUrl && (
         <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
@@ -334,6 +342,8 @@ export function LineChannelCard({
           </p>
         </div>
       )}
+        </div>
+      </details>
     </div>
   );
 }

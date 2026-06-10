@@ -6,10 +6,11 @@
 
 import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { MapPin, Plus, Loader2, AlertTriangle, Check, X, Search } from "lucide-react";
+import { MapPin, Plus, Loader2, AlertTriangle, Check, X, Search, AlertCircle } from "lucide-react";
 import {
   createLedgerBranch,
   updateLedgerBranch,
+  updateBranchTrcloud,
 } from "@/app/(admin)/ledger/_actions";
 
 export type BranchFull = {
@@ -18,7 +19,25 @@ export type BranchFull = {
   name: string;
   province: string | null;
   isActive: boolean;
+  // ผูก TRCloud ต่อสาขา (project/department) — เก็บใน Branch.settings.
+  // optional เพื่อ backward-compat กับ call site อื่นที่ยังไม่ส่ง settings เข้ามา.
+  settings?: Record<string, unknown> | null;
 };
+
+// อ่านค่า project/department ที่ผูกไว้ของสาขาจาก settings (string เสมอ)
+function trcloudOf(b: BranchFull): { project: string; department: string } {
+  const s = b.settings ?? null;
+  return {
+    project: String(s?.trcloudProject ?? ""),
+    department: String(s?.trcloudDepartment ?? ""),
+  };
+}
+
+// สาขาถือว่า "ผูกแล้ว" เมื่อมีทั้ง project + department
+function isTrcloudBound(b: BranchFull): boolean {
+  const { project, department } = trcloudOf(b);
+  return !!(project && department);
+}
 
 const inputCls =
   "h-10 w-full rounded-lg border border-zinc-200 bg-white px-2.5 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]";
@@ -59,6 +78,13 @@ export function BranchPanel({
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const router = useRouter();
+
+  // สรุปความคืบหน้า "ผูก TRCloud" — กี่สาขาจากทั้งหมดที่ผูก project+department แล้ว
+  const boundCount = useMemo(
+    () => branches.filter(isTrcloudBound).length,
+    [branches],
+  );
+  const unboundCount = branches.length - boundCount;
 
   // ค้นหาในรายการสาขาที่โหลดมาแล้ว (client-side) — ชื่อ หรือ รหัส
   const filteredBranches = useMemo(() => {
@@ -105,6 +131,37 @@ export function BranchPanel({
         <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
         สาขาใช้ร่วมกับทุกระบบ (เก้าอี้นวด/ตู้คีบ/น้ำมัน) — เพิ่ม/แก้ที่นี่กระทบทุกที่
       </div>
+
+      {/* ความคืบหน้าการผูก TRCloud — รวมการนับ "เสร็จสิ้น" ที่เคยอยู่หน้าผูก TRCloud */}
+      {branches.length > 0 && (
+        <div className="mb-3 flex items-center justify-between gap-2 rounded-lg bg-zinc-50 px-2.5 py-2">
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 w-24 overflow-hidden rounded-full bg-zinc-200">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${
+                  boundCount === branches.length
+                    ? "bg-[var(--color-leaf-600,theme(colors.emerald.600))]"
+                    : "bg-amber-400"
+                }`}
+                // eslint-disable-next-line react/forbid-component-props -- dynamic % width cannot be expressed as a static Tailwind class
+                style={{ width: `${Math.round((boundCount / branches.length) * 100)}%` }}
+              />
+            </div>
+            <span className="text-[11px] font-medium text-zinc-500">
+              ผูก TRCloud{" "}
+              <span className={boundCount === branches.length ? "text-emerald-600" : "text-amber-600"}>
+                {boundCount}/{branches.length}
+              </span>
+            </span>
+          </div>
+          {unboundCount > 0 && (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+              <AlertCircle className="size-3" aria-hidden />
+              {unboundCount} ยังไม่ผูก
+            </span>
+          )}
+        </div>
+      )}
 
       {okMsg && (
         <p className="mb-3 text-xs font-medium text-emerald-700" role="status" aria-live="polite">{okMsg}</p>
@@ -166,7 +223,14 @@ export function BranchPanel({
                   <span className="text-sm font-medium text-zinc-800">{b.name}</span>
                   <span className="ml-1.5 text-xs text-zinc-400">{b.code}{b.province ? ` · ${b.province}` : ""}</span>
                 </span>
-                {!b.isActive && <span className="shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500">ปิดอยู่</span>}
+                <span className="flex shrink-0 items-center gap-1">
+                  {isTrcloudBound(b) ? (
+                    <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">ผูกแล้ว</span>
+                  ) : (
+                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">ยังไม่ผูก</span>
+                  )}
+                  {!b.isActive && <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500">ปิดอยู่</span>}
+                </span>
               </button>
             </li>
           ))}
@@ -177,6 +241,7 @@ export function BranchPanel({
 
       {edit && (
         <BranchEditSheet
+          companyId={companyId}
           branch={edit}
           onClose={() => setEdit(null)}
         />
@@ -186,15 +251,21 @@ export function BranchPanel({
 }
 
 function BranchEditSheet({
+  companyId,
   branch,
   onClose,
 }: {
+  companyId: string;
   branch: BranchFull;
   onClose: () => void;
 }) {
   const [name, setName] = useState(branch.name);
   const [province, setProvince] = useState(branch.province ?? "");
   const [isActive, setIsActive] = useState(branch.isActive);
+  // ผูก TRCloud ต่อสาขา — seed จาก settings เดิม (ย้ายมาจากหน้า "ผูกสาขา → TRCloud")
+  const initialTrcloud = trcloudOf(branch);
+  const [trcloudProject, setTrcloudProject] = useState(initialTrcloud.project);
+  const [trcloudDepartment, setTrcloudDepartment] = useState(initialTrcloud.department);
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
   const router = useRouter();
@@ -202,8 +273,23 @@ function BranchEditSheet({
   function save() {
     setErr(null);
     start(async () => {
+      // 1) บันทึกชื่อ/จังหวัด/สถานะ (ของเดิม)
       const res = await updateLedgerBranch(branch.id, { name, province, isActive });
       if (!res.ok) { setErr(res.error ?? "บันทึกไม่สำเร็จ"); return; }
+      // 2) บันทึกการผูก TRCloud (เรียก action เดิมแบบไม่แตะ logic/signature)
+      //    arg shape ตรงกับ TRCloudBranchConfig เดิมเป๊ะ → พฤติกรรม byte-identical.
+      const trRes = await updateBranchTrcloud({
+        branchId: branch.id,
+        companyId,
+        trcloudProject,
+        trcloudDepartment,
+      });
+      if (!trRes.ok) {
+        // ชื่อบันทึกแล้ว แต่การผูก TRCloud พลาด → แจ้งชัดเจน ไม่ปิด sheet ทิ้งสถานะ
+        setErr(trRes.error ?? "บันทึกชื่อสาขาแล้ว แต่ผูก TRCloud ไม่สำเร็จ");
+        router.refresh();
+        return;
+      }
       onClose();
       router.refresh();
     });
@@ -228,6 +314,34 @@ function BranchEditSheet({
             <span className="text-zinc-700">เปิดใช้งานสาขานี้</span>
             <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="size-5 accent-emerald-500" />
           </label>
+
+          {/* ผูก TRCloud — รวมเข้ากับ flow แก้สาขา (เดิมเป็นรายการแยกอีกกล่อง) */}
+          <div className="mt-1 rounded-lg border border-zinc-200 bg-zinc-50/60 p-3">
+            <p className="mb-2 text-xs font-semibold text-zinc-700">ผูกกับ TRCloud</p>
+            <div className="space-y-2">
+              <div>
+                <label className="mb-0.5 block text-[11px] text-zinc-500">โครงการ (project) = รหัสสาขาใน TRCloud</label>
+                <input
+                  className={inputCls}
+                  value={trcloudProject}
+                  onChange={(e) => setTrcloudProject(e.target.value)}
+                  placeholder="AMAZON-001-สาขาเทศบาลจักราช"
+                />
+              </div>
+              <div>
+                <label className="mb-0.5 block text-[11px] text-zinc-500">แผนก (department) = รหัสนิติบุคคล</label>
+                <input
+                  className={inputCls}
+                  value={trcloudDepartment}
+                  onChange={(e) => setTrcloudDepartment(e.target.value)}
+                  placeholder="JPS_00001"
+                />
+              </div>
+            </div>
+            <p className="mt-2 text-[11px] text-zinc-400">
+              สาขาที่ยังไม่ผูก โครงการ+แผนก จะส่งใบเสร็จเข้า TRCloud ไม่ได้
+            </p>
+          </div>
         </div>
         {err && <p className="mt-2 text-xs text-rose-600">{err}</p>}
         <button

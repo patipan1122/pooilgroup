@@ -169,53 +169,66 @@ export default async function LedgerDashboardPage({
         )}
       </div>
 
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <div className="rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
-          <div className="text-xs font-semibold text-zinc-500">
-            ค่าใช้จ่ายเดือนนี้
+      {/* KPI groups — แยกเป็น 2 กลุ่มให้สายตาอ่านง่าย: เงิน vs สถานะเอกสาร */}
+      <div className="space-y-5">
+        {/* กลุ่ม "เงิน" — ยอดเงินรายเดือน */}
+        <section>
+          <h2 className="mb-2 text-sm font-semibold text-zinc-600">เงิน</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
+              <div className="text-xs font-semibold text-zinc-500">
+                ค่าใช้จ่ายเดือนนี้
+              </div>
+              <div className="mt-1 text-2xl font-extrabold tabular-nums text-zinc-900">
+                {baht(summary.postedTotal)}
+              </div>
+            </div>
+            {/* งานภาษีรายเดือน — ภาษีซื้อขอคืนได้ + หัก ณ ที่จ่าย */}
+            <div className="rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
+              <div className="text-xs font-semibold text-zinc-500">VAT ขอคืนได้</div>
+              <div className="mt-1 text-2xl font-extrabold tabular-nums text-emerald-700">
+                {baht(summary.vatClaimable)}
+              </div>
+              <div className="mt-0.5 text-[11px] text-zinc-500">
+                เฉพาะบิลที่ติ๊ก &ldquo;ขอคืนได้&rdquo; แล้ว
+              </div>
+            </div>
+            <div className="rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
+              <div className="text-xs font-semibold text-zinc-500">หัก ณ ที่จ่าย (WHT)</div>
+              <div className="mt-1 text-2xl font-extrabold tabular-nums text-sky-700">
+                {baht(summary.whtTotal)}
+              </div>
+              <div className="mt-0.5 text-[11px] text-zinc-500">ต้องนำส่งสรรพากร</div>
+            </div>
           </div>
-          <div className="mt-1 text-2xl font-extrabold tabular-nums text-zinc-900">
-            {baht(summary.postedTotal)}
+        </section>
+
+        {/* กลุ่ม "สถานะเอกสาร" — จำนวนใบ + หมวด */}
+        <section>
+          <h2 className="mb-2 text-sm font-semibold text-zinc-600">สถานะเอกสาร</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
+              <div className="text-xs font-semibold text-zinc-500">ยืนยันแล้ว</div>
+              <div className="mt-1 text-2xl font-extrabold tabular-nums text-emerald-700">
+                {summary.confirmedCount.toLocaleString("en-US")}
+                <span className="ml-1 text-sm font-medium text-zinc-400">ใบ</span>
+              </div>
+            </div>
+            <div className="rounded-2xl bg-white p-4 ring-1 ring-amber-300">
+              <div className="text-xs font-semibold text-zinc-500">รอยืนยัน</div>
+              <div className="mt-1 text-2xl font-extrabold tabular-nums text-amber-700">
+                {summary.draftCount.toLocaleString("en-US")}
+                <span className="ml-1 text-sm font-medium text-zinc-400">ใบ</span>
+              </div>
+            </div>
+            <div className="rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
+              <div className="text-xs font-semibold text-zinc-500">จำนวนหมวด</div>
+              <div className="mt-1 text-2xl font-extrabold tabular-nums text-zinc-900">
+                {byCat.length.toLocaleString("en-US")}
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
-          <div className="text-xs font-semibold text-zinc-500">ยืนยันแล้ว</div>
-          <div className="mt-1 text-2xl font-extrabold tabular-nums text-emerald-700">
-            {summary.confirmedCount.toLocaleString("en-US")}
-            <span className="ml-1 text-sm font-medium text-zinc-400">ใบ</span>
-          </div>
-        </div>
-        <div className="rounded-2xl bg-white p-4 ring-1 ring-amber-300">
-          <div className="text-xs font-semibold text-zinc-500">รอยืนยัน</div>
-          <div className="mt-1 text-2xl font-extrabold tabular-nums text-amber-700">
-            {summary.draftCount.toLocaleString("en-US")}
-            <span className="ml-1 text-sm font-medium text-zinc-400">ใบ</span>
-          </div>
-        </div>
-        {/* งานภาษีรายเดือน — ภาษีซื้อขอคืนได้ + หัก ณ ที่จ่าย */}
-        <div className="rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
-          <div className="text-xs font-semibold text-zinc-500">VAT ขอคืนได้</div>
-          <div className="mt-1 text-2xl font-extrabold tabular-nums text-emerald-700">
-            {baht(summary.vatClaimable)}
-          </div>
-          <div className="mt-0.5 text-[11px] text-zinc-500">
-            เฉพาะบิลที่ติ๊ก &ldquo;ขอคืนได้&rdquo; แล้ว
-          </div>
-        </div>
-        <div className="rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
-          <div className="text-xs font-semibold text-zinc-500">หัก ณ ที่จ่าย (WHT)</div>
-          <div className="mt-1 text-2xl font-extrabold tabular-nums text-sky-700">
-            {baht(summary.whtTotal)}
-          </div>
-          <div className="mt-0.5 text-[11px] text-zinc-500">ต้องนำส่งสรรพากร</div>
-        </div>
-        <div className="rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
-          <div className="text-xs font-semibold text-zinc-500">จำนวนหมวด</div>
-          <div className="mt-1 text-2xl font-extrabold tabular-nums text-zinc-900">
-            {byCat.length.toLocaleString("en-US")}
-          </div>
-        </div>
+        </section>
       </div>
 
       {/* AI วิเคราะห์ธุรกิจ */}
