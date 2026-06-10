@@ -393,8 +393,11 @@ export function AdminShell({
 
       {/* Quick Approve Bar — sticky right under topnav. Only renders when there
           are pending items the current admin can act on. Hidden in 1 session
-          via dismiss button. */}
-      {isAdmin && (
+          via dismiss button.
+          ซ่อนบนโมดูล ledger: การ์ดนี้ถือ approval ของ CashHub/คำขอเข้าร่วม ซึ่งไม่
+          เกี่ยวกับงานบัญชี — บนหน้า ledger มันซ้อนแถบฟ้าทับ "งานที่ต้องทำ" ของ
+          ledger เอง (impeccable critique 2026-06-10: blue-bar overload). */}
+      {isAdmin && activeModuleSlug !== "ledger" && (
         <QuickApproveBar
           pendingCashReports={navCounts.pendingCashReports ?? 0}
           pendingRegisterRequests={navCounts.pendingRegisterRequests ?? 0}

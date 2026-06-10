@@ -769,7 +769,6 @@ export function ExpenseList({
               branchId: r.branchId,
               categoryId: r.categoryId,
             });
-            const confirmedByAcct = !!r.confirmedBy;
             return (
               <li
                 key={r.id}
@@ -861,9 +860,13 @@ export function ExpenseList({
                       completenessStatus={r.completenessStatus}
                       missing={r.completenessMissing}
                     />
-                    {r.paymentStatus && r.paymentStatus !== "paid" && (
-                      <PaymentTag status={r.paymentStatus} />
-                    )}
+                    {/* ซ่อน "ยังไม่จ่าย" เมื่อมีป้าย payState (ขอโอน/รอโอน/โอนแล้ว) อยู่แล้ว —
+                        สื่อสถานะจ่ายซ้ำกัน (CEO 2026-06-10 ลด chip ล้น). */}
+                    {r.paymentStatus &&
+                      r.paymentStatus !== "paid" &&
+                      !(payreqEnabled && r.payState != null) && (
+                        <PaymentTag status={r.paymentStatus} />
+                      )}
 
                     {/* TRCloud send state */}
                     {isPending && (
@@ -891,12 +894,8 @@ export function ExpenseList({
                       </span>
                     )}
 
-                    {/* ยืนยันโดย — บัญชีรับรองแล้ว (confirmedBy present) */}
-                    {confirmedByAcct && (
-                      <span className="inline-flex items-center gap-0.5 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-                        <CheckCircle2 className="size-3" /> ยืนยันแล้ว
-                      </span>
-                    )}
+                    {/* "ยืนยันแล้ว" ลบจาก rail — StatusBadge มุมขวาบนของการ์ดโชว์สถานะนี้แล้ว
+                        (CEO 2026-06-10 ลด chip ซ้ำ). */}
 
                     {/* D1 confirm-gate warning — สาขา/หมวด ยังไม่ครบ. ทำให้ "แตะแก้ได้เลย"
                         (เปิด dialog ตั้งสาขา/หมวด เฉพาะใบนี้) สำหรับคนที่มีสิทธิ์แก้ —

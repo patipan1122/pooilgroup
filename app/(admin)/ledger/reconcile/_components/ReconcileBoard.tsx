@@ -56,12 +56,14 @@ const TABS: Array<{ key: BucketKey; label: string }> = [
   { key: "abnormal", label: "ต้องตรวจ" },
 ];
 
-// KPI card tone per bucket (redesign 2026-06-08 — prominent cards like the design).
-const TONE: Record<BucketKey, { ring: string; num: string }> = {
-  awaiting: { ring: "border-amber-300 ring-2 ring-amber-200", num: "text-amber-600" },
-  partial: { ring: "border-blue-300 ring-2 ring-blue-200", num: "text-blue-600" },
-  paid: { ring: "border-emerald-300 ring-2 ring-emerald-200", num: "text-emerald-600" },
-  abnormal: { ring: "border-rose-300 ring-2 ring-rose-200", num: "text-rose-600" },
+// Segment tone per bucket. impeccable critique 2026-06-10: เดิมเป็น 5 การ์ด
+// hero-metric เหมือนกันเป๊ะ (AI-slop card-grid + ตัวเลขใหญ่ลอย) → เปลี่ยนเป็น
+// "แถบสรุป segmented" แถบเดียว แบ่งช่อง เส้นคั่นบาง. active = แถบบนสี + พื้นจาง.
+const TONE: Record<BucketKey, { num: string; seg: string }> = {
+  awaiting: { num: "text-amber-600", seg: "border-t-amber-400 bg-amber-50" },
+  partial: { num: "text-blue-600", seg: "border-t-blue-400 bg-blue-50" },
+  paid: { num: "text-emerald-600", seg: "border-t-emerald-400 bg-emerald-50" },
+  abnormal: { num: "text-rose-600", seg: "border-t-rose-400 bg-rose-50" },
 };
 
 function RequestRow({ req, canCancel }: { req: ReconcileRequestRow; canCancel: boolean }) {
@@ -524,14 +526,16 @@ export function ReconcileBoard({
         </button>
       </div>
 
-      {/* DESKTOP/tablet: KPI cards — 4 buckets (count + total), click to filter. The
-          cards ARE the tab selector (redesign 2026-06-08 prominent cards). */}
+      {/* DESKTOP/tablet: แถบสรุปแบบ segmented — bucket เป็นช่องกรองในแถบเดียว
+          (impeccable critique 2026-06-10: เลิก 5 การ์ด hero-metric เหมือนกันเป๊ะ →
+          แถบเดียว เส้นคั่นบาง, count เด่นแต่ไม่ลอย + ยอดกำกับ inline, คลิกกรองได้
+          เหมือนเดิม. active = แถบบนสี + พื้นจาง). */}
       <div
         role="tablist"
         aria-label="กลุ่มสถานะการจ่าย"
-        className="mb-4 hidden grid-cols-2 gap-3 sm:grid lg:grid-cols-5"
+        className="mb-4 hidden overflow-hidden rounded-xl border border-zinc-200 bg-white sm:flex"
       >
-        {TABS.map((t) => {
+        {TABS.map((t, i) => {
           const active = tab === t.key;
           const s = summary[t.key];
           const tone = TONE[t.key];
@@ -543,52 +547,59 @@ export function ReconcileBoard({
               type="button"
               onClick={() => setTab(t.key)}
               className={
-                "flex flex-col gap-0.5 rounded-2xl border bg-white p-3 text-left transition " +
-                (active ? tone.ring : "border-zinc-200 hover:shadow-md")
+                "flex flex-1 flex-col gap-0.5 border-t-2 px-3 py-2 text-left transition " +
+                (i > 0 ? "border-l border-l-zinc-100 " : "") +
+                (active ? tone.seg : "border-t-transparent hover:bg-zinc-50")
               }
             >
-              <span className="text-xs font-semibold text-zinc-500">{t.label}</span>
-              <span className="text-2xl font-extrabold tabular-nums text-zinc-900">
-                {s.count}
-                <span className="ml-1 text-sm font-medium text-zinc-400">รายการ</span>
+              <span className="truncate text-[11px] font-medium text-zinc-500">
+                {t.label}
               </span>
-              <span className={"text-[11px] font-medium tabular-nums " + tone.num}>
-                {baht(s.expectedTotal)} ฿
+              <span className="flex items-baseline gap-1.5">
+                <span className="text-base font-bold tabular-nums text-zinc-900">
+                  {s.count}
+                </span>
+                <span className={"truncate text-[11px] tabular-nums " + tone.num}>
+                  {baht(s.expectedTotal)} ฿
+                </span>
               </span>
             </button>
           );
         })}
-        {/* การ์ดที่ 5 — "มีผลต่าง" (โอนเกิน/ขาด) คำนวณฝั่ง client */}
+        {/* ช่องที่ 5 — "มีผลต่าง" (โอนเกิน/ขาด) คำนวณฝั่ง client */}
         {(() => {
           const diffActive = tab === "diff";
           return (
-        <button
-          role="tab"
-          aria-selected={diffActive}
-          type="button"
-          onClick={() => setTab("diff")}
-          className={
-            "flex flex-col gap-0.5 rounded-2xl border bg-white p-3 text-left transition " +
-            (diffActive
-              ? "border-orange-300 ring-2 ring-orange-200"
-              : "border-zinc-200 hover:shadow-md")
-          }
-        >
-          <span className="text-xs font-semibold text-zinc-500">มีผลต่าง</span>
-          <span className="text-2xl font-extrabold tabular-nums text-zinc-900">
-            {diffRows.length}
-            <span className="ml-1 text-sm font-medium text-zinc-400">รายการ</span>
-          </span>
-          <span
-            className={
-              "text-[11px] font-medium tabular-nums " +
-              (diffNet >= 0 ? "text-amber-600" : "text-rose-600")
-            }
-          >
-            {diffNet >= 0 ? "เกินรวม " : "ขาดรวม "}
-            {baht(Math.abs(diffNet))} ฿
-          </span>
-        </button>
+            <button
+              role="tab"
+              aria-selected={diffActive}
+              type="button"
+              onClick={() => setTab("diff")}
+              className={
+                "flex flex-1 flex-col gap-0.5 border-l border-l-zinc-100 border-t-2 px-3 py-2 text-left transition " +
+                (diffActive
+                  ? "border-t-orange-400 bg-orange-50"
+                  : "border-t-transparent hover:bg-zinc-50")
+              }
+            >
+              <span className="truncate text-[11px] font-medium text-zinc-500">
+                มีผลต่าง
+              </span>
+              <span className="flex items-baseline gap-1.5">
+                <span className="text-base font-bold tabular-nums text-zinc-900">
+                  {diffRows.length}
+                </span>
+                <span
+                  className={
+                    "truncate text-[11px] tabular-nums " +
+                    (diffNet >= 0 ? "text-amber-600" : "text-rose-600")
+                  }
+                >
+                  {diffNet >= 0 ? "เกิน " : "ขาด "}
+                  {baht(Math.abs(diffNet))} ฿
+                </span>
+              </span>
+            </button>
           );
         })()}
       </div>

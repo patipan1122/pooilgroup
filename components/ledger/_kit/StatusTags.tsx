@@ -35,7 +35,10 @@ export function docTagOf(p: {
     case "yellow_partial":
       return { label: "รอใบกำกับ", tone: "warning" };
     case "red_invalid":
-      return { label: "ขอคืนไม่ได้", tone: "danger" };
+      // CEO 2026-06-10: "ขอคืนไม่ได้" ไม่ใช่ error (เป็นสถานะปกติของบิลที่ใบไม่สมบูรณ์) —
+      // เดิมแดง (danger) โผล่เกือบทุกใบ → ดูเหมือนพังทั้งลิสต์. เปลี่ยนเป็นเหลือง (warning);
+      // สงวนแดงไว้ให้ error จริง (จ่ายซ้ำ/ส่ง TRCloud พลาด/ขอโอนไม่ได้).
+      return { label: "ขอคืนไม่ได้", tone: "warning" };
     default:
       return null; // undecided / ใบเก่าก่อนฟีเจอร์ → ไม่ใส่ป้าย
   }
