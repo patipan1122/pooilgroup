@@ -295,7 +295,7 @@ export function ExpenseList({
     startTransition(async () => {
       const res = await bulkClassify(targetIds, classify.branchId, classify.categoryId, companyId);
       if (res.ok) {
-        setMsg({ kind: "ok", text: `ตั้งสาขา/หมวดให้ ${res.updated ?? 0} ใบแล้ว — ขอโอนต่อได้เลย` });
+        setMsg({ kind: "ok", text: `ตั้งสาขา/หมวดให้ ${res.updated ?? 0} ใบแล้ว ขอโอนต่อได้เลย` });
         setClassifyOpen(false);
         setClassify({ branchId: "", categoryId: "" });
         router.refresh();
@@ -326,7 +326,7 @@ export function ExpenseList({
       if (!put.ok) throw new Error("upload");
       setPayee((p) => ({ ...p, qrImageUrl: pj.publicUrl as string }));
     } catch {
-      setMsg({ kind: "err", text: "อัปโหลด QR ไม่สำเร็จ — ลองใหม่" });
+      setMsg({ kind: "err", text: "อัปโหลด QR ไม่สำเร็จ ลองใหม่อีกครั้ง" });
     } finally {
       setQrUploading(false);
     }
@@ -429,9 +429,9 @@ export function ExpenseList({
                 <button
                   onClick={runBulkConfirm}
                   disabled={pending}
-                  className="inline-flex h-7 items-center gap-1 rounded-lg bg-emerald-600 px-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:bg-zinc-300"
+                  className="press inline-flex h-7 items-center gap-1 rounded-lg bg-emerald-600 px-2.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
                 >
-                  {pending ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+                  {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <CheckCircle2 className="size-3.5" aria-hidden />}
                   ยืนยัน ({selDrafts.length})
                 </button>
               )}
@@ -439,9 +439,9 @@ export function ExpenseList({
                 <button
                   onClick={runBulkSend}
                   disabled={pending}
-                  className="inline-flex h-7 items-center gap-1 rounded-lg bg-blue-600 px-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:bg-zinc-300"
+                  className="press inline-flex h-7 items-center gap-1 rounded-lg bg-blue-600 px-2.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
                 >
-                  {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+                  {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Send className="size-3.5" aria-hidden />}
                   ส่งเข้า TRCloud ({selSendable.length})
                 </button>
               )}
@@ -450,9 +450,9 @@ export function ExpenseList({
                   type="button"
                   onClick={() => { setDeleteText(""); setConfirmDelete(true); }}
                   disabled={pending}
-                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                  className="press inline-flex h-7 items-center gap-1 rounded-lg border border-rose-200 bg-white px-2.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
                 >
-                  <Trash2 className="size-3.5" />
+                  <Trash2 className="size-3.5" aria-hidden />
                   ลบ ({checked.size})
                 </button>
               )}
@@ -462,9 +462,9 @@ export function ExpenseList({
                   onClick={openPayeeDialog}
                   disabled={pending || multiVendor}
                   title={multiVendor ? "เลือกบิลผู้ขายเดียวกันเท่านั้น" : undefined}
-                  className="inline-flex h-7 items-center gap-1 rounded-lg bg-[var(--color-brand-600)] px-2 text-xs font-semibold text-white hover:bg-[var(--color-brand-700)] disabled:bg-zinc-300"
+                  className="press inline-flex h-7 items-center gap-1 rounded-lg bg-[var(--color-brand-600)] px-2.5 text-xs font-semibold text-white hover:bg-[var(--color-brand-700)] disabled:cursor-not-allowed disabled:bg-zinc-300"
                 >
-                  <Banknote className="size-3.5" />
+                  <Banknote className="size-3.5" aria-hidden />
                   ขอโอนเงิน ({checked.size})
                 </button>
               )}
@@ -473,9 +473,9 @@ export function ExpenseList({
                   type="button"
                   onClick={() => { setMsg(null); setClassifyOpen(true); }}
                   disabled={pending}
-                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                  className="press inline-flex h-7 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50"
                 >
-                  <Tags className="size-3.5" />
+                  <Tags className="size-3.5" aria-hidden />
                   ตั้งสาขา/หมวด ({checkedNeedFix.length})
                 </button>
               )}
@@ -483,8 +483,8 @@ export function ExpenseList({
           </div>
         )}
         {payreqEnabled && multiVendor && checked.size > 0 && (
-          <p className="px-2 text-[11px] text-amber-600">
-            * ขอโอนได้ทีละผู้ขาย — ตอนนี้เลือกหลายผู้ขายอยู่ ({checkedVendors.length})
+          <p className="px-2 text-[11px] font-medium text-amber-700">
+            * ขอโอนได้ทีละผู้ขาย (ตอนนี้เลือกหลายผู้ขายอยู่ {checkedVendors.length} ราย)
           </p>
         )}
         {/* Type-"ลบ" guard — bulk delete is destructive, so it needs a deliberate
@@ -513,16 +513,16 @@ export function ExpenseList({
                 type="button"
                 onClick={runBulkVoid}
                 disabled={pending || deleteText.trim() !== "ลบ"}
-                className="inline-flex h-8 items-center gap-1 rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-700 disabled:bg-zinc-300"
+                className="press inline-flex h-8 items-center gap-1 rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
               >
-                {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Trash2 className="size-3.5" aria-hidden />}
                 ยืนยันลบ
               </button>
               <button
                 type="button"
                 onClick={() => { setConfirmDelete(false); setDeleteText(""); }}
                 disabled={pending}
-                className="inline-flex h-8 items-center rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+                className="press inline-flex h-8 items-center rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
               >
                 ยกเลิก
               </button>
@@ -531,7 +531,12 @@ export function ExpenseList({
         )}
         {msg && (
           <p
-            className={"text-xs " + (msg.kind === "ok" ? "text-emerald-700" : "text-rose-700")}
+            className={
+              "rounded-lg px-2.5 py-1.5 text-xs font-medium animate-fade-in " +
+              (msg.kind === "ok"
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-rose-50 text-rose-700")
+            }
             role="status"
             aria-live="polite"
           >
@@ -543,11 +548,11 @@ export function ExpenseList({
       {/* ขอโอนเงิน — payee dialog (bottom-sheet on mobile, centered on desktop) */}
       {payeeOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 animate-fade-in sm:items-center sm:p-4"
           onClick={() => { if (!pending) setPayeeOpen(false); }}
         >
           <div
-            className="w-full max-w-md rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl"
+            className="w-full max-w-md rounded-t-2xl bg-white p-4 shadow-xl animate-slide-up-soft sm:rounded-2xl sm:animate-scale-in"
             role="dialog"
             aria-modal="true"
             aria-labelledby="payee-dlg-title"
@@ -559,7 +564,7 @@ export function ExpenseList({
             </p>
             {checkedNeedFix.length > 0 && (
               <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
-                ⚠️ มี {checkedNeedFix.length} ใบยังไม่ได้ระบุ <b>สาขา/หมวด</b> — ขอโอนได้เฉพาะใบที่ระบุครบ
+                ⚠️ มี {checkedNeedFix.length} ใบยังไม่ได้ระบุ <b>สาขา/หมวด</b> (ขอโอนได้เฉพาะใบที่ระบุครบ)
                 {branches && branches.length > 0 && (
                   <button
                     type="button"
@@ -600,17 +605,17 @@ export function ExpenseList({
               <input
                 value={payee.promptpay}
                 onChange={(e) => setPayee((p) => ({ ...p, promptpay: e.target.value }))}
-                placeholder="พร้อมเพย์ (ถ้ามี — เบอร์/เลขภาษี)"
+                placeholder="พร้อมเพย์ (ถ้ามี · เบอร์/เลขภาษี)"
                 inputMode="numeric"
                 className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm outline-none focus:ring-2 focus:ring-violet-200"
               />
-              <p className="text-[11px] text-zinc-400">
+              <p className="text-[11px] leading-snug text-zinc-500">
                 💡 ใส่พร้อมเพย์ (เบอร์/บัตรปชช) เพื่อให้ผู้บริหารสแกน QR จ่ายได้เลย · เลขบัญชีเฉย ๆ จะมีปุ่มคัดลอกให้แทน
               </p>
               {/* แนบรูป QR (พร้อมเพย์/ธนาคาร) — โชว์บนการ์ด LINE ให้ผู้บริหารสแกนจ่าย */}
               <div>
                 <p className="mb-1 inline-flex items-center gap-1 text-[11px] font-medium text-zinc-500">
-                  <QrCode className="size-3" aria-hidden /> รูป QR (ถ้ามี) — ผู้บริหารสแกนจ่ายจากการ์ดได้เลย
+                  <QrCode className="size-3" aria-hidden /> รูป QR (ถ้ามี) ผู้บริหารสแกนจ่ายจากการ์ดได้เลย
                 </p>
                 {payee.qrImageUrl ? (
                   <div className="flex items-center gap-2">
@@ -625,8 +630,8 @@ export function ExpenseList({
                     </button>
                   </div>
                 ) : (
-                  <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
-                    {qrUploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                  <label className="press inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
+                    {qrUploading ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Upload className="size-3.5" aria-hidden />}
                     {qrUploading ? "กำลังอัปโหลด…" : "แนบรูป QR"}
                     <input
                       type="file"
@@ -653,7 +658,7 @@ export function ExpenseList({
                 type="button"
                 onClick={() => setPayeeOpen(false)}
                 disabled={pending}
-                className="inline-flex h-9 items-center rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+                className="press inline-flex h-9 items-center rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
               >
                 ยกเลิก
               </button>
@@ -662,9 +667,9 @@ export function ExpenseList({
                 onClick={runRequestTransfer}
                 disabled={pending || !canRequest}
                 title={!canRequest ? "ต้องระบุสาขา+หมวดทุกใบ + ผู้ขายเดียวกัน ก่อนขอโอน" : undefined}
-                className="inline-flex h-9 items-center gap-1 rounded-lg bg-violet-600 px-4 text-xs font-semibold text-white hover:bg-violet-700 disabled:bg-zinc-300"
+                className="press inline-flex h-9 items-center gap-1 rounded-lg bg-violet-600 px-4 text-xs font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
               >
-                {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Banknote className="size-3.5" />}
+                {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Banknote className="size-3.5" aria-hidden />}
                 ส่งคำขอโอน
               </button>
             </div>
@@ -675,11 +680,11 @@ export function ExpenseList({
       {/* #1 quick-classify dialog — set สาขา/หมวด for the ticked bills in one place */}
       {classifyOpen && branches && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 animate-fade-in sm:items-center sm:p-4"
           onClick={() => { if (!pending) setClassifyOpen(false); }}
         >
           <div
-            className="w-full max-w-md rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl"
+            className="w-full max-w-md rounded-t-2xl bg-white p-4 shadow-xl animate-slide-up-soft sm:rounded-2xl sm:animate-scale-in"
             role="dialog"
             aria-modal="true"
             aria-label="ตั้งสาขาและหมวด"
@@ -720,7 +725,7 @@ export function ExpenseList({
                 type="button"
                 onClick={() => setClassifyOpen(false)}
                 disabled={pending}
-                className="inline-flex h-9 items-center rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+                className="press inline-flex h-9 items-center rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
               >
                 ยกเลิก
               </button>
@@ -728,9 +733,9 @@ export function ExpenseList({
                 type="button"
                 onClick={runBulkClassify}
                 disabled={pending || (!classify.branchId && !classify.categoryId)}
-                className="inline-flex h-9 items-center gap-1 rounded-lg bg-amber-600 px-4 text-xs font-semibold text-white hover:bg-amber-700 disabled:bg-zinc-300"
+                className="press inline-flex h-9 items-center gap-1 rounded-lg bg-amber-600 px-4 text-xs font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
               >
-                {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Tags className="size-3.5" />}
+                {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Tags className="size-3.5" aria-hidden />}
                 ตั้งให้ทุกใบ
               </button>
             </div>
@@ -773,9 +778,9 @@ export function ExpenseList({
               <li
                 key={r.id}
                 className={
-                  "group flex items-stretch overflow-hidden rounded-xl border bg-white transition " +
+                  "group flex items-stretch overflow-hidden rounded-xl border bg-white transition animate-fade-in " +
                   (active
-                    ? "border-[var(--color-brand-300)] shadow-sm"
+                    ? "border-[var(--color-brand-300)] shadow-sm ring-1 ring-[var(--color-brand-200)]"
                     : "border-zinc-100 hover:border-zinc-200 hover:shadow-sm")
                 }
               >
@@ -829,8 +834,8 @@ export function ExpenseList({
                           />
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 truncate text-xs text-zinc-400">
-                        <span className="font-mono">{r.docCode}</span>
+                      <div className="flex items-center gap-1.5 truncate text-xs text-zinc-500">
+                        <span className="font-mono tabular-nums">{r.docCode}</span>
                         {r.docDate && (
                           <span className="tabular-nums">· {r.docDate.slice(5)}</span>
                         )}
@@ -946,7 +951,7 @@ export function ExpenseList({
 
                     {/* Inline TRCloud error — visible always (not just hover) */}
                     {pushErr && r.trcloudError && (
-                      <span className="w-full text-[10px] text-rose-600 mt-0.5">
+                      <span className="mt-0.5 w-full text-[10px] font-medium text-rose-700">
                         {r.trcloudError}
                       </span>
                     )}
@@ -980,9 +985,9 @@ export function ExpenseList({
                           type="button"
                           onClick={() => openPayeeForRow(r)}
                           title="ขอโอนเงินใบนี้"
-                          className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-1.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
+                          className="press ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-1.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
                         >
-                          <Banknote className="size-3" /> ขอโอน
+                          <Banknote className="size-3" aria-hidden /> ขอโอน
                         </button>
                       ) : null)}
                   </div>

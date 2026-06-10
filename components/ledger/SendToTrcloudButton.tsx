@@ -37,15 +37,15 @@ export function SendToTrcloudButton({
 
   if (sent) {
     return (
-      <div className="flex flex-col items-end gap-0.5">
+      <div className="flex flex-col items-end gap-1 animate-fade-in">
         <span
-          className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-1.5 text-xs font-semibold text-blue-700"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700"
           title="ส่งเข้า TRCloud แล้ว"
         >
-          <CloudCheck className="size-3.5" />
-          ส่ง TRCloud แล้ว{sent !== "ส่งแล้ว" ? ` · ${sent}` : ""}
+          <CloudCheck className="size-3.5" aria-hidden />
+          ส่ง TRCloud แล้ว{sent !== "ส่งแล้ว" ? <span className="tabular-nums"> · {sent}</span> : ""}
         </span>
-        {warn && <span className="max-w-[16rem] text-right text-[11px] text-amber-600">{warn}</span>}
+        {warn && <span className="max-w-[16rem] text-right text-[11px] leading-snug text-amber-700">{warn}</span>}
       </div>
     );
   }
@@ -72,28 +72,28 @@ export function SendToTrcloudButton({
   }
 
   return (
-    <div className="flex flex-col items-end gap-0.5">
+    <div className="flex flex-col items-end gap-1">
       <button
         onClick={run}
         disabled={pending || !sendable}
         title={sendable ? "ส่งใบนี้เข้า TRCloud (ใบกำกับภาษีซื้อ AP)" : "ยืนยันรายการก่อนจึงส่งได้"}
-        className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:bg-zinc-300"
+        className="press inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
       >
         {pending ? (
-          <Loader2 className="size-4 animate-spin" />
+          <Loader2 className="size-4 animate-spin" aria-hidden />
         ) : err ? (
-          <RefreshCw className="size-4" />
+          <RefreshCw className="size-4" aria-hidden />
         ) : (
-          <Send className="size-4" />
+          <Send className="size-4" aria-hidden />
         )}
         {err ? "ลองส่งอีกครั้ง" : "ส่งเข้า TRCloud"}
       </button>
       {isQuotation && !err && (
-        <span className="max-w-[16rem] text-right text-[11px] text-amber-600">
-          ใบเสนอราคา — ส่งได้ แต่ขอคืน VAT ไม่ได้
+        <span className="max-w-[16rem] text-right text-[11px] leading-snug text-amber-700">
+          ใบเสนอราคา (ส่งได้ แต่ขอคืน VAT ไม่ได้)
         </span>
       )}
-      {err && <span className="max-w-[16rem] text-right text-[11px] text-rose-600">{err}</span>}
+      {err && <span className="max-w-[16rem] text-right text-[11px] leading-snug text-rose-700">{err}</span>}
     </div>
   );
 }

@@ -137,10 +137,10 @@ function mathMismatch(f: ParsedFields): boolean {
 }
 
 function confColor(c?: number): string {
-  if (c == null) return "text-zinc-400";
-  if (c >= 0.85) return "text-emerald-600";
-  if (c >= 0.6) return "text-amber-600";
-  return "text-rose-600";
+  if (c == null) return "text-zinc-500";
+  if (c >= 0.85) return "text-emerald-700";
+  if (c >= 0.6) return "text-amber-700";
+  return "text-red-700";
 }
 function confLabel(c?: number): string | null {
   if (c == null) return null;
@@ -586,25 +586,25 @@ export function LedgerCaptureApp({
     const failCount = batch.results.filter((r) => r.status === "fail").length;
     const pct = batch.total > 0 ? Math.round((batch.done / batch.total) * 100) : 0;
     return (
-      <div className="min-h-screen bg-zinc-50 px-4 pb-32 pt-5">
+      <div className="min-h-screen bg-zinc-50 px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-5">
         <header className="mb-5">
           <LedgerLogo height={20} className="mb-3 opacity-90" priority />
           <h1 className="text-xl font-bold text-zinc-900">อัปโหลดหลายไฟล์</h1>
         </header>
 
         {!batch.finished ? (
-          <div className="rounded-2xl bg-white p-5 ring-1 ring-zinc-200" role="status" aria-live="polite">
+          <div className="animate-fade-in rounded-2xl bg-white p-5 ring-1 ring-zinc-200" role="status" aria-live="polite">
             <div className="mb-1 flex items-center gap-2">
               <div className="size-5 animate-spin rounded-full border-[3px] border-[var(--color-brand-200)] border-t-[var(--color-brand-600)]" />
               <span className="text-base font-bold text-zinc-900">กำลังอัปโหลด</span>
             </div>
-            <p className="mb-4 text-sm text-zinc-500">AI กำลังอ่านใบเสร็จทีละใบ · อย่าเพิ่งปิดหน้านี้</p>
+            <p className="mb-4 text-sm text-zinc-600">AI กำลังอ่านใบเสร็จทีละใบ · อย่าเพิ่งปิดหน้านี้</p>
             <div className="mb-2 flex items-baseline justify-between">
               <span className="text-2xl font-bold tabular-nums text-zinc-900">
                 {batch.done}
-                <span className="text-base font-medium text-zinc-400"> / {batch.total}</span>
+                <span className="text-base font-medium text-zinc-500"> / {batch.total}</span>
               </span>
-              <span className="text-xs font-medium tabular-nums text-zinc-400">{pct}%</span>
+              <span className="text-xs font-medium tabular-nums text-zinc-500">{pct}%</span>
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
               <div
@@ -612,18 +612,18 @@ export function LedgerCaptureApp({
                 style={{ width: `${pct}%` }}
               />
             </div>
-            <p className="mt-2 truncate text-xs text-zinc-400">{batch.current}</p>
+            <p className="mt-2 truncate text-xs text-zinc-500">{batch.current}</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="animate-fade-up space-y-4">
             <div className="rounded-2xl bg-white p-5 text-center ring-1 ring-zinc-200">
-              <div className="mx-auto mb-3 grid size-14 place-items-center rounded-full bg-emerald-100 text-3xl text-emerald-600">
+              <div className="mx-auto mb-3 grid size-14 place-items-center rounded-full bg-emerald-100 text-3xl text-emerald-700">
                 ✓
               </div>
               <h2 className="text-lg font-bold text-zinc-900">
                 {okCount > 0 ? `เพิ่ม ${okCount} ใบ (ร่าง) แล้ว` : "เสร็จสิ้น"}
               </h2>
-              <p className="mt-1 text-sm text-zinc-500">
+              <p className="mt-1 text-sm text-zinc-600">
                 ส่งให้ฝ่ายบัญชีตรวจ · ดูได้ที่ “ใบของฉัน”
               </p>
               <div className="mt-3 flex flex-wrap justify-center gap-1.5">
@@ -646,14 +646,14 @@ export function LedgerCaptureApp({
             </div>
 
             {failCount > 0 && (
-              <ul className="space-y-1 rounded-2xl bg-white p-3 text-xs text-zinc-600 ring-1 ring-zinc-200">
+              <ul className="space-y-1 rounded-2xl bg-white p-3 text-sm text-zinc-700 ring-1 ring-zinc-200">
                 {batch.results
                   .filter((r) => r.status === "fail")
                   .map((r, i) => (
                     <li key={i} className="flex items-start gap-1.5">
                       <span aria-hidden>⚠️</span>
                       <span className="min-w-0">
-                        <span className="font-medium text-zinc-700">{r.name}</span> — {r.error}
+                        <span className="font-medium text-zinc-900">{r.name}</span> · {r.error}
                       </span>
                     </li>
                   ))}
@@ -666,13 +666,13 @@ export function LedgerCaptureApp({
                 setBatch(null);
                 reset();
               }}
-              className="h-12 w-full rounded-xl bg-[var(--color-brand-600)] text-base font-semibold text-white transition active:bg-[var(--color-brand-700)]"
+              className="press h-12 w-full rounded-xl bg-[var(--color-brand-600)] text-base font-semibold text-white transition active:bg-[var(--color-brand-700)]"
             >
               อัปโหลดเพิ่ม
             </button>
             <Link
               href="/liff/ledger/my"
-              className="flex h-12 w-full items-center justify-center rounded-xl border border-zinc-300 bg-white text-sm font-semibold text-zinc-700 transition active:bg-zinc-50"
+              className="press flex h-12 w-full items-center justify-center rounded-xl border border-zinc-300 bg-white text-base font-semibold text-zinc-800 transition active:bg-zinc-50"
             >
               📋 ดูใบของฉัน
             </Link>
@@ -690,11 +690,11 @@ export function LedgerCaptureApp({
         {/* Mascot greets on the capture hero — warm, not scary text-only. Only on
             the capture screen so it doesn't crowd the review/done states. */}
         {phase === "capture" ? (
-          <div className="flex items-center gap-3">
+          <div className="flex animate-fade-in items-center gap-3">
             <LedgerMascot size={56} priority className="shrink-0" />
             <div className="min-w-0">
               <h1 className="text-xl font-bold text-zinc-900">ถ่ายใบเสร็จ</h1>
-              <p className="mt-0.5 text-sm text-zinc-500">
+              <p className="mt-0.5 text-sm text-zinc-600">
                 ถ่ายรูป · AI อ่านให้ · คุณตรวจแล้วบันทึก
               </p>
             </div>
@@ -711,11 +711,11 @@ export function LedgerCaptureApp({
       {showContextPicker && (
         <div className="mb-4 grid grid-cols-2 gap-3 rounded-2xl bg-white p-3 ring-1 ring-zinc-200">
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-zinc-500">บริษัท</span>
+            <span className="mb-1 block text-xs font-medium text-zinc-600">บริษัท</span>
             <select
               value={companyId}
               onChange={(e) => setCompanyId(e.target.value)}
-              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-medium text-zinc-900 outline-none focus:border-[var(--color-brand-500)]"
+              className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-base font-medium text-zinc-900 outline-none focus:border-[var(--color-brand-500)]"
             >
               {companies.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -725,7 +725,7 @@ export function LedgerCaptureApp({
             </select>
           </label>
           <div>
-            <span className="mb-1 block text-xs font-medium text-zinc-500">สาขา (ถ้ามี)</span>
+            <span className="mb-1 block text-xs font-medium text-zinc-600">สาขา (ถ้ามี)</span>
             <BranchPicker
               branches={branches}
               value={branchId}
@@ -770,18 +770,18 @@ export function LedgerCaptureApp({
 
       {/* Phase: capture */}
       {phase === "capture" && (
-        <div className="space-y-3">
+        <div className="animate-fade-up space-y-3">
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
             aria-label="แตะเพื่อถ่ายหรือเลือกรูปใบเสร็จ"
-            className="flex h-40 w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[var(--color-brand-300)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)] transition active:scale-[0.99] active:bg-[var(--color-brand-100)]"
+            className="press flex min-h-[44px] h-44 w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[var(--color-brand-300)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)] transition active:bg-[var(--color-brand-100)]"
           >
             <span className="text-4xl" aria-hidden>📷</span>
-            <span className="text-base font-semibold">แตะเพื่อถ่าย / เลือกรูป · PDF</span>
-            <span className="text-xs text-[var(--color-brand-600)]/80">เลือกหลายไฟล์พร้อมกันได้ · รองรับรูป · บิล · สลิป · PDF</span>
+            <span className="text-base font-semibold">แตะเพื่อถ่าย หรือเลือกรูป · PDF</span>
+            <span className="text-xs text-[var(--color-brand-700)]">เลือกหลายไฟล์พร้อมกันได้ · รับรูป · บิล · สลิป · PDF</span>
           </button>
-          <p className="px-1 text-center text-[11px] text-zinc-400">
+          <p className="px-1 text-center text-xs text-zinc-500">
             เคล็ดลับ: ปิด Live Photo บน iPhone เพื่อให้ AI อ่านแม่นขึ้น
           </p>
         </div>
@@ -790,19 +790,19 @@ export function LedgerCaptureApp({
       {/* Phase: parsing */}
       {phase === "parsing" && (
         <div
-          className="flex flex-col items-center justify-center gap-3 py-10 text-center"
+          className="flex animate-fade-in flex-col items-center justify-center gap-3 py-10 text-center"
           role="status"
           aria-live="polite"
         >
           <div className="size-12 animate-spin rounded-full border-4 border-[var(--color-brand-200)] border-t-[var(--color-brand-600)]" />
-          <p className="text-sm font-medium text-zinc-700">AI กำลังอ่านใบเสร็จ...</p>
-          <p className="text-xs text-zinc-400">สักครู่ · อย่าเพิ่งปิดหน้านี้</p>
+          <p className="text-base font-semibold text-zinc-800">AI กำลังอ่านใบเสร็จ...</p>
+          <p className="text-sm text-zinc-500">สักครู่ · อย่าเพิ่งปิดหน้านี้</p>
         </div>
       )}
 
       {/* Phase: review (edit fields) */}
       {phase === "review" && (
-        <div className="space-y-4">
+        <div className="animate-fade-up space-y-4">
           {/* Server Recheck warnings — authoritative math/format check. */}
           {serverWarnings.length > 0 && (
             <div
@@ -812,7 +812,7 @@ export function LedgerCaptureApp({
               <p className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-amber-800">
                 <span aria-hidden>⚠️</span> ตรวจตัวเลขก่อนบันทึก
               </p>
-              <ul className="list-disc space-y-1 pl-5 text-xs text-amber-700">
+              <ul className="list-disc space-y-1 pl-5 text-sm text-amber-700">
                 {serverWarnings.map((w, i) => (
                   <li key={i}>{w}</li>
                 ))}
@@ -828,7 +828,7 @@ export function LedgerCaptureApp({
                 onChange={(e) => set("total", e.target.value)}
                 placeholder="0.00"
                 aria-label="ยอดรวม"
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-lg font-bold tabular-nums outline-none focus:border-[var(--color-brand-500)]"
+                className="h-12 w-full rounded-xl border border-zinc-200 px-3 text-xl font-bold tabular-nums outline-none focus:border-[var(--color-brand-500)]"
               />
             </Field>
 
@@ -840,7 +840,7 @@ export function LedgerCaptureApp({
                   onChange={(e) => set("subtotal", e.target.value)}
                   placeholder="0.00"
                   aria-label="ยอดก่อน VAT"
-                  className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm tabular-nums outline-none focus:border-[var(--color-brand-500)]"
+                  className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-base tabular-nums outline-none focus:border-[var(--color-brand-500)]"
                 />
               </Field>
               <Field label="VAT" conf={fields.confidence.vat}>
@@ -850,13 +850,13 @@ export function LedgerCaptureApp({
                   onChange={(e) => set("vat", e.target.value)}
                   placeholder="0.00"
                   aria-label="VAT"
-                  className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm tabular-nums outline-none focus:border-[var(--color-brand-500)]"
+                  className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-base tabular-nums outline-none focus:border-[var(--color-brand-500)]"
                 />
               </Field>
             </div>
 
             {mathMismatch(fields) && serverWarnings.length === 0 && (
-              <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800" role="alert">
+              <div className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800" role="alert">
                 ⚠️ ยอดก่อน VAT + VAT ไม่เท่ากับยอดรวม · ตรวจอีกครั้ง
               </div>
             )}
@@ -867,7 +867,7 @@ export function LedgerCaptureApp({
                 onChange={(e) => set("vendor", e.target.value)}
                 placeholder="ชื่อร้าน"
                 aria-label="ร้านค้า"
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-[var(--color-brand-500)]"
+                className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-base outline-none focus:border-[var(--color-brand-500)]"
               />
             </Field>
 
@@ -878,7 +878,7 @@ export function LedgerCaptureApp({
                   value={fields.docDate}
                   onChange={(e) => set("docDate", e.target.value)}
                   aria-label="วันที่ในเอกสาร"
-                  className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-[var(--color-brand-500)]"
+                  className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-base outline-none focus:border-[var(--color-brand-500)]"
                 />
               </Field>
               <Field label="เลขภาษี 13 หลัก" conf={fields.confidence.vendor_tax_id}>
@@ -890,7 +890,7 @@ export function LedgerCaptureApp({
                   }
                   placeholder="0000000000000"
                   aria-label="เลขประจำตัวผู้เสียภาษี"
-                  className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm tabular-nums outline-none focus:border-[var(--color-brand-500)]"
+                  className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-base tabular-nums outline-none focus:border-[var(--color-brand-500)]"
                 />
               </Field>
             </div>
@@ -902,7 +902,7 @@ export function LedgerCaptureApp({
                     value={fields.categoryId}
                     onChange={(e) => set("categoryId", e.target.value)}
                     aria-label="หมวดค่าใช้จ่าย"
-                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--color-brand-500)]"
+                    className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-base outline-none focus:border-[var(--color-brand-500)]"
                   >
                     <option value="">
                       {fields.suggestedCategory ? `AI: ${fields.suggestedCategory}` : "— เลือกหมวด —"}
@@ -919,7 +919,7 @@ export function LedgerCaptureApp({
                     onChange={(e) => set("suggestedCategory", e.target.value)}
                     placeholder="เช่น ค่าน้ำมัน/ขนส่ง"
                     aria-label="หมวด (AI แนะนำ)"
-                    className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-[var(--color-brand-500)]"
+                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-base outline-none focus:border-[var(--color-brand-500)]"
                   />
                 )}
               </Field>
@@ -928,7 +928,7 @@ export function LedgerCaptureApp({
                   value={fields.paymentMethod}
                   onChange={(e) => set("paymentMethod", e.target.value)}
                   aria-label="วิธีชำระเงิน"
-                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--color-brand-500)]"
+                  className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-base outline-none focus:border-[var(--color-brand-500)]"
                 >
                   {PAYMENT_METHODS.map((p) => (
                     <option key={p.value} value={p.value}>
@@ -940,7 +940,7 @@ export function LedgerCaptureApp({
             </div>
           </div>
 
-          <p className="px-1 text-center text-xs text-zinc-400">
+          <p className="px-1 text-center text-sm text-zinc-500">
             บันทึกเป็น “ฉบับร่าง” · ฝ่ายบัญชียืนยันทีหลัง (ไม่ลงบัญชีอัตโนมัติ)
           </p>
         </div>
@@ -949,18 +949,18 @@ export function LedgerCaptureApp({
       {/* Phase: saving */}
       {phase === "saving" && (
         <div
-          className="flex flex-col items-center justify-center gap-3 py-10 text-center"
+          className="flex animate-fade-in flex-col items-center justify-center gap-3 py-10 text-center"
           role="status"
           aria-live="polite"
         >
           <div className="size-12 animate-spin rounded-full border-4 border-emerald-200 border-t-emerald-600" />
-          <p className="text-sm font-medium text-zinc-700">กำลังบันทึก...</p>
+          <p className="text-base font-semibold text-zinc-800">กำลังบันทึก...</p>
         </div>
       )}
 
       {/* Phase: done */}
       {phase === "done" && (
-        <div className="space-y-5 py-8 text-center" role="status" aria-live="polite">
+        <div className="animate-fade-up space-y-5 py-8 text-center" role="status" aria-live="polite">
           <div className="relative inline-flex">
             <div className="absolute inset-0 animate-ping rounded-full bg-emerald-400 opacity-30" />
             <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500 text-4xl text-white">
@@ -971,7 +971,7 @@ export function LedgerCaptureApp({
             <h2 className="text-xl font-bold text-zinc-900">
               {duplicate ? "ใบเสร็จนี้บันทึกไว้แล้ว" : "บันทึกแล้ว"}
             </h2>
-            <p className="mt-1 px-4 text-sm text-zinc-500">
+            <p className="mt-1 px-4 text-sm text-zinc-600">
               {duplicate
                 ? "ระบบเจอรูปเดิม จึงไม่บันทึกซ้ำ"
                 : `ส่งให้ฝ่ายบัญชีตรวจ · ยอด ฿${num(fields.total).toLocaleString("th-TH")}`}
@@ -979,7 +979,7 @@ export function LedgerCaptureApp({
           </div>
           {savedCode && (
             <div className="mx-auto inline-block rounded-2xl bg-white px-6 py-4 ring-1 ring-zinc-200">
-              <div className="text-[11px] font-medium text-zinc-500">เลขเอกสาร</div>
+              <div className="text-xs font-medium text-zinc-500">เลขเอกสาร</div>
               <div className="mt-0.5 font-mono text-lg font-bold tracking-wider text-zinc-900">
                 {savedCode}
               </div>
@@ -988,14 +988,14 @@ export function LedgerCaptureApp({
           <button
             type="button"
             onClick={reset}
-            className="h-12 w-full rounded-xl bg-[var(--color-brand-600)] text-base font-semibold text-white transition active:bg-[var(--color-brand-700)]"
+            className="press h-12 w-full rounded-xl bg-[var(--color-brand-600)] text-base font-semibold text-white transition active:bg-[var(--color-brand-700)]"
           >
             ถ่ายใบเสร็จอื่น
           </button>
           {/* discoverability: jump to the staffer's own receipt list */}
           <Link
             href="/liff/ledger/my"
-            className="flex h-12 w-full items-center justify-center rounded-xl border border-zinc-300 bg-white text-sm font-semibold text-zinc-700 transition active:bg-zinc-50"
+            className="press flex h-12 w-full items-center justify-center rounded-xl border border-zinc-300 bg-white text-base font-semibold text-zinc-800 transition active:bg-zinc-50"
           >
             📋 ดูใบของฉัน
           </Link>
@@ -1004,12 +1004,12 @@ export function LedgerCaptureApp({
 
       {/* Phase: error */}
       {phase === "error" && (
-        <div className="space-y-4 py-8 text-center" role="alert">
-          <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-rose-100 text-2xl">
+        <div className="animate-fade-up space-y-4 py-8 text-center" role="alert">
+          <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-red-100 text-2xl">
             ⚠️
           </div>
-          <p className="text-base font-semibold text-zinc-800">เกิดข้อผิดพลาด</p>
-          <p className="break-words rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-left text-xs text-zinc-700">
+          <p className="text-lg font-bold text-zinc-900">เกิดข้อผิดพลาด</p>
+          <p className="break-words rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-left text-sm text-zinc-700">
             {errMsg}
           </p>
           <div className="space-y-2">
@@ -1017,7 +1017,7 @@ export function LedgerCaptureApp({
               <button
                 type="button"
                 onClick={() => setPhase("review")}
-                className="h-11 w-full rounded-xl bg-zinc-900 text-sm font-semibold text-white transition active:bg-zinc-800"
+                className="press h-12 w-full rounded-xl bg-zinc-900 text-base font-semibold text-white transition active:bg-zinc-800"
               >
                 กรอกเอง
               </button>
@@ -1025,7 +1025,7 @@ export function LedgerCaptureApp({
             <button
               type="button"
               onClick={reset}
-              className="h-11 w-full rounded-xl border border-zinc-300 bg-white text-sm font-semibold text-zinc-700 transition active:bg-zinc-50"
+              className="press h-12 w-full rounded-xl border border-zinc-300 bg-white text-base font-semibold text-zinc-800 transition active:bg-zinc-50"
             >
               เริ่มใหม่
             </button>
@@ -1035,12 +1035,12 @@ export function LedgerCaptureApp({
 
       {/* Sticky confirm bar (review phase) */}
       {phase === "review" && (
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-zinc-200 bg-white/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
+        <div className="fixed inset-x-0 bottom-0 z-20 animate-slide-up-soft border-t border-zinc-200 bg-white/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
           <div className="mx-auto flex max-w-md gap-2">
             <button
               type="button"
               onClick={reset}
-              className="h-12 flex-1 rounded-xl border border-zinc-300 bg-white text-sm font-semibold text-zinc-700 transition active:bg-zinc-50"
+              className="press h-12 flex-1 rounded-xl border border-zinc-300 bg-white text-sm font-semibold text-zinc-800 transition active:bg-zinc-50"
             >
               ยกเลิก
             </button>
@@ -1048,14 +1048,14 @@ export function LedgerCaptureApp({
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="flex h-12 flex-1 items-center justify-center gap-1 rounded-xl border border-[var(--color-brand-200)] bg-[var(--color-brand-50)] text-sm font-semibold text-[var(--color-brand-700)] transition active:bg-white"
+              className="press flex h-12 flex-1 items-center justify-center gap-1 rounded-xl border border-[var(--color-brand-200)] bg-[var(--color-brand-50)] text-sm font-semibold text-[var(--color-brand-700)] transition active:bg-white"
             >
               📷 ถ่ายใหม่
             </button>
             <button
               type="button"
               onClick={onConfirm}
-              className="h-12 flex-[2] rounded-xl bg-[var(--color-brand-600)] text-base font-semibold text-white shadow-lg transition active:bg-[var(--color-brand-700)]"
+              className="press h-12 flex-[2] rounded-xl bg-[var(--color-brand-600)] text-base font-semibold text-white shadow-lg transition active:bg-[var(--color-brand-700)]"
             >
               บันทึก (ร่าง)
             </button>
@@ -1092,7 +1092,7 @@ function Field({
       <span className="mb-1.5 flex items-center justify-between">
         <span className="text-sm font-medium text-zinc-700">{label}</span>
         {lbl && (
-          <span className={`text-[11px] font-semibold ${confColor(conf)}`}>
+          <span className={`text-xs font-semibold ${confColor(conf)}`}>
             {conf != null && <span className="tabular-nums">{Math.round(conf * 100)}% </span>}
             {lbl}
           </span>

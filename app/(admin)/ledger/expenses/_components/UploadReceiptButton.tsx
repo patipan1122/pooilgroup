@@ -323,7 +323,7 @@ export function UploadReceiptButton({
         </Button>
       </div>
       {topErr && (
-        <p className="flex items-center gap-1 text-xs text-rose-600" role="alert">
+        <p className="flex items-center gap-1 text-xs font-medium text-rose-700 animate-fade-in" role="alert">
           <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
           {topErr}
         </p>
@@ -341,22 +341,22 @@ export function UploadReceiptButton({
             type="button"
             aria-label="ปิด"
             onClick={() => setSheetOpen(false)}
-            className="absolute inset-0 bg-black/40"
+            className="absolute inset-0 bg-black/40 animate-fade-in"
           />
           <div
-            className="absolute inset-x-0 bottom-0 mx-auto max-w-md rounded-t-3xl border-t border-zinc-200 bg-white p-4 sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-[26rem] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl sm:border"
+            className="absolute inset-x-0 bottom-0 mx-auto max-w-md rounded-t-3xl border-t border-zinc-200 bg-white p-4 shadow-xl animate-slide-up-soft sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-[26rem] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl sm:border sm:animate-scale-in"
             style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
           >
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <h2 className="text-base font-bold text-zinc-900">เพิ่มใบเสร็จ</h2>
-                <p className="text-xs text-zinc-500">เลือกรูปแบบการเพิ่ม</p>
+                <p className="text-xs text-zinc-500">เลือกวิธีเพิ่มใบเสร็จ</p>
               </div>
               <button
                 type="button"
                 aria-label="ปิด"
                 onClick={() => setSheetOpen(false)}
-                className="grid size-10 place-items-center rounded-full text-zinc-400 active:bg-zinc-100"
+                className="press grid size-10 place-items-center rounded-full text-zinc-500 hover:bg-zinc-100 active:bg-zinc-100"
               >
                 <X className="size-5" aria-hidden />
               </button>
@@ -366,7 +366,7 @@ export function UploadReceiptButton({
               <button
                 type="button"
                 onClick={pickCamera}
-                className="flex w-full items-center gap-3 rounded-2xl border border-zinc-200 p-3.5 text-left transition active:bg-zinc-50"
+                className="press flex w-full items-center gap-3 rounded-2xl border border-zinc-200 p-3.5 text-left transition hover:border-[var(--color-brand-200)] hover:bg-[var(--color-brand-50)] active:bg-zinc-50"
               >
                 <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[var(--color-brand-50)] text-[var(--color-brand-600)]">
                   <Camera className="size-5" aria-hidden />
@@ -380,7 +380,7 @@ export function UploadReceiptButton({
               <button
                 type="button"
                 onClick={pickFiles}
-                className="flex w-full items-center gap-3 rounded-2xl border border-zinc-200 p-3.5 text-left transition active:bg-zinc-50"
+                className="press flex w-full items-center gap-3 rounded-2xl border border-zinc-200 p-3.5 text-left transition hover:border-zinc-300 hover:bg-zinc-50 active:bg-zinc-50"
               >
                 <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-600">
                   <FileText className="size-5" aria-hidden />
@@ -405,8 +405,8 @@ export function UploadReceiptButton({
           aria-modal="true"
           aria-label={job.finished ? "สรุปการอัปโหลด" : "กำลังอัปโหลด"}
         >
-          <div className="absolute inset-0 bg-black/50" />
-          <div className="relative w-full max-w-sm rounded-3xl bg-white p-5 text-left shadow-xl">
+          <div className="absolute inset-0 bg-black/50 animate-fade-in" />
+          <div className="relative w-full max-w-sm rounded-3xl bg-white p-5 text-left shadow-xl animate-scale-in">
             {!job.finished ? (
               <>
                 <div className="mb-1 flex items-center gap-2">
@@ -419,9 +419,9 @@ export function UploadReceiptButton({
                 <div className="mb-2 flex items-baseline justify-between">
                   <span className="text-2xl font-bold tabular-nums text-zinc-900">
                     {job.done}
-                    <span className="text-base font-medium text-zinc-400"> / {job.total}</span>
+                    <span className="text-base font-medium text-zinc-500"> / {job.total}</span>
                   </span>
-                  <span className="text-xs font-medium text-zinc-400 tabular-nums">{pct}%</span>
+                  <span className="text-xs font-semibold tabular-nums text-zinc-500">{pct}%</span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
                   <div
@@ -429,7 +429,7 @@ export function UploadReceiptButton({
                     style={{ width: `${pct}%` }}
                   />
                 </div>
-                <p className="mt-2 truncate text-xs text-zinc-400">{job.current}</p>
+                <p className="mt-2 truncate text-xs text-zinc-500">{job.current}</p>
               </>
             ) : (
               <>
@@ -468,7 +468,7 @@ export function UploadReceiptButton({
                         <li key={i} className="flex items-start gap-1.5">
                           <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-rose-500" aria-hidden />
                           <span className="min-w-0">
-                            <span className="font-medium text-zinc-700">{r.name}</span> — {r.error}
+                            <span className="font-medium text-zinc-700">{r.name}</span> ({r.error})
                           </span>
                         </li>
                       ))}
@@ -476,13 +476,13 @@ export function UploadReceiptButton({
                 )}
 
                 <p className="mb-3 text-xs text-zinc-500">
-                  ทุกใบเป็น “ร่าง” · เปิดในรายการเพื่อตรวจและยืนยัน
+                  ทุกใบบันทึกเป็น “ร่าง” · เปิดในรายการเพื่อตรวจและยืนยัน
                 </p>
 
                 <button
                   type="button"
                   onClick={closeSummary}
-                  className="h-11 w-full rounded-xl bg-[var(--color-brand-600)] text-sm font-semibold text-white transition active:bg-[var(--color-brand-700)]"
+                  className="press h-11 w-full rounded-xl bg-[var(--color-brand-600)] text-sm font-semibold text-white transition hover:bg-[var(--color-brand-700)] active:bg-[var(--color-brand-700)]"
                 >
                   เสร็จ
                 </button>

@@ -111,12 +111,12 @@ const PAYMENT_STATUSES: { value: PaymentStatus; label: string }[] = [
 /** Section title chip — mirrors Bainy's numbered sections (1·2·3·4). */
 function SectionTitle({ n, icon, children }: { n: number; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="mb-2 flex items-center gap-2">
-      <span className="flex size-6 items-center justify-center rounded-full bg-[var(--color-brand-600,#2563EB)] text-xs font-bold text-white">
+    <div className="mb-3 flex items-center gap-2">
+      <span className="flex size-6 items-center justify-center rounded-full bg-[var(--color-brand-600,#2563EB)] text-xs font-bold tabular-nums text-white">
         {n}
       </span>
-      <span className="text-zinc-500">{icon}</span>
-      <h3 className="text-sm font-bold text-zinc-800">{children}</h3>
+      <span className="text-zinc-500" aria-hidden>{icon}</span>
+      <h3 className="text-sm font-bold tracking-tight text-zinc-800">{children}</h3>
     </div>
   );
 }
@@ -272,7 +272,7 @@ function FieldLabel({
   confidence?: number | null;
 }) {
   return (
-    <div className="mb-1 flex items-center gap-1.5">
+    <div className="mb-1.5 flex items-center gap-1.5">
       <label className="text-xs font-semibold text-zinc-600">{children}</label>
       <ConfidenceTag score={confidence} />
     </div>
@@ -634,12 +634,12 @@ export function ExpenseReviewPane({
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="font-mono text-lg font-bold tracking-tight">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-mono text-lg font-bold tracking-tight text-zinc-900">
             {expense.docCode}
           </div>
-          <div className="text-xs text-zinc-500">
+          <div className="mt-0.5 text-xs text-zinc-500">
             ที่มา:{" "}
             {expense.source === "line"
               ? "LINE"
@@ -685,7 +685,7 @@ export function ExpenseReviewPane({
       {expense.status === "draft" && (overallConf != null || expense.needsReview) && (
         <div
           className={cn(
-            "flex items-center gap-2 rounded-xl border px-3 py-2 text-sm",
+            "flex animate-fade-in items-center gap-2 rounded-xl border px-3.5 py-2.5 text-sm font-medium",
             expense.needsReview || (overallConf != null && overallConf < 0.6)
               ? "border-rose-200 bg-rose-50 text-rose-800"
               : overallConf != null && overallConf < 0.85
@@ -696,10 +696,10 @@ export function ExpenseReviewPane({
           <Sparkles className="size-4 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1">
             {expense.needsReview
-              ? "AI ไม่มั่นใจบางช่อง — โปรดตรวจก่อนยืนยัน"
+              ? "AI ยังไม่มั่นใจบางช่อง โปรดตรวจก่อนยืนยัน"
               : overallConf != null && overallConf >= 0.85
-                ? "AI อ่านได้ครบ — ตรวจแล้วกดยืนยันได้เลย"
-                : "AI อ่านได้บางส่วน — ตรวจช่องที่มีสีเหลือง/แดง"}
+                ? "AI อ่านได้ครบถ้วน ตรวจแล้วกดยืนยันได้เลย"
+                : "AI อ่านได้บางส่วน ตรวจช่องที่ขึ้นสีเหลืองหรือแดง"}
           </span>
           {overallConf != null && (
             <ConfidenceTag score={overallConf} showLabel className="shrink-0" />
@@ -717,11 +717,11 @@ export function ExpenseReviewPane({
         <div className="space-y-5">
           {/* 1 · ลงบัญชี (จำเป็น) — หมวด + สาขา ต้องครบก่อนยืนยัน (ยกขึ้นบนสุดตามดีไซน์
               ใหม่ 2026-06-07: ฟิลด์บังคับเห็นก่อน ลดการเลื่อนหา). */}
-          <section className="space-y-3 rounded-2xl border border-zinc-100 p-3">
+          <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4">
             <SectionTitle n={1} icon={<Building2 className="size-4" aria-hidden />}>
               ลงบัญชี
             </SectionTitle>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <FieldLabel confidence={conf.suggested_category ?? conf.category}>
                   ประเภทค่าใช้จ่าย
@@ -739,7 +739,10 @@ export function ExpenseReviewPane({
                   ))}
                 </select>
                 {gateMissingCategory && (
-                  <p className="mt-1 text-[11px] text-amber-700">ต้องระบุหมวดหมู่ค่าใช้จ่าย</p>
+                  <p className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-amber-700">
+                    <ListTree className="size-3" aria-hidden />
+                    ต้องระบุหมวดหมู่ค่าใช้จ่าย
+                  </p>
                 )}
               </div>
               <div>
@@ -758,7 +761,7 @@ export function ExpenseReviewPane({
                     type="button"
                     disabled={locked || centralPending}
                     onClick={() => pickBranch(CENTRAL_OPTION)}
-                    className="mt-1 text-[11px] text-[var(--color-brand-600)] underline disabled:opacity-50"
+                    className="mt-1.5 text-[11px] font-medium text-[var(--color-brand-700)] underline underline-offset-2 disabled:opacity-50"
                   >
                     {centralPending ? (
                       <span className="flex items-center gap-1">
@@ -766,12 +769,12 @@ export function ExpenseReviewPane({
                         กำลังตั้งสาขาสำนักงาน…
                       </span>
                     ) : (
-                      "ไม่รู้สาขา → เลือกสำนักงาน (ส่วนกลาง)"
+                      "ไม่รู้สาขา? เลือกสำนักงาน (ส่วนกลาง)"
                     )}
                   </button>
                 )}
                 {gateMissingBranch && !centralPending && (
-                  <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-700">
+                  <p className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-amber-700">
                     <Building2 className="size-3" aria-hidden />
                     ต้องระบุสาขา
                   </p>
@@ -781,9 +784,9 @@ export function ExpenseReviewPane({
           </section>
 
           {/* 2 · ข้อมูลร้านค้า & เอกสาร */}
-          <section className="space-y-3 rounded-2xl border border-zinc-100 p-3">
+          <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4">
             <SectionTitle n={2} icon={<FileText className="size-4" aria-hidden />}>
-              ข้อมูลร้านค้า & เอกสาร
+              ข้อมูลร้านค้าและเอกสาร
             </SectionTitle>
             {draft.vendor.trim() && (
               <button
@@ -792,9 +795,9 @@ export function ExpenseReviewPane({
                   setPriceTab("history");
                   setPriceTerm(draft.vendor.trim());
                 }}
-                className="-mt-1 inline-flex items-center gap-1 self-start rounded-lg border border-[var(--color-brand-200)] bg-[var(--color-brand-50)] px-2.5 py-1 text-xs font-medium text-[var(--color-brand-700)] hover:bg-[var(--color-brand-100)]"
+                className="-mt-1 inline-flex items-center gap-1.5 self-start rounded-lg border border-[var(--color-brand-200)] bg-[var(--color-brand-50)] px-2.5 py-1 text-xs font-medium text-[var(--color-brand-700)] transition-colors press hover:bg-[var(--color-brand-100)]"
               >
-                <Clock className="size-3.5" aria-hidden /> ประวัติผู้ขายรายนี้ · ดูราคาที่เคยซื้อ
+                <Clock className="size-3.5" aria-hidden /> ดูประวัติผู้ขายรายนี้และราคาที่เคยซื้อ
               </button>
             )}
             <div>
@@ -807,7 +810,7 @@ export function ExpenseReviewPane({
                 placeholder="ชื่อร้าน / บริษัท"
               />
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <FieldLabel>ประเภทเอกสาร</FieldLabel>
                 <select
@@ -833,13 +836,13 @@ export function ExpenseReviewPane({
                 />
               </div>
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <FieldLabel confidence={conf.vendor_tax_id ?? conf.vendorTaxId}>
                   เลขผู้เสียภาษี (13 หลัก)
                 </FieldLabel>
                 <input
-                  className={inputCls}
+                  className={cn(inputCls, "tabular-nums")}
                   value={draft.vendorTaxId}
                   disabled={locked}
                   inputMode="numeric"
@@ -861,7 +864,7 @@ export function ExpenseReviewPane({
                 />
               </div>
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_120px]">
               <div>
                 <FieldLabel>ที่อยู่ผู้ขาย</FieldLabel>
                 <input
@@ -886,9 +889,9 @@ export function ExpenseReviewPane({
           </section>
 
           {/* 3 · รายการ & ยอดเงิน */}
-          <section className="space-y-3 rounded-2xl border border-zinc-100 p-3">
+          <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4">
             <SectionTitle n={3} icon={<Wallet className="size-4" aria-hidden />}>
-              รายการ & ยอดเงิน
+              รายการและยอดเงิน
             </SectionTitle>
 
             {/* แยกรายการ — line items (M2: มือถือ default ยุบไว้ใต้ accordion · ≥768px
@@ -902,11 +905,11 @@ export function ExpenseReviewPane({
                 className="flex w-full items-center justify-between gap-2 text-left"
               >
                 <span className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600">
-                  <ListTree className="size-3.5 text-zinc-400" aria-hidden />
+                  <ListTree className="size-3.5 text-zinc-500" aria-hidden />
                   รายการสินค้า / บริการ {draft.items.length > 0 ? `(${draft.items.length})` : ""}
                 </span>
                 <ChevronDown
-                  className={cn("size-4 text-zinc-400 transition-transform", itemsOpen && "rotate-180")}
+                  className={cn("size-4 text-zinc-500 transition-transform", itemsOpen && "rotate-180")}
                   aria-hidden
                 />
               </button>
@@ -918,14 +921,14 @@ export function ExpenseReviewPane({
                       <button
                         type="button"
                         onClick={addItem}
-                        className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-xs font-medium text-[var(--color-brand-600,#2563EB)] ring-1 ring-zinc-200 hover:bg-zinc-50"
+                        className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs font-medium text-[var(--color-brand-700)] ring-1 ring-zinc-200 transition-colors press hover:bg-zinc-50"
                       >
                         <Plus className="size-3.5" aria-hidden /> เพิ่มรายการ
                       </button>
                     )}
                   </div>
                   {draft.items.length === 0 ? (
-                    <p className="px-1 py-2 text-xs text-zinc-400">ยังไม่มีรายการย่อย — เพิ่มได้ถ้าต้องการแยกบรรทัด</p>
+                    <p className="px-1 py-2 text-xs text-zinc-500">ยังไม่มีรายการย่อย เพิ่มได้ถ้าต้องการแยกบรรทัด</p>
                   ) : (
                     <div className="space-y-2 md:space-y-1.5">
                       {draft.items.map((it, i) => (
@@ -951,7 +954,7 @@ export function ExpenseReviewPane({
                                 }}
                                 aria-label={`ดูราคาและเทียบผู้ขายของ ${it.description.trim()}`}
                                 title="ดูราคา · เทียบผู้ขาย"
-                                className="absolute right-1 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-md text-[var(--color-brand-600)] hover:bg-[var(--color-brand-50)] md:size-6"
+                                className="press absolute right-1 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-md text-[var(--color-brand-700)] transition-colors hover:bg-[var(--color-brand-50)] md:size-6"
                               >
                                 <Tag className="size-4 md:size-3.5" aria-hidden />
                               </button>
@@ -960,9 +963,9 @@ export function ExpenseReviewPane({
                           {/* จำนวน · ราคา/หน่วย · ยอดรวม — มือถือ stack เป็น 3 ช่องมีป้ายกำกับ */}
                           <div className="mt-2 grid grid-cols-3 gap-1.5 md:mt-0 md:contents">
                             <label className="block md:contents">
-                              <span className="mb-0.5 block text-[10px] font-medium text-zinc-400 md:hidden">จำนวน</span>
+                              <span className="mb-0.5 block text-[10px] font-medium text-zinc-500 md:hidden">จำนวน</span>
                               <input
-                                className="h-11 w-full rounded-md border border-zinc-200 bg-white px-1.5 text-right text-base outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 md:h-8 md:text-xs"
+                                className="h-11 w-full rounded-md border border-zinc-200 bg-white px-1.5 text-right text-base tabular-nums outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 md:h-8 md:text-xs"
                                 value={it.qty}
                                 disabled={locked}
                                 inputMode="decimal"
@@ -971,9 +974,9 @@ export function ExpenseReviewPane({
                               />
                             </label>
                             <label className="block md:contents">
-                              <span className="mb-0.5 block text-[10px] font-medium text-zinc-400 md:hidden">ราคา/หน่วย</span>
+                              <span className="mb-0.5 block text-[10px] font-medium text-zinc-500 md:hidden">ราคา/หน่วย</span>
                               <input
-                                className="h-11 w-full rounded-md border border-zinc-200 bg-white px-1.5 text-right text-base outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 md:h-8 md:text-xs"
+                                className="h-11 w-full rounded-md border border-zinc-200 bg-white px-1.5 text-right text-base tabular-nums outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 md:h-8 md:text-xs"
                                 value={it.unitPrice}
                                 disabled={locked}
                                 inputMode="decimal"
@@ -982,9 +985,9 @@ export function ExpenseReviewPane({
                               />
                             </label>
                             <label className="block md:contents">
-                              <span className="mb-0.5 block text-[10px] font-medium text-zinc-400 md:hidden">ยอดรวม</span>
+                              <span className="mb-0.5 block text-[10px] font-medium text-zinc-500 md:hidden">ยอดรวม</span>
                               <input
-                                className="h-11 w-full rounded-md border border-zinc-200 bg-white px-1.5 text-right text-base font-medium outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 md:h-8 md:text-xs"
+                                className="h-11 w-full rounded-md border border-zinc-200 bg-white px-1.5 text-right text-base font-medium tabular-nums outline-none focus:ring-2 focus:ring-[var(--color-brand-200)] disabled:bg-zinc-100 md:h-8 md:text-xs"
                                 value={it.amount}
                                 disabled={locked}
                                 inputMode="decimal"
@@ -997,7 +1000,7 @@ export function ExpenseReviewPane({
                             <button
                               type="button"
                               onClick={() => removeItem(i)}
-                              className="mt-1 flex h-9 w-full items-center justify-center gap-1 rounded-md text-xs text-rose-500 hover:bg-rose-50 md:mt-0 md:size-7 md:w-auto md:text-transparent"
+                              className="press mt-1 flex h-9 w-full items-center justify-center gap-1 rounded-md text-xs text-rose-600 transition-colors hover:bg-rose-50 md:mt-0 md:size-7 md:w-auto md:text-transparent"
                               aria-label="ลบรายการ"
                             >
                               <Trash2 className="size-3.5" aria-hidden />
@@ -1010,9 +1013,9 @@ export function ExpenseReviewPane({
                         <button
                           type="button"
                           onClick={() => set("subtotal", +itemsSum.toFixed(2))}
-                          className="mt-1 text-[11px] font-medium text-[var(--color-brand-600,#2563EB)] hover:underline"
+                          className="mt-1 text-[11px] font-medium tabular-nums text-[var(--color-brand-700)] underline-offset-2 hover:underline"
                         >
-                          ผลรวมรายการ = {itemsSum.toLocaleString()} — กดเติมเป็นยอดย่อย
+                          ผลรวมรายการ = {itemsSum.toLocaleString()} · กดเติมเป็นยอดก่อนภาษี
                         </button>
                       )}
                     </div>
@@ -1022,7 +1025,7 @@ export function ExpenseReviewPane({
             </div>
 
             {/* ยอดเงิน */}
-            <div className="grid grid-cols-2 gap-3 rounded-xl bg-zinc-50 p-3 sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3.5 sm:grid-cols-3">
               <div>
                 <FieldLabel confidence={conf.subtotal}>ยอดก่อนภาษี (Net)</FieldLabel>
                 <AmountInput value={draft.subtotal} disabled={locked} ariaLabel="ยอดย่อย" onValueChange={(v) => set("subtotal", v)} />
@@ -1039,20 +1042,20 @@ export function ExpenseReviewPane({
                 <FieldLabel>หัก ณ ที่จ่าย</FieldLabel>
                 <AmountInput value={draft.wht} disabled={locked} ariaLabel="หัก ณ ที่จ่าย" onValueChange={(v) => set("wht", v)} />
               </div>
-              <div className="col-span-2 sm:col-span-1">
+              <div className="col-span-2 rounded-lg bg-white p-2 ring-1 ring-zinc-200 sm:col-span-1">
                 <FieldLabel confidence={conf.total}>ยอดรวมสุทธิ</FieldLabel>
-                <AmountInput value={draft.total} disabled={locked} ariaLabel="ยอดรวม" onValueChange={(v) => set("total", v)} className="border-zinc-300 font-semibold" />
+                <AmountInput value={draft.total} disabled={locked} ariaLabel="ยอดรวม" onValueChange={(v) => set("total", v)} className="border-zinc-300 text-base font-bold" />
               </div>
             </div>
 
             {/* ภาษีซื้อ — "ขอคืนได้?" + เหตุผล (เฉพาะนักบัญชี/แอดมิน · เรียก override action จริง) */}
             {canEditClaimability && onOverrideClaimability && (
-              <div className="rounded-xl border border-zinc-200 bg-white p-3">
+              <div className="rounded-xl border border-zinc-200 bg-white p-3.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-zinc-700">ภาษีซื้อ (VAT) นี้ขอคืนได้?</p>
-                    <p className="text-[11px] text-zinc-400">
-                      ระบบแนะนำจากสถานะสี — ปรับเองได้ บันทึกไว้ใครเปลี่ยน/เมื่อไหร่
+                    <p className="text-sm font-semibold text-zinc-800">ภาษีซื้อ (VAT) ใบนี้ขอคืนได้หรือไม่?</p>
+                    <p className="mt-0.5 text-[11px] text-zinc-500">
+                      ระบบแนะนำจากสถานะสีของใบกำกับ ปรับเองได้ และบันทึกไว้ว่าใครเปลี่ยนเมื่อไหร่
                     </p>
                   </div>
                   {/* 2-state segmented toggle → override action */}
@@ -1063,10 +1066,10 @@ export function ExpenseReviewPane({
                       disabled={vatPending}
                       aria-pressed={claimable === true}
                       className={cn(
-                        "px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50",
+                        "px-3.5 py-1.5 text-xs font-semibold transition-colors press disabled:opacity-50",
                         claimable === true
                           ? "bg-emerald-600 text-white"
-                          : "bg-white text-zinc-600 hover:bg-zinc-50",
+                          : "bg-white text-zinc-700 hover:bg-zinc-50",
                       )}
                     >
                       ขอคืนได้
@@ -1077,10 +1080,10 @@ export function ExpenseReviewPane({
                       disabled={vatPending}
                       aria-pressed={claimable === false}
                       className={cn(
-                        "border-l border-zinc-200 px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50",
+                        "border-l border-zinc-200 px-3.5 py-1.5 text-xs font-semibold transition-colors press disabled:opacity-50",
                         claimable === false
                           ? "bg-rose-600 text-white"
-                          : "bg-white text-zinc-600 hover:bg-zinc-50",
+                          : "bg-white text-zinc-700 hover:bg-zinc-50",
                       )}
                     >
                       ขอคืนไม่ได้
@@ -1113,7 +1116,7 @@ export function ExpenseReviewPane({
                 )}
 
                 {vatPending && (
-                  <p className="mt-2 flex items-center gap-1 text-[11px] text-zinc-400">
+                  <p className="mt-2 flex items-center gap-1 text-[11px] text-zinc-500">
                     <Loader2 className="size-3 animate-spin" aria-hidden /> กำลังบันทึก…
                   </p>
                 )}
@@ -1127,11 +1130,11 @@ export function ExpenseReviewPane({
           </section>
 
           {/* 4 · การชำระเงิน & ผู้เบิก */}
-          <section className="space-y-3 rounded-2xl border border-zinc-100 p-3">
+          <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4">
             <SectionTitle n={4} icon={<Wallet className="size-4" aria-hidden />}>
-              การชำระเงิน & ผู้เบิก
+              การชำระเงินและผู้เบิก
             </SectionTitle>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <FieldLabel>ชื่อผู้เบิก</FieldLabel>
                 <input
@@ -1157,7 +1160,7 @@ export function ExpenseReviewPane({
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <FieldLabel confidence={conf.payment_method ?? conf.paymentMethod}>วิธีชำระเงิน</FieldLabel>
                 <select
@@ -1184,10 +1187,10 @@ export function ExpenseReviewPane({
                 />
               </div>
             </div>
-            <label className={cn("flex items-center justify-between rounded-xl border border-zinc-200 px-3 py-2", locked && "opacity-60")}>
+            <label className={cn("flex cursor-pointer items-center justify-between rounded-xl border border-zinc-200 px-3.5 py-2.5 transition-colors hover:bg-zinc-50", locked && "cursor-default opacity-60 hover:bg-transparent")}>
               <span className="text-sm">
-                <span className="font-medium text-zinc-700">ตั้งเป็นรายจ่ายประจำ</span>
-                <span className="block text-[11px] text-zinc-400">แสดงบนแดชบอร์ดตามวันที่กำหนด</span>
+                <span className="font-medium text-zinc-800">ตั้งเป็นรายจ่ายประจำ</span>
+                <span className="mt-0.5 block text-[11px] text-zinc-500">แสดงบนแดชบอร์ดตามวันที่กำหนด</span>
               </span>
               <input
                 type="checkbox"
@@ -1200,9 +1203,9 @@ export function ExpenseReviewPane({
           </section>
 
           {/* 5 · หมายเหตุ & หลักฐาน */}
-          <section className="space-y-3 rounded-2xl border border-zinc-100 p-3">
+          <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4">
             <SectionTitle n={5} icon={<StickyNote className="size-4" aria-hidden />}>
-              หมายเหตุ & หลักฐาน
+              หมายเหตุและหลักฐาน
             </SectionTitle>
             <div>
               <FieldLabel>หมายเหตุ</FieldLabel>
@@ -1218,7 +1221,7 @@ export function ExpenseReviewPane({
             {/* หลักฐาน & ไฟล์แนบ — 3 ช่อง (CEO 2026-06-08): ใบเสร็จต้นฉบับ (+ลิงก์ Drive) /
                 สลิปโอนเงิน / ใบกำกับใหม่ทดแทน. แนบสลิปจริงทำผ่านกลุ่มขอโอน → ที่นี่ลิงก์ไปกระทบยอด. */}
             <div className="space-y-2">
-              <span className="text-xs font-semibold text-zinc-600">หลักฐาน & ไฟล์แนบ</span>
+              <span className="text-xs font-semibold text-zinc-600">หลักฐานและไฟล์แนบ</span>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {/* 1 · ใบเสร็จต้นฉบับ + ลิงก์ Google Drive */}
                 <div className="space-y-1.5">
@@ -1230,7 +1233,7 @@ export function ExpenseReviewPane({
                       alt={`ใบเสร็จ ${expense.docCode}`}
                     />
                   ) : (
-                    <div className="grid h-28 place-items-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50 text-[11px] text-zinc-400">
+                    <div className="grid h-28 place-items-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50 text-[11px] text-zinc-500">
                       ไม่มีรูปต้นฉบับ
                     </div>
                   )}
@@ -1258,7 +1261,7 @@ export function ExpenseReviewPane({
                 {/* 2 · สลิปโอนเงิน — แนบอัตโนมัติจากกลุ่มขอโอน */}
                 <div className="space-y-1.5">
                   <p className="text-[11px] font-medium text-zinc-500">สลิปโอนเงิน</p>
-                  <div className="grid h-28 place-items-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-2 text-center text-[11px] text-zinc-400">
+                  <div className="grid h-28 place-items-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-2 text-center text-[11px] text-zinc-500">
                     แนบอัตโนมัติจากกลุ่มขอโอน
                   </div>
                   <a
@@ -1280,8 +1283,8 @@ export function ExpenseReviewPane({
                   ) : !isGreen && !locked && canEditClaimability && onAttachReplacement ? (
                     <AttachReplacementButton expenseId={expense.id} onAttach={onAttachReplacement} />
                   ) : (
-                    <div className="grid h-28 place-items-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50 text-[11px] text-zinc-400">
-                      — ไม่มี —
+                    <div className="grid h-28 place-items-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50 text-[11px] text-zinc-500">
+                      ยังไม่มีใบทดแทน
                     </div>
                   )}
                 </div>
@@ -1305,17 +1308,17 @@ export function ExpenseReviewPane({
           role={hasError ? "alert" : "status"}
           aria-live={hasError ? "assertive" : "polite"}
           className={cn(
-            "space-y-1 rounded-xl border p-3 text-sm",
+            "animate-fade-in space-y-1.5 rounded-xl border p-3.5 text-sm",
             hasError
               ? "border-rose-200 bg-rose-50 text-rose-800"
               : "border-amber-200 bg-amber-50 text-amber-800",
           )}
         >
           <div className="flex items-center gap-1.5 font-semibold">
-            <AlertTriangle className="size-4" aria-hidden />
-            ตรวจยอด (Recheck)
+            <AlertTriangle className="size-4 shrink-0" aria-hidden />
+            ตรวจยอดเงิน
           </div>
-          <ul className="ml-5 list-disc space-y-0.5">
+          <ul className="ml-5 list-disc space-y-1 tabular-nums">
             {findings.map((f, i) => (
               <li key={i}>{f.message}</li>
             ))}
@@ -1330,7 +1333,7 @@ export function ExpenseReviewPane({
           aria-live="polite"
           className={cn(
             // CEO 2026-06-10: ทำให้เด่นชัด (เดิมจาง → รู้สึก "กดแล้วไม่มีอะไรเปลี่ยน")
-            "flex items-center gap-2 rounded-xl border px-3.5 py-3 text-sm font-semibold shadow-sm",
+            "flex animate-scale-in items-center gap-2 rounded-xl border px-3.5 py-3 text-sm font-semibold shadow-sm",
             msg.kind === "ok"
               ? "border-emerald-300 bg-emerald-50 text-emerald-800"
               : "border-rose-300 bg-rose-50 text-rose-800",
@@ -1348,21 +1351,21 @@ export function ExpenseReviewPane({
       {/* สถานะใบกำกับ (ภาษีซื้อ) — ย้ายมาล่างติดแถบปุ่ม (CEO 2026-06-08: คำเตือนแดงอยู่
           ข้างล่าง กระชับ ให้รู้ว่าบรรทัดไหนทำให้ยืนยัน/ขอโอนไม่ได้). */}
       {completeness !== "undecided" && (
-        <div className={cn("rounded-xl border px-3 py-2 text-xs", ccMeta.cls)}>
+        <div className={cn("animate-fade-in rounded-xl border px-3.5 py-2.5 text-xs", ccMeta.cls)}>
           <div className="flex flex-wrap items-center gap-2">
             <DocTag docType={expense.docType} vat={expense.vat} completenessStatus={completeness} />
             <PaymentTag status={expense.paymentStatus} />
             <span className="text-sm font-bold">{ccMeta.title}</span>
-            <span className={cn("ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold", ccMeta.chip)}>
+            <span className={cn("ml-auto rounded-full px-2.5 py-0.5 text-[11px] font-semibold", ccMeta.chip)}>
               {ccMeta.verdict}
             </span>
           </div>
-          <p className="mt-1 opacity-90">
+          <p className="mt-1.5">
             {BUYER_MATCH_LABEL[(expense.buyerMatchStatus ?? "undecided") as BuyerMatchStatus]}
             {expense.buyerTaxIdOnDoc ? ` · เลขบนใบ ${expense.buyerTaxIdOnDoc}` : ""}
           </p>
           {ccMissing.length > 0 && (
-            <ul className="mt-1 ml-4 list-disc space-y-0.5">
+            <ul className="mt-1.5 ml-4 list-disc space-y-0.5">
               {ccMissing.map((m) => (
                 <li key={m}>{missingLabel(m)}</li>
               ))}
@@ -1424,7 +1427,7 @@ export function ExpenseReviewPane({
                 });
               }}
               className={cn(
-                "flex-1 sm:flex-none",
+                "press flex-1 sm:flex-none",
                 savedFlash && "!bg-emerald-600 hover:!bg-emerald-600",
               )}
             >
@@ -1435,7 +1438,7 @@ export function ExpenseReviewPane({
               ) : (
                 <Save className="size-4" aria-hidden />
               )}
-              {savedFlash ? "บันทึกแล้ว" : "บันทึก"}
+              {savedFlash ? "บันทึกแล้ว" : "บันทึกรายการ"}
             </Button>
 
             {/* ขอโอน — ส่งคำขอเข้ากลุ่มผู้บริหาร (ปุ่มหลักของมือถือ; เดสก์ท็อปมีบนแถวด้วย).
@@ -1445,11 +1448,11 @@ export function ExpenseReviewPane({
                 variant="outline"
                 disabled={pending || !gate.ok}
                 onClick={handleRequestPayout}
-                title={!gate.ok ? "ระบุสาขา + หมวด ก่อนขอโอน" : "ส่งคำขอโอนเข้ากลุ่มผู้บริหาร"}
-                className="border-[var(--color-brand-200)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)] hover:bg-[var(--color-brand-100)]"
+                title={!gate.ok ? "ระบุสาขาและหมวดก่อนขอโอน" : "ส่งคำขอโอนเข้ากลุ่มผู้บริหาร"}
+                className="press border-[var(--color-brand-200)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)] hover:bg-[var(--color-brand-100)]"
               >
                 <Banknote className="size-4" aria-hidden />
-                ขอโอน
+                ขอโอนเงิน
               </Button>
             )}
 
@@ -1461,7 +1464,7 @@ export function ExpenseReviewPane({
                 disabled={pending || delPending}
                 onClick={handleSelfDelete}
                 className={cn(
-                  "ml-auto hover:bg-rose-50",
+                  "press ml-auto tabular-nums hover:bg-rose-50",
                   delConfirm ? "bg-rose-50 text-rose-700" : "text-rose-600",
                 )}
                 title={delConfirm ? "กดอีกครั้งเพื่อยืนยันการลบ" : undefined}
@@ -1483,7 +1486,7 @@ export function ExpenseReviewPane({
                 disabled={pending || delPending}
                 onClick={() => setReqDelOpen((v) => !v)}
                 className={cn(
-                  "ml-auto hover:bg-rose-50",
+                  "press ml-auto hover:bg-rose-50",
                   reqDelOpen ? "bg-rose-50 text-rose-700" : "text-rose-600",
                 )}
                 title="ส่งคำขอให้บัญชีลบให้ (เกิน 5 นาที / ไม่ใช่ของคุณ / ยืนยันแล้ว)"
@@ -1501,10 +1504,10 @@ export function ExpenseReviewPane({
                   variant="ghost"
                   disabled={pending}
                   onClick={handleVoid}
-                  className="ml-auto text-rose-600 hover:bg-rose-50"
+                  className="press ml-auto text-rose-600 hover:bg-rose-50"
                 >
                   <Ban className="size-4" aria-hidden />
-                  ยกเลิก
+                  ยกเลิกใบนี้
                 </Button>
               )
             )}
@@ -1528,7 +1531,7 @@ export function ExpenseReviewPane({
                   type="button"
                   onClick={doRequestDelete}
                   disabled={delPending}
-                  className="inline-flex h-9 items-center gap-1 rounded-lg bg-rose-600 px-3 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+                  className="press inline-flex h-9 items-center gap-1 rounded-lg bg-rose-600 px-3.5 text-sm font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
                 >
                   {delPending ? (
                     <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -1541,9 +1544,9 @@ export function ExpenseReviewPane({
                   type="button"
                   onClick={() => setReqDelOpen(false)}
                   disabled={delPending}
-                  className="inline-flex h-9 items-center rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+                  className="press inline-flex h-9 items-center rounded-lg border border-zinc-200 bg-white px-3.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50"
                 >
-                  ไม่
+                  ไม่ลบ
                 </button>
               </div>
             </div>
@@ -1556,7 +1559,7 @@ export function ExpenseReviewPane({
                 type="button"
                 disabled={pending}
                 onClick={handleVoid}
-                className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-400 hover:text-rose-600 disabled:opacity-50"
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-500 transition-colors hover:text-rose-600 disabled:opacity-50"
               >
                 <Ban className="size-3" aria-hidden /> ยกเลิกใบนี้ (บัญชี)
               </button>
@@ -1565,18 +1568,18 @@ export function ExpenseReviewPane({
 
           <p
             className={cn(
-              "mt-2 flex items-center gap-1 text-[11px]",
+              "mt-2 flex items-center gap-1.5 text-[11px]",
               hasError || (!gate.ok && canConfirm)
                 ? "font-semibold text-rose-600"
-                : "text-zinc-400",
+                : "text-zinc-500",
             )}
           >
-            <ShieldCheck className="size-3.5" aria-hidden />
+            <ShieldCheck className="size-3.5 shrink-0" aria-hidden />
             {hasError
-              ? "ยอดไม่ตรง — แก้ให้ถูกก่อนจึงจะกด “ยืนยัน” ได้"
+              ? "ยอดเงินไม่ตรง แก้ให้ถูกต้องก่อนจึงจะยืนยันได้"
               : !gate.ok && canConfirm
-                ? confirmabilityMessage(gate.missing) + " — บรรทัดที่ขาดเป็นสีแดง"
-                : "ระบบไม่บันทึกอัตโนมัติ — รายการเป็น “ร่าง” จนกว่าจะกดยืนยันเอง"}
+                ? confirmabilityMessage(gate.missing) + " (ช่องที่ขาดขึ้นสีแดง)"
+                : "ระบบไม่บันทึกอัตโนมัติ รายการยังเป็น “ร่าง” จนกว่าจะกดยืนยันเอง"}
           </p>
         </div>
       )}

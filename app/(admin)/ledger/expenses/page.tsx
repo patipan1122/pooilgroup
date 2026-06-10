@@ -341,7 +341,7 @@ export default async function ExpensesPage({
               {slipOn && (
                 <Link
                   href={`/ledger/reconcile?${quotationOffParams.toString()}`}
-                  className="inline-flex min-h-[40px] items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                  className="press inline-flex min-h-[40px] items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
                 >
                   สลิปรอจับคู่
                 </Link>
@@ -381,7 +381,7 @@ export default async function ExpensesPage({
         <div className="mb-3 hidden flex-wrap items-center gap-2 text-sm sm:flex">
           <Link
             href={`/ledger/expenses?${quotationOffParams.toString()}`}
-            className={`inline-flex min-h-[36px] items-center rounded-full border px-3 font-medium ${
+            className={`press inline-flex min-h-[36px] items-center rounded-full border px-3 font-medium transition-colors ${
               docType
                 ? "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"
                 : "border-[var(--color-brand-200)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)]"
@@ -391,7 +391,7 @@ export default async function ExpensesPage({
           </Link>
           <Link
             href={`/ledger/expenses?${quotationOnParams.toString()}`}
-            className={`inline-flex min-h-[36px] items-center rounded-full border px-3 font-medium ${
+            className={`press inline-flex min-h-[36px] items-center rounded-full border px-3 font-medium transition-colors ${
               docType
                 ? "border-amber-300 bg-amber-50 text-amber-700"
                 : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"
@@ -459,7 +459,7 @@ export default async function ExpensesPage({
               {slipOn && (
                 <Link
                   href={`/ledger/reconcile?${quotationOffParams.toString()}`}
-                  className="inline-flex min-h-[40px] items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                  className="press inline-flex min-h-[40px] items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
                 >
                   สลิปรอจับคู่
                 </Link>
@@ -484,7 +484,7 @@ export default async function ExpensesPage({
           {selected && (
             <Link
               href={`/ledger/expenses?${baseParams.toString()}`}
-              className="mb-3 inline-flex min-h-[44px] items-center gap-1 text-sm font-medium text-[var(--color-brand-600)] lg:hidden"
+              className="press mb-3 inline-flex min-h-[44px] items-center gap-1 text-sm font-medium text-[var(--color-brand-600)] transition-colors hover:text-[var(--color-brand-700)] lg:hidden"
             >
               ← กลับไปรายการ
             </Link>
@@ -527,7 +527,7 @@ export default async function ExpensesPage({
             />
           )}
           {!selectedExpense && (
-            <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 px-6 text-center">
+            <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 px-6 text-center animate-fade-in">
               <div className="grid size-16 place-items-center rounded-2xl bg-[var(--color-brand-50)] text-3xl">
                 🧾
               </div>
@@ -537,16 +537,16 @@ export default async function ExpensesPage({
                     ? "ยังไม่มีใบเสร็จในบริษัทนี้"
                     : "เลือกใบเสร็จเพื่อตรวจและยืนยัน"}
                 </p>
-                <p className="text-sm text-zinc-500">
+                <p className="text-sm leading-relaxed text-zinc-500">
                   {rows.length === 0
-                    ? "อัปโหลดใบเสร็จด้านบน หรือถ่ายในกลุ่ม LINE — AI จะอ่านให้แล้วรอบัญชียืนยัน"
-                    : "คลิกรายการจากซ้าย — รูป + ค่าที่ AI อ่านได้จะขึ้นตรงนี้ให้ตรวจก่อนยืนยัน"}
+                    ? "อัปโหลดใบเสร็จด้านบน หรือถ่ายในกลุ่ม LINE (AI จะอ่านค่าให้ แล้วรอบัญชียืนยัน)"
+                    : "คลิกรายการจากซ้าย รูปและค่าที่ AI อ่านได้จะขึ้นตรงนี้ให้ตรวจก่อนยืนยัน"}
                 </p>
               </div>
               {rows.length > 0 && (
                 <Link
                   href={`/ledger/expenses?${baseParams.toString()}${baseParams.toString() ? "&" : ""}status=draft`}
-                  className="text-sm font-medium text-[var(--color-brand-600)] hover:underline"
+                  className="press text-sm font-medium text-[var(--color-brand-600)] transition-colors hover:text-[var(--color-brand-700)] hover:underline"
                 >
                   ดูเฉพาะที่รอยืนยัน →
                 </Link>
