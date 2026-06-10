@@ -363,7 +363,10 @@ export function ExpenseReviewPane({
   const [pending, startTransition] = useTransition();
   // CEO 2026-06-10: feedback อยู่ "ที่ปุ่ม" — กดบันทึกสำเร็จ → ปุ่มเปลี่ยนเป็น "✓ บันทึกแล้ว"
   // (สีเขียว 3 วิ) แทน popup เด้ง. รู้ทันทีว่าเซฟแล้ว.
-  const [savedFlash, setSavedFlash] = useState(false);
+  // flashFor = id ของใบที่เพิ่งเซฟ → savedFlash เป็น derived (จริงเฉพาะใบนั้น) → สลับใบใน
+  // master-detail ปุ่มไม่ค้าง "✓ บันทึกแล้ว" ผิดใบ โดยไม่ต้องใช้ effect (เลี่ยง set-state-in-effect).
+  const [flashFor, setFlashFor] = useState<string | null>(null);
+  const savedFlash = flashFor === expense.id;
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
     null,
   );
@@ -1403,10 +1406,14 @@ export function ExpenseReviewPane({
                 startTransition(async () => {
                   const res = await (commit ? onConfirm : onSave)(expense.id, draft);
                   if (res.ok) {
-                    // feedback ที่ปุ่ม (CEO 2026-06-10): ปุ่มเปลี่ยนเป็น "✓ บันทึกแล้ว" สีเขียว
-                    // 3 วิ — ไม่ต้องมี popup. ไม่เด้งกลับหน้า/รีเฟรช เพื่อให้เห็นปุ่มชัด.
-                    setSavedFlash(true);
-                    setTimeout(() => setSavedFlash(false), 3000);
+                    // feedback ที่ปุ่ม (CEO 2026-06-10): ปุ่มเปลี่ยนเป็น "✓ บันทึกแล้ว" สีเขียว 3 วิ
+                    // แทน popup.
+                    setFlashFor(expense.id);
+                    setTimeout(() => setFlashFor(null), 3000);
+                    // ใบครบ → confirmed บนเซิร์ฟเวอร์ → ต้อง refresh ให้สถานะ + ปุ่ม "ส่ง TRCloud"
+                    // อัปเดต (ไม่งั้นค้าง disabled). web = soft refresh (คง savedFlash ไว้ ปุ่ม ✓
+                    // ยังโชว์) · LIFF = กลับหน้ารายการ. plain save (ไม่ commit) ไม่ต้อง refresh.
+                    if (commit) onAfterFinish?.();
                   } else {
                     setMsg({ kind: "err", text: res.error ?? "บันทึกไม่สำเร็จ" });
                   }
