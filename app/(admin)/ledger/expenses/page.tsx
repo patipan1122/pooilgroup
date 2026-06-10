@@ -260,9 +260,26 @@ export default async function ExpensesPage({
     !!selectedExpense &&
     (selectedExpense.status === "confirmed" || selectedExpense.status === "locked");
   if (canStockIn && selected) {
+    // กรอง SKU ตาม "สาขาของบิล" ก่อน (CEO 2026-06-10: เห็นเฉพาะสินค้าสต๊อกของสาขานั้น).
+    // หาว่าสาขานี้ผูกสินค้าสต๊อกตัวไหนไว้ (LedgerSkuBranch); ถ้าสาขายังไม่ตั้ง → fallback ทั้งบริษัท
+    // (กันรายการว่างจนผูกไม่ได้). server ยังกัน wrong_branch ตอน preview อยู่แล้ว.
+    const billBranchId = selectedExpense?.branchId ?? null;
+    let branchSkuIds: string[] = [];
+    if (billBranchId) {
+      const links = await prisma.ledgerSkuBranch.findMany({
+        where: { orgId: scope.orgId, companyId: scope.companyId, branchId: billBranchId },
+        select: { skuId: true },
+      });
+      branchSkuIds = links.map((l) => l.skuId);
+    }
     const [skuRows, expRow] = await Promise.all([
       prisma.ledgerTrcloudSku.findMany({
-        where: { orgId: scope.orgId, companyId: scope.companyId, stockTracked: true },
+        where: {
+          orgId: scope.orgId,
+          companyId: scope.companyId,
+          stockTracked: true,
+          ...(branchSkuIds.length > 0 ? { id: { in: branchSkuIds } } : {}),
+        },
         select: { id: true, productId: true, productName: true, businessGroup: true },
         orderBy: [{ businessGroup: "asc" }, { productId: "asc" }],
         take: 500,
