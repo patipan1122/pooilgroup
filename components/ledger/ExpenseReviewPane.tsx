@@ -361,6 +361,9 @@ export function ExpenseReviewPane({
     items: expense.items ?? [],
   });
   const [pending, startTransition] = useTransition();
+  // CEO 2026-06-10: feedback อยู่ "ที่ปุ่ม" — กดบันทึกสำเร็จ → ปุ่มเปลี่ยนเป็น "✓ บันทึกแล้ว"
+  // (สีเขียว 3 วิ) แทน popup เด้ง. รู้ทันทีว่าเซฟแล้ว.
+  const [savedFlash, setSavedFlash] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
     null,
   );
@@ -585,24 +588,6 @@ export function ExpenseReviewPane({
           ? { kind: "ok", text: res.error }
           : { kind: "ok", text: "ส่งคำขอให้บัญชีลบแล้ว" },
       );
-    });
-  }
-
-  function handle(
-    action: SaveExpenseAction | ConfirmExpenseAction,
-    successText: string,
-    finishOnOk = false,
-  ) {
-    setMsg(null);
-    startTransition(async () => {
-      const res = await action(expense.id, draft);
-      setMsg(
-        res.ok
-          ? { kind: "ok", text: successText }
-          : { kind: "err", text: res.error ?? "บันทึกไม่สำเร็จ" },
-      );
-      // หลังยืนยันสำเร็จ → "ไปต่อ" (LIFF เด้งกลับรายการ · เว็บ refresh).
-      if (res.ok && finishOnOk) onAfterFinish?.();
     });
   }
 
@@ -1414,17 +1399,32 @@ export function ExpenseReviewPane({
               onClick={() => {
                 const commit =
                   canConfirm && gate.ok && !hasError && expense.status === "draft";
-                if (commit) handle(onConfirm, "✓ บันทึกแล้ว · พร้อมส่งเข้า TRCloud", true);
-                else handle(onSave, "✓ บันทึกแล้ว");
+                setMsg(null);
+                startTransition(async () => {
+                  const res = await (commit ? onConfirm : onSave)(expense.id, draft);
+                  if (res.ok) {
+                    // feedback ที่ปุ่ม (CEO 2026-06-10): ปุ่มเปลี่ยนเป็น "✓ บันทึกแล้ว" สีเขียว
+                    // 3 วิ — ไม่ต้องมี popup. ไม่เด้งกลับหน้า/รีเฟรช เพื่อให้เห็นปุ่มชัด.
+                    setSavedFlash(true);
+                    setTimeout(() => setSavedFlash(false), 3000);
+                  } else {
+                    setMsg({ kind: "err", text: res.error ?? "บันทึกไม่สำเร็จ" });
+                  }
+                });
               }}
-              className="flex-1 sm:flex-none"
+              className={cn(
+                "flex-1 sm:flex-none",
+                savedFlash && "!bg-emerald-600 hover:!bg-emerald-600",
+              )}
             >
               {pending ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : savedFlash ? (
+                <CheckCircle2 className="size-4" aria-hidden />
               ) : (
                 <Save className="size-4" aria-hidden />
               )}
-              บันทึก
+              {savedFlash ? "บันทึกแล้ว" : "บันทึก"}
             </Button>
 
             {/* ขอโอน — ส่งคำขอเข้ากลุ่มผู้บริหาร (ปุ่มหลักของมือถือ; เดสก์ท็อปมีบนแถวด้วย).
