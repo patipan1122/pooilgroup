@@ -51,6 +51,7 @@ import { missingLabel } from "./_kit/CompletenessDot";
 import { DocTag, PaymentTag } from "./_kit/StatusTags";
 import { AmountInput } from "./_kit/AmountInput";
 import { BranchPicker } from "@/app/(admin)/ledger/_components/BranchPicker";
+import { SearchableSelect } from "./SearchableSelect";
 import type { ExpenseRow, CategoryOption, BranchOption } from "./_kit/types";
 import type {
   ExpenseItem,
@@ -726,18 +727,15 @@ export function ExpenseReviewPane({
                 <FieldLabel confidence={conf.suggested_category ?? conf.category}>
                   ประเภทค่าใช้จ่าย
                 </FieldLabel>
-                <select
-                  className={cn(inputCls, gateMissingCategory && "border-amber-300 ring-1 ring-amber-200")}
-                  aria-label="ประเภทค่าใช้จ่าย"
+                <SearchableSelect
+                  options={categories}
                   value={draft.categoryId}
+                  onChange={(id) => set("categoryId", id)}
+                  placeholder="— เลือกหมวด —"
                   disabled={locked}
-                  onChange={(e) => set("categoryId", e.target.value)}
-                >
-                  <option value="">— เลือกหมวด —</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                  searchPlaceholder="ค้นหาประเภท..."
+                  selectClassName={cn(gateMissingCategory && "border-amber-300 ring-1 ring-amber-200")}
+                />
                 {gateMissingCategory && (
                   <p className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-amber-700">
                     <ListTree className="size-3" aria-hidden />
@@ -1253,7 +1251,7 @@ export function ExpenseReviewPane({
                       disabled={driveBusy}
                       className="flex w-full items-center justify-center gap-1 rounded-lg border border-zinc-200 px-2 py-1.5 text-[11px] font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
                     >
-                      {driveBusy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <ExternalLink className="size-3.5 text-zinc-400" aria-hidden />}
+                      {driveBusy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <ExternalLink className="size-3.5 text-zinc-500" aria-hidden />}
                       ส่งเข้า Google Drive
                     </button>
                   ) : null}
@@ -1293,7 +1291,7 @@ export function ExpenseReviewPane({
               {(expense.attachments ?? []).map((a, i) => (
                 <a key={i} href={a.url} target="_blank" rel="noreferrer"
                    className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50">
-                  <FileText className="size-3.5 text-zinc-400" aria-hidden />
+                  <FileText className="size-3.5 text-zinc-500" aria-hidden />
                   {a.kind === "po" ? "ไฟล์ PO / ใบสั่งซื้อ" : "หลักฐานเพิ่มเติม"}{a.name ? ` · ${a.name}` : ""}
                 </a>
               ))}
@@ -1440,6 +1438,19 @@ export function ExpenseReviewPane({
               )}
               {savedFlash ? "บันทึกแล้ว" : "บันทึกรายการ"}
             </Button>
+
+            {/* ส่ง TRCloud (compact icon-only) — sticky footer สำหรับกดโดยไม่ต้องเลื่อนขึ้น */}
+            {showTrcloud && (
+              <SendToTrcloudButton
+                expenseId={expense.id}
+                status={expense.status}
+                docType={expense.docType}
+                trcloudDocId={expense.trcloudDocId}
+                trcloudDocNo={expense.trcloudDocNo}
+                trcloudError={expense.trcloudError}
+                compact
+              />
+            )}
 
             {/* ขอโอน — ส่งคำขอเข้ากลุ่มผู้บริหาร (ปุ่มหลักของมือถือ; เดสก์ท็อปมีบนแถวด้วย).
                 ต้องระบุสาขา+หมวดก่อน (server กันซ้ำ/ตรวจ companyId เอง). */}

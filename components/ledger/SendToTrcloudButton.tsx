@@ -18,6 +18,7 @@ export function SendToTrcloudButton({
   trcloudDocId,
   trcloudDocNo,
   trcloudError,
+  compact = false,
 }: {
   expenseId: string;
   status: string;
@@ -25,6 +26,8 @@ export function SendToTrcloudButton({
   trcloudDocId: string | null;
   trcloudDocNo: string | null;
   trcloudError: string | null;
+  /** Icon-only compact variant for sticky footer — same logic, no text. */
+  compact?: boolean;
 }) {
   const sendable = status === "confirmed" || status === "locked";
   const isQuotation = docType === "quotation";
@@ -36,6 +39,16 @@ export function SendToTrcloudButton({
   const [warn, setWarn] = useState<string | null>(null);
 
   if (sent) {
+    if (compact) {
+      return (
+        <span
+          title={`ส่ง TRCloud แล้ว${sent !== "ส่งแล้ว" ? ` · ${sent}` : ""}${warn ? `\n⚠️ ${warn}` : ""}`}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-700"
+        >
+          <CloudCheck className="size-4" />
+        </span>
+      );
+    }
     return (
       <div className="flex flex-col items-end gap-1 animate-fade-in">
         <span
@@ -69,6 +82,34 @@ export function SendToTrcloudButton({
         if (res.warning) setWarn(res.warning);
       } else setErr(res.error ?? "ส่งไม่สำเร็จ");
     });
+  }
+
+  // Compact (icon-only) variant for sticky footer — no text, same action logic.
+  if (compact) {
+    const titleText = !sendable
+      ? "ยืนยันรายการก่อนจึงส่งได้"
+      : err
+        ? `ส่งไม่สำเร็จ: ${err} (กดเพื่อลองอีกครั้ง)`
+        : isQuotation
+          ? "ส่งเข้า TRCloud (ใบเสนอราคา — ขอคืน VAT ไม่ได้)"
+          : "ส่งเข้า TRCloud";
+    return (
+      <button
+        onClick={run}
+        disabled={pending || !sendable}
+        title={titleText}
+        aria-label={titleText}
+        className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white transition-colors hover:bg-blue-700 disabled:bg-zinc-300"
+      >
+        {pending ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : err ? (
+          <RefreshCw className="size-4" />
+        ) : (
+          <Send className="size-4" />
+        )}
+      </button>
+    );
   }
 
   return (

@@ -12,6 +12,7 @@ import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
 import { CompletenessDot } from "@/components/ledger/_kit/CompletenessDot";
 import { DocTag, PaymentTag } from "@/components/ledger/_kit/StatusTags";
 import { LedgerEmptyState } from "@/components/ledger/Brand";
+import { SearchableSelect } from "@/components/ledger/SearchableSelect";
 import { expenseConfirmability } from "@/lib/ledger/confirmability";
 import {
   bulkConfirm,
@@ -696,29 +697,26 @@ export function ExpenseList({
             <p className="mt-0.5 text-[11px] text-zinc-500">
               ตั้งทีเดียวให้ทุกใบที่เลือก (ผู้ขายเดียวกันมักสาขาเดียวกัน) แล้วขอโอนต่อได้เลย
             </p>
-            <div className="mt-3 space-y-2">
-              <select
+            <div className="mt-3 space-y-3">
+              <SearchableSelect
+                options={(branches ?? []).map((b) => ({
+                  id: b.id,
+                  name: b.code ? `${b.code} · ${b.name}` : b.name,
+                }))}
                 value={classify.branchId}
-                onChange={(e) => setClassify((c) => ({ ...c, branchId: e.target.value }))}
-                aria-label="สาขา"
-                className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-amber-200"
-              >
-                <option value="">— เลือกสาขา —</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>{b.code ? `${b.code} · ${b.name}` : b.name}</option>
-                ))}
-              </select>
-              <select
+                onChange={(id) => setClassify((c) => ({ ...c, branchId: id }))}
+                placeholder="— เลือกสาขา —"
+                searchPlaceholder="ค้นหาสาขา..."
+                selectClassName="focus:ring-amber-200"
+              />
+              <SearchableSelect
+                options={categories}
                 value={classify.categoryId}
-                onChange={(e) => setClassify((c) => ({ ...c, categoryId: e.target.value }))}
-                aria-label="หมวดค่าใช้จ่าย"
-                className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-amber-200"
-              >
-                <option value="">— เลือกหมวด —</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+                onChange={(id) => setClassify((c) => ({ ...c, categoryId: id }))}
+                placeholder="— เลือกหมวด —"
+                searchPlaceholder="ค้นหาหมวด..."
+                selectClassName="focus:ring-amber-200"
+              />
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
