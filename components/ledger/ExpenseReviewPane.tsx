@@ -1395,7 +1395,7 @@ export function ExpenseReviewPane({
       {/* Actions — ปุ่ม "บันทึก" เดียว (ห้าม auto-post: คอมมิตเมื่อกดเอง).
           Sticky bottom bar so the save button is always reachable on phones. */}
       {!locked && (
-        <div className="sticky bottom-0 z-10 -mx-4 border-t border-zinc-100 bg-white/95 px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-4px_12px_rgba(15,23,42,0.06)] backdrop-blur sm:-mx-6 sm:px-6">
+        <div className="sticky bottom-0 z-10 -mx-4 border-t border-zinc-100 bg-white/95 px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-4px_12px_rgba(15,23,42,0.06)] backdrop-blur sm:-mx-6 sm:px-6">
           <div className="flex flex-wrap items-center gap-2">
             {/* CEO 2026-06-10: ตัดด่าน "ยืนยัน" ออก — เหลือปุ่มเดียว "บันทึก". ถ้าใบครบ
                 (สาขา+หมวด · ไม่มี error) และเป็นบัญชี/ผู้ดูแล → คอมมิตเป็น "ยืนยันแล้ว ·
@@ -1425,7 +1425,7 @@ export function ExpenseReviewPane({
                 });
               }}
               className={cn(
-                "press flex-1 sm:flex-none",
+                "press flex-1 whitespace-nowrap sm:flex-none",
                 savedFlash && "!bg-emerald-600 hover:!bg-emerald-600",
               )}
             >
