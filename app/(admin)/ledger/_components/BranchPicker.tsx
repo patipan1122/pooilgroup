@@ -6,7 +6,7 @@
 // - Search box filters by name/code across all types
 // - Falls back to plain select if branches is empty
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Search, X } from "lucide-react";
 
 export interface BranchOpt {
@@ -51,8 +51,10 @@ export function BranchPicker({
   placeholder?: string;
   disabled?: boolean;
 }) {
+  const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [activeType, setActiveType] = useState<string>(""); // "" = ทั้งหมด
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Unique business types present in the branch list (preserves order of first appearance)
   const types = useMemo(() => {
@@ -81,7 +83,17 @@ export function BranchPicker({
     }
   }
 
-  // Clear search
+  function toggleSearch() {
+    if (searchOpen) {
+      setSearchOpen(false);
+      setSearch("");
+      setActiveType("");
+    } else {
+      setSearchOpen(true);
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+    }
+  }
+
   function clearSearch() {
     setSearch("");
   }
@@ -118,98 +130,134 @@ export function BranchPicker({
 
   return (
     <div className={disabled ? "pointer-events-none opacity-50 " + className : className}>
-      {/* Type chip rail — only show when >1 type exists */}
-      {types.length > 1 && !search && (
-        <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1">
-          <button
-            type="button"
-            onClick={() => { setActiveType(""); }}
-            className={
-              "shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors " +
-              (activeType === ""
-                ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)]"
-                : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300")
-            }
-          >
-            ทั้งหมด
-          </button>
-          {types.map((t) => {
-            const count = branches.filter((b) => b.businessType === t).length;
-            const isActive = activeType === t;
-            return (
+      {/* Collapsible search panel — chips + text search */}
+      {searchOpen && (
+        <>
+          {/* Type chip rail */}
+          {types.length > 1 && !search && (
+            <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1">
               <button
-                key={t}
                 type="button"
-                onClick={() => handleTypeClick(t)}
+                onClick={() => { setActiveType(""); }}
                 className={
                   "shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors " +
-                  (isActive
+                  (activeType === ""
                     ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)]"
                     : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300")
                 }
               >
-                {btLabel(t)}{count > 1 ? ` ${count}` : ""}
+                ทั้งหมด
               </button>
-            );
-          })}
-        </div>
+              {types.map((t) => {
+                const count = branches.filter((b) => b.businessType === t).length;
+                const isActive = activeType === t;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => handleTypeClick(t)}
+                    className={
+                      "shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors " +
+                      (isActive
+                        ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)]"
+                        : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300")
+                    }
+                  >
+                    {btLabel(t)}{count > 1 ? ` ${count}` : ""}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Search input */}
+          <div className="relative mb-2">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
+            <input
+              ref={searchInputRef}
+              type="search"
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setActiveType(""); }}
+              placeholder="ค้นหาสาขา..."
+              className="h-11 w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-8 text-base outline-none focus:bg-white focus:ring-2 focus:ring-[var(--color-brand-200)] sm:h-9 sm:text-sm"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={clearSearch}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-600"
+                aria-label="ล้างการค้นหา"
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
+
+          {filtered.length === 0 && search && (
+            <p className="mb-1 text-[11px] text-zinc-500">ไม่พบสาขาที่ค้นหา</p>
+          )}
+        </>
       )}
 
-      {/* Search input */}
-      <div className="relative mb-2">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); setActiveType(""); }}
-          placeholder="ค้นหาสาขา..."
-          className="h-11 w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-8 text-base outline-none focus:bg-white focus:ring-2 focus:ring-[var(--color-brand-200)] sm:h-9 sm:text-sm"
-        />
-        {search && (
-          <button
-            type="button"
-            onClick={clearSearch}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-600"
-            aria-label="ล้างการค้นหา"
-          >
-            <X className="size-3.5" />
-          </button>
-        )}
-      </div>
-
-      {/* Auto-selected badge (single branch in type) */}
+      {/* Select row + toggle button */}
       {isAutoSelected ? (
-        <div className="flex h-11 items-center gap-2 rounded-lg border border-[var(--color-brand-300)] bg-[var(--color-brand-50)] px-3 text-sm font-medium text-[var(--color-brand-800)]">
-          <span className="flex-1 truncate">
-            {branches.find((b) => b.businessType === activeType)?.name ?? ""}
-          </span>
+        <div className="flex gap-1.5">
+          <div className="flex h-11 flex-1 items-center gap-2 rounded-lg border border-[var(--color-brand-300)] bg-[var(--color-brand-50)] px-3 text-sm font-medium text-[var(--color-brand-800)]">
+            <span className="flex-1 truncate">
+              {branches.find((b) => b.businessType === activeType)?.name ?? ""}
+            </span>
+            <button
+              type="button"
+              onClick={() => { setActiveType(""); onChange(""); }}
+              className="shrink-0 text-zinc-500 hover:text-zinc-600"
+              aria-label="เปลี่ยนสาขา"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
           <button
             type="button"
-            onClick={() => { setActiveType(""); onChange(""); }}
-            className="shrink-0 text-zinc-500 hover:text-zinc-600"
-            aria-label="เปลี่ยนสาขา"
+            onClick={toggleSearch}
+            aria-label={searchOpen ? "ปิดการค้นหา" : "ค้นหาสาขา"}
+            className={
+              "inline-flex h-11 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors sm:h-9 " +
+              (searchOpen
+                ? "border-[var(--color-brand-300)] bg-[var(--color-brand-50)] text-[var(--color-brand-600)]"
+                : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50")
+            }
           >
-            <X className="size-3.5" />
+            {searchOpen ? <X className="size-3.5" /> : <Search className="size-3.5" />}
           </button>
         </div>
       ) : (
-        <select
-          value={value}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.value)}
-          className="h-11 w-full rounded-lg border border-zinc-200 bg-white px-2 text-base focus:border-[var(--color-brand-400)] focus:outline-none sm:text-sm"
-        >
-          <option value="">{placeholder}</option>
-          {filtered.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-      )}
-
-      {filtered.length === 0 && search && (
-        <p className="mt-1 text-[11px] text-zinc-500">ไม่พบสาขาที่ค้นหา</p>
+        <div className="flex gap-1.5">
+          <select
+            value={value}
+            disabled={disabled}
+            onChange={(e) => onChange(e.target.value)}
+            className="h-11 flex-1 rounded-lg border border-zinc-200 bg-white px-2 text-base focus:border-[var(--color-brand-400)] focus:outline-none sm:h-9 sm:text-sm"
+          >
+            <option value="">{placeholder}</option>
+            {filtered.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={toggleSearch}
+            aria-label={searchOpen ? "ปิดการค้นหา" : "ค้นหาสาขา"}
+            className={
+              "inline-flex h-11 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors sm:h-9 " +
+              (searchOpen
+                ? "border-[var(--color-brand-300)] bg-[var(--color-brand-50)] text-[var(--color-brand-600)]"
+                : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50")
+            }
+          >
+            {searchOpen ? <X className="size-3.5" /> : <Search className="size-3.5" />}
+          </button>
+        </div>
       )}
     </div>
   );

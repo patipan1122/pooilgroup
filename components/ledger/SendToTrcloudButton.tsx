@@ -8,7 +8,7 @@
 // ใบเสนอราคา (quotation): CEO decision 2026-06-09 = ส่งได้ แต่ "เตือนก่อนส่ง".
 // กดปุ่มแล้วเด้ง confirm ก่อน 1 ครั้ง + หลังส่งโชว์หมายเหตุว่าภาษีซื้อขอคืนไม่ได้.
 import { useState, useTransition } from "react";
-import { Send, Loader2, CloudCheck, RefreshCw } from "lucide-react";
+import { CloudUpload, Loader2, CloudCheck, RefreshCw } from "lucide-react";
 import { sendExpenseToTrcloud } from "@/app/(admin)/ledger/_actions";
 
 export function SendToTrcloudButton({
@@ -106,7 +106,7 @@ export function SendToTrcloudButton({
         ) : err ? (
           <RefreshCw className="size-4" />
         ) : (
-          <Send className="size-4" />
+          <CloudUpload className="size-4" />
         )}
       </button>
     );
@@ -125,7 +125,7 @@ export function SendToTrcloudButton({
         ) : err ? (
           <RefreshCw className="size-4" aria-hidden />
         ) : (
-          <Send className="size-4" aria-hidden />
+          <CloudUpload className="size-4" aria-hidden />
         )}
         {err ? "ลองส่งอีกครั้ง" : "ส่งเข้า TRCloud"}
       </button>
