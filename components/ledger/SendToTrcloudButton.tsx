@@ -43,9 +43,10 @@ export function SendToTrcloudButton({
       return (
         <span
           title={`ส่ง TRCloud แล้ว${sent !== "ส่งแล้ว" ? ` · ${sent}` : ""}${warn ? `\n⚠️ ${warn}` : ""}`}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-700"
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-50 px-3 text-sm font-semibold text-blue-700"
         >
-          <CloudCheck className="size-4" />
+          <CloudCheck className="size-4 shrink-0" />
+          ส่งแล้ว
         </span>
       );
     }
@@ -84,7 +85,7 @@ export function SendToTrcloudButton({
     });
   }
 
-  // Compact (icon-only) variant for sticky footer — no text, same action logic.
+  // Compact variant for sticky footer — with text label.
   if (compact) {
     const titleText = !sendable
       ? "ยืนยันรายการก่อนจึงส่งได้"
@@ -99,15 +100,16 @@ export function SendToTrcloudButton({
         disabled={pending || !sendable}
         title={titleText}
         aria-label={titleText}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white transition-colors hover:bg-blue-700 disabled:bg-zinc-300"
+        className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
       >
         {pending ? (
-          <Loader2 className="size-4 animate-spin" />
+          <Loader2 className="size-4 shrink-0 animate-spin" />
         ) : err ? (
-          <RefreshCw className="size-4" />
+          <RefreshCw className="size-4 shrink-0" />
         ) : (
-          <CloudUpload className="size-4" />
+          <CloudUpload className="size-4 shrink-0" />
         )}
+        {pending ? "กำลังส่ง…" : err ? "ลองอีกครั้ง" : "ส่ง TRCloud"}
       </button>
     );
   }
