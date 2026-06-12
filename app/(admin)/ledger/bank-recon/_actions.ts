@@ -2,9 +2,11 @@
 
 // LedgerLine — Bank Reconciliation Server Actions
 // All mutations: import batch, confirm match, reject suggestion, lock period.
-// Node.js runtime required for SheetJS Buffer API (D8).
-
-export const runtime = "nodejs";
+//
+// NOTE: do NOT add `export const runtime = "nodejs"` here — a "use server" file may
+// ONLY export async functions (Turbopack build fails otherwise, even though tsc passes).
+// Server actions already run on the Node.js runtime by default. ref memory
+// feedback-use-server-only-async-2026-06-02.
 
 import { requireRole } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";

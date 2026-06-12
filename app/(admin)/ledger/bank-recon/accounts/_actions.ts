@@ -3,8 +3,9 @@
 // LedgerLine — Bank Account management (Settings → บัญชีธนาคาร)
 // CRUD for ledger_bank_account + ledger_bank_account_company junction.
 // Future-proof: lets admins add/edit/deactivate accounts without touching the DB.
-
-export const runtime = "nodejs";
+//
+// NOTE: no `export const runtime` here — "use server" files may only export async
+// functions or Turbopack build fails. ref memory feedback-use-server-only-async.
 
 import { requireRole } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
