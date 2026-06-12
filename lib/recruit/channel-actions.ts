@@ -16,7 +16,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { canRecruitAdmin } from "./role-guard";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { encryptToken, decryptToken } from "./channel-crypto";
 import crypto from "node:crypto";
 
@@ -31,7 +31,7 @@ export async function createChannel(input: {
   metadata?: Record<string, unknown>;
 }) {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!isSuperAdmin(session.user.role)) throw new Error("เฉพาะเจ้าของระบบ (super admin) จัดการช่องทางได้");
 
   const displayName = input.displayName.trim();
   if (!displayName) throw new Error("ตั้งชื่อเรียกของ channel");
@@ -84,7 +84,7 @@ export async function createChannel(input: {
 
 export async function listChannels() {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!isSuperAdmin(session.user.role)) throw new Error("เฉพาะเจ้าของระบบ (super admin) จัดการช่องทางได้");
 
   const channels = await prisma.recruitInboxChannel.findMany({
     where: { orgId: session.user.org_id },
@@ -133,7 +133,7 @@ export async function updateChannelSecrets(
   },
 ) {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!isSuperAdmin(session.user.role)) throw new Error("เฉพาะเจ้าของระบบ (super admin) จัดการช่องทางได้");
 
   const existing = await prisma.recruitInboxChannel.findUnique({
     where: { id },
@@ -165,7 +165,7 @@ export async function updateChannelSecrets(
 
 export async function deleteChannel(id: string) {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!isSuperAdmin(session.user.role)) throw new Error("เฉพาะเจ้าของระบบ (super admin) จัดการช่องทางได้");
 
   const existing = await prisma.recruitInboxChannel.findUnique({
     where: { id },
@@ -181,7 +181,7 @@ export async function deleteChannel(id: string) {
 
 export async function toggleChannelStatus(id: string, nextStatus: string) {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!isSuperAdmin(session.user.role)) throw new Error("เฉพาะเจ้าของระบบ (super admin) จัดการช่องทางได้");
 
   const existing = await prisma.recruitInboxChannel.findUnique({
     where: { id },

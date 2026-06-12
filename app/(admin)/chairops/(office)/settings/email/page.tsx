@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { Mail, CheckCircle2, AlertTriangle, Clock } from "lucide-react";
 
+import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { getGmailConnection, isGmailOAuthConfigured } from "@/lib/chairops/email/gmail";
 import { GmailConnectButton, GmailDisconnectButton } from "./email-connect-buttons";
 
@@ -23,6 +25,8 @@ export default async function EmailSettingsPage({
   searchParams: Promise<{ connected?: string; error?: string }>;
 }) {
   const session = await requireRole(ChairopsUserRole.ADMIN);
+  // เชื่อม Gmail (StarThing XLSX) = โครงสร้างเจ้าของระบบ → เฉพาะ Pool super_admin (CEO 2026-06-12)
+  if (!isSuperAdmin(session.poolUser.role)) redirect("/chairops?error=forbidden");
   const sp = await searchParams;
   const conn = await getGmailConnection(session.user.orgId);
   const configured = isGmailOAuthConfigured();

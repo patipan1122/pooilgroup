@@ -21,7 +21,8 @@ export default async function InventorySettingsPage({
   searchParams: Promise<{ company?: string; branch?: string }>;
 }) {
   if (!ledgerStockinV1()) notFound();
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  // คลัง/SKU + ดึง/ตั้งค่า TRCloud = โครงสร้างการเชื่อมต่อ → super_admin เท่านั้น
+  const session = await requireRole("super_admin");
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);
 

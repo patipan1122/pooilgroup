@@ -9,6 +9,7 @@ import crypto from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/chairops/audit/log";
 import { isGmailOAuthConfigured, buildGmailConsentUrl } from "@/lib/chairops/email/gmail";
@@ -17,7 +18,10 @@ import { OAUTH_STATE_COOKIE, callbackRedirectUri } from "@/lib/chairops/email/gm
 export async function startGmailConnect(): Promise<
   { ok: true; url: string } | { ok: false; error: string }
 > {
-  await requireRole(ChairopsUserRole.ADMIN);
+  const session = await requireRole(ChairopsUserRole.ADMIN);
+  if (!isSuperAdmin(session.poolUser.role)) {
+    return { ok: false, error: "เฉพาะเจ้าของระบบ (super admin) เชื่อมต่อได้" };
+  }
   if (!isGmailOAuthConfigured()) {
     return {
       ok: false,
@@ -41,6 +45,9 @@ export async function disconnectGmail(): Promise<
   { ok: true } | { ok: false; error: string }
 > {
   const session = await requireRole(ChairopsUserRole.ADMIN);
+  if (!isSuperAdmin(session.poolUser.role)) {
+    return { ok: false, error: "เฉพาะเจ้าของระบบ (super admin) ยกเลิกการเชื่อมต่อได้" };
+  }
   try {
     await prisma.chairopsGmailConnection.deleteMany({
       where: { orgId: session.user.orgId },

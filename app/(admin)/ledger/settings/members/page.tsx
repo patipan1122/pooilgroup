@@ -4,6 +4,7 @@
 // /ledger/settings/permissions redirects here with ?tab=permissions.
 import Link from "next/link";
 import { requireRole } from "@/lib/auth/session";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { resolveScope } from "../../_scope";
 import { LedgerHeader, NoCompanyState } from "../../_components/LedgerHeader";
 import { listLedgerMembers, listInvites } from "../../_data";
@@ -28,6 +29,9 @@ export default async function TeamSettingsPage({
   searchParams: Promise<{ company?: string; branch?: string; tab?: string }>;
 }) {
   const session = await requireRole("super_admin", "org_admin", "admin");
+  // หน้านี้ admin จัดการสมาชิก/สาขา/ดูสิทธิ์ได้ แต่ "ผูก LINE/เชิญผู้ดูแล" (การ์ดเชื่อมต่อ
+  // + การตั้งคนเป็นผู้ดูแล) สงวนให้ super_admin เท่านั้น (CEO 2026-06-12).
+  const isSuper = isSuperAdmin(session.user.role);
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);
 
@@ -66,7 +70,7 @@ export default async function TeamSettingsPage({
     ]);
     body = (
       <div className="space-y-4">
-        <IdentityClaimCard companyId={scope.companyId} />
+        {isSuper && <IdentityClaimCard companyId={scope.companyId} />}
         <MemberManager
           companyId={scope.companyId}
           branches={branchOpts}
@@ -78,6 +82,7 @@ export default async function TeamSettingsPage({
           companyId={scope.companyId}
           branches={branchOpts}
           invites={invites}
+          canInviteAdmin={isSuper}
         />
       </div>
     );

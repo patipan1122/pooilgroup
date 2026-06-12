@@ -104,10 +104,14 @@ export function SettingsHub({
   companyId,
   counts,
   stockinOn = false,
+  // เฉพาะ super_admin (เจ้าของระบบ) เห็นแถวการเชื่อมต่อภายนอก (TRCloud/ส่งออก/คลัง,
+  // กลุ่ม LINE, Google). admin ทั่วไปเห็นแค่งานจัดการประจำวัน (หมวดหมู่/ทีม/สาขา).
+  isSuper = false,
 }: {
   companyId: string;
   counts: HubCounts;
   stockinOn?: boolean;
+  isSuper?: boolean;
 }) {
   const qs = `?company=${encodeURIComponent(companyId)}`;
 
@@ -123,7 +127,7 @@ export function SettingsHub({
           subtitle: "จัดกลุ่ม · สี · ผูกรหัสบัญชี",
           count: counts.categories,
         },
-        ...(stockinOn
+        ...(stockinOn && isSuper
           ? [
               {
                 href: `/ledger/settings/inventory${qs}`,
@@ -134,13 +138,17 @@ export function SettingsHub({
               },
             ]
           : []),
-        {
-          href: `/ledger/settings/export${qs}`,
-          icon: FileSpreadsheet,
-          tone: "emerald",
-          title: "ส่งออก & โปรแกรมบัญชี",
-          subtitle: "ตั้งค่าไฟล์ส่งบัญชี / TRCloud",
-        },
+        ...(isSuper
+          ? [
+              {
+                href: `/ledger/settings/export${qs}`,
+                icon: FileSpreadsheet,
+                tone: "emerald" as const,
+                title: "ส่งออก & โปรแกรมบัญชี",
+                subtitle: "ตั้งค่าไฟล์ส่งบัญชี / TRCloud",
+              },
+            ]
+          : []),
       ],
     },
     {
@@ -168,27 +176,32 @@ export function SettingsHub({
         },
       ],
     },
-    {
-      label: "การเชื่อมต่อ",
-      rows: [
-        {
-          href: `/ledger/settings/line-groups${qs}`,
-          icon: MessageSquare,
-          tone: "emerald",
-          title: "กลุ่ม LINE → สาขา",
-          subtitle: "ดูกลุ่มไลน์ + ผูกแต่ละกลุ่มเข้าสาขา",
-          count: counts.groups,
-          status: { label: counts.lineConnected ? "เชื่อมแล้ว" : "ยังไม่เชื่อม", ok: counts.lineConnected },
-        },
-        {
-          href: `/ledger/settings/google${qs}`,
-          icon: CloudUpload,
-          tone: "sky",
-          title: "เชื่อมต่อ Google",
-          subtitle: "Drive (เก็บไฟล์ใบเสร็จ) + Gmail (ดึงค่าใช้จ่ายจากอีเมล)",
-        },
-      ],
-    },
+    // การเชื่อมต่อภายนอก (LINE channel + Google OAuth) = super_admin เท่านั้น
+    ...(isSuper
+      ? [
+          {
+            label: "การเชื่อมต่อ",
+            rows: [
+              {
+                href: `/ledger/settings/line-groups${qs}`,
+                icon: MessageSquare,
+                tone: "emerald" as const,
+                title: "กลุ่ม LINE → สาขา",
+                subtitle: "ดูกลุ่มไลน์ + ผูกแต่ละกลุ่มเข้าสาขา",
+                count: counts.groups,
+                status: { label: counts.lineConnected ? "เชื่อมแล้ว" : "ยังไม่เชื่อม", ok: counts.lineConnected },
+              },
+              {
+                href: `/ledger/settings/google${qs}`,
+                icon: CloudUpload,
+                tone: "sky" as const,
+                title: "เชื่อมต่อ Google",
+                subtitle: "Drive (เก็บไฟล์ใบเสร็จ) + Gmail (ดึงค่าใช้จ่ายจากอีเมล)",
+              },
+            ],
+          },
+        ]
+      : []),
   ];
 
   return (

@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
 import {
@@ -73,7 +74,12 @@ export default async function LedgerSettingsPage({
         subtitle="จัดการระบบบัญชี · ทีม · การเชื่อมต่อ LINE"
         scope={scope}
       />
-      <SettingsHub companyId={scope.companyId} counts={counts} stockinOn={ledgerStockinV1()} />
+      <SettingsHub
+        companyId={scope.companyId}
+        counts={counts}
+        stockinOn={ledgerStockinV1()}
+        isSuper={isSuperAdmin(session.user.role)}
+      />
     </div>
   );
 }

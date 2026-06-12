@@ -28,7 +28,9 @@ export default async function LedgerGoogleSettingsPage({
     error?: string;
   }>;
 }) {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  // เชื่อมต่อ Google (OAuth credential) = โครงสร้างระดับเจ้าของระบบ → super_admin เท่านั้น
+  // (CEO 2026-06-12: org_admin/admin ต้องไม่เห็นปุ่มเชื่อมต่อภายนอก)
+  const session = await requireRole("super_admin");
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);
   const callbackError = sp.error ?? null;
