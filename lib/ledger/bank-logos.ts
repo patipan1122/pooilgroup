@@ -60,6 +60,15 @@ const BRAND_COLOR: Record<string, string> = {
   UOB: "#005eb8",
   TRUEMONEY: "#f47b20",
 };
+// BAY ทองอ่อนเกินไป (ขาวอ่านไม่ออก) → ใช้ทองเข้มสำหรับ tile.
+BRAND_COLOR.BAY = "#c8961e";
+
+/** สีพื้น tile ของแต่ละธนาคาร (โลโก้ omise เป็นสีขาว → วางบนพื้นสีแบรนด์ให้เห็นชัด).
+ *  ค่าเริ่มต้น zinc-600 สำหรับธนาคารที่ไม่รู้จัก. */
+export function bankBrandColor(code: string | null | undefined): string {
+  const ab = toAbbr(code);
+  return (ab && BRAND_COLOR[ab]) || "#52525b";
+}
 
 /** normalize input (ตัวย่อ/เลขรหัส) → ตัวย่อมาตรฐาน หรือ null. */
 function toAbbr(code: string | null | undefined): string | null {
