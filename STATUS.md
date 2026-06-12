@@ -2,6 +2,16 @@
 
 > **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-12 (LedgerLine Bank Recon · ✅ PEAK v2 LIVE 2d2071d · กระทบยอดตามช่วงเวลา + overview 2 แท็บ + logo ธนาคาร)
 
+## 🎯 PEAK PARITY v3 (2026-06-12 #8 — ดีเทลเยอะขึ้น + โลโก้ธนาคารจริง · DEPLOYED 8ba82c9)
+
+CEO: ดีเทลเคลื่อนไหวน้อยไป + บัญชีให้มีรายละเอียด:
+- **bank movement**: เดิมโชว์ "ฝากถอนเงินโอนไม่ใช้สมุด · X2" (generic) → ตอนนี้โชว์ **ref2 = คู่ค้าจริง** ("รับโอนจาก KTB x6223 MR.TIANTHAM", "จ่ายบิล ROBINSON") + ประเภท/channel/ref รอง
+- **book (รายได้/ค่าใช้จ่าย)**: เพิ่ม detail line (doc_type/note/payment_status · source/channel)
+- **account header**: legal_entity + flow_type + EDC badge
+- **โลโก้ธนาคารจริง** (SVG omise 10 ธนาคาร) — ใช้ shared `@/components/ledger/BankLogo` ทุกหน้า (parallel session สร้าง, ผม consolidate + rebase)
+- build exit 0 · deploy 4fj8grena Ready
+- ⏳ รอ CEO ตอบ: TRCloud มีกี่บริษัท (x6?) เพื่อทำระบบดึงยอดขายให้ครบ
+
 ## 🎯 PEAK PARITY v2 (2026-06-12 #7 — กระทบยอดตามช่วงเวลา + overview · DEPLOYED 2d2071d)
 
 CEO เทียบ PEAK หน้าต่อหน้า → แก้ใหญ่:
