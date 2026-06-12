@@ -8,6 +8,7 @@ import { useState } from "react";
 import { Copy, Check, ReceiptText } from "lucide-react";
 import type { PaymentRequestDetail } from "@/lib/ledger/payment-request-queries";
 import { ReceiptThumb } from "@/components/ledger/ReceiptThumb";
+import { BankLogo } from "@/components/ledger/BankLogo";
 
 const baht = (n: number) =>
   `฿${n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -155,7 +156,12 @@ export function PayreqDetailClient({
         {req.payeeAcctName && (
           <p className="text-sm font-medium text-zinc-800">{req.payeeAcctName}</p>
         )}
-        {bankLabel && <p className="text-sm text-zinc-600">{bankLabel}</p>}
+        {(req.payeeBankCode || bankLabel) && (
+          <div className="flex items-center gap-2">
+            <BankLogo code={req.payeeBankCode} name={bankLabel} size={24} />
+            {bankLabel && <span className="text-sm text-zinc-600">{bankLabel}</span>}
+          </div>
+        )}
         {req.payeeAcctNo && <CopyRow label="เลขบัญชี" value={req.payeeAcctNo} />}
         {req.payeePromptpay && <CopyRow label="พร้อมเพย์" value={req.payeePromptpay} />}
         {!req.payeeAcctNo && !req.payeePromptpay && (

@@ -14,6 +14,7 @@ import {
   toggleBankAccountActiveAction,
 } from "../_actions";
 import { Plus, Pencil, Landmark, Power, X, Building2 } from "lucide-react";
+import { BankLogo } from "@/components/ledger/BankLogo";
 
 interface Account {
   id: string;
@@ -151,7 +152,7 @@ export function AccountsManager({ companyId, canEdit, accounts }: Props) {
           {Object.entries(grouped).map(([bankCode, list]) => (
             <div key={bankCode}>
               <div className="mb-2 flex items-center gap-2">
-                <Landmark size={15} className="text-zinc-400" />
+                <BankLogo code={bankCode} name={BANK_LABELS[bankCode]} size={24} />
                 <h3 className="text-sm font-semibold text-zinc-700">
                   {BANK_LABELS[bankCode] ?? bankCode}
                 </h3>
