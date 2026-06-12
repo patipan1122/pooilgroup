@@ -1,6 +1,19 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-12 (LedgerLine Bank Recon · ✅ LIVE บน prod จริงแล้ว cb0371e หลังแก้ build-breaker · 12 P0 + P1 ครบ · พร้อม pilot KBANK)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-12 (LedgerLine Bank Recon · ✅ PEAK-parity LIVE 6cc6932 · กระดาน 2 คอลัมน์ N:M + 2-step + จัดการรายได้)
+
+## 🎯 PEAK PARITY (2026-06-12 #6 — รื้อหน้ากระทบยอดเป็นแบบ PEAK · DEPLOYED 6cc6932)
+
+CEO: "เหมือน PEAK เลย · ไปดูหน้าต่อหน้าแล้วทำตาม" → รื้อจาก list เดี่ยวเป็นกระดาน PEAK เต็มรูป:
+- **กระดาน 2 คอลัมน์**: รายการบันทึกบัญชี (revenue+expense+payment) ⟷ รายการเคลื่อนไหวธนาคาร
+- **จับคู่หลายต่อหลาย (N:M)** — 1 บิล = 2 รายการธนาคาร (PEAK signature) · ดูยอดตรง/ต่าง realtime
+- **2-step PEAK**: รอกระทบยอด (ติ๊กเลือก 2 ฝั่ง → จับคู่) → รอยืนยัน (กระทบยอดทั้งหมด) → ล็อก
+- **จับคู่อัตโนมัติ** (suggested group amount+date ±2วัน) + **เพิ่มรายการธนาคารเอง** + **ข้าม/นำออก**
+- **หน้าจัดการรายได้** (`/bank-recon/revenue`): list ต่องวด + เพิ่ม + ลบ + ดึง TRCloud
+- Schema 20260612008000 (applied): `ledger_bank_match_group` + `match_item` (partial-unique กันจับซ้ำ DB)
+- data layer `lib/ledger/bank-reconcile-board.ts` · UI `ReconcileBoard.tsx` · build exit 0 · deploy Ready
+
+**ยังเหลือ (deferred):** PEAK "ทำรายการ" doc menu (รับชำระ/สร้างเอกสาร/โอนเงิน — deep ERP) · bulk revenue CSV import · adapter ธ.ก.ส./ออมสิน/กรุงไทย/ทรูมันนี่ (7 บัญชี) · "เลือกทุกรายการ" bulk-select (มี auto-match + manual multi-select แทน)
 
 ## 🔴→✅ BUILD-BREAKER (2026-06-12 #5 — bank-recon ไม่เคย deploy 2 ชม. · FIXED cb0371e)
 
