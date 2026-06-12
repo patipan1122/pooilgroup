@@ -47,3 +47,12 @@ export function ledgerAnalyticsV1(): boolean {
 export function ledgerStockinV1(): boolean {
   return flagOn("LEDGER_STOCKIN_V1");
 }
+
+//   LEDGER_BANK_RECON_V1 — bank statement reconciliation: upload CSV/Excel from
+//                          KBank/SCB/TTB/BBL, auto-suggest matches against book
+//                          entries (expense / payment / payment-request), manual
+//                          confirm, provisional GL 4999-PROV, period lock.
+//                          Route: /ledger/bank-recon
+export function ledgerBankReconV1(): boolean {
+  return flagOn("LEDGER_BANK_RECON_V1");
+}

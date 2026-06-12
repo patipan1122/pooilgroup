@@ -68,6 +68,7 @@ import {
   CalendarCheck,
   Receipt,
   Wallet2,
+  Landmark,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
@@ -907,6 +908,14 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         // page shows a friendly "ยังไม่เปิดใช้" message (not a dead route).
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
         section: "การเงิน – จ่ายเงิน",
+      },
+      {
+        href: "/ledger/bank-recon",
+        label: "กระทบยอดธนาคาร",
+        icon: Landmark,
+        // Import bank statements (KBank/SCB/TTB/BBL) → auto-match → confirm → lock.
+        // Feature-flagged LEDGER_BANK_RECON_V1; page shows "ยังไม่เปิดใช้" when off.
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       // ── ภาพรวม & รายงาน ──
       {
