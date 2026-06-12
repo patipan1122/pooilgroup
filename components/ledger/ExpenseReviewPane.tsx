@@ -39,6 +39,7 @@ import {
   confirmabilityMessage,
 } from "@/lib/ledger/confirmability";
 import { ReceiptThumb } from "./ReceiptThumb";
+import { SlipEvidence } from "./SlipEvidence";
 import { PriceLookupDialog } from "./PriceLookupDialog";
 import { VoucherMenu } from "./VoucherMenu";
 import { Clock, Tag } from "lucide-react";
@@ -1256,18 +1257,25 @@ export function ExpenseReviewPane({
                     </button>
                   ) : null}
                 </div>
-                {/* 2 · สลิปโอนเงิน — แนบอัตโนมัติจากกลุ่มขอโอน */}
+                {/* 2 · สลิปโอนเงิน — โชว์รูปสลิปจริงเมื่อโอนแล้ว (ดู/ดาวน์โหลด/ส่งต่อ) ·
+                    ยังไม่มี = placeholder + ลิงก์ไปกระทบยอด (CEO 2026-06-11). */}
                 <div className="space-y-1.5">
                   <p className="text-[11px] font-medium text-zinc-500">สลิปโอนเงิน</p>
-                  <div className="grid h-28 place-items-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-2 text-center text-[11px] text-zinc-500">
-                    แนบอัตโนมัติจากกลุ่มขอโอน
-                  </div>
-                  <a
-                    href="/ledger/reconcile"
-                    className="block text-center text-[11px] font-medium text-[var(--color-brand-600)] hover:underline"
-                  >
-                    ดูที่ โอนเงิน &amp; กระทบยอด →
-                  </a>
+                  {expense.slip && (expense.slip.slipUrl || expense.slip.slipThumbUrl) ? (
+                    <SlipEvidence slip={expense.slip} />
+                  ) : (
+                    <>
+                      <div className="grid h-28 place-items-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-2 text-center text-[11px] text-zinc-500">
+                        แนบอัตโนมัติจากกลุ่มขอโอน
+                      </div>
+                      <a
+                        href="/ledger/reconcile"
+                        className="block text-center text-[11px] font-medium text-[var(--color-brand-600)] hover:underline"
+                      >
+                        ดูที่ โอนเงิน &amp; กระทบยอด →
+                      </a>
+                    </>
+                  )}
                 </div>
                 {/* 3 · ใบกำกับใหม่ทดแทน */}
                 <div className="space-y-1.5">

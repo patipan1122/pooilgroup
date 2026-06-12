@@ -41,6 +41,16 @@ export type InputVatBlockReason =
   | "other";
 
 /** One line item read off a receipt. */
+/** สลิปโอนเงิน (จาก ledger_payment) ที่ผูกกับใบรายจ่าย — read-only evidence ใน
+ *  ใบรายละเอียด. ผูกได้ 2 ทาง: ตรงผ่าน matchedExpenseId หรือผ่านคำขอโอน. */
+export interface ExpenseSlip {
+  slipUrl: string | null;
+  slipThumbUrl: string | null;
+  transRef: string | null;
+  paidAt: string | null; // ISO
+  amount: number;
+}
+
 export interface ExpenseItem {
   id?: string;
   description: string;
@@ -87,6 +97,10 @@ export interface Expense {
    *  listExpensesSummary): "requested"=มีคำขอโอนเปิดอยู่(รอโอน) · "paid"=โอนแล้ว ·
    *  null/undefined=ยังไม่ขอโอน (chip = ขอโอน ได้/ไม่ได้ ตาม gate). */
   payState?: "requested" | "paid" | null;
+  /** สลิปโอนเงินที่จับคู่กับใบนี้แล้ว (โอนแล้ว) — join เฉพาะตอนเปิดใบรายละเอียด
+   *  (getExpense({ withSlip:true })) เพื่อโชว์รูป + ดาวน์โหลด/ส่งต่อให้คนขอโอน.
+   *  undefined = ไม่ได้ join (list/summary) · null = ยังไม่มีสลิป. */
+  slip?: ExpenseSlip | null;
   claimantName: string | null;
   bankDetail: string | null;
   isRecurring: boolean;

@@ -47,14 +47,15 @@ const CC_TABS: Array<{ value: "" | "green" | "yellow" | "red"; label: string; do
   { value: "red", label: "ขอคืนไม่ได้", dot: "bg-rose-500" },
 ];
 
-// เรียงลำดับ (?sort=) — "" = default (ใหม่→เก่า ตามวันเอกสาร).
+// เรียงลำดับ (?sort=) — "" = default "อัจฉริยะ" (งานค้างลอยบนสุด · ของพึ่งอัพโผล่).
 const SORT_TABS: Array<{
-  value: "" | "date-asc" | "amount-desc" | "amount-asc" | "created-desc";
+  value: "" | "date-desc" | "date-asc" | "amount-desc" | "amount-asc" | "created-desc";
   label: string;
 }> = [
-  { value: "", label: "ใหม่→เก่า (วันเอกสาร)" },
+  { value: "", label: "อัจฉริยะ · งานค้างก่อน" },
   { value: "created-desc", label: "ล่าสุดที่บันทึก" },
-  { value: "date-asc", label: "เก่า→ใหม่" },
+  { value: "date-desc", label: "ใหม่→เก่า (วันเอกสาร)" },
+  { value: "date-asc", label: "เก่า→ใหม่ (วันเอกสาร)" },
   { value: "amount-desc", label: "ยอดมาก→น้อย" },
   { value: "amount-asc", label: "ยอดน้อย→มาก" },
 ];
@@ -68,8 +69,8 @@ export interface FilterSheetProps {
   /** แหล่งที่มา (?tab=) — moved into the popover (was a top tab strip). */
   tab?: ExpenseTab;
   /** เรียงลำดับ (?sort=) — moved into the popover (LeanUX · was a top select).
-   *  "" = default (ใหม่→เก่า ตามวันเอกสาร). */
-  sort?: "date-asc" | "amount-desc" | "amount-asc" | "created-desc";
+   *  undefined = default "อัจฉริยะ" (งานค้างลอยบนสุด). */
+  sort?: "date-desc" | "date-asc" | "amount-desc" | "amount-asc" | "created-desc";
   /** Shared URL setter from the parent (setParam) — key/value, '' clears. */
   onSet: (key: string, value: string) => void;
   /** Clears status+tr+cc+category+tab in ONE router push (sequential onSet calls

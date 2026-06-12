@@ -102,9 +102,11 @@ export default async function ExpensesPage({
   const slipOn = ledgerSlipV1();
   const tab: ExpenseTab =
     sp.tab && TAB_VALUES.includes(sp.tab as ExpenseTab) ? (sp.tab as ExpenseTab) : "all";
-  // เรียงลำดับ — date-desc เป็นค่าเริ่มต้น (undefined) จึงเก็บเฉพาะค่าที่ไม่ใช่ค่าเริ่มต้น.
+  // เรียงลำดับ — undefined = "อัจฉริยะ" (งานค้างลอยบนสุด · ค่าตั้งต้นใหม่ CEO 2026-06-11).
+  // date-desc = ใหม่→เก่า ตามวันที่บนเอกสาร (ค่าตั้งต้นเดิม · ตอนนี้เป็นตัวเลือกชัดเจน).
   const sort =
     sp.sort === "date-asc" ||
+    sp.sort === "date-desc" ||
     sp.sort === "amount-desc" ||
     sp.sort === "amount-asc" ||
     sp.sort === "created-desc"
@@ -238,6 +240,7 @@ export default async function ExpensesPage({
         orgId: scope.orgId,
         companyId: scope.companyId,
         id: selected,
+        withSlip: true, // โชว์สลิปโอนเงินในใบ (โอนแล้ว → ดู/ดาวน์โหลด/ส่งต่อ)
       })
     : null;
 

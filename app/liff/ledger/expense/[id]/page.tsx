@@ -71,7 +71,7 @@ export default async function LedgerLiffExpensePage({
 
   const [expense, categories] = await Promise.all([
     scope.companyId
-      ? getExpense({ orgId: scope.orgId, companyId: scope.companyId, id }).catch(() => null)
+      ? getExpense({ orgId: scope.orgId, companyId: scope.companyId, id, withSlip: true }).catch(() => null)
       : Promise.resolve(null),
     scope.companyId
       ? listCategories(scope.orgId, scope.companyId)

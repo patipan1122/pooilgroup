@@ -16,6 +16,7 @@ import type {
   ExpenseAttachment,
   ExpenseDocType,
   ExpenseItem,
+  ExpenseSlip,
   ExpenseStatus,
   FieldConfidence,
   PaymentStatus,
@@ -422,6 +423,28 @@ function serializeExpenseSummary(row: ExpenseSummaryRow): Expense {
 }
 
 /**
+ * เรียง "อัจฉริยะ" (ค่าตั้งต้น) — ลำดับความสำคัญของเอกสาร เลขน้อย = อยู่บนสุด:
+ *   1 = งานค้างต้องเติมข้อมูล (ร่างที่ขาดสาขา/หมวด/วันที่ หรือ AI ต้องตรวจ) —
+ *       เอกสารที่พึ่งอัพมักตกชั้นนี้ → โผล่บนสุดให้ทำงานต่อทันที (CEO 2026-06-11)
+ *   2 = รอจัดการต่อ (ร่างครบ / ยืนยันแล้วยังไม่ส่ง TRCloud / ขอโอนแล้วรอโอน)
+ *   3 = จบแล้ว (ส่ง TRCloud แล้ว / โอนแล้ว / ปิดบิล) → ดันลงล่าง
+ *   4 = ยกเลิก (ล่างสุด)
+ * ภายในแต่ละชั้นคงลำดับ createdAt desc (ของพึ่งอัพอยู่บน) เพราะ sort แบบ stable.
+ */
+function smartRank(e: Expense): number {
+  if (e.status === "void") return 4;
+  const sentToTrcloud = !!e.trcloudDocId && e.trcloudDocId !== "pending";
+  if (sentToTrcloud || e.payState === "paid" || e.status === "locked") return 3;
+  if (
+    e.status === "draft" &&
+    (e.needsReview || !e.branchId || !e.categoryId || !e.docDate)
+  ) {
+    return 1;
+  }
+  return 2;
+}
+
+/**
  * List expenses for the summary list UI (newest first). Same scoping/filtering
  * as listExpenses() but WITHOUT the line-item join — use for the list pane /
  * home drafts where `items` is never rendered. Use listExpenses() (full include)
@@ -433,10 +456,13 @@ function serializeExpenseSummary(row: ExpenseSummaryRow): Expense {
  */
 export async function listExpensesSummary(f: ExpenseListFilter): Promise<ExpenseListResult> {
   const limit = f.take ?? 100;
-  // Sort order (redesign 2026-06-07) — default newest doc first; supports เก่า→ใหม่
-  // and ยอดมาก/น้อย for the list "เรียงลำดับ" control.
-  const orderBy: Prisma.LedgerExpenseOrderByWithRelationInput[] =
-    f.sort === "date-asc"
+  // Sort order. ค่าตั้งต้น (sort=undefined) = "อัจฉริยะ": ดึงหน้าต่างตาม createdAt desc
+  // (ของพึ่งอัพล่าสุด) แล้วจัดอันดับชั้นความสำคัญใน JS (smartRank) เพื่อให้งานค้างลอยบน +
+  // ของพึ่งอัพโผล่. เลือก sort ชัดเจน = เรียงใน DB ตามนั้น (ไม่จัดอันดับซ้ำ).
+  const isSmart = f.sort === undefined;
+  const orderBy: Prisma.LedgerExpenseOrderByWithRelationInput[] = isSmart
+    ? [{ createdAt: "desc" }]
+    : f.sort === "date-asc"
       ? [{ docDate: "asc" }, { createdAt: "asc" }]
       : f.sort === "amount-desc"
         ? [{ total: "desc" }, { createdAt: "desc" }]
@@ -444,7 +470,8 @@ export async function listExpensesSummary(f: ExpenseListFilter): Promise<Expense
           ? [{ total: "asc" }, { createdAt: "desc" }]
           : f.sort === "created-desc"
             ? [{ createdAt: "desc" }]
-            : [{ docDate: "desc" }, { createdAt: "desc" }];
+            : // date-desc — ใหม่→เก่า ตามวันที่บนเอกสาร (ค่าตั้งต้นเดิมก่อนเปลี่ยนเป็นอัจฉริยะ)
+              [{ docDate: "desc" }, { createdAt: "desc" }];
   // Fetch one extra row to detect whether more pages exist.
   const rows = await prisma.ledgerExpense.findMany({
     where: buildWhere(f),
@@ -493,20 +520,82 @@ export async function listExpensesSummary(f: ExpenseListFilter): Promise<Expense
     }));
   }
 
+  // เรียงอัจฉริยะ (ค่าตั้งต้น) — จัดอันดับชั้นความสำคัญใน JS หลัง derive payState แล้ว.
+  // ใช้ decorate-sort เพื่อให้ stable แน่นอน (ภายในชั้นคง createdAt desc จาก orderBy).
+  if (isSmart) {
+    expenses = expenses
+      .map((e, i) => ({ e, i }))
+      .sort((a, b) => smartRank(a.e) - smartRank(b.e) || a.i - b.i)
+      .map((x) => x.e);
+  }
+
   return { expenses, hasMore };
 }
 
-/** Single expense — org+company scoped (returns null if not in tenant). */
+/**
+ * สลิปโอนเงินที่ผูกกับใบนี้ (ถ้ามี) — org+company scoped, read-only.
+ * ผูกได้ 2 ทาง: (1) สลิป match บิลนี้โดยตรง (matchedExpenseId) หรือ (2) ผ่านคำขอโอน
+ * ที่บิลนี้อยู่ (ledger_payment.paymentRequestId). เลือกสลิปที่ paidAt ใหม่สุด.
+ * คืน null เมื่อยังไม่มีสลิป.
+ */
+async function getExpenseSlip(opts: {
+  orgId: string;
+  companyId: string;
+  expenseId: string;
+}): Promise<ExpenseSlip | null> {
+  const { orgId, companyId, expenseId } = opts;
+  // คำขอโอนทั้งหมดที่บิลนี้อยู่ (อาจมีหลายใบถ้าเคยถูกยกเลิก/ขอใหม่).
+  const billLinks = await prisma.ledgerPaymentRequestBill.findMany({
+    where: { orgId, companyId, expenseId },
+    select: { requestId: true },
+  });
+  const requestIds = billLinks.map((b) => b.requestId);
+  const slip = await prisma.ledgerPayment.findFirst({
+    where: {
+      orgId,
+      companyId,
+      slipUrl: { not: null },
+      OR: [
+        { matchedExpenseId: expenseId },
+        ...(requestIds.length > 0 ? [{ paymentRequestId: { in: requestIds } }] : []),
+      ],
+    },
+    orderBy: { paidAt: "desc" },
+    select: { slipUrl: true, slipThumbUrl: true, transRef: true, paidAt: true, amount: true },
+  });
+  if (!slip) return null;
+  return {
+    slipUrl: slip.slipUrl,
+    slipThumbUrl: slip.slipThumbUrl,
+    transRef: slip.transRef,
+    paidAt: iso(slip.paidAt),
+    amount: dec(slip.amount),
+  };
+}
+
+/** Single expense — org+company scoped (returns null if not in tenant).
+ *  withSlip=true → join สลิปโอนเงินที่จับคู่แล้ว (ใช้ในใบรายละเอียดเท่านั้น;
+ *  list/voucher ไม่ต้องการ → ไม่จ่าย query เพิ่ม). */
 export async function getExpense(opts: {
   orgId: string;
   companyId: string;
   id: string;
+  withSlip?: boolean;
 }): Promise<Expense | null> {
   const row = await prisma.ledgerExpense.findFirst({
     where: { id: opts.id, orgId: opts.orgId, companyId: opts.companyId },
     include: EXPENSE_INCLUDE,
   });
-  return row ? serializeExpense(row) : null;
+  if (!row) return null;
+  const expense = serializeExpense(row);
+  if (opts.withSlip) {
+    expense.slip = await getExpenseSlip({
+      orgId: opts.orgId,
+      companyId: opts.companyId,
+      expenseId: opts.id,
+    });
+  }
+  return expense;
 }
 
 /** Dedup lookup by sha256 within a tenant — used before creating a draft. */

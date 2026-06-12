@@ -101,8 +101,8 @@ export function ExpenseList({
   companyId: string;
   /** D4 source tab (?tab=) — all | line | web | mine (now lives inside ตัวกรอง). */
   tab: ExpenseTab;
-  /** เรียงลำดับปัจจุบัน (?sort=) — undefined = ใหม่→เก่า (ค่าเริ่มต้น). */
-  sort?: "date-asc" | "amount-desc" | "amount-asc" | "created-desc";
+  /** เรียงลำดับปัจจุบัน (?sort=) — undefined = "อัจฉริยะ" (งานค้างลอยบนสุด · ค่าเริ่มต้น). */
+  sort?: "date-desc" | "date-asc" | "amount-desc" | "amount-asc" | "created-desc";
   /** needsReview filter (?nr=) — true=รอตรวจ · false=รอยืนยัน · undefined=ไม่กรอง. */
   nr?: boolean;
   /** payment-flow tab (?pay=) — eligible=ขอโอนได้ · requested=รอโอน · paid=โอนแล้ว. */
