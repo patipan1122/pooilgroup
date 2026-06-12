@@ -12,7 +12,7 @@ import {
 } from "@/lib/ledger/bank-reconcile-board";
 import { ImportWizardWrapper } from "./_components/ImportWizardWrapper";
 import { AccountLedgerTabs } from "./_components/AccountLedgerTabs";
-import { BankLogo } from "../_components/BankLogo";
+import { BankLogo } from "@/components/ledger/BankLogo";
 import { prisma } from "@/lib/prisma";
 import { Upload, Scale } from "lucide-react";
 import Link from "next/link";
@@ -41,10 +41,12 @@ export default async function BankAccountDetailPage({
   const companyId = scope.companyId;
 
   const accountRows = await prisma.$queryRaw<{
-    id: string; bankCode: string; accountNo: string; accountName: string; canImport: boolean;
+    id: string; bankCode: string; accountNo: string; accountName: string;
+    canImport: boolean; legalEntity: string | null; accountType: string; flowType: string | null;
   }[]>`
     SELECT a.id, a.bank_code as "bankCode", a.account_no as "accountNo",
-           a.account_name as "accountName", ac.can_import as "canImport"
+           a.account_name as "accountName", ac.can_import as "canImport",
+           a.legal_entity as "legalEntity", a.account_type as "accountType", a.flow_type as "flowType"
     FROM ledger_bank_account a
     JOIN ledger_bank_account_company ac ON ac.bank_account_id = a.id
     WHERE a.id = ${accountId}::uuid AND a.org_id = ${orgId}::uuid
@@ -88,13 +90,24 @@ export default async function BankAccountDetailPage({
 
       {/* Header */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <BankLogo bankCode={account.bankCode} size={44} />
+        <BankLogo code={account.bankCode} name={BANK_NAMES[account.bankCode]} size={44} />
         <div className="min-w-0">
           <h1 className="truncate text-lg font-semibold text-zinc-900">{account.accountName}</h1>
-          <p className="text-xs text-zinc-400">
+          <p className="text-xs text-zinc-500">
             {BANK_NAMES[account.bankCode] ?? account.bankCode} · {maskedNo}
-            {summary.lastImportedDate && <span className="ml-2 text-zinc-400">· อัพ statement ถึง {summary.lastImportedDate}</span>}
+            {summary.lastImportedDate && <span className="ml-1 text-zinc-400">· อัพ statement ถึง {summary.lastImportedDate}</span>}
           </p>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            {account.legalEntity && (
+              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600">{account.legalEntity}</span>
+            )}
+            {account.flowType && (
+              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] text-blue-600">{account.flowType}</span>
+            )}
+            {account.accountType === "card_terminal" && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-700">เครื่องรูดบัตร EDC</span>
+            )}
+          </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <Link href={`?${cp}&period=${prevPeriod}`} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50">←</Link>

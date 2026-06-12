@@ -8,7 +8,7 @@ import { LedgerHeader } from "../../../_components/LedgerHeader";
 import { ledgerBankReconV1 } from "@/lib/ledger/flags";
 import { listBookEntries, listBankMovements, listMatchGroups } from "@/lib/ledger/bank-reconcile-board";
 import { ReconcileBoard } from "../../_components/ReconcileBoard";
-import { BankLogo } from "../../_components/BankLogo";
+import { BankLogo } from "@/components/ledger/BankLogo";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
@@ -73,7 +73,7 @@ export default async function ReconcilePage({
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <BankLogo bankCode={acct.bankCode} size={40} />
+        <BankLogo code={acct.bankCode} name={BANK_LABELS[acct.bankCode]} size={40} />
         <div>
           <h1 className="text-lg font-semibold text-zinc-900">กระทบยอด — {acct.accountName}</h1>
           <p className="text-xs text-zinc-400">{BANK_LABELS[acct.bankCode] ?? acct.bankCode} · {maskedNo}</p>

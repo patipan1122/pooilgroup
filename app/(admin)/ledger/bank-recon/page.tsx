@@ -12,7 +12,7 @@ import { ledgerBankReconV1 } from "@/lib/ledger/flags";
 import { listBankAccountsWithStatus } from "@/lib/ledger/bank-statement-reconcile";
 import { BankAccountStatusIcon } from "./_components/ConfidencePill";
 import { BANK_LABELS } from "@/lib/ledger/bank-adapters/types";
-import { BankLogo } from "./_components/BankLogo";
+import { BankLogo } from "@/components/ledger/BankLogo";
 import { Landmark, Settings, TrendingUp, ChevronRight } from "lucide-react";
 import Link from "next/link";
 
@@ -146,7 +146,7 @@ export default async function BankReconHubPage({
           ).map(([bankCode, list]) => (
             <div key={bankCode}>
               <div className="mb-2 flex items-center gap-2">
-                <BankLogo bankCode={bankCode} size={28} />
+                <BankLogo code={bankCode} name={BANK_NAMES[bankCode]} size={28} />
                 <h3 className="text-sm font-semibold text-zinc-700">{BANK_NAMES[bankCode] ?? bankCode}</h3>
                 <span className="text-xs text-zinc-400">({list.length})</span>
               </div>

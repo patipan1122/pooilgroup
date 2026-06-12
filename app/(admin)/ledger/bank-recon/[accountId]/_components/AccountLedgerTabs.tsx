@@ -8,12 +8,12 @@ import Link from "next/link";
 import { CheckCircle, Clock } from "lucide-react";
 
 interface BankRow {
-  id: string; date: string; description: string; ref1: string | null;
+  id: string; date: string; description: string; txnType: string; channel: string | null; ref1: string | null;
   amountSatang: number; balanceSatang: number; matchState: string;
 }
 interface BookRow {
   bookId: string; bookType: string; date: string; docNo: string;
-  contact: string; amountSatang: number; reconciled: boolean;
+  contact: string; detail: string; kind: string; amountSatang: number; reconciled: boolean;
 }
 interface Props {
   bankLedger: BankRow[];
@@ -78,10 +78,12 @@ export function AccountLedgerTabs({ bankLedger, bookLedger, companyId }: Props) 
                 const credit = r.amountSatang > 0;
                 return (
                   <tr key={r.id} className="hover:bg-zinc-50">
-                    <td className="whitespace-nowrap px-4 py-2.5 text-zinc-500">{r.date}</td>
-                    <td className="px-4 py-2.5 text-zinc-700 max-w-[320px] truncate">
-                      {r.description || "—"}
-                      {r.ref1 && <span className="ml-1 text-xs text-zinc-400">· {r.ref1}</span>}
+                    <td className="whitespace-nowrap px-4 py-2.5 text-zinc-500 align-top">{r.date}</td>
+                    <td className="px-4 py-2.5 align-top max-w-[360px]">
+                      <p className="truncate text-zinc-700">{r.description || "—"}</p>
+                      <p className="truncate text-xs text-zinc-400">
+                        {[r.txnType, r.channel, r.ref1].filter(Boolean).join(" · ") || "—"}
+                      </p>
                     </td>
                     <td className={`whitespace-nowrap px-4 py-2.5 text-right font-semibold ${credit ? "text-emerald-600" : "text-rose-600"}`}>
                       {credit ? "+" : "−"}฿{baht(r.amountSatang)}
@@ -125,9 +127,12 @@ export function AccountLedgerTabs({ bankLedger, bookLedger, companyId }: Props) 
                 );
                 return (
                   <tr key={`${r.bookType}:${r.bookId}`} className="hover:bg-zinc-50">
-                    <td className="whitespace-nowrap px-4 py-2.5 text-zinc-500">{r.date}</td>
-                    <td className="px-4 py-2.5">{href ? <Link href={href}>{docCell}</Link> : docCell}</td>
-                    <td className="px-4 py-2.5 text-zinc-600 max-w-[220px] truncate">{r.contact || "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-2.5 text-zinc-500 align-top">{r.date}</td>
+                    <td className="px-4 py-2.5 align-top">{href ? <Link href={href}>{docCell}</Link> : docCell}</td>
+                    <td className="px-4 py-2.5 align-top max-w-[260px]">
+                      <p className="truncate text-zinc-600">{r.contact || "—"}</p>
+                      {r.detail && <p className="truncate text-xs text-zinc-400">{r.detail}</p>}
+                    </td>
                     <td className={`whitespace-nowrap px-4 py-2.5 text-right font-semibold ${credit ? "text-emerald-600" : "text-rose-600"}`}>
                       {credit ? "+" : "−"}฿{baht(r.amountSatang)}
                     </td>

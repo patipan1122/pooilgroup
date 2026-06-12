@@ -19,10 +19,10 @@ import {
 
 interface BookEntry {
   bookId: string; bookType: "revenue" | "expense" | "payment";
-  date: string; docNo: string; contact: string; amountSatang: number; sub: string;
+  date: string; docNo: string; contact: string; detail: string; amountSatang: number; sub: string;
 }
 interface BankMovement {
-  id: string; date: string; description: string; ref1: string | null; amountSatang: number;
+  id: string; date: string; description: string; txnType: string; ref1: string | null; amountSatang: number;
 }
 interface GroupItem {
   kind: "bank" | "book"; bankTxnId: string | null; bookType: string | null;
@@ -74,13 +74,13 @@ export function ReconcileBoard({
     const q = qBook.trim().toLowerCase();
     if (!q) return bookEntries;
     return bookEntries.filter((b) =>
-      `${b.docNo} ${b.contact} ${b.amountSatang / 100}`.toLowerCase().includes(q));
+      `${b.docNo} ${b.contact} ${b.detail} ${b.amountSatang / 100}`.toLowerCase().includes(q));
   }, [qBook, bookEntries]);
   const fBank = useMemo(() => {
     const q = qBank.trim().toLowerCase();
     if (!q) return bankMovements;
     return bankMovements.filter((m) =>
-      `${m.description} ${m.ref1 ?? ""} ${m.amountSatang / 100}`.toLowerCase().includes(q));
+      `${m.description} ${m.txnType} ${m.ref1 ?? ""} ${m.amountSatang / 100}`.toLowerCase().includes(q));
   }, [qBank, bankMovements]);
 
   const selBankTotal = useMemo(
@@ -199,8 +199,9 @@ export function ReconcileBoard({
                       checked={selBook.has(k)}
                       onToggle={() => toggleBook(k)}
                       date={b.date}
-                      title={b.docNo || SOURCE_LABEL[b.sub] || "—"}
-                      subtitle={b.contact || SOURCE_LABEL[b.bookType]}
+                      title={b.contact || b.docNo || SOURCE_LABEL[b.sub] || "—"}
+                      subtitle={b.docNo}
+                      detail={b.detail}
                       tag={SOURCE_LABEL[b.bookType] ?? b.bookType}
                       amountSatang={b.amountSatang}
                     />
@@ -228,7 +229,7 @@ export function ReconcileBoard({
                     onToggle={() => toggleBank(m.id)}
                     date={m.date}
                     title={m.description || "รายการธนาคาร"}
-                    subtitle={m.ref1 ? `ref: ${m.ref1}` : ""}
+                    subtitle={[m.txnType, m.ref1].filter(Boolean).join(" · ")}
                     amountSatang={m.amountSatang}
                     onExclude={() => handleExclude(m.id)}
                   />
@@ -356,22 +357,23 @@ function Column({ title, count, selTotal, accent, onAdd, addLabel, search, onSea
   );
 }
 
-function Row({ checked, onToggle, disabled, date, title, subtitle, tag, amountSatang, onExclude }: {
+function Row({ checked, onToggle, disabled, date, title, subtitle, detail, tag, amountSatang, onExclude }: {
   checked: boolean; onToggle: () => void; disabled?: boolean;
-  date: string; title: string; subtitle?: string; tag?: string; amountSatang: number; onExclude?: () => void;
+  date: string; title: string; subtitle?: string; detail?: string; tag?: string; amountSatang: number; onExclude?: () => void;
 }) {
   const credit = amountSatang > 0;
   return (
-    <div className={`flex items-center gap-2 px-3 py-2.5 ${checked ? "bg-blue-50/60" : "hover:bg-zinc-50"}`}>
+    <div className={`flex items-start gap-2 px-3 py-2.5 ${checked ? "bg-blue-50/60" : "hover:bg-zinc-50"}`}>
       <input type="checkbox" checked={checked} onChange={onToggle} disabled={disabled}
-        className="size-4 shrink-0 rounded border-zinc-300 disabled:opacity-40" />
+        className="mt-0.5 size-4 shrink-0 rounded border-zinc-300 disabled:opacity-40" />
       <div className="min-w-0 flex-1 cursor-pointer" onClick={() => !disabled && onToggle()}>
         <div className="flex items-center gap-1.5">
           <span className="text-[11px] text-zinc-400">{date}</span>
           {tag && <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500">{tag}</span>}
         </div>
         <p className="truncate text-sm text-zinc-700">{title}</p>
-        {subtitle && <p className="truncate text-xs text-zinc-400">{subtitle}</p>}
+        {subtitle && <p className="truncate text-xs text-zinc-500">{subtitle}</p>}
+        {detail && <p className="truncate text-[11px] text-zinc-400">{detail}</p>}
       </div>
       <div className="shrink-0 text-right">
         <p className={`text-sm font-semibold ${credit ? "text-emerald-600" : "text-rose-600"}`}>

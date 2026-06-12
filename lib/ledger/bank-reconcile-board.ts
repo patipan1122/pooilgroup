@@ -17,13 +17,15 @@ export interface BookEntry {
   date: string;
   docNo: string;
   contact: string;
+  detail: string;
   amountSatang: number;
   sub: string;
 }
 export interface BankMovement {
   id: string;
   date: string;
-  description: string;
+  description: string;  // counterparty / purpose (ref2 preferred) — the meaningful line
+  txnType: string;      // bank transaction type (description) + channel — secondary detail
   ref1: string | null;
   amountSatang: number;
 }
@@ -53,12 +55,13 @@ export async function listBookEntries(params: {
   const { orgId, companyId, periodStart, periodEnd } = params;
   const rows = await prisma.$queryRaw<{
     bookId: string; bookType: string; date: string; docNo: string;
-    contact: string; amountSatang: bigint; sub: string;
+    contact: string; detail: string; amountSatang: bigint; sub: string;
   }[]>`
     SELECT * FROM (
       SELECT r.id::text as "bookId", 'revenue' as "bookType", r.entry_date::text as "date",
              COALESCE(r.source_ref, '') as "docNo",
              COALESCE(NULLIF(r.customer_name,''), NULLIF(r.description,''), '') as "contact",
+             TRIM(CONCAT_WS(' · ', NULLIF(r.payment_channel,''), NULLIF(r.description,''))) as "detail",
              r.amount_satang as "amountSatang", COALESCE(r.source_type,'') as "sub"
       FROM ledger_revenue_entry r
       WHERE r.org_id = ${orgId}::uuid AND r.company_id = ${companyId}::uuid
@@ -68,7 +71,8 @@ export async function listBookEntries(params: {
       UNION ALL
       SELECT e.id::text, 'expense', e.doc_date::text,
              COALESCE(NULLIF(e.doc_code,''), NULLIF(e.vendor_doc_number,''), ''),
-             COALESCE(NULLIF(e.vendor,''), NULLIF(e.note,''), ''),
+             COALESCE(NULLIF(e.vendor,''), ''),
+             TRIM(CONCAT_WS(' · ', NULLIF(e.doc_type,''), NULLIF(e.note,''))),
              (-ROUND(e.total*100))::bigint, COALESCE(e.doc_type,'')
       FROM ledger_expense e
       WHERE e.org_id = ${orgId}::uuid AND e.company_id = ${companyId}::uuid
@@ -77,7 +81,7 @@ export async function listBookEntries(params: {
         AND NOT EXISTS (SELECT 1 FROM ledger_bank_match_item mi WHERE mi.book_type='expense' AND mi.book_id = e.id)
       UNION ALL
       SELECT p.id::text, 'payment', p.paid_at::date::text,
-             COALESCE(p.trans_ref,''), '', (-ROUND(p.amount*100))::bigint, COALESCE(p.method,'')
+             COALESCE(p.trans_ref,''), '', COALESCE(p.method,''), (-ROUND(p.amount*100))::bigint, COALESCE(p.method,'')
       FROM ledger_payment p
       WHERE p.org_id = ${orgId}::uuid AND p.company_id = ${companyId}::uuid
         AND p.paid_at::date BETWEEN ${periodStart}::date AND ${periodEnd}::date
@@ -89,7 +93,7 @@ export async function listBookEntries(params: {
   `;
   return rows.map((r) => ({
     bookId: r.bookId, bookType: r.bookType as BookEntry["bookType"], date: r.date,
-    docNo: r.docNo, contact: r.contact, amountSatang: Number(r.amountSatang), sub: r.sub,
+    docNo: r.docNo, contact: r.contact, detail: r.detail, amountSatang: Number(r.amountSatang), sub: r.sub,
   }));
 }
 
@@ -100,10 +104,12 @@ export async function listBankMovements(params: {
 }): Promise<BankMovement[]> {
   const { orgId, companyId, bankAccountId, periodStart, periodEnd } = params;
   const rows = await prisma.$queryRaw<{
-    id: string; date: string; description: string; ref1: string | null; amountSatang: bigint;
+    id: string; date: string; description: string; txnType: string; ref1: string | null; amountSatang: bigint;
   }[]>`
     SELECT t.id::text as id, t.txn_date::text as "date",
-           COALESCE(NULLIF(t.description,''), NULLIF(t.channel,''), '') as "description",
+           -- the meaningful line: counterparty / purpose lives in ref2 (e.g. "รับโอนจาก KTB x6223 …")
+           COALESCE(NULLIF(t.ref2,''), NULLIF(t.description,''), NULLIF(t.channel,''), 'รายการธนาคาร') as "description",
+           TRIM(CONCAT_WS(' · ', NULLIF(t.description,''), NULLIF(t.channel,''))) as "txnType",
            t.ref1, t.amount_satang as "amountSatang"
     FROM ledger_bank_txn t
     WHERE t.bank_account_id = ${bankAccountId}::uuid AND t.org_id = ${orgId}::uuid
@@ -115,7 +121,7 @@ export async function listBankMovements(params: {
     LIMIT 1000
   `;
   return rows.map((r) => ({
-    id: r.id, date: r.date, description: r.description, ref1: r.ref1, amountSatang: Number(r.amountSatang),
+    id: r.id, date: r.date, description: r.description, txnType: r.txnType, ref1: r.ref1, amountSatang: Number(r.amountSatang),
   }));
 }
 
@@ -170,22 +176,23 @@ export async function listMatchGroups(params: {
 // ════════════════════════════════════════════════════════════════════════════
 
 export interface LedgerTxnRow {
-  id: string; date: string; description: string; ref1: string | null;
+  id: string; date: string; description: string; txnType: string; channel: string | null; ref1: string | null;
   amountSatang: number; balanceSatang: number; matchState: string;
 }
 
-// รายการเคลื่อนไหว (bank) — every txn in range with running balance + status
+// รายการเคลื่อนไหว (bank) — every txn in range with running balance + status + full detail
 export async function listBankLedger(params: {
   orgId: string; companyId: string; bankAccountId: string; periodStart: string; periodEnd: string;
 }): Promise<LedgerTxnRow[]> {
   const { orgId, companyId, bankAccountId, periodStart, periodEnd } = params;
   const rows = await prisma.$queryRaw<{
-    id: string; date: string; description: string; ref1: string | null;
+    id: string; date: string; description: string; txnType: string; channel: string | null; ref1: string | null;
     amountSatang: bigint; balanceSatang: bigint; matchState: string;
   }[]>`
     SELECT t.id::text as id, t.txn_date::text as "date",
-           COALESCE(NULLIF(t.description,''), NULLIF(t.channel,''), '') as "description",
-           t.ref1, t.amount_satang as "amountSatang", t.balance_satang as "balanceSatang",
+           COALESCE(NULLIF(t.ref2,''), NULLIF(t.description,''), NULLIF(t.channel,''), 'รายการธนาคาร') as "description",
+           COALESCE(NULLIF(t.description,''),'') as "txnType",
+           t.channel, t.ref1, t.amount_satang as "amountSatang", t.balance_satang as "balanceSatang",
            t.match_state as "matchState"
     FROM ledger_bank_txn t
     WHERE t.bank_account_id = ${bankAccountId}::uuid AND t.org_id = ${orgId}::uuid
@@ -195,29 +202,31 @@ export async function listBankLedger(params: {
     LIMIT 1000
   `;
   return rows.map((r) => ({
-    id: r.id, date: r.date, description: r.description, ref1: r.ref1,
+    id: r.id, date: r.date, description: r.description, txnType: r.txnType, channel: r.channel, ref1: r.ref1,
     amountSatang: Number(r.amountSatang), balanceSatang: Number(r.balanceSatang), matchState: r.matchState,
   }));
 }
 
 export interface BookLedgerRow {
   bookId: string; bookType: string; date: string; docNo: string; contact: string;
-  amountSatang: number; reconciled: boolean;
+  detail: string; kind: string; amountSatang: number; reconciled: boolean;
 }
 
-// รายการบันทึกบัญชี (book) — every entry in range with reconciled flag
+// รายการบันทึกบัญชี (book) — every entry in range with reconciled flag + detail
 export async function listBookLedger(params: {
   orgId: string; companyId: string; periodStart: string; periodEnd: string;
 }): Promise<BookLedgerRow[]> {
   const { orgId, companyId, periodStart, periodEnd } = params;
   const rows = await prisma.$queryRaw<{
     bookId: string; bookType: string; date: string; docNo: string; contact: string;
-    amountSatang: bigint; reconciled: boolean;
+    detail: string; kind: string; amountSatang: bigint; reconciled: boolean;
   }[]>`
     SELECT * FROM (
       SELECT r.id::text as "bookId", 'revenue' as "bookType", r.entry_date::text as "date",
              COALESCE(r.source_ref,'') as "docNo",
              COALESCE(NULLIF(r.customer_name,''), NULLIF(r.description,''),'') as "contact",
+             TRIM(CONCAT_WS(' · ', NULLIF(r.source_type,''), NULLIF(r.payment_channel,''), NULLIF(r.description,''))) as "detail",
+             'รายได้' as "kind",
              r.amount_satang as "amountSatang",
              (r.match_state='matched' OR EXISTS(SELECT 1 FROM ledger_bank_match_item mi WHERE mi.book_type='revenue' AND mi.book_id=r.id)) as reconciled
       FROM ledger_revenue_entry r
@@ -226,7 +235,10 @@ export async function listBookLedger(params: {
       UNION ALL
       SELECT e.id::text, 'expense', e.doc_date::text,
              COALESCE(NULLIF(e.doc_code,''), NULLIF(e.vendor_doc_number,''),''),
-             COALESCE(NULLIF(e.vendor,''), NULLIF(e.note,''),''),
+             COALESCE(NULLIF(e.vendor,''),''),
+             TRIM(CONCAT_WS(' · ', NULLIF(e.doc_type,''), NULLIF(e.note,''),
+                  CASE e.payment_status WHEN 'paid' THEN 'จ่ายแล้ว' WHEN 'unpaid' THEN 'ยังไม่จ่าย' ELSE NULLIF(e.payment_status,'') END)) as "detail",
+             'ค่าใช้จ่าย' as "kind",
              (-ROUND(e.total*100))::bigint,
              EXISTS(SELECT 1 FROM ledger_bank_match_item mi WHERE mi.book_type='expense' AND mi.book_id=e.id)
       FROM ledger_expense e
@@ -238,7 +250,7 @@ export async function listBookLedger(params: {
   `;
   return rows.map((r) => ({
     bookId: r.bookId, bookType: r.bookType, date: r.date, docNo: r.docNo,
-    contact: r.contact, amountSatang: Number(r.amountSatang), reconciled: r.reconciled,
+    contact: r.contact, detail: r.detail, kind: r.kind, amountSatang: Number(r.amountSatang), reconciled: r.reconciled,
   }));
 }
 
