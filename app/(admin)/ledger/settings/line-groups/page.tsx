@@ -16,7 +16,8 @@ export default async function LineGroupsSettingsPage({
 }: {
   searchParams: Promise<{ company?: string; branch?: string }>;
 }) {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  // ผูก LINE channel / กลุ่ม LINE → สาขา = โครงสร้างการเชื่อมต่อ → super_admin เท่านั้น
+  const session = await requireRole("super_admin");
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);
 

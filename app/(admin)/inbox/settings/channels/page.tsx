@@ -5,7 +5,7 @@
 
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/module-access";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { listChannels } from "@/lib/inbox/channel-actions";
 import { INBOX_BUSINESSES } from "@/lib/inbox/business";
 import { Section } from "@/components/ui/section";
@@ -20,7 +20,8 @@ export default async function InboxChannelsSettingsPage({
   searchParams: Promise<{ fb_error?: string }>;
 }) {
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) redirect("/403");
+  // เชื่อมช่องทาง LINE OA / Facebook = โครงสร้างเจ้าของระบบ → super_admin เท่านั้น (CEO 2026-06-12)
+  if (!isSuperAdmin(session.user.role)) redirect("/403");
 
   const params = await searchParams;
   const channels = await listChannels();

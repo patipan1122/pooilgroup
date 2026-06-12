@@ -8,8 +8,10 @@ import {
   FolderTree,
 } from "lucide-react";
 
+import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import {
   getDriveConnection,
   isDriveOAuthConfigured,
@@ -32,6 +34,8 @@ export default async function DriveSettingsPage({
   searchParams: Promise<{ connected?: string; error?: string }>;
 }) {
   const session = await requireRole(ChairopsUserRole.ADMIN);
+  // เชื่อม Google Drive = โครงสร้างเจ้าของระบบ → เฉพาะ Pool super_admin (CEO 2026-06-12)
+  if (!isSuperAdmin(session.poolUser.role)) redirect("/chairops?error=forbidden");
   const sp = await searchParams;
   const conn = await getDriveConnection(session.user.orgId);
   const configured = isDriveOAuthConfigured();

@@ -47,7 +47,12 @@ export default async function SettingsPage({
   }
 
   const sp = await searchParams;
-  const tab = (TABS.some((t) => t.key === sp.tab) ? sp.tab : "team") as Tab;
+  // แท็บ "ช่องทาง LINE" = โครงสร้างการเชื่อมต่อ (channel id/token/secret) → เฉพาะ
+  // เจ้าของระบบ (OWNER = Pool super_admin). แอดมินทั่วไปยังจัดการ พนักงาน/ธนาคาร/บอท ได้
+  // (CEO 2026-06-12). org_admin→ADMIN, admin→SALES_HEAD จึงไม่ใช่ OWNER.
+  const isOwner = user.role === "OWNER";
+  const visibleTabs = TABS.filter((t) => t.key !== "line" || isOwner);
+  const tab = (visibleTabs.some((t) => t.key === sp.tab) ? sp.tab : "team") as Tab;
 
   return (
     <div>
@@ -55,7 +60,7 @@ export default async function SettingsPage({
 
       {/* tabs */}
       <div className="flex gap-1.5 overflow-x-auto pb-1 mb-5">
-        {TABS.map((t) => {
+        {visibleTabs.map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;
           return (
@@ -75,7 +80,7 @@ export default async function SettingsPage({
       </div>
 
       {tab === "team" && <TeamSection orgId={user.orgId} selfId={user.id} />}
-      {tab === "line" && <LineSection orgId={user.orgId} />}
+      {tab === "line" && isOwner && <LineSection orgId={user.orgId} />}
       {tab === "bank" && <BankSection orgId={user.orgId} />}
       {tab === "bot" && <BotSection orgId={user.orgId} />}
     </div>

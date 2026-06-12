@@ -26,7 +26,7 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { liffIdForModule } from "@/lib/line/channels";
 import { requireSession, type DbUser } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isAdminTier, isSuperAdmin } from "@/lib/auth/role-guards";
 import { userHasModuleAccess } from "@/lib/auth/module-access";
 import { recheckReceipt, gradeCompleteness } from "@/lib/ledger/recheck";
 import { OUR_BUYER } from "@/lib/ledger/group-identity";
@@ -2144,8 +2144,8 @@ export async function connectLineChannel(raw: unknown): Promise<ActionResult> {
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
-    return { ok: false, error: "เฉพาะผู้ดูแลเชื่อมต่อ LINE ได้" };
+  if (!isSuperAdmin(session.user.role)) {
+    return { ok: false, error: "เฉพาะเจ้าของระบบ (super admin) เชื่อมต่อ LINE ได้" };
   }
   const parsed = lineChannelSchema.safeParse(raw);
   if (!parsed.success)
@@ -2251,8 +2251,8 @@ export async function disconnectLineChannel(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
-    return { ok: false, error: "เฉพาะผู้ดูแลจัดการ LINE ได้" };
+  if (!isSuperAdmin(session.user.role)) {
+    return { ok: false, error: "เฉพาะเจ้าของระบบ (super admin) จัดการ LINE ได้" };
   }
   const res = await prisma.ledgerLineChannel.deleteMany({
     where: { orgId: session.user.org_id, companyId },
@@ -2280,8 +2280,8 @@ export async function toggleLineChannel(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
-    return { ok: false, error: "เฉพาะผู้ดูแลจัดการ LINE ได้" };
+  if (!isSuperAdmin(session.user.role)) {
+    return { ok: false, error: "เฉพาะเจ้าของระบบ (super admin) จัดการ LINE ได้" };
   }
   await prisma.ledgerLineChannel.updateMany({
     where: { orgId: session.user.org_id, companyId },
@@ -2381,6 +2381,11 @@ export async function createLedgerInvite(
   const parsed = inviteSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "ข้อมูลคำเชิญไม่ถูกต้อง" };
   const p = parsed.data;
+  // role-rank guard: เฉพาะ super_admin เท่านั้นที่เชิญคนเป็น ledger-admin (ผู้ดูแล) ได้
+  // กันประตูหลัง — admin ทั่วไปจะมินต์ผู้ดูแลคนใหม่ผ่านลิงก์เชิญไม่ได้ [[role-rank-privilege-escalation-guard]]
+  if (p.role === "admin" && !isSuperAdmin(session.user.role)) {
+    return { ok: false, error: "เฉพาะเจ้าของระบบ (super admin) เชิญคนเป็นผู้ดูแลได้" };
+  }
 
   // Company must belong to the org (don't trust the client id).
   const company = await prisma.company.findFirst({
@@ -2432,8 +2437,8 @@ export async function createLedgerSelfClaimLink(): Promise<
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
-    return { ok: false, error: "เฉพาะผู้ดูแลผูกบัญชีของตัวเองได้" };
+  if (!isSuperAdmin(session.user.role)) {
+    return { ok: false, error: "เฉพาะเจ้าของระบบ (super admin) ผูกบัญชีได้" };
   }
   const company = await prisma.company.findFirst({
     where: { orgId: session.user.org_id },
@@ -2491,8 +2496,8 @@ export async function createLedgerAdminInvite(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
-    return { ok: false, error: "เฉพาะผู้ดูแลตั้งแอดมินได้" };
+  if (!isSuperAdmin(session.user.role)) {
+    return { ok: false, error: "เฉพาะเจ้าของระบบ (super admin) ตั้งผู้ดูแลได้" };
   }
   const parsed = adminInviteSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "ข้อมูลคำเชิญไม่ถูกต้อง" };
@@ -2534,8 +2539,8 @@ export async function revokeLedgerInvite(id: string): Promise<ActionResult> {
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
-    return { ok: false, error: "เฉพาะผู้ดูแลจัดการคำเชิญได้" };
+  if (!isSuperAdmin(session.user.role)) {
+    return { ok: false, error: "เฉพาะเจ้าของระบบ (super admin) จัดการคำเชิญได้" };
   }
   // Soft-revoke = delete the unused token (scoped to org).
   await prisma.ledgerLineInvite.deleteMany({

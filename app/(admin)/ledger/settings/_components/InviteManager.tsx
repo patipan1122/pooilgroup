@@ -19,11 +19,18 @@ export function InviteManager({
   companyId,
   branches,
   invites,
+  // role-rank guard: เฉพาะ super_admin เท่านั้นที่เชิญคนเป็น "ผู้ดูแล (admin)" ได้
+  // admin ทั่วไปเชิญได้แค่ พนักงาน/บัญชี/สนง.บัญชีภายนอก (กันประตูหลังมินต์ผู้ดูแล)
+  canInviteAdmin = false,
 }: {
   companyId: string;
   branches: BranchOpt[];
   invites: InviteRow[];
+  canInviteAdmin?: boolean;
 }) {
+  const roleOptions = canInviteAdmin
+    ? LEDGER_ROLES
+    : LEDGER_ROLES.filter((r) => r !== "admin");
   const [role, setRole] = useState<Role>("staff");
   const [scope, setScope] = useState<string[]>([]);
   const [note, setNote] = useState("");
@@ -99,7 +106,7 @@ export function InviteManager({
         <div>
           <label className="mb-1 block text-xs font-semibold text-zinc-600">สิทธิ์</label>
           <select className={inputCls} value={role} onChange={(e) => setRole(e.target.value as Role)} aria-label="สิทธิ์">
-            {LEDGER_ROLES.map((r) => (
+            {roleOptions.map((r) => (
               <option key={r} value={r}>{ROLE_LABEL[r]} — {ROLE_HINT[r]}</option>
             ))}
           </select>

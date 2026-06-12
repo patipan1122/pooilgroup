@@ -15,7 +15,7 @@ import { revalidatePath } from "next/cache";
 import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isAdminTier, isSuperAdmin } from "@/lib/auth/role-guards";
 import { encryptToken, decryptToken } from "./crypto";
 import { isBotCapable } from "./business";
 
@@ -27,6 +27,17 @@ async function requireInboxAdmin() {
   return session;
 }
 
+// เชื่อม/จัดการช่องทาง (LINE OA / FB webhook + token) = โครงสร้างเจ้าของระบบ
+// → เฉพาะ Pool super_admin (CEO 2026-06-12). NOTE: การอ่าน listChannels ยังคงเป็น
+// admin-tier เพราะหน้า inbox หลัก (/inbox) ใช้แสดงรายชื่อช่องทางให้แอดมินเห็น.
+async function requireInboxOwner() {
+  const session = await requireSession();
+  if (!isSuperAdmin(session.user.role)) {
+    throw new Error("เฉพาะเจ้าของระบบ (super admin) จัดการช่องทางได้");
+  }
+  return session;
+}
+
 export async function createChannel(input: {
   platform: InboxPlatform;
   displayName: string;
@@ -35,7 +46,7 @@ export async function createChannel(input: {
   accessToken?: string;
   providerSecret?: string;
 }) {
-  const session = await requireInboxAdmin();
+  const session = await requireInboxOwner();
 
   const displayName = input.displayName.trim();
   if (!displayName) throw new Error("ตั้งชื่อเรียกของช่องทาง");
@@ -77,6 +88,7 @@ export async function createChannel(input: {
 }
 
 export async function listChannels() {
+  // read-only — admin-tier (หน้า /inbox หลักเรียกแสดงรายชื่อช่องทาง)
   const session = await requireInboxAdmin();
   const channels = await prisma.inboxChannel.findMany({
     where: { orgId: session.user.org_id },
@@ -126,7 +138,7 @@ export async function updateChannel(
     accessToken?: string;
   },
 ) {
-  const session = await requireInboxAdmin();
+  const session = await requireInboxOwner();
   const existing = await prisma.inboxChannel.findUnique({
     where: { id },
     select: { orgId: true, accessTokenEnc: true, webhookSecret: true, botEnabled: true, businessTag: true },
@@ -156,7 +168,7 @@ export async function updateChannel(
 }
 
 export async function setChannelBotEnabled(id: string, enabled: boolean) {
-  const session = await requireInboxAdmin();
+  const session = await requireInboxOwner();
   const existing = await prisma.inboxChannel.findUnique({
     where: { id },
     select: { orgId: true, businessTag: true },
@@ -187,7 +199,7 @@ interface ChannelHealth {
 }
 
 export async function checkChannelHealth(id: string): Promise<ChannelHealth> {
-  const session = await requireInboxAdmin();
+  const session = await requireInboxOwner();
   const c = await prisma.inboxChannel.findUnique({
     where: { id },
     select: {
@@ -315,7 +327,7 @@ export async function checkChannelHealth(id: string): Promise<ChannelHealth> {
 }
 
 export async function deleteChannel(id: string) {
-  const session = await requireInboxAdmin();
+  const session = await requireInboxOwner();
   const existing = await prisma.inboxChannel.findUnique({
     where: { id },
     select: { orgId: true },
@@ -352,7 +364,7 @@ export async function fetchFacebookPagesFromUserToken(input: {
   pages: Array<{ id: string; name: string; access_token: string; category?: string }>;
   longLived: boolean;
 }> {
-  await requireInboxAdmin();
+  await requireInboxOwner();
   const token = input.userToken.trim();
   if (!token) throw new Error("ยังไม่ได้วาง Access Token");
 
@@ -399,7 +411,7 @@ export async function bulkImportFacebookFromPlaintext(input: {
     businessTag: string;
   }>;
 }): Promise<{ created: number; updated: number; subscribed: number; errors: string[] }> {
-  await requireInboxAdmin();
+  await requireInboxOwner();
   const encrypted = input.pages.map((p) => ({
     id: p.id,
     name: p.name,
@@ -441,7 +453,7 @@ async function bulkCreateFacebookChannelsInternal(input: {
     businessTag: string;
   }>;
 }): Promise<{ created: number; updated: number; subscribed: number; errors: string[] }> {
-  const session = await requireInboxAdmin();
+  const session = await requireInboxOwner();
   const errors: string[] = [];
   let created = 0;
   let updated = 0;

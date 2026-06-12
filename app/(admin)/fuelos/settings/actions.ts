@@ -18,6 +18,16 @@ async function requireAdmin() {
   return user;
 }
 
+// เชื่อม/จัดการช่องทาง LINE = โครงสร้างเจ้าของระบบ → เฉพาะ OWNER (Pool super_admin)
+// (CEO 2026-06-12). org_admin/admin map เป็น ADMIN/SALES_HEAD จึงไม่ผ่าน
+async function requireOwner() {
+  const user = await requireUser();
+  if (user.role !== "OWNER") {
+    throw new Error("เฉพาะเจ้าของระบบ (super admin) จัดการช่องทาง LINE ได้");
+  }
+  return user;
+}
+
 // ---------- team (พนักงาน) ----------
 export async function createUser(formData: FormData) {
   const user = await requireAdmin();
@@ -148,7 +158,7 @@ export async function reassignAll(fromUserId: string, toUserId: string) {
 
 // ---------- line (ช่องทาง LINE) ----------
 export async function upsertChannel(formData: FormData) {
-  const user = await requireAdmin();
+  const user = await requireOwner();
   const id = String(formData.get("id") ?? "") || null;
   const displayName = String(formData.get("displayName") ?? "").trim();
   if (!displayName) return { ok: false, error: "กรอกชื่อช่องทาง" };
@@ -188,7 +198,7 @@ export async function upsertChannel(formData: FormData) {
 }
 
 export async function toggleChannelBot(id: string, botEnabled: boolean) {
-  const user = await requireAdmin();
+  const user = await requireOwner();
   const existing = await prisma.fuelInboxChannel.findFirst({ where: { id, orgId: user.orgId }, select: { id: true } });
   if (!existing) return { ok: false, error: "ไม่พบช่องทาง" };
   await prisma.fuelInboxChannel.update({ where: { id, orgId: user.orgId }, data: { botEnabled } });

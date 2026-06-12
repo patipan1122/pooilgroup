@@ -20,7 +20,8 @@ import { scanMailbox } from "@/lib/ledger/email-scan";
 export async function startLedgerGmailConnect(
   companyId: string,
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  // เชื่อม/จัดการ Google (Drive + Gmail) = โครงสร้างเจ้าของระบบ → super_admin เท่านั้น
+  const session = await requireRole("super_admin");
   if (!isGmailOAuthConfigured()) {
     return {
       ok: false,
@@ -54,7 +55,8 @@ export async function startLedgerGmailConnect(
 export async function startLedgerDriveConnect(
   companyId: string,
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  // เชื่อม/จัดการ Google (Drive + Gmail) = โครงสร้างเจ้าของระบบ → super_admin เท่านั้น
+  const session = await requireRole("super_admin");
   if (!isDriveOAuthConfigured()) {
     return {
       ok: false,
@@ -94,7 +96,8 @@ export async function scanMailboxNow(
   | { ok: true; imported: number; needsManual: number; skipped: number }
   | { ok: false; error: string }
 > {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  // เชื่อม/จัดการ Google (Drive + Gmail) = โครงสร้างเจ้าของระบบ → super_admin เท่านั้น
+  const session = await requireRole("super_admin");
   const conn = await prisma.ledgerEmailConnection.findFirst({
     where: { id: connectionId, orgId: session.user.org_id },
     select: { id: true },
@@ -121,7 +124,8 @@ export async function updateMailboxFilters(
     filterKeywords: string[];
   },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  // เชื่อม/จัดการ Google (Drive + Gmail) = โครงสร้างเจ้าของระบบ → super_admin เท่านั้น
+  const session = await requireRole("super_admin");
   const conn = await prisma.ledgerEmailConnection.findFirst({
     where: { id: connectionId, orgId: session.user.org_id },
     select: { id: true },
@@ -143,7 +147,8 @@ export async function updateMailboxFilters(
 export async function disconnectLedgerMailbox(
   connectionId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  // เชื่อม/จัดการ Google (Drive + Gmail) = โครงสร้างเจ้าของระบบ → super_admin เท่านั้น
+  const session = await requireRole("super_admin");
   try {
     // scope the delete to the session org — never touch another org's row
     await prisma.ledgerEmailConnection.deleteMany({

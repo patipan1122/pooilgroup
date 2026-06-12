@@ -3,8 +3,9 @@
 //
 // CEO 2026-05-23: "คนสมัครทักมาใน line oa แล้วมาโผล่ในนี้เลย" + multi-account
 
+import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { requireRecruitAdmin } from "@/lib/recruit/role-guard";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { listChannels } from "@/lib/recruit/channel-actions";
 import { Section } from "@/components/ui/section";
 import { ChannelsManager } from "@/components/recruit/channels-manager";
@@ -14,7 +15,8 @@ export const dynamic = "force-dynamic";
 
 export default async function ChannelsSettingsPage() {
   const session = await requireSession();
-  requireRecruitAdmin(session.user.role);
+  // เชื่อมช่องทาง LINE OA / Facebook = โครงสร้างเจ้าของระบบ → super_admin เท่านั้น (CEO 2026-06-12)
+  if (!isSuperAdmin(session.user.role)) redirect("/403");
 
   const channels = await listChannels();
 
