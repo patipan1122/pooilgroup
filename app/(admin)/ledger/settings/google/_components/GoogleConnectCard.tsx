@@ -37,6 +37,9 @@ type Props = {
   companyName: string;
   driveConnected: boolean;
   driveEmail: string | null;
+  /** null = not connected yet (skip health display). true/false = health check result. */
+  driveHealthy: boolean | null;
+  driveHealthReason: string | null;
   mailboxes: LedgerMailbox[];
   emailScanEnabled: boolean;
 };
@@ -125,11 +128,19 @@ function ChipInput({
   );
 }
 
+const HEALTH_REASON_LABEL: Record<string, string> = {
+  decrypt_failed: "กุญแจเข้ารหัสเปลี่ยนไป — token ถอดรหัสไม่ออก",
+  token_refresh_failed: "Google ยกเลิก token แล้ว",
+  api_error: "เรียก Drive API ไม่สำเร็จ (เน็ต/โควต้า)",
+};
+
 export function GoogleConnectCard({
   companyId,
   companyName,
   driveConnected,
   driveEmail,
+  driveHealthy,
+  driveHealthReason,
   mailboxes,
   emailScanEnabled,
 }: Props) {
@@ -270,27 +281,54 @@ export function GoogleConnectCard({
             <p className="text-xs text-zinc-500">สำรองรูป/ไฟล์ใบเสร็จเข้าไดรฟ์อัตโนมัติ (ใช้ร่วมทั้งองค์กร)</p>
           </div>
         </div>
-        <div className="mt-3 flex items-center justify-between gap-3">
-          {driveConnected ? (
-            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700">
-              <CheckCircle2 className="size-4" />
-              เชื่อมแล้ว{driveEmail ? ` · ${driveEmail}` : ""}
-            </span>
-          ) : (
-            <span className="text-sm text-zinc-500">ยังไม่เชื่อม</span>
-          )}
-          <button
-            type="button"
-            onClick={() => go("drive", () => startLedgerDriveConnect(companyId))}
-            disabled={pending}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition disabled:opacity-50",
-              driveConnected ? "border border-zinc-200 text-zinc-700 hover:bg-zinc-50" : "bg-zinc-900 text-white hover:bg-zinc-800",
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            {!driveConnected ? (
+              <span className="text-sm text-zinc-500">ยังไม่เชื่อม</span>
+            ) : driveHealthy === true ? (
+              <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700">
+                <CheckCircle2 className="size-4" />
+                เชื่อมแล้ว · ใช้งานได้{driveEmail ? ` · ${driveEmail}` : ""}
+              </span>
+            ) : driveHealthy === false ? (
+              <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-700">
+                <AlertTriangle className="size-4" />
+                เชื่อมแล้วแต่ใช้งานไม่ได้{driveEmail ? ` · ${driveEmail}` : ""}
+              </span>
+            ) : (
+              // null = not yet connected, should not reach here but fallback
+              <span className="text-sm text-zinc-500">ยังไม่เชื่อม</span>
             )}
-          >
-            {busyKey === "drive" ? <Loader2 className="size-4 animate-spin" /> : <CloudUpload className="size-4" />}
-            {driveConnected ? "เชื่อมใหม่" : "เชื่อมต่อ Drive"}
-          </button>
+            <button
+              type="button"
+              onClick={() => go("drive", () => startLedgerDriveConnect(companyId))}
+              disabled={pending}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition disabled:opacity-50",
+                driveHealthy === false
+                  ? "bg-amber-600 text-white hover:bg-amber-700"
+                  : driveConnected
+                    ? "border border-zinc-200 text-zinc-700 hover:bg-zinc-50"
+                    : "bg-zinc-900 text-white hover:bg-zinc-800",
+              )}
+            >
+              {busyKey === "drive" ? <Loader2 className="size-4 animate-spin" /> : <CloudUpload className="size-4" />}
+              {driveConnected ? "เชื่อมใหม่" : "เชื่อมต่อ Drive"}
+            </button>
+          </div>
+          {/* Show reason when token is broken — guide user to reconnect */}
+          {driveConnected && driveHealthy === false && driveHealthReason && (
+            <div className="flex items-start gap-2 rounded-xl bg-amber-50 px-3.5 py-2.5 text-sm text-amber-800">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <div>
+                <p className="font-semibold">Drive ไม่ทำงาน — ใบเสร็จไม่ได้ถูกสำรองตอนนี้</p>
+                <p className="mt-0.5 text-xs text-amber-700">
+                  สาเหตุ: {HEALTH_REASON_LABEL[driveHealthReason] ?? driveHealthReason}
+                </p>
+                <p className="mt-0.5 text-xs text-amber-700">กด "เชื่อมใหม่" แล้ว Login Google อีกครั้งเพื่อแก้ไข</p>
+              </div>
+            </div>
+          )}
         </div>
       </Card>
 

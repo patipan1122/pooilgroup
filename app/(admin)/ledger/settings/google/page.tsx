@@ -7,6 +7,7 @@ import { resolveScope } from "../../_scope";
 import { LedgerHeader, NoCompanyState } from "../../_components/LedgerHeader";
 import { listLedgerMailboxes } from "@/lib/ledger/gmail";
 import { getDriveConnection } from "@/lib/chairops/storage/drive";
+import { testDriveConnection } from "@/lib/ledger/drive";
 import { GoogleConnectCard } from "./_components/GoogleConnectCard";
 import { SettingsBack } from "../_components/SettingsBack";
 
@@ -41,6 +42,8 @@ export default async function LedgerGoogleSettingsPage({
     EMAIL_SCAN_ENABLED ? listLedgerMailboxes(scope.orgId, scope.companyId) : Promise.resolve([]),
     getDriveConnection(scope.orgId),
   ]);
+  // Health check only when a connection exists — avoids Drive API call when not yet connected.
+  const driveHealth = driveConn ? await testDriveConnection(scope.orgId) : null;
 
   return (
     <div className="p-4 pb-24 sm:p-6 lg:pb-6">
@@ -56,6 +59,8 @@ export default async function LedgerGoogleSettingsPage({
           companyName={companyName}
           driveConnected={!!driveConn}
           driveEmail={driveConn?.driveEmail ?? null}
+          driveHealthy={driveHealth?.ok ?? null}
+          driveHealthReason={driveHealth?.reason ?? null}
           mailboxes={mailboxes}
           emailScanEnabled={EMAIL_SCAN_ENABLED}
         />

@@ -37,6 +37,40 @@ export function isDriveConfigured(): boolean {
   return isDriveOAuthConfigured();
 }
 
+/**
+ * Health-check: verifies that the org's Drive connection is actually usable —
+ * not just that a DB row exists. Checks in order:
+ *   1. OAuth app env vars present
+ *   2. DB row exists (org has connected)
+ *   3. Refresh token decrypts (CHAIROPS_DRIVE_CRYPTO_KEY still matches)
+ *   4. Access token can be obtained from Google (refresh token still valid)
+ *   5. Drive API responds (lightweight about/get call)
+ * Returns { ok: true } or { ok: false, reason } — never throws.
+ */
+export async function testDriveConnection(orgId: string): Promise<{
+  ok: boolean;
+  reason?: "not_configured" | "no_connection" | "decrypt_failed" | "token_refresh_failed" | "api_error";
+}> {
+  if (!isDriveOAuthConfigured()) return { ok: false, reason: "not_configured" };
+  try {
+    const conn = await getDriveConnection(orgId);
+    if (!conn) return { ok: false, reason: "no_connection" };
+    const refreshToken = decryptToken(conn.refreshTokenEnc);
+    if (!refreshToken) return { ok: false, reason: "decrypt_failed" };
+    const accessToken = await refreshAccessToken(refreshToken);
+    if (!accessToken) return { ok: false, reason: "token_refresh_failed" };
+    // Lightweight Drive probe — about/get returns only the user's email + quota.
+    const probe = await fetch(
+      "https://www.googleapis.com/drive/v3/about?fields=user",
+      { headers: { authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(6000) },
+    );
+    if (!probe.ok) return { ok: false, reason: "api_error" };
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "api_error" };
+  }
+}
+
 /** Resolve a usable access token from the org's SHARED (ChairOps) Drive connection. */
 async function getAccessToken(orgId: string): Promise<string | null> {
   if (!isDriveOAuthConfigured()) return null;
