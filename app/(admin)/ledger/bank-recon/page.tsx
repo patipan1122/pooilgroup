@@ -12,7 +12,7 @@ import { ledgerBankReconV1 } from "@/lib/ledger/flags";
 import { listBankAccountsWithStatus } from "@/lib/ledger/bank-statement-reconcile";
 import { BankAccountStatusIcon } from "./_components/ConfidencePill";
 import { BANK_LABELS } from "@/lib/ledger/bank-adapters/types";
-import { Landmark, Upload, Settings } from "lucide-react";
+import { Landmark, Upload, Settings, TrendingUp } from "lucide-react";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -105,13 +105,22 @@ export default async function BankReconHubPage({
           )}
         </div>
 
-        <Link
-          href={`/ledger/bank-recon/accounts?company=${scope.companyId}`}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
-        >
-          <Settings size={14} />
-          จัดการบัญชี
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/ledger/bank-recon/revenue?company=${scope.companyId}`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+          >
+            <TrendingUp size={14} />
+            จัดการรายได้
+          </Link>
+          <Link
+            href={`/ledger/bank-recon/accounts?company=${scope.companyId}`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+          >
+            <Settings size={14} />
+            จัดการบัญชี
+          </Link>
+        </div>
       </div>
 
       {/* Account table */}

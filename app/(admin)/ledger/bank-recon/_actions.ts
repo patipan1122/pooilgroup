@@ -1011,3 +1011,45 @@ export async function addRevenueEntryAction(params: {
       'MANUAL', ${description || "รายได้ (บันทึกเอง)"}, ${customerName ?? null})`;
   return { ok: true };
 }
+
+// ── Revenue management (หน้าจัดการรายได้) ─────────────────────────────────────
+
+export async function listRevenueForManageAction(params: {
+  companyId: string; periodStart: string; periodEnd: string;
+}): Promise<{
+  id: string; entryDate: string; amountSatang: number; sourceType: string;
+  sourceRef: string | null; description: string | null; customerName: string | null;
+  matchState: string; inGroup: boolean;
+}[]> {
+  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager");
+  const orgId = session.user.org_id;
+  const rows = await prisma.$queryRaw<{
+    id: string; entryDate: string; amountSatang: bigint; sourceType: string;
+    sourceRef: string | null; description: string | null; customerName: string | null;
+    matchState: string; inGroup: boolean;
+  }[]>`
+    SELECT r.id::text as id, r.entry_date::text as "entryDate", r.amount_satang as "amountSatang",
+           r.source_type as "sourceType", r.source_ref as "sourceRef", r.description,
+           r.customer_name as "customerName", r.match_state as "matchState",
+           EXISTS (SELECT 1 FROM ledger_bank_match_item mi WHERE mi.book_type='revenue' AND mi.book_id=r.id) as "inGroup"
+    FROM ledger_revenue_entry r
+    WHERE r.org_id=${orgId}::uuid AND r.company_id=${params.companyId}::uuid
+      AND r.entry_date BETWEEN ${params.periodStart}::date AND ${params.periodEnd}::date
+    ORDER BY r.entry_date DESC, r.amount_satang DESC
+    LIMIT 500`;
+  return rows.map((r) => ({ ...r, amountSatang: Number(r.amountSatang) }));
+}
+
+export async function deleteRevenueEntryAction(revenueId: string): Promise<{ ok: boolean; error?: string }> {
+  const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
+  // can't delete if already matched or sitting in an active group
+  const guard = await prisma.$queryRaw<{ matched: boolean; inGroup: boolean }[]>`
+    SELECT (r.match_state='matched') as matched,
+           EXISTS (SELECT 1 FROM ledger_bank_match_item mi WHERE mi.book_type='revenue' AND mi.book_id=r.id) as "inGroup"
+    FROM ledger_revenue_entry r WHERE r.id=${revenueId}::uuid AND r.org_id=${orgId}::uuid LIMIT 1`;
+  if (!guard.length) return { ok: false, error: "ไม่พบรายการ" };
+  if (guard[0].matched || guard[0].inGroup) return { ok: false, error: "รายการนี้กระทบยอดแล้ว ลบไม่ได้" };
+  await prisma.$executeRaw`DELETE FROM ledger_revenue_entry WHERE id=${revenueId}::uuid AND org_id=${orgId}::uuid`;
+  return { ok: true };
+}
