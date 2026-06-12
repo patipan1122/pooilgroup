@@ -2,7 +2,30 @@
 // A "NormalizedRow" is what every adapter must produce regardless of source format.
 // Amounts are always in satang (integer × 100) to avoid floating-point errors.
 
-export type BankCode = "KBANK" | "SCB" | "TTB" | "BBL" | "BAAC" | "KTB" | "BAY" | "OTHER";
+export type BankCode =
+  | "KBANK" | "SCB" | "TTB" | "BBL" | "BAAC"
+  | "KTB" | "BAY" | "GSB" | "CIMB" | "UOB" | "TRUEMONEY" | "OTHER";
+
+/** Thai display names — single source of truth for every bank-recon surface. */
+export const BANK_LABELS: Record<string, string> = {
+  KBANK:     "กสิกรไทย",
+  SCB:       "ไทยพาณิชย์",
+  TTB:       "ทหารไทยธนชาต",
+  BBL:       "กรุงเทพ",
+  BAAC:      "ธ.ก.ส.",
+  KTB:       "กรุงไทย",
+  BAY:       "กรุงศรีฯ",
+  GSB:       "ออมสิน",
+  CIMB:      "CIMB",
+  UOB:       "UOB",
+  TRUEMONEY: "ทรูมันนี่",
+  OTHER:     "อื่นๆ",
+};
+
+/** Ordered list for dropdowns in the bank-account settings form. */
+export const BANK_OPTIONS: { code: string; label: string }[] = [
+  "BBL", "KBANK", "SCB", "TTB", "BAAC", "KTB", "BAY", "GSB", "CIMB", "UOB", "TRUEMONEY", "OTHER",
+].map((code) => ({ code, label: BANK_LABELS[code] ?? code }));
 
 export interface NormalizedRow {
   txnDate: string;     // ISO: 'YYYY-MM-DD'

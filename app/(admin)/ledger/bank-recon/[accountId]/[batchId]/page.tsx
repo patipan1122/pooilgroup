@@ -14,18 +14,9 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { redirect } from "next/navigation";
+import { BANK_LABELS as BANK_NAMES } from "@/lib/ledger/bank-adapters/types";
 
 export const dynamic = "force-dynamic";
-
-const BANK_NAMES: Record<string, string> = {
-  KBANK: "กสิกรไทย",
-  SCB:   "ไทยพาณิชย์",
-  TTB:   "TTB",
-  BBL:   "กรุงเทพ",
-  BAAC:  "ธ.ก.ส.",
-  KTB:   "กรุงไทย",
-  BAY:   "กรุงศรีฯ",
-};
 
 export default async function MatchPage({
   params,

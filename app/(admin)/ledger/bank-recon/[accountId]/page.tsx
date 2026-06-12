@@ -12,18 +12,9 @@ import { prisma } from "@/lib/prisma";
 import { CheckCircle, Clock, Lock, Upload, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { BANK_LABELS as BANK_NAMES } from "@/lib/ledger/bank-adapters/types";
 
 export const dynamic = "force-dynamic";
-
-const BANK_NAMES: Record<string, string> = {
-  KBANK: "กสิกรไทย",
-  SCB:   "ไทยพาณิชย์",
-  TTB:   "TTB",
-  BBL:   "กรุงเทพ",
-  BAAC:  "ธ.ก.ส.",
-  KTB:   "กรุงไทย",
-  BAY:   "กรุงศรีฯ",
-};
 
 function StatusBadge({ status }: { status: string }) {
   if (status === "locked") {

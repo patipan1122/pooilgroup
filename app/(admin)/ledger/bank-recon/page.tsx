@@ -11,20 +11,13 @@ import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
 import { ledgerBankReconV1 } from "@/lib/ledger/flags";
 import { listBankAccountsWithStatus } from "@/lib/ledger/bank-statement-reconcile";
 import { BankAccountStatusIcon } from "./_components/ConfidencePill";
-import { Landmark, Plus, Upload } from "lucide-react";
+import { BANK_LABELS } from "@/lib/ledger/bank-adapters/types";
+import { Landmark, Upload, Settings } from "lucide-react";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
-const BANK_NAMES: Record<string, string> = {
-  KBANK: "กสิกรไทย",
-  SCB:   "ไทยพาณิชย์",
-  TTB:   "TTB",
-  BBL:   "กรุงเทพ",
-  BAAC:  "ธ.ก.ส.",
-  KTB:   "กรุงไทย",
-  BAY:   "กรุงศรีฯ",
-};
+const BANK_NAMES = BANK_LABELS;
 
 export default async function BankReconHubPage({
   searchParams,
@@ -111,6 +104,14 @@ export default async function BankReconHubPage({
             <span className="rounded-lg border border-zinc-100 px-3 py-1.5 text-sm text-zinc-300">→</span>
           )}
         </div>
+
+        <Link
+          href={`/ledger/bank-recon/accounts?company=${scope.companyId}`}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+        >
+          <Settings size={14} />
+          จัดการบัญชี
+        </Link>
       </div>
 
       {/* Account table */}
@@ -118,9 +119,13 @@ export default async function BankReconHubPage({
         <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 py-16 text-center">
           <Landmark size={32} className="mx-auto mb-3 text-zinc-300" />
           <p className="text-sm font-medium text-zinc-600">ยังไม่มีบัญชีธนาคาร</p>
-          <p className="mt-1 text-xs text-zinc-400">
-            เพิ่มบัญชีธนาคารใน Settings → บัญชีธนาคาร
-          </p>
+          <Link
+            href={`/ledger/bank-recon/accounts?company=${scope.companyId}`}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700"
+          >
+            <Settings size={12} />
+            เพิ่มบัญชีธนาคาร
+          </Link>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-zinc-100">
