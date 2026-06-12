@@ -716,3 +716,298 @@ export async function listBatchesAction(bankAccountId: string) {
     LIMIT 24
   `;
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// PEAK-parity group matching (N:M) — รอกระทบยอด → รอยืนยัน → กระทบยอดทั้งหมด
+// ════════════════════════════════════════════════════════════════════════════
+
+type BookRef = { bookType: "revenue" | "expense" | "payment"; bookId: string };
+
+async function fetchBookAmount(
+  orgId: string, companyId: string, ref: BookRef,
+): Promise<{ amountSatang: number; docNo: string } | null> {
+  if (ref.bookType === "revenue") {
+    const r = await prisma.$queryRaw<{ amt: bigint; doc: string }[]>`
+      SELECT amount_satang as amt, COALESCE(source_ref,'') as doc FROM ledger_revenue_entry
+      WHERE id=${ref.bookId}::uuid AND org_id=${orgId}::uuid AND company_id=${companyId}::uuid LIMIT 1`;
+    return r.length ? { amountSatang: Number(r[0].amt), docNo: r[0].doc } : null;
+  }
+  if (ref.bookType === "expense") {
+    const r = await prisma.$queryRaw<{ amt: bigint; doc: string }[]>`
+      SELECT (-ROUND(total*100))::bigint as amt, COALESCE(doc_code,'') as doc FROM ledger_expense
+      WHERE id=${ref.bookId}::uuid AND org_id=${orgId}::uuid AND company_id=${companyId}::uuid LIMIT 1`;
+    return r.length ? { amountSatang: Number(r[0].amt), docNo: r[0].doc } : null;
+  }
+  const r = await prisma.$queryRaw<{ amt: bigint; doc: string }[]>`
+    SELECT (-ROUND(amount*100))::bigint as amt, COALESCE(trans_ref,'') as doc FROM ledger_payment
+    WHERE id=${ref.bookId}::uuid AND org_id=${orgId}::uuid AND company_id=${companyId}::uuid LIMIT 1`;
+  return r.length ? { amountSatang: Number(r[0].amt), docNo: r[0].doc } : null;
+}
+
+// Create a match group from selected bank movements + book entries.
+export async function createMatchGroupAction(params: {
+  bankAccountId: string;
+  bankTxnIds: string[];
+  bookRefs: BookRef[];
+  matchKind?: "auto" | "manual";
+  note?: string;
+}): Promise<{ ok: boolean; error?: string; groupId?: string }> {
+  const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
+  const { bankAccountId, bankTxnIds, bookRefs } = params;
+
+  if (!bankTxnIds.length || !bookRefs.length) {
+    return { ok: false, error: "ต้องเลือกอย่างน้อย 1 รายการธนาคาร และ 1 รายการบัญชี" };
+  }
+
+  // Bank side: verify org + account + unmatched + not locked; sum amounts
+  const bankRows = await prisma.$queryRaw<{
+    id: string; amountSatang: bigint; companyId: string; locked: boolean; state: string;
+  }[]>`
+    SELECT t.id::text as id, t.amount_satang as "amountSatang", t.company_id as "companyId",
+           (b.locked_at IS NOT NULL) as "locked", t.match_state as "state"
+    FROM ledger_bank_txn t
+    JOIN ledger_bank_import_batch b ON b.id = t.batch_id
+    WHERE t.id = ANY(${bankTxnIds}::uuid[]) AND t.org_id = ${orgId}::uuid
+      AND t.bank_account_id = ${bankAccountId}::uuid
+  `;
+  if (bankRows.length !== bankTxnIds.length) return { ok: false, error: "ไม่พบรายการธนาคารบางรายการ" };
+  if (bankRows.some((r) => r.locked)) return { ok: false, error: "งวดนี้ล็อกแล้ว" };
+  if (bankRows.some((r) => r.state !== "unmatched")) return { ok: false, error: "บางรายการธนาคารถูกจับคู่ไปแล้ว" };
+
+  const companyId = bankRows[0].companyId;
+  const bankTotal = bankRows.reduce((s, r) => s + Number(r.amountSatang), 0);
+
+  // Book side: fetch amounts
+  let bookTotal = 0;
+  const bookItems: { ref: BookRef; amountSatang: number; docNo: string }[] = [];
+  for (const ref of bookRefs) {
+    const b = await fetchBookAmount(orgId, companyId, ref);
+    if (!b) return { ok: false, error: "ไม่พบรายการบัญชีบางรายการ" };
+    bookTotal += b.amountSatang;
+    bookItems.push({ ref, amountSatang: b.amountSatang, docNo: b.docNo });
+  }
+
+  const delta = bankTotal - bookTotal;
+  const groupId = randomUUID();
+
+  const ops = [
+    prisma.$executeRaw`
+      INSERT INTO ledger_bank_match_group
+        (id, org_id, company_id, bank_account_id, status, match_kind,
+         bank_total_satang, book_total_satang, delta_satang, note, created_by)
+      VALUES (${groupId}::uuid, ${orgId}::uuid, ${companyId}::uuid, ${bankAccountId}::uuid,
+        'suggested', ${params.matchKind ?? "manual"},
+        ${bankTotal}, ${bookTotal}, ${delta}, ${params.note ?? null}, ${session.user.id}::uuid)`,
+  ];
+  for (const r of bankRows) {
+    ops.push(prisma.$executeRaw`
+      INSERT INTO ledger_bank_match_item (id, group_id, org_id, kind, bank_txn_id, amount_satang)
+      VALUES (gen_random_uuid(), ${groupId}::uuid, ${orgId}::uuid, 'bank', ${r.id}::uuid, ${Number(r.amountSatang)})`);
+    ops.push(prisma.$executeRaw`
+      UPDATE ledger_bank_txn SET match_state='suggested' WHERE id=${r.id}::uuid AND org_id=${orgId}::uuid AND match_state='unmatched'`);
+  }
+  for (const b of bookItems) {
+    ops.push(prisma.$executeRaw`
+      INSERT INTO ledger_bank_match_item (id, group_id, org_id, kind, book_type, book_id, book_doc_no, amount_satang)
+      VALUES (gen_random_uuid(), ${groupId}::uuid, ${orgId}::uuid, 'book', ${b.ref.bookType}, ${b.ref.bookId}::uuid, ${b.docNo}, ${b.amountSatang})`);
+  }
+
+  try {
+    await prisma.$transaction(ops);
+  } catch {
+    return { ok: false, error: "บางรายการถูกจับคู่ไปแล้ว หรือบันทึกไม่สำเร็จ" };
+  }
+  return { ok: true, groupId };
+}
+
+// Auto-match: pair each unmatched credit/debit with a single book entry of equal
+// amount within ±2 days, creating suggested groups (PEAK step-1 auto).
+export async function autoMatchGroupsAction(
+  batchId: string, bankAccountId: string,
+): Promise<{ ok: boolean; created: number; error?: string }> {
+  const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
+
+  const batch = await prisma.$queryRaw<{ companyId: string; ps: string; pe: string; locked: boolean }[]>`
+    SELECT company_id as "companyId", period_start::text as ps, period_end::text as pe,
+           (locked_at IS NOT NULL) as locked
+    FROM ledger_bank_import_batch WHERE id=${batchId}::uuid AND org_id=${orgId}::uuid LIMIT 1`;
+  if (!batch.length) return { ok: false, created: 0, error: "ไม่พบงวด" };
+  if (batch[0].locked) return { ok: false, created: 0, error: "งวดนี้ล็อกแล้ว" };
+  const { companyId } = batch[0];
+
+  // unmatched bank movements (this batch, not yet in a group)
+  const banks = await prisma.$queryRaw<{ id: string; amt: bigint; d: string }[]>`
+    SELECT t.id::text as id, t.amount_satang as amt, t.txn_date::text as d
+    FROM ledger_bank_txn t
+    WHERE t.batch_id=${batchId}::uuid AND t.org_id=${orgId}::uuid AND t.match_state='unmatched'
+      AND NOT EXISTS (SELECT 1 FROM ledger_bank_match_item mi WHERE mi.bank_txn_id=t.id)
+    ORDER BY t.txn_date LIMIT 500`;
+
+  // candidate book entries in period (not yet grouped)
+  const book = await listBookEntriesForAuto(orgId, companyId, batch[0].ps, batch[0].pe);
+
+  const usedBook = new Set<string>();
+  let created = 0;
+  for (const bk of banks) {
+    const amt = Number(bk.amt);
+    const bd = new Date(bk.d).getTime();
+    const hit = book.find((e) => !usedBook.has(`${e.bookType}:${e.bookId}`)
+      && e.amountSatang === amt
+      && Math.abs((new Date(e.date).getTime() - bd) / 86400000) <= 2);
+    if (!hit) continue;
+    usedBook.add(`${hit.bookType}:${hit.bookId}`);
+    const res = await createMatchGroupAction({
+      bankAccountId, bankTxnIds: [bk.id],
+      bookRefs: [{ bookType: hit.bookType, bookId: hit.bookId }], matchKind: "auto",
+    });
+    if (res.ok) created++;
+  }
+  return { ok: true, created };
+}
+
+async function listBookEntriesForAuto(orgId: string, companyId: string, ps: string, pe: string) {
+  const { listBookEntries } = await import("@/lib/ledger/bank-reconcile-board");
+  return listBookEntries({ orgId, companyId, periodStart: ps, periodEnd: pe });
+}
+
+export async function confirmGroupAction(groupId: string): Promise<{ ok: boolean; error?: string }> {
+  return confirmGroupsInternal([groupId]);
+}
+
+export async function confirmAllGroupsAction(bankAccountId: string): Promise<{ ok: boolean; confirmed: number; error?: string }> {
+  const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
+  const groups = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id::text FROM ledger_bank_match_group
+    WHERE bank_account_id=${bankAccountId}::uuid AND org_id=${orgId}::uuid AND status='suggested'`;
+  if (!groups.length) return { ok: true, confirmed: 0 };
+  const res = await confirmGroupsInternal(groups.map((g) => g.id));
+  return res.ok ? { ok: true, confirmed: groups.length } : { ok: false, confirmed: 0, error: res.error };
+}
+
+async function confirmGroupsInternal(groupIds: string[]): Promise<{ ok: boolean; error?: string }> {
+  const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
+
+  // guard: none locked
+  const locked = await prisma.$queryRaw<{ c: number }[]>`
+    SELECT COUNT(*)::int as c
+    FROM ledger_bank_match_group g
+    JOIN ledger_bank_match_item mi ON mi.group_id=g.id AND mi.kind='bank'
+    JOIN ledger_bank_txn t ON t.id=mi.bank_txn_id
+    JOIN ledger_bank_import_batch b ON b.id=t.batch_id
+    WHERE g.id = ANY(${groupIds}::uuid[]) AND g.org_id=${orgId}::uuid AND b.locked_at IS NOT NULL`;
+  if ((locked[0]?.c ?? 0) > 0) return { ok: false, error: "งวดนี้ล็อกแล้ว" };
+
+  await prisma.$transaction([
+    prisma.$executeRaw`
+      UPDATE ledger_bank_match_group SET status='confirmed', confirmed_by=${session.user.id}::uuid,
+        confirmed_at=now(), updated_at=now()
+      WHERE id = ANY(${groupIds}::uuid[]) AND org_id=${orgId}::uuid AND status='suggested'`,
+    prisma.$executeRaw`
+      UPDATE ledger_bank_txn SET match_state='confirmed'
+      WHERE org_id=${orgId}::uuid AND id IN (
+        SELECT mi.bank_txn_id FROM ledger_bank_match_item mi
+        WHERE mi.group_id = ANY(${groupIds}::uuid[]) AND mi.kind='bank')`,
+    // close revenue book entries so the auto-match engine never re-suggests them
+    prisma.$executeRaw`
+      UPDATE ledger_revenue_entry SET match_state='matched', updated_at=now()
+      WHERE org_id=${orgId}::uuid AND id IN (
+        SELECT mi.book_id FROM ledger_bank_match_item mi
+        WHERE mi.group_id = ANY(${groupIds}::uuid[]) AND mi.kind='book' AND mi.book_type='revenue')`,
+  ]);
+  return { ok: true };
+}
+
+// Remove a group (suggested or confirmed, if not locked) — frees bank + book entries.
+export async function removeGroupAction(groupId: string): Promise<{ ok: boolean; error?: string }> {
+  const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
+
+  const locked = await prisma.$queryRaw<{ c: number }[]>`
+    SELECT COUNT(*)::int as c
+    FROM ledger_bank_match_item mi
+    JOIN ledger_bank_txn t ON t.id=mi.bank_txn_id
+    JOIN ledger_bank_import_batch b ON b.id=t.batch_id
+    WHERE mi.group_id=${groupId}::uuid AND mi.org_id=${orgId}::uuid AND b.locked_at IS NOT NULL`;
+  if ((locked[0]?.c ?? 0) > 0) return { ok: false, error: "งวดนี้ล็อกแล้ว" };
+
+  await prisma.$transaction([
+    prisma.$executeRaw`
+      UPDATE ledger_bank_txn SET match_state='unmatched'
+      WHERE org_id=${orgId}::uuid AND id IN (
+        SELECT mi.bank_txn_id FROM ledger_bank_match_item mi
+        WHERE mi.group_id=${groupId}::uuid AND mi.kind='bank')`,
+    prisma.$executeRaw`
+      UPDATE ledger_revenue_entry SET match_state='unmatched', bank_txn_id=NULL, updated_at=now()
+      WHERE org_id=${orgId}::uuid AND id IN (
+        SELECT mi.book_id FROM ledger_bank_match_item mi
+        WHERE mi.group_id=${groupId}::uuid AND mi.kind='book' AND mi.book_type='revenue')`,
+    prisma.$executeRaw`DELETE FROM ledger_bank_match_item WHERE group_id=${groupId}::uuid AND org_id=${orgId}::uuid`,
+    prisma.$executeRaw`
+      UPDATE ledger_bank_match_group SET status='reversed', reversed_by=${session.user.id}::uuid,
+        reversed_at=now(), updated_at=now()
+      WHERE id=${groupId}::uuid AND org_id=${orgId}::uuid`,
+  ]);
+  return { ok: true };
+}
+
+// Manually add a bank movement to a batch (PEAK "เพิ่มรายการ").
+export async function addBankMovementAction(params: {
+  batchId: string; bankAccountId: string; date: string;
+  amountSatang: number; description: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
+  const { batchId, bankAccountId, date, amountSatang, description } = params;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: "วันที่ไม่ถูกต้อง" };
+  if (!Number.isInteger(amountSatang) || amountSatang === 0) return { ok: false, error: "จำนวนเงินไม่ถูกต้อง" };
+
+  const acct = await prisma.$queryRaw<{ companyId: string; accountNo: string; locked: boolean }[]>`
+    SELECT b.company_id as "companyId", a.account_no as "accountNo", (b.locked_at IS NOT NULL) as locked
+    FROM ledger_bank_import_batch b JOIN ledger_bank_account a ON a.id=b.bank_account_id
+    WHERE b.id=${batchId}::uuid AND b.org_id=${orgId}::uuid AND b.bank_account_id=${bankAccountId}::uuid LIMIT 1`;
+  if (!acct.length) return { ok: false, error: "ไม่พบงวด" };
+  if (acct[0].locked) return { ok: false, error: "งวดนี้ล็อกแล้ว" };
+
+  const maxIdx = await prisma.$queryRaw<{ m: number }[]>`
+    SELECT COALESCE(MAX(row_index),0)+1 as m FROM ledger_bank_txn WHERE batch_id=${batchId}::uuid`;
+  const rowIndex = maxIdx[0]?.m ?? 1000;
+  const lineHash = computeLineHash({
+    accountNo: acct[0].accountNo, txnDate: date, amountSatang, balanceSatang: 0, ref1: "MANUAL", rowIndex,
+  });
+  try {
+    await prisma.$executeRaw`
+      INSERT INTO ledger_bank_txn
+        (id, org_id, company_id, bank_account_id, batch_id, line_hash, txn_date,
+         amount_satang, balance_satang, description, source_type, row_index)
+      VALUES (gen_random_uuid(), ${orgId}::uuid, ${acct[0].companyId}::uuid, ${bankAccountId}::uuid,
+        ${batchId}::uuid, ${lineHash}, ${date}::date, ${amountSatang}, 0, ${description || "เพิ่มเอง"},
+        'MANUAL_BAAC', ${rowIndex})`;
+  } catch {
+    return { ok: false, error: "รายการนี้มีอยู่แล้ว หรือบันทึกไม่สำเร็จ" };
+  }
+  return { ok: true };
+}
+
+// Manually add a revenue book entry (PEAK book-side add / import รายได้).
+export async function addRevenueEntryAction(params: {
+  companyId: string; entryDate: string; amountSatang: number;
+  description: string; customerName?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
+  const { companyId, entryDate, amountSatang, description, customerName } = params;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) return { ok: false, error: "วันที่ไม่ถูกต้อง" };
+  if (!Number.isInteger(amountSatang) || amountSatang <= 0) return { ok: false, error: "จำนวนเงินต้องมากกว่า 0" };
+  if (!companyId) return { ok: false, error: "ไม่พบบริษัท" };
+
+  await prisma.$executeRaw`
+    INSERT INTO ledger_revenue_entry
+      (org_id, company_id, entry_date, amount_satang, source_type, description, customer_name)
+    VALUES (${orgId}::uuid, ${companyId}::uuid, ${entryDate}::date, ${amountSatang},
+      'MANUAL', ${description || "รายได้ (บันทึกเอง)"}, ${customerName ?? null})`;
+  return { ok: true };
+}
