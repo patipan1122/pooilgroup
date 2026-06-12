@@ -19,11 +19,20 @@ const EMAIL_SCAN_ENABLED =
 export default async function LedgerGoogleSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ company?: string; branch?: string }>;
+  searchParams: Promise<{
+    company?: string;
+    branch?: string;
+    /** Set by the OAuth callback on success */
+    drive_connected?: string;
+    /** Set by the OAuth callback on failure */
+    error?: string;
+  }>;
 }) {
   const session = await requireRole("super_admin", "org_admin", "admin");
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);
+  const callbackError = sp.error ?? null;
+  const driveJustConnected = sp.drive_connected === "1";
 
   if (!scope.companyId) {
     return (
@@ -61,6 +70,8 @@ export default async function LedgerGoogleSettingsPage({
           driveEmail={driveConn?.driveEmail ?? null}
           driveHealthy={driveHealth?.ok ?? null}
           driveHealthReason={driveHealth?.reason ?? null}
+          driveJustConnected={driveJustConnected}
+          callbackError={callbackError}
           mailboxes={mailboxes}
           emailScanEnabled={EMAIL_SCAN_ENABLED}
         />

@@ -32,6 +32,13 @@ import {
 } from "../_actions";
 import type { LedgerMailbox } from "@/lib/ledger/gmail";
 
+const CALLBACK_ERROR_LABEL: Record<string, string> = {
+  bad_state: "Session หมดอายุ (เปิดหน้านี้นานเกินไป) — กดเชื่อมใหม่อีกครั้ง",
+  exchange_failed: "Google ไม่ยอมรับ code — กดเชื่อมใหม่อีกครั้ง",
+  store_failed: "บันทึกการเชื่อมต่อไม่สำเร็จ — แจ้งผู้ดูแลระบบ",
+  forbidden: "ต้องเป็น Admin จึงจะเชื่อม Drive ได้",
+};
+
 type Props = {
   companyId: string;
   companyName: string;
@@ -40,6 +47,10 @@ type Props = {
   /** null = not connected yet (skip health display). true/false = health check result. */
   driveHealthy: boolean | null;
   driveHealthReason: string | null;
+  /** true when Google callback just succeeded → show success flash */
+  driveJustConnected: boolean;
+  /** non-null when Google callback returned an error */
+  callbackError: string | null;
   mailboxes: LedgerMailbox[];
   emailScanEnabled: boolean;
 };
@@ -141,6 +152,8 @@ export function GoogleConnectCard({
   driveEmail,
   driveHealthy,
   driveHealthReason,
+  driveJustConnected,
+  callbackError,
   mailboxes,
   emailScanEnabled,
 }: Props) {
@@ -257,6 +270,23 @@ export function GoogleConnectCard({
         </p>
       </div>
 
+      {driveJustConnected && (
+        <div className="flex items-start gap-2 rounded-xl bg-emerald-50 px-3.5 py-3 text-sm text-emerald-800">
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+          <span><b>เชื่อม Google Drive สำเร็จ</b> — ใบเสร็จจะถูกสำรองอัตโนมัติจากนี้ไป</span>
+        </div>
+      )}
+      {callbackError && (
+        <div className="flex items-start gap-2 rounded-xl bg-rose-50 px-3.5 py-3 text-sm text-rose-700">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <div>
+            <p className="font-semibold">เชื่อม Drive ไม่สำเร็จ</p>
+            <p className="mt-0.5 text-xs">
+              {CALLBACK_ERROR_LABEL[callbackError] ?? `Error: ${callbackError}`}
+            </p>
+          </div>
+        </div>
+      )}
       {error && (
         <div className="flex items-start gap-2 rounded-xl bg-rose-50 px-3.5 py-3 text-sm text-rose-700">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
