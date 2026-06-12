@@ -1,6 +1,57 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-07 (LedgerLine TRCloud v2 · 5 skills complete · pending prod deploy + CEO DB migration)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-12 (LedgerLine Bank Recon · DEPLOYED b13acab · ✅ migrations applied + 26 บัญชีจริง seed + Settings CRUD · CEO เปิด flag แล้ว)
+
+## 🆕 Update (2026-06-12 #2 — Bank Recon DEPLOYED + 26 บัญชีจริง + Settings page)
+
+**สถานะ: ใช้งานได้จริงแล้ว** — CEO เพิ่ม `LEDGER_BANK_RECON_V1=1` ใน Vercel แล้ว
+
+- **Migrations applied to prod DB** (psql DIRECT_URL port 5432): 6 ไฟล์ครบ (4 bank tables + revenue_entry + seed). แก้ revenue_entry RLS: `profiles` (ไม่มี table) → `auth.jwt() app_metadata org_id` (pattern เดียวกับ ledger tables อื่น)
+- **Seed 26 บัญชีจริงจาก CEO master sheet** (Google Sheets, อ่านผ่าน Drive MCP — แม่น 100%):
+  · ขยาย `bank_code` → เพิ่ม GSB (ออมสิน) + TRUEMONEY (wallet)
+  · เพิ่ม col `legal_entity` (บริษัทเจ้าของจริง: เจพีซิ้ง×16, ส่วนบุคคล×4, วายเอ็มพลัส×3, วีดิค×2, พีโอออยล์×1) + `flow_type` (ฝากเงินสด/QR/EDC/คนละครึ่ง)
+  · ทุกบัญชี → ผูก junction กับ JP Sync Group = CEO เห็นเงินทุกบาทในที่เดียว (legal_entity เก็บเจ้าของจริงไว้ แยกบริษัททีหลังได้)
+  · 24 active + 2 ยกเลิก (is_active=false, เก็บประวัติ) · natural-key unique = re-run seed ปลอดภัย
+  · seed file: `20260612006000_ledger_bank_account_seed_pooil.sql`
+- **Settings → บัญชีธนาคาร** (`/ledger/bank-recon/accounts`): admin เพิ่ม/แก้/ปิดใช้งานเองได้ (future-proof) · dup-guard · soft-delete · role-gated · ลิงก์จาก hub ("จัดการบัญชี")
+- **Shared `BANK_LABELS`+`BANK_OPTIONS`** ใน bank-adapters/types (DRY — แทน BANK_NAMES 3 ที่ + เพิ่มชื่อ GSB/TrueMoney)
+- TypeScript: 0 error ใน bank-recon (2 error เดิม = chairops .next cache stale, ไม่เกี่ยว)
+
+**⚠️ ยังไม่ครบ (เก็บงานต่อ):**
+1. **Import adapters: ออมสิน GSB + กรุงไทย KTB ยังไม่มี** — ตอน upload statement 2 ธนาคารนี้ต้องคีย์มือ (BAAC-manual style) จนกว่าจะเขียน adapter
+2. **บัญชีส่วนตัว 2 ตัว (TrueMoney 1594, BBL 7775) เลขไม่ครบ** — รับเข้าระบบแล้วแต่ต้องเติมเลขเต็มก่อน import statement
+3. Pooil Oil ยังไม่มี view แยก (ออมสินโรงแรม Mix อยู่ใต้ JP Sync) — แยกได้ถ้า CEO ต้องการ
+
+## 🆕 Update (2026-06-12 — LedgerLine Bank Recon — ระบบกระทบยอดธนาคาร COMPLETE)
+
+### สรุปสิ่งที่ทำ
+
+ระบบกระทบยอดธนาคาร (Bank Statement Reconciliation) ใน LedgerLine เสร็จสมบูรณ์พร้อมใช้งาน
+Feature flag: `LEDGER_BANK_RECON_V1=1`
+
+**DB Migrations (ต้อง apply ก่อน):**
+- `20260612001000_ledger_bank_account.sql` — `ledger_bank_account` + `ledger_bank_account_company` junction (PDPA/multi-tenant)
+- `20260612002000_ledger_bank_import_batch.sql` — `ledger_bank_import_batch` (period, status, lock fingerprint)
+- `20260612003000_ledger_bank_txn.sql` — `ledger_bank_txn` + `ledger_bank_insert_batch` RPC (atomic import, lineHash dedup)
+- `20260612004000_ledger_bank_match.sql` — `ledger_bank_match` + `ledger_bank_provisional_gl` (GL 4999-PROV)
+
+**Bank Adapters (lib/ledger/bank-adapters/):**
+- KBank KBIZ (CSV ข้ามบรรทัด metadata, col interleaved), SCB, TTB, BBL (US-date M/D/YYYY), BAAC manual
+
+**UI Pages:**
+- `/ledger/bank-recon` — Hub: รายการบัญชีทุก account + สถานะ 🟢🔵⚫🔒 per month
+- `/ledger/bank-recon/[accountId]` — Account detail: ImportWizard 3-step + ประวัติ batch
+- `/ledger/bank-recon/[accountId]/[batchId]` — Match page: 3-tab (รอ/รอยืนยัน/เสร็จ) + 2-panel split + Lock period (SHA-256 fingerprint)
+
+**เมนู:** เพิ่ม "กระทบยอดธนาคาร" (Landmark icon) ใน lib/modules.ts ใต้ "การเงิน – จ่ายเงิน"
+
+**TypeScript: clean (0 errors ใน bank-recon files)**
+
+**⚠️ ขั้นตอนต่อไปที่ CEO ต้องทำ:**
+1. Apply 4 migrations ใน Supabase Dashboard
+2. เพิ่ม `LEDGER_BANK_RECON_V1=1` ใน Vercel env
+3. เพิ่ม bank account ใน `/ledger/settings → บัญชีธนาคาร` (ต้องสร้างหน้านี้)
+4. ทดสอบ upload CSV KBank/SCB/TTB/BBL แล้วดู match suggestions
 > ใช้แทน `ดีเทลv1/PROJECT_TRACKER.md` (ซึ่งบอก 0% — ไม่จริง)
 > Brand: **Pooilgroup** (คำเดียว, P ใหญ่)
 
