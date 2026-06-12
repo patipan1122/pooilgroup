@@ -1,6 +1,17 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-12 (LedgerLine Bank Recon · ✅ PEAK-parity LIVE 6cc6932 · กระดาน 2 คอลัมน์ N:M + 2-step + จัดการรายได้)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-12 (LedgerLine Bank Recon · ✅ PEAK v2 LIVE 2d2071d · กระทบยอดตามช่วงเวลา + overview 2 แท็บ + logo ธนาคาร)
+
+## 🎯 PEAK PARITY v2 (2026-06-12 #7 — กระทบยอดตามช่วงเวลา + overview · DEPLOYED 2d2071d)
+
+CEO เทียบ PEAK หน้าต่อหน้า → แก้ใหญ่:
+- **กระทบยอดตาม "ช่วงเวลา" ไม่ใช่ "ต่อไฟล์"** — reconcile board ย้าย `/[accountId]/reconcile?period=` ดึง bank movements ทั้งบัญชีในเดือน (ข้าม batch) = ต่อเนื่องแบบ PEAK. ลบ route `[batchId]` + MatchPanel เก่า
+- **หน้า account overview** `/[accountId]` แบบ PEAK "ภาพรวมเงินเข้า-ออก": ยอดยกมา/เข้า/ออก/คงเหลือ + อัพ statement ถึงวันไหน + **2 แท็บ** (รายการบันทึกบัญชี กดดูบิล→`expenses?selected` | รายการเคลื่อนไหว running balance) + ปุ่มไปกระทบยอด + import + ประวัติ
+- **logo ธนาคารสีแบรนด์** (BankLogo) + hub จัดกลุ่มตามธนาคาร + บอกอัพถึงวันไหน
+- **ค้นหา** 2 ฝั่งใน board · เพิ่มรายการเอง→get-or-create manual batch · ดึง TRCloud ตามช่วง (syncRevenueRange)
+- data layer เพิ่ม: listBankLedger/listBookLedger/accountSummary · build exit 0 · deploy Ready
+
+**ยังเหลือ:** TRCloud auto-pull (cron) — ตอนนี้ pull-on-demand · PEAK "ทำรายการ" doc menu · adapter ธ.ก.ส./ออมสิน/กรุงไทย/ทรูมันนี่ · lock period (reworking for date-range) · bulk revenue CSV.
 
 ## 🎯 PEAK PARITY (2026-06-12 #6 — รื้อหน้ากระทบยอดเป็นแบบ PEAK · DEPLOYED 6cc6932)
 
