@@ -1,6 +1,33 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-12 (LedgerLine Bank Recon · DEPLOYED b13acab · ✅ migrations applied + 26 บัญชีจริง seed + Settings CRUD · CEO เปิด flag แล้ว)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-12 (LedgerLine Bank Recon · ✅ แก้ 12 P0 + P1 จาก audit แล้ว DEPLOYED af5fc96 · พร้อม pilot 1 บัญชี KBANK)
+
+## ✅ FIX (2026-06-12 #4 — แก้ 12 P0 + P1 จาก /auditbigteam · DEPLOYED af5fc96)
+
+แก้ครบทุก P0 จาก audit (`docs/AUDIT_bank-recon_2026-06-12.md`) + migration 20260612007000 applied:
+- **P0-1** ลบ `payment_status` (auto-match เลิก crash) · **P0-2** lineHash เลิกรวม batchId (re-import dedup ได้) · **P0-3** write-back `revenue.match_state='matched'` ตอน confirm (เลิก double-count)
+- **P0-4+5** `excludeTxnAction` + UI จับคู่เอง/ข้าม/ยกเลิกยืนยัน ใน MatchPanel · **P0-6+12** เทียบเลขบัญชี+bankCode กันอัปผิด
+- **P0-7** hub เขียว = confirmed+excluded ครบเท่านั้น (เลิก false-green) · **P0-8** เพิ่มใน LedgerBottomNav (mobile) → CEO เห็นเมนูแล้ว
+- **P0-9** org_id scope ทุก mutation (Prisma bypass RLS) · **P0-10** locked_at guard + lock ต้อง settled ครบ · **P0-11** hub query period overlap
+- **P1:** delta ถูกทุก bookType · debit auto-suggest · atomic $transaction · matched_revenue_id (เลิก overload) · audit fields · empty-CSV guard
+
+**ยังเหลือ (deferred, ไม่บล็อก pilot KBANK):** adapter BAAC/GSB/KTB/TrueMoney (7 บัญชี import ไม่ได้) · encoding TIS-620 (ตอนนี้ reject graceful) · maker-checker · aggregate/split match (1:N) · MDR/provisional GL (YAGNI) · search/breadcrumb/mobile polish (P2).
+→ pilot บัญชี KBANK เดียวให้ครบ loop ตรง statement จริง
+
+## 🚨 AUDIT (2026-06-12 #3 — /auditbigteam bank-recon = 6/6 BLOCKED)
+
+**flag `LEDGER_BANK_RECON_V1=1` เปิด prod แต่ห้ามใช้กับเงินจริง** — report: `docs/AUDIT_bank-recon_2026-06-12.md` · memory [[audit-bank-recon-2026-06-12]]
+
+12 P0 (ที่ร้ายแรงสุด):
+- **auto-match crash เงียบทุกครั้ง** (query `ledger_payment.payment_status` ที่ไม่มีจริง) → ไม่มี suggestion เลย
+- **hub false-green "เสร็จแล้ว"** ทั้งที่ไม่มีใครยืนยัน → ขัดเป้าหมาย CEO โดยตรง (อันตรายกว่าไม่มีโมดูล)
+- **re-import = ยอดเบิ้ล** (line_hash รวม batchId)
+- **bank-recon ไม่อยู่ใน LedgerBottomNav** (เพิ่มผิดที่ใน lib/modules.ts) → เข้าไม่ถึงจาก UI จริง
+- **ไม่มี UI จับคู่เอง/ข้ามรายการ** → ปิดงวดไม่ได้ตลอดกาล
+- **cross-org IDOR** (Prisma bypass RLS, ไม่ filter org_id)
+- import ได้จริงแค่ 4 ธนาคาร (17/24 บัญชี); BAAC/GSB/KTB/TrueMoney เปิดไม่ได้
+
+→ next: /plan bank-recon-p0-fixes · pilot 1 บัญชี KBANK ก่อน (ไม่ใช่ 26)
 
 ## 🆕 Update (2026-06-12 #2 — Bank Recon DEPLOYED + 26 บัญชีจริง + Settings page)
 
