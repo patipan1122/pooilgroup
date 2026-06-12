@@ -10,10 +10,13 @@
 //   Tab 3: กระทบยอดแล้ว (confirmed)
 
 import { useState, useTransition } from "react";
-import { CheckCircle, X, ChevronRight, Lock, RefreshCw, TrendingUp } from "lucide-react";
+import { CheckCircle, X, ChevronRight, Lock, RefreshCw, TrendingUp, Link2, Ban, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfidencePill, MatchStatePill } from "./ConfidencePill";
-import { confirmMatchAction, rejectMatchAction, lockPeriodAction, syncRevenueAction } from "../_actions";
+import {
+  confirmMatchAction, rejectMatchAction, lockPeriodAction, syncRevenueAction,
+  createManualMatchAction, excludeTxnAction, unconfirmMatchAction,
+} from "../_actions";
 import { useRouter } from "next/navigation";
 
 type Tab = "unmatched" | "suggested" | "confirmed";
@@ -152,6 +155,43 @@ export function MatchPanel({
     });
   };
 
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // Manual match: link the selected (unmatched) bank txn to a revenue entry.
+  const handleManualMatchRevenue = (revenueId: string) => {
+    if (!selected) return;
+    setActionError(null);
+    startTransition(async () => {
+      const res = await createManualMatchAction({
+        bankTxnId: selected.id, bookType: "revenue", bookId: revenueId,
+      });
+      if (res.ok) { setSelected(null); router.refresh(); }
+      else setActionError(res.error ?? "จับคู่ไม่สำเร็จ");
+    });
+  };
+
+  // Exclude: mark a txn as "no book counterpart" (bank fee / interest / owner transfer).
+  const handleExclude = () => {
+    if (!selected) return;
+    const reason = window.prompt("เหตุผลที่ข้ามรายการนี้ (เช่น ค่าธรรมเนียมธนาคาร / ดอกเบี้ย / โอนภายใน):");
+    if (!reason?.trim()) return;
+    setActionError(null);
+    startTransition(async () => {
+      const res = await excludeTxnAction({ bankTxnId: selected.id, reason: reason.trim() });
+      if (res.ok) { setSelected(null); router.refresh(); }
+      else setActionError(res.error ?? "ข้ามรายการไม่สำเร็จ");
+    });
+  };
+
+  const handleUnconfirm = (matchId: string) => {
+    setActionError(null);
+    startTransition(async () => {
+      const res = await unconfirmMatchAction(matchId);
+      if (res.ok) { setSelected(null); router.refresh(); }
+      else setActionError(res.error ?? "ยกเลิกการยืนยันไม่สำเร็จ");
+    });
+  };
+
   const handleSync = () => {
     startTransition(async () => {
       const result = await syncRevenueAction(batchId);
@@ -207,7 +247,7 @@ export function MatchPanel({
             <p className="py-8 text-center text-sm text-zinc-400">
               {tab === "confirmed" ? "ยังไม่มีรายการที่กระทบยอดแล้ว" :
                tab === "suggested" ? "ไม่มีรายการรอยืนยัน" :
-               "รายการทั้งหมดได้รับการกระทบยอดแล้ว 🎉"}
+               "รายการทั้งหมดได้รับการกระทบยอดแล้ว"}
             </p>
           ) : (
             rows.map((txn) => (
@@ -232,16 +272,16 @@ export function MatchPanel({
             )}
             <Button
               variant="outline"
-              className="w-full border-purple-200 text-purple-700 hover:bg-purple-50"
+              className="w-full border-violet-200 text-violet-700 hover:bg-violet-50"
               onClick={handleLock}
-              disabled={isPending || unmatched.length > 0}
+              disabled={isPending || unmatched.length > 0 || suggested.length > 0}
             >
               <Lock size={14} className="mr-1" />
               ล็อคงวดบัญชี
             </Button>
-            {unmatched.length > 0 && (
+            {(unmatched.length > 0 || suggested.length > 0) && (
               <p className="mt-1 text-center text-xs text-zinc-400">
-                ต้องกระทบยอดครบก่อนล็อค ({unmatched.length} รายการ)
+                ต้องยืนยัน/ข้ามให้ครบก่อนล็อค (เหลือ {unmatched.length + suggested.length} รายการ)
               </p>
             )}
           </div>
@@ -320,25 +360,59 @@ export function MatchPanel({
               </div>
             )}
 
-            {selected.matchState === "confirmed" && (
-              <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
-                <CheckCircle size={14} className="text-emerald-600" />
-                <span className="text-sm text-emerald-700">กระทบยอดแล้ว</span>
-                {selected.deltaSatang !== null && Math.abs(selected.deltaSatang) > 0 && (
-                  <span className="ml-auto text-xs text-amber-600">
-                    Δ ฿{formatSatang(Math.abs(selected.deltaSatang))}
+            {(selected.matchState === "confirmed" || selected.matchState === "excluded") && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                  <CheckCircle size={14} className="text-emerald-600" />
+                  <span className="text-sm text-emerald-700">
+                    {selected.matchState === "excluded" ? "ข้ามรายการ (ไม่มีคู่ในบัญชี)" : "กระทบยอดแล้ว"}
                   </span>
+                  {selected.deltaSatang !== null && Math.abs(selected.deltaSatang) > 0 && (
+                    <span className="ml-auto text-xs text-amber-600">
+                      Δ ฿{formatSatang(Math.abs(selected.deltaSatang))}
+                    </span>
+                  )}
+                </div>
+                {!isLocked && selected.matchId && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+                    onClick={() => handleUnconfirm(selected.matchId!)}
+                    disabled={isPending}
+                  >
+                    <Undo2 size={12} className="mr-1" />
+                    ยกเลิกการยืนยัน
+                  </Button>
                 )}
               </div>
             )}
 
             {selected.matchState === "unmatched" && !isLocked && (
-              <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 p-4 text-center">
-                <p className="text-sm text-zinc-500">ยังไม่มีรายการในบัญชีที่ตรงกัน</p>
-                <p className="mt-1 text-xs text-zinc-400">
-                  ระบบจะแนะนำโดยอัตโนมัติ · หรือเลือกจับคู่ด้วยตนเอง
-                </p>
+              <div className="space-y-3">
+                <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 p-3 text-center">
+                  <p className="text-sm text-zinc-500">ยังไม่มีรายการในบัญชีที่ตรงกัน</p>
+                  <p className="mt-1 text-xs text-zinc-400">
+                    {selected.amountSatang > 0
+                      ? "เลือกรายได้ด้านล่าง เพื่อจับคู่ด้วยตนเอง"
+                      : "รายการเงินออก · จับคู่กับใบจ่าย หรือกด “ข้าม” ถ้าไม่มีคู่"}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full border-amber-200 text-amber-700 hover:bg-amber-50"
+                  onClick={handleExclude}
+                  disabled={isPending}
+                >
+                  <Ban size={12} className="mr-1" />
+                  ข้าม / ไม่มีคู่ในบัญชี (ค่าธรรมเนียม·ดอกเบี้ย·โอนภายใน)
+                </Button>
               </div>
+            )}
+
+            {actionError && (
+              <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{actionError}</p>
             )}
           </div>
         )}
@@ -381,36 +455,47 @@ export function MatchPanel({
                 ยังไม่มีรายได้ — กด "ดึงจาก TRCloud" หรือรอ webhook
               </p>
             ) : (
-              revenueEntries.map((r) => (
-                <div
-                  key={r.id}
-                  className={`flex items-center justify-between px-4 py-2.5 ${
-                    r.matchState === "matched" ? "bg-emerald-50/50" : ""
-                  }`}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500">
-                        {SOURCE_LABEL[r.sourceType] ?? r.sourceType}
-                      </span>
-                      {r.sourceRef && (
-                        <span className="truncate text-xs text-zinc-400">{r.sourceRef}</span>
+              revenueEntries.map((r) => {
+                // Clickable to manual-match when a credit (money-in) txn is selected & unmatched.
+                const canLink =
+                  !isLocked && !!selected &&
+                  selected.matchState === "unmatched" &&
+                  selected.amountSatang > 0 &&
+                  r.matchState !== "matched";
+                return (
+                  <div
+                    key={r.id}
+                    onClick={canLink ? () => handleManualMatchRevenue(r.id) : undefined}
+                    role={canLink ? "button" : undefined}
+                    className={`flex items-center justify-between px-4 py-2.5 ${
+                      r.matchState === "matched" ? "bg-emerald-50/50" : ""
+                    } ${canLink ? "cursor-pointer hover:bg-blue-50" : ""}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        {canLink && <Link2 size={12} className="text-blue-500" />}
+                        <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500">
+                          {SOURCE_LABEL[r.sourceType] ?? r.sourceType}
+                        </span>
+                        {r.sourceRef && (
+                          <span className="truncate text-xs text-zinc-400">{r.sourceRef}</span>
+                        )}
+                      </div>
+                      <p className="truncate text-xs text-zinc-600">
+                        {r.description ?? r.customerName ?? r.entryDate}
+                      </p>
+                    </div>
+                    <div className="ml-3 shrink-0 text-right">
+                      <p className="text-sm font-semibold text-emerald-600">
+                        +฿{formatSatang(r.amountSatang)}
+                      </p>
+                      {r.matchState === "matched" && (
+                        <CheckCircle size={10} className="ml-auto text-emerald-500" />
                       )}
                     </div>
-                    <p className="truncate text-xs text-zinc-600">
-                      {r.description ?? r.customerName ?? r.entryDate}
-                    </p>
                   </div>
-                  <div className="ml-3 shrink-0 text-right">
-                    <p className="text-sm font-semibold text-emerald-600">
-                      +฿{formatSatang(r.amountSatang)}
-                    </p>
-                    {r.matchState === "matched" && (
-                      <CheckCircle size={10} className="ml-auto text-emerald-500" />
-                    )}
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

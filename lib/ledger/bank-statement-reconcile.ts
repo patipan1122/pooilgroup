@@ -25,7 +25,7 @@ export type MatchType =
 
 export interface MatchSuggestion {
   bankTxnId: string;
-  bookType: "expense" | "payment" | "payment_request";
+  bookType: "expense" | "payment" | "payment_request" | "revenue";
   bookId: string;
   matchType: MatchType;
   confidence: MatchConfidence;
@@ -50,8 +50,16 @@ export interface BankTxnRow {
 
 /**
  * Compute the dedup hash for a bank transaction row.
- * batchId + rowIndex salt prevents false-positive dedup on KBank/SCB standing orders
- * (same amount + date in one statement are legitimate distinct transactions).
+ *
+ * CONTENT-ONLY hash (NO batchId) so re-importing the same statement file dedups
+ * correctly — the UNIQUE(bank_account_id, line_hash) index can only collide if the
+ * hash is stable across imports. rowIndex is kept as the salt so that legitimate
+ * standing orders (same amount + date + balance in one statement) stay distinct:
+ * within one file each occurrence has a different rowIndex, but the SAME file
+ * re-imported produces the same rowIndex sequence → same hash → ON CONFLICT skips.
+ *
+ * Caveat: balance_satang is part of the key, so a true duplicate row only dedups
+ * when the running balance also matches (it always does for the same statement).
  */
 export function computeLineHash(params: {
   accountNo: string;
@@ -59,7 +67,6 @@ export function computeLineHash(params: {
   amountSatang: number;
   balanceSatang: number;
   ref1: string | null;
-  batchId: string;
   rowIndex: number;
 }): string {
   const parts = [
@@ -68,7 +75,6 @@ export function computeLineHash(params: {
     String(params.amountSatang),
     String(params.balanceSatang),
     params.ref1 ?? "",
-    params.batchId,
     String(params.rowIndex),
   ];
   return createHash("sha256").update(parts.join("|")).digest("hex");
@@ -170,13 +176,17 @@ export async function suggestMatches(params: {
     paidAt: Date;
     transRef: string | null;
   }[]>`
-    SELECT id, ROUND(amount * 100)::bigint as "amountSatang",
-           paid_at as "paidAt", trans_ref as "transRef"
-    FROM ledger_payment
-    WHERE org_id = ${orgId}::uuid
-      AND company_id = ${companyId}::uuid
-      AND paid_at::date BETWEEN ${minDateStr}::date AND ${maxDateStr}::date
-      AND payment_status != 'cancelled'
+    SELECT p.id, ROUND(p.amount * 100)::bigint as "amountSatang",
+           p.paid_at as "paidAt", p.trans_ref as "transRef"
+    FROM ledger_payment p
+    WHERE p.org_id = ${orgId}::uuid
+      AND p.company_id = ${companyId}::uuid
+      AND p.paid_at::date BETWEEN ${minDateStr}::date AND ${maxDateStr}::date
+      -- don't re-suggest a payment already claimed by an active match
+      AND NOT EXISTS (
+        SELECT 1 FROM ledger_bank_match m
+        WHERE m.matched_payment_id = p.id AND m.status IN ('suggested','confirmed')
+      )
     LIMIT 500
   `;
 
@@ -199,7 +209,7 @@ export async function suggestMatches(params: {
           const delta = txn.amountSatang - refMatch.amountSatang;
           suggestions.push({
             bankTxnId: txn.id,
-            bookType: "payment",    // reuse bookType enum; "payment" maps to revenue in match context
+            bookType: "revenue",
             bookId: refMatch.id,
             matchType: "auto_ref",
             confidence: scoreConfidence(delta),
@@ -223,7 +233,7 @@ export async function suggestMatches(params: {
         const delta = txn.amountSatang - r.amountSatang;
         suggestions.push({
           bankTxnId: txn.id,
-          bookType: "payment",
+          bookType: "revenue",
           bookId: r.id,
           matchType: "auto_amount_date",
           confidence: scoreConfidence(delta),
@@ -268,7 +278,7 @@ export async function suggestMatches(params: {
         const delta = txn.amountSatang - looseRev.amountSatang;
         suggestions.push({
           bankTxnId: txn.id,
-          bookType: "payment",
+          bookType: "revenue",
           bookId: looseRev.id,
           matchType: "auto_amount",
           confidence: "low",
@@ -378,7 +388,8 @@ export async function listBankAccountsWithStatus(params: {
   const { orgId, companyId, period } = params;
   const [year, month] = period.split("-").map(Number);
   const periodStart = `${year}-${String(month).padStart(2, "0")}-01`;
-  const periodEnd = new Date(year, month, 0).toISOString().slice(0, 10); // last day of month
+  // last day of month — use Date.UTC so the +07 timezone doesn't shift it back a day
+  const periodEnd = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
 
   const rows = await prisma.$queryRaw<{
     accountId: string;
@@ -387,7 +398,9 @@ export async function listBankAccountsWithStatus(params: {
     accountName: string;
     totalTxns: number;
     unmatchedCount: number;
+    suggestedCount: number;
     confirmedCount: number;
+    settledCount: number;
     lockedAt: Date | null;
   }[]>`
     SELECT
@@ -397,14 +410,18 @@ export async function listBankAccountsWithStatus(params: {
       a.account_name as "accountName",
       COALESCE(SUM(CASE WHEN t.id IS NOT NULL THEN 1 ELSE 0 END), 0)::int as "totalTxns",
       COALESCE(SUM(CASE WHEN t.match_state = 'unmatched' THEN 1 ELSE 0 END), 0)::int as "unmatchedCount",
+      COALESCE(SUM(CASE WHEN t.match_state = 'suggested' THEN 1 ELSE 0 END), 0)::int as "suggestedCount",
       COALESCE(SUM(CASE WHEN t.match_state = 'confirmed' THEN 1 ELSE 0 END), 0)::int as "confirmedCount",
+      -- "settled" = a human dealt with it: confirmed OR explicitly excluded
+      COALESCE(SUM(CASE WHEN t.match_state IN ('confirmed','excluded') THEN 1 ELSE 0 END), 0)::int as "settledCount",
       MAX(b.locked_at) as "lockedAt"
     FROM ledger_bank_account a
     JOIN ledger_bank_account_company ac ON ac.bank_account_id = a.id
     LEFT JOIN ledger_bank_import_batch b
       ON b.bank_account_id = a.id
-      AND b.period_start >= ${periodStart}::date
-      AND b.period_end   <= ${periodEnd}::date
+      -- period OVERLAP (not nesting) so a statement spanning a month boundary still shows
+      AND b.period_start <= ${periodEnd}::date
+      AND b.period_end   >= ${periodStart}::date
     LEFT JOIN ledger_bank_txn t
       ON t.batch_id = b.id
     WHERE a.org_id = ${orgId}::uuid
@@ -420,10 +437,15 @@ export async function listBankAccountsWithStatus(params: {
       ? `****${r.accountNo.slice(-4)}`
       : r.accountNo;
 
+    // "completed" (เขียว) means a HUMAN settled every row (confirmed/excluded) —
+    // NEVER on auto-suggestions alone. Rows still in 'suggested' = รอยืนยัน (in_progress).
     let status: BankAccountStatus["status"] = "not_started";
     if (r.lockedAt) status = "locked";
-    else if (r.totalTxns > 0 && r.unmatchedCount === 0) status = "completed";
+    else if (r.totalTxns > 0 && r.settledCount === r.totalTxns) status = "completed";
     else if (r.totalTxns > 0) status = "in_progress";
+
+    // "ค้างกระทบยอด" = anything a human hasn't settled yet (unmatched + suggested).
+    const pendingCount = r.unmatchedCount + r.suggestedCount;
 
     return {
       accountId: r.accountId,
@@ -432,7 +454,7 @@ export async function listBankAccountsWithStatus(params: {
       accountName: r.accountName,
       period,
       totalTxns: r.totalTxns,
-      unmatchedCount: r.unmatchedCount,
+      unmatchedCount: pendingCount,
       matchedCount: r.confirmedCount,
       lockedAt: r.lockedAt ? r.lockedAt.toISOString() : null,
       status,
@@ -452,7 +474,7 @@ export async function listBankTxnsForBatch(params: {
   const stateFilter =
     tab === "unmatched"  ? ["unmatched"] :
     tab === "suggested"  ? ["suggested"] :
-    ["confirmed"];
+    ["confirmed", "excluded"]; // "กระทบยอดแล้ว" tab = human-settled (confirmed OR excluded)
 
   return prisma.$queryRaw<{
     id: string;

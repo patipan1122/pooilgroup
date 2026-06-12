@@ -117,10 +117,13 @@ export async function commitImportAction(
   const content = await file.text();
   const result = detectAndParse(content);
   if (!result) return { ok: false, error: "ไม่รู้จักรูปแบบไฟล์" };
+  if (!result.rows.length || !result.periodStart || !result.periodEnd) {
+    return { ok: false, error: "ไฟล์นี้ไม่มีรายการเดินบัญชี (statement ว่าง)" };
+  }
 
   // Verify bank account belongs to org
-  const acct = await prisma.$queryRaw<{ id: string; accountNo: string }[]>`
-    SELECT a.id, a.account_no as "accountNo"
+  const acct = await prisma.$queryRaw<{ id: string; accountNo: string; bankCode: string }[]>`
+    SELECT a.id, a.account_no as "accountNo", a.bank_code as "bankCode"
     FROM ledger_bank_account a
     JOIN ledger_bank_account_company ac ON ac.bank_account_id = a.id
     WHERE a.id = ${bankAccountId}::uuid
@@ -129,6 +132,15 @@ export async function commitImportAction(
     LIMIT 1
   `;
   if (!acct.length) return { ok: false, error: "ไม่พบบัญชีธนาคาร หรือไม่มีสิทธิ์ import" };
+
+  // P0-12: the detected file format must match the account's bank (don't import
+  // a KBank statement into an SCB account just because auto-detect guessed).
+  if (result.bankCode !== acct[0].bankCode) {
+    return {
+      ok: false,
+      error: `ไฟล์นี้เป็นรูปแบบ ${result.bankCode} แต่บัญชีที่เลือกเป็น ${acct[0].bankCode} — อัปไฟล์ผิดธนาคาร`,
+    };
+  }
 
   const companyRow = await prisma.$queryRaw<{ companyId: string }[]>`
     SELECT company_id as "companyId"
@@ -144,6 +156,20 @@ export async function commitImportAction(
   const batchId = randomUUID();
   const accountNo = acct[0].accountNo;
 
+  // P0-6: verify the file actually belongs to THIS account (prevent importing
+  // e.g. an SCB statement into a KBank account → money mixed across accounts).
+  // Compare digits-only; require the last 4 digits to match (statements may mask
+  // or format the number differently than what we store).
+  const digitsOnly = (s: string) => s.replace(/\D/g, "");
+  const fileDigits = digitsOnly(result.accountNo ?? "");
+  const acctDigits = digitsOnly(accountNo);
+  if (fileDigits && acctDigits && fileDigits.slice(-4) !== acctDigits.slice(-4)) {
+    return {
+      ok: false,
+      error: `เลขบัญชีในไฟล์ (…${fileDigits.slice(-4)}) ไม่ตรงกับบัญชีที่เลือก (…${acctDigits.slice(-4)}) — อาจอัปไฟล์ผิดบัญชี`,
+    };
+  }
+
   // Build txn rows with lineHash
   const txnRows = result.rows.map((row) => {
     const lineHash = computeLineHash({
@@ -152,7 +178,6 @@ export async function commitImportAction(
       amountSatang: row.amountSatang,
       balanceSatang: row.balanceSatang,
       ref1: row.ref1,
-      batchId,
       rowIndex: row.rowIndex,
     });
     return {
@@ -199,13 +224,15 @@ export async function commitImportAction(
     return { ok: false, error: `นำเข้าไม่สำเร็จ: ${error.message}` };
   }
 
-  // Run auto-match in background (non-blocking suggestions, no confirm)
+  // Run auto-match in background (non-blocking suggestions, no confirm).
+  // BOTH credits and debits — the engine handles each direction (P0: was credit-only,
+  // so debits never got auto-suggested). Cap raised; large statements still covered.
   const insertedIds = await prisma.$queryRaw<{ id: string }[]>`
     SELECT id FROM ledger_bank_txn
     WHERE batch_id = ${batchId}::uuid
       AND match_state = 'unmatched'
-      AND amount_satang > 0
-    LIMIT 100
+      AND amount_satang <> 0
+    LIMIT 1000
   `;
 
   if (insertedIds.length > 0) {
@@ -234,7 +261,18 @@ async function suggestMatchesAction(
 
   for (const s of suggestions) {
     // Insert into ledger_bank_match with appropriate book column (no dynamic column names)
-    if (s.bookType === "payment") {
+    if (s.bookType === "revenue") {
+      await prisma.$executeRaw`
+        INSERT INTO ledger_bank_match
+          (org_id, company_id, bank_txn_id, matched_revenue_id,
+           match_type, confidence, amount_satang, delta_satang, status)
+        VALUES
+          (${orgId}::uuid, ${companyId}::uuid, ${s.bankTxnId}::uuid, ${s.bookId}::uuid,
+           ${s.matchType}, ${s.confidence},
+           ${s.bankAmountSatang}, ${s.deltaSatang}, 'suggested')
+        ON CONFLICT DO NOTHING
+      `;
+    } else if (s.bookType === "payment") {
       await prisma.$executeRaw`
         INSERT INTO ledger_bank_match
           (org_id, company_id, bank_txn_id, matched_payment_id,
@@ -279,32 +317,56 @@ async function suggestMatchesAction(
   }
 }
 
+// ── helper: is the batch behind this txn/match locked? (org-scoped) ──────────
+// Prisma runs as the postgres role (rolbypassrls=TRUE) → RLS is NOT a backstop.
+// Every query here MUST self-scope org_id. ref memory feedback-ledger-query-must-filter-companyid.
+
 // ── 4. Confirm a match (human approval) ──────────────────────────────────────
 
 export async function confirmMatchAction(matchId: string): Promise<{ ok: boolean; error?: string }> {
   const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
 
-  const updated = await prisma.$executeRaw`
-    UPDATE ledger_bank_match
-    SET status = 'confirmed',
-        confirmed_by = ${session.user.id}::uuid,
-        confirmed_at = now(),
-        updated_at = now()
-    WHERE id = ${matchId}::uuid
-      AND status = 'suggested'
-  `;
-
-  if (!updated) return { ok: false, error: "ไม่พบ match หรือยืนยันไปแล้ว" };
-
-  // Update txn state
-  await prisma.$executeRaw`
-    UPDATE ledger_bank_txn t
-    SET match_state = 'confirmed'
+  const rows = await prisma.$queryRaw<{
+    bankTxnId: string;
+    matchedRevenueId: string | null;
+    locked: boolean;
+  }[]>`
+    SELECT m.bank_txn_id as "bankTxnId",
+           m.matched_revenue_id as "matchedRevenueId",
+           (b.locked_at IS NOT NULL) as "locked"
     FROM ledger_bank_match m
+    JOIN ledger_bank_txn t ON t.id = m.bank_txn_id
+    JOIN ledger_bank_import_batch b ON b.id = t.batch_id
     WHERE m.id = ${matchId}::uuid
-      AND t.id = m.bank_txn_id
+      AND m.org_id = ${orgId}::uuid
+      AND m.status = 'suggested'
+    LIMIT 1
   `;
+  if (!rows.length) return { ok: false, error: "ไม่พบ match หรือยืนยันไปแล้ว" };
+  const { bankTxnId, matchedRevenueId, locked } = rows[0];
+  if (locked) return { ok: false, error: "งวดนี้ล็อกแล้ว แก้ไขการกระทบยอดไม่ได้" };
 
+  const ops = [
+    prisma.$executeRaw`
+      UPDATE ledger_bank_match
+      SET status='confirmed', confirmed_by=${session.user.id}::uuid, confirmed_at=now(), updated_at=now()
+      WHERE id=${matchId}::uuid AND org_id=${orgId}::uuid AND status='suggested'
+    `,
+    prisma.$executeRaw`
+      UPDATE ledger_bank_txn SET match_state='confirmed'
+      WHERE id=${bankTxnId}::uuid AND org_id=${orgId}::uuid
+    `,
+  ];
+  // Write-back: close the revenue entry so it is never re-suggested (P0-3, anti double-count)
+  if (matchedRevenueId) {
+    ops.push(prisma.$executeRaw`
+      UPDATE ledger_revenue_entry
+      SET match_state='matched', bank_txn_id=${bankTxnId}::uuid, updated_at=now()
+      WHERE id=${matchedRevenueId}::uuid AND org_id=${orgId}::uuid
+    `);
+  }
+  await prisma.$transaction(ops);
   return { ok: true };
 }
 
@@ -312,93 +374,207 @@ export async function confirmMatchAction(matchId: string): Promise<{ ok: boolean
 
 export async function createManualMatchAction(params: {
   bankTxnId: string;
-  bookType: "expense" | "payment" | "payment_request";
+  bookType: "expense" | "payment" | "payment_request" | "revenue";
   bookId: string;
   note?: string;
 }): Promise<{ ok: boolean; matchId?: string; error?: string }> {
   const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
   const { bankTxnId, bookType, bookId, note } = params;
 
-  // Get bank txn amount
-  const txn = await prisma.$queryRaw<{ amountSatang: number; orgId: string; companyId: string }[]>`
-    SELECT amount_satang as "amountSatang", org_id as "orgId", company_id as "companyId"
-    FROM ledger_bank_txn
-    WHERE id = ${bankTxnId}::uuid
+  // Bank txn must belong to caller's org + its batch must not be locked
+  const txn = await prisma.$queryRaw<{
+    amountSatang: number; companyId: string; locked: boolean;
+  }[]>`
+    SELECT t.amount_satang as "amountSatang", t.company_id as "companyId",
+           (b.locked_at IS NOT NULL) as "locked"
+    FROM ledger_bank_txn t
+    JOIN ledger_bank_import_batch b ON b.id = t.batch_id
+    WHERE t.id = ${bankTxnId}::uuid AND t.org_id = ${orgId}::uuid
     LIMIT 1
   `;
   if (!txn.length) return { ok: false, error: "ไม่พบ transaction ธนาคาร" };
+  const { amountSatang, companyId, locked } = txn[0];
+  if (locked) return { ok: false, error: "งวดนี้ล็อกแล้ว แก้ไขการกระทบยอดไม่ได้" };
 
-  const { amountSatang, orgId, companyId } = txn[0];
-
-  // Get book amount based on type
+  // Resolve book amount (in satang), org+company scoped, by type
   let bookAmountSatang = 0;
-  if (bookType === "payment") {
-    const r = await prisma.$queryRaw<{ amount: number }[]>`
-      SELECT ROUND(amount * 100)::bigint as amount FROM ledger_payment WHERE id = ${bookId}::uuid LIMIT 1
-    `;
-    bookAmountSatang = r[0]?.amount ?? 0;
+  if (bookType === "revenue") {
+    const r = await prisma.$queryRaw<{ amt: number }[]>`
+      SELECT amount_satang as amt FROM ledger_revenue_entry
+      WHERE id=${bookId}::uuid AND org_id=${orgId}::uuid AND company_id=${companyId}::uuid LIMIT 1`;
+    if (!r.length) return { ok: false, error: "ไม่พบรายการรายได้ที่เลือก" };
+    bookAmountSatang = Number(r[0].amt);
+  } else if (bookType === "payment") {
+    const r = await prisma.$queryRaw<{ amt: number }[]>`
+      SELECT ROUND(amount*100)::bigint as amt FROM ledger_payment
+      WHERE id=${bookId}::uuid AND org_id=${orgId}::uuid AND company_id=${companyId}::uuid LIMIT 1`;
+    if (!r.length) return { ok: false, error: "ไม่พบรายการจ่ายที่เลือก" };
+    bookAmountSatang = Number(r[0].amt);
+  } else if (bookType === "expense") {
+    const r = await prisma.$queryRaw<{ amt: number }[]>`
+      SELECT ROUND(total*100)::bigint as amt FROM ledger_expense
+      WHERE id=${bookId}::uuid AND org_id=${orgId}::uuid AND company_id=${companyId}::uuid LIMIT 1`;
+    if (!r.length) return { ok: false, error: "ไม่พบบิลค่าใช้จ่ายที่เลือก" };
+    bookAmountSatang = Number(r[0].amt);
+  } else {
+    const r = await prisma.$queryRaw<{ amt: number }[]>`
+      SELECT ROUND(paid_total*100)::bigint as amt FROM ledger_payment_request
+      WHERE id=${bookId}::uuid AND org_id=${orgId}::uuid AND company_id=${companyId}::uuid LIMIT 1`;
+    if (!r.length) return { ok: false, error: "ไม่พบใบขอโอนที่เลือก" };
+    bookAmountSatang = Number(r[0].amt);
   }
 
-  const deltaSatang = amountSatang - bookAmountSatang;
+  // Bank debits are negative; book amounts are positive magnitudes → compare absolutes.
+  const deltaSatang = Math.abs(amountSatang) - bookAmountSatang;
   const matchId = randomUUID();
 
-  const matchedCol = bookType === "payment"
-    ? `matched_payment_id`
-    : bookType === "expense"
-    ? `matched_expense_id`
-    : `matched_payment_request_id`;
-
-  await prisma.$executeRaw`
-    INSERT INTO ledger_bank_match (
-      id, org_id, company_id, bank_txn_id,
-      match_type, confidence, amount_satang, delta_satang,
-      status, matched_by, matched_at, note
-    ) VALUES (
-      ${matchId}::uuid, ${orgId}::uuid, ${companyId}::uuid, ${bankTxnId}::uuid,
-      'manual', 'high', ${amountSatang}, ${deltaSatang},
-      'confirmed', ${session.user.id}::uuid, now(), ${note ?? null}
-    )
-  `;
-
-  // Set book ID (dynamic column name — safe, only 3 allowed values)
-  if (bookType === "payment") {
-    await prisma.$executeRaw`
-      UPDATE ledger_bank_match SET matched_payment_id = ${bookId}::uuid WHERE id = ${matchId}::uuid
-    `;
-  } else if (bookType === "expense") {
-    await prisma.$executeRaw`
-      UPDATE ledger_bank_match SET matched_expense_id = ${bookId}::uuid WHERE id = ${matchId}::uuid
-    `;
-  } else {
-    await prisma.$executeRaw`
-      UPDATE ledger_bank_match SET matched_payment_request_id = ${bookId}::uuid WHERE id = ${matchId}::uuid
-    `;
+  const ops = [
+    bookType === "revenue"
+      ? prisma.$executeRaw`
+          INSERT INTO ledger_bank_match (id, org_id, company_id, bank_txn_id, matched_revenue_id,
+            match_type, confidence, amount_satang, delta_satang, status, matched_by, matched_at, note)
+          VALUES (${matchId}::uuid, ${orgId}::uuid, ${companyId}::uuid, ${bankTxnId}::uuid, ${bookId}::uuid,
+            'manual','high',${amountSatang},${deltaSatang},'confirmed',${session.user.id}::uuid, now(), ${note ?? null})`
+      : bookType === "payment"
+      ? prisma.$executeRaw`
+          INSERT INTO ledger_bank_match (id, org_id, company_id, bank_txn_id, matched_payment_id,
+            match_type, confidence, amount_satang, delta_satang, status, matched_by, matched_at, note)
+          VALUES (${matchId}::uuid, ${orgId}::uuid, ${companyId}::uuid, ${bankTxnId}::uuid, ${bookId}::uuid,
+            'manual','high',${amountSatang},${deltaSatang},'confirmed',${session.user.id}::uuid, now(), ${note ?? null})`
+      : bookType === "expense"
+      ? prisma.$executeRaw`
+          INSERT INTO ledger_bank_match (id, org_id, company_id, bank_txn_id, matched_expense_id,
+            match_type, confidence, amount_satang, delta_satang, status, matched_by, matched_at, note)
+          VALUES (${matchId}::uuid, ${orgId}::uuid, ${companyId}::uuid, ${bankTxnId}::uuid, ${bookId}::uuid,
+            'manual','high',${amountSatang},${deltaSatang},'confirmed',${session.user.id}::uuid, now(), ${note ?? null})`
+      : prisma.$executeRaw`
+          INSERT INTO ledger_bank_match (id, org_id, company_id, bank_txn_id, matched_payment_request_id,
+            match_type, confidence, amount_satang, delta_satang, status, matched_by, matched_at, note)
+          VALUES (${matchId}::uuid, ${orgId}::uuid, ${companyId}::uuid, ${bankTxnId}::uuid, ${bookId}::uuid,
+            'manual','high',${amountSatang},${deltaSatang},'confirmed',${session.user.id}::uuid, now(), ${note ?? null})`,
+    prisma.$executeRaw`
+      UPDATE ledger_bank_txn SET match_state='confirmed' WHERE id=${bankTxnId}::uuid AND org_id=${orgId}::uuid`,
+  ];
+  if (bookType === "revenue") {
+    ops.push(prisma.$executeRaw`
+      UPDATE ledger_revenue_entry SET match_state='matched', bank_txn_id=${bankTxnId}::uuid, updated_at=now()
+      WHERE id=${bookId}::uuid AND org_id=${orgId}::uuid`);
   }
 
-  // Mark txn confirmed
-  await prisma.$executeRaw`
-    UPDATE ledger_bank_txn SET match_state = 'confirmed' WHERE id = ${bankTxnId}::uuid
-  `;
-
+  try {
+    await prisma.$transaction(ops);
+  } catch {
+    return { ok: false, error: "รายการนี้ถูกจับคู่ไปแล้ว หรือบันทึกไม่สำเร็จ" };
+  }
   return { ok: true, matchId };
 }
 
 // ── 6. Reject / revert a suggestion ──────────────────────────────────────────
 
 export async function rejectMatchAction(matchId: string): Promise<{ ok: boolean; error?: string }> {
-  await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
 
-  await prisma.$executeRaw`
-    UPDATE ledger_bank_match SET status = 'reversed', updated_at = now()
-    WHERE id = ${matchId}::uuid AND status = 'suggested'
-  `;
-
-  await prisma.$executeRaw`
-    UPDATE ledger_bank_txn t SET match_state = 'unmatched'
+  const rows = await prisma.$queryRaw<{ bankTxnId: string; locked: boolean }[]>`
+    SELECT m.bank_txn_id as "bankTxnId", (b.locked_at IS NOT NULL) as "locked"
     FROM ledger_bank_match m
-    WHERE m.id = ${matchId}::uuid AND t.id = m.bank_txn_id AND t.match_state = 'suggested'
+    JOIN ledger_bank_txn t ON t.id = m.bank_txn_id
+    JOIN ledger_bank_import_batch b ON b.id = t.batch_id
+    WHERE m.id = ${matchId}::uuid AND m.org_id = ${orgId}::uuid AND m.status = 'suggested'
+    LIMIT 1
   `;
+  if (!rows.length) return { ok: false, error: "ไม่พบ suggestion" };
+  if (rows[0].locked) return { ok: false, error: "งวดนี้ล็อกแล้ว" };
 
+  await prisma.$transaction([
+    prisma.$executeRaw`
+      UPDATE ledger_bank_match SET status='reversed', reversed_by=${session.user.id}::uuid,
+        reversed_at=now(), updated_at=now()
+      WHERE id=${matchId}::uuid AND org_id=${orgId}::uuid AND status='suggested'`,
+    prisma.$executeRaw`
+      UPDATE ledger_bank_txn SET match_state='unmatched'
+      WHERE id=${rows[0].bankTxnId}::uuid AND org_id=${orgId}::uuid AND match_state='suggested'`,
+  ]);
+  return { ok: true };
+}
+
+// ── 6b. Un-confirm a confirmed match (only before lock) ──────────────────────
+
+export async function unconfirmMatchAction(matchId: string): Promise<{ ok: boolean; error?: string }> {
+  const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
+
+  const rows = await prisma.$queryRaw<{
+    bankTxnId: string; matchedRevenueId: string | null; locked: boolean;
+  }[]>`
+    SELECT m.bank_txn_id as "bankTxnId", m.matched_revenue_id as "matchedRevenueId",
+           (b.locked_at IS NOT NULL) as "locked"
+    FROM ledger_bank_match m
+    JOIN ledger_bank_txn t ON t.id = m.bank_txn_id
+    JOIN ledger_bank_import_batch b ON b.id = t.batch_id
+    WHERE m.id = ${matchId}::uuid AND m.org_id = ${orgId}::uuid AND m.status = 'confirmed'
+    LIMIT 1
+  `;
+  if (!rows.length) return { ok: false, error: "ไม่พบรายการที่ยืนยันไว้" };
+  if (rows[0].locked) return { ok: false, error: "งวดนี้ล็อกแล้ว ยกเลิกการยืนยันไม่ได้" };
+
+  const ops = [
+    prisma.$executeRaw`
+      UPDATE ledger_bank_match SET status='reversed', reversed_by=${session.user.id}::uuid,
+        reversed_at=now(), reversal_reason='un-confirm', updated_at=now()
+      WHERE id=${matchId}::uuid AND org_id=${orgId}::uuid AND status='confirmed'`,
+    prisma.$executeRaw`
+      UPDATE ledger_bank_txn SET match_state='unmatched'
+      WHERE id=${rows[0].bankTxnId}::uuid AND org_id=${orgId}::uuid`,
+  ];
+  if (rows[0].matchedRevenueId) {
+    ops.push(prisma.$executeRaw`
+      UPDATE ledger_revenue_entry SET match_state='unmatched', bank_txn_id=NULL, updated_at=now()
+      WHERE id=${rows[0].matchedRevenueId}::uuid AND org_id=${orgId}::uuid`);
+  }
+  await prisma.$transaction(ops);
+  return { ok: true };
+}
+
+// ── 6c. Exclude a txn (no book counterpart: bank fee, interest, owner transfer) ──
+
+export async function excludeTxnAction(params: {
+  bankTxnId: string;
+  reason: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
+  const { bankTxnId, reason } = params;
+  if (!reason?.trim()) return { ok: false, error: "กรุณาระบุเหตุผลที่ข้ามรายการนี้" };
+
+  const txn = await prisma.$queryRaw<{
+    amountSatang: number; companyId: string; locked: boolean; state: string;
+  }[]>`
+    SELECT t.amount_satang as "amountSatang", t.company_id as "companyId",
+           (b.locked_at IS NOT NULL) as "locked", t.match_state as "state"
+    FROM ledger_bank_txn t
+    JOIN ledger_bank_import_batch b ON b.id = t.batch_id
+    WHERE t.id = ${bankTxnId}::uuid AND t.org_id = ${orgId}::uuid
+    LIMIT 1
+  `;
+  if (!txn.length) return { ok: false, error: "ไม่พบ transaction" };
+  if (txn[0].locked) return { ok: false, error: "งวดนี้ล็อกแล้ว" };
+
+  const { amountSatang, companyId } = txn[0];
+  const matchId = randomUUID();
+  await prisma.$transaction([
+    prisma.$executeRaw`
+      INSERT INTO ledger_bank_match (id, org_id, company_id, bank_txn_id,
+        match_type, confidence, amount_satang, delta_satang, status,
+        matched_by, matched_at, exclusion_reason)
+      VALUES (${matchId}::uuid, ${orgId}::uuid, ${companyId}::uuid, ${bankTxnId}::uuid,
+        'exclusion','high',${amountSatang}, 0, 'confirmed',
+        ${session.user.id}::uuid, now(), ${reason.trim()})`,
+    prisma.$executeRaw`
+      UPDATE ledger_bank_txn SET match_state='excluded'
+      WHERE id=${bankTxnId}::uuid AND org_id=${orgId}::uuid`,
+  ]);
   return { ok: true };
 }
 
@@ -406,20 +582,30 @@ export async function rejectMatchAction(matchId: string): Promise<{ ok: boolean;
 
 export async function lockPeriodAction(batchId: string): Promise<{ ok: boolean; fingerprint?: string; error?: string }> {
   const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
 
-  // Check for any unmatched txns
-  const unmatched = await prisma.$queryRaw<{ count: number }[]>`
-    SELECT COUNT(*)::int as count FROM ledger_bank_txn
-    WHERE batch_id = ${batchId}::uuid AND match_state = 'unmatched'
+  // Batch must belong to caller's org (RLS does not apply to Prisma)
+  const batch = await prisma.$queryRaw<{ locked: boolean }[]>`
+    SELECT (locked_at IS NOT NULL) as locked FROM ledger_bank_import_batch
+    WHERE id = ${batchId}::uuid AND org_id = ${orgId}::uuid LIMIT 1
   `;
-  if ((unmatched[0]?.count ?? 0) > 0) {
-    return { ok: false, error: `ยังมี ${unmatched[0]?.count} รายการที่ยังไม่ได้กระทบยอด — กรุณาจัดการก่อนล็อก` };
+  if (!batch.length) return { ok: false, error: "ไม่พบงวดนี้" };
+  if (batch[0].locked) return { ok: false, error: "งวดนี้ล็อกไปแล้ว" };
+
+  // "settled" = confirmed or excluded. Anything still unmatched/suggested blocks the lock.
+  const pending = await prisma.$queryRaw<{ count: number }[]>`
+    SELECT COUNT(*)::int as count FROM ledger_bank_txn
+    WHERE batch_id = ${batchId}::uuid AND org_id = ${orgId}::uuid
+      AND match_state NOT IN ('confirmed','excluded')
+  `;
+  if ((pending[0]?.count ?? 0) > 0) {
+    return { ok: false, error: `ยังมี ${pending[0]?.count} รายการที่ยังไม่ได้ยืนยัน/ข้าม — จัดการให้ครบก่อนล็อก` };
   }
 
-  // Compute fingerprint from all line_hashes
+  // Compute fingerprint from all line_hashes (org-scoped)
   const hashes = await prisma.$queryRaw<{ lineHash: string }[]>`
     SELECT line_hash as "lineHash" FROM ledger_bank_txn
-    WHERE batch_id = ${batchId}::uuid ORDER BY row_index
+    WHERE batch_id = ${batchId}::uuid AND org_id = ${orgId}::uuid ORDER BY row_index
   `;
   const fingerprint = computeBatchFingerprint(hashes.map((h) => h.lineHash));
 
@@ -427,7 +613,7 @@ export async function lockPeriodAction(batchId: string): Promise<{ ok: boolean; 
     UPDATE ledger_bank_import_batch
     SET locked_at = now(), locked_by = ${session.user.id}::uuid,
         lock_fingerprint = ${fingerprint}, status = 'locked', updated_at = now()
-    WHERE id = ${batchId}::uuid AND locked_at IS NULL
+    WHERE id = ${batchId}::uuid AND org_id = ${orgId}::uuid AND locked_at IS NULL
   `;
 
   return { ok: true, fingerprint };
