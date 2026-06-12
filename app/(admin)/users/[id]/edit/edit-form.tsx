@@ -28,10 +28,21 @@ const ROLES: { value: string; label: string; desc: string }[] = [
     label: "Branch Manager",
     desc: "ผู้จัดการสาขา · อนุมัติรายงาน",
   },
+  {
+    value: "program_admin",
+    label: "แอดมินโปรแกรม",
+    desc: "เห็น + ดูแลเฉพาะโปรแกรมที่เลือกด้านล่าง",
+  },
   { value: "staff", label: "Staff", desc: "พนักงาน · กรอกรายงาน" },
   { value: "driver", label: "Driver", desc: "คนขับ · FuelOS Driver App" },
   { value: "viewer", label: "Viewer", desc: "ดูได้อย่างเดียว" },
 ];
+
+interface ProgramOption {
+  slug: string;
+  name: string;
+  emoji: string;
+}
 
 interface Props {
   userId: string;
@@ -43,6 +54,9 @@ interface Props {
   };
   initialBranchIds: string[];
   branches: BranchOption[];
+  programs: ProgramOption[];
+  initialModules: string[];
+  initialAdminModules: string[];
   isSelf: boolean;
 }
 
@@ -51,6 +65,9 @@ export function EditUserForm({
   initial,
   initialBranchIds,
   branches,
+  programs,
+  initialModules,
+  initialAdminModules,
   isSelf,
 }: Props) {
   const router = useRouter();
@@ -62,6 +79,42 @@ export function EditUserForm({
   const [selected, setSelected] = useState<Set<string>>(
     new Set(initialBranchIds),
   );
+  // โปรแกรมที่ผู้ใช้นี้เข้าถึงได้ + ชุดย่อยที่เป็น "แอดมินโปรแกรม"
+  const [programSel, setProgramSel] = useState<Set<string>>(
+    new Set(initialModules),
+  );
+  const [adminSel, setAdminSel] = useState<Set<string>>(
+    new Set(initialAdminModules),
+  );
+
+  function toggleProgram(slug: string) {
+    setProgramSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(slug)) {
+        next.delete(slug);
+        // เอาโปรแกรมออก = ถอดสิทธิ์แอดมินของโปรแกรมนั้นด้วย
+        setAdminSel((a) => {
+          const na = new Set(a);
+          na.delete(slug);
+          return na;
+        });
+      } else {
+        next.add(slug);
+        // โปรแกรมใหม่ default = แอดมิน (ผู้ใช้ตั้งใจให้เขาดูแลโปรแกรมนี้)
+        setAdminSel((a) => new Set(a).add(slug));
+      }
+      return next;
+    });
+  }
+
+  function setProgramRole(slug: string, isAdmin: boolean) {
+    setAdminSel((prev) => {
+      const next = new Set(prev);
+      if (isAdmin) next.add(slug);
+      else next.delete(slug);
+      return next;
+    });
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -69,8 +122,13 @@ export function EditUserForm({
       toast.error("กรุณากรอกชื่อ");
       return;
     }
+    if (role === "program_admin" && programSel.size === 0) {
+      toast.error("เลือกอย่างน้อย 1 โปรแกรมที่จะให้เข้าถึง");
+      return;
+    }
 
     startTransition(async () => {
+      // 1) บันทึกข้อมูลผู้ใช้ + บทบาท
       const res = await fetch(`/api/admin/users/${userId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -87,6 +145,27 @@ export function EditUserForm({
         toast.error(json.error || "บันทึกไม่สำเร็จ");
         return;
       }
+
+      // 2) ถ้าเป็นแอดมินโปรแกรม → บันทึกสิทธิ์โปรแกรม (แทนที่ชุดเดิมทั้งหมด)
+      if (role === "program_admin") {
+        const modRes = await fetch(`/api/admin/users/${userId}/modules`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            modules: Array.from(programSel),
+            adminModules: Array.from(adminSel),
+          }),
+        });
+        const modJson = await modRes.json();
+        if (!modRes.ok) {
+          toast.error(
+            modJson.error ||
+              "บันทึกข้อมูลแล้ว แต่ตั้งสิทธิ์โปรแกรมไม่สำเร็จ — ลองอีกครั้ง",
+          );
+          return;
+        }
+      }
+
       toast.success("บันทึกการแก้ไขแล้ว");
       router.push(`/users/${userId}`);
       router.refresh();
@@ -94,6 +173,7 @@ export function EditUserForm({
   }
 
   const showBranches = role === "branch_manager" || role === "staff";
+  const showPrograms = role === "program_admin";
 
   return (
     <form onSubmit={handleSubmit}>
@@ -168,6 +248,81 @@ export function EditUserForm({
           ))}
         </CardBody>
       </Card>
+
+      {showPrograms && (
+        <Card className="mt-4 animate-fade-up delay-200">
+          <CardHeader>
+            <CardTitle>โปรแกรมที่เข้าถึงได้</CardTitle>
+            {programSel.size > 0 && (
+              <Badge tone="brand">{programSel.size} โปรแกรม</Badge>
+            )}
+          </CardHeader>
+          <CardBody className="!pt-0">
+            <p className="text-xs text-zinc-500 mb-3">
+              ติ๊กโปรแกรมที่จะให้ผู้ใช้นี้เห็น — เลือกได้ว่าเป็น{" "}
+              <strong>แอดมิน</strong> (จัดการทีมในโปรแกรมได้) หรือ{" "}
+              <strong>สมาชิก</strong> (เข้าดู/ใช้ได้แต่จัดการคนไม่ได้)
+            </p>
+            <div className="space-y-2">
+              {programs.map((p) => {
+                const on = programSel.has(p.slug);
+                const isAdmin = adminSel.has(p.slug);
+                return (
+                  <div
+                    key={p.slug}
+                    className={cn(
+                      "rounded-xl border-2 transition-colors",
+                      on
+                        ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)]"
+                        : "border-zinc-200",
+                    )}
+                  >
+                    <label className="flex items-center gap-3 p-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() => toggleProgram(p.slug)}
+                      />
+                      <span className="text-xl">{p.emoji}</span>
+                      <span className="font-semibold text-sm flex-1">
+                        {p.name}
+                      </span>
+                    </label>
+                    {on && (
+                      <div className="flex gap-2 px-3 pb-3 pl-12">
+                        <button
+                          type="button"
+                          onClick={() => setProgramRole(p.slug, true)}
+                          className={cn(
+                            "text-xs font-semibold rounded-lg px-3 py-1.5 border-2 transition-colors",
+                            isAdmin
+                              ? "border-[var(--color-brand-500)] bg-[var(--color-brand-600)] text-white"
+                              : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50",
+                          )}
+                        >
+                          แอดมิน
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setProgramRole(p.slug, false)}
+                          className={cn(
+                            "text-xs font-semibold rounded-lg px-3 py-1.5 border-2 transition-colors",
+                            !isAdmin
+                              ? "border-zinc-400 bg-zinc-700 text-white"
+                              : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50",
+                          )}
+                        >
+                          สมาชิก
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {showBranches && branches.length > 0 && (
         <Card className="mt-4 animate-fade-up delay-200">

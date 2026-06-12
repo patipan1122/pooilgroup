@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import {Mail, Phone, Calendar, ShieldAlert } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
+import { MODULES, type ModuleSlug } from "@/lib/modules";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { bkkDateTime } from "@/lib/utils/format";
@@ -14,7 +15,10 @@ export const dynamic = "force-dynamic";
 const ROLE_LABEL: Record<string, string> = {
   super_admin: "Super Admin",
   org_admin: "Admin",
+  admin: "Admin",
+  area_manager: "Area Manager",
   branch_manager: "Manager",
+  program_admin: "แอดมินโปรแกรม",
   staff: "Staff",
   driver: "Driver",
   viewer: "Viewer",
@@ -23,7 +27,10 @@ const ROLE_LABEL: Record<string, string> = {
 const ROLE_TONE: Record<string, "brand" | "neutral" | "warning" | "info"> = {
   super_admin: "warning",
   org_admin: "warning",
+  admin: "warning",
+  area_manager: "brand",
   branch_manager: "brand",
+  program_admin: "brand",
   staff: "info",
   driver: "info",
   viewer: "neutral",
@@ -68,6 +75,26 @@ export default async function UserDetailPage({ params }: Props) {
     .eq("user_id", id)
     .order("login_at", { ascending: false })
     .limit(5);
+
+  // โปรแกรมที่ผู้ใช้นี้เข้าถึงได้ (เฉพาะ active) — โชว์ให้เห็นว่าถือบัตรผ่านอะไรบ้าง
+  const { data: moduleLinks } = await admin
+    .from("user_modules")
+    .select("module_name, role")
+    .eq("user_id", id)
+    .eq("org_id", session.user.org_id)
+    .eq("is_active", true);
+
+  const programGrants = (moduleLinks ?? [])
+    .filter((m) => (MODULES as Record<string, unknown>)[m.module_name])
+    .map((m) => {
+      const def = MODULES[m.module_name as ModuleSlug];
+      return {
+        slug: m.module_name,
+        name: def.name,
+        emoji: def.emoji,
+        isAdmin: m.role === "admin",
+      };
+    });
 
   const isPendingInvite = !user.is_active && !user.invite_used_at;
   const isLocked = user.locked_until && new Date(user.locked_until) > new Date();
@@ -195,6 +222,39 @@ export default async function UserDetailPage({ params }: Props) {
             )}
           </CardBody>
         </Card>
+
+        {/* Program access — บัตรผ่านแต่ละโปรแกรม (program_admin / สมาชิกโปรแกรม) */}
+        {(user.role === "program_admin" || programGrants.length > 0) && (
+          <Card className="animate-fade-up delay-200">
+            <CardHeader>
+              <CardTitle>โปรแกรมที่เข้าถึงได้</CardTitle>
+              <Badge tone="brand">{programGrants.length}</Badge>
+            </CardHeader>
+            <CardBody>
+              {programGrants.length === 0 ? (
+                <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  ⚠️ ยังไม่ได้ให้สิทธิ์โปรแกรมใด ๆ — ผู้ใช้นี้จะเข้าโปรแกรมไม่ได้
+                  เลย กด &ldquo;แก้ไข&rdquo; เพื่อเลือกโปรแกรม
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {programGrants.map((p) => (
+                    <span
+                      key={p.slug}
+                      className="inline-flex items-center gap-1.5 text-xs rounded-lg bg-zinc-100 px-2.5 py-1 font-medium"
+                    >
+                      <span>{p.emoji}</span>
+                      <span>{p.name}</span>
+                      <Badge tone={p.isAdmin ? "brand" : "neutral"}>
+                        {p.isAdmin ? "แอดมิน" : "สมาชิก"}
+                      </Badge>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        )}
 
         {/* Login activity */}
         <Card className="animate-fade-up delay-250">

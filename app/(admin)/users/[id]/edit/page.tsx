@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth/session";
 import { BackButton } from "@/components/ui/back-button";
 import { adminClient } from "@/lib/db/server";
+import { MODULES } from "@/lib/modules";
 import { EditUserForm } from "./edit-form";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,24 @@ export default async function EditUserPage({ params }: Props) {
     .eq("is_active", true)
     .order("code");
 
+  // โปรแกรมที่ผู้ใช้นี้ถูกผูกไว้แล้ว (เฉพาะ active) — แยกว่าเป็นแอดมินหรือสมาชิก
+  const { data: moduleLinks } = await admin
+    .from("user_modules")
+    .select("module_name, role")
+    .eq("user_id", id)
+    .eq("org_id", session.user.org_id)
+    .eq("is_active", true);
+
+  const initialModules = (moduleLinks ?? []).map((m) => m.module_name);
+  const initialAdminModules = (moduleLinks ?? [])
+    .filter((m) => m.role === "admin")
+    .map((m) => m.module_name);
+
+  // โปรแกรมที่ให้เลือกได้ — active ทั้งหมด ยกเว้น CostCtrl (ของ super_admin เท่านั้น)
+  const programs = Object.values(MODULES)
+    .filter((m) => m.status === "active" && m.slug !== "costctrl")
+    .map((m) => ({ slug: m.slug, name: m.name, emoji: m.emoji }));
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-2xl mx-auto">
       <div className="mb-3">
@@ -62,6 +81,9 @@ export default async function EditUserPage({ params }: Props) {
         }}
         initialBranchIds={(branchLinks ?? []).map((b) => b.branch_id)}
         branches={allBranches ?? []}
+        programs={programs}
+        initialModules={initialModules}
+        initialAdminModules={initialAdminModules}
         isSelf={user.id === session.user.id}
       />
     </div>

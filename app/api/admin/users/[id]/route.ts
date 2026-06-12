@@ -21,6 +21,7 @@ const PatchSchema = z.object({
       "admin",
       "area_manager",
       "branch_manager",
+      "program_admin",
       "staff",
       "driver",
       "viewer",
