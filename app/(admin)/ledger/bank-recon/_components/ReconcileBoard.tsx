@@ -6,16 +6,24 @@
 //   รอยืนยัน: กลุ่มที่จับคู่แล้ว → "กระทบยอดทั้งหมด" → เสร็จ
 // Auto-match (PEAK step 1) + manual select (PEAK manual) + เพิ่มรายการ/รายได้.
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useTransition, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Sparkles, Plus, Link2, Ban, X, Check, Trash2, RefreshCw, Search,
+  MoreVertical, ArrowLeftRight, FilePlus2, Pencil, CalendarClock, ArrowDownWideNarrow,
 } from "lucide-react";
 import {
   createMatchGroupAction, autoMatchAccountAction, confirmAllGroupsAction,
   removeGroupAction, addBankMovementAction, addRevenueEntryAction,
   excludeTxnAction, syncRevenueRangeAction,
 } from "../_actions";
+import {
+  transferMovementAction, createRevenueFromMovementAction, createExpenseFromMovementAction,
+  editMovementAction, deleteMovementAction, listTransferTargetsAction,
+} from "../_movement-actions";
+
+const todayISO = () => new Date().toISOString().slice(0, 10);
+type SortMode = "date" | "high" | "low";
 
 interface BookEntry {
   bookId: string; bookType: "revenue" | "expense" | "payment";
@@ -63,25 +71,54 @@ export function ReconcileBoard({
   const [selBank, setSelBank] = useState<Set<string>>(new Set());
   const [selBook, setSelBook] = useState<Set<string>>(new Set());
   const [err, setErr] = useState<string | null>(null);
-  const [modal, setModal] = useState<null | "bank" | "revenue">(null);
+  const [modal, setModal] = useState<null | "bank" | "revenue" | { kind: "transfer" | "edit"; m: BankMovement }>(null);
   const [qBook, setQBook] = useState("");
   const [qBank, setQBank] = useState("");
+  const [todayBook, setTodayBook] = useState(false);
+  const [todayBank, setTodayBank] = useState(false);
+  const [sortBook, setSortBook] = useState<SortMode>("date");
+  const [sortBank, setSortBank] = useState<SortMode>("date");
 
   const bookKey = (b: { bookType: string; bookId: string }) => `${b.bookType}:${b.bookId}`;
+  const today = todayISO();
 
-  // search filters (PEAK: ค้นหาด้วยเลขที่เอกสาร/ผู้ติดต่อ · หมายเหตุรายการเคลื่อนไหว)
+  const sortRows = <T extends { amountSatang: number; date: string }>(rows: T[], mode: SortMode): T[] => {
+    if (mode === "high") return [...rows].sort((a, b) => Math.abs(b.amountSatang) - Math.abs(a.amountSatang));
+    if (mode === "low") return [...rows].sort((a, b) => Math.abs(a.amountSatang) - Math.abs(b.amountSatang));
+    return rows;
+  };
+
+  // search + วันนี้ filter + sort (PEAK: ค้นหา · ฟิลเตอร์วันนี้ · ดูยอดมาก/น้อย)
   const fBook = useMemo(() => {
     const q = qBook.trim().toLowerCase();
-    if (!q) return bookEntries;
-    return bookEntries.filter((b) =>
-      `${b.docNo} ${b.contact} ${b.detail} ${b.amountSatang / 100}`.toLowerCase().includes(q));
-  }, [qBook, bookEntries]);
+    let r = bookEntries;
+    if (q) r = r.filter((b) => `${b.docNo} ${b.contact} ${b.detail} ${b.amountSatang / 100}`.toLowerCase().includes(q));
+    if (todayBook) r = r.filter((b) => b.date === today);
+    return sortRows(r, sortBook);
+  }, [qBook, bookEntries, todayBook, sortBook, today]);
   const fBank = useMemo(() => {
     const q = qBank.trim().toLowerCase();
-    if (!q) return bankMovements;
-    return bankMovements.filter((m) =>
-      `${m.description} ${m.txnType} ${m.ref1 ?? ""} ${m.amountSatang / 100}`.toLowerCase().includes(q));
-  }, [qBank, bankMovements]);
+    let r = bankMovements;
+    if (q) r = r.filter((m) => `${m.description} ${m.txnType} ${m.ref1 ?? ""} ${m.amountSatang / 100}`.toLowerCase().includes(q));
+    if (todayBank) r = r.filter((m) => m.date === today);
+    return sortRows(r, sortBank);
+  }, [qBank, bankMovements, todayBank, sortBank, today]);
+
+  // select-all (เลือกทั้งหมดที่กรองอยู่)
+  const allBookSelected = fBook.length > 0 && fBook.every((b) => selBook.has(bookKey(b)));
+  const allBankSelected = fBank.length > 0 && fBank.every((m) => selBank.has(m.id));
+  const toggleAllBook = () => setSelBook((p) => {
+    const n = new Set(p);
+    if (allBookSelected) fBook.forEach((b) => n.delete(bookKey(b)));
+    else fBook.forEach((b) => n.add(bookKey(b)));
+    return n;
+  });
+  const toggleAllBank = () => setSelBank((p) => {
+    const n = new Set(p);
+    if (allBankSelected) fBank.forEach((m) => n.delete(m.id));
+    else fBank.forEach((m) => n.add(m.id));
+    return n;
+  });
 
   const selBankTotal = useMemo(
     () => bankMovements.filter((m) => selBank.has(m.id)).reduce((s, m) => s + m.amountSatang, 0),
@@ -128,6 +165,14 @@ export function ReconcileBoard({
     run(() => excludeTxnAction({ bankTxnId: txnId, reason: reason.trim() }));
   };
   const handleSync = () => run(() => syncRevenueRangeAction({ companyId, periodStart, periodEnd }).then((r) => ({ ok: r.ok, error: r.error })));
+
+  // per-movement actions (PEAK "ทำรายการ")
+  const handleCreateRevenue = (id: string) => run(() => createRevenueFromMovementAction({ bankTxnId: id }));
+  const handleCreateExpense = (id: string) => run(() => createExpenseFromMovementAction({ bankTxnId: id }));
+  const handleDeleteMovement = (id: string) => {
+    if (!window.confirm("ลบรายการที่เพิ่มเองนี้?")) return;
+    run(() => deleteMovementAction(id));
+  };
 
   const matchTotal = bankMovements.length + bookEntries.length;
   const isLocked = false; // lock reworking for date-range mode (handled in overview)
@@ -190,6 +235,12 @@ export function ReconcileBoard({
                 search={qBook}
                 onSearch={setQBook}
                 searchPlaceholder="ค้นหาเลขเอกสาร / ผู้ติดต่อ"
+                allSelected={allBookSelected}
+                onToggleAll={toggleAllBook}
+                today={todayBook}
+                onToday={() => setTodayBook((v) => !v)}
+                sort={sortBook}
+                onSort={setSortBook}
               >
                 {fBook.map((b) => {
                   const k = bookKey(b);
@@ -221,6 +272,12 @@ export function ReconcileBoard({
                 search={qBank}
                 onSearch={setQBank}
                 searchPlaceholder="ค้นหาหมายเหตุ / ref"
+                allSelected={allBankSelected}
+                onToggleAll={toggleAllBank}
+                today={todayBank}
+                onToday={() => setTodayBank((v) => !v)}
+                sort={sortBank}
+                onSort={setSortBank}
               >
                 {fBank.map((m) => (
                   <Row
@@ -231,7 +288,17 @@ export function ReconcileBoard({
                     title={m.description || "รายการธนาคาร"}
                     subtitle={[m.txnType, m.ref1].filter(Boolean).join(" · ")}
                     amountSatang={m.amountSatang}
-                    onExclude={() => handleExclude(m.id)}
+                    menu={
+                      <RowMenu
+                        isCredit={m.amountSatang > 0}
+                        pending={pending}
+                        onTransfer={() => setModal({ kind: "transfer", m })}
+                        onCreateBook={() => (m.amountSatang > 0 ? handleCreateRevenue(m.id) : handleCreateExpense(m.id))}
+                        onExclude={() => handleExclude(m.id)}
+                        onEdit={() => setModal({ kind: "edit", m })}
+                        onDelete={() => handleDeleteMovement(m.id)}
+                      />
+                    }
                   />
                 ))}
                 {fBank.length === 0 && <Empty text="ไม่มีรายการธนาคารค้าง" />}
@@ -309,15 +376,31 @@ export function ReconcileBoard({
         <AddRevenueModal companyId={companyId}
           onClose={() => setModal(null)} onDone={() => { setModal(null); router.refresh(); }} />
       )}
+      {modal && typeof modal === "object" && modal.kind === "transfer" && (
+        <TransferModal mv={modal.m} companyId={companyId} bankAccountId={bankAccountId}
+          onClose={() => setModal(null)} onDone={() => { setModal(null); router.refresh(); }} />
+      )}
+      {modal && typeof modal === "object" && modal.kind === "edit" && (
+        <EditMovementModal mv={modal.m}
+          onClose={() => setModal(null)} onDone={() => { setModal(null); router.refresh(); }} />
+      )}
     </div>
   );
 }
 
 // ── building blocks ───────────────────────────────────────────────────────────
-function Column({ title, count, selTotal, accent, onAdd, addLabel, search, onSearch, searchPlaceholder, children }: {
+const SORT_LABEL: Record<SortMode, string> = { date: "วันที่", high: "ยอดมาก→น้อย", low: "ยอดน้อย→มาก" };
+const nextSort: Record<SortMode, SortMode> = { date: "high", high: "low", low: "date" };
+
+function Column({
+  title, count, selTotal, accent, onAdd, addLabel, search, onSearch, searchPlaceholder,
+  allSelected, onToggleAll, today, onToday, sort, onSort, children,
+}: {
   title: string; count: number; selTotal: number; accent: "blue" | "emerald";
   onAdd?: () => void; addLabel: string;
   search: string; onSearch: (v: string) => void; searchPlaceholder: string;
+  allSelected: boolean; onToggleAll: () => void;
+  today: boolean; onToday: () => void; sort: SortMode; onSort: (s: SortMode) => void;
   children: React.ReactNode;
 }) {
   return (
@@ -340,7 +423,8 @@ function Column({ title, count, selTotal, accent, onAdd, addLabel, search, onSea
           )}
         </div>
       </div>
-      <div className="border-b border-zinc-50 px-3 py-2">
+      {/* search */}
+      <div className="px-3 pt-2">
         <div className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2 py-1">
           <Search size={13} className="text-zinc-400" />
           <input
@@ -352,14 +436,30 @@ function Column({ title, count, selTotal, accent, onAdd, addLabel, search, onSea
           />
         </div>
       </div>
+      {/* filter chips: select-all · วันนี้ · sort */}
+      <div className="flex items-center gap-1.5 border-b border-zinc-50 px-3 py-2">
+        <button type="button" onClick={onToggleAll}
+          className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2 py-1 text-[11px] text-zinc-600 hover:bg-zinc-50">
+          <input type="checkbox" readOnly checked={allSelected} className="size-3 rounded border-zinc-300" aria-hidden />
+          เลือกทั้งหมด
+        </button>
+        <button type="button" onClick={onToday}
+          className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] ${today ? "border-blue-200 bg-blue-50 text-blue-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
+          <CalendarClock size={11} /> วันนี้
+        </button>
+        <button type="button" onClick={() => onSort(nextSort[sort])}
+          className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] ${sort !== "date" ? "border-blue-200 bg-blue-50 text-blue-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
+          <ArrowDownWideNarrow size={11} /> {SORT_LABEL[sort]}
+        </button>
+      </div>
       <div className="max-h-[54vh] divide-y divide-zinc-50 overflow-y-auto">{children}</div>
     </div>
   );
 }
 
-function Row({ checked, onToggle, disabled, date, title, subtitle, detail, tag, amountSatang, onExclude }: {
+function Row({ checked, onToggle, disabled, date, title, subtitle, detail, tag, amountSatang, menu }: {
   checked: boolean; onToggle: () => void; disabled?: boolean;
-  date: string; title: string; subtitle?: string; detail?: string; tag?: string; amountSatang: number; onExclude?: () => void;
+  date: string; title: string; subtitle?: string; detail?: string; tag?: string; amountSatang: number; menu?: React.ReactNode;
 }) {
   const credit = amountSatang > 0;
   return (
@@ -375,16 +475,52 @@ function Row({ checked, onToggle, disabled, date, title, subtitle, detail, tag, 
         {subtitle && <p className="truncate text-xs text-zinc-500">{subtitle}</p>}
         {detail && <p className="truncate text-[11px] text-zinc-400">{detail}</p>}
       </div>
-      <div className="shrink-0 text-right">
+      <div className="flex shrink-0 items-start gap-1">
         <p className={`text-sm font-semibold ${credit ? "text-emerald-600" : "text-rose-600"}`}>
           {credit ? "+" : "−"}฿{baht(amountSatang)}
         </p>
-        {onExclude && (
-          <button onClick={onExclude} className="text-[11px] text-zinc-400 hover:text-amber-600">
-            <Ban size={11} className="mr-0.5 inline" />ข้าม
-          </button>
-        )}
+        {menu}
       </div>
+    </div>
+  );
+}
+
+// ── per-movement action menu (PEAK "ทำรายการ") ────────────────────────────────
+function RowMenu({ isCredit, pending, onTransfer, onCreateBook, onExclude, onEdit, onDelete }: {
+  isCredit: boolean; pending: boolean;
+  onTransfer: () => void; onCreateBook: () => void; onExclude: () => void; onEdit: () => void; onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+  const item = (icon: React.ReactNode, label: string, fn: () => void, danger?: boolean) => (
+    <button type="button" disabled={pending}
+      onClick={() => { setOpen(false); fn(); }}
+      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-zinc-50 disabled:opacity-50 ${danger ? "text-rose-600" : "text-zinc-700"}`}>
+      {icon} {label}
+    </button>
+  );
+  return (
+    <div className="relative" ref={ref}>
+      <button type="button" aria-label="ทำรายการ" onClick={() => setOpen((v) => !v)}
+        className="grid size-6 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600">
+        <MoreVertical size={15} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-7 z-20 w-48 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-lg">
+          {item(<FilePlus2 size={13} className="text-blue-500" />, isCredit ? "บันทึกเป็นรายได้" : "บันทึกเป็นค่าใช้จ่าย", onCreateBook)}
+          {item(<ArrowLeftRight size={13} className="text-violet-500" />, "โอนเงิน (ระหว่างบัญชี)", onTransfer)}
+          {item(<Ban size={13} className="text-amber-500" />, "ข้าม / ไม่มีคู่", onExclude)}
+          <div className="my-1 border-t border-zinc-100" />
+          {item(<Pencil size={13} className="text-zinc-400" />, "แก้ไข (เฉพาะเพิ่มเอง)", onEdit)}
+          {item(<Trash2 size={13} />, "ลบ (เฉพาะเพิ่มเอง)", onDelete, true)}
+        </div>
+      )}
     </div>
   );
 }
@@ -491,11 +627,82 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="block"><span className="mb-1 block text-xs font-medium text-zinc-500">{label}</span>{children}</label>;
 }
-function ModalActions({ pending, onClose, onSubmit }: { pending: boolean; onClose: () => void; onSubmit: () => void }) {
+function ModalActions({ pending, onClose, onSubmit, submitLabel }: { pending: boolean; onClose: () => void; onSubmit: () => void; submitLabel?: string }) {
   return (
     <div className="flex justify-end gap-2 pt-1">
-      <button onClick={onClose} disabled={pending} className="rounded-lg border border-zinc-200 px-4 py-2 text-sm text-zinc-600 disabled:opacity-50">ยกเลิก</button>
-      <button onClick={onSubmit} disabled={pending} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+      <button type="button" onClick={onClose} disabled={pending} className="rounded-lg border border-zinc-200 px-4 py-2 text-sm text-zinc-600 disabled:opacity-50">ยกเลิก</button>
+      <button type="button" onClick={onSubmit} disabled={pending} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">{pending ? "กำลังบันทึก…" : (submitLabel ?? "บันทึก")}</button>
     </div>
+  );
+}
+
+// ── โอนเงิน (transfer between accounts) ───────────────────────────────────────
+function TransferModal({ mv, companyId, bankAccountId, onClose, onDone }: {
+  mv: BankMovement; companyId: string; bankAccountId: string; onClose: () => void; onDone: () => void;
+}) {
+  const [pending, start] = useTransition();
+  const [targets, setTargets] = useState<{ id: string; bankCode: string; accountNo: string; accountName: string }[]>([]);
+  const [target, setTarget] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    listTransferTargetsAction(companyId, bankAccountId).then((t) => { setTargets(t); if (t[0]) setTarget(t[0].id); });
+  }, [companyId, bankAccountId]);
+  const out = mv.amountSatang < 0;
+  const submit = () => {
+    if (!target) { setErr("เลือกบัญชีปลายทาง"); return; }
+    start(async () => {
+      const r = await transferMovementAction({ bankTxnId: mv.id, targetAccountId: target });
+      if (r.ok) onDone(); else setErr(r.error ?? "ไม่สำเร็จ");
+    });
+  };
+  return (
+    <Modal title="โอนเงินระหว่างบัญชี" onClose={onClose}>
+      <div className="rounded-xl bg-zinc-50 p-3 text-sm">
+        <p className="text-xs text-zinc-400">{mv.date}</p>
+        <p className="text-zinc-700">{mv.description}</p>
+        <p className={`mt-1 font-semibold ${out ? "text-rose-600" : "text-emerald-600"}`}>{out ? "−" : "+"}฿{baht(mv.amountSatang)}</p>
+      </div>
+      <Field label={out ? "โอนไปบัญชี" : "รับโอนจากบัญชี"}>
+        <select aria-label="บัญชีปลายทาง" value={target} onChange={(e) => setTarget(e.target.value)}
+          className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none">
+          {targets.length === 0 && <option value="">— ไม่มีบัญชีอื่น —</option>}
+          {targets.map((t) => <option key={t.id} value={t.id}>{t.bankCode} …{t.accountNo.slice(-4)} · {t.accountName}</option>)}
+        </select>
+      </Field>
+      <p className="text-[11px] text-zinc-400">รายการนี้จะถูกทำเครื่องหมายเป็น “โอนภายใน” และนำออกจากการกระทบยอด (ไม่ใช่รายรับ/รายจ่าย)</p>
+      {err && <p className="text-xs text-red-600">{err}</p>}
+      <ModalActions pending={pending} onClose={onClose} onSubmit={submit} submitLabel="ยืนยันโอน" />
+    </Modal>
+  );
+}
+
+// ── แก้ไขรายการเคลื่อนไหวที่เพิ่มเอง ──────────────────────────────────────────
+function EditMovementModal({ mv, onClose, onDone }: { mv: BankMovement; onClose: () => void; onDone: () => void }) {
+  const [pending, start] = useTransition();
+  const [date, setDate] = useState(mv.date);
+  const [amount, setAmount] = useState((Math.abs(mv.amountSatang) / 100).toString());
+  const [dir, setDir] = useState<"in" | "out">(mv.amountSatang < 0 ? "out" : "in");
+  const [desc, setDesc] = useState(mv.description);
+  const [err, setErr] = useState<string | null>(null);
+  const submit = () => {
+    const n = Math.round(parseFloat(amount) * 100);
+    if (!date || isNaN(n) || n <= 0) { setErr("กรอกวันที่และจำนวนเงินให้ถูกต้อง"); return; }
+    start(async () => {
+      const r = await editMovementAction({ bankTxnId: mv.id, date, amountSatang: dir === "in" ? n : -n, description: desc });
+      if (r.ok) onDone(); else setErr(r.error ?? "แก้ไขไม่สำเร็จ");
+    });
+  };
+  return (
+    <Modal title="แก้ไขรายการเคลื่อนไหว" onClose={onClose}>
+      <div className="mb-2 flex gap-1 rounded-lg bg-zinc-100 p-1">
+        <button type="button" onClick={() => setDir("in")} className={`flex-1 rounded-md py-1.5 text-sm ${dir === "in" ? "bg-white shadow-sm text-emerald-600 font-medium" : "text-zinc-500"}`}>เงินเข้า</button>
+        <button type="button" onClick={() => setDir("out")} className={`flex-1 rounded-md py-1.5 text-sm ${dir === "out" ? "bg-white shadow-sm text-rose-600 font-medium" : "text-zinc-500"}`}>เงินออก</button>
+      </div>
+      <Field label="วันที่"><input aria-label="วันที่" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" /></Field>
+      <Field label="จำนวนเงิน (บาท)"><input aria-label="จำนวนเงิน" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" /></Field>
+      <Field label="รายละเอียด"><input aria-label="รายละเอียด" value={desc} onChange={(e) => setDesc(e.target.value)} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" /></Field>
+      {err && <p className="text-xs text-red-600">{err}</p>}
+      <ModalActions pending={pending} onClose={onClose} onSubmit={submit} />
+    </Modal>
   );
 }
