@@ -1,6 +1,12 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-12 (LedgerLine Bank Recon · ✅ แก้ 12 P0 + P1 จาก audit แล้ว DEPLOYED af5fc96 · พร้อม pilot 1 บัญชี KBANK)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-12 (LedgerLine Bank Recon · ✅ LIVE บน prod จริงแล้ว cb0371e หลังแก้ build-breaker · 12 P0 + P1 ครบ · พร้อม pilot KBANK)
+
+## 🔴→✅ BUILD-BREAKER (2026-06-12 #5 — bank-recon ไม่เคย deploy 2 ชม. · FIXED cb0371e)
+
+**อาการ:** CEO ไม่เห็นเมนูกระทบยอดธนาคารเลยแม้แก้ nav แล้ว. **ต้นตอ:** `export const runtime="nodejs"` ใน "use server" file (`_actions.ts` ×2) → Turbopack build fail 27 errors เงียบ ๆ → **ทุก deploy ตั้งแต่ b13acab Error หมด** (prod ค้างโค้ดเก่า 2 ชม., CEO เลยไม่เห็นอะไรเลย). tsc green ทุกครั้ง — bug โผล่แค่ตอน `next build`.
+**Fix (cb0371e):** ลบ `export const runtime` (server action = nodejs default อยู่แล้ว). ยืนยัน `pnpm run build` = exit 0. deploy ai64gzda6 = ● Ready. ref [[feedback-use-server-only-async-2026-06-02]] (REPEAT).
+**บทเรียน:** แตะ "use server" → ต้อง `pnpm run build` ก่อน push + `vercel ls` หลัง push (push ≠ deployed).
 
 ## ✅ FIX (2026-06-12 #4 — แก้ 12 P0 + P1 จาก /auditbigteam · DEPLOYED af5fc96)
 
