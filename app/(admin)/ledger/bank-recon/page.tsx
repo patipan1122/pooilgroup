@@ -12,7 +12,8 @@ import { ledgerBankReconV1 } from "@/lib/ledger/flags";
 import { listBankAccountsWithStatus } from "@/lib/ledger/bank-statement-reconcile";
 import { BankAccountStatusIcon } from "./_components/ConfidencePill";
 import { BANK_LABELS } from "@/lib/ledger/bank-adapters/types";
-import { Landmark, Upload, Settings, TrendingUp } from "lucide-react";
+import { BankLogo } from "./_components/BankLogo";
+import { Landmark, Settings, TrendingUp, ChevronRight } from "lucide-react";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -137,53 +138,59 @@ export default async function BankReconHubPage({
           </Link>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-zinc-100">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-100 bg-zinc-50 text-left text-xs font-medium text-zinc-500">
-                <th className="px-4 py-3">ธนาคาร</th>
-                <th className="px-4 py-3">เลขที่บัญชี</th>
-                <th className="px-4 py-3">ชื่อบัญชี</th>
-                <th className="px-4 py-3 text-center">สถานะ</th>
-                <th className="px-4 py-3 text-right">ค้างกระทบยอด</th>
-                <th className="px-4 py-3 text-right">กระทบยอดแล้ว</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-50">
-              {accounts.map((acct) => (
-                <tr key={acct.accountId} className="hover:bg-zinc-50">
-                  <td className="px-4 py-3 font-medium text-zinc-800">
-                    {BANK_NAMES[acct.bankCode] ?? acct.bankCode}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-zinc-600">{acct.accountNo}</td>
-                  <td className="px-4 py-3 text-zinc-600 max-w-[200px] truncate">{acct.accountName}</td>
-                  <td className="px-4 py-3 text-center">
-                    <BankAccountStatusIcon status={acct.status} />
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {acct.unmatchedCount > 0 ? (
-                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                        {acct.unmatchedCount}
-                      </span>
-                    ) : (
-                      <span className="text-zinc-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right text-zinc-600">{acct.matchedCount}</td>
-                  <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/ledger/bank-recon/${acct.accountId}?period=${period}&company=${scope.companyId}`}
-                      className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700"
-                    >
-                      <Upload size={10} />
-                      กระทบยอด
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-5">
+          {Object.entries(
+            accounts.reduce<Record<string, typeof accounts>>((acc, a) => {
+              (acc[a.bankCode] ??= []).push(a); return acc;
+            }, {}),
+          ).map(([bankCode, list]) => (
+            <div key={bankCode}>
+              <div className="mb-2 flex items-center gap-2">
+                <BankLogo bankCode={bankCode} size={28} />
+                <h3 className="text-sm font-semibold text-zinc-700">{BANK_NAMES[bankCode] ?? bankCode}</h3>
+                <span className="text-xs text-zinc-400">({list.length})</span>
+              </div>
+              <div className="overflow-hidden rounded-2xl border border-zinc-100">
+                <table className="w-full text-sm">
+                  <tbody className="divide-y divide-zinc-50">
+                    {list.map((acct) => (
+                      <tr key={acct.accountId} className="hover:bg-zinc-50">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <BankAccountStatusIcon status={acct.status} />
+                            <span className="font-mono text-xs text-zinc-500">{acct.accountNo}</span>
+                          </div>
+                          <p className="mt-0.5 text-zinc-700 max-w-[280px] truncate">{acct.accountName}</p>
+                          <p className="text-[11px] text-zinc-400">
+                            {acct.lastImportedDate ? `อัพ statement ถึง ${acct.lastImportedDate}` : "ยังไม่ได้นำเข้า statement"}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          {acct.unmatchedCount > 0 ? (
+                            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
+                              ค้าง {acct.unmatchedCount}
+                            </span>
+                          ) : acct.matchedCount > 0 ? (
+                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">ครบแล้ว</span>
+                          ) : (
+                            <span className="text-xs text-zinc-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <Link
+                            href={`/ledger/bank-recon/${acct.accountId}?period=${period}&company=${scope.companyId}`}
+                            className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                          >
+                            เปิด <ChevronRight size={12} />
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

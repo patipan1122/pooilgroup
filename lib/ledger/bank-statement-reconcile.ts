@@ -377,6 +377,7 @@ export interface BankAccountStatus {
   unmatchedCount: number;
   matchedCount: number;
   lockedAt: string | null;
+  lastImportedDate: string | null; // newest statement date imported (any period)
   status: "not_started" | "in_progress" | "completed" | "locked";
 }
 
@@ -402,12 +403,14 @@ export async function listBankAccountsWithStatus(params: {
     confirmedCount: number;
     settledCount: number;
     lockedAt: Date | null;
+    lastImported: string | null;
   }[]>`
     SELECT
       a.id as "accountId",
       a.bank_code as "bankCode",
       a.account_no as "accountNo",
       a.account_name as "accountName",
+      (SELECT MAX(t2.txn_date)::text FROM ledger_bank_txn t2 WHERE t2.bank_account_id = a.id) as "lastImported",
       COALESCE(SUM(CASE WHEN t.id IS NOT NULL THEN 1 ELSE 0 END), 0)::int as "totalTxns",
       COALESCE(SUM(CASE WHEN t.match_state = 'unmatched' THEN 1 ELSE 0 END), 0)::int as "unmatchedCount",
       COALESCE(SUM(CASE WHEN t.match_state = 'suggested' THEN 1 ELSE 0 END), 0)::int as "suggestedCount",
@@ -457,6 +460,7 @@ export async function listBankAccountsWithStatus(params: {
       unmatchedCount: pendingCount,
       matchedCount: r.confirmedCount,
       lockedAt: r.lockedAt ? r.lockedAt.toISOString() : null,
+      lastImportedDate: r.lastImported ?? null,
       status,
     };
   });

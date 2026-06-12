@@ -823,30 +823,25 @@ export async function createMatchGroupAction(params: {
 
 // Auto-match: pair each unmatched credit/debit with a single book entry of equal
 // amount within ±2 days, creating suggested groups (PEAK step-1 auto).
-export async function autoMatchGroupsAction(
-  batchId: string, bankAccountId: string,
+// Works on the ACCOUNT over a date range (continuous, not per file).
+export async function autoMatchAccountAction(
+  bankAccountId: string, companyId: string, periodStart: string, periodEnd: string,
 ): Promise<{ ok: boolean; created: number; error?: string }> {
   const session = await requireRole("super_admin", "org_admin", "admin");
   const orgId = session.user.org_id;
 
-  const batch = await prisma.$queryRaw<{ companyId: string; ps: string; pe: string; locked: boolean }[]>`
-    SELECT company_id as "companyId", period_start::text as ps, period_end::text as pe,
-           (locked_at IS NOT NULL) as locked
-    FROM ledger_bank_import_batch WHERE id=${batchId}::uuid AND org_id=${orgId}::uuid LIMIT 1`;
-  if (!batch.length) return { ok: false, created: 0, error: "ไม่พบงวด" };
-  if (batch[0].locked) return { ok: false, created: 0, error: "งวดนี้ล็อกแล้ว" };
-  const { companyId } = batch[0];
-
-  // unmatched bank movements (this batch, not yet in a group)
+  // unmatched bank movements (this account + range, not yet in a group)
   const banks = await prisma.$queryRaw<{ id: string; amt: bigint; d: string }[]>`
     SELECT t.id::text as id, t.amount_satang as amt, t.txn_date::text as d
     FROM ledger_bank_txn t
-    WHERE t.batch_id=${batchId}::uuid AND t.org_id=${orgId}::uuid AND t.match_state='unmatched'
+    WHERE t.bank_account_id=${bankAccountId}::uuid AND t.org_id=${orgId}::uuid
+      AND t.company_id=${companyId}::uuid AND t.match_state='unmatched'
+      AND t.txn_date BETWEEN ${periodStart}::date AND ${periodEnd}::date
       AND NOT EXISTS (SELECT 1 FROM ledger_bank_match_item mi WHERE mi.bank_txn_id=t.id)
-    ORDER BY t.txn_date LIMIT 500`;
+    ORDER BY t.txn_date LIMIT 1000`;
 
   // candidate book entries in period (not yet grouped)
-  const book = await listBookEntriesForAuto(orgId, companyId, batch[0].ps, batch[0].pe);
+  const book = await listBookEntriesForAuto(orgId, companyId, periodStart, periodEnd);
 
   const usedBook = new Set<string>();
   let created = 0;
@@ -954,36 +949,57 @@ export async function removeGroupAction(groupId: string): Promise<{ ok: boolean;
   return { ok: true };
 }
 
-// Manually add a bank movement to a batch (PEAK "เพิ่มรายการ").
+// Get-or-create a "manual" import batch for an account+month (for hand-entered
+// movements that don't come from a statement file).
+async function getOrCreateManualBatch(
+  orgId: string, companyId: string, bankAccountId: string, periodStart: string, periodEnd: string,
+): Promise<string> {
+  const existing = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id::text FROM ledger_bank_import_batch
+    WHERE bank_account_id=${bankAccountId}::uuid AND org_id=${orgId}::uuid
+      AND batch_format_version='MANUAL' AND period_start=${periodStart}::date AND period_end=${periodEnd}::date
+    LIMIT 1`;
+  if (existing.length) return existing[0].id;
+  const id = randomUUID();
+  await prisma.$executeRaw`
+    INSERT INTO ledger_bank_import_batch
+      (id, org_id, company_id, bank_account_id, period_start, period_end,
+       batch_format_version, source_filename, row_count, status)
+    VALUES (${id}::uuid, ${orgId}::uuid, ${companyId}::uuid, ${bankAccountId}::uuid,
+      ${periodStart}::date, ${periodEnd}::date, 'MANUAL', 'เพิ่มรายการเอง', 0, 'imported')`;
+  return id;
+}
+
+// Manually add a bank movement to an account in a period (PEAK "เพิ่มรายการ").
 export async function addBankMovementAction(params: {
-  batchId: string; bankAccountId: string; date: string;
-  amountSatang: number; description: string;
+  bankAccountId: string; companyId: string; periodStart: string; periodEnd: string;
+  date: string; amountSatang: number; description: string;
 }): Promise<{ ok: boolean; error?: string }> {
   const session = await requireRole("super_admin", "org_admin", "admin");
   const orgId = session.user.org_id;
-  const { batchId, bankAccountId, date, amountSatang, description } = params;
+  const { bankAccountId, companyId, periodStart, periodEnd, date, amountSatang, description } = params;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: "วันที่ไม่ถูกต้อง" };
   if (!Number.isInteger(amountSatang) || amountSatang === 0) return { ok: false, error: "จำนวนเงินไม่ถูกต้อง" };
 
-  const acct = await prisma.$queryRaw<{ companyId: string; accountNo: string; locked: boolean }[]>`
-    SELECT b.company_id as "companyId", a.account_no as "accountNo", (b.locked_at IS NOT NULL) as locked
-    FROM ledger_bank_import_batch b JOIN ledger_bank_account a ON a.id=b.bank_account_id
-    WHERE b.id=${batchId}::uuid AND b.org_id=${orgId}::uuid AND b.bank_account_id=${bankAccountId}::uuid LIMIT 1`;
-  if (!acct.length) return { ok: false, error: "ไม่พบงวด" };
-  if (acct[0].locked) return { ok: false, error: "งวดนี้ล็อกแล้ว" };
+  const acct = await prisma.$queryRaw<{ accountNo: string }[]>`
+    SELECT a.account_no as "accountNo" FROM ledger_bank_account a
+    JOIN ledger_bank_account_company ac ON ac.bank_account_id=a.id
+    WHERE a.id=${bankAccountId}::uuid AND a.org_id=${orgId}::uuid AND ac.company_id=${companyId}::uuid LIMIT 1`;
+  if (!acct.length) return { ok: false, error: "ไม่พบบัญชี" };
 
+  const batchId = await getOrCreateManualBatch(orgId, companyId, bankAccountId, periodStart, periodEnd);
   const maxIdx = await prisma.$queryRaw<{ m: number }[]>`
     SELECT COALESCE(MAX(row_index),0)+1 as m FROM ledger_bank_txn WHERE batch_id=${batchId}::uuid`;
   const rowIndex = maxIdx[0]?.m ?? 1000;
   const lineHash = computeLineHash({
-    accountNo: acct[0].accountNo, txnDate: date, amountSatang, balanceSatang: 0, ref1: "MANUAL", rowIndex,
+    accountNo: acct[0].accountNo, txnDate: date, amountSatang, balanceSatang: 0, ref1: `MANUAL-${rowIndex}`, rowIndex,
   });
   try {
     await prisma.$executeRaw`
       INSERT INTO ledger_bank_txn
         (id, org_id, company_id, bank_account_id, batch_id, line_hash, txn_date,
          amount_satang, balance_satang, description, source_type, row_index)
-      VALUES (gen_random_uuid(), ${orgId}::uuid, ${acct[0].companyId}::uuid, ${bankAccountId}::uuid,
+      VALUES (gen_random_uuid(), ${orgId}::uuid, ${companyId}::uuid, ${bankAccountId}::uuid,
         ${batchId}::uuid, ${lineHash}, ${date}::date, ${amountSatang}, 0, ${description || "เพิ่มเอง"},
         'MANUAL_BAAC', ${rowIndex})`;
   } catch {
@@ -1052,4 +1068,18 @@ export async function deleteRevenueEntryAction(revenueId: string): Promise<{ ok:
   if (guard[0].matched || guard[0].inGroup) return { ok: false, error: "รายการนี้กระทบยอดแล้ว ลบไม่ได้" };
   await prisma.$executeRaw`DELETE FROM ledger_revenue_entry WHERE id=${revenueId}::uuid AND org_id=${orgId}::uuid`;
   return { ok: true };
+}
+
+// Pull TRCloud IV revenue for a company over a date range (PEAK-style date pull).
+export async function syncRevenueRangeAction(params: {
+  companyId: string; periodStart: string; periodEnd: string;
+}): Promise<{ ok: boolean; inserted?: number; skipped?: number; error?: string }> {
+  const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
+  if (!params.companyId) return { ok: false, error: "ไม่พบบริษัท" };
+  const result = await syncTrcloudRevenue({
+    orgId, companyId: params.companyId, periodStart: params.periodStart, periodEnd: params.periodEnd,
+  });
+  if (result.error) return { ok: false, error: result.error };
+  return { ok: true, inserted: result.inserted, skipped: result.skipped };
 }

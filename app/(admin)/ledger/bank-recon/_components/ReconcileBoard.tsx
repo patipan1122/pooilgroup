@@ -9,12 +9,12 @@
 import { useState, useMemo, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Sparkles, Plus, Link2, Ban, X, Check, Trash2, Lock, RefreshCw,
+  Sparkles, Plus, Link2, Ban, X, Check, Trash2, RefreshCw, Search,
 } from "lucide-react";
 import {
-  createMatchGroupAction, autoMatchGroupsAction, confirmAllGroupsAction,
+  createMatchGroupAction, autoMatchAccountAction, confirmAllGroupsAction,
   removeGroupAction, addBankMovementAction, addRevenueEntryAction,
-  excludeTxnAction, lockPeriodAction, syncRevenueAction,
+  excludeTxnAction, syncRevenueRangeAction,
 } from "../_actions";
 
 interface BookEntry {
@@ -34,15 +34,13 @@ interface MatchGroup {
 }
 
 interface Props {
-  batchId: string;
   bankAccountId: string;
   companyId: string;
+  periodStart: string;
+  periodEnd: string;
   bookEntries: BookEntry[];
   bankMovements: BankMovement[];
   suggestedGroups: MatchGroup[];
-  confirmedCount: number;
-  isLocked: boolean;
-  canLock: boolean;
 }
 
 function baht(satang: number): string {
@@ -56,8 +54,8 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 export function ReconcileBoard({
-  batchId, bankAccountId, companyId, bookEntries, bankMovements,
-  suggestedGroups, confirmedCount, isLocked, canLock,
+  bankAccountId, companyId, periodStart, periodEnd,
+  bookEntries, bankMovements, suggestedGroups,
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -66,9 +64,24 @@ export function ReconcileBoard({
   const [selBook, setSelBook] = useState<Set<string>>(new Set());
   const [err, setErr] = useState<string | null>(null);
   const [modal, setModal] = useState<null | "bank" | "revenue">(null);
-  const [lockMsg, setLockMsg] = useState<string | null>(null);
+  const [qBook, setQBook] = useState("");
+  const [qBank, setQBank] = useState("");
 
   const bookKey = (b: { bookType: string; bookId: string }) => `${b.bookType}:${b.bookId}`;
+
+  // search filters (PEAK: ค้นหาด้วยเลขที่เอกสาร/ผู้ติดต่อ · หมายเหตุรายการเคลื่อนไหว)
+  const fBook = useMemo(() => {
+    const q = qBook.trim().toLowerCase();
+    if (!q) return bookEntries;
+    return bookEntries.filter((b) =>
+      `${b.docNo} ${b.contact} ${b.amountSatang / 100}`.toLowerCase().includes(q));
+  }, [qBook, bookEntries]);
+  const fBank = useMemo(() => {
+    const q = qBank.trim().toLowerCase();
+    if (!q) return bankMovements;
+    return bankMovements.filter((m) =>
+      `${m.description} ${m.ref1 ?? ""} ${m.amountSatang / 100}`.toLowerCase().includes(q));
+  }, [qBank, bankMovements]);
 
   const selBankTotal = useMemo(
     () => bankMovements.filter((m) => selBank.has(m.id)).reduce((s, m) => s + m.amountSatang, 0),
@@ -106,7 +119,7 @@ export function ReconcileBoard({
     }),
     clearSel,
   );
-  const handleAuto = () => run(() => autoMatchGroupsAction(batchId, bankAccountId).then((r) => ({ ok: r.ok, error: r.error })));
+  const handleAuto = () => run(() => autoMatchAccountAction(bankAccountId, companyId, periodStart, periodEnd).then((r) => ({ ok: r.ok, error: r.error })));
   const handleConfirmAll = () => run(() => confirmAllGroupsAction(bankAccountId).then((r) => ({ ok: r.ok, error: r.error })));
   const handleRemove = (gid: string) => run(() => removeGroupAction(gid));
   const handleExclude = (txnId: string) => {
@@ -114,17 +127,10 @@ export function ReconcileBoard({
     if (!reason?.trim()) return;
     run(() => excludeTxnAction({ bankTxnId: txnId, reason: reason.trim() }));
   };
-  const handleLock = () => {
-    setErr(null);
-    startTransition(async () => {
-      const r = await lockPeriodAction(batchId);
-      if (r.ok) { setLockMsg("ล็อคงวดสำเร็จ"); router.refresh(); }
-      else setErr(r.error ?? "ล็อคไม่สำเร็จ");
-    });
-  };
-  const handleSync = () => run(() => syncRevenueAction(batchId).then((r) => ({ ok: r.ok, error: r.error })));
+  const handleSync = () => run(() => syncRevenueRangeAction({ companyId, periodStart, periodEnd }).then((r) => ({ ok: r.ok, error: r.error })));
 
   const matchTotal = bankMovements.length + bookEntries.length;
+  const isLocked = false; // lock reworking for date-range mode (handled in overview)
 
   return (
     <div>
@@ -163,7 +169,6 @@ export function ReconcileBoard({
       </div>
 
       {err && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{err}</p>}
-      {lockMsg && <p className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{lockMsg}</p>}
 
       {tab === "match" ? (
         <>
@@ -177,20 +182,22 @@ export function ReconcileBoard({
               {/* LEFT — book */}
               <Column
                 title="รายการบันทึกบัญชี"
-                count={bookEntries.length}
+                count={fBook.length}
                 selTotal={selBookTotal}
                 accent="blue"
-                onAdd={isLocked ? undefined : () => setModal("revenue")}
+                onAdd={() => setModal("revenue")}
                 addLabel="เพิ่มรายได้"
+                search={qBook}
+                onSearch={setQBook}
+                searchPlaceholder="ค้นหาเลขเอกสาร / ผู้ติดต่อ"
               >
-                {bookEntries.map((b) => {
+                {fBook.map((b) => {
                   const k = bookKey(b);
                   return (
                     <Row
                       key={k}
                       checked={selBook.has(k)}
                       onToggle={() => toggleBook(k)}
-                      disabled={isLocked}
                       date={b.date}
                       title={b.docNo || SOURCE_LABEL[b.sub] || "—"}
                       subtitle={b.contact || SOURCE_LABEL[b.bookType]}
@@ -199,32 +206,34 @@ export function ReconcileBoard({
                     />
                   );
                 })}
-                {bookEntries.length === 0 && <Empty text="ไม่มีรายการบัญชีค้าง" />}
+                {fBook.length === 0 && <Empty text="ไม่มีรายการบัญชีค้าง" />}
               </Column>
 
               {/* RIGHT — bank */}
               <Column
                 title="รายการเคลื่อนไหว (ธนาคาร)"
-                count={bankMovements.length}
+                count={fBank.length}
                 selTotal={selBankTotal}
                 accent="emerald"
-                onAdd={isLocked ? undefined : () => setModal("bank")}
+                onAdd={() => setModal("bank")}
                 addLabel="เพิ่มรายการ"
+                search={qBank}
+                onSearch={setQBank}
+                searchPlaceholder="ค้นหาหมายเหตุ / ref"
               >
-                {bankMovements.map((m) => (
+                {fBank.map((m) => (
                   <Row
                     key={m.id}
                     checked={selBank.has(m.id)}
                     onToggle={() => toggleBank(m.id)}
-                    disabled={isLocked}
                     date={m.date}
                     title={m.description || "รายการธนาคาร"}
                     subtitle={m.ref1 ? `ref: ${m.ref1}` : ""}
                     amountSatang={m.amountSatang}
-                    onExclude={isLocked ? undefined : () => handleExclude(m.id)}
+                    onExclude={() => handleExclude(m.id)}
                   />
                 ))}
-                {bankMovements.length === 0 && <Empty text="ไม่มีรายการธนาคารค้าง" />}
+                {fBank.length === 0 && <Empty text="ไม่มีรายการธนาคารค้าง" />}
               </Column>
             </div>
           )}
@@ -290,19 +299,9 @@ export function ReconcileBoard({
         </div>
       )}
 
-      {/* Lock */}
-      {canLock && !isLocked && bankMovements.length === 0 && suggestedGroups.length === 0 && confirmedCount > 0 && (
-        <div className="mt-5 rounded-2xl border border-violet-100 bg-violet-50/40 p-4 text-center">
-          <p className="mb-2 text-sm text-zinc-600">กระทบยอดครบแล้ว — ล็อคงวดเพื่อกันแก้ย้อนหลัง</p>
-          <button onClick={handleLock} disabled={pending}
-            className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-5 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50">
-            <Lock size={14} /> ล็อคงวดบัญชี
-          </button>
-        </div>
-      )}
-
       {modal === "bank" && (
-        <AddBankModal batchId={batchId} bankAccountId={bankAccountId}
+        <AddBankModal bankAccountId={bankAccountId} companyId={companyId}
+          periodStart={periodStart} periodEnd={periodEnd}
           onClose={() => setModal(null)} onDone={() => { setModal(null); router.refresh(); }} />
       )}
       {modal === "revenue" && (
@@ -314,9 +313,11 @@ export function ReconcileBoard({
 }
 
 // ── building blocks ───────────────────────────────────────────────────────────
-function Column({ title, count, selTotal, accent, onAdd, addLabel, children }: {
+function Column({ title, count, selTotal, accent, onAdd, addLabel, search, onSearch, searchPlaceholder, children }: {
   title: string; count: number; selTotal: number; accent: "blue" | "emerald";
-  onAdd?: () => void; addLabel: string; children: React.ReactNode;
+  onAdd?: () => void; addLabel: string;
+  search: string; onSearch: (v: string) => void; searchPlaceholder: string;
+  children: React.ReactNode;
 }) {
   return (
     <div className="rounded-2xl border border-zinc-100 bg-white">
@@ -332,13 +333,25 @@ function Column({ title, count, selTotal, accent, onAdd, addLabel, children }: {
             </span>
           )}
           {onAdd && (
-            <button onClick={onAdd} className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50">
+            <button type="button" onClick={onAdd} className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50">
               <Plus size={12} /> {addLabel}
             </button>
           )}
         </div>
       </div>
-      <div className="max-h-[58vh] divide-y divide-zinc-50 overflow-y-auto">{children}</div>
+      <div className="border-b border-zinc-50 px-3 py-2">
+        <div className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2 py-1">
+          <Search size={13} className="text-zinc-400" />
+          <input
+            aria-label={searchPlaceholder}
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder={searchPlaceholder}
+            className="w-full bg-transparent text-xs text-zinc-700 outline-none"
+          />
+        </div>
+      </div>
+      <div className="max-h-[54vh] divide-y divide-zinc-50 overflow-y-auto">{children}</div>
     </div>
   );
 }
@@ -397,8 +410,9 @@ function Empty({ text, big }: { text: string; big?: boolean }) {
 }
 
 // ── modals ────────────────────────────────────────────────────────────────────
-function AddBankModal({ batchId, bankAccountId, onClose, onDone }: {
-  batchId: string; bankAccountId: string; onClose: () => void; onDone: () => void;
+function AddBankModal({ bankAccountId, companyId, periodStart, periodEnd, onClose, onDone }: {
+  bankAccountId: string; companyId: string; periodStart: string; periodEnd: string;
+  onClose: () => void; onDone: () => void;
 }) {
   const [pending, start] = useTransition();
   const [date, setDate] = useState("");
@@ -411,7 +425,8 @@ function AddBankModal({ batchId, bankAccountId, onClose, onDone }: {
     if (!date || isNaN(n) || n <= 0) { setErr("กรอกวันที่และจำนวนเงินให้ถูกต้อง"); return; }
     start(async () => {
       const r = await addBankMovementAction({
-        batchId, bankAccountId, date, amountSatang: dir === "in" ? n : -n, description: desc,
+        bankAccountId, companyId, periodStart, periodEnd,
+        date, amountSatang: dir === "in" ? n : -n, description: desc,
       });
       if (r.ok) onDone(); else setErr(r.error ?? "บันทึกไม่สำเร็จ");
     });
