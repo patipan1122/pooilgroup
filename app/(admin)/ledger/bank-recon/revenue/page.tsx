@@ -5,7 +5,7 @@
 import { requireRole } from "@/lib/auth/session";
 import { resolveScope } from "../../_scope";
 import { LedgerHeader, NoCompanyState } from "../../_components/LedgerHeader";
-import { ledgerBankReconV1 } from "@/lib/ledger/flags";
+import { ledgerBankReconV1, ledgerRevenueGlV1 } from "@/lib/ledger/flags";
 import { prisma } from "@/lib/prisma";
 import { RevenueManager } from "./_components/RevenueManager";
 import Link from "next/link";
@@ -95,6 +95,7 @@ export default async function RevenuePage({
         periodLabel={periodLabel}
         prevPeriod={prevPeriod}
         nextPeriod={nextPeriod}
+        glOn={ledgerRevenueGlV1()}
       />
     </div>
   );

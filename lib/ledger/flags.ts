@@ -56,3 +56,14 @@ export function ledgerStockinV1(): boolean {
 export function ledgerBankReconV1(): boolean {
   return flagOn("LEDGER_BANK_RECON_V1");
 }
+
+//   LEDGER_REVENUE_GL_V1 — revenue import + channel→GL: tag revenue by channel
+//                          (cash/transfer/card/qr), link each channel to a GL
+//                          account (snapshot), per-business config + management
+//                          pivot (business × channel × GL vs bank statement).
+//                          OFF = byte-equivalent (additive migration, NULL cols).
+//                          Routes: /ledger/settings/revenue-channels,
+//                          /ledger/bank-recon/revenue/overview
+export function ledgerRevenueGlV1(): boolean {
+  return flagOn("LEDGER_REVENUE_GL_V1");
+}

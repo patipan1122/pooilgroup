@@ -1,6 +1,15 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { ledgerRevenueGlV1 } from "./flags";
+import {
+  normalizeChannel,
+  loadRevenueChannelGl,
+  resolveRevenueGlFromConfig,
+  resolveRevenueGl,
+  type RevenueGlConfig,
+  type RevenueChannelCode,
+} from "./revenue-channel";
 
 // LedgerLine — TRCloud IV (Invoice) sync for revenue reconciliation.
 // Pulls IV documents from TRCloud API by date range and upserts them as
@@ -74,21 +83,15 @@ function parseIsoDate(raw: string): string | null {
   return null;
 }
 
-export async function syncTrcloudRevenue(params: {
-  orgId: string;
-  companyId: string;
-  periodStart: string; // YYYY-MM-DD
-  periodEnd: string;   // YYYY-MM-DD
-}): Promise<{ inserted: number; skipped: number; error?: string }> {
-  if (!trcloudRevenueSyncConfigured()) {
-    return { inserted: 0, skipped: 0, error: "TRCloud ยังไม่ได้ตั้งค่า (TRCLOUD_JPS_* env)" };
-  }
-
-  let rows: TrcloudIvRow[] = [];
+// Fetch IV rows from TRCloud for a date range (no DB write). Shared by preview + sync.
+async function fetchTrcloudIvRows(
+  periodStart: string,
+  periodEnd: string,
+): Promise<{ rows: TrcloudIvRow[]; error?: string }> {
   try {
     const data = await trcloudPost("iv/search.php", {
-      date_from: params.periodStart,
-      date_to: params.periodEnd,
+      date_from: periodStart,
+      date_to: periodEnd,
       limit: 500,
       page: 1,
     });
@@ -98,11 +101,97 @@ export async function syncTrcloudRevenue(params: {
       Array.isArray(data.list)   ? data.list :
       Array.isArray(data.result) ? data.result :
       [];
-    rows = list as TrcloudIvRow[];
+    return { rows: list as TrcloudIvRow[] };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "TRCloud fetch error";
-    return { inserted: 0, skipped: 0, error: msg };
+    return { rows: [], error: msg };
   }
+}
+
+export interface TrcloudRevenuePreviewRow {
+  docNo: string;
+  docDate: string | null;     // normalized YYYY-MM-DD (null = unparseable → invalid)
+  amountSatang: number;
+  customerName: string | null;
+  paymentMethod: string | null;
+  channelCode: RevenueChannelCode | null; // normalized channel (preview the tag)
+  isNew: boolean;   // false = already imported (will be skipped on sync)
+  valid: boolean;   // false = bad date/amount/doc_no (will be skipped on sync)
+}
+
+// PREVIEW: fetch what TRCloud would pull for the range and mark new-vs-existing,
+// WITHOUT writing anything. Lets the accountant "เลือกดึงให้ถูก" before committing
+// (diff-before-write, per the CSV-import rule). The sync then takes selectedDocNos.
+export async function previewTrcloudRevenue(params: {
+  orgId: string;
+  companyId: string;
+  periodStart: string;
+  periodEnd: string;
+}): Promise<{ rows?: TrcloudRevenuePreviewRow[]; error?: string }> {
+  if (!trcloudRevenueSyncConfigured()) {
+    return { error: "TRCloud ยังไม่ได้ตั้งค่า (TRCLOUD_JPS_* env)" };
+  }
+  const fetched = await fetchTrcloudIvRows(params.periodStart, params.periodEnd);
+  if (fetched.error) return { error: fetched.error };
+
+  const docNos = fetched.rows.map((r) => r.doc_no).filter(Boolean);
+  // Which doc_nos already exist? (company-scoped — AG-6)
+  const existing = docNos.length
+    ? await prisma.$queryRaw<{ sourceRef: string }[]>`
+        SELECT source_ref as "sourceRef" FROM ledger_revenue_entry
+        WHERE org_id = ${params.orgId}::uuid
+          AND company_id = ${params.companyId}::uuid
+          AND source_type = 'TRCLOUD_IV'
+          AND source_ref = ANY(${docNos})
+      `
+    : [];
+  const existingSet = new Set(existing.map((e) => e.sourceRef));
+
+  const rows: TrcloudRevenuePreviewRow[] = fetched.rows.map((r) => {
+    const docDate = parseIsoDate(r.doc_date);
+    const amountSatang = parseAmount(r.total);
+    const valid = !!(docDate && amountSatang > 0 && r.doc_no);
+    return {
+      docNo: r.doc_no,
+      docDate,
+      amountSatang,
+      customerName: r.customer_name ?? null,
+      paymentMethod: r.payment_method ?? null,
+      channelCode: normalizeChannel(r.payment_method),
+      isNew: !!r.doc_no && !existingSet.has(r.doc_no),
+      valid,
+    };
+  });
+  return { rows };
+}
+
+export async function syncTrcloudRevenue(params: {
+  orgId: string;
+  companyId: string;
+  periodStart: string; // YYYY-MM-DD
+  periodEnd: string;   // YYYY-MM-DD
+  selectedDocNos?: string[]; // if provided, only import these doc_nos (เลือกดึงให้ถูก)
+}): Promise<{ inserted: number; skipped: number; error?: string }> {
+  if (!trcloudRevenueSyncConfigured()) {
+    return { inserted: 0, skipped: 0, error: "TRCloud ยังไม่ได้ตั้งค่า (TRCLOUD_JPS_* env)" };
+  }
+
+  const fetched = await fetchTrcloudIvRows(params.periodStart, params.periodEnd);
+  if (fetched.error) return { inserted: 0, skipped: 0, error: fetched.error };
+
+  // Honor the accountant's selection — only import the chosen docs.
+  const selected = params.selectedDocNos ? new Set(params.selectedDocNos) : null;
+  const rows: TrcloudIvRow[] = selected
+    ? fetched.rows.filter((r) => r.doc_no && selected.has(r.doc_no))
+    : fetched.rows;
+
+  // Channel→GL stamping is gated on LEDGER_REVENUE_GL_V1 (OFF = byte-equivalent,
+  // new columns stay NULL). Load the ≤7-row config ONCE before the loop (AG-6:
+  // company-scoped — Prisma bypasses RLS).
+  const glOn = ledgerRevenueGlV1();
+  const channelConfig: Map<RevenueChannelCode, RevenueGlConfig> | null = glOn
+    ? await loadRevenueChannelGl({ orgId: params.orgId, companyId: params.companyId })
+    : null;
 
   let inserted = 0, skipped = 0;
 
@@ -114,20 +203,26 @@ export async function syncTrcloudRevenue(params: {
       continue;
     }
 
-    const existing = await prisma.$queryRaw<{ id: string }[]>`
-      SELECT id FROM ledger_revenue_entry
-      WHERE org_id = ${params.orgId}::uuid
-        AND company_id = ${params.companyId}::uuid
-        AND source_type = 'TRCLOUD_IV'
-        AND source_ref = ${row.doc_no}
-      LIMIT 1
-    `;
-    if (existing.length) { skipped++; continue; }
+    // Normalize the raw TRCloud payment_method into the canonical channel + resolve
+    // the GL snapshot (flag-gated; NULL when OFF).
+    const channelCode = glOn ? normalizeChannel(row.payment_method) : null;
+    let glAccount: string | null = null;
+    let glState: string | null = null;
+    let categoryId: string | null = null;
+    if (glOn && channelConfig) {
+      const r = resolveRevenueGlFromConfig(channelCode, channelConfig);
+      glAccount = r.glAccount;
+      glState = r.glState;
+      categoryId = r.categoryId;
+    }
 
-    await prisma.$executeRaw`
+    // AG-2: ON CONFLICT DO NOTHING instead of SELECT-then-INSERT — idempotent +
+    // race-safe (two concurrent syncs no longer throw an uncaught dup-key 500).
+    const result = await prisma.$queryRaw<{ id: string }[]>`
       INSERT INTO ledger_revenue_entry
         (org_id, company_id, entry_date, amount_satang, source_type, source_ref,
-         description, customer_name, payment_channel, raw_json)
+         description, customer_name, payment_channel,
+         channel_code, gl_account, gl_state, category_id, raw_json)
       VALUES (
         ${params.orgId}::uuid,
         ${params.companyId}::uuid,
@@ -138,10 +233,18 @@ export async function syncTrcloudRevenue(params: {
         ${"IV " + row.doc_no},
         ${row.customer_name ?? null},
         ${row.payment_method ?? null},
+        ${channelCode},
+        ${glAccount},
+        ${glState},
+        ${categoryId}::uuid,
         ${JSON.stringify({ doc_id: row.doc_id, doc_no: row.doc_no, total: row.total })}::jsonb
       )
+      ON CONFLICT (org_id, company_id, source_type, source_ref)
+        WHERE source_ref IS NOT NULL
+      DO NOTHING
+      RETURNING id
     `;
-    inserted++;
+    if (result.length) inserted++; else skipped++;
   }
 
   return { inserted, skipped };
@@ -176,10 +279,28 @@ export async function ingestWebhookRevenue(params: {
     if (existing.length) return { id: existing[0].id };
   }
 
+  // Normalize channel + resolve GL snapshot (flag-gated; NULL when OFF).
+  const glOn = ledgerRevenueGlV1();
+  const channelCode = glOn ? normalizeChannel(params.paymentChannel) : null;
+  let glAccount: string | null = null;
+  let glState: string | null = null;
+  let categoryId: string | null = null;
+  if (glOn) {
+    const r = await resolveRevenueGl({
+      orgId: params.orgId,
+      companyId: params.companyId,
+      channel: channelCode,
+    });
+    glAccount = r.glAccount;
+    glState = r.glState;
+    categoryId = r.categoryId;
+  }
+
   const result = await prisma.$queryRaw<{ id: string }[]>`
     INSERT INTO ledger_revenue_entry
       (org_id, company_id, entry_date, amount_satang, source_type, source_ref,
-       description, customer_name, payment_channel, raw_json)
+       description, customer_name, payment_channel,
+       channel_code, gl_account, gl_state, category_id, raw_json)
     VALUES (
       ${params.orgId}::uuid,
       ${params.companyId}::uuid,
@@ -190,6 +311,10 @@ export async function ingestWebhookRevenue(params: {
       ${params.description ?? null},
       ${params.customerName ?? null},
       ${params.paymentChannel ?? null},
+      ${channelCode},
+      ${glAccount},
+      ${glState},
+      ${categoryId}::uuid,
       ${params.rawJson ? JSON.stringify(params.rawJson) : null}::jsonb
     )
     RETURNING id

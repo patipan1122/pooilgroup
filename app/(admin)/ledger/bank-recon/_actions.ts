@@ -18,8 +18,17 @@ import {
 } from "@/lib/ledger/bank-statement-reconcile";
 import {
   syncTrcloudRevenue,
+  previewTrcloudRevenue,
   listRevenueEntriesForPeriod,
+  type TrcloudRevenuePreviewRow,
 } from "@/lib/ledger/trcloud-revenue";
+import {
+  normalizeChannel,
+  resolveRevenueGl,
+  isRevenueChannel,
+  type RevenueChannelCode,
+} from "@/lib/ledger/revenue-channel";
+import { ledgerRevenueGlV1 } from "@/lib/ledger/flags";
 import { prisma } from "@/lib/prisma";
 import { randomUUID } from "crypto";
 
@@ -1012,19 +1021,47 @@ export async function addBankMovementAction(params: {
 export async function addRevenueEntryAction(params: {
   companyId: string; entryDate: string; amountSatang: number;
   description: string; customerName?: string;
-}): Promise<{ ok: boolean; error?: string }> {
+  channelCode?: string;  // cash/transfer/card/qr/... (tagged by the user)
+  force?: boolean;       // bypass the near-duplicate guard after the user confirms
+}): Promise<{ ok: boolean; error?: string; duplicate?: boolean }> {
   const session = await requireRole("super_admin", "org_admin", "admin");
   const orgId = session.user.org_id;
-  const { companyId, entryDate, amountSatang, description, customerName } = params;
+  const { companyId, entryDate, amountSatang, description, customerName, force } = params;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) return { ok: false, error: "วันที่ไม่ถูกต้อง" };
   if (!Number.isInteger(amountSatang) || amountSatang <= 0) return { ok: false, error: "จำนวนเงินต้องมากกว่า 0" };
   if (!companyId) return { ok: false, error: "ไม่พบบริษัท" };
 
+  // AG-5: MANUAL rows have no source_ref → no DB dedup. Warn on a near-duplicate
+  // (same company + date + amount) so a double-tap can't silently double income.
+  if (!force) {
+    const dup = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM ledger_revenue_entry
+      WHERE org_id=${orgId}::uuid AND company_id=${companyId}::uuid
+        AND source_type='MANUAL' AND entry_date=${entryDate}::date AND amount_satang=${amountSatang}
+      LIMIT 1`;
+    if (dup.length) {
+      return { ok: false, duplicate: true, error: "มีรายได้จำนวนเท่ากันในวันเดียวกันอยู่แล้ว — ยืนยันเพิ่มซ้ำ?" };
+    }
+  }
+
+  // Channel + GL snapshot (flag-gated; NULL when LEDGER_REVENUE_GL_V1 is OFF).
+  const glOn = ledgerRevenueGlV1();
+  const channel: RevenueChannelCode | null = glOn
+    ? (isRevenueChannel(params.channelCode) ? params.channelCode : normalizeChannel(params.channelCode))
+    : null;
+  let glAccount: string | null = null, glState: string | null = null, categoryId: string | null = null;
+  if (glOn) {
+    const r = await resolveRevenueGl({ orgId, companyId, channel });
+    glAccount = r.glAccount; glState = r.glState; categoryId = r.categoryId;
+  }
+
   await prisma.$executeRaw`
     INSERT INTO ledger_revenue_entry
-      (org_id, company_id, entry_date, amount_satang, source_type, description, customer_name)
+      (org_id, company_id, entry_date, amount_satang, source_type, description, customer_name,
+       payment_channel, channel_code, gl_account, gl_state, category_id)
     VALUES (${orgId}::uuid, ${companyId}::uuid, ${entryDate}::date, ${amountSatang},
-      'MANUAL', ${description || "รายได้ (บันทึกเอง)"}, ${customerName ?? null})`;
+      'MANUAL', ${description || "รายได้ (บันทึกเอง)"}, ${customerName ?? null},
+      ${channel}, ${channel}, ${glAccount}, ${glState}, ${categoryId}::uuid)`;
   return { ok: true };
 }
 
@@ -1070,15 +1107,33 @@ export async function deleteRevenueEntryAction(revenueId: string): Promise<{ ok:
   return { ok: true };
 }
 
+// PREVIEW TRCloud IV revenue for a range (no write) — lets the accountant see
+// what would be pulled (new vs already-imported) and pick before committing.
+export async function previewRevenueRangeAction(params: {
+  companyId: string; periodStart: string; periodEnd: string;
+}): Promise<{ ok: boolean; rows?: TrcloudRevenuePreviewRow[]; error?: string }> {
+  const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
+  if (!params.companyId) return { ok: false, error: "ไม่พบบริษัท" };
+  const result = await previewTrcloudRevenue({
+    orgId, companyId: params.companyId, periodStart: params.periodStart, periodEnd: params.periodEnd,
+  });
+  if (result.error) return { ok: false, error: result.error };
+  return { ok: true, rows: result.rows };
+}
+
 // Pull TRCloud IV revenue for a company over a date range (PEAK-style date pull).
+// selectedDocNos (optional) = only import these docs (from the preview selection).
 export async function syncRevenueRangeAction(params: {
   companyId: string; periodStart: string; periodEnd: string;
+  selectedDocNos?: string[];
 }): Promise<{ ok: boolean; inserted?: number; skipped?: number; error?: string }> {
   const session = await requireRole("super_admin", "org_admin", "admin");
   const orgId = session.user.org_id;
   if (!params.companyId) return { ok: false, error: "ไม่พบบริษัท" };
   const result = await syncTrcloudRevenue({
     orgId, companyId: params.companyId, periodStart: params.periodStart, periodEnd: params.periodEnd,
+    selectedDocNos: params.selectedDocNos,
   });
   if (result.error) return { ok: false, error: result.error };
   return { ok: true, inserted: result.inserted, skipped: result.skipped };
