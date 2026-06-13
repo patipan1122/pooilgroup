@@ -28,6 +28,11 @@ async function gateSuper() {
   return session;
 }
 
+/** Anti-IDOR: throw unless the record exists within the caller's org. */
+async function ownGuard(exists: Promise<{ id: string } | null>, label: string): Promise<void> {
+  if (!(await exists)) throw new Error(`ไม่พบ${label} หรือไม่มีสิทธิ์`);
+}
+
 async function logAudit(
   session: Awaited<ReturnType<typeof requireSession>>,
   action: AuditAction,
@@ -100,6 +105,7 @@ export async function actSaveProject(input: {
   };
   let id = input.id;
   if (id) {
+    await ownGuard(prisma.rentalProject.findFirst({ where: { id, orgId: session.user.org_id }, select: { id: true } }), "โครงการ");
     await prisma.rentalProject.update({ where: { id }, data });
   } else {
     const created = await prisma.rentalProject.create({
@@ -151,6 +157,7 @@ export async function actSaveUnit(input: {
   };
   let id = input.id;
   if (id) {
+    await ownGuard(prisma.rentalUnit.findFirst({ where: { id, orgId: session.user.org_id }, select: { id: true } }), "ห้อง");
     await prisma.rentalUnit.update({ where: { id }, data });
   } else {
     const created = await prisma.rentalUnit.create({
@@ -171,8 +178,8 @@ export async function actSaveUnitPositions(
   const session = await gateAdmin();
   await prisma.$transaction(
     positions.map((p) =>
-      prisma.rentalUnit.update({
-        where: { id: p.id },
+      prisma.rentalUnit.updateMany({
+        where: { id: p.id, orgId: session.user.org_id },
         data: { mapX: p.mapX, mapY: p.mapY, mapW: p.mapW, mapH: p.mapH },
       }),
     ),
@@ -184,6 +191,10 @@ export async function actSaveUnitPositions(
 
 export async function actDeleteUnit(id: string) {
   const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalUnit.findFirst({ where: { id, orgId: session.user.org_id }, select: { id: true } }),
+    "ห้อง",
+  );
   const active = await prisma.rentalContract.count({
     where: { unitId: id, status: { in: ["active", "expiring"] } },
   });
@@ -238,6 +249,7 @@ export async function actSaveTenant(input: {
   };
   let id = input.id;
   if (id) {
+    await ownGuard(prisma.rentalTenant.findFirst({ where: { id, orgId: session.user.org_id }, select: { id: true } }), "ผู้เช่า");
     await prisma.rentalTenant.update({ where: { id }, data });
   } else {
     const created = await prisma.rentalTenant.create({
@@ -252,6 +264,10 @@ export async function actSaveTenant(input: {
 
 export async function actDeleteTenant(id: string) {
   const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalTenant.findFirst({ where: { id, orgId: session.user.org_id }, select: { id: true } }),
+    "ผู้เช่า",
+  );
   const active = await prisma.rentalContract.count({
     where: { tenantId: id, status: { in: ["active", "expiring"] } },
   });
@@ -274,6 +290,7 @@ export async function actSaveTemplate(input: { id?: string; name: string; bodyHt
   }
   const data = { name: input.name.trim(), bodyHtml: input.bodyHtml, isDefault: !!input.isDefault };
   if (id) {
+    await ownGuard(prisma.rentalContractTemplate.findFirst({ where: { id, orgId: session.user.org_id }, select: { id: true } }), "แม่แบบ");
     await prisma.rentalContractTemplate.update({ where: { id }, data });
   } else {
     const created = await prisma.rentalContractTemplate.create({
@@ -286,7 +303,8 @@ export async function actSaveTemplate(input: { id?: string; name: string; bodyHt
 }
 
 export async function actDeleteTemplate(id: string) {
-  await gateSuper();
+  const session = await gateSuper();
+  await ownGuard(prisma.rentalContractTemplate.findFirst({ where: { id, orgId: session.user.org_id }, select: { id: true } }), "แม่แบบ");
   await prisma.rentalContractTemplate.update({ where: { id }, data: { isActive: false } });
   revalidatePath("/rentspace/contracts/templates");
   return { ok: true };
@@ -353,6 +371,7 @@ export async function actSaveContract(input: {
   };
   let id = input.id;
   if (id) {
+    await ownGuard(prisma.rentalContract.findFirst({ where: { id, orgId: session.user.org_id }, select: { id: true } }), "สัญญา");
     await prisma.rentalContract.update({ where: { id }, data });
   } else {
     const created = await prisma.rentalContract.create({
@@ -377,7 +396,11 @@ export async function actSaveContract(input: {
 }
 
 export async function actGenerateSignLink(contractId: string) {
-  await gateAdmin();
+  const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalContract.findFirst({ where: { id: contractId, orgId: session.user.org_id }, select: { id: true } }),
+    "สัญญา",
+  );
   const token = randomBytes(24).toString("base64url");
   await prisma.rentalContract.update({ where: { id: contractId }, data: { signToken: token } });
   revalidatePath(`/rentspace/contracts/${contractId}`);
@@ -386,6 +409,10 @@ export async function actGenerateSignLink(contractId: string) {
 
 export async function actTerminateContract(contractId: string, note?: string) {
   const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalContract.findFirst({ where: { id: contractId, orgId: session.user.org_id }, select: { id: true } }),
+    "สัญญา",
+  );
   const c = await prisma.rentalContract.update({
     where: { id: contractId },
     data: { status: "terminated", note: note ?? null },
@@ -408,6 +435,10 @@ export async function actRecordDeposit(input: {
   note?: string;
 }) {
   const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalContract.findFirst({ where: { id: input.contractId, orgId: session.user.org_id }, select: { id: true } }),
+    "สัญญา",
+  );
   const d = await prisma.rentalDeposit.create({
     data: {
       id: randomUUID(),
@@ -438,6 +469,10 @@ export async function actSaveMeterReading(input: {
   note?: string;
 }) {
   const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalUnit.findFirst({ where: { id: input.unitId, orgId: session.user.org_id }, select: { id: true } }),
+    "ห้อง",
+  );
   // ensure a meter exists
   let meter = await prisma.rentalMeter.findUnique({
     where: { unitId_kind: { unitId: input.unitId, kind: input.kind } },
@@ -547,6 +582,10 @@ export async function actGenerateMonthlyBills(projectId: string, period: string)
 
 export async function actVoidBill(billId: string) {
   const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalBill.findFirst({ where: { id: billId, orgId: session.user.org_id }, select: { id: true } }),
+    "บิล",
+  );
   await prisma.rentalBill.update({ where: { id: billId }, data: { status: "void" } });
   await logAudit(session, "RENTSPACE_BILL_VOIDED", "rental_bill", billId);
   revalidatePath("/rentspace/bills");
@@ -583,8 +622,11 @@ export async function actRecordPayment(input: {
       receivedBy: session.user.id,
     },
   });
-  const paidAmount = toNum(bill.paidAmount) + input.amountThb;
-  await prisma.rentalBill.update({ where: { id: bill.id }, data: { paidAmount } });
+  // atomic increment avoids lost-update race on concurrent / double-click payments
+  await prisma.rentalBill.update({
+    where: { id: bill.id },
+    data: { paidAmount: { increment: input.amountThb } },
+  });
   await recomputeBillTotals(bill.id);
   await logAudit(session, "RENTSPACE_PAYMENT_RECORDED", "rental_bill", bill.id, { amount: input.amountThb });
   revalidatePath("/rentspace/payments");
@@ -606,9 +648,10 @@ export async function actRequestDiscount(input: {
     where: { id: input.billId, orgId: session.user.org_id },
   });
   if (!bill) throw new Error("ไม่พบบิล");
-  const base = toNum(bill.rentAmount) + toNum(bill.electricAmount) + toNum(bill.waterAmount) + toNum(bill.otherAmount);
-  const computedAmount =
-    input.kind === "percent" ? Math.round(base * (input.value / 100) * 100) / 100 : input.value;
+  const base = toNum(bill.rentAmount) + toNum(bill.electricAmount) + toNum(bill.waterAmount) + toNum(bill.otherAmount) + toNum(bill.lateFeeAmount);
+  const raw = input.kind === "percent" ? Math.round(base * (input.value / 100) * 100) / 100 : input.value;
+  // a discount can never exceed the bill — keeps totals ≥ 0
+  const computedAmount = Math.max(0, Math.min(raw, base));
   const d = await prisma.rentalDiscount.create({
     data: {
       id: randomUUID(),
@@ -632,6 +675,10 @@ export async function actRequestDiscount(input: {
 export async function actDecideDiscount(discountId: string, decision: "approved" | "rejected", note?: string) {
   const session = await requireSession();
   if (!isAdminTier(session.user.role)) throw new Error("เฉพาะผู้ดูแล (admin) ขึ้นไปอนุมัติส่วนลดได้");
+  await ownGuard(
+    prisma.rentalDiscount.findFirst({ where: { id: discountId, orgId: session.user.org_id }, select: { id: true } }),
+    "รายการส่วนลด",
+  );
   const d = await prisma.rentalDiscount.update({
     where: { id: discountId },
     data: {

@@ -89,6 +89,25 @@ export default async function RentSpaceOverview() {
         <RsKpi label="เก็บได้เดือนนี้" value={formatBaht(kpi.collectedThisMonth)} hint="ยอดที่รับชำระแล้ว" tone="ok" />
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        {[
+          { href: "/rentspace/contracts", label: "ทำสัญญา / สัญญา" },
+          { href: "/rentspace/bills", label: "ออกบิล / ใบแจ้งหนี้" },
+          { href: "/rentspace/payments", label: "รับชำระ / อนุมัติส่วนลด" },
+          { href: "/rentspace/tenants", label: "ผู้เช่า" },
+          { href: "/rentspace/units", label: "ห้อง" },
+        ].map((q) => (
+          <Link
+            key={q.href}
+            href={q.href}
+            className="rs-chip"
+            style={{ textDecoration: "none" }}
+          >
+            {q.label}
+          </Link>
+        ))}
+      </div>
+
       <RsCard className="overflow-hidden">
         <div className="px-4 pt-4 pb-2 flex items-center justify-between">
           <div>

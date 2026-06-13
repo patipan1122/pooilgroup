@@ -21,12 +21,16 @@ export async function actSignContract(input: {
 
   const contract = await prisma.rentalContract.findUnique({
     where: { signToken: input.token },
-    select: { id: true, orgId: true, unitId: true, tenantSigned: true },
+    select: { id: true, orgId: true, unitId: true, tenantSigned: true, status: true },
   });
   if (!contract) throw new Error("ไม่พบสัญญา");
   if (contract.tenantSigned) {
     // idempotent — already signed, no double-write
     return { ok: true };
+  }
+  // a terminated/expired contract must not be re-activated via an old sign link
+  if (contract.status === "terminated" || contract.status === "expired") {
+    throw new Error("สัญญานี้สิ้นสุดแล้ว ไม่สามารถเซ็นได้");
   }
 
   await prisma.rentalContract.update({

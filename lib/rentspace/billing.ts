@@ -106,9 +106,10 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
       else if (contract.lateFeeType === "percent_total")
         lateFeeAmount = Math.round(outstanding * (toNum(contract.lateFeeValue) / 100) * 100) / 100;
       else if (contract.lateFeeType === "per_day") {
+        const grace = Math.max(0, contract.lateFeeGraceDays || 0);
         const days = Math.max(
           0,
-          Math.floor((Date.now() - new Date(prior.dueDate).getTime()) / 86400000),
+          Math.floor((Date.now() - new Date(prior.dueDate).getTime()) / 86400000) - grace,
         );
         const capped = Math.min(days, 60);
         lateFeeAmount = capped * toNum(contract.lateFeeValue);
@@ -137,16 +138,18 @@ export async function recomputeBillTotals(billId: string): Promise<void> {
     include: { discounts: true },
   });
   if (!bill) return;
-  const discountAmount = bill.discounts
-    .filter((d) => d.status === "approved")
-    .reduce((s, d) => s + toNum(d.computedAmount), 0);
-  const subtotal =
+  const gross =
     toNum(bill.rentAmount) +
     toNum(bill.electricAmount) +
     toNum(bill.waterAmount) +
     toNum(bill.otherAmount) +
-    toNum(bill.lateFeeAmount) -
-    discountAmount;
+    toNum(bill.lateFeeAmount);
+  // discount can never exceed the gross (no negative bills)
+  const rawDiscount = bill.discounts
+    .filter((d) => d.status === "approved")
+    .reduce((s, d) => s + toNum(d.computedAmount), 0);
+  const discountAmount = Math.min(rawDiscount, gross);
+  const subtotal = Math.max(0, gross - discountAmount);
   const vatPercentRow = await prisma.rentalContract.findUnique({
     where: { id: bill.contractId },
     select: { vatPercent: true },
@@ -157,7 +160,7 @@ export async function recomputeBillTotals(billId: string): Promise<void> {
   const paid = toNum(bill.paidAmount);
   let status = bill.status;
   if (bill.status !== "void" && bill.status !== "draft") {
-    if (paid >= totalAmount && totalAmount > 0) status = "paid";
+    if (paid >= totalAmount) status = "paid"; // includes fully-discounted ฿0 bills
     else if (paid > 0) status = "partial";
     else if (new Date(bill.dueDate).getTime() < Date.now()) status = "overdue";
     else status = "issued";

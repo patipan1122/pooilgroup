@@ -29,6 +29,13 @@ export async function GET(req: NextRequest) {
   }
 
   const period = currentPeriod();
+
+  // sweep: lapsed contracts (endDate ผ่านไปแล้ว) → expired เพื่อหยุดออกบิลอัตโนมัติ
+  await prisma.rentalContract.updateMany({
+    where: { status: { in: ["active", "expiring"] }, endDate: { lt: new Date() } },
+    data: { status: "expired" },
+  });
+
   const projects = await prisma.rentalProject.findMany({
     where: { isActive: true, autoBillEnabled: true },
   });
