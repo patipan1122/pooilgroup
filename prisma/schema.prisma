@@ -5905,3 +5905,432 @@ model LedgerSkuAlias {
   @@map("ledger_sku_alias")
   @@schema("public")
 }
+
+// =============================================================
+// RentSpace — ระบบบริหารโครงการร้านค้าเช่า (commercial plaza rental)
+// module slug `rentspace` · pilot โครงการทะเลทาวน์
+// =============================================================
+
+enum RentalUnitStatus {
+  vacant // ว่าง
+  occupied // มีผู้เช่า
+  reserved // จอง
+  inactive // ปิดใช้งาน
+
+  @@schema("public")
+}
+
+enum RentalContractStatus {
+  draft // ร่าง
+  active // ใช้งาน
+  expiring // ใกล้หมดอายุ
+  expired // หมดอายุ
+  terminated // ยกเลิก
+
+  @@schema("public")
+}
+
+enum RentalBillStatus {
+  draft
+  issued // ออกบิลแล้ว
+  partial // จ่ายบางส่วน
+  paid // จ่ายครบ
+  overdue // เกินกำหนด
+  void // ยกเลิก
+
+  @@schema("public")
+}
+
+enum RentalMeterKind {
+  electric // ไฟ
+  water // น้ำ
+
+  @@schema("public")
+}
+
+enum RentalDepositKind {
+  collect // เก็บ
+  refund // คืน
+  deduct // หัก
+  forfeit // ริบ
+
+  @@schema("public")
+}
+
+enum RentalDiscountStatus {
+  pending
+  approved
+  rejected
+
+  @@schema("public")
+}
+
+enum RentalLateFeeType {
+  none
+  fixed // คงที่ต่อครั้ง
+  percent_total // % ของยอดบิล
+  per_day // ต่อวันที่เกิน
+
+  @@schema("public")
+}
+
+enum RentalDiscountKind {
+  amount // จำนวนเงิน
+  percent // เปอร์เซ็นต์
+
+  @@schema("public")
+}
+
+model RentalProject {
+  id               String            @id @default(uuid()) @db.Uuid
+  orgId            String            @map("org_id") @db.Uuid
+  companyId        String?           @map("company_id") @db.Uuid
+  name             String
+  slug             String
+  address          String?
+  description      String?
+  planImageUrl     String?           @map("plan_image_url")
+  view3dEnabled    Boolean           @default(true) @map("view_3d_enabled")
+  electricRate     Decimal           @default(7) @map("electric_rate") @db.Decimal(10, 2)
+  waterRate        Decimal           @default(18) @map("water_rate") @db.Decimal(10, 2)
+  vatPercent       Decimal           @default(0) @map("vat_percent") @db.Decimal(5, 2)
+  lateFeeType      RentalLateFeeType @default(none) @map("late_fee_type")
+  lateFeeValue     Decimal           @default(0) @map("late_fee_value") @db.Decimal(15, 2)
+  lateFeeGraceDays Int               @default(7) @map("late_fee_grace_days")
+  billDueDay       Int               @default(5) @map("bill_due_day")
+  autoBillEnabled  Boolean           @default(true) @map("auto_bill_enabled")
+  isActive         Boolean           @default(true) @map("is_active")
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  units     RentalUnit[]
+  contracts RentalContract[]
+  bills     RentalBill[]
+
+  @@unique([orgId, slug])
+  @@index([orgId, isActive])
+  @@map("rental_project")
+  @@schema("public")
+}
+
+model RentalUnit {
+  id          String           @id @default(uuid()) @db.Uuid
+  orgId       String           @map("org_id") @db.Uuid
+  projectId   String           @map("project_id") @db.Uuid
+  code        String // A1 · A2/1
+  name        String? // SHABU ZEED
+  building    String? // A1 / A2 / A3
+  floor       Int?
+  zone        String?
+  areaSqm     Decimal?         @map("area_sqm") @db.Decimal(10, 2)
+  baseRentThb Decimal          @default(0) @map("base_rent_thb") @db.Decimal(15, 2)
+  status      RentalUnitStatus @default(vacant)
+  mapX        Decimal?         @map("map_x") @db.Decimal(7, 3)
+  mapY        Decimal?         @map("map_y") @db.Decimal(7, 3)
+  mapW        Decimal?         @map("map_w") @db.Decimal(7, 3)
+  mapH        Decimal?         @map("map_h") @db.Decimal(7, 3)
+  mapColor    String?          @map("map_color")
+  sortOrder   Int              @default(0) @map("sort_order")
+  isActive    Boolean          @default(true) @map("is_active")
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project   RentalProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contracts RentalContract[]
+  meters    RentalMeter[]
+  readings  RentalMeterReading[]
+  bills     RentalBill[]
+
+  @@unique([projectId, code])
+  @@index([orgId, projectId, status])
+  @@map("rental_unit")
+  @@schema("public")
+}
+
+model RentalTenant {
+  id          String    @id @default(uuid()) @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  prefix      String? // นาย/นาง/บริษัท
+  firstName   String?   @map("first_name")
+  lastName    String?   @map("last_name")
+  nickname    String?
+  bizName     String?   @map("biz_name") // ชื่อร้าน/กิจการ
+  phones      String[]  @default([])
+  idCardNo    String?   @map("id_card_no")
+  taxId       String?   @map("tax_id")
+  birthDate   DateTime? @map("birth_date") @db.Date
+  nationality String?
+  address     String?
+  email       String?
+  facebook    String?
+  lineId      String?   @map("line_id")
+  idCardUrl   String?   @map("id_card_url")
+  docUrls     String[]  @default([]) @map("doc_urls")
+  note        String?
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  contracts RentalContract[]
+  bills     RentalBill[]
+
+  @@index([orgId, isActive])
+  @@map("rental_tenant")
+  @@schema("public")
+}
+
+model RentalContractTemplate {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  name      String
+  bodyHtml  String   @map("body_html") @db.Text
+  isDefault Boolean  @default(false) @map("is_default")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  contracts RentalContract[]
+
+  @@index([orgId, isActive])
+  @@map("rental_contract_template")
+  @@schema("public")
+}
+
+model RentalContract {
+  id               String                  @id @default(uuid()) @db.Uuid
+  orgId            String                  @map("org_id") @db.Uuid
+  projectId        String                  @map("project_id") @db.Uuid
+  unitId           String                  @map("unit_id") @db.Uuid
+  tenantId         String                  @map("tenant_id") @db.Uuid
+  templateId       String?                 @map("template_id") @db.Uuid
+  contractNo       String                  @map("contract_no")
+  startDate        DateTime                @map("start_date") @db.Date
+  endDate          DateTime?               @map("end_date") @db.Date
+  rentAmountThb    Decimal                 @default(0) @map("rent_amount_thb") @db.Decimal(15, 2)
+  rentDueDay       Int                     @default(5) @map("rent_due_day")
+  depositAmountThb Decimal                 @default(0) @map("deposit_amount_thb") @db.Decimal(15, 2)
+  depositMonths    Decimal                 @default(0) @map("deposit_months") @db.Decimal(5, 2)
+  vatPercent       Decimal                 @default(0) @map("vat_percent") @db.Decimal(5, 2)
+  electricRate     Decimal?                @map("electric_rate") @db.Decimal(10, 2)
+  waterRate        Decimal?                @map("water_rate") @db.Decimal(10, 2)
+  lateFeeType      RentalLateFeeType       @default(none) @map("late_fee_type")
+  lateFeeValue     Decimal                 @default(0) @map("late_fee_value") @db.Decimal(15, 2)
+  lateFeeGraceDays Int                     @default(7) @map("late_fee_grace_days")
+  rentSchedule     Json?                   @map("rent_schedule")
+  customTermsHtml  String?                 @map("custom_terms_html") @db.Text
+  status           RentalContractStatus    @default(draft)
+  signToken        String?                 @map("sign_token")
+  signedAt         DateTime?               @map("signed_at") @db.Timestamptz(6)
+  tenantSigned     Boolean                 @default(false) @map("tenant_signed")
+  signatureDataUrl String?                 @map("signature_data_url") @db.Text
+  signerName       String?                 @map("signer_name")
+  contractPdfUrl   String?                 @map("contract_pdf_url")
+  note             String?
+  createdBy        String?                 @map("created_by") @db.Uuid
+  createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project  RentalProject           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  unit     RentalUnit              @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  tenant   RentalTenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  template RentalContractTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  deposits RentalDeposit[]
+  bills    RentalBill[]
+
+  @@unique([orgId, contractNo])
+  @@unique([signToken])
+  @@index([orgId, projectId, status])
+  @@index([orgId, unitId, status])
+  @@map("rental_contract")
+  @@schema("public")
+}
+
+model RentalDeposit {
+  id         String            @id @default(uuid()) @db.Uuid
+  orgId      String            @map("org_id") @db.Uuid
+  contractId String            @map("contract_id") @db.Uuid
+  kind       RentalDepositKind
+  amountThb  Decimal           @map("amount_thb") @db.Decimal(15, 2)
+  occurredOn DateTime          @map("occurred_on") @db.Date
+  method     String?
+  slipUrl    String?           @map("slip_url")
+  note       String?
+  createdBy  String?           @map("created_by") @db.Uuid
+  createdAt  DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  contract RentalContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, contractId])
+  @@map("rental_deposit")
+  @@schema("public")
+}
+
+model RentalMeter {
+  id             String          @id @default(uuid()) @db.Uuid
+  orgId          String          @map("org_id") @db.Uuid
+  unitId         String          @map("unit_id") @db.Uuid
+  kind           RentalMeterKind
+  meterNo        String?         @map("meter_no")
+  initialReading Decimal         @default(0) @map("initial_reading") @db.Decimal(15, 2)
+  isActive       Boolean         @default(true) @map("is_active")
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  unit     RentalUnit           @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  readings RentalMeterReading[]
+
+  @@unique([unitId, kind])
+  @@index([orgId, unitId])
+  @@map("rental_meter")
+  @@schema("public")
+}
+
+model RentalMeterReading {
+  id          String          @id @default(uuid()) @db.Uuid
+  orgId       String          @map("org_id") @db.Uuid
+  unitId      String          @map("unit_id") @db.Uuid
+  meterId     String          @map("meter_id") @db.Uuid
+  kind        RentalMeterKind
+  period      String // YYYY-MM
+  prevReading Decimal         @default(0) @map("prev_reading") @db.Decimal(15, 2)
+  currReading Decimal         @default(0) @map("curr_reading") @db.Decimal(15, 2)
+  usage       Decimal         @default(0) @db.Decimal(15, 2)
+  ratePerUnit Decimal         @default(0) @map("rate_per_unit") @db.Decimal(10, 2)
+  amountThb   Decimal         @default(0) @map("amount_thb") @db.Decimal(15, 2)
+  photoUrl    String?         @map("photo_url")
+  note        String?
+  readBy      String?         @map("read_by") @db.Uuid
+  readAt      DateTime        @default(now()) @map("read_at") @db.Timestamptz(6)
+
+  unit  RentalUnit  @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  meter RentalMeter @relation(fields: [meterId], references: [id], onDelete: Cascade)
+
+  @@unique([meterId, period])
+  @@index([orgId, unitId, period])
+  @@map("rental_meter_reading")
+  @@schema("public")
+}
+
+model RentalBill {
+  id             String           @id @default(uuid()) @db.Uuid
+  orgId          String           @map("org_id") @db.Uuid
+  projectId      String           @map("project_id") @db.Uuid
+  unitId         String           @map("unit_id") @db.Uuid
+  contractId     String           @map("contract_id") @db.Uuid
+  tenantId       String           @map("tenant_id") @db.Uuid
+  billNo         String           @map("bill_no")
+  period         String // YYYY-MM
+  issueDate      DateTime         @map("issue_date") @db.Date
+  dueDate        DateTime         @map("due_date") @db.Date
+  status         RentalBillStatus @default(draft)
+  rentAmount     Decimal          @default(0) @map("rent_amount") @db.Decimal(15, 2)
+  electricAmount Decimal          @default(0) @map("electric_amount") @db.Decimal(15, 2)
+  waterAmount    Decimal          @default(0) @map("water_amount") @db.Decimal(15, 2)
+  otherAmount    Decimal          @default(0) @map("other_amount") @db.Decimal(15, 2)
+  lateFeeAmount  Decimal          @default(0) @map("late_fee_amount") @db.Decimal(15, 2)
+  discountAmount Decimal          @default(0) @map("discount_amount") @db.Decimal(15, 2)
+  subtotal       Decimal          @default(0) @db.Decimal(15, 2)
+  vatAmount      Decimal          @default(0) @map("vat_amount") @db.Decimal(15, 2)
+  totalAmount    Decimal          @default(0) @map("total_amount") @db.Decimal(15, 2)
+  paidAmount     Decimal          @default(0) @map("paid_amount") @db.Decimal(15, 2)
+  note           String?
+  pdfUrl         String?          @map("pdf_url")
+  autoGenerated  Boolean          @default(false) @map("auto_generated")
+  createdBy      String?          @map("created_by") @db.Uuid
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project   RentalProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  unit      RentalUnit       @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  contract  RentalContract   @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  tenant    RentalTenant     @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  items     RentalBillItem[]
+  payments  RentalPayment[]
+  discounts RentalDiscount[]
+
+  @@unique([contractId, period])
+  @@unique([orgId, billNo])
+  @@index([orgId, projectId, status])
+  @@index([orgId, status, dueDate])
+  @@map("rental_bill")
+  @@schema("public")
+}
+
+model RentalBillItem {
+  id        String  @id @default(uuid()) @db.Uuid
+  billId    String  @map("bill_id") @db.Uuid
+  kind      String // rent | electric | water | late_fee | discount | other
+  label     String
+  qty       Decimal @default(1) @db.Decimal(15, 2)
+  unitPrice Decimal @default(0) @map("unit_price") @db.Decimal(15, 2)
+  amount    Decimal @default(0) @db.Decimal(15, 2)
+  sort      Int     @default(0)
+
+  bill RentalBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([billId])
+  @@map("rental_bill_item")
+  @@schema("public")
+}
+
+model RentalPayment {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  billId     String   @map("bill_id") @db.Uuid
+  contractId String   @map("contract_id") @db.Uuid
+  amountThb  Decimal  @map("amount_thb") @db.Decimal(15, 2)
+  paidOn     DateTime @map("paid_on") @db.Date
+  method     String   @default("transfer") // cash | transfer | qr | card
+  reference  String?
+  slipUrl    String?  @map("slip_url")
+  note       String?
+  receivedBy String?  @map("received_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  bill RentalBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, billId])
+  @@index([orgId, contractId])
+  @@map("rental_payment")
+  @@schema("public")
+}
+
+model RentalDiscount {
+  id             String               @id @default(uuid()) @db.Uuid
+  orgId          String               @map("org_id") @db.Uuid
+  billId         String               @map("bill_id") @db.Uuid
+  kind           RentalDiscountKind
+  value          Decimal              @db.Decimal(15, 2)
+  computedAmount Decimal              @default(0) @map("computed_amount") @db.Decimal(15, 2)
+  reason         String?
+  status         RentalDiscountStatus @default(pending)
+  requestedBy    String?              @map("requested_by") @db.Uuid
+  decidedBy      String?              @map("decided_by") @db.Uuid
+  decidedAt      DateTime?            @map("decided_at") @db.Timestamptz(6)
+  decisionNote   String?              @map("decision_note")
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  bill RentalBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, billId])
+  @@index([orgId, status])
+  @@map("rental_discount")
+  @@schema("public")
+}
+
+model RentalDocument {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  ownerType  String   @map("owner_type") // tenant | contract | unit
+  ownerId    String   @map("owner_id") @db.Uuid
+  label      String?
+  url        String
+  mime       String?
+  sizeBytes  Int?     @map("size_bytes")
+  uploadedBy String?  @map("uploaded_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([orgId, ownerType, ownerId])
+  @@map("rental_document")
+  @@schema("public")
+}

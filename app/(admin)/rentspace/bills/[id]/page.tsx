@@ -1,0 +1,312 @@
+import { notFound } from "next/navigation";
+import { requireSession } from "@/lib/auth/session";
+import { isAdminTier } from "@/lib/auth/role-guards";
+import { RsPage, RsHeader, RsBadge, RsCard, RsBackLink } from "@/components/rentspace/ui";
+import {
+  formatBaht,
+  thaiDateLong,
+  toNum,
+  tenantDisplayName,
+  periodLabel,
+  PAYMENT_METHODS,
+} from "@/lib/rentspace/format";
+import { getBill } from "@/lib/rentspace/data";
+import {
+  RecordPaymentButton,
+  RequestDiscountButton,
+  DiscountDecisionButtons,
+  PrintBillButton,
+  VoidBillButton,
+} from "./_components/bill-detail-actions";
+
+export const dynamic = "force-dynamic";
+
+const ITEM_KIND_LABELS: Record<string, string> = {
+  rent: "ค่าเช่า",
+  electric: "ค่าไฟ",
+  water: "ค่าน้ำ",
+  late_fee: "ค่าปรับล่าช้า",
+  discount: "ส่วนลด",
+  other: "อื่น ๆ",
+};
+
+function TotalRow({
+  label,
+  value,
+  strong,
+  tone,
+}: {
+  label: string;
+  value: React.ReactNode;
+  strong?: boolean;
+  tone?: "danger" | "ok";
+}) {
+  const color = tone === "danger" ? "var(--rs-danger)" : tone === "ok" ? "var(--rs-ok)" : "var(--rs-text)";
+  return (
+    <div className="flex justify-between gap-4 py-1.5">
+      <span className={strong ? "text-[14px] font-semibold" : "text-[13px]"} style={{ color: strong ? "var(--rs-text)" : "var(--rs-text-2)" }}>
+        {label}
+      </span>
+      <span
+        className={`tabular-nums text-right ${strong ? "text-[15px] font-bold" : "text-[13.5px] font-medium"}`}
+        style={{ color: strong ? color : "var(--rs-text)" }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+export default async function BillDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const session = await requireSession();
+  const isAdmin = isAdminTier(session.user.role);
+  const bill = await getBill(session.user.org_id, id);
+  if (!bill) notFound();
+
+  const total = toNum(bill.totalAmount);
+  const paid = toNum(bill.paidAmount);
+  const remaining = Math.max(0, total - paid);
+  const discountTotal = toNum(bill.discountAmount);
+  const vat = toNum(bill.vatAmount);
+  const subtotal = toNum(bill.subtotal);
+
+  const items = bill.items ?? [];
+  const payments = bill.payments ?? [];
+  const discounts = bill.discounts ?? [];
+  const canEdit = bill.status !== "void" && bill.status !== "paid";
+
+  return (
+    <RsPage>
+      <div className="print:hidden">
+        <RsBackLink href="/rentspace/bills" label="กลับรายการบิล" />
+      </div>
+      <RsHeader
+        title={`บิล ${bill.billNo}`}
+        subtitle={`${bill.project.name} · ห้อง ${bill.unit.code} · ${periodLabel(bill.period)}`}
+        action={
+          <div className="flex items-center gap-2 print:hidden">
+            <RsBadge kind="bill" status={bill.status} />
+          </div>
+        }
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* ───── invoice ───── */}
+        <div className="lg:col-span-2 space-y-4">
+          <RsCard className="p-6 rs-invoice">
+            {/* invoice header */}
+            <div className="flex items-start justify-between gap-4 pb-4 mb-4 border-b" style={{ borderColor: "var(--rs-border)" }}>
+              <div>
+                <div className="text-xl font-bold" style={{ color: "var(--rs-text)" }}>
+                  {bill.project.name}
+                </div>
+                {bill.project.address && (
+                  <div className="text-[12.5px] mt-0.5" style={{ color: "var(--rs-text-3)" }}>
+                    {bill.project.address}
+                  </div>
+                )}
+              </div>
+              <div className="text-right">
+                <div className="text-[13px] font-semibold" style={{ color: "var(--rs-text)" }}>
+                  ใบแจ้งหนี้
+                </div>
+                <div className="text-[13px]" style={{ color: "var(--rs-text-2)" }}>
+                  {bill.billNo}
+                </div>
+              </div>
+            </div>
+
+            {/* bill-to + meta */}
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <div className="text-[11.5px] font-semibold uppercase mb-1" style={{ color: "var(--rs-text-3)" }}>
+                  เรียกเก็บจาก
+                </div>
+                <div className="text-[14px] font-medium" style={{ color: "var(--rs-text)" }}>
+                  {tenantDisplayName(bill.tenant)}
+                </div>
+                <div className="text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
+                  ห้อง {bill.unit.code}
+                  {bill.unit.name ? ` · ${bill.unit.name}` : ""}
+                </div>
+              </div>
+              <div className="text-right text-[12.5px] space-y-0.5" style={{ color: "var(--rs-text-2)" }}>
+                <div>
+                  งวด: <b style={{ color: "var(--rs-text)" }}>{periodLabel(bill.period)}</b>
+                </div>
+                <div>วันที่ออกบิล: {bill.issueDate ? thaiDateLong(bill.issueDate) : "—"}</div>
+                <div>
+                  ครบกำหนด:{" "}
+                  <b style={{ color: "var(--rs-text)" }}>{bill.dueDate ? thaiDateLong(bill.dueDate) : "—"}</b>
+                </div>
+              </div>
+            </div>
+
+            {/* items */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-[12px] border-b" style={{ color: "var(--rs-text-2)", borderColor: "var(--rs-border)" }}>
+                    <th className="py-2 font-semibold">รายการ</th>
+                    <th className="py-2 font-semibold text-right">จำนวน × ราคา</th>
+                    <th className="py-2 font-semibold text-right">รวม</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="py-4 text-center text-[13px]" style={{ color: "var(--rs-text-3)" }}>
+                        ไม่มีรายการย่อย
+                      </td>
+                    </tr>
+                  ) : (
+                    items.map((it) => (
+                      <tr key={it.id} className="border-b last:border-0" style={{ borderColor: "var(--rs-border)" }}>
+                        <td className="py-2.5" style={{ color: "var(--rs-text)" }}>
+                          {it.label}
+                          {it.kind && it.kind !== "other" ? (
+                            <span className="text-[11.5px] ml-1.5" style={{ color: "var(--rs-text-3)" }}>
+                              {ITEM_KIND_LABELS[it.kind] ?? it.kind}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="py-2.5 text-right tabular-nums text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
+                          {toNum(it.qty)} × {formatBaht(toNum(it.unitPrice))}
+                        </td>
+                        <td
+                          className="py-2.5 text-right tabular-nums font-medium"
+                          style={{ color: toNum(it.amount) < 0 ? "var(--rs-ok)" : "var(--rs-text)" }}
+                        >
+                          {formatBaht(toNum(it.amount))}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* totals */}
+            <div className="mt-4 pt-3 border-t" style={{ borderColor: "var(--rs-border)" }}>
+              <div className="ml-auto max-w-xs">
+                <TotalRow label="ยอดก่อนภาษี" value={formatBaht(subtotal)} />
+                {discountTotal > 0 && <TotalRow label="ส่วนลด" value={`− ${formatBaht(discountTotal)}`} tone="ok" />}
+                {vat > 0 && <TotalRow label="ภาษีมูลค่าเพิ่ม (VAT)" value={formatBaht(vat)} />}
+                <div className="border-t my-1.5" style={{ borderColor: "var(--rs-border)" }} />
+                <TotalRow label="ยอดรวมทั้งสิ้น" value={formatBaht(total)} strong />
+                <TotalRow label="ชำระแล้ว" value={formatBaht(paid)} />
+                <TotalRow label="คงเหลือ" value={formatBaht(remaining)} strong tone={remaining > 0 ? "danger" : "ok"} />
+              </div>
+            </div>
+          </RsCard>
+
+          {/* payment history */}
+          <RsCard className="p-5 print:hidden">
+            <h2 className="font-bold mb-3" style={{ color: "var(--rs-text)" }}>
+              ประวัติการชำระเงิน
+            </h2>
+            {payments.length === 0 ? (
+              <p className="text-[13px]" style={{ color: "var(--rs-text-3)" }}>
+                ยังไม่มีการชำระเงิน
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {payments.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between py-1.5 border-b last:border-0"
+                    style={{ borderColor: "var(--rs-border)" }}
+                  >
+                    <div>
+                      <div className="text-[13.5px] font-medium" style={{ color: "var(--rs-text)" }}>
+                        {thaiDateLong(p.paidOn)}
+                        <span className="ml-2 text-[12px] font-normal" style={{ color: "var(--rs-text-3)" }}>
+                          {PAYMENT_METHODS[p.method] ?? p.method}
+                          {p.reference ? ` · ${p.reference}` : ""}
+                        </span>
+                      </div>
+                      {p.slipUrl ? (
+                        <a href={p.slipUrl} target="_blank" rel="noreferrer" className="text-[12px]" style={{ color: "var(--rs-brand)" }}>
+                          ดูสลิป
+                        </a>
+                      ) : null}
+                    </div>
+                    <div className="text-[13.5px] font-semibold tabular-nums" style={{ color: "var(--rs-ok)" }}>
+                      {formatBaht(toNum(p.amountThb))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </RsCard>
+
+          {/* discounts */}
+          <RsCard className="p-5 print:hidden">
+            <h2 className="font-bold mb-3" style={{ color: "var(--rs-text)" }}>
+              ส่วนลด
+            </h2>
+            {discounts.length === 0 ? (
+              <p className="text-[13px]" style={{ color: "var(--rs-text-3)" }}>
+                ยังไม่มีคำขอส่วนลด
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {discounts.map((d) => (
+                  <div
+                    key={d.id}
+                    className="flex items-start justify-between gap-3 py-2 border-b last:border-0"
+                    style={{ borderColor: "var(--rs-border)" }}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[13.5px] font-medium" style={{ color: "var(--rs-text)" }}>
+                          {d.kind === "percent" ? `${toNum(d.value)}%` : formatBaht(toNum(d.value))}
+                          <span className="ml-1.5 text-[12.5px] font-normal" style={{ color: "var(--rs-text-2)" }}>
+                            (− {formatBaht(toNum(d.computedAmount))})
+                          </span>
+                        </span>
+                        <RsBadge kind="discount" status={d.status} />
+                      </div>
+                      {d.reason ? (
+                        <div className="text-[12.5px] mt-0.5" style={{ color: "var(--rs-text-3)" }}>
+                          {d.reason}
+                        </div>
+                      ) : null}
+                      {d.decisionNote ? (
+                        <div className="text-[12px] mt-0.5" style={{ color: "var(--rs-text-3)" }}>
+                          หมายเหตุการตัดสิน: {d.decisionNote}
+                        </div>
+                      ) : null}
+                    </div>
+                    {d.status === "pending" && isAdmin ? (
+                      <DiscountDecisionButtons discountId={d.id} />
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </RsCard>
+        </div>
+
+        {/* ───── actions ───── */}
+        <div className="space-y-4 print:hidden">
+          <RsCard className="p-5 space-y-2">
+            {canEdit && <RecordPaymentButton billId={bill.id} remaining={remaining} />}
+            {canEdit && <RequestDiscountButton billId={bill.id} />}
+            <PrintBillButton />
+            {bill.status !== "void" && <VoidBillButton billId={bill.id} />}
+          </RsCard>
+        </div>
+      </div>
+
+      <style>{`
+        @media print {
+          body { background: #fff; }
+          .rs-scope .print\\:hidden { display: none !important; }
+          .rs-invoice { box-shadow: none !important; border: none !important; }
+        }
+      `}</style>
+    </RsPage>
+  );
+}

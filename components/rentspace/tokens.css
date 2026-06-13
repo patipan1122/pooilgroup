@@ -1,0 +1,140 @@
+/* RentSpace design tokens — scoped to .rs-scope (mirrors .ch-scope palette, Pool blue brand) */
+.rs-scope {
+  --rs-brand: #1e3aff;
+  --rs-brand-700: #1830d4;
+  --rs-brand-50: #eef1ff;
+  --rs-navy: #0b1850;
+
+  --rs-bg: #ffffff;
+  --rs-bg-2: #f7f8fb;
+  --rs-bg-3: #f0f2f7;
+  --rs-border: #e6e9f1;
+
+  --rs-text: #0f172a;
+  --rs-text-2: #475569;
+  --rs-text-3: #94a3b8;
+
+  /* status */
+  --rs-ok: #16a34a;
+  --rs-ok-soft: #dcfce7;
+  --rs-pending: #d97706;
+  --rs-pending-soft: #fef3c7;
+  --rs-danger: #dc2626;
+  --rs-danger-soft: #fee2e2;
+  --rs-vacant: #64748b;
+  --rs-vacant-soft: #f1f5f9;
+  --rs-info: #2563eb;
+  --rs-info-soft: #dbeafe;
+}
+
+.rs-card {
+  background: #fff;
+  border: 1px solid var(--rs-border);
+  border-radius: 14px;
+}
+
+.rs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: var(--rs-bg-2);
+  border: 1px solid var(--rs-border);
+  font-size: 12.5px;
+  color: var(--rs-text-2);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.rs-chip.active {
+  background: var(--rs-brand);
+  color: #fff;
+  border-color: var(--rs-brand);
+}
+
+/* sticky table header — solid bg, matches admin topbar offset */
+.rs-table thead th {
+  position: sticky;
+  top: 3.5rem;
+  z-index: 20;
+  background: var(--rs-bg-2);
+}
+@media (min-width: 640px) {
+  .rs-table thead th {
+    top: 4rem;
+  }
+}
+
+/* KPI tile */
+.rs-kpi {
+  background: #fff;
+  border: 1px solid var(--rs-border);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+/* primary button */
+.rs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 42px;
+  padding: 0 18px;
+  border-radius: 12px;
+  background: var(--rs-brand);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  transition: background 0.15s;
+}
+.rs-btn:hover {
+  background: var(--rs-brand-700);
+}
+.rs-btn:disabled {
+  opacity: 0.5;
+}
+.rs-btn-ghost {
+  background: var(--rs-bg-2);
+  color: var(--rs-text);
+  border: 1px solid var(--rs-border);
+}
+.rs-btn-ghost:hover {
+  background: var(--rs-bg-3);
+}
+
+/* ===== 3D / isometric project map ===== */
+.rs-stage {
+  perspective: 1600px;
+}
+.rs-iso {
+  transform-style: preserve-3d;
+  transform: rotateX(54deg) rotateZ(-42deg);
+  transition: transform 0.5s ease;
+}
+.rs-iso-flat {
+  transform: rotateX(0deg) rotateZ(0deg);
+}
+.rs-unit3d {
+  transform-style: preserve-3d;
+  transition:
+    transform 0.2s ease,
+    filter 0.2s ease;
+}
+.rs-unit3d:hover {
+  filter: brightness(1.08);
+  z-index: 5;
+}
+.rs-unit3d .face-top {
+  transform: translateZ(var(--h, 26px));
+  backface-visibility: hidden;
+}
+.rs-unit3d .face-side-x {
+  transform-origin: left;
+  transform: rotateY(-90deg);
+}
+.rs-unit3d .face-side-y {
+  transform-origin: top;
+  transform: rotateX(90deg);
+}

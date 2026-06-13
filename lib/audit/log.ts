@@ -66,6 +66,25 @@ export type AuditAction =
   | "BULK_IMPORT_EV_REPORTS"
   // Hotel daily-sales import from Google-Sheet/xlsx → cashhub_hotel_daily.
   | "IMPORT_HOTEL_SALES"
+  // RentSpace — บริหารพื้นที่เช่า
+  | "RENTSPACE_PROJECT_SAVED"
+  | "RENTSPACE_UNIT_SAVED"
+  | "RENTSPACE_UNIT_DELETED"
+  | "RENTSPACE_TENANT_SAVED"
+  | "RENTSPACE_TENANT_DELETED"
+  | "RENTSPACE_CONTRACT_SAVED"
+  | "RENTSPACE_CONTRACT_SIGNED"
+  | "RENTSPACE_CONTRACT_TERMINATED"
+  | "RENTSPACE_DEPOSIT_RECORDED"
+  | "RENTSPACE_METER_READ"
+  | "RENTSPACE_BILL_CREATED"
+  | "RENTSPACE_BILL_AUTO_CREATED"
+  | "RENTSPACE_BILL_VOIDED"
+  | "RENTSPACE_PAYMENT_RECORDED"
+  | "RENTSPACE_DISCOUNT_REQUESTED"
+  | "RENTSPACE_DISCOUNT_DECIDED"
+  | "RENTSPACE_TENANTS_IMPORTED"
+  | "RENTSPACE_SETTINGS_UPDATED"
   // Telegram inline-keyboard reject flow: stores pending state so the next
   // text reply from the same Telegram user resolves into the rejection reason.
   | "TELEGRAM_PENDING_REJECT"

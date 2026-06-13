@@ -72,7 +72,7 @@ import {
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
-export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland" | "inbox" | "costctrl" | "hotelbook" | "ledger";
+export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland" | "inbox" | "costctrl" | "hotelbook" | "ledger" | "rentspace";
 export type ModuleStatus = "active" | "coming_soon" | "beta";
 
 export interface NavItem {
@@ -943,6 +943,72 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       {
         href: "/ledger/settings",
         label: "ตั้งค่า",
+        icon: Settings,
+        adminOnly: true,
+        section: "ตั้งค่า",
+      },
+    ],
+  },
+
+  rentspace: {
+    slug: "rentspace",
+    name: "บริหารพื้นที่เช่า",
+    tagline: "โครงการ · ห้อง · ผู้เช่า · สัญญา · มิเตอร์ · ออกบิลอัตโนมัติ · ผัง 3D",
+    description:
+      "ระบบบริหารโครงการร้านค้าเช่าครบวงจร · ผังโครงการคลิกได้ + 3D · ทะเบียนผู้เช่า + สัญญาออนไลน์เซ็นได้ + เงินประกัน + จดมิเตอร์น้ำไฟ + ออกบิลอัตโนมัติทุกเดือน + ค่าปรับล่าช้า + อนุมัติส่วนลด + ประวัติชำระ",
+    emoji: "🏬",
+    Icon: Building2,
+    status: "active",
+    basePath: "/rentspace",
+    nav: [
+      {
+        href: "/rentspace",
+        label: "ภาพรวม + ผัง",
+        icon: LayoutDashboard,
+        section: "โครงการ",
+      },
+      {
+        href: "/rentspace/units",
+        label: "ห้อง / ยูนิต",
+        icon: Building2,
+      },
+      {
+        href: "/rentspace/tenants",
+        label: "ผู้เช่า",
+        icon: UsersIcon,
+      },
+      {
+        href: "/rentspace/contracts",
+        label: "สัญญาเช่า",
+        icon: ScrollText,
+        section: "เอกสาร",
+      },
+      {
+        href: "/rentspace/meters",
+        label: "จดมิเตอร์",
+        icon: Gauge,
+        section: "การเงิน",
+      },
+      {
+        href: "/rentspace/bills",
+        label: "บิล / ใบแจ้งหนี้",
+        icon: Receipt,
+      },
+      {
+        href: "/rentspace/payments",
+        label: "การชำระเงิน",
+        icon: Banknote,
+      },
+      {
+        href: "/rentspace/import",
+        label: "นำเข้าข้อมูล",
+        icon: ClipboardList,
+        roles: ["super_admin", "org_admin", "admin"],
+        section: "จัดการ",
+      },
+      {
+        href: "/rentspace/settings",
+        label: "ตั้งค่าโครงการ",
         icon: Settings,
         adminOnly: true,
         section: "ตั้งค่า",
