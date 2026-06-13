@@ -72,12 +72,12 @@ const SOURCES: ImportSource[] = [
     status: "coming_soon",
   },
   {
-    slug: "hotel-pms",
+    slug: "hotel",
     emoji: "🏨",
     Icon: Hotel,
-    title: "โรงแรม PMS",
-    subtitle: "Occupancy + Revenue จาก PMS",
-    status: "coming_soon",
+    title: "ยอดขายโรงแรม",
+    subtitle: "ยอดราย วัน/กะ + ตรวจ QR/OTA/เงินสด · จากชีต Excel",
+    status: "ready",
   },
 ];
 

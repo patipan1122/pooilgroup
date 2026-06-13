@@ -64,6 +64,8 @@ export type AuditAction =
   | "RESUBMIT_REPORT"
   // Bulk import of external charge-session data (CONNEXT CSV → DailyReport).
   | "BULK_IMPORT_EV_REPORTS"
+  // Hotel daily-sales import from Google-Sheet/xlsx → cashhub_hotel_daily.
+  | "IMPORT_HOTEL_SALES"
   // Telegram inline-keyboard reject flow: stores pending state so the next
   // text reply from the same Telegram user resolves into the rejection reason.
   | "TELEGRAM_PENDING_REJECT"
