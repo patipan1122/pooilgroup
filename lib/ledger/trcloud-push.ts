@@ -3,18 +3,20 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { normalizePurchaseType, type PurchaseType } from "@/lib/ledger/types";
 
-// LedgerLine → TRCloud AP push v2 (JP Sync company 45)
+// LedgerLine → TRCloud PO push (JP Sync company 45)
 //
-// KEY CHANGES from v1:
-// - company_format="JPS_AP" (JP Sync custom format, not generic "AP")
-// - tax_option="in" (VAT-inclusive prices, matching live JPS AP docs)
+// CEO 2026-06-13: push เป็น "ใบสั่งซื้อ (PO)" แทน AP. PO ไม่ลงบัญชี/ไม่เข้า ภ.พ.30
+// /ไม่ขยับสต๊อก — เป็นเอกสารตั้งต้นให้ "บัญชีแปลง PO→AP ใน TRCloud เอง" ตอนนั้นถึงลง
+// ค่าใช้จ่าย+VAT+GL จริง. (ดู memory trcloud-po-create-probe-2026-06-13: live test ยืนยัน
+// PO โชว์ VAT ได้ แต่ไม่มี tax_report และไม่เก็บ acc_code รายบรรทัด.)
+//
+// KEY POINTS:
+// - company_format="PO" + type="po" + status="New" (status บังคับ) + delivery_due
+// - tax_option="in" (VAT-inclusive prices) — VAT ยังโชว์บน PO เพื่อให้บัญชีเห็นยอด
 // - Fixed SKU taxonomy: only JPS-100/101/103 — never auto-create new SKUs
-// - acc_code per AP line (from LedgerCategory.trcloudAccCode)
-// - department (นิติบุคคล/VAT branch) + project (สาขา) per AP
-// - Validation gate: block push if any required mapping missing
+// - department (นิติบุคคล/VAT branch) + project (สาขา) per PO
 // - Uses TRCLOUD_JPS_* env vars (company 45) not the shared company 31
-//
-// See docs/WORKSHOP_ledger-trcloud-v2.md for full spec.
+// - acc_code ส่งไปด้วย (PO เมิน — แต่ส่งไว้เผื่อ TRCloud แปลง PO→AP หยิบไปใช้)
 
 const BASE        = process.env.TRCLOUD_BASE        ?? "https://pooil.trcloud.co/application/api-connector2/end-point";
 const ORIGIN      = process.env.TRCLOUD_JPS_ORIGIN  ?? "https://pooil.trcloud.co";
@@ -22,9 +24,6 @@ const ORIGIN      = process.env.TRCLOUD_JPS_ORIGIN  ?? "https://pooil.trcloud.co
 const COMPANY_ID  = process.env.TRCLOUD_JPS_COMPANY_ID   ?? "";
 const PASSKEY     = process.env.TRCLOUD_JPS_PASSKEY       ?? "";
 const ENCRYPT_HEAD= process.env.TRCLOUD_JPS_ENCRYPT_HEAD  ?? "";
-
-const AP_TYPE_CASH   = process.env.TRCLOUD_AP_TYPE_CASH   ?? "Cash[AP]";
-const AP_TYPE_CREDIT = process.env.TRCLOUD_AP_TYPE_CREDIT ?? "Credit[AP]";
 
 export function trcloudPushConfigured(): boolean {
   return !!(COMPANY_ID && PASSKEY && ENCRYPT_HEAD);
@@ -315,7 +314,7 @@ type ApLine = {
   product: string;
   price: string;
   quantity: string;
-  vat: string;    // always "7" (rate, not amount) for tax_option="in"
+  vat: string;    // VAT AMOUNT for this line (TRCloud's PO `vat` field = amount, not rate)
   acc_code: string;
 };
 
@@ -384,7 +383,9 @@ async function buildLines(
       product: r.desc.slice(0, 2000),
       price: String(inclPrice),
       quantity: String(qty),
-      vat: lineVat === 0 ? "0" : "7", // rate — "0" for VAT-exempt lines
+      // TRCloud's PO `vat` field is an AMOUNT (proven by live test 2026-06-13: sending
+      // "7" booked VAT=฿7 not 7%). Send this line's actual VAT amount (฿), not the rate.
+      vat: String(round2(lineVat)),
       acc_code: accCode,
     });
   }
@@ -400,7 +401,8 @@ function toIsoDate(d: Date | string | null): string {
 // ── main push ────────────────────────────────────────────────────────────────
 
 /**
- * Push ONE confirmed expense into TRCloud as a JPS_AP (company 45, VAT-in, draft).
+ * Push ONE confirmed expense into TRCloud as a PO (ใบสั่งซื้อ, company 45, VAT-in, draft).
+ * บัญชีจะแปลง PO→AP ใน TRCloud เพื่อลงบัญชี+VAT จริง.
  * Validates all required mappings before sending; blocks with clear Thai error if missing.
  */
 export async function pushExpenseToTrcloud(
@@ -438,12 +440,12 @@ export async function pushExpenseToTrcloud(
   const built = await buildLines(scope, eff);
   if (!built.ok) return { ok: false, error: `สินค้า: ${built.error}` };
 
-  // 3) create AP
-  // P1#19 FIX — idempotent AP push (timeout + retry dedup):
-  // If a previous push timed out TRCloud may have already created the AP.
+  // 3) create PO
+  // P1#19 FIX — idempotent PO push (timeout + retry dedup):
+  // If a previous push timed out TRCloud may have already created the PO.
   // Search by reference (e.docCode) before creating; if found, return it directly.
   {
-    const searchR = await post("ap/search.php", { keyword: e.docCode, limit: "5" });
+    const searchR = await post("po/search.php", { keyword: e.docCode, limit: "5" });
     const searchList = asArr(searchR.data?.data) ?? asArr(searchR.data?.result) ?? asArr(searchR.data?.body) ?? [];
     for (const row of searchList) {
       const o = asObj(row);
@@ -458,12 +460,12 @@ export async function pushExpenseToTrcloud(
   }
 
   const issue = toIsoDate(e.docDate);
-  const apType = (e.paymentStatus ?? "paid") === "paid" ? AP_TYPE_CASH : AP_TYPE_CREDIT;
   const payload: Json = {
     issue_date: issue,
-    due_date: issue,
-    tax_date: issue,
-    company_format: "JPS_AP",  // JP Sync custom format (NOT generic "AP")
+    delivery_due: issue,        // PO: กำหนดส่งของ (แทน due_date/tax_date ของ AP)
+    company_format: "PO",       // ใบสั่งซื้อ — บัญชีแปลง PO→AP ใน TRCloud เพื่อลงบัญชีจริง
+    type: "po",
+    status: "New",              // PO บังคับช่อง status (ไม่ใส่ = 406)
     document_number: "",        // autorun
     payment_term: "0",
     reference: e.docCode,
@@ -471,10 +473,9 @@ export async function pushExpenseToTrcloud(
     // Sending a non-zero header discount here would deduct it a second time in TRCloud.
     discount: "0",
     wht: String(round2(e.wht)),
-    tax_option: "in",           // VAT-inclusive (matches live JPS AP docs)
-    tax_report: e.inputVatClaimable ? "1" : "0", // 0 = ไม่เข้า ภ.พ.30
-    type: apType,
-    approve_status: "wait",     // always draft; accountant approves in TRCloud
+    tax_option: "in",           // VAT-inclusive (VAT ยังโชว์บน PO ให้บัญชีเห็นยอด)
+    // หมายเหตุ: PO ไม่มีช่อง tax_report และไม่ post GL — VAT/บัญชีจริงเกิดตอนแปลงเป็น AP.
+    approve_status: "wait",     // ฉบับร่าง; รออนุมัติ/แปลงใน TRCloud
     department: e.branchTrcloudDepartment,  // นิติบุคคล/VAT branch
     project: e.branchTrcloudProject,        // สาขา
     invoice_note: e.note
@@ -497,17 +498,10 @@ export async function pushExpenseToTrcloud(
     product: built.lines,
   };
 
-  // P1#24 FIX — quotation tax_report must be "0":
-  // Quotations are not confirmed invoices; VAT cannot be claimed yet.
-  // Override tax_report to "0" regardless of inputVatClaimable flag.
-  if (e.docType === "quotation") {
-    payload.tax_report = "0";
-  }
-
-  const r = await post("ap/create.php", payload);
+  const r = await post("po/create.php", payload);
   if (!isSuccess(r.data)) return { ok: false, error: errMsg(r) };
   const inner = asObj(r.data?.data) ?? asObj(r.data?.head) ?? r.data;
-  const docId = pick(inner, "id", "document_id") ?? pick(r.data, "id", "document_id");
+  const docId = pick(inner, "id", "document_id", "doc") ?? pick(r.data, "id", "document_id", "doc");
   const docNo = pick(inner, "document_number", "no") ?? pick(r.data, "document_number", "no");
   // Defence-in-depth: a genuine create ALWAYS returns a document id/number. If we
   // get neither, treat it as a failure rather than stamping a phantom "sent" — the
@@ -518,9 +512,13 @@ export async function pushExpenseToTrcloud(
   return { ok: true, docId, docNo };
 }
 
-/** Delete an AP (test cleanup / future "ยกเลิกการส่ง"). */
+/** Delete a pushed doc ("ยกเลิกการส่ง" / test cleanup). Tries PO first (current model),
+ *  then falls back to AP so docs pushed before the AP→PO switch can still be cancelled. */
 export async function deleteTrcloudAp(docId: string): Promise<{ ok: boolean; error?: string }> {
   if (!trcloudPushConfigured()) return { ok: false, error: "ยังไม่ได้ตั้งค่า TRCloud" };
-  const r = await post("ap/delete.php", { id: docId });
-  return isSuccess(r.data) ? { ok: true } : { ok: false, error: errMsg(r) };
+  const poR = await post("po/delete.php", { id: docId });
+  if (isSuccess(poR.data)) return { ok: true };
+  const apR = await post("ap/delete.php", { id: docId });
+  if (isSuccess(apR.data)) return { ok: true };
+  return { ok: false, error: errMsg(poR) };
 }
