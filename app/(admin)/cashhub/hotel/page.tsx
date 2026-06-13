@@ -45,7 +45,21 @@ export default async function HotelSalesPage({
     name: string;
     code: string;
   }>;
-  const branchId = sp.branchId ?? branches[0]?.id ?? null;
+  // default = สาขาที่ "มีข้อมูลนำเข้าแล้ว" ก่อน (กันกรณีมีหลายสาขาโรงแรมแล้ว
+  // default ไปสาขาเปล่าจนดูเหมือนไม่มีข้อมูล) → ไม่งั้นค่อย fallback ตามชื่อ
+  let branchWithData: string | null = null;
+  if (!sp.branchId && branches.length > 1) {
+    const { data: withData } = await admin
+      .from("cashhub_hotel_daily")
+      .select("branch_id")
+      .in(
+        "branch_id",
+        branches.map((b) => b.id),
+      )
+      .limit(1);
+    branchWithData = (withData?.[0] as { branch_id: string } | undefined)?.branch_id ?? null;
+  }
+  const branchId = sp.branchId ?? branchWithData ?? branches[0]?.id ?? null;
 
   // ── เดือน (default = เม.ย. 2026 pilot) ───────────────────────────────
   const monthStr = sp.month ?? "2026-04";
