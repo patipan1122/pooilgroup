@@ -2,12 +2,15 @@
 // Layout per _design-reference/.../screens/lineapp.jsx <LineRichMenu>:
 //   greeting card → 2-KPI block (gap + monthly) → 4 task cards → cut-off banner.
 // Bottom nav lives in MaidShell. Server Component; cut-off countdown is
-// server-rendered (page is force-dynamic so it recomputes each request).
+// server-rendered (page is force-dynamic so the countdown + per-maid data are
+// always fresh). Drift is READ from the cache (readDriftSnapshot) — it is kept
+// up to date by every economic event, so we don't recompute/write on render.
 
 import Link from "next/link";
+import Image from "next/image";
 import { requireExactRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
-import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
+import { readDriftSnapshot } from "@/lib/chairops/reconcile/drift-engine";
 import { ChairopsKpiTile } from "@/components/chairops/_kit";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -94,7 +97,7 @@ export default async function MaidHomePage() {
       where: { id: branchId },
       select: { name: true },
     }),
-    recomputeDriftForBranch(branchId),
+    readDriftSnapshot(branchId, session.user.orgId),
     prisma.chairopsChair.count({
       where: { branchId, orgId: session.user.orgId, isActive: true },
     }),
@@ -244,12 +247,15 @@ export default async function MaidHomePage() {
         <CardBody className="space-y-2 p-4">
           <div className="flex items-start justify-between gap-2">
             <div className="flex min-w-0 items-start gap-3">
-              {/* น้องแมวน้ำโบกมือทักทายแม่บ้าน */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              {/* น้องแมวน้ำโบกมือทักทายแม่บ้าน · next/image ย่อ+แปลง WebP
+                  อัตโนมัติ (ไฟล์ต้นทาง 366KB → ไม่กี่ KB ที่ขนาดแสดง 64px)
+                  ลดเน็ตบนมือถือแม่บ้าน */}
+              <Image
                 src="/mascot/clean/seal-wave-clean.png"
                 alt=""
                 aria-hidden
+                width={56}
+                height={64}
                 className="-my-1 h-16 w-auto shrink-0"
               />
               <div className="min-w-0">

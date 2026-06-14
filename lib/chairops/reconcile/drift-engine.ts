@@ -441,11 +441,73 @@ export async function recomputeAllDrifts(
     where: { isActive: true, ...(orgId ? { orgId } : {}) },
     select: { id: true },
   });
+
+  // Parallelize with BOUNDED concurrency. Each branch recompute fans out to
+  // ~6 aggregate queries; a fully-unbounded Promise.all over 30+ branches would
+  // open 200+ simultaneous queries and exhaust the Supabase transaction pooler
+  // (:6543). Processing in chunks of CONCURRENCY keeps the fan-out safe while
+  // collapsing the old sequential loop (was ~30 round-trips deep) to ~6.
+  // Each branch writes only its own (orgId, branchId) ChairopsDrift row, so
+  // there is no write-write race between concurrent tasks within one call.
+  const CONCURRENCY = 5;
   const results: BranchDriftSnapshot[] = [];
-  for (const b of branches) {
-    results.push(await recomputeDriftForBranch(b.id));
+  for (let i = 0; i < branches.length; i += CONCURRENCY) {
+    const chunk = branches.slice(i, i + CONCURRENCY);
+    const chunkResults = await Promise.all(
+      chunk.map((b) => recomputeDriftForBranch(b.id)),
+    );
+    results.push(...chunkResults);
   }
   return results;
+}
+
+/**
+ * READ the cached drift snapshot for a branch WITHOUT recomputing or writing.
+ *
+ * For hot read-only render paths (e.g. the maid LIFF home) a fresh recompute is
+ * unnecessary: every economic event that can move drift — cash collection &
+ * deposit (collect/actions), write-off approval, POS import (pos-ingest), and
+ * the gmail-import cron — ALREADY calls recomputeDriftForBranch/recomputeAllDrifts
+ * and persists the cache. Recomputing on every page open was redundant work AND
+ * a write-on-GET (a persistDrift upsert per render, which also races concurrent
+ * opens of the same branch).
+ *
+ * Falls back to a one-time recomputeDriftForBranch when no cached row exists yet
+ * (brand-new branch never computed), so callers always get a snapshot.
+ */
+export async function readDriftSnapshot(
+  branchId: string,
+  orgId?: string,
+): Promise<BranchDriftSnapshot> {
+  const cached = await prisma.chairopsDrift.findFirst({
+    where: { branchId, ...(orgId ? { orgId } : {}) },
+    include: { branch: { select: { name: true } } },
+  });
+  if (!cached) {
+    // Cold cache (never computed) → compute once so the page isn't empty.
+    return recomputeDriftForBranch(branchId);
+  }
+  const driftHours = cached.driftSince ? ageHours(cached.driftSince) : 0;
+  const daysSinceLastCollection = cached.lastCollectionAt
+    ? ageDays(cached.lastCollectionAt)
+    : 999;
+  return {
+    branchId,
+    branchName: cached.branch.name,
+    posTotal: cached.posTotal,
+    depositTotal: cached.depositTotal,
+    driftAmount: cached.driftAmount,
+    driftHours,
+    lastCollectionAt: cached.lastCollectionAt,
+    daysSinceLastCollection,
+    status: classifyStatus(
+      cached.driftAmount,
+      driftHours,
+      daysSinceLastCollection,
+    ),
+    mode: resolveMode(),
+    windowStartAt: null,
+  };
 }
 
 export async function getDashboardRows(orgId?: string) {
