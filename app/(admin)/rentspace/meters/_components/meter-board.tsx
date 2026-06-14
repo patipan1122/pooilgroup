@@ -2,10 +2,12 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Zap, Droplet, Check, Loader2 } from "lucide-react";
+import { Zap, Droplet, Check, Loader2, Camera } from "lucide-react";
 import { toast } from "sonner";
 import { formatBaht, periodLabel, prevPeriod } from "@/lib/rentspace/format";
-import { actSaveMeterReading } from "../../_actions";
+import { actSaveMeterReading, actUploadFile } from "../../_actions";
+
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024; // 8MB UX guard (server also enforces)
 
 export type BoardSide = {
   prevReading: number | null;
@@ -36,6 +38,8 @@ type SideState = {
   saved: boolean; // currReading exists in DB and matches input
   dirty: boolean;
   saving: boolean;
+  photoUrl: string | null; // meter photo on the saved reading (if any)
+  uploading: boolean; // photo upload/attach in progress
 };
 
 type RowState = {
@@ -52,6 +56,8 @@ function initSide(s: BoardSide): SideState {
     saved: s.currReading != null,
     dirty: false,
     saving: false,
+    photoUrl: s.photoUrl,
+    uploading: false,
   };
 }
 
@@ -143,6 +149,58 @@ export default function MeterBoard({
       setSide(unitId, kind, { saving: false });
       toast.error(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
       return false;
+    }
+  }
+
+  /** Read a File → dataURL (base64). */
+  function readFileAsDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error("อ่านไฟล์ไม่สำเร็จ"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /** Upload a meter photo and attach it onto this kind's reading. */
+  async function attachPhoto(unitId: string, kind: Kind, file: File) {
+    const side = rows[unitId][kind];
+    const curr = parseReading(side.curr);
+    // require a reading value first — photo attaches onto the reading row
+    if (curr == null) {
+      toast.error("กรอกเลขมิเตอร์ก่อนแนบรูป");
+      return;
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      toast.error("รูปใหญ่เกินไป (เกิน 8MB)");
+      return;
+    }
+    setSide(unitId, kind, { uploading: true });
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const { url } = await actUploadFile({ sub: "meter", dataUrl });
+      // attach the photo onto the reading (also (re)saves currReading)
+      const res = await actSaveMeterReading({
+        unitId,
+        kind,
+        period,
+        currReading: curr,
+        photoUrl: url,
+      });
+      setSide(unitId, kind, {
+        uploading: false,
+        saving: false,
+        saved: true,
+        dirty: false,
+        usage: res.usage,
+        amount: res.amountThb,
+        photoUrl: url,
+      });
+      const label = kind === "electric" ? "ไฟ" : "น้ำ";
+      toast.success(`แนบรูปมิเตอร์${label}แล้ว`);
+    } catch (e) {
+      setSide(unitId, kind, { uploading: false });
+      toast.error(e instanceof Error ? e.message : "แนบรูปไม่สำเร็จ");
     }
   }
 
@@ -312,6 +370,7 @@ export default function MeterBoard({
                     onChange={onChange}
                     onKeyDown={onKeyDown}
                     onBlur={saveSide}
+                    onAttach={attachPhoto}
                   />
 
                   {/* water */}
@@ -324,6 +383,7 @@ export default function MeterBoard({
                     onChange={onChange}
                     onKeyDown={onKeyDown}
                     onBlur={saveSide}
+                    onAttach={attachPhoto}
                   />
 
                   {/* per-row save */}
@@ -359,7 +419,7 @@ export default function MeterBoard({
   );
 }
 
-/** The 3 cells for one side (prev · curr-input · usage). */
+/** The 3 cells for one side (prev · curr-input + photo · usage). */
 function SideCells({
   unitId,
   kind,
@@ -369,6 +429,7 @@ function SideCells({
   onChange,
   onKeyDown,
   onBlur,
+  onAttach,
 }: {
   unitId: string;
   kind: Kind;
@@ -378,43 +439,96 @@ function SideCells({
   onChange: (unitId: string, kind: Kind, value: string) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>, unitId: string, kind: Kind) => void;
   onBlur: (unitId: string, kind: Kind) => void;
+  onAttach: (unitId: string, kind: Kind, file: File) => void;
 }) {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const label = kind === "electric" ? "ไฟ" : "น้ำ";
   return (
     <>
       <td className="py-2.5 px-3 text-right tabular-nums" style={{ color: "var(--rs-text-3)" }}>
         {side.prev != null ? side.prev.toLocaleString("th-TH") : "—"}
       </td>
       <td className="py-1.5 px-2 text-right">
-        <div className="relative inline-flex items-center">
+        <div className="inline-flex items-center justify-end gap-1.5">
+          <div className="relative inline-flex items-center">
+            <input
+              ref={(el) => {
+                inputRefs.current[refKey(unitId, kind)] = el;
+              }}
+              type="number"
+              inputMode="decimal"
+              min={0}
+              value={side.curr}
+              onChange={(e) => onChange(unitId, kind, e.target.value)}
+              onKeyDown={(e) => onKeyDown(e, unitId, kind)}
+              onBlur={() => onBlur(unitId, kind)}
+              placeholder="—"
+              className="w-24 h-9 rounded-lg px-2 text-right tabular-nums text-sm outline-none focus:ring-2"
+              style={{
+                background: "var(--rs-bg-2)",
+                border: `1px solid ${side.saved && !side.dirty ? "var(--rs-ok)" : "var(--rs-border)"}`,
+                color: "var(--rs-text)",
+                // @ts-expect-error css var for ring
+                "--tw-ring-color": "var(--rs-brand)",
+              }}
+            />
+            {side.saving ? (
+              <Loader2
+                className="absolute -right-5 h-3.5 w-3.5 animate-spin"
+                style={{ color: "var(--rs-text-3)" }}
+              />
+            ) : side.saved && !side.dirty ? (
+              <Check className="absolute -right-5 h-3.5 w-3.5" style={{ color: "var(--rs-ok)" }} />
+            ) : null}
+          </div>
+
+          {/* meter photo: existing thumbnail OR attach button */}
           <input
-            ref={(el) => {
-              inputRefs.current[refKey(unitId, kind)] = el;
-            }}
-            type="number"
-            inputMode="decimal"
-            min={0}
-            value={side.curr}
-            onChange={(e) => onChange(unitId, kind, e.target.value)}
-            onKeyDown={(e) => onKeyDown(e, unitId, kind)}
-            onBlur={() => onBlur(unitId, kind)}
-            placeholder="—"
-            className="w-24 h-9 rounded-lg px-2 text-right tabular-nums text-sm outline-none focus:ring-2"
-            style={{
-              background: "var(--rs-bg-2)",
-              border: `1px solid ${side.saved && !side.dirty ? "var(--rs-ok)" : "var(--rs-border)"}`,
-              color: "var(--rs-text)",
-              // @ts-expect-error css var for ring
-              "--tw-ring-color": "var(--rs-brand)",
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onAttach(unitId, kind, f);
+              e.target.value = ""; // allow re-picking the same file
             }}
           />
-          {side.saving ? (
-            <Loader2
-              className="absolute -right-5 h-3.5 w-3.5 animate-spin"
-              style={{ color: "var(--rs-text-3)" }}
-            />
-          ) : side.saved && !side.dirty ? (
-            <Check className="absolute -right-5 h-3.5 w-3.5" style={{ color: "var(--rs-ok)" }} />
-          ) : null}
+          {side.uploading ? (
+            <span
+              className="inline-flex items-center justify-center h-8 w-8 rounded-lg"
+              style={{ background: "var(--rs-bg-3)" }}
+              title="กำลังแนบรูป"
+            >
+              <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--rs-text-3)" }} />
+            </span>
+          ) : side.photoUrl ? (
+            <button
+              type="button"
+              onClick={() => window.open(side.photoUrl!, "_blank", "noopener")}
+              className="inline-flex items-center justify-center h-8 w-8 overflow-hidden rounded-lg"
+              style={{ border: "1px solid var(--rs-ok)" }}
+              title={`ดูรูปมิเตอร์${label} · คลิกเพื่อเปิด`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={side.photoUrl} alt={`รูปมิเตอร์${label}`} className="h-full w-full object-cover" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="inline-flex items-center justify-center h-8 w-8 rounded-lg"
+              style={{
+                background: "var(--rs-bg-3)",
+                color: "var(--rs-text-3)",
+                border: "1px solid var(--rs-border)",
+              }}
+              title={`แนบรูปมิเตอร์${label}`}
+            >
+              <Camera className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </td>
       <td

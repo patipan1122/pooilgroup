@@ -91,6 +91,19 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
         }
       />
 
+      {bill.note && bill.note.includes("มิเตอร์") && (
+        <div
+          className="flex items-start gap-2.5 rounded-xl px-4 py-3 print:hidden"
+          style={{ background: "var(--rs-pending-soft)", border: "1px solid #F6E0AE" }}
+        >
+          <span style={{ fontSize: 16 }}>⚠️</span>
+          <div className="text-[12.5px]" style={{ color: "#8A6400" }}>
+            <b>บิลนี้ยังไม่ครบ:</b> {bill.note} — ค่าน้ำ-ไฟจะเพิ่มได้ภายหลังเมื่อจดมิเตอร์ (ไปที่หน้า{" "}
+            <a href="/rentspace/meters" className="underline font-semibold">จดมิเตอร์</a>)
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* ───── invoice ───── */}
         <div className="lg:col-span-2 space-y-4">

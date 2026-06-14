@@ -54,8 +54,10 @@ export default async function TenantsPage({
           {tenants.map((t) => {
             const activeContracts = t.contracts; // already filtered to status=active in data layer
             const phone = t.phones?.[0];
+            const activeUnitId = activeContracts.find((c) => c.unit?.id)?.unit?.id;
+            const href = activeUnitId ? `/rentspace/tenants?unit=${activeUnitId}` : `/rentspace/tenants/${t.id}`;
             return (
-              <Link key={t.id} href={`/rentspace/tenants/${t.id}`} className="block">
+              <Link key={t.id} href={href} className="block">
                 <RsCard className="p-4 h-full hover:border-[var(--rs-brand)] transition-colors">
                   <div className="flex items-start gap-3">
                     <div

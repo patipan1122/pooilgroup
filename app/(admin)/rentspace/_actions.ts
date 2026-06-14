@@ -636,6 +636,66 @@ export async function actCreateBill(contractId: string, period: string, issue = 
   return res;
 }
 
+/**
+ * Preview every room that "ออกบิลทั้งโครงการ" would bill — WITHOUT writing
+ * anything. Read-only: computes amounts via buildBill, flags rooms already
+ * billed this period and rooms missing a meter reading (their bill would carry
+ * rent only). Used by the confirm modal so the user sees the table first.
+ */
+export async function actBillingPreview(projectId: string, period: string) {
+  const session = await gateAdmin();
+  const { buildBill } = await import("@/lib/rentspace/billing");
+  const { tenantDisplayName } = await import("@/lib/rentspace/format");
+  const contracts = await prisma.rentalContract.findMany({
+    where: { orgId: session.user.org_id, projectId, status: { in: ["active", "expiring"] } },
+    include: { project: true, unit: true, tenant: true },
+    orderBy: { unit: { code: "asc" } },
+  });
+
+  const rows: {
+    code: string;
+    tenant: string;
+    rent: number;
+    utility: number;
+    total: number;
+    hasMeter: boolean;
+    alreadyBilled: boolean;
+  }[] = [];
+  let toBillCount = 0;
+  let missingMeterCount = 0;
+  let sum = 0;
+
+  for (const c of contracts) {
+    const code = c.unit?.code ?? "—";
+    const tenant = c.tenant ? tenantDisplayName(c.tenant) : "ไม่ระบุชื่อ";
+
+    const existing = await prisma.rentalBill.findUnique({
+      where: { contractId_period: { contractId: c.id, period } },
+      select: { id: true },
+    });
+    if (existing) {
+      // already billed → list it flagged, but it won't be re-billed
+      rows.push({ code, tenant, rent: 0, utility: 0, total: 0, hasMeter: true, alreadyBilled: true });
+      continue;
+    }
+
+    const built = await buildBill(c, period);
+    const rent = toNum(built.rentAmount);
+    const utility = toNum(built.electricAmount) + toNum(built.waterAmount);
+    const total = rent + utility + toNum(built.lateFeeAmount);
+    // a room "has meter" only if BOTH electric + water were read this period.
+    // buildBill pushes a "ยังไม่ได้จดมิเตอร์..." note for each missing side.
+    const hasMeter = !built.notes.some((n) => n.includes("ยังไม่ได้จดมิเตอร์"));
+
+    rows.push({ code, tenant, rent, utility, total, hasMeter, alreadyBilled: false });
+    toBillCount++;
+    if (!hasMeter) missingMeterCount++;
+    sum += total;
+  }
+
+  return { rows, toBillCount, missingMeterCount, sum: toNum(sum) };
+}
+
 /** Generate bills for ALL active contracts of a project for a period. */
 export async function actGenerateMonthlyBills(projectId: string, period: string) {
   const session = await gateAdmin();
