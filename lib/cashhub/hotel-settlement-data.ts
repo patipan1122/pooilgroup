@@ -151,7 +151,9 @@ export async function sendHotelDaysToReconcile(
         )
         ON CONFLICT (org_id, company_id, source_type, source_ref)
           WHERE source_ref IS NOT NULL
-        DO NOTHING
+        DO UPDATE SET amount_satang = EXCLUDED.amount_satang, updated_at = now()
+          WHERE ledger_revenue_entry.match_state = 'unmatched'
+            AND ledger_revenue_entry.amount_satang IS DISTINCT FROM EXCLUDED.amount_satang
         RETURNING id`;
       if (res.length) inserted++;
     }
@@ -179,13 +181,17 @@ export async function readHotelReconcileStatus(
   to: string,
 ): Promise<Map<string, ReconcileCell>> {
   const prefix = `hotel:${branchCode}:`;
+  // 🟢 = กระทบ "ยืนยันแล้ว" เท่านั้น (กัน false-green): match_item ถูกสร้างตั้งแต่ตอน
+  // "suggest" (group.status='suggested') → ต้อง JOIN group แล้วเช็ค status='confirmed'
   const rows = await prisma.$queryRaw<
     { source_ref: string; amount_satang: bigint; reconciled: boolean }[]
   >`
     SELECT r.source_ref, r.amount_satang,
       (r.match_state='matched' OR EXISTS(
         SELECT 1 FROM ledger_bank_match_item mi
-        WHERE mi.book_type='revenue' AND mi.book_id=r.id)) as reconciled
+        JOIN ledger_bank_match_group g ON g.id=mi.group_id
+        WHERE mi.book_type='revenue' AND mi.book_id=r.id
+          AND g.status='confirmed')) as reconciled
     FROM ledger_revenue_entry r
     WHERE r.org_id=${orgId}::uuid
       AND r.source_type='CASHHUB_HOTEL'
@@ -254,17 +260,20 @@ export function buildReconcileView(
         : st.reconciled
           ? "reconciled"
           : "pending";
-      cells.push({ channel: c.channel, amount: amt, state });
+      // ส่งแล้ว → ใช้ยอดที่อยู่ใน ledger จริง (st.amount) ไม่ใช่ยอด deposit ปัจจุบัน
+      // (กันยอดเพี้ยนถ้า deposit ถูกแก้หลังส่ง / รวมเรื่องปัดเศษ satang)
+      const showAmt = st ? st.amount : amt;
+      cells.push({ channel: c.channel, amount: showAmt, state });
       const s = byChannel.get(c.channel)!;
       s.daysWithDeposit += 1;
-      s.totalAmount += amt;
+      s.totalAmount += showAmt;
       if (state === "reconciled") {
         s.reconciledDays += 1;
-        s.reconciledAmount += amt;
+        s.reconciledAmount += showAmt;
       } else {
         if (state === "pending") s.pendingDays += 1;
         else s.unsentDays += 1;
-        s.outstandingAmount += amt;
+        s.outstandingAmount += showAmt;
       }
     }
     if (cells.length) days.push({ day: Number(d.date.slice(8, 10)), date: d.date, cells });

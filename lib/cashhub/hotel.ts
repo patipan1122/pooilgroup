@@ -131,10 +131,12 @@ export function groupByDay(rows: HotelShiftRow[]): HotelDay[] {
     d.fine = n(m?.fine) + n(e?.fine);
     d.overShort = n(m?.over_short) + n(e?.over_short);
 
-    // QR ระดับวัน
-    const qrTotalRaw = dayLevel(m, e, "qr_total");
-    d.qrTotal = qrTotalRaw != null ? qrTotalRaw
-      : n(m?.qr_morning) + n(m?.qr_after2330) + n(e?.qr_morning) + n(e?.qr_after2330);
+    // QR ระดับวัน — qr_total: IV เก็บต่อกะ (เช้า+ค่ำ) · Sheet เก็บระดับวันที่แถวเช้า (ค่ำ null)
+    // → รวมทั้งคู่ถูกทั้งสองแบบ (ค่ำ null = +0) และตรงกับ recorded ใน computeShiftBasis
+    d.qrTotal =
+      m?.qr_total != null || e?.qr_total != null
+        ? n(m?.qr_total) + n(e?.qr_total)
+        : n(m?.qr_morning) + n(m?.qr_after2330) + n(e?.qr_morning) + n(e?.qr_after2330);
     const bankedRaw = dayLevel(m, e, "qr_banked");
     d.qrChecked = bankedRaw != null;
     d.qrBanked = n(bankedRaw);

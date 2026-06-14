@@ -122,6 +122,7 @@ export async function POST(req: NextRequest) {
   const { data: rows } = await admin
     .from("cashhub_hotel_daily")
     .select("id, sales_date, shift, qr_total")
+    .eq("org_id", orgId) // scope ชัด (admin client bypass RLS — กัน cross-org)
     .eq("branch_id", branchId)
     .eq("source", source)
     .gte("sales_date", from)
@@ -177,7 +178,9 @@ export async function POST(req: NextRequest) {
           qr_diff: null, // ส่วนต่างรายวันคิดฐานกะตอนอ่าน (apples-to-apples)
           updated_at: now,
         })
-        .eq("id", e.morningId) as PromiseLike<{ error: unknown }>,
+        .eq("id", e.morningId)
+        .eq("org_id", orgId) // B-018: update by id ต้อง re-scope org (admin bypass RLS)
+        .eq("branch_id", branchId) as PromiseLike<{ error: unknown }>,
     );
   }
   const results = await Promise.all(updates);

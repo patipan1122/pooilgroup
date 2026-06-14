@@ -23,8 +23,8 @@ export function csvToMatrix(text: string): string[][] {
           i++;
         } else inQuotes = false;
       } else field += c;
-    } else if (c === '"') {
-      inQuotes = true;
+    } else if (c === '"' && field === "") {
+      inQuotes = true; // เปิดโหมด quote เฉพาะตอนต้น field (RFC4180) — quote กลาง field = ตัวอักษรปกติ
     } else if (c === ",") {
       row.push(field);
       field = "";
