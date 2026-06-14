@@ -146,12 +146,21 @@ export async function POST(req: NextRequest) {
   let unmatched = 0,
     totalBanked = 0;
   const now = new Date().toISOString();
-  // เติม "เข้าบัญชีจริง" (qr_banked) ต่อวัน — ตัด 23:00 ตรง statement.
-  // qr_diff = null: ไม่โชว์ส่วนต่างรายวัน (บันทึกตามกะ vs เข้าจริงตัด 23:00 คนละฐาน)
-  // ⚡ อัปเดตพร้อมกัน (parallel) กัน serverless timeout — เดิมทีละ call ช้าจนตายกลางทาง
+  // เก็บ 2 ฐานต่อวัน:
+  //   • qr_banked  = ยอดเข้าบัญชี (ตัด 23:00) → ตรง statement ธนาคาร
+  //   • qr_scan_total / qr_overnight = ยอดสแกนรวม + ช่วง 00:00–07:00 (ตามวันสแกน)
+  //     → หน้าเว็บคิด "ฐานกะ" ตอนอ่าน = สแกน(N) − ดึก(N) + ดึก(N+1) ให้ตรงยอดที่พนักงานคีย์
+  // ⚡ อัปเดตพร้อมกัน (parallel) กัน serverless timeout
+  const dateSet = new Set<string>();
+  for (const [d] of inMonth) dateSet.add(d);
+  for (const d of Object.keys(ttb.byScanDate))
+    if (d.startsWith(`${year}-${mm}`)) dateSet.add(d);
+
   const updates: Array<PromiseLike<{ error: unknown }>> = [];
-  for (const [date, banked] of inMonth) {
-    totalBanked += banked;
+  for (const date of dateSet) {
+    const banked = ttb.byDate[date] ?? null; // settlement (ตัด 23:00)
+    const band = ttb.byScanDate[date] ?? null; // {total, overnight} ตามวันสแกน
+    if (banked != null) totalBanked += banked;
     const e = byDateRows.get(date);
     if (!e?.morningId) {
       unmatched++;
@@ -160,7 +169,13 @@ export async function POST(req: NextRequest) {
     updates.push(
       admin
         .from("cashhub_hotel_daily")
-        .update({ qr_banked: banked, qr_diff: null, updated_at: now })
+        .update({
+          qr_banked: banked,
+          qr_scan_total: band ? band.total : null,
+          qr_overnight: band ? band.overnight : null,
+          qr_diff: null, // ส่วนต่างรายวันคิดฐานกะตอนอ่าน (apples-to-apples)
+          updated_at: now,
+        })
         .eq("id", e.morningId) as PromiseLike<{ error: unknown }>,
     );
   }

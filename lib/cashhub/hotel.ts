@@ -30,8 +30,10 @@ export type HotelShiftRow = {
   qr_morning: number | null;
   qr_after2330: number | null;
   qr_total: number | null;
-  qr_banked: number | null;
+  qr_banked: number | null; // เข้าบัญชี (ตัด 23:00) = statement ธนาคาร
   qr_diff: number | null;
+  qr_scan_total: number | null; // TTB สแกนรวมทั้งวัน (ตามวันสแกน) — คิดฐานกะ
+  qr_overnight: number | null; // TTB สแกน 00:00–07:00 (กะคืนวันก่อน) — คิดฐานกะ
   ota_agoda: number | null;
   ota_agoda_banked: number | null;
   ota_expedia: number | null;
@@ -208,6 +210,65 @@ export function summarize(days: HotelDay[]): HotelMonthSummary {
     if (!d.salesIntegrity) s.integrityCount += 1;
   }
   return s;
+}
+
+// ── ฐานกะ (shift-basis) ──────────────────────────────────────────────
+// พนักงานนับ QR ตามกะ (กะดึก 18:00–07:00 คร่อมเที่ยงคืน) แต่ธนาคารตัด 23:00 ตามวันปฏิทิน
+// → QR ช่วง 00:00–07:00 เป็นของ "กะคืนวันก่อน". ฐานกะของวัน N:
+//     shiftBanked(N) = สแกนรวม(N) − ดึก(N) [ยกออกไปวันก่อน] + ดึก(N+1) [ยกเข้ามาจากเช้าวันถัดไป]
+// → ตรงกับยอดที่พนักงานคีย์ (IV). ขอบเดือนต้องมีข้อมูลวัน N+1 (อัปไฟล์เดือนถัดไป) ถึงครบ.
+export type ShiftBasis = {
+  date: string;
+  recorded: number; // ยอด QR ที่คีย์ (IV) ระดับวัน = เช้า+ค่ำ
+  settlement: number | null; // qr_banked (ตัด 23:00) = statement ธนาคาร
+  shiftBanked: number | null; // ฐานกะ (ตรงกับที่คีย์)
+  shiftDiff: number | null; // shiftBanked − recorded (ตามแบบ "เข้าบัญชี − รวม QR" · ควร ~0)
+  hasTtb: boolean; // มีข้อมูล TTB ของวันนี้
+  incomplete: boolean; // ขาดยอดดึกของวันถัดไป (ยังไม่อัปไฟล์/เดือนถัดไป)
+};
+
+const nextIso = (iso: string): string =>
+  new Date(new Date(`${iso}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10);
+
+/** คิดฐานกะต่อวันจาก rows (ต้องมีวัน N+1 อยู่ใน rows ด้วยถึงจะครบที่วันสุดท้าย) */
+export function computeShiftBasis(rows: HotelShiftRow[]): Map<string, ShiftBasis> {
+  const by = new Map<string, { morning?: HotelShiftRow; evening?: HotelShiftRow }>();
+  for (const r of rows) {
+    const e = by.get(r.sales_date) ?? {};
+    if (r.shift === "morning") e.morning = r;
+    else e.evening = r;
+    by.set(r.sales_date, e);
+  }
+  const out = new Map<string, ShiftBasis>();
+  for (const [date, { morning, evening }] of by) {
+    const scanTotal = morning?.qr_scan_total;
+    const ovn = morning?.qr_overnight;
+    const recorded = n(morning?.qr_total) + n(evening?.qr_total);
+    const settlement = morning?.qr_banked ?? null;
+    const hasTtb = scanTotal != null;
+    let shiftBanked: number | null = null;
+    let incomplete = false;
+    if (scanTotal != null) {
+      const nd = by.get(nextIso(date));
+      const nextUploaded = nd?.morning?.qr_scan_total != null;
+      if (nextUploaded) {
+        shiftBanked = n(scanTotal) - n(ovn) + n(nd?.morning?.qr_overnight);
+      } else {
+        incomplete = true; // ขาดยอดดึก (00:00–07:00) ของวันถัดไป
+        shiftBanked = n(scanTotal) - n(ovn);
+      }
+    }
+    out.set(date, {
+      date,
+      recorded,
+      settlement,
+      shiftBanked,
+      shiftDiff: shiftBanked != null ? shiftBanked - recorded : null,
+      hasTtb,
+      incomplete,
+    });
+  }
+  return out;
 }
 
 export const TH_MONTHS = [

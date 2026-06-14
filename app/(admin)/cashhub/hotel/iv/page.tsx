@@ -47,11 +47,13 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
 
   // อ่านข้อมูล IV ที่บันทึกไว้ (source=trcloud_iv) → แสดงทันทีตอนโหลด ไม่ต้องดึง TRCloud ซ้ำ
   let savedRows: HotelShiftRow[] = [];
+  let savedMonthCount = 0;
   if (branchId) {
     const from = `${yy}-${String(mm).padStart(2, "0")}-01`;
-    const to = `${yy}-${String(mm).padStart(2, "0")}-${String(
-      new Date(yy, mm, 0).getDate(),
-    ).padStart(2, "0")}`;
+    // โหลดถึง "วันที่ 1 ของเดือนถัดไป" ด้วย — ใช้ยอด QR เช้ามืดวันนั้นคิดฐานกะของวันสุดท้าย
+    const nextY = mm === 12 ? yy + 1 : yy;
+    const nextM = mm === 12 ? 1 : mm + 1;
+    const to = `${nextY}-${String(nextM).padStart(2, "0")}-01`;
     const { data: sv } = await admin
       .from("cashhub_hotel_daily")
       .select("*")
@@ -61,6 +63,8 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
       .lte("sales_date", to)
       .order("sales_date");
     savedRows = (sv ?? []) as HotelShiftRow[];
+    const ymPrefix = `${yy}-${String(mm).padStart(2, "0")}`;
+    savedMonthCount = savedRows.filter((r) => r.sales_date.startsWith(ymPrefix)).length;
   }
 
   // ประวัติการอัปโหลดไฟล์ TTB (จาก audit_logs · kind=ttb · สาขานี้)
@@ -156,7 +160,7 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
             branchId={branchId}
             month={monthStr}
             initialRows={savedRows}
-            savedCount={savedRows.length}
+            savedCount={savedMonthCount}
           />
           <div className="mt-5">
             <HotelTtbUpload

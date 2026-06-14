@@ -4,7 +4,12 @@
 // ตารางเดียวกับหน้า Sheet แต่ยอดขายมาจาก IV → ไว้เทียบว่าตรงกันไหม
 import { useState } from "react";
 import { formatBaht } from "@/lib/utils/format";
-import { groupByDay, TH_MONTHS, type HotelShiftRow } from "@/lib/cashhub/hotel";
+import {
+  groupByDay,
+  computeShiftBasis,
+  TH_MONTHS,
+  type HotelShiftRow,
+} from "@/lib/cashhub/hotel";
 import { HotelExcelGrid } from "./hotel-excel-grid";
 
 type ShiftIv = {
@@ -189,7 +194,7 @@ export function HotelIvExcelView({
           cash_to_remit: iv.cash, cash_pool: null, cash_deposited: null,
           cash_diff: null, advance: null,
           qr_morning: null, qr_after2330: null, qr_total: iv.qr,
-          qr_banked: null, qr_diff: null,
+          qr_banked: null, qr_diff: null, qr_scan_total: null, qr_overnight: null,
           ota_agoda: null, ota_agoda_banked: null, ota_expedia: null,
           ota_expedia_banked: null, ota_booking: null, ota_booking_banked: null,
           staff_name: iv.status === "Paid" ? "จ่ายแล้ว" : "ค้าง",
@@ -203,7 +208,43 @@ export function HotelIvExcelView({
   } else {
     rows.push(...initialRows); // โหมดแสดงข้อมูลที่บันทึกไว้ (ยังไม่ดึงสด)
   }
-  const days = groupByDay(rows);
+  // ── ฐานกะ: ย้ายยอด QR ช่วง 00:00–07:00 ไปกะคืนวันก่อน → "เข้าบัญชี" ตรงกับที่คีย์ ──
+  // คิดจาก rows ทั้งหมด (รวมวันที่ 1 ของเดือนถัดไปที่หน้าโหลดมาให้) แล้วค่อยกรองเฉพาะเดือนนี้
+  const ymPrefix = `${yy}-${String(mm).padStart(2, "0")}`;
+  const shiftMap = computeShiftBasis(rows);
+  const displayRows = rows
+    .filter((r) => r.sales_date.startsWith(ymPrefix))
+    .map((r) => {
+      if (r.shift !== "morning") return r;
+      const sb = shiftMap.get(r.sales_date);
+      if (!sb || sb.shiftBanked == null) return r;
+      return { ...r, qr_banked: sb.shiftBanked, qr_diff: sb.shiftDiff };
+    });
+  const days = groupByDay(displayRows);
+
+  // สรุปยอดเทียบ (เฉพาะวันที่มีไฟล์ TTB แล้ว)
+  let kpiRecorded = 0,
+    kpiShift = 0,
+    kpiSettlement = 0,
+    kpiIncomplete = false,
+    kpiHasTtb = false;
+  for (const [date, sb] of shiftMap) {
+    if (!date.startsWith(ymPrefix) || !sb.hasTtb) continue;
+    kpiHasTtb = true;
+    kpiRecorded += sb.recorded;
+    kpiShift += sb.shiftBanked ?? 0;
+    kpiSettlement += sb.settlement ?? 0;
+    if (sb.incomplete) kpiIncomplete = true;
+  }
+  const kpi = kpiHasTtb ? (
+    <QrReconcile
+      recorded={kpiRecorded}
+      shift={kpiShift}
+      settlement={kpiSettlement}
+      incomplete={kpiIncomplete}
+    />
+  ) : null;
+
   const showingSaved = !data && initialRows.length > 0;
 
   return (
@@ -291,7 +332,10 @@ export function HotelIvExcelView({
             </div>
           )}
           {days.some((d) => d.hasData) ? (
-            <HotelExcelGrid days={days} />
+            <>
+              {kpi}
+              <HotelExcelGrid days={days} />
+            </>
           ) : (
             <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/40 p-8 text-center">
               <div className="text-3xl mb-2">📭</div>
@@ -331,6 +375,7 @@ export function HotelIvExcelView({
             📁 แสดงข้อมูลที่บันทึกไว้ ({savedCount} แถว) · กด “ดึงใหม่”
             เพื่ออัปเดตจาก TRCloud
           </div>
+          {kpi}
           <HotelExcelGrid days={days} />
         </>
       )}
@@ -338,6 +383,62 @@ export function HotelIvExcelView({
       {!data && !busy && !showingSaved && (
         <div className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-zinc-500">
           กด “ดึง IV เดือนนี้” เพื่อแสดงตาราง Excel จากข้อมูล IV
+        </div>
+      )}
+    </div>
+  );
+}
+
+// สรุปการเทียบ QR: ยอดคีย์ (IV) ↔ เข้าบัญชีฐานกะ ↔ statement ธนาคาร
+function QrReconcile({
+  recorded,
+  shift,
+  settlement,
+  incomplete,
+}: {
+  recorded: number;
+  shift: number;
+  settlement: number;
+  incomplete: boolean;
+}) {
+  const diff = recorded - shift; // ควร ~0 = พนักงานคีย์ตรงกับเข้าบัญชี
+  const matched = Math.abs(diff) < 1;
+  const overnightCross = shift - settlement; // QR กะดึกที่ตกไปคนละเดือน (สุทธิ)
+  return (
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4 space-y-3">
+      <div className="font-bold text-zinc-800">
+        🧮 เทียบยอด QR — ฐานกะ (ตรงกับที่พนักงานคีย์)
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="rounded-xl bg-zinc-50 p-2.5">
+          <div className="text-[11px] text-zinc-500">ยอด QR ที่คีย์ (IV)</div>
+          <div className="font-bold tabular-nums text-zinc-900">{formatBaht(recorded)}</div>
+        </div>
+        <div className="rounded-xl bg-zinc-50 p-2.5">
+          <div className="text-[11px] text-zinc-500">เข้าบัญชี (ฐานกะ)</div>
+          <div className="font-bold tabular-nums text-zinc-900">{formatBaht(shift)}</div>
+        </div>
+        <div
+          className={`rounded-xl p-2.5 ${matched ? "bg-emerald-50" : "bg-amber-50"}`}
+        >
+          <div className="text-[11px] text-zinc-500">ต่าง</div>
+          <div
+            className={`font-bold tabular-nums ${matched ? "text-emerald-700" : "text-amber-700"}`}
+          >
+            {matched ? "ตรงกัน ✓" : formatBaht(diff)}
+          </div>
+        </div>
+      </div>
+      <div className="text-xs text-zinc-500 leading-relaxed border-t border-zinc-100 pt-2.5">
+        เข้าบัญชีจริงตาม statement ธนาคาร (ตัดวันปฏิทิน 23:00) ={" "}
+        <b className="text-zinc-700">{formatBaht(settlement)}</b> · ต่างจากฐานกะ{" "}
+        <b className="text-zinc-700">{formatBaht(overnightCross)}</b> = QR กะดึกที่จ่ายเดือนนี้
+        แต่ธนาคารเข้าบัญชีเดือนถัดไป (00:00–07:00 คร่อมเที่ยงคืน) — ไม่ใช่ยอดหาย
+      </div>
+      {incomplete && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs p-2.5">
+          ⚠️ วันสุดท้ายของเดือนยังคิดฐานกะไม่ครบ — ต้องอัปไฟล์ TTB <b>เดือนถัดไป</b> ด้วย
+          (เพื่อเอายอด QR เช้ามืดวันที่ 1 ของเดือนถัดไป มารวมเข้ากะคืนวันสุดท้าย)
         </div>
       )}
     </div>
