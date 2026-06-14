@@ -21,6 +21,8 @@ type MeterRow = {
     usage?: unknown;
     amountThb?: unknown;
     photoUrl?: string | null;
+    isReset?: boolean | null;
+    oldMeterFinal?: unknown;
   }[];
 };
 
@@ -29,7 +31,15 @@ function buildSide(meters: MeterRow[], kind: "electric" | "water"): BoardSide {
   const meter = meters.find((m) => m.kind === kind);
   const reading = meter?.readings?.[0];
   if (!reading) {
-    return { prevReading: null, currReading: null, usage: null, amount: null, photoUrl: null };
+    return {
+      prevReading: null,
+      currReading: null,
+      usage: null,
+      amount: null,
+      photoUrl: null,
+      isReset: false,
+      oldMeterFinal: null,
+    };
   }
   return {
     prevReading: toNum(reading.prevReading),
@@ -37,6 +47,8 @@ function buildSide(meters: MeterRow[], kind: "electric" | "water"): BoardSide {
     usage: reading.usage == null ? null : toNum(reading.usage),
     amount: reading.amountThb == null ? null : toNum(reading.amountThb),
     photoUrl: reading.photoUrl ?? null,
+    isReset: !!reading.isReset,
+    oldMeterFinal: reading.oldMeterFinal == null ? null : toNum(reading.oldMeterFinal),
   };
 }
 

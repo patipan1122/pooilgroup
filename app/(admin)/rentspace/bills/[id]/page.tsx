@@ -11,11 +11,13 @@ import {
   PAYMENT_METHODS,
 } from "@/lib/rentspace/format";
 import { getBill } from "@/lib/rentspace/data";
+import { getBaseUrl } from "@/lib/utils/base-url";
 import {
   RecordPaymentButton,
   RequestDiscountButton,
   DiscountDecisionButtons,
   PrintBillButton,
+  SendBillButton,
   VoidBillButton,
 } from "./_components/bill-detail-actions";
 
@@ -118,11 +120,17 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
             <div className="flex items-start justify-between gap-4 pb-4 mb-4 border-b" style={{ borderColor: "var(--rs-border)" }}>
               <div>
                 <div className="text-xl font-bold" style={{ color: "var(--rs-text)" }}>
-                  {bill.project.name}
+                  {bill.project.billCompanyName || bill.project.name}
                 </div>
-                {bill.project.address && (
+                {(bill.project.billAddress || bill.project.address) && (
                   <div className="text-[12.5px] mt-0.5" style={{ color: "var(--rs-text-3)" }}>
-                    {bill.project.address}
+                    {bill.project.billAddress || bill.project.address}
+                  </div>
+                )}
+                {bill.project.billTaxId && (
+                  <div className="text-[12.5px] mt-0.5" style={{ color: "var(--rs-text-3)" }}>
+                    เลขผู้เสียภาษี {bill.project.billTaxId}
+                    {bill.project.billBranch ? ` · ${bill.project.billBranch}` : ""}
                   </div>
                 )}
               </div>
@@ -148,6 +156,11 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
                 <div className="text-[14px] font-medium" style={{ color: "var(--rs-text)" }}>
                   {tenantDisplayName(bill.tenant)}
                 </div>
+                {bill.tenant.taxId && (
+                  <div className="text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
+                    เลขผู้เสียภาษี {bill.tenant.taxId}
+                  </div>
+                )}
                 <div className="text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
                   ห้อง {bill.unit.code}
                   {bill.unit.name ? ` · ${bill.unit.name}` : ""}
@@ -190,6 +203,15 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
                           {it.kind && it.kind !== "other" ? (
                             <span className="text-[11.5px] ml-1.5" style={{ color: "var(--rs-text-3)" }}>
                               {ITEM_KIND_LABELS[it.kind] ?? it.kind}
+                            </span>
+                          ) : null}
+                          {it.vatable ? (
+                            <span
+                              className="inline-flex items-center text-[10.5px] font-semibold ml-1.5 px-1.5 py-0.5 rounded"
+                              style={{ background: "var(--rs-info-soft)", color: "var(--rs-info)" }}
+                              title="รายการนี้คิดภาษีมูลค่าเพิ่ม"
+                            >
+                              VAT
                             </span>
                           ) : null}
                         </td>
@@ -317,6 +339,13 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           <RsCard className="p-5 space-y-2">
             {canEdit && <RecordPaymentButton billId={bill.id} remaining={remaining} />}
             {canEdit && <RequestDiscountButton billId={bill.id} />}
+            {bill.status !== "void" && (
+              <SendBillButton
+                billId={bill.id}
+                initialSentAt={bill.sentAt ? bill.sentAt.toISOString() : null}
+                initialUrl={bill.publicToken ? `${getBaseUrl()}/rentspace/bill/${bill.publicToken}` : null}
+              />
+            )}
             <PrintBillButton />
             {bill.status !== "void" && <VoidBillButton billId={bill.id} />}
           </RsCard>

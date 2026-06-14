@@ -2,12 +2,28 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Zap, Droplet, Check, Loader2, Camera } from "lucide-react";
+import { Zap, Droplet, Check, Loader2, Camera, AlertTriangle, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { formatBaht, periodLabel, prevPeriod } from "@/lib/rentspace/format";
 import { actSaveMeterReading, actUploadFile } from "../../_actions";
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024; // 8MB UX guard (server also enforces)
+
+/**
+ * Live usage preview ONLY (the server in actSaveMeterReading is the source of
+ * truth — mirrors computeMeterUsage in lib/rentspace/billing.ts). Kept inline
+ * so this client bundle never imports the server-only billing engine (prisma).
+ */
+function previewUsage(prev: number | null, curr: number | null, isReset: boolean, oldFinal: number | null): number | null {
+  if (curr == null) return null;
+  const p = prev ?? 0;
+  if (isReset) {
+    const of = oldFinal ?? 0;
+    return Math.max(0, of - p) + Math.max(0, curr);
+  }
+  if (prev == null) return null;
+  return Math.max(0, curr - p);
+}
 
 export type BoardSide = {
   prevReading: number | null;
@@ -15,6 +31,8 @@ export type BoardSide = {
   usage: number | null;
   amount: number | null;
   photoUrl: string | null;
+  isReset: boolean;
+  oldMeterFinal: number | null;
 };
 
 export type BoardUnit = {
@@ -40,6 +58,8 @@ type SideState = {
   saving: boolean;
   photoUrl: string | null; // meter photo on the saved reading (if any)
   uploading: boolean; // photo upload/attach in progress
+  isReset: boolean; // มิเตอร์ครบรอบ / เปลี่ยนมิเตอร์
+  oldFinal: string; // raw input value for เลขมิเตอร์เดิมก่อนเปลี่ยน (oldMeterFinal)
 };
 
 type RowState = {
@@ -58,6 +78,8 @@ function initSide(s: BoardSide): SideState {
     saving: false,
     photoUrl: s.photoUrl,
     uploading: false,
+    isReset: s.isReset,
+    oldFinal: s.oldMeterFinal != null ? String(s.oldMeterFinal) : "",
   };
 }
 
@@ -108,11 +130,38 @@ export default function MeterBoard({
   function onChange(unitId: string, kind: Kind, value: string) {
     const side = rows[unitId][kind];
     const parsed = parseReading(value);
-    const liveUsage =
-      parsed != null && side.prev != null ? Math.max(0, parsed - side.prev) : null;
+    const oldFinal = parseReading(side.oldFinal);
+    const liveUsage = previewUsage(side.prev, parsed, side.isReset, oldFinal);
     setSide(unitId, kind, {
       curr: value,
       usage: liveUsage,
+      dirty: true,
+      saved: false,
+    });
+  }
+
+  /** Toggle "มิเตอร์เต็ม/เปลี่ยนมิเตอร์" for one side; recomputes live usage. */
+  function toggleReset(unitId: string, kind: Kind) {
+    const side = rows[unitId][kind];
+    const next = !side.isReset;
+    const parsed = parseReading(side.curr);
+    const oldFinal = parseReading(side.oldFinal);
+    setSide(unitId, kind, {
+      isReset: next,
+      usage: previewUsage(side.prev, parsed, next, oldFinal),
+      dirty: true,
+      saved: false,
+    });
+  }
+
+  /** Edit "เลขมิเตอร์เดิมก่อนเปลี่ยน (oldMeterFinal)"; recomputes live usage. */
+  function onOldFinalChange(unitId: string, kind: Kind, value: string) {
+    const side = rows[unitId][kind];
+    const parsed = parseReading(side.curr);
+    const oldFinal = parseReading(value);
+    setSide(unitId, kind, {
+      oldFinal: value,
+      usage: previewUsage(side.prev, parsed, side.isReset, oldFinal),
       dirty: true,
       saved: false,
     });
@@ -124,6 +173,21 @@ export default function MeterBoard({
     if (curr == null) return false; // empty / invalid → skip, never send NaN
     if (!side.dirty && side.saved) return true; // nothing to do
 
+    const oldFinal = parseReading(side.oldFinal);
+    // GUARD: curr < prev with no reset = almost certainly a rollover / swap.
+    // Block the save so we never persist a (clamped) 0-usage by accident.
+    if (!side.isReset && side.prev != null && curr < side.prev) {
+      toast.error(
+        "เลขน้อยกว่าเดือนก่อน — มิเตอร์ครบรอบ/เปลี่ยนหรือไม่? เปิด 'มิเตอร์เต็ม/เปลี่ยน'",
+      );
+      return false;
+    }
+    // if reset is ON, oldMeterFinal is required (it's the final reading of the old meter)
+    if (side.isReset && oldFinal == null) {
+      toast.error("กรอก 'เลขมิเตอร์เดิมก่อนเปลี่ยน' ก่อนบันทึก");
+      return false;
+    }
+
     setSide(unitId, kind, { saving: true });
     try {
       const res = await actSaveMeterReading({
@@ -131,6 +195,8 @@ export default function MeterBoard({
         kind,
         period,
         currReading: curr,
+        isReset: side.isReset,
+        oldMeterFinal: side.isReset && oldFinal != null ? oldFinal : undefined,
       });
       setSide(unitId, kind, {
         saving: false,
@@ -166,9 +232,21 @@ export default function MeterBoard({
   async function attachPhoto(unitId: string, kind: Kind, file: File) {
     const side = rows[unitId][kind];
     const curr = parseReading(side.curr);
+    const oldFinal = parseReading(side.oldFinal);
     // require a reading value first — photo attaches onto the reading row
     if (curr == null) {
       toast.error("กรอกเลขมิเตอร์ก่อนแนบรูป");
+      return;
+    }
+    // same rollover guard as saveSide — don't (re)save a bad reading via photo
+    if (!side.isReset && side.prev != null && curr < side.prev) {
+      toast.error(
+        "เลขน้อยกว่าเดือนก่อน — มิเตอร์ครบรอบ/เปลี่ยนหรือไม่? เปิด 'มิเตอร์เต็ม/เปลี่ยน'",
+      );
+      return;
+    }
+    if (side.isReset && oldFinal == null) {
+      toast.error("กรอก 'เลขมิเตอร์เดิมก่อนเปลี่ยน' ก่อนแนบรูป");
       return;
     }
     if (file.size > MAX_PHOTO_BYTES) {
@@ -186,6 +264,8 @@ export default function MeterBoard({
         period,
         currReading: curr,
         photoUrl: url,
+        isReset: side.isReset,
+        oldMeterFinal: side.isReset && oldFinal != null ? oldFinal : undefined,
       });
       setSide(unitId, kind, {
         uploading: false,
@@ -371,6 +451,8 @@ export default function MeterBoard({
                     onKeyDown={onKeyDown}
                     onBlur={saveSide}
                     onAttach={attachPhoto}
+                    onToggleReset={toggleReset}
+                    onOldFinalChange={onOldFinalChange}
                   />
 
                   {/* water */}
@@ -384,6 +466,8 @@ export default function MeterBoard({
                     onKeyDown={onKeyDown}
                     onBlur={saveSide}
                     onAttach={attachPhoto}
+                    onToggleReset={toggleReset}
+                    onOldFinalChange={onOldFinalChange}
                   />
 
                   {/* per-row save */}
@@ -430,6 +514,8 @@ function SideCells({
   onKeyDown,
   onBlur,
   onAttach,
+  onToggleReset,
+  onOldFinalChange,
 }: {
   unitId: string;
   kind: Kind;
@@ -440,15 +526,21 @@ function SideCells({
   onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>, unitId: string, kind: Kind) => void;
   onBlur: (unitId: string, kind: Kind) => void;
   onAttach: (unitId: string, kind: Kind, file: File) => void;
+  onToggleReset: (unitId: string, kind: Kind) => void;
+  onOldFinalChange: (unitId: string, kind: Kind, value: string) => void;
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const label = kind === "electric" ? "ไฟ" : "น้ำ";
+  const currNum = parseReading(side.curr);
+  // rollover suspicion: a lower reading than last month with reset OFF
+  const showRolloverWarn = !side.isReset && side.prev != null && currNum != null && currNum < side.prev;
   return (
     <>
       <td className="py-2.5 px-3 text-right tabular-nums" style={{ color: "var(--rs-text-3)" }}>
         {side.prev != null ? side.prev.toLocaleString("th-TH") : "—"}
       </td>
       <td className="py-1.5 px-2 text-right">
+        <div className="flex flex-col items-end gap-1.5">
         <div className="inline-flex items-center justify-end gap-1.5">
           <div className="relative inline-flex items-center">
             <input
@@ -529,6 +621,61 @@ function SideCells({
               <Camera className="h-4 w-4" />
             </button>
           )}
+        </div>
+
+        {/* rollover / replacement controls */}
+        <div className="flex flex-col items-end gap-1">
+          <button
+            type="button"
+            onClick={() => onToggleReset(unitId, kind)}
+            className="inline-flex items-center gap-1 text-[11px] font-medium rounded-md px-1.5 py-0.5"
+            style={{
+              background: side.isReset ? "var(--rs-pending-soft)" : "transparent",
+              color: side.isReset ? "#8A6400" : "var(--rs-text-3)",
+              border: `1px solid ${side.isReset ? "#F6E0AE" : "var(--rs-border)"}`,
+            }}
+            aria-pressed={side.isReset}
+            title="เปิดเมื่อมิเตอร์ครบรอบ (เลขวนกลับ 0) หรือถูกเปลี่ยนตัวใหม่"
+          >
+            <RotateCcw className="h-3 w-3" />
+            มิเตอร์เต็ม/เปลี่ยน
+          </button>
+
+          {side.isReset && (
+            <div className="inline-flex items-center gap-1">
+              <span className="text-[10.5px]" style={{ color: "var(--rs-text-3)" }}>
+                เลขเดิมก่อนเปลี่ยน
+              </span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                value={side.oldFinal}
+                onChange={(e) => onOldFinalChange(unitId, kind, e.target.value)}
+                onBlur={() => onBlur(unitId, kind)}
+                placeholder="เลขมิเตอร์เดิม"
+                className="w-24 h-8 rounded-lg px-2 text-right tabular-nums text-[12px] outline-none focus:ring-2"
+                style={{
+                  background: "var(--rs-bg-2)",
+                  border: "1px solid #F6E0AE",
+                  color: "var(--rs-text)",
+                  // @ts-expect-error css var for ring
+                  "--tw-ring-color": "var(--rs-pending)",
+                }}
+              />
+            </div>
+          )}
+
+          {showRolloverWarn && (
+            <div
+              className="inline-flex items-start gap-1 text-[10.5px] text-left max-w-[180px]"
+              style={{ color: "var(--rs-danger)" }}
+            >
+              <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+              <span>เลขน้อยกว่าเดือนก่อน — เปิด “มิเตอร์เต็ม/เปลี่ยน” หากครบรอบ</span>
+            </div>
+          )}
+        </div>
         </div>
       </td>
       <td

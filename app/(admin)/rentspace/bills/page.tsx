@@ -1,10 +1,8 @@
 import Link from "next/link";
-import { Receipt } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { RsPage, RsHeader, RsKpi, RsBadge, RsEmpty, RsCard, RsBackLink } from "@/components/rentspace/ui";
+import { RsPage, RsHeader, RsKpi, RsEmpty, RsBackLink } from "@/components/rentspace/ui";
 import {
   formatBaht,
-  thaiDateLong,
   toNum,
   tenantDisplayName,
   periodLabel,
@@ -13,6 +11,7 @@ import {
 } from "@/lib/rentspace/format";
 import { listBills, getPrimaryProject, listContracts } from "@/lib/rentspace/data";
 import { BillsActions } from "./_components/bills-actions";
+import { BillsTable, type BillRow } from "./_components/bills-list-client";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +68,35 @@ export default async function BillsPage({
     .slice(0, 6);
 
   const activeContracts = contracts.filter((c) => c.status === "active" || c.status === "expiring");
+
+  // floor grouping key for "เลือกทั้งชั้น": building + numeric floor when present.
+  function floorKeyOf(u: { building: string | null; floor: number | null }): string {
+    const b = u.building?.trim();
+    const f = u.floor != null ? `ชั้น ${u.floor}` : null;
+    if (b && f) return `${b} · ${f}`;
+    if (f) return f;
+    if (b) return `อาคาร ${b}`;
+    return "ไม่ระบุชั้น";
+  }
+
+  const billRows: BillRow[] = bills.map((b) => {
+    const remaining = outstandingOf(b);
+    const overdue = isOverdue(b);
+    return {
+      id: b.id,
+      billNo: b.billNo,
+      period: b.period,
+      unitCode: b.unit.code,
+      unitName: b.unit.name,
+      floorKey: floorKeyOf(b.unit),
+      tenantName: tenantDisplayName(b.tenant),
+      total: toNum(b.totalAmount),
+      paid: toNum(b.paidAmount),
+      remaining,
+      dueDateISO: b.dueDate ? new Date(b.dueDate).toISOString() : null,
+      displayStatus: overdue && b.status !== "void" ? "overdue" : b.status,
+    };
+  });
 
   function chipHref(next: { status?: string; period?: string }) {
     const params = new URLSearchParams();
@@ -134,80 +162,9 @@ export default async function BillsPage({
           title="ยังไม่มีบิล"
           hint="กดออกบิลทั้งโครงการสำหรับเดือนนี้ หรือออกบิลทีละห้องจากสัญญาที่ใช้งานอยู่"
         />
-      ) : (
-        <RsCard className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="rs-table w-full text-sm">
-              <thead>
-                <tr style={{ color: "var(--rs-text-2)" }} className="text-left text-[12.5px]">
-                  <th className="px-4 py-2.5 font-semibold">เลขที่บิล</th>
-                  <th className="px-4 py-2.5 font-semibold">ห้อง / ผู้เช่า</th>
-                  <th className="px-4 py-2.5 font-semibold">งวด</th>
-                  <th className="px-4 py-2.5 font-semibold text-right">ยอดรวม</th>
-                  <th className="px-4 py-2.5 font-semibold text-right">จ่ายแล้ว</th>
-                  <th className="px-4 py-2.5 font-semibold text-right">คงเหลือ</th>
-                  <th className="px-4 py-2.5 font-semibold">ครบกำหนด</th>
-                  <th className="px-4 py-2.5 font-semibold">สถานะ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bills.map((b) => {
-                  const remaining = outstandingOf(b);
-                  const overdue = isOverdue(b);
-                  return (
-                    <tr
-                      key={b.id}
-                      className="border-t hover:bg-[var(--rs-bg-2)] transition"
-                      style={{ borderColor: "var(--rs-border)" }}
-                    >
-                      <td className="px-4 py-3">
-                        <Link
-                          href={`/rentspace/bills/${b.id}`}
-                          className="font-semibold inline-flex items-center gap-1.5"
-                          style={{ color: "var(--rs-brand)" }}
-                        >
-                          <Receipt className="h-3.5 w-3.5" /> {b.billNo}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3" style={{ color: "var(--rs-text)" }}>
-                        {b.unit.code}
-                        <span style={{ color: "var(--rs-text-3)" }}>
-                          {" · "}
-                          {tenantDisplayName(b.tenant)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
-                        {periodLabel(b.period)}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums" style={{ color: "var(--rs-text)" }}>
-                        {formatBaht(toNum(b.totalAmount))}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums" style={{ color: "var(--rs-text-2)" }}>
-                        {formatBaht(toNum(b.paidAmount))}
-                      </td>
-                      <td
-                        className="px-4 py-3 text-right tabular-nums font-semibold"
-                        style={{ color: remaining > 0 ? "var(--rs-danger)" : "var(--rs-text-3)" }}
-                      >
-                        {formatBaht(remaining)}
-                      </td>
-                      <td
-                        className="px-4 py-3 text-[12.5px]"
-                        style={{ color: overdue ? "var(--rs-danger)" : "var(--rs-text-2)" }}
-                      >
-                        {b.dueDate ? thaiDateLong(b.dueDate) : "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <RsBadge kind="bill" status={overdue && b.status !== "void" ? "overdue" : b.status} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </RsCard>
-      )}
+      ) : project ? (
+        <BillsTable projectId={project.id} period={periodFilter ?? thisPeriod} rows={billRows} />
+      ) : null}
     </RsPage>
   );
 }

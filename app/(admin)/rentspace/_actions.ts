@@ -9,7 +9,9 @@ import { putObject } from "@/lib/r2/upload";
 import { audit } from "@/lib/audit/log";
 import type { AuditAction } from "@/lib/audit/log";
 import { toNum } from "@/lib/rentspace/format";
-import { createBillForContract, recomputeBillTotals } from "@/lib/rentspace/billing";
+import { createBillForContract, recomputeBillTotals, computeMeterUsage, round2 } from "@/lib/rentspace/billing";
+import { getBaseUrl } from "@/lib/utils/base-url";
+import type { RentalBillStatus } from "@/lib/generated/prisma/enums";
 
 async function gateAdmin() {
   const session = await requireSession();
@@ -161,6 +163,11 @@ export async function actSaveProject(input: {
   billDueDay?: number;
   autoBillEnabled?: boolean;
   view3dEnabled?: boolean;
+  // ── tax-header (ผู้ให้เช่า) — shown on the bill so corporate tenants get a ใบกำกับภาษี
+  billCompanyName?: string;
+  billTaxId?: string;
+  billBranch?: string;
+  billAddress?: string;
 }) {
   const session = await gateSuper();
   const data = {
@@ -178,6 +185,10 @@ export async function actSaveProject(input: {
     billDueDay: input.billDueDay ?? 5,
     autoBillEnabled: input.autoBillEnabled ?? true,
     view3dEnabled: input.view3dEnabled ?? true,
+    billCompanyName: input.billCompanyName?.trim() || null,
+    billTaxId: input.billTaxId?.trim() || null,
+    billBranch: input.billBranch?.trim() || null,
+    billAddress: input.billAddress?.trim() || null,
   };
   let id = input.id;
   if (id) {
@@ -543,6 +554,8 @@ export async function actSaveMeterReading(input: {
   ratePerUnit?: number;
   photoUrl?: string;
   note?: string;
+  isReset?: boolean;
+  oldMeterFinal?: number;
 }) {
   const session = await gateAdmin();
   await ownGuard(
@@ -576,8 +589,18 @@ export async function actSaveMeterReading(input: {
     const cRate = input.kind === "electric" ? contract?.electricRate : contract?.waterRate;
     rate = toNum(cRate ?? projRate);
   }
-  const usage = Math.max(0, toNum(input.currReading) - prevReading);
-  const amountThb = Math.round(usage * toNum(rate) * 100) / 100;
+  // ── usage is computed SERVER-SIDE only (never trust a client-sent usage/amount).
+  // Handles meter rollover / physical replacement via isReset + oldMeterFinal.
+  const isReset = !!input.isReset;
+  const oldMeterFinal =
+    isReset && input.oldMeterFinal != null ? Math.max(0, toNum(input.oldMeterFinal)) : null;
+  const usage = computeMeterUsage({
+    prevReading,
+    currReading: toNum(input.currReading),
+    isReset,
+    oldMeterFinal,
+  });
+  const amountThb = round2(usage * toNum(rate));
   const reading = await prisma.rentalMeterReading.upsert({
     where: { meterId_period: { meterId: meter.id, period: input.period } },
     create: {
@@ -590,6 +613,8 @@ export async function actSaveMeterReading(input: {
       prevReading,
       currReading: input.currReading,
       usage,
+      isReset,
+      oldMeterFinal,
       ratePerUnit: toNum(rate),
       amountThb,
       photoUrl: input.photoUrl ?? null,
@@ -600,6 +625,8 @@ export async function actSaveMeterReading(input: {
       prevReading,
       currReading: input.currReading,
       usage,
+      isReset,
+      oldMeterFinal,
       ratePerUnit: toNum(rate),
       amountThb,
       photoUrl: input.photoUrl ?? undefined,
@@ -805,6 +832,115 @@ export async function actRequestDiscount(input: {
   revalidatePath(`/rentspace/bills/${bill.id}`);
   revalidatePath("/rentspace/bills");
   return { id: d.id };
+}
+
+// ───────── send bill / overdue reminder (F2) ─────────
+// Tenants have NO app login + RentSpace has NO LINE channel yet, so delivery is
+// a shareable public link (?token). The token is the credential — generated once
+// per bill and reused (idempotent: re-sending the same bill keeps the same URL).
+// Future phase: automatic LINE push. Email is NOT wired (no generic Resend helper
+// exists in repo + constraint forbids adding the dep) → sentChannel = "link".
+
+/** Build the public, copy-able bill URL for a token. */
+function publicBillUrl(token: string): string {
+  const base = getBaseUrl();
+  // base falls back to localhost only in dev; in prod it resolves the deploy URL.
+  return `${base}/rentspace/bill/${token}`;
+}
+
+const REMINDABLE_STATUSES = ["issued", "partial", "overdue"] as const;
+
+/**
+ * "ส่งบิล" — ensure the bill has a public token, stamp sentAt, return the link.
+ * Idempotent: calling twice keeps the same token/URL (no duplicate links).
+ * Scoped by orgId (anti-IDOR). Email is best-effort only IF a helper existed —
+ * none does, so this is link-only and sentChannel = "link".
+ */
+export async function actSendBill(billId: string): Promise<{ ok: true; token: string; url: string }> {
+  const session = await gateAdmin();
+  const bill = await prisma.rentalBill.findFirst({
+    where: { id: billId, orgId: session.user.org_id },
+    select: { id: true, publicToken: true },
+  });
+  if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
+
+  const token = bill.publicToken ?? randomUUID();
+  await prisma.rentalBill.update({
+    where: { id: bill.id },
+    data: {
+      publicToken: token,
+      sentAt: new Date(),
+      sentChannel: "link",
+    },
+  });
+
+  await logAudit(session, "RENTSPACE_BILL_CREATED", "rental_bill", bill.id, { sent: true, channel: "link" });
+  revalidatePath("/rentspace/bills");
+  revalidatePath(`/rentspace/bills/${bill.id}`);
+  return { ok: true, token, url: publicBillUrl(token) };
+}
+
+/**
+ * "เตือนค้างชำระทั้งงวด" — for every outstanding bill of project+period, ensure a
+ * public token, stamp reminderSentAt, and return a ready-to-send list (one row
+ * per bill with its copy-able link). Scoped by orgId throughout.
+ */
+export async function actRemindOverdue(
+  projectId: string,
+  period: string,
+): Promise<{
+  ok: true;
+  count: number;
+  items: { billId: string; code: string; tenantName: string; outstanding: number; url: string }[];
+}> {
+  const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalProject.findFirst({ where: { id: projectId, orgId: session.user.org_id }, select: { id: true } }),
+    "โครงการ",
+  );
+  const { tenantDisplayName } = await import("@/lib/rentspace/format");
+
+  const bills = await prisma.rentalBill.findMany({
+    where: {
+      orgId: session.user.org_id,
+      projectId,
+      period,
+      status: { in: REMINDABLE_STATUSES as unknown as RentalBillStatus[] },
+    },
+    include: { tenant: true },
+    orderBy: { billNo: "asc" },
+  });
+
+  const items: { billId: string; code: string; tenantName: string; outstanding: number; url: string }[] = [];
+  for (const b of bills) {
+    const outstanding = Math.max(0, toNum(b.totalAmount) - toNum(b.paidAmount));
+    if (outstanding <= 0) continue; // only truly-owing bills get a reminder
+    const token = b.publicToken ?? randomUUID();
+    await prisma.rentalBill.update({
+      where: { id: b.id },
+      data: {
+        publicToken: token,
+        reminderSentAt: new Date(),
+        ...(b.publicToken ? {} : { sentAt: b.sentAt ?? new Date(), sentChannel: b.sentChannel ?? "link" }),
+      },
+    });
+    items.push({
+      billId: b.id,
+      code: b.billNo,
+      tenantName: tenantDisplayName(b.tenant),
+      outstanding: toNum(outstanding),
+      url: publicBillUrl(token),
+    });
+  }
+
+  await logAudit(session, "RENTSPACE_BILL_CREATED", "rental_project", projectId, {
+    remind: true,
+    period,
+    count: items.length,
+  });
+  revalidatePath("/rentspace/bills");
+  revalidatePath("/rentspace");
+  return { ok: true, count: items.length, items };
 }
 
 /** Approve/reject a discount. Approval requires admin tier (not program_admin). */

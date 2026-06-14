@@ -24,6 +24,10 @@ type Initial = {
   lateFeeGraceDays: number;
   autoBillEnabled: boolean;
   view3dEnabled: boolean;
+  billCompanyName: string;
+  billTaxId: string;
+  billBranch: string;
+  billAddress: string;
 };
 
 const LATE_FEE_OPTIONS: { value: LateFeeType; label: string }[] = [
@@ -69,6 +73,10 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
   const [lateFeeGraceDays, setLateFeeGraceDays] = useState(str(initial?.lateFeeGraceDays ?? 7));
   const [autoBillEnabled, setAutoBillEnabled] = useState(initial?.autoBillEnabled ?? true);
   const [view3dEnabled, setView3dEnabled] = useState(initial?.view3dEnabled ?? true);
+  const [billCompanyName, setBillCompanyName] = useState(initial?.billCompanyName ?? "");
+  const [billTaxId, setBillTaxId] = useState(initial?.billTaxId ?? "");
+  const [billBranch, setBillBranch] = useState(initial?.billBranch ?? "");
+  const [billAddress, setBillAddress] = useState(initial?.billAddress ?? "");
 
   function onNameChange(v: string) {
     setName(v);
@@ -142,6 +150,10 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
           lateFeeGraceDays: lateFeeGraceDays.trim() ? Number(lateFeeGraceDays) : undefined,
           autoBillEnabled,
           view3dEnabled,
+          billCompanyName: billCompanyName.trim() || undefined,
+          billTaxId: billTaxId.trim() || undefined,
+          billBranch: billBranch.trim() || undefined,
+          billAddress: billAddress.trim() || undefined,
         });
         toast.success(isFirstTime ? "สร้างโครงการแล้ว" : "บันทึกการตั้งค่าแล้ว");
         router.refresh();
@@ -206,6 +218,48 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="ศูนย์อาหาร / ตลาด / อาคารพาณิชย์ ..."
+            />
+          </Field>
+        </div>
+      </section>
+
+      {/* ── ข้อมูลผู้ให้เช่า (หัวบิล/ใบกำกับภาษี) ── */}
+      <section className="rs-card p-5 space-y-4">
+        <SectionTitle
+          title="ข้อมูลผู้ให้เช่า (หัวบิล / ใบกำกับภาษี)"
+          hint="ชื่อบริษัทและเลขผู้เสียภาษีของผู้ให้เช่า จะแสดงบนหัวบิล เพื่อให้เป็นใบกำกับภาษีที่ถูกต้องสำหรับผู้เช่านิติบุคคล"
+        />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="ชื่อบริษัท / ผู้ให้เช่า" hint="เช่น บริษัท ทะเลทาวน์ จำกัด">
+            <input
+              className="rs-input"
+              value={billCompanyName}
+              onChange={(e) => setBillCompanyName(e.target.value)}
+              placeholder="บริษัท ... จำกัด"
+            />
+          </Field>
+          <Field label="เลขประจำตัวผู้เสียภาษี" hint="13 หลัก">
+            <input
+              className="rs-input"
+              value={billTaxId}
+              onChange={(e) => setBillTaxId(e.target.value)}
+              placeholder="0 0000 00000 00 0"
+            />
+          </Field>
+          <Field label="สำนักงาน / สาขา" hint="เช่น สำนักงานใหญ่ หรือ สาขา 00001">
+            <input
+              className="rs-input"
+              value={billBranch}
+              onChange={(e) => setBillBranch(e.target.value)}
+              placeholder="สำนักงานใหญ่"
+            />
+          </Field>
+          <Field label="ที่อยู่ออกบิล" hint="ที่อยู่ตามใบกำกับภาษี (ถ้าต่างจากที่อยู่โครงการ)" full>
+            <input
+              className="rs-input"
+              value={billAddress}
+              onChange={(e) => setBillAddress(e.target.value)}
+              placeholder="เลขที่ ... ถนน ... ตำบล ... อำเภอ ... จังหวัด ... รหัสไปรษณีย์"
             />
           </Field>
         </div>

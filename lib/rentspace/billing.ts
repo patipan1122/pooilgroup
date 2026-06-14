@@ -9,6 +9,47 @@ type Contract = Prisma.RentalContractGetPayload<{ include: { project: true; unit
 
 export type RentScheduleEntry = { fromPeriod: string; amount: number };
 
+/** round to 2 decimals (money). Single source of truth for all bill math. */
+export function round2(x: number): number {
+  return Math.round(x * 100) / 100;
+}
+
+/**
+ * Meter usage that survives a rollover (…9998→9999→0001) or a physical meter
+ * swap. Server-side single source of truth — call this anywhere usage is
+ * computed so the meter-board, the action and any reprice agree exactly.
+ *
+ * - normal: usage = max(0, curr − prev)
+ * - reset/replaced: the OLD meter ran prev→oldMeterFinal, the NEW meter ran
+ *   0→curr, so usage = max(0, oldMeterFinal − prev) + max(0, curr).
+ *
+ * Everything is clamped at 0 so a mis-keyed reading can never produce a
+ * negative (money-eating) line.
+ */
+export function computeMeterUsage(args: {
+  prevReading: number;
+  currReading: number;
+  isReset: boolean;
+  oldMeterFinal?: number | null;
+}): number {
+  const prev = Number.isFinite(args.prevReading) ? args.prevReading : 0;
+  const curr = Number.isFinite(args.currReading) ? args.currReading : 0;
+  if (args.isReset) {
+    const oldFinal = args.oldMeterFinal != null && Number.isFinite(args.oldMeterFinal) ? args.oldMeterFinal : 0;
+    return Math.max(0, oldFinal - prev) + Math.max(0, curr);
+  }
+  return Math.max(0, curr - prev);
+}
+
+/**
+ * Per-line VAT default (commercial-plaza convention):
+ *   rent → VATable when the contract charges VAT; utilities & fees are
+ *   pass-through (not VATable). Centralised so create + recompute never drift.
+ */
+export function defaultVatable(kind: string, vatPercent: number): boolean {
+  return kind === "rent" ? vatPercent > 0 : false;
+}
+
 /** effective monthly rent for a period, honouring rentSchedule escalation */
 export function effectiveRent(contract: Contract, period: string): number {
   const base = toNum(contract.rentAmountThb);
@@ -48,18 +89,50 @@ export type BuiltBill = {
   electricAmount: number;
   waterAmount: number;
   lateFeeAmount: number;
-  items: { kind: string; label: string; qty: number; unitPrice: number; amount: number; sort: number }[];
+  items: { kind: string; label: string; qty: number; unitPrice: number; amount: number; vatable: boolean; sort: number }[];
   notes: string[];
 };
+
+/** Days in the calendar month of a YYYY-MM period. */
+function daysInPeriod(period: string): number {
+  const [y, m] = period.split("-").map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate(); // day 0 of next month = last day of this month
+}
+
+/** YYYY-MM of a Date (UTC — startDate is stored as @db.Date). */
+function periodOf(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
 
 /** Compute amounts + line items for one contract+period (reads meters + prior bill). */
 export async function buildBill(contract: Contract, period: string): Promise<BuiltBill> {
   const notes: string[] = [];
   const items: BuiltBill["items"] = [];
+  const vatPercent = toNum(contract.vatPercent);
 
-  // 1) rent
-  const rentAmount = effectiveRent(contract, period);
-  items.push({ kind: "rent", label: "ค่าเช่า", qty: 1, unitPrice: rentAmount, amount: rentAmount, sort: 1 });
+  // 1) rent — prorate the FIRST month by move-in date (เข้าอยู่กลางเดือน คิดตามวันจริง)
+  const fullRent = effectiveRent(contract, period);
+  const moveInPeriod = periodOf(new Date(contract.startDate));
+  const startDay = new Date(contract.startDate).getUTCDate();
+  let rentAmount = fullRent;
+  let rentLabel = "ค่าเช่า";
+  if (period === moveInPeriod && startDay > 1) {
+    const dim = daysInPeriod(period);
+    const daysOccupied = dim - startDay + 1;
+    rentAmount = round2((fullRent * daysOccupied) / dim);
+    const [, mm] = period.split("-");
+    rentLabel = `ค่าเช่า (เข้าอยู่ ${startDay}/${mm} · ${daysOccupied}/${dim} วัน)`;
+    notes.push(`เดือนแรกคิดค่าเช่าตามวันเข้าอยู่ (${daysOccupied}/${dim} วัน)`);
+  }
+  items.push({
+    kind: "rent",
+    label: rentLabel,
+    qty: 1,
+    unitPrice: rentAmount,
+    amount: rentAmount,
+    vatable: defaultVatable("rent", vatPercent),
+    sort: 1,
+  });
 
   // 2) electric + water from meter readings of this period
   const readings = await prisma.rentalMeterReading.findMany({
@@ -76,6 +149,7 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
       qty: toNum(elec.usage),
       unitPrice: toNum(elec.ratePerUnit),
       amount: electricAmount,
+      vatable: defaultVatable("electric", vatPercent),
       sort: 2,
     });
   } else notes.push("ยังไม่ได้จดมิเตอร์ไฟเดือนนี้");
@@ -86,6 +160,7 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
       qty: toNum(water.usage),
       unitPrice: toNum(water.ratePerUnit),
       amount: waterAmount,
+      vatable: defaultVatable("water", vatPercent),
       sort: 3,
     });
   } else notes.push("ยังไม่ได้จดมิเตอร์น้ำเดือนนี้");
@@ -121,6 +196,7 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
           qty: 1,
           unitPrice: lateFeeAmount,
           amount: lateFeeAmount,
+          vatable: defaultVatable("late_fee", vatPercent),
           sort: 4,
         });
         notes.push(`มีบิลค้างจ่าย ${prevPeriod(period)} → คิดค่าปรับ`);
@@ -131,32 +207,55 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
   return { rentAmount, electricAmount, waterAmount, lateFeeAmount, items, notes };
 }
 
+/**
+ * Compute discount + subtotal + VAT + total from line items, the approved
+ * discount total and the contract VAT %. VAT is charged ONLY on the VATable
+ * base (commercial rent), not on pass-through utilities — and the discount is
+ * allocated proportionally across the bill so the VATable share shrinks fairly.
+ *
+ * Pure (no DB) so a freshly-created bill and a recomputed bill agree exactly.
+ */
+export function computeBillTotals(args: {
+  items: { amount: number; vatable: boolean }[];
+  approvedDiscount: number;
+  vatPercent: number;
+}): { gross: number; discountAmount: number; subtotal: number; vatAmount: number; totalAmount: number } {
+  const gross = round2(args.items.reduce((s, it) => s + toNum(it.amount), 0));
+  // discount can never exceed the gross (no negative bills)
+  const discountAmount = round2(Math.min(Math.max(0, args.approvedDiscount), gross));
+  const vatableGross = round2(
+    args.items.filter((it) => it.vatable).reduce((s, it) => s + toNum(it.amount), 0),
+  );
+  // allocate the discount proportionally → only the VATable portion lowers VAT
+  const discountOnVatable = gross > 0 ? round2(discountAmount * (vatableGross / gross)) : 0;
+  const vatableNet = Math.max(0, round2(vatableGross - discountOnVatable));
+  const vatAmount = round2(vatableNet * (args.vatPercent / 100));
+  const subtotal = Math.max(0, round2(gross - discountAmount));
+  const totalAmount = round2(subtotal + vatAmount);
+  return { gross, discountAmount, subtotal, vatAmount, totalAmount };
+}
+
 /** Recompute subtotal/vat/total/status from items + approved discounts + payments. */
 export async function recomputeBillTotals(billId: string): Promise<void> {
   const bill = await prisma.rentalBill.findUnique({
     where: { id: billId },
-    include: { discounts: true },
+    include: { discounts: true, items: true },
   });
   if (!bill) return;
-  const gross =
-    toNum(bill.rentAmount) +
-    toNum(bill.electricAmount) +
-    toNum(bill.waterAmount) +
-    toNum(bill.otherAmount) +
-    toNum(bill.lateFeeAmount);
   // discount can never exceed the gross (no negative bills)
   const rawDiscount = bill.discounts
     .filter((d) => d.status === "approved")
     .reduce((s, d) => s + toNum(d.computedAmount), 0);
-  const discountAmount = Math.min(rawDiscount, gross);
-  const subtotal = Math.max(0, gross - discountAmount);
   const vatPercentRow = await prisma.rentalContract.findUnique({
     where: { id: bill.contractId },
     select: { vatPercent: true },
   });
   const vatPercent = toNum(vatPercentRow?.vatPercent);
-  const vatAmount = Math.round(subtotal * (vatPercent / 100) * 100) / 100;
-  const totalAmount = subtotal + vatAmount;
+  const { discountAmount, subtotal, vatAmount, totalAmount } = computeBillTotals({
+    items: bill.items.map((it) => ({ amount: toNum(it.amount), vatable: it.vatable })),
+    approvedDiscount: rawDiscount,
+    vatPercent,
+  });
   const paid = toNum(bill.paidAmount);
   let status = bill.status;
   if (bill.status !== "void" && bill.status !== "draft") {
@@ -188,10 +287,13 @@ export async function createBillForContract(
 
   const built = await buildBill(contract, period);
   const vatPercent = toNum(contract.vatPercent);
-  const subtotal =
-    built.rentAmount + built.electricAmount + built.waterAmount + built.lateFeeAmount;
-  const vatAmount = Math.round(subtotal * (vatPercent / 100) * 100) / 100;
-  const totalAmount = subtotal + vatAmount;
+  // initial totals: no approved discounts yet → VAT on the VATable base only.
+  // Uses the SAME engine as recomputeBillTotals so a fresh bill == a recomputed one.
+  const { subtotal, vatAmount, totalAmount } = computeBillTotals({
+    items: built.items.map((it) => ({ amount: it.amount, vatable: it.vatable })),
+    approvedDiscount: 0,
+    vatPercent,
+  });
   const status = opts.issue === false ? "draft" : "issued";
 
   for (let attempt = 0; attempt < 5; attempt++) {

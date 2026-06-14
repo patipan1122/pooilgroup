@@ -3,14 +3,16 @@
 import { useState, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Banknote, Percent, Download, Check, X } from "lucide-react";
+import { Banknote, Percent, Download, Check, X, Send, Copy, ExternalLink } from "lucide-react";
 import {
   actRecordPayment,
   actRequestDiscount,
   actDecideDiscount,
   actVoidBill,
   actUploadFile,
+  actSendBill,
 } from "../../../_actions";
+import { thaiDateLong } from "@/lib/rentspace/format";
 
 function num(v: string): number {
   const n = Number(String(v).replace(/,/g, ""));
@@ -292,6 +294,77 @@ export function DiscountDecisionButtons({ discountId }: { discountId: string }) 
       >
         <X className="h-4 w-4" />
       </button>
+    </div>
+  );
+}
+
+// ───────── send bill (public link) ─────────
+export function SendBillButton({
+  billId,
+  initialSentAt,
+  initialUrl,
+}: {
+  billId: string;
+  initialSentAt: string | null;
+  initialUrl: string | null;
+}) {
+  const [pending, start] = useTransition();
+  const [url, setUrl] = useState<string | null>(initialUrl);
+  const [sentAt, setSentAt] = useState<string | null>(initialSentAt);
+
+  function send() {
+    start(async () => {
+      try {
+        const r = await actSendBill(billId);
+        setUrl(r.url);
+        setSentAt(new Date().toISOString());
+        toast.success("สร้างลิงก์บิลแล้ว — คัดลอกแล้วส่งให้ผู้เช่าได้เลย");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "ส่งบิลไม่สำเร็จ");
+      }
+    });
+  }
+
+  async function copy() {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("คัดลอกลิงก์แล้ว");
+    } catch {
+      toast.error("คัดลอกไม่สำเร็จ — กดค้างที่ลิงก์เพื่อคัดลอกเอง");
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <button className="rs-btn w-full" onClick={send} disabled={pending}>
+        <Send className="h-4 w-4" /> {pending ? "กำลังสร้างลิงก์…" : url ? "ส่งบิลอีกครั้ง (อัปเดตลิงก์)" : "ส่งบิล (คัดลอกลิงก์)"}
+      </button>
+
+      {sentAt && (
+        <div className="text-[12px]" style={{ color: "var(--rs-text-3)" }}>
+          ส่งแล้วเมื่อ {thaiDateLong(new Date(sentAt))}
+        </div>
+      )}
+
+      {url && (
+        <div
+          className="rounded-xl p-2.5 space-y-2"
+          style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)" }}
+        >
+          <div className="text-[11.5px] break-all" style={{ color: "var(--rs-text-2)" }}>
+            {url}
+          </div>
+          <div className="flex gap-2">
+            <button className="rs-btn rs-btn-ghost flex-1" onClick={copy}>
+              <Copy className="h-3.5 w-3.5" /> คัดลอกลิงก์
+            </button>
+            <a className="rs-btn rs-btn-ghost flex-1" href={url} target="_blank" rel="noreferrer">
+              <ExternalLink className="h-3.5 w-3.5" /> เปิดดู
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -203,6 +203,26 @@ export async function getBill(orgId: string, id: string) {
   });
 }
 
+/**
+ * Public, unauthenticated bill lookup by its shareable token.
+ * Used by /rentspace/bill/[token] — tenants have no app login, so access is
+ * gated only by knowing the (random UUID) token. No orgId scope on purpose:
+ * the token IS the credential. Returns null (→ notFound) if no match.
+ */
+export async function getBillByPublicToken(token: string) {
+  if (!token) return null;
+  return prisma.rentalBill.findUnique({
+    where: { publicToken: token },
+    include: {
+      unit: true,
+      tenant: true,
+      project: true,
+      items: { orderBy: { sort: "asc" } },
+      payments: { orderBy: { paidOn: "desc" } },
+    },
+  });
+}
+
 export async function listPayments(orgId: string, limit = 300) {
   return prisma.rentalPayment.findMany({
     where: { orgId },

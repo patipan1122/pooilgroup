@@ -1,0 +1,425 @@
+"use client";
+
+// Bills list — interactive layer over the server-rendered table:
+//   • per-row checkboxes + "เลือกทั้งชั้น" (floor group) + select/clear all
+//   • "พิมพ์หลายห้อง" → opens /rentspace/bills/print?ids=…
+//   • "เตือนค้างชำระทั้งงวด" → actRemindOverdue, shows a copy-able link list
+//   • "คำอธิบายสถานะบิล" legend popover
+// Display-only: amounts come straight from the server rows (no recompute).
+
+import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
+import { toast } from "sonner";
+import { Receipt, Printer, BellRing, Info, Copy, ExternalLink, X } from "lucide-react";
+import { actRemindOverdue } from "../../_actions";
+import { formatBaht, thaiDateLong, periodLabel, BILL_STATUS } from "@/lib/rentspace/format";
+
+export type BillRow = {
+  id: string;
+  billNo: string;
+  period: string;
+  unitCode: string;
+  unitName: string | null;
+  floorKey: string; // grouping key, e.g. "A · ชั้น 2" or "ชั้น 1" or "ไม่ระบุชั้น"
+  tenantName: string;
+  total: number;
+  paid: number;
+  remaining: number;
+  dueDateISO: string | null;
+  displayStatus: string; // already overdue-adjusted by the server
+};
+
+type RemindItem = { billId: string; code: string; tenantName: string; outstanding: number; url: string };
+
+export function BillsToolbar({
+  projectId,
+  period,
+  selectedIds,
+}: {
+  projectId: string;
+  period: string;
+  selectedIds: string[];
+}) {
+  const [pending, start] = useTransition();
+  const [legendOpen, setLegendOpen] = useState(false);
+  const [remindOpen, setRemindOpen] = useState(false);
+  const [items, setItems] = useState<RemindItem[]>([]);
+
+  function openPrint() {
+    if (selectedIds.length === 0) return toast.error("ยังไม่ได้เลือกบิล");
+    const ids = selectedIds.join(",");
+    window.open(`/rentspace/bills/print?ids=${encodeURIComponent(ids)}`, "_blank", "noopener");
+  }
+
+  function remind() {
+    start(async () => {
+      try {
+        const r = await actRemindOverdue(projectId, period);
+        setItems(r.items);
+        setRemindOpen(true);
+        if (r.count === 0) toast.info(`ไม่มีบิลค้างชำระในงวด ${periodLabel(period)}`);
+        else toast.success(`เตรียมลิงก์เตือน ${r.count} ใบแล้ว`);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "เตือนค้างชำระไม่สำเร็จ");
+      }
+    });
+  }
+
+  async function copy(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("คัดลอกลิงก์แล้ว");
+    } catch {
+      toast.error("คัดลอกไม่สำเร็จ");
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 print:hidden">
+      <button
+        className="rs-btn rs-btn-ghost"
+        onClick={openPrint}
+        disabled={selectedIds.length === 0}
+        title={selectedIds.length === 0 ? "เลือกบิลก่อน" : undefined}
+      >
+        <Printer className="h-4 w-4" /> พิมพ์หลายห้อง{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
+      </button>
+
+      <button className="rs-btn rs-btn-ghost" onClick={remind} disabled={pending}>
+        <BellRing className="h-4 w-4" /> {pending ? "กำลังเตรียม…" : `เตือนค้างชำระทั้งงวด (${periodLabel(period)})`}
+      </button>
+
+      <div className="relative">
+        <button className="rs-btn rs-btn-ghost" onClick={() => setLegendOpen((v) => !v)}>
+          <Info className="h-4 w-4" /> คำอธิบายสถานะบิล
+        </button>
+        {legendOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setLegendOpen(false)} />
+            <div
+              className="absolute right-0 z-50 mt-2 w-64 rounded-xl p-3 shadow-lg"
+              style={{ background: "#fff", border: "1px solid var(--rs-border)" }}
+            >
+              <div className="text-[12px] font-semibold mb-2" style={{ color: "var(--rs-text-2)" }}>
+                สถานะบิล
+              </div>
+              <div className="space-y-1.5">
+                {Object.entries(BILL_STATUS).map(([k, v]) => (
+                  <div key={k} className="flex items-center gap-2">
+                    <span
+                      className="inline-block h-3 w-3 rounded-full shrink-0"
+                      style={{ background: v.color }}
+                    />
+                    <span className="text-[12.5px]" style={{ color: "var(--rs-text)" }}>
+                      {v.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* remind result modal — ready-to-send list */}
+      {remindOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4"
+          onClick={() => setRemindOpen(false)}
+        >
+          <div
+            className="rs-card w-full sm:max-w-lg rounded-b-none sm:rounded-2xl flex flex-col max-h-[88vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--rs-border)" }}>
+              <div className="font-bold text-lg" style={{ color: "var(--rs-text)" }}>
+                เตือนค้างชำระ · งวด {periodLabel(period)}
+              </div>
+              <button type="button" aria-label="ปิด" onClick={() => setRemindOpen(false)} className="p-1 rounded-lg hover:bg-black/5">
+                <X className="h-5 w-5" style={{ color: "var(--rs-text-2)" }} />
+              </button>
+            </div>
+            <div className="px-5 py-4 overflow-y-auto flex-1">
+              {items.length === 0 ? (
+                <div className="py-8 text-center text-[13px]" style={{ color: "var(--rs-text-3)" }}>
+                  ไม่มีบิลค้างชำระในงวดนี้ 🎉
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {items.map((it) => (
+                    <div
+                      key={it.billId}
+                      className="rounded-xl p-3"
+                      style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)" }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-[13.5px] font-medium truncate" style={{ color: "var(--rs-text)" }}>
+                            {it.code} · {it.tenantName}
+                          </div>
+                          <div className="text-[12.5px]" style={{ color: "var(--rs-danger)" }}>
+                            ค้าง {formatBaht(it.outstanding)}
+                          </div>
+                        </div>
+                        <div className="flex gap-1.5 shrink-0">
+                          <button
+                            className="inline-flex items-center justify-center h-8 px-2.5 rounded-lg text-[12px] font-medium"
+                            style={{ background: "var(--rs-brand)", color: "#fff" }}
+                            onClick={() => copy(it.url)}
+                          >
+                            <Copy className="h-3.5 w-3.5 mr-1" /> คัดลอกลิงก์
+                          </button>
+                          <a
+                            className="inline-flex items-center justify-center h-8 w-8 rounded-lg"
+                            style={{ background: "var(--rs-bg-3)", color: "var(--rs-text-2)" }}
+                            href={it.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="เปิดดู"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        </div>
+                      </div>
+                      <div className="text-[11px] mt-1.5 break-all" style={{ color: "var(--rs-text-3)" }}>
+                        {it.url}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Full interactive bills table with selection + floor groups. */
+export function BillsTable({
+  projectId,
+  period,
+  rows,
+}: {
+  projectId: string;
+  period: string;
+  rows: BillRow[];
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // group rows by floor for "เลือกทั้งชั้น"
+  const groups = useMemo(() => {
+    const map = new Map<string, BillRow[]>();
+    for (const r of rows) {
+      const arr = map.get(r.floorKey) ?? [];
+      arr.push(r);
+      map.set(r.floorKey, arr);
+    }
+    return Array.from(map.entries());
+  }, [rows]);
+
+  const allIds = useMemo(() => rows.map((r) => r.id), [rows]);
+  const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(allIds));
+  }
+
+  function toggleFloor(floorKey: string, ids: string[]) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const allOn = ids.every((id) => next.has(id));
+      for (const id of ids) {
+        if (allOn) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  }
+
+  return (
+    <div className="space-y-3">
+      <BillsToolbar projectId={projectId} period={period} selectedIds={Array.from(selected)} />
+
+      <div className="rs-card overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-2.5 border-b print:hidden" style={{ borderColor: "var(--rs-border)" }}>
+          <label className="inline-flex items-center gap-2 text-[12.5px] font-medium cursor-pointer" style={{ color: "var(--rs-text-2)" }}>
+            <input type="checkbox" checked={allSelected} onChange={toggleAll} className="rs-chk" />
+            {allSelected ? "ไม่เลือกทั้งหมด" : "เลือกทั้งหมด"}
+          </label>
+          {selected.size > 0 && (
+            <span className="text-[12.5px]" style={{ color: "var(--rs-text-3)" }}>
+              เลือกแล้ว {selected.size} ใบ
+            </span>
+          )}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="rs-table w-full text-sm">
+            <thead>
+              <tr style={{ color: "var(--rs-text-2)" }} className="text-left text-[12.5px]">
+                <th className="px-3 py-2.5 font-semibold w-9 print:hidden">
+                  <span className="sr-only">เลือก</span>
+                </th>
+                <th className="px-4 py-2.5 font-semibold">เลขที่บิล</th>
+                <th className="px-4 py-2.5 font-semibold">ห้อง / ผู้เช่า</th>
+                <th className="px-4 py-2.5 font-semibold">งวด</th>
+                <th className="px-4 py-2.5 font-semibold text-right">ยอดรวม</th>
+                <th className="px-4 py-2.5 font-semibold text-right">จ่ายแล้ว</th>
+                <th className="px-4 py-2.5 font-semibold text-right">คงเหลือ</th>
+                <th className="px-4 py-2.5 font-semibold">ครบกำหนด</th>
+                <th className="px-4 py-2.5 font-semibold">สถานะ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map(([floorKey, groupRows]) => {
+                const ids = groupRows.map((r) => r.id);
+                const floorAllOn = ids.every((id) => selected.has(id));
+                return (
+                  <FloorGroup
+                    key={floorKey}
+                    floorKey={floorKey}
+                    rows={groupRows}
+                    selected={selected}
+                    floorAllOn={floorAllOn}
+                    onToggleFloor={() => toggleFloor(floorKey, ids)}
+                    onToggleRow={toggle}
+                  />
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <style jsx>{`
+        :global(.rs-chk) {
+          width: 16px;
+          height: 16px;
+          accent-color: var(--rs-brand);
+          cursor: pointer;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function FloorGroup({
+  floorKey,
+  rows,
+  selected,
+  floorAllOn,
+  onToggleFloor,
+  onToggleRow,
+}: {
+  floorKey: string;
+  rows: BillRow[];
+  selected: Set<string>;
+  floorAllOn: boolean;
+  onToggleFloor: () => void;
+  onToggleRow: (id: string) => void;
+}) {
+  return (
+    <>
+      <tr style={{ background: "var(--rs-bg-2)" }} className="print:hidden">
+        <td className="px-3 py-1.5">
+          <input
+            type="checkbox"
+            aria-label={`เลือกทั้งชั้น ${floorKey}`}
+            checked={floorAllOn}
+            onChange={onToggleFloor}
+            className="rs-chk"
+          />
+        </td>
+        <td colSpan={8} className="px-4 py-1.5">
+          <button
+            className="text-[12px] font-semibold inline-flex items-center gap-1.5"
+            style={{ color: "var(--rs-text-2)" }}
+            onClick={onToggleFloor}
+          >
+            {floorKey}
+            <span className="font-normal" style={{ color: "var(--rs-text-3)" }}>
+              · เลือกทั้งชั้น ({rows.length})
+            </span>
+          </button>
+        </td>
+      </tr>
+      {rows.map((b) => (
+        <tr
+          key={b.id}
+          className="border-t hover:bg-[var(--rs-bg-2)] transition"
+          style={{ borderColor: "var(--rs-border)" }}
+        >
+          <td className="px-3 py-3 print:hidden">
+            <input
+              type="checkbox"
+              aria-label={`เลือกบิล ${b.billNo}`}
+              checked={selected.has(b.id)}
+              onChange={() => onToggleRow(b.id)}
+              className="rs-chk"
+            />
+          </td>
+          <td className="px-4 py-3">
+            <Link
+              href={`/rentspace/bills/${b.id}`}
+              className="font-semibold inline-flex items-center gap-1.5"
+              style={{ color: "var(--rs-brand)" }}
+            >
+              <Receipt className="h-3.5 w-3.5" /> {b.billNo}
+            </Link>
+          </td>
+          <td className="px-4 py-3" style={{ color: "var(--rs-text)" }}>
+            {b.unitCode}
+            <span style={{ color: "var(--rs-text-3)" }}>{" · "}{b.tenantName}</span>
+          </td>
+          <td className="px-4 py-3 text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
+            {periodLabel(b.period)}
+          </td>
+          <td className="px-4 py-3 text-right tabular-nums" style={{ color: "var(--rs-text)" }}>
+            {formatBaht(b.total)}
+          </td>
+          <td className="px-4 py-3 text-right tabular-nums" style={{ color: "var(--rs-text-2)" }}>
+            {formatBaht(b.paid)}
+          </td>
+          <td
+            className="px-4 py-3 text-right tabular-nums font-semibold"
+            style={{ color: b.remaining > 0 ? "var(--rs-danger)" : "var(--rs-text-3)" }}
+          >
+            {formatBaht(b.remaining)}
+          </td>
+          <td
+            className="px-4 py-3 text-[12.5px]"
+            style={{ color: b.displayStatus === "overdue" ? "var(--rs-danger)" : "var(--rs-text-2)" }}
+          >
+            {b.dueDateISO ? thaiDateLong(new Date(b.dueDateISO)) : "—"}
+          </td>
+          <td className="px-4 py-3">
+            <StatusChip status={b.displayStatus} />
+          </td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+function StatusChip({ status }: { status: string }) {
+  const t = BILL_STATUS[status] ?? { label: status, color: "var(--rs-text-3)", soft: "var(--rs-bg-3)" };
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2.5 py-1 text-[11.5px] font-semibold"
+      style={{ background: t.soft, color: t.color }}
+    >
+      {t.label}
+    </span>
+  );
+}
