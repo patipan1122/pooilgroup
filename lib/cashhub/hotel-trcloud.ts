@@ -1,0 +1,196 @@
+// CashHub Hotel — ดึง IV (ใบแจ้งหนี้/ขาย) ของโรงแรมจาก TRCloud (co.45 JPS)
+//
+// หน้างานคีย์ IV เข้า TRCloud อยู่แล้ว (แยก "กะเช้า"/"กะดึก" ในชื่อลูกค้า) → ดึงมาเติม
+// ยอดขาย+วัน+กะ ให้อัตโนมัติ ไม่ต้องคีย์ Excel ซ้ำ + เช็คว่า IV ถูกคีย์ครบทุกวัน/กะไหม.
+//
+// IV header มี: invoice_number, issue_date, name(=ลูกค้า มีคำว่ากะเช้า/กะดึก), project
+//   (="Hotel_001-โรงแรม MIX"), grand_total, status (Debtor=ยังไม่จ่าย). ⚠️ IV ไม่มีช่องทาง
+//   จ่าย (เงินสด/QR/OTA) — อันนั้นอยู่ที่ RV/statement → ยังต้องกรอก/เทียบเอง.
+//
+// Rate-limit: TRCloud จำกัดหนัก (429 หลัง ~8-10 calls) → เรียกครั้งเดียวต่อเดือน, cache ฝั่งเรียก.
+import { createHash } from "crypto";
+
+const BASE =
+  process.env.TRCLOUD_BASE ??
+  "https://pooil.trcloud.co/application/api-connector2/end-point";
+const COMPANY_ID = process.env.TRCLOUD_JPS_COMPANY_ID ?? "";
+const PASSKEY = process.env.TRCLOUD_JPS_PASSKEY ?? "";
+const ENCRYPT_HEAD = process.env.TRCLOUD_JPS_ENCRYPT_HEAD ?? "";
+
+export function hotelTrcloudConfigured(): boolean {
+  return Boolean(COMPANY_ID && PASSKEY && ENCRYPT_HEAD);
+}
+
+function authFields() {
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const securekey = createHash("md5")
+    .update(`${ENCRYPT_HEAD}t${timestamp}`)
+    .digest("hex");
+  return { company_id: COMPANY_ID, passkey: PASSKEY, timestamp, securekey };
+}
+
+async function trcloudPost(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const payload = new URLSearchParams({
+    json: JSON.stringify({ ...authFields(), ...body }),
+  });
+  const res = await fetch(`${BASE}/${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Origin: process.env.TRCLOUD_JPS_ORIGIN ?? "https://pooil.trcloud.co",
+    },
+    body: payload.toString(),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`TRCloud ${path} HTTP ${res.status}`);
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    throw new Error(`TRCloud ${path} non-JSON: ${text.slice(0, 160)}`);
+  }
+}
+
+type RawIv = {
+  invoice_number?: string;
+  issue_date?: string;
+  name?: string;
+  project?: string;
+  grand_total?: string | number;
+  total?: string | number;
+  status?: string;
+};
+
+export type HotelIv = {
+  ivNo: string;
+  date: string; // YYYY-MM-DD
+  shift: "morning" | "evening" | "unknown";
+  total: number;
+  status: string;
+  customer: string;
+};
+
+function isHotel(iv: RawIv): boolean {
+  const s = `${iv.project ?? ""}${iv.name ?? ""}`;
+  return /โรงแรม\s*mix|hotel_001/i.test(s);
+}
+
+function shiftOf(name: string): "morning" | "evening" | "unknown" {
+  if (/กะเช้า|เช้า/.test(name)) return "morning";
+  if (/กะดึก|ดึก|กะค่ำ|ค่ำ/.test(name)) return "evening";
+  return "unknown";
+}
+
+function amount(v: string | number | undefined): number {
+  if (v == null) return 0;
+  const n = typeof v === "number" ? v : Number.parseFloat(String(v).replace(/,/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** ดึง IV โรงแรมในช่วงวัน (กรอง project/ชื่อ = โรงแรม MIX, จับกะจากชื่อลูกค้า) */
+export async function fetchHotelIvs(
+  periodStart: string,
+  periodEnd: string,
+): Promise<{ ivs: HotelIv[]; error?: string }> {
+  if (!hotelTrcloudConfigured())
+    return { ivs: [], error: "TRCloud ยังไม่ได้ตั้งค่า (TRCLOUD_JPS_*)" };
+  try {
+    const data = await trcloudPost("iv/search.php", {
+      date_from: periodStart,
+      date_to: periodEnd,
+      limit: 500,
+      page: 1,
+    });
+    const list = (
+      Array.isArray(data.data)
+        ? data.data
+        : Array.isArray(data.list)
+          ? data.list
+          : Array.isArray(data.result)
+            ? data.result
+            : []
+    ) as RawIv[];
+    const ivs: HotelIv[] = list
+      .filter(isHotel)
+      .map((iv) => ({
+        ivNo: String(iv.invoice_number ?? ""),
+        date: String(iv.issue_date ?? "").slice(0, 10),
+        shift: shiftOf(String(iv.name ?? "")),
+        total: amount(iv.grand_total ?? iv.total),
+        status: String(iv.status ?? ""),
+        customer: String(iv.name ?? ""),
+      }))
+      .filter((iv) => iv.date >= periodStart && iv.date <= periodEnd);
+    return { ivs };
+  } catch (err) {
+    return { ivs: [], error: err instanceof Error ? err.message : "TRCloud error" };
+  }
+}
+
+export type IvDayMatch = {
+  day: number;
+  date: string;
+  morning: HotelIv | null;
+  evening: HotelIv | null;
+  ivTotal: number; // รวมยอด IV ของวัน
+  missing: boolean; // วันนี้ยังขาด IV (อย่างน้อย 1 กะ)
+};
+
+export type IvCompleteness = {
+  days: IvDayMatch[];
+  ivCount: number;
+  expectedShifts: number; // วัน × 2
+  missingShifts: number; // กะที่ยังไม่มี IV
+  unknownShift: HotelIv[]; // IV ที่แยกกะไม่ได้ (ชื่อไม่บอก)
+};
+
+/** จับคู่ IV เข้าวัน/กะ + คำนวณความครบ (ต้องมี 2 IV/วัน) */
+export function matchIvsToDays(
+  ivs: HotelIv[],
+  year: number,
+  month: number,
+): IvCompleteness {
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const byDay = new Map<number, IvDayMatch>();
+  const unknownShift: HotelIv[] = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    byDay.set(d, {
+      day: d,
+      date: `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
+      morning: null,
+      evening: null,
+      ivTotal: 0,
+      missing: true,
+    });
+  }
+  for (const iv of ivs) {
+    const d = Number(iv.date.slice(8, 10));
+    const m = byDay.get(d);
+    if (!m) continue;
+    if (iv.shift === "morning") m.morning = iv;
+    else if (iv.shift === "evening") m.evening = iv;
+    else {
+      unknownShift.push(iv);
+      continue;
+    }
+    m.ivTotal += iv.total;
+  }
+  let missingShifts = 0;
+  for (const m of byDay.values()) {
+    const hasM = !!m.morning;
+    const hasE = !!m.evening;
+    if (!hasM) missingShifts++;
+    if (!hasE) missingShifts++;
+    m.missing = !hasM || !hasE;
+  }
+  return {
+    days: [...byDay.values()].sort((a, b) => a.day - b.day),
+    ivCount: ivs.length,
+    expectedShifts: daysInMonth * 2,
+    missingShifts,
+    unknownShift,
+  };
+}

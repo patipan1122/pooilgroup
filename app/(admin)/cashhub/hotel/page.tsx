@@ -16,6 +16,7 @@ import {
   type HotelShiftRow,
 } from "@/lib/cashhub/hotel";
 import { HotelMonthView } from "./hotel-month-view";
+import { HotelTrcloudPanel } from "./hotel-trcloud-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -125,6 +126,8 @@ export default async function HotelSalesPage({
         {branches.length > 1 && (
           <select
             name="branchId"
+            aria-label="เลือกสาขาโรงแรม"
+            title="เลือกสาขาโรงแรม"
             defaultValue={branchId ?? ""}
             className="h-10 rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
           >
@@ -138,6 +141,9 @@ export default async function HotelSalesPage({
         <input
           type="month"
           name="month"
+          aria-label="เลือกเดือน"
+          title="เลือกเดือน (รูปแบบ ปี-เดือน)"
+          placeholder="2026-04"
           defaultValue={monthStr}
           className="h-10 rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
         />
@@ -155,6 +161,12 @@ export default async function HotelSalesPage({
         monthCheck={monthCheck}
         hasBranch={!!branchId}
       />
+
+      {branchId && (
+        <div className="mt-5">
+          <HotelTrcloudPanel branchId={branchId} month={monthStr} />
+        </div>
+      )}
     </div>
   );
 }
