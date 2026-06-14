@@ -150,6 +150,7 @@ export function TeaView({
         setMsg({ kind: "err", text: res.error });
         return;
       }
+      if (res.warning) setMsg({ kind: "err", text: `⚠️ ${res.warning}` });
       setPending({ fileName: file.name, branches: res.branches });
       setPicks(res.branches.map((b) => b.detectedBranchCode ?? ""));
     } catch {
@@ -172,6 +173,7 @@ export function TeaView({
       setMsg({ kind: "err", text: "เลือกสาขาอย่างน้อย 1 สาขาก่อนนำเข้า" });
       return;
     }
+    const skippedCount = pending.branches.length - payloadBranches.length;
     setImporting(true);
     setMsg(null);
     try {
@@ -190,9 +192,10 @@ export function TeaView({
         setMsg({ kind: "err", text: data.error ?? "นำเข้าไม่สำเร็จ" });
       } else {
         const t = data.totals;
+        const skipTxt = skippedCount > 0 ? ` · ข้าม ${skippedCount} สาขา (ยังไม่เลือก)` : "";
         setMsg({
           kind: "ok",
-          text: `นำเข้า ${data.results?.length ?? 0} สาขา · รวม ${t?.saved ?? 0} วัน · ✅ ตรง ${t?.matched ?? 0} · ⚠️ ไม่ตรง ${t?.mismatch ?? 0} · ⚪ ไม่มี IV ${t?.noIv ?? 0}`,
+          text: `นำเข้า ${data.results?.length ?? 0} สาขา · รวม ${t?.saved ?? 0} วัน · ✅ ตรง ${t?.matched ?? 0} · ⚠️ ไม่ตรง ${t?.mismatch ?? 0} · ⚪ ไม่มี IV ${t?.noIv ?? 0}${skipTxt}`,
         });
         setPending(null);
         setPicks([]);

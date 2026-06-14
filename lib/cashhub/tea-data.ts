@@ -261,13 +261,21 @@ export async function loadTeaChannelConfig(
   });
 }
 
-/** บันทึก config (super_admin) — upsert ต่อช่องทาง. คืนเฉพาะ code ที่รู้จัก */
+/** บันทึก config (super_admin) — upsert ต่อช่องทาง. คืนเฉพาะ code ที่รู้จัก
+ *  ⚠️ validate company_id/bank_account_id ว่าเป็นขององค์กรนี้จริง (กันชี้ข้ามองค์กร) — service-role bypass RLS */
 export async function saveTeaChannelConfig(
   admin: Admin,
   orgId: string,
   configs: TeaChannelConfig[],
 ): Promise<{ ok: boolean; error?: string }> {
   const valid = new Set(TEA_CHANNELS.map((c) => c.code));
+  // โหลด id ที่เป็นของ org นี้เท่านั้น → null ค่าที่แปลกปลอม
+  const [co, bank] = await Promise.all([
+    admin.from("companies").select("id").eq("org_id", orgId),
+    admin.from("ledger_bank_account").select("id").eq("org_id", orgId),
+  ]);
+  const validCo = new Set((co.data ?? []).map((r) => String((r as { id: unknown }).id)));
+  const validBank = new Set((bank.data ?? []).map((r) => String((r as { id: unknown }).id)));
   const now = new Date().toISOString();
   const rows = configs
     .filter((c) => valid.has(c.code))
@@ -278,8 +286,8 @@ export async function saveTeaChannelConfig(
       is_settle: c.isSettle,
       fee_percent: c.feePercent,
       min_settle_satang: Math.round((c.minSettleBaht ?? 0) * 100),
-      company_id: c.companyId,
-      bank_account_id: c.bankAccountId,
+      company_id: c.companyId && validCo.has(c.companyId) ? c.companyId : null,
+      bank_account_id: c.bankAccountId && validBank.has(c.bankAccountId) ? c.bankAccountId : null,
       updated_at: now,
     }));
   if (rows.length === 0) return { ok: true };

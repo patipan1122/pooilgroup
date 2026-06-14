@@ -36,7 +36,12 @@ export function TeaSettingsEditor({ configs, accounts, companies, canEdit }: Pro
   const save = useCallback(async () => {
     setBusy(true);
     setMsg(null);
-    const payload = rows.map((r) => ({ ...r, companyId: r.isSettle ? companyId || null : null }));
+    // ช่องที่ไม่ใช่เงินเข้าธนาคาร → ล้างทั้งบริษัทและบัญชี (กันค้างผูกบัญชีจริงไว้แบบมองไม่เห็น)
+    const payload = rows.map((r) => ({
+      ...r,
+      companyId: r.isSettle ? companyId || null : null,
+      bankAccountId: r.isSettle ? r.bankAccountId : null,
+    }));
     try {
       const res = await fetch("/api/cashhub/tea/channel-config", {
         method: "POST",

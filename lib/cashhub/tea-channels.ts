@@ -12,7 +12,8 @@ export type TeaChannelCode =
   | "lineman"
   | "shopee"
   | "wallet"
-  | "discount";
+  | "discount"
+  | "other";
 
 export type TeaChannelDef = {
   code: TeaChannelCode;
@@ -35,6 +36,8 @@ export const TEA_CHANNELS: TeaChannelDef[] = [
   { code: "wallet", label: "blueplus", match: ["blueplus"], isSettle: true, feePercent: 0, minSettleBaht: 0 },
   // ไม่ใช่เงินเข้าธนาคาร (ส่วนลด/แต้ม/คูปอง) — โชว์ไว้ให้ครบยอดแต่ไม่ส่ง reconcile
   { code: "discount", label: "ส่วนลด/แต้ม", match: ["ส่วนลด", "คูปอง", "redeem"], isSettle: false, feePercent: 0, minSettleBaht: 0 },
+  // ช่องทางที่ระบบยังไม่รู้จัก/เงินเชื่อ/comp — กันไป settle ผิด (default ของ classifyTeaPayment)
+  { code: "other", label: "อื่น ๆ", match: [], isSettle: false, feePercent: 0, minSettleBaht: 0 },
 ];
 
 export const TEA_CHANNEL_BY_CODE: Record<string, TeaChannelDef> = Object.fromEntries(
@@ -48,16 +51,18 @@ export const TEA_CHANNEL_BY_CODE: Record<string, TeaChannelDef> = Object.fromEnt
  */
 export function classifyTeaPayment(payment: string): TeaChannelCode {
   const p = payment.trim().toLowerCase();
-  if (!p) return "qr";
+  if (!p) return "other"; // เซลล์ว่าง (บิล comp/void) → ไม่ใช่เงินเข้าธนาคาร
   if (/grab/.test(p)) return "grab";
   if (/line\s?man/.test(p)) return "lineman";
-  if (/shopee/.test(p)) return "shopee";
+  if (/shopee(?!pay)/.test(p)) return "shopee";
   if (/voucher|ส่วนลด|คูปอง|redeem|แต้ม/.test(p)) return "discount";
   if (/cash|เงินสด/.test(p)) return "cash";
   if (/edc|credit|debit|บัตร|\bcard\b/.test(p)) return "card";
   if (/blueplus|true\s?money|truemoney|wallet|rabbit|shopeepay|linepay/.test(p)) return "wallet";
-  // K Plus / SCB / PromptPay / Bank Transfer / โอน ฯลฯ = เข้าธนาคารทางอิเล็กทรอนิกส์ → qr (default)
-  return "qr";
+  // เข้าธนาคารทางอิเล็กทรอนิกส์ → qr (จับเฉพาะที่รู้จัก · ที่เหลือ → other กัน bucket เพี้ยน)
+  if (/k\s?plus|kplus|qr|promptpay|prompt\s?pay|scb|krungthai|ktb|bualuang|kma|bbl|transfer|โอน|ธนาคาร|bank|พร้อมเพย/.test(p))
+    return "qr";
+  return "other"; // เงินเชื่อ/ไม่รู้จัก → ไม่ settle (เดิม default qr ทำให้ยอด QR เกินจริง)
 }
 
 /** จับชื่อคอลัมน์ Foodstory → channel_code (null = ไม่ใช่ช่องทางชำระ / จับไม่ได้) */

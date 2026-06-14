@@ -69,6 +69,7 @@ export function TeaExcelGrid({ branchLabel, days, byDate }: Props) {
             const iv = d?.iv_gross ?? null;
             const diff = iv != null && pos != null ? iv - pos : null;
             const diffBad = diff != null && Math.abs(diff) >= 1;
+            const noIv = pos != null && iv == null; // มียอด POS แต่ยังไม่คีย์ IV → ต้องตาม
             return (
               <tr key={date} className="hover:bg-zinc-50/60">
                 <td className="sticky left-0 z-10 bg-white px-2.5 py-1.5 font-medium text-zinc-700 border-b border-zinc-100">
@@ -88,15 +89,23 @@ export function TeaExcelGrid({ branchLabel, days, byDate }: Props) {
                     </td>
                   );
                 })}
-                <td className="px-2.5 py-1.5 text-right tabular-nums font-medium text-blue-700 border-b border-zinc-100 bg-blue-50/40">
-                  {iv != null ? cell(iv) : <span className="text-zinc-300">—</span>}
+                <td
+                  className={`px-2.5 py-1.5 text-right tabular-nums font-medium border-b border-zinc-100 ${
+                    noIv ? "bg-amber-50 text-amber-700" : "text-blue-700 bg-blue-50/40"
+                  }`}
+                >
+                  {iv != null ? cell(iv) : noIv ? "ยังไม่คีย์" : <span className="text-zinc-300">—</span>}
                 </td>
                 <td
                   className={`px-2.5 py-1.5 text-right tabular-nums border-b border-zinc-100 ${
-                    diffBad ? "bg-red-50 text-red-700 font-semibold" : "text-zinc-400"
+                    diffBad
+                      ? "bg-red-50 text-red-700 font-semibold"
+                      : noIv
+                        ? "bg-amber-50 text-amber-700"
+                        : "text-zinc-400"
                   }`}
                 >
-                  {diff != null ? (Math.abs(diff) < 0.5 ? "0" : cell(diff)) : ""}
+                  {diff != null ? (Math.abs(diff) < 0.5 ? "0" : cell(diff)) : noIv ? "⚪" : ""}
                 </td>
               </tr>
             );

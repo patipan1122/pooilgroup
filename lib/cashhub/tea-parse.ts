@@ -82,6 +82,7 @@ export type TeaPosBranch = {
 export type TeaPosParseResult = {
   branches: TeaPosBranch[];
   error?: string;
+  warning?: string; // เช่น มีบางบรรทัดอ่านวันที่ไม่ได้ → เตือนผู้ใช้ (ไม่ block)
 };
 
 function num(v: unknown): number {
@@ -145,6 +146,51 @@ function isBillReport(matrix: unknown[][]): boolean {
     .some((r) => Array.isArray(r) && r.some((c) => String(c ?? "").includes("วันที่ชำระเงิน")));
 }
 
+/** Excel serial number → YYYY-MM-DD (epoch 1899-12-30) */
+function excelSerialToISO(n: number): string | null {
+  if (!Number.isFinite(n) || n < 20000 || n > 80000) return null; // กรอบ ~1954–2089 กันค่าเพี้ยน
+  const ms = Math.round((n - 25569) * 86400 * 1000);
+  const d = new Date(ms);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+/**
+ * ตรวจว่าไฟล์ใช้วันที่แบบ วัน/เดือน (dmy) หรือ เดือน/วัน (mdy) — กัน XLSX อ่าน DD/MM/YYYY เพี้ยนเป็น US.
+ * สแกนทุกวัน: ถ้ามีตัวแรก > 12 = วันต้องมาก่อน (dmy) · ถ้าตัวแรก ≤12 แต่ตัวสอง > 12 = (mdy) · ไม่งั้น default dmy (ไทย).
+ */
+function detectSlashOrder(matrix: unknown[][], cDate: number, start: number): "dmy" | "mdy" {
+  let mdy = false;
+  for (let i = start; i < matrix.length; i++) {
+    const r = matrix[i];
+    if (!Array.isArray(r)) continue;
+    const m = String(r[cDate] ?? "").match(/^(\d{1,2})\/(\d{1,2})\//);
+    if (!m) continue;
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    if (a > 12) return "dmy"; // ตัวแรกเป็นวันแน่นอน
+    if (b > 12) mdy = true; // ตัวสองเป็นวัน → เดือนมาก่อน
+  }
+  return mdy ? "mdy" : "dmy";
+}
+
+/** parse วันที่ 1 ค่า → YYYY-MM-DD (รองรับ DD/MM, MM/DD, ISO, Excel serial) */
+function parseBillCellDate(raw: string, order: "dmy" | "mdy"): string | null {
+  const s = raw.trim();
+  if (!s) return null;
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (slash) {
+    const day = order === "dmy" ? slash[1] : slash[2];
+    const mon = order === "dmy" ? slash[2] : slash[1];
+    let year = slash[3];
+    if (year.length === 2) year = `20${year}`;
+    return `${year}-${mon.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+  if (/^\d+(\.\d+)?$/.test(s)) return excelSerialToISO(Number(s)); // Excel date serial
+  return null;
+}
+
 /** parse รายงาน "แยกตามบิล" → รวมต่อ (สาขา, วัน) + แยกช่องทางจากประเภทการชำระเงิน */
 function parseBillReport(matrix: unknown[][]): TeaPosParseResult {
   const hi = matrix.findIndex(
@@ -162,17 +208,21 @@ function parseBillReport(matrix: unknown[][]): TeaPosParseResult {
       error: "รายงานแยกตามบิล: ไม่พบคอลัมน์ที่ต้องการ (วันที่ชำระเงิน / รวมสุทธิ / สาขา)",
     };
 
+  const order = detectSlashOrder(matrix, cDate, hi + 1);
   const bag = new Map<string, { storeLabel: string; byDate: Map<string, TeaPosRow> }>();
+  let dropped = 0; // บรรทัดที่มีสาขา+ยอด แต่อ่านวันที่ไม่ได้
   for (let i = hi + 1; i < matrix.length; i++) {
     const r = matrix[i];
     if (!Array.isArray(r)) continue;
     const br = String(r[cBranch] ?? "").trim();
     if (!br) continue; // ข้ามแถว Total (สาขาว่าง)
-    const dm = String(r[cDate] ?? "").match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-    if (!dm) continue; // วันที่ = DD/MM/YYYY (ไทย day-first)
-    const date = `${dm[3]}-${dm[2].padStart(2, "0")}-${dm[1].padStart(2, "0")}`;
+    const date = parseBillCellDate(String(r[cDate] ?? ""), order);
     const net = round2(num(r[cNet]));
-    const code = cPay >= 0 ? classifyTeaPayment(String(r[cPay] ?? "")) : "qr";
+    if (!date) {
+      if (net > 0) dropped++; // มียอดแต่วันที่อ่านไม่ได้ → นับไว้เตือน
+      continue;
+    }
+    const code = cPay >= 0 ? classifyTeaPayment(String(r[cPay] ?? "")) : "other";
     let b = bag.get(br);
     if (!b) {
       b = { storeLabel: br, byDate: new Map() };
@@ -195,8 +245,12 @@ function parseBillReport(matrix: unknown[][]): TeaPosParseResult {
     rows: [...b.byDate.values()].sort((a, z) => a.date.localeCompare(z.date)),
   }));
   if (branches.length === 0)
-    return { branches: [], error: "รายงานแยกตามบิล: ไม่พบข้อมูลสาขา/ยอดขาย" };
-  return { branches };
+    return { branches: [], error: "รายงานแยกตามบิล: ไม่พบข้อมูลสาขา/ยอดขาย (อ่านวันที่ไม่ได้?)" };
+  const warning =
+    dropped > 0
+      ? `มี ${dropped} บิลที่อ่านวันที่ไม่ได้ → ไม่ถูกนำเข้า (แนะนำอัปเป็นไฟล์ .csv จะแม่นกว่า)`
+      : undefined;
+  return { branches, warning };
 }
 
 /** parse รายงาน "ปิดกะและปิดสิ้นวัน" (EOD) */
