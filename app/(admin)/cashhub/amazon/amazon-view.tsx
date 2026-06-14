@@ -2,10 +2,12 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import * as XLSX from "xlsx";
 import { formatBaht } from "@/lib/utils/format";
 import { CVAR_LABEL } from "@/lib/cashhub/amazon-parse";
 import type { SavedAmazonDay, ImportHistoryRow } from "@/lib/cashhub/amazon-data";
+import type { ChannelConfig } from "@/lib/cashhub/amazon-settlement";
 import { AmazonExcelGrid } from "./amazon-excel-grid";
 
 type Props = {
@@ -18,6 +20,7 @@ type Props = {
   savedDays: SavedAmazonDay[];
   canSend: boolean;
   history: ImportHistoryRow[];
+  configs: ChannelConfig[];
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -31,6 +34,7 @@ export function AmazonView({
   savedDays,
   canSend,
   history,
+  configs,
 }: Props) {
   const router = useRouter();
   const [showHistory, setShowHistory] = useState(false);
@@ -145,6 +149,41 @@ export function AmazonView({
     },
     [storeCode, router],
   );
+
+  // ส่งเงินเข้าจริง (หลังหักค่าธรรมเนียม) ของเดือน → หน้ากระทบยอดธนาคาร (super_admin)
+  const sendReconcile = useCallback(async () => {
+    if (
+      !window.confirm(
+        "ส่งเงินเข้าจริง (เฉพาะช่องที่ตั้งค่าแล้ว หลังหักค่าธรรมเนียม) ของเดือนนี้ เข้าหน้ากระทบยอดธนาคาร?\n\nระบบจะกันรายการซ้ำให้ (ส่งซ้ำได้ ไม่เพิ่มซ้ำ)",
+      )
+    )
+      return;
+    setBusy("reconcile");
+    setMsg(null);
+    try {
+      const res = await fetch("/api/cashhub/amazon-settlement/reconcile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeCode, from, to }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        inserted?: number;
+        skippedNoConfig?: number;
+        error?: string;
+      };
+      if (!res.ok || data.error) setMsg({ kind: "err", text: data.error ?? "ส่งไม่สำเร็จ" });
+      else
+        setMsg({
+          kind: "ok",
+          text: `ส่งเข้า reconcile แล้ว ${data.inserted} รายการ${data.skippedNoConfig ? ` · ข้าม ${data.skippedNoConfig} (ยังไม่ตั้งบัญชี)` : ""} → ดูที่หน้ากระทบยอดธนาคาร`,
+        });
+    } catch {
+      setMsg({ kind: "err", text: "เชื่อมต่อไม่สำเร็จ" });
+    } finally {
+      setBusy(null);
+    }
+  }, [storeCode, from, to]);
 
   // ⚠️ ส่งซ้ำ (ทดสอบ) — ข้าม dedup → ได้ใบกำกับซ้ำจริง · super_admin + พิมพ์ยืนยัน
   const forceSend = useCallback(
@@ -337,6 +376,24 @@ export function AmazonView({
               🕘 ประวัติการอัป ({history.length})
             </button>
           )}
+          {canSend && (
+            <>
+              <Link
+                href="/cashhub/amazon/settings"
+                className="h-11 inline-flex items-center rounded-xl border border-zinc-200 px-4 text-sm font-medium hover:bg-zinc-50"
+              >
+                ⚙️ ตั้งค่าช่องทาง
+              </Link>
+              <button
+                type="button"
+                disabled={busy !== null || savedDays.length === 0}
+                onClick={sendReconcile}
+                className="h-11 rounded-xl bg-[var(--ch-navy,#0b1850)] px-4 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                {busy === "reconcile" ? "กำลังส่ง…" : "🏦 ส่งเข้า reconcile"}
+              </button>
+            </>
+          )}
         </div>
         {showHistory && (
           <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
@@ -442,6 +499,7 @@ export function AmazonView({
             busy={busy}
             onCreate={createIv}
             onForce={forceSend}
+            configs={configs}
           />
         </>
       )}

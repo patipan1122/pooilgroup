@@ -15,6 +15,7 @@ import {
   listAmazonStores,
   loadImportHistory,
 } from "@/lib/cashhub/amazon-data";
+import { loadChannelConfig } from "@/lib/cashhub/amazon-settlement-data";
 import { AMAZON_BRANCHES } from "@/lib/cashhub/amazon-trcloud";
 import { AmazonView } from "./amazon-view";
 
@@ -45,7 +46,8 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
 
   const savedDays = await loadAmazonDays(admin, orgId, storeCode, from, to);
   const history = await loadImportHistory(admin, orgId);
-  const canSend = isSuperAdmin(session.user.role); // ส่งเข้า TRCloud = super_admin เท่านั้น
+  const configs = await loadChannelConfig(admin, orgId);
+  const canSend = isSuperAdmin(session.user.role); // ส่งเข้า TRCloud/reconcile = super_admin เท่านั้น
 
   return (
     <div className="ch-scope p-3 sm:p-6 lg:p-8 max-w-6xl mx-auto pb-24">
@@ -103,6 +105,7 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
         savedDays={savedDays}
         canSend={canSend}
         history={history}
+        configs={configs}
       />
     </div>
   );

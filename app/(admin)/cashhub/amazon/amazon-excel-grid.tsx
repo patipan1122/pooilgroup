@@ -4,6 +4,10 @@
 // ช่องสูตร ƒ สีฟ้า, ส่วนต่าง POS↔TRC แดงถ้า≠0, แถวรวมท้าย). 1 วัน = 1 แถว.
 import { formatBaht } from "@/lib/utils/format";
 import type { SavedAmazonDay } from "@/lib/cashhub/amazon-data";
+import {
+  computeDaySettlement,
+  type ChannelConfig,
+} from "@/lib/cashhub/amazon-settlement";
 
 const num = (v: number | null | undefined) =>
   v == null ? "" : Math.abs(v) < 0.005 ? "0" : formatBaht(v);
@@ -14,6 +18,7 @@ type Col = {
   f?: boolean; // ช่องคำนวณ (สูตร VAT)
   diff?: boolean; // ไฮไลต์แดงถ้า ≠ 0 (ส่วนต่าง POS↔TRC)
   cvar?: string; // เป็นคอลัมน์ช่องทาง (อ่านจาก channels[cvar])
+  settle?: boolean; // เงินเข้าจริง (ไฮไลต์เขียว)
 };
 
 // ช่องทางชำระ (ตามลำดับสมุดบัญชี) → คอลัมน์
@@ -35,7 +40,7 @@ const CHANNELS: Array<{ label: string; cvar: string }> = [
 
 const ch = (cvar: string) => (d: SavedAmazonDay) => d.channels?.[cvar] ?? null;
 
-const COLS: Col[] = [
+const BASE_COLS: Col[] = [
   { label: "ยอดขาย POS", get: (d) => d.gross },
   { label: "ก่อน VAT", get: (d) => d.total, f: true },
   { label: "VAT 7%", get: (d) => d.vat, f: true },
@@ -54,6 +59,7 @@ type Props = {
   busy: string | null;
   onCreate: (day: SavedAmazonDay) => void;
   onForce: (day: SavedAmazonDay) => void;
+  configs: ChannelConfig[];
 };
 
 export function AmazonExcelGrid({
@@ -62,8 +68,21 @@ export function AmazonExcelGrid({
   busy,
   onCreate,
   onForce,
+  configs,
 }: Props) {
   const data = savedDays;
+  // คำนวณค่าธรรมเนียม/เงินเข้าจริงต่อวัน จาก config
+  const configByCvar = new Map(configs.map((c) => [c.cvar, c]));
+  const settleByDate = new Map<string, { fee: number; net: number }>();
+  for (const d of data) {
+    const s = computeDaySettlement(d.channels, configByCvar);
+    settleByDate.set(d.sales_date, { fee: s.totalFee, net: s.totalNet });
+  }
+  const COLS: Col[] = [
+    ...BASE_COLS,
+    { label: "ค่าธรรมเนียม", get: (d) => settleByDate.get(d.sales_date)?.fee ?? null },
+    { label: "เงินเข้าจริง", get: (d) => settleByDate.get(d.sales_date)?.net ?? null, settle: true },
+  ];
   const totals = COLS.map((c) =>
     c.diff ? null : data.reduce((s, d) => s + (c.get(d) ?? 0), 0),
   );
@@ -77,9 +96,11 @@ export function AmazonExcelGrid({
         className={`px-1.5 py-1 text-right tabular-nums whitespace-nowrap ${
           bad
             ? "bg-red-100 font-bold text-red-800"
-            : c.f
-              ? "bg-blue-50/40 text-zinc-700"
-              : "text-zinc-700"
+            : c.settle
+              ? "bg-emerald-50 font-semibold text-emerald-700"
+              : c.f
+                ? "bg-blue-50/40 text-zinc-700"
+                : "text-zinc-700"
         }`}
       >
         {num(v)}
