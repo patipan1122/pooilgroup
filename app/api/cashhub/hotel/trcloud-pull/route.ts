@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
   ) =>
     iv
       ? {
+          ivId: iv.ivId,
           ivNo: iv.ivNo,
           total: iv.total,
           status: iv.status,

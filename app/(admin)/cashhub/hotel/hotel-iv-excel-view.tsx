@@ -8,6 +8,7 @@ import { groupByDay, TH_MONTHS, type HotelShiftRow } from "@/lib/cashhub/hotel";
 import { HotelExcelGrid } from "./hotel-excel-grid";
 
 type ShiftIv = {
+  ivId: string;
   ivNo: string;
   total: number;
   status: string;
@@ -16,6 +17,7 @@ type ShiftIv = {
   over: number;
   short: number;
 };
+type Split = { room: number; tip: number; fine: number; goods: number };
 type Day = { day: number; morning: ShiftIv | null; evening: ShiftIv | null };
 type Resp = {
   availableMonths: string[];
@@ -43,10 +45,49 @@ export function HotelIvExcelView({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [data, setData] = useState<Resp | null>(null);
+  const [splits, setSplits] = useState<Record<string, Split>>({});
+  const [enriching, setEnriching] = useState(false);
+  const [enrichNote, setEnrichNote] = useState<string | null>(null);
+
+  // รวม ivId ทั้งหมดของเดือน + ที่ยังไม่ดึง line items
+  const allIds: string[] = [];
+  if (data)
+    for (const d of data.days) {
+      if (d.morning?.ivId) allIds.push(d.morning.ivId);
+      if (d.evening?.ivId) allIds.push(d.evening.ivId);
+    }
+  const remainIds = allIds.filter((id) => !splits[id]);
+
+  async function enrich() {
+    if (remainIds.length === 0) return;
+    setEnriching(true);
+    setEnrichNote(null);
+    try {
+      const res = await fetch("/api/cashhub/hotel/iv-lines", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: remainIds }), // server cap 12/ครั้ง
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setEnrichNote(json.error ?? "ดึงรายละเอียดไม่สำเร็จ");
+        return;
+      }
+      setSplits((s) => ({ ...s, ...json.splits }));
+      if (json.rateLimited)
+        setEnrichNote("TRCloud ติด rate-limit — รอ 1–2 นาทีแล้วกด “ดึงเพิ่ม”");
+    } catch {
+      setEnrichNote("เชื่อมต่อไม่ได้");
+    } finally {
+      setEnriching(false);
+    }
+  }
 
   async function pull() {
     setBusy(true);
     setErr(null);
+    setSplits({});
+    setEnrichNote(null);
     try {
       const [y, m] = month.split("-").map(Number);
       const res = await fetch("/api/cashhub/hotel/trcloud-pull", {
@@ -72,12 +113,17 @@ export function HotelIvExcelView({
       const date = `${yy}-${String(mm).padStart(2, "0")}-${String(d.day).padStart(2, "0")}`;
       const mk = (sh: "morning" | "evening", iv: ShiftIv | null) => {
         if (!iv) return;
+        const sp = splits[iv.ivId]; // ค่าห้อง/ขนม/ทิป (ถ้าดึง line items แล้ว)
         rows.push({
           id: `${date}-${sh}`,
           sales_date: date,
           shift: sh,
-          rooms: null, room_revenue: null, fine: null, tip: null,
-          goods_sales: null, total_sales: iv.total,
+          rooms: null,
+          room_revenue: sp?.room ?? null,
+          fine: sp?.fine ?? null,
+          tip: sp?.tip ?? null,
+          goods_sales: sp?.goods ?? null,
+          total_sales: iv.total,
           // จากไส้ใน IV (special_note): c1 เงินสด · c2 QR · c18/c19 ขาด/เกิน
           cash_to_remit: iv.cash, cash_pool: null, cash_deposited: null,
           cash_diff: null, advance: null,
@@ -136,6 +182,31 @@ export function HotelIvExcelView({
           {data.summary.missingShifts > 0 && (
             <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm p-2.5">
               ⚠️ {data.summary.missingShifts} กะยังไม่มี IV — ตารางจะมีเฉพาะวันที่คีย์ IV แล้ว
+            </div>
+          )}
+          {days.some((d) => d.hasData) && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl bg-zinc-50 border border-zinc-200 p-2.5">
+              <span className="text-xs text-zinc-600">
+                แยก <b>ค่าห้อง / ขนม / ทิป</b>:{" "}
+                {Object.keys(splits).length}/{allIds.length} ใบ
+              </span>
+              {remainIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={enrich}
+                  disabled={enriching}
+                  className="h-8 px-3 rounded-lg bg-[var(--ch-navy,#0b1850)] text-white text-xs font-semibold disabled:opacity-50"
+                >
+                  {enriching
+                    ? "กำลังดึง…"
+                    : Object.keys(splits).length === 0
+                      ? "ดึงรายละเอียด ห้อง/ขนม/ทิป"
+                      : `ดึงเพิ่ม (เหลือ ${remainIds.length} ใบ)`}
+                </button>
+              )}
+              {enrichNote && (
+                <span className="text-xs text-amber-700">{enrichNote}</span>
+              )}
             </div>
           )}
           {days.some((d) => d.hasData) ? (

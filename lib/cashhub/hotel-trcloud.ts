@@ -58,6 +58,7 @@ async function trcloudPost(
 }
 
 type RawIv = {
+  invoice_id?: string;
   invoice_number?: string;
   issue_date?: string;
   name?: string;
@@ -69,6 +70,7 @@ type RawIv = {
 };
 
 export type HotelIv = {
+  ivId: string; // invoice_id (ใช้เรียก iv/read ดู line items)
   ivNo: string;
   date: string; // YYYY-MM-DD
   shift: "morning" | "evening" | "unknown";
@@ -186,6 +188,7 @@ export async function fetchHotelIvs(
     const allHotel: HotelIv[] = list.filter(isHotel).map((iv) => {
       const ch = parseChannels(iv.special_note);
       return {
+        ivId: String(iv.invoice_id ?? ""),
         ivNo: String(iv.invoice_number ?? ""),
         date: String(iv.issue_date ?? "").slice(0, 10),
         shift: shiftOf(String(iv.name ?? "")),
@@ -208,6 +211,52 @@ export async function fetchHotelIvs(
       ? "TRCloud ติด rate-limit (เรียกถี่เกินไป) — ลองใหม่ใน 1–2 นาที"
       : msg;
     return { ivs: [], error: friendly, totalReturned: 0, availableMonths: [] };
+  }
+}
+
+type RawIvLine = {
+  description?: string;
+  product_id?: string;
+  total?: string | number;
+};
+
+export type IvLineSplit = {
+  room: number; // ค่าห้อง (line "ห้องพัก")
+  tip: number; // ทิป (line "ทิป")
+  fine: number; // ค่าปรับ (line "ปรับ")
+  goods: number; // ขนม/ของ (ที่เหลือ — เบียร์/น้ำ/H_S*)
+};
+
+/** ดึง line items ของ IV (iv/read) → แยก ค่าห้อง/ขนม/ทิป/ค่าปรับ ตาม description.
+ *  ⚠️ 1 call ต่อ IV — เรียกเท่าที่จำเป็น (rate-limit TRCloud ~8-10/รอบ) */
+export async function fetchIvLineSplit(
+  invoiceId: string,
+): Promise<{ split?: IvLineSplit; error?: string }> {
+  if (!hotelTrcloudConfigured())
+    return { error: "TRCloud ยังไม่ได้ตั้งค่า" };
+  try {
+    const data = await trcloudPost("iv/read.php", { id: invoiceId });
+    const body = (Array.isArray(data.body) ? data.body : []) as RawIvLine[];
+    if (body.length === 0) {
+      const hint =
+        (typeof data.message === "string" && data.message) || "ไม่พบรายการสินค้า";
+      return { error: hint };
+    }
+    const split: IvLineSplit = { room: 0, tip: 0, fine: 0, goods: 0 };
+    for (const ln of body) {
+      const desc = String(ln.description ?? "");
+      const t = amount(ln.total);
+      if (/ห้องพัก|ค่าห้อง|ห้อง/.test(desc)) split.room += t;
+      else if (/ทิป|tip/i.test(desc)) split.tip += t;
+      else if (/ปรับ|fine/i.test(desc)) split.fine += t;
+      else split.goods += t; // เบียร์/น้ำ/ขนม/ของ
+    }
+    return { split };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "TRCloud error";
+    return {
+      error: /429/.test(msg) ? "TRCloud ติด rate-limit — ลองใหม่ใน 1–2 นาที" : msg,
+    };
   }
 }
 
