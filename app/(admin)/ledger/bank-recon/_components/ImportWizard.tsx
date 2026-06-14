@@ -9,7 +9,7 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, FileText, CheckCircle, AlertTriangle, ChevronRight } from "lucide-react";
+import { Upload, FileText, CheckCircle, AlertTriangle, ChevronRight, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { dryRunImportAction, commitImportAction } from "../_actions";
 import type { ImportDryRunResult } from "../_actions";
@@ -53,6 +53,22 @@ export function ImportWizard({ bankAccountId, accountName, onSuccess }: Props) {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Generate + download the universal LedgerLine Excel template (any bank, no parser needed).
+  // xlsx is imported lazily on click so it never bloats the page bundle.
+  const downloadTemplate = async () => {
+    const XLSX = await import("xlsx");
+    const aoa = [
+      ["วันที่", "เงินเข้า", "เงินออก", "รายละเอียด", "คู่ค้า/อ้างอิง"],
+      ["01/06/2026", 50000, "", "รับโอนค่าสินค้า", "บจก. ตัวอย่าง"],
+      ["02/06/2026", "", 1250.5, "ค่าไฟฟ้า", "การไฟฟ้านครหลวง"],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = [{ wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 28 }, { wch: 20 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "statement");
+    XLSX.writeFile(wb, "LedgerLine-template.xlsx");
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -101,6 +117,7 @@ export function ImportWizard({ bankAccountId, accountName, onSuccess }: Props) {
 
       {/* Step 1: Upload */}
       {step === 1 && (
+        <>
         <div
           className={`relative flex min-h-[200px] cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-8 transition-colors ${
             isDragging
@@ -133,9 +150,32 @@ export function ImportWizard({ bankAccountId, accountName, onSuccess }: Props) {
               <p className="text-xs text-zinc-400">
                 รองรับ CSV / Excel จาก KBank KBIZ · SCB · TTB · BBL
               </p>
+              <p className="text-xs text-zinc-400">
+                หรือไฟล์ตัวอย่าง Excel ของ LedgerLine — ใช้ได้กับ <strong>ทุกธนาคาร</strong>
+              </p>
             </>
           )}
         </div>
+
+        {/* Universal template — works for any bank, no dedicated parser needed */}
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-zinc-100 bg-zinc-50 px-4 py-3">
+          <div>
+            <p className="text-sm font-medium text-zinc-700">ธนาคารไม่อยู่ในรายการ?</p>
+            <p className="text-xs text-zinc-400">
+              ดาวน์โหลดไฟล์ตัวอย่าง กรอกวันที่/เงินเข้า/เงินออก แล้วอัปกลับมาได้เลย
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={downloadTemplate}
+            className="flex shrink-0 items-center gap-1.5"
+          >
+            <Download size={14} />
+            ไฟล์ตัวอย่าง Excel
+          </Button>
+        </div>
+        </>
       )}
 
       {/* Step 2: Preview */}
@@ -153,7 +193,9 @@ export function ImportWizard({ bankAccountId, accountName, onSuccess }: Props) {
                 <FileText size={16} className="text-emerald-600" />
                 <div className="flex-1">
                   <p className="text-sm font-semibold text-emerald-800">
-                    ตรวจพบ: {BANK_LABELS[preview.bankCode] ?? preview.bankCode}
+                    ตรวจพบ: {preview.formatVersion.startsWith("TEMPLATE")
+                      ? "ไฟล์ตัวอย่าง LedgerLine"
+                      : (BANK_LABELS[preview.bankCode] ?? preview.bankCode)}
                   </p>
                   <p className="text-xs text-emerald-600">{file?.name}</p>
                 </div>

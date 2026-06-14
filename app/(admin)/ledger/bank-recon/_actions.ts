@@ -31,6 +31,21 @@ import {
 import { ledgerRevenueGlV1 } from "@/lib/ledger/flags";
 import { prisma } from "@/lib/prisma";
 import { randomUUID } from "crypto";
+import * as XLSX from "xlsx";
+
+// Read an uploaded file as CSV-equivalent text. .xlsx/.xls → SheetJS → CSV
+// (previously file.text() was called on binary xlsx → garbage; CSV worked by luck).
+// One helper used by both dry-run and commit so every format funnels through detectAndParse.
+async function fileToContent(file: File): Promise<string> {
+  const name = (file.name || "").toLowerCase();
+  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+    const buf = Buffer.from(await file.arrayBuffer());
+    const wb = XLSX.read(buf, { type: "buffer" });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    return sheet ? XLSX.utils.sheet_to_csv(sheet) : "";
+  }
+  return await file.text();
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -66,22 +81,24 @@ export async function dryRunImportAction(formData: FormData): Promise<ImportDryR
   if (!file) return { ok: false, error: "ไม่พบไฟล์" };
   if (file.size > 10 * 1024 * 1024) return { ok: false, error: "ไฟล์ใหญ่เกิน 10MB" };
 
-  const content = await file.text();
+  const content = await fileToContent(file);
   const result = detectAndParse(content);
 
   if (!result) {
     return {
       ok: false,
-      error: "ไม่รู้จักรูปแบบไฟล์นี้ — รองรับ KBank KBIZ, SCB, TTB, BBL เท่านั้น",
+      error: "ไม่รู้จักรูปแบบไฟล์นี้ — รองรับ KBank KBIZ, SCB, TTB, BBL หรือไฟล์ตัวอย่าง Excel ของ LedgerLine",
     };
   }
 
+  const isTemplate = result.formatVersion.startsWith("TEMPLATE");
   const warnings = [...result.errors];
   const creditRows = result.rows.filter((r) => r.amountSatang > 0);
   const debitRows  = result.rows.filter((r) => r.amountSatang < 0);
 
-  // Balance continuity check (warn if first balance doesn't tie to previous)
-  if (result.rows.length > 1) {
+  // Balance continuity check (warn if first balance doesn't tie to previous).
+  // Skipped for the template format — it carries no running balance (all zeros).
+  if (result.rows.length > 1 && !isTemplate) {
     for (let i = 1; i < result.rows.length; i++) {
       const prev = result.rows[i - 1];
       const curr = result.rows[i];
@@ -125,9 +142,10 @@ export async function commitImportAction(
   const file = formData.get("file") as File | null;
   if (!file) return { ok: false, error: "ไม่พบไฟล์" };
 
-  const content = await file.text();
+  const content = await fileToContent(file);
   const result = detectAndParse(content);
   if (!result) return { ok: false, error: "ไม่รู้จักรูปแบบไฟล์" };
+  const isTemplate = result.formatVersion.startsWith("TEMPLATE");
   if (!result.rows.length || !result.periodStart || !result.periodEnd) {
     return { ok: false, error: "ไฟล์นี้ไม่มีรายการเดินบัญชี (statement ว่าง)" };
   }
@@ -146,7 +164,9 @@ export async function commitImportAction(
 
   // P0-12: the detected file format must match the account's bank (don't import
   // a KBank statement into an SCB account just because auto-detect guessed).
-  if (result.bankCode !== acct[0].bankCode) {
+  // The template format is account-agnostic (no embedded bank identity) — the user
+  // explicitly picked this account, so the mismatch guard doesn't apply.
+  if (!isTemplate && result.bankCode !== acct[0].bankCode) {
     return {
       ok: false,
       error: `ไฟล์นี้เป็นรูปแบบ ${result.bankCode} แต่บัญชีที่เลือกเป็น ${acct[0].bankCode} — อัปไฟล์ผิดธนาคาร`,

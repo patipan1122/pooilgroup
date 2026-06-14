@@ -4,17 +4,20 @@ import { ttbAdapter } from "./ttb";
 import { scbAdapter } from "./scb";
 import { kbankAdapter } from "./kbank";
 import { bblAdapter } from "./bbl";
+import { templateAdapter } from "./template";
 import type { BankAdapter, ParseResult } from "./types";
 
 export * from "./types";
 export { parseBaacManual } from "./baac-manual";
 export type { BaacManualEntry } from "./baac-manual";
+export { templateAdapter, TEMPLATE_FORMAT } from "./template";
 
 const ADAPTERS: BankAdapter[] = [
   kbankAdapter, // detect first (most distinctive header format)
   bblAdapter,
   ttbAdapter,
   scbAdapter,
+  templateAdapter, // LAST — generic fallback for any account (incl. banks w/o a dedicated parser)
 ];
 
 /**
