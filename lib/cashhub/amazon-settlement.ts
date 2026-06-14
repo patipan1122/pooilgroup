@@ -19,9 +19,10 @@ export const DEFAULT_CHANNELS: ChannelConfig[] = [
   { cvar: "c2", label: "QR", isSettle: true, feePercent: 0, minSettleBaht: 0, companyId: null, bankAccountId: null },
   { cvar: "c13", label: "QR Manual", isSettle: true, feePercent: 0, minSettleBaht: 0, companyId: null, bankAccountId: null },
   { cvar: "c12", label: "เครดิต EDC", isSettle: true, feePercent: 0.7, minSettleBaht: 0, companyId: null, bankAccountId: null },
+  // Grab/LineMan/Shopee หักค่าธรรมเนียม ~18% แล้วโอนยอดสุทธิเข้าวันละครั้ง (CEO 2026-06-14)
   { cvar: "c20", label: "Grab", isSettle: true, feePercent: 18, minSettleBaht: 0, companyId: null, bankAccountId: null },
-  { cvar: "c21", label: "Lineman", isSettle: true, feePercent: 0, minSettleBaht: 500, companyId: null, bankAccountId: null },
-  { cvar: "c22", label: "ShopeeFood", isSettle: true, feePercent: 0, minSettleBaht: 0, companyId: null, bankAccountId: null },
+  { cvar: "c21", label: "Lineman", isSettle: true, feePercent: 18, minSettleBaht: 0, companyId: null, bankAccountId: null },
+  { cvar: "c22", label: "ShopeeFood", isSettle: true, feePercent: 18, minSettleBaht: 0, companyId: null, bankAccountId: null },
   { cvar: "c14", label: "blueplus wallet", isSettle: true, feePercent: 0, minSettleBaht: 0, companyId: null, bankAccountId: null },
   { cvar: "c15", label: "blueplus credit", isSettle: true, feePercent: 0, minSettleBaht: 0, companyId: null, bankAccountId: null },
   // ไม่ใช่เงินจริง (ไม่เข้าธนาคาร)
