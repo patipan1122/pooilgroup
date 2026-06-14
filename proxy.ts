@@ -23,10 +23,30 @@ const FILE_EXEMPT = new Set([
   "/favicon.ico",
 ]);
 
+// เป็น "การเปิดหน้าเว็บ" (ไม่ใช่ RSC/prefetch/fetch/webhook) ไหม.
+// ดัก 3 ชั้น ให้แกร่ง: sec-fetch-dest=document · sec-fetch-mode=navigate ·
+// (กรณีไม่ส่ง sec-fetch-* เลย) Accept ขอ text/html และไม่มี header ของ RSC/prefetch.
+function isPageNavigation(request: NextRequest): boolean {
+  if (request.headers.get("sec-fetch-dest") === "document") return true;
+  if (request.headers.get("sec-fetch-mode") === "navigate") return true;
+  // fallback: client ที่ไม่ส่ง sec-fetch-* (เก่า/บาง webview) — ใช้ Accept แยกหน้า HTML
+  const dest = request.headers.get("sec-fetch-dest");
+  const mode = request.headers.get("sec-fetch-mode");
+  if (!dest && !mode) {
+    const accept = request.headers.get("accept") ?? "";
+    const isRsc =
+      request.headers.get("rsc") ||
+      request.headers.get("next-router-prefetch") ||
+      request.headers.get("next-url");
+    if (accept.includes("text/html") && !isRsc) return true;
+  }
+  return false;
+}
+
 function legacyHostRedirect(request: NextRequest): NextResponse | null {
   if ((request.headers.get("host") ?? "") !== LEGACY_HOST) return null;
   if (request.method !== "GET") return null;
-  if (request.headers.get("sec-fetch-dest") !== "document") return null;
+  if (!isPageNavigation(request)) return null;
   const { pathname, search } = request.nextUrl;
   if (FILE_EXEMPT.has(pathname)) return null;
   if (DIR_EXEMPT.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
