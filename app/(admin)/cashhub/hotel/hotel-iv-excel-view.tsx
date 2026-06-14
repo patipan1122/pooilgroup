@@ -194,7 +194,8 @@ export function HotelIvExcelView({
           cash_to_remit: iv.cash, cash_pool: null, cash_deposited: null,
           cash_diff: null, advance: null,
           qr_morning: null, qr_after2330: null, qr_total: iv.qr,
-          qr_banked: null, qr_diff: null, qr_scan_total: null, qr_overnight: null,
+          qr_banked: null, qr_diff: null,
+          qr_scan_total: null, qr_overnight: null, qr_late: null,
           ota_agoda: null, ota_agoda_banked: null, ota_expedia: null,
           ota_expedia_banked: null, ota_booking: null, ota_booking_banked: null,
           staff_name: iv.status === "Paid" ? "จ่ายแล้ว" : "ค้าง",
@@ -245,6 +246,7 @@ export function HotelIvExcelView({
       recorded: sb.recorded,
       shiftBanked: sb.shiftBanked,
       diff: sb.shiftDiff, // เข้าบัญชี − คีย์
+      late: sb.late, // QR 23:00–00:00 (ธนาคารดันไปวันถัดไป)
       incomplete: sb.incomplete,
     }));
 
@@ -469,6 +471,7 @@ function QrDailyCheck({
     recorded: number;
     shiftBanked: number | null;
     diff: number | null;
+    late: number | null;
     incomplete: boolean;
   }>;
 }) {
@@ -520,6 +523,9 @@ function QrDailyCheck({
                 <th className="px-2.5 py-1.5 text-right font-semibold">คีย์ (IV)</th>
                 <th className="px-2.5 py-1.5 text-right font-semibold">เข้าบัญชี (กะ)</th>
                 <th className="px-2.5 py-1.5 text-right font-semibold">ต่าง</th>
+                <th className="px-2.5 py-1.5 text-right font-semibold whitespace-nowrap text-indigo-500">
+                  🌙 23:00–00:00
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -546,6 +552,9 @@ function QrDailyCheck({
                           ? formatBaht(r.diff ?? 0)
                           : "ตรง ✓"}
                     </td>
+                    <td className="px-2.5 py-1.5 text-right tabular-nums text-indigo-600">
+                      {r.late ? formatBaht(r.late) : "—"}
+                    </td>
                   </tr>
                 );
               })}
@@ -555,7 +564,9 @@ function QrDailyCheck({
       )}
       <p className="text-[11px] text-zinc-400">
         “ต่าง” = เข้าบัญชี(ฐานกะ) − คีย์(IV) · วันที่ต่าง ≠ 0 = ควรเจาะตรวจ (เช่น พนักงานคีย์ผิด ·
-        QR สแกนไม่ผ่านแต่ถูกนับ · ลูกค้าจ่ายช่องอื่น)
+        QR สแกนไม่ผ่านแต่ถูกนับ · ลูกค้าจ่ายช่องอื่น) ·{" "}
+        <span className="text-indigo-500 font-semibold">🌙 23:00–00:00</span> = ยอด QR
+        ก่อนเที่ยงคืนที่ธนาคารดันไปเข้าบัญชี “วันถัดไป” (เศษที่คร่อมเที่ยงคืน — ดูเด่นที่ขอบเดือน)
       </p>
     </div>
   );

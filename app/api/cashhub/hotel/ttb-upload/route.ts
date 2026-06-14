@@ -173,6 +173,7 @@ export async function POST(req: NextRequest) {
           qr_banked: banked,
           qr_scan_total: band ? band.total : null,
           qr_overnight: band ? band.overnight : null,
+          qr_late: band ? band.late : null, // 23:00–00:00 (ธนาคารดันไปวันถัดไป)
           qr_diff: null, // ส่วนต่างรายวันคิดฐานกะตอนอ่าน (apples-to-apples)
           updated_at: now,
         })

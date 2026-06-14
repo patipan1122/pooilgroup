@@ -34,6 +34,7 @@ export type HotelShiftRow = {
   qr_diff: number | null;
   qr_scan_total: number | null; // TTB สแกนรวมทั้งวัน (ตามวันสแกน) — คิดฐานกะ
   qr_overnight: number | null; // TTB สแกน 00:00–07:00 (กะคืนวันก่อน) — คิดฐานกะ
+  qr_late: number | null; // TTB สแกน 23:00–00:00 (ธนาคารดันไปวันถัดไป)
   ota_agoda: number | null;
   ota_agoda_banked: number | null;
   ota_expedia: number | null;
@@ -223,6 +224,8 @@ export type ShiftBasis = {
   settlement: number | null; // qr_banked (ตัด 23:00) = statement ธนาคาร
   shiftBanked: number | null; // ฐานกะ (ตรงกับที่คีย์)
   shiftDiff: number | null; // shiftBanked − recorded (ตามแบบ "เข้าบัญชี − รวม QR" · ควร ~0)
+  late: number | null; // ยอด QR 23:00–00:00 ของวันนี้ (ธนาคารดันไปวันถัดไป)
+  overnight: number | null; // ยอด QR 00:00–07:00 ของวันนี้ (เป็นของกะคืนวันก่อน)
   hasTtb: boolean; // มีข้อมูล TTB ของวันนี้
   incomplete: boolean; // ขาดยอดดึกของวันถัดไป (ยังไม่อัปไฟล์/เดือนถัดไป)
 };
@@ -264,6 +267,8 @@ export function computeShiftBasis(rows: HotelShiftRow[]): Map<string, ShiftBasis
       settlement,
       shiftBanked,
       shiftDiff: shiftBanked != null ? shiftBanked - recorded : null,
+      late: morning?.qr_late ?? null,
+      overnight: ovn ?? null,
       hasTtb,
       incomplete,
     });

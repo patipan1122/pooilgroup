@@ -58,6 +58,8 @@ function amount(v: Cell): number {
 const SETTLE_CUTOFF_MIN = 23 * 60; // 23:00
 // 🌙 กะดึกโรงแรมจบ 07:00 — QR สแกนช่วง 00:00–07:00 = ของกะคืน "วันก่อน" (CEO 2026-06-14)
 const OVERNIGHT_END_MIN = 7 * 60; // 07:00
+// ⏰ QR สแกน 23:00–00:00 (ก่อนเที่ยงคืน) → ธนาคารตัด 23:00 ดันเข้าบัญชี "วันถัดไป"
+const LATE_START_MIN = 23 * 60; // 23:00
 
 function timeMins(rawTime: string): number {
   const tm = rawTime.trim().match(/^(\d{1,2}):(\d{2})/);
@@ -81,7 +83,8 @@ function bankDate(rawDate: string, rawTime: string): string | null {
   return dt.toISOString().slice(0, 10);
 }
 
-export type ScanBand = { total: number; overnight: number }; // overnight = 00:00–07:00
+// overnight = 00:00–07:00 (กะคืนวันก่อน) · late = 23:00–00:00 (ธนาคารดันไปวันถัดไป)
+export type ScanBand = { total: number; overnight: number; late: number };
 
 export type TtbQrResult = {
   byDate: Record<string, number>; // วันเข้าบัญชี (ตัด 23:00) → ยอด QR Success — เทียบ statement ธนาคาร
@@ -144,9 +147,11 @@ export function parseTtbQr(matrix: Cell[][]): TtbQrResult {
     if (!iso || !sIso) continue;
     const amt = amount(r[col.amount]);
     byDate[iso] = (byDate[iso] ?? 0) + amt;
-    const band = (byScanDate[sIso] ??= { total: 0, overnight: 0 });
+    const band = (byScanDate[sIso] ??= { total: 0, overnight: 0, late: 0 });
+    const mins = timeMins(rawTime);
     band.total += amt;
-    if (timeMins(rawTime) < OVERNIGHT_END_MIN) band.overnight += amt; // 00:00–07:00 = กะคืนวันก่อน
+    if (mins < OVERNIGHT_END_MIN) band.overnight += amt; // 00:00–07:00 = กะคืนวันก่อน
+    if (mins >= LATE_START_MIN) band.late += amt; // 23:00–00:00 = ธนาคารดันไปวันถัดไป
     total += amt;
     successCount++;
   }
