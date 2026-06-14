@@ -9,6 +9,7 @@ import { SectionPill } from "@/components/cashhub/redesign/section-pill";
 import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { TH_MONTHS, type HotelShiftRow } from "@/lib/cashhub/hotel";
 import { HotelIvExcelView } from "../hotel-iv-excel-view";
+import { HotelTtbUpload } from "../hotel-ttb-upload";
 
 export const dynamic = "force-dynamic";
 
@@ -113,12 +114,17 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
       </form>
 
       {branchId ? (
-        <HotelIvExcelView
-          branchId={branchId}
-          month={monthStr}
-          initialRows={savedRows}
-          savedCount={savedRows.length}
-        />
+        <>
+          <HotelIvExcelView
+            branchId={branchId}
+            month={monthStr}
+            initialRows={savedRows}
+            savedCount={savedRows.length}
+          />
+          <div className="mt-5">
+            <HotelTtbUpload branchId={branchId} month={monthStr} />
+          </div>
+        </>
       ) : (
         <div className="rounded-2xl border border-zinc-200 p-8 text-center text-zinc-500">
           ยังไม่มีสาขาโรงแรมในระบบ
