@@ -185,13 +185,15 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
 
       {branchId ? (
         <>
+          <StepLabel n={1} title="ดึง / บันทึก IV ยอดขาย (จาก TRCloud)" />
           <HotelIvExcelView
             branchId={branchId}
             month={monthStr}
             initialRows={savedRows}
             savedCount={savedMonthCount}
           />
-          <div className="mt-5">
+          <div className="mt-6">
+            <StepLabel n={2} title="อัปไฟล์ธนาคาร TTB → QR เงินเข้าจริง" />
             <HotelTtbUpload
               branchId={branchId}
               month={monthStr}
@@ -199,7 +201,8 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
             />
           </div>
           {reconcileView && reconcileView.summary.length > 0 && (
-            <div className="mt-5">
+            <div className="mt-6">
+              <StepLabel n={3} title="ส่งกระทบยอดธนาคาร (reconcile) → สถานะเขียว" />
               <HotelReconcilePanel
                 branchId={branchId}
                 month={monthStr}
@@ -216,6 +219,18 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
           ยังไม่มีสาขาโรงแรมในระบบ
         </div>
       )}
+    </div>
+  );
+}
+
+// ป้ายลำดับขั้นตอน — ช่วยให้ผู้ใช้รู้ว่าทำอะไรก่อน-หลัง (1 ดึง IV → 2 อัป TTB → 3 reconcile)
+function StepLabel({ n, title }: { n: number; title: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-2">
+      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--ch-navy,#0b1850)] text-white text-xs font-bold tabular-nums">
+        {n}
+      </span>
+      <span className="text-sm font-semibold text-zinc-700">{title}</span>
     </div>
   );
 }
