@@ -3,6 +3,7 @@
 // dedup-guard + checksum guard อยู่ใน createAmazonIv. body = { storeCode, day: AmazonDayRow }
 import { NextResponse, type NextRequest } from "next/server";
 import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { branchByStoreCode, createAmazonIv } from "@/lib/cashhub/amazon-trcloud";
@@ -15,6 +16,12 @@ export async function POST(req: NextRequest) {
   const gate = await cashHubApiGuard({ executive: true });
   if (gate.error) return gate.error;
   const session = gate.session;
+  // ส่งใบกำกับเข้า TRCloud = ลงบัญชี+ภาษีจริง → เฉพาะ super_admin (ตาม super_admin-only connection gating D-022)
+  if (!isSuperAdmin(session.user.role))
+    return NextResponse.json(
+      { error: "เฉพาะ super_admin เท่านั้นที่ส่งใบกำกับเข้า TRCloud ได้" },
+      { status: 403 },
+    );
 
   let body: { storeCode?: string; day?: AmazonDayRow };
   try {

@@ -157,6 +157,51 @@ export async function applyIvMatch(
   return { updated };
 }
 
+export type ImportHistoryRow = {
+  at: string;
+  days: number;
+  file: string | null;
+  storeCode: string | null;
+  by: string;
+};
+
+/** ประวัติการนำเข้าไฟล์ (จาก audit_logs IMPORT_AMAZON_SALES) */
+export async function loadImportHistory(
+  admin: Admin,
+  orgId: string,
+  limit = 15,
+): Promise<ImportHistoryRow[]> {
+  const { data } = await admin
+    .from("audit_logs")
+    .select("created_at, user_id, diff")
+    .eq("org_id", orgId)
+    .eq("action", "IMPORT_AMAZON_SALES")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  const userIds = [...new Set(rows.map((r) => r.user_id).filter(Boolean) as string[])];
+  const nameById = new Map<string, string>();
+  if (userIds.length) {
+    const { data: users } = await admin
+      .from("users")
+      .select("id, name")
+      .in("id", userIds);
+    for (const u of (users ?? []) as Array<{ id: string; name: string }>)
+      nameById.set(u.id, u.name);
+  }
+  return rows.map((r) => {
+    const di = (r.diff as { new?: Record<string, unknown> } | null)?.new ?? {};
+    const uid = r.user_id ? String(r.user_id) : null;
+    return {
+      at: String(r.created_at ?? ""),
+      days: Number(di.days ?? 0),
+      file: (di.file as string | null) ?? null,
+      storeCode: (di.storeCode as string | null) ?? null,
+      by: (uid ? nameById.get(uid) : null) ?? "—",
+    };
+  });
+}
+
 /** อัปเดตแถวหลังสร้าง IV สำเร็จ (กดสร้างจากหน้า) */
 export async function markIvPosted(
   admin: Admin,

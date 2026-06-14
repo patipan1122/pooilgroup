@@ -4,13 +4,17 @@
 //   recipe พิสูจน์แล้ว (IV 1048468). human-confirm ก่อนสร้าง. pilot=ชุมชนหัวทะเล (5157).
 //   ดู docs/WORKSHOP_cashhub-amazon-pos-iv.md
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole } from "@/lib/auth/role-guards";
+import { requireExecutiveRole, isSuperAdmin } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { BackButton } from "@/components/ui/back-button";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
 import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { endOfMonth, startOfMonth } from "date-fns";
-import { loadAmazonDays, listAmazonStores } from "@/lib/cashhub/amazon-data";
+import {
+  loadAmazonDays,
+  listAmazonStores,
+  loadImportHistory,
+} from "@/lib/cashhub/amazon-data";
 import { AMAZON_BRANCHES } from "@/lib/cashhub/amazon-trcloud";
 import { AmazonView } from "./amazon-view";
 
@@ -40,6 +44,8 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
   const to = endOfMonth(monthDate).toISOString().slice(0, 10);
 
   const savedDays = await loadAmazonDays(admin, orgId, storeCode, from, to);
+  const history = await loadImportHistory(admin, orgId);
+  const canSend = isSuperAdmin(session.user.role); // ส่งเข้า TRCloud = super_admin เท่านั้น
 
   return (
     <div className="ch-scope p-3 sm:p-6 lg:p-8 max-w-6xl mx-auto pb-24">
@@ -95,6 +101,8 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
         from={from}
         to={to}
         savedDays={savedDays}
+        canSend={canSend}
+        history={history}
       />
     </div>
   );

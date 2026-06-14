@@ -2,9 +2,10 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import * as XLSX from "xlsx";
 import { formatBaht } from "@/lib/utils/format";
 import { CVAR_LABEL } from "@/lib/cashhub/amazon-parse";
-import type { SavedAmazonDay } from "@/lib/cashhub/amazon-data";
+import type { SavedAmazonDay, ImportHistoryRow } from "@/lib/cashhub/amazon-data";
 
 type Props = {
   storeCode: string;
@@ -14,6 +15,8 @@ type Props = {
   from: string;
   to: string;
   savedDays: SavedAmazonDay[];
+  canSend: boolean;
+  history: ImportHistoryRow[];
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -25,8 +28,11 @@ export function AmazonView({
   from,
   to,
   savedDays,
+  canSend,
+  history,
 }: Props) {
   const router = useRouter();
+  const [showHistory, setShowHistory] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -182,7 +188,7 @@ export function AmazonView({
     router.refresh();
   }, [savedDays, storeCode, router]);
 
-  const exportCsv = useCallback(() => {
+  const exportXlsx = useCallback(() => {
     const cvarKeys = Array.from(
       new Set(savedDays.flatMap((d) => Object.keys(d.channels ?? {}))),
     ).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
@@ -197,31 +203,29 @@ export function AmazonView({
       "สถานะ",
       ...cvarKeys.map((k) => CVAR_LABEL[k] ?? k),
     ];
-    const lines = savedDays.map((d) => [
-      d.sales_date,
-      d.gross,
-      d.total ?? "",
-      d.vat ?? "",
-      d.iv_doc_no ?? "",
-      d.iv_gross ?? "",
-      d.match_state === "match"
-        ? "ตรง"
-        : d.match_state === "mismatch"
-          ? "ไม่ตรง"
-          : "ยังไม่มี IV",
-      d.balanced ? "พร้อม" : `ติดปัญหา: ${d.block_reason ?? ""}`,
-      ...cvarKeys.map((k) => d.channels?.[k] ?? ""),
-    ]);
-    const csv = [head, ...lines]
-      .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `amazon-${branchLabel}-${from.slice(0, 7)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const aoa: (string | number)[][] = [
+      head,
+      ...savedDays.map((d) => [
+        d.sales_date,
+        d.gross,
+        d.total ?? "",
+        d.vat ?? "",
+        d.iv_doc_no ?? "",
+        d.iv_gross ?? "",
+        d.match_state === "match"
+          ? "ตรง"
+          : d.match_state === "mismatch"
+            ? "ไม่ตรง"
+            : "ยังไม่มี IV",
+        d.balanced ? "พร้อม" : `ติดปัญหา: ${d.block_reason ?? ""}`,
+        ...cvarKeys.map((k) => d.channels?.[k] ?? ""),
+      ]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = head.map((h) => ({ wch: Math.max(10, String(h).length + 2) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Amazon");
+    XLSX.writeFile(wb, `amazon-${branchLabel}-${from.slice(0, 7)}.xlsx`);
   }, [savedDays, branchLabel, from]);
 
   const stat = {
@@ -266,12 +270,47 @@ export function AmazonView({
           <button
             type="button"
             disabled={savedDays.length === 0}
-            onClick={exportCsv}
+            onClick={exportXlsx}
             className="h-11 rounded-xl border border-zinc-200 px-4 text-sm font-medium hover:bg-zinc-50 disabled:opacity-40"
           >
-            ⬇ Excel (CSV)
+            ⬇ ดาวน์โหลด Excel
           </button>
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowHistory((s) => !s)}
+              className="h-11 rounded-xl border border-zinc-200 px-4 text-sm font-medium hover:bg-zinc-50"
+            >
+              🕘 ประวัติการอัป ({history.length})
+            </button>
+          )}
         </div>
+        {showHistory && (
+          <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+            <div className="mb-2 text-xs font-semibold text-zinc-500">
+              ประวัติการนำเข้าไฟล์
+            </div>
+            <div className="space-y-1">
+              {history.map((h, i) => (
+                <div
+                  key={i}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-zinc-600"
+                >
+                  <span className="font-medium text-zinc-700">
+                    {new Date(h.at).toLocaleString("th-TH", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
+                  </span>
+                  <span>· {h.days} วัน</span>
+                  {h.storeCode && <span>· สาขา {h.storeCode}</span>}
+                  {h.file && <span className="text-zinc-400">· {h.file}</span>}
+                  <span className="text-zinc-400">· โดย {h.by}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <p className="mt-2 text-xs text-zinc-500">
           {branchType ? `สูตรบัญชี: ${branchType} · ` : ""}อัปแล้วเซฟถาวร · กด&ldquo;เทียบกับ
           TRCloud&rdquo; เพื่ออัปเดตสถานะว่าที่คีย์ตรงกับ POS ไหม
@@ -293,6 +332,32 @@ export function AmazonView({
         </div>
       ) : (
         <>
+          {/* แจ้งเตือนยอดไม่ตรง / ติดปัญหา */}
+          {(stat.mismatch > 0 || stat.blocked > 0) && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+              <div className="font-bold text-red-700">⚠️ พบรายการที่ต้องตรวจสอบ</div>
+              <ul className="mt-1 text-sm text-red-700 space-y-0.5">
+                {stat.mismatch > 0 && (
+                  <li>
+                    • <b>{stat.mismatch} วัน</b> ยอดใน TRCloud <b>ไม่ตรง</b>กับยอด POS —{" "}
+                    {savedDays
+                      .filter((d) => d.match_state === "mismatch")
+                      .map((d) => d.sales_date.slice(5))
+                      .join(", ")}
+                  </li>
+                )}
+                {stat.blocked > 0 && (
+                  <li>
+                    • <b>{stat.blocked} วัน</b> ข้อมูล POS ไม่ครบ/ปิดกะไม่เสร็จ (ยังคีย์ IV ไม่ได้)
+                  </li>
+                )}
+              </ul>
+              <div className="mt-1.5 text-xs text-red-600">
+                ตรวจสอบให้ถูกต้องก่อน — วันที่ยอดไม่ตรงควรแก้ที่ต้นทาง (POS/TRCloud) ไม่ใช่สร้างทับ
+              </div>
+            </div>
+          )}
+
           {/* summary */}
           <div className="flex flex-wrap gap-2">
             <Stat n={stat.days} label="วันทั้งหมด" />
@@ -300,7 +365,7 @@ export function AmazonView({
             <Stat n={stat.mismatch} label="ไม่ตรง" tone="warn" />
             <Stat n={stat.noIv} label="ยังไม่มี IV" tone="info" />
             <Stat n={stat.blocked} label="ติดปัญหา" tone="warn" />
-            {stat.noIv > 0 && (
+            {stat.noIv > 0 && canSend && (
               <button
                 type="button"
                 disabled={busy !== null}
@@ -309,6 +374,11 @@ export function AmazonView({
               >
                 {busy === "push-all" ? "กำลังสร้าง…" : `✓ สร้าง IV ที่ยังไม่มี (${stat.noIv} วัน)`}
               </button>
+            )}
+            {stat.noIv > 0 && !canSend && (
+              <span className="ml-auto self-center text-xs text-zinc-400">
+                🔒 เฉพาะ super_admin สร้าง IV ได้
+              </span>
             )}
           </div>
 
@@ -330,7 +400,17 @@ export function AmazonView({
               </thead>
               <tbody>
                 {savedDays.map((d) => (
-                  <tr key={d.sales_date} className="border-b border-zinc-100 align-top">
+                  <tr
+                    key={d.sales_date}
+                    className={
+                      "border-b border-zinc-100 align-top " +
+                      (d.match_state === "mismatch"
+                        ? "bg-red-50/60"
+                        : !d.balanced
+                          ? "bg-amber-50/50"
+                          : "")
+                    }
+                  >
                     <td className="p-3 font-medium text-zinc-700">{d.sales_date}</td>
                     <td className="p-3 text-right font-semibold">{formatBaht(d.gross)}</td>
                     <td className="p-3 text-right text-zinc-500">
@@ -365,15 +445,17 @@ export function AmazonView({
                         </span>
                       ) : d.match_state === "match" || d.iv_status === "posted" ? (
                         <span className="text-xs text-emerald-600">✓ มีแล้ว</span>
-                      ) : (
+                      ) : canSend ? (
                         <button
                           type="button"
                           disabled={busy !== null}
                           onClick={() => createIv(d)}
                           className="rounded-lg bg-[var(--ch-brand,#1e3aff)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
                         >
-                          {busy === `push-${d.sales_date}` ? "กำลังสร้าง…" : "สร้าง IV"}
+                          {busy === `push-${d.sales_date}` ? "กำลังสร้าง…" : "ส่งเข้า TRCloud"}
                         </button>
+                      ) : (
+                        <span className="text-xs text-zinc-400">🔒 super_admin</span>
                       )}
                     </td>
                   </tr>
