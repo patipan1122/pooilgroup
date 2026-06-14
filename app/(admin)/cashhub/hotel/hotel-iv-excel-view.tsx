@@ -236,13 +236,28 @@ export function HotelIvExcelView({
     kpiSettlement += sb.settlement ?? 0;
     if (sb.incomplete) kpiIncomplete = true;
   }
+  // เทียบรายวัน: ยอด QR ที่คีย์ (IV) ↔ เข้าบัญชี (ฐานกะ) → เห็นวันที่ไม่ตรงไว้เจาะตรวจ
+  const dailyChecks = [...shiftMap.values()]
+    .filter((sb) => sb.date.startsWith(ymPrefix) && sb.hasTtb)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((sb) => ({
+      day: Number(sb.date.slice(8, 10)),
+      recorded: sb.recorded,
+      shiftBanked: sb.shiftBanked,
+      diff: sb.shiftDiff, // เข้าบัญชี − คีย์
+      incomplete: sb.incomplete,
+    }));
+
   const kpi = kpiHasTtb ? (
-    <QrReconcile
-      recorded={kpiRecorded}
-      shift={kpiShift}
-      settlement={kpiSettlement}
-      incomplete={kpiIncomplete}
-    />
+    <>
+      <QrReconcile
+        recorded={kpiRecorded}
+        shift={kpiShift}
+        settlement={kpiSettlement}
+        incomplete={kpiIncomplete}
+      />
+      <QrDailyCheck rows={dailyChecks} />
+    </>
   ) : null;
 
   const showingSaved = !data && initialRows.length > 0;
@@ -441,6 +456,107 @@ function QrReconcile({
           (เพื่อเอายอด QR เช้ามืดวันที่ 1 ของเดือนถัดไป มารวมเข้ากะคืนวันสุดท้าย)
         </div>
       )}
+    </div>
+  );
+}
+
+// ตรวจรายวัน: ยอด QR ที่คีย์ (IV) ↔ เข้าบัญชี (ฐานกะ) — ดึงเฉพาะวันไม่ตรงมาโชว์
+function QrDailyCheck({
+  rows,
+}: {
+  rows: Array<{
+    day: number;
+    recorded: number;
+    shiftBanked: number | null;
+    diff: number | null;
+    incomplete: boolean;
+  }>;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const mismatches = rows.filter((r) => !r.incomplete && Math.abs(r.diff ?? 0) >= 1);
+  const pending = rows.filter((r) => r.incomplete);
+  const matched = rows.filter((r) => !r.incomplete && Math.abs(r.diff ?? 0) < 1);
+  const visible = showAll ? rows : [...mismatches, ...pending].sort((a, b) => a.day - b.day);
+  const allGood = mismatches.length === 0 && pending.length === 0;
+
+  return (
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-bold text-zinc-800">🔍 ตรวจรายวัน — คีย์ (IV) ↔ เข้าบัญชี (ฐานกะ)</div>
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="h-7 px-2.5 rounded-lg border border-zinc-200 text-xs font-semibold text-zinc-600 hover:bg-zinc-50"
+        >
+          {showAll ? "ดูเฉพาะวันต่าง" : "ดูทุกวัน"}
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-2 text-xs">
+        <span className="rounded-full bg-emerald-50 text-emerald-700 px-2.5 py-1 font-semibold">
+          ตรง {matched.length} วัน
+        </span>
+        <span
+          className={`rounded-full px-2.5 py-1 font-semibold ${mismatches.length ? "bg-red-50 text-red-700" : "bg-zinc-50 text-zinc-400"}`}
+        >
+          ต่าง {mismatches.length} วัน
+        </span>
+        {pending.length > 0 && (
+          <span className="rounded-full bg-amber-50 text-amber-700 px-2.5 py-1 font-semibold">
+            รอไฟล์เดือนถัดไป {pending.length} วัน
+          </span>
+        )}
+      </div>
+
+      {allGood && !showAll ? (
+        <div className="rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm p-2.5 text-center font-semibold">
+          ✅ ทุกวันยอดคีย์ตรงกับเข้าบัญชี (ฐานกะ)
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-zinc-100">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-zinc-50 text-zinc-500 text-xs">
+                <th className="px-2.5 py-1.5 text-left font-semibold">วันที่</th>
+                <th className="px-2.5 py-1.5 text-right font-semibold">คีย์ (IV)</th>
+                <th className="px-2.5 py-1.5 text-right font-semibold">เข้าบัญชี (กะ)</th>
+                <th className="px-2.5 py-1.5 text-right font-semibold">ต่าง</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((r) => {
+                const bad = !r.incomplete && Math.abs(r.diff ?? 0) >= 1;
+                return (
+                  <tr
+                    key={r.day}
+                    className={`border-t border-zinc-50 ${bad ? "bg-red-50/60" : r.incomplete ? "bg-amber-50/50" : ""}`}
+                  >
+                    <td className="px-2.5 py-1.5 font-semibold text-zinc-700">{r.day}</td>
+                    <td className="px-2.5 py-1.5 text-right tabular-nums text-zinc-700">
+                      {formatBaht(r.recorded)}
+                    </td>
+                    <td className="px-2.5 py-1.5 text-right tabular-nums text-zinc-700">
+                      {r.incomplete ? "—" : formatBaht(r.shiftBanked ?? 0)}
+                    </td>
+                    <td
+                      className={`px-2.5 py-1.5 text-right tabular-nums font-semibold ${bad ? "text-red-700" : r.incomplete ? "text-amber-700" : "text-emerald-700"}`}
+                    >
+                      {r.incomplete
+                        ? "รอไฟล์เดือนถัดไป"
+                        : bad
+                          ? formatBaht(r.diff ?? 0)
+                          : "ตรง ✓"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="text-[11px] text-zinc-400">
+        “ต่าง” = เข้าบัญชี(ฐานกะ) − คีย์(IV) · วันที่ต่าง ≠ 0 = ควรเจาะตรวจ (เช่น พนักงานคีย์ผิด ·
+        QR สแกนไม่ผ่านแต่ถูกนับ · ลูกค้าจ่ายช่องอื่น)
+      </p>
     </div>
   );
 }
