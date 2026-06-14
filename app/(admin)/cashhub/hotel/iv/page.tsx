@@ -8,7 +8,7 @@ import { BackButton } from "@/components/ui/back-button";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
 import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { TH_MONTHS } from "@/lib/cashhub/hotel";
-import { HotelTrcloudPanel } from "../hotel-trcloud-panel";
+import { HotelIvExcelView } from "../hotel-iv-excel-view";
 
 export const dynamic = "force-dynamic";
 
@@ -95,7 +95,7 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
       </form>
 
       {branchId ? (
-        <HotelTrcloudPanel branchId={branchId} month={monthStr} />
+        <HotelIvExcelView branchId={branchId} month={monthStr} />
       ) : (
         <div className="rounded-2xl border border-zinc-200 p-8 text-center text-zinc-500">
           ยังไม่มีสาขาโรงแรมในระบบ
