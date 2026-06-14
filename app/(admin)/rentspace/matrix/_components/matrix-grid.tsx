@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Table, X, Calendar, ChevronRight } from "lucide-react";
@@ -69,6 +69,33 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
   }
   const grandYearTotal = monthsTotals.reduce((a, b) => a + b, 0);
 
+  // expandable month columns (show ค่าเช่า/น้ำ/ไฟ inline) + electric-outlier flag
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
+  function toggleExp(m: number) {
+    setExpanded((s) => {
+      const n = new Set(s);
+      if (n.has(m)) n.delete(m);
+      else n.add(m);
+      return n;
+    });
+  }
+  function monthElecAvg(m: number): number {
+    let sum = 0, count = 0;
+    for (const u of units) {
+      const c = cells[`${u.id}|${year}-${pad2(m)}`];
+      if (c && c.electric > 0) { sum += c.electric; count++; }
+    }
+    return count ? sum / count : 0;
+  }
+  function monthSub(m: number, pick: (c: MatrixCell) => number): number {
+    let sum = 0;
+    for (const u of units) {
+      const c = cells[`${u.id}|${year}-${pad2(m)}`];
+      if (c) sum += pick(c);
+    }
+    return sum;
+  }
+
   return (
     <div className="rs-matrix">
       {/* view + month toggles */}
@@ -116,12 +143,27 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
             <thead>
               <tr>
                 <th className="rs-sticky-col rs-th-room">ห้อง / ผู้เช่า</th>
-                {TH_MONTHS_SHORT.map((label) => (
-                  <th key={label} className="rs-th-month">
-                    <div>{label}</div>
-                    <div className="rs-th-year">{beYear}</div>
-                  </th>
-                ))}
+                {TH_MONTHS_SHORT.map((label, idx) => {
+                  const m = idx + 1;
+                  if (!expanded.has(m)) {
+                    return (
+                      <th key={label} className="rs-th-month rs-th-click" onClick={() => toggleExp(m)} title="กดเพื่อแยก ค่าเช่า/น้ำ/ไฟ">
+                        <div>{label} ▸</div>
+                        <div className="rs-th-year">{beYear}</div>
+                      </th>
+                    );
+                  }
+                  return (
+                    <Fragment key={label}>
+                      <th className="rs-th-month rs-th-sub rs-th-click" onClick={() => toggleExp(m)} title="กดเพื่อยุบ">
+                        <div>{label} ▾</div>
+                        <div className="rs-th-sublabel">เช่า</div>
+                      </th>
+                      <th className="rs-th-month rs-th-sub"><div>&nbsp;</div><div className="rs-th-sublabel">น้ำ</div></th>
+                      <th className="rs-th-month rs-th-sub"><div className="rs-th-year">{beYear}</div><div className="rs-th-sublabel">ไฟ ⚡</div></th>
+                    </Fragment>
+                  );
+                })}
                 <th className="rs-th-month rs-th-total">รวมทั้งปี</th>
               </tr>
             </thead>
@@ -134,6 +176,31 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
                   </th>
                   {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
                     const cell = cells[`${u.id}|${year}-${pad2(m)}`];
+                    const exp = expanded.has(m);
+                    if (exp) {
+                      const avg = monthElecAvg(m);
+                      const hot = cell && avg > 0 && cell.electric > avg * 1.5;
+                      return (
+                        <Fragment key={m}>
+                          <td className="rs-cell rs-cell-sub" onClick={() => openCell(u, m)}>
+                            <span className="rs-amount">{cell ? formatBaht(cell.rent) : formatBaht(u.baseRent)}</span>
+                          </td>
+                          <td className="rs-cell rs-cell-sub" onClick={() => openCell(u, m)}>
+                            <span style={{ color: "var(--rs-text-2)" }}>{cell ? formatBaht(cell.water) : "—"}</span>
+                          </td>
+                          <td
+                            className="rs-cell rs-cell-sub"
+                            onClick={() => openCell(u, m)}
+                            style={hot ? { background: "var(--rs-danger-soft)" } : undefined}
+                            title={hot ? "ค่าไฟสูงผิดปกติ (>1.5× เฉลี่ยเดือนนี้)" : undefined}
+                          >
+                            <span style={{ color: hot ? "var(--rs-danger)" : "var(--rs-text-2)", fontWeight: hot ? 800 : 600 }}>
+                              {cell ? formatBaht(cell.electric) : "—"}
+                            </span>
+                          </td>
+                        </Fragment>
+                      );
+                    }
                     if (!cell) {
                       return (
                         <td key={m} className="rs-cell rs-cell-empty" onClick={() => openCell(u, m)}>
@@ -165,11 +232,23 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
             <tfoot>
               <tr>
                 <th className="rs-sticky-col rs-td-room rs-foot-label">รวมต่อเดือน</th>
-                {monthsTotals.map((t, i) => (
-                  <td key={i} className="rs-cell rs-foot">
-                    <span className="rs-amount">{formatBaht(t)}</span>
-                  </td>
-                ))}
+                {monthsTotals.map((t, i) => {
+                  const m = i + 1;
+                  if (expanded.has(m)) {
+                    return (
+                      <Fragment key={i}>
+                        <td className="rs-cell rs-foot rs-cell-sub"><span className="rs-amount">{formatBaht(monthSub(m, (c) => c.rent))}</span></td>
+                        <td className="rs-cell rs-foot rs-cell-sub"><span className="rs-amount">{formatBaht(monthSub(m, (c) => c.water))}</span></td>
+                        <td className="rs-cell rs-foot rs-cell-sub"><span className="rs-amount">{formatBaht(monthSub(m, (c) => c.electric))}</span></td>
+                      </Fragment>
+                    );
+                  }
+                  return (
+                    <td key={i} className="rs-cell rs-foot">
+                      <span className="rs-amount">{formatBaht(t)}</span>
+                    </td>
+                  );
+                })}
                 <td className="rs-cell rs-foot rs-cell-total">
                   <span className="rs-amount">{formatBaht(grandYearTotal)}</span>
                 </td>
@@ -233,6 +312,26 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
         .rs-th-total {
           background: var(--rs-brand-50);
           color: var(--rs-brand);
+        }
+        .rs-th-click {
+          cursor: pointer;
+        }
+        .rs-th-click:hover {
+          background: var(--rs-brand-50);
+          color: var(--rs-brand);
+        }
+        .rs-th-sub {
+          background: var(--rs-brand-50);
+          min-width: 64px;
+        }
+        .rs-th-sublabel {
+          font-size: 9.5px;
+          font-weight: 700;
+          color: var(--rs-brand);
+        }
+        .rs-cell-sub {
+          min-width: 64px;
+          background: rgba(30, 58, 255, 0.03);
         }
         .rs-sticky-col {
           position: sticky;
