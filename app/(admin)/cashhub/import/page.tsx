@@ -67,6 +67,15 @@ const SOURCES: ImportSource[] = [
     href: "/cashhub/amazon",
   },
   {
+    slug: "tea",
+    emoji: "🧋",
+    Icon: Coffee,
+    title: "ร้านชาไข่มุก (Foodstory)",
+    subtitle: "OWL CHA / MR.WOOF / SNOW DIP · ดึง IV รายวันจาก TRCloud + เทียบ POS",
+    status: "ready",
+    href: "/cashhub/tea",
+  },
+  {
     slug: "7-eleven",
     emoji: "🏪",
     Icon: Store,
