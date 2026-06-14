@@ -218,3 +218,30 @@ export async function projectKpis(orgId: string, projectId: string) {
   const collectedThisMonth = thisMonthBills.reduce((s, b) => s + toNum(b.paidAmount), 0);
   return { units, occupied, vacant, outstanding, overdueCount, billedThisMonth, collectedThisMonth, period };
 }
+
+/** Billing-cycle status for the current period (จดมิเตอร์ → ออกบิล → รับชำระ). */
+export async function billingCycle(orgId: string, projectId: string, period = currentPeriod()) {
+  // billable = units with an active/expiring contract
+  const contracts = await prisma.rentalContract.findMany({
+    where: { orgId, projectId, status: { in: ["active", "expiring"] } },
+    select: { unitId: true },
+  });
+  const unitIds = [...new Set(contracts.map((c) => c.unitId))];
+  const total = unitIds.length;
+
+  const [readUnits, bills] = await Promise.all([
+    prisma.rentalMeterReading.findMany({
+      where: { orgId, period, unitId: { in: unitIds.length ? unitIds : ["00000000-0000-0000-0000-000000000000"] } },
+      select: { unitId: true },
+      distinct: ["unitId"],
+    }),
+    prisma.rentalBill.findMany({
+      where: { orgId, projectId, period, status: { not: "void" } },
+      select: { status: true },
+    }),
+  ]);
+  const metersDone = readUnits.length;
+  const billsDone = bills.filter((b) => b.status !== "draft").length;
+  const paidCount = bills.filter((b) => b.status === "paid").length;
+  return { period, total, metersDone, billsDone, paidCount };
+}
