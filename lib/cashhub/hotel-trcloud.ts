@@ -94,9 +94,9 @@ function amount(v: string | number | undefined): number {
 export async function fetchHotelIvs(
   periodStart: string,
   periodEnd: string,
-): Promise<{ ivs: HotelIv[]; error?: string }> {
+): Promise<{ ivs: HotelIv[]; error?: string; totalReturned: number }> {
   if (!hotelTrcloudConfigured())
-    return { ivs: [], error: "TRCloud ยังไม่ได้ตั้งค่า (TRCLOUD_JPS_*)" };
+    return { ivs: [], error: "TRCloud ยังไม่ได้ตั้งค่า (TRCLOUD_JPS_*)", totalReturned: 0 };
   try {
     const data = await trcloudPost("iv/search.php", {
       date_from: periodStart,
@@ -113,6 +113,22 @@ export async function fetchHotelIvs(
             ? data.result
             : []
     ) as RawIv[];
+    // TRCloud คืน 200 พร้อม body ที่ไม่มี array ตอนติด rate-limit/error → แยกให้ชัด
+    if (list.length === 0) {
+      const hint =
+        (typeof data.message === "string" && data.message) ||
+        (typeof data.error === "string" && data.error) ||
+        (data.success === false ? "TRCloud ปฏิเสธคำขอ" : "");
+      if (hint)
+        return { ivs: [], error: `TRCloud: ${hint}`, totalReturned: 0 };
+      // คืน array ว่างจริง — มักเป็น rate-limit (เรียกถี่เกิน) หรือไม่มีเอกสารช่วงนี้
+      return {
+        ivs: [],
+        error:
+          "TRCloud คืนข้อมูลว่าง — อาจติด rate-limit (เรียกถี่เกินไป) ลองใหม่ใน 1–2 นาที",
+        totalReturned: 0,
+      };
+    }
     const ivs: HotelIv[] = list
       .filter(isHotel)
       .map((iv) => ({
@@ -124,9 +140,14 @@ export async function fetchHotelIvs(
         customer: String(iv.name ?? ""),
       }))
       .filter((iv) => iv.date >= periodStart && iv.date <= periodEnd);
-    return { ivs };
+    return { ivs, totalReturned: list.length };
   } catch (err) {
-    return { ivs: [], error: err instanceof Error ? err.message : "TRCloud error" };
+    const msg = err instanceof Error ? err.message : "TRCloud error";
+    // 429 = rate-limit
+    const friendly = /429/.test(msg)
+      ? "TRCloud ติด rate-limit (เรียกถี่เกินไป) — ลองใหม่ใน 1–2 นาที"
+      : msg;
+    return { ivs: [], error: friendly, totalReturned: 0 };
   }
 }
 
