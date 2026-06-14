@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import {
   Sparkles, Plus, Link2, Ban, X, Check, CheckCircle2, AlertTriangle, Trash2, RefreshCw, Search,
   MoreVertical, ArrowLeftRight, FilePlus2, Pencil, CalendarClock, ArrowDownWideNarrow, CheckSquare, Square,
+  HelpCircle, Upload,
 } from "lucide-react";
 import {
   createMatchGroupAction, autoMatchAccountAction, confirmAllGroupsAction,
@@ -93,6 +94,7 @@ export function ReconcileBoard({
   const [todayBank, setTodayBank] = useState(false);
   const [sortBook, setSortBook] = useState<SortMode>("date");
   const [sortBank, setSortBank] = useState<SortMode>("date");
+  const [showHelp, setShowHelp] = useState(false);   // คำแนะนำการใช้งาน (PEAK-style help)
 
   const bookKey = (b: { bookType: string; bookId: string }) => `${b.bookType}:${b.bookId}`;
   const today = todayISO();
@@ -237,7 +239,7 @@ export function ReconcileBoard({
           <button
             type="button"
             onClick={() => setTab("match")}
-            className={`rounded-lg px-4 py-1.5 text-sm font-medium ${FOCUS} ${tab === "match" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}
+            className={`press inline-flex min-h-11 items-center rounded-lg px-4 py-1.5 text-sm font-medium sm:min-h-0 ${FOCUS} ${tab === "match" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}
           >
             รอกระทบยอด
             <span className="ml-1.5 rounded-full bg-brand-50 px-1.5 py-0.5 text-[10px] tabular-num text-brand-600">{bankMovements.length}</span>
@@ -245,7 +247,7 @@ export function ReconcileBoard({
           <button
             type="button"
             onClick={() => setTab("confirm")}
-            className={`rounded-lg px-4 py-1.5 text-sm font-medium ${FOCUS} ${tab === "confirm" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}
+            className={`press inline-flex min-h-11 items-center rounded-lg px-4 py-1.5 text-sm font-medium sm:min-h-0 ${FOCUS} ${tab === "confirm" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}
           >
             รอยืนยัน
             <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] tabular-num text-amber-600">{suggestedGroups.length}</span>
@@ -257,11 +259,27 @@ export function ReconcileBoard({
             <RefreshCw size={12} className={pending ? "animate-spin motion-reduce:animate-none" : ""} /> ดึงรายได้ TRCloud
           </button>
           <button type="button" onClick={handleAuto} disabled={pending}
-            className={`inline-flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50 ${FOCUS}`}>
+            className={`press inline-flex min-h-10 items-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50 sm:min-h-0 ${FOCUS}`}>
             <Sparkles size={12} /> จับคู่อัตโนมัติ
+          </button>
+          <button type="button" aria-label="คำแนะนำการใช้งาน" aria-expanded={showHelp ? "true" : "false"} onClick={() => setShowHelp((v) => !v)}
+            className={`press grid size-9 shrink-0 place-items-center rounded-lg border border-zinc-200 text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600 sm:size-8 ${FOCUS} ${showHelp ? "bg-zinc-50 text-zinc-600" : ""}`}>
+            <HelpCircle size={16} />
           </button>
         </div>
       </div>
+
+      {/* คำแนะนำการใช้งาน (PEAK-style help) — กดปุ่ม ? เพื่อเปิด/ปิด */}
+      {showHelp && (
+        <div className="mb-3 rounded-xl border border-brand-100 bg-brand-50/60 p-3 text-sm text-zinc-600">
+          <p className="mb-1.5 font-medium text-zinc-700">กระทบยอดธนาคารใน 3 ขั้น</p>
+          <ol className="space-y-1 text-xs">
+            <li><b className="text-brand-600">1.</b> นำเข้า/ดึงรายการเข้ามาทั้ง 2 ฝั่ง (ฝั่งบัญชี = ที่เราคีย์ · ฝั่งธนาคาร = statement จริง)</li>
+            <li><b className="text-brand-600">2.</b> ติ๊กรายการที่ตรงกันทั้งซ้าย-ขวา แล้วกด <b>“จับคู่”</b> — หรือกด <b>“จับคู่อัตโนมัติ”</b> ให้ระบบช่วยจับให้</li>
+            <li><b className="text-brand-600">3.</b> ไปแท็บ <b>“รอยืนยัน”</b> ตรวจส่วนต่าง แล้วกด <b>“กระทบยอดทั้งหมด”</b> (ลงบัญชีจริง ย้อนไม่ได้)</li>
+          </ol>
+        </div>
+      )}
 
       {success && (
         <div className="mb-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
@@ -275,15 +293,21 @@ export function ReconcileBoard({
       {tab === "match" ? (
         <>
           {matchTotal === 0 ? (
-            <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 py-16 text-center">
-              <CheckCircle2 size={28} className="mx-auto mb-2 text-emerald-400" />
-              <p className="text-sm text-zinc-600">กระทบยอดครบทุกรายการแล้ว</p>
+            <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 py-14 text-center">
+              <Upload size={26} className="mx-auto mb-2 text-zinc-300" />
+              <p className="text-sm font-medium text-zinc-600">ยังไม่มีรายการในงวดนี้</p>
+              <p className="mt-1 text-xs text-zinc-400">นำเข้า statement ธนาคาร หรือกด “ดึงรายได้ TRCloud” ด้านบนก่อน</p>
+              <a href={`/ledger/bank-recon/${bankAccountId}?company=${companyId}`}
+                className={`press mt-4 inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 ${FOCUS}`}>
+                <Upload size={14} /> นำเข้า statement
+              </a>
             </div>
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               {/* LEFT — book */}
               <Column
                 title="รายการบันทึกบัญชี"
+                subtitle="ยอดที่เราบันทึก/คีย์ไว้เอง"
                 count={fBook.length}
                 selTotal={selBookTotal}
                 accent="brand"
@@ -321,6 +345,7 @@ export function ReconcileBoard({
               {/* RIGHT — bank */}
               <Column
                 title="รายการเคลื่อนไหว (ธนาคาร)"
+                subtitle="ยอดจริงที่เข้า-ออกในธนาคาร"
                 count={fBank.length}
                 selTotal={selBankTotal}
                 accent="emerald"
@@ -365,10 +390,13 @@ export function ReconcileBoard({
 
           {/* sticky action bar — โผล่เมื่อเลือกฝั่งใดฝั่งหนึ่ง */}
           {(selBank.size > 0 || selBook.size > 0) && (
-            <div className="sticky bottom-3 mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-lg">
+            <div className="safe-bottom sticky bottom-3 mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-lg">
               <span className="text-sm text-zinc-600">
                 เลือก: บัญชี <b className="tabular-num">{selBook.size}</b> · ธนาคาร <b className="tabular-num">{selBank.size}</b>
               </span>
+              {!hasSelection && (
+                <span className="text-[11px] text-amber-600">เลือกอีกฝั่งให้ครบทั้งซ้าย-ขวา เพื่อจับคู่</span>
+              )}
               {hasSelection && (
                 <span className={`rounded-full px-2.5 py-1 text-xs font-medium tabular-num ${delta === 0 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
                   {delta === 0 ? "ยอดตรงกัน" : deltaDirection(delta)}
@@ -378,17 +406,17 @@ export function ReconcileBoard({
                 <span className="text-[11px] text-zinc-400">ลองตรวจค่าธรรมเนียม / ภาษีหัก ณ ที่จ่าย / โอนภายใน</span>
               )}
               <div className="ml-auto flex gap-2">
-                <button type="button" onClick={clearSel} className={`rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-500 hover:bg-zinc-50 ${FOCUS}`}>
+                <button type="button" onClick={clearSel} className={`press inline-flex min-h-11 items-center rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-500 hover:bg-zinc-50 sm:min-h-0 ${FOCUS}`}>
                   ล้าง
                 </button>
                 {selBank.size > 0 && (
                   <button type="button" onClick={() => setExcludeIds([...selBank])} disabled={pending}
-                    className={`inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 ${FOCUS}`}>
+                    className={`press inline-flex min-h-11 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 sm:min-h-0 ${FOCUS}`}>
                     <Ban size={14} /> ข้าม {selBank.size} รายการ
                   </button>
                 )}
                 <button type="button" onClick={handleMatch} disabled={pending || !hasSelection}
-                  className={`inline-flex items-center gap-1 rounded-lg bg-brand-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 ${FOCUS}`}>
+                  className={`press inline-flex min-h-11 items-center gap-1 rounded-lg bg-brand-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 sm:min-h-0 ${FOCUS}`}>
                   <Link2 size={14} /> จับคู่ → รอยืนยัน
                 </button>
               </div>
@@ -401,7 +429,7 @@ export function ReconcileBoard({
           {suggestedGroups.length > 0 && (
             <div className="mb-3 flex justify-end">
               <button type="button" onClick={() => setConfirmBulk(true)} disabled={pending}
-                className={`inline-flex items-center gap-1 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 ${FOCUS}`}>
+                className={`press inline-flex min-h-11 items-center gap-1 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 sm:min-h-0 ${FOCUS}`}>
                 <Check size={14} /> กระทบยอดทั้งหมด ({suggestedGroups.length})
               </button>
             </div>
@@ -471,7 +499,7 @@ export function ReconcileBoard({
             <button type="button" onClick={() => setConfirmBulk(false)} disabled={pending}
               className={`rounded-lg border border-zinc-200 px-4 py-2 text-sm text-zinc-600 disabled:opacity-50 ${FOCUS}`}>ยกเลิก</button>
             <button type="button" onClick={doConfirmAll} disabled={pending}
-              className={`inline-flex items-center gap-1 rounded-lg bg-brand-500 px-5 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 ${FOCUS}`}>
+              className={`press inline-flex min-h-11 items-center gap-1 rounded-lg bg-brand-500 px-5 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 sm:min-h-0 ${FOCUS}`}>
               {pending ? "กำลังกระทบยอด…" : <><Check size={14} /> ยืนยันกระทบยอด</>}
             </button>
           </div>
@@ -506,10 +534,10 @@ type Accent = "brand" | "emerald";
 const accentText = (a: Accent) => (a === "brand" ? "text-brand-600" : "text-emerald-600");
 
 function Column({
-  title, count, selTotal, accent, onAdd, addLabel, search, onSearch, searchPlaceholder,
+  title, subtitle, count, selTotal, accent, onAdd, addLabel, search, onSearch, searchPlaceholder,
   allSelected, onToggleAll, today, onToday, sort, onSort, children,
 }: {
-  title: string; count: number; selTotal: number; accent: Accent;
+  title: string; subtitle?: string; count: number; selTotal: number; accent: Accent;
   onAdd?: () => void; addLabel: string;
   search: string; onSearch: (v: string) => void; searchPlaceholder: string;
   allSelected: boolean; onToggleAll: () => void;
@@ -520,8 +548,11 @@ function Column({
     <div className="rounded-2xl border border-zinc-100 bg-white">
       <div className="flex items-center justify-between border-b border-zinc-50 px-4 py-3">
         <div>
-          <span className="text-sm font-semibold text-zinc-700">{title}</span>
-          <span className="ml-1.5 text-xs tabular-num text-zinc-400">({count})</span>
+          <div>
+            <span className="text-sm font-semibold text-zinc-700">{title}</span>
+            <span className="ml-1.5 text-xs tabular-num text-zinc-400">({count})</span>
+          </div>
+          {subtitle && <p className="text-[11px] text-zinc-400">{subtitle}</p>}
         </div>
         <div className="flex items-center gap-2">
           {selTotal !== 0 && (
@@ -552,16 +583,16 @@ function Column({
       {/* filter chips: select-all · วันนี้ · sort */}
       <div className="flex items-center gap-1.5 border-b border-zinc-50 px-3 py-2">
         <button type="button" onClick={onToggleAll} aria-pressed={allSelected ? "true" : "false"}
-          className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] ${FOCUS} ${allSelected ? "border-brand-200 bg-brand-50 text-brand-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
+          className={`press inline-flex min-h-9 items-center gap-1 rounded-lg border px-2 py-1 text-[11px] sm:min-h-0 ${FOCUS} ${allSelected ? "border-brand-200 bg-brand-50 text-brand-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
           {allSelected ? <CheckSquare size={12} aria-hidden /> : <Square size={12} aria-hidden />}
           เลือกทั้งหมด
         </button>
         <button type="button" onClick={onToday}
-          className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] ${FOCUS} ${today ? "border-brand-200 bg-brand-50 text-brand-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
+          className={`press inline-flex min-h-9 items-center gap-1 rounded-lg border px-2 py-1 text-[11px] sm:min-h-0 ${FOCUS} ${today ? "border-brand-200 bg-brand-50 text-brand-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
           <CalendarClock size={11} /> วันนี้
         </button>
         <button type="button" aria-label={`เรียงลำดับ: ${SORT_LABEL[sort]}`} onClick={() => onSort(nextSort[sort])}
-          className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] ${FOCUS} ${sort !== "date" ? "border-brand-200 bg-brand-50 text-brand-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
+          className={`press inline-flex min-h-9 items-center gap-1 rounded-lg border px-2 py-1 text-[11px] sm:min-h-0 ${FOCUS} ${sort !== "date" ? "border-brand-200 bg-brand-50 text-brand-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
           <ArrowDownWideNarrow size={11} /> {SORT_LABEL[sort]}
         </button>
       </div>
@@ -580,7 +611,7 @@ function Row({ checked, onToggle, disabled, date, title, subtitle, detail, tag, 
       {/* checkbox = the keyboard-operable control (labelled by row title); the body click is a mouse-only convenience */}
       <input type="checkbox" checked={checked} onChange={onToggle} disabled={disabled}
         aria-label={`เลือก ${title}${date ? ` (${date})` : ""}`}
-        className={`mt-0.5 size-4 shrink-0 rounded border-zinc-300 disabled:opacity-40 ${FOCUS}`} />
+        className={`mt-0.5 size-5 shrink-0 cursor-pointer rounded border-zinc-300 disabled:opacity-40 ${FOCUS}`} />
       <div className="min-w-0 flex-1 cursor-pointer" onClick={() => !disabled && onToggle()}>
         <div className="flex items-center gap-1.5">
           <span className="text-[11px] tabular-num text-zinc-400">{date}</span>
@@ -625,7 +656,7 @@ function RowMenu({ isCredit, pending, onTransfer, onCreateBook, onExclude, onEdi
   return (
     <div className="relative" ref={ref}>
       <button type="button" aria-label="ทำรายการ" onClick={() => setOpen((v) => !v)}
-        className={`grid size-7 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 ${FOCUS}`}>
+        className={`press grid size-9 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 sm:size-7 ${FOCUS}`}>
         <MoreVertical size={15} />
       </button>
       {open && (
@@ -798,7 +829,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={onClose}>
-      <div className="w-full max-w-md space-y-3 rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="safe-bottom w-full max-w-md space-y-3 rounded-t-2xl bg-white p-5 sm:rounded-2xl sm:pb-5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold text-zinc-800">{title}</h3>
           <button type="button" aria-label="ปิด" onClick={onClose} className={`rounded text-zinc-400 hover:text-zinc-600 ${FOCUS}`}><X size={20} /></button>
@@ -814,8 +845,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function ModalActions({ pending, onClose, onSubmit, submitLabel }: { pending: boolean; onClose: () => void; onSubmit: () => void; submitLabel?: string }) {
   return (
     <div className="flex justify-end gap-2 pt-1">
-      <button type="button" onClick={onClose} disabled={pending} className={`rounded-lg border border-zinc-200 px-4 py-2 text-sm text-zinc-600 disabled:opacity-50 ${FOCUS}`}>ยกเลิก</button>
-      <button type="button" onClick={onSubmit} disabled={pending} className={`rounded-lg bg-brand-500 px-5 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 ${FOCUS}`}>{pending ? "กำลังบันทึก…" : (submitLabel ?? "บันทึก")}</button>
+      <button type="button" onClick={onClose} disabled={pending} className={`press min-h-11 rounded-lg border border-zinc-200 px-4 py-2 text-sm text-zinc-600 disabled:opacity-50 sm:min-h-0 ${FOCUS}`}>ยกเลิก</button>
+      <button type="button" onClick={onSubmit} disabled={pending} className={`press min-h-11 rounded-lg bg-brand-500 px-5 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 sm:min-h-0 ${FOCUS}`}>{pending ? "กำลังบันทึก…" : (submitLabel ?? "บันทึก")}</button>
     </div>
   );
 }
