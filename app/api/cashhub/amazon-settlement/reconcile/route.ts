@@ -21,13 +21,13 @@ export async function POST(req: NextRequest) {
   if (!isSuperAdmin(session.user.role))
     return NextResponse.json({ error: "เฉพาะ super_admin ส่งเข้า reconcile ได้" }, { status: 403 });
 
-  let body: { storeCode?: string; from?: string; to?: string };
+  let body: { storeCode?: string; storeLabel?: string; from?: string; to?: string };
   try {
     body = (await req.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "body ไม่ถูกต้อง" }, { status: 400 });
   }
-  const cfg = branchByStoreCode(body.storeCode ?? null);
+  const cfg = branchByStoreCode(body.storeCode ?? null, body.storeLabel ?? null);
   if (!cfg) return NextResponse.json({ error: "ไม่รู้จักสาขานี้" }, { status: 400 });
   const from = body.from ?? "";
   const to = body.to ?? "";

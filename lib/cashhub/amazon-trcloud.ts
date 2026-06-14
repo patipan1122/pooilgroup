@@ -23,7 +23,8 @@ export function amazonTrcloudConfigured(): boolean {
 
 // ── config ต่อสาขา (validated จากใบจริง) ── key = pos store code ──────────────
 export type AmazonBranchCfg = {
-  storeCode: string;
+  storeCode: string; // POS store code (ว่างได้ถ้ายังไม่รู้ — match ด้วยชื่อแทน)
+  nameMatch: string; // คำในชื่อสาขา (POS label) ที่ใช้จับคู่ config นี้
   label: string;
   type: string; // ชื่อสูตรบัญชี TRCloud
   project: string;
@@ -37,10 +38,12 @@ export type AmazonBranchCfg = {
   unit: string;
 };
 
-export const AMAZON_BRANCHES: Record<string, AmazonBranchCfg> = {
+// สาขา Amazon ที่ probe จาก TRCloud จริง (co.45) — เพิ่มสาขาใหม่ = เติม entry ที่นี่
+export const AMAZON_BRANCH_LIST: AmazonBranchCfg[] = [
   // สาขา ชุมชนหัวทะเล (pilot) — validated vs IV 1048243 / 1048478 / 1042528
-  "5157": {
+  {
     storeCode: "5157",
+    nameMatch: "ชุมชนหัวทะเล",
     label: "ชุมชนหัวทะเล",
     type: "AMAZON ชุมชนหัวทะเล[IV]",
     project: "ANAZON-002 สาขา ชุมชนหัวทะเล", // สะกด ANAZON ตามที่ TRCloud เก็บจริง
@@ -53,11 +56,39 @@ export const AMAZON_BRANCHES: Record<string, AmazonBranchCfg> = {
     productName: "กาแฟ CAFE AMAZON",
     unit: "วัน",
   },
-};
+  // สาขา เทศบาลจักราช — probe จาก IV จริง (1048158 head.title=Ama-2504220001, contact 36134)
+  // ⚠️ store_code ยังไม่ทราบ (รอไฟล์ POS สาขานี้) → จับคู่ด้วยชื่อ "เทศบาลจักราช" ไปก่อน
+  {
+    storeCode: "",
+    nameMatch: "เทศบาลจักราช",
+    label: "เทศบาลจักราช",
+    type: "AMAZON เทศบาลจักราช[IV]",
+    project: "AMAZON-001-สาขาเทศบาลจักราช",
+    department: "JPS_00001",
+    contactId: "36134",
+    groupCode: "Ama-",
+    codeNumber: "2504220001", // รหัสคู่ค้า Ama-2504220001
+    customerName: "ร้านกาแฟ CAFE AMAZON (คาเฟ่อเมซอน) เทศบาลจักราช",
+    productId: "P-00005",
+    productName: "กาแฟ CAFE AMAZON",
+    unit: "วัน",
+  },
+];
 
-export function branchByStoreCode(code: string | null): AmazonBranchCfg | null {
-  if (!code) return null;
-  return AMAZON_BRANCHES[code] ?? null;
+/** หา config สาขา — ลอง store_code ก่อน แล้วค่อย match ด้วยชื่อ (POS label) */
+export function branchByStoreCode(
+  code: string | null,
+  label?: string | null,
+): AmazonBranchCfg | null {
+  if (code) {
+    const byCode = AMAZON_BRANCH_LIST.find((b) => b.storeCode && b.storeCode === code);
+    if (byCode) return byCode;
+  }
+  if (label) {
+    const byName = AMAZON_BRANCH_LIST.find((b) => label.includes(b.nameMatch));
+    if (byName) return byName;
+  }
+  return null;
 }
 
 function authFields() {

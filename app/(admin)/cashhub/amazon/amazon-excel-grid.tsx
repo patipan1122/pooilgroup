@@ -3,7 +3,7 @@
 // ตารางเต็มแบบ Excel — มิเรอร์สไตล์ hotel-excel-grid (ตรึงหัว+คอลัมน์ซ้าย, ช่องทางแยกทุกช่อง,
 // ช่องสูตร ƒ สีฟ้า, ส่วนต่าง POS↔TRC แดงถ้า≠0, แถวรวมท้าย). 1 วัน = 1 แถว.
 import { formatBaht } from "@/lib/utils/format";
-import type { SavedAmazonDay } from "@/lib/cashhub/amazon-data";
+import type { SavedAmazonDay, ReconcileStatus } from "@/lib/cashhub/amazon-data";
 import {
   computeDaySettlement,
   type ChannelConfig,
@@ -60,6 +60,7 @@ type Props = {
   onCreate: (day: SavedAmazonDay) => void;
   onForce: (day: SavedAmazonDay) => void;
   configs: ChannelConfig[];
+  reconcile: ReconcileStatus;
 };
 
 export function AmazonExcelGrid({
@@ -69,6 +70,7 @@ export function AmazonExcelGrid({
   onCreate,
   onForce,
   configs,
+  reconcile,
 }: Props) {
   const data = savedDays;
   // คำนวณค่าธรรมเนียม/เงินเข้าจริงต่อวัน จาก config
@@ -116,6 +118,21 @@ export function AmazonExcelGrid({
     return <span className="text-zinc-300">—</span>;
   };
 
+  // สถานะกระทบยอดธนาคาร (ไหลกลับจาก ledger_revenue_entry)
+  const reconcileCell = (d: SavedAmazonDay) => {
+    const rc = reconcile.byDate[d.sales_date];
+    if (!rc || rc.n === 0) return <span className="text-zinc-300">–</span>; // ยังไม่ส่ง
+    if (rc.nMatched >= rc.n)
+      return <span className="font-semibold text-emerald-600">🟢 แมตช์แล้ว</span>;
+    if (rc.nMatched > 0)
+      return (
+        <span className="font-semibold text-amber-600">
+          🟡 {rc.nMatched}/{rc.n}
+        </span>
+      );
+    return <span className="text-blue-500">⏳ รอแมตช์</span>; // ส่งแล้ว รอบัญชีแมตช์
+  };
+
   return (
     <div className="space-y-2">
       <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden">
@@ -140,6 +157,9 @@ export function AmazonExcelGrid({
                 </th>
                 <th className="px-2 py-1.5 text-left font-semibold border-b border-zinc-200 whitespace-nowrap">
                   IV (TRCloud)
+                </th>
+                <th className="px-2 py-1.5 text-center font-semibold border-b border-zinc-200 whitespace-nowrap">
+                  กระทบยอด
                 </th>
                 <th className="px-2 py-1.5 text-center font-semibold border-b border-zinc-200 whitespace-nowrap">
                   จัดการ
@@ -168,6 +188,9 @@ export function AmazonExcelGrid({
                     <td className="px-2 py-1 text-center">{matchCell(d)}</td>
                     <td className="px-2 py-1 text-left text-zinc-500 whitespace-nowrap">
                       {d.iv_doc_no ?? "—"}
+                    </td>
+                    <td className="px-2 py-1 text-center whitespace-nowrap">
+                      {reconcileCell(d)}
                     </td>
                     <td className="px-2 py-1 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1">
@@ -219,7 +242,7 @@ export function AmazonExcelGrid({
                     {t != null && t !== 0 ? formatBaht(t) : ""}
                   </td>
                 ))}
-                <td colSpan={3} />
+                <td colSpan={4} />
               </tr>
             </tbody>
           </table>

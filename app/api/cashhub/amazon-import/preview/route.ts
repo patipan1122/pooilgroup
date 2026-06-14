@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
   if (parsed.error)
     return NextResponse.json({ error: parsed.error }, { status: 400 });
 
-  const cfg = branchByStoreCode(parsed.storeCode);
+  const cfg = branchByStoreCode(parsed.storeCode, parsed.storeLabel);
   if (!cfg)
     return NextResponse.json(
       {

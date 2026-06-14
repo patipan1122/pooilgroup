@@ -202,6 +202,58 @@ export async function loadImportHistory(
   });
 }
 
+export type ReconcileDayStatus = {
+  sentSatang: number; // รวมเงินเข้าจริงที่ส่งเข้า reconcile แล้ว (วันนั้น)
+  matchedSatang: number; // ส่วนที่บัญชีแมตช์ยอดแล้ว
+  n: number; // จำนวนรายการ (ช่องทาง) ที่ส่ง
+  nMatched: number; // จำนวนที่แมตช์แล้ว
+};
+export type ReconcileStatus = {
+  byDate: Record<string, ReconcileDayStatus>;
+  totalSent: number; // รวมทั้งเดือน (บาท)
+  totalMatched: number;
+};
+
+/** อ่านสถานะ reconcile กลับมา: รายการ CASHHUB_AMAZON ใน ledger_revenue_entry แมตช์ไปเท่าไหร่ */
+export async function loadReconcileStatus(
+  admin: Admin,
+  orgId: string,
+  storeCode: string,
+  from: string,
+  to: string,
+): Promise<ReconcileStatus> {
+  const { data } = await admin
+    .from("ledger_revenue_entry")
+    .select("entry_date, amount_satang, match_state")
+    .eq("org_id", orgId)
+    .eq("source_type", "CASHHUB_AMAZON")
+    .like("source_ref", `amz-${storeCode}-%`)
+    .gte("entry_date", from)
+    .lte("entry_date", to);
+  const byDate: Record<string, ReconcileDayStatus> = {};
+  let totalSent = 0,
+    totalMatched = 0;
+  for (const r of (data ?? []) as Record<string, unknown>[]) {
+    const d = String(r.entry_date).slice(0, 10);
+    const amt = (n(r.amount_satang) ?? 0) / 100;
+    const matched = String(r.match_state) === "matched";
+    const cur = (byDate[d] ??= { sentSatang: 0, matchedSatang: 0, n: 0, nMatched: 0 });
+    cur.sentSatang += amt;
+    cur.n += 1;
+    totalSent += amt;
+    if (matched) {
+      cur.matchedSatang += amt;
+      cur.nMatched += 1;
+      totalMatched += amt;
+    }
+  }
+  return {
+    byDate,
+    totalSent: Math.round(totalSent * 100) / 100,
+    totalMatched: Math.round(totalMatched * 100) / 100,
+  };
+}
+
 /** อัปเดตแถวหลังสร้าง IV สำเร็จ (กดสร้างจากหน้า) */
 export async function markIvPosted(
   admin: Admin,

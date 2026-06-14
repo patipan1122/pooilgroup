@@ -23,13 +23,19 @@ export async function POST(req: NextRequest) {
       { status: 403 },
     );
 
-  let body: { storeCode?: string; day?: AmazonDayRow; force?: boolean; confirm?: string };
+  let body: {
+    storeCode?: string;
+    storeLabel?: string;
+    day?: AmazonDayRow;
+    force?: boolean;
+    confirm?: string;
+  };
   try {
     body = (await req.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "body ไม่ถูกต้อง" }, { status: 400 });
   }
-  const cfg = branchByStoreCode(body.storeCode ?? null);
+  const cfg = branchByStoreCode(body.storeCode ?? null, body.storeLabel ?? null);
   if (!cfg) return NextResponse.json({ error: "ไม่รู้จักสาขานี้" }, { status: 400 });
   const day = body.day;
   if (!day || !day.date)

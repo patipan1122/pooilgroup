@@ -6,7 +6,11 @@ import Link from "next/link";
 import * as XLSX from "xlsx";
 import { formatBaht } from "@/lib/utils/format";
 import { CVAR_LABEL } from "@/lib/cashhub/amazon-parse";
-import type { SavedAmazonDay, ImportHistoryRow } from "@/lib/cashhub/amazon-data";
+import type {
+  SavedAmazonDay,
+  ImportHistoryRow,
+  ReconcileStatus,
+} from "@/lib/cashhub/amazon-data";
 import type { ChannelConfig } from "@/lib/cashhub/amazon-settlement";
 import { AmazonExcelGrid } from "./amazon-excel-grid";
 
@@ -21,6 +25,7 @@ type Props = {
   canSend: boolean;
   history: ImportHistoryRow[];
   configs: ChannelConfig[];
+  reconcile: ReconcileStatus;
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -35,6 +40,7 @@ export function AmazonView({
   canSend,
   history,
   configs,
+  reconcile,
 }: Props) {
   const router = useRouter();
   const [showHistory, setShowHistory] = useState(false);
@@ -83,7 +89,7 @@ export function AmazonView({
       const res = await fetch("/api/cashhub/amazon-import/match", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeCode, from, to }),
+        body: JSON.stringify({ storeCode, storeLabel: branchLabel, from, to }),
       });
       const data = (await res.json()) as {
         ok?: boolean;
@@ -119,6 +125,7 @@ export function AmazonView({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             storeCode,
+            storeLabel: branchLabel,
             day: {
               date: day.sales_date,
               gross: day.gross,
@@ -164,7 +171,7 @@ export function AmazonView({
       const res = await fetch("/api/cashhub/amazon-settlement/reconcile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeCode, from, to }),
+        body: JSON.stringify({ storeCode, storeLabel: branchLabel, from, to }),
       });
       const data = (await res.json()) as {
         ok?: boolean;
@@ -206,6 +213,7 @@ export function AmazonView({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             storeCode,
+            storeLabel: branchLabel,
             force: true,
             confirm: "ยืนยัน",
             day: {
@@ -257,6 +265,7 @@ export function AmazonView({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             storeCode,
+            storeLabel: branchLabel,
             day: {
               date: day.sales_date,
               gross: day.gross,
@@ -492,6 +501,33 @@ export function AmazonView({
             )}
           </div>
 
+          {/* สรุป reconcile (เงินเข้าจริงที่ส่งเข้าบัญชี แมตช์ยอดไปเท่าไหร่) */}
+          {reconcile.totalSent > 0 && (
+            <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-zinc-700">
+                  🏦 กระทบยอดธนาคาร (reconcile)
+                </div>
+                <div className="text-sm text-zinc-600">
+                  แมตช์แล้ว{" "}
+                  <b className="text-emerald-600">{formatBaht(reconcile.totalMatched)}</b>{" "}
+                  / ส่งเข้า {formatBaht(reconcile.totalSent)}{" "}
+                  <b className="text-zinc-900">
+                    ({Math.round((reconcile.totalMatched / reconcile.totalSent) * 100)}%)
+                  </b>
+                </div>
+              </div>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+                <div
+                  className="h-full rounded-full bg-emerald-500"
+                  style={{
+                    width: `${Math.round((reconcile.totalMatched / reconcile.totalSent) * 100)}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           {/* excel grid (สเปรดชีตเต็ม — มิเรอร์สไตล์หน้าโรงแรม) */}
           <AmazonExcelGrid
             savedDays={savedDays}
@@ -500,6 +536,7 @@ export function AmazonView({
             onCreate={createIv}
             onForce={forceSend}
             configs={configs}
+            reconcile={reconcile}
           />
         </>
       )}

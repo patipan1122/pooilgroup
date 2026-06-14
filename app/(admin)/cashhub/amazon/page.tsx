@@ -14,9 +14,10 @@ import {
   loadAmazonDays,
   listAmazonStores,
   loadImportHistory,
+  loadReconcileStatus,
 } from "@/lib/cashhub/amazon-data";
 import { loadChannelConfig } from "@/lib/cashhub/amazon-settlement-data";
-import { AMAZON_BRANCHES } from "@/lib/cashhub/amazon-trcloud";
+import { branchByStoreCode } from "@/lib/cashhub/amazon-trcloud";
 import { AmazonView } from "./amazon-view";
 
 export const dynamic = "force-dynamic";
@@ -33,9 +34,9 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
   // ── เลือกสาขา (default = สาขาที่มีข้อมูลแล้ว, ไม่งั้น pilot 5157) ──
   const stores = await listAmazonStores(admin, orgId);
   const storeCode = sp.store ?? stores[0]?.store_code ?? "5157";
-  const cfg = AMAZON_BRANCHES[storeCode];
-  const branchLabel =
-    stores.find((s) => s.store_code === storeCode)?.branch_label ?? cfg?.label ?? storeCode;
+  const storeLabel = stores.find((s) => s.store_code === storeCode)?.branch_label ?? null;
+  const cfg = branchByStoreCode(storeCode, storeLabel);
+  const branchLabel = storeLabel ?? cfg?.label ?? storeCode;
 
   // ── เดือน (default = เดือนปัจจุบัน) ──
   const monthStr = sp.month ?? new Date().toISOString().slice(0, 7);
@@ -47,6 +48,7 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
   const savedDays = await loadAmazonDays(admin, orgId, storeCode, from, to);
   const history = await loadImportHistory(admin, orgId);
   const configs = await loadChannelConfig(admin, orgId);
+  const reconcile = await loadReconcileStatus(admin, orgId, storeCode, from, to);
   const canSend = isSuperAdmin(session.user.role); // ส่งเข้า TRCloud/reconcile = super_admin เท่านั้น
 
   return (
@@ -106,6 +108,7 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
         canSend={canSend}
         history={history}
         configs={configs}
+        reconcile={reconcile}
       />
     </div>
   );
