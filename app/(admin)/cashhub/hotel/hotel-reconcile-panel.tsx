@@ -24,6 +24,7 @@ export function HotelReconcilePanel({
   canSend,
   summary,
   days,
+  divergeDays = [],
 }: {
   branchId: string;
   month: string; // "2026-04"
@@ -31,6 +32,7 @@ export function HotelReconcilePanel({
   canSend: boolean;
   summary: ReconcileChannelSummary[];
   days: ReconcileDayView[];
+  divergeDays?: number[]; // วันที่ QR จาก IV กับ Sheet ต่างกัน >1% (เตือนก่อนกระทบ)
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -91,6 +93,12 @@ export function HotelReconcilePanel({
       {!configured && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm p-2.5">
           ⚠️ ยังไม่ได้ตั้งค่าช่องทาง→บัญชี — ติดต่อ super_admin
+        </div>
+      )}
+      {divergeDays.length > 0 && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm p-2.5">
+          ⚠️ ยอด QR จาก IV กับชีตต่างกัน &gt;1% — วันที่ <b>{divergeDays.join(", ")}</b> ·
+          ตรวจสอบก่อนกระทบ (อาจชีตเก่า หรือ IV ยังไม่ดึงใหม่)
         </div>
       )}
       {msg && (

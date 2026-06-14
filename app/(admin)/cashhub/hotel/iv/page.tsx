@@ -13,6 +13,7 @@ import {
   computeHotelDeposits,
   readHotelReconcileStatus,
   buildReconcileView,
+  qrDivergences,
 } from "@/lib/cashhub/hotel-settlement-data";
 import { HotelIvExcelView } from "../hotel-iv-excel-view";
 import { HotelTtbUpload } from "../hotel-ttb-upload";
@@ -116,6 +117,7 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
   const branchCode = branches.find((b) => b.id === branchId)?.code ?? "";
   let reconcileView: ReturnType<typeof buildReconcileView> | null = null;
   let reconcileConfigured = false;
+  let qrDivergeDays: number[] = [];
   if (branchId && branchCode) {
     const mFrom = `${yy}-${String(mm).padStart(2, "0")}-01`;
     const mTo = `${yy}-${String(mm).padStart(2, "0")}-${String(
@@ -125,6 +127,7 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
     const settle = configs.filter((c) => c.isSettle && c.active);
     reconcileConfigured = settle.some((c) => c.companyId && c.bankAccountId);
     const deposits = await computeHotelDeposits(admin, orgId, branchId, mFrom, mTo);
+    qrDivergeDays = qrDivergences(deposits).map((x) => Number(x.date.slice(8, 10)));
     const statusMap = await readHotelReconcileStatus(orgId, branchCode, mFrom, mTo);
     reconcileView = buildReconcileView(
       deposits,
@@ -210,6 +213,7 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
                 canSend={canSend}
                 summary={reconcileView.summary}
                 days={reconcileView.days}
+                divergeDays={qrDivergeDays}
               />
             </div>
           )}

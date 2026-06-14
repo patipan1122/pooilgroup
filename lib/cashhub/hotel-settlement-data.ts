@@ -46,7 +46,29 @@ export async function loadHotelChannelConfig(
   }));
 }
 
-export type HotelDeposit = { date: string; qrBanked: number; cashDeposited: number };
+export type HotelDeposit = {
+  date: string;
+  qrBanked: number;
+  cashDeposited: number;
+  qrIv: number | null; // qr_banked จาก IV (TTB) — ใช้เตือนถ้าต่างจาก Sheet
+  qrSheet: number | null; // qr_banked จาก Sheet (คีย์มือ)
+};
+
+/** วันที่ QR จาก IV กับ Sheet ต่างกันเกิน threshold (default 1%) — เตือนก่อนกระทบ */
+export function qrDivergences(
+  deposits: HotelDeposit[],
+  pct = 0.01,
+): Array<{ date: string; iv: number; sheet: number; diffPct: number }> {
+  const out: Array<{ date: string; iv: number; sheet: number; diffPct: number }> = [];
+  for (const d of deposits) {
+    if (d.qrIv == null || d.qrSheet == null) continue;
+    const base = Math.max(Math.abs(d.qrIv), Math.abs(d.qrSheet));
+    if (base === 0) continue;
+    const diff = Math.abs(d.qrIv - d.qrSheet) / base;
+    if (diff > pct) out.push({ date: d.date, iv: d.qrIv, sheet: d.qrSheet, diffPct: diff });
+  }
+  return out;
+}
 
 /** ยอดเข้าจริงต่อวัน: QR เข้าบัญชี (ตัด 23:00 จาก TTB) + เงินสดฝาก (จากชีต) — รวม 2 ชุดข้อมูล */
 export async function computeHotelDeposits(
@@ -83,6 +105,8 @@ export async function computeHotelDeposits(
       date,
       qrBanked: iv.get(date)?.qr ?? sheet.get(date)?.qr ?? 0, // TTB จริงก่อน
       cashDeposited: sheet.get(date)?.cash ?? iv.get(date)?.cash ?? 0,
+      qrIv: iv.get(date)?.qr ?? null,
+      qrSheet: sheet.get(date)?.qr ?? null,
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
 }
