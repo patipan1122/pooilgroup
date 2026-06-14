@@ -452,6 +452,8 @@ export function DashboardV1View({
         {/* Footer quick-links — Pool-only navigation aid */}
         <div className="ch-card-v2 bg-[var(--ch-bg-2)] p-3 sm:p-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-[var(--ch-text-2)]">
           <span className="font-semibold text-[var(--ch-text-3)]">ทางลัด:</span>
+          <Link href="/cashhub/hotel" className="font-semibold text-[var(--ch-brand)] hover:underline">🏨 ตรวจยอดขายโรงแรม</Link>
+          <span className="text-[var(--ch-border-strong)]">·</span>
           <Link href="/cashhub/reports" className="font-semibold text-[var(--ch-brand)] hover:underline">รายงาน</Link>
           <span className="text-[var(--ch-border-strong)]">·</span>
           <Link href="/cashhub/leaderboard" className="font-semibold text-[var(--ch-brand)] hover:underline">Leaderboard</Link>
