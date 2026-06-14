@@ -6,7 +6,7 @@ import * as XLSX from "xlsx";
 import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
-import { parseTtbQr } from "@/lib/cashhub/ttb-qr";
+import { parseTtbQr, csvToMatrix } from "@/lib/cashhub/ttb-qr";
 
 export const runtime = "nodejs";
 
@@ -44,16 +44,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ไม่พบสาขาโรงแรมนี้" }, { status: 404 });
 
   // อ่านไฟล์ (รับทั้ง xlsx + csv)
+  // 🔑 ตรวจชนิดไฟล์จาก "ลายเซ็น" ไม่ใช่นามสกุล: xlsx = ZIP ขึ้นต้นด้วย "PK" (0x50 0x4B)
+  // ไฟล์ CSV จริงของ TTB มี field ที่มี newline/quote ในชื่อคนจ่าย → XLSX.read ตัดจบกลางทาง
+  // (อ่านได้แค่ ~285/492 แถว) → ต้องใช้ตัวอ่าน CSV เอง (csvToMatrix) จึงจะครบทุกแถว
   let matrix: (string | number | null)[][];
   try {
     const buf = Buffer.from(await file.arrayBuffer());
-    const wb = XLSX.read(buf, { type: "buffer" });
-    const ws = wb.Sheets[wb.SheetNames[0]!];
-    matrix = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: null }) as (
-      | string
-      | number
-      | null
-    )[][];
+    const isZip = buf.length >= 2 && buf[0] === 0x50 && buf[1] === 0x4b; // "PK" = xlsx
+    if (isZip) {
+      const wb = XLSX.read(buf, { type: "buffer" });
+      const ws = wb.Sheets[wb.SheetNames[0]!];
+      matrix = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: null }) as (
+        | string
+        | number
+        | null
+      )[][];
+    } else {
+      // ไฟล์ข้อความ (CSV) — เดา encoding จาก BOM: Excel/Windows ไทยมักเป็น UTF-16
+      // (BOM FF FE / FE FF) → ถ้า decode เป็น utf8 ตรง ๆ ภาษาไทยจะเพี้ยน → ใช้ TextDecoder
+      let enc = "utf-8";
+      if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) enc = "utf-16le";
+      else if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) enc = "utf-16be";
+      const text = new TextDecoder(enc).decode(buf);
+      matrix = csvToMatrix(text);
+    }
   } catch {
     return NextResponse.json({ error: "อ่านไฟล์ไม่ได้" }, { status: 400 });
   }
@@ -72,6 +86,35 @@ export async function POST(req: NextRequest) {
       { error: `ไฟล์นี้ไม่มี QR ของเดือน ${mm}/${year}` },
       { status: 422 },
     );
+
+  // 🔁 ตรวจซ้ำ: เคยอัปไฟล์ที่ "เนื้อหาเหมือนกัน" (จำนวนรายการ + ยอดรวมทั้งไฟล์) แล้วหรือยัง
+  // (CEO: "ให้ตรวจข้อมูลซ้ำด้วยจะได้ไม่อัพซ้ำ") — เตือนได้ แต่ไม่บล็อก เพราะการเติมเป็น overwrite
+  // (idempotent) อัปซ้ำไฟล์เดิมไม่ทำให้ยอดเพี้ยน
+  let duplicateOf: { at: string; fileName: string } | null = null;
+  {
+    const { data: priorLogs } = await admin
+      .from("audit_logs")
+      .select("created_at, diff")
+      .eq("org_id", orgId)
+      .eq("action", "IMPORT_HOTEL_SALES")
+      .order("created_at", { ascending: false })
+      .limit(40);
+    for (const l of (priorLogs ?? []) as Array<{ created_at: string; diff: unknown }>) {
+      const n = ((l.diff as { new?: Record<string, unknown> } | null)?.new ?? {}) as Record<
+        string,
+        unknown
+      >;
+      if (
+        n.kind === "ttb" &&
+        n.branchId === branchId &&
+        Number(n.successCount ?? -1) === ttb.successCount &&
+        Number(n.fileTotal ?? -1) === ttb.total
+      ) {
+        duplicateOf = { at: l.created_at, fileName: String(n.fileName ?? "TTB file") };
+        break;
+      }
+    }
+  }
 
   // โหลดแถวของเดือนนั้น (เพื่อหา qr_total รวมต่อวัน + แถวกะเช้า)
   const from = `${year}-${mm}-01`;
@@ -145,6 +188,8 @@ export async function POST(req: NextRequest) {
         daysInFile: inMonth.length,
         updated,
         totalBanked,
+        successCount: ttb.successCount, // ทั้งไฟล์ (ใช้ตรวจซ้ำ)
+        fileTotal: ttb.total, // ยอดรวมทั้งไฟล์ (ใช้ตรวจซ้ำ)
       },
     },
   });
@@ -152,6 +197,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     successCount: ttb.successCount,
+    fileTotal: ttb.total, // ยอดรวมทั้งไฟล์ (ก่อนกรองเดือน)
     skipped: ttb.skipped,
     totalBanked,
     totalRecorded, // QR บันทึก (ตามกะ) รวมทั้งเดือน
@@ -161,5 +207,6 @@ export async function POST(req: NextRequest) {
     lastDate,
     updated,
     unmatched,
+    duplicate: duplicateOf, // เคยอัปไฟล์เนื้อหาเดียวกันแล้วหรือยัง (เตือน ไม่บล็อก)
   });
 }

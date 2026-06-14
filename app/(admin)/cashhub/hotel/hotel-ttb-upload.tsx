@@ -7,6 +7,7 @@ import { formatBaht } from "@/lib/utils/format";
 
 type Result = {
   successCount: number;
+  fileTotal: number;
   skipped: number;
   totalBanked: number;
   totalRecorded: number;
@@ -16,6 +17,7 @@ type Result = {
   lastDate: string | null;
   updated: number;
   unmatched: number;
+  duplicate: { at: string; fileName: string } | null;
 };
 
 export type TtbHistoryItem = {
@@ -116,6 +118,21 @@ export function HotelTtbUpload({
       {err && (
         <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm p-2.5">
           {err}
+        </div>
+      )}
+
+      {res?.duplicate && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm p-2.5">
+          🔁 ไฟล์นี้เคยอัปแล้ว (เนื้อหาเหมือนกัน) เมื่อ{" "}
+          <b>
+            {new Date(res.duplicate.at).toLocaleString("th-TH", {
+              day: "numeric",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </b>{" "}
+          — ระบบเขียนทับยอดเดิม (ไม่บวกซ้ำ) ปลอดภัย
         </div>
       )}
 

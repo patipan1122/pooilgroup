@@ -6,6 +6,43 @@
 
 type Cell = string | number | null | undefined;
 
+/** parse CSV เป็น matrix แบบ state-machine — รองรับ field มี comma/quote/newline ในเครื่องหมายคำพูด
+ *  (XLSX.read บางทีตัดจบกลางทางถ้าไฟล์มี newline ใน quoted field → ใช้ตัวนี้แทนสำหรับ .csv) */
+export function csvToMatrix(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  const s = text.replace(/^﻿/, ""); // ตัด BOM
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (s[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else inQuotes = false;
+      } else field += c;
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ",") {
+      row.push(field);
+      field = "";
+    } else if (c === "\n" || c === "\r") {
+      if (c === "\r" && s[i + 1] === "\n") i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+    } else field += c;
+  }
+  if (field !== "" || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows;
+}
+
 const txt = (v: Cell) => (v == null ? "" : String(v).trim());
 
 function amount(v: Cell): number {
