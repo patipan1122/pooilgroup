@@ -29,6 +29,8 @@ export type AmazonBranchCfg = {
   project: string;
   department: string;
   contactId: string;
+  groupCode: string; // กลุ่มคู่ค้า (รหัสคู่ค้า = groupCode + codeNumber เช่น C + 2601120001)
+  codeNumber: string; // เลขรหัสคู่ค้าของ contact (ขาด → รหัสเหลือแค่ "C")
   customerName: string;
   productId: string;
   productName: string;
@@ -36,7 +38,7 @@ export type AmazonBranchCfg = {
 };
 
 export const AMAZON_BRANCHES: Record<string, AmazonBranchCfg> = {
-  // สาขา ชุมชนหัวทะเล (pilot) — validated vs IV 1048243 / 1048478
+  // สาขา ชุมชนหัวทะเล (pilot) — validated vs IV 1048243 / 1048478 / 1042528
   "5157": {
     storeCode: "5157",
     label: "ชุมชนหัวทะเล",
@@ -44,6 +46,8 @@ export const AMAZON_BRANCHES: Record<string, AmazonBranchCfg> = {
     project: "ANAZON-002 สาขา ชุมชนหัวทะเล", // สะกด ANAZON ตามที่ TRCloud เก็บจริง
     department: "JPS_00005",
     contactId: "66075",
+    groupCode: "C",
+    codeNumber: "2601120001", // รหัสคู่ค้า C2601120001 (จากใบจริง 1042528 head.title)
     customerName: "ลูกค้า ร้านกาเเฟอเมซอนชุมชนหัวทะเล",
     productId: "P-00005",
     productName: "กาแฟ CAFE AMAZON",
@@ -238,8 +242,8 @@ export async function createAmazonIv(
       customer: {
         contact_id: cfg.contactId,
         add_contact: "0",
-        group_code: "C",
-        code_number: "",
+        group_code: cfg.groupCode,
+        code_number: cfg.codeNumber, // รหัสคู่ค้าเต็ม (กันรหัสเหลือแค่ "C")
         name: cfg.customerName,
         organization: cfg.customerName,
         branch: "",
