@@ -78,6 +78,7 @@ export type AuditAction =
   | "PULL_TEA_IV"
   | "IMPORT_TEA_POS"
   | "SAVE_TEA_CHANNEL_CONFIG"
+  | "SEND_TEA_IV"
   // RentSpace — บริหารพื้นที่เช่า
   | "RENTSPACE_PROJECT_SAVED"
   | "RENTSPACE_UNIT_SAVED"

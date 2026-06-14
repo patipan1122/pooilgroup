@@ -95,6 +95,157 @@ export type TeaIv = {
   project: string;
 };
 
+function isSuccess(res: Record<string, unknown>): boolean {
+  return res.success === 1 || res.success === "1" || Boolean(res.id ?? res.doc);
+}
+
+/**
+ * คืน "ลิงก์เปิดใบ IV" ใน TRCloud (field link จาก iv/read — มี signature ต่อใบ).
+ * เรียกตอนผู้ใช้กดเปิด (on-demand) — iv/search ไม่คืน link.
+ */
+export async function getTeaIvLink(ivId: string): Promise<{ url?: string; error?: string }> {
+  if (!ivId) return { error: "ไม่มีเลข IV" };
+  try {
+    const res = await trcloudPost("iv/read.php", { id: ivId });
+    const url = typeof res.link === "string" ? res.link : "";
+    return url ? { url } : { error: "ไม่พบลิงก์ของใบนี้" };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "TRCloud error";
+    return { error: /429/.test(msg) ? "TRCloud ขอบ่อยเกินไป ลองใหม่" : msg };
+  }
+}
+
+export type CreateTeaIvResult = {
+  ok: boolean;
+  ivId?: string;
+  ivNo?: string;
+  duplicate?: boolean; // มีใบของวันนี้อยู่แล้ว (ไม่สร้างซ้ำ)
+  error?: string;
+};
+
+/**
+ * สร้าง IV ร้านชา 1 วันเข้า TRCloud — **คัดลอกจากใบจริงของสาขานั้น** (ลูกค้า/สินค้า/รหัสคู่ค้า)
+ *   เปลี่ยนแค่ วันที่ + c-var (c1=เงินสด, c2=ที่เหลือ) + ยอดรวม → ได้ใบเหมือนที่คนคีย์เป๊ะ.
+ *   recipe พิสูจน์สด (create→read→match→delete IV 1048562): สูตร 1 (ร้านชา) · ไม่มี VAT · product P-00001.
+ * ⚠️ กันใบซ้ำ: ถ้ามี IV ของสาขานี้วันนี้แล้ว → ไม่สร้าง (คืน duplicate). สร้างเฉพาะวันที่ยังไม่มี IV.
+ */
+export async function createTeaIv(
+  cfg: TeaBranchCfg,
+  date: string,
+  c1: number, // เงินสด
+  c2: number, // ที่เหลือ (QR/โอน/อื่น ๆ) — Σ = total
+): Promise<CreateTeaIvResult> {
+  if (!teaTrcloudConfigured()) return { ok: false, error: "TRCloud ยังไม่ได้ตั้งค่า" };
+  const total = Math.round((c1 + c2) * 100) / 100;
+  if (total <= 0) return { ok: false, error: "ยอดเป็น 0 — สร้างไม่ได้" };
+  try {
+    // ── 1) กันใบซ้ำ: มี IV ของวันนี้แล้วไหม ──
+    const dup = await trcloudPost("iv/search.php", {
+      project: cfg.project,
+      "date-from": date,
+      "date-to": date,
+      limit: 5,
+    });
+    const dupList = (
+      Array.isArray(dup.data) ? dup.data : Array.isArray(dup.result) ? dup.result : Array.isArray(dup.list) ? dup.list : []
+    ) as Array<Record<string, unknown>>;
+    const existing = dupList.find((iv) => String(iv.issue_date ?? "").slice(0, 10) === date);
+    if (existing)
+      return {
+        ok: true,
+        duplicate: true,
+        ivId: String(existing.invoice_id ?? existing.id ?? ""),
+        ivNo: String(existing.invoice_number ?? ""),
+      };
+
+    // ── 2) หา "ใบอ้างอิง" ของสาขานี้ (วันไหนก็ได้) เพื่อก๊อปลูกค้า/สินค้า/รหัสคู่ค้า ──
+    const ref = await trcloudPost("iv/search.php", { project: cfg.project, limit: 1 });
+    const refList = (
+      Array.isArray(ref.data) ? ref.data : Array.isArray(ref.result) ? ref.result : Array.isArray(ref.list) ? ref.list : []
+    ) as Array<Record<string, unknown>>;
+    const refIv = refList[0];
+    if (!refIv) return { ok: false, error: "ยังไม่มีใบ IV เดิมของสาขานี้ให้ใช้เป็นต้นแบบ" };
+
+    const readRes = await trcloudPost("iv/read.php", { id: String(refIv.invoice_id ?? refIv.id ?? "") });
+    const head = (readRes.head ?? {}) as Record<string, unknown>;
+    const bodyRaw = readRes.body;
+    const lines = (Array.isArray(bodyRaw) ? bodyRaw : bodyRaw && typeof bodyRaw === "object" ? Object.values(bodyRaw) : []) as Array<Record<string, unknown>>;
+    const refLine = lines[0] ?? {};
+
+    const title = String(head.title ?? refIv.title ?? "");
+    const m = title.match(/^(\D+)(\d+)$/); // รหัสคู่ค้า = group_code + code_number
+    const groupCode = m ? m[1] : "";
+    const codeNumber = m ? m[2] : "";
+    const contactId = String(head.contact_id ?? refIv.contact_id ?? "");
+    const custName = String(head.name ?? refIv.name ?? "");
+    const productId = String(refLine.product_id ?? "P-00001");
+    const productName = String(refLine.product ?? "ชานมไข่มุก");
+    const unit = String(refLine.unit ?? "วัน");
+    const docType = String(head.type ?? refIv.type ?? "สูตร 1 (่ร้านชา)");
+    const department = String(head.department ?? "PATIPAN");
+
+    if (!contactId || !groupCode || !codeNumber)
+      return { ok: false, error: "อ่านข้อมูลลูกค้าจากใบต้นแบบไม่ครบ (รหัสคู่ค้า)" };
+
+    // ── 3) สร้างใบใหม่ (recipe พิสูจน์แล้ว) ──
+    const totStr = String(total);
+    const product = [
+      { product_id: productId, product: productName, price: totStr, quantity: "1", vat: "0", before_vat: totStr, total: totStr, unit },
+    ];
+    const cvars: Record<string, string> = { c1: String(c1) };
+    if (c2 > 0) cvars.c2 = String(c2);
+    const payload: Record<string, unknown> = {
+      issue_date: date,
+      due_date: date,
+      tax_date: date,
+      company_format: "JPS_IV",
+      document_number: "",
+      payment_term: "0",
+      tax_option: "ex",
+      tax_report: "no",
+      type: docType,
+      department,
+      project: cfg.project,
+      calculation: "1",
+      approve_status: "yes",
+      invoice_note: `CashHub auto · ${cfg.label} · ${date}`,
+      ...cvars,
+      grand_total: totStr,
+      total: totStr,
+      customer: {
+        contact_id: contactId,
+        add_contact: "0",
+        group_code: groupCode,
+        code_number: codeNumber,
+        name: custName,
+        organization: custName,
+        branch: "",
+        address: "",
+        email: "",
+        telephone: "",
+        tax_id: "",
+        contact_type: "normal",
+      },
+      product,
+      data: product, // TRCloud validation ต้องมี key data (mirror product)
+    };
+
+    const res = await trcloudPost("iv/create.php", payload);
+    if (!isSuccess(res)) {
+      const msg = (typeof res.message === "string" && res.message) || (typeof res.HTTP === "string" && res.HTTP) || "TRCloud ปฏิเสธ (success:0)";
+      return { ok: false, error: String(msg).slice(0, 200) };
+    }
+    return {
+      ok: true,
+      ivId: String(res.id ?? res.doc ?? ""),
+      ivNo: String(res.document_number ?? res.last ?? ""),
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "TRCloud error";
+    return { ok: false, error: /429/.test(msg) ? "TRCloud ติด rate-limit — ลองใหม่ใน 1–2 นาที" : msg };
+  }
+}
+
 /** ดึง IV ของสาขา (filter ด้วย project) ในช่วงวัน */
 export async function fetchTeaIvs(
   cfg: TeaBranchCfg,

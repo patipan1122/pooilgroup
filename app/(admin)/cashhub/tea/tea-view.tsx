@@ -424,7 +424,13 @@ export function TeaView({
       ) : view === "matrix" ? (
         <MatrixTable branches={branches} days={days} dayMap={dayMap} />
       ) : (
-        <TeaExcelGrid branchLabel={branchLabel} days={days} byDate={branchByDate} />
+        <TeaExcelGrid
+          branchLabel={branchLabel}
+          branchCode={branch}
+          days={days}
+          byDate={branchByDate}
+          canSend={canConfig}
+        />
       )}
     </div>
   );
