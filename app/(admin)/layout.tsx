@@ -8,6 +8,7 @@ import {
 import { loadNavCounts } from "@/lib/nav/counts";
 import { loadUserModules } from "@/lib/auth/module-access";
 import { isModuleDisabled, type ModuleSlug } from "@/lib/modules";
+import { pinpointV1 } from "@/lib/pinpoint/flags";
 
 const ROLE_LABEL: Record<string, string> = {
   super_admin: "Super Admin",
@@ -77,6 +78,7 @@ export default async function AdminLayout({
         userModules={Array.from(userModules).filter(
           (slug) => !isModuleDisabled(slug as ModuleSlug),
         )}
+        pinpointEnabled={pinpointV1()}
       >
         {children}
       </AdminShell>

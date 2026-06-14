@@ -41,6 +41,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.105.1
         version: 2.106.1
+      '@zumer/snapdom':
+        specifier: ^2.12.8
+        version: 2.12.8
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -2303,6 +2306,9 @@ packages:
 
   '@xtuc/long@4.2.2':
     resolution: {integrity: sha512-NuHqBY1PB/D8xU6s/thBgOAiAP7HOYDQ32+BFZILJ8ivkUkAHQnWfn6WhL79Owj1qmUnoN/YPhktdIoucipkAQ==}
+
+  '@zumer/snapdom@2.12.8':
+    resolution: {integrity: sha512-dLX6ZMNjLveasn9yhcruOOfd8GBZBDp59F7iJoLlGf7BnGp0vfVsjxIZDIjN2UTZJN1KoJR/BXsxEnAyY7LuXA==}
 
   acorn-import-attributes@1.9.5:
     resolution: {integrity: sha512-n02Vykv5uA3eHGM/Z2dQrcD56kL8TyDb2p1+0P83PClMnC/nc+anbQRhIOWnSq4Ke/KvDPrY3C9hDtC/A3eHnQ==}
@@ -6928,6 +6934,8 @@ snapshots:
   '@xtuc/ieee754@1.2.0': {}
 
   '@xtuc/long@4.2.2': {}
+
+  '@zumer/snapdom@2.12.8': {}
 
   acorn-import-attributes@1.9.5(acorn@8.16.0):
     dependencies:

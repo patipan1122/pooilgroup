@@ -22,11 +22,13 @@ import {
   Lock,
   HardDrive,
   Bot,
+  MapPin,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { browserClient } from "@/lib/db/client";
 import { cn } from "@/lib/utils/cn";
 import type { DbUser } from "@/lib/auth/session";
+import { isAdminTier } from "@/lib/auth/role-guards";
 import {
   MODULE_LIST,
   MODULES,
@@ -47,10 +49,27 @@ const AiChat = dynamic(
   { ssr: false },
 );
 
-function AiChatLauncher({ liftMobile = false }: { liftMobile?: boolean }) {
+// Pinpoint / โหมดติชม — global comment-mode overlay. Renders nothing until the
+// user starts a session, so this lazy mount costs ~0 on every page. Gated to
+// admin-tier + the PINPOINT_V1 flag at the call site below.
+const PinpointProvider = dynamic(
+  () =>
+    import("@/components/pinpoint/pinpoint-provider").then((m) => ({
+      default: m.PinpointProvider,
+    })),
+  { ssr: false },
+);
+
+function AiChatLauncher({
+  liftMobile = false,
+  canPinpoint = false,
+}: {
+  liftMobile?: boolean;
+  canPinpoint?: boolean;
+}) {
   const [mounted, setMounted] = useState(false);
   if (mounted) {
-    return <AiChat defaultOpen />;
+    return <AiChat defaultOpen canPinpoint={canPinpoint} />;
   }
   return (
     <button
@@ -94,6 +113,7 @@ const MANAGE_NAV: SimpleNavItem[] = [
 ];
 
 const SYSTEM_NAV: SimpleNavItem[] = [
+  { href: "/pinpoint", label: "ติชม (Pinpoint)", icon: MapPin },
   { href: "/audit", label: "Audit Log", icon: ShieldCheck },
   { href: "/settings", label: "ตั้งค่าระบบ", icon: Settings },
   { href: "/settings/notifications", label: "แจ้งเตือน", icon: Bell, indent: true },
@@ -114,6 +134,9 @@ interface Props {
   /** Module slugs the current user can access. Admin tier always gets all
       three; everyone else gets the explicit set from user_modules. */
   userModules?: string[];
+  /** PINPOINT_V1 flag (resolved server-side in the admin layout). Gates the
+      "เริ่มโหมดติชม" entry + the overlay provider; both also require admin tier. */
+  pinpointEnabled?: boolean;
 }
 
 const ZERO_COUNTS: NavCountsClient = {
@@ -131,7 +154,9 @@ export function AdminShell({
   currentCompanyId,
   navCounts = ZERO_COUNTS,
   userModules = ALL_MODULES,
+  pinpointEnabled = false,
 }: Props) {
+  const canPinpoint = pinpointEnabled && isAdminTier(user.role);
   const allowedModules = useMemo(() => new Set(userModules), [userModules]);
   const visibleModules = useMemo(
     () => MODULE_LIST.filter((m) => allowedModules.has(m.slug)),
@@ -419,6 +444,7 @@ export function AdminShell({
             activeModuleSlug={activeModuleSlug}
             moduleNav={moduleNav}
             navCounts={navCounts}
+            canPinpoint={canPinpoint}
           />
         </aside>
 
@@ -449,6 +475,7 @@ export function AdminShell({
                   activeModuleSlug={activeModuleSlug}
                   moduleNav={moduleNav}
                   navCounts={navCounts}
+                  canPinpoint={canPinpoint}
                   onNavigate={() => setMobileOpen(false)}
                 />
               </div>
@@ -471,7 +498,11 @@ export function AdminShell({
       {/* Global floating AI Assistant — available to every signed-in user
           (admins for analysis, branch managers for how-to + their own data).
           Lazy-mounted on first click via AiChatLauncher. */}
-      <AiChatLauncher liftMobile={showHubNav} />
+      <AiChatLauncher liftMobile={showHubNav} canPinpoint={canPinpoint} />
+
+      {/* Pinpoint / โหมดติชม overlay — admin-tier + flag only. Renders nothing
+          until a session is started from the AI button. */}
+      {canPinpoint && <PinpointProvider />}
 
       {/* Mobile hub bottom-nav — launcher tabs for owner/admin/program-admin.
           Hidden ≥lg (desktop uses the sidebar) AND hidden inside any module
@@ -499,6 +530,7 @@ function SidebarBody({
   activeModuleSlug,
   moduleNav,
   navCounts,
+  canPinpoint = false,
   onNavigate,
 }: {
   user: DbUser;
@@ -507,6 +539,7 @@ function SidebarBody({
   activeModuleSlug: ModuleSlug | null;
   moduleNav: NavItem[];
   navCounts: NavCountsClient;
+  canPinpoint?: boolean;
   onNavigate?: () => void;
 }) {
   const activeModule = activeModuleSlug ? MODULES[activeModuleSlug] : null;
@@ -585,7 +618,9 @@ function SidebarBody({
       {/* Zone 4: System (admin tier only) */}
       {isAdmin && (
         <SidebarSection title="ระบบ" storageKey="zone-system">
-          {SYSTEM_NAV.map((it) => (
+          {SYSTEM_NAV.filter(
+            (it) => it.href !== "/pinpoint" || canPinpoint,
+          ).map((it) => (
             <SidebarLink
               key={it.href}
               href={it.href}

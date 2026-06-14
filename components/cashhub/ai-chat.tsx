@@ -5,7 +5,7 @@
 
 import { useState, useRef, useEffect, useTransition } from "react";
 import { usePathname } from "next/navigation";
-import { Bot, Send, X, Sparkles, Bug } from "lucide-react";
+import { Bot, Send, X, Sparkles, Bug, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { BugReportModal } from "@/components/bug-report-modal";
 
@@ -32,9 +32,11 @@ interface AiChatProps {
   /** When true, mount the chat sheet open immediately (used by launcher to
    *  skip the extra click after lazy-import). Default: false. */
   defaultOpen?: boolean;
+  /** Admin-tier + PINPOINT_V1 — shows the "เริ่มโหมดติชม" entry. */
+  canPinpoint?: boolean;
 }
 
-export function AiChat({ defaultOpen = false }: AiChatProps = {}) {
+export function AiChat({ defaultOpen = false, canPinpoint = false }: AiChatProps = {}) {
   const [open, setOpen] = useState(defaultOpen);
   const [bugOpen, setBugOpen] = useState(false);
   const [input, setInput] = useState("");
@@ -202,6 +204,19 @@ export function AiChat({ defaultOpen = false }: AiChatProps = {}) {
                     <Bug className="size-4" />
                     <span>แจ้งบัคหน้านี้</span>
                   </button>
+                  {canPinpoint && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpen(false);
+                        window.dispatchEvent(new CustomEvent("pinpoint:start"));
+                      }}
+                      className="mt-2 flex items-center gap-2 w-full text-left px-3 py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 border-2 border-blue-200 text-blue-900 text-xs sm:text-sm font-medium transition-colors"
+                    >
+                      <MapPin className="size-4" />
+                      <span>เริ่มโหมดติชม (Pinpoint)</span>
+                    </button>
+                  )}
                 </div>
               ) : (
                 msgs.map((m, i) => (
