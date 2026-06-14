@@ -110,6 +110,12 @@ export function DashboardV1View({
             <TwoToneTitle first="ภาพรวม" accent="ยอดสาขา" size={42} />
             <div className="flex-1" />
             <div className="flex gap-2">
+              <Link
+                href="/cashhub/hotel"
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-[var(--ch-navy)] text-white text-sm font-semibold hover:opacity-90"
+              >
+                🏨 ตรวจยอดขายโรงแรม
+              </Link>
               <button
                 type="button"
                 className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-[var(--ch-border-strong)] bg-white text-sm font-semibold text-[var(--ch-text)] hover:bg-zinc-50"
