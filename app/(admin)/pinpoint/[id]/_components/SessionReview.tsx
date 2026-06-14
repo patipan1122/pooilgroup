@@ -55,7 +55,7 @@ export function SessionReview({
       await navigator.clipboard.writeText(markdown);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
-      toast.success("คัดลอกแล้ว — เอาไปวางในแชต Claude ได้เลย");
+      toast.success("คัดลอกแล้ว — เอาไปวางให้พิมได้เลย");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "ผิดพลาด");
     } finally {
@@ -135,7 +135,7 @@ export function SessionReview({
             ) : (
               <Copy className="size-4" />
             )}
-            {copied ? "คัดลอกแล้ว" : "คัดลอกให้ Claude"}
+            {copied ? "คัดลอกแล้ว" : "คัดลอกให้พิม"}
           </button>
         )}
       </header>

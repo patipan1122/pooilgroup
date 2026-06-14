@@ -14,7 +14,7 @@ const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   draft: { text: "กำลังทำ", cls: "bg-amber-100 text-amber-700" },
   submitted: { text: "รอรีวิว", cls: "bg-blue-100 text-blue-700" },
   reviewed: { text: "รีวิวแล้ว", cls: "bg-violet-100 text-violet-700" },
-  exported: { text: "ส่งให้ Claude แล้ว", cls: "bg-emerald-100 text-emerald-700" },
+  exported: { text: "ส่งให้พิมแล้ว", cls: "bg-emerald-100 text-emerald-700" },
   closed: { text: "ปิดแล้ว", cls: "bg-zinc-100 text-zinc-500" },
 };
 
@@ -33,7 +33,7 @@ export default async function PinpointListPage() {
           ติชม (Pinpoint)
         </h1>
         <p className="mt-1 text-sm text-zinc-500">
-          รอบการติชมทั้งหมด — เปิดดูจุดที่ปักไว้ แล้วกด “คัดลอกให้ Claude” เพื่อส่งให้ผมแก้
+          รอบการติชมทั้งหมด — เปิดดูจุดที่ปักไว้ แล้วกด “คัดลอกให้พิม” เพื่อส่งให้แก้
         </p>
       </header>
 
