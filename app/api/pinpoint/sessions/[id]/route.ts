@@ -126,7 +126,26 @@ export async function PATCH(
       return NextResponse.json({ error: "ยังไม่มีจุดติชม" }, { status: 400 });
     }
 
-    // Consolidated bug_reports row → session shows up natively in /bugs.
+    // Claim the session atomically (audit A3): the conditional UPDATE flips
+    // draft→submitted only for the FIRST concurrent finish; a duplicate finish
+    // matches 0 rows and bails — so exactly one bug_reports row is ever created.
+    const { data: claimed } = await admin
+      .from("pinpoint_sessions")
+      .update({
+        status: "submitted",
+        pin_count: pinList.length,
+        finished_at: now,
+        updated_at: now,
+      })
+      .eq("id", id)
+      .eq("org_id", orgId)
+      .eq("status", "draft")
+      .select("id");
+    if (!claimed || claimed.length === 0) {
+      return NextResponse.json({ error: "session ส่งไปแล้ว" }, { status: 409 });
+    }
+
+    // Now safe to create exactly one consolidated bug_reports row.
     const bugId = crypto.randomUUID();
     const firstUrl = pinList[0]?.url || "/";
     const { error: bugErr } = await admin.from("bug_reports").insert({
@@ -141,18 +160,17 @@ export async function PATCH(
     });
     if (bugErr) {
       console.error("[pinpoint finish] bug insert", bugErr);
-      return NextResponse.json({ error: "สร้างรายงานไม่สำเร็จ" }, { status: 500 });
+      // Session is already 'submitted' (re-finish blocked) and the pins are
+      // intact — only the /bugs mirror is missing. Surface a soft error.
+      return NextResponse.json(
+        { error: "สร้างใบสรุปไม่สำเร็จ (จุดติชมยังอยู่ครบ)" },
+        { status: 500 },
+      );
     }
 
     await admin
       .from("pinpoint_sessions")
-      .update({
-        status: "submitted",
-        consolidated_report_id: bugId,
-        pin_count: pinList.length,
-        finished_at: now,
-        updated_at: now,
-      })
+      .update({ consolidated_report_id: bugId, updated_at: now })
       .eq("id", id)
       .eq("org_id", orgId);
 

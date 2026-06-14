@@ -1,10 +1,11 @@
-// Pinpoint — review list (super_admin). One row per session; drill into pins.
+// Pinpoint — session list. super_admin sees ALL org sessions (review surface);
+// an admin-tier author sees only their own ("รอบของฉัน"). Both reachable from nav.
 
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { MapPin, ChevronRight } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { isSuperAdmin, isAdminTier } from "@/lib/auth/role-guards";
 import { pinpointV1 } from "@/lib/pinpoint/flags";
 import { listSessions } from "@/lib/pinpoint/data";
 
@@ -21,19 +22,26 @@ const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
 export default async function PinpointListPage() {
   if (!pinpointV1()) redirect("/dashboard");
   const session = await requireSession();
-  if (!isSuperAdmin(session.user.role)) redirect("/dashboard");
+  if (!isAdminTier(session.user.role)) redirect("/dashboard");
 
-  const sessions = await listSessions(session.user.org_id);
+  // super_admin reviews everything; an admin-tier author sees only their own.
+  const sa = isSuperAdmin(session.user.role);
+  const sessions = await listSessions(
+    session.user.org_id,
+    sa ? {} : { authorId: session.user.id },
+  );
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
       <header className="mb-5">
         <h1 className="flex items-center gap-2 text-xl font-extrabold font-display">
           <MapPin className="size-5 text-[var(--color-brand-600)]" />
-          ติชม (Pinpoint)
+          {sa ? "ติชม (Pinpoint)" : "รอบติชมของฉัน"}
         </h1>
         <p className="mt-1 text-sm text-zinc-500">
-          รอบการติชมทั้งหมด — เปิดดูจุดที่ปักไว้ แล้วกด “คัดลอกให้พิม” เพื่อส่งให้แก้
+          {sa
+            ? "รอบการติชมทั้งหมด — เปิดดูจุดที่ปักไว้ แล้วกด “คัดลอกให้พิม” เพื่อส่งให้แก้"
+            : "รอบติชมที่คุณสร้าง — เปิดดูจุดที่ปักไว้ และติดตามว่าพิมแก้ถึงไหนแล้ว"}
         </p>
       </header>
 
@@ -52,7 +60,7 @@ export default async function PinpointListPage() {
                   className="flex items-center gap-3 rounded-2xl border-2 border-zinc-100 bg-white px-4 py-3 transition-colors hover:border-[var(--color-brand-600)]"
                 >
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-brand-50,#eff6ff)] text-sm font-extrabold text-[var(--color-brand-700)]">
-                    {s.pin_count}
+                    {s.totalCount ?? s.pin_count}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold">
@@ -66,7 +74,7 @@ export default async function PinpointListPage() {
                       })}
                       {s.fixedCount ? (
                         <span className="ml-1.5 font-bold text-emerald-600">
-                          · พิมแก้แล้ว {s.fixedCount}/{s.pin_count}
+                          · พิมแก้แล้ว {s.fixedCount}/{s.totalCount ?? s.pin_count}
                         </span>
                       ) : null}
                     </p>

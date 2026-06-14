@@ -74,15 +74,10 @@ export async function POST(
     return NextResponse.json({ error: "session ส่งไปแล้ว" }, { status: 409 });
   }
 
-  const seq = (s.pin_count ?? 0) + 1;
-  const pinId = crypto.randomUUID();
   const now = new Date().toISOString();
-
-  const { error: insErr } = await admin.from("pinpoint_pins").insert({
-    id: pinId,
+  const basePin = {
     session_id: id,
     org_id: orgId,
-    seq,
     url: d.url,
     element_selector: d.elementSelector ?? null,
     element_text: d.elementText ?? null,
@@ -93,20 +88,41 @@ export async function POST(
     viewport_h: d.viewportH ?? null,
     comment: d.comment ?? null,
     priority: d.priority ?? "normal",
-    status: "open",
+    status: "open" as const,
     screenshot_key: d.screenshotKey ?? null,
     created_at: now,
     updated_at: now,
-  });
-  if (insErr) {
+  };
+
+  // Atomic-safe seq (audit A1): seq = max(seq)+1, retry on the
+  // UNIQUE(session_id, seq) race so two concurrent pins never collide.
+  let pinId = "";
+  let seq = 0;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: maxRow } = await admin
+      .from("pinpoint_pins")
+      .select("seq")
+      .eq("session_id", id)
+      .order("seq", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    seq = ((maxRow?.seq as number | undefined) ?? 0) + 1;
+    pinId = crypto.randomUUID();
+    const { error: insErr } = await admin
+      .from("pinpoint_pins")
+      .insert({ id: pinId, seq, ...basePin });
+    if (!insErr) break;
+    // 23505 = unique_violation → another pin grabbed this seq; retry.
+    if ((insErr as { code?: string }).code === "23505" && attempt < 4) continue;
     console.error("[POST pin]", insErr);
     return NextResponse.json({ error: "บันทึกจุดไม่สำเร็จ" }, { status: 500 });
   }
 
-  // Keep the session's denormalized count in step (display/seq only).
+  // Counts are computed at read time (audit A2) — no denormalized pin_count to
+  // drift on delete. Just bump updated_at.
   await admin
     .from("pinpoint_sessions")
-    .update({ pin_count: seq, updated_at: now })
+    .update({ updated_at: now })
     .eq("id", id)
     .eq("org_id", orgId);
 

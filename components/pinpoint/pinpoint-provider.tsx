@@ -13,6 +13,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -42,6 +43,10 @@ interface LocalPin {
   priority: PinpointPriority;
   coordXPct: number;
   coordYPct: number;
+  /** Document-space px (audit B1) — markers anchor here so they don't drift on
+   *  scroll. Falls back from coordXPct for legacy pins lacking doc coords. */
+  docX: number;
+  docY: number;
   screenshotKey: string | null;
 }
 
@@ -50,6 +55,8 @@ interface DraftPin {
   yPct: number;
   clientX: number;
   clientY: number;
+  docX: number;
+  docY: number;
   selector: string;
   text: string;
   meta: ElementMeta;
@@ -113,20 +120,30 @@ export function PinpointProvider() {
           priority: PinpointPriority;
           coord_x_pct: number | null;
           coord_y_pct: number | null;
+          element_meta: { docX?: number; docY?: number } | null;
           screenshot_key: string | null;
         }>;
       };
+      const vw = typeof window !== "undefined" ? window.innerWidth : 1000;
+      const vh = typeof window !== "undefined" ? window.innerHeight : 800;
       setPins(
-        json.pins.map((p) => ({
-          id: p.id,
-          seq: p.seq,
-          url: p.url,
-          comment: p.comment ?? "",
-          priority: p.priority,
-          coordXPct: p.coord_x_pct ?? 50,
-          coordYPct: p.coord_y_pct ?? 50,
-          screenshotKey: p.screenshot_key,
-        })),
+        json.pins.map((p) => {
+          const xPct = p.coord_x_pct ?? 50;
+          const yPct = p.coord_y_pct ?? 50;
+          return {
+            id: p.id,
+            seq: p.seq,
+            url: p.url,
+            comment: p.comment ?? "",
+            priority: p.priority,
+            coordXPct: xPct,
+            coordYPct: yPct,
+            // Prefer stored doc coords; legacy pins fall back to viewport-%.
+            docX: p.element_meta?.docX ?? (xPct / 100) * vw,
+            docY: p.element_meta?.docY ?? (yPct / 100) * vh,
+            screenshotKey: p.screenshot_key,
+          };
+        }),
       );
     } catch {
       /* ignore */
@@ -256,6 +273,9 @@ export function PinpointProvider() {
         yPct: (y / vh) * 100,
         clientX: x,
         clientY: y,
+        // Document-space px so the marker anchors to content, not the viewport.
+        docX: x + window.scrollX,
+        docY: y + window.scrollY,
         selector: buildSelector(el),
         text: elementText(el),
         meta: buildElementMeta(el),
@@ -280,7 +300,7 @@ export function PinpointProvider() {
             priority,
             elementSelector: draft.selector,
             elementText: draft.text,
-            elementMeta: draft.meta,
+            elementMeta: { ...draft.meta, docX: draft.docX, docY: draft.docY },
             coordXPct: draft.xPct,
             coordYPct: draft.yPct,
             viewportW: window.innerWidth,
@@ -303,6 +323,8 @@ export function PinpointProvider() {
             priority,
             coordXPct: draft.xPct,
             coordYPct: draft.yPct,
+            docX: draft.docX,
+            docY: draft.docY,
             screenshotKey: shotCache.current.get(url) ?? null,
           },
         ]);
@@ -415,10 +437,21 @@ export function PinpointProvider() {
         />
       )}
 
-      {/* existing pins on this page (above the trap so they're clickable) */}
-      {pinsHere.map((p) => (
-        <PinMarker key={p.id} pin={p} onDelete={() => deletePin(p.id)} />
-      ))}
+      {/* existing pins on this page — portaled to <body> and positioned in
+          document space so they scroll WITH the content instead of sticking to
+          the viewport (audit B1). Above the trap so they stay clickable. */}
+      {typeof document !== "undefined" &&
+        createPortal(
+          <div
+            data-pinpoint-ui
+            className="pointer-events-none absolute left-0 top-0 z-[9991]"
+          >
+            {pinsHere.map((p) => (
+              <PinMarker key={p.id} pin={p} onDelete={() => deletePin(p.id)} />
+            ))}
+          </div>,
+          document.body,
+        )}
 
       {/* draft popover */}
       {draft && (
@@ -456,10 +489,10 @@ function PinMarker({
   const [open, setOpen] = useState(false);
   return (
     <div
-      className="fixed z-[9991]"
+      className="pointer-events-auto absolute z-[9991]"
       style={{
-        left: `${pin.coordXPct}%`,
-        top: `${pin.coordYPct}%`,
+        left: `${pin.docX}px`,
+        top: `${pin.docY}px`,
         transform: "translate(-50%, -50%)",
       }}
     >
@@ -681,28 +714,48 @@ function SessionBar({
 }) {
   return (
     <div
-      className="fixed inset-x-0 bottom-4 z-[9993] mx-auto flex w-[min(560px,calc(100%-1.5rem))] items-center gap-1.5 rounded-2xl border-2 border-[var(--color-brand-600)] bg-white/95 px-2.5 py-2 shadow-pop backdrop-blur"
+      className="fixed bottom-4 left-3 right-16 z-[9993] mx-auto flex max-w-[560px] items-center gap-1.5 rounded-2xl border-2 border-[var(--color-brand-600)] bg-white/95 px-2.5 py-2 shadow-pop backdrop-blur md:right-3"
       style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
     >
-      <span className="flex items-center gap-1 px-1 text-xs font-extrabold text-[var(--color-brand-700)]">
-        📌 ติชม
+      <span className="flex shrink-0 items-center gap-1 px-1 text-xs font-extrabold text-[var(--color-brand-700)]">
+        📌
         <span className="rounded-full bg-[var(--color-brand-600)] px-1.5 text-white">{count}</span>
       </span>
 
-      <button
-        type="button"
-        onClick={onTogglePlacing}
-        className={cn(
-          "flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-colors",
-          placing ? "bg-[var(--color-brand-600)] text-white" : "bg-zinc-100 text-zinc-700",
-        )}
-        title={placing ? "กำลังปักหมุด — แตะจอเพื่อเพิ่ม" : "แตะเพื่อเข้าโหมดปักหมุด"}
-      >
-        {placing ? <Crosshair className="size-3.5" /> : <Hand className="size-3.5" />}
-        {placing ? "ปักหมุด" : "เลื่อนดู"}
-      </button>
+      {/* Segmented mode control — both modes shown, the active one highlighted,
+          so the user always knows whether a tap drops a pin or navigates (audit C4). */}
+      <div className="flex shrink-0 items-center rounded-lg bg-zinc-100 p-0.5 text-xs font-bold">
+        <button
+          type="button"
+          onClick={() => {
+            if (!placing) onTogglePlacing();
+          }}
+          aria-pressed={placing}
+          className={cn(
+            "flex items-center gap-1 rounded-md px-2 py-1 transition-colors",
+            placing
+              ? "bg-[var(--color-brand-600)] text-white shadow-sm"
+              : "text-zinc-500",
+          )}
+        >
+          <Crosshair className="size-3.5" /> ปักหมุด
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (placing) onTogglePlacing();
+          }}
+          aria-pressed={!placing}
+          className={cn(
+            "flex items-center gap-1 rounded-md px-2 py-1 transition-colors",
+            !placing ? "bg-zinc-700 text-white shadow-sm" : "text-zinc-500",
+          )}
+        >
+          <Hand className="size-3.5" /> เลื่อนดู
+        </button>
+      </div>
 
-      <div className="ml-auto flex items-center gap-1.5">
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
         <button
           type="button"
           onClick={onViewAll}
