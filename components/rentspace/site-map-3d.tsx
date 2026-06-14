@@ -5,6 +5,8 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { Box, Grid3x3, X, ArrowRight, RotateCw, RotateCcw, Plus, Minus, Move, Save } from "lucide-react";
 import { formatBaht } from "@/lib/rentspace/format";
+import { deriveUnitState, type RsUnitState } from "@/lib/rentspace/status";
+import { StatusLegend } from "@/components/rentspace/status-legend";
 import { actSaveUnitPositions } from "@/app/(admin)/rentspace/_actions";
 import { TALAYTOWN_SCENE, placeUnits, type SlotUnit, type Scene } from "@/lib/rentspace/site-layout";
 
@@ -51,11 +53,18 @@ function rotRect(r: Rect, steps: number, cx: number, cy: number): Rect {
   return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), d: Math.max(...ys) - Math.min(...ys) };
 }
 
-function colorFor(u: { status: string; outstanding: number; hasOverdue: boolean }) {
-  if (u.hasOverdue || u.outstanding > 0) return { fill: "#fecaca", edge: "#dc2626", ink: "#991b1b" };
-  if (u.status === "occupied") return { fill: "#bbf7d0", edge: "#16a34a", ink: "#166534" };
-  if (u.status === "reserved") return { fill: "#fde68a", edge: "#d97706", ink: "#92400e" };
-  return { fill: "#e2e8f0", edge: "#94a3b8", ink: "#64748b" };
+// SVG fill palette per derived state (hex so it works inside <polygon>/<rect> fills)
+const STATE_HEX: Record<RsUnitState, { fill: string; edge: string; ink: string }> = {
+  occupied_overdue: { fill: "#fecaca", edge: "#dc2626", ink: "#991b1b" },
+  occupied_partial: { fill: "#fde7c2", edge: "#e08a00", ink: "#92400e" },
+  occupied_ok: { fill: "#bbf7d0", edge: "#16a34a", ink: "#166534" },
+  near_expiry: { fill: "#bfdbfe", edge: "#2563eb", ink: "#1e40af" },
+  reserved: { fill: "#fde68a", edge: "#d97706", ink: "#92400e" },
+  vacant: { fill: "#e2e8f0", edge: "#94a3b8", ink: "#64748b" },
+  inactive: { fill: "#eef0f3", edge: "#cbd5e1", ink: "#94a3b8" },
+};
+function colorFor(u: { status: string; outstanding: number; hasOverdue: boolean; endDate?: string | null }) {
+  return STATE_HEX[deriveUnitState(u)];
 }
 function shade(hex: string, amt: number) {
   const n = parseInt(hex.slice(1), 16);
@@ -76,6 +85,15 @@ export function SiteMap3D({ units, view3dEnabled, scene = TALAYTOWN_SCENE, onSel
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<{ id: string; offX: number; offY: number } | null>(null);
   const pick = (u: SlotUnit) => (onSelect ? onSelect(u.id) : setSelected(u));
+
+  const stateCounts = useMemo(() => {
+    const c: Partial<Record<RsUnitState, number>> = {};
+    for (const u of units) {
+      const s = deriveUnitState(u);
+      c[s] = (c[s] ?? 0) + 1;
+    }
+    return c;
+  }, [units]);
 
   function meterAt(e: React.PointerEvent): { x: number; y: number } {
     const svg = svgRef.current;
@@ -257,9 +275,7 @@ export function SiteMap3D({ units, view3dEnabled, scene = TALAYTOWN_SCENE, onSel
             <Save className="h-3.5 w-3.5" /> {saving ? "กำลังบันทึก…" : "บันทึกผัง"}
           </button>
         )}
-        <div className="ml-auto flex items-center gap-3 text-[11.5px]" style={{ color: "var(--rs-text-3)" }}>
-          <Lg color="#16a34a" label="เช่าอยู่" /><Lg color="#dc2626" label="ค้างจ่าย" /><Lg color="#d97706" label="จอง" /><Lg color="#94a3b8" label="ว่าง" />
-        </div>
+        <StatusLegend className="ml-auto" counts={stateCounts} />
       </div>
 
       <div className="overflow-auto px-2 pb-4" style={{ background: "linear-gradient(180deg,#eef2f7,#fff)", maxHeight: 560 }}>
@@ -299,9 +315,6 @@ export function SiteMap3D({ units, view3dEnabled, scene = TALAYTOWN_SCENE, onSel
   );
 }
 
-function Lg({ color, label }: { color: string; label: string }) {
-  return <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: color }} /> {label}</span>;
-}
 function Row({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
   return <div className="flex items-center justify-between"><span style={{ color: "var(--rs-text-3)" }}>{label}</span><span className="font-semibold" style={{ color: danger ? "var(--rs-danger)" : "var(--rs-text)" }}>{value}</span></div>;
 }

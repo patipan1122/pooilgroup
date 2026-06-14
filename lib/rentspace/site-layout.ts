@@ -66,6 +66,8 @@ export type SlotUnit = {
   tenantName: string | null;
   outstanding: number;
   hasOverdue: boolean;
+  /** active contract end date (ISO string) — drives near-expiry status color */
+  endDate?: string | null;
   /** saved drag position in METERS (overrides auto-slot placement) */
   mapX?: number | null;
   mapY?: number | null;

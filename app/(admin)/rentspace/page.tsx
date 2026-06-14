@@ -6,6 +6,7 @@ import {
   listUnitsWithState,
   projectKpis,
   billingCycle,
+  expiringContracts,
 } from "@/lib/rentspace/data";
 import { formatBaht, tenantDisplayName, toNum, periodLabel } from "@/lib/rentspace/format";
 import { PlanWithDrawer } from "@/components/rentspace/plan-with-drawer";
@@ -71,10 +72,11 @@ export default async function RentSpaceOverview() {
     );
   }
 
-  const [kpi, cycle, units] = await Promise.all([
+  const [kpi, cycle, units, expiring] = await Promise.all([
     projectKpis(orgId, project.id),
     billingCycle(orgId, project.id),
     listUnitsWithState(orgId, project.id),
+    expiringContracts(orgId, project.id),
   ]);
 
   const mapUnits = units.map((u) => ({
@@ -87,6 +89,7 @@ export default async function RentSpaceOverview() {
     tenantName: u.tenant ? tenantDisplayName(u.tenant) : null,
     outstanding: u.outstanding,
     hasOverdue: u.hasOverdue,
+    endDate: u.contract?.endDate ? new Date(u.contract.endDate).toISOString() : null,
     mapX: u.mapX != null ? toNum(u.mapX) : null,
     mapY: u.mapY != null ? toNum(u.mapY) : null,
     mapW: u.mapW != null ? toNum(u.mapW) : null,
@@ -130,6 +133,18 @@ export default async function RentSpaceOverview() {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>ทำสัญญาใหม่
         </Link>
       </div>
+
+      {/* near-expiry contract alert (adopted from Horganice) */}
+      {expiring.length > 0 && (
+        <Link href="/rentspace/contracts" className="flex items-center gap-3 rounded-2xl px-4 py-3 mb-4" style={{ background: "#FFF8E6", border: "1px solid #F3E0A6" }}>
+          <span className="w-[34px] h-[34px] rounded-lg shrink-0 flex items-center justify-center text-base" style={{ background: "#FCEFC6" }}>⏳</span>
+          <span className="flex-1 min-w-0">
+            <span className="block font-semibold text-[13.5px]" style={{ color: "#7A5B00" }}>มีห้องใกล้หมดสัญญาเช่า {expiring.length} ห้อง</span>
+            <span className="block text-xs truncate" style={{ color: "#9A7B1F" }}>{expiring.slice(0, 5).map((c) => c.unit.code).join(" · ")}{expiring.length > 5 ? " · …" : ""} — กดต่อสัญญาก่อนหมดอายุ</span>
+          </span>
+          <span className="text-[11.5px] font-semibold self-center shrink-0" style={{ color: "#B45309" }}>ดูสัญญา</span>
+        </Link>
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-4">
@@ -179,6 +194,8 @@ export default async function RentSpaceOverview() {
       <div className="flex flex-wrap gap-2 mb-4">
         {[
           { href: "/rentspace/matrix", label: "📊 ตารางค่าเช่า (Excel)" },
+          { href: "/rentspace/analytics", label: "📈 วิเคราะห์รายได้" },
+          { href: "/rentspace/collections", label: "🔴 ตามเก็บ (ค้างชำระ)" },
           { href: "/rentspace/meters", label: "จดมิเตอร์" },
           { href: "/rentspace/bills", label: "บิล / ใบแจ้งหนี้" },
           { href: "/rentspace/payments", label: "รับชำระ / ส่วนลด" },

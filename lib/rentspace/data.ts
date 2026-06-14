@@ -127,6 +127,24 @@ export async function getContractBySignToken(token: string) {
   });
 }
 
+/** Active contracts whose end date is within the next `days` days (and not past) — สัญญาใกล้หมด. */
+export async function expiringContracts(orgId: string, projectId: string, days = 60) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const horizon = new Date(today);
+  horizon.setDate(horizon.getDate() + days);
+  return prisma.rentalContract.findMany({
+    where: {
+      orgId,
+      projectId,
+      status: { in: ["active", "expiring"] },
+      endDate: { gte: today, lte: horizon },
+    },
+    orderBy: { endDate: "asc" },
+    include: { unit: true, tenant: true },
+  });
+}
+
 /** All เงินประกัน movements across the org — newest first, with unit + tenant for display. */
 export async function listDeposits(orgId: string) {
   return prisma.rentalDeposit.findMany({
