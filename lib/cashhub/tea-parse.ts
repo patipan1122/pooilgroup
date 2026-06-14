@@ -1,23 +1,21 @@
 // CashHub ร้านชาไข่มุก — แปลงไฟล์ Foodstory "รายงานปิดกะและปิดสิ้นวัน" (POS) → ยอดขายรายวัน
 //
-// ไฟล์ POS ของ Foodstory มีหัวกระจายหลายแถว (title / ช่วงวันที่ / หัวคอลัมน์ / ชื่อสาขา /
-// แถวกะ / แถวสรุปรายวัน). 1 ไฟล์ = 1 สาขา. เราใช้แถว "สรุปของวันที่ DD-MM-2569" เป็น 1 วัน
-// (พ.ศ. −543 = ค.ศ.) แล้วอ่านคอลัมน์ "ยอดขาย" (รวม VAT แล้ว) มาเทียบกับ iv_gross.
+// ⚠️ 1 ไฟล์ "มีได้หลายสาขา" (Foodstory export รวมหลายสาขาในไฟล์เดียว) → parse ทุก section
+//   section เริ่มที่แถว "<เลขร้าน>:<ชื่อสาขา>" · แถว "สรุปของวันที่ DD-MM-2569" = 1 วันของ section นั้น.
+//   พ.ศ.−543 = ค.ศ. · คอลัมน์ "ยอดขาย" = รวม VAT (เทียบ iv_gross).
 //
-// ต่างจาก Amazon (amazon-parse.ts): ร้านชา = IV ถูกคีย์ไว้แล้ว → เราแค่ดึงยอด POS มา "เทียบ"
-//   ไม่ต้องแยกช่องทางชำระ (c-vars) เพราะไม่ได้สร้าง IV. โครงไฟล์เหมือนกันเป๊ะ.
+// แยกยอดช่องทางชำระ: อ่านเฉพาะคอลัมน์ "ระหว่าง ยอดขาย ↔ รวมยอดชำระ" (กันชนคอลัมน์เงินทอน/นับเงิน)
+//   แล้วจับเข้า bucket มาตรฐาน (cash/qr/card/grab/lineman/shopee/wallet/discount) ด้วย keyword.
 //
-// หัวคอลัมน์ match ด้วย "ชื่อ" (ไม่ใช่ index) — กัน Foodstory สลับ/เพิ่มคอลัมน์.
-// ⚠️ ไฟล์นี้ import ในฝั่ง client (tea-view) → ห้าม import tea-trcloud (มี crypto/process.env)
-//    ให้ route ทำ validate สาขาด้วย teaBranchByCode เอง.
+// ⚠️ ไฟล์นี้ import ฝั่ง client (tea-view) → ห้าม import tea-trcloud (มี crypto/process.env).
+//    route validate สาขาด้วย teaBranchByCode เอง.
+import { classifyTeaChannel, type TeaChannelCode } from "./tea-channels";
 
 const GROSS_COL = "ยอดขาย";
+const CHECK_COL = "รวมยอดชำระ";
 const BILL_COL = "จำนวนบิล";
 
-/**
- * คำหลักของแต่ละสาขา (ดึงจาก project ใน TRCloud — ส่วนหลัง "ปตท.") ไว้เดาว่าไฟล์เป็นสาขาไหน.
- * ถ้าเดาไม่ได้ ผู้ใช้เลือกเองจาก dropdown.
- */
+/** คำหลักของแต่ละสาขา (จาก project TRCloud หลัง "ปตท.") ไว้เดาสาขาจากชื่อในไฟล์ */
 export const TEA_POS_KEYWORDS: { code: string; keyword: string }[] = [
   { code: "OWLCHA-001", keyword: "โนนคอย" },
   { code: "OWLCHA-002", keyword: "ชุมพวง" },
@@ -33,13 +31,18 @@ export type TeaPosRow = {
   date: string; // YYYY-MM-DD (Gregorian)
   gross: number; // ยอดขาย (รวม VAT)
   bills: number; // จำนวนบิล
+  channels: Partial<Record<TeaChannelCode, number>>; // ยอดแยกช่องทาง (บาท)
+};
+
+export type TeaPosBranch = {
+  storeCode: string | null; // เลขร้านใน Foodstory เช่น "5157"
+  storeLabel: string | null; // ชื่อสาขาในไฟล์ เช่น "OWL CHA สาขา ปตท.พิมาย"
+  detectedBranchCode: string | null; // เดา branch_code จากคำหลัก (null = เดาไม่ได้)
+  rows: TeaPosRow[];
 };
 
 export type TeaPosParseResult = {
-  rows: TeaPosRow[];
-  storeLabel: string | null; // ชื่อสาขาในไฟล์ เช่น "OWL CHA สาขา ปตท.พิมาย"
-  storeCode: string | null; // เลขร้านใน Foodstory เช่น "5157"
-  detectedBranchCode: string | null; // เดา branch_code จากคำหลัก (null = เดาไม่ได้ → ให้เลือกเอง)
+  branches: TeaPosBranch[];
   error?: string;
 };
 
@@ -49,11 +52,9 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** เดา branch_code จากชื่อสาขาในไฟล์ (match คำหลักของสาขา) */
+/** เดา branch_code จากชื่อสาขาในไฟล์ */
 export function detectTeaBranch(storeLabel: string | null): string | null {
   if (!storeLabel) return null;
   for (const { code, keyword } of TEA_POS_KEYWORDS) {
@@ -62,82 +63,111 @@ export function detectTeaBranch(storeLabel: string | null): string | null {
   return null;
 }
 
+type ColMap = {
+  grossIdx: number;
+  billIdx: number;
+  // คอลัมน์ช่องทางชำระ (อยู่ระหว่าง ยอดขาย ↔ รวมยอดชำระ) → channel bucket
+  channelCols: { idx: number; code: TeaChannelCode }[];
+};
+
+/** อ่านหัวคอลัมน์ → ตำแหน่ง ยอดขาย/บิล + คอลัมน์ช่องทาง (เฉพาะช่วง ยอดขาย→รวมยอดชำระ) */
+function readHeader(row: unknown[]): ColMap | null {
+  const idxOf = (name: string) =>
+    row.findIndex((c) => String(c ?? "").trim() === name);
+  const grossIdx = idxOf(GROSS_COL);
+  if (grossIdx < 0) return null;
+  const checkIdx = idxOf(CHECK_COL);
+  const billIdx = idxOf(BILL_COL);
+  const channelCols: { idx: number; code: TeaChannelCode }[] = [];
+  const end = checkIdx > grossIdx ? checkIdx : row.length;
+  for (let i = grossIdx + 1; i < end; i++) {
+    const code = classifyTeaChannel(String(row[i] ?? ""));
+    if (code) channelCols.push({ idx: i, code });
+  }
+  return { grossIdx, billIdx, channelCols };
+}
+
 /**
- * แปลง matrix (xlsx/csv → array of arrays) → ยอดขายรายวัน.
+ * แปลง matrix (xlsx/csv → array of arrays) → หลายสาขา.
  * @param matrix แถวเซลล์จาก XLSX.utils.sheet_to_json(ws, { header: 1, raw: false })
  */
 export function parseTeaPos(matrix: unknown[][]): TeaPosParseResult {
-  const empty = { rows: [], storeLabel: null, storeCode: null, detectedBranchCode: null };
   if (!Array.isArray(matrix) || matrix.length === 0)
-    return { ...empty, error: "ไฟล์ว่าง" };
+    return { branches: [], error: "ไฟล์ว่าง" };
 
-  // หัวคอลัมน์ = แถวที่มีคำว่า "ยอดขาย"
-  const headerRow = matrix.find(
-    (r) => Array.isArray(r) && r.some((c) => String(c ?? "").trim() === GROSS_COL),
-  );
-  if (!headerRow)
-    return {
-      ...empty,
-      error:
-        "อ่านไฟล์ไม่ออก — ไม่พบหัวคอลัมน์ 'ยอดขาย' (ไฟล์อาจไม่ใช่รายงานปิดสิ้นวันของ Foodstory)",
-    };
-  const col: Record<string, number> = {};
-  headerRow.forEach((h, i) => {
-    const key = String(h ?? "").trim();
-    if (key) col[key] = i;
-  });
-  if (col[GROSS_COL] == null)
-    return { ...empty, error: "ไม่พบคอลัมน์ 'ยอดขาย'" };
+  let col: ColMap | null = null;
+  const branches: TeaPosBranch[] = [];
+  let cur: TeaPosBranch | null = null;
+  let curByDate: Map<string, TeaPosRow> | null = null;
 
-  // ชื่อ/เลขสาขา — แถวที่ขึ้นต้นด้วย "<เลข>:<ชื่อสาขา>" (เช่น "5157:OWL CHA สาขา ปตท.พิมาย")
-  let storeLabel: string | null = null;
-  let storeCode: string | null = null;
-  for (const r of matrix) {
-    const a = String(r?.[0] ?? "");
-    const m = a.match(/^\s*(\d{3,6})\s*:\s*(.+)$/);
-    if (m) {
-      storeCode = m[1];
-      storeLabel = m[2].trim();
-      break;
+  const flush = () => {
+    if (cur && curByDate) {
+      cur.rows = [...curByDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+      if (cur.rows.length > 0 || cur.storeCode) branches.push(cur);
     }
-  }
+  };
 
-  // แถวสรุปรายวัน → 1 วัน
-  const byDate = new Map<string, TeaPosRow>();
   for (const r of matrix) {
     if (!Array.isArray(r)) continue;
     const a = String(r[0] ?? "");
+
+    // หัวคอลัมน์ (อาจซ้ำต่อสาขา) → อัปเดต mapping
+    if (r.some((c) => String(c ?? "").trim() === GROSS_COL)) {
+      const m = readHeader(r);
+      if (m) col = m;
+      continue;
+    }
+
+    // เริ่ม section สาขาใหม่
+    const sm = a.match(/^\s*(\d{3,6})\s*:\s*(.+)$/);
+    if (sm) {
+      flush();
+      const storeLabel = sm[2].trim();
+      cur = {
+        storeCode: sm[1],
+        storeLabel,
+        detectedBranchCode: detectTeaBranch(storeLabel),
+        rows: [],
+      };
+      curByDate = new Map();
+      continue;
+    }
+
+    // แถวสรุปรายวัน
     const dm = a.match(/สรุปของวันที่\s*:?\s*(\d{2})-(\d{2})-(\d{4})/);
-    if (!dm) continue;
-    const [, dd, mm, by] = dm;
-    const year = Number.parseInt(by, 10) - 543; // พ.ศ. → ค.ศ.
-    if (year < 2020 || year > 2040) continue; // กัน parse เพี้ยน
-    const date = `${year}-${mm}-${dd}`;
-    const gross = round2(num(r[col[GROSS_COL]]));
-    const bills = num(r[col[BILL_COL]] ?? 0);
-    // กันไฟล์มีวันซ้ำ (ปกติไม่ควรมี) → บวกรวม
-    const cur = byDate.get(date);
-    if (cur) {
-      cur.gross = round2(cur.gross + gross);
-      cur.bills += bills;
-    } else {
-      byDate.set(date, { date, gross, bills });
+    if (dm && col && cur && curByDate) {
+      const [, dd, mm, by] = dm;
+      const year = Number.parseInt(by, 10) - 543;
+      if (year < 2020 || year > 2040) continue;
+      const date = `${year}-${mm}-${dd}`;
+      const gross = round2(num(r[col.grossIdx]));
+      const bills = num(col.billIdx >= 0 ? r[col.billIdx] : 0);
+      const channels: Partial<Record<TeaChannelCode, number>> = {};
+      for (const { idx, code } of col.channelCols) {
+        const amt = round2(num(r[idx]));
+        if (amt) channels[code] = round2((channels[code] ?? 0) + amt);
+      }
+      const existing = curByDate.get(date);
+      if (existing) {
+        existing.gross = round2(existing.gross + gross);
+        existing.bills += bills;
+        for (const k of Object.keys(channels) as TeaChannelCode[])
+          existing.channels[k] = round2((existing.channels[k] ?? 0) + (channels[k] ?? 0));
+      } else {
+        curByDate.set(date, { date, gross, bills, channels });
+      }
     }
   }
+  flush();
 
-  const rows = [...byDate.values()].sort((x, y) => x.date.localeCompare(y.date));
-  if (rows.length === 0)
+  if (!col)
     return {
-      ...empty,
-      storeLabel,
-      storeCode,
-      error: "ไม่พบแถวสรุปรายวัน ('สรุปของวันที่ …') ในไฟล์",
+      branches: [],
+      error:
+        "อ่านไฟล์ไม่ออก — ไม่พบหัวคอลัมน์ 'ยอดขาย' (ไฟล์อาจไม่ใช่รายงานปิดสิ้นวันของ Foodstory)",
     };
+  if (branches.length === 0)
+    return { branches: [], error: "ไม่พบข้อมูลสาขา/ยอดขายรายวันในไฟล์" };
 
-  return {
-    rows,
-    storeLabel,
-    storeCode,
-    detectedBranchCode: detectTeaBranch(storeLabel),
-  };
+  return { branches };
 }

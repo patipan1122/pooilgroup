@@ -3,7 +3,7 @@
 //   (รวมทุกสาขา วันที่×สาขา + เจาะรายสาขา) แล้ว (ภายหลัง) อัปไฟล์ Foodstory มาเทียบว่าตรงกับ POS ไหม.
 //   project codes 8 สาขา validated สด — ดู memory cashhub-tea-foodstory-iv-pull-2026-06-14.
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole, isExecutiveRole } from "@/lib/auth/role-guards";
+import { requireExecutiveRole, isExecutiveRole, isSuperAdmin } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { BackButton } from "@/components/ui/back-button";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
@@ -33,6 +33,7 @@ export default async function TeaSalesPage({ searchParams }: { searchParams: SP 
 
   const savedDays = await loadTeaDays(admin, orgId, from, to);
   const canPull = isExecutiveRole(session.user.role);
+  const canConfig = isSuperAdmin(session.user.role);
 
   const branches = TEA_BRANCHES.map((b) => ({
     code: b.code,
@@ -61,6 +62,7 @@ export default async function TeaSalesPage({ searchParams }: { searchParams: SP 
         branches={branches}
         savedDays={savedDays}
         canPull={canPull}
+        canConfig={canConfig}
         initialView={sp.view === "branch" ? "branch" : "matrix"}
         initialBranch={sp.branch ?? branches[0]?.code ?? ""}
       />

@@ -2,6 +2,12 @@
 // ตาราง cashhub_tea_daily. ทุก query scope org_id เสมอ (service-role bypass RLS).
 import type { adminClient } from "@/lib/db/server";
 import type { TeaBranchCfg, TeaIv } from "./tea-trcloud";
+import {
+  TEA_CHANNELS,
+  defaultTeaChannelConfigs,
+  type TeaChannelConfig,
+  type TeaChannelCode,
+} from "./tea-channels";
 
 type Admin = ReturnType<typeof adminClient>;
 
@@ -17,6 +23,7 @@ export type SavedTeaDay = {
   iv_status: string; // none | posted
   iv_project: string | null;
   pos_gross: number | null;
+  pos_channels: Partial<Record<TeaChannelCode, number>> | null; // ยอดแยกช่องทาง
   match_state: string | null; // match | mismatch | no_pos | no_iv
   iv_checked_at: string | null;
 };
@@ -49,7 +56,7 @@ export async function loadTeaDays(
   let q = admin
     .from("cashhub_tea_daily")
     .select(
-      "branch_code, branch_label, sales_date, iv_doc_no, iv_doc_id, iv_gross, iv_total, iv_vat, iv_status, iv_project, pos_gross, match_state, iv_checked_at",
+      "branch_code, branch_label, sales_date, iv_doc_no, iv_doc_id, iv_gross, iv_total, iv_vat, iv_status, iv_project, pos_gross, pos_channels, match_state, iv_checked_at",
     )
     .eq("org_id", orgId)
     .gte("sales_date", from)
@@ -68,6 +75,8 @@ export async function loadTeaDays(
     iv_status: String(d.iv_status ?? "none"),
     iv_project: (d.iv_project as string | null) ?? null,
     pos_gross: n(d.pos_gross),
+    pos_channels:
+      (d.pos_channels as Partial<Record<TeaChannelCode, number>> | null) ?? null,
     match_state: (d.match_state as string | null) ?? null,
     iv_checked_at: (d.iv_checked_at as string | null) ?? null,
   }));
@@ -156,7 +165,7 @@ export async function upsertTeaPos(
   admin: Admin,
   orgId: string,
   cfg: { code: string; label: string },
-  rows: { date: string; gross: number }[],
+  rows: { date: string; gross: number; channels?: Partial<Record<TeaChannelCode, number>> }[],
   fileName: string,
 ): Promise<{ saved: number; matched: number; mismatch: number; noIv: number; error?: string }> {
   const clean = rows.filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date));
@@ -183,6 +192,7 @@ export async function upsertTeaPos(
       branch_label: cfg.label,
       sales_date: r.date,
       pos_gross: r.gross,
+      pos_channels: (r.channels ?? {}) as Record<string, number>,
       pos_source: fileName.slice(0, 200),
       match_state: state,
       updated_at: now,
@@ -220,4 +230,61 @@ export function summarizeTea(days: SavedTeaDay[]): Map<string, TeaBranchSummary>
     m.set(d.branch_code, s);
   }
   return m;
+}
+
+// ── ตั้งค่าช่องทาง → บัญชี/บริษัท (เตรียม reconcile) ─────────────────────────
+/** โหลด config ต่อช่องทาง (merge กับ default — ช่องที่ยังไม่ตั้งใช้ค่าเริ่มต้น) */
+export async function loadTeaChannelConfig(
+  admin: Admin,
+  orgId: string,
+): Promise<TeaChannelConfig[]> {
+  const { data } = await admin
+    .from("cashhub_tea_channel_config")
+    .select("channel_code, label, is_settle, fee_percent, min_settle_satang, company_id, bank_account_id")
+    .eq("org_id", orgId);
+  const saved = new Map<string, Record<string, unknown>>();
+  for (const r of (data ?? []) as Record<string, unknown>[])
+    saved.set(String(r.channel_code), r);
+  return defaultTeaChannelConfigs().map((d) => {
+    const s = saved.get(d.code);
+    if (!s) return d;
+    return {
+      code: d.code,
+      label: (s.label as string) ?? d.label,
+      isSettle: s.is_settle == null ? d.isSettle : Boolean(s.is_settle),
+      feePercent: s.fee_percent != null ? Number(s.fee_percent) : d.feePercent,
+      minSettleBaht:
+        s.min_settle_satang != null ? Number(s.min_settle_satang) / 100 : d.minSettleBaht,
+      companyId: (s.company_id as string | null) ?? null,
+      bankAccountId: (s.bank_account_id as string | null) ?? null,
+    };
+  });
+}
+
+/** บันทึก config (super_admin) — upsert ต่อช่องทาง. คืนเฉพาะ code ที่รู้จัก */
+export async function saveTeaChannelConfig(
+  admin: Admin,
+  orgId: string,
+  configs: TeaChannelConfig[],
+): Promise<{ ok: boolean; error?: string }> {
+  const valid = new Set(TEA_CHANNELS.map((c) => c.code));
+  const now = new Date().toISOString();
+  const rows = configs
+    .filter((c) => valid.has(c.code))
+    .map((c) => ({
+      org_id: orgId,
+      channel_code: c.code,
+      label: c.label,
+      is_settle: c.isSettle,
+      fee_percent: c.feePercent,
+      min_settle_satang: Math.round((c.minSettleBaht ?? 0) * 100),
+      company_id: c.companyId,
+      bank_account_id: c.bankAccountId,
+      updated_at: now,
+    }));
+  if (rows.length === 0) return { ok: true };
+  const { error } = await admin
+    .from("cashhub_tea_channel_config")
+    .upsert(rows, { onConflict: "org_id,channel_code" });
+  return error ? { ok: false, error: error.message } : { ok: true };
 }

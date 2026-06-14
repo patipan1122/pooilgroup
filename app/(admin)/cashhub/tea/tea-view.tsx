@@ -3,9 +3,9 @@
 import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
-import { formatBaht } from "@/lib/utils/format";
 import type { SavedTeaDay } from "@/lib/cashhub/tea-data";
-import { parseTeaPos, type TeaPosRow } from "@/lib/cashhub/tea-parse";
+import { parseTeaPos, type TeaPosBranch } from "@/lib/cashhub/tea-parse";
+import { TeaExcelGrid } from "./tea-excel-grid";
 
 type BranchMeta = { code: string; label: string; brand: string };
 
@@ -16,26 +16,13 @@ type Props = {
   branches: BranchMeta[];
   savedDays: SavedTeaDay[];
   canPull: boolean;
+  canConfig: boolean;
   initialView: "matrix" | "branch";
   initialBranch: string;
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const shortLabel = (b: BranchMeta) => b.label.replace(b.brand, "").trim() || b.label;
-const matchBadge = (s: string | null) => {
-  switch (s) {
-    case "match":
-      return { text: "✅ ตรง", cls: "bg-emerald-50 text-emerald-700" };
-    case "mismatch":
-      return { text: "⚠️ ไม่ตรง", cls: "bg-red-50 text-red-700" };
-    case "no_iv":
-      return { text: "⚪ ไม่มี IV", cls: "bg-amber-50 text-amber-700" };
-    case "no_pos":
-      return { text: "— รอ POS", cls: "bg-zinc-100 text-zinc-500" };
-    default:
-      return { text: "—", cls: "bg-zinc-100 text-zinc-400" };
-  }
-};
 
 export function TeaView({
   month,
@@ -44,6 +31,7 @@ export function TeaView({
   branches,
   savedDays,
   canPull,
+  canConfig,
   initialView,
   initialBranch,
 }: Props) {
@@ -54,17 +42,11 @@ export function TeaView({
   const [progress, setProgress] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
-  // ── นำเข้า POS Foodstory ──
-  const [pending, setPending] = useState<{
-    fileName: string;
-    storeLabel: string | null;
-    detected: string | null;
-    rows: TeaPosRow[];
-  } | null>(null);
-  const [importBranch, setImportBranch] = useState("");
+  // ── นำเข้า POS Foodstory (หลายสาขา/ไฟล์) ──
+  const [pending, setPending] = useState<{ fileName: string; branches: TeaPosBranch[] } | null>(null);
+  const [picks, setPicks] = useState<string[]>([]); // picks[i] = branchCode ของ section i
   const [importing, setImporting] = useState(false);
 
-  // index: code|date -> day
   const dayMap = useMemo(() => {
     const m = new Map<string, SavedTeaDay>();
     for (const d of savedDays) m.set(`${d.branch_code}|${d.sales_date}`, d);
@@ -98,7 +80,6 @@ export function TeaView({
         if (!res.ok || data.error) {
           failed++;
           setMsg({ kind: "err", text: `${b.label}: ${data.error ?? "ดึงไม่สำเร็จ"}` });
-          // ถ้าโดน rate-limit ให้พักนานขึ้นก่อนไปต่อ
           if ((data.error ?? "").includes("rate-limit")) await sleep(4000);
         } else {
           totalIv += data.ivCount ?? 0;
@@ -106,7 +87,7 @@ export function TeaView({
       } catch {
         failed++;
       }
-      if (i < branches.length - 1) await sleep(1800); // throttle TRCloud
+      if (i < branches.length - 1) await sleep(1800);
     }
     setProgress(null);
     setBusy(false);
@@ -115,61 +96,38 @@ export function TeaView({
     else
       setMsg({
         kind: "err",
-        text: `ดึงเสร็จ — สำเร็จ ${branches.length - failed}/${branches.length} สาขา (บางสาขาติด rate-limit ลองกดอีกครั้งใน 1–2 นาที)`,
+        text: `ดึงเสร็จ — สำเร็จ ${branches.length - failed}/${branches.length} สาขา (บางสาขาติด rate-limit ลองอีกครั้งใน 1–2 นาที)`,
       });
     router.refresh();
   }, [branches, from, to, router]);
 
   const exportXlsx = useCallback(() => {
-    if (view === "matrix") {
-      const head = ["วันที่", ...branches.map((b) => shortLabel(b)), "รวมวัน"];
-      const aoa: (string | number)[][] = [head];
-      const colTot = new Array(branches.length).fill(0);
-      let grand = 0;
-      for (const date of days) {
-        let rowTot = 0;
-        const cells = branches.map((b, ci) => {
-          const d = dayMap.get(`${b.code}|${date}`);
-          const v = d?.iv_gross ?? null;
-          if (v != null) {
-            rowTot += v;
-            colTot[ci] += v;
-          }
-          return v ?? "";
-        });
-        grand += rowTot;
-        aoa.push([Number(date.slice(8, 10)), ...cells, rowTot]);
-      }
-      aoa.push(["รวม", ...colTot, grand]);
-      const ws = XLSX.utils.aoa_to_sheet(aoa);
-      ws["!cols"] = head.map((h) => ({ wch: Math.max(10, String(h).length + 2) }));
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "ยอดขายรวม");
-      XLSX.writeFile(wb, `tea-ยอดรวม-${month}.xlsx`);
-    } else {
-      const b = branches.find((x) => x.code === branch);
-      const head = ["วันที่", "IV เลขที่", "ยอดขาย (รวม VAT)", "ก่อน VAT", "VAT", "POS Foodstory", "เทียบ"];
-      const rows = days.map((date) => {
-        const d = dayMap.get(`${branch}|${date}`);
-        return [
-          date,
-          d?.iv_doc_no ?? "",
-          d?.iv_gross ?? "",
-          d?.iv_total ?? "",
-          d?.iv_vat ?? "",
-          d?.pos_gross ?? "",
-          matchBadge(d?.match_state ?? null).text,
-        ];
+    const head = ["วันที่", ...branches.map((b) => shortLabel(b)), "รวมวัน"];
+    const aoa: (string | number)[][] = [head];
+    const colTot = new Array(branches.length).fill(0);
+    let grand = 0;
+    for (const date of days) {
+      let rowTot = 0;
+      const cells = branches.map((b, ci) => {
+        const v = dayMap.get(`${b.code}|${date}`)?.iv_gross ?? null;
+        if (v != null) {
+          rowTot += v;
+          colTot[ci] += v;
+        }
+        return v ?? "";
       });
-      const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
-      ws["!cols"] = head.map((h) => ({ wch: Math.max(10, String(h).length + 2) }));
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, b ? shortLabel(b) : "สาขา");
-      XLSX.writeFile(wb, `tea-${b ? shortLabel(b) : branch}-${month}.xlsx`);
+      grand += rowTot;
+      aoa.push([Number(date.slice(8, 10)), ...cells, rowTot]);
     }
-  }, [view, branches, branch, days, dayMap, month]);
+    aoa.push(["รวม", ...colTot, grand]);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = head.map((h) => ({ wch: Math.max(10, String(h).length + 2) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ยอดขายรวม");
+    XLSX.writeFile(wb, `tea-ยอดรวม-${month}.xlsx`);
+  }, [branches, days, dayMap, month]);
 
-  // ── เลือกไฟล์ Foodstory → parse ฝั่ง client → เด้ง panel ยืนยัน ──
+  // ── เลือกไฟล์ Foodstory → parse ฝั่ง client (หลายสาขา) → เด้ง panel ยืนยัน ──
   const onPickFile = useCallback(async (file: File) => {
     setMsg(null);
     try {
@@ -186,66 +144,52 @@ export function TeaView({
         setMsg({ kind: "err", text: res.error });
         return;
       }
-      setPending({
-        fileName: file.name,
-        storeLabel: res.storeLabel,
-        detected: res.detectedBranchCode,
-        rows: res.rows,
-      });
-      setImportBranch(res.detectedBranchCode ?? "");
+      setPending({ fileName: file.name, branches: res.branches });
+      setPicks(res.branches.map((b) => b.detectedBranchCode ?? ""));
     } catch {
       setMsg({ kind: "err", text: "อ่านไฟล์ไม่สำเร็จ — รองรับ .xlsx / .csv" });
     }
   }, []);
 
-  // diff เทียบ POS เดิมในระบบ (ก่อนเขียนทับ) — pool-csv-import-must-diff-before-write
-  const importDiff = useMemo(() => {
-    if (!pending || !importBranch) return null;
-    let neu = 0;
-    let changed = 0;
-    let same = 0;
-    for (const r of pending.rows) {
-      const prev = dayMap.get(`${importBranch}|${r.date}`)?.pos_gross ?? null;
-      if (prev == null) neu++;
-      else if (Math.abs(prev - r.gross) >= 0.01) changed++;
-      else same++;
-    }
-    const total = pending.rows.reduce((s, r) => s + r.gross, 0);
-    return { neu, changed, same, total, days: pending.rows.length };
-  }, [pending, importBranch, dayMap]);
+  const setPick = (i: number, code: string) =>
+    setPicks((p) => p.map((x, idx) => (idx === i ? code : x)));
 
   const confirmImport = useCallback(async () => {
-    if (!pending || !importBranch) return;
+    if (!pending) return;
+    const payloadBranches = pending.branches
+      .map((b, i) => ({
+        branchCode: picks[i],
+        rows: b.rows.map((r) => ({ date: r.date, gross: r.gross, channels: r.channels })),
+      }))
+      .filter((b) => b.branchCode && b.rows.length > 0);
+    if (payloadBranches.length === 0) {
+      setMsg({ kind: "err", text: "เลือกสาขาอย่างน้อย 1 สาขาก่อนนำเข้า" });
+      return;
+    }
     setImporting(true);
     setMsg(null);
     try {
       const res = await fetch("/api/cashhub/tea/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          branchCode: importBranch,
-          fileName: pending.fileName,
-          rows: pending.rows.map((r) => ({ date: r.date, gross: r.gross })),
-        }),
+        body: JSON.stringify({ fileName: pending.fileName, branches: payloadBranches }),
       });
       const data = (await res.json()) as {
         ok?: boolean;
-        saved?: number;
-        matched?: number;
-        mismatch?: number;
-        noIv?: number;
+        results?: { label: string; saved: number; mismatch: number }[];
+        totals?: { saved: number; matched: number; mismatch: number; noIv: number };
         error?: string;
       };
       if (!res.ok || data.error) {
         setMsg({ kind: "err", text: data.error ?? "นำเข้าไม่สำเร็จ" });
       } else {
-        const bl = branches.find((b) => b.code === importBranch)?.label ?? importBranch;
+        const t = data.totals;
         setMsg({
           kind: "ok",
-          text: `นำเข้า POS ${bl} ${data.saved} วัน · ✅ ตรง ${data.matched} · ⚠️ ไม่ตรง ${data.mismatch} · ⚪ ไม่มี IV ${data.noIv}`,
+          text: `นำเข้า ${data.results?.length ?? 0} สาขา · รวม ${t?.saved ?? 0} วัน · ✅ ตรง ${t?.matched ?? 0} · ⚠️ ไม่ตรง ${t?.mismatch ?? 0} · ⚪ ไม่มี IV ${t?.noIv ?? 0}`,
         });
         setPending(null);
-        setImportBranch("");
+        setPicks([]);
         router.refresh();
       }
     } catch {
@@ -253,7 +197,15 @@ export function TeaView({
     } finally {
       setImporting(false);
     }
-  }, [pending, importBranch, branches, router]);
+  }, [pending, picks, router]);
+
+  const branchByDate = useMemo(() => {
+    const m = new Map<string, SavedTeaDay>();
+    for (const d of savedDays) if (d.branch_code === branch) m.set(d.sales_date, d);
+    return m;
+  }, [savedDays, branch]);
+
+  const branchLabel = branches.find((b) => b.code === branch)?.label ?? branch;
 
   return (
     <div className="space-y-5">
@@ -278,6 +230,14 @@ export function TeaView({
 
           <div className="grow" />
 
+          {canConfig && (
+            <a
+              href="/cashhub/tea/settings"
+              className="h-10 inline-flex items-center rounded-xl border border-zinc-200 px-4 text-sm font-medium hover:bg-zinc-50"
+            >
+              ⚙ ตั้งค่าบัญชี (Reconcile)
+            </a>
+          )}
           {canPull && (
             <button
               type="button"
@@ -313,16 +273,18 @@ export function TeaView({
           </button>
         </div>
 
-        {/* panel ยืนยันนำเข้า POS Foodstory */}
+        {/* panel ยืนยันนำเข้า POS Foodstory (หลายสาขา) */}
         {pending && (
           <div className="rounded-2xl border border-[var(--ch-brand,#1e3aff)]/40 bg-[var(--ch-brand,#1e3aff)]/[0.03] p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <div className="font-semibold text-zinc-800">นำเข้ายอด POS Foodstory มาเทียบ</div>
+              <div className="font-semibold text-zinc-800">
+                นำเข้ายอด POS Foodstory — พบ {pending.branches.length} สาขาในไฟล์
+              </div>
               <button
                 type="button"
                 onClick={() => {
                   setPending(null);
-                  setImportBranch("");
+                  setPicks([]);
                 }}
                 className="text-sm text-zinc-400 hover:text-zinc-700"
               >
@@ -331,53 +293,67 @@ export function TeaView({
             </div>
             <div className="text-sm text-zinc-500">
               ไฟล์: <span className="font-medium text-zinc-700">{pending.fileName}</span>
-              {pending.storeLabel && (
-                <>
-                  {" · "}ในไฟล์ระบุสาขา:{" "}
-                  <span className="font-medium text-zinc-700">{pending.storeLabel}</span>
-                </>
-              )}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm text-zinc-600">นำเข้าเป็นสาขา:</span>
-              <select
-                value={importBranch}
-                onChange={(e) => setImportBranch(e.target.value)}
-                aria-label="เลือกสาขาที่จะนำเข้า"
-                className="h-9 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium"
-              >
-                <option value="">— เลือกสาขา —</option>
-                {branches.map((b) => (
-                  <option key={b.code} value={b.code}>
-                    {b.label}
-                  </option>
-                ))}
-              </select>
-              {pending.detected && importBranch === pending.detected && (
-                <span className="text-xs text-emerald-600">✓ ระบบเดาสาขาให้จากชื่อในไฟล์</span>
-              )}
-              {!pending.detected && (
-                <span className="text-xs text-amber-600">
-                  เดาสาขาอัตโนมัติไม่ได้ — กรุณาเลือกเอง
-                </span>
-              )}
+            <div className="space-y-2">
+              {pending.branches.map((b, i) => {
+                const pick = picks[i] ?? "";
+                let neu = 0;
+                let changed = 0;
+                for (const r of b.rows) {
+                  const prev = pick ? dayMap.get(`${pick}|${r.date}`)?.pos_gross ?? null : null;
+                  if (prev == null) neu++;
+                  else if (Math.abs(prev - r.gross) >= 0.01) changed++;
+                }
+                const total = b.rows.reduce((s, r) => s + r.gross, 0);
+                return (
+                  <div
+                    key={i}
+                    className="rounded-xl bg-white border border-zinc-200 px-3 py-2.5 flex flex-wrap items-center gap-2"
+                  >
+                    <div className="min-w-[180px] text-sm text-zinc-600">
+                      ในไฟล์:{" "}
+                      <span className="font-medium text-zinc-800">
+                        {b.storeLabel ?? b.storeCode ?? "—"}
+                      </span>
+                    </div>
+                    <span className="text-sm text-zinc-400">→</span>
+                    <select
+                      value={pick}
+                      onChange={(e) => setPick(i, e.target.value)}
+                      aria-label="เลือกสาขาที่จะนำเข้า"
+                      className="h-9 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium"
+                    >
+                      <option value="">— ข้าม (ไม่นำเข้า) —</option>
+                      {branches.map((br) => (
+                        <option key={br.code} value={br.code}>
+                          {br.label}
+                        </option>
+                      ))}
+                    </select>
+                    {b.detectedBranchCode && pick === b.detectedBranchCode && (
+                      <span className="text-xs text-emerald-600">✓ เดาให้</span>
+                    )}
+                    <div className="grow" />
+                    <div className="text-xs text-zinc-500">
+                      {b.rows.length} วัน · {total.toLocaleString()} ฿
+                      {pick && (
+                        <>
+                          {" · "}ใหม่ {neu}
+                          {changed > 0 && <span className="text-amber-700"> · เปลี่ยน {changed}</span>}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            {importDiff && (
-              <div className="rounded-xl bg-white border border-zinc-200 px-3 py-2 text-sm text-zinc-600">
-                พบ <b className="text-zinc-800">{importDiff.days}</b> วัน · ยอดรวม{" "}
-                <b className="text-zinc-800">{formatBaht(importDiff.total)}</b>
-                {" · "}ใหม่ <b className="text-emerald-700">{importDiff.neu}</b> · เปลี่ยน{" "}
-                <b className="text-amber-700">{importDiff.changed}</b> · เหมือนเดิม{" "}
-                {importDiff.same}
-              </div>
-            )}
             <button
               type="button"
-              disabled={!importBranch || importing}
+              disabled={importing || picks.every((p) => !p)}
               onClick={confirmImport}
               className="h-10 rounded-xl bg-[var(--ch-brand,#1e3aff)] px-5 text-sm font-bold text-white disabled:opacity-40"
             >
-              {importing ? "กำลังนำเข้า…" : "ยืนยันนำเข้า"}
+              {importing ? "กำลังนำเข้า…" : "ยืนยันนำเข้าทุกสาขาที่เลือก"}
             </button>
           </div>
         )}
@@ -397,7 +373,7 @@ export function TeaView({
               onClick={() => setView("branch")}
               className={`h-8 rounded-lg px-3 text-sm font-medium ${view === "branch" ? "bg-white shadow-sm text-zinc-900" : "text-zinc-500"}`}
             >
-              รายสาขา
+              รายสาขา (Excel)
             </button>
           </div>
           {view === "branch" && (
@@ -425,9 +401,9 @@ export function TeaView({
           </div>
         )}
         <p className="text-xs text-zinc-500">
-          IV ดึงจาก TRCloud (มีคนคีย์ไว้แล้ว 1 ใบ/วัน/สาขา) · กด &ldquo;ดึงยอดจาก TRCloud&rdquo;
-          เพื่ออัปเดต · แล้วกด &ldquo;⬆ อัปไฟล์ Foodstory&rdquo; (รายงานปิดสิ้นวัน 1 สาขา/ไฟล์)
-          เพื่อเทียบว่ายอดที่คีย์ตรงกับ POS จริงไหม
+          ดึง IV จาก TRCloud (คีย์ไว้แล้ว 1 ใบ/วัน/สาขา) → กด &ldquo;⬆ อัปไฟล์ Foodstory&rdquo;
+          (รายงานปิดสิ้นวัน · ไฟล์เดียวมีหลายสาขาได้) → ดูทาน &ldquo;รายสาขา (Excel)&rdquo; ว่าตรง POS ไหม ·
+          ตั้งบัญชีต่อช่องทางที่ &ldquo;⚙ ตั้งค่าบัญชี&rdquo; เพื่อเตรียม reconcile
         </p>
       </div>
 
@@ -439,7 +415,7 @@ export function TeaView({
       ) : view === "matrix" ? (
         <MatrixTable branches={branches} days={days} dayMap={dayMap} />
       ) : (
-        <BranchTable branchCode={branch} days={days} dayMap={dayMap} />
+        <TeaExcelGrid branchLabel={branchLabel} days={days} byDate={branchByDate} />
       )}
     </div>
   );
@@ -528,84 +504,6 @@ function MatrixTable({
             <td className="px-3 py-2 text-right tabular-nums text-zinc-900 bg-zinc-200">
               {grand.toLocaleString()}
             </td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
-  );
-}
-
-// ── ตารางรายสาขา ───────────────────────────────────────────────────────
-function BranchTable({
-  branchCode,
-  days,
-  dayMap,
-}: {
-  branchCode: string;
-  days: string[];
-  dayMap: Map<string, SavedTeaDay>;
-}) {
-  const rows = days.map((date) => dayMap.get(`${branchCode}|${date}`) ?? null);
-  const totGross = rows.reduce((s, d) => s + (d?.iv_gross ?? 0), 0);
-  const totBefore = rows.reduce((s, d) => s + (d?.iv_total ?? 0), 0);
-  const totVat = rows.reduce((s, d) => s + (d?.iv_vat ?? 0), 0);
-
-  return (
-    <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
-      <table className="min-w-full border-collapse text-sm">
-        <thead>
-          <tr className="bg-zinc-50 text-zinc-600">
-            <th className="px-3 py-2 text-left font-semibold border-b border-zinc-200">วันที่</th>
-            <th className="px-3 py-2 text-left font-semibold border-b border-zinc-200">IV เลขที่</th>
-            <th className="px-3 py-2 text-right font-semibold border-b border-zinc-200">ยอดขาย (รวม VAT)</th>
-            <th className="px-3 py-2 text-right font-semibold border-b border-zinc-200">ก่อน VAT</th>
-            <th className="px-3 py-2 text-right font-semibold border-b border-zinc-200">VAT</th>
-            <th className="px-3 py-2 text-right font-semibold border-b border-zinc-200">POS Foodstory</th>
-            <th className="px-3 py-2 text-center font-semibold border-b border-zinc-200">เทียบ</th>
-          </tr>
-        </thead>
-        <tbody>
-          {days.map((date, i) => {
-            const d = rows[i];
-            const badge = matchBadge(d?.match_state ?? null);
-            return (
-              <tr key={date} className="hover:bg-zinc-50/60">
-                <td className="px-3 py-1.5 font-medium text-zinc-700 border-b border-zinc-100">
-                  {Number(date.slice(8, 10))}
-                </td>
-                <td className="px-3 py-1.5 text-zinc-500 border-b border-zinc-100 whitespace-nowrap">
-                  {d?.iv_doc_no ?? <span className="text-zinc-300">—</span>}
-                </td>
-                <td className="px-3 py-1.5 text-right tabular-nums font-medium text-zinc-800 border-b border-zinc-100">
-                  {d?.iv_gross != null ? formatBaht(d.iv_gross) : <span className="text-zinc-300">—</span>}
-                </td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-zinc-500 border-b border-zinc-100">
-                  {d?.iv_total != null ? d.iv_total.toLocaleString() : "—"}
-                </td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-zinc-500 border-b border-zinc-100">
-                  {d?.iv_vat != null ? d.iv_vat.toLocaleString() : "—"}
-                </td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-zinc-400 border-b border-zinc-100">
-                  {d?.pos_gross != null ? formatBaht(d.pos_gross) : "—"}
-                </td>
-                <td className="px-3 py-1.5 text-center border-b border-zinc-100">
-                  <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${badge.cls}`}>
-                    {badge.text}
-                  </span>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-        <tfoot>
-          <tr className="bg-zinc-100 font-bold text-zinc-800">
-            <td className="px-3 py-2" colSpan={2}>
-              รวมเดือน
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums">{formatBaht(totGross)}</td>
-            <td className="px-3 py-2 text-right tabular-nums">{totBefore.toLocaleString()}</td>
-            <td className="px-3 py-2 text-right tabular-nums">{totVat.toLocaleString()}</td>
-            <td className="px-3 py-2" colSpan={2} />
           </tr>
         </tfoot>
       </table>

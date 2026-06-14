@@ -76,6 +76,7 @@ export type AuditAction =
   // ร้านชาไข่มุก (OWL CHA / MR.WOOF / SNOW DIP, POS Foodstory) — ดึง IV จาก TRCloud + เทียบ POS
   | "PULL_TEA_IV"
   | "IMPORT_TEA_POS"
+  | "SAVE_TEA_CHANNEL_CONFIG"
   // RentSpace — บริหารพื้นที่เช่า
   | "RENTSPACE_PROJECT_SAVED"
   | "RENTSPACE_UNIT_SAVED"
