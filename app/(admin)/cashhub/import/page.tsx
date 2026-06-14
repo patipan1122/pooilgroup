@@ -27,6 +27,8 @@ interface ImportSource {
   status: "ready" | "coming_soon";
   /** business_type ที่ source นี้นำเข้า (สำหรับนับล่าสุด) */
   businessType?: string;
+  /** override ปลายทาง (ถ้าไม่ใช่ /cashhub/import/<slug>) */
+  href?: string;
 }
 
 const SOURCES: ImportSource[] = [
@@ -60,8 +62,9 @@ const SOURCES: ImportSource[] = [
     emoji: "☕",
     Icon: Coffee,
     title: "Café Amazon POS",
-    subtitle: "ยอด POS Café · จากระบบ POS ของ PTTOR",
-    status: "coming_soon",
+    subtitle: "ยอด POS Café · คีย์ IV รายวันเข้า TRCloud อัตโนมัติ",
+    status: "ready",
+    href: "/cashhub/amazon",
   },
   {
     slug: "7-eleven",
@@ -118,7 +121,9 @@ export default async function ImportHubPage() {
           const isReady = s.status === "ready";
           const showLastEv = s.slug === "ev-connext" && lastEvAt;
           const Card = isReady ? Link : "div";
-          const cardProps = isReady ? { href: `/cashhub/import/${s.slug}` } : {};
+          const cardProps = isReady
+            ? { href: s.href ?? `/cashhub/import/${s.slug}` }
+            : {};
 
           return (
             <Card

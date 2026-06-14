@@ -66,6 +66,9 @@ export type AuditAction =
   | "BULK_IMPORT_EV_REPORTS"
   // Hotel daily-sales import from Google-Sheet/xlsx → cashhub_hotel_daily.
   | "IMPORT_HOTEL_SALES"
+  // Café Amazon — auto-create daily IV into TRCloud from POS shift-close xlsx.
+  | "CREATE_AMAZON_IV"
+  | "SKIP_AMAZON_IV_DUPLICATE"
   // RentSpace — บริหารพื้นที่เช่า
   | "RENTSPACE_PROJECT_SAVED"
   | "RENTSPACE_UNIT_SAVED"
