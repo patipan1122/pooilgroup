@@ -169,7 +169,7 @@ export function AmazonSettingsEditor({ configs, accounts, companies }: Props) {
         </button>
       </div>
 
-      <p className="text-xs text-zinc-400">
+      <p className="text-xs text-zinc-500">
         เงินเข้าจริง = ยอดช่องทาง − ค่าธรรมเนียม · ถ้ายอด/วัน &lt; ขั้นต่ำ = ยังไม่โอน (รอสะสม) ·
         ช่องที่ไม่ติ๊ก &ldquo;เงินเข้าธนาคาร&rdquo; (Redeem/ส่วนลด) จะไม่ส่งเข้า reconcile
       </p>

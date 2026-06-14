@@ -121,7 +121,7 @@ export function AmazonExcelGrid({
   // สถานะกระทบยอดธนาคาร (ไหลกลับจาก ledger_revenue_entry)
   const reconcileCell = (d: SavedAmazonDay) => {
     const rc = reconcile.byDate[d.sales_date];
-    if (!rc || rc.n === 0) return <span className="text-zinc-300">–</span>; // ยังไม่ส่ง
+    if (!rc || rc.n === 0) return <span className="text-zinc-300">—</span>; // ยังไม่ส่ง
     if (rc.nMatched >= rc.n)
       return <span className="font-semibold text-emerald-600">🟢 แมตช์แล้ว</span>;
     if (rc.nMatched > 0)
@@ -248,7 +248,7 @@ export function AmazonExcelGrid({
           </table>
         </div>
       </div>
-      <p className="text-[11px] text-zinc-400">
+      <p className="text-[11px] text-zinc-500">
         <span className="text-blue-500 font-semibold">ƒ</span> = ช่องคำนวณอัตโนมัติ ·
         ก่อน VAT = ยอดขาย÷1.07 · VAT = ยอดขาย−ก่อน VAT · ส่วนต่าง = ยอด IV−ยอด POS (≠0
         = แดง) · ● = ต้องตรวจสอบ · เลื่อนซ้าย-ขวาดูช่องทางครบทุกช่อง

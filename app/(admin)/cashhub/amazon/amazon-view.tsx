@@ -430,8 +430,8 @@ export function AmazonView({
                   </span>
                   <span>· {h.days} วัน</span>
                   {h.storeCode && <span>· สาขา {h.storeCode}</span>}
-                  {h.file && <span className="text-zinc-400">· {h.file}</span>}
-                  <span className="text-zinc-400">· โดย {h.by}</span>
+                  {h.file && <span className="text-zinc-500">· {h.file}</span>}
+                  <span className="text-zinc-500">· โดย {h.by}</span>
                 </div>
               ))}
             </div>
@@ -502,7 +502,7 @@ export function AmazonView({
               </button>
             )}
             {stat.noIv > 0 && !canSend && (
-              <span className="ml-auto self-center text-xs text-zinc-400">
+              <span className="ml-auto self-center text-xs text-zinc-500">
                 🔒 เฉพาะ super_admin สร้าง IV ได้
               </span>
             )}
