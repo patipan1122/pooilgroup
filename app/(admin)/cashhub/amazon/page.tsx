@@ -1,19 +1,45 @@
-// CASHHUB · Café Amazon — ตรวจยอดขาย + คีย์ IV อัตโนมัติจากไฟล์ POS ปิดกะ
-// CEO 2026-06-14: อัปไฟล์ POS รายวัน → ระบบคำนวณ IV (VAT 7% + ช่องทาง) → รีวิว → กดสร้างเข้า TRCloud
-//   เลิกนั่งคีย์ IV มือ. recipe พิสูจน์แล้ว (IV 1048468). human-confirm ก่อนสร้างเสมอ (ไม่ auto-post).
-//   pilot = สาขาชุมชนหัวทะเล. ดู docs/WORKSHOP_cashhub-amazon-pos-iv.md
+// CASHHUB · Café Amazon — ตรวจยอดขาย + คีย์ IV อัตโนมัติ (เซฟถาวร + เทียบ POS↔TRCloud)
+// CEO 2026-06-14: อัปไฟล์ POS → เซฟลง DB → แสดงตลอดเป็นตาราง Excel + เช็คว่าที่คีย์ใน TRCloud
+//   ตรงกับยอด POS ไหม (match/mismatch) + ดาวน์โหลด Excel + กดสร้าง IV วันที่ยังไม่มี.
+//   recipe พิสูจน์แล้ว (IV 1048468). human-confirm ก่อนสร้าง. pilot=ชุมชนหัวทะเล (5157).
+//   ดู docs/WORKSHOP_cashhub-amazon-pos-iv.md
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
+import { adminClient } from "@/lib/db/server";
 import { BackButton } from "@/components/ui/back-button";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
 import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
-import { AmazonShell } from "./amazon-shell";
+import { endOfMonth, startOfMonth } from "date-fns";
+import { loadAmazonDays, listAmazonStores } from "@/lib/cashhub/amazon-data";
+import { AMAZON_BRANCHES } from "@/lib/cashhub/amazon-trcloud";
+import { AmazonView } from "./amazon-view";
 
 export const dynamic = "force-dynamic";
 
-export default async function AmazonSalesPage() {
+type SP = Promise<{ store?: string; month?: string }>;
+
+export default async function AmazonSalesPage({ searchParams }: { searchParams: SP }) {
   const session = await requireSession();
-  requireExecutiveRole(session.user.role); // บัญชี/ผู้บริหารเท่านั้น
+  requireExecutiveRole(session.user.role);
+  const orgId = session.user.org_id;
+  const admin = adminClient();
+  const sp = await searchParams;
+
+  // ── เลือกสาขา (default = สาขาที่มีข้อมูลแล้ว, ไม่งั้น pilot 5157) ──
+  const stores = await listAmazonStores(admin, orgId);
+  const storeCode = sp.store ?? stores[0]?.store_code ?? "5157";
+  const cfg = AMAZON_BRANCHES[storeCode];
+  const branchLabel =
+    stores.find((s) => s.store_code === storeCode)?.branch_label ?? cfg?.label ?? storeCode;
+
+  // ── เดือน (default = เดือนปัจจุบัน) ──
+  const monthStr = sp.month ?? new Date().toISOString().slice(0, 7);
+  const [yy, mm] = monthStr.split("-").map((x) => Number.parseInt(x, 10));
+  const monthDate = new Date(yy, (mm || 1) - 1, 1);
+  const from = startOfMonth(monthDate).toISOString().slice(0, 10);
+  const to = endOfMonth(monthDate).toISOString().slice(0, 10);
+
+  const savedDays = await loadAmazonDays(admin, orgId, storeCode, from, to);
 
   return (
     <div className="ch-scope p-3 sm:p-6 lg:p-8 max-w-6xl mx-auto pb-24">
@@ -21,15 +47,55 @@ export default async function AmazonSalesPage() {
       <header className="mt-3 mb-5">
         <SectionPill num="☕" label="Café Amazon · ตรวจยอด + คีย์ IV" />
         <div className="flex flex-wrap items-end justify-between gap-3 mt-1">
-          <TwoToneTitle first="ยอดขายร้านกาแฟ" accent="Café Amazon" size={30} />
+          <TwoToneTitle first="ยอดขาย" accent={branchLabel} size={30} />
         </div>
         <p className="text-sm text-zinc-500 mt-1">
-          อัปไฟล์ปิดกะ POS (.xlsx) → ระบบคำนวณใบกำกับภาษีรายวันให้ → ตรวจแล้วกดสร้างเข้า TRCloud
-          (เลิกคีย์มือ) · ระบบกันสร้างใบซ้ำให้อัตโนมัติ
+          อัปไฟล์ปิดกะ POS → เซฟถาวร → เทียบว่าที่คีย์ใน TRCloud ตรงกับยอด POS ไหม + กดสร้าง IV วันที่ยังไม่มี
         </p>
       </header>
 
-      <AmazonShell />
+      {/* store / month picker */}
+      <form method="get" className="flex flex-wrap gap-2 mb-5">
+        {stores.length > 1 && (
+          <select
+            name="store"
+            aria-label="เลือกสาขา"
+            title="เลือกสาขา"
+            defaultValue={storeCode}
+            className="h-10 rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
+          >
+            {stores.map((s) => (
+              <option key={s.store_code} value={s.store_code}>
+                {s.branch_label ?? s.store_code}
+              </option>
+            ))}
+          </select>
+        )}
+        <input
+          type="month"
+          name="month"
+          aria-label="เลือกเดือน"
+          title="เลือกเดือน"
+          defaultValue={monthStr}
+          className="h-10 rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
+        />
+        <button
+          type="submit"
+          className="h-10 rounded-xl bg-zinc-900 text-white font-semibold px-5 text-sm"
+        >
+          ดู
+        </button>
+      </form>
+
+      <AmazonView
+        storeCode={storeCode}
+        branchLabel={branchLabel}
+        branchType={cfg?.type ?? null}
+        month={monthStr}
+        from={from}
+        to={to}
+        savedDays={savedDays}
+      />
     </div>
   );
 }

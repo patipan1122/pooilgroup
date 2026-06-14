@@ -3,8 +3,10 @@
 // dedup-guard + checksum guard อยู่ใน createAmazonIv. body = { storeCode, day: AmazonDayRow }
 import { NextResponse, type NextRequest } from "next/server";
 import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
+import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { branchByStoreCode, createAmazonIv } from "@/lib/cashhub/amazon-trcloud";
+import { markIvPosted } from "@/lib/cashhub/amazon-data";
 import type { AmazonDayRow } from "@/lib/cashhub/amazon-parse";
 
 export const runtime = "nodejs";
@@ -29,6 +31,16 @@ export async function POST(req: NextRequest) {
   const result = await createAmazonIv(cfg, day);
 
   if (result.ok) {
+    // อัปเดต DB: IV สร้างแล้ว (grand = gross เพราะสร้างจากยอด POS)
+    await markIvPosted(
+      adminClient(),
+      session.user.org_id,
+      cfg.storeCode,
+      day.date,
+      result.ivNo,
+      result.ivId,
+      day.gross,
+    );
     await audit({
       orgId: session.user.org_id,
       userId: session.user.id,

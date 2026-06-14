@@ -69,6 +69,7 @@ export type AuditAction =
   // Café Amazon — auto-create daily IV into TRCloud from POS shift-close xlsx.
   | "CREATE_AMAZON_IV"
   | "SKIP_AMAZON_IV_DUPLICATE"
+  | "IMPORT_AMAZON_SALES"
   // RentSpace — บริหารพื้นที่เช่า
   | "RENTSPACE_PROJECT_SAVED"
   | "RENTSPACE_UNIT_SAVED"
