@@ -1,15 +1,22 @@
 // CASHHUB · Hotel → ดึง IV จาก TRCloud (หน้าเต็มของตัวเอง)
 // แยกจากหน้า Excel: หน้านี้ = ดึง IV โรงแรมจาก TRCloud มาแสดง + เช็ค IV ครบทุกวัน/กะ
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole } from "@/lib/auth/role-guards";
+import { requireExecutiveRole, isSuperAdmin } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import Link from "next/link";
 import { BackButton } from "@/components/ui/back-button";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
 import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { TH_MONTHS, type HotelShiftRow } from "@/lib/cashhub/hotel";
+import {
+  loadHotelChannelConfig,
+  computeHotelDeposits,
+  readHotelReconcileStatus,
+  buildReconcileView,
+} from "@/lib/cashhub/hotel-settlement-data";
 import { HotelIvExcelView } from "../hotel-iv-excel-view";
 import { HotelTtbUpload } from "../hotel-ttb-upload";
+import { HotelReconcilePanel } from "../hotel-reconcile-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -24,12 +31,12 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
 
   const { data } = await admin
     .from("branches")
-    .select("id, name")
+    .select("id, name, code")
     .eq("org_id", orgId)
     .eq("business_type", "hotel")
     .eq("is_active", true)
     .order("name");
-  const branches = (data ?? []) as Array<{ id: string; name: string }>;
+  const branches = (data ?? []) as Array<{ id: string; name: string; code: string }>;
   // default = สาขาที่มีข้อมูล Excel ก่อน
   let withData: string | null = null;
   if (!sp.branchId && branches.length > 1) {
@@ -104,6 +111,28 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
       }));
   }
 
+  // ── reconcile (กระทบยอดธนาคาร) ──
+  const canSend = isSuperAdmin(session.user.role);
+  const branchCode = branches.find((b) => b.id === branchId)?.code ?? "";
+  let reconcileView: ReturnType<typeof buildReconcileView> | null = null;
+  let reconcileConfigured = false;
+  if (branchId && branchCode) {
+    const mFrom = `${yy}-${String(mm).padStart(2, "0")}-01`;
+    const mTo = `${yy}-${String(mm).padStart(2, "0")}-${String(
+      new Date(yy, mm, 0).getDate(),
+    ).padStart(2, "0")}`;
+    const configs = await loadHotelChannelConfig(admin, orgId);
+    const settle = configs.filter((c) => c.isSettle && c.active);
+    reconcileConfigured = settle.some((c) => c.companyId && c.bankAccountId);
+    const deposits = await computeHotelDeposits(admin, orgId, branchId, mFrom, mTo);
+    const statusMap = await readHotelReconcileStatus(orgId, branchCode, mFrom, mTo);
+    reconcileView = buildReconcileView(
+      deposits,
+      statusMap,
+      settle.map((c) => ({ channel: c.channel, label: c.label })),
+    );
+  }
+
   return (
     <div className="ch-scope p-3 sm:p-6 lg:p-8 max-w-4xl mx-auto pb-24">
       <BackButton label="ตรวจยอดขายโรงแรม" fallbackHref="/cashhub/hotel" />
@@ -169,6 +198,18 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
               history={ttbHistory}
             />
           </div>
+          {reconcileView && reconcileView.summary.length > 0 && (
+            <div className="mt-5">
+              <HotelReconcilePanel
+                branchId={branchId}
+                month={monthStr}
+                configured={reconcileConfigured}
+                canSend={canSend}
+                summary={reconcileView.summary}
+                days={reconcileView.days}
+              />
+            </div>
+          )}
         </>
       ) : (
         <div className="rounded-2xl border border-zinc-200 p-8 text-center text-zinc-500">
