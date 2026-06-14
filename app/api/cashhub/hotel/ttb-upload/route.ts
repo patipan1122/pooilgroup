@@ -100,10 +100,13 @@ export async function POST(req: NextRequest) {
   let totalRecorded = 0;
   for (const e of byDateRows.values()) totalRecorded += e.recorded;
 
-  let updated = 0,
-    unmatched = 0,
+  let unmatched = 0,
     totalBanked = 0;
   const now = new Date().toISOString();
+  // เติม "เข้าบัญชีจริง" (qr_banked) ต่อวัน — ตัด 23:00 ตรง statement.
+  // qr_diff = null: ไม่โชว์ส่วนต่างรายวัน (บันทึกตามกะ vs เข้าจริงตัด 23:00 คนละฐาน)
+  // ⚡ อัปเดตพร้อมกัน (parallel) กัน serverless timeout — เดิมทีละ call ช้าจนตายกลางทาง
+  const updates: Array<Promise<unknown>> = [];
   for (const [date, banked] of inMonth) {
     totalBanked += banked;
     const e = byDateRows.get(date);
@@ -111,14 +114,17 @@ export async function POST(req: NextRequest) {
       unmatched++;
       continue;
     }
-    // เติม "เข้าบัญชีจริง" (qr_banked) ต่อวัน — ตัด 23:00 ตรง statement.
-    // qr_diff = null: ไม่โชว์ส่วนต่างรายวัน (บันทึกตามกะ vs เข้าจริงตัด 23:00 คนละฐาน)
-    const { error } = await admin
-      .from("cashhub_hotel_daily")
-      .update({ qr_banked: banked, qr_diff: null, updated_at: now })
-      .eq("id", e.morningId);
-    if (!error) updated++;
+    updates.push(
+      admin
+        .from("cashhub_hotel_daily")
+        .update({ qr_banked: banked, qr_diff: null, updated_at: now })
+        .eq("id", e.morningId),
+    );
   }
+  const results = await Promise.all(updates);
+  const updated = results.filter(
+    (r) => !(r as { error?: unknown }).error,
+  ).length;
 
   const dates = inMonth.map(([d]) => d).sort();
   const firstDate = dates[0] ?? null;
