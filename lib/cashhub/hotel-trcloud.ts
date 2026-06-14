@@ -65,6 +65,7 @@ type RawIv = {
   grand_total?: string | number;
   total?: string | number;
   status?: string;
+  special_note?: string; // JSON {"c1":"เงินสด","c2":"QR",...} = ช่องทางเงิน "ไส้ใน"
 };
 
 export type HotelIv = {
@@ -74,7 +75,45 @@ export type HotelIv = {
   total: number;
   status: string;
   customer: string;
+  // ── ไส้ในช่องทางเงิน (จาก special_note c1-c40) ──
+  cash: number; // c1 เงินสด
+  qr: number; // c2 QR Payment (+ c13 QRManual)
+  delivery: number; // c3 Grab + c4 LineMan + c5 ShopeeFood
+  wallet: number; // c6 TrueMoney + c14/15 bluePlus
+  discount: number; // c7+c8+c9 ส่วนลด
+  shortAmt: number; // c18 เงินขาด
+  overAmt: number; // c19 เงินเกิน
 };
+
+/** parse special_note (JSON c1-c40) → ยอดแต่ละช่องทาง */
+function parseChannels(raw: string | undefined): {
+  cash: number; qr: number; delivery: number; wallet: number;
+  discount: number; shortAmt: number; overAmt: number;
+} {
+  const z = { cash: 0, qr: 0, delivery: 0, wallet: 0, discount: 0, shortAmt: 0, overAmt: 0 };
+  if (!raw) return z;
+  let o: Record<string, unknown>;
+  try {
+    o = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return z;
+  }
+  const c = (k: string): number => {
+    const v = o[k];
+    if (v == null || v === "") return 0;
+    const n = Number.parseFloat(String(v).replace(/,/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  };
+  return {
+    cash: c("c1"),
+    qr: c("c2") + c("c13"), // QR Payment + QRManual
+    delivery: c("c3") + c("c4") + c("c5"), // Grab + LineMan + ShopeeFood
+    wallet: c("c6") + c("c14") + c("c15"), // TrueMoney + bluePlus wallet/credit
+    discount: c("c7") + c("c8") + c("c9"),
+    shortAmt: c("c18"),
+    overAmt: c("c19"),
+  };
+}
 
 function isHotel(iv: RawIv): boolean {
   const s = `${iv.project ?? ""}${iv.name ?? ""}`;
@@ -144,16 +183,18 @@ export async function fetchHotelIvs(
       };
     }
     // IV โรงแรมทั้งหมด (ยังไม่กรองช่วงวัน) → ใช้บอก "TRCloud มี IV เดือนไหน"
-    const allHotel: HotelIv[] = list
-      .filter(isHotel)
-      .map((iv) => ({
+    const allHotel: HotelIv[] = list.filter(isHotel).map((iv) => {
+      const ch = parseChannels(iv.special_note);
+      return {
         ivNo: String(iv.invoice_number ?? ""),
         date: String(iv.issue_date ?? "").slice(0, 10),
         shift: shiftOf(String(iv.name ?? "")),
         total: amount(iv.grand_total ?? iv.total),
         status: String(iv.status ?? ""),
         customer: String(iv.name ?? ""),
-      }));
+        ...ch,
+      };
+    });
     const availableMonths = [
       ...new Set(allHotel.map((iv) => iv.date.slice(0, 7)).filter(Boolean)),
     ].sort();

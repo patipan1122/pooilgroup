@@ -51,35 +51,31 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const days = completeness.days.map((d) => {
-    const mk = `${d.date}|morning`;
-    const ek = `${d.date}|evening`;
-    return {
-      day: d.day,
-      morning: d.morning
-        ? {
-            ivNo: d.morning.ivNo,
-            total: d.morning.total,
-            status: d.morning.status,
-            excel: excelByKey.get(mk) ?? null,
-            match: excelByKey.has(mk)
-              ? Math.abs((excelByKey.get(mk) ?? 0) - d.morning.total) < 1
-              : null,
-          }
-        : null,
-      evening: d.evening
-        ? {
-            ivNo: d.evening.ivNo,
-            total: d.evening.total,
-            status: d.evening.status,
-            excel: excelByKey.get(ek) ?? null,
-            match: excelByKey.has(ek)
-              ? Math.abs((excelByKey.get(ek) ?? 0) - d.evening.total) < 1
-              : null,
-          }
-        : null,
-    };
-  });
+  const shiftOut = (
+    iv: (typeof completeness.days)[number]["morning"],
+    key: string,
+  ) =>
+    iv
+      ? {
+          ivNo: iv.ivNo,
+          total: iv.total,
+          status: iv.status,
+          cash: iv.cash, // c1 เงินสด (= ยอดส่งเงินสด)
+          qr: iv.qr, // c2 QR (= ยอดรวม QR)
+          over: iv.overAmt,
+          short: iv.shortAmt,
+          excel: excelByKey.get(key) ?? null,
+          match: excelByKey.has(key)
+            ? Math.abs((excelByKey.get(key) ?? 0) - iv.total) < 1
+            : null,
+        }
+      : null;
+
+  const days = completeness.days.map((d) => ({
+    day: d.day,
+    morning: shiftOut(d.morning, `${d.date}|morning`),
+    evening: shiftOut(d.evening, `${d.date}|evening`),
+  }));
 
   void session;
   return NextResponse.json({

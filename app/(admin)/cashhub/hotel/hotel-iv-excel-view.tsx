@@ -7,7 +7,15 @@ import { formatBaht } from "@/lib/utils/format";
 import { groupByDay, TH_MONTHS, type HotelShiftRow } from "@/lib/cashhub/hotel";
 import { HotelExcelGrid } from "./hotel-excel-grid";
 
-type ShiftIv = { ivNo: string; total: number; status: string };
+type ShiftIv = {
+  ivNo: string;
+  total: number;
+  status: string;
+  cash: number;
+  qr: number;
+  over: number;
+  short: number;
+};
 type Day = { day: number; morning: ShiftIv | null; evening: ShiftIv | null };
 type Resp = {
   availableMonths: string[];
@@ -70,14 +78,16 @@ export function HotelIvExcelView({
           shift: sh,
           rooms: null, room_revenue: null, fine: null, tip: null,
           goods_sales: null, total_sales: iv.total,
-          cash_to_remit: null, cash_pool: null, cash_deposited: null,
+          // จากไส้ใน IV (special_note): c1 เงินสด · c2 QR · c18/c19 ขาด/เกิน
+          cash_to_remit: iv.cash, cash_pool: null, cash_deposited: null,
           cash_diff: null, advance: null,
-          qr_morning: null, qr_after2330: null, qr_total: null,
+          qr_morning: null, qr_after2330: null, qr_total: iv.qr,
           qr_banked: null, qr_diff: null,
           ota_agoda: null, ota_agoda_banked: null, ota_expedia: null,
           ota_expedia_banked: null, ota_booking: null, ota_booking_banked: null,
           staff_name: iv.status === "Paid" ? "จ่ายแล้ว" : "ค้าง",
-          note: `IV #${iv.ivNo}`, over_short: null,
+          note: `IV #${iv.ivNo}`,
+          over_short: (iv.over ?? 0) - (iv.short ?? 0),
         });
       };
       mk("morning", d.morning);
