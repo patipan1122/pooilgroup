@@ -7,6 +7,8 @@
 //   low    = zinc/gray (loose match)
 // Used in the Match panel left column.
 
+import { Circle, CircleDot, CheckCircle2, Lock } from "lucide-react";
+
 type Confidence = "high" | "medium" | "low" | null;
 
 const CONFIG: Record<NonNullable<Confidence>, { label: string; className: string }> = {
@@ -41,23 +43,25 @@ export function MatchStatePill({ state }: { state: string }) {
   );
 }
 
-// Status icon for hub (🟢🔵⚫ pattern matching PEAK Account)
+// Status icon for hub — real SVG icons (not emoji: emoji render inconsistently
+// across OS/font and read as toy-like in financial UI).
 export function BankAccountStatusIcon({
   status,
 }: {
   status: "not_started" | "in_progress" | "completed" | "locked";
 }) {
   const map = {
-    not_started: { dot: "⚫", label: "ยังไม่เริ่ม",  className: "text-zinc-400" },
-    in_progress: { dot: "🔵", label: "กำลังทำ",       className: "text-blue-600" },
-    completed:   { dot: "🟢", label: "เสร็จแล้ว",     className: "text-emerald-600" },
-    locked:      { dot: "🔒", label: "ล็อคแล้ว",      className: "text-purple-600" },
+    not_started: { Icon: Circle,      label: "ยังไม่เริ่ม", className: "text-zinc-400" },
+    in_progress: { Icon: CircleDot,   label: "กำลังทำ",     className: "text-brand-600" },
+    completed:   { Icon: CheckCircle2, label: "เสร็จแล้ว",   className: "text-emerald-600" },
+    locked:      { Icon: Lock,        label: "ล็อคแล้ว",    className: "text-zinc-500" },
   };
-  const { dot, label, className } = map[status];
+  const { Icon, label, className } = map[status];
   return (
     <span className={`flex items-center gap-1 text-sm font-medium ${className}`}>
-      <span>{dot}</span>
+      <Icon size={14} aria-hidden />
       <span className="hidden sm:inline">{label}</span>
+      <span className="sr-only">{label}</span>
     </span>
   );
 }

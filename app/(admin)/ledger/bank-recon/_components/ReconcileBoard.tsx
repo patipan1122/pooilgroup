@@ -3,14 +3,16 @@
 // ReconcileBoard — PEAK-parity 2-column bank reconciliation.
 //   รอกระทบยอด: LEFT รายการบันทึกบัญชี (book) | RIGHT รายการเคลื่อนไหว (bank)
 //     → ติ๊กเลือกทั้ง 2 ฝั่ง (รองรับหลายต่อหลาย) → "จับคู่" → ไปรอยืนยัน
-//   รอยืนยัน: กลุ่มที่จับคู่แล้ว → "กระทบยอดทั้งหมด" → เสร็จ
+//   รอยืนยัน: กลุ่มที่จับคู่แล้ว → "กระทบยอดทั้งหมด" → ถามยืนยัน + สรุป → เสร็จ
 // Auto-match (PEAK step 1) + manual select (PEAK manual) + เพิ่มรายการ/รายได้.
+// Design: brand tokens, .tabular-num money, focus-visible rings, real modals
+// (ไม่ใช้ window.prompt/confirm), confirm+summary ก่อนลงบัญชี, success state.
 
 import { useState, useMemo, useTransition, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Sparkles, Plus, Link2, Ban, X, Check, Trash2, RefreshCw, Search,
-  MoreVertical, ArrowLeftRight, FilePlus2, Pencil, CalendarClock, ArrowDownWideNarrow,
+  Sparkles, Plus, Link2, Ban, X, Check, CheckCircle2, AlertTriangle, Trash2, RefreshCw, Search,
+  MoreVertical, ArrowLeftRight, FilePlus2, Pencil, CalendarClock, ArrowDownWideNarrow, CheckSquare, Square,
 } from "lucide-react";
 import {
   createMatchGroupAction, autoMatchAccountAction, confirmAllGroupsAction,
@@ -21,6 +23,9 @@ import {
   transferMovementAction, createRevenueFromMovementAction, createExpenseFromMovementAction,
   editMovementAction, deleteMovementAction, listTransferTargetsAction,
 } from "../_movement-actions";
+
+// shared focus ring (mirrors --ring-focus token)
+const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:ring-offset-1";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 type SortMode = "date" | "high" | "low";
@@ -55,6 +60,12 @@ function baht(satang: number): string {
   return (Math.abs(satang) / 100).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// ทิศทางส่วนต่าง: delta = ฝั่งธนาคาร − ฝั่งบัญชี (บอกชัดว่าฝั่งไหนเกิน เพื่อให้นักบัญชีตามแก้ได้)
+function deltaDirection(deltaSatang: number): string {
+  if (deltaSatang === 0) return "ยอดตรงกัน";
+  return deltaSatang > 0 ? `ธนาคารเกิน ฿${baht(deltaSatang)}` : `บัญชีเกิน ฿${baht(deltaSatang)}`;
+}
+
 const SOURCE_LABEL: Record<string, string> = {
   TRCLOUD_IV: "TRCloud", CHAIROPS: "ChairOps", CLAWFLEET: "ClawFleet",
   FUELOS: "FuelOS", WEBHOOK: "Webhook", MANUAL: "บันทึกเอง",
@@ -71,7 +82,11 @@ export function ReconcileBoard({
   const [selBank, setSelBank] = useState<Set<string>>(new Set());
   const [selBook, setSelBook] = useState<Set<string>>(new Set());
   const [err, setErr] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [modal, setModal] = useState<null | "bank" | "revenue" | { kind: "transfer" | "edit"; m: BankMovement }>(null);
+  const [excludeIds, setExcludeIds] = useState<string[] | null>(null);   // exclude reason modal
+  const [deleteId, setDeleteId] = useState<string | null>(null);         // delete confirm modal
+  const [confirmBulk, setConfirmBulk] = useState(false);                 // P0: confirm before posting to GL
   const [qBook, setQBook] = useState("");
   const [qBank, setQBank] = useState("");
   const [todayBook, setTodayBook] = useState(false);
@@ -131,16 +146,26 @@ export function ReconcileBoard({
   const delta = selBankTotal - selBookTotal;
   const hasSelection = selBank.size > 0 && selBook.size > 0;
 
+  // สรุปก่อนกระทบยอดทั้งหมด (P0 confirm) — โชว์ทั้ง 2 ฝั่ง + ยอดต่างรวม ให้ผู้อนุมัติชั่งน้ำหนักก่อนลงบัญชี
+  const bulkStats = useMemo(() => {
+    const n = suggestedGroups.length;
+    const matched = suggestedGroups.filter((g) => g.deltaSatang === 0).length;
+    const bookTotal = suggestedGroups.reduce((s, g) => s + Math.abs(g.bookTotalSatang), 0);
+    const bankTotal = suggestedGroups.reduce((s, g) => s + Math.abs(g.bankTotalSatang), 0);
+    const residual = suggestedGroups.reduce((s, g) => s + Math.abs(g.deltaSatang), 0);
+    return { n, matched, diff: n - matched, bookTotal, bankTotal, residual };
+  }, [suggestedGroups]);
+
   function toggleBank(id: string) {
-    setSelBank((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    setSelBank((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   }
   function toggleBook(k: string) {
-    setSelBook((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
+    setSelBook((p) => { const n = new Set(p); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   }
   function clearSel() { setSelBank(new Set()); setSelBook(new Set()); }
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>, after?: () => void) => {
-    setErr(null);
+    setErr(null); setSuccess(null);
     startTransition(async () => {
       const r = await fn();
       if (r.ok) { after?.(); router.refresh(); }
@@ -157,25 +182,52 @@ export function ReconcileBoard({
     clearSel,
   );
   const handleAuto = () => run(() => autoMatchAccountAction(bankAccountId, companyId, periodStart, periodEnd).then((r) => ({ ok: r.ok, error: r.error })));
-  const handleConfirmAll = () => run(() => confirmAllGroupsAction(bankAccountId).then((r) => ({ ok: r.ok, error: r.error })));
+
+  // P0: กระทบยอดทั้งหมด — ลงสมุดบัญชีจริง ย้อนไม่ได้ → ต้องยืนยัน + สรุปก่อนเสมอ.
+  // idempotent: action re-query เฉพาะ status="suggested" → กดซ้ำเร็ว ๆ ไม่ลงซ้ำ (และปุ่ม disabled ตอน pending).
+  const doConfirmAll = () => {
+    setErr(null); setSuccess(null);
+    startTransition(async () => {
+      const r = await confirmAllGroupsAction(bankAccountId);
+      if (r.ok) {
+        setConfirmBulk(false);
+        setSuccess(`กระทบยอด ${r.confirmed} กลุ่มเรียบร้อย — ลงบันทึกบัญชีแล้ว`);
+        router.refresh();
+      } else { setConfirmBulk(false); setErr(r.error ?? "กระทบยอดไม่สำเร็จ"); }
+    });
+  };
   const handleRemove = (gid: string) => run(() => removeGroupAction(gid));
-  const handleExclude = (txnId: string) => {
-    const reason = window.prompt("เหตุผลที่ข้าม (ค่าธรรมเนียม/ดอกเบี้ย/โอนภายใน):");
-    if (!reason?.trim()) return;
-    run(() => excludeTxnAction({ bankTxnId: txnId, reason: reason.trim() }));
+
+  // ข้าม / ไม่มีคู่ — ผ่าน modal (แทน window.prompt) · รองรับทั้งรายตัวและหลายรายการ.
+  // แต่ละรายการเป็น transaction แยก (per-txn) → ถ้าพังกลางคันต้องบอกชัดว่าข้ามไปกี่รายการแล้ว
+  // + refresh ให้ตารางตรงกับความจริง (กัน user เข้าใจผิดว่า "ไม่มีอะไรเกิดขึ้น")
+  const doExclude = (ids: string[], reason: string) => {
+    setErr(null); setSuccess(null);
+    startTransition(async () => {
+      let done = 0;
+      for (const id of ids) {
+        const r = await excludeTxnAction({ bankTxnId: id, reason: reason.trim() });
+        if (!r.ok) {
+          setExcludeIds(null); setSelBank(new Set()); router.refresh();
+          setErr(done > 0
+            ? `ข้ามสำเร็จ ${done} จาก ${ids.length} รายการ · รายการถัดไปไม่สำเร็จ: ${r.error ?? "ผิดพลาด"}`
+            : (r.error ?? "ข้ามรายการไม่สำเร็จ"));
+          return;
+        }
+        done++;
+      }
+      setExcludeIds(null); setSelBank(new Set());
+      if (ids.length > 1) setSuccess(`ข้าม ${done} รายการเรียบร้อย`);
+      router.refresh();
+    });
   };
   const handleSync = () => run(() => syncRevenueRangeAction({ companyId, periodStart, periodEnd }).then((r) => ({ ok: r.ok, error: r.error })));
 
   // per-movement actions (PEAK "ทำรายการ")
   const handleCreateRevenue = (id: string) => run(() => createRevenueFromMovementAction({ bankTxnId: id }));
   const handleCreateExpense = (id: string) => run(() => createExpenseFromMovementAction({ bankTxnId: id }));
-  const handleDeleteMovement = (id: string) => {
-    if (!window.confirm("ลบรายการที่เพิ่มเองนี้?")) return;
-    run(() => deleteMovementAction(id));
-  };
 
   const matchTotal = bankMovements.length + bookEntries.length;
-  const isLocked = false; // lock reworking for date-range mode (handled in overview)
 
   return (
     <div>
@@ -183,43 +235,48 @@ export function ReconcileBoard({
       <div className="mb-4 flex items-center gap-2">
         <div className="flex gap-1 rounded-xl bg-zinc-100 p-1">
           <button
+            type="button"
             onClick={() => setTab("match")}
-            className={`rounded-lg px-4 py-1.5 text-sm font-medium ${tab === "match" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500"}`}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium ${FOCUS} ${tab === "match" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}
           >
             รอกระทบยอด
-            <span className="ml-1.5 rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] text-rose-600">{bankMovements.length}</span>
+            <span className="ml-1.5 rounded-full bg-brand-50 px-1.5 py-0.5 text-[10px] tabular-num text-brand-600">{bankMovements.length}</span>
           </button>
           <button
+            type="button"
             onClick={() => setTab("confirm")}
-            className={`rounded-lg px-4 py-1.5 text-sm font-medium ${tab === "confirm" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500"}`}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium ${FOCUS} ${tab === "confirm" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}
           >
             รอยืนยัน
-            <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-600">{suggestedGroups.length}</span>
+            <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] tabular-num text-amber-600">{suggestedGroups.length}</span>
           </button>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {!isLocked && (
-            <>
-              <button onClick={handleSync} disabled={pending}
-                className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs text-zinc-600 hover:bg-zinc-50 disabled:opacity-50">
-                <RefreshCw size={12} className={pending ? "animate-spin" : ""} /> ดึงรายได้ TRCloud
-              </button>
-              <button onClick={handleAuto} disabled={pending}
-                className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50">
-                <Sparkles size={12} /> จับคู่อัตโนมัติ
-              </button>
-            </>
-          )}
+          <button type="button" onClick={handleSync} disabled={pending}
+            className={`inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 ${FOCUS}`}>
+            <RefreshCw size={12} className={pending ? "animate-spin motion-reduce:animate-none" : ""} /> ดึงรายได้ TRCloud
+          </button>
+          <button type="button" onClick={handleAuto} disabled={pending}
+            className={`inline-flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50 ${FOCUS}`}>
+            <Sparkles size={12} /> จับคู่อัตโนมัติ
+          </button>
         </div>
       </div>
 
+      {success && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          <CheckCircle2 size={16} className="shrink-0" />
+          <span className="flex-1">{success}</span>
+          <button type="button" aria-label="ปิด" onClick={() => setSuccess(null)} className={`rounded text-emerald-500 hover:text-emerald-700 ${FOCUS}`}><X size={15} /></button>
+        </div>
+      )}
       {err && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{err}</p>}
 
       {tab === "match" ? (
         <>
           {matchTotal === 0 ? (
             <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 py-16 text-center">
-              <Check size={28} className="mx-auto mb-2 text-emerald-400" />
+              <CheckCircle2 size={28} className="mx-auto mb-2 text-emerald-400" />
               <p className="text-sm text-zinc-600">กระทบยอดครบทุกรายการแล้ว</p>
             </div>
           ) : (
@@ -229,7 +286,7 @@ export function ReconcileBoard({
                 title="รายการบันทึกบัญชี"
                 count={fBook.length}
                 selTotal={selBookTotal}
-                accent="blue"
+                accent="brand"
                 onAdd={() => setModal("revenue")}
                 addLabel="เพิ่มรายได้"
                 search={qBook}
@@ -294,9 +351,9 @@ export function ReconcileBoard({
                         pending={pending}
                         onTransfer={() => setModal({ kind: "transfer", m })}
                         onCreateBook={() => (m.amountSatang > 0 ? handleCreateRevenue(m.id) : handleCreateExpense(m.id))}
-                        onExclude={() => handleExclude(m.id)}
+                        onExclude={() => setExcludeIds([m.id])}
                         onEdit={() => setModal({ kind: "edit", m })}
-                        onDelete={() => handleDeleteMovement(m.id)}
+                        onDelete={() => setDeleteId(m.id)}
                       />
                     }
                   />
@@ -306,21 +363,32 @@ export function ReconcileBoard({
             </div>
           )}
 
-          {/* sticky action bar */}
-          {hasSelection && !isLocked && (
+          {/* sticky action bar — โผล่เมื่อเลือกฝั่งใดฝั่งหนึ่ง */}
+          {(selBank.size > 0 || selBook.size > 0) && (
             <div className="sticky bottom-3 mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-lg">
               <span className="text-sm text-zinc-600">
-                เลือก: บัญชี <b>{selBook.size}</b> · ธนาคาร <b>{selBank.size}</b>
+                เลือก: บัญชี <b className="tabular-num">{selBook.size}</b> · ธนาคาร <b className="tabular-num">{selBank.size}</b>
               </span>
-              <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${delta === 0 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                {delta === 0 ? "ยอดตรงกัน" : `ต่างกัน ฿${baht(delta)}`}
-              </span>
+              {hasSelection && (
+                <span className={`rounded-full px-2.5 py-1 text-xs font-medium tabular-num ${delta === 0 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                  {delta === 0 ? "ยอดตรงกัน" : deltaDirection(delta)}
+                </span>
+              )}
+              {hasSelection && delta !== 0 && (
+                <span className="text-[11px] text-zinc-400">ลองตรวจค่าธรรมเนียม / ภาษีหัก ณ ที่จ่าย / โอนภายใน</span>
+              )}
               <div className="ml-auto flex gap-2">
-                <button onClick={clearSel} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-500 hover:bg-zinc-50">
+                <button type="button" onClick={clearSel} className={`rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-500 hover:bg-zinc-50 ${FOCUS}`}>
                   ล้าง
                 </button>
-                <button onClick={handleMatch} disabled={pending}
-                  className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+                {selBank.size > 0 && (
+                  <button type="button" onClick={() => setExcludeIds([...selBank])} disabled={pending}
+                    className={`inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 ${FOCUS}`}>
+                    <Ban size={14} /> ข้าม {selBank.size} รายการ
+                  </button>
+                )}
+                <button type="button" onClick={handleMatch} disabled={pending || !hasSelection}
+                  className={`inline-flex items-center gap-1 rounded-lg bg-brand-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 ${FOCUS}`}>
                   <Link2 size={14} /> จับคู่ → รอยืนยัน
                 </button>
               </div>
@@ -330,10 +398,10 @@ export function ReconcileBoard({
       ) : (
         /* ── รอยืนยัน ── */
         <div>
-          {suggestedGroups.length > 0 && !isLocked && (
+          {suggestedGroups.length > 0 && (
             <div className="mb-3 flex justify-end">
-              <button onClick={handleConfirmAll} disabled={pending}
-                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+              <button type="button" onClick={() => setConfirmBulk(true)} disabled={pending}
+                className={`inline-flex items-center gap-1 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 ${FOCUS}`}>
                 <Check size={14} /> กระทบยอดทั้งหมด ({suggestedGroups.length})
               </button>
             </div>
@@ -345,20 +413,18 @@ export function ReconcileBoard({
               {suggestedGroups.map((g) => (
                 <div key={g.id} className="rounded-2xl border border-zinc-100 bg-white p-4">
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <GroupSide title="บัญชี" items={g.items.filter((i) => i.kind === "book")} accent="blue" />
+                    <GroupSide title="บัญชี" items={g.items.filter((i) => i.kind === "book")} accent="brand" />
                     <GroupSide title="ธนาคาร" items={g.items.filter((i) => i.kind === "bank")} accent="emerald" />
                   </div>
                   <div className="mt-3 flex items-center gap-2 border-t border-zinc-50 pt-3">
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${g.deltaSatang === 0 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium tabular-num ${g.deltaSatang === 0 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
                       {g.deltaSatang === 0 ? "ยอดตรงกัน" : `ต่างกัน ฿${baht(g.deltaSatang)}`}
                     </span>
                     {g.matchKind === "auto" && <span className="text-[11px] text-violet-500">จับคู่อัตโนมัติ</span>}
-                    {!isLocked && (
-                      <button onClick={() => handleRemove(g.id)} disabled={pending}
-                        className="ml-auto inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2.5 py-1 text-xs text-zinc-500 hover:bg-zinc-50">
-                        <Trash2 size={12} /> นำออก
-                      </button>
-                    )}
+                    <button type="button" onClick={() => handleRemove(g.id)} disabled={pending}
+                      className={`ml-auto inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2.5 py-1 text-xs text-zinc-500 hover:bg-zinc-50 disabled:opacity-50 ${FOCUS}`}>
+                      <Trash2 size={12} /> นำออก
+                    </button>
                   </div>
                 </div>
               ))}
@@ -384,6 +450,51 @@ export function ReconcileBoard({
         <EditMovementModal mv={modal.m}
           onClose={() => setModal(null)} onDone={() => { setModal(null); router.refresh(); }} />
       )}
+
+      {/* P0 — ยืนยันก่อนลงบัญชี (ย้อนไม่ได้) */}
+      {confirmBulk && (
+        <Modal title="ยืนยันกระทบยอด" onClose={() => !pending && setConfirmBulk(false)}>
+          <div className="space-y-2 rounded-xl bg-zinc-50 p-3 text-sm">
+            <Stat label="กลุ่มที่จะกระทบยอด" value={`${bulkStats.n} กลุ่ม`} />
+            <Stat label="ยอดตรงกัน" value={`${bulkStats.matched} กลุ่ม`} good />
+            {bulkStats.diff > 0 && <Stat label="ยังมีส่วนต่าง" value={`${bulkStats.diff} กลุ่ม · รวม ฿${baht(bulkStats.residual)}`} warn />}
+            <div className="space-y-2 border-t border-zinc-200 pt-2">
+              <Stat label="มูลค่ารวม (ฝั่งบัญชี)" value={`฿${baht(bulkStats.bookTotal)}`} />
+              <Stat label="มูลค่ารวม (ฝั่งธนาคาร)" value={`฿${baht(bulkStats.bankTotal)}`} />
+            </div>
+          </div>
+          <p className="flex items-start gap-1.5 text-[11px] text-amber-600">
+            <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+            การกระทบยอดจะ<b>ลงบันทึกในสมุดบัญชีและย้อนกลับไม่ได้</b> — ตรวจส่วนต่างก่อนยืนยัน
+          </p>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={() => setConfirmBulk(false)} disabled={pending}
+              className={`rounded-lg border border-zinc-200 px-4 py-2 text-sm text-zinc-600 disabled:opacity-50 ${FOCUS}`}>ยกเลิก</button>
+            <button type="button" onClick={doConfirmAll} disabled={pending}
+              className={`inline-flex items-center gap-1 rounded-lg bg-brand-500 px-5 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 ${FOCUS}`}>
+              {pending ? "กำลังกระทบยอด…" : <><Check size={14} /> ยืนยันกระทบยอด</>}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ข้าม / ไม่มีคู่ — modal แทน window.prompt */}
+      {excludeIds && (
+        <ExcludeModal count={excludeIds.length} pending={pending}
+          onClose={() => !pending && setExcludeIds(null)}
+          onSubmit={(reason) => doExclude(excludeIds, reason)} />
+      )}
+
+      {/* ลบรายการที่เพิ่มเอง — modal แทน window.confirm */}
+      {deleteId && (
+        <ConfirmDangerModal
+          title="ลบรายการที่เพิ่มเอง?"
+          body="ลบรายการเคลื่อนไหวที่เพิ่มเองนี้ออกจากการกระทบยอด"
+          confirmLabel="ลบรายการ"
+          pending={pending}
+          onClose={() => !pending && setDeleteId(null)}
+          onConfirm={() => run(() => deleteMovementAction(deleteId), () => setDeleteId(null))} />
+      )}
     </div>
   );
 }
@@ -391,12 +502,14 @@ export function ReconcileBoard({
 // ── building blocks ───────────────────────────────────────────────────────────
 const SORT_LABEL: Record<SortMode, string> = { date: "วันที่", high: "ยอดมาก→น้อย", low: "ยอดน้อย→มาก" };
 const nextSort: Record<SortMode, SortMode> = { date: "high", high: "low", low: "date" };
+type Accent = "brand" | "emerald";
+const accentText = (a: Accent) => (a === "brand" ? "text-brand-600" : "text-emerald-600");
 
 function Column({
   title, count, selTotal, accent, onAdd, addLabel, search, onSearch, searchPlaceholder,
   allSelected, onToggleAll, today, onToday, sort, onSort, children,
 }: {
-  title: string; count: number; selTotal: number; accent: "blue" | "emerald";
+  title: string; count: number; selTotal: number; accent: Accent;
   onAdd?: () => void; addLabel: string;
   search: string; onSearch: (v: string) => void; searchPlaceholder: string;
   allSelected: boolean; onToggleAll: () => void;
@@ -408,16 +521,16 @@ function Column({
       <div className="flex items-center justify-between border-b border-zinc-50 px-4 py-3">
         <div>
           <span className="text-sm font-semibold text-zinc-700">{title}</span>
-          <span className="ml-1.5 text-xs text-zinc-400">({count})</span>
+          <span className="ml-1.5 text-xs tabular-num text-zinc-400">({count})</span>
         </div>
         <div className="flex items-center gap-2">
           {selTotal !== 0 && (
-            <span className={`text-xs font-medium ${accent === "blue" ? "text-blue-600" : "text-emerald-600"}`}>
+            <span className={`text-xs font-medium tabular-num ${accentText(accent)}`}>
               เลือก ฿{baht(selTotal)}
             </span>
           )}
           {onAdd && (
-            <button type="button" onClick={onAdd} className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50">
+            <button type="button" onClick={onAdd} className={`inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50 ${FOCUS}`}>
               <Plus size={12} /> {addLabel}
             </button>
           )}
@@ -425,30 +538,30 @@ function Column({
       </div>
       {/* search */}
       <div className="px-3 pt-2">
-        <div className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2 py-1">
+        <div className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2 py-1 focus-within:border-brand-400 focus-within:ring-1 focus-within:ring-brand-200">
           <Search size={13} className="text-zinc-400" />
           <input
             aria-label={searchPlaceholder}
             value={search}
             onChange={(e) => onSearch(e.target.value)}
             placeholder={searchPlaceholder}
-            className="w-full bg-transparent text-xs text-zinc-700 outline-none"
+            className="w-full bg-transparent text-xs text-zinc-700 outline-none placeholder:text-zinc-400"
           />
         </div>
       </div>
       {/* filter chips: select-all · วันนี้ · sort */}
       <div className="flex items-center gap-1.5 border-b border-zinc-50 px-3 py-2">
-        <button type="button" onClick={onToggleAll}
-          className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2 py-1 text-[11px] text-zinc-600 hover:bg-zinc-50">
-          <input type="checkbox" readOnly checked={allSelected} className="size-3 rounded border-zinc-300" aria-hidden />
+        <button type="button" onClick={onToggleAll} aria-pressed={allSelected ? "true" : "false"}
+          className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] ${FOCUS} ${allSelected ? "border-brand-200 bg-brand-50 text-brand-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
+          {allSelected ? <CheckSquare size={12} aria-hidden /> : <Square size={12} aria-hidden />}
           เลือกทั้งหมด
         </button>
         <button type="button" onClick={onToday}
-          className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] ${today ? "border-blue-200 bg-blue-50 text-blue-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
+          className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] ${FOCUS} ${today ? "border-brand-200 bg-brand-50 text-brand-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
           <CalendarClock size={11} /> วันนี้
         </button>
-        <button type="button" onClick={() => onSort(nextSort[sort])}
-          className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] ${sort !== "date" ? "border-blue-200 bg-blue-50 text-blue-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
+        <button type="button" aria-label={`เรียงลำดับ: ${SORT_LABEL[sort]}`} onClick={() => onSort(nextSort[sort])}
+          className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] ${FOCUS} ${sort !== "date" ? "border-brand-200 bg-brand-50 text-brand-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
           <ArrowDownWideNarrow size={11} /> {SORT_LABEL[sort]}
         </button>
       </div>
@@ -463,12 +576,14 @@ function Row({ checked, onToggle, disabled, date, title, subtitle, detail, tag, 
 }) {
   const credit = amountSatang > 0;
   return (
-    <div className={`flex items-start gap-2 px-3 py-2.5 ${checked ? "bg-blue-50/60" : "hover:bg-zinc-50"}`}>
+    <div className={`flex items-start gap-2 px-3 py-2.5 ${checked ? "bg-brand-50" : "hover:bg-zinc-50"}`}>
+      {/* checkbox = the keyboard-operable control (labelled by row title); the body click is a mouse-only convenience */}
       <input type="checkbox" checked={checked} onChange={onToggle} disabled={disabled}
-        className="mt-0.5 size-4 shrink-0 rounded border-zinc-300 disabled:opacity-40" />
+        aria-label={`เลือก ${title}${date ? ` (${date})` : ""}`}
+        className={`mt-0.5 size-4 shrink-0 rounded border-zinc-300 disabled:opacity-40 ${FOCUS}`} />
       <div className="min-w-0 flex-1 cursor-pointer" onClick={() => !disabled && onToggle()}>
         <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-zinc-400">{date}</span>
+          <span className="text-[11px] tabular-num text-zinc-400">{date}</span>
           {tag && <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500">{tag}</span>}
         </div>
         <p className="truncate text-sm text-zinc-700">{title}</p>
@@ -476,7 +591,7 @@ function Row({ checked, onToggle, disabled, date, title, subtitle, detail, tag, 
         {detail && <p className="truncate text-[11px] text-zinc-400">{detail}</p>}
       </div>
       <div className="flex shrink-0 items-start gap-1">
-        <p className={`text-sm font-semibold ${credit ? "text-emerald-600" : "text-rose-600"}`}>
+        <p className={`text-sm font-semibold tabular-num ${credit ? "text-emerald-600" : "text-rose-600"}`}>
           {credit ? "+" : "−"}฿{baht(amountSatang)}
         </p>
         {menu}
@@ -495,25 +610,27 @@ function RowMenu({ isCredit, pending, onTransfer, onCreateBook, onExclude, onEdi
   useEffect(() => {
     if (!open) return;
     const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
+    document.addEventListener("keydown", k);
+    return () => { document.removeEventListener("mousedown", h); document.removeEventListener("keydown", k); };
   }, [open]);
   const item = (icon: React.ReactNode, label: string, fn: () => void, danger?: boolean) => (
     <button type="button" disabled={pending}
       onClick={() => { setOpen(false); fn(); }}
-      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-zinc-50 disabled:opacity-50 ${danger ? "text-rose-600" : "text-zinc-700"}`}>
+      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-zinc-50 disabled:opacity-50 ${FOCUS} ${danger ? "text-rose-600" : "text-zinc-700"}`}>
       {icon} {label}
     </button>
   );
   return (
     <div className="relative" ref={ref}>
       <button type="button" aria-label="ทำรายการ" onClick={() => setOpen((v) => !v)}
-        className="grid size-6 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600">
+        className={`grid size-7 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 ${FOCUS}`}>
         <MoreVertical size={15} />
       </button>
       {open && (
-        <div className="absolute right-0 top-7 z-20 w-48 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-lg">
-          {item(<FilePlus2 size={13} className="text-blue-500" />, isCredit ? "บันทึกเป็นรายได้" : "บันทึกเป็นค่าใช้จ่าย", onCreateBook)}
+        <div className="absolute right-0 top-8 z-20 w-48 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-lg">
+          {item(<FilePlus2 size={13} className="text-brand-500" />, isCredit ? "บันทึกเป็นรายได้" : "บันทึกเป็นค่าใช้จ่าย", onCreateBook)}
           {item(<ArrowLeftRight size={13} className="text-violet-500" />, "โอนเงิน (ระหว่างบัญชี)", onTransfer)}
           {item(<Ban size={13} className="text-amber-500" />, "ข้าม / ไม่มีคู่", onExclude)}
           <div className="my-1 border-t border-zinc-100" />
@@ -525,15 +642,15 @@ function RowMenu({ isCredit, pending, onTransfer, onCreateBook, onExclude, onEdi
   );
 }
 
-function GroupSide({ title, items, accent }: { title: string; items: GroupItem[]; accent: "blue" | "emerald" }) {
+function GroupSide({ title, items, accent }: { title: string; items: GroupItem[]; accent: Accent }) {
   return (
     <div>
-      <p className={`mb-1 text-[11px] font-semibold ${accent === "blue" ? "text-blue-600" : "text-emerald-600"}`}>{title}</p>
+      <p className={`mb-1 text-[11px] font-semibold ${accentText(accent)}`}>{title}</p>
       <div className="space-y-1">
         {items.map((i, idx) => (
           <div key={idx} className="flex items-center justify-between rounded-lg bg-zinc-50 px-2.5 py-1.5">
             <span className="truncate text-xs text-zinc-600">{i.date ? `${i.date} · ` : ""}{i.label}</span>
-            <span className={`ml-2 shrink-0 text-xs font-medium ${i.amountSatang > 0 ? "text-emerald-600" : "text-rose-600"}`}>
+            <span className={`ml-2 shrink-0 text-xs font-medium tabular-num ${i.amountSatang > 0 ? "text-emerald-600" : "text-rose-600"}`}>
               {i.amountSatang > 0 ? "+" : "−"}฿{baht(i.amountSatang)}
             </span>
           </div>
@@ -545,6 +662,15 @@ function GroupSide({ title, items, accent }: { title: string; items: GroupItem[]
 
 function Empty({ text, big }: { text: string; big?: boolean }) {
   return <p className={`text-center text-sm text-zinc-400 ${big ? "py-16" : "py-8"}`}>{text}</p>;
+}
+
+function Stat({ label, value, good, warn }: { label: string; value: string; good?: boolean; warn?: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-zinc-500">{label}</span>
+      <span className={`font-medium tabular-num ${good ? "text-emerald-600" : warn ? "text-amber-600" : "text-zinc-800"}`}>{value}</span>
+    </div>
+  );
 }
 
 // ── modals ────────────────────────────────────────────────────────────────────
@@ -571,13 +697,10 @@ function AddBankModal({ bankAccountId, companyId, periodStart, periodEnd, onClos
   };
   return (
     <Modal title="เพิ่มรายการเคลื่อนไหว (ธนาคาร)" onClose={onClose}>
-      <div className="mb-2 flex gap-1 rounded-lg bg-zinc-100 p-1">
-        <button onClick={() => setDir("in")} className={`flex-1 rounded-md py-1.5 text-sm ${dir === "in" ? "bg-white shadow-sm text-emerald-600 font-medium" : "text-zinc-500"}`}>เงินเข้า</button>
-        <button onClick={() => setDir("out")} className={`flex-1 rounded-md py-1.5 text-sm ${dir === "out" ? "bg-white shadow-sm text-rose-600 font-medium" : "text-zinc-500"}`}>เงินออก</button>
-      </div>
-      <Field label="วันที่"><input aria-label="วันที่" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" /></Field>
-      <Field label="จำนวนเงิน (บาท)"><input aria-label="จำนวนเงิน" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" /></Field>
-      <Field label="รายละเอียด"><input aria-label="รายละเอียด" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="เช่น ค่าธรรมเนียม" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" /></Field>
+      <SegIO dir={dir} setDir={setDir} />
+      <Field label="วันที่"><input aria-label="วันที่" type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} /></Field>
+      <Field label="จำนวนเงิน (บาท)"><input aria-label="จำนวนเงิน" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className={`${inputCls} tabular-num`} /></Field>
+      <Field label="รายละเอียด"><input aria-label="รายละเอียด" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="เช่น ค่าธรรมเนียม" className={inputCls} /></Field>
       {err && <p className="text-xs text-red-600">{err}</p>}
       <ModalActions pending={pending} onClose={onClose} onSubmit={submit} />
     </Modal>
@@ -601,23 +724,84 @@ function AddRevenueModal({ companyId, onClose, onDone }: { companyId: string; on
   };
   return (
     <Modal title="เพิ่มรายได้ (บันทึกบัญชี)" onClose={onClose}>
-      <Field label="วันที่"><input aria-label="วันที่" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" /></Field>
-      <Field label="จำนวนเงิน (บาท)"><input aria-label="จำนวนเงิน" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" /></Field>
-      <Field label="รายละเอียด"><input aria-label="รายละเอียด" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="เช่น ขายหน้าร้าน" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" /></Field>
-      <Field label="ลูกค้า (ถ้ามี)"><input aria-label="ลูกค้า" value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="ชื่อลูกค้า" className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" /></Field>
+      <Field label="วันที่"><input aria-label="วันที่" type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} /></Field>
+      <Field label="จำนวนเงิน (บาท)"><input aria-label="จำนวนเงิน" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className={`${inputCls} tabular-num`} /></Field>
+      <Field label="รายละเอียด"><input aria-label="รายละเอียด" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="เช่น ขายหน้าร้าน" className={inputCls} /></Field>
+      <Field label="ลูกค้า (ถ้ามี)"><input aria-label="ลูกค้า" value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="ชื่อลูกค้า" className={inputCls} /></Field>
       {err && <p className="text-xs text-red-600">{err}</p>}
       <ModalActions pending={pending} onClose={onClose} onSubmit={submit} />
     </Modal>
   );
 }
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+// ── ข้าม / ไม่มีคู่ (reason) — แทน window.prompt ──────────────────────────────
+function ExcludeModal({ count, pending, onClose, onSubmit }: {
+  count: number; pending: boolean; onClose: () => void; onSubmit: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const presets = ["ค่าธรรมเนียมธนาคาร", "ดอกเบี้ย", "โอนภายใน", "ภาษีหัก ณ ที่จ่าย"];
+  const submit = () => {
+    if (!reason.trim()) { setErr("กรอกเหตุผลที่ข้าม"); return; }
+    onSubmit(reason);
+  };
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
-      <div className="w-full max-w-md space-y-3 rounded-t-2xl bg-white p-5 sm:rounded-2xl">
+    <Modal title={count > 1 ? `ข้าม ${count} รายการ` : "ข้ามรายการ (ไม่มีคู่)"} onClose={onClose}>
+      <div className="flex flex-wrap gap-1.5">
+        {presets.map((p) => (
+          <button key={p} type="button" onClick={() => setReason(p)}
+            className={`rounded-full border px-2.5 py-1 text-[11px] ${FOCUS} ${reason === p ? "border-brand-200 bg-brand-50 text-brand-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
+            {p}
+          </button>
+        ))}
+      </div>
+      <Field label="เหตุผล"><input aria-label="เหตุผลที่ข้าม" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="เช่น ค่าธรรมเนียม / ดอกเบี้ย / โอนภายใน" className={inputCls} /></Field>
+      <p className="text-[11px] text-zinc-400">รายการที่ข้ามจะถูกนำออกจากการกระทบยอด (ไม่นับเป็นรายรับ/รายจ่าย)</p>
+      {err && <p className="text-xs text-red-600">{err}</p>}
+      <ModalActions pending={pending} onClose={onClose} onSubmit={submit} submitLabel="ยืนยันข้าม" />
+    </Modal>
+  );
+}
+
+function ConfirmDangerModal({ title, body, confirmLabel, pending, onClose, onConfirm }: {
+  title: string; body: string; confirmLabel: string; pending: boolean; onClose: () => void; onConfirm: () => void;
+}) {
+  return (
+    <Modal title={title} onClose={onClose}>
+      <p className="text-sm text-zinc-600">{body}</p>
+      <div className="flex justify-end gap-2 pt-1">
+        <button type="button" onClick={onClose} disabled={pending} className={`rounded-lg border border-zinc-200 px-4 py-2 text-sm text-zinc-600 disabled:opacity-50 ${FOCUS}`}>ยกเลิก</button>
+        <button type="button" onClick={onConfirm} disabled={pending} className={`inline-flex items-center gap-1 rounded-lg bg-rose-600 px-5 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50 ${FOCUS}`}>
+          {pending ? "กำลังลบ…" : <><Trash2 size={14} /> {confirmLabel}</>}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+const inputCls = "w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus-visible:border-brand-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand-200";
+
+function SegIO({ dir, setDir }: { dir: "in" | "out"; setDir: (d: "in" | "out") => void }) {
+  return (
+    <div className="mb-2 flex gap-1 rounded-lg bg-zinc-100 p-1">
+      <button type="button" onClick={() => setDir("in")} className={`flex-1 rounded-md py-1.5 text-sm ${FOCUS} ${dir === "in" ? "bg-white shadow-sm text-emerald-600 font-medium" : "text-zinc-500"}`}>เงินเข้า</button>
+      <button type="button" onClick={() => setDir("out")} className={`flex-1 rounded-md py-1.5 text-sm ${FOCUS} ${dir === "out" ? "bg-white shadow-sm text-rose-600 font-medium" : "text-zinc-500"}`}>เงินออก</button>
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", k);
+    return () => document.removeEventListener("keydown", k);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={onClose}>
+      <div className="w-full max-w-md space-y-3 rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold text-zinc-800">{title}</h3>
-          <button type="button" aria-label="ปิด" onClick={onClose} className="text-zinc-400 hover:text-zinc-600"><X size={20} /></button>
+          <button type="button" aria-label="ปิด" onClick={onClose} className={`rounded text-zinc-400 hover:text-zinc-600 ${FOCUS}`}><X size={20} /></button>
         </div>
         {children}
       </div>
@@ -630,8 +814,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function ModalActions({ pending, onClose, onSubmit, submitLabel }: { pending: boolean; onClose: () => void; onSubmit: () => void; submitLabel?: string }) {
   return (
     <div className="flex justify-end gap-2 pt-1">
-      <button type="button" onClick={onClose} disabled={pending} className="rounded-lg border border-zinc-200 px-4 py-2 text-sm text-zinc-600 disabled:opacity-50">ยกเลิก</button>
-      <button type="button" onClick={onSubmit} disabled={pending} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">{pending ? "กำลังบันทึก…" : (submitLabel ?? "บันทึก")}</button>
+      <button type="button" onClick={onClose} disabled={pending} className={`rounded-lg border border-zinc-200 px-4 py-2 text-sm text-zinc-600 disabled:opacity-50 ${FOCUS}`}>ยกเลิก</button>
+      <button type="button" onClick={onSubmit} disabled={pending} className={`rounded-lg bg-brand-500 px-5 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 ${FOCUS}`}>{pending ? "กำลังบันทึก…" : (submitLabel ?? "บันทึก")}</button>
     </div>
   );
 }
@@ -658,13 +842,13 @@ function TransferModal({ mv, companyId, bankAccountId, onClose, onDone }: {
   return (
     <Modal title="โอนเงินระหว่างบัญชี" onClose={onClose}>
       <div className="rounded-xl bg-zinc-50 p-3 text-sm">
-        <p className="text-xs text-zinc-400">{mv.date}</p>
+        <p className="text-xs tabular-num text-zinc-400">{mv.date}</p>
         <p className="text-zinc-700">{mv.description}</p>
-        <p className={`mt-1 font-semibold ${out ? "text-rose-600" : "text-emerald-600"}`}>{out ? "−" : "+"}฿{baht(mv.amountSatang)}</p>
+        <p className={`mt-1 font-semibold tabular-num ${out ? "text-rose-600" : "text-emerald-600"}`}>{out ? "−" : "+"}฿{baht(mv.amountSatang)}</p>
       </div>
       <Field label={out ? "โอนไปบัญชี" : "รับโอนจากบัญชี"}>
         <select aria-label="บัญชีปลายทาง" value={target} onChange={(e) => setTarget(e.target.value)}
-          className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none">
+          className={inputCls}>
           {targets.length === 0 && <option value="">— ไม่มีบัญชีอื่น —</option>}
           {targets.map((t) => <option key={t.id} value={t.id}>{t.bankCode} …{t.accountNo.slice(-4)} · {t.accountName}</option>)}
         </select>
@@ -694,13 +878,10 @@ function EditMovementModal({ mv, onClose, onDone }: { mv: BankMovement; onClose:
   };
   return (
     <Modal title="แก้ไขรายการเคลื่อนไหว" onClose={onClose}>
-      <div className="mb-2 flex gap-1 rounded-lg bg-zinc-100 p-1">
-        <button type="button" onClick={() => setDir("in")} className={`flex-1 rounded-md py-1.5 text-sm ${dir === "in" ? "bg-white shadow-sm text-emerald-600 font-medium" : "text-zinc-500"}`}>เงินเข้า</button>
-        <button type="button" onClick={() => setDir("out")} className={`flex-1 rounded-md py-1.5 text-sm ${dir === "out" ? "bg-white shadow-sm text-rose-600 font-medium" : "text-zinc-500"}`}>เงินออก</button>
-      </div>
-      <Field label="วันที่"><input aria-label="วันที่" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" /></Field>
-      <Field label="จำนวนเงิน (บาท)"><input aria-label="จำนวนเงิน" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" /></Field>
-      <Field label="รายละเอียด"><input aria-label="รายละเอียด" value={desc} onChange={(e) => setDesc(e.target.value)} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" /></Field>
+      <SegIO dir={dir} setDir={setDir} />
+      <Field label="วันที่"><input aria-label="วันที่" type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} /></Field>
+      <Field label="จำนวนเงิน (บาท)"><input aria-label="จำนวนเงิน" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className={`${inputCls} tabular-num`} /></Field>
+      <Field label="รายละเอียด"><input aria-label="รายละเอียด" value={desc} onChange={(e) => setDesc(e.target.value)} className={inputCls} /></Field>
       {err && <p className="text-xs text-red-600">{err}</p>}
       <ModalActions pending={pending} onClose={onClose} onSubmit={submit} />
     </Modal>
