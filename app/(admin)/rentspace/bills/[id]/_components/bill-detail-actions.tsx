@@ -3,7 +3,7 @@
 import { useState, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Banknote, Percent, Printer, Check, X } from "lucide-react";
+import { Banknote, Percent, Download, Check, X } from "lucide-react";
 import {
   actRecordPayment,
   actRequestDiscount,
@@ -300,7 +300,7 @@ export function DiscountDecisionButtons({ discountId }: { discountId: string }) 
 export function PrintBillButton() {
   return (
     <button className="rs-btn rs-btn-ghost w-full" onClick={() => window.print()}>
-      <Printer className="h-4 w-4" /> พิมพ์บิล
+      <Download className="h-4 w-4" /> ดาวน์โหลด / พิมพ์ PDF
     </button>
   );
 }

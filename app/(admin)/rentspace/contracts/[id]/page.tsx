@@ -27,6 +27,18 @@ const DEPOSIT_KINDS: Record<string, string> = {
   forfeit: "ยึดประกัน",
 };
 
+// ผู้ให้เช่า (lessor) — fixed for โครงการทะเลทาวน์ / เจพี ซิงค์ กรุ๊ป
+const LESSOR_NAME = "บริษัท เจพี ซิงค์ กรุ๊ป จำกัด";
+const LESSOR_PROJECT = "โครงการทะเลทาวน์";
+
+/** mask an id-card / tax id → show only last 4 digits */
+function maskId(raw?: string | null): string {
+  if (!raw) return "—";
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length <= 4) return raw;
+  return `${"x".repeat(digits.length - 4)}${digits.slice(-4)}`;
+}
+
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex justify-between gap-4 py-1.5">
@@ -61,6 +73,24 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
     ? (contract.rentSchedule as { fromPeriod: string; amount: number }[])
     : [];
 
+  // ─── A4 document fields ───
+  const tenantName = tenantDisplayName(contract.tenant);
+  const tenantPhone = contract.tenant.phones?.[0] ?? "—";
+  const tenantId = maskId(contract.tenant.idCardNo ?? contract.tenant.taxId);
+  const rent = toNum(contract.rentAmountThb);
+  const deposit = toNum(contract.depositAmountThb);
+  const depositMonths = toNum(contract.depositMonths);
+  const electricRate =
+    contract.electricRate != null ? toNum(contract.electricRate) : toNum(contract.project.electricRate);
+  const waterRate =
+    contract.waterRate != null ? toNum(contract.waterRate) : toNum(contract.project.waterRate);
+  const unitLabel = `${contract.unit.code}${contract.unit.name ? ` · ${contract.unit.name}` : ""}`;
+  const docNo = contract.contractNo;
+  const lateFeeLine =
+    contract.lateFeeType !== "none"
+      ? `${LATE_FEE_LABELS[contract.lateFeeType]} ${formatBaht(toNum(contract.lateFeeValue))} (ผ่อนผัน ${contract.lateFeeGraceDays} วัน)`
+      : null;
+
   return (
     <RsPage>
       <div className="print:hidden">
@@ -79,7 +109,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* left: terms */}
         <div className="lg:col-span-2 space-y-4">
-          <RsCard className="p-5">
+          <RsCard className="p-5 print:hidden">
             <h2 className="font-bold mb-3" style={{ color: "var(--rs-text)" }}>
               รายละเอียดสัญญา
             </h2>
@@ -184,23 +214,121 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
             </div>
           </RsCard>
 
-          {/* printable document */}
-          {docBody && (
-            <RsCard className="p-6">
-              <div className="flex items-center justify-between mb-3 print:hidden">
-                <h2 className="font-bold" style={{ color: "var(--rs-text)" }}>
-                  เอกสารสัญญา
-                </h2>
-                <PrintButton />
+          {/* ─────────── printable A4 document ─────────── */}
+          <RsCard className="p-0 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b rs-noprint" style={{ borderColor: "var(--rs-border)" }}>
+              <h2 className="font-bold" style={{ color: "var(--rs-text)" }}>
+                เอกสารสัญญา (A4)
+              </h2>
+              <PrintButton />
+            </div>
+
+            <div id="rs-contract" className="rs-a4">
+              {/* document title */}
+              <div className="rs-a4-title">
+                <div className="rs-a4-h1">สัญญาเช่าพื้นที่</div>
+                <div className="rs-a4-sub">
+                  {LESSOR_PROJECT} · เลขที่สัญญา {docNo}
+                </div>
+                <div className="rs-a4-sub">ทำ ณ วันที่ {thaiDateLong(new Date())}</div>
               </div>
-              <div
-                className="rs-doc text-[14px] leading-relaxed"
-                style={{ color: "var(--rs-text)" }}
-                // เนื้อห้ามาจากแม่แบบที่ super_admin สร้างเอง (ไม่ใช่ user input ทั่วไป)
-                dangerouslySetInnerHTML={{ __html: docBody }}
-              />
-            </RsCard>
-          )}
+
+              {/* parties */}
+              <div className="rs-a4-parties">
+                <div className="rs-a4-party">
+                  <div className="rs-a4-party-h">ผู้ให้เช่า (เจ้าของพื้นที่)</div>
+                  <div className="rs-a4-party-name">{LESSOR_NAME}</div>
+                  <div className="rs-a4-party-line">{LESSOR_PROJECT}</div>
+                  {contract.project.address && (
+                    <div className="rs-a4-party-line">{contract.project.address}</div>
+                  )}
+                </div>
+                <div className="rs-a4-party">
+                  <div className="rs-a4-party-h">ผู้เช่า</div>
+                  <div className="rs-a4-party-name">{tenantName}</div>
+                  <div className="rs-a4-party-line">เลขประจำตัว: {tenantId}</div>
+                  <div className="rs-a4-party-line">โทร: {tenantPhone}</div>
+                </div>
+              </div>
+
+              <p className="rs-a4-intro">
+                คู่สัญญาทั้งสองฝ่ายตกลงทำสัญญาเช่าพื้นที่ตามข้อกำหนดและเงื่อนไขดังต่อไปนี้
+              </p>
+
+              {/* custom template body (if super_admin authored one) replaces the clauses */}
+              {docBody ? (
+                <div
+                  className="rs-a4-custom"
+                  // เนื้อหามาจากแม่แบบที่ super_admin สร้างเอง (ไม่ใช่ user input ทั่วไป)
+                  dangerouslySetInnerHTML={{ __html: docBody }}
+                />
+              ) : (
+                <ol className="rs-a4-clauses">
+                  <li>
+                    <b>ห้อง / วัตถุประสงค์การเช่า</b> — ผู้ให้เช่าตกลงให้เช่าพื้นที่ห้อง {unitLabel} ภายใน
+                    {" "}{contract.project.name} เพื่อใช้ประกอบกิจการของผู้เช่าตามที่ได้แจ้งไว้ ผู้เช่าจะไม่นำพื้นที่
+                    ไปให้ผู้อื่นเช่าช่วงโดยไม่ได้รับความยินยอมเป็นลายลักษณ์อักษรจากผู้ให้เช่า
+                  </li>
+                  <li>
+                    <b>ค่าเช่า เงินประกัน และส่วนลด</b> — ค่าเช่าเดือนละ {formatBaht(rent)}
+                    {toNum(contract.vatPercent) > 0 ? ` (รวมภาษีมูลค่าเพิ่ม ${toNum(contract.vatPercent)}%)` : ""}
+                    {" "}ผู้เช่าวางเงินประกันจำนวน {formatBaht(deposit)}
+                    {depositMonths ? ` (เทียบเท่า ${depositMonths} เดือน)` : ""} ซึ่งผู้ให้เช่าจะคืนเมื่อสิ้นสุดสัญญา
+                    หลังหักค่าเสียหาย (ถ้ามี)
+                    {schedule.length > 0 ? " ทั้งนี้ค่าเช่าอาจปรับตามตารางแนบท้ายสัญญา" : ""}
+                  </li>
+                  <li>
+                    <b>ระยะเวลาและการชำระเงิน</b> — สัญญานี้มีกำหนดตั้งแต่ {thaiDateLong(contract.startDate)} ถึง
+                    {" "}{contract.endDate ? thaiDateLong(contract.endDate) : "ไม่มีกำหนด"} ผู้เช่าตกลงชำระค่าเช่า
+                    ภายในวันที่ {contract.rentDueDay} ของทุกเดือน
+                    {lateFeeLine ? ` หากชำระล่าช้าจะมีค่าปรับ ${lateFeeLine}` : ""}
+                  </li>
+                  <li>
+                    <b>ค่าน้ำ–ค่าไฟ</b> — ผู้เช่าเป็นผู้รับผิดชอบค่าน้ำและค่าไฟฟ้าตามที่ใช้จริง โดยคิดอัตรา
+                    {" "}ค่าไฟหน่วยละ {formatBaht(electricRate)} และค่าน้ำหน่วยละ {formatBaht(waterRate)}
+                    {" "}ตามที่จดมิเตอร์ในแต่ละงวด
+                  </li>
+                </ol>
+              )}
+
+              {/* attachments */}
+              <div className="rs-a4-attach">
+                เอกสารแนบ: สำเนาบัตรประชาชน/ทะเบียนพาณิชย์ผู้เช่า
+                {schedule.length > 0 ? " · ตารางปรับค่าเช่ารายงวด" : ""}
+                {contract.note ? ` · หมายเหตุ: ${contract.note}` : ""}
+              </div>
+
+              {/* signatures */}
+              <div className="rs-a4-signs">
+                <div className="rs-a4-sign">
+                  <div className="rs-a4-sign-space" />
+                  <div className="rs-a4-sign-line" />
+                  <div className="rs-a4-sign-role">ผู้ให้เช่า</div>
+                  <div className="rs-a4-sign-name">( {LESSOR_NAME} )</div>
+                </div>
+                <div className="rs-a4-sign">
+                  {contract.tenantSigned && contract.signatureDataUrl ? (
+                    <div className="rs-a4-sign-img">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={contract.signatureDataUrl} alt="ลายเซ็นผู้เช่า" />
+                    </div>
+                  ) : (
+                    <div className="rs-a4-sign-space" />
+                  )}
+                  <div className="rs-a4-sign-line" />
+                  <div className="rs-a4-sign-role">ผู้เช่า</div>
+                  <div className="rs-a4-sign-name">
+                    ( {contract.tenantSigned ? contract.signerName ?? tenantName : tenantName} )
+                  </div>
+                  {contract.tenantSigned && (
+                    <div className="rs-a4-sign-stamp">
+                      ลงนามออนไลน์แล้ว{contract.signedAt ? ` · ${thaiDateLong(contract.signedAt)}` : ""}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </RsCard>
         </div>
 
         {/* right: actions */}
@@ -235,9 +363,46 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
       </div>
 
       <style>{`
+        /* ── on-screen A4 preview ── */
+        #rs-contract.rs-a4 {
+          background: #fff;
+          color: #111;
+          max-width: 794px;
+          margin: 0 auto;
+          padding: 28px 32px 36px;
+          font-size: 14px;
+          line-height: 1.7;
+        }
+        .rs-a4-title { text-align: center; margin-bottom: 22px; }
+        .rs-a4-h1 { font-size: 22px; font-weight: 800; letter-spacing: .5px; }
+        .rs-a4-sub { font-size: 12.5px; color: #555; margin-top: 2px; }
+        .rs-a4-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+        .rs-a4-party { border: 1px solid #ddd; border-radius: 8px; padding: 12px 14px; }
+        .rs-a4-party-h { font-size: 11.5px; font-weight: 700; color: #777; text-transform: uppercase; margin-bottom: 4px; }
+        .rs-a4-party-name { font-size: 15px; font-weight: 700; }
+        .rs-a4-party-line { font-size: 12.5px; color: #444; margin-top: 1px; }
+        .rs-a4-intro { margin: 14px 0 8px; }
+        .rs-a4-clauses { padding-left: 22px; margin: 0; }
+        .rs-a4-clauses > li { margin-bottom: 12px; text-align: justify; }
+        .rs-a4-custom { margin: 8px 0; }
+        .rs-a4-attach { margin-top: 18px; padding-top: 12px; border-top: 1px dashed #ccc; font-size: 12.5px; color: #555; }
+        .rs-a4-signs { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 48px; }
+        .rs-a4-sign { text-align: center; }
+        .rs-a4-sign-space { height: 48px; }
+        .rs-a4-sign-img { height: 48px; display: flex; align-items: flex-end; justify-content: center; }
+        .rs-a4-sign-img img { max-height: 48px; max-width: 180px; }
+        .rs-a4-sign-line { border-top: 1px solid #333; margin: 0 12px; }
+        .rs-a4-sign-role { font-size: 13px; font-weight: 600; margin-top: 6px; }
+        .rs-a4-sign-name { font-size: 12.5px; color: #444; margin-top: 2px; }
+        .rs-a4-sign-stamp { font-size: 11.5px; color: #1a7f37; margin-top: 4px; font-weight: 600; }
+
         @media print {
+          @page { size: A4; margin: 14mm; }
           body { background: #fff; }
-          .rs-doc { font-size: 13px; }
+          body * { visibility: hidden; }
+          #rs-contract, #rs-contract * { visibility: visible; }
+          #rs-contract { position: absolute; inset: 0; max-width: none; margin: 0; padding: 0; }
+          .rs-noprint { display: none !important; }
         }
       `}</style>
     </RsPage>

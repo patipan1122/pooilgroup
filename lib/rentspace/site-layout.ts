@@ -66,6 +66,9 @@ export type SlotUnit = {
   tenantName: string | null;
   outstanding: number;
   hasOverdue: boolean;
+  /** saved drag position in METERS (overrides auto-slot placement) */
+  mapX?: number | null;
+  mapY?: number | null;
 };
 
 export type PlacedUnit = SlotUnit & { x: number; y: number; w: number; d: number; floors: number; buildingId: string };
@@ -112,5 +115,9 @@ export function placeUnits(scene: Scene, units: SlotUnit[]): { placed: PlacedUni
       toilets.push({ x: cx, y: bld.y, w: cellW, d: bld.d, buildingId: bld.id });
     }
   }
-  return { placed, toilets };
+  // saved drag positions (meters) override the auto-slot
+  const withOverrides = placed.map((p) =>
+    p.mapX != null && p.mapY != null ? { ...p, x: p.mapX, y: p.mapY } : p,
+  );
+  return { placed: withOverrides, toilets };
 }

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import {
   getPrimaryProject,
   listUnitsWithState,
@@ -194,7 +195,7 @@ export default async function RentSpaceOverview() {
             <div className="font-semibold text-[15.5px]">ผังโครงการ</div>
             <div className="text-[12px]" style={{ color: "#9098A4" }}>คลิกห้องเพื่อดูข้อมูล · สลับ 2D / 3D · หมุน + ซูมได้</div>
           </div>
-          <PlanWithDrawer units={mapUnits} view3dEnabled={project.view3dEnabled} />
+          <PlanWithDrawer units={mapUnits} view3dEnabled={project.view3dEnabled} canEdit={isSuperAdmin(session.user.role)} />
         </div>
 
         {/* attention */}

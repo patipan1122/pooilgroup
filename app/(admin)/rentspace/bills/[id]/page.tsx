@@ -108,6 +108,12 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
         {/* ───── invoice ───── */}
         <div className="lg:col-span-2 space-y-4">
           <RsCard className="p-6 rs-invoice">
+           <div id="rs-bill">
+            {/* paid / unpaid stamp */}
+            <div className="rs-bill-stamp" data-state={remaining <= 0 && bill.status !== "void" ? "paid" : bill.status === "void" ? "void" : "unpaid"}>
+              {bill.status === "void" ? "ยกเลิก" : remaining <= 0 ? "ชำระแล้ว" : "ค้างชำระ"}
+            </div>
+
             {/* invoice header */}
             <div className="flex items-start justify-between gap-4 pb-4 mb-4 border-b" style={{ borderColor: "var(--rs-border)" }}>
               <div>
@@ -121,11 +127,14 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
                 )}
               </div>
               <div className="text-right">
-                <div className="text-[13px] font-semibold" style={{ color: "var(--rs-text)" }}>
-                  ใบแจ้งหนี้
+                <div className="text-[14px] font-bold" style={{ color: "var(--rs-text)" }}>
+                  {remaining <= 0 && bill.status !== "void" ? "ใบเสร็จรับเงิน" : "ใบแจ้งหนี้"}
                 </div>
                 <div className="text-[13px]" style={{ color: "var(--rs-text-2)" }}>
-                  {bill.billNo}
+                  เลขที่ {bill.billNo}
+                </div>
+                <div className="text-[12.5px] mt-0.5" style={{ color: "var(--rs-text-3)" }}>
+                  งวด {periodLabel(bill.period)}
                 </div>
               </div>
             </div>
@@ -212,6 +221,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
                 <TotalRow label="คงเหลือ" value={formatBaht(remaining)} strong tone={remaining > 0 ? "danger" : "ok"} />
               </div>
             </div>
+           </div>
           </RsCard>
 
           {/* payment history */}
@@ -314,10 +324,38 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
       </div>
 
       <style>{`
+        /* paid / unpaid / void stamp */
+        #rs-bill { position: relative; }
+        .rs-bill-stamp {
+          position: absolute;
+          top: 18px;
+          right: 18px;
+          transform: rotate(-12deg);
+          padding: 4px 14px;
+          border: 2.5px solid currentColor;
+          border-radius: 8px;
+          font-size: 15px;
+          font-weight: 800;
+          letter-spacing: 1px;
+          opacity: .85;
+          pointer-events: none;
+        }
+        .rs-bill-stamp[data-state="paid"] { color: var(--rs-ok); }
+        .rs-bill-stamp[data-state="unpaid"] { color: var(--rs-danger); }
+        .rs-bill-stamp[data-state="void"] { color: var(--rs-text-3); }
+
         @media print {
+          @page { size: A4; margin: 14mm; }
           body { background: #fff; }
-          .rs-scope .print\\:hidden { display: none !important; }
-          .rs-invoice { box-shadow: none !important; border: none !important; }
+          body * { visibility: hidden; }
+          #rs-bill, #rs-bill * { visibility: visible; }
+          #rs-bill {
+            position: absolute;
+            inset: 0;
+            box-shadow: none !important;
+            border: none !important;
+          }
+          .rs-bill-stamp { top: 0; right: 0; }
         }
       `}</style>
     </RsPage>

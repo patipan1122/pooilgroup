@@ -3,7 +3,7 @@
 import { useState, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Copy, Check, PenLine, Printer, X } from "lucide-react";
+import { Copy, Check, PenLine, Download, X } from "lucide-react";
 import { actGenerateSignLink, actTerminateContract, actRecordDeposit, actUploadFile } from "../../../_actions";
 
 const DEPOSIT_KINDS: Record<string, string> = {
@@ -95,7 +95,7 @@ export function SignLinkBox({
 export function PrintButton() {
   return (
     <button className="rs-btn rs-btn-ghost" onClick={() => window.print()}>
-      <Printer className="h-4 w-4" /> พิมพ์สัญญา
+      <Download className="h-4 w-4" /> ดาวน์โหลด / พิมพ์ PDF
     </button>
   );
 }

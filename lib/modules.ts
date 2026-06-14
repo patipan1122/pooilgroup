@@ -1005,6 +1005,11 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: Banknote,
       },
       {
+        href: "/rentspace/deposits",
+        label: "เงินประกัน",
+        icon: Wallet2,
+      },
+      {
         href: "/rentspace/import",
         label: "นำเข้าข้อมูล",
         icon: ClipboardList,

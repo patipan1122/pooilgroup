@@ -127,6 +127,15 @@ export async function getContractBySignToken(token: string) {
   });
 }
 
+/** All เงินประกัน movements across the org — newest first, with unit + tenant for display. */
+export async function listDeposits(orgId: string) {
+  return prisma.rentalDeposit.findMany({
+    where: { orgId },
+    orderBy: { occurredOn: "desc" },
+    include: { contract: { include: { unit: true, tenant: true } } },
+  });
+}
+
 export async function listTemplates(orgId: string) {
   return prisma.rentalContractTemplate.findMany({
     where: { orgId, isActive: true },

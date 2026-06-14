@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Box, Grid3x3, X, ArrowRight, RotateCw, RotateCcw, Plus, Minus } from "lucide-react";
+import { toast } from "sonner";
+import { Box, Grid3x3, X, ArrowRight, RotateCw, RotateCcw, Plus, Minus, Move, Save } from "lucide-react";
 import { formatBaht } from "@/lib/rentspace/format";
+import { actSaveUnitPositions } from "@/app/(admin)/rentspace/_actions";
 import { TALAYTOWN_SCENE, placeUnits, type SlotUnit, type Scene } from "@/lib/rentspace/site-layout";
 
 const ISO_X = 0.866;
@@ -63,12 +65,63 @@ function shade(hex: string, amt: number) {
   return `rgb(${r},${g},${b})`;
 }
 
-export function SiteMap3D({ units, view3dEnabled, scene = TALAYTOWN_SCENE, onSelect }: { units: SlotUnit[]; view3dEnabled: boolean; scene?: Scene; onSelect?: (unitId: string) => void }) {
+export function SiteMap3D({ units, view3dEnabled, scene = TALAYTOWN_SCENE, onSelect, canEdit }: { units: SlotUnit[]; view3dEnabled: boolean; scene?: Scene; onSelect?: (unitId: string) => void; canEdit?: boolean }) {
   const [is3d, setIs3d] = useState(view3dEnabled);
   const [rot, setRot] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [selected, setSelected] = useState<SlotUnit | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [pos, setPos] = useState<Record<string, { x: number; y: number }>>({});
+  const [saving, setSaving] = useState(false);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const dragRef = useRef<{ id: string; offX: number; offY: number } | null>(null);
   const pick = (u: SlotUnit) => (onSelect ? onSelect(u.id) : setSelected(u));
+
+  function meterAt(e: React.PointerEvent): { x: number; y: number } {
+    const svg = svgRef.current;
+    const ctm = svg?.getScreenCTM();
+    if (!svg || !ctm) return { x: 0, y: 0 };
+    const p = svg.createSVGPoint();
+    p.x = e.clientX;
+    p.y = e.clientY;
+    const u = p.matrixTransform(ctm.inverse());
+    return { x: u.x / S, y: u.y / S };
+  }
+  function startDrag(e: React.PointerEvent, id: string, rx: number, ry: number) {
+    if (!editing) return;
+    e.stopPropagation();
+    const m = meterAt(e);
+    dragRef.current = { id, offX: m.x - rx, offY: m.y - ry };
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+  }
+  function onMove(e: React.PointerEvent) {
+    if (!editing || !dragRef.current) return;
+    const m = meterAt(e);
+    const d = dragRef.current;
+    setPos((p) => ({ ...p, [d.id]: { x: Math.round((m.x - d.offX) * 10) / 10, y: Math.round((m.y - d.offY) * 10) / 10 } }));
+  }
+  function onUp() {
+    dragRef.current = null;
+  }
+  async function savePositions() {
+    const positions = drawn
+      .filter((it) => it.unit && pos[it.unit.id])
+      .map((it) => ({ id: it.unit!.id, mapX: pos[it.unit!.id].x, mapY: pos[it.unit!.id].y, mapW: it.R.w, mapH: it.R.d }));
+    if (positions.length === 0) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      await actSaveUnitPositions(positions);
+      toast.success(`บันทึกตำแหน่ง ${positions.length} ห้องแล้ว`);
+      setEditing(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const { placed, toilets } = useMemo(() => placeUnits(scene, units), [scene, units]);
   const cx = scene.site.w / 2, cy = scene.site.d / 2;
@@ -100,14 +153,17 @@ export function SiteMap3D({ units, view3dEnabled, scene = TALAYTOWN_SCENE, onSel
 
   // rotate + depth sort
   const drawn = useMemo(() => {
-    const arr = rawItems.map((it) => ({ ...it, R: rotRect(it.rect, rot, cx, cy) }));
+    const arr = rawItems.map((it) => {
+      const rect = it.unit && pos[it.unit.id] ? { ...it.rect, x: pos[it.unit.id].x, y: pos[it.unit.id].y } : it.rect;
+      return { ...it, R: rotRect(rect, rot, cx, cy) };
+    });
     arr.sort((a, b) => {
       const ka = a.R.x + a.R.y + (a.R.w + a.R.d) / 2 + (a.kind === "box" ? 0.1 : 0);
       const kb = b.R.x + b.R.y + (b.R.w + b.R.d) / 2 + (b.kind === "box" ? 0.1 : 0);
       return ka - kb;
     });
     return arr;
-  }, [rawItems, rot, cx, cy]);
+  }, [rawItems, rot, cx, cy, pos]);
 
   const bounds = useMemo(() => {
     const site = rotRect({ x: 0, y: 0, w: scene.site.w, d: scene.site.d }, rot, cx, cy);
@@ -125,11 +181,18 @@ export function SiteMap3D({ units, view3dEnabled, scene = TALAYTOWN_SCENE, onSel
 
   function renderItem(it: Item & { R: Rect }, key: number) {
     const r = it.R;
-    const onClick = it.unit ? () => pick(it.unit!) : undefined;
+    const editUnit = editing && !!it.unit;
+    const onClick = it.unit && !editing ? () => pick(it.unit!) : undefined;
+    const onPointerDownUnit = editUnit ? (e: React.PointerEvent) => startDrag(e, it.unit!.id, r.x, r.y) : undefined;
     if (!is3d) {
       return (
-        <g key={key} style={onClick ? { cursor: "pointer" } : undefined} onClick={onClick}>
-          <rect x={r.x * S} y={r.y * S} width={r.w * S} height={r.d * S} rx={it.kind === "box" ? 2 : 3} fill={it.hatch ? "url(#rs-hatch)" : it.fill} stroke={it.edge} strokeWidth={it.kind === "box" ? 1.2 : 1} />
+        <g
+          key={key}
+          style={editUnit ? { cursor: "grab" } : onClick ? { cursor: "pointer" } : undefined}
+          onClick={onClick}
+          onPointerDown={onPointerDownUnit}
+        >
+          <rect x={r.x * S} y={r.y * S} width={r.w * S} height={r.d * S} rx={it.kind === "box" ? 2 : 3} fill={it.hatch ? "url(#rs-hatch)" : it.fill} stroke={editUnit ? "#2563EB" : it.edge} strokeWidth={editUnit ? 2 : it.kind === "box" ? 1.2 : 1} />
           {it.label && it.big !== false && <text x={(r.x + r.w / 2) * S} y={(r.y + r.d / 2) * S + 3} textAnchor="middle" fontSize={9} fontWeight={it.unit ? 800 : 600} fill={it.ink ?? "#475569"}>{it.label}</text>}
         </g>
       );
@@ -166,7 +229,7 @@ export function SiteMap3D({ units, view3dEnabled, scene = TALAYTOWN_SCENE, onSel
     <div className="relative">
       <div className="flex items-center gap-2 px-4 pb-3 flex-wrap">
         <div className="inline-flex rounded-lg p-0.5" style={{ background: "var(--rs-bg-3)" }}>
-          <button type="button" onClick={() => setIs3d(false)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold" style={!is3d ? { background: "#fff", color: "var(--rs-brand)" } : { color: "var(--rs-text-2)" }}><Grid3x3 className="h-3.5 w-3.5" /> 2D</button>
+          <button type="button" onClick={() => { setIs3d(false); setRot(0); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold" style={!is3d ? { background: "#fff", color: "var(--rs-brand)" } : { color: "var(--rs-text-2)" }}><Grid3x3 className="h-3.5 w-3.5" /> 2D</button>
           {view3dEnabled && <button type="button" onClick={() => setIs3d(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold" style={is3d ? { background: "#fff", color: "var(--rs-brand)" } : { color: "var(--rs-text-2)" }}><Box className="h-3.5 w-3.5" /> 3D</button>}
         </div>
         {is3d && (
@@ -179,13 +242,28 @@ export function SiteMap3D({ units, view3dEnabled, scene = TALAYTOWN_SCENE, onSel
           <button type="button" aria-label="ซูมออก" onClick={() => setZoom((z) => Math.max(0.6, z - 0.25))} className={btn} style={{ color: "var(--rs-text-2)" }}><Minus className="h-4 w-4" /></button>
           <button type="button" aria-label="ซูมเข้า" onClick={() => setZoom((z) => Math.min(3, z + 0.25))} className={btn} style={{ color: "var(--rs-text-2)" }}><Plus className="h-4 w-4" /></button>
         </div>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => { setEditing((v) => !v); if (!editing) { setIs3d(false); setRot(0); } }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold"
+            style={editing ? { background: "var(--rs-brand)", color: "#fff" } : { background: "var(--rs-bg-3)", color: "var(--rs-text-2)" }}
+          >
+            <Move className="h-3.5 w-3.5" /> {editing ? "กำลังจัดผัง" : "จัดผัง"}
+          </button>
+        )}
+        {editing && Object.keys(pos).length > 0 && (
+          <button type="button" onClick={savePositions} disabled={saving} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-60" style={{ background: "#16A34A" }}>
+            <Save className="h-3.5 w-3.5" /> {saving ? "กำลังบันทึก…" : "บันทึกผัง"}
+          </button>
+        )}
         <div className="ml-auto flex items-center gap-3 text-[11.5px]" style={{ color: "var(--rs-text-3)" }}>
           <Lg color="#16a34a" label="เช่าอยู่" /><Lg color="#dc2626" label="ค้างจ่าย" /><Lg color="#d97706" label="จอง" /><Lg color="#94a3b8" label="ว่าง" />
         </div>
       </div>
 
       <div className="overflow-auto px-2 pb-4" style={{ background: "linear-gradient(180deg,#eef2f7,#fff)", maxHeight: 560 }}>
-        <svg viewBox={`${bounds.minX} ${bounds.minY} ${bounds.w} ${bounds.h}`} style={{ width: `${Math.round(940 * zoom)}px`, maxWidth: zoom <= 1 ? "100%" : "none", margin: "0 auto", display: "block" }}>
+        <svg ref={svgRef} onPointerMove={onMove} onPointerUp={onUp} viewBox={`${bounds.minX} ${bounds.minY} ${bounds.w} ${bounds.h}`} style={{ width: `${Math.round(940 * zoom)}px`, maxWidth: zoom <= 1 ? "100%" : "none", margin: "0 auto", display: "block", touchAction: editing ? "none" : undefined }}>
           <defs>
             <pattern id="rs-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
               <rect width="6" height="6" fill="#eef2f7" />
