@@ -68,6 +68,82 @@ export async function actUploadFile(input: { sub: string; dataUrl: string }): Pr
   return { url };
 }
 
+// ───────── unit drawer (rich detail for plan click) ─────────
+export async function actGetUnitDrawer(unitId: string) {
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+  const { currentPeriod, toNum, tenantDisplayName } = await import("@/lib/rentspace/format");
+  const unit = await prisma.rentalUnit.findFirst({
+    where: { id: unitId, orgId },
+    include: {
+      contracts: { where: { status: { in: ["active", "expiring"] } }, take: 1, orderBy: { startDate: "desc" }, include: { tenant: true } },
+      meters: { include: { readings: { orderBy: { period: "desc" }, take: 1 } } },
+      bills: {
+        orderBy: { period: "desc" },
+        take: 8,
+        include: { payments: { orderBy: { paidOn: "desc" } } },
+      },
+    },
+  });
+  if (!unit) throw new Error("ไม่พบห้อง");
+  const period = currentPeriod();
+  const c = unit.contracts[0] ?? null;
+  const curBill = unit.bills.find((b) => b.period === period) ?? null;
+  const elecM = unit.meters.find((m) => m.kind === "electric");
+  const waterM = unit.meters.find((m) => m.kind === "water");
+  const elecR = elecM?.readings.find((r) => r.period === period) ?? null;
+  const waterR = waterM?.readings.find((r) => r.period === period) ?? null;
+
+  return {
+    unit: { id: unit.id, code: unit.code, name: unit.name, status: unit.status as string },
+    tenant: c?.tenant ? { name: tenantDisplayName(c.tenant), phone: (c.tenant.phones ?? [])[0] ?? "" } : null,
+    contract: c
+      ? {
+          id: c.id,
+          contractNo: c.contractNo,
+          rent: toNum(c.rentAmountThb),
+          deposit: toNum(c.depositAmountThb),
+          endDate: c.endDate ? c.endDate.toISOString().slice(0, 10) : null,
+          rentDueDay: c.rentDueDay,
+          electricRate: toNum(c.electricRate ?? unit.contracts[0]?.electricRate ?? 0),
+          waterRate: toNum(c.waterRate ?? 0),
+        }
+      : null,
+    period,
+    currentBill: curBill
+      ? {
+          billId: curBill.id,
+          rent: toNum(curBill.rentAmount),
+          electric: toNum(curBill.electricAmount),
+          water: toNum(curBill.waterAmount),
+          lateFee: toNum(curBill.lateFeeAmount),
+          discount: toNum(curBill.discountAmount),
+          vat: toNum(curBill.vatAmount),
+          total: toNum(curBill.totalAmount),
+          paid: toNum(curBill.paidAmount),
+          status: curBill.status as string,
+        }
+      : null,
+    meters: {
+      electric: elecR ? { prev: toNum(elecR.prevReading), curr: toNum(elecR.currReading), usage: toNum(elecR.usage) } : null,
+      water: waterR ? { prev: toNum(waterR.prevReading), curr: toNum(waterR.currReading), usage: toNum(waterR.usage) } : null,
+    },
+    baseRent: toNum(unit.baseRentThb),
+    history: unit.bills.map((b) => ({
+      billId: b.id,
+      period: b.period,
+      total: toNum(b.totalAmount),
+      paid: toNum(b.paidAmount),
+      status: b.status as string,
+      payments: b.payments.map((p) => ({
+        paidOn: p.paidOn.toISOString().slice(0, 10),
+        method: p.method,
+        amount: toNum(p.amountThb),
+      })),
+    })),
+  };
+}
+
 // ───────── project ─────────
 export async function actSaveProject(input: {
   id?: string;

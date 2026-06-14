@@ -130,6 +130,12 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
             ))}
           </div>
         )}
+
+        {view === "year" && (
+          <span className="ml-auto inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--rs-text-3)" }}>
+            <span style={{ fontSize: 13 }}>💡</span> กดหัวเดือน (ม.ค./ก.พ. …) เพื่อแยกดู ค่าเช่า · น้ำ · ไฟ — ห้องค่าไฟแพงผิดปกติจะขึ้นแดง
+          </span>
+        )}
       </div>
 
       {units.length === 0 ? (

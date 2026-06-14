@@ -88,7 +88,7 @@ export default async function UnitsPage() {
                           >
                             <td className="py-2.5 px-3">
                               <Link
-                                href={`/rentspace/units/${u.id}`}
+                                href={`/rentspace/units?unit=${u.id}`}
                                 className="font-semibold"
                                 style={{ color: "var(--rs-brand)" }}
                               >
@@ -96,7 +96,7 @@ export default async function UnitsPage() {
                               </Link>
                             </td>
                             <td className="py-2.5 px-3" style={{ color: "var(--rs-text)" }}>
-                              <Link href={`/rentspace/units/${u.id}`} className="block">
+                              <Link href={`/rentspace/units?unit=${u.id}`} className="block">
                                 {u.name || "—"}
                               </Link>
                             </td>

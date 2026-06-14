@@ -7,7 +7,7 @@ import {
   billingCycle,
 } from "@/lib/rentspace/data";
 import { formatBaht, tenantDisplayName, toNum, periodLabel } from "@/lib/rentspace/format";
-import { SiteMap3D } from "@/components/rentspace/site-map-3d";
+import { PlanWithDrawer } from "@/components/rentspace/plan-with-drawer";
 import { CycleCta } from "./_components/cycle-cta";
 
 export const dynamic = "force-dynamic";
@@ -194,7 +194,7 @@ export default async function RentSpaceOverview() {
             <div className="font-semibold text-[15.5px]">ผังโครงการ</div>
             <div className="text-[12px]" style={{ color: "#9098A4" }}>คลิกห้องเพื่อดูข้อมูล · สลับ 2D / 3D · หมุน + ซูมได้</div>
           </div>
-          <SiteMap3D units={mapUnits} view3dEnabled={project.view3dEnabled} />
+          <PlanWithDrawer units={mapUnits} view3dEnabled={project.view3dEnabled} />
         </div>
 
         {/* attention */}

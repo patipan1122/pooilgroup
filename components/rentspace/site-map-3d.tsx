@@ -63,11 +63,12 @@ function shade(hex: string, amt: number) {
   return `rgb(${r},${g},${b})`;
 }
 
-export function SiteMap3D({ units, view3dEnabled, scene = TALAYTOWN_SCENE }: { units: SlotUnit[]; view3dEnabled: boolean; scene?: Scene }) {
+export function SiteMap3D({ units, view3dEnabled, scene = TALAYTOWN_SCENE, onSelect }: { units: SlotUnit[]; view3dEnabled: boolean; scene?: Scene; onSelect?: (unitId: string) => void }) {
   const [is3d, setIs3d] = useState(view3dEnabled);
   const [rot, setRot] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [selected, setSelected] = useState<SlotUnit | null>(null);
+  const pick = (u: SlotUnit) => (onSelect ? onSelect(u.id) : setSelected(u));
 
   const { placed, toilets } = useMemo(() => placeUnits(scene, units), [scene, units]);
   const cx = scene.site.w / 2, cy = scene.site.d / 2;
@@ -124,7 +125,7 @@ export function SiteMap3D({ units, view3dEnabled, scene = TALAYTOWN_SCENE }: { u
 
   function renderItem(it: Item & { R: Rect }, key: number) {
     const r = it.R;
-    const onClick = it.unit ? () => setSelected(it.unit!) : undefined;
+    const onClick = it.unit ? () => pick(it.unit!) : undefined;
     if (!is3d) {
       return (
         <g key={key} style={onClick ? { cursor: "pointer" } : undefined} onClick={onClick}>
