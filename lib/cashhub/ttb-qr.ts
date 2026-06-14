@@ -16,12 +16,20 @@ function amount(v: Cell): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** DD/MM/YYYY → YYYY-MM-DD (รับ 2026 ค.ศ. ตามไฟล์ TTB) */
-function toIsoDate(raw: string): string | null {
-  const m = raw.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+// 🔑 ธนาคาร TTB ตัดยอดเข้าบัญชีที่ 23:00 ("BP Auto 23:00") — รายการ QR ที่สแกน
+// ตั้งแต่ 23:00 เป็นต้นไป จะไปเข้าบัญชี "วันถัดไป" (verified 29/30 วันตรงยอด statement)
+const SETTLE_CUTOFF_MIN = 23 * 60; // 23:00
+
+/** DD/MM/YYYY + เวลา → วันที่เข้าบัญชีจริง (YYYY-MM-DD) ตาม cutoff 23:00 */
+function bankDate(rawDate: string, rawTime: string): string | null {
+  const m = rawDate.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!m) return null;
   const [, d, mo, y] = m;
-  return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  let dt = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
+  const tm = rawTime.trim().match(/^(\d{1,2}):(\d{2})/);
+  const mins = tm ? Number(tm[1]) * 60 + Number(tm[2]) : 0;
+  if (mins >= SETTLE_CUTOFF_MIN) dt = new Date(dt.getTime() + 86400000); // +1 วัน
+  return dt.toISOString().slice(0, 10);
 }
 
 export type TtbQrResult = {
@@ -43,11 +51,13 @@ export function parseTtbQr(matrix: Cell[][]): TtbQrResult {
   for (let i = 0; i < Math.min(matrix.length, 20); i++) {
     const r = matrix[i].map((c) => txt(c).toLowerCase());
     const idxDate = r.findIndex((c) => c.includes("payment date"));
+    const idxTime = r.findIndex((c) => c.includes("payment time"));
     const idxAmt = r.findIndex((c) => c.includes("payment amount"));
     const idxStatus = r.findIndex((c) => c.includes("transaction status") || c === "status");
     if (idxDate >= 0 && idxAmt >= 0 && idxStatus >= 0) {
       headerRow = i;
       col.date = idxDate;
+      col.time = idxTime; // อาจ -1 ถ้าไม่มี (จะถือเป็น 00:00)
       col.amount = idxAmt;
       col.status = idxStatus;
       break;
@@ -68,7 +78,7 @@ export function parseTtbQr(matrix: Cell[][]): TtbQrResult {
       if (txt(r[col.date])) skipped++;
       continue;
     }
-    const iso = toIsoDate(txt(r[col.date]));
+    const iso = bankDate(txt(r[col.date]), col.time >= 0 ? txt(r[col.time]) : "");
     if (!iso) continue;
     const amt = amount(r[col.amount]);
     byDate[iso] = (byDate[iso] ?? 0) + amt;
