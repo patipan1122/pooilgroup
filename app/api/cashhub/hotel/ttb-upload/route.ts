@@ -106,7 +106,7 @@ export async function POST(req: NextRequest) {
   // เติม "เข้าบัญชีจริง" (qr_banked) ต่อวัน — ตัด 23:00 ตรง statement.
   // qr_diff = null: ไม่โชว์ส่วนต่างรายวัน (บันทึกตามกะ vs เข้าจริงตัด 23:00 คนละฐาน)
   // ⚡ อัปเดตพร้อมกัน (parallel) กัน serverless timeout — เดิมทีละ call ช้าจนตายกลางทาง
-  const updates: Array<Promise<unknown>> = [];
+  const updates: Array<PromiseLike<{ error: unknown }>> = [];
   for (const [date, banked] of inMonth) {
     totalBanked += banked;
     const e = byDateRows.get(date);
@@ -118,13 +118,11 @@ export async function POST(req: NextRequest) {
       admin
         .from("cashhub_hotel_daily")
         .update({ qr_banked: banked, qr_diff: null, updated_at: now })
-        .eq("id", e.morningId),
+        .eq("id", e.morningId) as PromiseLike<{ error: unknown }>,
     );
   }
   const results = await Promise.all(updates);
-  const updated = results.filter(
-    (r) => !(r as { error?: unknown }).error,
-  ).length;
+  const updated = results.filter((r) => !r.error).length;
 
   const dates = inMonth.map(([d]) => d).sort();
   const firstDate = dates[0] ?? null;
