@@ -98,11 +98,53 @@ export function HotelIvExcelView({
     }
   }
 
+  const [saving, setSaving] = useState(false);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+
+  async function save() {
+    if (!data) return;
+    setSaving(true);
+    setSavedMsg(null);
+    const [yy2, mm2] = month.split("-").map(Number);
+    const outRows: Array<Record<string, unknown>> = [];
+    for (const d of data.days) {
+      const date = `${yy2}-${String(mm2).padStart(2, "0")}-${String(d.day).padStart(2, "0")}`;
+      const mk = (sh: "morning" | "evening", iv: ShiftIv | null) => {
+        if (!iv) return;
+        const sp = splits[iv.ivId];
+        outRows.push({
+          date, shift: sh, total: iv.total, cash: iv.cash, qr: iv.qr,
+          over: iv.over, short: iv.short, ivNo: iv.ivNo, status: iv.status,
+          room: sp?.room ?? null, goods: sp?.goods ?? null,
+          tip: sp?.tip ?? null, fine: sp?.fine ?? null,
+        });
+      };
+      mk("morning", d.morning);
+      mk("evening", d.evening);
+    }
+    try {
+      const res = await fetch("/api/cashhub/hotel/iv-save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branchId, rows: outRows }),
+      });
+      const json = await res.json();
+      setSavedMsg(
+        res.ok ? `✅ บันทึกแล้ว ${json.saved} แถว` : `❌ ${json.error}`,
+      );
+    } catch {
+      setSavedMsg("❌ เชื่อมต่อไม่ได้");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function pull() {
     setBusy(true);
     setErr(null);
     setSplits({});
     setEnrichNote(null);
+    setSavedMsg(null);
     try {
       const [y, m] = month.split("-").map(Number);
       const res = await fetch("/api/cashhub/hotel/trcloud-pull", {
@@ -166,15 +208,32 @@ export function HotelIvExcelView({
             ยอดขายดึงจาก IV ที่หน้างานคีย์ · ช่องอื่น (QR/OTA/เงินสด) IV ไม่มี → ว่างไว้
           </div>
         </div>
-        <button
-          type="button"
-          onClick={pull}
-          disabled={busy}
-          className="h-9 px-4 rounded-xl bg-[var(--ch-navy,#0b1850)] text-white text-sm font-semibold disabled:opacity-50 shrink-0"
-        >
-          {busy ? "กำลังดึง…" : "ดึง IV เดือนนี้"}
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {data && (
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving || busy}
+              className="h-9 px-4 rounded-xl bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50"
+            >
+              {saving ? "กำลังบันทึก…" : "💾 บันทึก"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={pull}
+            disabled={busy}
+            className="h-9 px-4 rounded-xl bg-[var(--ch-navy,#0b1850)] text-white text-sm font-semibold disabled:opacity-50"
+          >
+            {busy ? "กำลังดึง…" : data ? "ดึงใหม่" : "ดึง IV เดือนนี้"}
+          </button>
+        </div>
       </div>
+      {savedMsg && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm p-2.5">
+          {savedMsg}
+        </div>
+      )}
 
       {err && (
         <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm p-2.5">

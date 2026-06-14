@@ -82,6 +82,7 @@ export default async function HotelSalesPage({
       .from("cashhub_hotel_daily")
       .select("*")
       .eq("branch_id", branchId)
+      .neq("source", "trcloud_iv") // หน้า Sheet = เฉพาะข้อมูลชีต (IV เก็บแยก)
       .gte("sales_date", from)
       .lte("sales_date", to)
       .order("sales_date");
