@@ -10,6 +10,8 @@ import type { PinpointPin, PinpointSession } from "./types";
 
 export interface SessionListRow extends PinpointSession {
   author: { id: string; name: string | null } | null;
+  /** How many pins in this session are marked fixed (for "แก้แล้ว X/Y"). */
+  fixedCount?: number;
 }
 
 export async function listSessions(orgId: string): Promise<SessionListRow[]> {
@@ -26,7 +28,24 @@ export async function listSessions(orgId: string): Promise<SessionListRow[]> {
     console.error("[pinpoint.listSessions]", error);
     return [];
   }
-  return (data ?? []) as unknown as SessionListRow[];
+  const rows = (data ?? []) as unknown as SessionListRow[];
+
+  // One extra query for fixed-pin counts across all listed sessions.
+  const ids = rows.map((r) => r.id);
+  if (ids.length > 0) {
+    const { data: fixed } = await admin
+      .from("pinpoint_pins")
+      .select("session_id")
+      .eq("org_id", orgId)
+      .eq("status", "fixed")
+      .in("session_id", ids);
+    const counts = new Map<string, number>();
+    for (const p of (fixed ?? []) as { session_id: string }[]) {
+      counts.set(p.session_id, (counts.get(p.session_id) ?? 0) + 1);
+    }
+    for (const r of rows) r.fixedCount = counts.get(r.id) ?? 0;
+  }
+  return rows;
 }
 
 export async function getSessionWithPins(

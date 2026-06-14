@@ -79,8 +79,34 @@ export function buildElementMeta(el: Element): ElementMeta {
   };
 }
 
-/** Trimmed innerText snippet (the human-readable fallback). */
+/** A SHORT, meaningful label for the clicked element — prefer an accessible
+ *  name / direct text over the whole subtree's concatenated text (which on a
+ *  big container is a noisy blob like "ภาพรวมภาพรวม…"). This is what the
+ *  developer reads to locate the target, so keep it tight + relevant. */
 export function elementText(el: Element): string {
-  const t = (el.textContent || "").replace(/\s+/g, " ").trim();
-  return t.slice(0, 120);
+  const cap = (s: string) => s.replace(/\s+/g, " ").trim().slice(0, 80);
+
+  // 1. Explicit accessible name.
+  const aria = el.getAttribute("aria-label");
+  if (aria?.trim()) return cap(aria);
+  const title = el.getAttribute("title");
+  if (title?.trim()) return cap(title);
+
+  // 2. Form controls → value / placeholder.
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    const v = el.value || el.placeholder;
+    if (v?.trim()) return cap(v);
+  }
+  if (el instanceof HTMLImageElement && el.alt?.trim()) return cap(el.alt);
+
+  // 3. The element's OWN direct text nodes (not deep descendants).
+  let direct = "";
+  for (const node of Array.from(el.childNodes)) {
+    if (node.nodeType === Node.TEXT_NODE) direct += node.textContent ?? "";
+  }
+  if (direct.trim()) return cap(direct);
+
+  // 4. Last resort — full text, but short so a container blob stays bounded.
+  const t = el.textContent ?? "";
+  return cap(t);
 }

@@ -64,6 +64,11 @@ export default async function PinpointListPage() {
                         dateStyle: "medium",
                         timeStyle: "short",
                       })}
+                      {s.fixedCount ? (
+                        <span className="ml-1.5 font-bold text-emerald-600">
+                          · พิมแก้แล้ว {s.fixedCount}/{s.pin_count}
+                        </span>
+                      ) : null}
                     </p>
                   </div>
                   <span

@@ -13,18 +13,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { adminClient } from "@/lib/db/server";
 import { deleteObject } from "@/lib/r2/upload";
+import { verifyServiceSecret } from "@/lib/pinpoint/service-auth";
 
 export const runtime = "nodejs";
 
 const SCREENSHOT_TTL_DAYS = 30;
 const DRAFT_TTL_DAYS = 7;
 const BATCH = 500;
-
-function isAuthorizedCron(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return true; // dev mode
-  return req.headers.get("authorization") === `Bearer ${secret}`;
-}
 
 export async function GET(req: NextRequest) {
   return handle(req);
@@ -34,7 +29,7 @@ export async function POST(req: NextRequest) {
 }
 
 async function handle(req: NextRequest) {
-  if (!isAuthorizedCron(req)) {
+  if (!verifyServiceSecret(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const admin = adminClient();

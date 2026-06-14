@@ -25,6 +25,7 @@ import {
   ListChecks,
   Pause,
   Play,
+  Mic,
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { buildSelector, buildElementMeta, elementText } from "@/lib/pinpoint/selector";
@@ -499,6 +500,34 @@ function PinMarker({
   );
 }
 
+// ── Web Speech API (พูดแทนพิมพ์) — minimal typed wrapper, no `any` ──────────────
+interface SpeechResultLike {
+  0: { transcript: string };
+}
+interface SpeechEventLike {
+  results: ArrayLike<SpeechResultLike>;
+}
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((e: SpeechEventLike) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+
+function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as {
+    SpeechRecognition?: SpeechRecognitionCtor;
+    webkitSpeechRecognition?: SpeechRecognitionCtor;
+  };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
 // ── draft popover ─────────────────────────────────────────────────────────────
 function PinPopover({
   draft,
@@ -515,10 +544,45 @@ function PinPopover({
 }) {
   const [comment, setComment] = useState("");
   const [urgent, setUrgent] = useState(false);
+  const [listening, setListening] = useState(false);
   const ref = useRef<HTMLTextAreaElement | null>(null);
+  const recogRef = useRef<SpeechRecognitionLike | null>(null);
   useEffect(() => {
     ref.current?.focus();
   }, []);
+
+  // พูดแทนพิมพ์ — Web Speech API (ฟรี, ในเบราว์เซอร์). ซ่อนปุ่มถ้าไม่รองรับ.
+  const speechSupported = getSpeechRecognitionCtor() != null;
+  function toggleMic() {
+    if (listening) {
+      recogRef.current?.stop();
+      return;
+    }
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) return;
+    const r = new Ctor();
+    r.lang = "th-TH";
+    r.interimResults = false;
+    r.continuous = false;
+    r.onresult = (e) => {
+      const t = e.results?.[0]?.[0]?.transcript ?? "";
+      if (t) setComment((c) => (c.trim() ? c.trim() + " " : "") + t);
+    };
+    r.onend = () => setListening(false);
+    r.onerror = () => setListening(false);
+    recogRef.current = r;
+    // start() can throw synchronously (InvalidStateError on rapid re-tap, or when
+    // mic permission is hard-blocked). Flip `listening` only on success so the
+    // button never gets stuck in the red "หยุดพูด" state with no way to recover.
+    try {
+      r.start();
+      setListening(true);
+    } catch {
+      recogRef.current = null;
+      setListening(false);
+    }
+  }
+  useEffect(() => () => recogRef.current?.stop(), []);
 
   // Keep the popover on-screen: clamp near the click point.
   const left = Math.min(Math.max(draft.clientX, 130), (typeof window !== "undefined" ? window.innerWidth : 360) - 130);
@@ -533,7 +597,13 @@ function PinPopover({
         <span className="flex size-6 items-center justify-center rounded-full bg-[var(--color-brand-600)] text-[11px] font-extrabold text-white">
           {seq}
         </span>
-        <button type="button" onClick={onCancel} className="text-zinc-400 hover:text-zinc-700">
+        <button
+          type="button"
+          onClick={onCancel}
+          aria-label="ปิด"
+          title="ปิด"
+          className="text-zinc-400 hover:text-zinc-700"
+        >
           <X className="size-4" />
         </button>
       </div>
@@ -544,21 +614,39 @@ function PinPopover({
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSave(comment.trim(), urgent ? "urgent" : "normal");
         }}
-        placeholder="พิมพ์สิ่งที่อยากแก้… (เว้นว่างก็ได้)"
+        placeholder="พิมพ์ หรือกดไมค์เพื่อพูด… (เว้นว่างก็ได้)"
         rows={3}
         className="w-full resize-none rounded-lg border border-zinc-300 px-2.5 py-2 text-sm outline-none focus:border-[var(--color-brand-600)]"
       />
       <div className="mt-2 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => setUrgent((v) => !v)}
-          className={cn(
-            "rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors",
-            urgent ? "bg-red-600 text-white" : "bg-zinc-100 text-zinc-600",
+        <div className="flex items-center gap-1.5">
+          {speechSupported && (
+            <button
+              type="button"
+              onClick={toggleMic}
+              aria-label={listening ? "หยุดพูด" : "พูดแทนพิมพ์"}
+              title={listening ? "หยุดพูด" : "พูดแทนพิมพ์"}
+              className={cn(
+                "flex size-7 items-center justify-center rounded-full transition-colors",
+                listening
+                  ? "animate-pulse bg-red-600 text-white"
+                  : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200",
+              )}
+            >
+              <Mic className="size-3.5" />
+            </button>
           )}
-        >
-          🔴 ด่วน
-        </button>
+          <button
+            type="button"
+            onClick={() => setUrgent((v) => !v)}
+            className={cn(
+              "rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors",
+              urgent ? "bg-red-600 text-white" : "bg-zinc-100 text-zinc-600",
+            )}
+          >
+            🔴 ด่วน
+          </button>
+        </div>
         <button
           type="button"
           disabled={busy}
