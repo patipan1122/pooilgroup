@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
+  // ลดร่องรอย tech-stack: ไม่ส่ง header "x-powered-by: Next.js" (anti-recon เล็กน้อย).
+  // หมายเหตุ: header "server: Vercel" + path /_next/ เป็นของแพลตฟอร์ม ลบไม่ได้.
+  poweredByHeader: false,
   experimental: {
     optimizePackageImports: [
       "lucide-react",
