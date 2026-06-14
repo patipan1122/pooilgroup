@@ -15,8 +15,8 @@ import {
   TH_MONTHS,
   type HotelShiftRow,
 } from "@/lib/cashhub/hotel";
+import Link from "next/link";
 import { HotelMonthView } from "./hotel-month-view";
-import { HotelTrcloudPanel } from "./hotel-trcloud-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -163,9 +163,20 @@ export default async function HotelSalesPage({
       />
 
       {branchId && (
-        <div className="mt-5">
-          <HotelTrcloudPanel branchId={branchId} month={monthStr} />
-        </div>
+        <Link
+          href={`/cashhub/hotel/iv?branchId=${branchId}&month=${monthStr}`}
+          className="mt-5 flex items-center justify-between gap-3 rounded-2xl border border-[var(--ch-navy,#0b1850)]/20 bg-[var(--ch-navy,#0b1850)]/[0.03] p-4 hover:bg-[var(--ch-navy,#0b1850)]/[0.06] transition"
+        >
+          <div>
+            <div className="font-bold text-zinc-800">🔗 ดึง IV จาก TRCloud</div>
+            <div className="text-xs text-zinc-500">
+              เช็คว่าหน้างานคีย์ IV ครบทุกวัน/กะไหม + ยอด IV (= ยอดขายในชีต)
+            </div>
+          </div>
+          <span className="text-[var(--ch-navy,#0b1850)] font-semibold text-sm shrink-0">
+            เปิดหน้า →
+          </span>
+        </Link>
       )}
     </div>
   );
