@@ -6,6 +6,7 @@ import * as XLSX from "xlsx";
 import { formatBaht } from "@/lib/utils/format";
 import { CVAR_LABEL } from "@/lib/cashhub/amazon-parse";
 import type { SavedAmazonDay, ImportHistoryRow } from "@/lib/cashhub/amazon-data";
+import { AmazonExcelGrid } from "./amazon-excel-grid";
 
 type Props = {
   storeCode: string;
@@ -217,7 +218,7 @@ export function AmazonView({
           : d.match_state === "mismatch"
             ? "ไม่ตรง"
             : "ยังไม่มี IV",
-        d.balanced ? "พร้อม" : `ติดปัญหา: ${d.block_reason ?? ""}`,
+        d.balanced ? "พร้อม" : `ติดปัญหา${d.block_reason ? ": " + d.block_reason : ""}`,
         ...cvarKeys.map((k) => d.channels?.[k] ?? ""),
       ]),
     ];
@@ -382,106 +383,17 @@ export function AmazonView({
             )}
           </div>
 
-          {/* excel grid */}
-          <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs text-zinc-500">
-                  <th className="p-3">วันที่</th>
-                  <th className="p-3 text-right">ยอดขาย POS</th>
-                  <th className="p-3 text-right">ก่อน VAT</th>
-                  <th className="p-3 text-right">VAT</th>
-                  <th className="p-3">IV (TRCloud)</th>
-                  <th className="p-3 text-right">ยอด IV</th>
-                  <th className="p-3">ตรงกับ POS?</th>
-                  <th className="p-3">ช่องทาง</th>
-                  <th className="p-3">จัดการ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {savedDays.map((d) => (
-                  <tr
-                    key={d.sales_date}
-                    className={
-                      "border-b border-zinc-100 align-top " +
-                      (d.match_state === "mismatch"
-                        ? "bg-red-50/60"
-                        : !d.balanced
-                          ? "bg-amber-50/50"
-                          : "")
-                    }
-                  >
-                    <td className="p-3 font-medium text-zinc-700">{d.sales_date}</td>
-                    <td className="p-3 text-right font-semibold">{formatBaht(d.gross)}</td>
-                    <td className="p-3 text-right text-zinc-500">
-                      {d.total != null ? formatBaht(d.total) : "—"}
-                    </td>
-                    <td className="p-3 text-right text-zinc-500">
-                      {d.vat != null ? formatBaht(d.vat) : "—"}
-                    </td>
-                    <td className="p-3 text-xs text-zinc-600">{d.iv_doc_no ?? "—"}</td>
-                    <td className="p-3 text-right text-zinc-500">
-                      {d.iv_gross != null ? formatBaht(d.iv_gross) : "—"}
-                    </td>
-                    <td className="p-3">
-                      <MatchBadge day={d} />
-                    </td>
-                    <td className="p-3">
-                      <div className="flex flex-wrap gap-1">
-                        {Object.entries(d.channels ?? {}).map(([k, v]) => (
-                          <span
-                            key={k}
-                            className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-600"
-                          >
-                            {CVAR_LABEL[k] ?? k} {Number(v).toLocaleString()}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="p-3">
-                      {!d.balanced ? (
-                        <span className="text-xs text-amber-600" title={d.block_reason ?? ""}>
-                          ⚠️ {d.block_reason}
-                        </span>
-                      ) : d.match_state === "match" || d.iv_status === "posted" ? (
-                        <span className="text-xs text-emerald-600">✓ มีแล้ว</span>
-                      ) : canSend ? (
-                        <button
-                          type="button"
-                          disabled={busy !== null}
-                          onClick={() => createIv(d)}
-                          className="rounded-lg bg-[var(--ch-brand,#1e3aff)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
-                        >
-                          {busy === `push-${d.sales_date}` ? "กำลังสร้าง…" : "ส่งเข้า TRCloud"}
-                        </button>
-                      ) : (
-                        <span className="text-xs text-zinc-400">🔒 super_admin</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {/* excel grid (สเปรดชีตเต็ม — มิเรอร์สไตล์หน้าโรงแรม) */}
+          <AmazonExcelGrid
+            savedDays={savedDays}
+            canSend={canSend}
+            busy={busy}
+            onCreate={createIv}
+          />
         </>
       )}
     </div>
   );
-}
-
-function MatchBadge({ day }: { day: SavedAmazonDay }) {
-  if (day.match_state === "match")
-    return <span className="text-xs font-medium text-emerald-600">✅ ตรง</span>;
-  if (day.match_state === "mismatch") {
-    const diff = (day.iv_gross ?? 0) - day.gross;
-    return (
-      <span className="text-xs font-medium text-red-600">
-        ⚠️ ต่าง {diff > 0 ? "+" : ""}
-        {formatBaht(diff)}
-      </span>
-    );
-  }
-  return <span className="text-xs text-zinc-400">⚪ ยังไม่เทียบ/ไม่มี IV</span>;
 }
 
 function Stat({
