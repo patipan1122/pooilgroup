@@ -38,10 +38,14 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
   const cfg = branchByStoreCode(storeCode, storeLabel);
   const branchLabel = storeLabel ?? cfg?.label ?? storeCode;
 
-  // ── เดือน (default = เดือนปัจจุบัน) ──
-  const monthStr = sp.month ?? new Date().toISOString().slice(0, 7);
+  // ── เดือน (default = เดือนปัจจุบัน) — guard รูปแบบผิด (?month=xxx) ไม่ให้ Invalid Date → 500 ──
+  const monthStr =
+    sp.month && /^\d{4}-\d{2}$/.test(sp.month)
+      ? sp.month
+      : new Date().toISOString().slice(0, 7);
   const [yy, mm] = monthStr.split("-").map((x) => Number.parseInt(x, 10));
-  const monthDate = new Date(yy, (mm || 1) - 1, 1);
+  const safeMm = mm >= 1 && mm <= 12 ? mm : 1;
+  const monthDate = new Date(yy, safeMm - 1, 1);
   const from = startOfMonth(monthDate).toISOString().slice(0, 10);
   const to = endOfMonth(monthDate).toISOString().slice(0, 10);
 

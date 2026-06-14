@@ -53,16 +53,21 @@ export async function POST(req: NextRequest) {
 
   if (result.ok) {
     // force = ใบทดสอบซ้ำ → ไม่อัปเดต DB (ไม่ให้ทับสถานะใบจริงเดิม) · ปกติ → markIvPosted
+    // IV สร้างใน TRCloud สำเร็จแล้ว → DB-stamp = best-effort: ถ้าพังห้าม 500 (ไม่งั้น user เห็น error ทั้งที่ใบขึ้นแล้ว)
     if (!force) {
-      await markIvPosted(
-        adminClient(),
-        session.user.org_id,
-        cfg.storeCode,
-        day.date,
-        result.ivNo,
-        result.ivId,
-        day.gross,
-      );
+      try {
+        await markIvPosted(
+          adminClient(),
+          session.user.org_id,
+          cfg.storeCode,
+          day.date,
+          result.ivNo,
+          result.ivId,
+          day.gross,
+        );
+      } catch (e) {
+        console.error("[amazon push] markIvPosted failed (IV created OK):", e);
+      }
     }
     await audit({
       orgId: session.user.org_id,

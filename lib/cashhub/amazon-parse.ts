@@ -120,7 +120,10 @@ export function parseAmazonPos(matrix: unknown[][]): AmazonParseResult {
     if (!dm) continue;
     const [, dd, mm, by] = dm;
     const year = Number.parseInt(by, 10) - 543;
+    const mmN = Number.parseInt(mm, 10);
+    const ddN = Number.parseInt(dd, 10);
     if (year < 2020 || year > 2040) continue; // กัน parse เพี้ยน
+    if (mmN < 1 || mmN > 12 || ddN < 1 || ddN > 31) continue; // กันวันที่เพี้ยน (เดือน>12/วัน>31)
     const date = `${year}-${mm}-${dd}`;
 
     const gross = num(r[col[GROSS_COL]]);
