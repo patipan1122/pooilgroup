@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import type { SavedTeaDay } from "@/lib/cashhub/tea-data";
-import { parseTeaPos, type TeaPosBranch } from "@/lib/cashhub/tea-parse";
+import { parseTeaPos, csvToMatrix, type TeaPosBranch } from "@/lib/cashhub/tea-parse";
 import { TeaExcelGrid } from "./tea-excel-grid";
 
 type BranchMeta = { code: string; label: string; brand: string };
@@ -132,13 +132,19 @@ export function TeaView({
     setMsg(null);
     try {
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const matrix = XLSX.utils.sheet_to_json(ws, {
-        header: 1,
-        raw: false,
-        defval: "",
-      }) as unknown[][];
+      let matrix: unknown[][];
+      if (/\.csv$/i.test(file.name)) {
+        // CSV → อ่าน UTF-8 + parse เอง (กัน XLSX แปลงวันที่ DD/MM/YYYY เพี้ยน)
+        matrix = csvToMatrix(new TextDecoder("utf-8").decode(buf));
+      } else {
+        const wb = XLSX.read(buf, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        matrix = XLSX.utils.sheet_to_json(ws, {
+          header: 1,
+          raw: false,
+          defval: "",
+        }) as unknown[][];
+      }
       const res = parseTeaPos(matrix);
       if (res.error) {
         setMsg({ kind: "err", text: res.error });

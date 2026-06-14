@@ -9,11 +9,49 @@
 //
 // ⚠️ ไฟล์นี้ import ฝั่ง client (tea-view) → ห้าม import tea-trcloud (มี crypto/process.env).
 //    route validate สาขาด้วย teaBranchByCode เอง.
-import { classifyTeaChannel, type TeaChannelCode } from "./tea-channels";
+import { classifyTeaChannel, classifyTeaPayment, type TeaChannelCode } from "./tea-channels";
 
 const GROSS_COL = "ยอดขาย";
 const CHECK_COL = "รวมยอดชำระ";
 const BILL_COL = "จำนวนบิล";
+
+/**
+ * แปลงข้อความ CSV → matrix (array of arrays) เก็บค่าเป็น "ข้อความดิบ" ไม่แปลงชนิด
+ * ⚠️ จำเป็นสำหรับรายงานแยกตามบิล: ถ้าให้ XLSX แปลง CSV จะตีความวันที่ DD/MM/YYYY ผิดเป็นแบบอเมริกา.
+ */
+export function csvToMatrix(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cur = "";
+  let q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') {
+        if (text[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else q = false;
+      } else cur += c;
+    } else if (c === '"') {
+      q = true;
+    } else if (c === ",") {
+      row.push(cur);
+      cur = "";
+    } else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cur);
+      if (row.length > 1 || row[0] !== "") rows.push(row);
+      row = [];
+      cur = "";
+    } else cur += c;
+  }
+  if (cur || row.length) {
+    row.push(cur);
+    rows.push(row);
+  }
+  return rows;
+}
 
 /** คำหลักของแต่ละสาขา (จาก project TRCloud หลัง "ปตท.") ไว้เดาสาขาจากชื่อในไฟล์ */
 export const TEA_POS_KEYWORDS: { code: string; keyword: string }[] = [
@@ -88,10 +126,81 @@ function readHeader(row: unknown[]): ColMap | null {
 }
 
 /**
- * แปลง matrix (xlsx/csv → array of arrays) → หลายสาขา.
- * @param matrix แถวเซลล์จาก XLSX.utils.sheet_to_json(ws, { header: 1, raw: false })
+ * จุดเข้าหลัก — auto-detect รูปแบบไฟล์ Foodstory แล้วแยกเป็นหลายสาขา.
+ * รองรับ 2 รูปแบบ:
+ *   1) "รายงานปิดกะและปิดสิ้นวัน" (EOD) — section <เลข>:<ชื่อ> + แถวสรุปรายวัน + คอลัมน์ช่องทาง
+ *   2) "รายงานสรุปยอดขายแยกตามบิล" (รายบิล) — มีคอลัมน์ สาขา/วันที่ชำระเงิน/รวมสุทธิ/ประเภทการชำระเงิน
  */
 export function parseTeaPos(matrix: unknown[][]): TeaPosParseResult {
+  if (!Array.isArray(matrix) || matrix.length === 0)
+    return { branches: [], error: "ไฟล์ว่าง" };
+  if (isBillReport(matrix)) return parseBillReport(matrix);
+  return parseEodReport(matrix);
+}
+
+/** ไฟล์เป็นรายงาน "แยกตามบิล" ไหม (มีหัวคอลัมน์ วันที่ชำระเงิน) */
+function isBillReport(matrix: unknown[][]): boolean {
+  return matrix
+    .slice(0, 8)
+    .some((r) => Array.isArray(r) && r.some((c) => String(c ?? "").includes("วันที่ชำระเงิน")));
+}
+
+/** parse รายงาน "แยกตามบิล" → รวมต่อ (สาขา, วัน) + แยกช่องทางจากประเภทการชำระเงิน */
+function parseBillReport(matrix: unknown[][]): TeaPosParseResult {
+  const hi = matrix.findIndex(
+    (r) => Array.isArray(r) && r.some((c) => String(c ?? "").includes("วันที่ชำระเงิน")),
+  );
+  const header = (matrix[hi] as unknown[]).map((h) => String(h ?? "").trim());
+  const find = (pred: (h: string) => boolean) => header.findIndex(pred);
+  const cDate = find((h) => h.includes("วันที่ชำระเงิน"));
+  const cNet = find((h) => h.startsWith("รวมสุทธิ"));
+  const cPay = find((h) => h === "ประเภทการชำระเงิน");
+  const cBranch = find((h) => h === "สาขา");
+  if (cDate < 0 || cNet < 0 || cBranch < 0)
+    return {
+      branches: [],
+      error: "รายงานแยกตามบิล: ไม่พบคอลัมน์ที่ต้องการ (วันที่ชำระเงิน / รวมสุทธิ / สาขา)",
+    };
+
+  const bag = new Map<string, { storeLabel: string; byDate: Map<string, TeaPosRow> }>();
+  for (let i = hi + 1; i < matrix.length; i++) {
+    const r = matrix[i];
+    if (!Array.isArray(r)) continue;
+    const br = String(r[cBranch] ?? "").trim();
+    if (!br) continue; // ข้ามแถว Total (สาขาว่าง)
+    const dm = String(r[cDate] ?? "").match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (!dm) continue; // วันที่ = DD/MM/YYYY (ไทย day-first)
+    const date = `${dm[3]}-${dm[2].padStart(2, "0")}-${dm[1].padStart(2, "0")}`;
+    const net = round2(num(r[cNet]));
+    const code = cPay >= 0 ? classifyTeaPayment(String(r[cPay] ?? "")) : "qr";
+    let b = bag.get(br);
+    if (!b) {
+      b = { storeLabel: br, byDate: new Map() };
+      bag.set(br, b);
+    }
+    let d = b.byDate.get(date);
+    if (!d) {
+      d = { date, gross: 0, bills: 0, channels: {} };
+      b.byDate.set(date, d);
+    }
+    d.gross = round2(d.gross + net);
+    d.bills += 1;
+    d.channels[code] = round2((d.channels[code] ?? 0) + net);
+  }
+
+  const branches: TeaPosBranch[] = [...bag.values()].map((b) => ({
+    storeCode: null,
+    storeLabel: b.storeLabel,
+    detectedBranchCode: detectTeaBranch(b.storeLabel),
+    rows: [...b.byDate.values()].sort((a, z) => a.date.localeCompare(z.date)),
+  }));
+  if (branches.length === 0)
+    return { branches: [], error: "รายงานแยกตามบิล: ไม่พบข้อมูลสาขา/ยอดขาย" };
+  return { branches };
+}
+
+/** parse รายงาน "ปิดกะและปิดสิ้นวัน" (EOD) */
+function parseEodReport(matrix: unknown[][]): TeaPosParseResult {
   if (!Array.isArray(matrix) || matrix.length === 0)
     return { branches: [], error: "ไฟล์ว่าง" };
 

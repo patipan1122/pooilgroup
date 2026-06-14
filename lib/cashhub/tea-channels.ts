@@ -41,6 +41,25 @@ export const TEA_CHANNEL_BY_CODE: Record<string, TeaChannelDef> = Object.fromEnt
   TEA_CHANNELS.map((c) => [c.code, c]),
 );
 
+/**
+ * จับ "ประเภทการชำระเงิน" รายบิล (รายงานแยกตามบิล) → channel_code
+ * ค่าเช่น Cash / K Plus / Bank Transfer / Grab / Line Man / ShopeeFood / Credit Card / True Money.
+ * แยกจาก classifyTeaChannel (ซึ่งจับ "หัวคอลัมน์" ของรายงานปิดสิ้นวัน) เพราะคำศัพท์ต่างกัน.
+ */
+export function classifyTeaPayment(payment: string): TeaChannelCode {
+  const p = payment.trim().toLowerCase();
+  if (!p) return "qr";
+  if (/grab/.test(p)) return "grab";
+  if (/line\s?man/.test(p)) return "lineman";
+  if (/shopee/.test(p)) return "shopee";
+  if (/voucher|ส่วนลด|คูปอง|redeem|แต้ม/.test(p)) return "discount";
+  if (/cash|เงินสด/.test(p)) return "cash";
+  if (/edc|credit|debit|บัตร|\bcard\b/.test(p)) return "card";
+  if (/blueplus|true\s?money|truemoney|wallet|rabbit|shopeepay|linepay/.test(p)) return "wallet";
+  // K Plus / SCB / PromptPay / Bank Transfer / โอน ฯลฯ = เข้าธนาคารทางอิเล็กทรอนิกส์ → qr (default)
+  return "qr";
+}
+
 /** จับชื่อคอลัมน์ Foodstory → channel_code (null = ไม่ใช่ช่องทางชำระ / จับไม่ได้) */
 export function classifyTeaChannel(header: string): TeaChannelCode | null {
   const h = header.trim().toLowerCase();
