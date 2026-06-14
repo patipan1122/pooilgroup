@@ -360,6 +360,7 @@ export function AmazonView({
             {busy === "upload" ? "กำลังอ่าน + เซฟ…" : "อัปไฟล์ + เซฟ"}
           </button>
           <div className="grow" />
+          {/* การทำงานหลัก (เด่น) */}
           <button
             type="button"
             disabled={busy !== null || savedDays.length === 0}
@@ -368,41 +369,47 @@ export function AmazonView({
           >
             {busy === "match" ? "กำลังเทียบ…" : "🔄 เทียบกับ TRCloud"}
           </button>
-          <button
-            type="button"
-            disabled={savedDays.length === 0}
-            onClick={exportXlsx}
-            className="h-11 rounded-xl border border-zinc-200 px-4 text-sm font-medium hover:bg-zinc-50 disabled:opacity-40"
-          >
-            ⬇ ดาวน์โหลด Excel
-          </button>
-          {history.length > 0 && (
+          {canSend && (
             <button
               type="button"
-              onClick={() => setShowHistory((s) => !s)}
-              className="h-11 rounded-xl border border-zinc-200 px-4 text-sm font-medium hover:bg-zinc-50"
+              disabled={busy !== null || savedDays.length === 0}
+              onClick={sendReconcile}
+              className="h-11 rounded-xl bg-[var(--ch-navy,#0b1850)] px-4 text-sm font-semibold text-white disabled:opacity-40"
             >
-              🕘 ประวัติการอัป ({history.length})
+              {busy === "reconcile" ? "กำลังส่ง…" : "🏦 ส่งเข้า reconcile"}
             </button>
           )}
-          {canSend && (
-            <>
-              <Link
-                href="/cashhub/amazon/settings"
-                className="h-11 inline-flex items-center rounded-xl border border-zinc-200 px-4 text-sm font-medium hover:bg-zinc-50"
-              >
-                ⚙️ ตั้งค่าช่องทาง
-              </Link>
+          {/* เครื่องมือรอง (ย่อ ghost) */}
+          <div className="ml-1 flex items-center gap-1 border-l border-zinc-200 pl-2">
+            <button
+              type="button"
+              disabled={savedDays.length === 0}
+              onClick={exportXlsx}
+              title="ดาวน์โหลด Excel"
+              className="h-9 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100 disabled:opacity-40"
+            >
+              ⬇ Excel
+            </button>
+            {history.length > 0 && (
               <button
                 type="button"
-                disabled={busy !== null || savedDays.length === 0}
-                onClick={sendReconcile}
-                className="h-11 rounded-xl bg-[var(--ch-navy,#0b1850)] px-4 text-sm font-semibold text-white disabled:opacity-40"
+                onClick={() => setShowHistory((s) => !s)}
+                title="ประวัติการอัปไฟล์"
+                className="h-9 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100"
               >
-                {busy === "reconcile" ? "กำลังส่ง…" : "🏦 ส่งเข้า reconcile"}
+                🕘 ประวัติ ({history.length})
               </button>
-            </>
-          )}
+            )}
+            {canSend && (
+              <Link
+                href="/cashhub/amazon/settings"
+                title="ตั้งค่าช่องทาง/ค่าธรรมเนียม/บัญชี"
+                className="inline-flex h-9 items-center rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100"
+              >
+                ⚙️ ตั้งค่า
+              </Link>
+            )}
+          </div>
         </div>
         {showHistory && (
           <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
