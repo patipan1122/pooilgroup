@@ -135,10 +135,12 @@ export async function sendHotelDaysToReconcile(
   }
   if (rows.length === 0) return { inserted: 0, skippedNoConfig };
 
+  // ห่อ transaction เดียว (all-or-nothing) — ถ้าพังกลางทางไม่เข้า ledger บางส่วน
   let inserted = 0;
   try {
-    for (const r of rows) {
-      const res = await prisma.$queryRaw<{ id: string }[]>`
+    await prisma.$transaction(async (tx) => {
+      for (const r of rows) {
+        const res = await tx.$queryRaw<{ id: string }[]>`
         INSERT INTO ledger_revenue_entry
           (org_id, company_id, entry_date, amount_satang, source_type, source_ref,
            description, customer_name, payment_channel, channel_code, match_state,
@@ -155,11 +157,13 @@ export async function sendHotelDaysToReconcile(
           WHERE ledger_revenue_entry.match_state = 'unmatched'
             AND ledger_revenue_entry.amount_satang IS DISTINCT FROM EXCLUDED.amount_satang
         RETURNING id`;
-      if (res.length) inserted++;
-    }
+        if (res.length) inserted++;
+      }
+    });
   } catch (e) {
+    // transaction rolled back → ไม่มีอะไรเข้า ledger
     return {
-      inserted,
+      inserted: 0,
       skippedNoConfig,
       error: e instanceof Error ? e.message : "insert error",
     };

@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
     const { data } = await adminClient()
       .from("cashhub_hotel_daily")
       .select("sales_date, shift, total_sales")
+      .eq("org_id", session.user.org_id) // scope ชัด — กัน IDOR อ่านข้ามองค์กร (admin bypass RLS)
       .eq("branch_id", body.branchId)
       .gte("sales_date", start)
       .lte("sales_date", end);
