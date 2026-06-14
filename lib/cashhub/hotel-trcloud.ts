@@ -17,6 +17,9 @@ const COMPANY_ID = process.env.TRCLOUD_JPS_COMPANY_ID ?? "";
 const PASSKEY = process.env.TRCLOUD_JPS_PASSKEY ?? "";
 const ENCRYPT_HEAD = process.env.TRCLOUD_JPS_ENCRYPT_HEAD ?? "";
 
+// TRCloud project ของโรงแรม (ทุก IV โรงแรมอยู่ใต้ project นี้) — กรองให้ดึงเฉพาะของโรงแรม
+const HOTEL_PROJECT = process.env.HOTEL_TRCLOUD_PROJECT ?? "Hotel_001-โรงแรม MIX";
+
 export function hotelTrcloudConfigured(): boolean {
   return Boolean(COMPANY_ID && PASSKEY && ENCRYPT_HEAD);
 }
@@ -108,11 +111,13 @@ export async function fetchHotelIvs(
       availableMonths: [],
     };
   try {
+    // ⚠️ TRCloud ใช้ param "date-from"/"date-to" (ขีดกลาง) — underscore ถูกเมิน
+    //    (คืนเฉพาะล่าสุด) + project filter ดึงเฉพาะ IV โรงแรม
     const data = await trcloudPost("iv/search.php", {
-      date_from: periodStart,
-      date_to: periodEnd,
+      project: HOTEL_PROJECT,
+      "date-from": periodStart,
+      "date-to": periodEnd,
       limit: 500,
-      page: 1,
     });
     const list = (
       Array.isArray(data.data)
