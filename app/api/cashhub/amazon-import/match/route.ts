@@ -21,7 +21,10 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "body ไม่ถูกต้อง" }, { status: 400 });
   }
-  const cfg = branchByStoreCode(body.storeCode ?? null, body.storeLabel ?? null);
+  // store_code จริงจากแถวที่เซฟ (ไม่ใช่ cfg.storeCode ที่อาจว่างสำหรับสาขาจับคู่ด้วยชื่อ)
+  const storeCode = (body.storeCode ?? "").trim();
+  if (!storeCode) return NextResponse.json({ error: "ไม่มีรหัสสาขา" }, { status: 400 });
+  const cfg = branchByStoreCode(storeCode, body.storeLabel ?? null);
   if (!cfg) return NextResponse.json({ error: "ไม่รู้จักสาขานี้" }, { status: 400 });
   const from = body.from ?? "";
   const to = body.to ?? "";
@@ -31,8 +34,8 @@ export async function POST(req: NextRequest) {
   const { ivs, error } = await fetchAmazonIvs(cfg, from, to);
   if (error) return NextResponse.json({ error }, { status: 502 });
 
-  const savedDays = await loadAmazonDays(admin, orgId, cfg.storeCode, from, to);
-  const { updated } = await applyIvMatch(admin, orgId, cfg.storeCode, savedDays, ivs);
+  const savedDays = await loadAmazonDays(admin, orgId, storeCode, from, to);
+  const { updated } = await applyIvMatch(admin, orgId, storeCode, savedDays, ivs);
 
   return NextResponse.json({ ok: true, updated, ivCount: ivs.length });
 }

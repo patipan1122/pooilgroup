@@ -23,6 +23,7 @@ type Props = {
   to: string;
   savedDays: SavedAmazonDay[];
   canSend: boolean;
+  allowForce: boolean;
   history: ImportHistoryRow[];
   configs: ChannelConfig[];
   reconcile: ReconcileStatus;
@@ -38,6 +39,7 @@ export function AmazonView({
   to,
   savedDays,
   canSend,
+  allowForce,
   history,
   configs,
   reconcile,
@@ -180,17 +182,19 @@ export function AmazonView({
         error?: string;
       };
       if (!res.ok || data.error) setMsg({ kind: "err", text: data.error ?? "ส่งไม่สำเร็จ" });
-      else
+      else {
         setMsg({
           kind: "ok",
           text: `ส่งเข้า reconcile แล้ว ${data.inserted} รายการ${data.skippedNoConfig ? ` · ข้าม ${data.skippedNoConfig} (ยังไม่ตั้งบัญชี)` : ""} → ดูที่หน้ากระทบยอดธนาคาร`,
         });
+        router.refresh(); // โหลดสถานะ "กระทบยอด" + แถบสรุปใหม่ (ไม่งั้นคอลัมน์ค้าง "—" เหมือนยังไม่ส่ง)
+      }
     } catch {
       setMsg({ kind: "err", text: "เชื่อมต่อไม่สำเร็จ" });
     } finally {
       setBusy(null);
     }
-  }, [storeCode, from, to]);
+  }, [storeCode, branchLabel, from, to, router]);
 
   // ⚠️ ส่งซ้ำ (ทดสอบ) — ข้าม dedup → ได้ใบกำกับซ้ำจริง · super_admin + พิมพ์ยืนยัน
   const forceSend = useCallback(
@@ -257,10 +261,14 @@ export function AmazonView({
     )
       return;
     setBusy("push-all");
-    for (const day of ready) {
-      setMsg({ kind: "ok", text: `กำลังสร้าง ${day.sales_date}…` });
+    let ok = 0;
+    const failed: string[] = [];
+    let rateLimited = false;
+    for (let i = 0; i < ready.length; i++) {
+      const day = ready[i]!;
+      setMsg({ kind: "ok", text: `กำลังสร้าง ${day.sales_date}… (${i + 1}/${ready.length})` });
       try {
-        await fetch("/api/cashhub/amazon-import/push", {
+        const res = await fetch("/api/cashhub/amazon-import/push", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -279,15 +287,34 @@ export function AmazonView({
             },
           }),
         });
+        const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (res.ok && data.ok) ok++;
+        else {
+          failed.push(day.sales_date.slice(5));
+          // TRCloud ติด rate-limit → หยุด (ยิงต่อก็พลาดหมด) ไม่รายงานเท็จว่าครบ
+          if (/rate-limit|429/.test(data.error ?? "")) {
+            rateLimited = true;
+            break;
+          }
+        }
       } catch {
-        /* ต่อวันถัดไป */
+        failed.push(day.sales_date.slice(5));
       }
       await sleep(1300); // throttle 429
     }
     setBusy(null);
-    setMsg({ kind: "ok", text: `สร้าง IV เสร็จ ${ready.length} วัน` });
     router.refresh();
-  }, [savedDays, storeCode, router]);
+    if (failed.length === 0) {
+      setMsg({ kind: "ok", text: `สร้าง IV สำเร็จครบ ${ok} วัน` });
+    } else {
+      setMsg({
+        kind: "err",
+        text:
+          `สร้างสำเร็จ ${ok} วัน · ล้มเหลว ${failed.length} วัน: ${failed.join(", ")}` +
+          (rateLimited ? " — TRCloud ติด rate-limit หยุดไว้ก่อน ลองใหม่อีก 1-2 นาที" : " — ลองใหม่เฉพาะวันที่พลาด"),
+      });
+    }
+  }, [savedDays, storeCode, branchLabel, router]);
 
   const exportXlsx = useCallback(() => {
     const cvarKeys = Array.from(
@@ -539,6 +566,7 @@ export function AmazonView({
           <AmazonExcelGrid
             savedDays={savedDays}
             canSend={canSend}
+            allowForce={allowForce}
             busy={busy}
             onCreate={createIv}
             onForce={forceSend}

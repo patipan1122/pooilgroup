@@ -54,6 +54,8 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
   const configs = await loadChannelConfig(admin, orgId);
   const reconcile = await loadReconcileStatus(admin, orgId, storeCode, from, to);
   const canSend = isSuperAdmin(session.user.role); // ส่งเข้า TRCloud/reconcile = super_admin เท่านั้น
+  // ปุ่ม "ส่งซ้ำ (ทดสอบ)" สร้างใบกำกับภาษีซ้ำจริง = foot-gun → ซ่อนใน prod เปิดเฉพาะ env CASHHUB_AMAZON_FORCE=1
+  const allowForce = canSend && process.env.CASHHUB_AMAZON_FORCE === "1";
 
   return (
     <div className="ch-scope p-3 sm:p-6 lg:p-8 max-w-6xl mx-auto pb-24">
@@ -110,6 +112,7 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
         to={to}
         savedDays={savedDays}
         canSend={canSend}
+        allowForce={allowForce}
         history={history}
         configs={configs}
         reconcile={reconcile}

@@ -56,6 +56,7 @@ const BASE_COLS: Col[] = [
 type Props = {
   savedDays: SavedAmazonDay[];
   canSend: boolean;
+  allowForce: boolean;
   busy: string | null;
   onCreate: (day: SavedAmazonDay) => void;
   onForce: (day: SavedAmazonDay) => void;
@@ -66,6 +67,7 @@ type Props = {
 export function AmazonExcelGrid({
   savedDays,
   canSend,
+  allowForce,
   busy,
   onCreate,
   onForce,
@@ -212,8 +214,8 @@ export function AmazonExcelGrid({
                         ) : (
                           <span className="text-zinc-400">🔒</span>
                         )}
-                        {/* ⚠️ ส่งซ้ำ (ทดสอบ) — super_admin + พิมพ์ยืนยัน · ได้ใบซ้ำจริง */}
-                        {canSend && d.balanced && (
+                        {/* ⚠️ ส่งซ้ำ (ทดสอบ) — ซ่อนใน prod · เปิดเฉพาะ env CASHHUB_AMAZON_FORCE=1 (ได้ใบซ้ำจริง) */}
+                        {allowForce && d.balanced && (
                           <button
                             type="button"
                             disabled={busy !== null}

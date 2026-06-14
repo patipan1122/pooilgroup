@@ -41,6 +41,20 @@ export async function upsertAmazonDays(
   rows: AmazonDayRow[],
 ): Promise<{ saved: number; error?: string }> {
   if (rows.length === 0) return { saved: 0 };
+  // อ่านยอดเดิมก่อน เพื่อ "ล้างสถานะ match เก่า" เฉพาะวันที่ยอด POS เปลี่ยน (กันเขียวลวงหลัง re-import)
+  const dates = rows.map((r) => r.date);
+  const { data: existingRows } = await admin
+    .from("cashhub_amazon_daily")
+    .select("sales_date, gross")
+    .eq("org_id", meta.orgId)
+    .eq("store_code", meta.storeCode)
+    .in("sales_date", dates);
+  const oldGross = new Map(
+    ((existingRows ?? []) as Record<string, unknown>[]).map((e) => [
+      String(e.sales_date).slice(0, 10),
+      n(e.gross) ?? 0,
+    ]),
+  );
   const payload = rows.map((r) => ({
     org_id: meta.orgId,
     store_code: meta.storeCode,
@@ -63,6 +77,21 @@ export async function upsertAmazonDays(
     .from("cashhub_amazon_daily")
     .upsert(payload, { onConflict: "org_id,store_code,sales_date", ignoreDuplicates: false });
   if (error) return { saved: 0, error: error.message };
+
+  // วันที่ยอด POS เปลี่ยน → ใบ IV เดิม (ถ้ามี) อาจไม่ตรงแล้ว → ล้าง match_state ให้กลับไป "ยังไม่เทียบ"
+  // (คง iv_doc_no/iv_status ไว้ — ใบยังอยู่ใน TRCloud · กด "เทียบกับ TRCloud" จะคำนวณ match ใหม่ถูกต้อง)
+  const changed = rows
+    .filter((r) => oldGross.has(r.date) && Math.abs((oldGross.get(r.date) ?? 0) - r.gross) >= 1)
+    .map((r) => r.date);
+  if (changed.length) {
+    const now = new Date().toISOString();
+    await admin
+      .from("cashhub_amazon_daily")
+      .update({ match_state: null, iv_checked_at: null, updated_at: now })
+      .eq("org_id", meta.orgId)
+      .eq("store_code", meta.storeCode)
+      .in("sales_date", changed);
+  }
   return { saved: rows.length };
 }
 
@@ -254,7 +283,7 @@ export async function loadReconcileStatus(
   };
 }
 
-/** อัปเดตแถวหลังสร้าง IV สำเร็จ (กดสร้างจากหน้า) */
+/** อัปเดตแถวหลังสร้าง/พบ IV (กดสร้างจากหน้า) — เทียบยอด IV จริงกับ POS เสมอ (ไม่เหมา match) */
 export async function markIvPosted(
   admin: Admin,
   orgId: string,
@@ -263,9 +292,11 @@ export async function markIvPosted(
   ivNo: string,
   ivId: string,
   ivGross: number,
+  posGross: number,
 ): Promise<void> {
   const now = new Date().toISOString();
-  // IV สร้างจากยอด POS เอง (grand = total+vat = gross) → ถือว่า match
+  // match จากการเทียบยอดจริง: ใบที่สร้างจาก POS → grand=gross=match · ใบที่ "พบซ้ำ" (คีย์มือ) อาจ mismatch
+  const match_state = Math.abs(ivGross - posGross) < 1 ? "match" : "mismatch";
   await admin
     .from("cashhub_amazon_daily")
     .update({
@@ -273,7 +304,7 @@ export async function markIvPosted(
       iv_doc_id: ivId,
       iv_status: "posted",
       iv_gross: ivGross,
-      match_state: "match",
+      match_state,
       iv_checked_at: now,
       updated_at: now,
     })

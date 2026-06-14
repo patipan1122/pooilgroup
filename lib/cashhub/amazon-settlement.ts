@@ -75,23 +75,24 @@ export function computeDaySettlement(
     }
     const fee = round2((gross * feePercent) / 100);
     const net = round2(gross - fee);
-    const belowMin = gross < minBaht;
+    // นโยบาย CEO 2026-06-14: ส่งทุกช่อง "เงินเข้าธนาคาร" เข้า reconcile ทุกวัน — ไม่ตัดทิ้งตามขั้นต่ำ
+    //   (แพลตฟอร์มมักโอนรวมหลายวัน → ปล่อยให้ bank-recon จับคู่ N:M เอง · กันเงินหายเงียบ)
+    //   minSettleBaht เหลือเป็นแค่ "หมายเหตุ" (pending=true = วันนี้ยอดยังต่ำกว่าที่ตั้งไว้) ไม่ใช่ตัวกรอง
+    const belowMin = minBaht > 0 && gross < minBaht;
     perChannel.push({
       cvar,
       label,
       gross,
       fee,
       net,
-      settled: !belowMin,
+      settled: true,
       pending: belowMin,
       companyId: cfg?.companyId ?? null,
       bankAccountId: cfg?.bankAccountId ?? null,
     });
+    totalFee = round2(totalFee + fee);
+    totalNet = round2(totalNet + net);
     if (belowMin) totalPending = round2(totalPending + gross);
-    else {
-      totalFee = round2(totalFee + fee);
-      totalNet = round2(totalNet + net);
-    }
   }
   return { perChannel, totalFee, totalNet, totalPending };
 }

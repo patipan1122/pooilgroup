@@ -184,7 +184,7 @@ export async function fetchAmazonIvs(
 
 // ── Goal 1: สร้าง IV รายวัน ──────────────────────────────────────────────────
 export type CreateIvResult =
-  | { ok: true; ivId: string; ivNo: string; duplicate?: boolean }
+  | { ok: true; ivId: string; ivNo: string; duplicate?: boolean; ivGross?: number }
   | { ok: false; error: string };
 
 function isSuccess(d: Record<string, unknown>): boolean {
@@ -238,6 +238,8 @@ export async function createAmazonIv(
           ivId: String(existing.invoice_id ?? existing.id ?? ""),
           ivNo: String(existing.invoice_number ?? ""),
           duplicate: true,
+          // ยอดจริงของใบที่มีอยู่ (อาจคีย์มือต่างจาก POS) → ใช้เทียบ match จริง ไม่เหมา match
+          ivGross: amount(existing.grand_total ?? existing.total),
         };
     }
 

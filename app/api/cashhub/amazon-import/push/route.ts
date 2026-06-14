@@ -35,7 +35,11 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "body ไม่ถูกต้อง" }, { status: 400 });
   }
-  const cfg = branchByStoreCode(body.storeCode ?? null, body.storeLabel ?? null);
+  // ใช้ store_code จริงจากแถวที่เซฟ (จากไฟล์ POS) เป็น key เขียน DB — ไม่ใช่ cfg.storeCode
+  // (cfg.storeCode ว่างสำหรับสาขาที่จับคู่ด้วยชื่อ เช่น เทศบาลจักราช → จะอัปเดต DB ไม่ตรงแถว)
+  const storeCode = (body.storeCode ?? "").trim();
+  if (!storeCode) return NextResponse.json({ error: "ไม่มีรหัสสาขา" }, { status: 400 });
+  const cfg = branchByStoreCode(storeCode, body.storeLabel ?? null);
   if (!cfg) return NextResponse.json({ error: "ไม่รู้จักสาขานี้" }, { status: 400 });
   const day = body.day;
   if (!day || !day.date)
@@ -49,7 +53,54 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
 
+  const admin = adminClient();
+  const orgId = session.user.org_id;
+
+  // ── กัน race สร้างใบกำกับซ้ำ (2 แท็บ/2 คน/ลูปกดพร้อมกัน) ──
+  // atomic claim: ตั้ง iv_status='creating' เฉพาะแถวที่ยังเป็น 'none' (UPDATE เดียว = atomic ระดับแถว)
+  // ถ้า claim ไม่ได้ = มีคนกำลังสร้าง/สร้างไปแล้ว → ไม่ยิง create ซ้ำ (กันใบ+VAT ซ้ำใน ภ.พ.30)
+  if (!force) {
+    const { data: claimed } = await admin
+      .from("cashhub_amazon_daily")
+      .update({ iv_status: "creating", updated_at: new Date().toISOString() })
+      .eq("org_id", orgId)
+      .eq("store_code", storeCode)
+      .eq("sales_date", day.date)
+      .eq("iv_status", "none")
+      .select("sales_date");
+    if (!claimed || claimed.length === 0) {
+      const { data: cur } = await admin
+        .from("cashhub_amazon_daily")
+        .select("iv_status, iv_doc_no")
+        .eq("org_id", orgId)
+        .eq("store_code", storeCode)
+        .eq("sales_date", day.date)
+        .maybeSingle();
+      if (cur?.iv_status === "posted")
+        return NextResponse.json({
+          ok: true,
+          duplicate: true,
+          ivNo: (cur.iv_doc_no as string | null) ?? "",
+        });
+      return NextResponse.json(
+        { error: "วันนี้กำลังสร้างใบกำกับอยู่ (อีกแท็บ/อีกคน) — รอสักครู่แล้วรีเฟรช" },
+        { status: 409 },
+      );
+    }
+  }
+
   const result = await createAmazonIv(cfg, day, { force });
+
+  // create ไม่สำเร็จ → ปล่อย claim คืน (iv_status กลับเป็น 'none') ให้ลองใหม่ได้
+  if (!result.ok && !force) {
+    await admin
+      .from("cashhub_amazon_daily")
+      .update({ iv_status: "none", updated_at: new Date().toISOString() })
+      .eq("org_id", orgId)
+      .eq("store_code", storeCode)
+      .eq("sales_date", day.date)
+      .eq("iv_status", "creating");
+  }
 
   if (result.ok) {
     // force = ใบทดสอบซ้ำ → ไม่อัปเดต DB (ไม่ให้ทับสถานะใบจริงเดิม) · ปกติ → markIvPosted
@@ -57,16 +108,34 @@ export async function POST(req: NextRequest) {
     if (!force) {
       try {
         await markIvPosted(
-          adminClient(),
-          session.user.org_id,
-          cfg.storeCode,
+          admin,
+          orgId,
+          storeCode,
           day.date,
           result.ivNo,
           result.ivId,
-          day.gross,
+          result.ivGross ?? day.gross, // ยอด IV จริง (ใบที่พบซ้ำอาจต่างจาก POS)
+          day.gross, // ยอด POS — ใช้เทียบ match จริง
         );
       } catch (e) {
         console.error("[amazon push] markIvPosted failed (IV created OK):", e);
+        // IV สร้างสำเร็จแล้วแต่ stamp พัง → กันแถวค้างสถานะ 'creating' (claim ตั้งไว้) แบบ best-effort
+        // (ถ้า DB ล่มจริง ตัวนี้ก็พัง → กู้ได้ภายหลังด้วยปุ่ม "เทียบกับ TRCloud")
+        try {
+          await admin
+            .from("cashhub_amazon_daily")
+            .update({
+              iv_status: "posted",
+              iv_doc_no: result.ivNo,
+              iv_doc_id: result.ivId,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("org_id", orgId)
+            .eq("store_code", storeCode)
+            .eq("sales_date", day.date);
+        } catch {
+          /* DB ล่ม — กู้สถานะภายหลังด้วยการกด "เทียบกับ TRCloud" */
+        }
       }
     }
     await audit({
@@ -78,7 +147,7 @@ export async function POST(req: NextRequest) {
           ? "SKIP_AMAZON_IV_DUPLICATE"
           : "CREATE_AMAZON_IV",
       resourceType: "cashhub_amazon_iv",
-      resourceId: `${cfg.storeCode}:${day.date}`,
+      resourceId: `${storeCode}:${day.date}`,
       diff: {
         new: {
           branch: cfg.label,

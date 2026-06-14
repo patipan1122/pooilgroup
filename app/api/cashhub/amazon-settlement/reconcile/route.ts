@@ -27,7 +27,10 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "body ไม่ถูกต้อง" }, { status: 400 });
   }
-  const cfg = branchByStoreCode(body.storeCode ?? null, body.storeLabel ?? null);
+  // store_code จริงจากแถวที่เซฟ (ไม่ใช่ cfg.storeCode ที่อาจว่างสำหรับสาขาจับคู่ด้วยชื่อ)
+  const storeCode = (body.storeCode ?? "").trim();
+  if (!storeCode) return NextResponse.json({ error: "ไม่มีรหัสสาขา" }, { status: 400 });
+  const cfg = branchByStoreCode(storeCode, body.storeLabel ?? null);
   if (!cfg) return NextResponse.json({ error: "ไม่รู้จักสาขานี้" }, { status: 400 });
   const from = body.from ?? "";
   const to = body.to ?? "";
@@ -35,7 +38,7 @@ export async function POST(req: NextRequest) {
 
   const orgId = session.user.org_id;
   const admin = adminClient();
-  const days = await loadAmazonDays(admin, orgId, cfg.storeCode, from, to);
+  const days = await loadAmazonDays(admin, orgId, storeCode, from, to);
   const configs = await loadChannelConfig(admin, orgId);
 
   // ต้องตั้งบริษัทอย่างน้อย 1 ช่องก่อน (ไม่งั้นไม่มีอะไรเข้า reconcile)
@@ -45,7 +48,7 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
 
-  const res = await sendDaysToReconcile(orgId, cfg.storeCode, cfg.label, days, configs);
+  const res = await sendDaysToReconcile(orgId, storeCode, cfg.label, days, configs);
   if (res.error) return NextResponse.json({ error: res.error }, { status: 500 });
 
   await audit({
@@ -53,7 +56,7 @@ export async function POST(req: NextRequest) {
     userId: session.user.id,
     action: "SEND_AMAZON_RECONCILE",
     resourceType: "ledger_revenue_entry",
-    diff: { new: { storeCode: cfg.storeCode, from, to, inserted: res.inserted, skipped: res.skippedNoConfig } },
+    diff: { new: { storeCode, from, to, inserted: res.inserted, skipped: res.skippedNoConfig } },
   });
   return NextResponse.json({ ok: true, ...res });
 }

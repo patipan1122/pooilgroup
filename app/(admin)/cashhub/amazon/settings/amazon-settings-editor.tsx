@@ -92,7 +92,6 @@ export function AmazonSettingsEditor({ configs, accounts, companies }: Props) {
               <th className="p-3">ช่องทาง</th>
               <th className="p-3 text-center">เป็นเงินเข้าธนาคาร?</th>
               <th className="p-3 text-right">ค่าธรรมเนียม %</th>
-              <th className="p-3 text-right">ขั้นต่ำที่โอน (฿)</th>
               <th className="p-3">บัญชีที่เงินเข้า</th>
             </tr>
           </thead>
@@ -118,18 +117,6 @@ export function AmazonSettingsEditor({ configs, accounts, companies }: Props) {
                     onChange={(e) => patch(r.cvar, { feePercent: Number(e.target.value) })}
                     aria-label={`ค่าธรรมเนียม ${r.label}`}
                     className="w-20 h-9 rounded-lg border border-zinc-200 px-2 text-right text-sm disabled:bg-zinc-50 disabled:text-zinc-300"
-                  />
-                </td>
-                <td className="p-3 text-right">
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    value={r.minSettleBaht}
-                    disabled={!r.isSettle}
-                    onChange={(e) => patch(r.cvar, { minSettleBaht: Number(e.target.value) })}
-                    aria-label={`ขั้นต่ำที่โอน ${r.label}`}
-                    className="w-24 h-9 rounded-lg border border-zinc-200 px-2 text-right text-sm disabled:bg-zinc-50 disabled:text-zinc-300"
                   />
                 </td>
                 <td className="p-3">
@@ -170,8 +157,9 @@ export function AmazonSettingsEditor({ configs, accounts, companies }: Props) {
       </div>
 
       <p className="text-xs text-zinc-500">
-        เงินเข้าจริง = ยอดช่องทาง − ค่าธรรมเนียม · ถ้ายอด/วัน &lt; ขั้นต่ำ = ยังไม่โอน (รอสะสม) ·
-        ช่องที่ไม่ติ๊ก &ldquo;เงินเข้าธนาคาร&rdquo; (Redeem/ส่วนลด) จะไม่ส่งเข้า reconcile
+        เงินเข้าจริง = ยอดช่องทาง − ค่าธรรมเนียม · ทุกช่องที่ติ๊ก &ldquo;เงินเข้าธนาคาร&rdquo; จะถูกส่งเข้า
+        reconcile ทุกวัน (หน้ากระทบยอดจะจับคู่กับเงินที่แพลตฟอร์มโอนจริง แม้โอนรวมหลายวัน) ·
+        ช่องที่ไม่ติ๊ก (Redeem/ส่วนลด) จะไม่ส่งเข้า reconcile
       </p>
     </div>
   );
