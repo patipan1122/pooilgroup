@@ -38,9 +38,13 @@ function monthLabel(ym: string): string {
 export function HotelIvExcelView({
   branchId,
   month,
+  initialRows = [],
+  savedCount = 0,
 }: {
   branchId: string | null;
   month: string;
+  initialRows?: HotelShiftRow[]; // ข้อมูลที่บันทึกไว้ (อ่านจาก DB ตอนโหลด)
+  savedCount?: number;
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -196,8 +200,11 @@ export function HotelIvExcelView({
       mk("morning", d.morning);
       mk("evening", d.evening);
     }
+  } else {
+    rows.push(...initialRows); // โหมดแสดงข้อมูลที่บันทึกไว้ (ยังไม่ดึงสด)
   }
   const days = groupByDay(rows);
+  const showingSaved = !data && initialRows.length > 0;
 
   return (
     <div className="space-y-4">
@@ -225,7 +232,7 @@ export function HotelIvExcelView({
             disabled={busy}
             className="h-9 px-4 rounded-xl bg-[var(--ch-navy,#0b1850)] text-white text-sm font-semibold disabled:opacity-50"
           >
-            {busy ? "กำลังดึง…" : data ? "ดึงใหม่" : "ดึง IV เดือนนี้"}
+            {busy ? "กำลังดึง…" : data || showingSaved ? "ดึงใหม่" : "ดึง IV เดือนนี้"}
           </button>
         </div>
       </div>
@@ -317,7 +324,18 @@ export function HotelIvExcelView({
         </>
       )}
 
-      {!data && !busy && (
+      {/* โหมดแสดงข้อมูลที่บันทึกไว้ (ยังไม่ดึงสด) */}
+      {showingSaved && (
+        <>
+          <div className="rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-sm p-2.5">
+            📁 แสดงข้อมูลที่บันทึกไว้ ({savedCount} แถว) · กด “ดึงใหม่”
+            เพื่ออัปเดตจาก TRCloud
+          </div>
+          <HotelExcelGrid days={days} />
+        </>
+      )}
+
+      {!data && !busy && !showingSaved && (
         <div className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-zinc-500">
           กด “ดึง IV เดือนนี้” เพื่อแสดงตาราง Excel จากข้อมูล IV
         </div>
