@@ -7,6 +7,7 @@ import type {
   HotelMonthSummary,
   HotelShiftRow,
 } from "@/lib/cashhub/hotel";
+import { HotelExcelGrid } from "./hotel-excel-grid";
 
 const baht = (v: number) => formatBaht(v);
 
@@ -119,6 +120,7 @@ export function HotelMonthView({
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const [onlyFlagged, setOnlyFlagged] = useState(false);
+  const [view, setView] = useState<"grid" | "summary">("grid");
   const dataDays = useMemo(() => days.filter((d) => d.hasData), [days]);
   const flaggedCount = useMemo(
     () => dataDays.filter((d) => d.flagged).length,
@@ -253,56 +255,92 @@ export function HotelMonthView({
         </div>
       )}
 
-      {/* ── filter chips ── */}
-      {flaggedCount > 0 && (
-        <div className="flex gap-2 text-sm">
-          <Chip active={!onlyFlagged} onClick={() => setOnlyFlagged(false)}>
-            ทั้งเดือน ({dataDays.length})
-          </Chip>
-          <Chip active={onlyFlagged} onClick={() => setOnlyFlagged(true)} danger>
-            เฉพาะวันผิด 🔴 ({flaggedCount})
-          </Chip>
+      {/* ── tabs (ตารางเต็ม / สรุปรายวัน) + filter ── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-xl border border-zinc-200 p-0.5 bg-zinc-50">
+          <Tab active={view === "grid"} onClick={() => setView("grid")}>
+            📊 ตารางเต็ม (Excel)
+          </Tab>
+          <Tab active={view === "summary"} onClick={() => setView("summary")}>
+            📋 สรุปรายวัน
+          </Tab>
+        </div>
+        <div className="flex-1" />
+        {flaggedCount > 0 && (
+          <div className="flex gap-2 text-sm">
+            <Chip active={!onlyFlagged} onClick={() => setOnlyFlagged(false)}>
+              ทั้งเดือน ({dataDays.length})
+            </Chip>
+            <Chip active={onlyFlagged} onClick={() => setOnlyFlagged(true)} danger>
+              เฉพาะวันผิด 🔴 ({flaggedCount})
+            </Chip>
+          </div>
+        )}
+      </div>
+
+      {view === "grid" ? (
+        <HotelExcelGrid days={shownDays} />
+      ) : (
+        <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden">
+          <div className="overflow-x-auto max-h-[70vh]">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-zinc-50">
+                <tr className="text-[11px] uppercase tracking-wide text-zinc-500 border-b border-zinc-200">
+                  <th className="text-left font-semibold px-3 py-2.5 sticky left-0 bg-zinc-50">
+                    วันที่
+                  </th>
+                  <th className="text-right font-semibold px-2 py-2.5">ห้อง</th>
+                  <th className="text-right font-semibold px-2 py-2.5">ยอดขาย</th>
+                  <th className="text-right font-semibold px-2 py-2.5">เงินสดส่ง</th>
+                  <th className="text-right font-semibold px-2 py-2.5">QR บันทึก</th>
+                  <th className="text-right font-semibold px-2 py-2.5">เข้าบัญชี</th>
+                  <th className="text-right font-semibold px-2 py-2.5">ส่วนต่าง</th>
+                  <th className="text-right font-semibold px-2 py-2.5">OTA</th>
+                  <th className="text-right font-semibold px-2 py-2.5">เกิน/ขาด</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shownDays.map((d) => (
+                  <DayRows
+                    key={d.date}
+                    d={d}
+                    isOpen={open === d.date}
+                    onToggle={() => setOpen(open === d.date ? null : d.date)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
-
-      {/* ── Day table ── */}
-      <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden">
-        <div className="overflow-x-auto max-h-[70vh]">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-zinc-50">
-              <tr className="text-[11px] uppercase tracking-wide text-zinc-500 border-b border-zinc-200">
-                <th className="text-left font-semibold px-3 py-2.5 sticky left-0 bg-zinc-50">
-                  วันที่
-                </th>
-                <th className="text-right font-semibold px-2 py-2.5">ห้อง</th>
-                <th className="text-right font-semibold px-2 py-2.5">ยอดขาย</th>
-                <th className="text-right font-semibold px-2 py-2.5">เงินสดส่ง</th>
-                <th className="text-right font-semibold px-2 py-2.5">QR บันทึก</th>
-                <th className="text-right font-semibold px-2 py-2.5">เข้าบัญชี</th>
-                <th className="text-right font-semibold px-2 py-2.5">ส่วนต่าง</th>
-                <th className="text-right font-semibold px-2 py-2.5">OTA</th>
-                <th className="text-right font-semibold px-2 py-2.5">เกิน/ขาด</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shownDays.map((d) => (
-                <DayRows
-                  key={d.date}
-                  d={d}
-                  isOpen={open === d.date}
-                  onToggle={() => setOpen(open === d.date ? null : d.date)}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
       <p className="text-xs text-zinc-400">
         หน่วยเงินสด = รอบส่งเงิน (กะดึก 18:00–07:00 + กะเช้า 07:00–18:00 เก็บ ~10 โมง) ·
         ฝั่ง “เข้าบัญชี” คือสะพานไป reconcile กับ statement ธนาคาร · ส่วนต่างคำนวณจากยอดเข้าจริง
       </p>
     </div>
+  );
+}
+
+function Tab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`h-8 px-3 rounded-lg text-sm font-semibold transition ${
+        active ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -366,6 +404,7 @@ function Chip({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={`h-8 px-3 rounded-full font-semibold border transition ${
         active
