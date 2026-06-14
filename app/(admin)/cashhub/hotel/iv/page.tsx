@@ -63,6 +63,43 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
     savedRows = (sv ?? []) as HotelShiftRow[];
   }
 
+  // ประวัติการอัปโหลดไฟล์ TTB (จาก audit_logs · kind=ttb · สาขานี้)
+  let ttbHistory: Array<{
+    at: string;
+    fileName: string;
+    firstDate: string | null;
+    lastDate: string | null;
+    daysInFile: number;
+    updated: number;
+    totalBanked: number;
+  }> = [];
+  if (branchId) {
+    const { data: logs } = await admin
+      .from("audit_logs")
+      .select("created_at, diff")
+      .eq("org_id", orgId)
+      .eq("action", "IMPORT_HOTEL_SALES")
+      .order("created_at", { ascending: false })
+      .limit(40);
+    ttbHistory = ((logs ?? []) as Array<{ created_at: string; diff: unknown }>)
+      .map((l) => ({
+        at: l.created_at,
+        n: ((l.diff as { new?: Record<string, unknown> } | null)?.new ??
+          {}) as Record<string, unknown>,
+      }))
+      .filter(({ n }) => n.kind === "ttb" && n.branchId === branchId)
+      .slice(0, 8)
+      .map(({ at, n }) => ({
+        at,
+        fileName: String(n.fileName ?? "TTB file"),
+        firstDate: (n.firstDate as string) ?? null,
+        lastDate: (n.lastDate as string) ?? null,
+        daysInFile: Number(n.daysInFile ?? 0),
+        updated: Number(n.updated ?? 0),
+        totalBanked: Number(n.totalBanked ?? 0),
+      }));
+  }
+
   return (
     <div className="ch-scope p-3 sm:p-6 lg:p-8 max-w-4xl mx-auto pb-24">
       <BackButton label="ตรวจยอดขายโรงแรม" fallbackHref="/cashhub/hotel" />
@@ -122,7 +159,11 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
             savedCount={savedRows.length}
           />
           <div className="mt-5">
-            <HotelTtbUpload branchId={branchId} month={monthStr} />
+            <HotelTtbUpload
+              branchId={branchId}
+              month={monthStr}
+              history={ttbHistory}
+            />
           </div>
         </>
       ) : (

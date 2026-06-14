@@ -120,12 +120,29 @@ export async function POST(req: NextRequest) {
     if (!error) updated++;
   }
 
+  const dates = inMonth.map(([d]) => d).sort();
+  const firstDate = dates[0] ?? null;
+  const lastDate = dates[dates.length - 1] ?? null;
+  const fileName = file instanceof File ? file.name : "TTB file";
+
   await audit({
     orgId,
     userId: session.user.id,
     action: "IMPORT_HOTEL_SALES",
     resourceType: "cashhub_hotel_daily",
-    diff: { new: { branchId, ttb: "qr_banked", updated, totalBanked } },
+    diff: {
+      new: {
+        kind: "ttb",
+        branchId,
+        fileName,
+        month: `${year}-${mm}`,
+        firstDate,
+        lastDate,
+        daysInFile: inMonth.length,
+        updated,
+        totalBanked,
+      },
+    },
   });
 
   return NextResponse.json({
@@ -136,6 +153,8 @@ export async function POST(req: NextRequest) {
     totalRecorded, // QR บันทึก (ตามกะ) รวมทั้งเดือน
     monthDiff: totalBanked - totalRecorded, // reconcile ระดับเดือน
     daysInFile: inMonth.length,
+    firstDate,
+    lastDate,
     updated,
     unmatched,
   });

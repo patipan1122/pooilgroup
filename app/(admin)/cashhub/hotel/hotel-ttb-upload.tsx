@@ -12,18 +12,34 @@ type Result = {
   totalRecorded: number;
   monthDiff: number;
   daysInFile: number;
+  firstDate: string | null;
+  lastDate: string | null;
   updated: number;
   unmatched: number;
 };
+
+export type TtbHistoryItem = {
+  at: string;
+  fileName: string;
+  firstDate: string | null;
+  lastDate: string | null;
+  daysInFile: number;
+  updated: number;
+  totalBanked: number;
+};
+
+const dayOf = (iso: string | null) => (iso ? Number(iso.slice(8, 10)) : null);
 
 export function HotelTtbUpload({
   branchId,
   month,
   source = "trcloud_iv",
+  history = [],
 }: {
   branchId: string | null;
   month: string;
   source?: string;
+  history?: TtbHistoryItem[];
 }) {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
@@ -115,6 +131,18 @@ export function HotelTtbUpload({
             {res.unmatched > 0 && ` · ${res.unmatched} วันไม่มีแถวให้เติม`}
             {res.skipped > 0 && ` · ข้ามไม่สำเร็จ ${res.skipped}`}
           </div>
+          {res.firstDate && (
+            <div className="text-xs">
+              📅 ไฟล์นี้มี QR วันที่ <b>{dayOf(res.firstDate)}–{dayOf(res.lastDate)}</b>
+              {(dayOf(res.firstDate) ?? 1) > 1 && (
+                <span className="text-amber-700 font-semibold">
+                  {" "}
+                  ⚠️ ไม่ครบเดือน! ขาดวันที่ 1–{(dayOf(res.firstDate) ?? 1) - 1} —
+                  ดาวน์โหลด TTB ทั้งเดือนแล้วอัปใหม่ (หรืออัปไฟล์ต้นเดือนเพิ่ม)
+                </span>
+              )}
+            </div>
+          )}
           <button
             type="button"
             onClick={() => router.refresh()}
@@ -133,6 +161,36 @@ export function HotelTtbUpload({
       >
         {busy ? "กำลังอ่านไฟล์…" : "อัปโหลด + คิด QR เงินเข้าจริง"}
       </button>
+
+      {history.length > 0 && (
+        <div className="pt-2 border-t border-zinc-100">
+          <div className="text-xs font-semibold text-zinc-600 mb-1.5">
+            ประวัติการอัปโหลด ({history.length})
+          </div>
+          <div className="space-y-1">
+            {history.map((h, i) => (
+              <div
+                key={i}
+                className="flex flex-wrap items-center justify-between gap-2 text-xs bg-zinc-50 rounded-lg px-2.5 py-1.5"
+              >
+                <span className="text-zinc-700 truncate max-w-[55%]" title={h.fileName}>
+                  📄 {h.fileName}
+                </span>
+                <span className="text-zinc-500 tabular-nums">
+                  วันที่ {dayOf(h.firstDate) ?? "?"}–{dayOf(h.lastDate) ?? "?"} ·{" "}
+                  {h.updated} วัน · {formatBaht(h.totalBanked)} ·{" "}
+                  {new Date(h.at).toLocaleString("th-TH", {
+                    day: "numeric",
+                    month: "short",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
