@@ -53,9 +53,16 @@ type Props = {
   canSend: boolean;
   busy: string | null;
   onCreate: (day: SavedAmazonDay) => void;
+  onForce: (day: SavedAmazonDay) => void;
 };
 
-export function AmazonExcelGrid({ savedDays, canSend, busy, onCreate }: Props) {
+export function AmazonExcelGrid({
+  savedDays,
+  canSend,
+  busy,
+  onCreate,
+  onForce,
+}: Props) {
   const data = savedDays;
   const totals = COLS.map((c) =>
     c.diff ? null : data.reduce((s, d) => s + (c.get(d) ?? 0), 0),
@@ -142,24 +149,38 @@ export function AmazonExcelGrid({ savedDays, canSend, busy, onCreate }: Props) {
                       {d.iv_doc_no ?? "—"}
                     </td>
                     <td className="px-2 py-1 text-center whitespace-nowrap">
-                      {!d.balanced ? (
-                        <span className="text-amber-600" title={d.block_reason ?? ""}>
-                          ⚠️ ไม่ครบ
-                        </span>
-                      ) : d.match_state === "match" || d.iv_status === "posted" ? (
-                        <span className="text-emerald-600">มีแล้ว</span>
-                      ) : canSend ? (
-                        <button
-                          type="button"
-                          disabled={busy !== null}
-                          onClick={() => onCreate(d)}
-                          className="rounded-lg bg-[var(--ch-brand,#1e3aff)] px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40"
-                        >
-                          {busy === `push-${d.sales_date}` ? "…" : "ส่ง TRCloud"}
-                        </button>
-                      ) : (
-                        <span className="text-zinc-400">🔒</span>
-                      )}
+                      <div className="flex items-center justify-center gap-1">
+                        {!d.balanced ? (
+                          <span className="text-amber-600" title={d.block_reason ?? ""}>
+                            ⚠️ ไม่ครบ
+                          </span>
+                        ) : d.match_state === "match" || d.iv_status === "posted" ? (
+                          <span className="text-emerald-600">มีแล้ว</span>
+                        ) : canSend ? (
+                          <button
+                            type="button"
+                            disabled={busy !== null}
+                            onClick={() => onCreate(d)}
+                            className="rounded-lg bg-[var(--ch-brand,#1e3aff)] px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40"
+                          >
+                            {busy === `push-${d.sales_date}` ? "…" : "ส่ง TRCloud"}
+                          </button>
+                        ) : (
+                          <span className="text-zinc-400">🔒</span>
+                        )}
+                        {/* ⚠️ ส่งซ้ำ (ทดสอบ) — super_admin + พิมพ์ยืนยัน · ได้ใบซ้ำจริง */}
+                        {canSend && d.balanced && (
+                          <button
+                            type="button"
+                            disabled={busy !== null}
+                            onClick={() => onForce(d)}
+                            title="ส่งซ้ำ (ทดสอบ) — จะได้ใบกำกับซ้ำจริง · ต้องพิมพ์ยืนยัน"
+                            className="rounded-lg border border-amber-300 bg-amber-50 px-1.5 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-40"
+                          >
+                            {busy === `force-${d.sales_date}` ? "…" : "🔁"}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
       { status: 403 },
     );
 
-  let body: { storeCode?: string; day?: AmazonDayRow };
+  let body: { storeCode?: string; day?: AmazonDayRow; force?: boolean; confirm?: string };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -35,23 +35,37 @@ export async function POST(req: NextRequest) {
   if (!day || !day.date)
     return NextResponse.json({ error: "ไม่มีข้อมูลวัน" }, { status: 400 });
 
-  const result = await createAmazonIv(cfg, day);
+  // ⚠️ force = ส่งซ้ำ (ข้าม dedup → ได้ใบกำกับซ้ำจริง) — ต้องพิมพ์ยืนยันตรงเป๊ะ (กันพลาด)
+  const force = body.force === true;
+  if (force && body.confirm !== "ยืนยัน")
+    return NextResponse.json(
+      { error: "การส่งซ้ำต้องพิมพ์คำว่า “ยืนยัน” ให้ถูกต้องก่อน" },
+      { status: 400 },
+    );
+
+  const result = await createAmazonIv(cfg, day, { force });
 
   if (result.ok) {
-    // อัปเดต DB: IV สร้างแล้ว (grand = gross เพราะสร้างจากยอด POS)
-    await markIvPosted(
-      adminClient(),
-      session.user.org_id,
-      cfg.storeCode,
-      day.date,
-      result.ivNo,
-      result.ivId,
-      day.gross,
-    );
+    // force = ใบทดสอบซ้ำ → ไม่อัปเดต DB (ไม่ให้ทับสถานะใบจริงเดิม) · ปกติ → markIvPosted
+    if (!force) {
+      await markIvPosted(
+        adminClient(),
+        session.user.org_id,
+        cfg.storeCode,
+        day.date,
+        result.ivNo,
+        result.ivId,
+        day.gross,
+      );
+    }
     await audit({
       orgId: session.user.org_id,
       userId: session.user.id,
-      action: result.duplicate ? "SKIP_AMAZON_IV_DUPLICATE" : "CREATE_AMAZON_IV",
+      action: force
+        ? "FORCE_CREATE_AMAZON_IV"
+        : result.duplicate
+          ? "SKIP_AMAZON_IV_DUPLICATE"
+          : "CREATE_AMAZON_IV",
       resourceType: "cashhub_amazon_iv",
       resourceId: `${cfg.storeCode}:${day.date}`,
       diff: {
@@ -61,6 +75,7 @@ export async function POST(req: NextRequest) {
           gross: day.gross,
           ivNo: result.ivNo,
           duplicate: result.duplicate ?? false,
+          force,
         },
       },
     });

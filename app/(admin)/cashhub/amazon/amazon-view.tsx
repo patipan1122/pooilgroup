@@ -146,6 +146,58 @@ export function AmazonView({
     [storeCode, router],
   );
 
+  // ⚠️ ส่งซ้ำ (ทดสอบ) — ข้าม dedup → ได้ใบกำกับซ้ำจริง · super_admin + พิมพ์ยืนยัน
+  const forceSend = useCallback(
+    async (day: SavedAmazonDay) => {
+      const typed = window.prompt(
+        `⚠️ ส่งซ้ำเข้า TRCloud — วันที่ ${day.sales_date} (ยอด ${formatBaht(day.gross)})\n\n` +
+          `จะได้ใบกำกับภาษี "ซ้ำ" ในระบบจริง! (สำหรับทดสอบเท่านั้น — รายได้/VAT จะถูกนับเพิ่ม)\n\n` +
+          `พิมพ์คำว่า  ยืนยัน  เพื่อยืนยันการส่งซ้ำ:`,
+      );
+      if (typed === null) return;
+      if (typed.trim() !== "ยืนยัน") {
+        setMsg({ kind: "err", text: 'ยกเลิก — ต้องพิมพ์คำว่า "ยืนยัน" ให้ถูกต้อง' });
+        return;
+      }
+      setBusy(`force-${day.sales_date}`);
+      setMsg(null);
+      try {
+        const res = await fetch("/api/cashhub/amazon-import/push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            storeCode,
+            force: true,
+            confirm: "ยืนยัน",
+            day: {
+              date: day.sales_date,
+              gross: day.gross,
+              total: day.total ?? 0,
+              vat: day.vat ?? 0,
+              cvars: day.channels ?? {},
+              sumChannels: day.gross,
+              balanced: day.balanced,
+              blockReason: day.block_reason,
+              unmapped: [],
+            },
+          }),
+        });
+        const data = (await res.json()) as { ok: boolean; ivNo?: string; error?: string };
+        if (data.ok)
+          setMsg({
+            kind: "ok",
+            text: `ส่งซ้ำสำเร็จ — สร้างใบทดสอบ IV ${data.ivNo} (วันที่ ${day.sales_date}) · อย่าลืมลบใบทดสอบใน TRCloud`,
+          });
+        else setMsg({ kind: "err", text: `${day.sales_date}: ${data.error ?? "ล้มเหลว"}` });
+      } catch {
+        setMsg({ kind: "err", text: "เชื่อมต่อไม่สำเร็จ" });
+      } finally {
+        setBusy(null);
+      }
+    },
+    [storeCode],
+  );
+
   const createAllReady = useCallback(async () => {
     const ready = savedDays.filter(
       (d) => d.balanced && d.iv_status !== "posted" && d.match_state !== "match",
@@ -389,6 +441,7 @@ export function AmazonView({
             canSend={canSend}
             busy={busy}
             onCreate={createIv}
+            onForce={forceSend}
           />
         </>
       )}

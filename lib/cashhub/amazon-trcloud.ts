@@ -163,10 +163,12 @@ function isSuccess(d: Record<string, unknown>): boolean {
 /**
  * สร้าง IV 1 วัน. มี dedup-guard: search ก่อนว่ามี IV ของสาขานี้ในวันนั้นแล้วหรือยัง.
  * @param dayRow แถวรายวันจาก parseAmazonPos (ต้อง balanced)
+ * @param opts.force ⚠️ ข้าม dedup → สร้างใบใหม่แม้มีอยู่แล้ว (ได้ใบซ้ำจริง — สำหรับทดสอบ super_admin เท่านั้น)
  */
 export async function createAmazonIv(
   cfg: AmazonBranchCfg,
   dayRow: AmazonDayRow,
+  opts?: { force?: boolean },
 ): Promise<CreateIvResult> {
   if (!amazonTrcloudConfigured()) return { ok: false, error: "TRCloud ยังไม่ได้ตั้งค่า" };
   if (!dayRow.balanced)
@@ -181,26 +183,28 @@ export async function createAmazonIv(
     };
 
   try {
-    // ── dedup: มี IV ของสาขานี้วันนี้แล้วหรือยัง ──
-    const dup = await trcloudPost("iv/search.php", {
-      project: cfg.project,
-      "date-from": dayRow.date,
-      "date-to": dayRow.date,
-      limit: 50,
-    });
-    const dupList = (
-      Array.isArray(dup.data) ? dup.data : Array.isArray(dup.result) ? dup.result : []
-    ) as Array<Record<string, unknown>>;
-    const existing = dupList.find(
-      (iv) => String(iv.issue_date ?? "").slice(0, 10) === dayRow.date,
-    );
-    if (existing)
-      return {
-        ok: true,
-        ivId: String(existing.invoice_id ?? existing.id ?? ""),
-        ivNo: String(existing.invoice_number ?? ""),
-        duplicate: true,
-      };
+    // ── dedup: มี IV ของสาขานี้วันนี้แล้วหรือยัง (ข้ามถ้า force) ──
+    if (!opts?.force) {
+      const dup = await trcloudPost("iv/search.php", {
+        project: cfg.project,
+        "date-from": dayRow.date,
+        "date-to": dayRow.date,
+        limit: 50,
+      });
+      const dupList = (
+        Array.isArray(dup.data) ? dup.data : Array.isArray(dup.result) ? dup.result : []
+      ) as Array<Record<string, unknown>>;
+      const existing = dupList.find(
+        (iv) => String(iv.issue_date ?? "").slice(0, 10) === dayRow.date,
+      );
+      if (existing)
+        return {
+          ok: true,
+          ivId: String(existing.invoice_id ?? existing.id ?? ""),
+          ivNo: String(existing.invoice_number ?? ""),
+          duplicate: true,
+        };
+    }
 
     // ── build payload (recipe ที่พิสูจน์แล้ว) ──
     const cvarFields: Record<string, string> = {};
