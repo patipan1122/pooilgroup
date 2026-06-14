@@ -59,23 +59,38 @@ export function HotelIvExcelView({
   const remainIds = allIds.filter((id) => !splits[id]);
 
   async function enrich() {
-    if (remainIds.length === 0) return;
+    if (remainIds.length === 0 || !data) return;
     setEnriching(true);
     setEnrichNote(null);
+    // วนเรียกทีละชุด (server cap 15/ครั้ง) จนครบทั้งเดือน — อัตโนมัติ
+    const acc: Record<string, Split> = { ...splits };
+    const all: string[] = [];
+    for (const d of data.days) {
+      if (d.morning?.ivId) all.push(d.morning.ivId);
+      if (d.evening?.ivId) all.push(d.evening.ivId);
+    }
     try {
-      const res = await fetch("/api/cashhub/hotel/iv-lines", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: remainIds }), // server cap 12/ครั้ง
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setEnrichNote(json.error ?? "ดึงรายละเอียดไม่สำเร็จ");
-        return;
+      for (let guard = 0; guard < 20; guard++) {
+        const missing = all.filter((id) => !acc[id]);
+        if (missing.length === 0) break;
+        const res = await fetch("/api/cashhub/hotel/iv-lines", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: missing }),
+        });
+        const json = await res.json();
+        if (!res.ok) {
+          setEnrichNote(json.error ?? "ดึงรายละเอียดไม่สำเร็จ");
+          break;
+        }
+        Object.assign(acc, json.splits);
+        setSplits({ ...acc }); // เติมทีละชุดให้เห็นความคืบหน้า
+        if (json.rateLimited) {
+          setEnrichNote("TRCloud ติด rate-limit ชั่วคราว — กด “ดึงเพิ่ม” อีกครั้งใน 1 นาที");
+          break;
+        }
+        if (Object.keys(json.splits).length === 0) break; // กันวนไม่จบ
       }
-      setSplits((s) => ({ ...s, ...json.splits }));
-      if (json.rateLimited)
-        setEnrichNote("TRCloud ติด rate-limit — รอ 1–2 นาทีแล้วกด “ดึงเพิ่ม”");
     } catch {
       setEnrichNote("เชื่อมต่อไม่ได้");
     } finally {

@@ -6,8 +6,8 @@ import { fetchIvLineSplit, type IvLineSplit } from "@/lib/cashhub/hotel-trcloud"
 
 export const runtime = "nodejs";
 
-const CAP = 12;
-const DELAY_MS = 450;
+const CAP = 15; // ต่อคำขอ (กัน serverless timeout) — client วนเรียกจนครบ
+const DELAY_MS = 250;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function POST(req: NextRequest) {
