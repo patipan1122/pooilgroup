@@ -968,6 +968,11 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         section: "โครงการ",
       },
       {
+        href: "/rentspace/matrix",
+        label: "ตารางค่าเช่า (Excel)",
+        icon: ClipboardList,
+      },
+      {
         href: "/rentspace/units",
         label: "ห้อง / ยูนิต",
         icon: Building2,

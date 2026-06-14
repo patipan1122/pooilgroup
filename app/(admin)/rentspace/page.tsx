@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
 import {
   getPrimaryProject,
   listUnitsWithState,
@@ -8,7 +7,7 @@ import {
 } from "@/lib/rentspace/data";
 import { formatBaht, tenantDisplayName, toNum, periodLabel } from "@/lib/rentspace/format";
 import { RsPage, RsHeader, RsKpi, RsEmpty, RsCard } from "@/components/rentspace/ui";
-import { ProjectMap } from "@/components/rentspace/project-map";
+import { SiteMap3D } from "@/components/rentspace/site-map-3d";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +15,6 @@ export default async function RentSpaceOverview() {
   const session = await requireSession();
   const orgId = session.user.org_id;
   const project = await getPrimaryProject(orgId);
-  const canEdit = isSuperAdmin(session.user.role);
 
   if (!project) {
     return (
@@ -91,6 +89,7 @@ export default async function RentSpaceOverview() {
 
       <div className="flex flex-wrap gap-2">
         {[
+          { href: "/rentspace/matrix", label: "📊 ตารางค่าเช่า (Excel)" },
           { href: "/rentspace/contracts", label: "ทำสัญญา / สัญญา" },
           { href: "/rentspace/bills", label: "ออกบิล / ใบแจ้งหนี้" },
           { href: "/rentspace/payments", label: "รับชำระ / อนุมัติส่วนลด" },
@@ -117,12 +116,7 @@ export default async function RentSpaceOverview() {
             </div>
           </div>
         </div>
-        <ProjectMap
-          units={mapUnits}
-          planImageUrl={project.planImageUrl}
-          view3dEnabled={project.view3dEnabled}
-          canEdit={canEdit}
-        />
+        <SiteMap3D units={mapUnits} view3dEnabled={project.view3dEnabled} />
       </RsCard>
 
       <RsCard>
