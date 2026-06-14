@@ -9,10 +9,11 @@ type Result = {
   successCount: number;
   skipped: number;
   totalBanked: number;
+  totalRecorded: number;
+  monthDiff: number;
   daysInFile: number;
   updated: number;
   unmatched: number;
-  diffAbs: number;
 };
 
 export function HotelTtbUpload({
@@ -106,12 +107,13 @@ export function HotelTtbUpload({
         <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-900 space-y-1">
           <div className="font-bold">
             ✅ QR เงินเข้าจริงรวม {formatBaht(res.totalBanked)} ({res.successCount}{" "}
-            รายการสำเร็จ)
+            รายการสำเร็จ · ตัดยอด 23:00)
           </div>
           <div className="text-xs">
-            เติมเข้าตาราง {res.updated} วัน · ส่วนต่างรวม {formatBaht(res.diffAbs)}
+            เติม “เข้าบัญชี” {res.updated} วัน · QR บันทึก (ตามกะ){" "}
+            {formatBaht(res.totalRecorded)} · ต่างทั้งเดือน {formatBaht(res.monthDiff)}
             {res.unmatched > 0 && ` · ${res.unmatched} วันไม่มีแถวให้เติม`}
-            {res.skipped > 0 && ` · ข้ามรายการไม่สำเร็จ ${res.skipped}`}
+            {res.skipped > 0 && ` · ข้ามไม่สำเร็จ ${res.skipped}`}
           </div>
           <button
             type="button"

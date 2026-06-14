@@ -96,10 +96,13 @@ export async function POST(req: NextRequest) {
     byDateRows.set(r.sales_date, e);
   }
 
+  // recorded รวมทั้งเดือน (ตามกะ) — ใช้ reconcile ระดับเดือน (รายวันคนละฐานเวลา ไม่เทียบ)
+  let totalRecorded = 0;
+  for (const e of byDateRows.values()) totalRecorded += e.recorded;
+
   let updated = 0,
     unmatched = 0,
-    totalBanked = 0,
-    diffAbs = 0;
+    totalBanked = 0;
   const now = new Date().toISOString();
   for (const [date, banked] of inMonth) {
     totalBanked += banked;
@@ -108,11 +111,11 @@ export async function POST(req: NextRequest) {
       unmatched++;
       continue;
     }
-    const diff = banked - e.recorded;
-    diffAbs += Math.abs(diff);
+    // เติม "เข้าบัญชีจริง" (qr_banked) ต่อวัน — ตัด 23:00 ตรง statement.
+    // qr_diff = null: ไม่โชว์ส่วนต่างรายวัน (บันทึกตามกะ vs เข้าจริงตัด 23:00 คนละฐาน)
     const { error } = await admin
       .from("cashhub_hotel_daily")
-      .update({ qr_banked: banked, qr_diff: diff, updated_at: now })
+      .update({ qr_banked: banked, qr_diff: null, updated_at: now })
       .eq("id", e.morningId);
     if (!error) updated++;
   }
@@ -130,9 +133,10 @@ export async function POST(req: NextRequest) {
     successCount: ttb.successCount,
     skipped: ttb.skipped,
     totalBanked,
+    totalRecorded, // QR บันทึก (ตามกะ) รวมทั้งเดือน
+    monthDiff: totalBanked - totalRecorded, // reconcile ระดับเดือน
     daysInFile: inMonth.length,
     updated,
     unmatched,
-    diffAbs,
   });
 }
