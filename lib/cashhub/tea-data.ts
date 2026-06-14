@@ -147,6 +147,55 @@ export async function upsertTeaIvs(
   return { saved: payload.length };
 }
 
+/**
+ * เติมยอด POS Foodstory ลง DB (1 แถว/สาขา/วัน) แล้ว recompute match_state เทียบกับ IV ที่ดึงไว้.
+ * idempotent บน (org, branch, date). ⚠️ ไม่แตะคอลัมน์ iv_* — upsert ส่งเฉพาะคอลัมน์ POS
+ *   → PostgREST อัปเดตเฉพาะคอลัมน์ที่ส่ง (iv_* ของแถวเดิมคงอยู่). วันที่ยังไม่มี IV → match = no_iv.
+ */
+export async function upsertTeaPos(
+  admin: Admin,
+  orgId: string,
+  cfg: { code: string; label: string },
+  rows: { date: string; gross: number }[],
+  fileName: string,
+): Promise<{ saved: number; matched: number; mismatch: number; noIv: number; error?: string }> {
+  const clean = rows.filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date));
+  if (clean.length === 0) return { saved: 0, matched: 0, mismatch: 0, noIv: 0 };
+
+  // อ่าน iv_gross เดิมของช่วงที่ครอบ เพื่อ recompute match_state โดยไม่ทับ IV
+  const dates = clean.map((r) => r.date).sort();
+  const existing = await loadTeaDays(admin, orgId, dates[0], dates[dates.length - 1], cfg.code);
+  const ivByDate = new Map(existing.map((d) => [d.sales_date, d.iv_gross]));
+  const now = new Date().toISOString();
+
+  let matched = 0;
+  let mismatch = 0;
+  let noIv = 0;
+  const payload = clean.map((r) => {
+    const iv = ivByDate.get(r.date) ?? null;
+    const state = computeTeaMatch(iv, r.gross);
+    if (state === "match") matched++;
+    else if (state === "mismatch") mismatch++;
+    else if (state === "no_iv") noIv++;
+    return {
+      org_id: orgId,
+      branch_code: cfg.code,
+      branch_label: cfg.label,
+      sales_date: r.date,
+      pos_gross: r.gross,
+      pos_source: fileName.slice(0, 200),
+      match_state: state,
+      updated_at: now,
+    };
+  });
+
+  const { error } = await admin
+    .from("cashhub_tea_daily")
+    .upsert(payload, { onConflict: "org_id,branch_code,sales_date", ignoreDuplicates: false });
+  if (error) return { saved: 0, matched: 0, mismatch: 0, noIv: 0, error: error.message };
+  return { saved: payload.length, matched, mismatch, noIv };
+}
+
 /** สรุปยอดต่อสาขาในช่วง (ไว้โชว์ KPI/หัวตาราง) */
 export type TeaBranchSummary = {
   branch_code: string;

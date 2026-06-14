@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { formatBaht } from "@/lib/utils/format";
 import type { SavedTeaDay } from "@/lib/cashhub/tea-data";
+import { parseTeaPos, type TeaPosRow } from "@/lib/cashhub/tea-parse";
 
 type BranchMeta = { code: string; label: string; brand: string };
 
@@ -52,6 +53,16 @@ export function TeaView({
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  // ── นำเข้า POS Foodstory ──
+  const [pending, setPending] = useState<{
+    fileName: string;
+    storeLabel: string | null;
+    detected: string | null;
+    rows: TeaPosRow[];
+  } | null>(null);
+  const [importBranch, setImportBranch] = useState("");
+  const [importing, setImporting] = useState(false);
 
   // index: code|date -> day
   const dayMap = useMemo(() => {
@@ -158,6 +169,92 @@ export function TeaView({
     }
   }, [view, branches, branch, days, dayMap, month]);
 
+  // ── เลือกไฟล์ Foodstory → parse ฝั่ง client → เด้ง panel ยืนยัน ──
+  const onPickFile = useCallback(async (file: File) => {
+    setMsg(null);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const matrix = XLSX.utils.sheet_to_json(ws, {
+        header: 1,
+        raw: false,
+        defval: "",
+      }) as unknown[][];
+      const res = parseTeaPos(matrix);
+      if (res.error) {
+        setMsg({ kind: "err", text: res.error });
+        return;
+      }
+      setPending({
+        fileName: file.name,
+        storeLabel: res.storeLabel,
+        detected: res.detectedBranchCode,
+        rows: res.rows,
+      });
+      setImportBranch(res.detectedBranchCode ?? "");
+    } catch {
+      setMsg({ kind: "err", text: "อ่านไฟล์ไม่สำเร็จ — รองรับ .xlsx / .csv" });
+    }
+  }, []);
+
+  // diff เทียบ POS เดิมในระบบ (ก่อนเขียนทับ) — pool-csv-import-must-diff-before-write
+  const importDiff = useMemo(() => {
+    if (!pending || !importBranch) return null;
+    let neu = 0;
+    let changed = 0;
+    let same = 0;
+    for (const r of pending.rows) {
+      const prev = dayMap.get(`${importBranch}|${r.date}`)?.pos_gross ?? null;
+      if (prev == null) neu++;
+      else if (Math.abs(prev - r.gross) >= 0.01) changed++;
+      else same++;
+    }
+    const total = pending.rows.reduce((s, r) => s + r.gross, 0);
+    return { neu, changed, same, total, days: pending.rows.length };
+  }, [pending, importBranch, dayMap]);
+
+  const confirmImport = useCallback(async () => {
+    if (!pending || !importBranch) return;
+    setImporting(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/cashhub/tea/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branchCode: importBranch,
+          fileName: pending.fileName,
+          rows: pending.rows.map((r) => ({ date: r.date, gross: r.gross })),
+        }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        saved?: number;
+        matched?: number;
+        mismatch?: number;
+        noIv?: number;
+        error?: string;
+      };
+      if (!res.ok || data.error) {
+        setMsg({ kind: "err", text: data.error ?? "นำเข้าไม่สำเร็จ" });
+      } else {
+        const bl = branches.find((b) => b.code === importBranch)?.label ?? importBranch;
+        setMsg({
+          kind: "ok",
+          text: `นำเข้า POS ${bl} ${data.saved} วัน · ✅ ตรง ${data.matched} · ⚠️ ไม่ตรง ${data.mismatch} · ⚪ ไม่มี IV ${data.noIv}`,
+        });
+        setPending(null);
+        setImportBranch("");
+        router.refresh();
+      }
+    } catch {
+      setMsg({ kind: "err", text: "นำเข้าไม่สำเร็จ" });
+    } finally {
+      setImporting(false);
+    }
+  }, [pending, importBranch, branches, router]);
+
   return (
     <div className="space-y-5">
       {/* controls */}
@@ -191,6 +288,21 @@ export function TeaView({
               {busy ? progress ?? "กำลังดึง…" : "⟳ ดึงยอดจาก TRCloud"}
             </button>
           )}
+          {canPull && (
+            <label className="h-10 inline-flex items-center rounded-xl border border-zinc-200 px-4 text-sm font-medium hover:bg-zinc-50 cursor-pointer">
+              ⬆ อัปไฟล์ Foodstory
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void onPickFile(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          )}
           <button
             type="button"
             disabled={!hasAnyData}
@@ -200,6 +312,75 @@ export function TeaView({
             ⬇ Excel
           </button>
         </div>
+
+        {/* panel ยืนยันนำเข้า POS Foodstory */}
+        {pending && (
+          <div className="rounded-2xl border border-[var(--ch-brand,#1e3aff)]/40 bg-[var(--ch-brand,#1e3aff)]/[0.03] p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-semibold text-zinc-800">นำเข้ายอด POS Foodstory มาเทียบ</div>
+              <button
+                type="button"
+                onClick={() => {
+                  setPending(null);
+                  setImportBranch("");
+                }}
+                className="text-sm text-zinc-400 hover:text-zinc-700"
+              >
+                ✕ ยกเลิก
+              </button>
+            </div>
+            <div className="text-sm text-zinc-500">
+              ไฟล์: <span className="font-medium text-zinc-700">{pending.fileName}</span>
+              {pending.storeLabel && (
+                <>
+                  {" · "}ในไฟล์ระบุสาขา:{" "}
+                  <span className="font-medium text-zinc-700">{pending.storeLabel}</span>
+                </>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-zinc-600">นำเข้าเป็นสาขา:</span>
+              <select
+                value={importBranch}
+                onChange={(e) => setImportBranch(e.target.value)}
+                aria-label="เลือกสาขาที่จะนำเข้า"
+                className="h-9 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium"
+              >
+                <option value="">— เลือกสาขา —</option>
+                {branches.map((b) => (
+                  <option key={b.code} value={b.code}>
+                    {b.label}
+                  </option>
+                ))}
+              </select>
+              {pending.detected && importBranch === pending.detected && (
+                <span className="text-xs text-emerald-600">✓ ระบบเดาสาขาให้จากชื่อในไฟล์</span>
+              )}
+              {!pending.detected && (
+                <span className="text-xs text-amber-600">
+                  เดาสาขาอัตโนมัติไม่ได้ — กรุณาเลือกเอง
+                </span>
+              )}
+            </div>
+            {importDiff && (
+              <div className="rounded-xl bg-white border border-zinc-200 px-3 py-2 text-sm text-zinc-600">
+                พบ <b className="text-zinc-800">{importDiff.days}</b> วัน · ยอดรวม{" "}
+                <b className="text-zinc-800">{formatBaht(importDiff.total)}</b>
+                {" · "}ใหม่ <b className="text-emerald-700">{importDiff.neu}</b> · เปลี่ยน{" "}
+                <b className="text-amber-700">{importDiff.changed}</b> · เหมือนเดิม{" "}
+                {importDiff.same}
+              </div>
+            )}
+            <button
+              type="button"
+              disabled={!importBranch || importing}
+              onClick={confirmImport}
+              className="h-10 rounded-xl bg-[var(--ch-brand,#1e3aff)] px-5 text-sm font-bold text-white disabled:opacity-40"
+            >
+              {importing ? "กำลังนำเข้า…" : "ยืนยันนำเข้า"}
+            </button>
+          </div>
+        )}
 
         {/* view toggle */}
         <div className="flex items-center gap-2">
@@ -244,8 +425,9 @@ export function TeaView({
           </div>
         )}
         <p className="text-xs text-zinc-500">
-          IV ดึงจาก TRCloud (มีคนคีย์ไว้แล้ว 1 ใบ/วัน/สาขา) · เก็บถาวรในระบบ · กด &ldquo;ดึงยอดจาก
-          TRCloud&rdquo; เพื่ออัปเดตเดือนนี้ · ยอด POS (Foodstory) จะมาเทียบในเฟสถัดไป
+          IV ดึงจาก TRCloud (มีคนคีย์ไว้แล้ว 1 ใบ/วัน/สาขา) · กด &ldquo;ดึงยอดจาก TRCloud&rdquo;
+          เพื่ออัปเดต · แล้วกด &ldquo;⬆ อัปไฟล์ Foodstory&rdquo; (รายงานปิดสิ้นวัน 1 สาขา/ไฟล์)
+          เพื่อเทียบว่ายอดที่คีย์ตรงกับ POS จริงไหม
         </p>
       </div>
 

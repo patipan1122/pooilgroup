@@ -49,8 +49,8 @@ export default async function TeaSalesPage({ searchParams }: { searchParams: SP 
           <TwoToneTitle first="ยอดขาย" accent="ร้านชาไข่มุก" size={30} />
         </div>
         <p className="text-sm text-zinc-500 mt-1">
-          ดึงใบกำกับ (IV) รายวันจาก TRCloud ทั้ง {branches.length} สาขา · เก็บถาวร · (เร็ว ๆ นี้)
-          อัปไฟล์ Foodstory มาเทียบว่ายอดที่คีย์ตรงกับ POS จริงไหม
+          ดึงใบกำกับ (IV) รายวันจาก TRCloud ทั้ง {branches.length} สาขา · เก็บถาวร · อัปไฟล์ Foodstory
+          (รายงานปิดสิ้นวัน) มาเทียบว่ายอดที่คีย์ตรงกับ POS จริงไหม
         </p>
       </header>
 
