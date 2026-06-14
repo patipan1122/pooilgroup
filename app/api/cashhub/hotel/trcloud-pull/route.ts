@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     new Date(year, month, 0).getDate(),
   ).padStart(2, "0")}`;
 
-  const { ivs, error } = await fetchHotelIvs(start, end);
+  const { ivs, error, availableMonths } = await fetchHotelIvs(start, end);
   if (error) return NextResponse.json({ error }, { status: 502 });
   const completeness = matchIvsToDays(ivs, year, month);
 
@@ -84,6 +84,7 @@ export async function POST(req: NextRequest) {
   void session;
   return NextResponse.json({
     ok: true,
+    availableMonths: availableMonths ?? [],
     summary: {
       ivCount: completeness.ivCount,
       expectedShifts: completeness.expectedShifts,

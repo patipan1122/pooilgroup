@@ -4,12 +4,13 @@
 // ตารางเดียวกับหน้า Sheet แต่ยอดขายมาจาก IV → ไว้เทียบว่าตรงกันไหม
 import { useState } from "react";
 import { formatBaht } from "@/lib/utils/format";
-import { groupByDay, type HotelShiftRow } from "@/lib/cashhub/hotel";
+import { groupByDay, TH_MONTHS, type HotelShiftRow } from "@/lib/cashhub/hotel";
 import { HotelExcelGrid } from "./hotel-excel-grid";
 
 type ShiftIv = { ivNo: string; total: number; status: string };
 type Day = { day: number; morning: ShiftIv | null; evening: ShiftIv | null };
 type Resp = {
+  availableMonths: string[];
   summary: {
     ivCount: number;
     expectedShifts: number;
@@ -18,6 +19,11 @@ type Resp = {
   };
   days: Day[];
 };
+
+function monthLabel(ym: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  return `${TH_MONTHS[(m || 1) - 1]} ${(y || 0) + 543}`;
+}
 
 export function HotelIvExcelView({
   branchId,
@@ -125,8 +131,32 @@ export function HotelIvExcelView({
           {days.some((d) => d.hasData) ? (
             <HotelExcelGrid days={days} />
           ) : (
-            <div className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-zinc-500">
-              เดือนนี้ยังไม่มี IV ใน TRCloud
+            <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/40 p-8 text-center">
+              <div className="text-3xl mb-2">📭</div>
+              <div className="font-semibold text-zinc-700">
+                ไม่มี IV โรงแรมในเดือนนี้ใน TRCloud
+              </div>
+              <div className="text-sm text-zinc-500 mt-1">
+                หน้างานยังไม่ได้คีย์ IV เข้า TRCloud สำหรับเดือนนี้
+              </div>
+              {data.availableMonths.length > 0 && (
+                <div className="mt-4">
+                  <div className="text-xs text-zinc-500 mb-1.5">
+                    TRCloud มี IV โรงแรมในเดือน — กดเพื่อไปดู:
+                  </div>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    {data.availableMonths.map((ym) => (
+                      <a
+                        key={ym}
+                        href={`/cashhub/hotel/iv?branchId=${branchId ?? ""}&month=${ym}`}
+                        className="h-8 px-3 inline-flex items-center rounded-full bg-[var(--ch-navy,#0b1850)] text-white text-sm font-semibold"
+                      >
+                        {monthLabel(ym)} →
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </>

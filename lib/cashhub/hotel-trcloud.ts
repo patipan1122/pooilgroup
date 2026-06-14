@@ -94,9 +94,19 @@ function amount(v: string | number | undefined): number {
 export async function fetchHotelIvs(
   periodStart: string,
   periodEnd: string,
-): Promise<{ ivs: HotelIv[]; error?: string; totalReturned: number }> {
+): Promise<{
+  ivs: HotelIv[];
+  error?: string;
+  totalReturned: number;
+  availableMonths: string[]; // YYYY-MM ของ IV โรงแรมที่ TRCloud คืนมา (ไว้บอก "ไปดูเดือนไหน")
+}> {
   if (!hotelTrcloudConfigured())
-    return { ivs: [], error: "TRCloud ยังไม่ได้ตั้งค่า (TRCLOUD_JPS_*)", totalReturned: 0 };
+    return {
+      ivs: [],
+      error: "TRCloud ยังไม่ได้ตั้งค่า (TRCLOUD_JPS_*)",
+      totalReturned: 0,
+      availableMonths: [],
+    };
   try {
     const data = await trcloudPost("iv/search.php", {
       date_from: periodStart,
@@ -119,17 +129,17 @@ export async function fetchHotelIvs(
         (typeof data.message === "string" && data.message) ||
         (typeof data.error === "string" && data.error) ||
         (data.success === false ? "TRCloud ปฏิเสธคำขอ" : "");
-      if (hint)
-        return { ivs: [], error: `TRCloud: ${hint}`, totalReturned: 0 };
-      // คืน array ว่างจริง — มักเป็น rate-limit (เรียกถี่เกิน) หรือไม่มีเอกสารช่วงนี้
       return {
         ivs: [],
-        error:
-          "TRCloud คืนข้อมูลว่าง — อาจติด rate-limit (เรียกถี่เกินไป) ลองใหม่ใน 1–2 นาที",
+        error: hint
+          ? `TRCloud: ${hint}`
+          : "TRCloud คืนข้อมูลว่าง — อาจติด rate-limit (เรียกถี่เกินไป) ลองใหม่ใน 1–2 นาที",
         totalReturned: 0,
+        availableMonths: [],
       };
     }
-    const ivs: HotelIv[] = list
+    // IV โรงแรมทั้งหมด (ยังไม่กรองช่วงวัน) → ใช้บอก "TRCloud มี IV เดือนไหน"
+    const allHotel: HotelIv[] = list
       .filter(isHotel)
       .map((iv) => ({
         ivNo: String(iv.invoice_number ?? ""),
@@ -138,16 +148,20 @@ export async function fetchHotelIvs(
         total: amount(iv.grand_total ?? iv.total),
         status: String(iv.status ?? ""),
         customer: String(iv.name ?? ""),
-      }))
-      .filter((iv) => iv.date >= periodStart && iv.date <= periodEnd);
-    return { ivs, totalReturned: list.length };
+      }));
+    const availableMonths = [
+      ...new Set(allHotel.map((iv) => iv.date.slice(0, 7)).filter(Boolean)),
+    ].sort();
+    const ivs = allHotel.filter(
+      (iv) => iv.date >= periodStart && iv.date <= periodEnd,
+    );
+    return { ivs, totalReturned: list.length, availableMonths };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "TRCloud error";
-    // 429 = rate-limit
     const friendly = /429/.test(msg)
       ? "TRCloud ติด rate-limit (เรียกถี่เกินไป) — ลองใหม่ใน 1–2 นาที"
       : msg;
-    return { ivs: [], error: friendly, totalReturned: 0 };
+    return { ivs: [], error: friendly, totalReturned: 0, availableMonths: [] };
   }
 }
 
