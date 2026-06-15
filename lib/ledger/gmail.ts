@@ -39,8 +39,10 @@ export function buildLedgerGmailConsentUrl(redirectUri: string, state: string): 
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_OAUTH_CLIENT_ID!,
     redirect_uri: redirectUri,
-    response_type: "code",
-    scope: GMAIL_SCOPE,
+    // openid+email so the callback can read the connected address from the standard
+    // userinfo endpoint (the per-company unique key). gmail.readonly alone made us
+    // depend on the Gmail profile endpoint, which sometimes returns no address → no_email.
+    scope: `openid email ${GMAIL_SCOPE}`,
     access_type: "offline",
     prompt: "consent",
     include_granted_scopes: "true",

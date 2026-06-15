@@ -23,6 +23,40 @@ function back(origin: string, companyId: string | null, params: Record<string, s
   return NextResponse.redirect(u);
 }
 
+/** Resolve the connected Google account's email. userinfo first (standard, needs
+ *  the 'email' scope), Gmail profile as fallback. Returns null only if BOTH fail. */
+async function resolveConnectedEmail(accessToken: string): Promise<string | null> {
+  // 1) OpenID userinfo — the canonical way to read the signed-in account's email.
+  try {
+    const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (r.ok) {
+      const j = (await r.json()) as { email?: string };
+      if (j.email) return j.email;
+    } else {
+      console.warn("[ledger:email] userinfo failed", r.status, await r.text().catch(() => ""));
+    }
+  } catch (e) {
+    console.warn("[ledger:email] userinfo threw", e);
+  }
+  // 2) Gmail profile — fallback (needs gmail.readonly).
+  try {
+    const r = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/profile", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (r.ok) {
+      const j = (await r.json()) as { emailAddress?: string };
+      if (j.emailAddress) return j.emailAddress;
+    } else {
+      console.warn("[ledger:email] gmail profile failed", r.status, await r.text().catch(() => ""));
+    }
+  } catch (e) {
+    console.warn("[ledger:email] gmail profile threw", e);
+  }
+  return null;
+}
+
 export async function GET(request: NextRequest) {
   const origin = request.nextUrl.origin;
   const code = request.nextUrl.searchParams.get("code");
@@ -75,20 +109,11 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // The connected Gmail address is both display + the per-company unique key.
-  let gmailEmail: string | null = null;
-  try {
-    const profileRes = await fetch(
-      "https://gmail.googleapis.com/gmail/v1/users/me/profile",
-      { headers: { Authorization: `Bearer ${tokens.accessToken}` } },
-    );
-    if (profileRes.ok) {
-      const profile = (await profileRes.json()) as { emailAddress?: string };
-      gmailEmail = profile.emailAddress ?? null;
-    }
-  } catch {
-    // best-effort
-  }
+  // The connected Gmail address is both display + the per-company unique key →
+  // it MUST resolve. Try the standard OpenID userinfo endpoint first (reliable,
+  // needs the 'email' scope we now request), then fall back to the Gmail profile
+  // endpoint. Log every failure so a recurring no_email is debuggable.
+  const gmailEmail = await resolveConnectedEmail(tokens.accessToken);
   if (!gmailEmail) return back(origin, companyId, { error: "no_email" });
 
   try {
