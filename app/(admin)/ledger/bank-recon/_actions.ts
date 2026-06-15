@@ -1112,6 +1112,15 @@ export async function confirmAllGroupsAction(bankAccountId: string): Promise<{ o
   return res.ok ? { ok: true, confirmed: groups.length } : { ok: false, confirmed: 0, error: res.error };
 }
 
+// ยืนยันเฉพาะกลุ่มที่เลือก (เช่น "ยืนยันคู่มั่นใจสูง") — reuse guard เดิม (ล็อก + transaction + idempotent
+// เพราะกรอง status='suggested' ภายใน). self-scope orgId ใน internal → กัน IDOR ข้ามองค์กร.
+export async function confirmGroupsAction(groupIds: string[]): Promise<{ ok: boolean; confirmed: number; error?: string }> {
+  const ids = [...new Set(groupIds)].filter(Boolean);
+  if (!ids.length) return { ok: true, confirmed: 0 };
+  const res = await confirmGroupsInternal(ids);
+  return res.ok ? { ok: true, confirmed: ids.length } : { ok: false, confirmed: 0, error: res.error };
+}
+
 async function confirmGroupsInternal(groupIds: string[]): Promise<{ ok: boolean; error?: string }> {
   const session = await requireRole("super_admin", "org_admin", "admin");
   const orgId = session.user.org_id;

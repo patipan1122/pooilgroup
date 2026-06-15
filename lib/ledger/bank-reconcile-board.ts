@@ -156,7 +156,9 @@ export async function listMatchGroups(params: {
   }[]>`
     SELECT mi.group_id::text as "groupId", mi.kind, mi.bank_txn_id::text as "bankTxnId",
            mi.book_type as "bookType", mi.book_id::text as "bookId", mi.book_doc_no as "bookDocNo",
-           CASE WHEN mi.kind='bank' THEN COALESCE(NULLIF(t.description,''), NULLIF(t.channel,''), 'รายการธนาคาร')
+           -- ฝั่งธนาคาร: เอา "ชื่อคู่ค้า" (ref2) มาก่อน (เช่น "รับโอนจาก KTB X0752 SHOPEEPAY")
+           -- เพื่อให้ "ดูชื่อ" ตอนยืนยันได้ + ใช้เทียบชื่อผู้ให้บริการ 2 ฝั่ง (ชื่อสำคัญ)
+           CASE WHEN mi.kind='bank' THEN COALESCE(NULLIF(t.ref2,''), NULLIF(t.description,''), NULLIF(t.channel,''), 'รายการธนาคาร')
                 ELSE COALESCE(NULLIF(mi.book_doc_no,''), 'รายการบัญชี') END as "label",
            CASE WHEN mi.kind='bank' THEN t.txn_date::text ELSE NULL END as "date",
            mi.amount_satang as "amountSatang"

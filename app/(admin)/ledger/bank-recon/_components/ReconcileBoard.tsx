@@ -16,7 +16,7 @@ import {
   HelpCircle, Upload, SlidersHorizontal, ChevronDown,
 } from "lucide-react";
 import {
-  createMatchGroupAction, autoMatchAccountAction, confirmAllGroupsAction,
+  createMatchGroupAction, autoMatchAccountAction, confirmAllGroupsAction, confirmGroupsAction,
   removeGroupAction, addBankMovementAction, addRevenueEntryAction,
   excludeTxnAction, syncRevenueRangeAction,
 } from "../_actions";
@@ -93,6 +93,61 @@ function groupType(g: MatchGroup): { label: string; cls: string } | null {
   return null;
 }
 
+// ── ความมั่นใจของคู่ที่จับ (แท็บ "รอยืนยัน") ────────────────────────────────────
+// ซื่อสัตย์ ไม่หลอกตา: ดูจาก 2 อย่างที่ "คู่นั้นรู้จริง"
+//   (1) ยอดต่าง — เกณฑ์เดียวกับเครื่องจับคู่   (2) ชื่อผู้ให้บริการ 2 ฝั่ง (ชื่อสำคัญ)
+//   🟢 มั่นใจสูง   = ยอดตรงเป๊ะ + ชื่อไม่ขัด        → ยืนยันได้สบายใจ
+//   🟡 ควรตรวจสอบ = ต่างเล็กน้อย ≤฿500 หรือ ชื่อผู้ให้บริการอาจคนละเจ้า (กันจับผิดเจ้า)
+//   🔴 มั่นใจน้อย   = ยอดต่างกันมาก >฿500          → อาจจับผิดคู่
+type Band = "high" | "review" | "low";
+const REVIEW_DELTA_SATANG = 50000; // ฿500 — เกินนี้ = ต่างเยอะ (ตรงกับ MEDIUM_DELTA ของเครื่องจับคู่)
+const BAND_META: Record<Band, { label: string; dot: string; pill: string; chip: string }> = {
+  high:   { label: "มั่นใจสูง",    dot: "bg-emerald-500", pill: "bg-emerald-100 text-emerald-700", chip: "border-emerald-300 bg-emerald-50 text-emerald-700" },
+  review: { label: "ควรตรวจสอบ", dot: "bg-amber-500",   pill: "bg-amber-100 text-amber-700",     chip: "border-amber-300 bg-amber-50 text-amber-700" },
+  low:    { label: "มั่นใจน้อย",   dot: "bg-rose-500",    pill: "bg-rose-100 text-rose-700",       chip: "border-rose-300 bg-rose-50 text-rose-700" },
+};
+
+// provider key ฝั่งบัญชี (จาก c-var ใน docNo — เชื่อถือได้ที่สุด)
+const CVAR_PROVIDER: Record<string, string> = {
+  c20: "grab", c21: "lineman", c22: "shopee",
+  c1: "cash", c2: "qr", c13: "qr", qr: "qr", c14: "wallet", c12: "card", c15: "card",
+};
+function bookProviderKey(g: MatchGroup): string | null {
+  const doc = g.items.find((i) => i.kind === "book")?.bookDocNo ?? "";
+  const m = doc.match(/-(c\d+|qr)$/i);
+  return m ? (CVAR_PROVIDER[m[1].toLowerCase()] ?? null) : null;
+}
+// provider key ฝั่งธนาคาร (จากข้อความชื่อคู่ค้า)
+function bankProviderKey(g: MatchGroup): string | null {
+  const t = (g.items.find((i) => i.kind === "bank")?.label ?? "").toLowerCase();
+  if (t.includes("แกร็บ") || t.includes("grab")) return "grab";
+  if (t.includes("ไลน์แมน") || t.includes("lineman")) return "lineman";
+  if (t.includes("ช้อปปี้") || t.includes("shopee")) return "shopee";
+  if (t.includes("thai qr") || t.includes("พร้อมเพย์") || t.includes("promptpay")) return "qr";
+  if (t.includes("amz_sd") || t.includes("ผ่อนชำระ")) return "card";
+  if (t.includes("ฝากเงินสด")) return "cash";
+  return null;
+}
+// ชื่อตรงกันไหม: true=ตรง · false=คนละเจ้า · null=ตรวจไม่ได้ (ฝั่งใดฝั่งหนึ่งไม่ระบุชื่อ)
+function nameAgrees(g: MatchGroup): boolean | null {
+  const a = bookProviderKey(g), b = bankProviderKey(g);
+  if (!a || !b) return null;
+  return a === b;
+}
+function confidenceBand(g: MatchGroup): Band {
+  if (Math.abs(g.deltaSatang) > REVIEW_DELTA_SATANG) return "low";
+  if (g.deltaSatang === 0 && nameAgrees(g) !== false) return "high";
+  return "review";
+}
+// เหตุผลใต้การ์ด (เฉพาะ review/low) — บอกชัดว่าทำไม + เน้น "ชื่อสำคัญ"
+function bandReason(g: MatchGroup): string | null {
+  if (confidenceBand(g) === "high") return null;
+  if (nameAgrees(g) === false) return "ชื่อผู้ให้บริการ 2 ฝั่งอาจคนละเจ้า — ตรวจดูก่อนยืนยัน";
+  if (g.deltaSatang === 0) return null;
+  if (Math.abs(g.deltaSatang) > REVIEW_DELTA_SATANG) return `ยอดต่างกันมาก ฿${baht(g.deltaSatang)} — อาจจับผิดคู่`;
+  return `ต่างกัน ฿${baht(g.deltaSatang)} — อาจเป็นค่าธรรมเนียม/GP`;
+}
+
 const SOURCE_LABEL: Record<string, string> = {
   TRCLOUD_IV: "TRCloud", CHAIROPS: "ChairOps", CLAWFLEET: "ClawFleet",
   FUELOS: "FuelOS", WEBHOOK: "Webhook", MANUAL: "บันทึกเอง",
@@ -135,7 +190,8 @@ export function ReconcileBoard({
   const [modal, setModal] = useState<null | "bank" | "revenue" | { kind: "transfer" | "edit"; m: BankMovement }>(null);
   const [excludeIds, setExcludeIds] = useState<string[] | null>(null);   // exclude reason modal
   const [deleteId, setDeleteId] = useState<string | null>(null);         // delete confirm modal
-  const [confirmBulk, setConfirmBulk] = useState(false);                 // P0: confirm before posting to GL
+  const [confirmScope, setConfirmScope] = useState<null | "all" | "high">(null); // P0: confirm before posting to GL
+  const [bandFilter, setBandFilter] = useState<"all" | Band>("all");     // กรองตามระดับความมั่นใจ (รอยืนยัน)
   const [qBook, setQBook] = useState("");
   const [qBank, setQBank] = useState("");
   const [todayBook, setTodayBook] = useState(false);
@@ -224,15 +280,34 @@ export function ReconcileBoard({
   const delta = selBankTotal - selBookTotal;
   const hasSelection = selBank.size > 0 && selBook.size > 0;
 
-  // สรุปก่อนกระทบยอดทั้งหมด (P0 confirm) — โชว์ทั้ง 2 ฝั่ง + ยอดต่างรวม ให้ผู้อนุมัติชั่งน้ำหนักก่อนลงบัญชี
-  const bulkStats = useMemo(() => {
-    const n = suggestedGroups.length;
-    const matched = suggestedGroups.filter((g) => g.deltaSatang === 0).length;
-    const bookTotal = suggestedGroups.reduce((s, g) => s + Math.abs(g.bookTotalSatang), 0);
-    const bankTotal = suggestedGroups.reduce((s, g) => s + Math.abs(g.bankTotalSatang), 0);
-    const residual = suggestedGroups.reduce((s, g) => s + Math.abs(g.deltaSatang), 0);
-    return { n, matched, diff: n - matched, bookTotal, bankTotal, residual };
+  // คู่ที่ "มั่นใจสูง" (ยอดตรง + ชื่อตรง) — ใช้ทำปุ่ม "ยืนยันคู่มั่นใจสูง" + แถบความคืบหน้า
+  const highGroups = useMemo(() => suggestedGroups.filter((g) => confidenceBand(g) === "high"), [suggestedGroups]);
+  // นับจำนวนต่อหมวด (ทั้งหมด / สูง / ควรตรวจ / น้อย) สำหรับแถบกรองด้านบน
+  const bandCounts = useMemo(() => {
+    const c = { all: suggestedGroups.length, high: 0, review: 0, low: 0 };
+    for (const g of suggestedGroups) c[confidenceBand(g)]++;
+    return c;
   }, [suggestedGroups]);
+  // การ์ดที่โชว์ตามหมวดที่เลือก (กรองในจอ — ไม่แตะ DB)
+  const visibleGroups = useMemo(
+    () => (bandFilter === "all" ? suggestedGroups : suggestedGroups.filter((g) => confidenceBand(g) === bandFilter)),
+    [suggestedGroups, bandFilter],
+  );
+
+  // สรุปก่อนกระทบยอด (P0 confirm) — โชว์ทั้ง 2 ฝั่ง + ยอดต่างรวม ให้ผู้อนุมัติชั่งน้ำหนักก่อนลงบัญชี.
+  // คิดตาม "ขอบเขต" ที่จะยืนยัน: ทั้งหมด หรือ เฉพาะคู่มั่นใจสูง
+  const statsFor = (groups: MatchGroup[]) => {
+    const n = groups.length;
+    const matched = groups.filter((g) => g.deltaSatang === 0).length;
+    const bookTotal = groups.reduce((s, g) => s + Math.abs(g.bookTotalSatang), 0);
+    const bankTotal = groups.reduce((s, g) => s + Math.abs(g.bankTotalSatang), 0);
+    const residual = groups.reduce((s, g) => s + Math.abs(g.deltaSatang), 0);
+    return { n, matched, diff: n - matched, bookTotal, bankTotal, residual };
+  };
+  const bulkStats = useMemo(
+    () => statsFor(confirmScope === "high" ? highGroups : suggestedGroups),
+    [confirmScope, highGroups, suggestedGroups],
+  );
 
   function toggleBank(id: string) {
     setSelBank((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -263,15 +338,19 @@ export function ReconcileBoard({
 
   // P0: กระทบยอดทั้งหมด — ลงสมุดบัญชีจริง ย้อนไม่ได้ → ต้องยืนยัน + สรุปก่อนเสมอ.
   // idempotent: action re-query เฉพาะ status="suggested" → กดซ้ำเร็ว ๆ ไม่ลงซ้ำ (และปุ่ม disabled ตอน pending).
-  const doConfirmAll = () => {
+  const doConfirm = () => {
     setErr(null); setSuccess(null);
+    const scope = confirmScope;
     startTransition(async () => {
-      const r = await confirmAllGroupsAction(bankAccountId);
+      const r = scope === "high"
+        ? await confirmGroupsAction(highGroups.map((g) => g.id))
+        : await confirmAllGroupsAction(bankAccountId);
       if (r.ok) {
-        setConfirmBulk(false);
+        setConfirmScope(null);
+        setBandFilter("all");
         setSuccess(`กระทบยอด ${r.confirmed} กลุ่มเรียบร้อย — ลงบันทึกบัญชีแล้ว`);
         router.refresh();
-      } else { setConfirmBulk(false); setErr(r.error ?? "กระทบยอดไม่สำเร็จ"); }
+      } else { setConfirmScope(null); setErr(r.error ?? "กระทบยอดไม่สำเร็จ"); }
     });
   };
   const handleRemove = (gid: string) => run(() => removeGroupAction(gid));
@@ -518,44 +597,92 @@ export function ReconcileBoard({
       ) : (
         /* ── รอยืนยัน ── */
         <div>
-          {suggestedGroups.length > 0 && (
-            <div className="mb-3 flex justify-end">
-              <button type="button" onClick={() => setConfirmBulk(true)} disabled={pending}
-                className={`press inline-flex min-h-11 items-center gap-1 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 sm:min-h-0 ${FOCUS}`}>
-                <Check size={14} /> กระทบยอดทั้งหมด ({suggestedGroups.length})
-              </button>
-            </div>
-          )}
           {suggestedGroups.length === 0 ? (
             <Empty text="ไม่มีรายการรอยืนยัน — จับคู่จากแท็บ ‘รอกระทบยอด’ ก่อน" big />
           ) : (
-            <div className="space-y-3">
-              {suggestedGroups.map((g) => (
-                <div key={g.id} className="rounded-2xl border border-zinc-100 bg-white p-4">
-                  {/* แถบหัว: ประเภท (เห็นปุ๊บรู้เลย) + ส่วนต่าง + นำออก */}
-                  <div className="mb-2.5 flex flex-wrap items-center gap-2">
-                    {(() => {
-                      const t = groupType(g);
-                      return t ? (
-                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${t.cls}`}>{t.label}</span>
-                      ) : null;
-                    })()}
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium tabular-num ${g.deltaSatang === 0 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                      {g.deltaSatang === 0 ? "ยอดตรงกัน" : `ต่างกัน ฿${baht(g.deltaSatang)}`}
-                    </span>
-                    {g.matchKind === "auto" && <span className="text-[11px] text-violet-500">จับคู่อัตโนมัติ</span>}
-                    <button type="button" onClick={() => handleRemove(g.id)} disabled={pending}
-                      className={`ml-auto inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2.5 py-1 text-xs text-zinc-500 hover:bg-zinc-50 disabled:opacity-50 ${FOCUS}`}>
-                      <Trash2 size={12} /> นำออก
+            <>
+              {/* แถบควบคุมด้านบน: ความคืบหน้า + ปุ่มยืนยัน + หมวดหมู่กรอง (ที่ CEO อยากได้) */}
+              <div className="mb-3 rounded-2xl border border-zinc-100 bg-white p-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-zinc-600">พร้อมยืนยันสบายใจ (มั่นใจสูง)</span>
+                      <span className="tabular-num text-zinc-500">{bandCounts.high}/{bandCounts.all} คู่</span>
+                    </div>
+                    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-zinc-100">
+                      <div className="h-full rounded-full bg-emerald-500 transition-all"
+                        style={{ width: `${bandCounts.all ? Math.round((bandCounts.high / bandCounts.all) * 100) : 0}%` }} />
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    {bandCounts.high > 0 && (
+                      <button type="button" onClick={() => setConfirmScope("high")} disabled={pending}
+                        className={`press inline-flex min-h-11 items-center gap-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 sm:min-h-0 ${FOCUS}`}>
+                        <Check size={14} /> ยืนยันคู่มั่นใจสูง ({bandCounts.high})
+                      </button>
+                    )}
+                    <button type="button" onClick={() => setConfirmScope("all")} disabled={pending}
+                      className={`press inline-flex min-h-11 items-center gap-1 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 sm:min-h-0 ${FOCUS} ${bandCounts.high > 0 ? "border border-zinc-200 text-zinc-600 hover:bg-zinc-50" : "bg-brand-500 text-white hover:bg-brand-600"}`}>
+                      กระทบยอดทั้งหมด ({bandCounts.all})
                     </button>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <GroupSide title="บัญชี (ที่เราบันทึก)" items={g.items.filter((i) => i.kind === "book")} accent="brand" />
-                    <GroupSide title="ธนาคาร (เงินเข้าจริง)" items={g.items.filter((i) => i.kind === "bank")} accent="emerald" />
-                  </div>
                 </div>
-              ))}
-            </div>
+                {/* หมวดหมู่: กดกรองดูทีละระดับความมั่นใจ */}
+                <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-zinc-50 pt-3">
+                  <BandChip active={bandFilter === "all"} onClick={() => setBandFilter("all")} label="ทั้งหมด" count={bandCounts.all} />
+                  <BandChip active={bandFilter === "high"} onClick={() => setBandFilter("high")} label="มั่นใจสูง" band="high" count={bandCounts.high} onlyWhenCount />
+                  <BandChip active={bandFilter === "review"} onClick={() => setBandFilter("review")} label="ควรตรวจสอบ" band="review" count={bandCounts.review} onlyWhenCount />
+                  <BandChip active={bandFilter === "low"} onClick={() => setBandFilter("low")} label="มั่นใจน้อย" band="low" count={bandCounts.low} onlyWhenCount />
+                  {bankMovements.length > 0 && (
+                    <BandChip onClick={() => setTab("match")} label="หาคู่ไม่ได้" count={bankMovements.length} muted />
+                  )}
+                </div>
+              </div>
+
+              {/* การ์ดคู่ที่จับ (กรองตามหมวดที่เลือก) */}
+              {visibleGroups.length === 0 ? (
+                <Empty text="ไม่มีคู่ในหมวดนี้ — เลือกหมวดอื่นด้านบน" />
+              ) : (
+                <div className="space-y-3">
+                  {visibleGroups.map((g) => {
+                    const band = confidenceBand(g);
+                    const meta = BAND_META[band];
+                    const reason = bandReason(g);
+                    const t = groupType(g);
+                    return (
+                      <div key={g.id} className="rounded-2xl border border-zinc-100 bg-white p-4">
+                        {/* แถบหัว: ความมั่นใจ (เด่นสุด) + ประเภท + ส่วนต่าง + นำออก */}
+                        <div className="mb-2.5 flex flex-wrap items-center gap-2">
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${meta.pill}`}>
+                            <span className={`size-2 rounded-full ${meta.dot}`} aria-hidden /> {meta.label}
+                          </span>
+                          {t && <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${t.cls}`}>{t.label}</span>}
+                          {g.deltaSatang !== 0 && (
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium tabular-num text-amber-700">
+                              ต่างกัน ฿{baht(g.deltaSatang)}
+                            </span>
+                          )}
+                          <span className="text-[11px] text-zinc-400">{g.matchKind === "auto" ? "จับคู่อัตโนมัติ" : "จับคู่เอง"}</span>
+                          <button type="button" onClick={() => handleRemove(g.id)} disabled={pending}
+                            className={`ml-auto inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2.5 py-1 text-xs text-zinc-500 hover:bg-zinc-50 disabled:opacity-50 ${FOCUS}`}>
+                            <Trash2 size={12} /> นำออก
+                          </button>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <GroupSide title="บัญชี (ที่เราบันทึก)" items={g.items.filter((i) => i.kind === "book")} accent="brand" />
+                          <GroupSide title="ธนาคาร (เงินเข้าจริง)" items={g.items.filter((i) => i.kind === "bank")} accent="emerald" />
+                        </div>
+                        {reason && (
+                          <p className={`mt-2.5 flex items-center gap-1.5 text-[11px] ${band === "low" ? "text-rose-600" : "text-amber-600"}`}>
+                            <AlertTriangle size={12} className="shrink-0" /> {reason}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -579,8 +706,13 @@ export function ReconcileBoard({
       )}
 
       {/* P0 — ยืนยันก่อนลงบัญชี (ย้อนไม่ได้) */}
-      {confirmBulk && (
-        <Modal title="ยืนยันกระทบยอด" onClose={() => !pending && setConfirmBulk(false)}>
+      {confirmScope && (
+        <Modal title={confirmScope === "high" ? "ยืนยันคู่มั่นใจสูง" : "ยืนยันกระทบยอด"} onClose={() => !pending && setConfirmScope(null)}>
+          {confirmScope === "high" && (
+            <p className="rounded-lg bg-emerald-50 px-3 py-2 text-[11px] text-emerald-700">
+              ยืนยันเฉพาะคู่ที่<b>ยอดตรงและชื่อตรง</b> — คู่ที่ควรตรวจสอบ/มั่นใจน้อยจะยังค้างไว้ให้ดูเอง
+            </p>
+          )}
           <div className="space-y-2 rounded-xl bg-zinc-50 p-3 text-sm">
             <Stat label="กลุ่มที่จะกระทบยอด" value={`${bulkStats.n} กลุ่ม`} />
             <Stat label="ยอดตรงกัน" value={`${bulkStats.matched} กลุ่ม`} good />
@@ -595,10 +727,10 @@ export function ReconcileBoard({
             การกระทบยอดจะ<b>ลงบันทึกในสมุดบัญชีและย้อนกลับไม่ได้</b> — ตรวจส่วนต่างก่อนยืนยัน
           </p>
           <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={() => setConfirmBulk(false)} disabled={pending}
+            <button type="button" onClick={() => setConfirmScope(null)} disabled={pending}
               className={`rounded-lg border border-zinc-200 px-4 py-2 text-sm text-zinc-600 disabled:opacity-50 ${FOCUS}`}>ยกเลิก</button>
-            <button type="button" onClick={doConfirmAll} disabled={pending}
-              className={`press inline-flex min-h-11 items-center gap-1 rounded-lg bg-brand-500 px-5 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 sm:min-h-0 ${FOCUS}`}>
+            <button type="button" onClick={doConfirm} disabled={pending || bulkStats.n === 0}
+              className={`press inline-flex min-h-11 items-center gap-1 rounded-lg px-5 py-2 text-sm font-medium text-white disabled:opacity-50 sm:min-h-0 ${FOCUS} ${confirmScope === "high" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-brand-500 hover:bg-brand-600"}`}>
               {pending ? "กำลังกระทบยอด…" : <><Check size={14} /> ยืนยันกระทบยอด</>}
             </button>
           </div>
@@ -873,6 +1005,26 @@ function GroupSide({ title, items, accent }: { title: string; items: GroupItem[]
 
 function Empty({ text, big }: { text: string; big?: boolean }) {
   return <p className={`text-center text-sm text-zinc-400 ${big ? "py-16" : "py-8"}`}>{text}</p>;
+}
+
+// ชิปหมวดหมู่ความมั่นใจ (รอยืนยัน) — กดกรอง · band=สี/จุดตามระดับ · ไม่มี band = ชิปกลาง (เช่น "หาคู่ไม่ได้" ที่ข้ามไปแท็บอื่น)
+function BandChip({ active, onClick, label, count, band, onlyWhenCount }: {
+  active?: boolean; onClick: () => void; label: string; count: number;
+  band?: Band; onlyWhenCount?: boolean;
+}) {
+  if (onlyWhenCount && count === 0) return null;
+  const meta = band ? BAND_META[band] : null;
+  const cls = active
+    ? (meta ? meta.chip : "border-zinc-800 bg-zinc-900 text-white")
+    : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50";
+  return (
+    <button type="button" onClick={onClick} aria-pressed={active ? "true" : "false"}
+      className={`press inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium sm:min-h-0 ${FOCUS} ${cls}`}>
+      <span className={`size-2 rounded-full ${meta ? meta.dot : "bg-zinc-300"}`} aria-hidden />
+      {label}
+      <span className="tabular-num opacity-70">{count}</span>
+    </button>
+  );
 }
 
 function Stat({ label, value, good, warn }: { label: string; value: string; good?: boolean; warn?: boolean }) {
