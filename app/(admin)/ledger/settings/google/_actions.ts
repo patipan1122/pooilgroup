@@ -16,7 +16,7 @@ import { OAUTH_STATE_COOKIE, callbackRedirectUri } from "@/lib/ledger/gmail-oaut
 import { isDriveOAuthConfigured, buildConsentUrl } from "@/lib/chairops/storage/drive";
 import { DRIVE_OAUTH_STATE_COOKIE, driveCallbackRedirectUri } from "@/lib/ledger/drive-oauth";
 import { scanMailbox } from "@/lib/ledger/email-scan";
-import { autoImportScbStatements } from "@/lib/ledger/scb-statement-ingest";
+import { autoImportScbStatements, diagnoseScbSearch } from "@/lib/ledger/scb-statement-ingest";
 
 export async function startLedgerGmailConnect(
   companyId: string,
@@ -134,8 +134,14 @@ export async function scanScbStatementsNow(): Promise<
   const skipped = results.reduce((s, r) => s + r.skippedMessages, 0);
   const remaining = results.reduce((s, r) => s + r.remaining, 0);
   const errs = results.map((r) => r.error).filter((e): e is string => Boolean(e));
+  // When nothing was found, run diagnostic probes so the cause is visible to the CEO.
+  let note = errs.join("; ");
+  if (scanned === 0) {
+    const diag = await diagnoseScbSearch(session.user.org_id);
+    note = note ? `${note} · ${diag}` : diag;
+  }
   revalidatePath("/ledger/settings/google");
-  return { ok: true, scanned, rows, batches, importedMessages, skipped, remaining, note: errs.join("; ") };
+  return { ok: true, scanned, rows, batches, importedMessages, skipped, remaining, note };
 }
 
 export async function updateMailboxFilters(

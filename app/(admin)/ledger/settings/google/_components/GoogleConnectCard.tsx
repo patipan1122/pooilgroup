@@ -229,7 +229,7 @@ export function GoogleConnectCard({
           res.rows > 0
             ? `ดึง statement SCB เสร็จ — เข้า ${res.rows} รายการ (${res.batches} บัญชี/งวด) ไปที่หน้ากระทบยอดธนาคารได้เลย ${found}${more}${res.note ? ` · หมายเหตุ: ${res.note}` : ""}`
             : res.scanned === 0
-              ? `ค้นไม่เจอเมล SCB ในกล่องนี้เลย ${found} — เช็คว่า SCB ส่งเข้า patipantantikul@gmail.com จริงไหม (อาจอยู่ในแท็บ/โฟลเดอร์อื่น หรือ Spam)`
+              ? `ค้นไม่เจอเมล SCB ในกล่องนี้ ${found}${res.note ? ` · ตรวจสอบ: ${res.note}` : ""}`
               : `ดึงเสร็จ — เมลที่เจอเข้าระบบไปครบแล้ว ${found}${more}${res.note ? ` · ${res.note}` : ""}`,
         );
       } else {
