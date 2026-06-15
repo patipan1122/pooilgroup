@@ -53,8 +53,9 @@ export default async function NewUserPage() {
             เพิ่มผู้ใช้ใหม่
           </h1>
           <p className="mt-1 max-w-xl text-sm text-zinc-600">
-            ระบบจะสร้าง 1) Supabase auth account 2) ChairOps profile · ระบบจะ
-            ตั้งรหัสผ่านชั่วคราว · ผู้ใช้ต้องกด &quot;ลืมรหัสผ่าน&quot; ในครั้งแรก
+            เลือกได้ 2 วิธี · <span className="font-semibold text-zinc-800">ลิงก์เชิญ LINE</span>{" "}
+            (แนะนำ — ส่งลิงก์ให้กด → ล็อกอิน LINE → เข้าใช้ได้เลย ไม่ต้องตั้งรหัส)
+            หรือ <span className="font-semibold text-zinc-800">อีเมล + รหัสผ่าน</span> สำหรับคนที่ไม่ใช้ LINE
           </p>
         </header>
 

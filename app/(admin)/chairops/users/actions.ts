@@ -750,6 +750,169 @@ export async function createMaidInvite(
   }
 }
 
+// Generalized one-tap invite — like createMaidInvite() but for ANY role
+// (office / manager / admin / technician / CEO), so an admin can onboard a
+// back-office teammate by link the exact same way maids are onboarded. The
+// invitee taps the link → LINE login → /api/auth/line-login `invite` path binds
+// their verified LINE id to this user + logs them in. ADMIN-only.
+//   - MAID:     requires a branch · lands on /chairops/m · must fill onboarding
+//   - non-MAID: branch optional · lands on /chairops · skips the maid-only
+//     onboarding form (onboardingComplete=true so line-login won't bounce them
+//     to /chairops/m/onboarding, which is gated requireExactRole("MAID")).
+const inviteUserSchema = z.object({
+  displayName: z.string().trim().min(1, "ต้องระบุชื่อ").max(100),
+  role: z.enum(ChairopsUserRole),
+  primaryBranchId: z.string().optional().or(z.literal("")),
+});
+
+export async function createUserInvite(
+  formData: FormData,
+): Promise<ActionResult<{ link: string; userId: string }>> {
+  const session = await requireRole("ADMIN");
+  const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+  if (!liffId) return { ok: false, error: "ยังไม่ได้ตั้งค่า LIFF (NEXT_PUBLIC_LIFF_ID)" };
+
+  // Pre-flight: ตรวจกุญแจเซ็นลิงก์ก่อนแตะ Supabase auth — กัน orphan auth user
+  // (เหมือน createMaidInvite · ดู [[chairops-invite-secret-missing-2026-06-15]]).
+  if (!hasInviteSecret()) {
+    return {
+      ok: false,
+      error: "ระบบยังไม่ได้ตั้งค่ากุญแจลิงก์เชิญ (CHAIROPS_INVITE_SECRET) — แจ้งผู้ดูแลระบบ",
+    };
+  }
+
+  const parsed = inviteUserSchema.safeParse({
+    displayName: formData.get("displayName"),
+    role: formData.get("role"),
+    primaryBranchId: formData.get("primaryBranchId") || undefined,
+  });
+  if (!parsed.success)
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+
+  const role = parsed.data.role;
+  const isMaid = role === ChairopsUserRole.MAID;
+
+  // GUARD: ห้ามเชิญผู้ใช้ที่สิทธิ์ >= ตัวเอง (กัน privilege escalation · server re-check)
+  if (!canAssignRole(session.user, role)) {
+    return {
+      ok: false,
+      error: `คุณ (${session.user.role}) ไม่สามารถเชิญผู้ใช้สิทธิ์ ${role} ได้`,
+    };
+  }
+
+  // Branch บังคับเฉพาะแม่บ้าน (1 แม่บ้าน : 1 สาขา) · ตำแหน่งอื่นไม่บังคับ
+  const branchId = parsed.data.primaryBranchId || null;
+  if (isMaid && !branchId) {
+    return { ok: false, error: "แม่บ้านต้องมีสาขาประจำ" };
+  }
+  if (branchId) {
+    const branch = await prisma.chairopsBranch.findFirst({
+      where: { id: branchId, orgId: session.user.orgId },
+    });
+    if (!branch) return { ok: false, error: "ไม่พบสาขาที่เลือก" };
+  }
+
+  // Placeholder email — invitee ไม่เคยเช็ค; login ใช้ LINE id_token. ต้องเป็น
+  // format อีเมลที่ถูกต้องสำหรับ Supabase. (ไม่มีโค้ดไหน parse prefix นี้.)
+  const email = `invite-${randomUUID().slice(0, 8)}@chairops.local`;
+  const supabase = adminClient();
+  const tempPassword = `Ch${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    email,
+    password: tempPassword,
+    email_confirm: true,
+  });
+  if (authError || !authData?.user) {
+    return { ok: false, error: `สร้างบัญชี auth ไม่สำเร็จ: ${authError?.message ?? "unknown"}` };
+  }
+
+  // generate token BEFORE transaction so we can store it atomically
+  const token = signInvite(authData.user.id);
+  const inviteExpiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+
+  try {
+    const user = await prisma.$transaction(async (tx) => {
+      // auto-revoke pending same-branch maid invite (mirror createMaidInvite)
+      if (isMaid && branchId) {
+        await tx.chairopsUser.updateMany({
+          where: {
+            orgId: session.user.orgId,
+            primaryBranchId: branchId,
+            role: ChairopsUserRole.MAID,
+            inviteToken: { not: null },
+          },
+          data: { inviteToken: null, inviteExpiresAt: null },
+        });
+      }
+
+      const row = await tx.chairopsUser.create({
+        data: {
+          orgId: session.user.orgId,
+          authUserId: authData.user.id,
+          email,
+          displayName: parsed.data.displayName,
+          role,
+          primaryBranchId: branchId,
+          isActive: true,
+          // non-maids ข้ามฟอร์มกรอกข้อมูลแม่บ้าน → mark complete กัน line-login
+          // เด้งไป /chairops/m/onboarding (ซึ่ง gate requireExactRole("MAID")).
+          onboardingComplete: !isMaid,
+          inviteToken: token,
+          inviteExpiresAt,
+        },
+      });
+
+      // เฉพาะแม่บ้าน — wire ghost MaidAssignment table สำหรับ audit trail
+      if (isMaid && branchId) {
+        await tx.chairopsMaidAssignment.create({
+          data: {
+            orgId: session.user.orgId,
+            userId: row.id,
+            branchId,
+            startedAt: new Date(),
+            isActive: true,
+          },
+        });
+      }
+
+      await writeAudit(
+        {
+          userId: session.user.id,
+          action: "user.create_invite",
+          entity: "User",
+          entityId: row.id,
+          newValue: {
+            displayName: row.displayName,
+            role,
+            primaryBranchId: row.primaryBranchId,
+            via: "line_invite",
+          },
+        },
+        tx,
+      );
+      return row;
+    });
+
+    // non-maids → หน้าออฟฟิศ /chairops · maids → mini-app /chairops/m
+    const next = isMaid ? "/chairops/m" : "/chairops";
+    // F1: ?openExternalBrowser=1 บังคับ LINE iOS เปิด Safari (ไม่ใช่ WKWebView)
+    // ที่ทิ้ง httpOnly cookie. See [[liff-magic-link-ios-webview-cookie-drop]].
+    const link =
+      `https://liff.line.me/${liffId}/chairops` +
+      `?openExternalBrowser=1` +
+      `&invite=${encodeURIComponent(token)}` +
+      `&next=${encodeURIComponent(next)}`;
+
+    revalidatePath("/chairops/users");
+    revalidatePath("/chairops/maids");
+    return { ok: true, data: { link, userId: user.id } };
+  } catch (e) {
+    // Roll back the auth user if the profile write fails.
+    await supabase.auth.admin.deleteUser(authData.user.id);
+    return { ok: false, error: `บันทึกไม่สำเร็จ: ${e instanceof Error ? e.message : "unknown"}` };
+  }
+}
+
 // F4: Maid self-onboarding — maid fills 5 fields on first login.
 // Called from /chairops/m/onboarding (outside maid layout gate).
 // Gate: onboardingComplete must be false (skip if already done).
