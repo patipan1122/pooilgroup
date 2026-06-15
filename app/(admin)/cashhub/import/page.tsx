@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
+import { cashhubFuelV1 } from "@/lib/cashhub/flags";
 import { BackButton } from "@/components/ui/back-button";
 import { Badge } from "@/components/ui/badge";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
@@ -40,6 +41,16 @@ const SOURCES: ImportSource[] = [
     subtitle: "Looker Studio · PEA VOLTA · CSV รายชาร์จ",
     status: "ready",
     businessType: "ev_station",
+  },
+  {
+    // ปั๊ม 62 หัวทะเล (วายเอ็มพลัส) — pulled from a public Google Sheet. Status is
+    // promoted to "ready" at render when CASHHUB_FUEL_V1 is ON (see ImportHubPage).
+    slug: "fuel-pump62",
+    emoji: "⛽",
+    Icon: Fuel,
+    title: "ปั๊มน้ำมัน 62 (วายเอ็มพลัส)",
+    subtitle: "ยอดขาย + กระทบเงินเข้าบัญชี รายกะ · จากชีต Google",
+    status: "coming_soon",
   },
   {
     slug: "fuel-trcloud",
@@ -96,6 +107,7 @@ const SOURCES: ImportSource[] = [
 export default async function ImportHubPage() {
   const session = await requireRole("super_admin", "org_admin", "admin");
   const admin = adminClient();
+  const fuelOn = cashhubFuelV1();
 
   // For each "ready" source, peek at the last import (best-effort)
   // — joined via audit_logs (BULK_IMPORT_EV_REPORTS) to surface "last imported X ago"
@@ -127,7 +139,8 @@ export default async function ImportHubPage() {
 
       <div className="grid sm:grid-cols-2 gap-3 animate-fade-up delay-100">
         {SOURCES.map((s) => {
-          const isReady = s.status === "ready";
+          const isReady =
+            s.status === "ready" || (s.slug === "fuel-pump62" && fuelOn);
           const showLastEv = s.slug === "ev-connext" && lastEvAt;
           const Card = isReady ? Link : "div";
           const cardProps = isReady

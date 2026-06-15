@@ -64,6 +64,8 @@ export type AuditAction =
   | "RESUBMIT_REPORT"
   // Bulk import of external charge-session data (CONNEXT CSV → DailyReport).
   | "BULK_IMPORT_EV_REPORTS"
+  // Gas-station (ปั๊ม 62 / วายเอ็มพลัส) daily sales + cash recon → cashhub_fuel_daily.
+  | "BULK_IMPORT_FUEL_REPORTS"
   // Hotel daily-sales import from Google-Sheet/xlsx → cashhub_hotel_daily.
   | "IMPORT_HOTEL_SALES"
   // Café Amazon — auto-create daily IV into TRCloud from POS shift-close xlsx.
