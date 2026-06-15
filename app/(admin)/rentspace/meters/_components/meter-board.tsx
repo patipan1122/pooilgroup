@@ -386,7 +386,7 @@ export default function MeterBoard({
         </button>
       </div>
 
-      <div className="rs-card overflow-x-auto p-0">
+      <div className="rs-card p-0 rs-meter-scroll">
         <table className="rs-table w-full text-sm" style={{ minWidth: 880 }}>
           <thead>
             <tr style={{ color: "var(--rs-text-2)" }} className="text-left text-[12px]">
@@ -502,6 +502,28 @@ export default function MeterBoard({
           </tbody>
         </table>
       </div>
+
+      <style jsx>{`
+        /* Excel-style frozen panes: cap the box height so the sticky header
+           (top) + sticky room column (left) freeze inside it instead of
+           floating 4rem down over the first row (overflow-x breaks
+           window-relative sticky). */
+        .rs-meter-scroll {
+          overflow: auto;
+          max-height: calc(100dvh - 18rem);
+          min-height: 300px;
+          overscroll-behavior: contain;
+        }
+        .rs-meter-scroll :global(.rs-table thead th) {
+          top: 0;
+        }
+        /* corner cell (ห้อง) must sit above both the header row and the
+           sticky room column — tokens' .rs-table thead th (z 20) out-specs
+           the Tailwind z-30 on this cell, so re-assert it here. */
+        .rs-meter-scroll :global(.rs-table thead th:first-child) {
+          z-index: 31;
+        }
+      `}</style>
     </div>
   );
 }

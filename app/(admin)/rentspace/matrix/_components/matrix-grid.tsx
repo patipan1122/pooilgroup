@@ -98,31 +98,32 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
 
   return (
     <div className="rs-matrix">
-      {/* view + month toggles */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+      {/* view + month toggles — single non-wrapping row; the month chips
+          scroll horizontally instead of stacking onto a 2nd line on mobile */}
+      <div className="mb-3 flex items-center gap-2">
         <button
           type="button"
           onClick={() => setView("year")}
-          className={`rs-chip ${view === "year" ? "active" : ""}`}
+          className={`rs-chip shrink-0 ${view === "year" ? "active" : ""}`}
         >
           <Table className="mr-1 inline h-3.5 w-3.5" /> รายปี
         </button>
         <button
           type="button"
           onClick={() => setView("month")}
-          className={`rs-chip ${view === "month" ? "active" : ""}`}
+          className={`rs-chip shrink-0 ${view === "month" ? "active" : ""}`}
         >
           <Calendar className="mr-1 inline h-3.5 w-3.5" /> รายเดือน
         </button>
 
         {view === "month" && (
-          <div className="ml-1 flex flex-wrap items-center gap-1">
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
             {TH_MONTHS_SHORT.map((label, i) => (
               <button
                 key={i}
                 type="button"
                 onClick={() => setMonth(i + 1)}
-                className={`rs-chip ${month === i + 1 ? "active" : ""}`}
+                className={`rs-chip shrink-0 ${month === i + 1 ? "active" : ""}`}
                 style={{ height: 26, padding: "0 9px", fontSize: 11.5 }}
               >
                 {label}
@@ -132,7 +133,7 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
         )}
 
         {view === "year" && (
-          <span className="ml-auto inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--rs-text-3)" }}>
+          <span className="ml-auto hidden sm:inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--rs-text-3)" }}>
             <span style={{ fontSize: 13 }}>💡</span> กดหัวเดือน (ม.ค./ก.พ. …) เพื่อแยกดู ค่าเช่า · น้ำ · ไฟ — ห้องค่าไฟแพงผิดปกติจะขึ้นแดง
           </span>
         )}
@@ -144,7 +145,7 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
         </div>
       ) : view === "year" ? (
         /* ============ รายปี: 12-month overview ============ */
-        <div className="rs-scroll overflow-x-auto">
+        <div className="rs-scroll">
           <table className="rs-grid">
             <thead>
               <tr>
@@ -279,6 +280,15 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
       )}
 
       <style jsx>{`
+        /* Excel-style frozen panes: the scroll box owns BOTH axes so the
+           sticky header (top) + sticky room column (left) freeze correctly.
+           A height cap is what makes window-scroll vs overflow-x not fight. */
+        .rs-scroll {
+          overflow: auto;
+          max-height: calc(100dvh - 15rem);
+          min-height: 280px;
+          overscroll-behavior: contain;
+        }
         .rs-grid {
           border-collapse: separate;
           border-spacing: 0;
@@ -295,7 +305,7 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
         }
         .rs-grid thead th {
           position: sticky;
-          top: 3.5rem;
+          top: 0;
           z-index: 20;
           background: var(--rs-bg-3);
           color: var(--rs-text-2);
@@ -304,11 +314,6 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
           padding: 6px 8px;
           text-align: center;
           border-top: 1px solid var(--rs-border);
-        }
-        @media (min-width: 640px) {
-          .rs-grid thead th {
-            top: 4rem;
-          }
         }
         .rs-th-year {
           font-size: 9.5px;
@@ -467,7 +472,7 @@ function MonthView({
   });
 
   return (
-    <div className="rs-scroll overflow-x-auto">
+    <div className="rs-scroll">
       <table className="rs-grid-m">
         <thead>
           <tr>
@@ -556,6 +561,12 @@ function MonthView({
       </table>
 
       <style jsx>{`
+        .rs-scroll {
+          overflow: auto;
+          max-height: calc(100dvh - 15rem);
+          min-height: 280px;
+          overscroll-behavior: contain;
+        }
         .rs-grid-m {
           border-collapse: separate;
           border-spacing: 0;
@@ -572,7 +583,7 @@ function MonthView({
         }
         .rs-grid-m thead th {
           position: sticky;
-          top: 3.5rem;
+          top: 0;
           z-index: 20;
           background: var(--rs-bg-3);
           color: var(--rs-text-2);
@@ -581,11 +592,6 @@ function MonthView({
           padding: 7px 10px;
           text-align: right;
           border-top: 1px solid var(--rs-border);
-        }
-        @media (min-width: 640px) {
-          .rs-grid-m thead th {
-            top: 4rem;
-          }
         }
         .rs-mroom {
           text-align: left !important;
