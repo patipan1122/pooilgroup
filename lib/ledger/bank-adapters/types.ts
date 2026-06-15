@@ -71,6 +71,29 @@ export function parseDateDMY(raw: string): string | null {
   return `${y}-${mm}-${dd}`;
 }
 
+/**
+ * Parse a Day-Month-Year date that may use '/' OR '-' (or '.') separators and a
+ * 2- or 4-digit year. KBank/BBL/SCB/TTB all export DMY but differ in punctuation:
+ * '1/3/2026', '01-03-26', '13-03-2026' → 'YYYY-MM-DD'.
+ * 2-digit years are treated as CE (20YY) — Thai bank exports use Gregorian years.
+ * Returns null if day>31 / month>12 (guards against MDY files sneaking through).
+ */
+export function parseDateFlexibleDMY(raw: string): string | null {
+  if (!raw?.trim()) return null;
+  const parts = raw.trim().split(/[\/\-.]/);
+  if (parts.length !== 3) return null;
+  let [d, m, y] = parts;
+  if (!d || !m || !y) return null;
+  if (y.length === 2) y = `20${y}`;
+  const dd = d.padStart(2, "0");
+  const mm = m.padStart(2, "0");
+  const dn = Number(dd);
+  const mn = Number(mm);
+  if (!Number.isInteger(dn) || !Number.isInteger(mn)) return null;
+  if (dn < 1 || dn > 31 || mn < 1 || mn > 12) return null;
+  return `${y}-${mm}-${dd}`;
+}
+
 /** Parse a US-style date: 'M/D/YYYY' or combined 'M/D/YYYY H:MM' → 'YYYY-MM-DD' */
 export function parseDateMDY(raw: string): string | null {
   if (!raw?.trim()) return null;

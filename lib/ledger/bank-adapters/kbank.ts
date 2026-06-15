@@ -5,13 +5,14 @@
 //   Columns with EMPTY intercalating columns:
 //     [0]=blank [1]=วันที่ [2]=เวลา/ วันที่มีผล [3]=รายการ [4]=ถอนเงิน [5]=blank
 //     [6]=ฝากเงิน [7]=blank [8]=ยอดคงเหลือ [9]=blank [10]=ช่องทาง [11]=blank [12]=รายละเอียด
-//   Date: D/M/YYYY | Time: H:MM (separate column) | Amounts: "1,775.00" (with commas)
+//   Date: D/M/YYYY or DD-MM-YY (both seen across exports) | Time: H:MM (separate column)
+//   Amounts: "1,775.00" (with commas)
 //   Account number in metadata row (เลขที่บัญชีเงินฝาก)
 //   Opening balance row (ยอดยกมา) after header — skip
 //   Encoding: UTF-8 BOM
 
 import type { BankAdapter, ParseResult, NormalizedRow } from "./types";
-import { parseDateDMY, parseAmountSatang, parseBalanceSatang, parseCSVLines } from "./types";
+import { parseDateFlexibleDMY, parseAmountSatang, parseBalanceSatang, parseCSVLines } from "./types";
 
 export const kbankAdapter: BankAdapter = {
   bankCode: "KBANK",
@@ -38,8 +39,15 @@ export const kbankAdapter: BankAdapter = {
       // Look for "เลขที่บัญชีเงินฝาก" in any column
       for (let j = 0; j < row.length; j++) {
         if (row[j].includes("เลขที่บัญชีเงินฝาก")) {
-          // Account number is in the column 3 positions to the right
-          accountNo = row[j + 3]?.trim() ?? row[j + 1]?.trim() ?? "";
+          // Account number sits a few (variable) blank columns to the right —
+          // scan rightward for the first non-empty cell rather than a fixed offset.
+          for (let k = j + 1; k < row.length; k++) {
+            const v = row[k]?.trim();
+            if (v) {
+              accountNo = v;
+              break;
+            }
+          }
         }
       }
       // Find the actual header row: col[1] === "วันที่"
@@ -68,7 +76,7 @@ export const kbankAdapter: BankAdapter = {
       if (desc === "ยอดยกมา" || desc === "ยอดยกไป") continue;
       if (!dateRaw) continue;
 
-      const txnDate = parseDateDMY(dateRaw);
+      const txnDate = parseDateFlexibleDMY(dateRaw);
       if (!txnDate) continue;
 
       const withdrawalRaw = cols[4]?.trim() ?? "";
