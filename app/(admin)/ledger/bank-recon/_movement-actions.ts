@@ -203,3 +203,75 @@ export async function deleteMovementAction(bankTxnId: string): Promise<{ ok: boo
   await prisma.$executeRaw`DELETE FROM ledger_bank_txn WHERE id=${bankTxnId}::uuid AND org_id=${orgId}::uuid`;
   return { ok: true };
 }
+
+// ── ล้างรายการซ้ำ (double-import) — super_admin · CEO กดยืนยันก่อนลบ ─────────────
+// ซ้ำ = (วันที่ + ยอด + ref1 + ref2) เหมือนกัน. ลบเฉพาะ "ใบเกิน" ที่:
+//   match_state='unmatched' + ไม่อยู่ในคู่ที่จับแล้ว + งวดไม่ล็อก. เก็บ 1 ใบ (เลือกใบที่จับแล้ว/แรกสุด).
+// แตะเฉพาะบัญชี+org นี้.
+async function duplicateExtraIds(orgId: string, bankAccountId: string): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT z.id FROM (
+      SELECT t.id::text AS id, t.match_state AS state, t.batch_id,
+             ROW_NUMBER() OVER (
+               PARTITION BY t.txn_date, t.amount_satang, COALESCE(t.ref1,''), COALESCE(t.ref2,'')
+               ORDER BY (t.match_state <> 'unmatched') DESC, t.row_index, t.id
+             ) AS rn
+      FROM ledger_bank_txn t
+      WHERE t.bank_account_id = ${bankAccountId}::uuid AND t.org_id = ${orgId}::uuid
+    ) z
+    JOIN ledger_bank_import_batch b ON b.id = z.batch_id
+    WHERE z.rn > 1 AND z.state = 'unmatched' AND b.locked_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM ledger_bank_match_item mi WHERE mi.bank_txn_id = z.id::uuid)`;
+  return rows.map((r) => r.id);
+}
+
+/** ตรวจรายการซ้ำ (พรีวิวก่อนลบ) — คืนจำนวนใบเกิน + ตัวอย่างกลุ่มซ้ำ */
+export async function findBankDuplicatesAction(bankAccountId: string): Promise<{
+  ok: boolean; extraCount: number;
+  sample: { date: string; amountSatang: number; ref: string; copies: number }[];
+  error?: string;
+}> {
+  const session = await requireRole("super_admin");
+  const orgId = session.user.org_id;
+  try {
+    const ids = await duplicateExtraIds(orgId, bankAccountId);
+    const sample = await prisma.$queryRaw<{ date: string; amt: number; ref: string; copies: number }[]>`
+      SELECT t.txn_date::text AS "date", t.amount_satang::int AS amt,
+             COALESCE(NULLIF(t.ref2,''), NULLIF(t.ref1,''), '') AS ref, COUNT(*)::int AS copies
+      FROM ledger_bank_txn t
+      WHERE t.bank_account_id = ${bankAccountId}::uuid AND t.org_id = ${orgId}::uuid
+        AND t.match_state = 'unmatched'
+      GROUP BY t.txn_date, t.amount_satang, COALESCE(t.ref1,''), COALESCE(t.ref2,'')
+      HAVING COUNT(*) > 1
+      ORDER BY COUNT(*) DESC, t.txn_date DESC
+      LIMIT 20`;
+    return {
+      ok: true,
+      extraCount: ids.length,
+      sample: sample.map((s) => ({ date: s.date, amountSatang: Number(s.amt), ref: s.ref, copies: Number(s.copies) })),
+    };
+  } catch (e) {
+    return { ok: false, extraCount: 0, sample: [], error: e instanceof Error ? e.message : "ตรวจไม่สำเร็จ" };
+  }
+}
+
+/** ลบรายการซ้ำจริง — เก็บ 1 ใบ/กลุ่ม · ลบเฉพาะใบเกินที่ยังไม่แมตช์+ไม่ล็อก */
+export async function purgeBankDuplicatesAction(bankAccountId: string): Promise<{
+  ok: boolean; deleted: number; error?: string;
+}> {
+  const session = await requireRole("super_admin");
+  const orgId = session.user.org_id;
+  try {
+    const ids = await duplicateExtraIds(orgId, bankAccountId);
+    if (ids.length === 0) return { ok: true, deleted: 0 };
+    await prisma.$executeRaw`
+      DELETE FROM ledger_bank_txn
+      WHERE org_id = ${orgId}::uuid AND bank_account_id = ${bankAccountId}::uuid
+        AND id = ANY(${ids}::uuid[])
+        AND match_state = 'unmatched'
+        AND NOT EXISTS (SELECT 1 FROM ledger_bank_match_item mi WHERE mi.bank_txn_id = ledger_bank_txn.id)`;
+    return { ok: true, deleted: ids.length };
+  } catch (e) {
+    return { ok: false, deleted: 0, error: e instanceof Error ? e.message : "ลบไม่สำเร็จ" };
+  }
+}

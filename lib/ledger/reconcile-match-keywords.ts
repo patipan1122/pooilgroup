@@ -30,7 +30,7 @@ export const MATCH_CONCEPTS: Record<string, MatchConcept> = {
   shopee:  { key: "shopee",  label: "ShopeeFood", keywords: ["ช้อปปี้เพย์", "ช้อปปี้", "shopee"],  requireName: true,  dateWindowDays: 2, tolAbsSatang: 2000, tolPct: 0.05 },
   lineman: { key: "lineman", label: "Lineman",   keywords: ["ไลน์แมน", "lineman"],                 requireName: true,  dateWindowDays: 3, tolAbsSatang: 1500, tolPct: 0.05 },
   card:    { key: "card",    label: "บัตร/EDC",   keywords: ["amz_sd", "ผ่อนชำระ"],                 requireName: true,  dateWindowDays: 2, tolAbsSatang: 500,  tolPct: 0.02 },
-  qr:      { key: "qr",      label: "QR",        keywords: ["thai qr payment"],                    requireName: true,  dateWindowDays: 2, tolAbsSatang: 100,  tolPct: 0 },
+  qr:      { key: "qr",      label: "QR",        keywords: ["thai qr payment", "qr payment", "qr", "พร้อมเพย์", "promptpay"], requireName: true, dateWindowDays: 2, tolAbsSatang: 100, tolPct: 0 },
   cash:    { key: "cash",    label: "เงินสด",     keywords: ["ฝากเงินสด"],                          requireName: false, dateWindowDays: 7, tolAbsSatang: 100,  tolPct: 0 },
   other:   { key: "other",   label: "อื่น ๆ",     keywords: [],                                     requireName: false, dateWindowDays: 2, tolAbsSatang: 100,  tolPct: 0 },
 };

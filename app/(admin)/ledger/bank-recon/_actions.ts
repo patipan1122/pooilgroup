@@ -33,6 +33,7 @@ import {
   bankNameMatches,
   amountToleranceSatang,
 } from "@/lib/ledger/reconcile-match-keywords";
+import { loadAccountKeywordMap, learnFromConfirm } from "@/lib/ledger/reconcile-keyword-dict";
 import { ledgerRevenueGlV1 } from "@/lib/ledger/flags";
 import { prisma } from "@/lib/prisma";
 import { randomUUID } from "crypto";
@@ -1053,6 +1054,8 @@ export async function autoMatchAccountAction(
   // candidate book entries in period (not yet grouped) — กรองตามบัญชีด้วย กัน auto-match ข้ามบัญชี
   // (เช่น ยอด QR ที่เข้า TTB ต้องไม่ไปจับกับ statement ของ BBL)
   const book = await listBookEntriesForAuto(orgId, companyId, bankAccountId, periodStart, periodEnd);
+  // สมุดจำคีย์ของบัญชีนี้ (คีย์ที่เพิ่มเอง/เรียนรู้) → ต่อท้าย keyword ในระบบ
+  const kwMap = await loadAccountKeywordMap(orgId, bankAccountId);
 
   // หลักการ: ป้ายชื่อ 2 ฝั่งต้องตรง (concept จาก payment_channel ↔ keyword ในชื่อธนาคาร)
   //   → ยืนยันด้วยวัน + ยอด (เผื่อค่าธรรมเนียมแกว่ง) · เงินสด = ไม่เช็คชื่อ ยอดตรง วันยืดหยุ่น
@@ -1068,7 +1071,7 @@ export async function autoMatchAccountAction(
       // ต้องเป็นด้านเดียวกัน (เงินเข้า↔รายได้ + · เงินออก↔รายจ่าย −)
       if (amt >= 0 !== e.amountSatang >= 0) continue;
       const concept = conceptForChannel(e.channel);
-      if (!bankNameMatches(concept, bk.text)) continue; // ชื่อไม่ตรง = ข้าม (กันจับข้ามเจ้า)
+      if (!bankNameMatches(concept, bk.text, kwMap[concept.key] ?? [])) continue; // ชื่อไม่ตรง = ข้าม (กันจับข้ามเจ้า)
       const amtDiff = Math.abs(amt - e.amountSatang);
       if (amtDiff > amountToleranceSatang(concept, e.amountSatang)) continue;
       const dateDiff = Math.abs((new Date(e.date).getTime() - bd) / 86400000);
@@ -1140,6 +1143,32 @@ async function confirmGroupsInternal(groupIds: string[]): Promise<{ ok: boolean;
         SELECT mi.book_id FROM ledger_bank_match_item mi
         WHERE mi.group_id = ANY(${groupIds}::uuid[]) AND mi.kind='book' AND mi.book_type='revenue')`,
   ]);
+
+  // เรียนรู้: จด "ชื่อคู่ค้าธนาคาร ↔ ประเภทบัญชี" ของคู่ที่เพิ่งยืนยัน → รอบหน้าจับเอง
+  //   best-effort · ห้าม throw (confirm ต้องสำเร็จไม่ว่า learn จะพังไหม)
+  try {
+    // เรียนเฉพาะกลุ่ม 1:1 (1 ธนาคาร ↔ 1 รายได้) — กันกลุ่ม N:M จับชื่อข้ามประเภท (จำคีย์ผิด)
+    const pairs = await prisma.$queryRaw<{ bankAccountId: string; text: string; channel: string }[]>`
+      SELECT t.bank_account_id::text as "bankAccountId",
+             LOWER(CONCAT_WS(' ', COALESCE(t.ref2,''), COALESCE(t.description,''), COALESCE(t.channel,''))) as text,
+             COALESCE(r.payment_channel,'') as channel
+      FROM ledger_bank_match_group g
+      JOIN ledger_bank_match_item bi ON bi.group_id = g.id AND bi.kind='bank'
+      JOIN ledger_bank_txn t ON t.id = bi.bank_txn_id
+      JOIN ledger_bank_match_item bk ON bk.group_id = g.id AND bk.kind='book' AND bk.book_type='revenue'
+      JOIN ledger_revenue_entry r ON r.id = bk.book_id
+      WHERE g.id = ANY(${groupIds}::uuid[]) AND g.org_id=${orgId}::uuid
+        AND (SELECT COUNT(*) FROM ledger_bank_match_item m WHERE m.group_id=g.id AND m.kind='bank') = 1
+        AND (SELECT COUNT(*) FROM ledger_bank_match_item m WHERE m.group_id=g.id AND m.kind='book') = 1`;
+    for (const p of pairs) {
+      await learnFromConfirm({
+        orgId, bankAccountId: p.bankAccountId, bankTextLower: p.text,
+        conceptKey: conceptForChannel(p.channel).key,
+      });
+    }
+  } catch {
+    /* best-effort */
+  }
   return { ok: true };
 }
 

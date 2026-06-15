@@ -12,6 +12,7 @@ import {
 } from "@/lib/ledger/bank-reconcile-board";
 import { ImportWizardWrapper } from "./_components/ImportWizardWrapper";
 import { AccountLedgerTabs } from "./_components/AccountLedgerTabs";
+import { DuplicateCleanup } from "./_components/DuplicateCleanup";
 import { BankLogo } from "@/components/ledger/BankLogo";
 import { prisma } from "@/lib/prisma";
 import { Upload, Scale } from "lucide-react";
@@ -193,6 +194,13 @@ export default async function BankAccountDetailPage({
           )}
         </div>
       </div>
+
+      {/* ล้างรายการซ้ำ (double-import) — super_admin */}
+      {session.user.role === "super_admin" && (
+        <div className="mt-5">
+          <DuplicateCleanup bankAccountId={accountId} />
+        </div>
+      )}
     </div>
   );
 }
