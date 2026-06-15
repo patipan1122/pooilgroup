@@ -18,7 +18,7 @@ import { canAssignRole, canManageUser } from "@/lib/chairops/auth/role-guards";
 import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
 import { ChairopsUserRole, OffboardingReason } from "@/lib/generated/prisma/enums";
 import { randomUUID } from "node:crypto";
-import { signInvite } from "@/lib/chairops/line/invite";
+import { signInvite, hasInviteSecret } from "@/lib/chairops/line/invite";
 import { blockLineUser } from "@/lib/chairops/line/block";
 
 export type ActionResult<T = void> =
@@ -631,6 +631,16 @@ export async function createMaidInvite(
   const session = await requireRole("ADMIN");
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
   if (!liffId) return { ok: false, error: "ยังไม่ได้ตั้งค่า LIFF (NEXT_PUBLIC_LIFF_ID)" };
+
+  // Pre-flight: ตรวจกุญแจเซ็นลิงก์ก่อนแตะ Supabase auth — ป้องกัน orphan auth user
+  // (เดิม signInvite() throw หลัง createUser แล้ว → ทิ้งบัญชี maid-*@chairops.local ค้าง
+  // ทุกครั้งที่กุญแจหาย + เด้งหน้าแดงแทน toast). See [[rule-j-namespace-env-by-program-d021]].
+  if (!hasInviteSecret()) {
+    return {
+      ok: false,
+      error: "ระบบยังไม่ได้ตั้งค่ากุญแจลิงก์เชิญ (CHAIROPS_INVITE_SECRET) — แจ้งผู้ดูแลระบบ",
+    };
+  }
 
   const parsed = inviteSchema.safeParse({
     displayName: formData.get("displayName"),

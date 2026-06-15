@@ -12,9 +12,31 @@ import crypto from "node:crypto";
 
 const TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
+// Per [[rule-j-namespace-env-by-program-d021]]: ChairOps owns its invite-signing
+// key (CHAIROPS_INVITE_SECRET). We keep NEXTAUTH_SECRET/AUTH_SECRET as a fallback
+// ONLY for local dev / backward-compat — prod must set CHAIROPS_INVITE_SECRET so we
+// never share a key with inbox/recruit/costctrl crypto (avoids the cross-program
+// brick described in [[inbox-line-decrypt-null-silent-bail-2026-06-08]]).
+function inviteSecret(): string | null {
+  return (
+    process.env.CHAIROPS_INVITE_SECRET ??
+    process.env.NEXTAUTH_SECRET ??
+    process.env.AUTH_SECRET ??
+    null
+  );
+}
+
+/** True when an invite-signing key is configured (non-throwing — for pre-flight checks). */
+export function hasInviteSecret(): boolean {
+  return inviteSecret() !== null;
+}
+
 function secret(): string {
-  const s = process.env.NEXTAUTH_SECRET ?? process.env.AUTH_SECRET;
-  if (!s) throw new Error("NEXTAUTH_SECRET (or AUTH_SECRET) required to sign maid invites");
+  const s = inviteSecret();
+  if (!s)
+    throw new Error(
+      "CHAIROPS_INVITE_SECRET required to sign maid invites (set it in the deploy env)",
+    );
   return s;
 }
 
