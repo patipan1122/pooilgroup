@@ -10,7 +10,10 @@ import {
   listBankAccounts,
   listCompanies,
 } from "@/lib/cashhub/amazon-settlement-data";
+import { computeDaySettlement } from "@/lib/cashhub/amazon-settlement";
+import { loadAmazonDays, listAmazonStores } from "@/lib/cashhub/amazon-data";
 import { AmazonSettingsEditor } from "./amazon-settings-editor";
+import { AmazonSendPreview, type SendPreviewDay } from "./amazon-send-preview";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +29,42 @@ export default async function AmazonSettingsPage() {
     listCompanies(admin, orgId),
   ]);
 
+  // พรีวิว: ข้อมูลจริง 2 วันล่าสุด (รันสูตรเดียวกับตัวส่งจริง) — หาสาขาแรกที่มีข้อมูล
+  const configByCvar = new Map(configs.map((c) => [c.cvar, c]));
+  const accById = new Map(accounts.map((a) => [a.id, a.label]));
+  const now = new Date();
+  const to = now.toISOString().slice(0, 10);
+  const from = new Date(now.getTime() - 14 * 86400000).toISOString().slice(0, 10);
+  const stores = await listAmazonStores(admin, orgId);
+  let previewDays: SendPreviewDay[] = [];
+  let storeLabel = "";
+  for (const st of stores.slice(0, 8)) {
+    const rawDays = await loadAmazonDays(admin, orgId, st.store_code, from, to);
+    const withData = rawDays.filter((d) => d.channels && Object.keys(d.channels).length > 0);
+    if (withData.length === 0) continue;
+    storeLabel = st.branch_label ?? st.store_code;
+    previewDays = withData.slice(-2).map((d) => {
+      const { perChannel, totalNet } = computeDaySettlement(d.channels, configByCvar);
+      return {
+        date: d.sales_date,
+        totalNet,
+        rows: perChannel.filter((s) => s.settled).map((s) => {
+          const accId = s.bankAccountId ?? configByCvar.get(s.cvar)?.bankAccountId ?? null;
+          return {
+            label: s.label,
+            gross: s.gross,
+            feePercent: configByCvar.get(s.cvar)?.feePercent ?? 0,
+            fee: s.fee,
+            net: s.net,
+            account: accId ? (accById.get(accId) ?? "บัญชีถูกลบ") : "",
+            hasAccount: !!accId && accById.has(accId),
+          };
+        }),
+      };
+    });
+    break;
+  }
+
   return (
     <div className="ch-scope p-3 sm:p-6 lg:p-8 max-w-4xl mx-auto pb-24">
       <BackButton label="ตรวจยอด Amazon" fallbackHref="/cashhub/amazon" />
@@ -38,6 +77,7 @@ export default async function AmazonSettingsPage() {
         </p>
       </header>
       <AmazonSettingsEditor configs={configs} accounts={accounts} companies={companies} />
+      <AmazonSendPreview days={previewDays} storeLabel={storeLabel} />
     </div>
   );
 }
