@@ -7,10 +7,15 @@
 import { redirect } from "next/navigation";
 import type { DbUser } from "@/lib/auth/session";
 
+// `program_admin` = scoped admin granted via user_modules. The /playland layout
+// gates entry on an active user_modules `playland` grant FIRST, so listing it
+// here only affects users explicitly granted playland — they get full playland
+// admin (CEO principle [[program-admin-must-just-work]]).
 export const PLAYLAND_ROLES: DbUser["role"][] = [
   "super_admin",
   "org_admin",
   "admin",
+  "program_admin",
   "area_manager",
   "branch_manager",
   "staff",
@@ -22,6 +27,7 @@ export const PLAYLAND_CASHIER_ROLES: DbUser["role"][] = [
   "super_admin",
   "org_admin",
   "admin",
+  "program_admin",
   "area_manager",
   "branch_manager",
   "staff",
@@ -32,6 +38,7 @@ export const PLAYLAND_MANAGER_ROLES: DbUser["role"][] = [
   "super_admin",
   "org_admin",
   "admin",
+  "program_admin",
   "area_manager",
   "branch_manager",
 ];
@@ -41,6 +48,7 @@ export const PLAYLAND_ADMIN_ROLES: DbUser["role"][] = [
   "super_admin",
   "org_admin",
   "admin",
+  "program_admin",
 ];
 
 export function requirePlaylandAccess(role: DbUser["role"]): void {

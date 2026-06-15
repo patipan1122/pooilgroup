@@ -29,6 +29,11 @@ import {
 import { prisma } from "@/lib/prisma";
 import type { ChairopsUser } from "@/lib/generated/prisma/client";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
+import {
+  userHasModuleAccess,
+  userIsModuleAdmin,
+  isAdminTier,
+} from "@/lib/auth/module-access";
 import { rankOf } from "./role-guards";
 
 export interface Session {
@@ -69,15 +74,86 @@ export const getSession = cache(async (): Promise<Session | null> => {
     where: { authUserId },
   });
 
-  // SECURITY (Wave-0 fix · audit Phase-1 BE/SA flagged): NO auto-bootstrap.
-  // First-touch users used to be auto-granted ADMIN derived from Pool role —
-  // that turned any Pool admin (incl. fresh signups) into a ChairOps admin
-  // without explicit approval. Now: unknown user → log denial → return null
-  // so requireAuth() redirects to access-denied. Admin must explicitly create
-  // a ChairopsUser row (future /chairops/access-requests page) before the
-  // user can enter the module.
+  // SECURITY model (Wave-0 + CEO principle 2026-06-15 [[program-admin-must-just-work]]):
+  // We do NOT blanket auto-bootstrap (that once turned any fresh Pool signup into
+  // a ChairOps admin). BUT a user who is explicitly authorized for chairops —
+  // either Pool admin-tier OR an active `user_modules` chairops grant — IS
+  // approved; the grant *is* the approval. For those, bootstrap a ChairopsUser
+  // row on first touch so program-admins can actually enter (fixes P0-4,
+  // AUDIT_coreperms_2026-06-01). Everyone else → log denial → return null.
   if (!chairUser) {
-    // Best-effort audit (don't block login flow if audit write fails).
+    const poolIsAdmin = isAdminTier(poolDbUser.role);
+    const grantedAdmin =
+      poolIsAdmin || (await userIsModuleAdmin(poolDbUser, "chairops"));
+    const grantedAny =
+      poolIsAdmin || (await userHasModuleAccess(poolDbUser, "chairops"));
+
+    if (grantedAny) {
+      // Respect a pre-existing row keyed by email (orphan invite / prior seed)
+      // so we never violate the (orgId,email) unique — link authUserId onto it.
+      const byEmail = email
+        ? await prisma.chairopsUser.findFirst({
+            where: { orgId: poolDbUser.org_id, email },
+          })
+        : null;
+      if (byEmail) {
+        if (!byEmail.isActive) return null; // deactivated → stay denied
+        const linked =
+          byEmail.authUserId === authUserId
+            ? byEmail
+            : await prisma.chairopsUser
+                .update({ where: { id: byEmail.id }, data: { authUserId } })
+                .catch(() => byEmail);
+        return { authUser: { id: authUserId, email }, user: linked, poolUser: poolDbUser };
+      }
+
+      // No row yet → create one derived from the grant. ADMIN when granted as
+      // program-admin (or Pool admin-tier), else OFFICE.
+      const derivedRole = grantedAdmin
+        ? ChairopsUserRole.ADMIN
+        : ChairopsUserRole.OFFICE;
+      try {
+        const created = await prisma.chairopsUser.create({
+          data: {
+            orgId: poolDbUser.org_id,
+            authUserId,
+            email,
+            displayName: poolDbUser.name || email || "ผู้ดูแล",
+            role: derivedRole,
+            isActive: true,
+          },
+        });
+        // Best-effort audit trail of the auto-grant (don't block on failure).
+        try {
+          await prisma.chairopsAuditLog.create({
+            data: {
+              orgId: poolDbUser.org_id,
+              userId: created.id,
+              action: "access.bootstrap_from_grant",
+              entity: "ChairopsUser",
+              entityId: created.id,
+              metadata: {
+                email,
+                poolRole: poolDbUser.role,
+                derivedRole,
+                reason: "user_modules_chairops_grant_or_admin_tier",
+              },
+            },
+          });
+        } catch {
+          // swallow — access already granted
+        }
+        return { authUser: { id: authUserId, email }, user: created, poolUser: poolDbUser };
+      } catch {
+        // Race: a concurrent request created it first — re-fetch by authUserId.
+        const retry = await prisma.chairopsUser.findFirst({ where: { authUserId } });
+        if (retry?.isActive)
+          return { authUser: { id: authUserId, email }, user: retry, poolUser: poolDbUser };
+        return null;
+      }
+    }
+
+    // Not authorized for chairops → log denial → deny (requireAuth redirects).
     // W0: AuditLog.orgId now required · use the Pool user's org_id (cross-
     // schema text reference). See [[chairops-audit-2026-05-25]].
     try {

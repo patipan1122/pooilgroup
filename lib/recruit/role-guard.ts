@@ -5,11 +5,16 @@
 import { redirect } from "next/navigation";
 import type { DbUser } from "@/lib/auth/session";
 
+// `program_admin` = scoped admin of programs granted via user_modules. The
+// /recruit layout gates entry on an active user_modules `recruit` grant FIRST,
+// so listing program_admin here only affects users who were explicitly granted
+// recruit — they get full recruit admin (CEO principle [[program-admin-must-just-work]]).
 /** Roles allowed to access /recruit/* admin pages */
 export const RECRUIT_ROLES: DbUser["role"][] = [
   "super_admin",
   "org_admin",
   "admin",
+  "program_admin",
   "area_manager",
   "branch_manager",
   "viewer", // read-only access
@@ -20,6 +25,7 @@ export const RECRUIT_WRITE_ROLES: DbUser["role"][] = [
   "super_admin",
   "org_admin",
   "admin",
+  "program_admin",
   "area_manager",
   "branch_manager",
 ];
@@ -29,6 +35,7 @@ export const RECRUIT_ADMIN_ROLES: DbUser["role"][] = [
   "super_admin",
   "org_admin",
   "admin",
+  "program_admin",
 ];
 
 export function requireRecruitAccess(role: DbUser["role"]): void {
