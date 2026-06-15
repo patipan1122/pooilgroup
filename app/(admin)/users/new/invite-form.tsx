@@ -46,10 +46,19 @@ function generatePassword(): string {
 export function InviteForm({
   branches,
   programs,
+  canAppointAdmins,
 }: {
   branches: BranchOption[];
   programs: { slug: string; name: string; emoji: string }[];
+  // เฉพาะ super_admin เท่านั้นที่เห็นตัวเลือกบทบาทระดับแอดมิน (CEO 2026-06-15)
+  canAppointAdmins: boolean;
 }) {
+  // ซ่อน "แอดมินโปรแกรม" + "Admin (เห็นทุกโปรแกรม)" จากคนที่ไม่ใช่ super_admin
+  const visibleRoles = canAppointAdmins
+    ? ROLES
+    : ROLES.filter(
+        (r) => r.value !== "program_admin" && r.value !== "org_admin",
+      );
   const [pending, startTransition] = useTransition();
   const [mode, setMode] = useState<Mode>("invite");
   const [name, setName] = useState("");
@@ -399,7 +408,7 @@ export function InviteForm({
           <CardTitle>บทบาท</CardTitle>
         </CardHeader>
         <CardBody className="space-y-2">
-          {ROLES.map((r) => (
+          {visibleRoles.map((r) => (
             <label
               key={r.value}
               className={cn(

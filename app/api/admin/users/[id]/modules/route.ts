@@ -80,6 +80,19 @@ export async function PUT(
     );
   }
 
+  // มอบสิทธิ์ "แอดมินโปรแกรม" (role=admin ของโมดูล) = super_admin เท่านั้น
+  // (CEO 2026-06-15) — admin/org_admin เพิ่ม "สมาชิก" โปรแกรมได้ แต่ตั้ง "แอดมิน
+  // โปรแกรม" ไม่ได้ (เป็นการแต่งตั้งแอดมิน → สงวนให้ super admin).
+  if (adminSet.size > 0 && session.user.role !== "super_admin") {
+    return NextResponse.json(
+      {
+        error:
+          "การแต่งตั้งแอดมินโปรแกรม สงวนสำหรับผู้ดูแลระบบ (super admin) เท่านั้น",
+      },
+      { status: 403 },
+    );
+  }
+
   // Strategy (RELIABILITY FIX 2026-06-15): GRANT FIRST, then remove leftovers.
   // The old order ("deactivate ALL → upsert") meant a failed upsert left the
   // user with ZERO active grants (saved → silently empty). Now we activate the

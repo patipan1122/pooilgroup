@@ -1,4 +1,5 @@
 import { requireRole } from "@/lib/auth/session";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { MODULES } from "@/lib/modules";
 import { InviteForm } from "./invite-form";
@@ -36,7 +37,11 @@ export default async function NewUserPage() {
         </p>
       </div>
 
-      <InviteForm branches={branches ?? []} programs={programs} />
+      <InviteForm
+        branches={branches ?? []}
+        programs={programs}
+        canAppointAdmins={isSuperAdmin(session.user.role)}
+      />
     </div>
   );
 }

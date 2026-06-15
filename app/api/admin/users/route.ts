@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
-import { canAssignRole } from "@/lib/auth/role-guards";
+import { canAssignRole, isAdminLevelRole } from "@/lib/auth/role-guards";
 import { MODULES } from "@/lib/modules";
 
 // Module slugs accepted for program grants — derived from the registry so a
@@ -74,7 +74,9 @@ async function grantAdminModules(
 }
 
 export async function POST(req: NextRequest) {
-  const session = await requireRole("super_admin", "org_admin");
+  // admin-tier เพิ่มผู้ใช้ได้ (เพื่อให้ admin เพิ่ม staff ได้ — CEO 2026-06-15)
+  // แต่การแต่งตั้งบทบาทระดับแอดมินถูกล็อกเป็น super_admin เท่านั้นด้านล่าง
+  const session = await requireRole("super_admin", "org_admin", "admin");
 
   let body: unknown;
   try {
@@ -98,6 +100,21 @@ export async function POST(req: NextRequest) {
   if (!canAssignRole(session.user.role, data.role)) {
     return NextResponse.json(
       { error: "ไม่มีสิทธิ์เชิญผู้ใช้ระดับนี้" },
+      { status: 403 },
+    );
+  }
+
+  // แต่งตั้งบทบาทระดับแอดมิน (รวม program_admin) หรือมอบสิทธิ์แอดมินรายโปรแกรม
+  // (adminModules) = super_admin เท่านั้น (CEO 2026-06-15). admin/org_admin เพิ่ม
+  // ได้แค่ staff/manager/viewer · ห้ามขยายวงแอดมินเอง.
+  const appointsAdmin =
+    isAdminLevelRole(data.role) || (data.adminModules?.length ?? 0) > 0;
+  if (appointsAdmin && session.user.role !== "super_admin") {
+    return NextResponse.json(
+      {
+        error:
+          "การแต่งตั้งผู้ดูแล (admin) สงวนสำหรับผู้ดูแลระบบ (super admin) เท่านั้น — กรุณาให้ผู้ดูแลระบบดำเนินการ",
+      },
       { status: 403 },
     );
   }

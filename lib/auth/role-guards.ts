@@ -78,6 +78,24 @@ export function isSuperAdmin(role: DbUser["role"]): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Admin-appointment guard (CEO 2026-06-15) — appointing ANY admin-level role is
+// reserved to super_admin only. admin/org_admin may add regular staff but must
+// NOT create or promote another admin (incl program_admin). The rank rule in
+// canAssignRole() is NOT enough on its own — e.g. admin(60) out-ranks
+// program_admin(25) and would otherwise be allowed to mint a program-admin.
+// ─────────────────────────────────────────────────────────────────────────────
+export const ADMIN_LEVEL_ROLES: DbUser["role"][] = [
+  "super_admin",
+  "org_admin",
+  "admin",
+  "program_admin",
+];
+
+export function isAdminLevelRole(role: DbUser["role"]): boolean {
+  return ADMIN_LEVEL_ROLES.includes(role);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Role-hierarchy helpers — prevent privilege escalation in user-management APIs.
 // Rule: a caller may only assign / modify users whose role rank is < caller's.
 // Without this, an `admin`-tier user could grant `super_admin` to themselves

@@ -58,6 +58,8 @@ interface Props {
   initialModules: string[];
   initialAdminModules: string[];
   isSelf: boolean;
+  // เฉพาะ super_admin เท่านั้นที่เลือกบทบาทระดับแอดมินได้ (CEO 2026-06-15)
+  canAppointAdmins: boolean;
 }
 
 export function EditUserForm({
@@ -69,7 +71,17 @@ export function EditUserForm({
   initialModules,
   initialAdminModules,
   isSelf,
+  canAppointAdmins,
 }: Props) {
+  // ซ่อนตัวเลือกบทบาทระดับแอดมินจาก non-super · แต่คงบทบาทปัจจุบันของผู้ใช้ไว้
+  // เสมอ เพื่อให้ฟอร์มแสดงค่าที่ถูกต้องและแก้ผู้ใช้ทั่วไปได้ตามปกติ
+  const visibleRoles = canAppointAdmins
+    ? ROLES
+    : ROLES.filter(
+        (r) =>
+          !["super_admin", "org_admin", "program_admin"].includes(r.value) ||
+          r.value === initial.role,
+      );
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [name, setName] = useState(initial.name);
@@ -222,7 +234,7 @@ export function EditUserForm({
               ⚠️ ระวัง: เปลี่ยนบทบาทตัวเองอาจเสียสิทธิ์เข้าหน้านี้ได้
             </p>
           )}
-          {ROLES.map((r) => (
+          {visibleRoles.map((r) => (
             <label
               key={r.value}
               className={cn(

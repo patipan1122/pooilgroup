@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth/session";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { BackButton } from "@/components/ui/back-button";
 import { adminClient } from "@/lib/db/server";
 import { MODULES } from "@/lib/modules";
@@ -85,6 +86,7 @@ export default async function EditUserPage({ params }: Props) {
         initialModules={initialModules}
         initialAdminModules={initialAdminModules}
         isSelf={user.id === session.user.id}
+        canAppointAdmins={isSuperAdmin(session.user.role)}
       />
     </div>
   );

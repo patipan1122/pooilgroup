@@ -8,7 +8,7 @@ import { zUUID } from "@/lib/zod-helpers";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
-import { canAssignRole, canManageUser } from "@/lib/auth/role-guards";
+import { canAssignRole, canManageUser, isAdminLevelRole } from "@/lib/auth/role-guards";
 
 const PatchSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -114,6 +114,22 @@ export async function PATCH(
   ) {
     return NextResponse.json(
       { error: "ไม่มีสิทธิ์มอบ role ระดับนี้" },
+      { status: 403 },
+    );
+  }
+
+  // เลื่อน/แต่งตั้งเป็นบทบาทระดับแอดมิน (รวม program_admin) = super_admin เท่านั้น
+  // (CEO 2026-06-15) — กันเลี่ยงด้วยการสร้าง staff แล้ว promote เป็นแอดมินทีหลัง.
+  if (
+    parsed.data.role !== undefined &&
+    isAdminLevelRole(parsed.data.role) &&
+    session.user.role !== "super_admin"
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "การแต่งตั้งผู้ดูแล (admin) สงวนสำหรับผู้ดูแลระบบ (super admin) เท่านั้น",
+      },
       { status: 403 },
     );
   }
