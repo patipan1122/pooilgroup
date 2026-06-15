@@ -555,6 +555,27 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: ClipboardCheck,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
       },
+      // IA-01 (audit 2026-06-15): desktop sidebar was missing 3 pages the mobile
+      // bottom-nav already had → these routes were unreachable on desktop. Add them
+      // so the maker-checker review queue + collect/deposit flow are findable.
+      {
+        href: "/chairops/branch-collect",
+        label: "เก็บเงินแทน · เลือกสาขา",
+        icon: Wallet,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
+      },
+      {
+        href: "/chairops/deposits",
+        label: "ฝากเงิน",
+        icon: Banknote,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
+      },
+      {
+        href: "/chairops/review-queue",
+        label: "คิวตรวจสอบ (อนุมัติ)",
+        icon: ListChecks,
+        roles: ["super_admin", "org_admin", "admin", "area_manager"],
+      },
       // BF1 · maid roster + day-off + pay ledger (2026-06-02)
       {
         href: "/chairops/maids",
