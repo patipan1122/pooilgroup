@@ -51,9 +51,9 @@ export interface MatchGroup {
 
 // ── Book side: UN-reconciled entries in the period (not in any active group) ───
 export async function listBookEntries(params: {
-  orgId: string; companyId: string; periodStart: string; periodEnd: string;
+  orgId: string; companyId: string; bankAccountId: string; periodStart: string; periodEnd: string;
 }): Promise<BookEntry[]> {
-  const { orgId, companyId, periodStart, periodEnd } = params;
+  const { orgId, companyId, bankAccountId, periodStart, periodEnd } = params;
   const rows = await prisma.$queryRaw<{
     bookId: string; bookType: string; date: string; docNo: string;
     contact: string; detail: string; amountSatang: bigint; sub: string; channel: string;
@@ -70,6 +70,9 @@ export async function listBookEntries(params: {
         AND r.entry_date BETWEEN ${periodStart}::date AND ${periodEnd}::date
         AND r.match_state <> 'matched'
         AND NOT EXISTS (SELECT 1 FROM ledger_bank_match_item mi WHERE mi.book_type='revenue' AND mi.book_id = r.id)
+        -- บัญชีใครบัญชีมัน: รายได้ที่ผูกเลขบัญชีไว้ (โรงแรม cash→BBL · qr→TTB) โผล่เฉพาะบัญชีตัวเอง
+        --   · รายได้ที่ยังไม่ผูกบัญชี (NULL) โผล่ทุกบัญชี (กันข้อมูลหาย) · กัน auto-match ข้ามบัญชี
+        AND (r.expected_bank_account_id = ${bankAccountId}::uuid OR r.expected_bank_account_id IS NULL)
       UNION ALL
       SELECT e.id::text, 'expense', e.doc_date::text,
              COALESCE(NULLIF(e.doc_code,''), NULLIF(e.vendor_doc_number,''), ''),
@@ -216,9 +219,9 @@ export interface BookLedgerRow {
 
 // รายการบันทึกบัญชี (book) — every entry in range with reconciled flag + detail
 export async function listBookLedger(params: {
-  orgId: string; companyId: string; periodStart: string; periodEnd: string;
+  orgId: string; companyId: string; bankAccountId: string; periodStart: string; periodEnd: string;
 }): Promise<BookLedgerRow[]> {
-  const { orgId, companyId, periodStart, periodEnd } = params;
+  const { orgId, companyId, bankAccountId, periodStart, periodEnd } = params;
   const rows = await prisma.$queryRaw<{
     bookId: string; bookType: string; date: string; docNo: string; contact: string;
     detail: string; kind: string; amountSatang: bigint; reconciled: boolean;
@@ -234,6 +237,8 @@ export async function listBookLedger(params: {
       FROM ledger_revenue_entry r
       WHERE r.org_id=${orgId}::uuid AND r.company_id=${companyId}::uuid
         AND r.entry_date BETWEEN ${periodStart}::date AND ${periodEnd}::date
+        -- บัญชีใครบัญชีมัน: รายได้ผูกบัญชีไหน โผล่บัญชีนั้น · NULL = โผล่ทุกบัญชี (กันข้อมูลหาย)
+        AND (r.expected_bank_account_id = ${bankAccountId}::uuid OR r.expected_bank_account_id IS NULL)
       UNION ALL
       SELECT e.id::text, 'expense', e.doc_date::text,
              COALESCE(NULLIF(e.doc_code,''), NULLIF(e.vendor_doc_number,''),''),

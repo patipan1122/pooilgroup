@@ -62,7 +62,7 @@ export default async function ReconcilePage({
   }
 
   const [bookEntries, bankMovements, suggestedGroups] = await Promise.all([
-    listBookEntries({ orgId, companyId, periodStart, periodEnd }),
+    listBookEntries({ orgId, companyId, bankAccountId: accountId, periodStart, periodEnd }),
     listBankMovements({ orgId, companyId, bankAccountId: accountId, periodStart, periodEnd }),
     listMatchGroups({ orgId, companyId, bankAccountId: accountId, status: "suggested" }),
   ]);

@@ -869,8 +869,9 @@ export async function autoMatchAccountAction(
       AND NOT EXISTS (SELECT 1 FROM ledger_bank_match_item mi WHERE mi.bank_txn_id=t.id)
     ORDER BY t.txn_date LIMIT 1000`;
 
-  // candidate book entries in period (not yet grouped)
-  const book = await listBookEntriesForAuto(orgId, companyId, periodStart, periodEnd);
+  // candidate book entries in period (not yet grouped) — กรองตามบัญชีด้วย กัน auto-match ข้ามบัญชี
+  // (เช่น ยอด QR ที่เข้า TTB ต้องไม่ไปจับกับ statement ของ BBL)
+  const book = await listBookEntriesForAuto(orgId, companyId, bankAccountId, periodStart, periodEnd);
 
   const usedBook = new Set<string>();
   let created = 0;
@@ -891,9 +892,9 @@ export async function autoMatchAccountAction(
   return { ok: true, created };
 }
 
-async function listBookEntriesForAuto(orgId: string, companyId: string, ps: string, pe: string) {
+async function listBookEntriesForAuto(orgId: string, companyId: string, bankAccountId: string, ps: string, pe: string) {
   const { listBookEntries } = await import("@/lib/ledger/bank-reconcile-board");
-  return listBookEntries({ orgId, companyId, periodStart: ps, periodEnd: pe });
+  return listBookEntries({ orgId, companyId, bankAccountId, periodStart: ps, periodEnd: pe });
 }
 
 export async function confirmGroupAction(groupId: string): Promise<{ ok: boolean; error?: string }> {

@@ -68,7 +68,7 @@ export default async function BankAccountDetailPage({
   const [summary, bankLedger, bookLedger, batches] = await Promise.all([
     accountSummary({ orgId, companyId, bankAccountId: accountId, periodStart, periodEnd }),
     listBankLedger({ orgId, companyId, bankAccountId: accountId, periodStart, periodEnd }),
-    listBookLedger({ orgId, companyId, periodStart, periodEnd }),
+    listBookLedger({ orgId, companyId, bankAccountId: accountId, periodStart, periodEnd }),
     listBatchesAction(accountId),
   ]);
 

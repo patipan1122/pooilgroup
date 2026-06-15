@@ -80,20 +80,23 @@ export async function computeHotelDeposits(
 ): Promise<HotelDeposit[]> {
   const { data } = await admin
     .from("cashhub_hotel_daily")
-    .select("sales_date, shift, source, qr_banked, cash_deposited")
+    .select("sales_date, shift, source, qr_banked, cash_to_remit")
     .eq("org_id", orgId)
     .eq("branch_id", branchId)
     .gte("sales_date", from)
     .lte("sales_date", to);
-  // ค่าระดับวันอยู่แถวกะเช้า (morning) — fallback กะค่ำถ้าเช้าว่าง. QR เอาจาก trcloud_iv ก่อน (TTB จริง)
-  type Acc = { qr: number | null; cash: number | null };
+  // QR (qr_banked) = ค่าระดับวัน (shift-basis คำนวณแล้ว) → เก็บแถวกะเช้าก่อน.
+  // เงินสด = "ยอดส่งเงินสด" (cash_to_remit = ยอดขายรวม − QR) เก็บ "ต่อกะ" → ต้องรวมเช้า+ค่ำ
+  //   = ยอดฝากเงินสด 1 วัน 1 ยอด (CEO 2026-06-15: ส่งเงินสดเช้า+ค่ำรวมกัน → เข้า BBL → แมตช์ statement 1:1).
+  //   ของเดิมดึง cash_deposited (เงินสดส่ง/ฝากจริง มีของล่วงหน้าปน) + กะเดียว → ยอดเพี้ยน.
+  type Acc = { qr: number | null; cash: number };
   const iv = new Map<string, Acc>();
   const sheet = new Map<string, Acc>();
   const put = (m: Map<string, Acc>, r: Record<string, unknown>) => {
-    const a = m.get(String(r.sales_date)) ?? { qr: null, cash: null };
+    const a = m.get(String(r.sales_date)) ?? { qr: null, cash: 0 };
     const isMorning = r.shift === "morning";
     if (r.qr_banked != null && (isMorning || a.qr == null)) a.qr = Number(r.qr_banked);
-    if (r.cash_deposited != null && (isMorning || a.cash == null)) a.cash = Number(r.cash_deposited);
+    if (r.cash_to_remit != null) a.cash += Number(r.cash_to_remit); // รวมทุกกะของวัน (เช้า+ค่ำ)
     m.set(String(r.sales_date), a);
   };
   for (const r of (data ?? []) as Record<string, unknown>[])
