@@ -3,26 +3,14 @@ import type { adminClient } from "@/lib/db/server";
 import { prisma } from "@/lib/prisma";
 import {
   DEFAULT_CHANNELS,
-  computeDaySettlement,
+  computeSendRows,
+  SETTLEMENT_GROUPS,
   type ChannelConfig,
 } from "./amazon-settlement";
 import type { SavedAmazonDay } from "./amazon-data";
 import { BANK_LABELS } from "@/lib/ledger/bank-adapters/types";
 
 type Admin = ReturnType<typeof adminClient>;
-
-// cvar → channel_code มาตรฐานของ bank-recon (cash/transfer/card/qr/wallet)
-const CVAR_CHANNEL_CODE: Record<string, string> = {
-  c1: "cash",
-  c2: "qr",
-  c13: "qr",
-  c12: "card",
-  c20: "transfer",
-  c21: "transfer",
-  c22: "transfer",
-  c14: "wallet",
-  c15: "wallet",
-};
 
 /** โหลด config ช่องทาง (merge กับ default — ช่องใหม่โผล่อัตโนมัติ) */
 export async function loadChannelConfig(
@@ -147,25 +135,30 @@ export async function sendDaysToReconcile(
 ): Promise<{ inserted: number; skippedNoConfig: number; error?: string }> {
   const configByCvar = new Map(configs.map((c) => [c.cvar, c]));
   const rows: ReconcileRow[] = [];
+  // source_ref เก่าแบบ "แยก QR/QR Manual/wallet" (ก่อนรวมก้อนเดียว) → เก็บไว้ลบกันนับซ้ำ
+  const legacyRefs: string[] = [];
   let skippedNoConfig = 0;
   for (const day of days) {
     if (!day.balanced) continue;
-    const { perChannel } = computeDaySettlement(day.channels, configByCvar);
-    for (const s of perChannel) {
-      if (!s.settled) continue; // ข้ามช่องที่ไม่เข้าธนาคาร/รอสะสม
+    // รวมช่องที่โอนเข้าบัญชีก้อนเดียว (QR+QR Manual+wallet) เป็น 1 บรรทัด — สูตรเดียวกับพรีวิว
+    const { rows: sendRows } = computeSendRows(day.channels, configByCvar);
+    for (const g of SETTLEMENT_GROUPS)
+      for (const cv of g.cvars)
+        legacyRefs.push(`amz-${storeCode}-${day.sales_date}-${cv}`);
+    for (const s of sendRows) {
       if (!s.companyId) {
-        skippedNoConfig++; // ยังไม่ตั้งบริษัท → ข้าม (ต้องตั้งก่อน)
+        skippedNoConfig++; // ยังไม่ตั้งบริษัท/บัญชี → ข้าม (ต้องตั้งก่อน)
         continue;
       }
       rows.push({
         companyId: s.companyId,
         entryDate: day.sales_date,
         amountSatang: Math.round(s.net * 100),
-        sourceRef: `amz-${storeCode}-${day.sales_date}-${s.cvar}`,
+        sourceRef: `amz-${storeCode}-${day.sales_date}-${s.key}`,
         description: `Amazon ${branchLabel} · ${s.label} · ${day.sales_date}`,
         customerName: `Café Amazon ${branchLabel}`,
         paymentChannel: s.label,
-        channelCode: CVAR_CHANNEL_CODE[s.cvar] ?? "other",
+        channelCode: s.channelCode,
         bankAccountId: s.bankAccountId,
       });
     }
@@ -176,6 +169,20 @@ export async function sendDaysToReconcile(
   // conflict target ตรงกับ partial unique index (org,company,source_type,source_ref WHERE source_ref NOT NULL)
   let inserted = 0;
   try {
+    // ลบบรรทัดเก่าที่เคยส่งแบบ "แยก QR/QR Manual/wallet" และยัง unmatched — กันนับซ้ำหลังเปลี่ยนมารวมก้อนเดียว
+    // (แตะเฉพาะที่ยังไม่จับคู่ statement · ของที่กระทบยอดแล้วไม่ถูกแตะ)
+    if (legacyRefs.length) {
+      await prisma.$executeRaw`
+        DELETE FROM ledger_revenue_entry
+        WHERE org_id = ${orgId}::uuid
+          AND source_type = 'CASHHUB_AMAZON'
+          AND match_state = 'unmatched'
+          AND source_ref = ANY(${legacyRefs})
+          AND NOT EXISTS (
+            SELECT 1 FROM ledger_bank_match_item mi
+            WHERE mi.book_type = 'revenue' AND mi.book_id = ledger_revenue_entry.id
+          )`;
+    }
     for (const r of rows) {
       const res = await prisma.$queryRaw<{ id: string }[]>`
         INSERT INTO ledger_revenue_entry

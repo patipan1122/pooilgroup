@@ -97,3 +97,107 @@ export function computeDaySettlement(
   }
   return { perChannel, totalFee, totalNet, totalPending };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// การรวมช่องทาง → "บรรทัดที่ส่งเข้า reconcile"
+// 1 ก้อนเงินที่เข้าบัญชีจริง = 1 บรรทัด = จับคู่ statement ธนาคาร 1:1
+// ─────────────────────────────────────────────────────────────────────────────
+
+// cvar → channel_code มาตรฐานของ bank-recon
+export const CVAR_CHANNEL_CODE: Record<string, string> = {
+  c1: "cash",
+  c2: "qr",
+  c13: "qr",
+  c12: "card",
+  c20: "transfer",
+  c21: "transfer",
+  c22: "transfer",
+  c14: "wallet",
+  c15: "wallet",
+};
+
+// ช่องทางที่แพลตฟอร์มโอนรวมเข้าบัญชีเป็น "ก้อนเดียวต่อวัน" → ต้องส่ง reconcile เป็น 1 บรรทัด
+// (ไม่งั้น statement มี 1 บรรทัด/วัน แต่ระบบส่งหลายบรรทัด → จับคู่ไม่ตรง)
+// CEO 2026-06-15: QR Payment + QR Manual + blueplus wallet โอนรวมเข้าด้วยกัน · blueplus credit แยกเดี่ยว
+export const SETTLEMENT_GROUPS: {
+  key: string;
+  label: string;
+  channelCode: string;
+  cvars: string[];
+}[] = [
+  { key: "qr", label: "QR + Wallet", channelCode: "qr", cvars: ["c2", "c13", "c14"] },
+];
+
+// cvar → group key (ช่องที่ไม่อยู่ในกลุ่ม = ส่งเดี่ยว 1 บรรทัด/วัน)
+export const CVAR_GROUP: Record<string, string> = Object.fromEntries(
+  SETTLEMENT_GROUPS.flatMap((g) => g.cvars.map((cv) => [cv, g.key] as const)),
+);
+
+export type SettlementSendRow = {
+  key: string; // source_ref suffix (group key หรือ cvar)
+  label: string;
+  channelCode: string;
+  gross: number;
+  fee: number;
+  net: number;
+  feePercent: number; // ค่าธรรมเนียมรวม % (สำหรับแสดงผล)
+  companyId: string | null;
+  bankAccountId: string | null;
+  memberCvars: string[];
+};
+
+/**
+ * แปลงยอดขายต่อวัน → "บรรทัดที่จะส่งเข้า reconcile" (หลังรวมช่องที่โอนก้อนเดียว)
+ * ใช้ร่วมกันทั้งตัวส่งจริง (sendDaysToReconcile) และพรีวิวในหน้าตั้งค่า → เลขตรงกันเสมอ
+ */
+export function computeSendRows(
+  channels: Record<string, number> | null,
+  configByCvar: Map<string, ChannelConfig>,
+): { rows: SettlementSendRow[]; totalNet: number } {
+  const { perChannel } = computeDaySettlement(channels, configByCvar);
+  const settled = perChannel.filter((s) => s.settled);
+  const rows: SettlementSendRow[] = [];
+
+  // 1) ช่องที่โอนรวมเข้าบัญชีก้อนเดียว → รวมเป็น 1 บรรทัด/กลุ่ม
+  for (const g of SETTLEMENT_GROUPS) {
+    const members = settled.filter((s) => g.cvars.includes(s.cvar));
+    if (members.length === 0) continue;
+    const gross = round2(members.reduce((a, m) => a + m.gross, 0));
+    const fee = round2(members.reduce((a, m) => a + m.fee, 0));
+    const net = round2(members.reduce((a, m) => a + m.net, 0));
+    // โอนรวม = บัญชีเดียวกัน → ใช้ config ของสมาชิกตัวแรกที่ตั้งบริษัทไว้
+    const rep = members.find((m) => m.companyId) ?? members[0];
+    rows.push({
+      key: g.key,
+      label: g.label,
+      channelCode: g.channelCode,
+      gross,
+      fee,
+      net,
+      feePercent: gross > 0 ? round2((fee / gross) * 100) : 0,
+      companyId: rep.companyId,
+      bankAccountId: rep.bankAccountId,
+      memberCvars: members.map((m) => m.cvar),
+    });
+  }
+
+  // 2) ช่องเดี่ยว (ไม่อยู่ในกลุ่ม) → 1 บรรทัด/ช่อง
+  for (const s of settled) {
+    if (CVAR_GROUP[s.cvar]) continue;
+    rows.push({
+      key: s.cvar,
+      label: s.label,
+      channelCode: CVAR_CHANNEL_CODE[s.cvar] ?? "other",
+      gross: s.gross,
+      fee: s.fee,
+      net: s.net,
+      feePercent: configByCvar.get(s.cvar)?.feePercent ?? 0,
+      companyId: s.companyId,
+      bankAccountId: s.bankAccountId,
+      memberCvars: [s.cvar],
+    });
+  }
+
+  const totalNet = round2(rows.reduce((a, r) => a + r.net, 0));
+  return { rows, totalNet };
+}

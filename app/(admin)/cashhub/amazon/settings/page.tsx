@@ -10,9 +10,10 @@ import {
   listBankAccounts,
   listCompanies,
 } from "@/lib/cashhub/amazon-settlement-data";
-import { computeDaySettlement } from "@/lib/cashhub/amazon-settlement";
+import { computeSendRows } from "@/lib/cashhub/amazon-settlement";
 import { loadAmazonDays, listAmazonStores } from "@/lib/cashhub/amazon-data";
 import { AmazonSettingsEditor } from "./amazon-settings-editor";
+import { AmazonRuleSummary } from "./amazon-rule-summary";
 import { AmazonSendPreview, type SendPreviewDay } from "./amazon-send-preview";
 
 export const dynamic = "force-dynamic";
@@ -44,16 +45,17 @@ export default async function AmazonSettingsPage() {
     if (withData.length === 0) continue;
     storeLabel = st.branch_label ?? st.store_code;
     previewDays = withData.slice(-2).map((d) => {
-      const { perChannel, totalNet } = computeDaySettlement(d.channels, configByCvar);
+      // รวมช่องที่โอนก้อนเดียว (QR+QR Manual+wallet) แล้ว — สูตรเดียวกับตัวส่งจริง
+      const { rows, totalNet } = computeSendRows(d.channels, configByCvar);
       return {
         date: d.sales_date,
         totalNet,
-        rows: perChannel.filter((s) => s.settled).map((s) => {
-          const accId = s.bankAccountId ?? configByCvar.get(s.cvar)?.bankAccountId ?? null;
+        rows: rows.map((s) => {
+          const accId = s.bankAccountId;
           return {
             label: s.label,
             gross: s.gross,
-            feePercent: configByCvar.get(s.cvar)?.feePercent ?? 0,
+            feePercent: s.feePercent,
             fee: s.fee,
             net: s.net,
             account: accId ? (accById.get(accId) ?? "บัญชีถูกลบ") : "",
@@ -76,6 +78,7 @@ export default async function AmazonSettingsPage() {
           ระบบคำนวณ &ldquo;เงินเข้าจริง&rdquo; + ส่งเข้าหน้ากระทบยอดธนาคารให้
         </p>
       </header>
+      <AmazonRuleSummary configs={configs} />
       <AmazonSettingsEditor configs={configs} accounts={accounts} companies={companies} />
       <AmazonSendPreview days={previewDays} storeLabel={storeLabel} />
     </div>
