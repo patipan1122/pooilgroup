@@ -46,6 +46,67 @@ export async function loadHotelChannelConfig(
   }));
 }
 
+/** ช่องทางมาตรฐานของโรงแรม — โผล่ในหน้าตั้งค่าเสมอ แม้ยังไม่เคยตั้ง (OTA ปิด default) */
+export const DEFAULT_HOTEL_CHANNELS: { channel: string; label: string; isSettle: boolean }[] = [
+  { channel: "cash", label: "เงินสดฝาก", isSettle: true },
+  { channel: "qr", label: "QR พร้อมเพย์", isSettle: true },
+  { channel: "ota_agoda", label: "Agoda", isSettle: false },
+  { channel: "ota_expedia", label: "Expedia", isSettle: false },
+  { channel: "ota_booking", label: "Booking.com", isSettle: false },
+];
+
+/** โหลด config สำหรับหน้าตั้งค่า — merge default + ที่บันทึกไว้ (รวม inactive ด้วย ให้เห็น/แก้ได้ครบ) */
+export async function loadHotelChannelConfigForSettings(
+  admin: Admin,
+  orgId: string,
+): Promise<HotelChannelConfig[]> {
+  const { data } = await admin
+    .from("cashhub_hotel_channel_config")
+    .select("channel, label, is_settle, fee_percent, bank_account_id, company_id, active")
+    .eq("org_id", orgId);
+  const saved = new Map<string, Record<string, unknown>>();
+  for (const r of (data ?? []) as Record<string, unknown>[]) saved.set(String(r.channel), r);
+  // ช่องทาง = default + ช่องที่ตั้งไว้แล้วแต่ไม่อยู่ใน default (กันตกหล่น)
+  const extra = [...saved.keys()].filter((c) => !DEFAULT_HOTEL_CHANNELS.some((d) => d.channel === c));
+  const order = [...DEFAULT_HOTEL_CHANNELS.map((d) => d.channel), ...extra];
+  return order.map((ch) => {
+    const d = DEFAULT_HOTEL_CHANNELS.find((x) => x.channel === ch);
+    const s = saved.get(ch);
+    return {
+      channel: ch,
+      label: (s?.label as string) ?? d?.label ?? ch,
+      isSettle: s ? (s.is_settle == null ? true : Boolean(s.is_settle)) : (d?.isSettle ?? false),
+      feePercent: s?.fee_percent != null ? Number(s.fee_percent) : 0,
+      bankAccountId: (s?.bank_account_id as string | null) ?? null,
+      companyId: (s?.company_id as string | null) ?? null,
+      active: s ? Boolean(s.active) : false,
+    };
+  });
+}
+
+/** บันทึก config ช่องทางโรงแรม (super_admin) — upsert ต่อช่องทาง · active=ติ๊กเงินเข้าธนาคาร */
+export async function saveHotelChannelConfig(
+  admin: Admin,
+  orgId: string,
+  configs: HotelChannelConfig[],
+): Promise<{ ok: boolean; error?: string }> {
+  const rows = configs.map((c) => ({
+    org_id: orgId,
+    channel: c.channel,
+    label: c.label,
+    is_settle: c.isSettle,
+    fee_percent: c.feePercent,
+    bank_account_id: c.isSettle ? c.bankAccountId : null,
+    company_id: c.isSettle ? c.companyId : null,
+    active: c.isSettle, // ติ๊ก "เป็นเงินเข้าธนาคาร" = ใช้งาน (ส่งเข้า reconcile)
+    updated_at: new Date().toISOString(),
+  }));
+  const { error } = await admin
+    .from("cashhub_hotel_channel_config")
+    .upsert(rows, { onConflict: "org_id,channel" });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
 export type HotelDeposit = {
   date: string;
   qrBanked: number;

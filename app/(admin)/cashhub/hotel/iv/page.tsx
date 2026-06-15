@@ -143,12 +143,21 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
         <SectionPill num="🔗" label="Hotel · ดึง IV จาก TRCloud" />
         <div className="flex flex-wrap items-end justify-between gap-3 mt-1">
           <TwoToneTitle first="ดึง IV โรงแรม" accent={monthLabel} size={28} />
-          <Link
-            href={`/cashhub/hotel?branchId=${branchId ?? ""}&month=${monthStr}`}
-            className="h-10 inline-flex items-center gap-1.5 rounded-xl border border-zinc-300 bg-white text-sm font-semibold px-4 hover:bg-zinc-50"
-          >
-            📊 ไปหน้า Excel ยอดขาย
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/cashhub/hotel/settings"
+              title="ตั้งค่าช่องทาง → บัญชี (super_admin)"
+              className="h-10 inline-flex items-center gap-1.5 rounded-xl border border-zinc-300 bg-white text-sm font-semibold px-4 hover:bg-zinc-50"
+            >
+              ⚙️ ตั้งค่าช่องทาง
+            </Link>
+            <Link
+              href={`/cashhub/hotel?branchId=${branchId ?? ""}&month=${monthStr}`}
+              className="h-10 inline-flex items-center gap-1.5 rounded-xl border border-zinc-300 bg-white text-sm font-semibold px-4 hover:bg-zinc-50"
+            >
+              📊 ไปหน้า Excel ยอดขาย
+            </Link>
+          </div>
         </div>
         <p className="text-sm text-zinc-500 mt-1">
           หน้างานคีย์ IV เข้า TRCloud → ดึงมาเช็คว่าคีย์ครบทุกวัน/กะไหม (ยอด IV = ยอดขายในชีต)
