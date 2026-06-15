@@ -80,14 +80,11 @@ export async function PUT(
     );
   }
 
-  // Strategy: deactivate ALL existing rows for this user, then upsert the
-  // requested set. Cleaner than diff-and-patch and the table is small.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (admin.from as any)("user_modules")
-    .update({ is_active: false, updated_at: now })
-    .eq("user_id", targetId)
-    .eq("org_id", orgId);
-
+  // Strategy (RELIABILITY FIX 2026-06-15): GRANT FIRST, then remove leftovers.
+  // The old order ("deactivate ALL → upsert") meant a failed upsert left the
+  // user with ZERO active grants (saved → silently empty). Now we activate the
+  // requested set first; only after that succeeds do we deactivate the modules
+  // being removed — so a save can never wipe access on a partial failure.
   if (requested.length > 0) {
     const rows = requested.map((module_name) => ({
       org_id: orgId,
@@ -102,7 +99,8 @@ export async function PUT(
     }));
 
     // Upsert on the (org_id, user_id, module_name) composite — re-activates
-    // any row that existed previously without creating duplicates.
+    // any row that existed previously without creating duplicates. If THIS
+    // fails we return immediately WITHOUT having touched existing grants.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (admin.from as any)("user_modules").upsert(rows, {
       onConflict: "org_id,user_id,module_name",
@@ -111,6 +109,31 @@ export async function PUT(
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+  }
+
+  // Deactivate ONLY the modules NOT in the requested set (removals). Runs after
+  // a successful grant, so the active set is always correct; a failure here
+  // leaves the new grants intact (stale removals are harmless, surfaced below).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let deactivate = (admin.from as any)("user_modules")
+    .update({ is_active: false, updated_at: now })
+    .eq("user_id", targetId)
+    .eq("org_id", orgId)
+    .eq("is_active", true);
+  if (requested.length > 0) {
+    // Keep the requested slugs active; turn off everything else.
+    const inList = `(${requested.map((m) => `"${m}"`).join(",")})`;
+    deactivate = deactivate.not("module_name", "in", inList);
+  }
+  const { error: deErr } = await deactivate;
+  if (deErr) {
+    // Non-fatal: the requested grants ARE active — only stale removals lingered.
+    return NextResponse.json({
+      success: true,
+      modules: requested,
+      warning:
+        "ให้สิทธิ์โปรแกรมสำเร็จ แต่ถอดสิทธิ์เก่าบางส่วนไม่สำเร็จ — ลองบันทึกอีกครั้งถ้าต้องการ",
+    });
   }
 
   await audit({
