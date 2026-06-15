@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCronSecret } from "@/lib/chairops/auth/cron-secret";
 import { runWithMonitor } from "@/lib/cron/runner";
-import { autoImportScbStatements } from "@/lib/ledger/scb-statement-ingest";
+import { autoImportScbStatements, diagnoseScbSearch } from "@/lib/ledger/scb-statement-ingest";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -27,16 +27,22 @@ export async function GET(request: NextRequest) {
         const importedMessages = results.reduce((s, r) => s + r.importedMessages, 0);
         const insertedRows = results.reduce((s, r) => s + r.insertedRows, 0);
         const batches = results.reduce((s, r) => s + r.batches, 0);
+        const scanned = results.reduce((s, r) => s + r.scanned, 0);
         const errors = results
           .filter((r) => r.error)
           .map((r) => ({ mailbox: r.gmailEmail, error: r.error }));
 
+        // When nothing landed, attach probe diagnostics so a "0 imported" is traceable.
+        const diagnostic = insertedRows === 0 ? await diagnoseScbSearch() : undefined;
+
         return NextResponse.json({
           ok: true,
           mailboxes: results.length,
+          scanned,
           importedMessages,
           batches,
           insertedRows,
+          diagnostic,
           errors: errors.length > 0 ? errors : undefined,
           ms: Date.now() - t0,
         });

@@ -387,30 +387,31 @@ async function recordMessage(
 // ── Diagnostic: probe several Gmail queries to pinpoint why 0 were found ──────
 // Returns a human-readable line per connected mailbox with hit-counts, so a "0 found"
 // can be traced to (a) Gmail read broken, (b) wrong sender filter, or (c) Spam/elsewhere.
-export async function diagnoseScbSearch(orgId: string): Promise<string> {
+export async function diagnoseScbSearch(orgId?: string): Promise<string> {
   const conns = await prisma.ledgerEmailConnection.findMany({
-    where: { active: true, orgId },
-    select: { id: true, gmailEmail: true },
+    where: { active: true, ...(orgId ? { orgId } : {}) },
+    select: { id: true, gmailEmail: true, scopes: true },
   });
   if (!conns.length) return "ไม่พบกล่องเมลที่เชื่อม";
 
   const lines: string[] = [];
   for (const c of conns) {
+    const hasGmailScope = (c.scopes ?? "").includes("gmail.readonly");
     const token = await getMailboxAccessToken(c.id);
     if (!token) {
-      lines.push(`${c.gmailEmail}: ⚠️ ต่อ Gmail ไม่ได้ (token พัง/เพิกถอน)`);
+      lines.push(`${c.gmailEmail}: ⚠️ ต่อ Gmail ไม่ได้ (token พัง/เพิกถอน) · gmail-scope=${hasGmailScope}`);
       continue;
     }
     const probe = async (q: string) =>
       (await searchMailboxMessages(token, c.gmailEmail, q, 5)).length;
-    const anyAtt = await probe("has:attachment newer_than:1y");
     const anyMail = await probe("newer_than:1y");
+    const anyAtt = await probe("has:attachment newer_than:1y");
     const fromScb = await probe("from:scb.co.th");
     const fromExact = await probe("from:contact_business@email.scb.co.th");
-    const subj = await probe('subject:(SCB Business Anywhere)');
+    const subj = await probe("subject:(SCB Business Anywhere)");
     const anywhere = await probe("from:scb.co.th in:anywhere");
     lines.push(
-      `${c.gmailEmail}: เมลทั้งหมด(1ปี)=${anyMail} · มีไฟล์แนบ=${anyAtt} · from:scb.co.th=${fromScb} · from:เป๊ะ=${fromExact} · subject=${subj} · scb+spam/all=${anywhere}`,
+      `${c.gmailEmail} [gmail-scope=${hasGmailScope}]: เมลทั้งหมด(1ปี)=${anyMail} · มีไฟล์แนบ=${anyAtt} · from:scb.co.th=${fromScb} · from:เป๊ะ=${fromExact} · subject=${subj} · scb+spam/all=${anywhere}`,
     );
   }
   return lines.join(" || ");
