@@ -11,6 +11,7 @@
 import { useState, useTransition } from "react";
 import { Send, Loader2, CloudCheck, RefreshCw, Boxes } from "lucide-react";
 import { sendExpenseToTrcloud } from "@/app/(admin)/ledger/_actions";
+import { trcloudState } from "@/lib/ledger/trcloud-state";
 import { StockInButton } from "./StockInButton";
 
 type SkuOpt = { id: string; productId: string; productName: string | null; businessGroup: string | null };
@@ -45,10 +46,17 @@ export function TrcloudButton({
 }) {
   const sendable = status === "confirmed" || status === "locked";
   const isQuotation = docType === "quotation";
+  const initialState = trcloudState(trcloudDocId);
   const [pending, start] = useTransition();
   const [mode, setMode] = useState<"idle" | "stock">("idle");
-  const [sent, setSent] = useState<string | null>(trcloudDocId ? trcloudDocNo ?? "ส่งแล้ว" : null);
-  const [err, setErr] = useState<string | null>(trcloudError);
+  // "ส่งแล้ว" badge only for a REAL doc id — a failed push ("error") shows the retry
+  // button instead (err seeded from trcloudError). See trcloud-state.ts.
+  const [sent, setSent] = useState<string | null>(
+    initialState === "sent" ? trcloudDocNo ?? "ส่งแล้ว" : null,
+  );
+  const [err, setErr] = useState<string | null>(
+    initialState === "error" ? trcloudError ?? "ส่งไม่สำเร็จ" : null,
+  );
   const [warn, setWarn] = useState<string | null>(null);
 
   // ── mutual exclusion: ทำไปทางใดทางหนึ่งแล้ว → ไม่ให้ทำอีกทาง (กันต้นทุนเบิ้ล) ──

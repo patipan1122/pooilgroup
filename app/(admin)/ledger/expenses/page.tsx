@@ -25,6 +25,7 @@ import { ExportButton } from "./_components/ExportButton";
 import { HeaderToolsMenu } from "./_components/HeaderToolsMenu";
 import { ledgerQuotationV1, ledgerSlipV1, ledgerPayreqV1, ledgerStockinV1 } from "@/lib/ledger/flags";
 import { TrcloudButton } from "@/components/ledger/TrcloudButton";
+import { isTrcloudSendable } from "@/lib/ledger/trcloud-state";
 import { expenseConfirmability } from "@/lib/ledger/confirmability";
 import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
 
@@ -213,12 +214,24 @@ export default async function ExpensesPage({
     prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "draft", needsReview: true } }),
     prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "draft", needsReview: false } }),
     prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "confirmed" } }),
+    // ส่งแล้ว = REAL doc id only (exclude null + "pending"/"error" sentinels — else a
+    // failed push inflates this count, the 2026-06-15 false-sent-display bug). See trcloud-state.ts.
     prisma.ledgerExpense.count({
-      where: { ...statusCountWhere, status: { in: VISIBLE_STATUSES }, trcloudDocId: { not: null } },
+      where: {
+        ...statusCountWhere,
+        status: { in: VISIBLE_STATUSES },
+        trcloudDocId: { not: null, notIn: ["pending", "error"] },
+      },
     }),
-    // ยังไม่ส่ง TRCloud (CEO 2026-06-10 tab) — visible + ยังไม่มี trcloudDocId.
+    // ยังไม่ส่ง TRCloud (CEO 2026-06-10 tab) — never pushed (null) OR last push FAILED
+    // ("error") so failed bills surface here for retry instead of hiding as "sent".
+    // AND-wrapped so it composes with the search OR that statusCountWhere may carry.
     prisma.ledgerExpense.count({
-      where: { ...statusCountWhere, status: { in: VISIBLE_STATUSES }, trcloudDocId: null },
+      where: {
+        ...statusCountWhere,
+        status: { in: VISIBLE_STATUSES },
+        AND: [{ OR: [{ trcloudDocId: null }, { trcloudDocId: "error" }] }],
+      },
     }),
   ]);
   const statusCounts = {
@@ -320,9 +333,11 @@ export default async function ExpensesPage({
   quotationOnParams.set("dt", "quotation");
 
   const draftIds = rows.filter((r) => r.status === "draft").map((r) => r.id);
-  // Confirmed/locked rows not yet in TRCloud → bulk-sendable.
+  // Confirmed/locked rows not yet in TRCloud → bulk-sendable. Includes rows whose
+  // last push FAILED ("error") so they can be retried in bulk (isTrcloudSendable),
+  // not just never-pushed rows (the old `!r.trcloudDocId` treated "error" as sent).
   const sendableIds = rows
-    .filter((r) => (r.status === "confirmed" || r.status === "locked") && !r.trcloudDocId)
+    .filter((r) => (r.status === "confirmed" || r.status === "locked") && isTrcloudSendable(r.trcloudDocId))
     .map((r) => r.id);
 
   return (

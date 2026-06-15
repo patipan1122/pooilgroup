@@ -14,6 +14,7 @@ import { DocTag, PaymentTag } from "@/components/ledger/_kit/StatusTags";
 import { LedgerEmptyState } from "@/components/ledger/Brand";
 import { SearchableSelect } from "@/components/ledger/SearchableSelect";
 import { expenseConfirmability } from "@/lib/ledger/confirmability";
+import { trcloudState } from "@/lib/ledger/trcloud-state";
 import {
   bulkConfirm,
   bulkVoid,
@@ -763,9 +764,12 @@ export function ExpenseList({
             const isDraft = r.status === "draft";
             const isSendable = sendableSet.has(r.id);
             const selectable = isDraft || isSendable;
-            const isPending = r.trcloudDocId === "pending";
-            const pushed = !!r.trcloudDocId && !isPending;
-            const pushErr = !pushed && !isPending && !!r.trcloudError;
+            // TRCloud state from the shared classifier — "error" is a FAILED push,
+            // NOT sent (the old `!!trcloudDocId` lit the blue "ส่งแล้ว" chip on failures).
+            const trState = trcloudState(r.trcloudDocId);
+            const isPending = trState === "pending";
+            const pushed = trState === "sent";
+            const pushErr = trState === "error";
             // D1 surfacing — show legacy/incomplete rows missing สาขา/หมวด so they
             // can be remediated (some were confirmed before the gate existed).
             const gate = expenseConfirmability({

@@ -10,6 +10,7 @@
 import { useState, useTransition } from "react";
 import { CloudUpload, Loader2, CloudCheck, RefreshCw } from "lucide-react";
 import { sendExpenseToTrcloud } from "@/app/(admin)/ledger/_actions";
+import { trcloudState } from "@/lib/ledger/trcloud-state";
 
 export function SendToTrcloudButton({
   expenseId,
@@ -31,11 +32,17 @@ export function SendToTrcloudButton({
 }) {
   const sendable = status === "confirmed" || status === "locked";
   const isQuotation = docType === "quotation";
+  const initialState = trcloudState(trcloudDocId);
   const [pending, start] = useTransition();
+  // "sent" badge only for a REAL doc id — a failed push ("error") falls through to the
+  // retry button below (err is seeded from trcloudError). The old check treated the
+  // "error" sentinel as sent → no way to retry. See trcloud-state.ts.
   const [sent, setSent] = useState<string | null>(
-    trcloudDocId ? trcloudDocNo ?? "ส่งแล้ว" : null,
+    initialState === "sent" ? trcloudDocNo ?? "ส่งแล้ว" : null,
   );
-  const [err, setErr] = useState<string | null>(trcloudError);
+  const [err, setErr] = useState<string | null>(
+    initialState === "error" ? trcloudError ?? "ส่งไม่สำเร็จ" : null,
+  );
   const [warn, setWarn] = useState<string | null>(null);
 
   if (sent) {

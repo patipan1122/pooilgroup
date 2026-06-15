@@ -44,6 +44,7 @@ import { PriceLookupDialog } from "./PriceLookupDialog";
 import { VoucherMenu } from "./VoucherMenu";
 import { Clock, Tag } from "lucide-react";
 import { SendToTrcloudButton } from "./SendToTrcloudButton";
+import { trcloudState } from "@/lib/ledger/trcloud-state";
 import { AttachReplacementButton } from "./AttachReplacementButton";
 import type { AttachReplacementAction } from "./AttachReplacementButton";
 import { StatusBadge } from "./_kit/StatusBadge";
@@ -408,11 +409,17 @@ export function ExpenseReviewPane({
   // CEO 2026-06-07: confirmed bills stay EDITABLE — only lock after the bill is pushed
   // to TRCloud (trcloudDocId set) or formally locked/void. So "ยืนยันแล้ว" can still be
   // edited (บันทึกร่าง); once it's in TRCloud the form is read-only (server enforces too).
+  // Lock the form only when the bill genuinely reached TRCloud ("sent") or a push is
+  // in flight ("pending"). A FAILED push ("error") stays EDITABLE so the user can fix
+  // the cause and re-send — the old `trcloudDocId != null` locked failed bills too,
+  // hiding the retry button. See trcloud-state.ts.
+  const trState = trcloudState(expense.trcloudDocId);
   const locked =
     readOnly ||
     expense.status === "locked" ||
     expense.status === "void" ||
-    expense.trcloudDocId != null;
+    trState === "sent" ||
+    trState === "pending";
 
   // ── ภาษีซื้อ (input-VAT) — สถานะสี + override "ขอคืนได้?" ──
   const completeness = (expense.completenessStatus ?? "undecided") as CompletenessStatus;
@@ -1394,9 +1401,11 @@ export function ExpenseReviewPane({
           เลยรู้สึกว่า "ตาย"). */}
       {locked && (
         <div className="-mx-4 border-t border-zinc-100 bg-zinc-50 px-4 py-3 text-sm font-medium text-zinc-600 sm:-mx-6 sm:px-6">
-          {expense.trcloudDocId != null
+          {trState === "sent"
             ? "✓ ส่งเข้า TRCloud แล้ว · แก้ไขไม่ได้ (ถ้าต้องแก้ ให้ลบใบใน TRCloud ก่อน)"
-            : "รายการนี้ถูกล็อก/ยกเลิก · แก้ไขไม่ได้"}
+            : trState === "pending"
+              ? "⏳ กำลังส่งเข้า TRCloud… · แก้ไขไม่ได้ระหว่างส่ง"
+              : "รายการนี้ถูกล็อก/ยกเลิก · แก้ไขไม่ได้"}
         </div>
       )}
 

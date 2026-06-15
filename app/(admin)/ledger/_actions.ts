@@ -46,6 +46,7 @@ import { storeReceiptImage } from "@/lib/ledger/storage";
 import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
 import type { InputVatBlockReason } from "@/lib/ledger/types";
 import { buildTrcloudCsv } from "@/lib/ledger/trcloud-export";
+import { isTrcloudSent } from "@/lib/ledger/trcloud-state";
 import { createDraftExpense } from "@/lib/ledger/actions";
 import {
   pushExpenseToTrcloud,
@@ -1467,7 +1468,10 @@ async function loadPushable(
     status: row.status,
     docType: row.docType,
     companyId: row.companyId,
-    alreadyPushed: !!row.trcloudDocId,
+    // Only a REAL doc id = already pushed. A failed push ("error") is RE-SENDABLE
+    // (it created no TRCloud doc; the push dedups by reference). "pending" is handled
+    // separately via stalePending below. See trcloud-state.ts.
+    alreadyPushed: isTrcloudSent(row.trcloudDocId),
     // self-heal: a 'pending' row stuck >5 min = a prior push died mid-flight → reclaimable
     // (TRCloud push dedups by docCode, so retrying an actually-succeeded push won't dup the AP).
     stalePending:
@@ -1706,6 +1710,7 @@ export async function sendExpenseToTrcloud(
       companyId: loaded.companyId,
       OR: [
         { trcloudDocId: null },
+        { trcloudDocId: "error" }, // retry a failed push (no doc created → no dup)
         { trcloudDocId: "pending", updatedAt: { lt: stalePendingBefore } },
       ],
     },
@@ -1785,9 +1790,11 @@ export async function sendExpensesToTrcloud(
       skipped++;
       continue;
     }
-    // Atomic claim — prevents duplicate AP if bulk is retried concurrently.
+    // Atomic claim — prevents duplicate AP if bulk is retried concurrently. Claims
+    // never-pushed (null) AND previously-failed ("error") rows so a fixed-config bill
+    // can be re-sent in bulk (safe: "error" = no doc created; push dedups by reference).
     const bulkClaimed = await prisma.ledgerExpense.updateMany({
-      where: { id, orgId, companyId, trcloudDocId: null },
+      where: { id, orgId, companyId, OR: [{ trcloudDocId: null }, { trcloudDocId: "error" }] },
       data: { trcloudDocId: "pending" },
     });
     if (bulkClaimed.count === 0) {

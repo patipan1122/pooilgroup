@@ -93,7 +93,9 @@ export default async function LedgerHomePage({
       },
     }),
     prisma.ledgerExpense.count({
-      where: { ...taskBase, status: "confirmed", trcloudDocId: null },
+      // ยืนยันแล้วแต่ยังไม่เข้า TRCloud — never pushed (null) OR last push FAILED
+      // ("error"). Failed bills must count as "ยังต้องทำ", not silently sent.
+      where: { ...taskBase, status: "confirmed", OR: [{ trcloudDocId: null }, { trcloudDocId: "error" }] },
     }),
   ]);
 

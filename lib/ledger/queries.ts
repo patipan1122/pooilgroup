@@ -21,6 +21,7 @@ import type {
   FieldConfidence,
   PaymentStatus,
 } from "./types";
+import { trcloudState } from "./trcloud-state";
 
 /** Coerce the jsonb attachments column → typed array (tolerant of bad rows). */
 function attachmentsOf(v: unknown): ExpenseAttachment[] {
@@ -205,15 +206,21 @@ function buildWhere(f: ExpenseListFilter): Prisma.LedgerExpenseWhereInput {
   if (f.needsReview !== undefined) where.needsReview = f.needsReview;
   if (f.trcloudPushed !== undefined) {
     if (f.trcloudPushed) {
-      // Exclude null AND the in-flight "pending" sentinel so only rows with a
-      // real TRCloud docId are shown as "ส่งแล้ว".
+      // "ส่งแล้ว" = a REAL doc id only. Exclude null AND both string sentinels
+      // ("pending" in-flight, "error" failed) — otherwise a failed push shows as
+      // sent (the 2026-06-15 false-sent-display bug). See trcloud-state.ts.
       where.AND = [
         ...(Array.isArray(where.AND) ? (where.AND as Prisma.LedgerExpenseWhereInput[]) : []),
         { trcloudDocId: { not: null } },
-        { trcloudDocId: { not: "pending" } },
+        { trcloudDocId: { notIn: ["pending", "error"] } },
       ];
     } else {
-      where.trcloudDocId = null;
+      // "ยังไม่ส่ง" = never pushed (null) OR last push FAILED ("error") — surface
+      // failed bills here so the accountant sees them + can retry (not hidden).
+      where.AND = [
+        ...(Array.isArray(where.AND) ? (where.AND as Prisma.LedgerExpenseWhereInput[]) : []),
+        { OR: [{ trcloudDocId: null }, { trcloudDocId: "error" }] },
+      ];
     }
   }
   if (f.completeness) {
@@ -433,7 +440,9 @@ function serializeExpenseSummary(row: ExpenseSummaryRow): Expense {
  */
 function smartRank(e: Expense): number {
   if (e.status === "void") return 4;
-  const sentToTrcloud = !!e.trcloudDocId && e.trcloudDocId !== "pending";
+  // Only a REAL TRCloud doc counts as "done" — a failed push ("error") must NOT
+  // sink to the bottom; it needs attention (falls through to rank 2). See trcloud-state.ts.
+  const sentToTrcloud = trcloudState(e.trcloudDocId) === "sent";
   if (sentToTrcloud || e.payState === "paid" || e.status === "locked") return 3;
   if (
     e.status === "draft" &&
