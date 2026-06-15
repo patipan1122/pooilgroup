@@ -284,7 +284,7 @@ export function ReconcileBoard({
   return (
     <div>
       {/* Tabs */}
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-3 flex items-center gap-2">
         <div className="flex gap-1 rounded-xl bg-zinc-100 p-1">
           <button
             type="button"
@@ -613,7 +613,7 @@ function Column({
 }) {
   return (
     <div className="rounded-2xl border border-zinc-100 bg-white">
-      <div className="flex items-center justify-between border-b border-zinc-50 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-zinc-50 px-4 py-2.5">
         <div>
           <div>
             <span className="text-sm font-semibold text-zinc-700">{title}</span>
@@ -649,7 +649,7 @@ function Column({
       </div>
       {extraFilter}
       {/* filter chips: select-all · วันนี้ · sort */}
-      <div className="flex items-center gap-1.5 border-b border-zinc-50 px-3 py-2">
+      <div className="flex items-center gap-1.5 border-b border-zinc-50 px-3 py-1.5">
         <button type="button" onClick={onToggleAll} aria-pressed={allSelected ? "true" : "false"}
           className={`press inline-flex min-h-9 items-center gap-1 rounded-lg border px-2 py-1 text-[11px] sm:min-h-0 ${FOCUS} ${allSelected ? "border-brand-200 bg-brand-50 text-brand-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
           {allSelected ? <CheckSquare size={12} aria-hidden /> : <Square size={12} aria-hidden />}
@@ -664,7 +664,7 @@ function Column({
           <ArrowDownWideNarrow size={11} /> {SORT_LABEL[sort]}
         </button>
       </div>
-      <div className="max-h-[54vh] divide-y divide-zinc-50 overflow-y-auto">{children}</div>
+      <div className="max-h-[68vh] divide-y divide-zinc-50 overflow-y-auto">{children}</div>
     </div>
   );
 }
@@ -753,7 +753,7 @@ function Row({ checked, onToggle, disabled, date, title, subtitle, detail, tag, 
 }) {
   const credit = amountSatang > 0;
   return (
-    <div className={`flex items-start gap-2 px-3 py-2.5 ${checked ? "bg-brand-50" : "hover:bg-zinc-50"}`}>
+    <div className={`flex items-start gap-2 px-3 py-2 ${checked ? "bg-brand-50" : "hover:bg-zinc-50"}`}>
       {/* checkbox = the keyboard-operable control (labelled by row title); the body click is a mouse-only convenience */}
       <input type="checkbox" checked={checked} onChange={onToggle} disabled={disabled}
         aria-label={`เลือก ${title}${date ? ` (${date})` : ""}`}

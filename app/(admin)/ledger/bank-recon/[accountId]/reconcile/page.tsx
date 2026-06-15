@@ -70,16 +70,16 @@ export default async function ReconcilePage({
   const cp = `company=${companyId}`;
 
   return (
-    <div className="p-4 sm:p-6">
-      <div className="mb-2">
+    <div className="px-4 py-3 sm:px-6 sm:py-4">
+      <div className="mb-1">
         <Link href={`/ledger/bank-recon/${accountId}?${cp}&period=${periodFrom}`}
           className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-600">
           <ChevronLeft size={14} /> {BANK_LABELS[acct.bankCode] ?? acct.bankCode} {maskedNo}
         </Link>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <BankLogo code={acct.bankCode} name={BANK_LABELS[acct.bankCode]} size={40} />
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <BankLogo code={acct.bankCode} name={BANK_LABELS[acct.bankCode]} size={32} />
         <div>
           <h1 className="text-lg font-semibold text-zinc-900">กระทบยอด — {acct.accountName}</h1>
           <p className="text-xs text-zinc-400">{BANK_LABELS[acct.bankCode] ?? acct.bankCode} · {maskedNo}</p>
