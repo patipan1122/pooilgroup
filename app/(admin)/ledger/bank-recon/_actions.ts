@@ -142,25 +142,31 @@ export type SmartAccountCandidate = {
   exact: boolean; // last-4 of the file's account number matches this account
 };
 
+// One detected account-group inside the file (a file may carry several, e.g. TTB ACCHIST).
+export type SmartImportGroup = {
+  fileAccountNo: string;     // raw account number for this group ("" when the file has none)
+  fileLast4: string | null;
+  rowCount: number;
+  creditCount: number;
+  debitCount: number;
+  totalCreditSatang: number;
+  totalDebitSatang: number;
+  periodStart: string;
+  periodEnd: string;
+  candidates: SmartAccountCandidate[];
+  autoSelectedId: string | null; // pre-selected target account when detection is unambiguous
+  unknownAccount: boolean;       // file names an account number that isn't in the system yet
+};
+
 export type SmartDetectResult =
   | { ok: false; error: string }
   | {
       ok: true;
       bankCode: string;
       bankLabel: string;
-      isTemplate: boolean;       // file carries no bank/account identity (BBL CSV / LedgerLine template)
-      fileLast4: string | null;  // last 4 digits of the account number found in the file (if any)
-      rowCount: number;
-      periodStart: string;
-      periodEnd: string;
-      creditCount: number;
-      debitCount: number;
-      totalCreditSatang: number;
-      totalDebitSatang: number;
+      isTemplate: boolean;   // file carries no bank/account identity (BBL CSV / LedgerLine template)
       warnings: string[];
-      candidates: SmartAccountCandidate[];
-      autoSelectedId: string | null; // pre-selected account when detection is unambiguous
-      unknownAccount: boolean;       // file names an account number that isn't in the system yet
+      groups: SmartImportGroup[]; // 1 for a normal file, N for a multi-account file
     };
 
 export async function smartImportDetectAction(
@@ -185,8 +191,6 @@ export async function smartImportDetectAction(
   }
 
   const isTemplate = result.formatVersion.startsWith("TEMPLATE");
-  const creditRows = result.rows.filter((r) => r.amountSatang > 0);
-  const debitRows = result.rows.filter((r) => r.amountSatang < 0);
 
   // Importable accounts for this company (the only ones a statement can land in).
   const accounts = await prisma.$queryRaw<{
@@ -202,61 +206,77 @@ export async function smartImportDetectAction(
   `;
 
   const digitsOnly = (s: string) => s.replace(/\D/g, "");
-  const fileDigits = digitsOnly(result.accountNo ?? "");
-  const fileLast4 = fileDigits.length >= 4 ? fileDigits.slice(-4) : null;
   const mask = (no: string) => (no.length >= 4 ? `****${no.slice(-4)}` : no);
 
-  let candidates: SmartAccountCandidate[];
-  let autoSelectedId: string | null = null;
-  let unknownAccount = false;
-
-  if (isTemplate) {
-    // Template / account-agnostic file → user must pick which account it belongs to.
-    candidates = accounts.map((a) => ({
-      accountId: a.id, bankCode: a.bankCode,
-      accountNoMasked: mask(a.accountNo), accountName: a.accountName, exact: false,
-    }));
-  } else {
-    // Real bank file → narrow to that bank, then try to pin the exact account by last-4.
-    const sameBank = accounts.filter((a) => a.bankCode === result.bankCode);
-    const exactIds = new Set(
-      fileLast4
-        ? sameBank.filter((a) => digitsOnly(a.accountNo).slice(-4) === fileLast4).map((a) => a.id)
-        : [],
-    );
-    candidates = sameBank.map((a) => ({
-      accountId: a.id, bankCode: a.bankCode,
-      accountNoMasked: mask(a.accountNo), accountName: a.accountName,
-      exact: exactIds.has(a.id),
-    }));
-
-    if (exactIds.size === 1) {
-      autoSelectedId = [...exactIds][0];               // file's account number nails one account
-    } else if (exactIds.size === 0 && fileLast4 && sameBank.length > 0) {
-      unknownAccount = true;                            // file names an account we don't have
-    } else if (!fileLast4 && sameBank.length === 1) {
-      autoSelectedId = sameBank[0].id;                 // BBL has no acct no in file, but only one BBL account
-    }
-    if (sameBank.length === 0) unknownAccount = true;  // no importable account for this bank at all
+  // Split the file's rows by their per-row account number (TTB ACCHIST etc.);
+  // single-account files / templates fall back to one group keyed by the file account.
+  const buckets: Record<string, typeof result.rows> = {};
+  for (const r of result.rows) {
+    const key = r.accountNo || result.accountNo || "";
+    (buckets[key] ??= []).push(r);
   }
+
+  const groups: SmartImportGroup[] = Object.keys(buckets).map((fileAccountNo) => {
+    const rows = buckets[fileAccountNo];
+    const creditRows = rows.filter((r) => r.amountSatang > 0);
+    const debitRows = rows.filter((r) => r.amountSatang < 0);
+    const dates = rows.map((r) => r.txnDate).filter(Boolean).sort();
+    const fileDigits = digitsOnly(fileAccountNo);
+    const fileLast4 = fileDigits.length >= 4 ? fileDigits.slice(-4) : null;
+
+    let candidates: SmartAccountCandidate[];
+    let autoSelectedId: string | null = null;
+    let unknownAccount = false;
+
+    if (isTemplate) {
+      candidates = accounts.map((a) => ({
+        accountId: a.id, bankCode: a.bankCode,
+        accountNoMasked: mask(a.accountNo), accountName: a.accountName, exact: false,
+      }));
+    } else {
+      const sameBank = accounts.filter((a) => a.bankCode === result.bankCode);
+      const exactIds = new Set(
+        fileLast4
+          ? sameBank.filter((a) => digitsOnly(a.accountNo).slice(-4) === fileLast4).map((a) => a.id)
+          : [],
+      );
+      candidates = sameBank.map((a) => ({
+        accountId: a.id, bankCode: a.bankCode,
+        accountNoMasked: mask(a.accountNo), accountName: a.accountName,
+        exact: exactIds.has(a.id),
+      }));
+      if (exactIds.size === 1) autoSelectedId = [...exactIds][0];
+      else if (exactIds.size === 0 && fileLast4 && sameBank.length > 0) unknownAccount = true;
+      else if (!fileLast4 && sameBank.length === 1) autoSelectedId = sameBank[0].id;
+      if (sameBank.length === 0) unknownAccount = true;
+    }
+
+    return {
+      fileAccountNo,
+      fileLast4,
+      rowCount: rows.length,
+      creditCount: creditRows.length,
+      debitCount: debitRows.length,
+      totalCreditSatang: creditRows.reduce((s, r) => s + r.amountSatang, 0),
+      totalDebitSatang: debitRows.reduce((s, r) => s + Math.abs(r.amountSatang), 0),
+      periodStart: dates[0] ?? "",
+      periodEnd: dates[dates.length - 1] ?? "",
+      candidates,
+      autoSelectedId,
+      unknownAccount,
+    };
+  });
+
+  // Largest account first (most rows) — the main account leads the list.
+  groups.sort((a, b) => b.rowCount - a.rowCount);
 
   return {
     ok: true,
     bankCode: result.bankCode,
     bankLabel: isTemplate ? "ไฟล์ตัวอย่าง LedgerLine" : (BANK_LABELS[result.bankCode] ?? result.bankCode),
     isTemplate,
-    fileLast4,
-    rowCount: result.rows.length,
-    periodStart: result.periodStart,
-    periodEnd: result.periodEnd,
-    creditCount: creditRows.length,
-    debitCount: debitRows.length,
-    totalCreditSatang: creditRows.reduce((s, r) => s + r.amountSatang, 0),
-    totalDebitSatang: debitRows.reduce((s, r) => s + Math.abs(r.amountSatang), 0),
     warnings: [...result.errors],
-    candidates,
-    autoSelectedId,
-    unknownAccount,
+    groups,
   };
 }
 
@@ -265,6 +285,11 @@ export async function smartImportDetectAction(
 export async function commitImportAction(
   bankAccountId: string,
   formData: FormData,
+  // Multi-account files (e.g. TTB ACCHIST) carry several account numbers in one file.
+  // Smart Upload passes the specific file account number for THIS account so we import
+  // only its rows. When omitted (in-account upload) we still keep only the rows that
+  // belong to the chosen account, so a combined file can never bleed across accounts.
+  fileAccountNo?: string,
 ): Promise<ImportCommitResult> {
   const session = await requireRole("super_admin", "org_admin", "admin");
   const { org_id: orgId } = session.user;
@@ -318,22 +343,40 @@ export async function commitImportAction(
   const batchId = randomUUID();
   const accountNo = acct[0].accountNo;
 
-  // P0-6: verify the file actually belongs to THIS account (prevent importing
-  // e.g. an SCB statement into a KBank account → money mixed across accounts).
-  // Compare digits-only; require the last 4 digits to match (statements may mask
-  // or format the number differently than what we store).
+  // P0-6 + multi-account: figure out WHICH rows of the file belong to this account.
+  // Compare digits-only; the last 4 digits must match (statements may mask/format
+  // the number differently than what we store).
   const digitsOnly = (s: string) => s.replace(/\D/g, "");
-  const fileDigits = digitsOnly(result.accountNo ?? "");
-  const acctDigits = digitsOnly(accountNo);
-  if (fileDigits && acctDigits && fileDigits.slice(-4) !== acctDigits.slice(-4)) {
-    return {
-      ok: false,
-      error: `เลขบัญชีในไฟล์ (…${fileDigits.slice(-4)}) ไม่ตรงกับบัญชีที่เลือก (…${acctDigits.slice(-4)}) — อาจอัปไฟล์ผิดบัญชี`,
-    };
+  const acctLast4 = digitsOnly(accountNo).slice(-4);
+  const fileHasPerRowAcct = result.rows.some((r) => r.accountNo);
+
+  let groupRows = result.rows;
+  if (fileAccountNo != null) {
+    // Smart Upload: import exactly this account-group from the file.
+    groupRows = result.rows.filter((r) => (r.accountNo || result.accountNo || "") === fileAccountNo);
+    const gd = digitsOnly(fileAccountNo);
+    if (!isTemplate && gd && acctLast4 && gd.slice(-4) !== acctLast4) {
+      return { ok: false, error: `เลขบัญชีในไฟล์ (…${gd.slice(-4)}) ไม่ตรงกับบัญชีที่เลือก (…${acctLast4}) — อาจอัปไฟล์ผิดบัญชี` };
+    }
+  } else if (fileHasPerRowAcct && acctLast4) {
+    // In-account upload of a (possibly combined) file → keep only this account's rows.
+    groupRows = result.rows.filter((r) => digitsOnly(r.accountNo || "").slice(-4) === acctLast4);
+  } else if (!isTemplate) {
+    // Single-account file with no per-row tags → classic last-4 guard on the whole file.
+    const fd = digitsOnly(result.accountNo ?? "");
+    if (fd && acctLast4 && fd.slice(-4) !== acctLast4) {
+      return { ok: false, error: `เลขบัญชีในไฟล์ (…${fd.slice(-4)}) ไม่ตรงกับบัญชีที่เลือก (…${acctLast4}) — อาจอัปไฟล์ผิดบัญชี` };
+    }
   }
+  if (!groupRows.length) return { ok: false, error: "ไม่พบรายการเดินบัญชีของบัญชีนี้ในไฟล์" };
+
+  // Period for THIS account-group (not the whole file, which may span several accounts).
+  const groupDates = groupRows.map((r) => r.txnDate).filter(Boolean).sort();
+  const periodStart = groupDates[0] ?? result.periodStart;
+  const periodEnd = groupDates[groupDates.length - 1] ?? result.periodEnd;
 
   // Build txn rows with lineHash
-  const txnRows = result.rows.map((row) => {
+  const txnRows = groupRows.map((row) => {
     const lineHash = computeLineHash({
       accountNo,
       txnDate: row.txnDate,
@@ -366,11 +409,11 @@ export async function commitImportAction(
     org_id: orgId,
     company_id: companyId,
     bank_account_id: bankAccountId,
-    period_start: result.periodStart,
-    period_end: result.periodEnd,
+    period_start: periodStart,
+    period_end: periodEnd,
     batch_format_version: result.formatVersion,
     source_filename: file.name,
-    row_count: result.rows.length,
+    row_count: groupRows.length,
     uploaded_by: session.user.id,
   };
 

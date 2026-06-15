@@ -37,6 +37,8 @@ export interface NormalizedRow {
   description: string | null;
   channel: string | null;
   rowIndex: number;    // 0-based index in file (for lineHash rowIndex salt)
+  accountNo?: string;  // per-row account number (multi-account files e.g. TTB ACCHIST);
+                       // when unset the row belongs to ParseResult.accountNo (single-account file)
   rawRow: Record<string, string>; // original CSV columns for raw_row_json
 }
 

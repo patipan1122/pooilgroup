@@ -89,6 +89,7 @@ export const ttbAdapter: BankAdapter = {
         description,
         channel,
         rowIndex: i - 1,
+        accountNo: acct || undefined, // TTB ACCHIST can carry several accounts in one file
         rawRow,
       });
     }

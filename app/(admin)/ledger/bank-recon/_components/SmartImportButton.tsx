@@ -2,18 +2,20 @@
 
 // SmartImportButton — "นำเข้า statement" จากหน้ารวมบัญชี โดยไม่ต้องเลือกบัญชีก่อน.
 // ลากไฟล์วาง → ระบบอ่าน "ธนาคาร + เลขบัญชี" จากตัวไฟล์ → จับคู่บัญชีจริงในระบบให้เอง
-// → โชว์บัญชีที่ตรวจพบให้ยืนยัน → นำเข้า → ไปหน้ากระทบยอดของบัญชีนั้น.
+// → โชว์บัญชีที่ตรวจพบให้ยืนยัน → นำเข้า → ไปหน้ากระทบยอด.
 //
-// ตัวไฟล์กสิกร/SCB/TTB มีเลขบัญชีในหัวกระดาษ → เดาบัญชีได้แม่น.
-// กรุงเทพ + ไฟล์ตัวอย่าง Excel ไม่มีเลขบัญชี → รู้แค่ธนาคาร → ให้ผู้ใช้แตะเลือก.
+// รองรับไฟล์ "หลายบัญชีในไฟล์เดียว" (เช่น TTB ACCHIST): แยกรายการตามเลขบัญชีราย-แถว
+// → โชว์ทุกบัญชีที่พบ → นำเข้าแยกเป็นชุดต่อบัญชี (กันเงินปนข้ามบัญชี).
+//
+// กสิกร/SCB/TTB มีเลขบัญชีในไฟล์ → เดาบัญชีได้แม่น · กรุงเทพ/ไฟล์ตัวอย่างไม่มี → ให้เลือก.
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, FileText, AlertTriangle, CheckCircle, ChevronRight, Landmark, Check } from "lucide-react";
+import { Upload, FileText, AlertTriangle, CheckCircle, ChevronRight, Landmark, Check, Layers } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { smartImportDetectAction, commitImportAction, type SmartDetectResult } from "../_actions";
+import { smartImportDetectAction, commitImportAction, type SmartDetectResult, type SmartImportGroup } from "../_actions";
 
 interface Props {
   companyId: string;
@@ -28,7 +30,8 @@ export function SmartImportButton({ companyId, period }: Props) {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [detect, setDetect] = useState<SmartDetectResult | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // selected target account per file-account-group (keyed by group.fileAccountNo)
+  const [selected, setSelected] = useState<Record<string, string | null>>({});
   const [loading, setLoading] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,19 +41,23 @@ export function SmartImportButton({ companyId, period }: Props) {
   const router = useRouter();
 
   function reset() {
-    setFile(null); setDetect(null); setSelectedId(null);
+    setFile(null); setDetect(null); setSelected({});
     setError(null); setLoading(false); setCommitting(false); setDone(false); setIsDragging(false);
   }
   function close() { setOpen(false); setTimeout(reset, 200); }
 
   async function handleFile(f: File) {
-    setFile(f); setError(null); setDetect(null); setSelectedId(null); setLoading(true);
+    setFile(f); setError(null); setDetect(null); setSelected({}); setLoading(true);
     try {
       const fd = new FormData();
       fd.append("file", f);
       const res = await smartImportDetectAction(companyId, fd);
       setDetect(res);
-      if (res.ok) setSelectedId(res.autoSelectedId);
+      if (res.ok) {
+        const init: Record<string, string | null> = {};
+        res.groups.forEach((g) => { init[g.fileAccountNo] = g.autoSelectedId; });
+        setSelected(init);
+      }
     } catch {
       setError("อ่านไฟล์ไม่สำเร็จ กรุณาลองใหม่");
     } finally {
@@ -59,24 +66,50 @@ export function SmartImportButton({ companyId, period }: Props) {
   }
 
   async function handleCommit() {
-    if (!file || !selectedId) return;
+    if (!file || !detect || !detect.ok) return;
     setCommitting(true); setError(null);
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await commitImportAction(selectedId, fd);
-      if (!res.ok) { setError(res.error); return; }
+      let okCount = 0;
+      let firstAccountId: string | null = null;
+      let firstPeriodEnd = "";
+      const errs: string[] = [];
+      // import each detected account-group into its chosen target account
+      for (const g of detect.groups) {
+        const targetId = selected[g.fileAccountNo];
+        if (!targetId) continue; // skip unmatched groups (e.g. account not in system)
+        const res = await commitImportAction(targetId, fd, g.fileAccountNo);
+        if (res.ok) {
+          okCount++;
+          if (!firstAccountId) { firstAccountId = targetId; firstPeriodEnd = g.periodEnd; }
+        } else {
+          errs.push(`${g.fileLast4 ? `****${g.fileLast4}` : "ไฟล์"}: ${res.error}`);
+        }
+      }
+      if (okCount === 0) {
+        setError(errs.join(" · ") || "นำเข้าไม่สำเร็จ");
+        return;
+      }
       setDone(true);
-      const dest = detect && detect.ok ? periodOf(detect.periodEnd) : period;
+      const multi = detect.groups.filter((g) => selected[g.fileAccountNo]).length > 1;
       setTimeout(() => {
-        router.push(`/ledger/bank-recon/${selectedId}/reconcile?company=${companyId}&period=${dest}`);
-      }, 1000);
+        if (!multi && firstAccountId) {
+          router.push(`/ledger/bank-recon/${firstAccountId}/reconcile?company=${companyId}&period=${periodOf(firstPeriodEnd) || period}`);
+        } else {
+          // several accounts imported → back to the hub so the CEO sees them all
+          router.push(`/ledger/bank-recon?company=${companyId}&period=${period}`);
+        }
+      }, 1100);
     } catch {
       setError("นำเข้าไม่สำเร็จ กรุณาลองใหม่");
     } finally {
       setCommitting(false);
     }
   }
+
+  const anySelected = detect?.ok ? detect.groups.some((g) => selected[g.fileAccountNo]) : false;
+  const skipCount = detect?.ok ? detect.groups.filter((g) => !selected[g.fileAccountNo]).length : 0;
 
   return (
     <>
@@ -126,7 +159,7 @@ export function SmartImportButton({ companyId, period }: Props) {
                   <Upload size={30} className="text-zinc-400" />
                   <p className="text-sm font-medium text-zinc-700">ลากวางไฟล์ statement หรือคลิกเพื่อเลือก</p>
                   <p className="text-center text-xs text-zinc-400">
-                    ระบบจะอ่านเองว่าเป็น<strong>ธนาคารไหน บัญชีไหน</strong><br />
+                    ระบบจะอ่านเองว่าเป็น<strong>ธนาคารไหน บัญชีไหน</strong> (ไฟล์เดียวมีหลายบัญชีก็แยกให้)<br />
                     รองรับ KBank · SCB · TTB · กรุงเทพ · ไฟล์ตัวอย่าง Excel
                   </p>
                 </>
@@ -144,79 +177,38 @@ export function SmartImportButton({ companyId, period }: Props) {
             <Button variant="outline" onClick={reset}>เลือกไฟล์ใหม่</Button>
           </div>
         ) : (
-          /* Step 2 — detection result + account picker + preview */
+          /* Step 2 — detection result(s) + account picker(s) + preview */
           <div className="space-y-4">
             {/* What we detected */}
             <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
               <FileText size={16} className="shrink-0 text-emerald-600" />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-emerald-800">
-                  ตรวจพบ: {detect.bankLabel}
-                  {detect.fileLast4 && <span className="font-mono"> · บัญชี ****{detect.fileLast4}</span>}
-                </p>
+                <p className="text-sm font-semibold text-emerald-800">ตรวจพบ: {detect.bankLabel}</p>
                 <p className="truncate text-xs text-emerald-600">{file?.name}</p>
               </div>
             </div>
 
-            {/* Account selection */}
-            <div>
-              <p className="mb-2 text-xs font-semibold text-zinc-500">นำเข้าไปยังบัญชี</p>
+            {/* Multi-account banner */}
+            {detect.groups.length > 1 && (
+              <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm text-blue-800">
+                <Layers size={16} className="shrink-0" />
+                <span>ไฟล์นี้มี <strong>{detect.groups.length} บัญชี</strong> — จะแยกนำเข้าให้แต่ละบัญชี</span>
+              </div>
+            )}
 
-              {detect.candidates.length === 0 ? (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
-                  {detect.unknownAccount
-                    ? <>ไฟล์นี้เป็นบัญชี <strong>{detect.bankLabel}{detect.fileLast4 ? ` ****${detect.fileLast4}` : ""}</strong> ซึ่งยังไม่มีในระบบ</>
-                    : <>ยังไม่มีบัญชีที่นำเข้าได้สำหรับธนาคารนี้</>}
-                  <Link
-                    href={`/ledger/bank-recon/accounts?company=${companyId}`}
-                    className="mt-2 inline-flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
-                  >
-                    <Landmark size={12} /> ไปเพิ่มบัญชีธนาคาร
-                  </Link>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {detect.unknownAccount && (
-                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                      เลขบัญชีในไฟล์ (****{detect.fileLast4}) ไม่ตรงกับบัญชีที่มี — เลือกบัญชีที่ถูกต้องด้านล่าง
-                    </p>
-                  )}
-                  {detect.candidates.map((c) => {
-                    const active = selectedId === c.accountId;
-                    return (
-                      <button
-                        key={c.accountId}
-                        type="button"
-                        onClick={() => setSelectedId(c.accountId)}
-                        className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${
-                          active ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500" : "border-zinc-200 bg-white hover:bg-zinc-50"
-                        }`}
-                      >
-                        <span className={`flex size-5 shrink-0 items-center justify-center rounded-full border ${active ? "border-blue-600 bg-blue-600" : "border-zinc-300"}`}>
-                          {active && <Check size={13} className="text-white" />}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium text-zinc-800">{c.accountName}</span>
-                          <span className="font-mono text-xs text-zinc-400">{c.accountNoMasked}</span>
-                        </span>
-                        {c.exact && (
-                          <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                            เลขตรง
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Preview summary */}
-            <div className="grid grid-cols-2 gap-2 rounded-xl border border-zinc-100 bg-zinc-50 p-3 text-sm sm:grid-cols-4">
-              <div><p className="text-xs text-zinc-400">รายการ</p><p className="font-semibold text-zinc-800">{detect.rowCount}</p></div>
-              <div><p className="text-xs text-zinc-400">ช่วงวันที่</p><p className="text-xs font-semibold text-zinc-800">{detect.periodStart} → {detect.periodEnd}</p></div>
-              <div><p className="text-xs text-emerald-600">รับเข้า</p><p className="font-semibold text-emerald-700">฿{baht(detect.totalCreditSatang)}</p></div>
-              <div><p className="text-xs text-rose-600">จ่ายออก</p><p className="font-semibold text-rose-700">฿{baht(detect.totalDebitSatang)}</p></div>
+            {/* One block per detected account-group */}
+            <div className="space-y-3">
+              {detect.groups.map((g) => (
+                <GroupBlock
+                  key={g.fileAccountNo}
+                  group={g}
+                  multi={detect.groups.length > 1}
+                  bankLabel={detect.bankLabel}
+                  selectedId={selected[g.fileAccountNo] ?? null}
+                  onSelect={(id) => setSelected((s) => ({ ...s, [g.fileAccountNo]: id }))}
+                  companyId={companyId}
+                />
+              ))}
             </div>
 
             {detect.warnings.length > 0 && (
@@ -226,12 +218,16 @@ export function SmartImportButton({ companyId, period }: Props) {
               </div>
             )}
 
+            {skipCount > 0 && anySelected && (
+              <p className="text-xs text-amber-600">* {skipCount} บัญชีที่ยังไม่ได้เลือกปลายทางจะถูกข้าม</p>
+            )}
+
             {error && <p className="text-sm text-red-600">{error}</p>}
 
             <div className="flex gap-2">
               <Button variant="outline" onClick={reset}>เลือกไฟล์ใหม่</Button>
-              <Button onClick={handleCommit} disabled={!selectedId || committing} className="flex flex-1 items-center justify-center gap-1">
-                {committing ? "กำลังนำเข้า..." : "ยืนยันนำเข้า"}
+              <Button onClick={handleCommit} disabled={!anySelected || committing} className="flex flex-1 items-center justify-center gap-1">
+                {committing ? "กำลังนำเข้า..." : detect.groups.length > 1 ? "ยืนยันนำเข้าทุกบัญชี" : "ยืนยันนำเข้า"}
                 <ChevronRight size={14} />
               </Button>
             </div>
@@ -239,5 +235,85 @@ export function SmartImportButton({ companyId, period }: Props) {
         )}
       </Dialog>
     </>
+  );
+}
+
+// One detected account-group: file account header + target picker + mini preview.
+function GroupBlock({
+  group, multi, bankLabel, selectedId, onSelect, companyId,
+}: {
+  group: SmartImportGroup;
+  multi: boolean;
+  bankLabel: string;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  companyId: string;
+}) {
+  return (
+    <div className={multi ? "rounded-2xl border border-zinc-200 p-3" : ""}>
+      {/* file account header (only labelled when several accounts share the file) */}
+      {multi && (
+        <p className="mb-2 text-sm font-semibold text-zinc-700">
+          {group.fileLast4 ? <>บัญชีในไฟล์ <span className="font-mono">****{group.fileLast4}</span></> : "บัญชีในไฟล์"}
+          <span className="ml-1 font-normal text-zinc-400">· {group.rowCount} รายการ</span>
+        </p>
+      )}
+
+      {/* target account selection */}
+      {group.candidates.length === 0 ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {group.unknownAccount
+            ? <>บัญชี <strong>{bankLabel}{group.fileLast4 ? ` ****${group.fileLast4}` : ""}</strong> ยังไม่มีในระบบ — จะข้ามบัญชีนี้</>
+            : <>ยังไม่มีบัญชีที่นำเข้าได้สำหรับธนาคารนี้</>}
+          <Link
+            href={`/ledger/bank-recon/accounts?company=${companyId}`}
+            className="mt-2 inline-flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
+          >
+            <Landmark size={12} /> ไปเพิ่มบัญชีธนาคาร
+          </Link>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {!multi && <p className="text-xs font-semibold text-zinc-500">นำเข้าไปยังบัญชี</p>}
+          {group.unknownAccount && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              เลขบัญชีในไฟล์ (****{group.fileLast4}) ไม่ตรงกับบัญชีที่มี — เลือกบัญชีที่ถูกต้องด้านล่าง
+            </p>
+          )}
+          {group.candidates.map((c) => {
+            const active = selectedId === c.accountId;
+            return (
+              <button
+                key={c.accountId}
+                type="button"
+                onClick={() => onSelect(c.accountId)}
+                className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                  active ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500" : "border-zinc-200 bg-white hover:bg-zinc-50"
+                }`}
+              >
+                <span className={`flex size-5 shrink-0 items-center justify-center rounded-full border ${active ? "border-blue-600 bg-blue-600" : "border-zinc-300"}`}>
+                  {active && <Check size={13} className="text-white" />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-zinc-800">{c.accountName}</span>
+                  <span className="font-mono text-xs text-zinc-400">{c.accountNoMasked}</span>
+                </span>
+                {c.exact && (
+                  <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">เลขตรง</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* mini preview for this group */}
+      <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl border border-zinc-100 bg-zinc-50 p-2.5 text-sm sm:grid-cols-4">
+        <div><p className="text-[11px] text-zinc-400">รายการ</p><p className="font-semibold text-zinc-800 tabular-num">{group.rowCount}</p></div>
+        <div><p className="text-[11px] text-zinc-400">ช่วงวันที่</p><p className="text-xs font-semibold text-zinc-800 tabular-num">{group.periodStart} → {group.periodEnd}</p></div>
+        <div><p className="text-[11px] text-emerald-600">รับเข้า</p><p className="font-semibold text-emerald-700 tabular-num">฿{baht(group.totalCreditSatang)}</p></div>
+        <div><p className="text-[11px] text-rose-600">จ่ายออก</p><p className="font-semibold text-rose-700 tabular-num">฿{baht(group.totalDebitSatang)}</p></div>
+      </div>
+    </div>
   );
 }
