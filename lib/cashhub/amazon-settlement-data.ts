@@ -7,6 +7,7 @@ import {
   type ChannelConfig,
 } from "./amazon-settlement";
 import type { SavedAmazonDay } from "./amazon-data";
+import { BANK_LABELS } from "@/lib/ledger/bank-adapters/types";
 
 type Admin = ReturnType<typeof adminClient>;
 
@@ -73,7 +74,15 @@ export async function saveChannelConfig(
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 
-export type BankAccountOpt = { id: string; name: string; bankCode: string; last4: string };
+export type BankAccountOpt = { id: string; name: string; bankCode: string; last4: string; label: string };
+
+// ป้าย dropdown: "ธนาคาร ****เลข4ตัวท้าย · ชื่อบัญชี" — ระบุบัญชีจากธนาคาร+เลขชัดเจน (ไม่ต้องเดาจากชื่อที่ตั้งเอง)
+export function bankAccountLabel(bankCode: string, last4: string, name: string): string {
+  const bank = BANK_LABELS[bankCode] ?? bankCode ?? "บัญชี";
+  const num = last4 ? ` ****${last4}` : "";
+  const nm = name ? ` · ${name}` : "";
+  return `${bank}${num}${nm}`;
+}
 
 /** บัญชีธนาคารทั้งหมด (สำหรับ dropdown เลือกบัญชีที่เงินเข้า) */
 export async function listBankAccounts(
@@ -88,11 +97,15 @@ export async function listBankAccounts(
     .order("account_name");
   return ((data ?? []) as Record<string, unknown>[]).map((a) => {
     const no = String(a.account_no ?? "");
+    const name = String(a.account_name ?? "");
+    const bankCode = String(a.bank_code ?? "");
+    const last4 = no.slice(-4);
     return {
       id: String(a.id),
-      name: String(a.account_name ?? ""),
-      bankCode: String(a.bank_code ?? ""),
-      last4: no.slice(-4),
+      name,
+      bankCode,
+      last4,
+      label: bankAccountLabel(bankCode, last4, name),
     };
   });
 }

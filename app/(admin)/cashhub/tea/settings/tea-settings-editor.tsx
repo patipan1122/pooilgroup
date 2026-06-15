@@ -15,8 +15,8 @@ type Props = {
   canEdit: boolean;
 };
 
-const accLabel = (a: BankAccountOpt) =>
-  `${a.name}${a.bankCode ? ` · ${a.bankCode}` : ""}${a.last4 ? ` ···${a.last4}` : ""}`;
+// ป้ายบัญชี: ธนาคาร ****เลข4ตัวท้าย · ชื่อ (ระบุบัญชีชัดเจน — ไม่ต้องเดาจากชื่อที่ตั้งเอง)
+const accLabel = (a: BankAccountOpt) => a.label;
 
 export function TeaSettingsEditor({ configs, accounts, companies, canEdit }: Props) {
   const router = useRouter();
