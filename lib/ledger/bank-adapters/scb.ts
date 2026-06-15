@@ -85,6 +85,7 @@ export const scbAdapter: BankAdapter = {
         description,
         channel,
         rowIndex: i - 1,
+        accountNo: acct || undefined, // SCB HISTSTMT can carry several accounts in one file
         rawRow,
       });
     }
