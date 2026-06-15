@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
 import {
   Sparkles, Plus, Link2, Ban, X, Check, CheckCircle2, AlertTriangle, Trash2, RefreshCw, Search,
   MoreVertical, ArrowLeftRight, FilePlus2, Pencil, CalendarClock, ArrowDownWideNarrow, CheckSquare, Square,
-  HelpCircle, Upload, SlidersHorizontal, ChevronDown,
+  HelpCircle, Upload, SlidersHorizontal, ChevronDown, ChevronRight, Undo2, FileText,
 } from "lucide-react";
 import {
   createMatchGroupAction, autoMatchAccountAction, confirmAllGroupsAction, confirmGroupsAction,
@@ -24,6 +24,7 @@ import {
   transferMovementAction, createRevenueFromMovementAction, createExpenseFromMovementAction,
   editMovementAction, deleteMovementAction, listTransferTargetsAction,
 } from "../_movement-actions";
+import { bulkUndoAction, getBankTxnRawAction } from "../_recon-controls-actions";
 
 // shared focus ring (mirrors --ring-focus token)
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:ring-offset-1";
@@ -37,13 +38,18 @@ interface BookEntry {
 }
 interface BankMovement {
   id: string; date: string; description: string; txnType: string; ref1: string | null; amountSatang: number;
+  // richer statement detail (surfaced in the row expander)
+  ref2: string | null; channel: string | null; balanceSatang: number | null; valueDate: string | null;
 }
 interface GroupItem {
   kind: "bank" | "book"; bankTxnId: string | null; bookType: string | null;
   bookId: string | null; bookDocNo: string | null; label: string; date: string | null; amountSatang: number;
+  // richer human detail (so รอยืนยัน reads like the real IV)
+  customerName: string | null; sourceType: string | null; paymentChannel: string | null;
+  vendor: string | null; detailLine: string | null; bizDate: string | null;
 }
 interface MatchGroup {
-  id: string; status: string; matchKind: string;
+  id: string; status: string; matchKind: string; matchType: string;
   bankTotalSatang: number; bookTotalSatang: number; deltaSatang: number; items: GroupItem[];
 }
 
@@ -192,6 +198,8 @@ export function ReconcileBoard({
   const [deleteId, setDeleteId] = useState<string | null>(null);         // delete confirm modal
   const [confirmScope, setConfirmScope] = useState<null | "all" | "high">(null); // P0: confirm before posting to GL
   const [bandFilter, setBandFilter] = useState<"all" | Band>("all");     // กรองตามระดับความมั่นใจ (รอยืนยัน)
+  const [confirmUndo, setConfirmUndo] = useState(false);                 // ย้อนทั้งหมด (เฉพาะที่ยังรอยืนยัน)
+  const [qPending, setQPending] = useState("");                          // ค้นหากลุ่มในแท็บรอยืนยัน
   const [qBook, setQBook] = useState("");
   const [qBank, setQBank] = useState("");
   const [todayBook, setTodayBook] = useState(false);
@@ -309,6 +317,22 @@ export function ReconcileBoard({
     [confirmScope, highGroups, suggestedGroups],
   );
 
+  // แท็บรอยืนยัน: ค้นหากลุ่ม (จากชื่อ/ผู้ขาย/เลขเอกสาร/ยอดของรายการในกลุ่ม) — กรองต่อจากหมวดความมั่นใจ (visibleGroups)
+  const searchedGroups = useMemo(() => {
+    const q = qPending.trim().toLowerCase();
+    if (!q) return visibleGroups;
+    return visibleGroups.filter((g) =>
+      g.items.some((i) =>
+        `${i.label} ${i.customerName ?? ""} ${i.vendor ?? ""} ${i.bookDocNo ?? ""} ${i.detailLine ?? ""} ${Math.abs(i.amountSatang) / 100}`
+          .toLowerCase().includes(q)));
+  }, [qPending, visibleGroups]);
+  // สรุปยอด 2 ฝั่ง + ส่วนต่างรวม ตามรายการที่โชว์อยู่จริง (หมวด + คำค้น)
+  const searchedStats = useMemo(() => {
+    const bookTotal = searchedGroups.reduce((s, g) => s + Math.abs(g.bookTotalSatang), 0);
+    const bankTotal = searchedGroups.reduce((s, g) => s + Math.abs(g.bankTotalSatang), 0);
+    return { bookTotal, bankTotal, delta: bankTotal - bookTotal };
+  }, [searchedGroups]);
+
   function toggleBank(id: string) {
     setSelBank((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   }
@@ -354,6 +378,20 @@ export function ReconcileBoard({
     });
   };
   const handleRemove = (gid: string) => run(() => removeGroupAction(gid));
+
+  // ย้อนทั้งหมด — เอากลุ่มที่จับคู่ไว้ (เฉพาะที่ยังรอยืนยัน) กลับไปเริ่มใหม่ ไม่แตะรายการที่ลงบัญชีแล้ว.
+  const doBulkUndo = () => {
+    setErr(null); setSuccess(null);
+    startTransition(async () => {
+      const r = await bulkUndoAction({ bankAccountId, periodStart, periodEnd, scope: "suggested" });
+      setConfirmUndo(false);
+      if (r.ok) {
+        const skipped = r.skippedLocked > 0 ? ` · ข้าม ${r.skippedLocked} รายการที่ล็อก/ลงบัญชีแล้ว` : "";
+        setSuccess(`ย้อนกลับไปเริ่มใหม่ ${r.revertedSuggested} รายการเรียบร้อย${skipped}`);
+        router.refresh();
+      } else setErr(r.error ?? "ย้อนรายการไม่สำเร็จ");
+    });
+  };
 
   // ข้าม / ไม่มีคู่ — ผ่าน modal (แทน window.prompt) · รองรับทั้งรายตัวและหลายรายการ.
   // แต่ละรายการเป็น transaction แยก (per-txn) → ถ้าพังกลางคันต้องบอกชัดว่าข้ามไปกี่รายการแล้ว
@@ -533,14 +571,11 @@ export function ReconcileBoard({
                 onSort={setSortBank}
               >
                 {fBank.map((m) => (
-                  <Row
+                  <BankRow
                     key={m.id}
+                    m={m}
                     checked={selBank.has(m.id)}
                     onToggle={() => toggleBank(m.id)}
-                    date={m.date}
-                    title={m.description || "รายการธนาคาร"}
-                    subtitle={[m.txnType, m.ref1].filter(Boolean).join(" · ")}
-                    amountSatang={m.amountSatang}
                     menu={
                       <RowMenu
                         isCredit={m.amountSatang > 0}
@@ -597,6 +632,42 @@ export function ReconcileBoard({
       ) : (
         /* ── รอยืนยัน ── */
         <div>
+          {/* ย้อนทั้งหมด (เฉพาะที่ยังรอยืนยัน) + ค้นหากลุ่ม + สรุปยอด 2 ฝั่ง/ส่วนต่างรวม (ตามผลค้นหา) */}
+          {suggestedGroups.length > 0 && (
+            <>
+              <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
+                <button type="button" onClick={() => setConfirmUndo(true)} disabled={pending}
+                  className={`press inline-flex min-h-11 items-center gap-1 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 sm:min-h-0 ${FOCUS}`}>
+                  <Undo2 size={14} /> ย้อนทั้งหมด
+                </button>
+              </div>
+
+              {/* ค้นหากลุ่ม + สรุปยอด 2 ฝั่ง/ส่วนต่างรวม (ตามหมวด + คำค้นที่โชว์อยู่) */}
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-zinc-100 bg-white px-3 py-2">
+                <div className="flex min-w-[12rem] flex-1 items-center gap-1.5 rounded-lg border border-zinc-200 px-2 py-1 focus-within:border-brand-400 focus-within:ring-1 focus-within:ring-brand-200">
+                  <Search size={13} className="text-zinc-400" />
+                  <input
+                    aria-label="ค้นหากลุ่มที่รอยืนยัน"
+                    value={qPending}
+                    onChange={(e) => setQPending(e.target.value)}
+                    placeholder="ค้นหา ชื่อ / ผู้ขาย / เลขเอกสาร / ยอด"
+                    className="w-full bg-transparent text-xs text-zinc-700 outline-none placeholder:text-zinc-400"
+                  />
+                  {qPending && (
+                    <button type="button" aria-label="ล้างคำค้น" onClick={() => setQPending("")} className={`rounded text-zinc-400 hover:text-zinc-600 ${FOCUS}`}><X size={13} /></button>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-zinc-400">{searchedGroups.length}/{suggestedGroups.length} กลุ่ม</span>
+                  <span className="text-zinc-500">บัญชี <b className="tabular-num text-zinc-700">฿{baht(searchedStats.bookTotal)}</b></span>
+                  <span className="text-zinc-500">ธนาคาร <b className="tabular-num text-zinc-700">฿{baht(searchedStats.bankTotal)}</b></span>
+                  <span className={`rounded-full px-2.5 py-0.5 font-medium tabular-num ${searchedStats.delta === 0 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                    {searchedStats.delta === 0 ? "ยอดตรงกัน" : deltaDirection(searchedStats.delta)}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
           {suggestedGroups.length === 0 ? (
             <Empty text="ไม่มีรายการรอยืนยัน — จับคู่จากแท็บ ‘รอกระทบยอด’ ก่อน" big />
           ) : (
@@ -639,12 +710,12 @@ export function ReconcileBoard({
                 </div>
               </div>
 
-              {/* การ์ดคู่ที่จับ (กรองตามหมวดที่เลือก) */}
-              {visibleGroups.length === 0 ? (
-                <Empty text="ไม่มีคู่ในหมวดนี้ — เลือกหมวดอื่นด้านบน" />
+              {/* การ์ดคู่ที่จับ (กรองตามหมวดที่เลือก + คำค้น) */}
+              {searchedGroups.length === 0 ? (
+                <Empty text={qPending.trim() ? "ไม่พบกลุ่มตามคำค้น — ลองล้างคำค้น" : "ไม่มีคู่ในหมวดนี้ — เลือกหมวดอื่นด้านบน"} />
               ) : (
                 <div className="space-y-3">
-                  {visibleGroups.map((g) => {
+                  {searchedGroups.map((g) => {
                     const band = confidenceBand(g);
                     const meta = BAND_META[band];
                     const reason = bandReason(g);
@@ -732,6 +803,30 @@ export function ReconcileBoard({
             <button type="button" onClick={doConfirm} disabled={pending || bulkStats.n === 0}
               className={`press inline-flex min-h-11 items-center gap-1 rounded-lg px-5 py-2 text-sm font-medium text-white disabled:opacity-50 sm:min-h-0 ${FOCUS} ${confirmScope === "high" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-brand-500 hover:bg-brand-600"}`}>
               {pending ? "กำลังกระทบยอด…" : <><Check size={14} /> ยืนยันกระทบยอด</>}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ย้อนทั้งหมด — เฉพาะที่ยังรอยืนยัน (ไม่แตะรายการที่ลงบัญชีแล้ว) */}
+      {confirmUndo && (
+        <Modal title="ย้อนรายการทั้งหมด" onClose={() => !pending && setConfirmUndo(false)}>
+          <p className="text-sm text-zinc-600">
+            ย้อนรายการที่จับคู่ไว้ทั้งหมดในงวดนี้กลับไปเริ่มใหม่ <b>(เฉพาะที่ยังรอยืนยัน)</b>
+          </p>
+          <div className="space-y-2 rounded-xl bg-zinc-50 p-3 text-sm">
+            <Stat label="รายการที่จะย้อน" value={`${suggestedGroups.length} กลุ่ม`} />
+          </div>
+          <p className="flex items-start gap-1.5 text-[11px] text-zinc-400">
+            <Undo2 size={13} className="mt-0.5 shrink-0" />
+            รายการที่ลงบันทึกบัญชี/ล็อกงวดแล้วจะไม่ถูกแตะ — รายการที่ย้อนจะกลับไปแท็บ “รอกระทบยอด” ให้จับคู่ใหม่
+          </p>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={() => setConfirmUndo(false)} disabled={pending}
+              className={`rounded-lg border border-zinc-200 px-4 py-2 text-sm text-zinc-600 disabled:opacity-50 ${FOCUS}`}>ยกเลิก</button>
+            <button type="button" onClick={doBulkUndo} disabled={pending}
+              className={`press inline-flex min-h-11 items-center gap-1 rounded-lg bg-zinc-800 px-5 py-2 text-sm font-medium text-white hover:bg-zinc-900 disabled:opacity-50 sm:min-h-0 ${FOCUS}`}>
+              {pending ? "กำลังย้อน…" : <><Undo2 size={14} /> ยืนยันย้อนทั้งหมด</>}
             </button>
           </div>
         </Modal>
@@ -912,34 +1007,128 @@ function BookFilters({
   );
 }
 
-function Row({ checked, onToggle, disabled, date, title, subtitle, detail, tag, channel, amountSatang, menu }: {
+function Row({
+  checked, onToggle, disabled, date, title, subtitle, detail, tag, channel, amountSatang, menu,
+  expandOpen, onExpand, expandContent,
+}: {
   checked: boolean; onToggle: () => void; disabled?: boolean;
   date: string; title: string; subtitle?: string; detail?: string; tag?: string; channel?: string; amountSatang: number; menu?: React.ReactNode;
+  // optional expand/collapse — reveals a detail block beneath the resting row (keeps the row clean)
+  expandOpen?: boolean; onExpand?: () => void; expandContent?: React.ReactNode;
 }) {
   const credit = amountSatang > 0;
   return (
-    <div className={`flex items-start gap-2 px-3 py-2 ${checked ? "bg-brand-50" : "hover:bg-zinc-50"}`}>
-      {/* checkbox = the keyboard-operable control (labelled by row title); the body click is a mouse-only convenience */}
-      <input type="checkbox" checked={checked} onChange={onToggle} disabled={disabled}
-        aria-label={`เลือก ${title}${date ? ` (${date})` : ""}`}
-        className={`mt-0.5 size-5 shrink-0 cursor-pointer rounded border-zinc-300 disabled:opacity-40 ${FOCUS}`} />
-      <div className="min-w-0 flex-1 cursor-pointer" onClick={() => !disabled && onToggle()}>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] tabular-num text-zinc-400">{date}</span>
-          {tag && <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500">{tag}</span>}
-          {channel && <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${CHANNEL_STYLE[channel] ?? "bg-zinc-100 text-zinc-500"}`}>{chLabel(channel)}</span>}
+    <div className={checked ? "bg-brand-50" : "hover:bg-zinc-50"}>
+      <div className="flex items-start gap-2 px-3 py-2">
+        {/* checkbox = the keyboard-operable control (labelled by row title); the body click is a mouse-only convenience */}
+        <input type="checkbox" checked={checked} onChange={onToggle} disabled={disabled}
+          aria-label={`เลือก ${title}${date ? ` (${date})` : ""}`}
+          className={`mt-0.5 size-5 shrink-0 cursor-pointer rounded border-zinc-300 disabled:opacity-40 ${FOCUS}`} />
+        <div className="min-w-0 flex-1 cursor-pointer" onClick={() => !disabled && onToggle()}>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] tabular-num text-zinc-400">{date}</span>
+            {tag && <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500">{tag}</span>}
+            {channel && <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${CHANNEL_STYLE[channel] ?? "bg-zinc-100 text-zinc-500"}`}>{chLabel(channel)}</span>}
+          </div>
+          <p className="truncate text-sm text-zinc-700">{title}</p>
+          {subtitle && <p className="truncate text-xs text-zinc-500">{subtitle}</p>}
+          {detail && <p className="truncate text-[11px] text-zinc-400">{detail}</p>}
+          {onExpand && (
+            <button type="button" onClick={(e) => { e.stopPropagation(); onExpand(); }} aria-expanded={expandOpen ? "true" : "false"}
+              className={`press mt-0.5 inline-flex min-h-7 items-center gap-0.5 rounded text-[11px] text-zinc-400 hover:text-brand-600 ${FOCUS}`}>
+              <ChevronRight size={12} className={`transition-transform ${expandOpen ? "rotate-90" : ""}`} />
+              ดูรายละเอียด
+            </button>
+          )}
         </div>
-        <p className="truncate text-sm text-zinc-700">{title}</p>
-        {subtitle && <p className="truncate text-xs text-zinc-500">{subtitle}</p>}
-        {detail && <p className="truncate text-[11px] text-zinc-400">{detail}</p>}
+        <div className="flex shrink-0 items-start gap-1">
+          <p className={`text-sm font-semibold tabular-num ${credit ? "text-emerald-600" : "text-rose-600"}`}>
+            {credit ? "+" : "−"}฿{baht(amountSatang)}
+          </p>
+          {menu}
+        </div>
       </div>
-      <div className="flex shrink-0 items-start gap-1">
-        <p className={`text-sm font-semibold tabular-num ${credit ? "text-emerald-600" : "text-rose-600"}`}>
-          {credit ? "+" : "−"}฿{baht(amountSatang)}
-        </p>
-        {menu}
-      </div>
+      {expandOpen && expandContent && (
+        <div className="px-3 pb-2.5 pl-10">{expandContent}</div>
+      )}
     </div>
+  );
+}
+
+// ── bank movement row + detail expander (channel · balance · value date · ref1/ref2 · raw CSV) ──
+function BankRow({ m, checked, onToggle, menu }: {
+  m: BankMovement; checked: boolean; onToggle: () => void; menu: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [raw, setRaw] = useState<Record<string, unknown> | null>(null);
+  const [rawErr, setRawErr] = useState<string | null>(null);
+  const [loadingRaw, startRaw] = useTransition();
+  const loadRaw = () => {
+    setRawErr(null);
+    startRaw(async () => {
+      const r = await getBankTxnRawAction(m.id);
+      if (r.ok) setRaw(r.raw ?? {}); else setRawErr(r.error ?? "โหลดข้อมูลดิบไม่สำเร็จ");
+    });
+  };
+  // resting subtitle stays the short [txnType · ref1]; detail moves into the expander
+  const subtitle = [m.txnType, m.ref1].filter(Boolean).join(" · ");
+  const detailRows: { label: string; value: string }[] = [];
+  if (m.channel) detailRows.push({ label: "ช่องทาง", value: m.channel });
+  if (m.balanceSatang != null) detailRows.push({ label: "ยอดคงเหลือ", value: `฿${baht(m.balanceSatang)}` });
+  if (m.valueDate) detailRows.push({ label: "วันที่มีผล", value: m.valueDate });
+  if (m.ref1) detailRows.push({ label: "อ้างอิง 1", value: m.ref1 });
+  if (m.ref2) detailRows.push({ label: "คู่ค้า / อ้างอิง 2", value: m.ref2 });
+
+  return (
+    <Row
+      checked={checked}
+      onToggle={onToggle}
+      date={m.date}
+      title={m.description || "รายการธนาคาร"}
+      subtitle={subtitle}
+      amountSatang={m.amountSatang}
+      menu={menu}
+      expandOpen={open}
+      onExpand={() => setOpen((v) => !v)}
+      expandContent={
+        <div className="rounded-xl border border-zinc-100 bg-zinc-50/70 p-2.5 text-xs">
+          {detailRows.length > 0 ? (
+            <dl className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+              {detailRows.map((d) => (
+                <div key={d.label} className="flex items-baseline justify-between gap-2">
+                  <dt className="shrink-0 text-zinc-400">{d.label}</dt>
+                  <dd className={`min-w-0 truncate text-right text-zinc-700 ${d.label.includes("ยอด") ? "tabular-num" : ""}`}>{d.value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p className="text-zinc-400">ไม่มีรายละเอียดเพิ่มเติมจาก statement</p>
+          )}
+          <div className="mt-2 border-t border-zinc-200 pt-2">
+            {raw == null ? (
+              <button type="button" onClick={loadRaw} disabled={loadingRaw}
+                className={`press inline-flex min-h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[11px] text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 ${FOCUS}`}>
+                <FileText size={12} /> {loadingRaw ? "กำลังโหลด…" : "ดูข้อมูลดิบ"}
+              </button>
+            ) : (
+              Object.keys(raw).length === 0 ? (
+                <p className="text-zinc-400">ไม่มีข้อมูลดิบ (statement)</p>
+              ) : (
+                <dl className="grid grid-cols-1 gap-x-4 gap-y-0.5 sm:grid-cols-2">
+                  {Object.entries(raw).map(([k, v]) => (
+                    <div key={k} className="flex items-baseline justify-between gap-2">
+                      <dt className="shrink-0 truncate text-zinc-400">{k}</dt>
+                      <dd className="min-w-0 truncate text-right text-zinc-600">{v == null ? "—" : String(v)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )
+            )}
+            {rawErr && <p className="mt-1 text-[11px] text-red-600">{rawErr}</p>}
+          </div>
+        </div>
+      }
+    />
   );
 }
 
@@ -990,14 +1179,44 @@ function GroupSide({ title, items, accent }: { title: string; items: GroupItem[]
     <div>
       <p className={`mb-1 text-[11px] font-semibold ${accentText(accent)}`}>{title}</p>
       <div className="space-y-1">
-        {items.map((i, idx) => (
-          <div key={idx} className="flex items-center justify-between rounded-lg bg-zinc-50 px-2.5 py-1.5">
-            <span className="truncate text-xs text-zinc-600">{i.date ? `${i.date} · ` : ""}{i.label}</span>
-            <span className={`ml-2 shrink-0 text-xs font-medium tabular-num ${i.amountSatang > 0 ? "text-emerald-600" : "text-rose-600"}`}>
-              {i.amountSatang > 0 ? "+" : "−"}฿{baht(i.amountSatang)}
-            </span>
+        {items.map((i, idx) => <GroupItemRow key={idx} i={i} />)}
+      </div>
+    </div>
+  );
+}
+
+// แสดงรายละเอียดเต็มแบบเดียวกับใบจริง (IV-style): บรรทัดหลัก = ชื่อ/ผู้ขาย/เลขเอกสาร · บรรทัดรอง = ธุรกิจ · ป้ายช่องทาง · รายละเอียด · วันที่
+function GroupItemRow({ i }: { i: GroupItem }) {
+  const credit = i.amountSatang > 0;
+  // บรรทัดหลัก
+  const primary = i.kind === "bank"
+    ? i.label
+    : (i.customerName || i.vendor || i.label || i.bookDocNo || "—");
+  // ป้ายช่องทาง (revenue) — ใช้สีเดียวกับ Row ในแท็บจับคู่
+  const ch = i.kind === "book" && i.bookType === "revenue" ? i.paymentChannel : null;
+  // ส่วนต่อท้ายบรรทัดรอง (ไม่รวม channel ที่โชว์เป็นป้ายแล้ว)
+  const bits = i.kind === "bank"
+    ? (i.date ? [i.date] : [])
+    : [
+        i.bookType === "revenue" && i.sourceType ? bizLabel(i.sourceType) : null,
+        i.bookType === "expense" && i.vendor && i.vendor !== primary ? i.vendor : null,
+        i.detailLine,
+        i.bizDate,
+      ].filter((b): b is string => Boolean(b));
+  const secondary = bits.join(" · ");
+  return (
+    <div className="rounded-lg bg-zinc-50 px-2.5 py-1.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <p className="min-w-0 truncate text-xs font-medium text-zinc-700">{primary}</p>
+            {ch && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${CHANNEL_STYLE[ch] ?? "bg-zinc-100 text-zinc-500"}`}>{chLabel(ch)}</span>}
           </div>
-        ))}
+          {secondary && <p className="truncate text-[11px] text-zinc-400">{secondary}</p>}
+        </div>
+        <span className={`shrink-0 text-xs font-medium tabular-num ${credit ? "text-emerald-600" : "text-rose-600"}`}>
+          {credit ? "+" : "−"}฿{baht(i.amountSatang)}
+        </span>
       </div>
     </div>
   );
@@ -1008,13 +1227,16 @@ function Empty({ text, big }: { text: string; big?: boolean }) {
 }
 
 // ชิปหมวดหมู่ความมั่นใจ (รอยืนยัน) — กดกรอง · band=สี/จุดตามระดับ · ไม่มี band = ชิปกลาง (เช่น "หาคู่ไม่ได้" ที่ข้ามไปแท็บอื่น)
-function BandChip({ active, onClick, label, count, band, onlyWhenCount }: {
+// muted = ชิปนำทาง (ไม่ใช่ตัวกรอง) เช่น "หาคู่ไม่ได้" ที่กดแล้วข้ามไปแท็บจับคู่ — โทนเบากว่า แยกออกจากชิปกรอง
+function BandChip({ active, onClick, label, count, band, onlyWhenCount, muted }: {
   active?: boolean; onClick: () => void; label: string; count: number;
-  band?: Band; onlyWhenCount?: boolean;
+  band?: Band; onlyWhenCount?: boolean; muted?: boolean;
 }) {
   if (onlyWhenCount && count === 0) return null;
   const meta = band ? BAND_META[band] : null;
-  const cls = active
+  const cls = muted
+    ? "border-dashed border-zinc-200 bg-zinc-50 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
+    : active
     ? (meta ? meta.chip : "border-zinc-800 bg-zinc-900 text-white")
     : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50";
   return (

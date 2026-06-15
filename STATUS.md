@@ -1,6 +1,21 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-12 (LedgerLine Bank Recon · ✅ PEAK v2 LIVE 2d2071d · กระทบยอดตามช่วงเวลา + overview 2 แท็บ + logo ธนาคาร)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-15 (Bank-Recon Controls bigfeature BUILT · ⏳ รอ CEO deploy gates)
+
+## 🛠️ BANK-RECON CONTROLS & WORKSPACE (2026-06-15 · /bigfeature · BUILT commit `bd1fd32`, ⏳ NOT deployed)
+
+CEO ขอชุดควบคุมหน้ากระทบยอด 7 ข้อ (full-ship, รวดเดียว). สร้างบน worktree off origin/setup. tsc/eslint/`next build` EXIT0.
+1. **ย้อนทั้งหมด** (bulk undo) suggested ในงวด — auto-match ไม่เวิร์คเริ่มใหม่ได้ (ปุ่มในแท็บรอยืนยัน)
+2. **คลัง** `/ledger/bank-recon/archive` — ค้นหารายการที่ยืนยัน/ย้อนแล้ว + ย้อนกลับ (super ตรง · อื่นขออนุมัติ)
+3. **ขออนุมัติแก้** `/approvals` — ledger_recon_edit_request, maker≠checker, super_admin อนุมัติ → ย้อนจริง
+4. **statement ละเอียด** — ref2/คู่ค้า/channel/ยอดคงเหลือ/value date + "ดูข้อมูลดิบ" (raw CSV)
+5. **รอยืนยันละเอียดแบบ IV** — ลูกค้า/ธุรกิจ/ช่องทาง/วันที่ แทน tag เปล่า
+6. **รอยืนยัน + ค้นหา + สรุปยอด 2 ฝั่ง + diff**
+7. **โยกเงิน** `/transfers` จับคู่ 2 ขาข้ามบัญชี (ไม่นับ P&L) + `/special-items` รวมทุกบัญชี (โยกเงิน + ที่ข้าม)
+- 🔴 สีรุ้ง CashHub เด้งกลับเมื่อย้อน (amazon-data อ่าน match_state สด · force-dynamic) — VERIFIED
+- revertGroup() ตัวกลางเดียว snapshot ก่อนลบ + lock guard + audit ครบ (เดิมหน้านี้ไม่มี audit)
+- migration `20260615180000_ledger_recon_controls.sql` (match_type + nullable account + reversed_snapshot + ledger_recon_edit_request + RLS)
+- ⏳ **CEO deploy gates:** (1) apply migration prod DB + verify · (2) push `HEAD:setup`
 
 ## 🎯 PEAK PARITY v3 (2026-06-12 #8 — ดีเทลเยอะขึ้น + โลโก้ธนาคารจริง · DEPLOYED 8ba82c9)
 

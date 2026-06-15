@@ -10,6 +10,7 @@
 
 import { requireRole } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
+import { revertGroup } from "@/lib/ledger/recon-controls";
 import { detectAndParse, BANK_LABELS } from "@/lib/ledger/bank-adapters";
 import {
   computeLineHash,
@@ -1181,37 +1182,22 @@ async function confirmGroupsInternal(groupIds: string[]): Promise<{ ok: boolean;
   return { ok: true };
 }
 
-// Remove a group (suggested or confirmed, if not locked) — frees bank + book entries.
+// Remove/undo a group — frees bank + book entries (delegates to the shared revertGroup,
+// which snapshots the items first so the reversed group stays searchable in the archive).
+//   • suggested (รอยืนยัน, not posted) → anyone with edit role can undo directly
+//   • confirmed (posted) → super_admin direct only; others must file "ขออนุมัติแก้"
 export async function removeGroupAction(groupId: string): Promise<{ ok: boolean; error?: string }> {
   const session = await requireRole("super_admin", "org_admin", "admin");
   const orgId = session.user.org_id;
-
-  const locked = await prisma.$queryRaw<{ c: number }[]>`
-    SELECT COUNT(*)::int as c
-    FROM ledger_bank_match_item mi
-    JOIN ledger_bank_txn t ON t.id=mi.bank_txn_id
-    JOIN ledger_bank_import_batch b ON b.id=t.batch_id
-    WHERE mi.group_id=${groupId}::uuid AND mi.org_id=${orgId}::uuid AND b.locked_at IS NOT NULL`;
-  if ((locked[0]?.c ?? 0) > 0) return { ok: false, error: "งวดนี้ล็อกแล้ว" };
-
-  await prisma.$transaction([
-    prisma.$executeRaw`
-      UPDATE ledger_bank_txn SET match_state='unmatched'
-      WHERE org_id=${orgId}::uuid AND id IN (
-        SELECT mi.bank_txn_id FROM ledger_bank_match_item mi
-        WHERE mi.group_id=${groupId}::uuid AND mi.kind='bank')`,
-    prisma.$executeRaw`
-      UPDATE ledger_revenue_entry SET match_state='unmatched', bank_txn_id=NULL, updated_at=now()
-      WHERE org_id=${orgId}::uuid AND id IN (
-        SELECT mi.book_id FROM ledger_bank_match_item mi
-        WHERE mi.group_id=${groupId}::uuid AND mi.kind='book' AND mi.book_type='revenue')`,
-    prisma.$executeRaw`DELETE FROM ledger_bank_match_item WHERE group_id=${groupId}::uuid AND org_id=${orgId}::uuid`,
-    prisma.$executeRaw`
-      UPDATE ledger_bank_match_group SET status='reversed', reversed_by=${session.user.id}::uuid,
-        reversed_at=now(), updated_at=now()
-      WHERE id=${groupId}::uuid AND org_id=${orgId}::uuid`,
-  ]);
-  return { ok: true };
+  const g = await prisma.$queryRaw<{ status: string }[]>`
+    SELECT status FROM ledger_bank_match_group WHERE id=${groupId}::uuid AND org_id=${orgId}::uuid LIMIT 1`;
+  if (!g.length) return { ok: false, error: "ไม่พบรายการ" };
+  if (g[0].status === "confirmed" && session.user.role !== "super_admin")
+    return { ok: false, error: "รายการนี้ยืนยันแล้ว — ต้องขออนุมัติแก้ก่อน" };
+  return revertGroup({
+    orgId, groupId, userId: session.user.id,
+    reason: g[0].status === "confirmed" ? "ย้อนรายการที่ยืนยันแล้ว" : "นำออกจากรอยืนยัน",
+  });
 }
 
 // Get-or-create a "manual" import batch for an account+month (for hand-entered

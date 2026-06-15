@@ -29,11 +29,17 @@ export interface BankMovement {
   txnType: string;      // bank transaction type (description) + channel — secondary detail
   ref1: string | null;
   amountSatang: number;
+  // ── extra bank detail from the statement CSV (shown in the row expander) ──
+  ref2: string | null;        // raw counterparty line ("รับโอนจาก KTB x6223 …")
+  channel: string | null;     // bank channel (Mobile / EDC/K SHOP/MYQR …)
+  balanceSatang: number | null; // running balance after this txn
+  valueDate: string | null;   // value/settlement date
 }
 export interface MatchGroup {
   id: string;
   status: string;
   matchKind: string;
+  matchType: string;          // 'standard' | 'transfer'
   bankTotalSatang: number;
   bookTotalSatang: number;
   deltaSatang: number;
@@ -46,6 +52,13 @@ export interface MatchGroup {
     label: string;
     date: string | null;
     amountSatang: number;
+    // ── richer human detail (so รอยืนยัน reads like the real IV, not a bare tag) ──
+    customerName: string | null;
+    sourceType: string | null;     // revenue source_type (CASHHUB_AMAZON …)
+    paymentChannel: string | null; // revenue payment_channel (cash/qr/card …)
+    vendor: string | null;         // expense vendor
+    detailLine: string | null;     // composed human detail
+    bizDate: string | null;        // book-side date (entry/doc/paid date)
   }[];
 }
 
@@ -110,12 +123,14 @@ export async function listBankMovements(params: {
   const { orgId, companyId, bankAccountId, periodStart, periodEnd } = params;
   const rows = await prisma.$queryRaw<{
     id: string; date: string; description: string; txnType: string; ref1: string | null; amountSatang: bigint;
+    ref2: string | null; channel: string | null; balanceSatang: bigint | null; valueDate: string | null;
   }[]>`
     SELECT t.id::text as id, t.txn_date::text as "date",
            -- the meaningful line: counterparty / purpose lives in ref2 (e.g. "รับโอนจาก KTB x6223 …")
            COALESCE(NULLIF(t.ref2,''), NULLIF(t.description,''), NULLIF(t.channel,''), 'รายการธนาคาร') as "description",
            TRIM(CONCAT_WS(' · ', NULLIF(t.description,''), NULLIF(t.channel,''))) as "txnType",
-           t.ref1, t.amount_satang as "amountSatang"
+           t.ref1, t.amount_satang as "amountSatang",
+           t.ref2, t.channel, t.balance_satang as "balanceSatang", t.value_date::text as "valueDate"
     FROM ledger_bank_txn t
     WHERE t.bank_account_id = ${bankAccountId}::uuid AND t.org_id = ${orgId}::uuid
       AND t.company_id = ${companyId}::uuid
@@ -127,6 +142,8 @@ export async function listBankMovements(params: {
   `;
   return rows.map((r) => ({
     id: r.id, date: r.date, description: r.description, txnType: r.txnType, ref1: r.ref1, amountSatang: Number(r.amountSatang),
+    ref2: r.ref2, channel: r.channel,
+    balanceSatang: r.balanceSatang == null ? null : Number(r.balanceSatang), valueDate: r.valueDate,
   }));
 }
 
@@ -136,10 +153,10 @@ export async function listMatchGroups(params: {
 }): Promise<MatchGroup[]> {
   const { orgId, companyId, bankAccountId, status } = params;
   const groups = await prisma.$queryRaw<{
-    id: string; status: string; matchKind: string;
+    id: string; status: string; matchKind: string; matchType: string;
     bankTotalSatang: bigint; bookTotalSatang: bigint; deltaSatang: bigint;
   }[]>`
-    SELECT id::text, status, match_kind as "matchKind",
+    SELECT id::text, status, match_kind as "matchKind", match_type as "matchType",
            bank_total_satang as "bankTotalSatang", book_total_satang as "bookTotalSatang",
            delta_satang as "deltaSatang"
     FROM ledger_bank_match_group
@@ -150,30 +167,53 @@ export async function listMatchGroups(params: {
   `;
   if (!groups.length) return [];
   const ids = groups.map((g) => g.id);
+  // LEFT JOIN to the 3 book tables (keyed by book_type) so each item carries full human
+  // detail — the รอยืนยัน list reads like the real IV: "รายได้ คาเฟ่ Amazon · เงินสด · 30 เม.ย.".
   const items = await prisma.$queryRaw<{
     groupId: string; kind: string; bankTxnId: string | null; bookType: string | null;
     bookId: string | null; bookDocNo: string | null; label: string; date: string | null; amountSatang: bigint;
+    customerName: string | null; sourceType: string | null; paymentChannel: string | null;
+    vendor: string | null; detailLine: string | null; bizDate: string | null;
   }[]>`
     SELECT mi.group_id::text as "groupId", mi.kind, mi.bank_txn_id::text as "bankTxnId",
            mi.book_type as "bookType", mi.book_id::text as "bookId", mi.book_doc_no as "bookDocNo",
            -- ฝั่งธนาคาร: เอา "ชื่อคู่ค้า" (ref2) มาก่อน (เช่น "รับโอนจาก KTB X0752 SHOPEEPAY")
            -- เพื่อให้ "ดูชื่อ" ตอนยืนยันได้ + ใช้เทียบชื่อผู้ให้บริการ 2 ฝั่ง (ชื่อสำคัญ)
+           -- ฝั่งบัญชี: ลูกค้า (revenue) / ผู้ขาย (expense) แบบอ่านรู้เรื่อง
            CASE WHEN mi.kind='bank' THEN COALESCE(NULLIF(t.ref2,''), NULLIF(t.description,''), NULLIF(t.channel,''), 'รายการธนาคาร')
+                WHEN mi.book_type='revenue' THEN COALESCE(NULLIF(r.customer_name,''), NULLIF(r.description,''), NULLIF(mi.book_doc_no,''), 'รายได้')
+                WHEN mi.book_type='expense' THEN COALESCE(NULLIF(e.vendor,''), NULLIF(mi.book_doc_no,''), 'ค่าใช้จ่าย')
                 ELSE COALESCE(NULLIF(mi.book_doc_no,''), 'รายการบัญชี') END as "label",
            CASE WHEN mi.kind='bank' THEN t.txn_date::text ELSE NULL END as "date",
-           mi.amount_satang as "amountSatang"
+           mi.amount_satang as "amountSatang",
+           r.customer_name as "customerName",
+           r.source_type as "sourceType",
+           r.payment_channel as "paymentChannel",
+           e.vendor as "vendor",
+           CASE WHEN mi.book_type='revenue'
+                  THEN NULLIF(TRIM(CONCAT_WS(' · ', NULLIF(r.source_type,''), NULLIF(r.payment_channel,''), NULLIF(r.description,''))), '')
+                WHEN mi.book_type='expense'
+                  THEN NULLIF(TRIM(CONCAT_WS(' · ', NULLIF(e.doc_type,''), NULLIF(e.note,''))), '')
+                ELSE NULL END as "detailLine",
+           CASE WHEN mi.book_type='revenue' THEN r.entry_date::text
+                WHEN mi.book_type='expense' THEN e.doc_date::text
+                ELSE NULL END as "bizDate"
     FROM ledger_bank_match_item mi
-    LEFT JOIN ledger_bank_txn t ON t.id = mi.bank_txn_id
+    LEFT JOIN ledger_bank_txn t       ON t.id = mi.bank_txn_id
+    LEFT JOIN ledger_revenue_entry r  ON mi.book_type='revenue' AND r.id = mi.book_id
+    LEFT JOIN ledger_expense e        ON mi.book_type='expense' AND e.id = mi.book_id
     WHERE mi.group_id = ANY(${ids}::uuid[])
     ORDER BY mi.kind, mi.amount_satang DESC
   `;
   return groups.map((g) => ({
-    id: g.id, status: g.status, matchKind: g.matchKind,
+    id: g.id, status: g.status, matchKind: g.matchKind, matchType: g.matchType,
     bankTotalSatang: Number(g.bankTotalSatang), bookTotalSatang: Number(g.bookTotalSatang),
     deltaSatang: Number(g.deltaSatang),
     items: items.filter((i) => i.groupId === g.id).map((i) => ({
       kind: i.kind as "bank" | "book", bankTxnId: i.bankTxnId, bookType: i.bookType,
       bookId: i.bookId, bookDocNo: i.bookDocNo, label: i.label, date: i.date, amountSatang: Number(i.amountSatang),
+      customerName: i.customerName, sourceType: i.sourceType, paymentChannel: i.paymentChannel,
+      vendor: i.vendor, detailLine: i.detailLine, bizDate: i.bizDate,
     })),
   }));
 }

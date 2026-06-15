@@ -202,7 +202,15 @@ export type AuditAction =
   | "LEDGER_RECONCILE_EXPORTED"
   // "เซฟเล่ม" (saved analytics books · LEDGER_ANALYTICS_V1): deleting a SHARED book
   // affects everyone in the company → audited (creator/admin only).
-  | "LEDGER_SAVED_BOOK_DELETED";
+  | "LEDGER_SAVED_BOOK_DELETED"
+  // bank-recon controls (bigfeature 2026-06-15)
+  | "LEDGER_RECON_GROUP_REVERTED"
+  | "LEDGER_RECON_BULK_UNDO"
+  | "LEDGER_RECON_REVERT_REQUESTED"
+  | "LEDGER_RECON_REVERT_APPROVED"
+  | "LEDGER_RECON_REVERT_REJECTED"
+  | "LEDGER_RECON_TRANSFER_CREATED"
+  | "LEDGER_RECON_UNEXCLUDED";
 
 export interface AuditEntry {
   orgId: string;

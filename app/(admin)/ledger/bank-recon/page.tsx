@@ -17,6 +17,7 @@ import { BankLogo } from "@/components/ledger/BankLogo";
 import {
   Landmark, Settings, TrendingUp, ChevronRight,
   CalendarCheck2, CalendarOff, Database, Inbox,
+  Archive, ClipboardCheck, ArrowLeftRight, Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -176,6 +177,30 @@ export default async function BankReconHubPage({
           </div>
         )}
       </section>
+
+      {/* ── Workspace links: คลัง · คำขออนุมัติ · โยกเงิน · รายการพิเศษ ──────────── */}
+      <div className="mb-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        {[
+          { href: "archive",       label: "คลัง",          hint: "รายการที่กระทบยอดแล้ว", Icon: Archive },
+          { href: "approvals",     label: "คำขออนุมัติ",   hint: "อนุมัติย้อนรายการ",      Icon: ClipboardCheck },
+          { href: "transfers",     label: "โยกเงิน",        hint: "ระหว่างบัญชี",          Icon: ArrowLeftRight },
+          { href: "special-items", label: "รายการพิเศษ",   hint: "โยกเงิน + ข้าม/ไม่มีคู่", Icon: Sparkles },
+        ].map(({ href, label, hint, Icon }) => (
+          <Link
+            key={href}
+            href={`/ledger/bank-recon/${href}?${cp}`}
+            className="press group flex items-center gap-3 rounded-2xl border border-zinc-100 bg-white p-3 transition-colors hover:border-brand-200 hover:shadow-soft focus-visible:ring-2 focus-visible:ring-brand-300"
+          >
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+              <Icon size={17} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-zinc-800">{label}</span>
+              <span className="block truncate text-[11px] text-zinc-400">{hint}</span>
+            </span>
+          </Link>
+        ))}
+      </div>
 
       {/* ── Month selector (drives the per-account status/ค้าง counts) ───────── */}
       <div className="mb-4 flex items-center gap-2">
