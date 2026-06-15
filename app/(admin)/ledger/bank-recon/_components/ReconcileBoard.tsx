@@ -122,8 +122,6 @@ export function ReconcileBoard({
   const [bizFilter, setBizFilter] = useState<Set<string>>(new Set());     // ธุรกิจ (source_type)
   const [branchFilter, setBranchFilter] = useState<Set<string>>(new Set()); // สาขา (จาก contact)
   const [chFilter, setChFilter] = useState<Set<string>>(new Set());       // ประเภทรับเงิน
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
   const [amtMin, setAmtMin] = useState("");
   const [amtMax, setAmtMax] = useState("");
   const [showBookFilters, setShowBookFilters] = useState(false);
@@ -148,7 +146,7 @@ export function ReconcileBoard({
   const branchOptions = useMemo(() => opt(bookEntries.map((b) => b.contact), (v) => v), [bookEntries]);
   const chOptions = useMemo(() => opt(bookEntries.map((b) => b.channel), chLabel), [bookEntries]);
   const bookFilterCount = typeFilter.size + bizFilter.size + branchFilter.size + chFilter.size
-    + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0) + (amtMin ? 1 : 0) + (amtMax ? 1 : 0);
+    + (amtMin ? 1 : 0) + (amtMax ? 1 : 0);
 
   const fBook = useMemo(() => {
     const q = qBook.trim().toLowerCase();
@@ -159,14 +157,12 @@ export function ReconcileBoard({
     if (bizFilter.size) r = r.filter((b) => bizFilter.has(b.sub));
     if (branchFilter.size) r = r.filter((b) => branchFilter.has(b.contact));
     if (chFilter.size) r = r.filter((b) => chFilter.has(b.channel));
-    if (dateFrom) r = r.filter((b) => b.date >= dateFrom);
-    if (dateTo) r = r.filter((b) => b.date <= dateTo);
     const min = amtMin ? Math.round(parseFloat(amtMin) * 100) : null;
     const max = amtMax ? Math.round(parseFloat(amtMax) * 100) : null;
     if (min != null && !isNaN(min)) r = r.filter((b) => Math.abs(b.amountSatang) >= min);
     if (max != null && !isNaN(max)) r = r.filter((b) => Math.abs(b.amountSatang) <= max);
     return sortRows(r, sortBook);
-  }, [qBook, bookEntries, todayBook, sortBook, today, typeFilter, bizFilter, branchFilter, chFilter, dateFrom, dateTo, amtMin, amtMax]);
+  }, [qBook, bookEntries, todayBook, sortBook, today, typeFilter, bizFilter, branchFilter, chFilter, amtMin, amtMax]);
   const fBank = useMemo(() => {
     const q = qBank.trim().toLowerCase();
     let r = bankMovements;
@@ -346,6 +342,21 @@ export function ReconcileBoard({
 
       {tab === "match" ? (
         <>
+          {/* ตัวกรองฝั่งบัญชี — รวมไว้ที่เดียวด้านบน (ไม่ซ้ำซ้อนในคอลัมน์) */}
+          <BookFilters
+            count={bookFilterCount} open={showBookFilters} onToggle={() => setShowBookFilters((v) => !v)}
+            menus={[
+              { label: "รายรับ/จ่าย", options: typeOptions, selected: typeFilter, onToggle: (s) => toggleSet(setTypeFilter, s) },
+              { label: "ธุรกิจ", options: bizOptions, selected: bizFilter, onToggle: (s) => toggleSet(setBizFilter, s) },
+              { label: "สาขา", options: branchOptions, selected: branchFilter, onToggle: (s) => toggleSet(setBranchFilter, s) },
+              { label: "ประเภท", options: chOptions, selected: chFilter, onToggle: (s) => toggleSet(setChFilter, s) },
+            ]}
+            amtMin={amtMin} amtMax={amtMax} setAmtMin={setAmtMin} setAmtMax={setAmtMax}
+            onClear={() => {
+              setTypeFilter(new Set()); setBizFilter(new Set()); setBranchFilter(new Set()); setChFilter(new Set());
+              setAmtMin(""); setAmtMax("");
+            }}
+          />
           {matchTotal === 0 ? (
             <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 py-14 text-center">
               <Upload size={26} className="mx-auto mb-2 text-zinc-300" />
@@ -376,23 +387,6 @@ export function ReconcileBoard({
                 onToday={() => setTodayBook((v) => !v)}
                 sort={sortBook}
                 onSort={setSortBook}
-                extraFilter={
-                  <BookFilters
-                    count={bookFilterCount} open={showBookFilters} onToggle={() => setShowBookFilters((v) => !v)}
-                    menus={[
-                      { label: "รายรับ/จ่าย", options: typeOptions, selected: typeFilter, onToggle: (s) => toggleSet(setTypeFilter, s) },
-                      { label: "ธุรกิจ", options: bizOptions, selected: bizFilter, onToggle: (s) => toggleSet(setBizFilter, s) },
-                      { label: "สาขา", options: branchOptions, selected: branchFilter, onToggle: (s) => toggleSet(setBranchFilter, s) },
-                      { label: "ประเภท", options: chOptions, selected: chFilter, onToggle: (s) => toggleSet(setChFilter, s) },
-                    ]}
-                    dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo}
-                    amtMin={amtMin} amtMax={amtMax} setAmtMin={setAmtMin} setAmtMax={setAmtMax}
-                    onClear={() => {
-                      setTypeFilter(new Set()); setBizFilter(new Set()); setBranchFilter(new Set()); setChFilter(new Set());
-                      setDateFrom(""); setDateTo(""); setAmtMin(""); setAmtMax("");
-                    }}
-                  />
-                }
               >
                 {fBook.map((b) => {
                   const k = bookKey(b);
@@ -714,49 +708,39 @@ function FilterMenu({ label, options, selected, onToggle }: {
   );
 }
 
-// ── ตัวกรองฝั่งบัญชี (ยุบเก็บได้ — แก้ปัญหาบัญชีปนธุรกิจ): รายรับ/จ่าย · ธุรกิจ · สาขา · ประเภท · ช่วงวันที่ · ช่วงยอด ──
+// ── ตัวกรองฝั่งบัญชี (การ์ดด้านบน · ยุบเก็บได้ — แก้ปัญหาบัญชีปนธุรกิจ): รายรับ/จ่าย · ธุรกิจ · สาขา · ประเภท · ช่วงยอด ──
 function BookFilters({
-  count, open, onToggle, menus, dateFrom, dateTo, setDateFrom, setDateTo, amtMin, amtMax, setAmtMin, setAmtMax, onClear,
+  count, open, onToggle, menus, amtMin, amtMax, setAmtMin, setAmtMax, onClear,
 }: {
   count: number; open: boolean; onToggle: () => void;
   menus: { label: string; options: FilterOption[]; selected: Set<string>; onToggle: (v: string) => void }[];
-  dateFrom: string; dateTo: string; setDateFrom: (v: string) => void; setDateTo: (v: string) => void;
   amtMin: string; amtMax: string; setAmtMin: (v: string) => void; setAmtMax: (v: string) => void;
   onClear: () => void;
 }) {
   const activeMenus = menus.filter((m) => m.options.length > 0);
   if (activeMenus.length === 0) return null; // ไม่มีอะไรให้กรอง → ไม่ต้องโชว์ (คงความสะอาด)
-  const dateCls = `rounded-lg border border-zinc-200 px-2 py-1 text-[11px] tabular-num ${FOCUS}`;
   const amtCls = `w-20 rounded-lg border border-zinc-200 px-2 py-1 text-[11px] tabular-num ${FOCUS}`;
   return (
-    <div className="border-b border-zinc-50 px-3 py-2">
-      <button type="button" onClick={onToggle} aria-expanded={open ? "true" : "false"}
-        className={`press inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] sm:min-h-0 ${FOCUS} ${count > 0 ? "border-brand-200 bg-brand-50 text-brand-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
-        <SlidersHorizontal size={12} /> ตัวกรอง{count > 0 ? ` (${count})` : ""}
-        <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
+    <div className="mb-3 rounded-2xl border border-zinc-100 bg-white px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={onToggle} aria-expanded={open ? "true" : "false"}
+          className={`press inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs sm:min-h-0 ${FOCUS} ${count > 0 ? "border-brand-200 bg-brand-50 text-brand-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
+          <SlidersHorizontal size={13} /> ตัวกรองรายการบัญชี{count > 0 ? ` (${count})` : ""}
+          <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+        {count > 0 && (
+          <button type="button" onClick={onClear} className={`press min-h-8 rounded-lg px-2 py-1 text-[11px] text-zinc-400 hover:text-zinc-600 sm:min-h-0 ${FOCUS}`}>ล้างตัวกรอง</button>
+        )}
+      </div>
       {open && (
-        <div className="mt-2 space-y-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {activeMenus.map((m) => (
-              <FilterMenu key={m.label} label={m.label} options={m.options} selected={m.selected} onToggle={m.onToggle} />
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] text-zinc-400">ช่วงวันที่</span>
-            <input type="date" aria-label="ตั้งแต่วันที่" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={dateCls} />
-            <span className="text-zinc-300">–</span>
-            <input type="date" aria-label="ถึงวันที่" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={dateCls} />
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] text-zinc-400">ช่วงยอด</span>
-            <input type="number" inputMode="decimal" aria-label="ยอดต่ำสุด" value={amtMin} onChange={(e) => setAmtMin(e.target.value)} placeholder="ต่ำสุด" className={amtCls} />
-            <span className="text-zinc-300">–</span>
-            <input type="number" inputMode="decimal" aria-label="ยอดสูงสุด" value={amtMax} onChange={(e) => setAmtMax(e.target.value)} placeholder="สูงสุด" className={amtCls} />
-            {count > 0 && (
-              <button type="button" onClick={onClear} className={`press ml-auto min-h-8 rounded-lg px-2 py-1 text-[11px] text-zinc-400 hover:text-zinc-600 sm:min-h-0 ${FOCUS}`}>ล้างตัวกรอง</button>
-            )}
-          </div>
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          {activeMenus.map((m) => (
+            <FilterMenu key={m.label} label={m.label} options={m.options} selected={m.selected} onToggle={m.onToggle} />
+          ))}
+          <span className="ml-1 text-[10px] text-zinc-400">ยอด</span>
+          <input type="number" inputMode="decimal" aria-label="ยอดต่ำสุด" value={amtMin} onChange={(e) => setAmtMin(e.target.value)} placeholder="ต่ำสุด" className={amtCls} />
+          <span className="text-zinc-300">–</span>
+          <input type="number" inputMode="decimal" aria-label="ยอดสูงสุด" value={amtMax} onChange={(e) => setAmtMax(e.target.value)} placeholder="สูงสุด" className={amtCls} />
         </div>
       )}
     </div>

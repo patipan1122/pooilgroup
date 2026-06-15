@@ -4,10 +4,10 @@
 
 import { requireRole } from "@/lib/auth/session";
 import { resolveScope } from "../../../_scope";
-import { LedgerHeader } from "../../../_components/LedgerHeader";
 import { ledgerBankReconV1 } from "@/lib/ledger/flags";
 import { listBookEntries, listBankMovements, listMatchGroups } from "@/lib/ledger/bank-reconcile-board";
 import { ReconcileBoard } from "../../_components/ReconcileBoard";
+import { ReconcileMonthRange } from "./_components/ReconcileMonthRange";
 import { BankLogo } from "@/components/ledger/BankLogo";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
@@ -22,7 +22,7 @@ export default async function ReconcilePage({
   searchParams,
 }: {
   params: Promise<{ accountId: string }>;
-  searchParams: Promise<{ company?: string; branch?: string; period?: string }>;
+  searchParams: Promise<{ company?: string; branch?: string; period?: string; periodTo?: string }>;
 }) {
   const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer");
   const { accountId } = await params;
@@ -45,11 +45,21 @@ export default async function ReconcilePage({
   const maskedNo = acct.accountNo.length >= 4 ? `****${acct.accountNo.slice(-4)}` : acct.accountNo;
 
   const now = new Date();
-  const period = sp.period ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const [year, month] = period.split("-").map(Number);
-  const periodStart = `${year}-${String(month).padStart(2, "0")}-01`;
-  const periodEnd = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
-  const periodLabel = new Date(year, month - 1, 1).toLocaleDateString("th-TH", { year: "numeric", month: "long" });
+  const curMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  // ช่วงเดือน: ดูได้หลายเดือนพร้อมกัน (เดือนเริ่ม → เดือนจบ) — query bounded ตามช่วง (เร็ว)
+  let periodFrom = sp.period ?? curMonth;
+  let periodTo = sp.periodTo ?? periodFrom;
+  if (periodFrom > periodTo) [periodFrom, periodTo] = [periodTo, periodFrom]; // กันสลับ
+  const [fy, fm] = periodFrom.split("-").map(Number);
+  const [ty, tm] = periodTo.split("-").map(Number);
+  const periodStart = `${fy}-${String(fm).padStart(2, "0")}-01`;
+  const periodEnd = new Date(Date.UTC(ty, tm, 0)).toISOString().slice(0, 10);
+  // ตัวเลือกเดือน 18 เดือนล่าสุด
+  const monthOptions: string[] = [];
+  for (let i = 0; i < 18; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    monthOptions.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
 
   const [bookEntries, bankMovements, suggestedGroups] = await Promise.all([
     listBookEntries({ orgId, companyId, periodStart, periodEnd }),
@@ -57,16 +67,12 @@ export default async function ReconcilePage({
     listMatchGroups({ orgId, companyId, bankAccountId: accountId, status: "suggested" }),
   ]);
 
-  const prevM = new Date(year, month - 2, 1);
-  const nextM = new Date(year, month, 1);
-  const prevPeriod = `${prevM.getFullYear()}-${String(prevM.getMonth() + 1).padStart(2, "0")}`;
-  const nextPeriod = nextM > now ? null : `${nextM.getFullYear()}-${String(nextM.getMonth() + 1).padStart(2, "0")}`;
   const cp = `company=${companyId}`;
 
   return (
     <div className="p-4 sm:p-6">
       <div className="mb-2">
-        <Link href={`/ledger/bank-recon/${accountId}?${cp}&period=${period}`}
+        <Link href={`/ledger/bank-recon/${accountId}?${cp}&period=${periodFrom}`}
           className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-600">
           <ChevronLeft size={14} /> {BANK_LABELS[acct.bankCode] ?? acct.bankCode} {maskedNo}
         </Link>
@@ -78,12 +84,8 @@ export default async function ReconcilePage({
           <h1 className="text-lg font-semibold text-zinc-900">กระทบยอด — {acct.accountName}</h1>
           <p className="text-xs text-zinc-400">{BANK_LABELS[acct.bankCode] ?? acct.bankCode} · {maskedNo}</p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          <Link href={`?${cp}&period=${prevPeriod}`} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50">←</Link>
-          <span className="text-sm font-semibold text-zinc-800">{periodLabel}</span>
-          {nextPeriod
-            ? <Link href={`?${cp}&period=${nextPeriod}`} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50">→</Link>
-            : <span className="rounded-lg border border-zinc-100 px-3 py-1.5 text-sm text-zinc-300">→</span>}
+        <div className="ml-auto">
+          <ReconcileMonthRange from={periodFrom} to={periodTo} options={monthOptions} />
         </div>
       </div>
 
