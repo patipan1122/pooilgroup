@@ -224,10 +224,13 @@ export function GoogleConnectCard({
       const res = await scanScbStatementsNow();
       if (res.ok) {
         const more = res.remaining > 0 ? ` · ยังเหลืออีก ${res.remaining} เมล — กด "ดึง SCB" อีกครั้งเพื่อดึงต่อ` : "";
+        const found = `(ค้นเจอเมล SCB ${res.scanned} ฉบับ${res.skipped > 0 ? ` · เคยเข้าแล้ว ${res.skipped}` : ""})`;
         setScanMsg(
           res.rows > 0
-            ? `ดึง statement SCB เสร็จ — เข้า ${res.rows} รายการ (${res.batches} บัญชี/งวด) ไปที่หน้ากระทบยอดธนาคารได้เลย${more}${res.note ? ` · หมายเหตุ: ${res.note}` : ""}`
-            : `ดึงเสร็จ — ยังไม่เจอ statement SCB ใหม่ในกล่องเมล (หรือดึงไปครบแล้ว)${more}${res.note ? ` · ${res.note}` : ""}`,
+            ? `ดึง statement SCB เสร็จ — เข้า ${res.rows} รายการ (${res.batches} บัญชี/งวด) ไปที่หน้ากระทบยอดธนาคารได้เลย ${found}${more}${res.note ? ` · หมายเหตุ: ${res.note}` : ""}`
+            : res.scanned === 0
+              ? `ค้นไม่เจอเมล SCB ในกล่องนี้เลย ${found} — เช็คว่า SCB ส่งเข้า patipantantikul@gmail.com จริงไหม (อาจอยู่ในแท็บ/โฟลเดอร์อื่น หรือ Spam)`
+              : `ดึงเสร็จ — เมลที่เจอเข้าระบบไปครบแล้ว ${found}${more}${res.note ? ` · ${res.note}` : ""}`,
         );
       } else {
         setError(res.error);

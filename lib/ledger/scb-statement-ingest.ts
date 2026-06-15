@@ -30,7 +30,8 @@ import {
   type GmailFullMessage,
 } from "@/lib/ledger/gmail";
 
-const SCB_SENDER = "contact_business@email.scb.co.th";
+// SCB Business Anywhere sends statements from contact_business@email.scb.co.th
+// (domain email.scb.co.th). We match the whole scb.co.th domain to be resilient.
 const SEARCH_WINDOW_DAYS = 90; // CEO 2026-06-15: keep ~3 months so backfill is automatic
 const MAX_LIST_RESULTS = 150;  // one page big enough for ~3 months of daily SCB emails
 const MAX_NEW_PER_RUN = 50;    // process at most N NEW emails per run (timeout guard);
@@ -300,8 +301,12 @@ async function scanConnection(conn: ConnRow): Promise<ScbConnectionResult> {
   if (!accessToken) return { ...base, error: "ต่อ Gmail ไม่ได้ (อาจถูกเพิกถอนสิทธิ์)" };
 
   const afterSec = Math.floor((Date.now() - SEARCH_WINDOW_DAYS * 86_400_000) / 1000);
-  const query = `from:${SCB_SENDER} has:attachment filename:zip after:${afterSec}`;
+  // Broad-but-safe: any SCB sender with an attachment. We DON'T use `filename:zip`
+  // (Gmail's filename operator is unreliable for uppercase ".ZIP") — the code filters
+  // to .zip attachments + decrypts, so non-statement mail is skipped harmlessly.
+  const query = `from:scb.co.th has:attachment after:${afterSec}`;
   const messages = await searchMailboxMessages(accessToken, conn.gmailEmail, query, MAX_LIST_RESULTS);
+  console.log(`[ledger:scb-import] ${conn.gmailEmail}: query="${query}" → ${messages.length} messages`);
   base.scanned = messages.length;
   if (!messages.length) return base;
 
