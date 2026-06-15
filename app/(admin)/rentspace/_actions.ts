@@ -247,6 +247,11 @@ export async function actSaveUnit(input: {
     await ownGuard(prisma.rentalUnit.findFirst({ where: { id, orgId: session.user.org_id }, select: { id: true } }), "ห้อง");
     await prisma.rentalUnit.update({ where: { id }, data });
   } else {
+    // anti-IDOR: ห้ามสร้างห้องใต้โครงการของ org อื่น (FK เช็คแค่ว่ามีอยู่ ไม่เช็คเจ้าของ)
+    await ownGuard(
+      prisma.rentalProject.findFirst({ where: { id: input.projectId, orgId: session.user.org_id }, select: { id: true } }),
+      "โครงการ",
+    );
     const created = await prisma.rentalUnit.create({
       data: { id: randomUUID(), orgId: session.user.org_id, projectId: input.projectId, ...data },
     });
@@ -652,6 +657,10 @@ export async function actCreateBill(contractId: string, period: string, issue = 
     include: { project: true, unit: true },
   });
   if (!contract) throw new Error("ไม่พบสัญญา");
+  // ออกบิลได้เฉพาะสัญญาที่ยังใช้งานอยู่ (UI กรองแล้ว แต่ guard ฝั่ง server กัน API ตรง)
+  if (!["active", "expiring"].includes(contract.status)) {
+    throw new Error("ออกบิลได้เฉพาะสัญญาที่ใช้งานอยู่ (สัญญานี้สถานะ " + contract.status + ")");
+  }
   const res = await createBillForContract(contract, period, {
     actorId: session.user.id,
     auto: false,
@@ -770,6 +779,19 @@ export async function actRecordPayment(input: {
     where: { id: input.billId, orgId: session.user.org_id },
   });
   if (!bill) throw new Error("ไม่พบบิล");
+  // กันรับชำระซ้ำ (double-click / network retry / หลายแท็บ): บิล+ยอด+วิธี+วันเดียวกัน ภายใน 2 นาที = ซ้ำ
+  const dupSince = new Date(Date.now() - 120_000);
+  const dup = await prisma.rentalPayment.findFirst({
+    where: {
+      billId: bill.id,
+      amountThb: input.amountThb,
+      method: input.method ?? "transfer",
+      paidOn: new Date(input.paidOn),
+      createdAt: { gte: dupSince },
+    },
+    select: { id: true },
+  });
+  if (dup) return { ok: true, deduped: true };
   await prisma.rentalPayment.create({
     data: {
       id: randomUUID(),
@@ -811,7 +833,8 @@ export async function actRequestDiscount(input: {
     where: { id: input.billId, orgId: session.user.org_id },
   });
   if (!bill) throw new Error("ไม่พบบิล");
-  const base = toNum(bill.rentAmount) + toNum(bill.electricAmount) + toNum(bill.waterAmount) + toNum(bill.otherAmount) + toNum(bill.lateFeeAmount);
+  // ฐานส่วนลด = ผลรวมรายการบิลจริง (rent+ไฟ+น้ำ+ค่าปรับ) ตรงกับที่ recomputeBillTotals เฉลี่ยส่วนลด — otherAmount ยังไม่มี line item จึงไม่รวม
+  const base = toNum(bill.rentAmount) + toNum(bill.electricAmount) + toNum(bill.waterAmount) + toNum(bill.lateFeeAmount);
   const raw = input.kind === "percent" ? Math.round(base * (input.value / 100) * 100) / 100 : input.value;
   // a discount can never exceed the bill — keeps totals ≥ 0
   const computedAmount = Math.max(0, Math.min(raw, base));
@@ -947,10 +970,13 @@ export async function actRemindOverdue(
 export async function actDecideDiscount(discountId: string, decision: "approved" | "rejected", note?: string) {
   const session = await requireSession();
   if (!isAdminTier(session.user.role)) throw new Error("เฉพาะผู้ดูแล (admin) ขึ้นไปอนุมัติส่วนลดได้");
-  await ownGuard(
-    prisma.rentalDiscount.findFirst({ where: { id: discountId, orgId: session.user.org_id }, select: { id: true } }),
-    "รายการส่วนลด",
-  );
+  const existing = await prisma.rentalDiscount.findFirst({
+    where: { id: discountId, orgId: session.user.org_id },
+    select: { id: true, status: true },
+  });
+  if (!existing) throw new Error("ไม่พบรายการส่วนลด");
+  // กันพลิกผล: ตัดสินแล้ว (อนุมัติ/ไม่อนุมัติ) เปลี่ยนซ้ำไม่ได้ — รักษา audit trail
+  if (existing.status !== "pending") throw new Error("รายการส่วนลดนี้ตัดสินไปแล้ว เปลี่ยนผลซ้ำไม่ได้");
   const d = await prisma.rentalDiscount.update({
     where: { id: discountId },
     data: {

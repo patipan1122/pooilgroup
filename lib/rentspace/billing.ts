@@ -260,8 +260,9 @@ export async function recomputeBillTotals(billId: string): Promise<void> {
   let status = bill.status;
   if (bill.status !== "void" && bill.status !== "draft") {
     if (paid >= totalAmount) status = "paid"; // includes fully-discounted ฿0 bills
-    else if (paid > 0) status = "partial";
+    // เลยกำหนดชำระ = ค้าง แม้จ่ายมาบางส่วน (ให้โผล่ในหน้าตามเก็บ)
     else if (new Date(bill.dueDate).getTime() < Date.now()) status = "overdue";
+    else if (paid > 0) status = "partial";
     else status = "issued";
   }
   await prisma.rentalBill.update({
