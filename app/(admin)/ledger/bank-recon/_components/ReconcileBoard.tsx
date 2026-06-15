@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
 import {
   Sparkles, Plus, Link2, Ban, X, Check, CheckCircle2, AlertTriangle, Trash2, RefreshCw, Search,
   MoreVertical, ArrowLeftRight, FilePlus2, Pencil, CalendarClock, ArrowDownWideNarrow, CheckSquare, Square,
-  HelpCircle, Upload,
+  HelpCircle, Upload, SlidersHorizontal, ChevronDown,
 } from "lucide-react";
 import {
   createMatchGroupAction, autoMatchAccountAction, confirmAllGroupsAction,
@@ -33,7 +33,7 @@ type SortMode = "date" | "high" | "low";
 
 interface BookEntry {
   bookId: string; bookType: "revenue" | "expense" | "payment";
-  date: string; docNo: string; contact: string; detail: string; amountSatang: number; sub: string;
+  date: string; docNo: string; contact: string; detail: string; amountSatang: number; sub: string; channel: string;
 }
 interface BankMovement {
   id: string; date: string; description: string; txnType: string; ref1: string | null; amountSatang: number;
@@ -73,6 +73,28 @@ const SOURCE_LABEL: Record<string, string> = {
   revenue: "รายได้", expense: "ค่าใช้จ่าย", payment: "จ่ายเงิน",
 };
 
+// "ธุรกิจ" (source_type → ชื่อธุรกิจที่คนเข้าใจ) สำหรับ detail + filter เวลาบัญชีปนธุรกิจ
+const BIZ_LABEL: Record<string, string> = {
+  CASHHUB_HOTEL: "โรงแรม", FUELOS: "ปั๊มน้ำมัน", CHAIROPS: "เก้าอี้นวด", CLAWFLEET: "ตู้คีบ",
+  TRCLOUD_IV: "TRCloud", CASHHUB_AMAZON: "คาเฟ่ Amazon", CASHHUB_TEA: "ร้านชา",
+  WEBHOOK: "Webhook", MANUAL: "บันทึกเอง",
+};
+const bizLabel = (s: string) => BIZ_LABEL[s] ?? SOURCE_LABEL[s] ?? s;
+
+// "ประเภท" รับเงิน (payment_channel) — ป้ายสี + filter
+const CHANNEL_LABEL: Record<string, string> = {
+  cash: "เงินสด", transfer: "เงินโอน", qr: "QR", card: "บัตร", mixed: "ผสม", other: "อื่นๆ",
+};
+const chLabel = (c: string) => CHANNEL_LABEL[c] ?? c;
+const CHANNEL_STYLE: Record<string, string> = {
+  cash: "bg-emerald-50 text-emerald-600", transfer: "bg-blue-50 text-blue-600",
+  qr: "bg-violet-50 text-violet-600", card: "bg-amber-50 text-amber-600",
+  mixed: "bg-zinc-100 text-zinc-500", other: "bg-zinc-100 text-zinc-500",
+};
+
+const toggleSet = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, val: string) =>
+  setter((p) => { const n = new Set(p); if (n.has(val)) n.delete(val); else n.add(val); return n; });
+
 export function ReconcileBoard({
   bankAccountId, companyId, periodStart, periodEnd,
   bookEntries, bankMovements, suggestedGroups,
@@ -95,6 +117,12 @@ export function ReconcileBoard({
   const [sortBook, setSortBook] = useState<SortMode>("date");
   const [sortBank, setSortBank] = useState<SortMode>("date");
   const [showHelp, setShowHelp] = useState(false);   // คำแนะนำการใช้งาน (PEAK-style help)
+  // ตัวกรองฝั่งบัญชี (แก้ปัญหาบัญชีปนธุรกิจ): ธุรกิจ · ประเภทรับเงิน · ช่วงยอด
+  const [bizFilter, setBizFilter] = useState<Set<string>>(new Set());
+  const [chFilter, setChFilter] = useState<Set<string>>(new Set());
+  const [amtMin, setAmtMin] = useState("");
+  const [amtMax, setAmtMax] = useState("");
+  const [showBookFilters, setShowBookFilters] = useState(false);
 
   const bookKey = (b: { bookType: string; bookId: string }) => `${b.bookType}:${b.bookId}`;
   const today = todayISO();
@@ -106,13 +134,24 @@ export function ReconcileBoard({
   };
 
   // search + วันนี้ filter + sort (PEAK: ค้นหา · ฟิลเตอร์วันนี้ · ดูยอดมาก/น้อย)
+  // ตัวเลือกธุรกิจ/ประเภทที่ "มีจริง" ในงวดนี้ (โผล่เฉพาะที่เกี่ยวข้อง)
+  const bizOptions = useMemo(() => [...new Set(bookEntries.map((b) => b.sub).filter(Boolean))], [bookEntries]);
+  const chOptions = useMemo(() => [...new Set(bookEntries.map((b) => b.channel).filter(Boolean))], [bookEntries]);
+  const bookFilterCount = bizFilter.size + chFilter.size + (amtMin ? 1 : 0) + (amtMax ? 1 : 0);
+
   const fBook = useMemo(() => {
     const q = qBook.trim().toLowerCase();
     let r = bookEntries;
-    if (q) r = r.filter((b) => `${b.docNo} ${b.contact} ${b.detail} ${b.amountSatang / 100}`.toLowerCase().includes(q));
+    if (q) r = r.filter((b) => `${b.docNo} ${b.contact} ${b.detail} ${bizLabel(b.sub)} ${chLabel(b.channel)} ${b.amountSatang / 100}`.toLowerCase().includes(q));
     if (todayBook) r = r.filter((b) => b.date === today);
+    if (bizFilter.size) r = r.filter((b) => bizFilter.has(b.sub));
+    if (chFilter.size) r = r.filter((b) => chFilter.has(b.channel));
+    const min = amtMin ? Math.round(parseFloat(amtMin) * 100) : null;
+    const max = amtMax ? Math.round(parseFloat(amtMax) * 100) : null;
+    if (min != null && !isNaN(min)) r = r.filter((b) => Math.abs(b.amountSatang) >= min);
+    if (max != null && !isNaN(max)) r = r.filter((b) => Math.abs(b.amountSatang) <= max);
     return sortRows(r, sortBook);
-  }, [qBook, bookEntries, todayBook, sortBook, today]);
+  }, [qBook, bookEntries, todayBook, sortBook, today, bizFilter, chFilter, amtMin, amtMax]);
   const fBank = useMemo(() => {
     const q = qBank.trim().toLowerCase();
     let r = bankMovements;
@@ -315,13 +354,22 @@ export function ReconcileBoard({
                 addLabel="เพิ่มรายได้"
                 search={qBook}
                 onSearch={setQBook}
-                searchPlaceholder="ค้นหาเลขเอกสาร / ผู้ติดต่อ"
+                searchPlaceholder="ค้นหา สาขา / ผู้ติดต่อ / เลขเอกสาร"
                 allSelected={allBookSelected}
                 onToggleAll={toggleAllBook}
                 today={todayBook}
                 onToday={() => setTodayBook((v) => !v)}
                 sort={sortBook}
                 onSort={setSortBook}
+                extraFilter={
+                  <BookFilters
+                    count={bookFilterCount} open={showBookFilters} onToggle={() => setShowBookFilters((v) => !v)}
+                    bizOptions={bizOptions} bizFilter={bizFilter} onBiz={(s) => toggleSet(setBizFilter, s)}
+                    chOptions={chOptions} chFilter={chFilter} onCh={(s) => toggleSet(setChFilter, s)}
+                    amtMin={amtMin} amtMax={amtMax} setAmtMin={setAmtMin} setAmtMax={setAmtMax}
+                    onClear={() => { setBizFilter(new Set()); setChFilter(new Set()); setAmtMin(""); setAmtMax(""); }}
+                  />
+                }
               >
                 {fBook.map((b) => {
                   const k = bookKey(b);
@@ -331,15 +379,16 @@ export function ReconcileBoard({
                       checked={selBook.has(k)}
                       onToggle={() => toggleBook(k)}
                       date={b.date}
-                      title={b.contact || b.docNo || SOURCE_LABEL[b.sub] || "—"}
+                      title={b.contact || bizLabel(b.sub) || b.docNo || "—"}
                       subtitle={b.docNo}
                       detail={b.detail}
-                      tag={SOURCE_LABEL[b.bookType] ?? b.bookType}
+                      tag={b.sub ? bizLabel(b.sub) : (SOURCE_LABEL[b.bookType] ?? b.bookType)}
+                      channel={b.channel}
                       amountSatang={b.amountSatang}
                     />
                   );
                 })}
-                {fBook.length === 0 && <Empty text="ไม่มีรายการบัญชีค้าง" />}
+                {fBook.length === 0 && <Empty text={bookFilterCount > 0 ? "ไม่มีรายการตามตัวกรอง — ลองล้างตัวกรอง" : "ไม่มีรายการบัญชีค้าง"} />}
               </Column>
 
               {/* RIGHT — bank */}
@@ -535,13 +584,14 @@ const accentText = (a: Accent) => (a === "brand" ? "text-brand-600" : "text-emer
 
 function Column({
   title, subtitle, count, selTotal, accent, onAdd, addLabel, search, onSearch, searchPlaceholder,
-  allSelected, onToggleAll, today, onToday, sort, onSort, children,
+  allSelected, onToggleAll, today, onToday, sort, onSort, extraFilter, children,
 }: {
   title: string; subtitle?: string; count: number; selTotal: number; accent: Accent;
   onAdd?: () => void; addLabel: string;
   search: string; onSearch: (v: string) => void; searchPlaceholder: string;
   allSelected: boolean; onToggleAll: () => void;
   today: boolean; onToday: () => void; sort: SortMode; onSort: (s: SortMode) => void;
+  extraFilter?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -580,6 +630,7 @@ function Column({
           />
         </div>
       </div>
+      {extraFilter}
       {/* filter chips: select-all · วันนี้ · sort */}
       <div className="flex items-center gap-1.5 border-b border-zinc-50 px-3 py-2">
         <button type="button" onClick={onToggleAll} aria-pressed={allSelected ? "true" : "false"}
@@ -601,9 +652,72 @@ function Column({
   );
 }
 
-function Row({ checked, onToggle, disabled, date, title, subtitle, detail, tag, amountSatang, menu }: {
+// ── ตัวกรองฝั่งบัญชี: ธุรกิจ · ประเภทรับเงิน · ช่วงยอด (ยุบเก็บได้ — แก้ปัญหาบัญชีปนธุรกิจ) ──
+function BookFilters({
+  count, open, onToggle, bizOptions, bizFilter, onBiz, chOptions, chFilter, onCh,
+  amtMin, amtMax, setAmtMin, setAmtMax, onClear,
+}: {
+  count: number; open: boolean; onToggle: () => void;
+  bizOptions: string[]; bizFilter: Set<string>; onBiz: (s: string) => void;
+  chOptions: string[]; chFilter: Set<string>; onCh: (s: string) => void;
+  amtMin: string; amtMax: string; setAmtMin: (v: string) => void; setAmtMax: (v: string) => void;
+  onClear: () => void;
+}) {
+  // ไม่มีหลายธุรกิจ/หลายประเภทให้กรอง → ไม่ต้องโชว์ (คงความสะอาด)
+  if (bizOptions.length <= 1 && chOptions.length <= 1) return null;
+  const chipCls = (active: boolean) =>
+    `press min-h-8 rounded-full border px-2.5 py-1 text-[11px] sm:min-h-0 ${FOCUS} ${active ? "border-brand-300 bg-brand-100 text-brand-700" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`;
+  return (
+    <div className="border-b border-zinc-50 px-3 py-2">
+      <button type="button" onClick={onToggle} aria-expanded={open ? "true" : "false"}
+        className={`press inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] sm:min-h-0 ${FOCUS} ${count > 0 ? "border-brand-200 bg-brand-50 text-brand-600" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
+        <SlidersHorizontal size={12} /> ตัวกรอง{count > 0 ? ` (${count})` : ""}
+        <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2.5">
+          {bizOptions.length > 1 && (
+            <div>
+              <p className="mb-1 text-[10px] font-medium text-zinc-400">ธุรกิจ</p>
+              <div className="flex flex-wrap gap-1">
+                {bizOptions.map((s) => (
+                  <button key={s} type="button" onClick={() => onBiz(s)} className={chipCls(bizFilter.has(s))}>{bizLabel(s)}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          {chOptions.length > 1 && (
+            <div>
+              <p className="mb-1 text-[10px] font-medium text-zinc-400">ประเภทรับเงิน</p>
+              <div className="flex flex-wrap gap-1">
+                {chOptions.map((c) => (
+                  <button key={c} type="button" onClick={() => onCh(c)} className={chipCls(chFilter.has(c))}>{chLabel(c)}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <p className="mb-1 text-[10px] font-medium text-zinc-400">ช่วงยอดเงิน (บาท)</p>
+            <div className="flex items-center gap-1.5">
+              <input type="number" inputMode="decimal" aria-label="ยอดต่ำสุด" value={amtMin} onChange={(e) => setAmtMin(e.target.value)} placeholder="ต่ำสุด"
+                className={`w-24 rounded-lg border border-zinc-200 px-2 py-1 text-[11px] tabular-num ${FOCUS}`} />
+              <span className="text-zinc-300">–</span>
+              <input type="number" inputMode="decimal" aria-label="ยอดสูงสุด" value={amtMax} onChange={(e) => setAmtMax(e.target.value)} placeholder="สูงสุด"
+                className={`w-24 rounded-lg border border-zinc-200 px-2 py-1 text-[11px] tabular-num ${FOCUS}`} />
+              {count > 0 && (
+                <button type="button" onClick={onClear} className={`press ml-auto min-h-8 rounded-lg px-2 py-1 text-[11px] text-zinc-400 hover:text-zinc-600 sm:min-h-0 ${FOCUS}`}>ล้างตัวกรอง</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Row({ checked, onToggle, disabled, date, title, subtitle, detail, tag, channel, amountSatang, menu }: {
   checked: boolean; onToggle: () => void; disabled?: boolean;
-  date: string; title: string; subtitle?: string; detail?: string; tag?: string; amountSatang: number; menu?: React.ReactNode;
+  date: string; title: string; subtitle?: string; detail?: string; tag?: string; channel?: string; amountSatang: number; menu?: React.ReactNode;
 }) {
   const credit = amountSatang > 0;
   return (
@@ -613,9 +727,10 @@ function Row({ checked, onToggle, disabled, date, title, subtitle, detail, tag, 
         aria-label={`เลือก ${title}${date ? ` (${date})` : ""}`}
         className={`mt-0.5 size-5 shrink-0 cursor-pointer rounded border-zinc-300 disabled:opacity-40 ${FOCUS}`} />
       <div className="min-w-0 flex-1 cursor-pointer" onClick={() => !disabled && onToggle()}>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[11px] tabular-num text-zinc-400">{date}</span>
           {tag && <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500">{tag}</span>}
+          {channel && <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${CHANNEL_STYLE[channel] ?? "bg-zinc-100 text-zinc-500"}`}>{chLabel(channel)}</span>}
         </div>
         <p className="truncate text-sm text-zinc-700">{title}</p>
         {subtitle && <p className="truncate text-xs text-zinc-500">{subtitle}</p>}

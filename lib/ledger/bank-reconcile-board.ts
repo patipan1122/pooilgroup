@@ -19,7 +19,8 @@ export interface BookEntry {
   contact: string;
   detail: string;
   amountSatang: number;
-  sub: string;
+  sub: string;        // source_type (ธุรกิจ/ระบบที่มา) — ใช้ทำ filter "ธุรกิจ"
+  channel: string;    // payment_channel (cash/transfer/qr/card) — ใช้ทำ filter "ประเภท"
 }
 export interface BankMovement {
   id: string;
@@ -55,14 +56,15 @@ export async function listBookEntries(params: {
   const { orgId, companyId, periodStart, periodEnd } = params;
   const rows = await prisma.$queryRaw<{
     bookId: string; bookType: string; date: string; docNo: string;
-    contact: string; detail: string; amountSatang: bigint; sub: string;
+    contact: string; detail: string; amountSatang: bigint; sub: string; channel: string;
   }[]>`
     SELECT * FROM (
       SELECT r.id::text as "bookId", 'revenue' as "bookType", r.entry_date::text as "date",
              COALESCE(r.source_ref, '') as "docNo",
              COALESCE(NULLIF(r.customer_name,''), NULLIF(r.description,''), '') as "contact",
-             TRIM(CONCAT_WS(' · ', NULLIF(r.payment_channel,''), NULLIF(r.description,''))) as "detail",
-             r.amount_satang as "amountSatang", COALESCE(r.source_type,'') as "sub"
+             COALESCE(NULLIF(r.description,''), '') as "detail",
+             r.amount_satang as "amountSatang", COALESCE(r.source_type,'') as "sub",
+             COALESCE(r.payment_channel,'') as "channel"
       FROM ledger_revenue_entry r
       WHERE r.org_id = ${orgId}::uuid AND r.company_id = ${companyId}::uuid
         AND r.entry_date BETWEEN ${periodStart}::date AND ${periodEnd}::date
@@ -73,7 +75,7 @@ export async function listBookEntries(params: {
              COALESCE(NULLIF(e.doc_code,''), NULLIF(e.vendor_doc_number,''), ''),
              COALESCE(NULLIF(e.vendor,''), ''),
              TRIM(CONCAT_WS(' · ', NULLIF(e.doc_type,''), NULLIF(e.note,''))),
-             (-ROUND(e.total*100))::bigint, COALESCE(e.doc_type,'')
+             (-ROUND(e.total*100))::bigint, COALESCE(e.doc_type,''), ''
       FROM ledger_expense e
       WHERE e.org_id = ${orgId}::uuid AND e.company_id = ${companyId}::uuid
         AND e.doc_date BETWEEN ${periodStart}::date AND ${periodEnd}::date
@@ -81,7 +83,7 @@ export async function listBookEntries(params: {
         AND NOT EXISTS (SELECT 1 FROM ledger_bank_match_item mi WHERE mi.book_type='expense' AND mi.book_id = e.id)
       UNION ALL
       SELECT p.id::text, 'payment', p.paid_at::date::text,
-             COALESCE(p.trans_ref,''), '', COALESCE(p.method,''), (-ROUND(p.amount*100))::bigint, COALESCE(p.method,'')
+             COALESCE(p.trans_ref,''), '', COALESCE(p.method,''), (-ROUND(p.amount*100))::bigint, COALESCE(p.method,''), COALESCE(p.method,'')
       FROM ledger_payment p
       WHERE p.org_id = ${orgId}::uuid AND p.company_id = ${companyId}::uuid
         AND p.paid_at::date BETWEEN ${periodStart}::date AND ${periodEnd}::date
@@ -93,7 +95,7 @@ export async function listBookEntries(params: {
   `;
   return rows.map((r) => ({
     bookId: r.bookId, bookType: r.bookType as BookEntry["bookType"], date: r.date,
-    docNo: r.docNo, contact: r.contact, detail: r.detail, amountSatang: Number(r.amountSatang), sub: r.sub,
+    docNo: r.docNo, contact: r.contact, detail: r.detail, amountSatang: Number(r.amountSatang), sub: r.sub, channel: r.channel,
   }));
 }
 
