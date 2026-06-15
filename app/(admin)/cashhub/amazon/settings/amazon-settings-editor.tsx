@@ -12,9 +12,10 @@ type Props = {
   configs: ChannelConfig[];
   accounts: BankAccountOpt[];
   companies: CompanyOpt[];
+  branchCode?: string; // "" = ค่าเริ่มต้นทุกสาขา · ระบุ = override รายสาขา
 };
 
-export function AmazonSettingsEditor({ configs, accounts, companies }: Props) {
+export function AmazonSettingsEditor({ configs, accounts, companies, branchCode = "" }: Props) {
   const router = useRouter();
   const [rows, setRows] = useState<ChannelConfig[]>(configs);
   // บริษัทเดียวกันทุกช่อง (default จากช่องแรกที่ตั้งไว้)
@@ -36,7 +37,7 @@ export function AmazonSettingsEditor({ configs, accounts, companies }: Props) {
       const res = await fetch("/api/cashhub/amazon-settlement/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ configs: payload }),
+        body: JSON.stringify({ configs: payload, branchCode }),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok || data.error) setMsg({ kind: "err", text: data.error ?? "บันทึกไม่สำเร็จ" });
@@ -49,7 +50,7 @@ export function AmazonSettingsEditor({ configs, accounts, companies }: Props) {
     } finally {
       setBusy(false);
     }
-  }, [rows, companyId, router]);
+  }, [rows, companyId, branchCode, router]);
 
   const applyAccountToAll = (accId: string) =>
     setRows((rs) => rs.map((r) => (r.isSettle ? { ...r, bankAccountId: accId || null } : r)));

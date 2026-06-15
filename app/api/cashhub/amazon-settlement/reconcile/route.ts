@@ -39,7 +39,8 @@ export async function POST(req: NextRequest) {
   const orgId = session.user.org_id;
   const admin = adminClient();
   const days = await loadAmazonDays(admin, orgId, storeCode, from, to);
-  const configs = await loadChannelConfig(admin, orgId);
+  // ใช้ค่าตั้งของสาขานี้ถ้ามี (ไม่งั้น fallback ค่าเริ่มต้นทุกสาขา)
+  const configs = await loadChannelConfig(admin, orgId, storeCode);
 
   // ต้องตั้งบริษัทอย่างน้อย 1 ช่องก่อน (ไม่งั้นไม่มีอะไรเข้า reconcile)
   if (!configs.some((c) => c.isSettle && c.companyId))

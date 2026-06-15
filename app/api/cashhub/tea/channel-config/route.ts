@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
   if (!isSuperAdmin(gate.session.user.role))
     return NextResponse.json({ error: "เฉพาะ super_admin ตั้งค่าบัญชีได้" }, { status: 403 });
 
-  let body: { configs?: TeaChannelConfig[] };
+  let body: { configs?: TeaChannelConfig[]; branchCode?: string };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -27,8 +27,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ไม่พบข้อมูลการตั้งค่า" }, { status: 400 });
 
   const orgId = gate.session.user.org_id;
+  const branchCode = typeof body.branchCode === "string" ? body.branchCode : "";
   const admin = adminClient();
-  const res = await saveTeaChannelConfig(admin, orgId, body.configs);
+  const res = await saveTeaChannelConfig(admin, orgId, body.configs, branchCode);
   if (!res.ok) return NextResponse.json({ error: res.error }, { status: 500 });
 
   await audit({
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
     userId: gate.session.user.id,
     action: "SAVE_TEA_CHANNEL_CONFIG",
     resourceType: "cashhub_tea_channel_config",
-    diff: { new: { channels: body.configs.length } },
+    diff: { new: { channels: body.configs.length, branchCode } },
   });
   return NextResponse.json({ ok: true });
 }

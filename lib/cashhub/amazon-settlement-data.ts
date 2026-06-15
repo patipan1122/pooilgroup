@@ -12,20 +12,26 @@ import { BANK_LABELS } from "@/lib/ledger/bank-adapters/types";
 
 type Admin = ReturnType<typeof adminClient>;
 
-/** โหลด config ช่องทาง (merge กับ default — ช่องใหม่โผล่อัตโนมัติ) */
+/** โหลด config ช่องทาง (merge กับ default — ช่องใหม่โผล่อัตโนมัติ)
+ *  branchCode = "" → ค่าเริ่มต้นทุกสาขา (org default) · ระบุสาขา → ใช้ค่าสาขานั้นถ้ามี ไม่งั้น fallback ค่าเริ่มต้น */
 export async function loadChannelConfig(
   admin: Admin,
   orgId: string,
+  branchCode = "",
 ): Promise<ChannelConfig[]> {
   const { data } = await admin
     .from("cashhub_amazon_channel_config")
-    .select("channel_cvar, label, is_settle, fee_percent, min_settle_satang, company_id, bank_account_id")
+    .select("branch_code, channel_cvar, label, is_settle, fee_percent, min_settle_satang, company_id, bank_account_id")
     .eq("org_id", orgId);
-  const saved = new Map<string, Record<string, unknown>>();
-  for (const r of (data ?? []) as Record<string, unknown>[])
-    saved.set(String(r.channel_cvar), r);
+  const orgDefault = new Map<string, Record<string, unknown>>();
+  const branchRows = new Map<string, Record<string, unknown>>();
+  for (const r of (data ?? []) as Record<string, unknown>[]) {
+    const bc = String(r.branch_code ?? "");
+    if (bc === "") orgDefault.set(String(r.channel_cvar), r);
+    else if (bc === branchCode) branchRows.set(String(r.channel_cvar), r);
+  }
   return DEFAULT_CHANNELS.map((d) => {
-    const s = saved.get(d.cvar);
+    const s = branchRows.get(d.cvar) ?? orgDefault.get(d.cvar);
     if (!s) return d;
     return {
       cvar: d.cvar,
@@ -39,14 +45,31 @@ export async function loadChannelConfig(
   });
 }
 
-/** บันทึก config (super_admin) — upsert ต่อช่องทาง */
+/** เช็คว่าสาขานี้มีค่าตั้งเป็นของตัวเองไหม (ไม่อิงค่าเริ่มต้น) — ใช้โชว์ใน UI */
+export async function branchHasOwnConfig(
+  admin: Admin,
+  orgId: string,
+  branchCode: string,
+): Promise<boolean> {
+  if (!branchCode) return false;
+  const { count } = await admin
+    .from("cashhub_amazon_channel_config")
+    .select("id", { count: "exact", head: true })
+    .eq("org_id", orgId)
+    .eq("branch_code", branchCode);
+  return (count ?? 0) > 0;
+}
+
+/** บันทึก config (super_admin) — upsert ต่อช่องทาง/สาขา (branchCode="" = ค่าเริ่มต้นทุกสาขา) */
 export async function saveChannelConfig(
   admin: Admin,
   orgId: string,
   configs: ChannelConfig[],
+  branchCode = "",
 ): Promise<{ ok: boolean; error?: string }> {
   const rows = configs.map((c) => ({
     org_id: orgId,
+    branch_code: branchCode,
     channel_cvar: c.cvar,
     label: c.label,
     is_settle: c.isSettle,
@@ -58,7 +81,7 @@ export async function saveChannelConfig(
   }));
   const { error } = await admin
     .from("cashhub_amazon_channel_config")
-    .upsert(rows, { onConflict: "org_id,channel_cvar" });
+    .upsert(rows, { onConflict: "org_id,branch_code,channel_cvar" });
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 

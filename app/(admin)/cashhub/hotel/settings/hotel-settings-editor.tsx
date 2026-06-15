@@ -9,11 +9,12 @@ type Props = {
   configs: HotelChannelConfig[];
   accounts: BankAccountOpt[];
   companies: CompanyOpt[];
+  branchCode?: string; // "" = ค่าเริ่มต้นทุกสาขา · ระบุ = override รายสาขา
 };
 
 const acctLabel = (a: BankAccountOpt) => a.name || `${a.bankCode} ****${a.last4}`;
 
-export function HotelSettingsEditor({ configs, accounts, companies }: Props) {
+export function HotelSettingsEditor({ configs, accounts, companies, branchCode = "" }: Props) {
   const router = useRouter();
   const [rows, setRows] = useState<HotelChannelConfig[]>(configs);
   const [busy, setBusy] = useState(false);
@@ -31,7 +32,7 @@ export function HotelSettingsEditor({ configs, accounts, companies }: Props) {
       const res = await fetch("/api/cashhub/hotel-settlement/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ configs: rows }),
+        body: JSON.stringify({ configs: rows, branchCode }),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok || data.error) setMsg({ kind: "err", text: data.error ?? "บันทึกไม่สำเร็จ" });
@@ -44,7 +45,7 @@ export function HotelSettingsEditor({ configs, accounts, companies }: Props) {
     } finally {
       setBusy(false);
     }
-  }, [rows, router]);
+  }, [rows, branchCode, router]);
 
   return (
     <div className="space-y-4">

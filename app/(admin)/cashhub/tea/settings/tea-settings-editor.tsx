@@ -13,12 +13,13 @@ type Props = {
   accounts: BankAccountOpt[];
   companies: CompanyOpt[];
   canEdit: boolean;
+  branchCode?: string; // "" = ค่าเริ่มต้นทุกสาขา · ระบุ = override รายสาขา
 };
 
 // ป้ายบัญชี: ชื่อบัญชี · ถ้าไม่มีใช้ ธนาคาร ****เลข4ตัวท้าย (ระบุชัด ไม่เดาจากชื่อที่ตั้งเอง)
 const accLabel = (a: BankAccountOpt) => a.name || `${a.bankCode} ****${a.last4}`;
 
-export function TeaSettingsEditor({ configs, accounts, companies, canEdit }: Props) {
+export function TeaSettingsEditor({ configs, accounts, companies, canEdit, branchCode = "" }: Props) {
   const router = useRouter();
   const [rows, setRows] = useState<TeaChannelConfig[]>(configs);
   const [companyId, setCompanyId] = useState<string>(
@@ -48,7 +49,7 @@ export function TeaSettingsEditor({ configs, accounts, companies, canEdit }: Pro
       const res = await fetch("/api/cashhub/tea/channel-config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ configs: payload }),
+        body: JSON.stringify({ configs: payload, branchCode }),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok || data.error) setMsg({ kind: "err", text: data.error ?? "บันทึกไม่สำเร็จ" });
@@ -61,7 +62,7 @@ export function TeaSettingsEditor({ configs, accounts, companies, canEdit }: Pro
     } finally {
       setBusy(false);
     }
-  }, [rows, companyId, router]);
+  }, [rows, companyId, branchCode, router]);
 
   return (
     <div className="space-y-4">

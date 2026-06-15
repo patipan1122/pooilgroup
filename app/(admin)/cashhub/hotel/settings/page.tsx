@@ -5,34 +5,41 @@ import { adminClient } from "@/lib/db/server";
 import { BackButton } from "@/components/ui/back-button";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
 import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
-import { loadHotelChannelConfigForSettings, computeHotelDeposits } from "@/lib/cashhub/hotel-settlement-data";
+import {
+  loadHotelChannelConfigForSettings,
+  computeHotelDeposits,
+  hotelBranchHasOwnConfig,
+} from "@/lib/cashhub/hotel-settlement-data";
 import { listBankAccounts, listCompanies } from "@/lib/cashhub/amazon-settlement-data";
 import { loadBranches } from "@/lib/cashhub/data";
 import { HotelSettingsEditor } from "./hotel-settings-editor";
 import { SendPreview, type SendPreviewDay } from "@/components/cashhub/send-preview";
 import { SendPreviewControls } from "@/components/cashhub/send-preview-controls";
+import { SettingsBranchPicker } from "@/components/cashhub/settings-branch-picker";
 
 export const dynamic = "force-dynamic";
 
 export default async function HotelSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ previewStore?: string; previewDate?: string }>;
+  searchParams: Promise<{ branch?: string; previewDate?: string }>;
 }) {
   const session = await requireSession();
   requireSuperAdmin(session.user.role);
   const admin = adminClient();
   const orgId = session.user.org_id;
 
-  const [configs, accounts, companies] = await Promise.all([
-    loadHotelChannelConfigForSettings(admin, orgId),
+  const sp = await searchParams;
+  const branchCode = sp.branch ?? "";
+
+  const [configs, accounts, companies, hasOwn] = await Promise.all([
+    loadHotelChannelConfigForSettings(admin, orgId, branchCode),
     listBankAccounts(admin, orgId),
     listCompanies(admin, orgId),
+    hotelBranchHasOwnConfig(admin, orgId, branchCode),
   ]);
 
-  // พรีวิว: รันสูตรเดียวกับตัวส่งจริง (computeHotelDeposits) — QR/เงินสด (ไม่หักค่าธรรมเนียม) · เลือกสาขา + ระบุวันที่
-  const sp = await searchParams;
-  const reqStore = sp.previewStore ?? "";
+  // พรีวิว: รันสูตรเดียวกับตัวส่งจริง (computeHotelDeposits) — QR/เงินสด (ไม่หักค่าธรรมเนียม) · ใช้สาขาที่ตั้งค่า + ระบุวันที่
   const reqDate = /^\d{4}-\d{2}-\d{2}$/.test(sp.previewDate ?? "") ? sp.previewDate! : "";
   const accById = new Map(accounts.map((a) => [a.id, a.label]));
   const settleConfigs = configs.filter((c) => c.isSettle && c.active);
@@ -46,7 +53,7 @@ export default async function HotelSettingsPage({
     .from("cashhub_hotel_daily").select("branch_id").eq("org_id", orgId).gte("sales_date", discFrom);
   const hotelIds = new Set((hbRows ?? []).map((r) => String((r as { branch_id?: string }).branch_id)));
   const stores = allBranches.filter((b) => hotelIds.has(b.id)).map((b) => ({ code: b.id, label: b.name }));
-  const activeStore = (reqStore && stores.some((s) => s.code === reqStore)) ? reqStore : (stores[0]?.code ?? "");
+  const activeStore = (branchCode && stores.some((s) => s.code === branchCode)) ? branchCode : (stores[0]?.code ?? "");
   const deposits = activeStore ? await computeHotelDeposits(admin, orgId, activeStore, dayFrom, dayTo) : [];
   const withMoney = deposits.filter((d) => d.qrBanked > 0 || d.cashDeposited > 0);
   const srcDeps = reqDate ? withMoney : withMoney.slice(-2);
@@ -76,9 +83,10 @@ export default async function HotelSettingsPage({
           (บัญชีใครบัญชีมัน — แมตช์ statement ได้ตรง)
         </p>
       </header>
-      <HotelSettingsEditor configs={configs} accounts={accounts} companies={companies} />
+      <SettingsBranchPicker branches={stores} activeBranch={branchCode} hasOwnConfig={hasOwn} />
+      <HotelSettingsEditor key={branchCode || "default"} configs={configs} accounts={accounts} companies={companies} branchCode={branchCode} />
       <div className="mt-8">
-        <SendPreviewControls stores={stores} activeStore={activeStore} activeDate={reqDate} />
+        <SendPreviewControls stores={[]} activeStore="" activeDate={reqDate} />
         <SendPreview days={previewDays} caption={previewCaption} showFee={false} />
       </div>
     </div>

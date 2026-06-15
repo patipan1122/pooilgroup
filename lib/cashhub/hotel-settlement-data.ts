@@ -25,17 +25,8 @@ const CHANNEL_CODE: Record<string, string> = {
   ota_booking: "transfer",
 };
 
-/** โหลด config ช่องทางโรงแรมที่ active */
-export async function loadHotelChannelConfig(
-  admin: Admin,
-  orgId: string,
-): Promise<HotelChannelConfig[]> {
-  const { data } = await admin
-    .from("cashhub_hotel_channel_config")
-    .select("channel, label, is_settle, fee_percent, bank_account_id, company_id, active")
-    .eq("org_id", orgId)
-    .eq("active", true);
-  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+function mapHotelRow(r: Record<string, unknown>): HotelChannelConfig {
+  return {
     channel: String(r.channel),
     label: String(r.label ?? r.channel),
     isSettle: r.is_settle == null ? true : Boolean(r.is_settle),
@@ -43,7 +34,35 @@ export async function loadHotelChannelConfig(
     bankAccountId: (r.bank_account_id as string | null) ?? null,
     companyId: (r.company_id as string | null) ?? null,
     active: Boolean(r.active),
-  }));
+  };
+}
+
+/** โหลด config ช่องทางโรงแรมที่ active (สำหรับส่ง reconcile)
+ *  branchCode="" → ค่าเริ่มต้นทุกสาขา · ระบุสาขา → ใช้ค่าสาขานั้นถ้ามี ไม่งั้น fallback ค่าเริ่มต้น */
+export async function loadHotelChannelConfig(
+  admin: Admin,
+  orgId: string,
+  branchCode = "",
+): Promise<HotelChannelConfig[]> {
+  const { data } = await admin
+    .from("cashhub_hotel_channel_config")
+    .select("branch_code, channel, label, is_settle, fee_percent, bank_account_id, company_id, active")
+    .eq("org_id", orgId);
+  const orgDefault = new Map<string, Record<string, unknown>>();
+  const branchRows = new Map<string, Record<string, unknown>>();
+  for (const r of (data ?? []) as Record<string, unknown>[]) {
+    const bc = String(r.branch_code ?? "");
+    if (bc === "") orgDefault.set(String(r.channel), r);
+    else if (bc === branchCode) branchRows.set(String(r.channel), r);
+  }
+  const channels = new Set([...orgDefault.keys(), ...branchRows.keys()]);
+  const out: HotelChannelConfig[] = [];
+  for (const ch of channels) {
+    const r = branchRows.get(ch) ?? orgDefault.get(ch)!;
+    if (!Boolean(r.active)) continue; // เฉพาะ active (= ส่งเข้า reconcile)
+    out.push(mapHotelRow(r));
+  }
+  return out;
 }
 
 /** ช่องทางมาตรฐานของโรงแรม — โผล่ในหน้าตั้งค่าเสมอ แม้ยังไม่เคยตั้ง (OTA ปิด default) */
@@ -55,17 +74,43 @@ export const DEFAULT_HOTEL_CHANNELS: { channel: string; label: string; isSettle:
   { channel: "ota_booking", label: "Booking.com", isSettle: false },
 ];
 
-/** โหลด config สำหรับหน้าตั้งค่า — merge default + ที่บันทึกไว้ (รวม inactive ด้วย ให้เห็น/แก้ได้ครบ) */
+/** เช็คว่าสาขานี้ตั้งค่าเอง (ไม่อิงค่าเริ่มต้น) ไหม — ใช้โชว์ใน UI */
+export async function hotelBranchHasOwnConfig(
+  admin: Admin,
+  orgId: string,
+  branchCode: string,
+): Promise<boolean> {
+  if (!branchCode) return false;
+  const { count } = await admin
+    .from("cashhub_hotel_channel_config")
+    .select("id", { count: "exact", head: true })
+    .eq("org_id", orgId)
+    .eq("branch_code", branchCode);
+  return (count ?? 0) > 0;
+}
+
+/** โหลด config สำหรับหน้าตั้งค่า — merge default + ที่บันทึกไว้ (รวม inactive ด้วย ให้เห็น/แก้ได้ครบ)
+ *  branchCode="" → ค่าเริ่มต้นทุกสาขา · ระบุสาขา → ใช้ค่าสาขานั้นถ้ามี ไม่งั้น fallback ค่าเริ่มต้น */
 export async function loadHotelChannelConfigForSettings(
   admin: Admin,
   orgId: string,
+  branchCode = "",
 ): Promise<HotelChannelConfig[]> {
   const { data } = await admin
     .from("cashhub_hotel_channel_config")
-    .select("channel, label, is_settle, fee_percent, bank_account_id, company_id, active")
+    .select("branch_code, channel, label, is_settle, fee_percent, bank_account_id, company_id, active")
     .eq("org_id", orgId);
+  const orgDefault = new Map<string, Record<string, unknown>>();
+  const branchRows = new Map<string, Record<string, unknown>>();
+  for (const r of (data ?? []) as Record<string, unknown>[]) {
+    const bc = String(r.branch_code ?? "");
+    if (bc === "") orgDefault.set(String(r.channel), r);
+    else if (bc === branchCode) branchRows.set(String(r.channel), r);
+  }
+  // effective: ค่าสาขา (ถ้ามี) ทับค่าเริ่มต้น
   const saved = new Map<string, Record<string, unknown>>();
-  for (const r of (data ?? []) as Record<string, unknown>[]) saved.set(String(r.channel), r);
+  for (const [ch, r] of orgDefault) saved.set(ch, r);
+  for (const [ch, r] of branchRows) saved.set(ch, r);
   // ช่องทาง = default + ช่องที่ตั้งไว้แล้วแต่ไม่อยู่ใน default (กันตกหล่น)
   const extra = [...saved.keys()].filter((c) => !DEFAULT_HOTEL_CHANNELS.some((d) => d.channel === c));
   const order = [...DEFAULT_HOTEL_CHANNELS.map((d) => d.channel), ...extra];
@@ -89,9 +134,11 @@ export async function saveHotelChannelConfig(
   admin: Admin,
   orgId: string,
   configs: HotelChannelConfig[],
+  branchCode = "",
 ): Promise<{ ok: boolean; error?: string }> {
   const rows = configs.map((c) => ({
     org_id: orgId,
+    branch_code: branchCode,
     channel: c.channel,
     label: c.label,
     is_settle: c.isSettle,
@@ -103,7 +150,7 @@ export async function saveHotelChannelConfig(
   }));
   const { error } = await admin
     .from("cashhub_hotel_channel_config")
-    .upsert(rows, { onConflict: "org_id,channel" });
+    .upsert(rows, { onConflict: "org_id,branch_code,channel" });
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 

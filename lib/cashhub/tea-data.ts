@@ -233,20 +233,58 @@ export function summarizeTea(days: SavedTeaDay[]): Map<string, TeaBranchSummary>
 }
 
 // ── ตั้งค่าช่องทาง → บัญชี/บริษัท (เตรียม reconcile) ─────────────────────────
-/** โหลด config ต่อช่องทาง (merge กับ default — ช่องที่ยังไม่ตั้งใช้ค่าเริ่มต้น) */
+/** รายชื่อสาขาร้านชาทั้งหมดที่เคยมีข้อมูล (สำหรับ dropdown ตั้งค่าแยกสาขา) */
+export async function listTeaBranches(
+  admin: Admin,
+  orgId: string,
+): Promise<{ code: string; label: string }[]> {
+  const { data } = await admin
+    .from("cashhub_tea_daily")
+    .select("branch_code, branch_label")
+    .eq("org_id", orgId);
+  const m = new Map<string, string>();
+  for (const r of (data ?? []) as Record<string, unknown>[]) {
+    const code = String(r.branch_code);
+    if (!m.has(code)) m.set(code, (r.branch_label as string | null) || code);
+  }
+  return [...m.entries()].map(([code, label]) => ({ code, label })).sort((a, b) => a.label.localeCompare(b.label, "th"));
+}
+
+/** เช็คว่าสาขานี้ตั้งค่าเอง (ไม่อิงค่าเริ่มต้น) ไหม — ใช้โชว์ใน UI */
+export async function teaBranchHasOwnConfig(
+  admin: Admin,
+  orgId: string,
+  branchCode: string,
+): Promise<boolean> {
+  if (!branchCode) return false;
+  const { count } = await admin
+    .from("cashhub_tea_channel_config")
+    .select("id", { count: "exact", head: true })
+    .eq("org_id", orgId)
+    .eq("branch_code", branchCode);
+  return (count ?? 0) > 0;
+}
+
+/** โหลด config ต่อช่องทาง (merge กับ default — ช่องที่ยังไม่ตั้งใช้ค่าเริ่มต้น)
+ *  branchCode="" → ค่าเริ่มต้นทุกสาขา · ระบุสาขา → ใช้ค่าสาขานั้นถ้ามี ไม่งั้น fallback ค่าเริ่มต้น */
 export async function loadTeaChannelConfig(
   admin: Admin,
   orgId: string,
+  branchCode = "",
 ): Promise<TeaChannelConfig[]> {
   const { data } = await admin
     .from("cashhub_tea_channel_config")
-    .select("channel_code, label, is_settle, fee_percent, min_settle_satang, company_id, bank_account_id")
+    .select("branch_code, channel_code, label, is_settle, fee_percent, min_settle_satang, company_id, bank_account_id")
     .eq("org_id", orgId);
-  const saved = new Map<string, Record<string, unknown>>();
-  for (const r of (data ?? []) as Record<string, unknown>[])
-    saved.set(String(r.channel_code), r);
+  const orgDefault = new Map<string, Record<string, unknown>>();
+  const branchRows = new Map<string, Record<string, unknown>>();
+  for (const r of (data ?? []) as Record<string, unknown>[]) {
+    const bc = String(r.branch_code ?? "");
+    if (bc === "") orgDefault.set(String(r.channel_code), r);
+    else if (bc === branchCode) branchRows.set(String(r.channel_code), r);
+  }
   return defaultTeaChannelConfigs().map((d) => {
-    const s = saved.get(d.code);
+    const s = branchRows.get(d.code) ?? orgDefault.get(d.code);
     if (!s) return d;
     return {
       code: d.code,
@@ -267,6 +305,7 @@ export async function saveTeaChannelConfig(
   admin: Admin,
   orgId: string,
   configs: TeaChannelConfig[],
+  branchCode = "",
 ): Promise<{ ok: boolean; error?: string }> {
   const valid = new Set(TEA_CHANNELS.map((c) => c.code));
   // โหลด id ที่เป็นของ org นี้เท่านั้น → null ค่าที่แปลกปลอม
@@ -281,6 +320,7 @@ export async function saveTeaChannelConfig(
     .filter((c) => valid.has(c.code))
     .map((c) => ({
       org_id: orgId,
+      branch_code: branchCode,
       channel_code: c.code,
       label: c.label,
       is_settle: c.isSettle,
@@ -293,6 +333,6 @@ export async function saveTeaChannelConfig(
   if (rows.length === 0) return { ok: true };
   const { error } = await admin
     .from("cashhub_tea_channel_config")
-    .upsert(rows, { onConflict: "org_id,channel_code" });
+    .upsert(rows, { onConflict: "org_id,branch_code,channel_code" });
   return error ? { ok: false, error: error.message } : { ok: true };
 }

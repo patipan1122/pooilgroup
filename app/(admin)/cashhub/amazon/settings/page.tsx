@@ -9,6 +9,7 @@ import {
   loadChannelConfig,
   listBankAccounts,
   listCompanies,
+  branchHasOwnConfig,
 } from "@/lib/cashhub/amazon-settlement-data";
 import { computeSendRows } from "@/lib/cashhub/amazon-settlement";
 import { loadAmazonDays, listAmazonStores } from "@/lib/cashhub/amazon-data";
@@ -16,28 +17,32 @@ import { AmazonSettingsEditor } from "./amazon-settings-editor";
 import { AmazonRuleSummary } from "./amazon-rule-summary";
 import { AmazonSendPreview, type SendPreviewDay } from "./amazon-send-preview";
 import { AmazonPreviewControls } from "./amazon-preview-controls";
+import { SettingsBranchPicker } from "@/components/cashhub/settings-branch-picker";
 
 export const dynamic = "force-dynamic";
 
 export default async function AmazonSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ previewStore?: string; previewDate?: string }>;
+  searchParams: Promise<{ branch?: string; previewDate?: string }>;
 }) {
   const session = await requireSession();
   requireSuperAdmin(session.user.role);
   const admin = adminClient();
   const orgId = session.user.org_id;
 
-  const [configs, accounts, companies] = await Promise.all([
-    loadChannelConfig(admin, orgId),
+  const sp = await searchParams;
+  const branchCode = sp.branch ?? "";
+
+  const [configs, accounts, companies, hasOwn] = await Promise.all([
+    loadChannelConfig(admin, orgId, branchCode),
     listBankAccounts(admin, orgId),
     listCompanies(admin, orgId),
+    branchHasOwnConfig(admin, orgId, branchCode),
   ]);
 
-  // พรีวิว: รันสูตรเดียวกับตัวส่งจริง (computeSendRows) — เลือกสาขา + ระบุวันที่ได้
-  const sp = await searchParams;
-  const reqStore = sp.previewStore ?? "";
+  // พรีวิว: รันสูตรเดียวกับตัวส่งจริง (computeSendRows) — ใช้สาขาที่กำลังตั้งค่า + ระบุวันที่ได้
+  const reqStore = branchCode;
   const reqDate = /^\d{4}-\d{2}-\d{2}$/.test(sp.previewDate ?? "") ? sp.previewDate! : "";
   const configByCvar = new Map(configs.map((c) => [c.cvar, c]));
   const accById = new Map(accounts.map((a) => [a.id, a.label]));
@@ -89,10 +94,15 @@ export default async function AmazonSettingsPage({
           ระบบคำนวณ &ldquo;เงินเข้าจริง&rdquo; + ส่งเข้าหน้ากระทบยอดธนาคารให้
         </p>
       </header>
+      <SettingsBranchPicker
+        branches={stores.map((s) => ({ code: s.store_code, label: s.branch_label || s.store_code }))}
+        activeBranch={branchCode}
+        hasOwnConfig={hasOwn}
+      />
       <AmazonRuleSummary configs={configs} />
-      <AmazonSettingsEditor configs={configs} accounts={accounts} companies={companies} />
+      <AmazonSettingsEditor key={branchCode || "default"} configs={configs} accounts={accounts} companies={companies} branchCode={branchCode} />
       <div className="mt-8">
-        <AmazonPreviewControls stores={stores} activeStore={activeStore} activeDate={reqDate} />
+        <AmazonPreviewControls stores={[]} activeStore="" activeDate={reqDate} />
         <AmazonSendPreview days={previewDays} storeLabel={storeLabel} caption={previewCaption} />
       </div>
     </div>

@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       { status: 403 },
     );
 
-  let body: { configs?: ChannelConfig[] };
+  let body: { configs?: ChannelConfig[]; branchCode?: string };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
   const configs = Array.isArray(body.configs) ? body.configs : [];
   if (configs.length === 0)
     return NextResponse.json({ error: "ไม่มีข้อมูลตั้งค่า" }, { status: 400 });
+  const branchCode = typeof body.branchCode === "string" ? body.branchCode : "";
 
   // sanitize เบา ๆ
   for (const c of configs) {
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
     c.minSettleBaht = Math.max(0, Number(c.minSettleBaht) || 0);
   }
 
-  const res = await saveChannelConfig(adminClient(), session.user.org_id, configs);
+  const res = await saveChannelConfig(adminClient(), session.user.org_id, configs, branchCode);
   if (!res.ok) return NextResponse.json({ error: res.error }, { status: 500 });
 
   await audit({
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
     userId: session.user.id,
     action: "UPDATE_AMAZON_SETTLEMENT_CONFIG",
     resourceType: "cashhub_amazon_channel_config",
-    diff: { new: { channels: configs.length } },
+    diff: { new: { channels: configs.length, branchCode } },
   });
   return NextResponse.json({ ok: true });
 }

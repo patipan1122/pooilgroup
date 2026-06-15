@@ -45,7 +45,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ไม่พบสาขาโรงแรมนี้" }, { status: 404 });
   const b = branch as { code: string; name: string };
 
-  const configs = await loadHotelChannelConfig(admin, orgId);
+  // ใช้ค่าตั้งของสาขานี้ถ้ามี (ไม่งั้น fallback ค่าเริ่มต้นทุกสาขา) — branch_code ของ hotel = branch_id
+  const configs = await loadHotelChannelConfig(admin, orgId, branchId);
   if (!configs.some((c) => c.isSettle && c.companyId && c.bankAccountId))
     return NextResponse.json(
       { error: "ยังไม่ได้ตั้งค่าช่องทาง→บัญชีปลายทาง" },
