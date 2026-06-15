@@ -21,6 +21,7 @@ import {
   X,
   ChevronDown,
   ChevronUp,
+  Landmark,
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import {
@@ -28,6 +29,7 @@ import {
   startLedgerDriveConnect,
   disconnectLedgerMailbox,
   scanMailboxNow,
+  scanScbStatementsNow,
   updateMailboxFilters,
 } from "../_actions";
 import type { LedgerMailbox } from "@/lib/ledger/gmail";
@@ -205,6 +207,26 @@ export function GoogleConnectCard({
           total > 0
             ? `สแกนเสร็จ — เจอ ${total} ใบ${res.needsManual ? ` (${res.needsManual} ใบต้องกรอกเอง)` : ""} เข้าไปรอตรวจแล้ว`
             : "สแกนเสร็จ — ยังไม่เจอใบเสร็จใหม่",
+        );
+      } else {
+        setError(res.error);
+      }
+      setBusyKey(null);
+      router.refresh();
+    });
+  }
+
+  function scbNow(id: string) {
+    setError(null);
+    setScanMsg(null);
+    setBusyKey(`scb:${id}`);
+    startTransition(async () => {
+      const res = await scanScbStatementsNow();
+      if (res.ok) {
+        setScanMsg(
+          res.rows > 0
+            ? `ดึง statement SCB เสร็จ — เข้า ${res.rows} รายการ (${res.batches} บัญชี/งวด) ไปที่หน้ากระทบยอดธนาคารได้เลย${res.note ? ` · หมายเหตุ: ${res.note}` : ""}`
+            : `ดึงเสร็จ — ยังไม่เจอ statement SCB ใหม่ในกล่องเมล (หรือดึงไปครบแล้ว)${res.note ? ` · ${res.note}` : ""}`,
         );
       } else {
         setError(res.error);
@@ -427,12 +449,22 @@ export function GoogleConnectCard({
                           </button>
                           <button
                             type="button"
-                            onClick={() => scanNow(m.id)}
+                            onClick={() => scbNow(m.id)}
                             disabled={pending}
+                            title="ดึง statement ธนาคาร SCB (ZIP) จากกล่องเมลนี้เข้าหน้ากระทบยอด"
                             className="inline-flex items-center gap-1 rounded-lg bg-[var(--color-brand-600)] px-2.5 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
                           >
+                            {busyKey === `scb:${m.id}` ? <Loader2 className="size-3.5 animate-spin" /> : <Landmark className="size-3.5" />}
+                            ดึง SCB
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => scanNow(m.id)}
+                            disabled={pending}
+                            className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
+                          >
                             {busyKey === `scan:${m.id}` ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-                            สแกนเลย
+                            สแกนใบเสร็จ
                           </button>
                           <button
                             type="button"

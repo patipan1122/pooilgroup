@@ -16,6 +16,7 @@ import { OAUTH_STATE_COOKIE, callbackRedirectUri } from "@/lib/ledger/gmail-oaut
 import { isDriveOAuthConfigured, buildConsentUrl } from "@/lib/chairops/storage/drive";
 import { DRIVE_OAUTH_STATE_COOKIE, driveCallbackRedirectUri } from "@/lib/ledger/drive-oauth";
 import { scanMailbox } from "@/lib/ledger/email-scan";
+import { autoImportScbStatements } from "@/lib/ledger/scb-statement-ingest";
 
 export async function startLedgerGmailConnect(
   companyId: string,
@@ -113,6 +114,25 @@ export async function scanMailboxNow(
     needsManual: res.needsManual,
     skipped: res.skipped,
   };
+}
+
+/** Pull SCB Business Anywhere statement ZIPs from the connected mailbox(es) NOW
+ *  ("ดึง statement เดี๋ยวนี้") — dogfood the daily cron from the settings page. */
+export async function scanScbStatementsNow(): Promise<
+  | { ok: true; rows: number; batches: number; importedMessages: number; note: string }
+  | { ok: false; error: string }
+> {
+  const session = await requireRole("super_admin");
+  if (!process.env.LEDGER_SCB_ZIP_PASSWORD) {
+    return { ok: false, error: "ยังไม่ได้ตั้งรหัส ZIP (LEDGER_SCB_ZIP_PASSWORD) ใน Vercel" };
+  }
+  const results = await autoImportScbStatements({ orgId: session.user.org_id });
+  const rows = results.reduce((s, r) => s + r.insertedRows, 0);
+  const batches = results.reduce((s, r) => s + r.batches, 0);
+  const importedMessages = results.reduce((s, r) => s + r.importedMessages, 0);
+  const errs = results.map((r) => r.error).filter((e): e is string => Boolean(e));
+  revalidatePath("/ledger/settings/google");
+  return { ok: true, rows, batches, importedMessages, note: errs.join("; ") };
 }
 
 export async function updateMailboxFilters(

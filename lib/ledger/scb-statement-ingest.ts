@@ -372,8 +372,12 @@ async function recordMessage(
   }
 }
 
-// ── Entry point: scan every connected mailbox for SCB statements ─────────────
-export async function autoImportScbStatements(): Promise<ScbConnectionResult[]> {
+// ── Entry point: scan connected mailboxes for SCB statements ─────────────────
+// opts.orgId restricts to one org (used by the manual "ดึงเดี๋ยวนี้" button);
+// the daily cron calls it with no orgId to cover every org.
+export async function autoImportScbStatements(
+  opts?: { orgId?: string },
+): Promise<ScbConnectionResult[]> {
   if (!isGmailOAuthConfigured()) {
     console.warn("[ledger:scb-import] Google OAuth not configured — skipping");
     return [];
@@ -384,7 +388,7 @@ export async function autoImportScbStatements(): Promise<ScbConnectionResult[]> 
   }
 
   const connections = await prisma.ledgerEmailConnection.findMany({
-    where: { active: true },
+    where: { active: true, ...(opts?.orgId ? { orgId: opts.orgId } : {}) },
     select: { id: true, orgId: true, companyId: true, gmailEmail: true },
   });
 
