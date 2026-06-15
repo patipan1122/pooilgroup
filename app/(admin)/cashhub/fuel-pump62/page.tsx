@@ -65,12 +65,21 @@ export default async function FuelManagePage() {
             บริษัทวายเอ็มพลัส · ตรวจยอดขาย + กระทบเงินเข้าบัญชี รายกะ
           </p>
         </div>
-        <Link
-          href="/cashhub/import/fuel-pump62"
-          className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--ch-border)] bg-white px-3 py-2 text-xs font-semibold text-[var(--ch-text)] hover:border-[var(--ch-brand)]"
-        >
-          <Upload className="size-3.5" /> นำเข้า/อัปเดตยอด
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/cashhub/fuel-pump62/settings"
+            title="ตั้งค่าช่องทาง → บัญชี (super_admin)"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--ch-border)] bg-white px-3 py-2 text-xs font-semibold text-[var(--ch-text)] hover:border-[var(--ch-brand)]"
+          >
+            ⚙️ ตั้งค่าช่องทาง
+          </Link>
+          <Link
+            href="/cashhub/import/fuel-pump62"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--ch-border)] bg-white px-3 py-2 text-xs font-semibold text-[var(--ch-text)] hover:border-[var(--ch-brand)]"
+          >
+            <Upload className="size-3.5" /> นำเข้า/อัปเดตยอด
+          </Link>
+        </div>
       </header>
 
       <FuelManageView rows={rows} fetchedAt={fetchedAt} />

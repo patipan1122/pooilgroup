@@ -3,7 +3,7 @@
 // ตั้งค่าช่องทาง → บัญชี/บริษัท (เตรียม reconcile) — มิเรอร์ amazon-settings-editor.
 // แต่ละช่องทาง (เงินสด/QR/EDC/Grab/Lineman/Shopee/wallet): เงินเข้าธนาคารจริงไหม + ค่าธรรมเนียม + บัญชีปลายทาง.
 // บริษัทเดียวกันทุกช่อง (เลือกครั้งเดียว). บันทึกได้เฉพาะ super_admin.
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { TeaChannelConfig } from "@/lib/cashhub/tea-channels";
 import type { BankAccountOpt, CompanyOpt } from "@/lib/cashhub/amazon-settlement-data";
@@ -15,8 +15,8 @@ type Props = {
   canEdit: boolean;
 };
 
-// ป้ายบัญชี: ธนาคาร ****เลข4ตัวท้าย · ชื่อ (ระบุบัญชีชัดเจน — ไม่ต้องเดาจากชื่อที่ตั้งเอง)
-const accLabel = (a: BankAccountOpt) => a.label;
+// ป้ายบัญชี: ชื่อบัญชี · ถ้าไม่มีใช้ ธนาคาร ****เลข4ตัวท้าย (ระบุชัด ไม่เดาจากชื่อที่ตั้งเอง)
+const accLabel = (a: BankAccountOpt) => a.name || `${a.bankCode} ****${a.last4}`;
 
 export function TeaSettingsEditor({ configs, accounts, companies, canEdit }: Props) {
   const router = useRouter();
@@ -26,6 +26,8 @@ export function TeaSettingsEditor({ configs, accounts, companies, canEdit }: Pro
   );
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const acctById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
 
   const patch = (code: string, p: Partial<TeaChannelConfig>) =>
     setRows((rs) => rs.map((r) => (r.code === code ? { ...r, ...p } : r)));
@@ -68,6 +70,33 @@ export function TeaSettingsEditor({ configs, accounts, companies, canEdit }: Pro
           ดูได้อย่างเดียว — เฉพาะ super_admin แก้/บันทึกการตั้งค่าบัญชีได้
         </div>
       )}
+
+      {/* การ์ดสรุป: ดูแวบเดียวว่าช่องไหนเข้าบัญชีไหน */}
+      <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+        <div className="text-xs font-medium text-zinc-500 mb-2">สถานะปัจจุบัน — ช่องทาง → บัญชี</div>
+        <ul className="space-y-1.5">
+          {rows.map((r) => {
+            const acc = r.bankAccountId ? acctById.get(r.bankAccountId) : null;
+            return (
+              <li key={r.code} className="flex items-center gap-2 text-sm">
+                <span className="min-w-[120px] font-medium text-zinc-700">{r.label}</span>
+                <span className="text-zinc-400">→</span>
+                {!r.isSettle ? (
+                  <span className="text-zinc-400">ไม่ส่งเข้ากระทบยอด (ส่วนลด/แต้ม)</span>
+                ) : acc ? (
+                  <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-emerald-700">
+                    {accLabel(acc)}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-amber-700">
+                    ⚠️ ยังไม่ได้เลือกบัญชี
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
 
       {/* บริษัท + ตั้งบัญชีทุกช่องทีเดียว */}
       <div className="rounded-2xl border border-zinc-200 bg-white p-4 flex flex-wrap items-center gap-3">
