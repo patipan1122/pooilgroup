@@ -11,14 +11,28 @@ import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
 import { ledgerBankReconV1, ledgerRevenueGlV1 } from "@/lib/ledger/flags";
 import { listBankAccountsWithStatus } from "@/lib/ledger/bank-statement-reconcile";
 import { BankAccountStatusIcon } from "./_components/ConfidencePill";
+import { SmartImportButton } from "./_components/SmartImportButton";
 import { BANK_LABELS } from "@/lib/ledger/bank-adapters/types";
 import { BankLogo } from "@/components/ledger/BankLogo";
-import { Landmark, Settings, TrendingUp, ChevronRight } from "lucide-react";
+import {
+  Landmark, Settings, TrendingUp, ChevronRight,
+  CalendarCheck2, CalendarOff, Database, Inbox,
+} from "lucide-react";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
 const BANK_NAMES = BANK_LABELS;
+
+// "2026-06-14" / "2026-06-15 04:37:..." → "14 มิ.ย. 2569" (parse components → no TZ shift)
+function thDate(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d).toLocaleDateString("th-TH", {
+    day: "numeric", month: "short", year: "numeric",
+  });
+}
 
 export default async function BankReconHubPage({
   searchParams,
@@ -71,152 +85,223 @@ export default async function BankReconHubPage({
   const prevPeriod = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, "0")}`;
   const nextPeriod = nextMonth > now ? null : `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}`;
 
+  // Portfolio-level rollup (answers the CEO's "ข้อมูลล่าสุดคือวันไหน" at a glance)
   const totalUnmatched = accounts.reduce((s, a) => s + a.unmatchedCount, 0);
-  const subtitle = accounts.length === 0
-    ? "ยังไม่มีบัญชีธนาคาร"
-    : `${accounts.length} บัญชี · ค้างกระทบยอด ${totalUnmatched} รายการ`;
+  const withData = accounts.filter((a) => a.lastImportedDate).length;
+  const noData = accounts.length - withData;
+  // newest statement date across every account (ISO strings compare correctly)
+  const latestData = accounts.reduce<string | null>(
+    (m, a) => (a.lastImportedDate && (!m || a.lastImportedDate > m) ? a.lastImportedDate : m),
+    null,
+  );
+
+  const cp = `company=${scope.companyId}`;
+
+  // status → left accent colour on each account card
+  function accentClass(a: (typeof accounts)[number]): string {
+    if (a.status === "locked") return "bg-zinc-300";
+    if (a.unmatchedCount > 0) return "bg-rose-400";
+    if (a.status === "completed") return "bg-emerald-400";
+    return "bg-zinc-200";
+  }
 
   return (
     <div className="p-4 sm:p-6">
-      <LedgerHeader
-        title="กระทบยอดธนาคาร"
-        subtitle={subtitle}
-        scope={scope}
-      />
+      <LedgerHeader title="กระทบยอดธนาคาร" scope={scope} />
 
-      {/* Period selector */}
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link
-            href={`?company=${scope.companyId}&period=${prevPeriod}`}
-            className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50"
-          >
-            ←
-          </Link>
-          <span className="text-sm font-semibold text-zinc-800">{periodLabel}</span>
-          {nextPeriod ? (
+      {/* ── Hero: latest data + portfolio stats + primary import CTA ───────── */}
+      <section className="mb-5 overflow-hidden rounded-2xl border border-zinc-100 bg-white shadow-soft">
+        <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
+              <Database size={22} />
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-400">ข้อมูลล่าสุดในระบบ</p>
+              {latestData ? (
+                <p className="text-xl font-bold text-zinc-900 tabular-num">
+                  ถึงวันที่ {thDate(latestData)}
+                </p>
+              ) : (
+                <p className="text-base font-semibold text-zinc-500">ยังไม่มี statement ในระบบ</p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 sm:shrink-0">
+            <SmartImportButton companyId={scope.companyId} period={period} />
             <Link
-              href={`?company=${scope.companyId}&period=${nextPeriod}`}
-              className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50"
+              href={`/ledger/bank-recon/revenue?${cp}`}
+              className="press inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-sm font-medium text-zinc-600 hover:bg-zinc-50 sm:min-h-0 sm:py-2"
+              title="จัดการรายได้"
             >
-              →
+              <TrendingUp size={14} />
+              <span className="hidden sm:inline">จัดการรายได้</span>
             </Link>
-          ) : (
-            <span className="rounded-lg border border-zinc-100 px-3 py-1.5 text-sm text-zinc-300">→</span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/ledger/bank-recon/revenue?company=${scope.companyId}`}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
-          >
-            <TrendingUp size={14} />
-            จัดการรายได้
-          </Link>
-          <Link
-            href={`/ledger/bank-recon/accounts?company=${scope.companyId}`}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
-          >
-            <Settings size={14} />
-            จัดการบัญชี
-          </Link>
-          {ledgerRevenueGlV1() && (
             <Link
-              href={`/ledger/bank-recon/revenue-channels?company=${scope.companyId}`}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+              href={`/ledger/bank-recon/accounts?${cp}`}
+              className="press inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-sm font-medium text-zinc-600 hover:bg-zinc-50 sm:min-h-0 sm:py-2"
+              title="จัดการบัญชี"
             >
               <Settings size={14} />
-              ผังบัญชีรายได้
+              <span className="hidden sm:inline">จัดการบัญชี</span>
             </Link>
-          )}
+            {ledgerRevenueGlV1() && (
+              <Link
+                href={`/ledger/bank-recon/revenue-channels?${cp}`}
+                className="press hidden min-h-11 items-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-sm font-medium text-zinc-600 hover:bg-zinc-50 sm:inline-flex sm:min-h-0 sm:py-2"
+                title="ผังบัญชีรายได้"
+              >
+                <Settings size={14} />
+                ผังบัญชีรายได้
+              </Link>
+            )}
+          </div>
         </div>
+
+        {/* mini stats */}
+        {accounts.length > 0 && (
+          <div className="grid grid-cols-2 divide-x divide-y divide-zinc-100 border-t border-zinc-100 sm:grid-cols-4 sm:divide-y-0">
+            {[
+              { label: "บัญชีทั้งหมด",     value: accounts.length,  color: "text-zinc-800" },
+              { label: "มีข้อมูลแล้ว",     value: withData,         color: "text-emerald-600" },
+              { label: "ค้างกระทบยอด",     value: totalUnmatched,   color: totalUnmatched > 0 ? "text-rose-600" : "text-zinc-400" },
+              { label: "ยังไม่นำเข้า",     value: noData,           color: noData > 0 ? "text-amber-600" : "text-zinc-400" },
+            ].map((s) => (
+              <div key={s.label} className="px-4 py-3 text-center">
+                <p className={`text-2xl font-bold tabular-num ${s.color}`}>{s.value}</p>
+                <p className="text-[11px] text-zinc-400">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* ── Month selector (drives the per-account status/ค้าง counts) ───────── */}
+      <div className="mb-4 flex items-center gap-2">
+        <span className="text-xs text-zinc-400">สถานะกระทบยอดของเดือน</span>
+        <Link
+          href={`?${cp}&period=${prevPeriod}`}
+          className="press rounded-lg border border-zinc-200 px-2.5 py-1 text-sm text-zinc-600 hover:bg-zinc-50"
+        >
+          ←
+        </Link>
+        <span className="text-sm font-semibold text-zinc-800">{periodLabel}</span>
+        {nextPeriod ? (
+          <Link
+            href={`?${cp}&period=${nextPeriod}`}
+            className="press rounded-lg border border-zinc-200 px-2.5 py-1 text-sm text-zinc-600 hover:bg-zinc-50"
+          >
+            →
+          </Link>
+        ) : (
+          <span className="rounded-lg border border-zinc-100 px-2.5 py-1 text-sm text-zinc-300">→</span>
+        )}
       </div>
 
-      {/* Account table */}
+      {/* ── Account cards, grouped by bank ──────────────────────────────────── */}
       {accounts.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 py-16 text-center">
           <Landmark size={32} className="mx-auto mb-3 text-zinc-300" />
           <p className="text-sm font-medium text-zinc-600">ยังไม่มีบัญชีธนาคาร</p>
           <Link
-            href={`/ledger/bank-recon/accounts?company=${scope.companyId}`}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700"
+            href={`/ledger/bank-recon/accounts?${cp}`}
+            className="press mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-xs font-medium text-white hover:bg-blue-700 sm:min-h-0 sm:py-2"
           >
             <Settings size={12} />
             เพิ่มบัญชีธนาคาร
           </Link>
         </div>
       ) : (
-        <div className="space-y-5">
+        <div className="space-y-6">
           {Object.entries(
             accounts.reduce<Record<string, typeof accounts>>((acc, a) => {
               (acc[a.bankCode] ??= []).push(a); return acc;
             }, {}),
           ).map(([bankCode, list]) => (
             <div key={bankCode}>
-              <div className="mb-2 flex items-center gap-2">
-                <BankLogo code={bankCode} name={BANK_NAMES[bankCode]} size={28} />
+              <div className="mb-2.5 flex items-center gap-2">
+                <BankLogo code={bankCode} name={BANK_NAMES[bankCode]} size={26} />
                 <h3 className="text-sm font-semibold text-zinc-700">{BANK_NAMES[bankCode] ?? bankCode}</h3>
-                <span className="text-xs text-zinc-400">({list.length})</span>
+                <span className="rounded-full bg-zinc-100 px-1.5 text-xs text-zinc-400">{list.length}</span>
               </div>
-              <div className="overflow-hidden rounded-2xl border border-zinc-100">
-                <table className="w-full text-sm">
-                  <tbody className="divide-y divide-zinc-50">
-                    {list.map((acct) => (
-                      <tr key={acct.accountId} className="hover:bg-zinc-50">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5">
-                            <BankAccountStatusIcon status={acct.status} />
-                            <span className="font-mono text-xs text-zinc-500">{acct.accountNo}</span>
-                          </div>
-                          <p className="mt-0.5 text-zinc-700 max-w-[280px] truncate">{acct.accountName}</p>
-                          <p className="text-[11px] text-zinc-400">
-                            {acct.lastImportedDate ? `อัพ statement ถึง ${acct.lastImportedDate}` : "ยังไม่ได้นำเข้า statement"}
-                          </p>
-                        </td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
-                          {acct.unmatchedCount > 0 ? (
-                            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
-                              ค้าง {acct.unmatchedCount}
-                            </span>
-                          ) : acct.matchedCount > 0 ? (
-                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">ครบแล้ว</span>
-                          ) : (
-                            <span className="text-xs text-zinc-400">—</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          <Link
-                            href={`/ledger/bank-recon/${acct.accountId}?period=${period}&company=${scope.companyId}`}
-                            className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-                          >
-                            เปิด <ChevronRight size={12} />
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
-      {/* Summary counts */}
-      {accounts.length > 0 && (
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            { label: "ล็อคแล้ว",         count: accounts.filter((a) => a.status === "locked").length,      color: "text-purple-600" },
-            { label: "เสร็จแล้ว",         count: accounts.filter((a) => a.status === "completed").length,  color: "text-emerald-600" },
-            { label: "กำลังทำ",           count: accounts.filter((a) => a.status === "in_progress").length, color: "text-blue-600" },
-            { label: "ยังไม่เริ่ม",       count: accounts.filter((a) => a.status === "not_started").length, color: "text-zinc-400" },
-          ].map((item) => (
-            <div key={item.label} className="rounded-xl border border-zinc-100 bg-white p-3 text-center">
-              <p className={`text-2xl font-bold ${item.color}`}>{item.count}</p>
-              <p className="text-xs text-zinc-400">{item.label}</p>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {list.map((acct) => {
+                  const hasData = !!acct.lastImportedDate;
+                  return (
+                    <Link
+                      key={acct.accountId}
+                      href={`/ledger/bank-recon/${acct.accountId}?period=${period}&${cp}`}
+                      className="press group relative flex flex-col gap-3 overflow-hidden rounded-2xl border border-zinc-100 bg-white p-4 transition-colors hover:border-brand-200 hover:shadow-soft"
+                    >
+                      {/* status accent rail */}
+                      <span className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${accentClass(acct)}`} aria-hidden />
+
+                      {/* header: logo + name + chevron */}
+                      <div className="flex items-start gap-3 pl-1.5">
+                        <BankLogo code={acct.bankCode} name={BANK_NAMES[acct.bankCode]} size={36} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium text-zinc-800">{acct.accountName}</p>
+                          <p className="font-mono text-xs text-zinc-400 tabular-num">{acct.accountNo}</p>
+                        </div>
+                        <ChevronRight size={18} className="shrink-0 text-zinc-300 transition-colors group-hover:text-brand-500" />
+                      </div>
+
+                      {/* DATA FRESHNESS — the headline element */}
+                      {hasData ? (
+                        <div className="flex items-center gap-2.5 rounded-xl bg-brand-50/60 px-3 py-2 pl-3">
+                          <CalendarCheck2 size={18} className="shrink-0 text-brand-600" />
+                          <div className="min-w-0">
+                            <p className="text-[11px] leading-tight text-zinc-400">ข้อมูลถึงวันที่</p>
+                            <p className="text-sm font-semibold text-zinc-800 tabular-num">{thDate(acct.lastImportedDate)}</p>
+                          </div>
+                          {acct.lastUploadedAt && (
+                            <p className="ml-auto shrink-0 text-right text-[11px] leading-tight text-zinc-400">
+                              นำเข้าเมื่อ<br />{thDate(acct.lastUploadedAt)}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2.5 rounded-xl border border-dashed border-zinc-200 bg-zinc-50/50 px-3 py-2 text-zinc-400">
+                          <CalendarOff size={18} className="shrink-0" />
+                          <p className="text-xs">ยังไม่มีข้อมูล · แตะเพื่อนำเข้า statement</p>
+                        </div>
+                      )}
+
+                      {/* footer: status + pending count */}
+                      <div className="flex items-center justify-between pl-1.5">
+                        <BankAccountStatusIcon status={acct.status} />
+                        {acct.unmatchedCount > 0 ? (
+                          <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700 tabular-num">
+                            ค้าง {acct.unmatchedCount}
+                          </span>
+                        ) : acct.matchedCount > 0 ? (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">ครบแล้ว</span>
+                        ) : hasData ? (
+                          <span className="text-xs text-zinc-400">ไม่มีรายการเดือนนี้</span>
+                        ) : (
+                          <span className="text-xs text-zinc-300">—</span>
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
           ))}
+
+          {/* gentle nudge when nothing has been imported yet */}
+          {withData === 0 && (
+            <div className="flex items-center gap-3 rounded-2xl border border-dashed border-brand-200 bg-brand-50/50 px-4 py-4">
+              <Inbox size={22} className="shrink-0 text-brand-600" />
+              <div className="flex-1 text-sm text-zinc-600">
+                <p className="font-medium text-zinc-800">ยังไม่มี statement ในระบบ</p>
+                <p className="text-xs text-zinc-500">กด “นำเข้า statement” แล้วลากไฟล์วาง — ระบบจะรู้เองว่าเป็นธนาคารและบัญชีไหน</p>
+              </div>
+              <SmartImportButton companyId={scope.companyId} period={period} />
+            </div>
+          )}
         </div>
       )}
     </div>

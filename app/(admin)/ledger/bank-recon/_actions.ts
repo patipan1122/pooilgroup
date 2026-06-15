@@ -10,7 +10,7 @@
 
 import { requireRole } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { detectAndParse } from "@/lib/ledger/bank-adapters";
+import { detectAndParse, BANK_LABELS } from "@/lib/ledger/bank-adapters";
 import {
   computeLineHash,
   computeBatchFingerprint,
@@ -126,6 +126,137 @@ export async function dryRunImportAction(formData: FormData): Promise<ImportDryR
     totalDebitSatang: debitRows.reduce((s, r) => s + Math.abs(r.amountSatang), 0),
     errors: result.errors,
     warnings,
+  };
+}
+
+// ── 1b. Smart detect — read bank + account FROM the file, match a real account ──
+// Lets the user drop a statement WITHOUT pre-picking an account: we read which
+// bank + account number the file belongs to, then resolve it against the company's
+// importable accounts. NEVER imports — just proposes the account for confirmation.
+
+export type SmartAccountCandidate = {
+  accountId: string;
+  bankCode: string;
+  accountNoMasked: string;
+  accountName: string;
+  exact: boolean; // last-4 of the file's account number matches this account
+};
+
+export type SmartDetectResult =
+  | { ok: false; error: string }
+  | {
+      ok: true;
+      bankCode: string;
+      bankLabel: string;
+      isTemplate: boolean;       // file carries no bank/account identity (BBL CSV / LedgerLine template)
+      fileLast4: string | null;  // last 4 digits of the account number found in the file (if any)
+      rowCount: number;
+      periodStart: string;
+      periodEnd: string;
+      creditCount: number;
+      debitCount: number;
+      totalCreditSatang: number;
+      totalDebitSatang: number;
+      warnings: string[];
+      candidates: SmartAccountCandidate[];
+      autoSelectedId: string | null; // pre-selected account when detection is unambiguous
+      unknownAccount: boolean;       // file names an account number that isn't in the system yet
+    };
+
+export async function smartImportDetectAction(
+  companyId: string,
+  formData: FormData,
+): Promise<SmartDetectResult> {
+  const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
+  if (!companyId) return { ok: false, error: "ไม่พบบริษัท" };
+
+  const file = formData.get("file") as File | null;
+  if (!file) return { ok: false, error: "ไม่พบไฟล์" };
+  if (file.size > 10 * 1024 * 1024) return { ok: false, error: "ไฟล์ใหญ่เกิน 10MB" };
+
+  const content = await fileToContent(file);
+  const result = detectAndParse(content);
+  if (!result) {
+    return {
+      ok: false,
+      error: "ไม่รู้จักรูปแบบไฟล์นี้ — รองรับ KBank KBIZ, SCB, TTB, BBL หรือไฟล์ตัวอย่าง Excel ของ LedgerLine",
+    };
+  }
+
+  const isTemplate = result.formatVersion.startsWith("TEMPLATE");
+  const creditRows = result.rows.filter((r) => r.amountSatang > 0);
+  const debitRows = result.rows.filter((r) => r.amountSatang < 0);
+
+  // Importable accounts for this company (the only ones a statement can land in).
+  const accounts = await prisma.$queryRaw<{
+    id: string; bankCode: string; accountNo: string; accountName: string;
+  }[]>`
+    SELECT a.id::text as id, a.bank_code as "bankCode",
+           a.account_no as "accountNo", a.account_name as "accountName"
+    FROM ledger_bank_account a
+    JOIN ledger_bank_account_company ac ON ac.bank_account_id = a.id
+    WHERE a.org_id = ${orgId}::uuid AND ac.company_id = ${companyId}::uuid
+      AND ac.can_import = true AND a.is_active = true
+    ORDER BY a.bank_code, a.account_no
+  `;
+
+  const digitsOnly = (s: string) => s.replace(/\D/g, "");
+  const fileDigits = digitsOnly(result.accountNo ?? "");
+  const fileLast4 = fileDigits.length >= 4 ? fileDigits.slice(-4) : null;
+  const mask = (no: string) => (no.length >= 4 ? `****${no.slice(-4)}` : no);
+
+  let candidates: SmartAccountCandidate[];
+  let autoSelectedId: string | null = null;
+  let unknownAccount = false;
+
+  if (isTemplate) {
+    // Template / account-agnostic file → user must pick which account it belongs to.
+    candidates = accounts.map((a) => ({
+      accountId: a.id, bankCode: a.bankCode,
+      accountNoMasked: mask(a.accountNo), accountName: a.accountName, exact: false,
+    }));
+  } else {
+    // Real bank file → narrow to that bank, then try to pin the exact account by last-4.
+    const sameBank = accounts.filter((a) => a.bankCode === result.bankCode);
+    const exactIds = new Set(
+      fileLast4
+        ? sameBank.filter((a) => digitsOnly(a.accountNo).slice(-4) === fileLast4).map((a) => a.id)
+        : [],
+    );
+    candidates = sameBank.map((a) => ({
+      accountId: a.id, bankCode: a.bankCode,
+      accountNoMasked: mask(a.accountNo), accountName: a.accountName,
+      exact: exactIds.has(a.id),
+    }));
+
+    if (exactIds.size === 1) {
+      autoSelectedId = [...exactIds][0];               // file's account number nails one account
+    } else if (exactIds.size === 0 && fileLast4 && sameBank.length > 0) {
+      unknownAccount = true;                            // file names an account we don't have
+    } else if (!fileLast4 && sameBank.length === 1) {
+      autoSelectedId = sameBank[0].id;                 // BBL has no acct no in file, but only one BBL account
+    }
+    if (sameBank.length === 0) unknownAccount = true;  // no importable account for this bank at all
+  }
+
+  return {
+    ok: true,
+    bankCode: result.bankCode,
+    bankLabel: isTemplate ? "ไฟล์ตัวอย่าง LedgerLine" : (BANK_LABELS[result.bankCode] ?? result.bankCode),
+    isTemplate,
+    fileLast4,
+    rowCount: result.rows.length,
+    periodStart: result.periodStart,
+    periodEnd: result.periodEnd,
+    creditCount: creditRows.length,
+    debitCount: debitRows.length,
+    totalCreditSatang: creditRows.reduce((s, r) => s + r.amountSatang, 0),
+    totalDebitSatang: debitRows.reduce((s, r) => s + Math.abs(r.amountSatang), 0),
+    warnings: [...result.errors],
+    candidates,
+    autoSelectedId,
+    unknownAccount,
   };
 }
 

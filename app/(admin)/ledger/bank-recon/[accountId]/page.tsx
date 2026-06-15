@@ -25,6 +25,14 @@ function baht(s: number) {
   return (s / 100).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// "2026-06-14" → "14 มิ.ย. 2569" (parse components → no TZ shift)
+function thDate(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+}
+
 export default async function BankAccountDetailPage({
   params,
   searchParams,
@@ -95,7 +103,7 @@ export default async function BankAccountDetailPage({
           <h1 className="truncate text-lg font-semibold text-zinc-900">{account.accountName}</h1>
           <p className="text-xs text-zinc-500">
             {BANK_NAMES[account.bankCode] ?? account.bankCode} · {maskedNo}
-            {summary.lastImportedDate && <span className="ml-1 text-zinc-400">· อัพ statement ถึง {summary.lastImportedDate}</span>}
+            {summary.lastImportedDate && <span className="ml-1 text-zinc-500">· ข้อมูลถึงวันที่ <span className="font-medium text-zinc-700">{thDate(summary.lastImportedDate)}</span></span>}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {account.legalEntity && (
@@ -156,7 +164,7 @@ export default async function BankAccountDetailPage({
           <div className="rounded-2xl border border-zinc-100 bg-white p-4">
             <h2 className="mb-3 text-sm font-semibold text-zinc-700">นำเข้า bank statement</h2>
             {account.canImport ? (
-              <ImportWizardWrapper bankAccountId={accountId} accountName={bankLabel} />
+              <ImportWizardWrapper bankAccountId={accountId} accountName={bankLabel} companyId={companyId} period={period} />
             ) : (
               <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-8 text-center text-sm text-zinc-500">
                 บัญชีนี้ไม่ได้รับอนุญาตให้ import

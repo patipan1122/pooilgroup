@@ -377,7 +377,8 @@ export interface BankAccountStatus {
   unmatchedCount: number;
   matchedCount: number;
   lockedAt: string | null;
-  lastImportedDate: string | null; // newest statement date imported (any period)
+  lastImportedDate: string | null; // newest STATEMENT date (latest txn) — "ข้อมูลถึงวันนี้", NOT the upload day
+  lastUploadedAt: string | null;   // when the latest batch was actually imported (the upload day)
   status: "not_started" | "in_progress" | "completed" | "locked";
 }
 
@@ -404,13 +405,17 @@ export async function listBankAccountsWithStatus(params: {
     settledCount: number;
     lockedAt: Date | null;
     lastImported: string | null;
+    lastUploaded: string | null;
   }[]>`
     SELECT
       a.id as "accountId",
       a.bank_code as "bankCode",
       a.account_no as "accountNo",
       a.account_name as "accountName",
+      -- "ข้อมูลถึงวันนี้" = วันสุดท้ายของรายการในไฟล์ (ไม่ใช่วันที่กดอัพ)
       (SELECT MAX(t2.txn_date)::text FROM ledger_bank_txn t2 WHERE t2.bank_account_id = a.id) as "lastImported",
+      -- วันที่กดนำเข้าจริง (batch ล่าสุด) — โชว์แยกกันกันสับสน
+      (SELECT MAX(b2.created_at)::text FROM ledger_bank_import_batch b2 WHERE b2.bank_account_id = a.id) as "lastUploaded",
       COALESCE(SUM(CASE WHEN t.id IS NOT NULL THEN 1 ELSE 0 END), 0)::int as "totalTxns",
       COALESCE(SUM(CASE WHEN t.match_state = 'unmatched' THEN 1 ELSE 0 END), 0)::int as "unmatchedCount",
       COALESCE(SUM(CASE WHEN t.match_state = 'suggested' THEN 1 ELSE 0 END), 0)::int as "suggestedCount",
@@ -461,6 +466,7 @@ export async function listBankAccountsWithStatus(params: {
       matchedCount: r.confirmedCount,
       lockedAt: r.lockedAt ? r.lockedAt.toISOString() : null,
       lastImportedDate: r.lastImported ?? null,
+      lastUploadedAt: r.lastUploaded ?? null,
       status,
     };
   });

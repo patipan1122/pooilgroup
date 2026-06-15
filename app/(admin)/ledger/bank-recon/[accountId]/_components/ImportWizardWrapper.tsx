@@ -9,16 +9,19 @@ import { ImportWizard } from "../../_components/ImportWizard";
 interface Props {
   bankAccountId: string;
   accountName: string;
+  companyId: string;
+  period: string;
 }
 
-export function ImportWizardWrapper({ bankAccountId, accountName }: Props) {
+export function ImportWizardWrapper({ bankAccountId, accountName, companyId, period }: Props) {
   const router = useRouter();
   return (
     <ImportWizard
       bankAccountId={bankAccountId}
       accountName={accountName}
-      onSuccess={(batchId) => {
-        router.push(`/ledger/bank-recon/${bankAccountId}/${batchId}`);
+      // go straight to this account's reconcile board (the old /[batchId] route was removed)
+      onSuccess={() => {
+        router.push(`/ledger/bank-recon/${bankAccountId}/reconcile?company=${companyId}&period=${period}`);
       }}
     />
   );
