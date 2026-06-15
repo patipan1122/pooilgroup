@@ -250,10 +250,24 @@ export const BILL_DOC_STYLE = `
     font-size: 15px;
     font-weight: 800;
     letter-spacing: 1px;
-    opacity: .85;
+    /* translucent watermark so any text behind the stamp stays legible */
+    opacity: .55;
     pointer-events: none;
+    z-index: 1;
   }
   .rs-bill-stamp[data-state="paid"] { color: var(--rs-ok); }
   .rs-bill-stamp[data-state="unpaid"] { color: var(--rs-danger); }
   .rs-bill-stamp[data-state="void"] { color: var(--rs-text-3); }
+  /* Print: pin the stamp into the A4 top-right margin so it never sits on the
+     header meta (bill no / period) or the line-item table + totals. Higher
+     specificity (.rs-bill-doc .rs-bill-stamp) intentionally wins over the
+     consuming pages' bare ".rs-bill-stamp { top:0; right:0 }" print override. */
+  @media print {
+    .rs-bill-doc .rs-bill-stamp {
+      top: 4px;
+      right: 4px;
+      opacity: .5;
+      z-index: 1;
+    }
+  }
 `;

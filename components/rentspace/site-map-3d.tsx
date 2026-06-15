@@ -241,14 +241,14 @@ export function SiteMap3D({ units, view3dEnabled, scene = TALAYTOWN_SCENE, onSel
     );
   }
 
-  const btn = "inline-flex items-center justify-center h-8 w-8 rounded-md";
+  const btn = "inline-flex items-center justify-center h-10 w-10 rounded-md";
 
   return (
     <div className="relative">
       <div className="flex items-center gap-2 px-4 pb-3 flex-wrap">
         <div className="inline-flex rounded-lg p-0.5" style={{ background: "var(--rs-bg-3)" }}>
-          <button type="button" onClick={() => { setIs3d(false); setRot(0); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold" style={!is3d ? { background: "#fff", color: "var(--rs-brand)" } : { color: "var(--rs-text-2)" }}><Grid3x3 className="h-3.5 w-3.5" /> 2D</button>
-          {view3dEnabled && <button type="button" onClick={() => setIs3d(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold" style={is3d ? { background: "#fff", color: "var(--rs-brand)" } : { color: "var(--rs-text-2)" }}><Box className="h-3.5 w-3.5" /> 3D</button>}
+          <button type="button" aria-label="มุมมองแผนผัง 2 มิติ" aria-pressed={!is3d} onClick={() => { setIs3d(false); setRot(0); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold" style={!is3d ? { background: "#fff", color: "var(--rs-brand)" } : { color: "var(--rs-text-2)" }}><Grid3x3 className="h-3.5 w-3.5" /> 2D</button>
+          {view3dEnabled && <button type="button" aria-label="มุมมองแผนผัง 3 มิติ" aria-pressed={is3d} onClick={() => setIs3d(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold" style={is3d ? { background: "#fff", color: "var(--rs-brand)" } : { color: "var(--rs-text-2)" }}><Box className="h-3.5 w-3.5" /> 3D</button>}
         </div>
         {is3d && (
           <div className="inline-flex rounded-lg p-0.5 gap-0.5" style={{ background: "var(--rs-bg-3)" }}>
@@ -300,7 +300,7 @@ export function SiteMap3D({ units, view3dEnabled, scene = TALAYTOWN_SCENE, onSel
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={() => setSelected(null)}>
           <div className="absolute inset-0 bg-black/40" />
           <div className="relative w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <button type="button" aria-label="ปิด" onClick={() => setSelected(null)} className="absolute right-4 top-4 text-zinc-400"><X className="h-5 w-5" /></button>
+            <button type="button" aria-label="ปิด" onClick={() => setSelected(null)} className="absolute right-2 top-2 inline-flex h-10 w-10 items-center justify-center rounded-md text-zinc-400"><X className="h-5 w-5" /></button>
             <div className="text-xl font-bold" style={{ color: "var(--rs-text)" }}>{selected.code} {selected.name ? `· ${selected.name}` : ""}</div>
             <div className="mt-3 space-y-2 text-sm">
               <Row label="ผู้เช่า" value={selected.tenantName || "— ว่าง —"} />

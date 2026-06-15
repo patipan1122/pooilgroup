@@ -277,22 +277,24 @@ export function DiscountDecisionButtons({ discountId }: { discountId: string }) 
   return (
     <div className="flex items-center gap-1.5 shrink-0">
       <button
-        className="inline-flex items-center justify-center h-8 w-8 rounded-lg"
+        className="inline-flex items-center justify-center h-10 w-10 rounded-lg"
         style={{ background: "var(--rs-ok-soft)", color: "var(--rs-ok)" }}
+        aria-label="อนุมัติส่วนลด"
         title="อนุมัติ"
         disabled={pending}
         onClick={() => decide("approved")}
       >
-        <Check className="h-4 w-4" />
+        <Check className="h-4 w-4" aria-hidden="true" />
       </button>
       <button
-        className="inline-flex items-center justify-center h-8 w-8 rounded-lg"
+        className="inline-flex items-center justify-center h-10 w-10 rounded-lg"
         style={{ background: "var(--rs-danger-soft)", color: "var(--rs-danger)" }}
+        aria-label="ไม่อนุมัติส่วนลด"
         title="ไม่อนุมัติ"
         disabled={pending}
         onClick={() => decide("rejected")}
       >
-        <X className="h-4 w-4" />
+        <X className="h-4 w-4" aria-hidden="true" />
       </button>
     </div>
   );
@@ -335,10 +337,22 @@ export function SendBillButton({
     }
   }
 
+  const sendLabel = pending
+    ? "กำลังสร้างลิงก์…"
+    : url
+      ? "ส่งบิลอีกครั้ง (อัปเดตลิงก์)"
+      : "ส่งบิล (คัดลอกลิงก์)";
+
   return (
     <div className="space-y-2">
-      <button className="rs-btn w-full" onClick={send} disabled={pending}>
-        <Send className="h-4 w-4" /> {pending ? "กำลังสร้างลิงก์…" : url ? "ส่งบิลอีกครั้ง (อัปเดตลิงก์)" : "ส่งบิล (คัดลอกลิงก์)"}
+      <button
+        className="rs-btn w-full"
+        onClick={send}
+        disabled={pending}
+        aria-label={url ? "ส่งบิลอีกครั้ง — สร้างลิงก์ใหม่ให้ผู้เช่า" : "ส่งบิล — สร้างลิงก์ให้ผู้เช่า"}
+        aria-busy={pending ? "true" : "false"}
+      >
+        <Send className="h-4 w-4" aria-hidden="true" /> {sendLabel}
       </button>
 
       {sentAt && (
@@ -347,24 +361,34 @@ export function SendBillButton({
         </div>
       )}
 
-      {url && (
-        <div
-          className="rounded-xl p-2.5 space-y-2"
-          style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)" }}
-        >
-          <div className="text-[11.5px] break-all" style={{ color: "var(--rs-text-2)" }}>
-            {url}
+      {/* aria-live: announce the generated public link (and its appearance)
+          to screen readers once "ส่งบิล" succeeds. */}
+      <div aria-live="polite">
+        {url && (
+          <div
+            className="rounded-xl p-2.5 space-y-2"
+            style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)" }}
+          >
+            <div className="text-[11.5px] break-all" style={{ color: "var(--rs-text-2)" }}>
+              {url}
+            </div>
+            <div className="flex gap-2">
+              <button className="rs-btn rs-btn-ghost flex-1" onClick={copy} aria-label="คัดลอกลิงก์บิล">
+                <Copy className="h-3.5 w-3.5" aria-hidden="true" /> คัดลอกลิงก์
+              </button>
+              <a
+                className="rs-btn rs-btn-ghost flex-1"
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="เปิดดูบิลในแท็บใหม่"
+              >
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /> เปิดดู
+              </a>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button className="rs-btn rs-btn-ghost flex-1" onClick={copy}>
-              <Copy className="h-3.5 w-3.5" /> คัดลอกลิงก์
-            </button>
-            <a className="rs-btn rs-btn-ghost flex-1" href={url} target="_blank" rel="noreferrer">
-              <ExternalLink className="h-3.5 w-3.5" /> เปิดดู
-            </a>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

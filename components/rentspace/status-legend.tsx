@@ -72,7 +72,7 @@ export function StatusLegend({
               type="button"
               aria-label="ปิด"
               onClick={() => setOpen(false)}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md"
+              className="inline-flex h-9 w-9 -mr-1.5 items-center justify-center rounded-md"
               style={{ color: "var(--rs-text-3)" }}
             >
               <X className="h-4 w-4" />

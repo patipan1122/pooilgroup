@@ -372,7 +372,7 @@ export default function MeterBoard({
               </option>
             ))}
           </select>
-          {navPending && <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--rs-text-3)" }} />}
+          {navPending && <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--rs-text-3)" }} aria-hidden="true" />}
         </label>
 
         <button
@@ -381,7 +381,7 @@ export default function MeterBoard({
           disabled={savingAll || dirtyCount === 0}
           className="rs-btn"
         >
-          {savingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+          {savingAll ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
           บันทึกทั้งหมด{dirtyCount > 0 ? ` (${dirtyCount})` : ""}
         </button>
       </div>
@@ -443,6 +443,7 @@ export default function MeterBoard({
                   {/* electric */}
                   <SideCells
                     unitId={u.id}
+                    roomCode={u.code}
                     kind="electric"
                     side={r.electric}
                     inputRefs={inputRefs}
@@ -458,6 +459,7 @@ export default function MeterBoard({
                   {/* water */}
                   <SideCells
                     unitId={u.id}
+                    roomCode={u.code}
                     kind="water"
                     side={r.water}
                     inputRefs={inputRefs}
@@ -479,17 +481,18 @@ export default function MeterBoard({
                         await saveSide(u.id, "water");
                       }}
                       disabled={r.electric.saving || r.water.saving || !rowDirty}
-                      className="inline-flex items-center justify-center h-8 w-8 rounded-lg disabled:opacity-40"
+                      className="inline-flex items-center justify-center h-10 w-10 rounded-lg disabled:opacity-40"
                       style={{
                         background: rowDirty ? "var(--rs-brand)" : "var(--rs-bg-3)",
                         color: rowDirty ? "#fff" : "var(--rs-text-3)",
                       }}
                       title="บันทึกห้องนี้"
+                      aria-label={`บันทึกห้อง ${u.code}`}
                     >
                       {r.electric.saving || r.water.saving ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                       ) : (
-                        <Check className="h-4 w-4" />
+                        <Check className="h-4 w-4" aria-hidden="true" />
                       )}
                     </button>
                   </td>
@@ -506,6 +509,7 @@ export default function MeterBoard({
 /** The 3 cells for one side (prev · curr-input + photo · usage). */
 function SideCells({
   unitId,
+  roomCode,
   kind,
   side,
   inputRefs,
@@ -518,6 +522,7 @@ function SideCells({
   onOldFinalChange,
 }: {
   unitId: string;
+  roomCode: string;
   kind: Kind;
   side: SideState;
   inputRefs: React.MutableRefObject<Record<string, HTMLInputElement | null>>;
@@ -531,6 +536,7 @@ function SideCells({
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const label = kind === "electric" ? "ไฟ" : "น้ำ";
+  const roomLabel = roomCode; // ป้ายกำกับห้องสำหรับ screen reader (aria-label)
   const currNum = parseReading(side.curr);
   // rollover suspicion: a lower reading than last month with reset OFF
   const showRolloverWarn = !side.isReset && side.prev != null && currNum != null && currNum < side.prev;
@@ -555,7 +561,8 @@ function SideCells({
               onKeyDown={(e) => onKeyDown(e, unitId, kind)}
               onBlur={() => onBlur(unitId, kind)}
               placeholder="—"
-              className="w-24 h-9 rounded-lg px-2 text-right tabular-nums text-sm outline-none focus:ring-2"
+              aria-label={`เลขมิเตอร์ล่าสุด ห้อง ${roomLabel} (${label})`}
+              className="w-24 h-10 rounded-lg px-2 text-right tabular-nums text-sm outline-none focus:ring-2"
               style={{
                 background: "var(--rs-bg-2)",
                 border: `1px solid ${side.saved && !side.dirty ? "var(--rs-ok)" : "var(--rs-border)"}`,
@@ -568,9 +575,10 @@ function SideCells({
               <Loader2
                 className="absolute -right-5 h-3.5 w-3.5 animate-spin"
                 style={{ color: "var(--rs-text-3)" }}
+                aria-hidden="true"
               />
             ) : side.saved && !side.dirty ? (
-              <Check className="absolute -right-5 h-3.5 w-3.5" style={{ color: "var(--rs-ok)" }} />
+              <Check className="absolute -right-5 h-3.5 w-3.5" style={{ color: "var(--rs-ok)" }} aria-hidden="true" />
             ) : null}
           </div>
 
@@ -589,36 +597,40 @@ function SideCells({
           />
           {side.uploading ? (
             <span
-              className="inline-flex items-center justify-center h-8 w-8 rounded-lg"
+              role="status"
+              aria-label={`กำลังแนบรูปมิเตอร์${label} ห้อง ${roomLabel}`}
+              className="inline-flex items-center justify-center h-10 w-10 rounded-lg"
               style={{ background: "var(--rs-bg-3)" }}
               title="กำลังแนบรูป"
             >
-              <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--rs-text-3)" }} />
+              <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--rs-text-3)" }} aria-hidden="true" />
             </span>
           ) : side.photoUrl ? (
             <button
               type="button"
               onClick={() => window.open(side.photoUrl!, "_blank", "noopener")}
-              className="inline-flex items-center justify-center h-8 w-8 overflow-hidden rounded-lg"
+              className="inline-flex items-center justify-center h-10 w-10 overflow-hidden rounded-lg"
               style={{ border: "1px solid var(--rs-ok)" }}
               title={`ดูรูปมิเตอร์${label} · คลิกเพื่อเปิด`}
+              aria-label={`ดูรูปมิเตอร์${label} ห้อง ${roomLabel} (คลิกเพื่อเปิด)`}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={side.photoUrl} alt={`รูปมิเตอร์${label}`} className="h-full w-full object-cover" />
+              <img src={side.photoUrl} alt={`รูปมิเตอร์${label} ห้อง ${roomLabel}`} className="h-full w-full object-cover" />
             </button>
           ) : (
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="inline-flex items-center justify-center h-8 w-8 rounded-lg"
+              className="inline-flex items-center justify-center h-10 w-10 rounded-lg"
               style={{
                 background: "var(--rs-bg-3)",
                 color: "var(--rs-text-3)",
                 border: "1px solid var(--rs-border)",
               }}
               title={`แนบรูปมิเตอร์${label}`}
+              aria-label={`แนบรูปมิเตอร์${label} ห้อง ${roomLabel}`}
             >
-              <Camera className="h-4 w-4" />
+              <Camera className="h-4 w-4" aria-hidden="true" />
             </button>
           )}
         </div>
@@ -635,9 +647,10 @@ function SideCells({
               border: `1px solid ${side.isReset ? "#F6E0AE" : "var(--rs-border)"}`,
             }}
             aria-pressed={side.isReset}
+            aria-label={`มิเตอร์เต็ม/เปลี่ยน ห้อง ${roomLabel} (${label})`}
             title="เปิดเมื่อมิเตอร์ครบรอบ (เลขวนกลับ 0) หรือถูกเปลี่ยนตัวใหม่"
           >
-            <RotateCcw className="h-3 w-3" />
+            <RotateCcw className="h-3 w-3" aria-hidden="true" />
             มิเตอร์เต็ม/เปลี่ยน
           </button>
 
@@ -654,7 +667,8 @@ function SideCells({
                 onChange={(e) => onOldFinalChange(unitId, kind, e.target.value)}
                 onBlur={() => onBlur(unitId, kind)}
                 placeholder="เลขมิเตอร์เดิม"
-                className="w-24 h-8 rounded-lg px-2 text-right tabular-nums text-[12px] outline-none focus:ring-2"
+                aria-label={`เลขมิเตอร์เดิมก่อนเปลี่ยน ห้อง ${roomLabel} (${label})`}
+                className="w-24 h-10 rounded-lg px-2 text-right tabular-nums text-[12px] outline-none focus:ring-2"
                 style={{
                   background: "var(--rs-bg-2)",
                   border: "1px solid #F6E0AE",
@@ -668,10 +682,12 @@ function SideCells({
 
           {showRolloverWarn && (
             <div
-              className="inline-flex items-start gap-1 text-[10.5px] text-left max-w-[180px]"
-              style={{ color: "var(--rs-danger)" }}
+              role="alert"
+              className="inline-flex items-start gap-1 text-[11px] font-medium text-left max-w-[180px]"
+              // ใช้แดงเข้มกว่า rs-danger เพื่อให้ผ่าน WCAG AA ที่ตัวอักษรเล็ก (พื้นขาว)
+              style={{ color: "#b91c1c" }}
             >
-              <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" aria-hidden="true" />
               <span>เลขน้อยกว่าเดือนก่อน — เปิด “มิเตอร์เต็ม/เปลี่ยน” หากครบรอบ</span>
             </div>
           )}

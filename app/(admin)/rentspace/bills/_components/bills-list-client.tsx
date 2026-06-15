@@ -77,21 +77,38 @@ export function BillsToolbar({
   return (
     <div className="flex flex-wrap items-center gap-2 print:hidden">
       <button
-        className="rs-btn rs-btn-ghost"
+        className="rs-btn rs-btn-ghost rs-btn-toolbar"
         onClick={openPrint}
         disabled={selectedIds.length === 0}
+        aria-label={
+          selectedIds.length === 0
+            ? "พิมพ์หลายห้อง — เลือกบิลก่อน"
+            : `พิมพ์หลายห้อง ${selectedIds.length} ใบ`
+        }
         title={selectedIds.length === 0 ? "เลือกบิลก่อน" : undefined}
       >
-        <Printer className="h-4 w-4" /> พิมพ์หลายห้อง{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
+        <Printer className="h-4 w-4" aria-hidden="true" /> พิมพ์หลายห้อง{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
       </button>
 
-      <button className="rs-btn rs-btn-ghost" onClick={remind} disabled={pending}>
-        <BellRing className="h-4 w-4" /> {pending ? "กำลังเตรียม…" : `เตือนค้างชำระทั้งงวด (${periodLabel(period)})`}
+      <button
+        className="rs-btn rs-btn-ghost rs-btn-toolbar"
+        onClick={remind}
+        disabled={pending}
+        aria-label={`เตือนค้างชำระทั้งงวด ${periodLabel(period)}`}
+        aria-busy={pending ? "true" : "false"}
+      >
+        <BellRing className="h-4 w-4" aria-hidden="true" /> {pending ? "กำลังเตรียม…" : `เตือนค้างชำระทั้งงวด (${periodLabel(period)})`}
       </button>
 
       <div className="relative">
-        <button className="rs-btn rs-btn-ghost" onClick={() => setLegendOpen((v) => !v)}>
-          <Info className="h-4 w-4" /> คำอธิบายสถานะบิล
+        <button
+          className="rs-btn rs-btn-ghost rs-btn-toolbar"
+          onClick={() => setLegendOpen((v) => !v)}
+          aria-label="คำอธิบายสถานะบิล"
+          aria-expanded={legendOpen}
+          aria-haspopup="true"
+        >
+          <Info className="h-4 w-4" aria-hidden="true" /> คำอธิบายสถานะบิล
         </button>
         {legendOpen && (
           <>
@@ -192,6 +209,18 @@ export function BillsToolbar({
           </div>
         </div>
       )}
+
+      <style jsx>{`
+        /* Disabled toolbar buttons: the global ".rs-btn:disabled { opacity:.5 }"
+           fades near-black text on the light ghost bg below WCAG AA (~3.4:1).
+           Replace the faint fade with a slightly stronger opacity + an explicit
+           AA-compliant text color (var(--rs-text-2) ≈ 7:1 on the ghost bg). */
+        :global(.rs-btn-toolbar:disabled) {
+          opacity: 0.75;
+          color: var(--rs-text-2);
+          cursor: not-allowed;
+        }
+      `}</style>
     </div>
   );
 }
@@ -254,7 +283,13 @@ export function BillsTable({
       <div className="rs-card overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2.5 border-b print:hidden" style={{ borderColor: "var(--rs-border)" }}>
           <label className="inline-flex items-center gap-2 text-[12.5px] font-medium cursor-pointer" style={{ color: "var(--rs-text-2)" }}>
-            <input type="checkbox" checked={allSelected} onChange={toggleAll} className="rs-chk" />
+            <input
+              type="checkbox"
+              aria-label={allSelected ? "ไม่เลือกบิลทั้งหมด" : "เลือกบิลทั้งหมด"}
+              checked={allSelected}
+              onChange={toggleAll}
+              className="rs-chk"
+            />
             {allSelected ? "ไม่เลือกทั้งหมด" : "เลือกทั้งหมด"}
           </label>
           {selected.size > 0 && (
@@ -304,10 +339,19 @@ export function BillsTable({
 
       <style jsx>{`
         :global(.rs-chk) {
+          /* 16px visual box, but a 40×40 tappable target (WCAG 2.5.8 / touch).
+             Negative margin keeps the table rows visually compact. */
           width: 16px;
           height: 16px;
+          padding: 12px;
+          margin: -12px;
+          box-sizing: content-box;
           accent-color: var(--rs-brand);
           cursor: pointer;
+        }
+        :global(.rs-chk:focus-visible) {
+          outline: 2px solid var(--rs-brand);
+          outline-offset: 2px;
         }
       `}</style>
     </div>
@@ -343,8 +387,11 @@ function FloorGroup({
         </td>
         <td colSpan={8} className="px-4 py-1.5">
           <button
-            className="text-[12px] font-semibold inline-flex items-center gap-1.5"
+            type="button"
+            className="text-[12px] font-semibold inline-flex items-center gap-1.5 min-h-[40px]"
             style={{ color: "var(--rs-text-2)" }}
+            aria-label={`เลือกทั้งชั้น ${floorKey} (${rows.length} ใบ)`}
+            aria-pressed={floorAllOn}
             onClick={onToggleFloor}
           >
             {floorKey}

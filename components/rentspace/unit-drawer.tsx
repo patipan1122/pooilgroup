@@ -98,7 +98,7 @@ export function UnitDrawer({ unitId, onClose }: { unitId: string | null; onClose
                 {data.unit.name && <div className="text-sm font-semibold" style={{ color: "#1F2733" }}>{data.unit.name}</div>}
                 <div className="text-[13px]" style={{ color: "#7A828F" }}>{data.tenant?.name ?? "— ว่าง —"}</div>
               </div>
-              <button type="button" onClick={onClose} aria-label="ปิด" className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ border: "1px solid #E6E8EC" }}>
+              <button type="button" onClick={onClose} aria-label="ปิด" className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ border: "1px solid #E6E8EC" }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#525B68" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
               </button>
             </div>
