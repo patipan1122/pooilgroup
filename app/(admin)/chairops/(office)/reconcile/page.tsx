@@ -14,11 +14,13 @@
 
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/chairops/auth/session";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { recomputeAllDrifts } from "@/lib/chairops/reconcile/drift-engine";
 import {
   ReconcileShell,
   normalizeView,
 } from "./_components/reconcile-shell";
+import { ClosePeriodButton } from "./_components/close-period-button";
 
 export default async function ReconcileOrgPage({
   searchParams,
@@ -41,16 +43,24 @@ export default async function ReconcileOrgPage({
   }
 
   const view = normalizeView(sp.view);
+  const canClosePeriod = isSuperAdmin(session.poolUser.role);
 
   return (
-    <ReconcileShell
-      orgId={orgId}
-      branchId={null}
-      branchName={null}
-      view={view}
-      from={sp.from}
-      to={sp.to}
-      missingSlip={sp.missingSlip === "1"}
-    />
+    <div className="chairops-scope space-y-3">
+      {canClosePeriod && (
+        <div className="px-4 pt-4 sm:px-6">
+          <ClosePeriodButton />
+        </div>
+      )}
+      <ReconcileShell
+        orgId={orgId}
+        branchId={null}
+        branchName={null}
+        view={view}
+        from={sp.from}
+        to={sp.to}
+        missingSlip={sp.missingSlip === "1"}
+      />
+    </div>
   );
 }

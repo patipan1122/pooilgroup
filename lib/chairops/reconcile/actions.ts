@@ -13,8 +13,12 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
-import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
+import {
+  recomputeDriftForBranch,
+  recomputeAllDrifts,
+} from "@/lib/chairops/reconcile/drift-engine";
 import { writeAudit } from "@/lib/chairops/audit/log";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 
 // TODO[claude-design]: Wave 2 · expand to optionally re-evaluate alerts after
 // recompute so the right-rail alert badge refreshes without a second call.
@@ -52,6 +56,91 @@ export async function recomputeDriftForBranchAction(
     return {
       ok: false,
       error: e instanceof Error ? e.message : "ไม่สามารถ recompute ได้",
+    };
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+// FIN-01 (audit 2026-06-15): "ปิดงวดเงินขาด" — เปลี่ยนตัวเลขเงินขาดจาก
+// "สะสมตลอดชีพสาขา" (legacy default ที่ขัดกฎ CEO "ห้ามสะสมเงินขาด") เป็น
+// "รายงวด" (window mode · วัดตั้งแต่ครั้งปิดงวดล่าสุด).
+//
+// กลไก: drift-engine window mode ใช้ branch.lastReconcileClosedAt เป็น anchor
+// แต่เดิม "ไม่เคยมีโค้ดไหนเขียนค่านี้" → window mode fall back ไป createdAt =
+// ยังสะสมตลอดชีพ. action นี้คือตัวเขียน anchor ที่ขาดไป.
+//
+// ทำ 3 ขั้นแบบ atomic ต่อ org:
+//   1) snapshot ยอดเงินขาดสะสมปัจจุบันของทุกสาขา → audit log (หลักฐานก่อน reset)
+//   2) set lastReconcileClosedAt = now (เปิดงวดใหม่)
+//   3) recompute → เงินขาดเริ่มนับใหม่ตั้งแต่วันปิดงวด
+//
+// ต้องตั้ง env CHAIROPS_DRIFT_MODE=window ด้วย ตัวเลขถึงจะเป็นรายงวดจริง
+// (ไม่งั้น legacy mode จะ ignore lastReconcileClosedAt). ผ่าน FIN+OFC+AUD lens.
+export async function closePeriodForOrg(): Promise<
+  | { ok: true; closedAt: string; branchCount: number; snapshotTotal: number }
+  | { ok: false; error: string }
+> {
+  const session = await requireRole("ADMIN");
+  // ปิดงวด = รีเซ็ตฐานการนับเงินขาดของทั้งองค์กร (money op สำคัญ) → super_admin เท่านั้น
+  // (เหมือนปุ่มเชื่อมต่อภายนอกอื่น ๆ · CEO 2026-06-12).
+  if (!isSuperAdmin(session.poolUser.role)) {
+    return { ok: false, error: "เฉพาะผู้ดูแลสูงสุด (super admin) เท่านั้นที่ปิดงวดได้" };
+  }
+  const orgId = session.user.orgId;
+  try {
+    const branches = await prisma.chairopsBranch.findMany({
+      where: { orgId, isActive: true },
+      select: { id: true, name: true },
+    });
+    if (branches.length === 0) {
+      return { ok: false, error: "ไม่พบสาขาที่เปิดใช้งาน" };
+    }
+
+    // 1) snapshot ยอดเงินขาดสะสมก่อนปิดงวด (หลักฐาน · ไม่ใช่การเก็บเงินจริง)
+    const snapshots: { branchId: string; name: string; driftAmount: number }[] = [];
+    for (const b of branches) {
+      const snap = await recomputeDriftForBranch(b.id);
+      snapshots.push({ branchId: b.id, name: b.name, driftAmount: snap.driftAmount });
+    }
+    const snapshotTotal = snapshots.reduce((s, x) => s + x.driftAmount, 0);
+    const closedAt = new Date();
+
+    // 2) เขียน anchor + audit หลักฐานแบบ atomic
+    await prisma.$transaction([
+      prisma.chairopsBranch.updateMany({
+        where: { orgId, isActive: true },
+        data: { lastReconcileClosedAt: closedAt },
+      }),
+    ]);
+    await writeAudit({
+      userId: session.user.id,
+      action: "drift.period_closed",
+      entity: "Branch",
+      entityId: "ALL",
+      orgId,
+      newValue: {
+        closedAt: closedAt.toISOString(),
+        branchCount: branches.length,
+        snapshotTotal,
+        snapshots,
+      },
+    });
+
+    // 3) recompute → เริ่มนับงวดใหม่
+    await recomputeAllDrifts(orgId);
+    revalidatePath("/chairops/reconcile");
+    revalidatePath("/chairops");
+
+    return {
+      ok: true,
+      closedAt: closedAt.toISOString(),
+      branchCount: branches.length,
+      snapshotTotal,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "ปิดงวดไม่สำเร็จ",
     };
   }
 }

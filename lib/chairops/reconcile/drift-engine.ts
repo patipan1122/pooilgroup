@@ -426,7 +426,18 @@ async function persistDrift(args: {
 export async function recomputeDriftForBranch(
   branchId: string,
 ): Promise<BranchDriftSnapshot> {
-  return resolveMode() === "window"
+  // FIN-01 (audit 2026-06-15): per-branch mode. Once a branch's period is closed
+  // (lastReconcileClosedAt set via the "ปิดงวด" action), it measures drift
+  // per-period (window). Until then it stays legacy/lifetime — so nothing changes
+  // for anyone until the super_admin clicks "ปิดงวด" (atomic activation, no env
+  // flip, no surprise jump). `CHAIROPS_DRIFT_MODE=window` still works as a global
+  // override for backward-compat.
+  const branch = await prisma.chairopsBranch.findUnique({
+    where: { id: branchId },
+    select: { lastReconcileClosedAt: true },
+  });
+  const useWindow = branch?.lastReconcileClosedAt != null || resolveMode() === "window";
+  return useWindow
     ? recomputeDriftForBranch_window(branchId)
     : recomputeDriftForBranch_legacy(branchId);
 }
