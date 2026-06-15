@@ -3,8 +3,16 @@
 import type { adminClient } from "@/lib/db/server";
 import type { AmazonDayRow } from "./amazon-parse";
 import type { AmazonIv } from "./amazon-trcloud";
+import { SETTLEMENT_GROUPS } from "./amazon-settlement";
 
 type Admin = ReturnType<typeof adminClient>;
+
+// source_ref suffix (key) → ช่องทาง (cvar) ที่อยู่ในก้อนนั้น — ใช้ทาสี "แมตช์แล้ว" กลับเป็นราย-คอลัมน์
+// key "qr" = c2+c13+c14 (โอนรวมก้อนเดียว) · key อื่น = cvar เดี่ยว
+function cvarsForSendKey(key: string): string[] {
+  const g = SETTLEMENT_GROUPS.find((x) => x.key === key);
+  return g ? g.cvars : [key];
+}
 
 export type SavedAmazonDay = {
   sales_date: string;
@@ -236,6 +244,7 @@ export type ReconcileDayStatus = {
   matchedSatang: number; // ส่วนที่บัญชีแมตช์ยอดแล้ว
   n: number; // จำนวนรายการ (ช่องทาง) ที่ส่ง
   nMatched: number; // จำนวนที่แมตช์แล้ว
+  matchedCvars: string[]; // cvar ของช่องทางที่แมตช์ยอดแล้ว (ทาสีรุ้งราย-คอลัมน์)
 };
 export type ReconcileStatus = {
   byDate: Record<string, ReconcileDayStatus>;
@@ -253,7 +262,7 @@ export async function loadReconcileStatus(
 ): Promise<ReconcileStatus> {
   const { data } = await admin
     .from("ledger_revenue_entry")
-    .select("entry_date, amount_satang, match_state")
+    .select("entry_date, amount_satang, match_state, source_ref")
     .eq("org_id", orgId)
     .eq("source_type", "CASHHUB_AMAZON")
     .like("source_ref", `amz-${storeCode}-%`)
@@ -266,7 +275,7 @@ export async function loadReconcileStatus(
     const d = String(r.entry_date).slice(0, 10);
     const amt = (n(r.amount_satang) ?? 0) / 100;
     const matched = String(r.match_state) === "matched";
-    const cur = (byDate[d] ??= { sentSatang: 0, matchedSatang: 0, n: 0, nMatched: 0 });
+    const cur = (byDate[d] ??= { sentSatang: 0, matchedSatang: 0, n: 0, nMatched: 0, matchedCvars: [] });
     cur.sentSatang += amt;
     cur.n += 1;
     totalSent += amt;
@@ -274,6 +283,10 @@ export async function loadReconcileStatus(
       cur.matchedSatang += amt;
       cur.nMatched += 1;
       totalMatched += amt;
+      // source_ref = amz-<store>-<date>-<key> → key = ส่วนท้าย (ไม่มี '-') → ช่องทางที่แมตช์
+      const key = String(r.source_ref ?? "").split("-").pop() ?? "";
+      for (const cv of cvarsForSendKey(key))
+        if (!cur.matchedCvars.includes(cv)) cur.matchedCvars.push(cv);
     }
   }
   return {

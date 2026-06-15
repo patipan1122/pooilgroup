@@ -243,6 +243,50 @@ p {
   color: transparent;
 }
 
+/* Iridescent "matched/reconciled" highlight — เหลือบมุกแบบ AI-glasses bubble.
+   ใช้ทาช่องยอดที่กระทบยอดธนาคาร+ยืนยันแล้ว → ช่องที่ยังไม่แมตช์จะเด่นออกมาเอง.
+   พาสเทลสว่าง (lightness สูง) → ตัวเลขดำยังอ่านออกในตารางหนาแน่น. */
+@keyframes cashhub-iridescent {
+  0%   { background-position:   0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+.cell-matched-iridescent {
+  background-image: linear-gradient(
+    115deg,
+    oklch(0.93 0.07 200) 0%,
+    oklch(0.92 0.09 285) 25%,
+    oklch(0.93 0.08 330) 50%,
+    oklch(0.93 0.09 150) 75%,
+    oklch(0.93 0.07 200) 100%
+  );
+  background-size: 220% 100%;
+  animation: cashhub-iridescent 7s linear infinite;
+  color: #18181b; /* zinc-900 — เลขชัด */
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.5);
+}
+/* iridescent text variant — สำหรับป้ายสถานะ "แมตช์แล้ว" */
+.text-matched-iridescent {
+  background-image: linear-gradient(
+    115deg,
+    oklch(0.62 0.2 250) 0%,
+    oklch(0.6 0.23 320) 35%,
+    oklch(0.65 0.2 160) 70%,
+    oklch(0.62 0.2 250) 100%
+  );
+  background-size: 220% 100%;
+  animation: cashhub-iridescent 7s linear infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  font-weight: 700;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cell-matched-iridescent,
+  .text-matched-iridescent { animation: none; }
+}
+
 /* Glow ring around CTA / focus elements */
 .glow-blue {
   box-shadow:

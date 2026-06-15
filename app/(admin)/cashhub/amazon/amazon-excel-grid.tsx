@@ -94,17 +94,25 @@ export function AmazonExcelGrid({
   const cell = (c: Col, d: SavedAmazonDay) => {
     const v = c.get(d);
     const bad = c.diff && v != null && Math.abs(v) >= 1;
+    const rc = reconcile.byDate[d.sales_date];
+    const hasVal = v != null && Math.abs(v) >= 0.005;
+    // ช่องทางที่บัญชีแมตช์ยอด+ยืนยันแล้ว → สีรุ้งเหลือบมุก (ช่องที่ยังไม่แมตช์จะเด่นออกมาเอง)
+    const matched = !!c.cvar && hasVal && (rc?.matchedCvars?.includes(c.cvar) ?? false);
+    // คอลัมน์ "เงินเข้าจริง" → รุ้งเมื่อวันนั้นแมตช์ครบทุกช่อง
+    const settleMatched = !!c.settle && !!rc && rc.n > 0 && rc.nMatched >= rc.n;
     return (
       <td
         key={c.label}
         className={`px-1.5 py-1 text-right tabular-nums whitespace-nowrap ${
           bad
             ? "bg-red-100 font-bold text-red-800"
-            : c.settle
-              ? "bg-emerald-50 font-semibold text-emerald-700"
-              : c.f
-                ? "bg-blue-50/40 text-zinc-700"
-                : "text-zinc-700"
+            : matched || settleMatched
+              ? "cell-matched-iridescent"
+              : c.settle
+                ? "bg-emerald-50 font-semibold text-emerald-700"
+                : c.f
+                  ? "bg-blue-50/40 text-zinc-700"
+                  : "text-zinc-700"
         }`}
       >
         {num(v)}
@@ -125,7 +133,7 @@ export function AmazonExcelGrid({
     const rc = reconcile.byDate[d.sales_date];
     if (!rc || rc.n === 0) return <span className="text-zinc-300">—</span>; // ยังไม่ส่ง
     if (rc.nMatched >= rc.n)
-      return <span className="font-semibold text-emerald-600">🟢 แมตช์แล้ว</span>;
+      return <span className="text-matched-iridescent">✦ แมตช์แล้ว</span>;
     if (rc.nMatched > 0)
       return (
         <span className="font-semibold text-amber-600">
@@ -253,7 +261,9 @@ export function AmazonExcelGrid({
       <p className="text-[11px] text-zinc-500">
         <span className="text-blue-500 font-semibold">ƒ</span> = ช่องคำนวณอัตโนมัติ ·
         ก่อน VAT = ยอดขาย÷1.07 · VAT = ยอดขาย−ก่อน VAT · ส่วนต่าง = ยอด IV−ยอด POS (≠0
-        = แดง) · ● = ต้องตรวจสอบ · เลื่อนซ้าย-ขวาดูช่องทางครบทุกช่อง
+        = แดง) · ● = ต้องตรวจสอบ ·{" "}
+        <span className="cell-matched-iridescent rounded px-1">ช่องสีรุ้ง</span> = กระทบยอดธนาคาร
+        +ยืนยันแล้ว (ช่องที่ยังไม่สีรุ้ง = ยังไม่แมตช์) · เลื่อนซ้าย-ขวาดูช่องทางครบทุกช่อง
       </p>
     </div>
   );
