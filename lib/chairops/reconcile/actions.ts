@@ -11,6 +11,7 @@
 // reconcile/actions.ts that BR15 chain depends on.
 
 import { revalidatePath } from "next/cache";
+import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
 import { writeAudit } from "@/lib/chairops/audit/log";
@@ -25,6 +26,16 @@ export async function recomputeDriftForBranchAction(
     return { ok: false, error: "missing branchId" };
   }
   const session = await requireRole("OFFICE");
+  // CO-QA-02 fix: verify the branch belongs to the actor's org before recompute.
+  // Without this, OFFICE of org A could recompute + overwrite drift of org B's
+  // branch (cross-tenant IDOR write).
+  const branch = await prisma.chairopsBranch.findFirst({
+    where: { id: branchId, orgId: session.user.orgId },
+    select: { id: true },
+  });
+  if (!branch) {
+    return { ok: false, error: "ไม่พบสาขา หรือไม่มีสิทธิ์เข้าถึงสาขานี้" };
+  }
   try {
     const snap = await recomputeDriftForBranch(branchId);
     await writeAudit({

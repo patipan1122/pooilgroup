@@ -74,12 +74,16 @@ export default async function UserDetailPage({
   const session = await requireRole("ADMIN");
   const { id } = await params;
 
-  const target = await prisma.chairopsUser.findUnique({ where: { id } });
+  // SEC-02 fix: scope by orgId — findUnique({id}) leaked other-company staff PII
+  // to any ADMIN (cross-tenant IDOR). Use findFirst with orgId guard + notFound.
+  const target = await prisma.chairopsUser.findFirst({
+    where: { id, orgId: session.user.orgId },
+  });
   if (!target) notFound();
 
   const [branches, recentAudit, recentByActor] = await Promise.all([
     prisma.chairopsBranch.findMany({
-      where: { isActive: true },
+      where: { isActive: true, orgId: session.user.orgId },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),

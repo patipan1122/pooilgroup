@@ -59,6 +59,16 @@ function bangkokYmd(d: Date): string {
   return fmt.format(d); // en-CA gives ISO YYYY-MM-DD
 }
 
+/** Current hour (0–23) in Asia/Bangkok regardless of server TZ. */
+function bangkokHour(d: Date): number {
+  const fmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    hour12: false,
+  });
+  return Number(fmt.format(d)); // "00".."23"
+}
+
 /** UTC instant of "today 00:00 Asia/Bangkok". Use for timestamp columns. */
 function bangkokStartOfToday(): Date {
   const ymd = bangkokYmd(new Date());
@@ -216,12 +226,19 @@ export const getExecHomeKpis = cache(async function getExecHomeKpis(
       .filter((m) => m.primaryBranchId && leaveMaidIds.has(m.id))
       .map((m) => m.primaryBranchId as string),
   );
-  const missedMaidCount = activeRows.filter(
-    (r) =>
-      !depositedSet.has(r.branchId) &&
-      branchHasMaidSet.has(r.branchId) &&
-      !leaveBranchIdSet.has(r.branchId),
-  ).length;
+  // CO-WF-01 fix: before the BKK cut-off hour, maids haven't "missed" anything —
+  // they still have until 17:00 to deposit. Counting them as missed from morning
+  // showed a false red alarm every day. Gate to 0 before cut-off; only after the
+  // cut-off is a non-deposit an actual miss.
+  const pastCutoff = bangkokHour(new Date()) >= MAID_CUTOFF_HOUR;
+  const missedMaidCount = pastCutoff
+    ? activeRows.filter(
+        (r) =>
+          !depositedSet.has(r.branchId) &&
+          branchHasMaidSet.has(r.branchId) &&
+          !leaveBranchIdSet.has(r.branchId),
+      ).length
+    : 0;
   let todayDepositTotal = 0;
   for (const amt of depositsTodayByBranch.values()) todayDepositTotal += amt;
 

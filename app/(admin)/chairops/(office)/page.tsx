@@ -86,14 +86,21 @@ function pctLabel(pct: number | null): {
 }
 
 function cutoffCountdownLabel(): string {
-  const now = new Date();
-  const cutoff = new Date();
-  cutoff.setHours(MAID_CUTOFF_HOUR, 0, 0, 0);
-  const diffMs = cutoff.getTime() - now.getTime();
-  if (diffMs <= 0) return "เลยเวลาแล้ว";
-  const totalMin = Math.floor(diffMs / 60000);
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
+  // CO-WF-02 fix: setHours(17) used the SERVER local clock (UTC on Vercel) →
+  // 17:00 UTC = 24:00 BKK → countdown was 7 hours off. Compute remaining time
+  // against the Asia/Bangkok wall clock regardless of server TZ.
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const bkkH = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  const bkkM = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  const diffMin = MAID_CUTOFF_HOUR * 60 - (bkkH * 60 + bkkM);
+  if (diffMin <= 0) return "เลยเวลาแล้ว";
+  const h = Math.floor(diffMin / 60);
+  const m = diffMin % 60;
   return `เหลือ ${h} ชม. ${m} นาที`;
 }
 
