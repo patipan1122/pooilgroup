@@ -25,7 +25,7 @@ const BANK_LABELS: Record<string, string> = {
 interface Props {
   bankAccountId: string;
   accountName: string;
-  onSuccess: (batchId: string) => void;
+  onSuccess: (batchId: string, periodStart?: string, periodEnd?: string) => void;
 }
 
 export function ImportWizard({ bankAccountId, accountName, onSuccess }: Props) {
@@ -91,7 +91,9 @@ export function ImportWizard({ bankAccountId, accountName, onSuccess }: Props) {
         return;
       }
       setStep(3);
-      setTimeout(() => onSuccess(result.batchId), 1200);
+      const pStart = preview?.ok ? preview.periodStart : undefined;
+      const pEnd = preview?.ok ? preview.periodEnd : undefined;
+      setTimeout(() => onSuccess(result.batchId, pStart, pEnd), 1200);
     } catch (e) {
       setError("นำเข้าไม่สำเร็จ กรุณาลองใหม่");
     } finally {
