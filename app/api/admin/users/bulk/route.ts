@@ -1,6 +1,12 @@
 // POST /api/admin/users/bulk
 // Apply same action to multiple users at once.
-// Actions: lock | unlock | force_logout | resend_invite
+// Actions: lock | unlock | force_logout | resend_invite | delete
+//
+// "delete" = HARD delete (row removed permanently). super_admin ONLY.
+// Protected by Postgres FK ON DELETE RESTRICT: users who created work history
+// (daily reports, recruit/clawfleet records, …) cannot be deleted — the DB
+// blocks it and we report them as "blocked" so the admin uses "ปิดบัญชี" instead.
+// Audit logs of deleted users are preserved (their FK is ON DELETE SetNull).
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
@@ -11,7 +17,13 @@ import { audit } from "@/lib/audit/log";
 
 const Schema = z.object({
   userIds: z.array(zUUID()).min(1).max(100),
-  action: z.enum(["lock", "unlock", "force_logout", "resend_invite"]),
+  action: z.enum([
+    "lock",
+    "unlock",
+    "force_logout",
+    "resend_invite",
+    "delete",
+  ]),
 });
 
 function makeToken(): string {
@@ -37,6 +49,17 @@ export async function POST(req: NextRequest) {
   }
 
   const { userIds, action } = parsed.data;
+
+  // Hard delete is super_admin-only. Gate on the SURFACE role so a super_admin
+  // who is impersonating an admin is blocked too (they see the admin's view).
+  // [[ledgerline-superadmin-only-connection-gating]] — two-layer lock (UI + server).
+  if (action === "delete" && session.user.role !== "super_admin") {
+    return NextResponse.json(
+      { error: "เฉพาะ Super Admin เท่านั้นที่ลบผู้ใช้ถาวรได้" },
+      { status: 403 },
+    );
+  }
+
   const admin = adminClient();
   const orgId = session.user.org_id;
 
@@ -56,6 +79,10 @@ export async function POST(req: NextRequest) {
     if (action === "lock" || action === "force_logout") {
       return !(u.role === "super_admin" && u.id !== session.user.id);
     }
+    // Hard delete: never the caller themselves, never ANY super_admin.
+    if (action === "delete") {
+      return u.id !== session.user.id && u.role !== "super_admin";
+    }
     return true;
   });
 
@@ -69,6 +96,10 @@ export async function POST(req: NextRequest) {
 
   const now = new Date().toISOString();
   let result: { processed: number; skipped: number };
+  // For "delete": how many were skipped specifically because the DB blocked
+  // them (FK RESTRICT — they have work history). Reported separately so the UI
+  // can tell the admin "use ปิดบัญชี instead".
+  let blockedByHistory = 0;
 
   switch (action) {
     case "lock": {
@@ -151,18 +182,65 @@ export async function POST(req: NextRequest) {
       };
       break;
     }
+    case "delete": {
+      // Revoke sessions first (best-effort) so a deleted user is kicked even if
+      // their row removal races a live request.
+      await admin
+        .from("user_sessions")
+        .update({ is_revoked: true, logout_at: now })
+        .in("user_id", eligibleIds)
+        .eq("is_revoked", false);
+
+      // Delete one-by-one: a single .in() delete is one transaction, so ONE
+      // user with protected history (FK RESTRICT) would abort the whole batch.
+      // Per-row lets the clean ones through and reports the blocked ones.
+      const outcomes = await Promise.all(
+        eligibleIds.map(async (uid) => {
+          const { error } = await admin
+            .from("users")
+            .delete()
+            .eq("id", uid)
+            .eq("org_id", orgId);
+          if (error) {
+            // 23503 = foreign_key_violation → user has work history (RESTRICT)
+            return { ok: false, history: error.code === "23503" };
+          }
+          // Best-effort: drop the Supabase Auth identity too
+          try {
+            await admin.auth.admin.deleteUser(uid);
+          } catch {
+            /* no auth identity / already gone — ignore */
+          }
+          return { ok: true, history: false };
+        }),
+      );
+      const deleted = outcomes.filter((o) => o.ok).length;
+      blockedByHistory = outcomes.filter((o) => !o.ok && o.history).length;
+      const otherFailed = outcomes.filter((o) => !o.ok && !o.history).length;
+      result = {
+        processed: deleted,
+        skipped:
+          targets.length - eligibleIds.length + blockedByHistory + otherFailed,
+      };
+      break;
+    }
   }
 
   await audit({
     orgId,
     userId: session.user.id,
-    action: "DEACTIVATE_USER",
+    action: action === "delete" ? "DELETE_USER" : "DEACTIVATE_USER",
     resourceType: "user_bulk",
     resourceId: undefined,
     diff: {
-      new: { action, processed: result.processed, skipped: result.skipped },
+      new: {
+        action,
+        processed: result.processed,
+        skipped: result.skipped,
+        ...(action === "delete" ? { userIds: eligibleIds } : {}),
+      },
     },
   });
 
-  return NextResponse.json({ success: true, ...result });
+  return NextResponse.json({ success: true, ...result, blockedByHistory });
 }

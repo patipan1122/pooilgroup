@@ -15,6 +15,7 @@ export type AuditAction =
   | "UPDATE_USER"
   | "UPDATE_USER_MODULES"
   | "DEACTIVATE_USER"
+  | "DELETE_USER"
   | "INVITE_ACCEPTED"
   | "CREATE_BRANCH"
   | "UPDATE_BRANCH"

@@ -127,6 +127,7 @@ export default async function UserDetailPage({ params }: Props) {
         </div>
         <UserDetailActions
           userId={user.id}
+          userName={user.name}
           isActive={user.is_active}
           isPendingInvite={isPendingInvite}
           isSelf={user.id === session.user.id}
@@ -134,6 +135,7 @@ export default async function UserDetailPage({ params }: Props) {
             (session.actingAs?.realUser.role ?? session.user.role) ===
             "super_admin"
           }
+          canHardDelete={session.user.role === "super_admin"}
         />
       </header>
 

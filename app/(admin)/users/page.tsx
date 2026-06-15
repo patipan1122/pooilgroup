@@ -370,6 +370,7 @@ export default async function UsersPage() {
             flatUsers={flatUsers}
             currentUserId={session.user.id}
             currentUserRole={session.actingAs?.realUser.role ?? session.user.role}
+            canHardDelete={session.user.role === "super_admin"}
             unreadByUserId={unreadByUserId}
           />
         </Section>

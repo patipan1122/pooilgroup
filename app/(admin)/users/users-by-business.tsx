@@ -207,6 +207,8 @@ interface Props {
   currentUserId: string;
   /** Real (not impersonated) viewer role — controls impersonate target gating. */
   currentUserRole: string;
+  /** super_admin only (surface role) — enables the permanent "ลบทิ้ง" action. */
+  canHardDelete: boolean;
   /** userId → unread notification count. Drives the red dot in chips. */
   unreadByUserId: Record<string, number>;
 }
@@ -222,6 +224,7 @@ export function UsersByBusiness({
   flatUsers,
   currentUserId,
   currentUserRole,
+  canHardDelete,
   unreadByUserId,
 }: Props) {
   const router = useRouter();
@@ -470,7 +473,9 @@ export function UsersByBusiness({
       {/* View-mode tabs: การ์ดสำหรับดูภาพรวม / ตารางสำหรับ bulk-edit + Excel */}
       <ViewModeTabs viewMode={viewMode} setViewMode={setViewMode} />
 
-      {viewMode === "table" && <UsersTableView users={flatUsers} />}
+      {viewMode === "table" && (
+        <UsersTableView users={flatUsers} canHardDelete={canHardDelete} />
+      )}
 
       {viewMode === "card" && (
       <>

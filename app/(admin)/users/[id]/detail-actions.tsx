@@ -18,23 +18,31 @@ import { Dialog } from "@/components/ui/dialog";
 
 interface Props {
   userId: string;
+  /** Shown in the permanent-delete confirm dialog (type-to-confirm). */
+  userName: string;
   isActive: boolean;
   isPendingInvite: boolean;
   isSelf: boolean;
   /** Real (not impersonated) admin role — shown the "เข้าใช้แทน" button only when super_admin. */
   canImpersonate: boolean;
+  /** super_admin only — shows the permanent "ลบถาวร" button. */
+  canHardDelete: boolean;
 }
 
 export function UserDetailActions({
   userId,
+  userName,
   isActive,
   isPendingInvite,
   isSelf,
   canImpersonate,
+  canHardDelete,
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteText, setDeleteText] = useState("");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -51,6 +59,37 @@ export function UserDetailActions({
       }
       toast.success("ปิดบัญชีแล้ว · ผู้ใช้ออกจากทุกอุปกรณ์");
       router.refresh();
+    });
+  }
+
+  function hardDelete() {
+    setConfirmDelete(false);
+    setDeleteText("");
+    startTransition(async () => {
+      const res = await fetch(`/api/admin/users/bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIds: [userId], action: "delete" }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(json.error || "ลบไม่สำเร็จ");
+        return;
+      }
+      if (json.processed > 0) {
+        toast.success("ลบผู้ใช้ถาวรแล้ว");
+        router.push("/users");
+        router.refresh();
+        return;
+      }
+      // Blocked by FK RESTRICT — user has work history.
+      if (json.blockedByHistory > 0) {
+        toast.error(
+          'ลบไม่ได้ — ผู้ใช้นี้มีประวัติงานจริงในระบบ · ใช้ "ปิดบัญชี" แทน',
+        );
+      } else {
+        toast.error("ลบไม่สำเร็จ");
+      }
     });
   }
 
@@ -163,6 +202,22 @@ export function UserDetailActions({
             </Button>
           </a>
         )}
+        {/* Permanent delete — super_admin only. Distinct from "ปิดบัญชี"
+            (which only deactivates). Protected server-side + by FK RESTRICT. */}
+        {!isSelf && canHardDelete && (
+          <Button
+            variant="danger"
+            size="md"
+            onClick={() => {
+              setDeleteText("");
+              setConfirmDelete(true);
+            }}
+            disabled={pending}
+          >
+            <Trash2 className="size-4" />
+            ลบถาวร
+          </Button>
+        )}
       </div>
 
       {/* Resend-invite result */}
@@ -235,6 +290,61 @@ export function UserDetailActions({
                 loading={pending}
               >
                 ยืนยันปิด
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+
+      {/* Permanent-delete confirmation — must type the user's name to confirm */}
+      {confirmDelete && (
+        <Dialog
+          open
+          onClose={() => setConfirmDelete(false)}
+          title="ลบผู้ใช้นี้ถาวร?"
+        >
+          <div className="space-y-3">
+            <div className="flex items-start gap-2">
+              <Trash2 className="size-5 text-red-600 mt-0.5" />
+              <div>
+                <h3 className="font-bold">ลบผู้ใช้นี้ถาวร?</h3>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  ลบออกจากระบบถาวร · <strong>กู้คืนไม่ได้</strong> ·
+                  ถ้าผู้ใช้นี้มีประวัติงานจริง ระบบจะกันไว้ให้เอง (ลบไม่ได้ →
+                  ใช้ &ldquo;ปิดบัญชี&rdquo;) · ประวัติการตรวจสอบ (audit log)
+                  ยังเก็บไว้ครบ
+                </p>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-zinc-700">
+                พิมพ์ชื่อ &ldquo;{userName}&rdquo; เพื่อยืนยัน
+              </label>
+              <input
+                type="text"
+                value={deleteText}
+                onChange={(e) => setDeleteText(e.target.value)}
+                placeholder={userName}
+                autoFocus
+                className="mt-1 w-full rounded-lg border-2 border-zinc-200 px-3 py-2 text-sm focus:border-red-400 focus:outline-none"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                fullWidth
+                onClick={() => setConfirmDelete(false)}
+              >
+                ยกเลิก
+              </Button>
+              <Button
+                variant="danger"
+                fullWidth
+                onClick={hardDelete}
+                loading={pending}
+                disabled={deleteText.trim() !== userName.trim()}
+              >
+                ลบถาวร
               </Button>
             </div>
           </div>

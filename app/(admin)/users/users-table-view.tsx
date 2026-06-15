@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Lock, LogOut, Mail, Unlock } from "lucide-react";
+import { Lock, LogOut, Mail, Trash2, Unlock } from "lucide-react";
 import { DataGrid, PasteDialog } from "@/components/ui/data-grid";
 import type {
   DataGridBulkAction,
@@ -69,7 +69,14 @@ function timeAgo(iso: string | null): string {
   return `${d} วัน`;
 }
 
-export function UsersTableView({ users }: { users: FlatUser[] }) {
+export function UsersTableView({
+  users,
+  canHardDelete = false,
+}: {
+  users: FlatUser[];
+  /** super_admin only — shows the permanent "ลบทิ้ง" bulk action. */
+  canHardDelete?: boolean;
+}) {
   const router = useRouter();
   const [pasteText, setPasteText] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -344,6 +351,31 @@ export function UsersTableView({ users }: { users: FlatUser[] }) {
     router.refresh();
   };
 
+  // Hard delete (super_admin only). Reports rows the DB blocked because the
+  // user has work history (FK RESTRICT) → tell the admin to use ปิดบัญชี.
+  const callDelete = async (rows: FlatUser[]) => {
+    const res = await fetch("/api/admin/users/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userIds: rows.map((r) => r.id), action: "delete" }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error(json.error || "ลบไม่สำเร็จ");
+      return;
+    }
+    const parts: string[] = [];
+    if (json.processed > 0) parts.push(`ลบถาวร ${json.processed} คน`);
+    if (json.blockedByHistory > 0)
+      parts.push(
+        `${json.blockedByHistory} คนมีประวัติงาน ลบไม่ได้ — ใช้ "ปิดบัญชี" แทน`,
+      );
+    if (parts.length === 0) parts.push("ไม่มีผู้ใช้ที่ลบได้");
+    toast[json.processed > 0 ? "success" : "error"](parts.join(" · "));
+    setSelectedIds(new Set());
+    router.refresh();
+  };
+
   const bulkActions: DataGridBulkAction<FlatUser>[] = [
     {
       id: "resend",
@@ -371,6 +403,19 @@ export function UsersTableView({ users }: { users: FlatUser[] }) {
       confirm: (n) => `ปิดบัญชี ${n} คน?`,
       run: (rows) => callBulk("lock", rows, "ปิดบัญชี"),
     },
+    ...(canHardDelete
+      ? [
+          {
+            id: "delete",
+            label: "ลบทิ้ง",
+            icon: <Trash2 className="size-3.5" />,
+            danger: true,
+            confirm: (n: number) =>
+              `ลบถาวร ${n} คน? — กู้คืนไม่ได้ · บัญชีที่มีประวัติงานจริงระบบจะกันไว้ให้เอง (ใช้ "ปิดบัญชี" แทน)`,
+            run: (rows: FlatUser[]) => callDelete(rows),
+          },
+        ]
+      : []),
   ];
 
   const rowActions: DataGridRowAction<FlatUser>[] = [
