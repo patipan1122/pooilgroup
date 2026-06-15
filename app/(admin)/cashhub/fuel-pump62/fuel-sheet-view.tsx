@@ -13,6 +13,12 @@ export interface FuelMonthMeta {
   ncol: number;
 }
 
+// freeze-pane geometry (px) — frozen columns get EXACT widths so the sticky `left`
+// offsets line up perfectly (no skew); the 2-row header uses an exact group-row height.
+const DATE_W = 96;
+const SHIFT_W = 58;
+const GROUP_H = 26;
+
 const fmtCell = (v: number | string | null) => {
   if (v == null || v === "") return "·";
   if (typeof v === "number")
@@ -152,15 +158,18 @@ export function FuelSheetView({ months }: { months: FuelMonthMeta[] }) {
           <table className="border-separate border-spacing-0 text-[11.5px] tabular-nums whitespace-nowrap">
             <thead>
               <tr>
+                {/* frozen corner (date) — top+left, highest layer */}
                 <th
                   rowSpan={2}
-                  className="sticky left-0 top-0 z-30 bg-[var(--ch-bg-2)] border-b border-r border-[var(--ch-border)] px-2 py-1.5 text-left text-[10.5px] font-semibold text-[var(--ch-text-2)]"
+                  style={{ left: 0, width: DATE_W, minWidth: DATE_W, maxWidth: DATE_W }}
+                  className="sticky top-0 z-40 bg-[var(--ch-bg-2)] border-b border-r border-[var(--ch-border)] px-2 text-left text-[10.5px] font-semibold text-[var(--ch-text-2)]"
                 >
                   วันที่
                 </th>
                 <th
                   rowSpan={2}
-                  className="sticky left-[92px] top-0 z-30 bg-[var(--ch-bg-2)] border-b border-r border-[var(--ch-border)] px-2 py-1.5 text-left text-[10.5px] font-semibold text-[var(--ch-text-2)]"
+                  style={{ left: DATE_W, width: SHIFT_W, minWidth: SHIFT_W, maxWidth: SHIFT_W }}
+                  className="sticky top-0 z-40 bg-[var(--ch-bg-2)] border-b border-r border-[var(--ch-border)] px-2 text-left text-[10.5px] font-semibold text-[var(--ch-text-2)]"
                 >
                   กะ
                 </th>
@@ -168,7 +177,8 @@ export function FuelSheetView({ months }: { months: FuelMonthMeta[] }) {
                   <th
                     key={i}
                     colSpan={g.span}
-                    className={`sticky top-0 z-20 border-b border-r border-[var(--ch-border)] px-2 py-1 text-center text-[10.5px] font-semibold ${
+                    style={{ top: 0, height: GROUP_H }}
+                    className={`sticky z-30 border-b border-r border-[var(--ch-border)] px-2 text-center text-[10.5px] font-semibold ${
                       g.group ? groupClass(g.group) : "bg-[var(--ch-bg-2)] text-[var(--ch-text-2)]"
                     }`}
                   >
@@ -180,7 +190,8 @@ export function FuelSheetView({ months }: { months: FuelMonthMeta[] }) {
                 {data.headers.map((h, i) => (
                   <th
                     key={i}
-                    className={`sticky top-[27px] z-20 border-b border-r border-[var(--ch-border)] px-2 py-1 text-right text-[10px] font-semibold text-[var(--ch-text-2)] ${
+                    style={{ top: GROUP_H }}
+                    className={`sticky z-30 border-b border-r border-[var(--ch-border)] px-2 py-1 text-right text-[10px] font-semibold text-[var(--ch-text-2)] ${
                       h.group ? groupClass(h.group) : "bg-[var(--ch-bg-2)]"
                     }`}
                   >
@@ -190,31 +201,40 @@ export function FuelSheetView({ months }: { months: FuelMonthMeta[] }) {
               </tr>
             </thead>
             <tbody>
-              {data.rows.map((r, ri) => (
-                <tr key={ri} className="odd:bg-[var(--ch-bg-2)]/40">
-                  <td className="sticky left-0 z-10 bg-inherit border-b border-r border-[var(--ch-border)] px-2 py-1 text-left text-[var(--ch-text)]">
-                    {r.date}
-                  </td>
-                  <td className="sticky left-[92px] z-10 bg-inherit border-b border-r border-[var(--ch-border)] px-2 py-1 text-left font-semibold text-[var(--ch-text)]">
-                    {r.shift}
-                  </td>
-                  {data.headers.map((_, ci) => {
-                    const v = r.cells[ci] ?? null;
-                    const neg = typeof v === "number" && v < 0;
-                    const txt = typeof v === "string";
-                    return (
-                      <td
-                        key={ci}
-                        className={`border-b border-r border-[var(--ch-border)] px-2 py-1 ${
-                          txt ? "text-left text-[var(--ch-text-2)]" : "text-right"
-                        } ${neg ? "text-[var(--ch-danger)]" : "text-[var(--ch-text)]"}`}
-                      >
-                        {fmtCell(v)}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              {data.rows.map((r, ri) => {
+                const rowBg = ri % 2 === 1 ? "bg-[var(--ch-bg-2)]" : "bg-white";
+                return (
+                  <tr key={ri}>
+                    <td
+                      style={{ left: 0, width: DATE_W, minWidth: DATE_W, maxWidth: DATE_W }}
+                      className={`sticky z-20 ${rowBg} border-b border-r border-[var(--ch-border)] px-2 py-1 text-left text-[var(--ch-text)]`}
+                    >
+                      {r.date}
+                    </td>
+                    <td
+                      style={{ left: DATE_W, width: SHIFT_W, minWidth: SHIFT_W, maxWidth: SHIFT_W }}
+                      className={`sticky z-20 ${rowBg} border-b border-r border-[var(--ch-border)] px-2 py-1 text-left font-semibold text-[var(--ch-text)]`}
+                    >
+                      {r.shift}
+                    </td>
+                    {data.headers.map((_, ci) => {
+                      const v = r.cells[ci] ?? null;
+                      const neg = typeof v === "number" && v < 0;
+                      const txt = typeof v === "string";
+                      return (
+                        <td
+                          key={ci}
+                          className={`${rowBg} border-b border-r border-[var(--ch-border)] px-2 py-1 ${
+                            txt ? "text-left text-[var(--ch-text-2)]" : "text-right"
+                          } ${neg ? "text-[var(--ch-danger)]" : "text-[var(--ch-text)]"}`}
+                        >
+                          {fmtCell(v)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
