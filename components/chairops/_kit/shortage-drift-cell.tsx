@@ -23,7 +23,7 @@ export interface ShortageDriftCellProps {
   ageHours?: number;
   /** Escalation tier — auto-calculated by caller from age/amount thresholds. */
   escalation?: EscalationTier;
-  /** When true, prepend the row-left red stripe (table-row use). */
+  /** When true, flag the cell as a shortage row (subtle full bg-tint, table-row use). */
   withLeftStripe?: boolean;
   /** Compact mode for dense tables (hides cumulative+age unless > 0). */
   compact?: boolean;
@@ -63,7 +63,9 @@ export function ShortageDriftCell({
     <div
       className={cn(
         "flex flex-wrap items-center gap-1.5",
-        withLeftStripe && isShortage && "border-l-4 border-rose-500 pl-2",
+        // impeccable: replaced banned side-stripe (border-l-4) with a subtle full
+        // bg-tint — same "flag this shortage row" signal, approved treatment.
+        withLeftStripe && isShortage && "rounded-md bg-rose-50/70 px-2 py-0.5",
         className,
       )}
     >
