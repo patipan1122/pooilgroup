@@ -180,9 +180,16 @@ export async function sendHotelDaysToReconcile(
         )
         ON CONFLICT (org_id, company_id, source_type, source_ref)
           WHERE source_ref IS NOT NULL
-        DO UPDATE SET amount_satang = EXCLUDED.amount_satang, updated_at = now()
+        -- ส่งซ้ำ = อัปเดตทั้งยอด + เลขบัญชีปลายทาง (กันรายการเก่าที่ยังไม่ผูกบัญชี/ยอดเพี้ยน)
+        -- แตะเฉพาะรายการที่ยัง "ไม่กระทบ" (unmatched) เท่านั้น — ปลอดภัยกับที่ reconcile ไปแล้ว
+        DO UPDATE SET amount_satang = EXCLUDED.amount_satang,
+                      expected_bank_account_id = EXCLUDED.expected_bank_account_id,
+                      payment_channel = EXCLUDED.payment_channel,
+                      channel_code = EXCLUDED.channel_code,
+                      updated_at = now()
           WHERE ledger_revenue_entry.match_state = 'unmatched'
-            AND ledger_revenue_entry.amount_satang IS DISTINCT FROM EXCLUDED.amount_satang
+            AND (ledger_revenue_entry.amount_satang IS DISTINCT FROM EXCLUDED.amount_satang
+                 OR ledger_revenue_entry.expected_bank_account_id IS DISTINCT FROM EXCLUDED.expected_bank_account_id)
         RETURNING id`;
         if (res.length) inserted++;
       }
