@@ -8,7 +8,9 @@ import { SectionPill } from "@/components/cashhub/redesign/section-pill";
 import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { cashhubFuelV1 } from "@/lib/cashhub/flags";
 import { PUMP_KEY } from "@/lib/cashhub/fuel-import-core";
-import { FuelManageView, type FuelRow } from "./fuel-manage-view";
+import { type FuelRow } from "./fuel-manage-view";
+import { type FuelMonthMeta } from "./fuel-sheet-view";
+import { FuelTabs } from "./fuel-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +30,15 @@ export default async function FuelManagePage() {
     .order("shift", { ascending: true });
 
   const rows = (data ?? []) as unknown as FuelRow[];
+
+  // lightweight month list for the "ตารางเต็ม" selector (grids load on demand).
+  const { data: monthData } = await admin
+    .from("cashhub_fuel_sheet_month")
+    .select("period_key, label, days_present, expected_days, missing_days, ncol")
+    .eq("org_id", session.user.org_id)
+    .eq("pump_key", PUMP_KEY)
+    .order("period_key", { ascending: false });
+  const months = (monthData ?? []) as unknown as FuelMonthMeta[];
 
   if (rows.length === 0) {
     return (
@@ -82,7 +93,7 @@ export default async function FuelManagePage() {
         </div>
       </header>
 
-      <FuelManageView rows={rows} fetchedAt={fetchedAt} />
+      <FuelTabs rows={rows} fetchedAt={fetchedAt} months={months} />
     </div>
   );
 }

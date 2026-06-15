@@ -21,6 +21,7 @@ import {
   importKey,
   type ImportMode,
 } from "@/lib/cashhub/fuel-import-core";
+import { parseFuelSheetMonths } from "@/lib/cashhub/fuel-raw-parser";
 
 export const dynamic = "force-dynamic";
 
@@ -128,6 +129,42 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // FULL-grid mirror for the "ตารางเต็มเหมือนชีต" view: parse EVERY month (all columns,
+  // header-driven) from the same buffer and upsert one row per month. Additive — a
+  // failure here must NOT fail the reconcile import that already succeeded above.
+  let sheetMonths = 0;
+  try {
+    const months = parseFuelSheetMonths(loaded.buf);
+    if (months.length > 0) {
+      const monthPayloads = months.map((m) => ({
+        org_id: orgId,
+        pump_key: PUMP_KEY,
+        year: m.year,
+        month: m.month,
+        period_key: m.periodKey,
+        label: m.label,
+        sheet_tab: m.sheetTab,
+        headers: m.headers,
+        rows: m.rows,
+        ncol: m.ncol,
+        days_present: m.daysPresent,
+        expected_days: m.expectedDays,
+        missing_days: m.missingDays,
+        source: loaded.source,
+        source_fetched_at: loaded.fetchedAt,
+        imported_by_id: session.user.id,
+        imported_at: nowIso,
+        updated_at: nowIso,
+      }));
+      const { error: monthErr } = await admin
+        .from("cashhub_fuel_sheet_month")
+        .upsert(monthPayloads, { onConflict: "org_id,pump_key,year,month" });
+      if (!monthErr) sheetMonths = monthPayloads.length;
+    }
+  } catch {
+    // swallow — the reconcile data is already saved; full-grid is best-effort.
+  }
+
   let created = 0;
   let updated = 0;
   for (const c of outcome.classified) {
@@ -155,12 +192,14 @@ export async function POST(req: NextRequest) {
         created,
         updated,
         flagged,
+        sheetMonths,
       },
     },
   });
 
   return NextResponse.json({
     ok: true,
+    sheetMonths,
     created,
     updated,
     flagged,
