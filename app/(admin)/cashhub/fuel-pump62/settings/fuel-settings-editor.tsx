@@ -11,7 +11,8 @@ type Props = {
   companies: CompanyOpt[];
 };
 
-const acctLabel = (a: BankAccountOpt) => a.name || `${a.bankCode} ****${a.last4}`;
+// ป้ายบัญชี: "ธนาคาร ****เลข4ตัวท้าย · ชื่อบัญชี" — ระบุบัญชีจากธนาคาร+เลขชัดเจน
+const acctLabel = (a: BankAccountOpt) => a.label;
 
 export function FuelSettingsEditor({ configs, accounts, companies }: Props) {
   const router = useRouter();

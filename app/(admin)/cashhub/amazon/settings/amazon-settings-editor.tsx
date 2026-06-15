@@ -81,7 +81,7 @@ export function AmazonSettingsEditor({ configs, accounts, companies, branchCode 
         >
           <option value="">— เลือกบัญชี —</option>
           {accounts.map((a) => (
-            <option key={a.id} value={a.id}>{a.name || `${a.bankCode} ${a.last4}`}</option>
+            <option key={a.id} value={a.id}>{a.label}</option>
           ))}
         </select>
       </div>

@@ -16,8 +16,8 @@ type Props = {
   branchCode?: string; // "" = ค่าเริ่มต้นทุกสาขา · ระบุ = override รายสาขา
 };
 
-// ป้ายบัญชี: ชื่อบัญชี · ถ้าไม่มีใช้ ธนาคาร ****เลข4ตัวท้าย (ระบุชัด ไม่เดาจากชื่อที่ตั้งเอง)
-const accLabel = (a: BankAccountOpt) => a.name || `${a.bankCode} ****${a.last4}`;
+// ป้ายบัญชี: "ธนาคาร ****เลข4ตัวท้าย · ชื่อบัญชี" — ระบุบัญชีจากธนาคาร+เลขชัดเจน (ไม่ต้องเดาจากชื่อที่ตั้งเอง)
+const accLabel = (a: BankAccountOpt) => a.label;
 
 export function TeaSettingsEditor({ configs, accounts, companies, canEdit, branchCode = "" }: Props) {
   const router = useRouter();
