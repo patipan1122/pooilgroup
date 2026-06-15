@@ -28,6 +28,11 @@ import {
   isRevenueChannel,
   type RevenueChannelCode,
 } from "@/lib/ledger/revenue-channel";
+import {
+  conceptForChannel,
+  bankNameMatches,
+  amountToleranceSatang,
+} from "@/lib/ledger/reconcile-match-keywords";
 import { ledgerRevenueGlV1 } from "@/lib/ledger/flags";
 import { prisma } from "@/lib/prisma";
 import { randomUUID } from "crypto";
@@ -1034,8 +1039,10 @@ export async function autoMatchAccountAction(
   const orgId = session.user.org_id;
 
   // unmatched bank movements (this account + range, not yet in a group)
-  const banks = await prisma.$queryRaw<{ id: string; amt: bigint; d: string }[]>`
-    SELECT t.id::text as id, t.amount_satang as amt, t.txn_date::text as d
+  // ดึง "ชื่อคู่ค้า" (ref2/description/channel) มาด้วย → ใช้ "ดูชื่อ" ตอนจับคู่
+  const banks = await prisma.$queryRaw<{ id: string; amt: bigint; d: string; text: string }[]>`
+    SELECT t.id::text as id, t.amount_satang as amt, t.txn_date::text as d,
+           LOWER(CONCAT_WS(' ', COALESCE(t.ref2,''), COALESCE(t.description,''), COALESCE(t.channel,''))) as text
     FROM ledger_bank_txn t
     WHERE t.bank_account_id=${bankAccountId}::uuid AND t.org_id=${orgId}::uuid
       AND t.company_id=${companyId}::uuid AND t.match_state='unmatched'
@@ -1047,19 +1054,35 @@ export async function autoMatchAccountAction(
   // (เช่น ยอด QR ที่เข้า TTB ต้องไม่ไปจับกับ statement ของ BBL)
   const book = await listBookEntriesForAuto(orgId, companyId, bankAccountId, periodStart, periodEnd);
 
+  // หลักการ: ป้ายชื่อ 2 ฝั่งต้องตรง (concept จาก payment_channel ↔ keyword ในชื่อธนาคาร)
+  //   → ยืนยันด้วยวัน + ยอด (เผื่อค่าธรรมเนียมแกว่ง) · เงินสด = ไม่เช็คชื่อ ยอดตรง วันยืดหยุ่น
+  //   ห้ามจับซ้ำ: book ที่ใช้แล้วตัดทิ้ง · createMatchGroupAction กัน bank ซ้ำที่ DB อีกชั้น
   const usedBook = new Set<string>();
   let created = 0;
   for (const bk of banks) {
     const amt = Number(bk.amt);
     const bd = new Date(bk.d).getTime();
-    const hit = book.find((e) => !usedBook.has(`${e.bookType}:${e.bookId}`)
-      && e.amountSatang === amt
-      && Math.abs((new Date(e.date).getTime() - bd) / 86400000) <= 2);
-    if (!hit) continue;
-    usedBook.add(`${hit.bookType}:${hit.bookId}`);
+    let best: { e: (typeof book)[number]; dateDiff: number; amtDiff: number } | null = null;
+    for (const e of book) {
+      if (usedBook.has(`${e.bookType}:${e.bookId}`)) continue;
+      // ต้องเป็นด้านเดียวกัน (เงินเข้า↔รายได้ + · เงินออก↔รายจ่าย −)
+      if (amt >= 0 !== e.amountSatang >= 0) continue;
+      const concept = conceptForChannel(e.channel);
+      if (!bankNameMatches(concept, bk.text)) continue; // ชื่อไม่ตรง = ข้าม (กันจับข้ามเจ้า)
+      const amtDiff = Math.abs(amt - e.amountSatang);
+      if (amtDiff > amountToleranceSatang(concept, e.amountSatang)) continue;
+      const dateDiff = Math.abs((new Date(e.date).getTime() - bd) / 86400000);
+      if (dateDiff > concept.dateWindowDays) continue;
+      // คู่ที่ดีที่สุด = วันใกล้สุดก่อน แล้วยอดใกล้สุด
+      if (!best || dateDiff < best.dateDiff || (dateDiff === best.dateDiff && amtDiff < best.amtDiff)) {
+        best = { e, dateDiff, amtDiff };
+      }
+    }
+    if (!best) continue;
+    usedBook.add(`${best.e.bookType}:${best.e.bookId}`);
     const res = await createMatchGroupAction({
       bankAccountId, bankTxnIds: [bk.id],
-      bookRefs: [{ bookType: hit.bookType, bookId: hit.bookId }], matchKind: "auto",
+      bookRefs: [{ bookType: best.e.bookType, bookId: best.e.bookId }], matchKind: "auto",
     });
     if (res.ok) created++;
   }

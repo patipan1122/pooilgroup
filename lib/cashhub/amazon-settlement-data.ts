@@ -220,7 +220,15 @@ export async function sendDaysToReconcile(
         )
         ON CONFLICT (org_id, company_id, source_type, source_ref)
           WHERE source_ref IS NOT NULL
-        DO NOTHING
+        DO UPDATE SET
+          amount_satang = EXCLUDED.amount_satang,
+          payment_channel = EXCLUDED.payment_channel,
+          channel_code = EXCLUDED.channel_code,
+          expected_bank_account_id = EXCLUDED.expected_bank_account_id,
+          description = EXCLUDED.description,
+          customer_name = EXCLUDED.customer_name,
+          updated_at = now()
+        WHERE ledger_revenue_entry.match_state = 'unmatched'
         RETURNING id`;
       if (res.length) inserted++;
     }
