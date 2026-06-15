@@ -87,12 +87,12 @@ export async function saveChannelConfig(
 
 export type BankAccountOpt = { id: string; name: string; bankCode: string; last4: string; label: string };
 
-// ป้าย dropdown: "ธนาคาร ****เลข4ตัวท้าย · ชื่อบัญชี" — ระบุบัญชีจากธนาคาร+เลขชัดเจน (ไม่ต้องเดาจากชื่อที่ตั้งเอง)
+// ป้าย dropdown: "ธนาคาร ****เลข4ตัวท้าย" — ระบุบัญชีจากธนาคาร+เลขชัดเจน ไม่โชว์ชื่อที่ตั้งเอง (CEO: กันสับสน)
+// name ใช้เป็น fallback เฉพาะกรณีไม่มีชื่อธนาคาร (กันป้ายว่าง)
 export function bankAccountLabel(bankCode: string, last4: string, name: string): string {
-  const bank = BANK_LABELS[bankCode] ?? bankCode ?? "บัญชี";
+  const bank = BANK_LABELS[bankCode] || bankCode || name || "บัญชี";
   const num = last4 ? ` ****${last4}` : "";
-  const nm = name ? ` · ${name}` : "";
-  return `${bank}${num}${nm}`;
+  return `${bank}${num}`;
 }
 
 /** บัญชีธนาคารทั้งหมด (สำหรับ dropdown เลือกบัญชีที่เงินเข้า) */
