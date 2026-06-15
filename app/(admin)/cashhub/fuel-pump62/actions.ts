@@ -111,11 +111,25 @@ export async function promoteMonthsToReconcile(
     imported.push({ label: (m.label as string) ?? (m.period_key as string), rows: classified.length });
   }
 
+  // Dedupe by the conflict key (date|shift): a month-end spillover row (e.g. a "วันที่ 31"
+  // in a 30-day month, clamped to day 30) can collide with the real day-30 same-shift row.
+  // Postgres rejects two rows hitting the same ON CONFLICT target in one statement, so keep
+  // the larger-sales row (the real full shift) and drop the small straggler.
+  const byKey = new Map<string, Record<string, unknown>>();
+  for (const p of payloads) {
+    const k = `${String(p.report_date)}|${String(p.shift)}`;
+    const ex = byKey.get(k);
+    const pv = Math.abs(Number(p.total_sales) || 0);
+    const ev = ex ? Math.abs(Number(ex.total_sales) || 0) : -1;
+    if (!ex || pv > ev) byKey.set(k, p);
+  }
+  const deduped = [...byKey.values()];
+
   const { error: upErr } = await admin
     .from("cashhub_fuel_daily")
-    .upsert(payloads, { onConflict: "org_id,pump_key,report_date,shift" });
+    .upsert(deduped, { onConflict: "org_id,pump_key,report_date,shift" });
   if (upErr) return { ok: false, error: `บันทึกไม่สำเร็จ: ${upErr.message}` };
 
   revalidatePath("/cashhub/fuel-pump62");
-  return { ok: true, imported, totalRows: payloads.length };
+  return { ok: true, imported, totalRows: deduped.length };
 }
