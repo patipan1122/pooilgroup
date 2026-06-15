@@ -67,6 +67,32 @@ function deltaDirection(deltaSatang: number): string {
   return deltaSatang > 0 ? `ธนาคารเกิน ฿${baht(deltaSatang)}` : `บัญชีเกิน ฿${baht(deltaSatang)}`;
 }
 
+// ป้าย "ประเภท" ต่อคู่ที่จับ — ให้ดูง่ายตอนยืนยัน (เดาจาก suffix c-var ของ docNo · fallback ชื่อธนาคาร)
+const CVAR_TYPE: Record<string, { label: string; cls: string }> = {
+  c1: { label: "เงินสด", cls: "bg-emerald-100 text-emerald-700" },
+  c2: { label: "QR", cls: "bg-violet-100 text-violet-700" },
+  qr: { label: "QR", cls: "bg-violet-100 text-violet-700" },
+  c12: { label: "บัตร EDC", cls: "bg-orange-100 text-orange-700" },
+  c13: { label: "QR", cls: "bg-violet-100 text-violet-700" },
+  c14: { label: "Wallet", cls: "bg-sky-100 text-sky-700" },
+  c15: { label: "Credit", cls: "bg-orange-100 text-orange-700" },
+  c20: { label: "Grab", cls: "bg-green-100 text-green-700" },
+  c21: { label: "Lineman", cls: "bg-lime-100 text-lime-700" },
+  c22: { label: "ShopeeFood", cls: "bg-rose-100 text-rose-700" },
+};
+function groupType(g: MatchGroup): { label: string; cls: string } | null {
+  const doc = g.items.find((i) => i.kind === "book")?.bookDocNo ?? "";
+  const m = doc.match(/-(c\d+|qr)$/i);
+  if (m && CVAR_TYPE[m[1].toLowerCase()]) return CVAR_TYPE[m[1].toLowerCase()];
+  const bank = (g.items.find((i) => i.kind === "bank")?.label ?? "").toLowerCase();
+  if (bank.includes("แกร็บ")) return CVAR_TYPE.c20;
+  if (bank.includes("ช้อปปี้") || bank.includes("shopee")) return CVAR_TYPE.c22;
+  if (bank.includes("amz_sd") || bank.includes("ผ่อนชำระ")) return CVAR_TYPE.c12;
+  if (bank.includes("thai qr") || bank.includes("พร้อมเพย์")) return CVAR_TYPE.qr;
+  if (bank.includes("ฝากเงินสด")) return CVAR_TYPE.c1;
+  return null;
+}
+
 const SOURCE_LABEL: Record<string, string> = {
   TRCLOUD_IV: "TRCloud", CHAIROPS: "ChairOps", CLAWFLEET: "ClawFleet",
   FUELOS: "FuelOS", WEBHOOK: "Webhook", MANUAL: "บันทึกเอง",
@@ -506,11 +532,14 @@ export function ReconcileBoard({
             <div className="space-y-3">
               {suggestedGroups.map((g) => (
                 <div key={g.id} className="rounded-2xl border border-zinc-100 bg-white p-4">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <GroupSide title="บัญชี" items={g.items.filter((i) => i.kind === "book")} accent="brand" />
-                    <GroupSide title="ธนาคาร" items={g.items.filter((i) => i.kind === "bank")} accent="emerald" />
-                  </div>
-                  <div className="mt-3 flex items-center gap-2 border-t border-zinc-50 pt-3">
+                  {/* แถบหัว: ประเภท (เห็นปุ๊บรู้เลย) + ส่วนต่าง + นำออก */}
+                  <div className="mb-2.5 flex flex-wrap items-center gap-2">
+                    {(() => {
+                      const t = groupType(g);
+                      return t ? (
+                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${t.cls}`}>{t.label}</span>
+                      ) : null;
+                    })()}
                     <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium tabular-num ${g.deltaSatang === 0 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
                       {g.deltaSatang === 0 ? "ยอดตรงกัน" : `ต่างกัน ฿${baht(g.deltaSatang)}`}
                     </span>
@@ -519,6 +548,10 @@ export function ReconcileBoard({
                       className={`ml-auto inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2.5 py-1 text-xs text-zinc-500 hover:bg-zinc-50 disabled:opacity-50 ${FOCUS}`}>
                       <Trash2 size={12} /> นำออก
                     </button>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <GroupSide title="บัญชี (ที่เราบันทึก)" items={g.items.filter((i) => i.kind === "book")} accent="brand" />
+                    <GroupSide title="ธนาคาร (เงินเข้าจริง)" items={g.items.filter((i) => i.kind === "bank")} accent="emerald" />
                   </div>
                 </div>
               ))}
