@@ -5,13 +5,20 @@ import { adminClient } from "@/lib/db/server";
 import { BackButton } from "@/components/ui/back-button";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
 import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
-import { loadHotelChannelConfigForSettings } from "@/lib/cashhub/hotel-settlement-data";
+import { loadHotelChannelConfigForSettings, computeHotelDeposits } from "@/lib/cashhub/hotel-settlement-data";
 import { listBankAccounts, listCompanies } from "@/lib/cashhub/amazon-settlement-data";
+import { loadBranches } from "@/lib/cashhub/data";
 import { HotelSettingsEditor } from "./hotel-settings-editor";
+import { SendPreview, type SendPreviewDay } from "@/components/cashhub/send-preview";
+import { SendPreviewControls } from "@/components/cashhub/send-preview-controls";
 
 export const dynamic = "force-dynamic";
 
-export default async function HotelSettingsPage() {
+export default async function HotelSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ previewStore?: string; previewDate?: string }>;
+}) {
   const session = await requireSession();
   requireSuperAdmin(session.user.role);
   const admin = adminClient();
@@ -22,6 +29,40 @@ export default async function HotelSettingsPage() {
     listBankAccounts(admin, orgId),
     listCompanies(admin, orgId),
   ]);
+
+  // พรีวิว: รันสูตรเดียวกับตัวส่งจริง (computeHotelDeposits) — QR/เงินสด (ไม่หักค่าธรรมเนียม) · เลือกสาขา + ระบุวันที่
+  const sp = await searchParams;
+  const reqStore = sp.previewStore ?? "";
+  const reqDate = /^\d{4}-\d{2}-\d{2}$/.test(sp.previewDate ?? "") ? sp.previewDate! : "";
+  const accById = new Map(accounts.map((a) => [a.id, a.label]));
+  const settleConfigs = configs.filter((c) => c.isSettle && c.active);
+  const now = new Date();
+  const dayTo = reqDate || now.toISOString().slice(0, 10);
+  const dayFrom = reqDate || new Date(now.getTime() - 14 * 86400000).toISOString().slice(0, 10);
+  // หาสาขาโรงแรม (ที่มีข้อมูลใน cashhub_hotel_daily ช่วง 90 วัน)
+  const discFrom = new Date(now.getTime() - 90 * 86400000).toISOString().slice(0, 10);
+  const allBranches = await loadBranches(orgId);
+  const { data: hbRows } = await admin
+    .from("cashhub_hotel_daily").select("branch_id").eq("org_id", orgId).gte("sales_date", discFrom);
+  const hotelIds = new Set((hbRows ?? []).map((r) => String((r as { branch_id?: string }).branch_id)));
+  const stores = allBranches.filter((b) => hotelIds.has(b.id)).map((b) => ({ code: b.id, label: b.name }));
+  const activeStore = (reqStore && stores.some((s) => s.code === reqStore)) ? reqStore : (stores[0]?.code ?? "");
+  const deposits = activeStore ? await computeHotelDeposits(admin, orgId, activeStore, dayFrom, dayTo) : [];
+  const withMoney = deposits.filter((d) => d.qrBanked > 0 || d.cashDeposited > 0);
+  const srcDeps = reqDate ? withMoney : withMoney.slice(-2);
+  const previewDays: SendPreviewDay[] = srcDeps.map((d) => {
+    const rows = settleConfigs
+      .map((c) => ({ c, amt: c.channel === "qr" ? d.qrBanked : c.channel === "cash" ? d.cashDeposited : 0 }))
+      .filter((x) => x.amt > 0)
+      .map(({ c, amt }) => ({
+        label: c.label, gross: amt, feePercent: 0, fee: 0, net: amt,
+        account: c.bankAccountId ? (accById.get(c.bankAccountId) ?? "บัญชีถูกลบ") : "",
+        hasAccount: !!c.bankAccountId && accById.has(c.bankAccountId),
+      }));
+    return { date: d.date, totalNet: rows.reduce((a, r) => a + r.net, 0), rows };
+  });
+  const storeLabel = stores.find((s) => s.code === activeStore)?.label ?? "";
+  const previewCaption = `${storeLabel ? `สาขา ${storeLabel} · ` : ""}${reqDate ? `วันที่ ${reqDate}` : "2 วันล่าสุด"}`;
 
   return (
     <div className="ch-scope p-3 sm:p-6 lg:p-8 max-w-4xl mx-auto pb-24">
@@ -36,6 +77,10 @@ export default async function HotelSettingsPage() {
         </p>
       </header>
       <HotelSettingsEditor configs={configs} accounts={accounts} companies={companies} />
+      <div className="mt-8">
+        <SendPreviewControls stores={stores} activeStore={activeStore} activeDate={reqDate} />
+        <SendPreview days={previewDays} caption={previewCaption} showFee={false} />
+      </div>
     </div>
   );
 }
