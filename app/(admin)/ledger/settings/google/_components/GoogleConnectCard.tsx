@@ -223,10 +223,11 @@ export function GoogleConnectCard({
     startTransition(async () => {
       const res = await scanScbStatementsNow();
       if (res.ok) {
+        const more = res.remaining > 0 ? ` · ยังเหลืออีก ${res.remaining} เมล — กด "ดึง SCB" อีกครั้งเพื่อดึงต่อ` : "";
         setScanMsg(
           res.rows > 0
-            ? `ดึง statement SCB เสร็จ — เข้า ${res.rows} รายการ (${res.batches} บัญชี/งวด) ไปที่หน้ากระทบยอดธนาคารได้เลย${res.note ? ` · หมายเหตุ: ${res.note}` : ""}`
-            : `ดึงเสร็จ — ยังไม่เจอ statement SCB ใหม่ในกล่องเมล (หรือดึงไปครบแล้ว)${res.note ? ` · ${res.note}` : ""}`,
+            ? `ดึง statement SCB เสร็จ — เข้า ${res.rows} รายการ (${res.batches} บัญชี/งวด) ไปที่หน้ากระทบยอดธนาคารได้เลย${more}${res.note ? ` · หมายเหตุ: ${res.note}` : ""}`
+            : `ดึงเสร็จ — ยังไม่เจอ statement SCB ใหม่ในกล่องเมล (หรือดึงไปครบแล้ว)${more}${res.note ? ` · ${res.note}` : ""}`,
         );
       } else {
         setError(res.error);
@@ -457,6 +458,13 @@ export function GoogleConnectCard({
                             {busyKey === `scb:${m.id}` ? <Loader2 className="size-3.5 animate-spin" /> : <Landmark className="size-3.5" />}
                             ดึง SCB
                           </button>
+                          <a
+                            href="/ledger/bank-recon/scb-history"
+                            title="ดูประวัติการดึง statement SCB"
+                            className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-600 transition hover:bg-zinc-50"
+                          >
+                            ประวัติ
+                          </a>
                           <button
                             type="button"
                             onClick={() => scanNow(m.id)}

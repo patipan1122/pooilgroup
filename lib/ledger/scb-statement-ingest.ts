@@ -31,7 +31,10 @@ import {
 } from "@/lib/ledger/gmail";
 
 const SCB_SENDER = "contact_business@email.scb.co.th";
-const SEARCH_WINDOW_DAYS = 5; // re-scan a few days back so a missed cron self-heals
+const SEARCH_WINDOW_DAYS = 90; // CEO 2026-06-15: keep ~3 months so backfill is automatic
+const MAX_LIST_RESULTS = 150;  // one page big enough for ~3 months of daily SCB emails
+const MAX_NEW_PER_RUN = 50;    // process at most N NEW emails per run (timeout guard);
+                               // dedup means the rest are picked up next run/click
 const MAX_ZIP_BYTES = 15 * 1024 * 1024; // SCB statement ZIPs are ~1MB; guard runaway
 
 function zipPassword(): string {
@@ -275,6 +278,7 @@ export type ScbConnectionResult = {
   batches: number;
   insertedRows: number;
   skippedMessages: number;
+  remaining: number; // NEW emails left unprocessed this run (hit the per-run cap)
   error?: string;
 };
 
@@ -289,6 +293,7 @@ async function scanConnection(conn: ConnRow): Promise<ScbConnectionResult> {
     batches: 0,
     insertedRows: 0,
     skippedMessages: 0,
+    remaining: 0,
   };
 
   const accessToken = await getMailboxAccessToken(conn.id);
@@ -296,7 +301,7 @@ async function scanConnection(conn: ConnRow): Promise<ScbConnectionResult> {
 
   const afterSec = Math.floor((Date.now() - SEARCH_WINDOW_DAYS * 86_400_000) / 1000);
   const query = `from:${SCB_SENDER} has:attachment filename:zip after:${afterSec}`;
-  const messages = await searchMailboxMessages(accessToken, conn.gmailEmail, query, 25);
+  const messages = await searchMailboxMessages(accessToken, conn.gmailEmail, query, MAX_LIST_RESULTS);
   base.scanned = messages.length;
   if (!messages.length) return base;
 
@@ -311,11 +316,13 @@ async function scanConnection(conn: ConnRow): Promise<ScbConnectionResult> {
   });
   const doneSet = new Set(done.map((d) => d.gmailMessageId));
 
-  for (const m of messages) {
-    if (doneSet.has(m.id)) {
-      base.skippedMessages += 1;
-      continue;
-    }
+  // Only NEW (not-yet-imported) emails need work; cap per run to avoid timeouts.
+  const pending = messages.filter((m) => !doneSet.has(m.id));
+  base.skippedMessages = messages.length - pending.length;
+  const toProcess = pending.slice(0, MAX_NEW_PER_RUN);
+  base.remaining = pending.length - toProcess.length;
+
+  for (const m of toProcess) {
     try {
       const outcome = await processMessage(conn.orgId, accessToken, m.id);
       if (outcome.status === "imported") {
@@ -405,6 +412,7 @@ export async function autoImportScbStatements(
         batches: 0,
         insertedRows: 0,
         skippedMessages: 0,
+        remaining: 0,
         error: e instanceof Error ? e.message : "unknown",
       });
     }
