@@ -10,12 +10,13 @@ export type SendPreviewDay = { date: string; rows: SendPreviewRow[]; totalNet: n
 
 const baht = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export function AmazonSendPreview({ days, storeLabel }: { days: SendPreviewDay[]; storeLabel: string }) {
+export function AmazonSendPreview({ days, storeLabel, caption }: { days: SendPreviewDay[]; storeLabel: string; caption?: string }) {
+  const head = caption ?? `${storeLabel ? `สาขา ${storeLabel} · ` : ""}2 วันล่าสุด`;
   return (
     <section className="mt-8">
       <h3 className="text-base font-semibold text-zinc-800">ตัวอย่างข้อมูลที่จะส่งเข้ากระทบยอด</h3>
       <p className="mt-0.5 mb-3 text-xs text-zinc-500">
-        {storeLabel ? `สาขา ${storeLabel} · ` : ""}2 วันล่าสุด — แต่ละช่องทางส่งยอดเท่าไหร่ หักค่าธรรมเนียมแล้วเหลือเท่าไหร่ เข้าบัญชีไหน
+        {head} — แต่ละช่องทางส่งยอดเท่าไหร่ หักค่าธรรมเนียมแล้วเหลือเท่าไหร่ เข้าบัญชีไหน
         (ส่งเฉพาะช่องที่ตั้งว่า &ldquo;เงินเข้าธนาคาร&rdquo;)
       </p>
       {days.length === 0 ? (

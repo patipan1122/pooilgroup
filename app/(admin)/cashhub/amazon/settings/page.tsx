@@ -15,10 +15,15 @@ import { loadAmazonDays, listAmazonStores } from "@/lib/cashhub/amazon-data";
 import { AmazonSettingsEditor } from "./amazon-settings-editor";
 import { AmazonRuleSummary } from "./amazon-rule-summary";
 import { AmazonSendPreview, type SendPreviewDay } from "./amazon-send-preview";
+import { AmazonPreviewControls } from "./amazon-preview-controls";
 
 export const dynamic = "force-dynamic";
 
-export default async function AmazonSettingsPage() {
+export default async function AmazonSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ previewStore?: string; previewDate?: string }>;
+}) {
   const session = await requireSession();
   requireSuperAdmin(session.user.role);
   const admin = adminClient();
@@ -30,22 +35,19 @@ export default async function AmazonSettingsPage() {
     listCompanies(admin, orgId),
   ]);
 
-  // พรีวิว: ข้อมูลจริง 2 วันล่าสุด (รันสูตรเดียวกับตัวส่งจริง) — หาสาขาแรกที่มีข้อมูล
+  // พรีวิว: รันสูตรเดียวกับตัวส่งจริง (computeSendRows) — เลือกสาขา + ระบุวันที่ได้
+  const sp = await searchParams;
+  const reqStore = sp.previewStore ?? "";
+  const reqDate = /^\d{4}-\d{2}-\d{2}$/.test(sp.previewDate ?? "") ? sp.previewDate! : "";
   const configByCvar = new Map(configs.map((c) => [c.cvar, c]));
   const accById = new Map(accounts.map((a) => [a.id, a.label]));
   const now = new Date();
-  const to = now.toISOString().slice(0, 10);
-  const from = new Date(now.getTime() - 14 * 86400000).toISOString().slice(0, 10);
+  const dayTo = reqDate || now.toISOString().slice(0, 10);
+  const dayFrom = reqDate || new Date(now.getTime() - 14 * 86400000).toISOString().slice(0, 10);
   const stores = await listAmazonStores(admin, orgId);
-  let previewDays: SendPreviewDay[] = [];
-  let storeLabel = "";
-  for (const st of stores.slice(0, 8)) {
-    const rawDays = await loadAmazonDays(admin, orgId, st.store_code, from, to);
-    const withData = rawDays.filter((d) => d.channels && Object.keys(d.channels).length > 0);
-    if (withData.length === 0) continue;
-    storeLabel = st.branch_label ?? st.store_code;
-    previewDays = withData.slice(-2).map((d) => {
-      // รวมช่องที่โอนก้อนเดียว (QR+QR Manual+wallet) แล้ว — สูตรเดียวกับตัวส่งจริง
+
+  const buildDays = (raw: Awaited<ReturnType<typeof loadAmazonDays>>): SendPreviewDay[] =>
+    raw.filter((d) => d.channels && Object.keys(d.channels).length > 0).map((d) => {
       const { rows, totalNet } = computeSendRows(d.channels, configByCvar);
       return {
         date: d.sales_date,
@@ -53,19 +55,28 @@ export default async function AmazonSettingsPage() {
         rows: rows.map((s) => {
           const accId = s.bankAccountId;
           return {
-            label: s.label,
-            gross: s.gross,
-            feePercent: s.feePercent,
-            fee: s.fee,
-            net: s.net,
+            label: s.label, gross: s.gross, feePercent: s.feePercent, fee: s.fee, net: s.net,
             account: accId ? (accById.get(accId) ?? "บัญชีถูกลบ") : "",
             hasAccount: !!accId && accById.has(accId),
           };
         }),
       };
     });
+
+  let previewDays: SendPreviewDay[] = [];
+  let activeStore = reqStore;
+  let storeLabel = "";
+  // ระบุสาขา → ใช้สาขานั้น · ไม่ระบุ → หาสาขาแรกที่มีข้อมูล
+  const candidates = reqStore ? stores.filter((s) => s.store_code === reqStore) : stores.slice(0, 8);
+  for (const st of candidates) {
+    const days = buildDays(await loadAmazonDays(admin, orgId, st.store_code, dayFrom, dayTo));
+    if (days.length === 0 && !reqStore) continue; // auto: ข้ามสาขาที่ว่าง
+    activeStore = st.store_code;
+    storeLabel = st.branch_label ?? st.store_code;
+    previewDays = reqDate ? days : days.slice(-2);
     break;
   }
+  const previewCaption = `${storeLabel ? `สาขา ${storeLabel} · ` : ""}${reqDate ? `วันที่ ${reqDate}` : "2 วันล่าสุด"}`;
 
   return (
     <div className="ch-scope p-3 sm:p-6 lg:p-8 max-w-4xl mx-auto pb-24">
@@ -80,7 +91,10 @@ export default async function AmazonSettingsPage() {
       </header>
       <AmazonRuleSummary configs={configs} />
       <AmazonSettingsEditor configs={configs} accounts={accounts} companies={companies} />
-      <AmazonSendPreview days={previewDays} storeLabel={storeLabel} />
+      <div className="mt-8">
+        <AmazonPreviewControls stores={stores} activeStore={activeStore} activeDate={reqDate} />
+        <AmazonSendPreview days={previewDays} storeLabel={storeLabel} caption={previewCaption} />
+      </div>
     </div>
   );
 }
