@@ -5,7 +5,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { FileText, RefreshCw, ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole, isAdminTier } from "@/lib/auth/role-guards";
+import { requireExecutiveRole } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BackButton } from "@/components/ui/back-button";
@@ -84,7 +85,7 @@ export default async function VehicleDetailPage({
     ? companies.find((c) => c.id === vehicle.company_id)
     : null;
   const typeCfg = getVehicleTypeConfig(vehicle.vehicle_type);
-  const canRenew = isAdminTier(session.user.role);
+  const canRenew = await userIsModuleAdmin(session.user, "docuflow");
 
   // Build 4-slot grid (any extra docs render in "อื่นๆ")
   const docByType = new Map<string, CanonicalVehicleDocument>();

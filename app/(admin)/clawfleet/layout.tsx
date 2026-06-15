@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { userHasModuleAccess, isAdminTier } from "@/lib/auth/module-access";
+import { userHasModuleAccess, isAdminTier, userIsModuleAdmin } from "@/lib/auth/module-access";
 import { isModuleDisabled } from "@/lib/modules";
 import { CF_ALL_ROLES } from "@/lib/clawfleet/role-guard";
 import { MobileBottomNav } from "@/components/clawfleet/_kit/mobile-bottom-nav";
@@ -21,7 +21,7 @@ export default async function ClawfleetLayout({
     const ok = await userHasModuleAccess(session.user, "clawfleet");
     if (!ok) redirect("/403");
   }
-  const isAdmin = isAdminTier(session.user.role);
+  const isAdmin = await userIsModuleAdmin(session.user, "clawfleet");
   return (
     <div className="min-h-screen bg-zinc-50/30">
       {/* Add bottom padding on mobile so content not hidden behind MobileBottomNav (64px + safe-area) */}

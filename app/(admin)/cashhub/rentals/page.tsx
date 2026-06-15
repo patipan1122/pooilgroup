@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
 import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
-import { isAdmin } from "@/lib/auth/permissions";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { redirect } from "next/navigation";
 import { formatBaht, bkkDate } from "@/lib/utils/format";
 import { BackButton } from "@/components/ui/back-button";
@@ -39,7 +39,8 @@ const RENTAL_TYPE_LABEL: Record<RentalRow["rental_type"], string> = {
 
 export default async function RentalsPage() {
   const session = await requireSession();
-  if (!isAdmin(session.user)) redirect("/403");
+  // Grant-scoped: org admin-tier OR a program_admin granted cashhub admin.
+  if (!(await userIsModuleAdmin(session.user, "cashhub"))) redirect("/403");
 
   const admin = adminClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

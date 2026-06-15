@@ -17,7 +17,8 @@ import {
   FileText,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole, isAdminTier } from "@/lib/auth/role-guards";
+import { requireExecutiveRole } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { prisma } from "@/lib/prisma";
 import { bkkRelative } from "@/lib/utils/format";
 import {
@@ -72,7 +73,7 @@ export default async function DocuFlowWorkflowPage() {
   const session = await requireSession();
   requireExecutiveRole(session.user.role);
   const orgId = session.user.org_id;
-  const adminTier = isAdminTier(session.user.role);
+  const adminTier = await userIsModuleAdmin(session.user, "docuflow");
 
   // Pick the most-recent doc that has signature placements as the live example
   const recentDoc = await prisma.document.findFirst({

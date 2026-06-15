@@ -7,14 +7,15 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { assertBotCapable } from "../business";
 
 const DEFAULT_TAG = "chairops";
 
 async function requireAdmin() {
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await userIsModuleAdmin(session.user, "inbox")))
+    throw new Error("ไม่มีสิทธิ์");
   return session;
 }
 

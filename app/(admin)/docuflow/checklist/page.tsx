@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
-import { isAdminTier } from "@/lib/auth/module-access";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { loadDocuments } from "@/lib/docuflow/data";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import {
@@ -98,7 +98,7 @@ export default async function DocuFlowChecklistPage() {
   const session = await requireSession();
   requireExecutiveRole(session.user.role);
   const orgId = session.user.org_id;
-  const adminTier = isAdminTier(session.user.role);
+  const adminTier = await userIsModuleAdmin(session.user, "docuflow");
 
   // Fetch uploaded docs ต่อ biztype แบบขนาน (max 14 biztype × 50 = 700 docs)
   const supported = listSupportedBizTypes();

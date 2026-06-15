@@ -32,7 +32,7 @@ import {
   type CanonicalVehicleDocument,
   type ExpiryStatus,
 } from "@/lib/vehicles/data";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { VehicleCard, type VehicleCardVm } from "@/components/docuflow/vehicle-card";
 import { prisma } from "@/lib/prisma";
 
@@ -181,7 +181,7 @@ export default async function DocuFlowVehiclesPage({
   const branchOptions = allBranches
     .filter((b) => b.is_active)
     .map((b) => ({ id: b.id, code: b.code, name: b.name }));
-  const canRegister = isAdminTier(session.user.role);
+  const canRegister = await userIsModuleAdmin(session.user, "docuflow");
 
   return (
     <div

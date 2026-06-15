@@ -8,7 +8,7 @@ import Link from "next/link";
 import { FileText, Upload, ArrowLeft, Filter } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
-import { isAdminTier } from "@/lib/auth/module-access";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import {
   loadDocuments,
   loadDocumentsSharedToBranch,
@@ -65,7 +65,7 @@ export default async function DocumentsListPage({
   requireExecutiveRole(session.user.role);
   const sp = await searchParams;
   const orgId = session.user.org_id;
-  const adminTier = isAdminTier(session.user.role);
+  const adminTier = await userIsModuleAdmin(session.user, "docuflow");
 
   const filterLevel = sp.level || "";
   const filterTag = sp.tag || "";

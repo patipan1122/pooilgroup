@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
-import { isAdminTier } from "@/lib/auth/module-access";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { loadDocumentById } from "@/lib/docuflow/data";
 import { getSignedDownloadUrl } from "@/lib/docuflow/r2";
 import { prisma } from "@/lib/prisma";
@@ -64,7 +64,7 @@ export default async function DocumentDetailPage({
   const session = await requireSession();
   requireExecutiveRole(session.user.role);
   const orgId = session.user.org_id;
-  const adminTier = isAdminTier(session.user.role);
+  const adminTier = await userIsModuleAdmin(session.user, "docuflow");
 
   const doc = await loadDocumentById(orgId, id);
   if (!doc || !doc.isActive) notFound();

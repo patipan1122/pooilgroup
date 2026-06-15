@@ -27,7 +27,7 @@ import type { Prisma } from "@/lib/generated/prisma/client";
 import { liffIdForModule } from "@/lib/line/channels";
 import { requireSession, type DbUser } from "@/lib/auth/session";
 import { isAdminTier, isSuperAdmin } from "@/lib/auth/role-guards";
-import { userHasModuleAccess } from "@/lib/auth/module-access";
+import { userHasModuleAccess, userIsModuleAdmin } from "@/lib/auth/module-access";
 import { recheckReceipt, gradeCompleteness } from "@/lib/ledger/recheck";
 import { OUR_BUYER } from "@/lib/ledger/group-identity";
 import { setPermission, isLedgerRole, isLedgerCapability } from "@/lib/ledger/permissions";
@@ -333,7 +333,7 @@ export async function saveExpense(
   // P1#21 ROLE CHECK — only the creator OR an admin/accountant may edit a draft.
   // Staff who didn't create the record cannot silently overwrite another user's entry.
   const canEditOthers =
-    isAdminTier(session.user.role) ||
+    (await userIsModuleAdmin(session.user, "ledger")) ||
     (await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.confirm"));
   if (row.createdBy !== session.user.id && !canEditOthers) {
     return { ok: false, error: "ไม่มีสิทธิ์แก้ไขรายการของผู้อื่น" };
@@ -1045,7 +1045,7 @@ export async function createCategory(raw: unknown): Promise<ActionResult> {
   const { session } = access;
   // Categories drive the chart of accounts + TRCloud mapping → admin tier only
   // (matches the settings page requireRole + the nav adminOnly flag).
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลตั้งค่าหมวดได้" };
   }
   const parsed = categorySchema.safeParse(raw);
@@ -1091,7 +1091,7 @@ export async function toggleCategory(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลตั้งค่าหมวดได้" };
   }
   await prisma.ledgerCategory.updateMany({
@@ -1115,7 +1115,7 @@ export async function updateCategory(raw: unknown): Promise<ActionResult> {
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลตั้งค่าหมวดได้" };
   }
   const parsed = categoryUpdateSchema.safeParse(raw);
@@ -1158,7 +1158,7 @@ export async function updateCategoryTrcloud(raw: unknown): Promise<ActionResult>
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) return { ok: false, error: "เฉพาะผู้ดูแลตั้งค่าหมวดได้" };
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) return { ok: false, error: "เฉพาะผู้ดูแลตั้งค่าหมวดได้" };
   const parsed = updateCategoryTrcloudSchema.safeParse(raw);
   if (!parsed.success)
     return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
@@ -1195,7 +1195,7 @@ export async function updateBranchTrcloud(raw: unknown): Promise<ActionResult> {
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) return { ok: false, error: "เฉพาะผู้ดูแลตั้งค่าสาขาได้" };
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) return { ok: false, error: "เฉพาะผู้ดูแลตั้งค่าสาขาได้" };
   const parsed = updateBranchTrcloudSchema.safeParse(raw);
   if (!parsed.success)
     return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
@@ -2313,7 +2313,7 @@ export async function setChannelBranch(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลตั้งค่าสาขาได้" };
   }
   const orgId = session.user.org_id;
@@ -2382,7 +2382,7 @@ export async function createLedgerInvite(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลสร้างคำเชิญได้" };
   }
   const parsed = inviteSchema.safeParse(raw);
@@ -2594,7 +2594,7 @@ export async function updateMemberBranches(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลกำหนดสาขาได้" };
   }
   const member = await loadMemberScoped(session.user.org_id, memberId);
@@ -2634,7 +2634,7 @@ export async function setMemberRole(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลตั้งสิทธิ์ได้" };
   }
   const r = await prisma.ledgerLineMember.updateMany({
@@ -2664,7 +2664,7 @@ export async function toggleMemberActive(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลจัดการสมาชิกได้" };
   }
   const r = await prisma.ledgerLineMember.updateMany({
@@ -2685,7 +2685,7 @@ export async function approveMemberPending(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลอนุมัติได้" };
   }
   const member = await loadMemberScoped(session.user.org_id, memberId);
@@ -2722,7 +2722,7 @@ export async function rejectMemberPending(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลจัดการคำขอได้" };
   }
   await prisma.ledgerLineMember.updateMany({
@@ -2751,7 +2751,7 @@ export async function linkLineMemberToMe(memberId: string): Promise<ActionResult
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลผูกบัญชี LINE ได้" };
   }
   const member = await prisma.ledgerLineMember.findFirst({
@@ -2799,7 +2799,7 @@ export async function unlinkLineMember(memberId: string): Promise<ActionResult> 
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลจัดการได้" };
   }
   const member = await prisma.ledgerLineMember.findFirst({
@@ -2844,7 +2844,7 @@ export async function setLedgerGroupBranch(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลกำหนดสาขาได้" };
   }
   const row = await prisma.ledgerLineGroup.findFirst({
@@ -2873,7 +2873,7 @@ export async function toggleLedgerGroup(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลจัดการได้" };
   }
   const r = await prisma.ledgerLineGroup.updateMany({
@@ -2898,7 +2898,7 @@ export async function toggleLedgerGroupSlipIntake(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลตั้งกลุ่มส่งสลิปได้" };
   }
   const r = await prisma.ledgerLineGroup.updateMany({
@@ -3257,7 +3257,7 @@ export async function setLedgerPermission(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลตั้งสิทธิ์ได้" };
   }
   if (!isLedgerRole(role) || !isLedgerCapability(capability)) {
@@ -3306,7 +3306,7 @@ export async function createLedgerBranch(raw: unknown): Promise<ActionResult> {
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลเพิ่มสาขาได้" };
   }
   const parsed = branchCreateSchema.safeParse(raw);
@@ -3357,7 +3357,7 @@ export async function updateLedgerBranch(
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลแก้สาขาได้" };
   }
   const parsed = branchUpdateSchema.safeParse(raw);
@@ -3640,7 +3640,7 @@ export async function updateLedgerOrgInfo(raw: unknown): Promise<ActionResult> {
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isAdminTier(session.user.role)) {
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
     return { ok: false, error: "เฉพาะผู้ดูแลแก้ข้อมูลบริษัทได้" };
   }
   const parsed = orgInfoSchema.safeParse(raw);

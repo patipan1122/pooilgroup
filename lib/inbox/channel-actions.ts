@@ -15,7 +15,8 @@ import { revalidatePath } from "next/cache";
 import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier, isSuperAdmin } from "@/lib/auth/role-guards";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { encryptToken, decryptToken } from "./crypto";
 import { isBotCapable } from "./business";
 
@@ -23,7 +24,8 @@ export type InboxPlatform = "LINE" | "FACEBOOK";
 
 async function requireInboxAdmin() {
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await userIsModuleAdmin(session.user, "inbox")))
+    throw new Error("ไม่มีสิทธิ์");
   return session;
 }
 

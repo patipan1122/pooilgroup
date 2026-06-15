@@ -2,14 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { prisma } from "@/lib/prisma";
 import { putObject, deleteObject } from "@/lib/r2/upload";
 import { updateBookingStatus } from "@/lib/hotelbook/booking";
 
 async function gateAdmin() {
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  // Grant-scoped: org admin-tier OR a program_admin granted hotelbook admin.
+  if (!(await userIsModuleAdmin(session.user, "hotelbook")))
+    throw new Error("ไม่มีสิทธิ์");
   return session;
 }
 

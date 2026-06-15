@@ -15,7 +15,7 @@
 import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
-import { userHasModuleAccess } from "@/lib/auth/module-access";
+import { userHasModuleAccess, userIsModuleAdmin } from "@/lib/auth/module-access";
 import { ledgerWebCanForRole } from "@/lib/ledger/liff-auth";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
@@ -53,7 +53,7 @@ async function base(): Promise<{ ok: true; session: Session } | { ok: false; err
 async function adminGate(): Promise<{ ok: true; session: Session } | { ok: false; error: string }> {
   const g = await base();
   if (!g.ok) return g;
-  if (!isAdminTier(g.session.user.role)) return { ok: false, error: "เฉพาะผู้ดูแลตั้งค่าคลังสินค้าได้" };
+  if (!(await userIsModuleAdmin(g.session.user, "ledger"))) return { ok: false, error: "เฉพาะผู้ดูแลตั้งค่าคลังสินค้าได้" };
   return g;
 }
 

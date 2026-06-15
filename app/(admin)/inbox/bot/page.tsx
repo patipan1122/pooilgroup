@@ -5,7 +5,7 @@
 
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/module-access";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import {
   listFaqs,
   listKnowledge,
@@ -29,7 +29,7 @@ export default async function InboxBotPage({
   searchParams: Promise<{ biz?: string }>;
 }) {
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) redirect("/403");
+  if (!(await userIsModuleAdmin(session.user, "inbox"))) redirect("/403");
 
   const params = await searchParams;
   const businessTag = BOT_CAPABLE_TAGS.includes(params.biz ?? "")

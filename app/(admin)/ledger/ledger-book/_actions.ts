@@ -11,7 +11,7 @@
 
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
-import { userHasModuleAccess } from "@/lib/auth/module-access";
+import { userHasModuleAccess, userIsModuleAdmin } from "@/lib/auth/module-access";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
@@ -87,7 +87,7 @@ export async function renameSavedBook(input: {
     select: { createdBy: true },
   });
   if (!book) return { ok: false, error: "ไม่พบเล่ม" };
-  if (book.createdBy !== g.session.user.id && !isAdminTier(g.session.user.role)) {
+  if (book.createdBy !== g.session.user.id && !(await userIsModuleAdmin(g.session.user, "ledger"))) {
     return { ok: false, error: "แก้ชื่อได้เฉพาะผู้สร้างหรือแอดมิน" };
   }
   await prisma.ledgerSavedBook.update({ where: { id: input.id }, data: { name } });
@@ -107,7 +107,7 @@ export async function deleteSavedBook(input: {
     select: { createdBy: true, name: true },
   });
   if (!book) return { ok: false, error: "ไม่พบเล่ม" };
-  if (book.createdBy !== g.session.user.id && !isAdminTier(g.session.user.role)) {
+  if (book.createdBy !== g.session.user.id && !(await userIsModuleAdmin(g.session.user, "ledger"))) {
     return { ok: false, error: "ลบได้เฉพาะผู้สร้างหรือแอดมิน" };
   }
   await prisma.ledgerSavedBook.delete({ where: { id: input.id } });

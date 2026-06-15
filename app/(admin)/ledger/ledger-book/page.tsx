@@ -28,7 +28,7 @@ import {
 import { ledgerAnalyticsV1 } from "@/lib/ledger/flags";
 import { currentPeriodBangkok } from "@/lib/ledger/dashboard";
 import { listSavedBooks, bookConfigToQuery, type SavedBookConfig } from "@/lib/ledger/saved-books";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { resolveScope, type LedgerScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
 import { Sparkline, TrendChart } from "../categories/_components/TrendChart";
@@ -184,7 +184,7 @@ export default async function LedgerBookPage({
   // the client island never imports the prisma-backed saved-books lib.
   const savedBooks = await listSavedBooks(scope.orgId, scope.companyId);
   const currentUserId = session.user.id;
-  const canManageAll = isAdminTier(session.user.role);
+  const canManageAll = await userIsModuleAdmin(session.user, "ledger");
   const bookChips: SavedBookChip[] = savedBooks.map((b) => {
     const qs = bookConfigToQuery(b.config, scope.companyId);
     return {

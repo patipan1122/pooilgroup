@@ -17,7 +17,8 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole, isAdminTier } from "@/lib/auth/role-guards";
+import { requireExecutiveRole } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { adminClient } from "@/lib/db/server";
 import { computeOrgRiskSummary, type RiskGroup } from "@/lib/docuflow/risk-aggregate";
 import { narrateOrgRisk } from "@/lib/docuflow/risk-narrate";
@@ -63,7 +64,7 @@ export default async function OrgRiskPage() {
   const session = await requireSession();
   requireExecutiveRole(session.user.role);
   const orgId = session.user.org_id;
-  const adminTier = isAdminTier(session.user.role);
+  const adminTier = await userIsModuleAdmin(session.user, "docuflow");
 
   const [summary, orgName, branchRows, branchExpRows] = await Promise.all([
     computeOrgRiskSummary(orgId),

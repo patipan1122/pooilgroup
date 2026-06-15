@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
-import { isAdminTier } from "@/lib/auth/module-access";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { loadRenewals } from "@/lib/docuflow/data";
 import { prisma } from "@/lib/prisma";
 import { thaiDateLong, bkkRelative } from "@/lib/utils/format";
@@ -48,7 +48,7 @@ export default async function DocuFlowOverviewPage() {
   const session = await requireSession();
   requireExecutiveRole(session.user.role);
   const orgId = session.user.org_id;
-  const adminTier = isAdminTier(session.user.role);
+  const adminTier = await userIsModuleAdmin(session.user, "docuflow");
   const today = new Date();
 
   // Load everything for the dashboard in parallel

@@ -6,7 +6,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import {
   FLOW_IMAGE_TOPICS,
   REPLY_TEMPLATE_KEYS,
@@ -34,7 +34,8 @@ function resolveBizTag(input: string | undefined): string {
 
 async function requireAdmin() {
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await userIsModuleAdmin(session.user, "inbox")))
+    throw new Error("ไม่มีสิทธิ์");
   return session;
 }
 
