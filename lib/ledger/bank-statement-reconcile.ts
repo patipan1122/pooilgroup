@@ -51,15 +51,21 @@ export interface BankTxnRow {
 /**
  * Compute the dedup hash for a bank transaction row.
  *
- * CONTENT-ONLY hash (NO batchId) so re-importing the same statement file dedups
- * correctly — the UNIQUE(bank_account_id, line_hash) index can only collide if the
- * hash is stable across imports. rowIndex is kept as the salt so that legitimate
- * standing orders (same amount + date + balance in one statement) stay distinct:
- * within one file each occurrence has a different rowIndex, but the SAME file
- * re-imported produces the same rowIndex sequence → same hash → ON CONFLICT skips.
+ * CONTENT-ONLY hash (NO batchId, NO rowIndex) so the SAME transaction dedups
+ * across DIFFERENT files — e.g. a "03-01→05-31" export and a "01-01→06-14" export
+ * both contain the May-1 deposit; the running BALANCE after that txn is identical in
+ * both files, so the hash matches → UNIQUE(bank_account_id, line_hash) skips the dup.
  *
- * Caveat: balance_satang is part of the key, so a true duplicate row only dedups
- * when the running balance also matches (it always does for the same statement).
+ * Why balance (not rowIndex) is the disambiguator: rowIndex shifts when a file starts
+ * at a different date → same txn gets a different rowIndex per file → the OLD hash
+ * (which salted on rowIndex) let cross-file duplicates through. The running balance is
+ * intrinsic to the txn and stable across files, AND two legit same-day/same-amount
+ * deposits have DIFFERENT balances → they still stay distinct. (Manual-add rows carry
+ * a unique ref1 = "MANUAL-<n>", so they remain distinct even with balance=0.)
+ *
+ * ⚠️ Changing this formula means rows imported BEFORE this fix carry the old (rowIndex)
+ * hash → re-importing the SAME old data can still dup against them once; the
+ * "ล้างรายการซ้ำ" tool cleans that transition. New imports are stable from here on.
  */
 export function computeLineHash(params: {
   accountNo: string;
@@ -67,7 +73,7 @@ export function computeLineHash(params: {
   amountSatang: number;
   balanceSatang: number;
   ref1: string | null;
-  rowIndex: number;
+  rowIndex?: number; // kept for callers' row_index column; NOT part of the hash
 }): string {
   const parts = [
     params.accountNo,
@@ -75,7 +81,6 @@ export function computeLineHash(params: {
     String(params.amountSatang),
     String(params.balanceSatang),
     params.ref1 ?? "",
-    String(params.rowIndex),
   ];
   return createHash("sha256").update(parts.join("|")).digest("hex");
 }

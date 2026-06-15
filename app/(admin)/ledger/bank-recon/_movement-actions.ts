@@ -237,7 +237,7 @@ export async function findBankDuplicatesAction(bankAccountId: string): Promise<{
     const ids = await duplicateExtraIds(orgId, bankAccountId);
     const sample = await prisma.$queryRaw<{ date: string; amt: number; ref: string; copies: number }[]>`
       SELECT t.txn_date::text AS "date", t.amount_satang::int AS amt,
-             COALESCE(NULLIF(t.ref2,''), NULLIF(t.ref1,''), '') AS ref, COUNT(*)::int AS copies
+             MAX(COALESCE(NULLIF(t.ref2,''), NULLIF(t.ref1,''), '')) AS ref, COUNT(*)::int AS copies
       FROM ledger_bank_txn t
       WHERE t.bank_account_id = ${bankAccountId}::uuid AND t.org_id = ${orgId}::uuid
         AND t.match_state = 'unmatched'
