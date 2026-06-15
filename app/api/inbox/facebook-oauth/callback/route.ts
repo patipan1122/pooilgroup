@@ -6,7 +6,7 @@
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import {
   exchangeCodeForToken,
   upgradeToLongLived,
@@ -52,7 +52,8 @@ function fail(req: Request, message: string): NextResponse {
 
 export async function GET(req: Request) {
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) {
+  // เชื่อม Facebook = โครงสร้างหลังบ้าน (เห็น page access token) → super_admin เท่านั้น
+  if (!isSuperAdmin(session.user.role)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

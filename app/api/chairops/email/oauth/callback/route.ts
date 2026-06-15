@@ -5,8 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getSession } from "@/lib/chairops/auth/session";
-import { rankOf } from "@/lib/chairops/auth/role-guards";
-import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/chairops/audit/log";
 import {
@@ -34,7 +33,8 @@ export async function GET(request: NextRequest) {
 
   const session = await getSession();
   if (!session) return NextResponse.redirect(new URL("/login", origin));
-  if (rankOf(session.user.role) < rankOf(ChairopsUserRole.ADMIN)) {
+  // เชื่อม Gmail = โครงสร้างหลังบ้าน → เฉพาะ Pool super_admin (CEO 2026-06-15)
+  if (!isSuperAdmin(session.poolUser.role)) {
     return back(origin, { error: "forbidden" });
   }
 

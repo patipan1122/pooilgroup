@@ -2,13 +2,18 @@
 // LINE OA Rich Menu (the 4-button maid menu with the seal mascot). Runs the
 // registration server-side via /api/chairops/richmenu/register so the LINE
 // access token never leaves Vercel.
+import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/chairops/auth/session";
+import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { RegisterRichMenuButton } from "./_register-button";
 
 export const dynamic = "force-dynamic";
 
 export default async function LineSetupPage() {
-  await requireRole("CEO");
+  // ตั้งค่า LINE (กุญแจ channel) = โครงสร้างหลังบ้าน → เฉพาะ Pool super_admin (CEO 2026-06-15)
+  const session = await requireRole(ChairopsUserRole.ADMIN);
+  if (!isSuperAdmin(session.poolUser.role)) redirect("/chairops?error=forbidden");
   const tokenSet = Boolean(process.env.CHAIROPS_LINE_CHANNEL_ACCESS_TOKEN);
   const liffSet = Boolean(process.env.NEXT_PUBLIC_LIFF_ID);
 

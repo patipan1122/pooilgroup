@@ -5,7 +5,7 @@
 // — lets a non-technical operator press one button instead of running a CLI.
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/chairops/auth/session";
-import { rankOf } from "@/lib/chairops/auth/role-guards";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
 
 export const dynamic = "force-dynamic";
@@ -19,9 +19,10 @@ export async function POST(request: NextRequest) {
   if (!session) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
-  if (rankOf(session.user.role) < rankOf("CEO")) {
+  // ตั้งค่า LINE = โครงสร้างหลังบ้าน → เฉพาะ Pool super_admin (CEO 2026-06-15)
+  if (!isSuperAdmin(session.poolUser.role)) {
     return NextResponse.json(
-      { ok: false, error: "ต้องเป็นผู้บริหาร (CEO/Admin) เท่านั้น" },
+      { ok: false, error: "หน้านี้สงวนสำหรับผู้ดูแลระบบ (super admin) เท่านั้น — กรุณาติดต่อผู้ดูแลระบบ" },
       { status: 403 },
     );
   }

@@ -4,6 +4,8 @@
 
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { requirePlaylandManager } from "@/lib/playland/role-guard";
 import { prisma } from "@/lib/prisma";
 import { listBranches } from "@/lib/playland/queries";
 import { SettingsRail } from "@/components/playland/settings-rail";
@@ -14,6 +16,8 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
+  // หน้าตั้งค่า = ผู้จัดการขึ้นไป (กันพนักงาน/ผู้ชมหลุดเข้ามาแก้แพ็กเกจ/โปรโม)
+  requirePlaylandManager(session.user.role);
   const orgId = session.user.org_id;
 
   const [branches, packageCount, productCount, deviceCount, promoCount] = await Promise.all([
@@ -28,7 +32,10 @@ export default async function SettingsLayout({ children }: { children: React.Rea
     { href: "/playland/settings/branches", iconName: "building" as const,  label: "สาขา",           count: branches.length, desc: "พื้นที่ทำธุรกิจ" },
     { href: "/playland/settings/packages", iconName: "package" as const,   label: "Packages",        count: packageCount,    desc: "ราคาเข้าเล่น" },
     { href: "/playland/settings/products", iconName: "shopping" as const,  label: "สินค้า POS",      count: productCount,    desc: "ขนม · เครื่องดื่ม" },
-    { href: "/playland/settings/devices",  iconName: "scanface" as const,  label: "ACS Devices",     count: deviceCount,     desc: "face reader" },
+    // ACS Devices ถือกุญแจลับ webhook → โชว์เมนูเฉพาะ super_admin
+    ...(isSuperAdmin(session.user.role)
+      ? [{ href: "/playland/settings/devices", iconName: "scanface" as const, label: "ACS Devices", count: deviceCount, desc: "face reader" }]
+      : []),
     { href: "/playland/settings/promos",   iconName: "tag" as const,       label: "Promo / Coupon",  count: promoCount,      desc: "ส่วนลด" },
   ];
 

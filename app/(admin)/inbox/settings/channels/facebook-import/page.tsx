@@ -5,7 +5,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { Section } from "@/components/ui/section";
 import { readOauthCookie } from "@/lib/inbox/facebook-import";
 import { INBOX_BUSINESSES } from "@/lib/inbox/business";
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 export default async function FacebookImportPage() {
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) redirect("/403");
+  if (!isSuperAdmin(session.user.role)) redirect("/403");
 
   const cookie = await readOauthCookie();
   if (!cookie || cookie.pages.length === 0) {

@@ -5,7 +5,7 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { buildOauthUrl, signState } from "@/lib/inbox/facebook-oauth";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,8 @@ function redirectUriFrom(req: Request): string {
 
 export async function GET(req: Request) {
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) {
+  // เชื่อม Facebook = โครงสร้างหลังบ้าน (เห็น page access token) → super_admin เท่านั้น
+  if (!isSuperAdmin(session.user.role)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

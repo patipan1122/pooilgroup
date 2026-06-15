@@ -5,7 +5,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { Section } from "@/components/ui/section";
 import { INBOX_BUSINESSES } from "@/lib/inbox/business";
 import { PasteImportForm } from "./_components/paste-form";
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export default async function FacebookPastePage() {
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) redirect("/403");
+  if (!isSuperAdmin(session.user.role)) redirect("/403");
 
   return (
     <div className="mx-auto max-w-[1100px] p-5 sm:p-8">

@@ -7,14 +7,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getSession } from "@/lib/auth/session";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { exchangeCodeForTokens, encryptToken, GMAIL_SCOPE } from "@/lib/ledger/gmail";
 import { OAUTH_STATE_COOKIE, callbackRedirectUri } from "@/lib/ledger/gmail-oauth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-const ADMIN_ROLES = ["super_admin", "org_admin", "admin"];
 
 function back(origin: string, companyId: string | null, params: Record<string, string>) {
   const u = new URL("/ledger/settings/google", origin);
@@ -73,7 +72,8 @@ export async function GET(request: NextRequest) {
 
   const session = await getSession();
   if (!session) return NextResponse.redirect(new URL("/login", origin));
-  if (!ADMIN_ROLES.includes(session.user.role)) {
+  // เชื่อม Gmail = โครงสร้างหลังบ้าน → เฉพาะ super_admin (CEO 2026-06-15)
+  if (!isSuperAdmin(session.user.role)) {
     return back(origin, companyId, { error: "forbidden" });
   }
 
