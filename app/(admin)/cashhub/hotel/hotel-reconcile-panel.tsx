@@ -124,8 +124,8 @@ export function HotelReconcilePanel({
             >
               <div className="flex items-center justify-between">
                 <span className="font-semibold text-zinc-800">{s.label}</span>
-                <span className="text-xs font-bold tabular-nums">
-                  {s.reconciledDays}/{s.daysWithDeposit} วัน {allGood ? "🟢" : ""}
+                <span className={`text-xs font-bold tabular-nums ${allGood ? "text-matched-iridescent" : ""}`}>
+                  {s.reconciledDays}/{s.daysWithDeposit} วัน {allGood ? "✦" : ""}
                 </span>
               </div>
               <div className="text-xs text-zinc-500 mt-1 flex flex-wrap gap-x-3">
@@ -134,7 +134,7 @@ export function HotelReconcilePanel({
                 <span>⚪ ยังไม่ส่ง {s.unsentDays}</span>
               </div>
               <div className="text-xs mt-1.5 tabular-nums">
-                <span className="text-emerald-700 font-semibold">กระทบแล้ว {formatBaht(s.reconciledAmount)}</span>
+                <span className={allGood ? "text-matched-iridescent font-semibold" : "text-emerald-700 font-semibold"}>กระทบแล้ว {formatBaht(s.reconciledAmount)}</span>
                 {" · "}
                 <span className="text-zinc-600">ค้าง {formatBaht(s.outstandingAmount)}</span>
               </div>
@@ -180,12 +180,13 @@ export function HotelReconcilePanel({
                     const cell = d.cells.find((c) => c.channel === s.channel);
                     if (!cell)
                       return <td key={s.channel} className="px-2.5 py-1.5 text-right text-zinc-300">—</td>;
+                    const recon = cell.state === "reconciled";
                     return (
                       <td
                         key={s.channel}
-                        className={`px-2.5 py-1.5 text-right tabular-nums ${STATE_TEXT[cell.state]}`}
+                        className={`px-2.5 py-1.5 text-right tabular-nums ${recon ? "cell-matched-iridescent" : STATE_TEXT[cell.state]}`}
                       >
-                        {DOT[cell.state]} {formatBaht(cell.amount)}
+                        {recon ? "✦" : DOT[cell.state]} {formatBaht(cell.amount)}
                       </td>
                     );
                   })}
@@ -197,8 +198,9 @@ export function HotelReconcilePanel({
       )}
 
       <p className="text-[11px] text-zinc-400">
-        🟢 = นักบัญชีกระทบกับ statement ธนาคารจริงแล้ว · 🟡 = ส่งเข้าระบบแล้ว รอ statement มากระทบ ·
-        ⚪ = ยังไม่ส่งเข้าระบบ · QR→TTB 3468 · เงินสด→BBL 933335
+        <span className="cell-matched-iridescent rounded px-1">✦ สีรุ้ง</span> = นักบัญชีกระทบกับ statement
+        ธนาคารจริงแล้ว · 🟡 = ส่งเข้าระบบแล้ว รอ statement มากระทบ · ⚪ = ยังไม่ส่งเข้าระบบ ·
+        QR→TTB 3468 · เงินสด→BBL 933335
       </p>
     </div>
   );
