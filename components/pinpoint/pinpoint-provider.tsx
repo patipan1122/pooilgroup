@@ -27,10 +27,12 @@ import {
   Pause,
   Play,
   Mic,
+  Pen,
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { buildSelector, buildElementMeta, elementText } from "@/lib/pinpoint/selector";
 import { captureBody, uploadCapture, isLikelyMobile } from "@/lib/pinpoint/capture";
+import { PinpointDrawCanvas } from "@/components/pinpoint/pinpoint-draw-canvas";
 import type { ElementMeta, PinpointPriority } from "@/lib/pinpoint/types";
 
 const LS_KEY = "pinpoint:v1";
@@ -285,11 +287,17 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
   );
 
   const savePin = useCallback(
-    async (comment: string, priority: PinpointPriority) => {
+    async (
+      comment: string,
+      priority: PinpointPriority,
+      screenshotKeyOverride?: string | null,
+    ) => {
       if (!sessionId || !draft || busy) return;
       setBusy(true);
       const url = currentUrl();
       void ensureCapture(url);
+      // ภาพวาด (ถ้ามี) = ภาพเฉพาะของหมุดนี้ · ไม่งั้นใช้ภาพรวมของหน้านั้น.
+      const finalKey = screenshotKeyOverride ?? shotCache.current.get(url) ?? null;
       try {
         const res = await fetch(`/api/pinpoint/sessions/${sessionId}/pins`, {
           method: "POST",
@@ -305,7 +313,7 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
             coordYPct: draft.yPct,
             viewportW: window.innerWidth,
             viewportH: window.innerHeight,
-            screenshotKey: shotCache.current.get(url) ?? null,
+            screenshotKey: finalKey,
           }),
         });
         if (!res.ok) {
@@ -325,7 +333,7 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
             coordYPct: draft.yPct,
             docX: draft.docX,
             docY: draft.docY,
-            screenshotKey: shotCache.current.get(url) ?? null,
+            screenshotKey: finalKey,
           },
         ]);
         setDraft(null);
@@ -580,16 +588,62 @@ function PinPopover({
   seq: number;
   busy: boolean;
   onCancel: () => void;
-  onSave: (comment: string, priority: PinpointPriority) => void;
+  onSave: (
+    comment: string,
+    priority: PinpointPriority,
+    screenshotKey?: string | null,
+  ) => void;
 }) {
   const [comment, setComment] = useState("");
   const [urgent, setUrgent] = useState(false);
   const [listening, setListening] = useState(false);
+  // ── ปากกาวาดภาพ ──
+  const [drawBlob, setDrawBlob] = useState<Blob | null>(null); // ภาพหน้าจอรอวาด
+  const [drawOpen, setDrawOpen] = useState(false);
+  const [capturing, setCapturing] = useState(false); // กำลังถ่ายภาพหน้าจอ
+  const [savingDraw, setSavingDraw] = useState(false); // กำลังอัปโหลดภาพวาด
+  const [annotatedKey, setAnnotatedKey] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const recogRef = useRef<SpeechRecognitionLike | null>(null);
   useEffect(() => {
     ref.current?.focus();
   }, []);
+
+  const canDraw = !isLikelyMobile();
+
+  // กด "วาด" → ถ่ายภาพหน้าจอ (UI ของเราถูกตัดออกอยู่แล้ว) → เปิดโมดัลวาด.
+  async function openDraw() {
+    if (capturing || savingDraw) return;
+    setCapturing(true);
+    try {
+      const blob = await captureBody();
+      if (!blob) {
+        toast.error("วาดภาพบนหน้านี้ไม่ได้");
+        return;
+      }
+      setDrawBlob(blob);
+      setDrawOpen(true);
+    } finally {
+      setCapturing(false);
+    }
+  }
+
+  // วาดเสร็จ → อัปโหลดภาพที่มีรอยวาด เก็บเป็น screenshot เฉพาะของหมุดนี้.
+  async function handleDrawDone(blob: Blob) {
+    setDrawOpen(false);
+    setSavingDraw(true);
+    try {
+      const key = await uploadCapture(blob);
+      if (!key) {
+        toast.error("อัปโหลดภาพวาดไม่สำเร็จ");
+        return;
+      }
+      setAnnotatedKey(key);
+      toast.success("แนบภาพวาดแล้ว");
+    } finally {
+      setSavingDraw(false);
+    }
+  }
 
   // พูดแทนพิมพ์ — Web Speech API (ฟรี, ในเบราว์เซอร์). ซ่อนปุ่มถ้าไม่รองรับ.
   const speechSupported = getSpeechRecognitionCtor() != null;
@@ -652,7 +706,8 @@ function PinPopover({
         value={comment}
         onChange={(e) => setComment(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSave(comment.trim(), urgent ? "urgent" : "normal");
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+            onSave(comment.trim(), urgent ? "urgent" : "normal", annotatedKey);
         }}
         placeholder="พิมพ์ หรือกดไมค์เพื่อพูด… (เว้นว่างก็ได้)"
         rows={3}
@@ -676,6 +731,29 @@ function PinPopover({
               <Mic className="size-3.5" />
             </button>
           )}
+          {canDraw && (
+            <button
+              type="button"
+              onClick={openDraw}
+              disabled={capturing || savingDraw}
+              aria-label="วาดภาพบนภาพหน้าจอ"
+              title={annotatedKey ? "วาดใหม่" : "วาดภาพบนภาพหน้าจอ"}
+              className={cn(
+                "flex size-7 items-center justify-center rounded-full transition-colors disabled:opacity-50",
+                annotatedKey
+                  ? "bg-emerald-600 text-white"
+                  : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200",
+              )}
+            >
+              {capturing || savingDraw ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : annotatedKey ? (
+                <Check className="size-3.5" />
+              ) : (
+                <Pen className="size-3.5" />
+              )}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setUrgent((v) => !v)}
@@ -689,14 +767,29 @@ function PinPopover({
         </div>
         <button
           type="button"
-          disabled={busy}
-          onClick={() => onSave(comment.trim(), urgent ? "urgent" : "normal")}
+          disabled={busy || savingDraw}
+          onClick={() =>
+            onSave(comment.trim(), urgent ? "urgent" : "normal", annotatedKey)
+          }
           className="flex items-center gap-1 rounded-lg bg-[var(--color-brand-600)] px-3 py-1.5 text-sm font-bold text-white disabled:opacity-50"
         >
           {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
           บันทึก
         </button>
       </div>
+
+      {/* โมดัลปากกาวาดภาพ — portal ขึ้น body เพื่อคลุมเต็มจอเหนือทุกชั้น */}
+      {drawOpen &&
+        drawBlob &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <PinpointDrawCanvas
+            imageBlob={drawBlob}
+            onCancel={() => setDrawOpen(false)}
+            onDone={handleDrawDone}
+          />,
+          document.body,
+        )}
     </div>
   );
 }
