@@ -3,7 +3,7 @@
 // DELETE /api/docuflow/[id]/share?branchId — remove a single share
 // ────────────────────────────────────────────────────────────────────
 // Capability E · Cross-branch Document Sharing
-//   - requireExecutiveRole for read · requireAdminTier for write
+//   - requireExecutiveRole for read · requireProgramAdminTier for write
 //   - Multi-tenant orgId scope ทุก query
 //   - skipDuplicates on bulk add (link table has @@unique(documentId, branchId))
 //   - Audit DOCUFLOW_SHARE on every mutation
@@ -15,7 +15,7 @@ import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import {
   requireExecutiveRole,
-  requireAdminTier,
+  requireProgramAdminTier,
 } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
@@ -84,7 +84,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 
 export async function POST(req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  requireAdminTier(session.user.role);
+  requireProgramAdminTier(session.user.role);
   const orgId = session.user.org_id;
   const { id } = await ctx.params;
 
@@ -173,7 +173,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
 
 export async function DELETE(req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  requireAdminTier(session.user.role);
+  requireProgramAdminTier(session.user.role);
   const orgId = session.user.org_id;
   const { id } = await ctx.params;
 

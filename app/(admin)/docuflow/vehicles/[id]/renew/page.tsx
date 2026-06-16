@@ -5,7 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireAdminTier } from "@/lib/auth/role-guards";
+import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { VEHICLE_DOC_TYPES } from "@/lib/vehicles/data";
 import { RenewDocForm } from "@/components/docuflow/renew-doc-form";
@@ -27,7 +27,7 @@ export default async function VehicleDocRenewPage({
   searchParams: Promise<{ type?: string }>;
 }) {
   const session = await requireSession();
-  requireAdminTier(session.user.role);
+  requireProgramAdminTier(session.user.role);
 
   const { id } = await params;
   const sp = await searchParams;

@@ -7,7 +7,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier, isExecutiveRole } from "@/lib/auth/role-guards";
+import { isProgramAdminTier, isExecutiveRole } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { loadDocumentById } from "@/lib/docuflow/data";
@@ -74,7 +74,7 @@ const PatchSchema = z.object({
 
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) {
+  if (!isProgramAdminTier(session.user.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await ctx.params;
@@ -251,7 +251,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) {
+  if (!isProgramAdminTier(session.user.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await ctx.params;

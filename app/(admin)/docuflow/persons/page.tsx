@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { UserCircle2, ArrowLeft, Users, AlertTriangle, FileText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireAdminTier } from "@/lib/auth/role-guards";
+import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { Section } from "@/components/ui/section";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -75,7 +75,7 @@ const WORST_BADGE: Record<
 
 export default async function DocuFlowPersonsPage() {
   const session = await requireSession();
-  requireAdminTier(session.user.role);
+  requireProgramAdminTier(session.user.role);
   const orgId = session.user.org_id;
 
   // Pull all active users + their person docs

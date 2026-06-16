@@ -6,7 +6,7 @@
 
 import { Sparkles, FileText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireAdminTier } from "@/lib/auth/role-guards";
+import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { BUSINESS_TYPE_LIST } from "@/constants/business-types";
 import { UploadForm } from "@/components/docuflow/upload-form";
@@ -23,7 +23,7 @@ export const dynamic = "force-dynamic";
 
 export default async function DocumentUploadPage() {
   const session = await requireSession();
-  requireAdminTier(session.user.role);
+  requireProgramAdminTier(session.user.role);
   const orgId = session.user.org_id;
 
   const [companies, branches, users] = await Promise.all([

@@ -16,7 +16,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { adminClient } from "@/lib/db/server";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isAdminTier, isProgramAdminTier } from "@/lib/auth/role-guards";
 import { userHasModuleAccess } from "@/lib/auth/module-access";
 import { audit } from "@/lib/audit/log";
 import type { DbUser } from "@/lib/auth/session";
@@ -39,7 +39,10 @@ type Result<T = void> =
 
 /** Accountant tier = admin tiers + viewer (UserRole "viewer" = accountant/HR). */
 function isAccountant(role: DbUser["role"]): boolean {
-  return isAdminTier(role) || role === "viewer";
+  // 2026-06-16 (CEO): program_admin = ฟังก์ชันบัญชีครบ (ยืนยัน/ยกเลิก/ออกใบสำคัญ).
+  // grant-scoped — call-site ที่ตามมา (เช่น confirm/bulk) เช็ค userHasModuleAccess("ledger")
+  // อยู่แล้ว → program_admin ต้องถูกติ๊กสิทธิ์ ledger ถึงจะมาถึง.
+  return isProgramAdminTier(role) || role === "viewer";
 }
 
 async function assertCompanyInOrg(orgId: string, companyId: string): Promise<boolean> {
@@ -765,6 +768,10 @@ export async function voidExpense(input: {
   }
   if (!isAccountant(user.role)) {
     return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลยกเลิกได้" };
+  }
+  // grant-scoped (มิเรอร์ confirmExpense): non-admin ต้องถูกติ๊กสิทธิ์ ledger
+  if (!isAdminTier(user.role) && !(await userHasModuleAccess(user, "ledger"))) {
+    return { ok: false, error: "ไม่มีสิทธิ์ใช้งานโมดูลนี้" };
   }
 
   const existing = await prisma.ledgerExpense.findFirst({

@@ -22,6 +22,12 @@ const EXECUTIVE_ROLES: DbUser["role"][] = [
   "area_manager",
   "branch_manager",
   "viewer",
+  // 2026-06-16 (CEO): program_admin ต้องเห็นทุกฟังก์ชันของโปรแกรมที่ได้รับสิทธิ์.
+  // ปลอดภัยเพราะ executive gate เหล่านี้อยู่ "ภายในโปรแกรม" (cashhub/docuflow)
+  // ที่ผ่านด่านเข้าโปรแกรม (assertModuleEnabled / module-grant) มาแล้ว →
+  // program_admin จะมาถึงด่านนี้ได้ก็ต่อเมื่อถูกติ๊กสิทธิ์โปรแกรมนั้น = grant-scoped.
+  // ด่าน "เข้าโปรแกรมไหนได้" ยังพึ่ง isAdminTier เดิม (ไม่แตะ) → ไม่ทะลุระบบติ๊กสิทธิ์.
+  "program_admin",
 ];
 
 /** Admin tier — top 3 roles only. Used to gate sensitive views (monthly PDF
@@ -59,6 +65,37 @@ export function isExecutiveRole(role: DbUser["role"]): boolean {
 
 export function isAdminTier(role: DbUser["role"]): boolean {
   return ADMIN_TIER_ROLES.includes(role);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Program-operator tier (CEO 2026-06-16) — admin tier PLUS program_admin.
+// ใช้ที่ด่าน "ฟังก์ชันภายในโปรแกรม" (เช่น confirm/void บิล, ออกใบสำคัญจ่าย,
+// รายงานในโมดูล, ปุ่ม admin ของโปรแกรม) ที่ผู้ใช้มาถึงได้ก็ต่อเมื่อผ่านด่านเข้า
+// โปรแกรม (module-grant) มาแล้ว → ใช้แทน isAdminTier ตรงจุดเหล่านั้นเพื่อปลดให้
+// program_admin ที่ได้รับสิทธิ์โปรแกรมนั้นทำงานได้เหมือนแอดมิน.
+//
+// ⚠️ ห้ามใช้ตัวนี้ที่ด่าน "เข้าโปรแกรมไหนได้บ้าง" (loadUserModules /
+// userHasModuleAccess / assertModuleEnabled) — ตรงนั้นต้องคง isAdminTier ไว้
+// ไม่งั้น program_admin จะเข้าได้ทุกโปรแกรมแม้ไม่ถูกติ๊กสิทธิ์ (ทะลุระบบ).
+// ⚠️ และห้ามใช้กับด่าน "เชื่อมต่อ/secret" (LINE/Drive/API) — ตรงนั้น super_admin เท่านั้น.
+const PROGRAM_ADMIN_TIER_ROLES: DbUser["role"][] = [
+  ...ADMIN_TIER_ROLES,
+  "program_admin",
+];
+
+export function isProgramAdminTier(role: DbUser["role"]): boolean {
+  return PROGRAM_ADMIN_TIER_ROLES.includes(role);
+}
+
+/**
+ * เรียกในหน้า/route ฟังก์ชัน "ระดับแอดมินของโปรแกรม" ที่อยู่หลังด่านเข้าโปรแกรม.
+ * ตำแหน่งที่ต่ำกว่า (staff/driver) ที่หลุดเข้ามา → redirect ไป heatmap
+ * (มิเรอร์ behavior ของ requireAdminTier เดิม).
+ */
+export function requireProgramAdminTier(role: DbUser["role"]): void {
+  if (!isProgramAdminTier(role)) {
+    redirect("/cashhub/heatmap");
+  }
 }
 
 /**

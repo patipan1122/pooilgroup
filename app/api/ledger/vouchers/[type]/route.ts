@@ -21,7 +21,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isAdminTier, isProgramAdminTier } from "@/lib/auth/role-guards";
 import { userHasModuleAccess } from "@/lib/auth/module-access";
 import { getExpense } from "@/lib/ledger/queries";
 import { buildVoucher, isVoucherType, VOUCHER_LABEL } from "@/lib/ledger/vouchers";
@@ -47,7 +47,7 @@ export async function GET(
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const role = session.user.role;
-  const accountant = isAdminTier(role) || role === "viewer";
+  const accountant = isProgramAdminTier(role) || role === "viewer";
   if (!accountant) {
     return NextResponse.json(
       { error: "เฉพาะบัญชี/ผู้ดูแลออกเอกสารได้" },

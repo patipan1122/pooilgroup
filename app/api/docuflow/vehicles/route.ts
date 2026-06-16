@@ -7,7 +7,7 @@ import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import {
-  isAdminTier,
+  isProgramAdminTier,
   isExecutiveRole,
 } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
@@ -24,7 +24,7 @@ const CreateVehicleSchema = z.object({
 
 export async function POST(req: Request) {
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) {
+  if (!isProgramAdminTier(session.user.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

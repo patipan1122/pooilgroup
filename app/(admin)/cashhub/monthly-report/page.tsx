@@ -2,7 +2,7 @@
 // 4 หน้าตามสเปค: Executive · Branch Ranking · By Type · Compliance
 
 import { requireSession } from "@/lib/auth/session";
-import { requireAdminTier } from "@/lib/auth/role-guards";
+import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { PrintButton } from "./print-button";
 import { adminClient } from "@/lib/db/server";
 import {
@@ -44,7 +44,7 @@ export default async function MonthlyReportPage({
   // Stricter than other CashHub exec pages — monthly PDF contains org-wide
   // P&L + compliance data; area_manager + viewer should not see this.
   // Per CEO rule (2026-05-07): "ดูได้แค่ super_admin และ admin"
-  requireAdminTier(session.user.role);
+  requireProgramAdminTier(session.user.role);
   const sp = await searchParams;
 
   const monthStr =

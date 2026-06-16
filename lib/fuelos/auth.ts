@@ -7,6 +7,7 @@
 // fuel code imports requireUser/requireRole/atLeast/RANK from here.
 import { cache } from "react";
 import { requireSession, type DbUser } from "@/lib/auth/session";
+import { userHasModuleAccess } from "@/lib/auth/module-access";
 import { prisma } from "@/lib/prisma";
 
 export type FuelRole =
@@ -37,7 +38,15 @@ export type FuelUserCtx = { id: string; orgId: string; role: FuelRole; name: str
 export const getCurrentUser = cache(async (): Promise<FuelUserCtx> => {
   const session = await requireSession(); // redirects to /login if not authed
   const u = session.user;
-  const role = mapRole(u.role);
+  let role = mapRole(u.role);
+
+  // 2026-06-16 (CEO): program_admin = ADMIN เต็มของ FuelOS (ตั้งค่าทีม/บัญชี/บอท)
+  // แต่ grant-scoped — เป็น ADMIN เฉพาะเมื่อถูกติ๊กสิทธิ์ fuelos เท่านั้น
+  // (program_admin ที่ไม่ได้ติ๊ก fuelos คงเป็น SALES เหมือนเดิม ไม่ escalate).
+  // ช่องเชื่อม LINE ยังล็อก OWNER (= super_admin) เท่านั้น เพราะ ADMIN(90) < OWNER(100).
+  if (u.role === "program_admin" && (await userHasModuleAccess(u, "fuelos"))) {
+    role = "ADMIN";
+  }
 
   const email = u.email ?? `${u.id}@pool.local`;
 

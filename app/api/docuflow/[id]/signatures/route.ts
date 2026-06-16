@@ -22,7 +22,7 @@ import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import {
-  requireAdminTier,
+  requireProgramAdminTier,
   requireExecutiveRole,
 } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
@@ -150,7 +150,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 
 export async function POST(req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  requireAdminTier(session.user.role);
+  requireProgramAdminTier(session.user.role);
 
   const { id: documentId } = await ctx.params;
   if (!IdSchema.safeParse(documentId).success) {
@@ -249,7 +249,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
 
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  requireAdminTier(session.user.role);
+  requireProgramAdminTier(session.user.role);
 
   const { id: documentId } = await ctx.params;
   if (!IdSchema.safeParse(documentId).success) {
@@ -353,7 +353,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
 export async function DELETE(req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  requireAdminTier(session.user.role);
+  requireProgramAdminTier(session.user.role);
 
   const { id: documentId } = await ctx.params;
   if (!IdSchema.safeParse(documentId).success) {

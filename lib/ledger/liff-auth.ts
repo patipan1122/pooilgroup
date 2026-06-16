@@ -76,6 +76,13 @@ export async function resolveLedgerActor(): Promise<LedgerActor | null> {
     return { orgId, userId, kind: "pool", role: "accountant", scopeBranchIds: [], allBranches, canConfirm, companyId: null };
   }
 
+  // 2026-06-16 (CEO): Pool program_admin ที่ถูกติ๊กสิทธิ์ ledger = ledger admin เต็ม
+  // (เปิด LIFF admin console + ยืนยันเงินผ่าน LINE + admin web actions). grant-scoped —
+  // program_admin ที่ไม่มีสิทธิ์ ledger จะตกไปที่ทางอื่น (member row / null) ตามเดิม.
+  if (role === "program_admin" && (await userHasModuleAccess(session.user, "ledger"))) {
+    return { orgId, userId, kind: "pool", role: "admin", scopeBranchIds: [], allBranches: true, canConfirm: true, companyId: null };
+  }
+
   // Any other identity: find this person's ledger member row — by the canonical
   // Pool linkage FIRST (set when an admin promotes/claims), else by EITHER LINE id
   // (messaging userId from the webhook seed OR login sub from an invite/claim).

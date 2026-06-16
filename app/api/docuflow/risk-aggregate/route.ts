@@ -10,7 +10,7 @@
 
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier, isExecutiveRole } from "@/lib/auth/role-guards";
+import { isProgramAdminTier, isExecutiveRole } from "@/lib/auth/role-guards";
 import { audit } from "@/lib/audit/log";
 import { adminClient } from "@/lib/db/server";
 import { computeOrgRiskSummary } from "@/lib/docuflow/risk-aggregate";
@@ -70,7 +70,7 @@ export async function GET() {
 
 export async function POST() {
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) {
+  if (!isProgramAdminTier(session.user.role)) {
     return NextResponse.json(
       { error: "Forbidden — admin tier only" },
       { status: 403 },

@@ -13,7 +13,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
-import { requireAdminTier } from "@/lib/auth/role-guards";
+import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 
@@ -27,7 +27,7 @@ const IdSchema = zUUID();
 
 export async function POST(_req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  requireAdminTier(session.user.role);
+  requireProgramAdminTier(session.user.role);
 
   const { id: documentId, placementId } = await ctx.params;
   if (

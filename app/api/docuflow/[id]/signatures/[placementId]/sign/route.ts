@@ -15,7 +15,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { deleteObject, putObject } from "@/lib/r2/upload";
@@ -114,7 +114,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
         { status: 403 },
       );
     }
-  } else if (!isAdminTier(session.user.role)) {
+  } else if (!isProgramAdminTier(session.user.role)) {
     return NextResponse.json(
       { error: "คุณไม่ได้รับสิทธิ์เซ็นจุดนี้" },
       { status: 403 },
