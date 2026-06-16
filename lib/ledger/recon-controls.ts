@@ -86,6 +86,7 @@ function acctLabel(bankCode: string | null, accountNo: string | null): string | 
 export interface ArchiveItem {
   kind: string; label: string; amountSatang: number; date: string | null;
   bookType: string | null; paymentChannel: string | null; sourceType: string | null;
+  bankTxnId: string | null;  // ฝั่งธนาคาร: ใช้ดึงรายละเอียดเต็มจากไฟล์ (raw_row_json) ตอนกางดู
 }
 export interface ArchiveGroup {
   id: string; status: string; matchType: string; matchKind: string;
@@ -128,7 +129,7 @@ export async function listMatchedArchive(params: {
   const liveItems = confirmedIds.length
     ? await prisma.$queryRaw<{
         groupId: string; kind: string; label: string; amountSatang: bigint; date: string | null;
-        bookType: string | null; paymentChannel: string | null; sourceType: string | null;
+        bookType: string | null; paymentChannel: string | null; sourceType: string | null; bankTxnId: string | null;
       }[]>`
         SELECT mi.group_id::text as "groupId", mi.kind,
                CASE WHEN mi.kind='bank' THEN COALESCE(NULLIF(t.ref2,''), NULLIF(t.description,''), NULLIF(t.channel,''), 'รายการธนาคาร')
@@ -139,7 +140,8 @@ export async function listMatchedArchive(params: {
                CASE WHEN mi.kind='bank' THEN t.txn_date::text
                     WHEN mi.book_type='revenue' THEN r.entry_date::text
                     WHEN mi.book_type='expense' THEN e.doc_date::text ELSE NULL END as "date",
-               mi.book_type as "bookType", r.payment_channel as "paymentChannel", r.source_type as "sourceType"
+               mi.book_type as "bookType", r.payment_channel as "paymentChannel", r.source_type as "sourceType",
+               mi.bank_txn_id::text as "bankTxnId"
         FROM ledger_bank_match_item mi
         LEFT JOIN ledger_bank_txn t      ON t.id = mi.bank_txn_id
         LEFT JOIN ledger_revenue_entry r ON mi.book_type='revenue' AND r.id = mi.book_id
@@ -153,13 +155,13 @@ export async function listMatchedArchive(params: {
     if (g.status === "confirmed") {
       items = liveItems.filter((i) => i.groupId === g.id).map((i) => ({
         kind: i.kind, label: i.label, amountSatang: Number(i.amountSatang), date: i.date,
-        bookType: i.bookType, paymentChannel: i.paymentChannel, sourceType: i.sourceType,
+        bookType: i.bookType, paymentChannel: i.paymentChannel, sourceType: i.sourceType, bankTxnId: i.bankTxnId,
       }));
     } else {
       const snap = (g.reversedSnapshot as { items?: { kind: string; label: string; amountSatang: number; date: string | null; bookType: string | null }[] } | null);
       items = (snap?.items ?? []).map((i) => ({
         kind: i.kind, label: i.label, amountSatang: Number(i.amountSatang), date: i.date,
-        bookType: i.bookType ?? null, paymentChannel: null, sourceType: null,
+        bookType: i.bookType ?? null, paymentChannel: null, sourceType: null, bankTxnId: null,
       }));
     }
     return {
