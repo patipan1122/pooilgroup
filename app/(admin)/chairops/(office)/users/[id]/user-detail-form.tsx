@@ -254,6 +254,35 @@ export function UserDetailForm({
             บันทึก
           </Button>
         </form>
+        {/* Explicit unbind — clearing the field + บันทึก also works, but a maid
+            bound to the wrong/leftover account needs an obvious one-tap "ปลด LINE".
+            Frees this LINE so it can bind to another account. */}
+        {target.lineUserId && (
+          <form
+            action={(fd) =>
+              startTransition(async () => {
+                const r = await bindLineUserId(fd);
+                if (r.ok)
+                  toast.success("ปลด LINE แล้ว · LINE นี้ผูกกับบัญชีอื่นได้แล้ว");
+                else toast.error(r.error ?? "ทำงานไม่สำเร็จ");
+              })
+            }
+            className="mt-2"
+          >
+            <input type="hidden" name="userId" value={target.id} />
+            <input type="hidden" name="lineUserId" value="" />
+            <Button
+              type="submit"
+              variant="outline"
+              size="sm"
+              disabled={!canManage || isPending}
+              loading={isPending}
+              className="text-rose-700 ring-rose-200 hover:bg-rose-50"
+            >
+              ปลด LINE ออกจากบัญชีนี้
+            </Button>
+          </form>
+        )}
       </Section>
 
       {/* 4. status · F7: reason + note required for deactivation */}

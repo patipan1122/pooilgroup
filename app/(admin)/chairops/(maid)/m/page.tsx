@@ -13,6 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { readDriftSnapshot } from "@/lib/chairops/reconcile/drift-engine";
 import { ChairopsKpiTile } from "@/components/chairops/_kit";
 import { Card, CardBody } from "@/components/ui/card";
+import { MaidLogoutButton } from "./profile/logout-button";
 import { Badge } from "@/components/ui/badge";
 import { baht, thaiDate, thaiRelative, ageDays, TZ } from "@/lib/chairops/utils/format";
 import { toZonedTime } from "date-fns-tz";
@@ -50,18 +51,30 @@ export default async function MaidHomePage() {
   const session = await requireExactRole("MAID");
 
   if (!session.user.primaryBranchId) {
+    // No branch yet → the maid can't do any task. Don't trap them on a bare
+    // message (previously this page had NO name + NO logout → a maid bound to the
+    // wrong/leftover account was stuck with no way out). Show who they're signed
+    // in as + a logout button so they can switch accounts / let the office fix it.
     return (
-      <Card className="border-amber-200 bg-amber-50">
-        <CardBody className="space-y-2 p-5 text-sm">
-          <div className="flex items-center gap-2 font-semibold text-amber-800">
-            <CircleAlert className="h-5 w-5" />
-            ยังไม่ได้ผูกสาขา
-          </div>
-          <p className="text-amber-700">
-            บัญชีของคุณยังไม่ได้กำหนดสาขา · กรุณาติดต่อออฟฟิศก่อนเริ่มใช้งาน
-          </p>
-        </CardBody>
-      </Card>
+      <div className="space-y-3">
+        <Card className="border-amber-200 bg-amber-50">
+          <CardBody className="space-y-2 p-5 text-sm">
+            <div className="flex items-center gap-2 font-semibold text-amber-800">
+              <CircleAlert className="h-5 w-5" />
+              ยังไม่ได้ผูกสาขา
+            </div>
+            <p className="text-amber-700">
+              เข้าสู่ระบบเป็น{" "}
+              <span className="font-semibold">{session.user.displayName}</span> ·
+              บัญชีนี้ยังไม่ได้กำหนดสาขา · กรุณาติดต่อออฟฟิศให้ตั้งสาขาก่อนเริ่มใช้งาน
+            </p>
+            <p className="text-xs text-amber-600">
+              ถ้านี่ไม่ใช่บัญชีของคุณ · กด “ออกจากระบบ” แล้วเปิดลิงก์เชิญของคุณใหม่อีกครั้ง
+            </p>
+          </CardBody>
+        </Card>
+        <MaidLogoutButton />
+      </div>
     );
   }
 
