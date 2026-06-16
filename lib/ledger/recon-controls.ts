@@ -308,3 +308,71 @@ export async function listAccountsForCompany(params: {
     ...r, label: `${acctLabel(r.bankCode, r.accountNo) ?? r.accountNo} · ${r.accountName}`,
   }));
 }
+
+// ── Reconcile coverage (% กระทบยอด) — count + ฿ by match_state + direction ──────
+// ใช้บนหน้าบัญชี (ต่อบัญชี) + หน้าหลัก (รวมทุกบัญชี). อ่านสด ๆ จาก ledger_bank_txn.
+// match_state: unmatched(ยังไม่จัดการ) · suggested(รอยืนยัน) · confirmed(ยืนยัน/โยกเงิน) · excluded(ข้าม).
+export interface ReconcileCoverage {
+  total: number; totalSatang: number;
+  unmatched: number; unmatchedSatang: number;
+  suggested: number; suggestedSatang: number;
+  confirmed: number; confirmedSatang: number;
+  excluded: number; excludedSatang: number;
+  inCount: number; inSatang: number;     // เงินเข้า (credit)
+  outCount: number; outSatang: number;   // เงินออก (debit)
+  // derived (0–100, ปัดเศษ) — ตามยอดเงิน (satang) เป็นหลัก + ตามจำนวนรายการ
+  confirmedPctSatang: number; confirmedPctCount: number;  // "ยืนยันแล้วจริง"
+  handledPctSatang: number; handledPctCount: number;      // จัดการแล้ว (ยืนยัน+ข้าม+รอยืนยัน) = ไม่นับสีแดง
+}
+export async function reconcileCoverage(params: {
+  orgId: string; companyId: string; bankAccountId?: string; periodStart: string; periodEnd: string;
+}): Promise<ReconcileCoverage> {
+  const { orgId, companyId, bankAccountId, periodStart, periodEnd } = params;
+  const rows = await prisma.$queryRaw<{
+    total: number; totalSatang: bigint;
+    unmatched: number; unmatchedSatang: bigint;
+    suggested: number; suggestedSatang: bigint;
+    confirmed: number; confirmedSatang: bigint;
+    excluded: number; excludedSatang: bigint;
+    inCount: number; inSatang: bigint; outCount: number; outSatang: bigint;
+  }[]>`
+    SELECT
+      COUNT(*)::int as "total",
+      COALESCE(SUM(ABS(amount_satang)),0)::bigint as "totalSatang",
+      COUNT(*) FILTER (WHERE match_state='unmatched')::int as "unmatched",
+      COALESCE(SUM(ABS(amount_satang)) FILTER (WHERE match_state='unmatched'),0)::bigint as "unmatchedSatang",
+      COUNT(*) FILTER (WHERE match_state='suggested')::int as "suggested",
+      COALESCE(SUM(ABS(amount_satang)) FILTER (WHERE match_state='suggested'),0)::bigint as "suggestedSatang",
+      COUNT(*) FILTER (WHERE match_state='confirmed')::int as "confirmed",
+      COALESCE(SUM(ABS(amount_satang)) FILTER (WHERE match_state='confirmed'),0)::bigint as "confirmedSatang",
+      COUNT(*) FILTER (WHERE match_state='excluded')::int as "excluded",
+      COALESCE(SUM(ABS(amount_satang)) FILTER (WHERE match_state='excluded'),0)::bigint as "excludedSatang",
+      COUNT(*) FILTER (WHERE amount_satang > 0)::int as "inCount",
+      COALESCE(SUM(amount_satang) FILTER (WHERE amount_satang > 0),0)::bigint as "inSatang",
+      COUNT(*) FILTER (WHERE amount_satang < 0)::int as "outCount",
+      COALESCE(SUM(ABS(amount_satang)) FILTER (WHERE amount_satang < 0),0)::bigint as "outSatang"
+    FROM ledger_bank_txn
+    WHERE org_id=${orgId}::uuid AND company_id=${companyId}::uuid
+      AND txn_date BETWEEN ${periodStart}::date AND ${periodEnd}::date
+      AND (${bankAccountId ?? null}::uuid IS NULL OR bank_account_id = ${bankAccountId ?? null}::uuid)`;
+  const r = rows[0];
+  const n = (v: bigint | number | null | undefined) => Number(v ?? 0);
+  const total = n(r?.total), totalSat = n(r?.totalSatang);
+  const confirmed = n(r?.confirmed), confirmedSat = n(r?.confirmedSatang);
+  const suggested = n(r?.suggested), suggestedSat = n(r?.suggestedSatang);
+  const excluded = n(r?.excluded), excludedSat = n(r?.excludedSatang);
+  const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
+  const handledSat = confirmedSat + excludedSat + suggestedSat;
+  const handledCnt = confirmed + excluded + suggested;
+  return {
+    total, totalSatang: totalSat,
+    unmatched: n(r?.unmatched), unmatchedSatang: n(r?.unmatchedSatang),
+    suggested, suggestedSatang: suggestedSat,
+    confirmed, confirmedSatang: confirmedSat,
+    excluded, excludedSatang: excludedSat,
+    inCount: n(r?.inCount), inSatang: n(r?.inSatang),
+    outCount: n(r?.outCount), outSatang: n(r?.outSatang),
+    confirmedPctSatang: pct(confirmedSat, totalSat), confirmedPctCount: pct(confirmed, total),
+    handledPctSatang: pct(handledSat, totalSat), handledPctCount: pct(handledCnt, total),
+  };
+}

@@ -6,7 +6,9 @@ import { requireRole } from "@/lib/auth/session";
 import { resolveScope } from "../../../_scope";
 import { ledgerBankReconV1 } from "@/lib/ledger/flags";
 import { listBookEntries, listBankMovements, listMatchGroups } from "@/lib/ledger/bank-reconcile-board";
+import { reconcileCoverage } from "@/lib/ledger/recon-controls";
 import { ReconcileBoard } from "../../_components/ReconcileBoard";
+import { CoverageCard } from "../../_components/CoverageCard";
 import { ReconcileMonthRange } from "./_components/ReconcileMonthRange";
 import { BankLogo } from "@/components/ledger/BankLogo";
 import { prisma } from "@/lib/prisma";
@@ -61,10 +63,11 @@ export default async function ReconcilePage({
     monthOptions.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
   }
 
-  const [bookEntries, bankMovements, suggestedGroups] = await Promise.all([
+  const [bookEntries, bankMovements, suggestedGroups, coverage] = await Promise.all([
     listBookEntries({ orgId, companyId, bankAccountId: accountId, periodStart, periodEnd }),
     listBankMovements({ orgId, companyId, bankAccountId: accountId, periodStart, periodEnd }),
     listMatchGroups({ orgId, companyId, bankAccountId: accountId, status: "suggested" }),
+    reconcileCoverage({ orgId, companyId, bankAccountId: accountId, periodStart, periodEnd }),
   ]);
 
   const cp = `company=${companyId}`;
@@ -93,6 +96,14 @@ export default async function ReconcilePage({
           </Link>
           <ReconcileMonthRange from={periodFrom} to={periodTo} options={monthOptions} />
         </div>
+      </div>
+
+      <div className="mb-4">
+        <CoverageCard
+          coverage={coverage}
+          title="ความคืบหน้าการกระทบยอด"
+          subtitle={periodFrom === periodTo ? periodFrom : `${periodFrom} – ${periodTo}`}
+        />
       </div>
 
       <ReconcileBoard

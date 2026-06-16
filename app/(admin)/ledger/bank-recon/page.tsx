@@ -10,6 +10,8 @@ import { resolveScope } from "../_scope";
 import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
 import { ledgerBankReconV1, ledgerRevenueGlV1 } from "@/lib/ledger/flags";
 import { listBankAccountsWithStatus } from "@/lib/ledger/bank-statement-reconcile";
+import { reconcileCoverage } from "@/lib/ledger/recon-controls";
+import { CoverageCard } from "./_components/CoverageCard";
 import { BankAccountStatusIcon } from "./_components/ConfidencePill";
 import { SmartImportButton } from "./_components/SmartImportButton";
 import { BANK_LABELS } from "@/lib/ledger/bank-adapters/types";
@@ -78,6 +80,13 @@ export default async function BankReconHubPage({
     orgId: scope.orgId,
     companyId: scope.companyId,
     period,
+  });
+
+  // ภาพรวมทุกบัญชี: กระทบยอดไปกี่ % (count + ฿) ของเดือนนี้
+  const periodStart = `${period}-01`;
+  const periodEnd = new Date(year, month, 0).toISOString().slice(0, 10);
+  const coverage = await reconcileCoverage({
+    orgId: scope.orgId, companyId: scope.companyId, periodStart, periodEnd,
   });
 
   // Month navigation
@@ -177,6 +186,13 @@ export default async function BankReconHubPage({
           </div>
         )}
       </section>
+
+      {/* ── ภาพรวมการกระทบยอดทุกบัญชี (กี่ % · count + ฿) ───────────────────────── */}
+      {accounts.length > 0 && (
+        <div className="mb-5">
+          <CoverageCard coverage={coverage} title="กระทบยอดไปกี่ % — ทุกบัญชีรวมกัน" subtitle={periodLabel} />
+        </div>
+      )}
 
       {/* ── Workspace links: คลัง · คำขออนุมัติ · โยกเงิน · รายการพิเศษ ──────────── */}
       <div className="mb-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
