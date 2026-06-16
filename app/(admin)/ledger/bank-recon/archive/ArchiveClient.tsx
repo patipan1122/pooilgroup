@@ -15,11 +15,15 @@ import {
   ArrowUpRight,
   Landmark,
   Info,
+  CheckSquare,
+  Square,
+  X,
 } from "lucide-react";
 import type { ArchiveGroup } from "@/lib/ledger/recon-controls";
 import {
   revertConfirmedGroupAction,
   requestRevertAction,
+  bulkRevertGroupsAction,
 } from "../_recon-controls-actions";
 import { Money, thDate, StatusBadge, ReasonModal, FeedbackBar } from "../_components/recon-controls-ui";
 
@@ -40,6 +44,11 @@ export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Prop
   const [target, setTarget] = useState<ArchiveGroup | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: "ok" | "error"; message: string } | null>(null);
+  // เลือกหลายรายการเพื่อย้อนพร้อมกัน (เฉพาะ super_admin)
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const toggleOne = (id: string) =>
+    setSelected((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   // submit search → server re-query (keeps deep-linkable ?q=)
   function submitSearch(e: React.FormEvent) {
@@ -83,6 +92,29 @@ export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Prop
     }
   }
 
+  // เลือกได้เฉพาะรายการที่ "ยืนยันอยู่" (ย้อนได้) — ที่ย้อนแล้วเลือกไม่ได้
+  const confirmedVisible = visible.filter((g) => g.status === "confirmed");
+  const allSelected = confirmedVisible.length > 0 && confirmedVisible.every((g) => selected.has(g.id));
+  const toggleAll = () =>
+    setSelected(allSelected ? new Set() : new Set(confirmedVisible.map((g) => g.id)));
+
+  async function doBulkRevert(reason: string) {
+    setBusy(true);
+    const res = await bulkRevertGroupsAction({ groupIds: [...selected], reason });
+    setBusy(false);
+    setBulkOpen(false);
+    if (res.ok) {
+      setFeedback({
+        kind: "ok",
+        message: `ย้อน ${res.reverted} รายการแล้ว${res.skipped ? ` · ข้าม ${res.skipped} (ล็อกงวด/ย้อนไม่ได้)` : ""} — กลับไปรอจับคู่ใหม่ + ปลดสีรุ้ง CashHub`,
+      });
+      setSelected(new Set());
+      startTransition(() => router.refresh());
+    } else {
+      setFeedback({ kind: "error", message: res.error ?? "ทำรายการไม่สำเร็จ" });
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* search */}
@@ -117,10 +149,22 @@ export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Prop
         <FeedbackBar kind={feedback.kind} message={feedback.message} onDismiss={() => setFeedback(null)} />
       )}
 
-      {/* result count */}
-      <p className="text-xs text-zinc-400">
-        {visible.length} รายการ{q ? ` (กรองจากทั้งหมด ${groups.length})` : ""}
-      </p>
+      {/* result count + เลือกทั้งหมด (super_admin) */}
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-xs text-zinc-400">
+          {visible.length} รายการ{q ? ` (กรองจากทั้งหมด ${groups.length})` : ""}
+        </p>
+        {isSuper && confirmedVisible.length > 0 && (
+          <button
+            type="button"
+            onClick={toggleAll}
+            className="press inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-brand-300 sm:min-h-0"
+          >
+            {allSelected ? <CheckSquare size={14} className="text-brand-600" /> : <Square size={14} />}
+            {allSelected ? "ยกเลิกเลือกทั้งหมด" : `เลือกทั้งหมด (${confirmedVisible.length})`}
+          </button>
+        )}
+      </div>
 
       {/* list */}
       {visible.length === 0 ? (
@@ -141,25 +185,58 @@ export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Prop
                 setTarget(g);
               }}
               disabled={pending}
+              selectable={isSuper && g.status === "confirmed"}
+              checked={selected.has(g.id)}
+              onToggle={() => toggleOne(g.id)}
             />
           ))}
         </ul>
       )}
 
+      {/* แถบล่าง: เลือกหลายรายการแล้วย้อนพร้อมกัน (เฉพาะ super_admin) */}
+      {isSuper && selected.size > 0 && (
+        <div className="safe-bottom sticky bottom-3 z-10 flex flex-wrap items-center gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-lg">
+          <span className="text-sm text-zinc-700">เลือก <b className="tabular-num">{selected.size}</b> รายการ</span>
+          <div className="ml-auto flex gap-2">
+            <button
+              type="button"
+              onClick={() => setSelected(new Set())}
+              className="press inline-flex min-h-11 items-center gap-1 rounded-lg border border-zinc-200 px-3 text-sm text-zinc-500 hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-brand-300 sm:min-h-0 sm:py-2"
+            >
+              <X size={14} /> ล้าง
+            </button>
+            <button
+              type="button"
+              disabled={pending || busy}
+              onClick={() => { setFeedback(null); setBulkOpen(true); }}
+              className="press inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-rose-300 sm:min-h-0 sm:py-2"
+            >
+              <Undo2 size={15} /> ย้อนกลับที่เลือก ({selected.size})
+            </button>
+          </div>
+        </div>
+      )}
+
       <ReasonModal
-        open={!!target}
+        open={!!target || bulkOpen}
         busy={busy}
-        title={isSuper ? "ย้อนรายการที่ยืนยันแล้ว" : "ขออนุมัติแก้รายการ"}
-        description={
-          isSuper
-            ? "ระบุเหตุผลที่ย้อน — รายการจะกลับไปรอจับคู่ใหม่ทันที (และปลดสีรุ้ง CashHub)"
-            : "ระบุเหตุผล — จะส่งให้ super admin อนุมัติก่อนจึงย้อนได้"
+        title={
+          bulkOpen
+            ? `ย้อนกลับ ${selected.size} รายการที่เลือก`
+            : isSuper ? "ย้อนรายการที่ยืนยันแล้ว" : "ขออนุมัติแก้รายการ"
         }
-        confirmLabel={isSuper ? "ย้อนกลับ" : "ส่งคำขอ"}
-        confirmTone={isSuper ? "rose" : "brand"}
+        description={
+          bulkOpen
+            ? `ระบุเหตุผล — จะย้อน ${selected.size} รายการที่เลือกพร้อมกัน (กลับไปรอจับคู่ใหม่ + ปลดสีรุ้ง CashHub) · ที่ล็อกงวดจะถูกข้าม`
+            : isSuper
+              ? "ระบุเหตุผลที่ย้อน — รายการจะกลับไปรอจับคู่ใหม่ทันที (และปลดสีรุ้ง CashHub)"
+              : "ระบุเหตุผล — จะส่งให้ super admin อนุมัติก่อนจึงย้อนได้"
+        }
+        confirmLabel={bulkOpen ? `ย้อน ${selected.size} รายการ` : isSuper ? "ย้อนกลับ" : "ส่งคำขอ"}
+        confirmTone={bulkOpen || isSuper ? "rose" : "brand"}
         placeholder="เช่น จับคู่ผิดบัญชี / ยอดไม่ตรง / ต้องแก้ใบ..."
-        onConfirm={doRevert}
-        onClose={() => setTarget(null)}
+        onConfirm={bulkOpen ? doBulkRevert : doRevert}
+        onClose={() => { setTarget(null); setBulkOpen(false); }}
       />
     </div>
   );
@@ -170,20 +247,35 @@ function ArchiveCard({
   isSuper,
   onRevert,
   disabled,
+  selectable,
+  checked,
+  onToggle,
 }: {
   group: ArchiveGroup;
   isSuper: boolean;
   onRevert: () => void;
   disabled: boolean;
+  selectable: boolean;
+  checked: boolean;
+  onToggle: () => void;
 }) {
   const bookItems = g.items.filter((i) => i.kind === "book");
   const bankItems = g.items.filter((i) => i.kind === "bank");
   const hasDelta = g.deltaSatang !== 0;
 
   return (
-    <li className="overflow-hidden rounded-2xl border border-zinc-100 bg-white shadow-soft">
+    <li className={`overflow-hidden rounded-2xl border bg-white shadow-soft ${checked ? "border-rose-300 ring-1 ring-rose-200" : "border-zinc-100"}`}>
       {/* header */}
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-100 px-4 py-3">
+        {selectable && (
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={onToggle}
+            aria-label="เลือกรายการนี้เพื่อย้อนกลับ"
+            className="size-4 shrink-0 cursor-pointer rounded border-zinc-300 text-rose-600 focus-visible:ring-2 focus-visible:ring-rose-300"
+          />
+        )}
         <StatusBadge status={g.status} />
         <span className="text-sm font-medium text-zinc-700">{g.accountLabel ?? "ทุกบัญชี"}</span>
         {g.matchType === "transfer" && (

@@ -217,6 +217,28 @@ export async function revertConfirmedGroupAction(params: { groupId: string; reas
   return { ok: true };
 }
 
+// ย้อนหลายรายการที่เลือกพร้อมกัน (คลัง) — เฉพาะ super_admin · เหตุผลเดียวใช้ทั้งชุด.
+// แต่ละกลุ่มย้อนแบบ atomic ของตัวเอง (revertGroup) → ถ้าบางตัวล็อก/ย้อนไม่ได้ ก็ข้ามไปนับ skipped
+// (ไม่ล้มทั้งชุด). เก็บ audit สรุปยอด.
+export async function bulkRevertGroupsAction(params: { groupIds: string[]; reason: string }): Promise<{ ok: boolean; reverted: number; skipped: number; error?: string }> {
+  const session = await requireRole("super_admin", "org_admin", "admin");
+  const orgId = session.user.org_id;
+  if (session.user.role !== "super_admin") return { ok: false, reverted: 0, skipped: 0, error: "ย้อนหลายรายการพร้อมกันได้เฉพาะ super admin — รายการอื่นกด ‘ขออนุมัติแก้’ ทีละใบ" };
+  const reason = params.reason.trim();
+  if (reason.length < 3) return { ok: false, reverted: 0, skipped: 0, error: "กรุณาระบุเหตุผลที่ย้อนรายการ" };
+  const ids = [...new Set(params.groupIds)].filter(Boolean);
+  if (!ids.length) return { ok: true, reverted: 0, skipped: 0 };
+  let reverted = 0, skipped = 0;
+  for (const groupId of ids) {
+    const g = await loadGroup(orgId, groupId);
+    if (!g || g.status !== "confirmed") { skipped++; continue; }   // ย้อนได้เฉพาะที่ยืนยันอยู่
+    const r = await revertGroup({ orgId, groupId, userId: session.user.id, reason });
+    if (r.ok) reverted++; else skipped++;                           // ล็อกงวด ฯลฯ → ข้าม
+  }
+  await safeAudit({ orgId, userId: session.user.id, action: "LEDGER_RECON_GROUP_REVERTED", resourceId: ids[0], diff: { new: { via: "super_bulk", reverted, skipped, reason } } });
+  return { ok: true, reverted, skipped };
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // 3. โยกเงิน — internal transfer (pair 2 legs across accounts)
 // ════════════════════════════════════════════════════════════════════════════
