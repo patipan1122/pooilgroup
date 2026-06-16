@@ -35,6 +35,7 @@ function clearOauthCookies(res: NextResponse) {
   res.cookies.delete("line_oauth_next");
   res.cookies.delete("line_oauth_module");
   res.cookies.delete("line_oauth_claim");
+  res.cookies.delete("line_oauth_invite");
 }
 
 export async function GET(req: NextRequest) {
@@ -52,6 +53,10 @@ export async function GET(req: NextRequest) {
   // LedgerLine claim/invite token (LIFF-SDK-free bind path for iOS). When present we
   // bind the verified login sub via /api/ledger/invite/accept instead of logging in.
   const cookieClaim = req.cookies.get("line_oauth_claim")?.value;
+  // ChairOps onboarding invite token (set by line-start when the LIFF bootstrap
+  // fell back to OAuth). Forwarded to line-login so it binds the maid's verified
+  // LINE id to the invited user — the OAuth path previously dropped it.
+  const cookieInvite = req.cookies.get("line_oauth_invite")?.value;
 
   function fail(reason: string, detail = ""): NextResponse {
     const u = new URL(`${baseUrl}/auth/line-error`);
@@ -147,7 +152,7 @@ export async function GET(req: NextRequest) {
         "Content-Type": "application/json",
         "x-line-internal": "1",
       },
-      body: JSON.stringify({ idToken, redirectTo: cookieClaim ? "/auth/line-claimed" : cookieNext, module: lineModule }),
+      body: JSON.stringify({ idToken, redirectTo: cookieClaim ? "/auth/line-claimed" : cookieNext, module: lineModule, invite: cookieInvite || undefined }),
     });
     loginJson = (await loginRes.json()) as LoginResult;
     if (!loginRes.ok) {

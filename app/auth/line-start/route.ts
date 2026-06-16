@@ -32,6 +32,9 @@ export async function GET(req: NextRequest) {
   // Optional LedgerLine claim/invite token — when present, the callback binds the
   // verified login sub (the LIFF-SDK-free path for iOS where liff.init() "Load failed").
   const claim = (url.searchParams.get("claim") ?? "").trim().slice(0, 512);
+  // Optional ChairOps onboarding invite token — carried from the LIFF bootstrap's
+  // OAuth fallback so /auth/line-callback can bind the maid to the invited user.
+  const invite = (url.searchParams.get("invite") ?? "").trim().slice(0, 512);
   const channelId = loginChannelIdForModule(lineModule);
   if (!channelId) {
     return NextResponse.json(
@@ -77,5 +80,6 @@ export async function GET(req: NextRequest) {
   // the code with the SAME channel's secret + client_id.
   res.cookies.set("line_oauth_module", lineModule, cookieOpts);
   if (claim) res.cookies.set("line_oauth_claim", claim, cookieOpts);
+  if (invite) res.cookies.set("line_oauth_invite", invite, cookieOpts);
   return res;
 }

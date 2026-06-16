@@ -731,13 +731,17 @@ export async function createMaidInvite(
       return row;
     });
 
-    // F1: ?openExternalBrowser=1 forces LINE iOS to open Safari (not WKWebView).
-    // WKWebView drops httpOnly cookies → session lost on iPhone.
-    // See [[liff-magic-link-ios-webview-cookie-drop]].
+    // Keep the link INSIDE the LINE in-app browser (NO openExternalBrowser).
+    // openExternalBrowser=1 forced Android to open the link in external Chrome,
+    // where LIFF isn't logged in → liff.init failed → OAuth fallback that dropped
+    // the invite → maid bounced to /login (2026-06-16). The iOS WKWebView
+    // httpOnly-cookie drop it originally worked around is now handled server-side:
+    // /auth/liff-complete posts tokens to /api/auth/set-session which writes the
+    // session via Set-Cookie (WKWebView-safe). The OAuth fallback also now carries
+    // the invite. See memory chairops-invite-link-liff-endpoint-url-2026-06-16.
     const link =
       `https://liff.line.me/${liffId}/chairops` +
-      `?openExternalBrowser=1` +
-      `&invite=${encodeURIComponent(token)}` +
+      `?invite=${encodeURIComponent(token)}` +
       `&next=${encodeURIComponent("/chairops/m")}`;
 
     revalidatePath("/chairops/users");
@@ -895,12 +899,13 @@ export async function createUserInvite(
 
     // non-maids → หน้าออฟฟิศ /chairops · maids → mini-app /chairops/m
     const next = isMaid ? "/chairops/m" : "/chairops";
-    // F1: ?openExternalBrowser=1 บังคับ LINE iOS เปิด Safari (ไม่ใช่ WKWebView)
-    // ที่ทิ้ง httpOnly cookie. See [[liff-magic-link-ios-webview-cookie-drop]].
+    // อยู่ในเบราว์เซอร์ของ LINE (ไม่มี openExternalBrowser) — Android เปิด Chrome
+    // ภายนอกที่ LIFF ไม่ได้ล็อกอิน → liff.init fail → OAuth fallback ทำ invite หล่น
+    // → เด้ง /login. iOS cookie จัดการฝั่ง server (set-session Set-Cookie) แล้ว ·
+    // OAuth fallback ส่ง invite ต่อแล้ว. ดู memory chairops-invite-link-liff-endpoint-url-2026-06-16.
     const link =
       `https://liff.line.me/${liffId}/chairops` +
-      `?openExternalBrowser=1` +
-      `&invite=${encodeURIComponent(token)}` +
+      `?invite=${encodeURIComponent(token)}` +
       `&next=${encodeURIComponent(next)}`;
 
     revalidatePath("/chairops/users");

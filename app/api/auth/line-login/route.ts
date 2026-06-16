@@ -246,6 +246,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ข้อมูล LINE ไม่ครบ" }, { status: 400 });
   }
   const { idToken, displayName, invite } = parsed.data;
+  // TEMP diagnostic (chairops invite bounce 2026-06-16) — confirms whether the
+  // invite token actually reaches line-login and via which path. Remove once the
+  // maid invite flow is verified working.
+  console.error(
+    "[DIAG-INVITE] line-login entry " +
+      JSON.stringify({
+        hasInvite: !!invite,
+        internal: req.headers.get("x-line-internal") === "1",
+        redirectTo: parsed.data.redirectTo ?? null,
+        module: parsed.data.module ?? null,
+      }),
+  );
   // F4: may be overridden to /chairops/m/onboarding for un-onboarded maids
   let redirectTo = parsed.data.redirectTo;
   const lineModule = asLineModule(parsed.data.module);

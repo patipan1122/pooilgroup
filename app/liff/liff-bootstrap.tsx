@@ -130,6 +130,13 @@ export function LiffBootstrap({
       const u = new URL("/auth/line-start", window.location.href);
       u.searchParams.set("next", next);
       if (lineModule !== "default") u.searchParams.set("module", lineModule);
+      // Carry the invite token through the OAuth fallback. Without this, a maid
+      // whose liff.init() failed (e.g. Android opening the link in external
+      // Chrome via openExternalBrowser=1, where LIFF isn't logged in) takes the
+      // OAuth path, which then logged in WITHOUT binding the invite → no
+      // ChairOps account matched → no session → bounced to /login with no error.
+      // See memory chairops-invite-link-liff-endpoint-url-2026-06-16.
+      if (invite) u.searchParams.set("invite", invite);
       window.location.replace(u.toString());
       return true;
     };
