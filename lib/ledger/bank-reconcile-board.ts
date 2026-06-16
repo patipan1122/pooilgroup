@@ -59,6 +59,12 @@ export interface MatchGroup {
     vendor: string | null;         // expense vendor
     detailLine: string | null;     // composed human detail
     bizDate: string | null;        // book-side date (entry/doc/paid date)
+    // ── ฝั่งธนาคาร: รายละเอียด statement ครบ (ใช้ไล่หาบรรทัดเป๊ะในแอปธนาคาร) ──
+    bankTxnType: string | null;    // ledger_bank_txn.description (ประเภทรายการธนาคาร)
+    bankChannel: string | null;    // ช่องทาง (Mobile / EDC / MYQR …)
+    bankRef1: string | null;       // เลขอ้างอิงในสเตทเมนต์
+    bankBalanceSatang: number | null; // ยอดคงเหลือหลังรายการ
+    bankValueDate: string | null;  // วันที่เงินเข้าจริง (value date)
   }[];
 }
 
@@ -174,6 +180,8 @@ export async function listMatchGroups(params: {
     bookId: string | null; bookDocNo: string | null; label: string; date: string | null; amountSatang: bigint;
     customerName: string | null; sourceType: string | null; paymentChannel: string | null;
     vendor: string | null; detailLine: string | null; bizDate: string | null;
+    bankTxnType: string | null; bankChannel: string | null; bankRef1: string | null;
+    bankBalanceSatang: bigint | null; bankValueDate: string | null;
   }[]>`
     SELECT mi.group_id::text as "groupId", mi.kind, mi.bank_txn_id::text as "bankTxnId",
            mi.book_type as "bookType", mi.book_id::text as "bookId", mi.book_doc_no as "bookDocNo",
@@ -197,7 +205,13 @@ export async function listMatchGroups(params: {
                 ELSE NULL END as "detailLine",
            CASE WHEN mi.book_type='revenue' THEN r.entry_date::text
                 WHEN mi.book_type='expense' THEN e.doc_date::text
-                ELSE NULL END as "bizDate"
+                ELSE NULL END as "bizDate",
+           -- ฝั่งธนาคาร: รายละเอียด statement ครบ (โชว์ทางขวาให้ไล่หาบรรทัดเป๊ะในแอปธนาคารได้)
+           CASE WHEN mi.kind='bank' THEN NULLIF(t.description,'') ELSE NULL END as "bankTxnType",
+           CASE WHEN mi.kind='bank' THEN NULLIF(t.channel,'')     ELSE NULL END as "bankChannel",
+           CASE WHEN mi.kind='bank' THEN NULLIF(t.ref1,'')        ELSE NULL END as "bankRef1",
+           CASE WHEN mi.kind='bank' THEN t.balance_satang         ELSE NULL END as "bankBalanceSatang",
+           CASE WHEN mi.kind='bank' THEN t.value_date::text       ELSE NULL END as "bankValueDate"
     FROM ledger_bank_match_item mi
     LEFT JOIN ledger_bank_txn t       ON t.id = mi.bank_txn_id
     LEFT JOIN ledger_revenue_entry r  ON mi.book_type='revenue' AND r.id = mi.book_id
@@ -214,6 +228,9 @@ export async function listMatchGroups(params: {
       bookId: i.bookId, bookDocNo: i.bookDocNo, label: i.label, date: i.date, amountSatang: Number(i.amountSatang),
       customerName: i.customerName, sourceType: i.sourceType, paymentChannel: i.paymentChannel,
       vendor: i.vendor, detailLine: i.detailLine, bizDate: i.bizDate,
+      bankTxnType: i.bankTxnType, bankChannel: i.bankChannel, bankRef1: i.bankRef1,
+      bankBalanceSatang: i.bankBalanceSatang == null ? null : Number(i.bankBalanceSatang),
+      bankValueDate: i.bankValueDate,
     })),
   }));
 }

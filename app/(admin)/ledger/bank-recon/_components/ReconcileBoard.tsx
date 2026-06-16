@@ -47,6 +47,9 @@ interface GroupItem {
   // richer human detail (so รอยืนยัน reads like the real IV)
   customerName: string | null; sourceType: string | null; paymentChannel: string | null;
   vendor: string | null; detailLine: string | null; bizDate: string | null;
+  // ฝั่งธนาคาร: รายละเอียด statement ครบ (โชว์ทางขวาให้ตรวจกับแอปธนาคารได้)
+  bankTxnType: string | null; bankChannel: string | null; bankRef1: string | null;
+  bankBalanceSatang: number | null; bankValueDate: string | null;
 }
 interface MatchGroup {
   id: string; status: string; matchKind: string; matchType: string;
@@ -1186,17 +1189,23 @@ function GroupSide({ title, items, accent }: { title: string; items: GroupItem[]
 }
 
 // แสดงรายละเอียดเต็มแบบเดียวกับใบจริง (IV-style): บรรทัดหลัก = ชื่อ/ผู้ขาย/เลขเอกสาร · บรรทัดรอง = ธุรกิจ · ป้ายช่องทาง · รายละเอียด · วันที่
+// ฝั่งธนาคารโชว์ statement ครบ: ชื่อคู่ค้า · ประเภทรายการ · ช่องทาง · วันที่ (+ value date ถ้าต่าง) · เลขอ้างอิง · ยอดคงเหลือ
 function GroupItemRow({ i }: { i: GroupItem }) {
   const credit = i.amountSatang > 0;
+  const isBank = i.kind === "bank";
   // บรรทัดหลัก
-  const primary = i.kind === "bank"
+  const primary = isBank
     ? i.label
     : (i.customerName || i.vendor || i.label || i.bookDocNo || "—");
-  // ป้ายช่องทาง (revenue) — ใช้สีเดียวกับ Row ในแท็บจับคู่
-  const ch = i.kind === "book" && i.bookType === "revenue" ? i.paymentChannel : null;
-  // ส่วนต่อท้ายบรรทัดรอง (ไม่รวม channel ที่โชว์เป็นป้ายแล้ว)
-  const bits = i.kind === "bank"
-    ? (i.date ? [i.date] : [])
+  // ป้ายช่องทาง — revenue ใช้สีตามประเภท (เงินสด/QR/บัตร) · ธนาคารใช้ช่องทางจริงจาก statement (Mobile/EDC/MYQR) โทนกลาง
+  const ch = !isBank && i.bookType === "revenue" ? i.paymentChannel : null;
+  // บรรทัดรอง
+  const bits = isBank
+    ? [
+        i.bankTxnType && i.bankTxnType !== primary ? i.bankTxnType : null,
+        i.date,
+        i.bankValueDate && i.bankValueDate !== i.date ? `เงินเข้า ${i.bankValueDate}` : null,
+      ].filter((b): b is string => Boolean(b))
     : [
         i.bookType === "revenue" && i.sourceType ? bizLabel(i.sourceType) : null,
         i.bookType === "expense" && i.vendor && i.vendor !== primary ? i.vendor : null,
@@ -1204,6 +1213,13 @@ function GroupItemRow({ i }: { i: GroupItem }) {
         i.bizDate,
       ].filter((b): b is string => Boolean(b));
   const secondary = bits.join(" · ");
+  // บรรทัดอ้างอิง (ฝั่งธนาคารเท่านั้น) — เลขอ้างอิง + ยอดคงเหลือ คือกุญแจไล่หาบรรทัดเป๊ะในแอปธนาคาร
+  const bankMeta = isBank
+    ? [
+        i.bankRef1 ? `อ้างอิง ${i.bankRef1}` : null,
+        i.bankBalanceSatang != null ? `คงเหลือ ฿${baht(i.bankBalanceSatang)}` : null,
+      ].filter((b): b is string => Boolean(b))
+    : [];
   return (
     <div className="rounded-lg bg-zinc-50 px-2.5 py-1.5">
       <div className="flex items-start justify-between gap-2">
@@ -1211,8 +1227,10 @@ function GroupItemRow({ i }: { i: GroupItem }) {
           <div className="flex flex-wrap items-center gap-1.5">
             <p className="min-w-0 truncate text-xs font-medium text-zinc-700">{primary}</p>
             {ch && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${CHANNEL_STYLE[ch] ?? "bg-zinc-100 text-zinc-500"}`}>{chLabel(ch)}</span>}
+            {isBank && i.bankChannel && <span className="shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500">{i.bankChannel}</span>}
           </div>
           {secondary && <p className="truncate text-[11px] text-zinc-400">{secondary}</p>}
+          {bankMeta.length > 0 && <p className="truncate text-[11px] tabular-num text-zinc-400">{bankMeta.join("  ·  ")}</p>}
         </div>
         <span className={`shrink-0 text-xs font-medium tabular-num ${credit ? "text-emerald-600" : "text-rose-600"}`}>
           {credit ? "+" : "−"}฿{baht(i.amountSatang)}
