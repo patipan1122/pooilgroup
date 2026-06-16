@@ -491,7 +491,9 @@ export function AdminShell({
             on mobile for the hub audience, the fixed bottom-nav (~64px). */}
         <main
           className={cn(
-            "flex-1 min-w-0",
+            // flex-col so a full-height page (เช่น กล่องแชท) ใช้ flex-1 ฟิลพื้นที่จริง
+            // ที่เหลือใต้ topnav + แถบฟ้ารออนุมัติได้เอง (ไม่ต้องเดา 100dvh-Nrem ตายตัว)
+            "flex-1 min-w-0 flex flex-col",
             showHubNav ? "pb-24 lg:pb-20" : "pb-20",
           )}
         >

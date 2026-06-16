@@ -105,7 +105,7 @@ export default async function InboxPage({
   const convLabels = conv ? conv.labels.map((l) => l.label) : [];
 
   return (
-    <div className="h-full min-h-0 overflow-hidden -mx-4 sm:-mx-6 lg:mx-0">
+    <div className="flex-1 min-h-0 overflow-hidden -mx-4 sm:-mx-6 lg:mx-0">
       <div className="lg:grid lg:grid-cols-[360px_1fr] h-full min-h-0">
         {/* LIST */}
         <div className={cn("lg:border-r border-border overflow-y-auto min-h-0 bg-surface", conv && "hidden lg:block")}>
