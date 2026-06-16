@@ -19,6 +19,7 @@
 //   4) สถานะบัญชี (activate / deactivate)
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,7 @@ import {
   assignBranch,
   bindLineUserId,
   deactivateUser,
+  deleteChairopsUser,
   reactivateUser,
   updateDisplayName,
   updateUserRole,
@@ -54,6 +56,8 @@ interface Props {
   canManage: boolean;
   assignableRoles: ChairopsUserRole[];
   branches: { id: string; name: string }[];
+  /** Super Admin only — shows the irreversible "ลบทิ้ง" (hard delete) button. */
+  canHardDelete?: boolean;
 }
 
 export function UserDetailForm({
@@ -61,8 +65,11 @@ export function UserDetailForm({
   canManage,
   assignableRoles,
   branches,
+  canHardDelete = false,
 }: Props) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [role, setRole] = useState<ChairopsUserRole>(target.role);
   const [branchId, setBranchId] = useState<string>(
     target.primaryBranchId ?? "",
@@ -311,6 +318,44 @@ export function UserDetailForm({
           >
             เปิดใช้งานบัญชี
           </Button>
+        )}
+
+        {/* Hard delete — Super Admin only, irreversible. Two-tap confirm. Used to
+            clear junk/test accounts; real accounts with work history are blocked
+            server-side (FK Restrict → "ใช้ปิดบัญชีแทน"). */}
+        {canHardDelete && canManage && (
+          <div className="mt-3 border-t border-zinc-100 pt-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isPending}
+              loading={isPending}
+              className="text-rose-700 ring-rose-200 hover:bg-rose-50"
+              onClick={() => {
+                if (!confirmDelete) {
+                  setConfirmDelete(true);
+                  return;
+                }
+                startTransition(async () => {
+                  const r = await deleteChairopsUser(target.id);
+                  if (r.ok) {
+                    toast.success("ลบบัญชีถาวรแล้ว");
+                    router.push("/chairops/users");
+                    router.refresh();
+                  } else {
+                    toast.error(r.error ?? "ลบไม่สำเร็จ");
+                    setConfirmDelete(false);
+                  }
+                });
+              }}
+            >
+              {confirmDelete ? "⚠️ กดอีกครั้งเพื่อลบถาวร" : "ลบบัญชีถาวร (ลบทิ้ง)"}
+            </Button>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              ลบถาวร · เฉพาะ Super Admin · ใช้กับบัญชีขยะ/ทดสอบ · บัญชีที่มีประวัติงานจริงลบไม่ได้ (ใช้ปิดบัญชีแทน)
+            </p>
+          </div>
         )}
       </Section>
     </div>

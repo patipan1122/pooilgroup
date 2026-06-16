@@ -170,6 +170,7 @@ export default async function UsersListPage({
         user={selectedUser}
         actor={session.user}
         branches={branches}
+        canHardDelete={session.poolUser.role === "super_admin"}
         branchName={selectedUser.primaryBranchId ? branchById.get(selectedUser.primaryBranchId) : undefined}
       />
     );

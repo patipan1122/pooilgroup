@@ -44,11 +44,13 @@ export function UserPanel({
   actor,
   branches,
   branchName,
+  canHardDelete = false,
 }: {
   user: ChairopsUser;
   actor: Actor;
   branches: ReadonlyArray<Branch>;
   branchName?: string;
+  canHardDelete?: boolean;
 }) {
   const ROLE_LABEL: Record<ChairopsUserRole, string> = {
     ADMIN: "แอดมิน", CEO: "CEO", MANAGER: "ผู้จัดการ",
@@ -95,6 +97,7 @@ export function UserPanel({
           lineUserId: user.lineUserId,
         }}
         canManage={manageable}
+        canHardDelete={canHardDelete}
         assignableRoles={assignableRoles}
         branches={branches as Branch[]}
       />

@@ -181,6 +181,7 @@ export default async function UserDetailPage({
             lineUserId: target.lineUserId,
           }}
           canManage={canManage}
+          canHardDelete={session.poolUser.role === "super_admin"}
           assignableRoles={assignableRoles}
           branches={branches}
         />

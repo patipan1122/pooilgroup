@@ -549,6 +549,76 @@ export async function reactivateUser(userId: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+// HARD DELETE (Super Admin only · irreversible). The office's normal tool is
+// "ปิดบัญชี" (deactivate, soft); this PERMANENTLY removes the row — for clearing
+// junk / test accounts that pile up in the list. A real account that has done
+// work (cash collections/deposits/reports/day-off/daily-pay) is protected by the
+// default onDelete: Restrict on those required FKs → the delete throws P2003 and
+// we tell the admin to deactivate instead. 2026-06-16 (CEO request).
+export async function deleteChairopsUser(userId: string): Promise<ActionResult> {
+  const session = await requireRole("ADMIN");
+  // Surface Pool super_admin only — never a ChairOps-only admin / org_admin.
+  if (session.poolUser.role !== "super_admin") {
+    return { ok: false, error: "เฉพาะ Super Admin เท่านั้นที่ลบบัญชีถาวรได้" };
+  }
+  const parsed = zUUID().safeParse(userId);
+  if (!parsed.success) return { ok: false, error: "userId ไม่ถูกต้อง" };
+
+  const target = await prisma.chairopsUser.findFirst({
+    where: { id: parsed.data, orgId: session.user.orgId },
+  });
+  if (!target) return { ok: false, error: "ไม่พบผู้ใช้" };
+  if (target.id === session.user.id) return { ok: false, error: "ห้ามลบบัญชีตัวเอง" };
+  if (!canManageUser(session.user, target)) {
+    return { ok: false, error: `คุณไม่มีสิทธิ์ลบผู้ใช้ระดับ ${target.role}` };
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      // The invite/assignment artifact (createMaidInvite always makes one) is the
+      // only dependent a junk account has — remove it so the row can go. ANY real
+      // work uses required FKs (onDelete: Restrict by default) → the delete below
+      // throws P2003 and the whole tx rolls back (nothing deleted).
+      await tx.chairopsMaidAssignment.deleteMany({ where: { userId: target.id } });
+      await tx.chairopsUser.delete({ where: { id: target.id } });
+      await writeAudit(
+        {
+          userId: session.user.id,
+          action: "user.delete",
+          entity: "User",
+          entityId: target.id,
+          oldValue: {
+            displayName: target.displayName,
+            role: target.role,
+            email: target.email,
+            primaryBranchId: target.primaryBranchId,
+          },
+        },
+        tx,
+      );
+    });
+  } catch (e) {
+    const code =
+      typeof e === "object" && e !== null && "code" in e
+        ? (e as { code?: unknown }).code
+        : undefined;
+    if (code === "P2003") {
+      return {
+        ok: false,
+        error: "บัญชีนี้มีประวัติงานจริง (เก็บเงิน/รายงาน) ลบถาวรไม่ได้ · ใช้ปิดบัญชีแทน",
+      };
+    }
+    return { ok: false, error: e instanceof Error ? e.message : "ลบไม่สำเร็จ" };
+  }
+
+  // Best-effort: drop the Supabase auth user too (no orphan login left behind).
+  if (target.authUserId) {
+    await adminClient().auth.admin.deleteUser(target.authUserId).catch(() => {});
+  }
+  revalidatePath("/chairops/users");
+  return { ok: true };
+}
+
 // Bind a verified LINE userId to a ChairOps user so they can auto-login via the
 // LIFF Mini App (see /api/auth/line-login ChairopsUser fallback). ADMIN-only
 // (SEC D-CO-M7: never let the client self-claim a LINE identity). Pass empty
