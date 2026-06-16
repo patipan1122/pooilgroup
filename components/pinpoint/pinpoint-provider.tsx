@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { buildSelector, buildElementMeta, elementText } from "@/lib/pinpoint/selector";
-import { captureBody, uploadCapture, isLikelyMobile } from "@/lib/pinpoint/capture";
+import { captureBody, uploadCapture, isLikelyMobile, lastCaptureError } from "@/lib/pinpoint/capture";
 import { PinpointDrawCanvas } from "@/components/pinpoint/pinpoint-draw-canvas";
 import type { ElementMeta, PinpointPriority } from "@/lib/pinpoint/types";
 
@@ -107,6 +107,7 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
   const shotCache = useRef<Map<string, string>>(new Map());
   const shotInFlight = useRef<Set<string>>(new Set());
   const trapRef = useRef<HTMLDivElement | null>(null);
+  const captureWarned = useRef(false); // เตือนปัญหาจับภาพครั้งเดียวพอ (ไม่สแปม)
 
   // ── start / resume / pause ──────────────────────────────────────────────
   const loadPins = useCallback(async (sid: string) => {
@@ -218,9 +219,22 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
       shotInFlight.current.add(url);
       try {
         const blob = await captureBody();
-        if (!blob) return;
+        if (!blob) {
+          // เดิมเงียบ → CEO ไม่รู้ว่าทำไมไม่มีภาพ. ตอนนี้บอกเหตุผล (ครั้งเดียว) · หมุดยังเซฟได้ปกติ
+          if (!captureWarned.current) {
+            captureWarned.current = true;
+            toast.error(`บันทึกภาพหน้าจอไม่สำเร็จ — ${lastCaptureError() ?? "ไม่ทราบสาเหตุ"} (หมุด/คอมเมนต์ยังบันทึกได้ปกติ)`);
+          }
+          return;
+        }
         const key = await uploadCapture(blob);
-        if (!key) return;
+        if (!key) {
+          if (!captureWarned.current) {
+            captureWarned.current = true;
+            toast.error("อัปโหลดภาพหน้าจอไม่สำเร็จ (หมุด/คอมเมนต์ยังบันทึกได้ปกติ)");
+          }
+          return;
+        }
         shotCache.current.set(url, key);
         // Backfill any already-saved pins on this page that lack a screenshot.
         setPins((prev) => {
