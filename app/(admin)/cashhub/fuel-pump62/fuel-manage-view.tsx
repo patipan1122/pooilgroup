@@ -49,7 +49,7 @@ const STATUS: Record<
   FuelRow["recon_status"],
   { label: string; cls: string; dot: string }
 > = {
-  ok: { label: "ปกติ", cls: "text-[var(--ch-text-2)]", dot: "bg-[var(--ch-ok)]" },
+  ok: { label: "✦ เป๊ะ", cls: "text-matched-iridescent font-bold", dot: "bg-[var(--ch-ok)]" },
   pending_deposit: {
     label: "รอเงินเข้า",
     cls: "text-[#a16207] bg-[var(--ch-pending,#fef9c3)]",

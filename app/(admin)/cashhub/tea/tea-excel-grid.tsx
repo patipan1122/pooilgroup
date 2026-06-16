@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { formatBaht } from "@/lib/utils/format";
 import type { SavedTeaDay } from "@/lib/cashhub/tea-data";
 import { TEA_CHANNELS, type TeaChannelCode } from "@/lib/cashhub/tea-channels";
+import { reconDiffKind } from "@/lib/cashhub/recon-diff";
 
 const cell = (v: number | null | undefined) =>
   v == null ? "" : Math.abs(v) < 0.005 ? "0" : formatBaht(v);
@@ -125,8 +126,8 @@ export function TeaExcelGrid({ branchLabel, branchCode, days, byDate, canSend }:
                   <td className={`px-2.5 py-1.5 text-right tabular-nums font-medium border-b border-zinc-100 ${noIv ? "bg-amber-50 text-amber-700" : "text-blue-700 bg-blue-50/40"}`}>
                     {iv != null ? cell(iv) : noIv ? "ยังไม่คีย์" : <span className="text-zinc-300">—</span>}
                   </td>
-                  <td className={`px-2.5 py-1.5 text-right tabular-nums border-b border-zinc-100 ${diffBad ? "bg-red-50 text-red-700 font-semibold" : noIv ? "bg-amber-50 text-amber-700" : "text-zinc-400"}`}>
-                    {diff != null ? (Math.abs(diff) < 0.5 ? "0" : cell(diff)) : noIv ? "⚪" : ""}
+                  <td className={`px-2.5 py-1.5 text-right tabular-nums border-b border-zinc-100 ${diff != null && reconDiffKind(diff) === "exact" ? "cell-matched-iridescent" : diffBad ? "bg-red-50 text-red-700 font-semibold" : noIv ? "bg-amber-50 text-amber-700" : "text-zinc-400"}`}>
+                    {diff != null ? (reconDiffKind(diff) === "exact" ? "เป๊ะ" : cell(diff)) : noIv ? "⚪" : ""}
                   </td>
                   <td className="px-2.5 py-1.5 text-center border-b border-zinc-100 whitespace-nowrap">
                     {iv != null && ivId ? (

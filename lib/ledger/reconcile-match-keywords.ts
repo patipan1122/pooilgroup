@@ -11,8 +11,9 @@
 //   - หน้าต่างวัน (dateWindowDays) — Grab/Shopee เข้า T+1 · เงินสดฝากช้าได้หลายวัน
 //   - ช่วงเผื่อยอด (ค่าธรรมเนียมแกว่ง) — name-lock กันจับผิด เลยเผื่อยอดได้กว้าง
 //
-// ตัวเลขค่าธรรมเนียมจริง (ดึง statement 0886 มาคำนวณ 2026-06-15):
-//   Grab = 16.0% เป๊ะ · Shopee ~13–16% แกว่ง · EDC 0.6–0.9% · QR/เงินสด 0%
+// ตัวเลขค่าธรรมเนียมจริง (verified จาก statement 0886 · เม.ย.–มิ.ย. 2026):
+//   Grab = 16.00% เป๊ะ (T+1) · Shopee = 16.05% เป๊ะ (= 15% + VAT 7% · แต่ฝากไม่ตรงวัน lag +1..+3) · EDC ~0.9% · QR/เงินสด 0%
+//   → Shopee ต้องเผื่อ "วัน" กว้าง (ฝากช้า) ไม่ใช่เผื่อ "ยอด" (ยอดสุทธิเป๊ะแล้วหลังตั้ง fee 16.05)
 
 export interface MatchConcept {
   key: string;             // grab · shopee · lineman · card · qr · cash · other
@@ -27,7 +28,7 @@ export interface MatchConcept {
 // concept มาตรฐาน (seed) — หน้าสมุดจำคีย์ (เฟสหน้า) จะเพิ่ม keyword ราย-บัญชีทับได้
 export const MATCH_CONCEPTS: Record<string, MatchConcept> = {
   grab:    { key: "grab",    label: "Grab",      keywords: ["แกร็บ", "grab"],                      requireName: true,  dateWindowDays: 2, tolAbsSatang: 1500, tolPct: 0.03 },
-  shopee:  { key: "shopee",  label: "ShopeeFood", keywords: ["ช้อปปี้เพย์", "ช้อปปี้", "shopee"],  requireName: true,  dateWindowDays: 2, tolAbsSatang: 2000, tolPct: 0.05 },
+  shopee:  { key: "shopee",  label: "ShopeeFood", keywords: ["ช้อปปี้เพย์", "ช้อปปี้", "shopee"],  requireName: true,  dateWindowDays: 5, tolAbsSatang: 2000, tolPct: 0.05 },
   lineman: { key: "lineman", label: "Lineman",   keywords: ["ไลน์แมน", "lineman"],                 requireName: true,  dateWindowDays: 3, tolAbsSatang: 1500, tolPct: 0.05 },
   card:    { key: "card",    label: "บัตร/EDC",   keywords: ["amz_sd", "ผ่อนชำระ"],                 requireName: true,  dateWindowDays: 2, tolAbsSatang: 500,  tolPct: 0.02 },
   qr:      { key: "qr",      label: "QR",        keywords: ["thai qr payment", "qr payment", "qr", "พร้อมเพย์", "promptpay"], requireName: true, dateWindowDays: 2, tolAbsSatang: 100, tolPct: 0 },

@@ -4,6 +4,7 @@
 // ครบทุกช่อง ("ไส้ใน") + แถวรวมท้ายตาราง + ไฮไลต์ช่องที่ผิด (ส่วนต่าง ≠ 0)
 import { formatBaht } from "@/lib/utils/format";
 import type { HotelDay, HotelShiftRow } from "@/lib/cashhub/hotel";
+import { reconDiffKind } from "@/lib/cashhub/recon-diff";
 
 const num = (v: number | null | undefined) =>
   v == null ? "" : Math.abs(v) < 0.005 ? "0" : formatBaht(v);
@@ -56,11 +57,19 @@ export function HotelExcelGrid({ days }: { days: HotelDay[] }) {
     if (!r) return <td key={c.label} className="px-1.5 py-1 text-right text-zinc-300" />;
     const v = c.get(r);
     const bad = c.diff && v != null && Math.abs(v) >= 1;
+    // ช่องส่วนต่าง (เกิน/ขาด · เงินสด/QR) ที่กระทบยอดเป๊ะ (|diff| ≤ ฿1) → สีรุ้ง
+    const exact = c.diff && v != null && reconDiffKind(v) === "exact";
     return (
       <td
         key={c.label}
         className={`px-1.5 py-1 text-right tabular-nums whitespace-nowrap ${
-          bad ? "bg-red-100 font-bold text-red-800" : c.f ? "bg-blue-50/40 text-zinc-700" : "text-zinc-700"
+          exact
+            ? "cell-matched-iridescent"
+            : bad
+              ? "bg-red-100 font-bold text-red-800"
+              : c.f
+                ? "bg-blue-50/40 text-zinc-700"
+                : "text-zinc-700"
         }`}
       >
         {num(v)}

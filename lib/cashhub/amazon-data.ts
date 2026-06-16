@@ -4,6 +4,7 @@ import type { adminClient } from "@/lib/db/server";
 import type { AmazonDayRow } from "./amazon-parse";
 import type { AmazonIv } from "./amazon-trcloud";
 import { SETTLEMENT_GROUPS } from "./amazon-settlement";
+import { prisma } from "@/lib/prisma";
 
 type Admin = ReturnType<typeof adminClient>;
 
@@ -245,11 +246,13 @@ export type ReconcileDayStatus = {
   n: number; // จำนวนรายการ (ช่องทาง) ที่ส่ง
   nMatched: number; // จำนวนที่แมตช์แล้ว
   matchedCvars: string[]; // cvar ของช่องทางที่แมตช์ยอดแล้ว (ทาสีรุ้งราย-คอลัมน์)
+  diffBaht: number | null; // ส่วนต่าง = เงินเข้าจริง(ธนาคาร) − ที่ควรได้(สุทธิ) · null = ยังไม่มีคู่แมตช์ · <0 = เงินขาด
 };
 export type ReconcileStatus = {
   byDate: Record<string, ReconcileDayStatus>;
   totalSent: number; // รวมทั้งเดือน (บาท)
   totalMatched: number;
+  totalDiff: number; // รวมส่วนต่างทั้งเดือน (บาท · <0 = ขาดสุทธิ)
 };
 
 /** อ่านสถานะ reconcile กลับมา: รายการ CASHHUB_AMAZON ใน ledger_revenue_entry แมตช์ไปเท่าไหร่ */
@@ -275,7 +278,7 @@ export async function loadReconcileStatus(
     const d = String(r.entry_date).slice(0, 10);
     const amt = (n(r.amount_satang) ?? 0) / 100;
     const matched = String(r.match_state) === "matched";
-    const cur = (byDate[d] ??= { sentSatang: 0, matchedSatang: 0, n: 0, nMatched: 0, matchedCvars: [] });
+    const cur = (byDate[d] ??= { sentSatang: 0, matchedSatang: 0, n: 0, nMatched: 0, matchedCvars: [], diffBaht: null });
     cur.sentSatang += amt;
     cur.n += 1;
     totalSent += amt;
@@ -289,10 +292,41 @@ export async function loadReconcileStatus(
         if (!cur.matchedCvars.includes(cv)) cur.matchedCvars.push(cv);
     }
   }
+  // ส่วนต่างจริง: เทียบยอดที่ส่ง (สุทธิ) กับเงินเข้าธนาคารที่จับคู่แล้ว → delta จาก match group
+  //   delta_satang = bank_total − book_total (ลบ = เงินขาด · บวก = เกิน) · นับ 1 ครั้ง/กลุ่ม กันซ้ำ N:M
+  let totalDiff = 0;
+  try {
+    const diffRows = await prisma.$queryRaw<{ d: string; delta: bigint | null }[]>`
+      SELECT to_char(x.entry_date,'YYYY-MM-DD') AS d, SUM(x.delta)::bigint AS delta
+      FROM (
+        SELECT g.id, MIN(re.entry_date) AS entry_date, MAX(g.delta_satang) AS delta
+        FROM ledger_bank_match_group g
+        JOIN ledger_bank_match_item mi
+          ON mi.group_id = g.id AND mi.kind = 'book' AND mi.book_type = 'revenue'
+        JOIN ledger_revenue_entry re ON re.id = mi.book_id
+        WHERE re.org_id = ${orgId}::uuid
+          AND re.source_type = 'CASHHUB_AMAZON'
+          AND re.source_ref LIKE ${`amz-${storeCode}-%`}
+          AND re.entry_date BETWEEN ${from}::date AND ${to}::date
+          AND g.status IN ('suggested', 'confirmed')
+        GROUP BY g.id
+      ) x
+      GROUP BY 1`;
+    for (const r of diffRows) {
+      const d = String(r.d).slice(0, 10);
+      const diff = Number(r.delta ?? 0) / 100;
+      const cur = (byDate[d] ??= { sentSatang: 0, matchedSatang: 0, n: 0, nMatched: 0, matchedCvars: [], diffBaht: null });
+      cur.diffBaht = diff;
+      totalDiff += diff;
+    }
+  } catch {
+    // ถ้าตาราง match group ยังไม่มี/อ่านไม่ได้ → ปล่อย diff เป็น null (ไม่ทำให้หน้าพัง)
+  }
   return {
     byDate,
     totalSent: Math.round(totalSent * 100) / 100,
     totalMatched: Math.round(totalMatched * 100) / 100,
+    totalDiff: Math.round(totalDiff * 100) / 100,
   };
 }
 

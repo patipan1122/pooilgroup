@@ -8,6 +8,7 @@ import {
   computeDaySettlement,
   type ChannelConfig,
 } from "@/lib/cashhub/amazon-settlement";
+import { reconDiffKind, reconDiffPillClass } from "@/lib/cashhub/recon-diff";
 
 const num = (v: number | null | undefined) =>
   v == null ? "" : Math.abs(v) < 0.005 ? "0" : formatBaht(v);
@@ -132,6 +133,17 @@ export function AmazonExcelGrid({
   const reconcileCell = (d: SavedAmazonDay) => {
     const rc = reconcile.byDate[d.sales_date];
     if (!rc || rc.n === 0) return <span className="text-zinc-300">—</span>; // ยังไม่ส่ง
+    // มีคู่แมตช์แล้ว → โชว์ "ส่วนต่าง" เงินเข้าจริง vs ที่ควรได้ (เป๊ะ=สีรุ้ง · ขาด=แดง · เกิน=ส้ม)
+    if (rc.diffBaht != null) {
+      const kind = reconDiffKind(rc.diffBaht);
+      if (kind === "exact")
+        return <span className="text-matched-iridescent font-bold">✦ เป๊ะ</span>;
+      return (
+        <span className={reconDiffPillClass(kind)}>
+          {kind === "short" ? "🔴 ขาด" : "🟠 เกิน"} ฿{formatBaht(Math.abs(rc.diffBaht))}
+        </span>
+      );
+    }
     if (rc.nMatched >= rc.n)
       return <span className="text-matched-iridescent">✦ แมตช์แล้ว</span>;
     if (rc.nMatched > 0)
@@ -263,7 +275,10 @@ export function AmazonExcelGrid({
         ก่อน VAT = ยอดขาย÷1.07 · VAT = ยอดขาย−ก่อน VAT · ส่วนต่าง = ยอด IV−ยอด POS (≠0
         = แดง) · ● = ต้องตรวจสอบ ·{" "}
         <span className="cell-matched-iridescent rounded px-1">ช่องสีรุ้ง</span> = กระทบยอดธนาคาร
-        +ยืนยันแล้ว (ช่องที่ยังไม่สีรุ้ง = ยังไม่แมตช์) · เลื่อนซ้าย-ขวาดูช่องทางครบทุกช่อง
+        +ยืนยันแล้ว (ช่องที่ยังไม่สีรุ้ง = ยังไม่แมตช์) · คอลัมน์ <b>กระทบยอด</b>:{" "}
+        <span className="text-matched-iridescent font-bold">✦ เป๊ะ</span> = เงินเข้าตรง (±฿1) ·{" "}
+        <span className="text-red-700 font-bold">🔴 ขาด</span> = เงินเข้าน้อยกว่าที่ควร ·{" "}
+        <span className="text-amber-700 font-bold">🟠 เกิน</span> = เงินเข้ามากกว่า · เลื่อนซ้าย-ขวาดูช่องทางครบทุกช่อง
       </p>
     </div>
   );
