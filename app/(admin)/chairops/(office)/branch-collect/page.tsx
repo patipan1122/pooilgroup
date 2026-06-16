@@ -78,7 +78,9 @@ export default async function BranchCollectPage() {
 
   return (
     <div className="chairops-scope">
-      <MasterDetailShell sidebar={null} noMeta>
+      <MasterDetailShell noSidebar noMeta>
+        {/* จำกัดความกว้าง + จัดกึ่งกลาง: บนจอกว้างการ์ดจะไม่ยืดเตอะ อ่านง่ายขึ้น */}
+        <div className="mx-auto w-full max-w-7xl">
         <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs font-semibold text-zinc-500">
@@ -113,7 +115,7 @@ export default async function BranchCollectPage() {
           </div>
         </header>
 
-        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="mb-4 grid grid-cols-2 gap-3 sm:max-w-2xl sm:grid-cols-3">
           <ChairopsKpiTile
             label="สาขาทั้งหมด"
             value={String(branches.length)}
@@ -135,7 +137,7 @@ export default async function BranchCollectPage() {
           )}
         </div>
 
-        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {branches.map((b) => {
             const maid = maidByBranch.get(b.id);
             const hasChairs = b._count.chairs > 0;
@@ -197,6 +199,7 @@ export default async function BranchCollectPage() {
             </CardBody>
           </Card>
         )}
+        </div>
       </MasterDetailShell>
     </div>
   );

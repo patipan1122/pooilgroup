@@ -34,12 +34,18 @@ export function MasterDetailShell({
   noSidebar = false,
   noMeta = false,
 }: MasterDetailShellProps) {
+  // กันพลาด: ถ้าไม่ได้ส่ง pane มาจริง (เช่น sidebar={null}) ให้ถือว่า "ซ่อน"
+  // ไม่งั้น grid ยังจองคอลัมน์ไว้ แต่ไม่มี aside มาเติม → เนื้อหาหลักไปกองใน
+  // คอลัมน์แคบ 260px (บั๊ก branch-collect บนเดสก์ท็อป 2026-06-16).
+  const hideSidebar = noSidebar || !sidebar;
+  const hideMeta = noMeta || !meta;
+
   // grid-cols: mobile = 1 · md = 220 + flex · lg = 260 + flex + 360
   const gridCols = (() => {
-    if (noSidebar && noMeta) return "lg:grid-cols-1";
-    if (noSidebar)
+    if (hideSidebar && hideMeta) return "lg:grid-cols-1";
+    if (hideSidebar)
       return "md:grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]";
-    if (noMeta)
+    if (hideMeta)
       return "md:grid-cols-[220px_minmax(0,1fr)] lg:grid-cols-[260px_minmax(0,1fr)]";
     return "md:grid-cols-[220px_minmax(0,1fr)] lg:grid-cols-[260px_minmax(0,1fr)_360px]";
   })();
@@ -52,7 +58,7 @@ export function MasterDetailShell({
         className,
       )}
     >
-      {sidebar && !noSidebar && (
+      {!hideSidebar && (
         <aside
           className={cn(
             "hidden border-r border-border bg-zinc-50 md:block",
@@ -68,7 +74,7 @@ export function MasterDetailShell({
         <div className="p-4 sm:p-6">{children}</div>
       </main>
 
-      {meta && !noMeta && (
+      {!hideMeta && (
         <aside
           className={cn(
             "hidden border-t border-border bg-zinc-50/60 lg:block lg:border-l lg:border-t-0",
