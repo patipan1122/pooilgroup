@@ -91,6 +91,34 @@ export async function fetchLineGroupMemberProfile(
   }
 }
 
+export type LineGroupSummary = { groupName: string | null; pictureUrl: string | null };
+
+// ดึงสรุปกลุ่ม (ชื่อกลุ่ม + รูปกลุ่ม) — best-effort
+// ⚠️ ใช้ได้เฉพาะ group เท่านั้น · room (แชทหลายคนชั่วคราว) ไม่มี endpoint นี้ → คืน null
+export async function fetchLineGroupSummary(
+  accessToken: string,
+  groupId: string,
+): Promise<LineGroupSummary | null> {
+  try {
+    const res = await fetch(`https://api.line.me/v2/bot/group/${groupId}/summary`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as { groupName?: string; pictureUrl?: string };
+    return { groupName: j.groupName ?? null, pictureUrl: j.pictureUrl ?? null };
+  } catch {
+    return null;
+  }
+}
+
+// LINE emoji (Sticon) แบบพรีเมียม — ในข้อความ text จะมาเป็น "ตัวแทน" + ข้อมูลแยกใน emojis[]
+export type LineEmoji = { index: number; length: number; productId: string; emojiId: string };
+
+// รูปจริงของ LINE emoji — โหลดจาก CDN เดียวกับสติกเกอร์ (android variant ตามที่ repo ใช้อยู่)
+export function lineEmojiImageUrl(productId: string, emojiId: string): string {
+  return `https://stickershop.line-scdn.net/sticonshop/v1/sticon/${productId}/android/${emojiId}.png`;
+}
+
 // แนบชื่อพนักงานนำหน้าข้อความที่ส่งออก (ตัวเลือก A ของ CEO) — ลูกค้าจะเห็นว่าใครคุย
 // เช่น "[นัท] ราคาวันนี้ดีเซล 37.35"
 export function prefixStaffName(text: string, staffName: string | null | undefined): string {
@@ -126,7 +154,9 @@ export function lineMessageToText(m: {
 }
 
 // metadata ของไฟล์แนบจาก LINE → เก็บลง Message.attachments (jsonb) เพื่อนำไปแสดงจริง
+// type "text" = ข้อความที่มี LINE emoji พรีเมียม → เก็บ emojis[] ไว้ render เป็นรูปจริง
 export type LineAttachment =
+  | { type: "text"; emojis: LineEmoji[] }
   | { type: "image" | "video" | "audio"; messageId: string | null }
   | { type: "sticker"; stickerId: string | null; packageId: string | null }
   | { type: "file"; messageId: string | null; fileName: string | null; fileSize: number | null }
@@ -143,8 +173,12 @@ export function lineMessageAttachment(m: {
   longitude?: number;
   title?: string;
   address?: string;
+  emojis?: LineEmoji[];
 }): LineAttachment | null {
   switch (m.type) {
+    case "text":
+      // เก็บเฉพาะตอนมี LINE emoji พรีเมียม — ข้อความล้วนไม่ต้องมี attachment
+      return m.emojis && m.emojis.length ? { type: "text", emojis: m.emojis } : null;
     case "image":
     case "video":
     case "audio":

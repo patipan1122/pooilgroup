@@ -4867,6 +4867,8 @@ model Conversation {
   externalUserId   String?     @map("external_user_id") // กรณี 1:1
   customerId       String?     @map("customer_id") @db.Uuid
   displayName      String?     @map("display_name")
+  pictureUrl       String?     @map("picture_url") // รูปกลุ่ม/โปรไฟล์ LINE (cache ครั้งแรก)
+  lineGroupName    String?     @map("line_group_name") // ชื่อกลุ่มจาก LINE (cache)
   status           ConvStatus  @default(OPEN)
   segment          ConvSegment @default(NEW)
   assignedToId     String?     @map("assigned_to_id") @db.Uuid // เจ้าของหลัก
@@ -4884,6 +4886,7 @@ model Conversation {
   assignedTo FuelUser?         @relation("ConvAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   messages   Message[]
   quotes     Quote[]
+  labels     FuelConvLabelLink[]
 
   @@unique([channelId, lineGroupId])
   @@index([orgId, status])
@@ -4892,6 +4895,38 @@ model Conversation {
   @@index([orgId, lastMessageAt])
   @@index([orgId, isUnanswered, lastMessageAt])
   @@map("conversations")
+  @@schema("fuel")
+}
+
+// ป้าย/หมวดหมู่แชทที่ผู้ใช้สร้างเอง (เช่น "ซัพพลายเออร์" "ลูกค้า VIP" "ราคา") — ต่อองค์กร
+model FuelConvLabel {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  name      String
+  color     String   @default("brand") // คีย์สีจาก palette (brand/leaf/amber/rose/sky/violet/zinc)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  links FuelConvLabelLink[]
+
+  @@unique([orgId, name])
+  @@index([orgId, sortOrder])
+  @@map("conv_labels")
+  @@schema("fuel")
+}
+
+// แชท ↔ ป้าย (many-to-many · 1 แชทติดได้หลายป้าย)
+model FuelConvLabelLink {
+  conversationId String   @map("conversation_id") @db.Uuid
+  labelId        String   @map("label_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  label        FuelConvLabel @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, labelId])
+  @@index([labelId])
+  @@map("conv_label_links")
   @@schema("fuel")
 }
 

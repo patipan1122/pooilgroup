@@ -210,3 +210,73 @@ export async function bankText(): Promise<string> {
   if (!acc) return "ยังไม่ได้ตั้งค่าบัญชีธนาคาร";
   return `🏦 โอนเข้า\n${acc.bankName} ${acc.accountNo}\nชื่อบัญชี: ${acc.accountName}`;
 }
+
+// ---------- จัดหมวดหมู่แชท: ป้าย/โฟลเดอร์ที่ผู้ใช้สร้างเอง ----------
+const LABEL_COLORS = ["brand", "leaf", "warning", "danger", "info", "success", "zinc"];
+const normColor = (c: string | null | undefined) => (c && LABEL_COLORS.includes(c) ? c : "brand");
+
+// สร้างป้ายใหม่ (ต่อองค์กร) — ชื่อห้ามซ้ำ
+export async function createLabel(name: string, color: string) {
+  const user = await requireUser();
+  const n = name.trim();
+  if (!n) return { ok: false as const, error: "ใส่ชื่อป้ายก่อน" };
+  try {
+    const agg = await prisma.fuelConvLabel.aggregate({ where: { orgId: user.orgId }, _max: { sortOrder: true } });
+    const label = await prisma.fuelConvLabel.create({
+      data: { orgId: user.orgId, name: n, color: normColor(color), sortOrder: (agg._max.sortOrder ?? 0) + 1 },
+      select: { id: true, name: true, color: true },
+    });
+    revalidatePath("/fuelos/inbox");
+    return { ok: true as const, label };
+  } catch {
+    return { ok: false as const, error: "มีป้ายชื่อนี้อยู่แล้ว" };
+  }
+}
+
+// แก้ชื่อ/สีป้าย
+export async function updateLabel(labelId: string, data: { name?: string; color?: string }) {
+  const user = await requireUser();
+  const found = await prisma.fuelConvLabel.findFirst({ where: { id: labelId, orgId: user.orgId }, select: { id: true } });
+  if (!found) return { ok: false as const, error: "ไม่พบป้าย" };
+  const patch: { name?: string; color?: string } = {};
+  if (data.name != null) {
+    const n = data.name.trim();
+    if (!n) return { ok: false as const, error: "ใส่ชื่อป้ายก่อน" };
+    patch.name = n;
+  }
+  if (data.color != null) patch.color = normColor(data.color);
+  try {
+    await prisma.fuelConvLabel.update({ where: { id: labelId }, data: patch });
+    revalidatePath("/fuelos/inbox");
+    return { ok: true as const };
+  } catch {
+    return { ok: false as const, error: "มีป้ายชื่อนี้อยู่แล้ว" };
+  }
+}
+
+// ลบป้าย (ลิงก์แชท↔ป้าย จะถูกลบตาม cascade)
+export async function deleteLabel(labelId: string) {
+  const user = await requireUser();
+  const r = await prisma.fuelConvLabel.deleteMany({ where: { id: labelId, orgId: user.orgId } });
+  revalidatePath("/fuelos/inbox");
+  return { ok: r.count > 0 };
+}
+
+// ติด/ถอดป้ายให้แชท
+export async function toggleConvLabel(convId: string, labelId: string, on: boolean) {
+  const user = await requireUser();
+  await ownConv(user.orgId, convId);
+  const label = await prisma.fuelConvLabel.findFirst({ where: { id: labelId, orgId: user.orgId }, select: { id: true } });
+  if (!label) return { ok: false as const, error: "ไม่พบป้าย" };
+  if (on) {
+    await prisma.fuelConvLabelLink.upsert({
+      where: { conversationId_labelId: { conversationId: convId, labelId } },
+      create: { conversationId: convId, labelId },
+      update: {},
+    });
+  } else {
+    await prisma.fuelConvLabelLink.deleteMany({ where: { conversationId: convId, labelId } });
+  }
+  revalidatePath("/fuelos/inbox");
+  return { ok: true as const };
+}

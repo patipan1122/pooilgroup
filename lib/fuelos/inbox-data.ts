@@ -1,14 +1,28 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/lib/generated/prisma/client";
 
 export type ConvFilter = "all" | "unanswered" | "mine";
+export type ConvLabel = { id: string; name: string; color: string };
 
 export async function listConversations(
   orgId: string,
-  opts: { filter: ConvFilter; userId: string },
+  opts: { filter: ConvFilter; userId: string; q?: string; labelId?: string | null },
 ) {
-  const where: Record<string, unknown> = { orgId };
+  const where: Prisma.ConversationWhereInput = { orgId };
   if (opts.filter === "unanswered") where.isUnanswered = true;
   if (opts.filter === "mine") where.assignedToId = opts.userId;
+  // กรองตามป้าย/หมวดหมู่ที่เลือก
+  if (opts.labelId) where.labels = { some: { labelId: opts.labelId } };
+  // ค้นหา: ชื่อแชท · ชื่อกลุ่ม · ชื่อลูกค้าที่ผูก · เนื้อหาข้อความ
+  const q = opts.q?.trim();
+  if (q) {
+    where.OR = [
+      { displayName: { contains: q, mode: "insensitive" } },
+      { lineGroupName: { contains: q, mode: "insensitive" } },
+      { customer: { is: { name: { contains: q, mode: "insensitive" } } } },
+      { messages: { some: { body: { contains: q, mode: "insensitive" } } } },
+    ];
+  }
 
   const rows = await prisma.conversation.findMany({
     where,
@@ -18,11 +32,14 @@ export async function listConversations(
       customer: { select: { id: true, name: true, zone: true, lastOrderAt: true, normalCadenceDays: true } },
       assignedTo: { select: { id: true, name: true } },
       messages: { orderBy: { createdAt: "desc" }, take: 1, select: { body: true, direction: true, senderType: true } },
+      labels: { select: { label: { select: { id: true, name: true, color: true } } } },
     },
   });
   return rows.map((c) => ({
     id: c.id,
-    name: c.customer?.name ?? c.displayName ?? "(ไม่ทราบชื่อ)",
+    name: c.customer?.name ?? c.lineGroupName ?? c.displayName ?? "(ไม่ทราบชื่อ)",
+    pictureUrl: c.pictureUrl,
+    isGroup: !!c.lineGroupId,
     zone: c.customer?.zone ?? null,
     segment: c.segment,
     isUnanswered: c.isUnanswered,
@@ -30,7 +47,18 @@ export async function listConversations(
     assignee: c.assignedTo?.name ?? null,
     lastMessageAt: c.lastMessageAt,
     preview: c.messages[0]?.body ?? "",
+    labels: c.labels.map((l) => l.label) as ConvLabel[],
   }));
+}
+
+// ป้าย/หมวดหมู่ทั้งหมดขององค์กร + จำนวนแชทในแต่ละป้าย (สำหรับชิปกรอง + ตัวจัดการป้าย)
+export async function listLabels(orgId: string) {
+  const labels = await prisma.fuelConvLabel.findMany({
+    where: { orgId },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    select: { id: true, name: true, color: true, _count: { select: { links: true } } },
+  });
+  return labels.map((l) => ({ id: l.id, name: l.name, color: l.color, count: l._count.links }));
 }
 
 export async function conversationCounts(orgId: string, userId: string) {
@@ -62,6 +90,7 @@ export async function getConversation(orgId: string, convId: string) {
         },
       },
       assignedTo: { select: { id: true, name: true } },
+      labels: { select: { label: { select: { id: true, name: true, color: true } } } },
       // ดึง 50 ข้อความล่าสุด (desc) แล้วกลับลำดับเป็นเก่า→ใหม่ตอนแสดง
       messages: {
         orderBy: { createdAt: "desc" },
