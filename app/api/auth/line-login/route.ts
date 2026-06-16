@@ -334,6 +334,23 @@ export async function POST(req: NextRequest) {
       );
     }
     if (!maid.lineUserId) {
+      // Auto-heal (2026-06-16): this LINE may be stuck on a leftover BRANCHLESS
+      // self-registered "junk" account from an earlier tap (selfRegisterChairopsMaid
+      // fires when a /chairops tap arrives with no invite). That stale row holds the
+      // (orgId,lineUserId) unique → the bind below would 409 and the maid would stay
+      // logged into the wrong, branchless account (CEO: "ไม่เห็นชื่อที่ตั้ง · ไม่มีสาขา").
+      // An explicit invite is an admin action that must WIN — free the junk row first.
+      // We ONLY ever touch a row with NO branch (primaryBranchId null): a properly-
+      // onboarded maid always has a branch, so a real account is never disturbed.
+      await prisma.chairopsUser.updateMany({
+        where: {
+          orgId: maid.orgId,
+          lineUserId,
+          primaryBranchId: null,
+          id: { not: maid.id },
+        },
+        data: { lineUserId: null, isActive: false },
+      });
       try {
         // F5: bind LINE id + consume (null out) the invite token atomically
         await prisma.chairopsUser.update({
