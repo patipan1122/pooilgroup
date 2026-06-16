@@ -1040,6 +1040,35 @@ export async function autoMatchAccountAction(
   const session = await requireRole("super_admin", "org_admin", "admin");
   const orgId = session.user.org_id;
 
+  // กดซ้ำได้ผลใหม่เสมอ (idempotent): ล้าง "ข้อเสนออัตโนมัติเก่า" ที่ยังไม่ยืนยันในช่วงนี้ก่อน
+  //   เฉพาะ match_kind='auto' + status='suggested' (ไม่แตะ manual / ที่ยืนยันแล้ว / ที่ exclude)
+  //   เหตุผล: ถ้าแก้ค่าธรรมเนียม/ส่งยอดใหม่ แล้วข้อเสนอเก่ายังค้าง → bank ถูกกันไว้ในกลุ่ม จับใหม่ไม่ได้
+  const staleGroups = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT DISTINCT g.id::text as id
+    FROM ledger_bank_match_group g
+    JOIN ledger_bank_match_item mi ON mi.group_id = g.id AND mi.kind = 'bank'
+    JOIN ledger_bank_txn t ON t.id = mi.bank_txn_id
+    WHERE g.bank_account_id = ${bankAccountId}::uuid AND g.org_id = ${orgId}::uuid
+      AND g.status = 'suggested' AND g.match_kind = 'auto'
+      AND t.txn_date BETWEEN ${periodStart}::date AND ${periodEnd}::date`;
+  if (staleGroups.length) {
+    const ids = staleGroups.map((g) => g.id);
+    await prisma.$transaction([
+      prisma.$executeRaw`
+        UPDATE ledger_bank_txn SET match_state = 'unmatched'
+        WHERE org_id = ${orgId}::uuid AND id IN (
+          SELECT mi.bank_txn_id FROM ledger_bank_match_item mi
+          WHERE mi.group_id = ANY(${ids}::uuid[]) AND mi.kind = 'bank')`,
+      prisma.$executeRaw`
+        UPDATE ledger_revenue_entry SET match_state = 'unmatched', bank_txn_id = NULL, updated_at = now()
+        WHERE org_id = ${orgId}::uuid AND id IN (
+          SELECT mi.book_id FROM ledger_bank_match_item mi
+          WHERE mi.group_id = ANY(${ids}::uuid[]) AND mi.kind = 'book' AND mi.book_type = 'revenue')`,
+      prisma.$executeRaw`
+        DELETE FROM ledger_bank_match_group WHERE id = ANY(${ids}::uuid[]) AND org_id = ${orgId}::uuid`,
+    ]);
+  }
+
   // unmatched bank movements (this account + range, not yet in a group)
   // ดึง "ชื่อคู่ค้า" (ref2/description/channel) มาด้วย → ใช้ "ดูชื่อ" ตอนจับคู่
   const banks = await prisma.$queryRaw<{ id: string; amt: bigint; d: string; text: string }[]>`
