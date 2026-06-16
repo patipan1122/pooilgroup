@@ -345,15 +345,17 @@ export async function createAmazonIv(
   opts?: { force?: boolean },
 ): Promise<CreateIvResult> {
   if (!amazonTrcloudConfigured()) return { ok: false, error: "TRCloud ยังไม่ได้ตั้งค่า" };
-  if (!dayRow.balanced)
+  // ปกติต้องบาลานซ์ก่อนถึงคีย์ได้ · force (super_admin ฝืน) ข้ามด่านนี้
+  if (!opts?.force && !dayRow.balanced)
     return { ok: false, error: dayRow.blockReason ?? "ยอดไม่บาลานซ์ — ยังคีย์ไม่ได้" };
 
-  // checksum guard (กันใบผิดยอด): Σc-vars ต้อง = total+vat
+  // checksum guard — เช็กเสมอ แม้ force: Σc-vars ต้อง = total+vat
+  // (ถ้าช่องทางบวกไม่ครบ IV จะ Dr≠Cr = ใบเสียที่ TRCloud ไม่รับ/บัญชีเพี้ยน → กันไว้ ต้องเพิ่ม mapping ก่อน)
   const sumC = Object.values(dayRow.cvars).reduce((a, b) => a + b, 0);
   if (Math.abs(sumC - (dayRow.total + dayRow.vat)) > 1)
     return {
       ok: false,
-      error: `checksum ไม่ผ่าน: Σช่องทาง ${sumC} ≠ total+vat ${dayRow.total + dayRow.vat}`,
+      error: `ส่งไม่ได้: ยอดแยกช่องทางไม่ครบ (Σช่องทาง ${sumC.toLocaleString()} ≠ ยอดรวม ${(dayRow.total + dayRow.vat).toLocaleString()}) — มีช่องทางที่ระบบยังไม่รู้จัก · ต้องเพิ่มก่อนถึงส่งได้`,
     };
 
   try {

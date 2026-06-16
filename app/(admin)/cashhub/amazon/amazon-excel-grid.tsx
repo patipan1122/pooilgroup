@@ -190,14 +190,17 @@ export function AmazonExcelGrid({
             </thead>
             <tbody>
               {data.map((d) => {
-                const rowBad = d.match_state === "mismatch" || !d.balanced;
+                // วันที่มี IV ใน TRCloud แล้ว (ตรง/โพสต์) = เรียบร้อย — ไม่นับเป็น "ติดปัญหา"
+                // (ด่าน "ไม่ครบ" ใช้ตอนจะ "สร้าง IV ใหม่" เท่านั้น · IV มีอยู่แล้วไม่เกี่ยว)
+                const hasIv = d.match_state === "match" || d.iv_status === "posted";
+                const rowBad = d.match_state === "mismatch" || (!d.balanced && !hasIv);
                 return (
                   <tr
                     key={d.sales_date}
                     className={`border-b border-zinc-50 hover:bg-amber-50/40 ${
                       d.match_state === "mismatch"
                         ? "bg-red-50/40"
-                        : !d.balanced
+                        : !d.balanced && !hasIv
                           ? "bg-amber-50/40"
                           : ""
                     }`}
@@ -216,12 +219,12 @@ export function AmazonExcelGrid({
                     </td>
                     <td className="px-2 py-1 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1">
-                        {!d.balanced ? (
+                        {hasIv ? (
+                          <span className="text-emerald-600 font-medium">✅ มี IV แล้ว</span>
+                        ) : !d.balanced ? (
                           <span className="text-amber-600" title={d.block_reason ?? ""}>
                             ⚠️ ไม่ครบ
                           </span>
-                        ) : d.match_state === "match" || d.iv_status === "posted" ? (
-                          <span className="text-emerald-600">มีแล้ว</span>
                         ) : canSend ? (
                           <button
                             type="button"
@@ -234,16 +237,24 @@ export function AmazonExcelGrid({
                         ) : (
                           <span className="text-zinc-400">🔒</span>
                         )}
-                        {/* ⚠️ ส่งซ้ำ (ทดสอบ) — ซ่อนใน prod · เปิดเฉพาะ env CASHHUB_AMAZON_FORCE=1 (ได้ใบซ้ำจริง) */}
-                        {allowForce && d.balanced && (
+                        {/* ฝืนส่ง (super admin) — ทุกแถว · มี IV แล้ว=ส่งซ้ำ(ใบซ้ำ) · ต้องพิมพ์ยืนยัน */}
+                        {allowForce && (
                           <button
                             type="button"
                             disabled={busy !== null}
                             onClick={() => onForce(d)}
-                            title="ส่งซ้ำ (ทดสอบ) — จะได้ใบกำกับซ้ำจริง · ต้องพิมพ์ยืนยัน"
+                            title={
+                              hasIv
+                                ? "ฝืนส่งซ้ำ — จะได้ใบกำกับซ้ำจริง (VAT ซ้ำใน ภ.พ.30) · ต้องพิมพ์ยืนยัน"
+                                : "ฝืนส่ง (super admin) — ข้ามด่านตรวจ · ต้องพิมพ์ยืนยัน"
+                            }
                             className="rounded-lg border border-amber-300 bg-amber-50 px-1.5 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-40"
                           >
-                            {busy === `force-${d.sales_date}` ? "…" : "🔁"}
+                            {busy === `force-${d.sales_date}`
+                              ? "…"
+                              : hasIv
+                                ? "ส่งซ้ำ"
+                                : "ฝืนส่ง"}
                           </button>
                         )}
                       </div>

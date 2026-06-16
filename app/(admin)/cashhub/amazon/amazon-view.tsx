@@ -205,13 +205,19 @@ export function AmazonView({
     }
   }, [storeCode, branchLabel, from, to, router]);
 
-  // ⚠️ ส่งซ้ำ (ทดสอบ) — ข้าม dedup → ได้ใบกำกับซ้ำจริง · super_admin + พิมพ์ยืนยัน
+  // ⚠️ ฝืนส่ง (super_admin) — ข้ามด่านตรวจ/dedup → ส่งได้ทุกกรณี รวมใบซ้ำ · ต้องพิมพ์ยืนยัน
   const forceSend = useCallback(
     async (day: SavedAmazonDay) => {
+      const hasIv = day.match_state === "match" || day.iv_status === "posted";
       const typed = window.prompt(
-        `⚠️ ส่งซ้ำเข้า TRCloud — วันที่ ${day.sales_date} (ยอด ${formatBaht(day.gross)})\n\n` +
-          `จะได้ใบกำกับภาษี "ซ้ำ" ในระบบจริง! (สำหรับทดสอบเท่านั้น — รายได้/VAT จะถูกนับเพิ่ม)\n\n` +
-          `พิมพ์คำว่า  ยืนยัน  เพื่อยืนยันการส่งซ้ำ:`,
+        hasIv
+          ? `⚠️ ฝืนส่งซ้ำเข้า TRCloud — วันที่ ${day.sales_date} (ยอด ${formatBaht(day.gross)})\n\n` +
+            `วันนี้มีใบกำกับ ${day.iv_doc_no ?? ""} อยู่แล้ว!\n` +
+            `ส่งอีก = ได้ใบกำกับ "ซ้ำ" + VAT ถูกนับซ้ำใน ภ.พ.30\n\n` +
+            `พิมพ์คำว่า  ยืนยัน  เพื่อฝืนส่งซ้ำ:`
+          : `⚠️ ฝืนส่งเข้า TRCloud — วันที่ ${day.sales_date} (ยอด ${formatBaht(day.gross)})\n\n` +
+            `ระบบเตือนว่าข้อมูลยังไม่ครบ — กำลังฝืนส่ง (super admin)\n\n` +
+            `พิมพ์คำว่า  ยืนยัน  เพื่อฝืนส่ง:`,
       );
       if (typed === null) return;
       if (typed.trim() !== "ยืนยัน") {
@@ -246,7 +252,9 @@ export function AmazonView({
         if (data.ok)
           setMsg({
             kind: "ok",
-            text: `ส่งซ้ำสำเร็จ — สร้างใบทดสอบ IV ${data.ivNo} (วันที่ ${day.sales_date}) · อย่าลืมลบใบทดสอบใน TRCloud`,
+            text: hasIv
+              ? `ฝืนส่งซ้ำสำเร็จ — สร้าง IV ${data.ivNo} (วันที่ ${day.sales_date}) · ⚠️ เป็นใบซ้ำ ตรวจ TRCloud + ภ.พ.30 ด้วย`
+              : `ฝืนส่งสำเร็จ — สร้าง IV ${data.ivNo} (วันที่ ${day.sales_date}) · ตรวจ TRCloud ให้ตรงด้วย`,
           });
         else setMsg({ kind: "err", text: `${day.sales_date}: ${data.error ?? "ล้มเหลว"}` });
       } catch {
@@ -370,7 +378,10 @@ export function AmazonView({
     match: savedDays.filter((d) => d.match_state === "match").length,
     mismatch: savedDays.filter((d) => d.match_state === "mismatch").length,
     noIv: savedDays.filter((d) => d.balanced && d.match_state !== "match" && d.iv_status !== "posted").length,
-    blocked: savedDays.filter((d) => !d.balanced).length,
+    // "ติดปัญหา" = ยังคีย์ IV ไม่ได้ + ยังไม่มี IV จริง · วันที่มี IV ตรงแล้ว = เรียบร้อย ไม่นับ
+    blocked: savedDays.filter(
+      (d) => !d.balanced && d.match_state !== "match" && d.iv_status !== "posted",
+    ).length,
   };
 
   return (
