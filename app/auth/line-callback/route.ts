@@ -156,6 +156,11 @@ export async function GET(req: NextRequest) {
     });
     loginJson = (await loginRes.json()) as LoginResult;
     if (!loginRes.ok) {
+      // ลิงก์เชิญใช้ซ้ำ / หมดอายุ / ผูก LINE อื่นไปแล้ว → หน้าอธิบายชัด ๆ ภาษาคน
+      // ("ลิงก์เชิญใช้ได้ครั้งเดียว") แทน error ดิบ "login-api · 410: ..." ที่ดูเหมือน crash
+      if (cookieInvite && [400, 404, 409, 410].includes(loginRes.status)) {
+        return fail("invite-used", loginJson?.error ?? "");
+      }
       return fail("login-api", `${loginRes.status}: ${loginJson?.error ?? ""}`);
     }
   } catch (e) {

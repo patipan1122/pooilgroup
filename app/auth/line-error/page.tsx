@@ -23,6 +23,7 @@ const REASON_TH: Record<string, string> = {
     "เซต Supabase session ไม่สำเร็จ (อาจเป็น cookie partitioning ใน iOS webview)",
   "pool-membership":
     "ใส่ Pool users/user_modules ไม่สำเร็จ (Supabase admin INSERT พัง)",
+  "invite-used": "ลิงก์เชิญนี้ถูกใช้ไปแล้ว หรือหมดอายุ",
   unexpected: "ตอบกลับไม่คาดคิดจาก server",
 };
 
@@ -35,6 +36,28 @@ export default async function LineAuthError({
   const reason = sp.reason ?? "unknown";
   const detail = sp.detail ?? "";
   const reasonLabel = REASON_TH[reason] ?? reason;
+
+  // ลิงก์เชิญใช้ซ้ำ/หมดอายุ ไม่ใช่ "ระบบพัง" — แสดงหน้าอธิบายเบา ๆ ภาษาคน
+  // ไม่มีกล่อง error ดิบ และไม่มีปุ่ม "ลองใหม่" (กดซ้ำลิงก์เดิมก็ล้มเหมือนเดิม วนลูป)
+  if (reason === "invite-used") {
+    // detail = ข้อความไทยสะอาดจาก line-login (เช่น "ลิงก์เชิญถูกยกเลิกหรือหมดอายุแล้ว")
+    const headline = detail || reasonLabel;
+    return (
+      <div className="min-h-screen bg-white px-6 py-10">
+        <div className="mx-auto max-w-sm space-y-4 text-center">
+          <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-amber-100 text-2xl">
+            🔗
+          </div>
+          <p className="text-base font-semibold text-zinc-800">{headline}</p>
+          <p className="text-sm leading-relaxed text-zinc-600">
+            ลิงก์เชิญใช้ได้ครั้งเดียว — ถ้าเพิ่งกดเข้าระบบได้แล้ว ถือว่าใช้ลิงก์นั้นไปแล้ว
+            <br />
+            กรุณาขอ <span className="font-medium text-zinc-800">ลิงก์เชิญใหม่</span> จากออฟฟิศ
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white px-6 py-10">

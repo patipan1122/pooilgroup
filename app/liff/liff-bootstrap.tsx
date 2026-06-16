@@ -208,6 +208,15 @@ export function LiffBootstrap({
           return;
         }
         if (!res.ok) {
+          // ลิงก์เชิญใช้ซ้ำ/หมดอายุ/ผูก LINE อื่น → หน้าอธิบายชัด ๆ หน้าเดียวกับ
+          // OAuth path (DRY) แทนกล่อง error ดิบที่ดูเหมือน crash
+          if (invite && [400, 404, 409, 410].includes(res.status)) {
+            const u = new URL("/auth/line-error", window.location.origin);
+            u.searchParams.set("reason", "invite-used");
+            u.searchParams.set("detail", String(json.error ?? "").slice(0, 280));
+            window.location.replace(u.toString());
+            return;
+          }
           failOrSkip(`เข้าระบบไม่สำเร็จ (HTTP ${res.status}): ${json.error ?? ""}`);
           return;
         }
