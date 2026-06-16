@@ -15,6 +15,7 @@
 import * as XLSX from "xlsx";
 import { createHash } from "crypto";
 import type { PrismaClient } from "@/lib/generated/prisma/client";
+import { cleanHeaderText, baseHeaderText } from "@/lib/chairops/pos-ingest/header-normalize";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -152,9 +153,13 @@ const COLUMN_ALIASES: Record<keyof StarThingRow, readonly string[]> = {
   giftCoinUnit: ["ราคาต่อหน่วยของเหรียญของขวัญ", "gift coin unit price"],
 } as const;
 
-/** Lowercase + trim · matches headers regardless of casing/spacing variance. */
+/**
+ * Robust header key — NFC + strips invisible/format chars (BOM, zero-width,
+ * bidi, NBSP) before lowercasing. Defends against the messy-export bug where the
+ * first column carried an invisible prefix. (Root cause 2026-06-16.)
+ */
 function normalizeHeader(h: string): string {
-  return h.trim().toLowerCase();
+  return cleanHeaderText(h);
 }
 
 // Columns that MUST be present for the row to be usable (enforced inline in row loop):
@@ -175,10 +180,13 @@ function buildHeaderIndex(rawHeader: string[]): {
     const key = keyRaw as keyof StarThingRow;
     // Case-insensitive alias set per key · built once per call.
     const aliasNorm = new Set(aliases.map(normalizeHeader));
+    // Fallback set with Thai combining marks stripped — matches vowel/tone
+    // composition or reorder variants when the exact match misses.
+    const aliasBase = new Set(aliases.map(baseHeaderText).filter(Boolean));
     for (let i = 0; i < rawHeader.length; i++) {
       const raw = (rawHeader[i] ?? "").trim();
       if (!raw) continue;
-      if (aliasNorm.has(normalizeHeader(raw))) {
+      if (aliasNorm.has(normalizeHeader(raw)) || aliasBase.has(baseHeaderText(raw))) {
         if (index[key] === undefined) index[key] = i;
         matchedHeaders.add(raw);
       }

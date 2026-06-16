@@ -42,6 +42,11 @@ import {
   aggregateToBranchDaily,
   type AggregatedDailyRow,
 } from "@/lib/chairops/pos-ingest/starthing-xlsx";
+import {
+  cleanHeaderText,
+  baseHeaderText,
+  headerCodepoints,
+} from "@/lib/chairops/pos-ingest/header-normalize";
 
 // ----- Types ----------------------------------------------------------------
 
@@ -227,9 +232,24 @@ const HEADER_ALIASES: Record<string, string> = {
   "total amount": "total",
 };
 
+// Pre-normalize alias keys once: exact (cleaned) + base (Thai-marks-stripped).
+// Lets us match headers robustly even when an export injects invisible chars or
+// stores Thai marks in a different order. (Root cause 2026-06-16 — see
+// header-normalize.ts.)
+const ALIAS_BY_CLEAN: Record<string, string> = {};
+const ALIAS_BY_BASE: Record<string, string> = {};
+for (const [k, v] of Object.entries(HEADER_ALIASES)) {
+  ALIAS_BY_CLEAN[cleanHeaderText(k)] = v;
+  const b = baseHeaderText(k);
+  if (b) ALIAS_BY_BASE[b] = v;
+}
+
 function normalizeHeader(s: string): string {
-  const key = s.trim().toLowerCase();
-  return HEADER_ALIASES[key] ?? key;
+  const clean = cleanHeaderText(s);
+  if (clean in ALIAS_BY_CLEAN) return ALIAS_BY_CLEAN[clean];
+  const base = baseHeaderText(s);
+  if (base && base in ALIAS_BY_BASE) return ALIAS_BY_BASE[base];
+  return clean;
 }
 
 function toInt(v: string | undefined): number {
@@ -431,7 +451,16 @@ export async function previewImport(formData: FormData): Promise<{ ok: true; imp
   const required = ["date"];
   for (const k of required) {
     if (!headers.includes(k)) {
-      return { ok: false, error: `CSV ขาด column วันที่ (header ที่อ่านได้: ${headers.join(", ")})` };
+      // Diagnostic: dump the exact code points of the raw header cells so a
+      // future invisible-char failure is pinpointable without guesswork.
+      const diag = (grid[0] ?? [])
+        .slice(0, 5)
+        .map((h) => headerCodepoints(String(h)))
+        .join(" · ");
+      return {
+        ok: false,
+        error: `ไฟล์นี้หาคอลัมน์ "วันที่" ไม่เจอ (header ที่อ่านได้: ${headers.join(", ")}) · ตัวอักษรจริง: ${diag}`,
+      };
     }
   }
 
