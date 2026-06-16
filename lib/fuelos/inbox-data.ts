@@ -78,6 +78,61 @@ export type LineContactLite = {
   roleLabel: string | null;
 };
 
+// ข้อความที่ serialize แล้ว (Date → ISO string) พร้อมส่งเข้า client component
+export type ChatMessage = {
+  id: string;
+  direction: "IN" | "OUT";
+  body: string;
+  attachments: unknown;
+  externalId: string | null;
+  senderType: "CUSTOMER" | "STAFF";
+  senderUserName: string | null;
+  sentByBot: boolean;
+  createdAt: string;
+  senderContact: LineContactLite | null;
+};
+
+type RawMessage = {
+  id: string;
+  direction: string;
+  body: string;
+  attachments: unknown;
+  externalId: string | null;
+  senderType: string;
+  senderLineUserId: string | null;
+  sentByBot: boolean;
+  createdAt: Date;
+  senderUser: { name: string } | null;
+};
+
+function toChatMessage(m: RawMessage, contactMap: Map<string, LineContactLite>): ChatMessage {
+  return {
+    id: m.id,
+    direction: m.direction as "IN" | "OUT",
+    body: m.body,
+    attachments: m.attachments ?? null,
+    externalId: m.externalId,
+    senderType: m.senderType as "CUSTOMER" | "STAFF",
+    senderUserName: m.senderUser?.name ?? null,
+    sentByBot: m.sentByBot,
+    createdAt: m.createdAt.toISOString(),
+    senderContact: m.senderLineUserId ? contactMap.get(m.senderLineUserId) ?? null : null,
+  };
+}
+
+async function loadContactMap(channelId: string | null): Promise<Map<string, LineContactLite>> {
+  const contacts: LineContactLite[] = channelId
+    ? await prisma.fuelLineContact.findMany({
+        where: { channelId },
+        select: { lineUserId: true, displayName: true, alias: true, pictureUrl: true, roleLabel: true },
+      })
+    : [];
+  return new Map(contacts.map((c) => [c.lineUserId, c]));
+}
+
+// ขนาดหน้าละ — เปิดแชทโชว์ 50 ล่าสุด แล้วกด "ดูข้อความเก่ากว่านี้" โหลดเพิ่มทีละ 50 ได้ลึกไม่จำกัด
+const PAGE_SIZE = 50;
+
 export async function getConversation(orgId: string, convId: string) {
   const conv = await prisma.conversation.findFirst({
     where: { id: convId, orgId },
@@ -91,31 +146,24 @@ export async function getConversation(orgId: string, convId: string) {
       },
       assignedTo: { select: { id: true, name: true } },
       labels: { select: { label: { select: { id: true, name: true, color: true } } } },
-      // ดึง 50 ข้อความล่าสุด (desc) แล้วกลับลำดับเป็นเก่า→ใหม่ตอนแสดง
+      // ดึง 50 ข้อความล่าสุด (+1 เพื่อเช็คว่ายังมีเก่ากว่านี้ไหม) แล้วกลับลำดับเป็นเก่า→ใหม่ตอนแสดง
       messages: {
-        orderBy: { createdAt: "desc" },
-        take: 50,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: PAGE_SIZE + 1,
         include: { senderUser: { select: { name: true } } },
       },
     },
   });
   if (!conv) return null;
-  conv.messages.reverse();
+
+  const hasMoreMessages = conv.messages.length > PAGE_SIZE;
+  const recent = hasMoreMessages ? conv.messages.slice(0, PAGE_SIZE) : conv.messages;
 
   // ดึงตัวตนคนใน LINE (ชื่อจริง/alias/รูป) ของช่องนี้ → map ตาม lineUserId
-  const contacts: LineContactLite[] = conv.channelId
-    ? await prisma.fuelLineContact.findMany({
-        where: { channelId: conv.channelId },
-        select: { lineUserId: true, displayName: true, alias: true, pictureUrl: true, roleLabel: true },
-      })
-    : [];
-  const contactMap = new Map(contacts.map((c) => [c.lineUserId, c]));
+  const contactMap = await loadContactMap(conv.channelId);
 
-  // แนบ contact ต่อข้อความ
-  const messages = conv.messages.map((m) => ({
-    ...m,
-    senderContact: m.senderLineUserId ? contactMap.get(m.senderLineUserId) ?? null : null,
-  }));
+  // serialize + กลับลำดับเป็น เก่า→ใหม่
+  const messages = recent.map((m) => toChatMessage(m, contactMap)).reverse();
 
   // รายชื่อ "คนในกลุ่มนี้" (ลูกค้าที่เคยส่งในห้องนี้)
   const senders = await prisma.message.groupBy({
@@ -126,7 +174,38 @@ export async function getConversation(orgId: string, convId: string) {
     .map((s) => s.senderLineUserId!)
     .map((uid) => contactMap.get(uid) ?? { lineUserId: uid, displayName: null, alias: null, pictureUrl: null, roleLabel: null });
 
-  return { ...conv, messages, people };
+  return { ...conv, messages, people, hasMoreMessages };
+}
+
+// โหลดข้อความที่ "เก่ากว่า" beforeMessageId อีกหนึ่งหน้า (กดดูย้อนหลังลึกได้เรื่อย ๆ)
+export async function getOlderMessages(
+  orgId: string,
+  convId: string,
+  beforeMessageId: string,
+  take = PAGE_SIZE,
+): Promise<{ messages: ChatMessage[]; hasMore: boolean } | null> {
+  // กันข้ามองค์กร (IDOR) — แชทต้องเป็นของ org นี้
+  const conv = await prisma.conversation.findFirst({
+    where: { id: convId, orgId },
+    select: { id: true, channelId: true },
+  });
+  if (!conv) return null;
+
+  // keyset pagination: ดึงรายการที่อยู่ "หลัง" cursor ในลำดับ createdAt desc (= เก่ากว่า) +1 เพื่อเช็คว่ายังมีต่อ
+  const rows = await prisma.message.findMany({
+    where: { conversationId: convId, orgId },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    cursor: { id: beforeMessageId },
+    skip: 1,
+    take: take + 1,
+    include: { senderUser: { select: { name: true } } },
+  });
+  const hasMore = rows.length > take;
+  const slice = hasMore ? rows.slice(0, take) : rows;
+
+  const contactMap = await loadContactMap(conv.channelId);
+  const messages = slice.map((m) => toChatMessage(m, contactMap)).reverse();
+  return { messages, hasMore };
 }
 
 // สถิติโปรไฟล์ลูกค้า (ใช้ใน popup/panel ฝั่งแชท) — ประวัติซื้อขาย/ปริมาณเฉลี่ย/margin

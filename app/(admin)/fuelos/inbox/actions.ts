@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/fuelos/auth";
 import { audit } from "@/lib/fuelos/audit";
 import { getPricingContext } from "@/lib/fuelos/pricing-data";
+import { getOlderMessages } from "@/lib/fuelos/inbox-data";
 import { PRODUCT_LABELS, PRODUCT_ORDER, computeSellPrice } from "@/lib/fuelos/pricing";
 import { formatNumber } from "@/lib/fuelos/utils/format";
 import { pushLineMessage, pushLineSticker, prefixStaffName } from "@/lib/fuelos/line";
@@ -201,6 +202,14 @@ export async function updateContact(
   });
   revalidatePath("/fuelos/inbox");
   return { ok: true };
+}
+
+// โหลดข้อความเก่ากว่านี้อีกหนึ่งหน้า (ปุ่ม "ดูข้อความเก่ากว่านี้" ในกล่องแชท)
+export async function loadOlderMessages(convId: string, beforeMessageId: string) {
+  const user = await requireUser();
+  const res = await getOlderMessages(user.orgId, convId, beforeMessageId);
+  if (!res) return { ok: false as const, messages: [], hasMore: false };
+  return { ok: true as const, messages: res.messages, hasMore: res.hasMore };
 }
 
 // F4 — ดึงเลขบัญชีโอน

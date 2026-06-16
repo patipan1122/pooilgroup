@@ -11,9 +11,8 @@ import {
 } from "@/lib/fuelos/inbox-data";
 import { getPricingContext } from "@/lib/fuelos/pricing-data";
 import { listCustomerOptions } from "@/lib/fuelos/quotes-data";
-import { bkkRelative, bkkTime } from "@/lib/fuelos/utils/format";
+import { bkkRelative } from "@/lib/fuelos/utils/format";
 import { cn } from "@/lib/fuelos/utils/cn";
-import { lineEmojiImageUrl, type LineEmoji } from "@/lib/fuelos/line";
 import { ReplyBox } from "./reply-box";
 import { ChatControls } from "./chat-controls";
 import { ChatTools } from "@/components/fuelos/inbox/chat-tools";
@@ -22,67 +21,13 @@ import { ChatSearch } from "@/components/fuelos/inbox/chat-search";
 import { LabelManager } from "@/components/fuelos/inbox/label-manager";
 import { ConvLabelPicker } from "@/components/fuelos/inbox/conv-label-picker";
 import { labelTone } from "@/components/fuelos/inbox/label-colors";
-import { ArrowLeft, MessageSquareWarning, MessagesSquare, UserCircle2, Lock, Users } from "lucide-react";
+import { ChatThread } from "@/components/fuelos/inbox/chat-thread";
+import { ArrowLeft, MessageSquareWarning, MessagesSquare, UserCircle2, Users } from "lucide-react";
 
 const SEG_LABEL: Record<string, string> = { NEW: "ลูกค้าใหม่", OLD: "ลูกค้าเก่า", PRICE_CHECK: "เช็คราคา" };
 const SEG_TONE: Record<string, string> = {
   NEW: "bg-info/10 text-info", OLD: "bg-leaf-100 text-leaf-700", PRICE_CHECK: "bg-warning/15 text-warning",
 };
-const STATUS_PREFIX = "📌 สถานะ:";
-
-type Att =
-  | { type: "text"; emojis: LineEmoji[] }
-  | { type: "image" | "video" | "audio"; messageId: string | null }
-  | { type: "sticker"; stickerId: string | null }
-  | { type: "file"; messageId: string | null; fileName: string | null }
-  | { type: "location"; lat: number | null; lng: number | null; title: string | null; address: string | null };
-
-// ข้อความ text + LINE emoji พรีเมียม → แทรกรูป emoji ตามตำแหน่ง index/length (clamp กัน index เพี้ยน)
-function RichText({ text, emojis, out }: { text: string; emojis: LineEmoji[]; out: boolean }) {
-  const sorted = [...emojis].sort((a, b) => a.index - b.index);
-  const nodes: React.ReactNode[] = [];
-  let cursor = 0;
-  sorted.forEach((e, i) => {
-    const start = Math.max(cursor, Math.min(e.index, text.length));
-    if (start > cursor) nodes.push(text.slice(cursor, start));
-    nodes.push(
-      // eslint-disable-next-line @next/next/no-img-element
-      <img key={`e${i}`} src={lineEmojiImageUrl(e.productId, e.emojiId)} alt="emoji" className="inline-block align-text-bottom size-[1.2em] mx-px" />,
-    );
-    cursor = Math.min(start + Math.max(1, e.length), text.length);
-  });
-  if (cursor < text.length) nodes.push(text.slice(cursor));
-  return <div className={cn("text-sm whitespace-pre-wrap break-words", out && "text-white")}>{nodes}</div>;
-}
-
-function MsgContent({ attachments, externalId, body, out }: { attachments: unknown; externalId: string | null; body: string; out: boolean }) {
-  const att = (attachments ?? null) as Att | null;
-  if (att?.type === "text" && att.emojis?.length) {
-    return <RichText text={body} emojis={att.emojis} out={out} />;
-  }
-  if (att?.type === "image" && externalId) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={`/api/fuelos/line-content/${externalId}`} alt="รูปจากลูกค้า" className="rounded-lg max-h-64 w-auto" />;
-  }
-  if (att?.type === "sticker" && att.stickerId) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={`https://stickershop.line-scdn.net/stickershop/v1/sticker/${att.stickerId}/android/sticker.png`} alt="สติกเกอร์" className="size-28 object-contain" />;
-  }
-  if (att?.type === "video" && externalId) {
-    return <video src={`/api/fuelos/line-content/${externalId}`} controls className="rounded-lg max-h-64 w-auto" />;
-  }
-  if (att?.type === "audio" && externalId) {
-    return <audio src={`/api/fuelos/line-content/${externalId}`} controls className="max-w-full" />;
-  }
-  if (att?.type === "location" && att.lat != null && att.lng != null) {
-    return <a href={`https://maps.google.com/?q=${att.lat},${att.lng}`} target="_blank" rel="noreferrer" className={cn("text-sm underline", out ? "text-white" : "text-brand-700")}>📍 {att.title || att.address || "ดูตำแหน่งบนแผนที่"}</a>;
-  }
-  if (att?.type === "file" && externalId) {
-    return <a href={`/api/fuelos/line-content/${externalId}`} target="_blank" rel="noreferrer" className={cn("text-sm underline", out ? "text-white" : "text-brand-700")}>📎 {att.fileName || "ดาวน์โหลดไฟล์"}</a>;
-  }
-  return <div className="text-sm whitespace-pre-wrap break-words">{body}</div>;
-}
-
 // avatar แชท: รูปจริง (กลุ่ม/โปรไฟล์) + ป้ายมุมบอกว่าเป็นกลุ่ม
 function ConvAvatar({ src, name, isGroup, size = 44 }: { src?: string | null; name: string; isGroup: boolean; size?: number }) {
   return (
@@ -310,43 +255,13 @@ export default async function InboxPage({
                 salesUsers={salesUsers}
               />
 
-              {/* messages */}
-              <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2.5">
-                {conv.messages.map((m) => {
-                  const out = m.direction === "OUT";
-                  // โน้ตภายใน (สถานะ) — ลูกค้าไม่เห็น · แสดงกลางจอแบบ chip
-                  if (out && m.body.startsWith(STATUS_PREFIX)) {
-                    return (
-                      <div key={m.id} className="flex justify-center">
-                        <span className="inline-flex items-center gap-1 text-[11px] text-zinc-500 bg-surface border border-border rounded-full px-2.5 py-1">
-                          <Lock className="size-3" /> โน้ตภายใน · {m.body.replace(STATUS_PREFIX, "").trim()}
-                          <span className="text-zinc-400">(ลูกค้าไม่เห็น)</span>
-                        </span>
-                      </div>
-                    );
-                  }
-                  const contactName = m.senderContact?.alias?.trim() || m.senderContact?.displayName?.trim() || "ลูกค้า";
-                  const pic = m.senderContact?.pictureUrl;
-                  return (
-                    <div key={m.id} className={cn("flex gap-2", out ? "justify-end" : "justify-start")}>
-                      {!out && <LineAvatar src={pic} name={contactName} size={28} className="mt-0.5" />}
-                      <div className={cn("max-w-[78%] rounded-2xl px-3.5 py-2", out ? "bg-brand-600 text-white" : "bg-surface border border-border")}>
-                        {!out && (
-                          <div className="text-[10px] text-zinc-500 mb-0.5 flex items-center gap-1">
-                            {contactName}
-                            {m.senderContact?.roleLabel && <span className="text-brand-600 bg-brand-50 rounded px-1">{m.senderContact.roleLabel}</span>}
-                          </div>
-                        )}
-                        {out && (m.senderUser?.name || m.sentByBot) && (
-                          <div className="text-[10px] text-white/70 mb-0.5">{m.sentByBot ? "🤖 บอท" : m.senderUser?.name}</div>
-                        )}
-                        <MsgContent attachments={m.attachments} externalId={m.externalId} body={m.body} out={out} />
-                        <div className={cn("text-[10px] mt-0.5", out ? "text-white/60" : "text-zinc-400")}>{bkkTime(m.createdAt)}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              {/* messages — เปิดมาโชว์ 50 ล่าสุด · กด "ดูข้อความเก่ากว่านี้" โหลดย้อนหลังลึกได้เรื่อย ๆ */}
+              <ChatThread
+                key={conv.id}
+                convId={conv.id}
+                initialMessages={conv.messages}
+                hasMore={conv.hasMoreMessages}
+              />
 
               <ReplyBox convId={conv.id} zone={conv.customer?.zone ?? null} />
             </>
