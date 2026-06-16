@@ -1,6 +1,17 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-15 (Bank-Recon Controls bigfeature BUILT · ⏳ รอ CEO deploy gates)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-16 (FuelOS กล่องแชท ปรับใหญ่ BUILT · ⏳ รอ CEO apply migration → push)
+
+## 💬 FUELOS กล่องแชท — อ่านง่าย + รูปกลุ่ม + ค้นหา + จัดหมวด + emoji จริง (2026-06-16 · BUILT commit `e2c3985`, ⏳ NOT deployed)
+
+CEO: หน้า `/fuelos/inbox` ดูไม่ออก — emoji ขึ้น "(emoji)", ไม่มีรูปกลุ่ม, ไม่มีค้นหา, จัดหมวดไม่ได้. เคาะ: ป้ายสร้างเอง + ทำ 5 เรื่องรวดเดียว. worktree off origin/setup · tsc/webpack build EXIT0.
+1. **รูปกลุ่ม** — cache `Conversation.pictureUrl`/`lineGroupName` จาก LINE group summary ตอน ingest (ครั้งแรกครั้งเดียว) → avatar จริง + ป้ายมุมกลุ่ม
+2. **ค้นหาแชท** — ช่องค้นหา debounce → ชื่อ/ชื่อกลุ่ม/ลูกค้า/เนื้อหาข้อความ
+3. **จัดหมวดป้าย** — ป้าย/โฟลเดอร์ผู้ใช้สร้างเอง (m2m) + ชิปกรอง + จัดการป้าย + ติดป้ายต่อแชท
+4. **emoji** — รับ `emojis[]` (LINE Sticon) จาก webhook → render รูปจริง (ของใหม่; ของเก่า "(emoji)" กู้ไม่ได้ เพราะเดิมเก็บ text ดิบ)
+5. **redesign list** — avatar 44px + unread badge + label chips + decluttered
+- migration `20260616_fuelos_inbox_groups_labels.sql` (additive: ADD COLUMN IF NOT EXISTS picture_url/line_group_name + conv_labels + conv_label_links)
+- ⏳ **CEO deploy gates (บังคับตามลำดับ):** (1) apply migration ก่อน (ปลอดภัยกับโค้ดเก่า) · (2) push `HEAD:setup` (push ก่อน migration = inbox crash)
 
 ## 🛠️ BANK-RECON CONTROLS & WORKSPACE (2026-06-15 · /bigfeature · BUILT commit `bd1fd32`, ⏳ NOT deployed)
 
