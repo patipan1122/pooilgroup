@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function BankReconArchivePage({
   searchParams,
 }: {
-  searchParams: Promise<{ company?: string; branch?: string; q?: string }>;
+  searchParams: Promise<{ company?: string; branch?: string; q?: string; account?: string }>;
 }) {
   const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer");
   const sp = await searchParams;
@@ -27,19 +27,22 @@ export default async function BankReconArchivePage({
   const orgId = session.user.org_id;
   const companyId = scope.companyId;
   const search = (sp.q ?? "").trim();
+  const account = sp.account;
 
-  const groups = await listMatchedArchive({ orgId, companyId, search: search || undefined });
+  const groups = await listMatchedArchive({ orgId, companyId, bankAccountId: account, search: search || undefined });
   const cp = `company=${companyId}`;
+  // เข้าจากในบัญชี → ปุ่มย้อนกลับไปหน้าบัญชีนั้น (ไม่ใช่ hub รวม)
+  const backHref = account ? `/ledger/bank-recon/${account}?${cp}` : `/ledger/bank-recon?${cp}`;
   const isSuper = session.user.role === "super_admin";
 
   return (
     <div className="px-4 py-3 sm:px-6 sm:py-4">
       <div className="mb-1">
         <Link
-          href={`/ledger/bank-recon?${cp}`}
+          href={backHref}
           className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-600"
         >
-          <ChevronLeft size={14} /> กระทบยอดธนาคาร
+          <ChevronLeft size={14} /> {account ? "กลับหน้าบัญชี" : "กระทบยอดธนาคาร"}
         </Link>
       </div>
 
@@ -48,12 +51,12 @@ export default async function BankReconArchivePage({
           <Archive size={18} />
         </div>
         <div>
-          <h1 className="text-lg font-semibold text-zinc-900">คลัง (รายการที่กระทบยอดแล้ว)</h1>
+          <h1 className="text-lg font-semibold text-zinc-900">คลัง (รายการที่กระทบยอดแล้ว){account ? " — เฉพาะบัญชีนี้" : ""}</h1>
           <p className="text-xs text-zinc-400">ค้นหารายการที่ยืนยัน/ย้อนแล้ว · ย้อนกลับได้ถ้าจับคู่ผิด</p>
         </div>
       </div>
 
-      <BankReconControlsNav companyId={companyId} active="archive" />
+      <BankReconControlsNav companyId={companyId} active="archive" account={account} />
 
       <ArchiveClient groups={groups} initialQuery={search} companyId={companyId} isSuper={isSuper} />
     </div>

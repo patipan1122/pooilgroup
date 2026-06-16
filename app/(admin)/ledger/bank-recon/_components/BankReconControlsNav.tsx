@@ -18,11 +18,13 @@ const TABS: { key: Key; label: string; href: string; Icon: typeof Archive }[] = 
 export function BankReconControlsNav({
   companyId,
   active,
+  account,
 }: {
   companyId: string;
-  active: Key;
+  active?: Key;
+  account?: string; // เมื่อระบุ = ผูกขอบเขตไว้ที่บัญชีเดียว (เข้าจากในบัญชี → เห็นเฉพาะของบัญชีนั้น)
 }) {
-  const cp = `company=${companyId}`;
+  const cp = account ? `company=${companyId}&account=${account}` : `company=${companyId}`;
   return (
     <nav className="mb-4 flex flex-wrap gap-2">
       {TABS.map(({ key, label, href, Icon }) => {

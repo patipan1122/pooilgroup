@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function BankReconTransfersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ company?: string; branch?: string }>;
+  searchParams: Promise<{ company?: string; branch?: string; account?: string }>;
 }) {
   const session = await requireRole("super_admin", "org_admin", "admin");
   const sp = await searchParams;
@@ -26,21 +26,23 @@ export default async function BankReconTransfersPage({
   if (!ledgerBankReconV1() || !scope.companyId) redirect("/ledger/bank-recon");
   const orgId = session.user.org_id;
   const companyId = scope.companyId;
+  const account = sp.account;
 
   const [accounts, special] = await Promise.all([
     listAccountsForCompany({ orgId, companyId }),
-    listSpecialItems({ orgId, companyId }),
+    listSpecialItems({ orgId, companyId, bankAccountId: account }),
   ]);
   const cp = `company=${companyId}`;
+  const backHref = account ? `/ledger/bank-recon/${account}?${cp}` : `/ledger/bank-recon?${cp}`;
 
   return (
     <div className="px-4 py-3 sm:px-6 sm:py-4">
       <div className="mb-1">
         <Link
-          href={`/ledger/bank-recon?${cp}`}
+          href={backHref}
           className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-600"
         >
-          <ChevronLeft size={14} /> กระทบยอดธนาคาร
+          <ChevronLeft size={14} /> {account ? "กลับหน้าบัญชี" : "กระทบยอดธนาคาร"}
         </Link>
       </div>
 
@@ -49,12 +51,12 @@ export default async function BankReconTransfersPage({
           <ArrowLeftRight size={18} />
         </div>
         <div>
-          <h1 className="text-lg font-semibold text-zinc-900">โยกเงิน (ระหว่างบัญชี)</h1>
-          <p className="text-xs text-zinc-400">จับคู่เงินออก–เงินเข้าข้ามบัญชี · ไม่นับเป็นรายรับ/รายจ่าย</p>
+          <h1 className="text-lg font-semibold text-zinc-900">โยกเงิน (ระหว่างบัญชี){account ? " — บัญชีนี้" : ""}</h1>
+          <p className="text-xs text-zinc-400">จับคู่เงินออก–เงินเข้าข้ามบัญชี · ไม่นับเป็นรายรับ/รายจ่าย{account ? " · ประวัติโยกเงินของบัญชีนี้" : ""}</p>
         </div>
       </div>
 
-      <BankReconControlsNav companyId={companyId} active="transfers" />
+      <BankReconControlsNav companyId={companyId} active="transfers" account={account} />
 
       <TransfersClient accounts={accounts} transfers={special.transfers} companyId={companyId} />
     </div>

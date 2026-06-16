@@ -9,6 +9,7 @@ import { listBookEntries, listBankMovements, listMatchGroups } from "@/lib/ledge
 import { reconcileCoverage } from "@/lib/ledger/recon-controls";
 import { ReconcileBoard } from "../../_components/ReconcileBoard";
 import { CoverageCard } from "../../_components/CoverageCard";
+import { BankReconControlsNav } from "../../_components/BankReconControlsNav";
 import { ReconcileMonthRange } from "./_components/ReconcileMonthRange";
 import { BankLogo } from "@/components/ledger/BankLogo";
 import { prisma } from "@/lib/prisma";
@@ -104,6 +105,12 @@ export default async function ReconcilePage({
           title="ความคืบหน้าการกระทบยอด"
           subtitle={periodFrom === periodTo ? periodFrom : `${periodFrom} – ${periodTo}`}
         />
+      </div>
+
+      {/* ดูประวัติของบัญชีนี้ — ยืนยันแล้ว(คลัง)/ข้าม/โอนเงิน เฉพาะบัญชีนี้ (ขออนุมัติแก้/ย้อนได้) */}
+      <div className="mb-4">
+        <p className="mb-2 text-xs font-medium text-zinc-500">ดูประวัติของบัญชีนี้</p>
+        <BankReconControlsNav companyId={companyId} account={accountId} />
       </div>
 
       <ReconcileBoard

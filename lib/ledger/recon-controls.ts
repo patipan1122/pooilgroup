@@ -189,9 +189,9 @@ export interface SkippedRecord {
   accountLabel: string | null; description: string; reason: string | null; at: string | null;
 }
 export async function listSpecialItems(params: {
-  orgId: string; companyId: string;
+  orgId: string; companyId: string; bankAccountId?: string;
 }): Promise<{ transfers: TransferRecord[]; skipped: SkippedRecord[] }> {
-  const { orgId, companyId } = params;
+  const { orgId, companyId, bankAccountId } = params;
   // transfers (new group model · match_type='transfer')
   const trows = await prisma.$queryRaw<{
     groupId: string; status: string; note: string | null; createdAt: string; reversalReason: string | null;
@@ -208,6 +208,11 @@ export async function listSpecialItems(params: {
     LEFT JOIN ledger_bank_account a ON a.id=t.bank_account_id
     WHERE g.org_id=${orgId}::uuid AND g.company_id=${companyId}::uuid
       AND g.match_type='transfer' AND g.status IN ('suggested','confirmed')
+      -- กรองตามบัญชี (เมื่อระบุ): โชว์โยกเงินที่ "ขาใดขาหนึ่ง" อยู่ในบัญชีนี้ (เห็นครบทั้ง 2 ขา)
+      AND (${bankAccountId ?? null}::uuid IS NULL OR EXISTS (
+        SELECT 1 FROM ledger_bank_match_item mi2
+        JOIN ledger_bank_txn t2 ON t2.id=mi2.bank_txn_id
+        WHERE mi2.group_id=g.id AND mi2.kind='bank' AND t2.bank_account_id=${bankAccountId ?? null}::uuid))
     ORDER BY g.created_at DESC, t.amount_satang DESC
     LIMIT 600`;
   const tmap = new Map<string, TransferRecord>();
@@ -237,6 +242,7 @@ export async function listSpecialItems(params: {
     LEFT JOIN ledger_bank_account a ON a.id=t.bank_account_id
     WHERE m.org_id=${orgId}::uuid AND m.company_id=${companyId}::uuid
       AND m.match_type='exclusion' AND m.status='confirmed'
+      AND (${bankAccountId ?? null}::uuid IS NULL OR t.bank_account_id=${bankAccountId ?? null}::uuid)
     ORDER BY m.matched_at DESC NULLS LAST
     LIMIT 600`;
   const skipped: SkippedRecord[] = srows.map((s) => ({

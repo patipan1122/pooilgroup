@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 export default async function BankReconSpecialItemsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ company?: string; branch?: string }>;
+  searchParams: Promise<{ company?: string; branch?: string; account?: string }>;
 }) {
   const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer");
   const sp = await searchParams;
@@ -27,9 +27,11 @@ export default async function BankReconSpecialItemsPage({
   if (!ledgerBankReconV1() || !scope.companyId) redirect("/ledger/bank-recon");
   const orgId = session.user.org_id;
   const companyId = scope.companyId;
+  const account = sp.account;
 
-  const { transfers, skipped } = await listSpecialItems({ orgId, companyId });
+  const { transfers, skipped } = await listSpecialItems({ orgId, companyId, bankAccountId: account });
   const cp = `company=${companyId}`;
+  const backHref = account ? `/ledger/bank-recon/${account}?${cp}` : `/ledger/bank-recon?${cp}`;
   // unExcludeAction itself requires super_admin/org_admin/admin → match that gate in UI
   const canUnExclude = ["super_admin", "org_admin", "admin"].includes(session.user.role);
 
@@ -37,10 +39,10 @@ export default async function BankReconSpecialItemsPage({
     <div className="px-4 py-3 sm:px-6 sm:py-4">
       <div className="mb-1">
         <Link
-          href={`/ledger/bank-recon?${cp}`}
+          href={backHref}
           className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-600"
         >
-          <ChevronLeft size={14} /> กระทบยอดธนาคาร
+          <ChevronLeft size={14} /> {account ? "กลับหน้าบัญชี" : "กระทบยอดธนาคาร"}
         </Link>
       </div>
 
@@ -49,12 +51,12 @@ export default async function BankReconSpecialItemsPage({
           <Sparkles size={18} />
         </div>
         <div>
-          <h1 className="text-lg font-semibold text-zinc-900">รายการพิเศษ (ทุกบัญชี)</h1>
-          <p className="text-xs text-zinc-400">โยกเงินภายใน + รายการที่ข้าม/ไม่มีคู่ จากทุกบัญชีรวมกัน</p>
+          <h1 className="text-lg font-semibold text-zinc-900">รายการพิเศษ {account ? "(บัญชีนี้)" : "(ทุกบัญชี)"}</h1>
+          <p className="text-xs text-zinc-400">โยกเงินภายใน + รายการที่ข้าม/ไม่มีคู่ {account ? "ของบัญชีนี้" : "จากทุกบัญชีรวมกัน"}</p>
         </div>
       </div>
 
-      <BankReconControlsNav companyId={companyId} active="special-items" />
+      <BankReconControlsNav companyId={companyId} active="special-items" account={account} />
 
       <SpecialItemsClient transfers={transfers} skipped={skipped} canUnExclude={canUnExclude} />
     </div>

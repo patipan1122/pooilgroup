@@ -13,6 +13,7 @@ import {
 import { ImportWizardWrapper } from "./_components/ImportWizardWrapper";
 import { AccountLedgerTabs } from "./_components/AccountLedgerTabs";
 import { DuplicateCleanup } from "./_components/DuplicateCleanup";
+import { BankReconControlsNav } from "../_components/BankReconControlsNav";
 import { BankLogo } from "@/components/ledger/BankLogo";
 import { prisma } from "@/lib/prisma";
 import { Upload, Scale } from "lucide-react";
@@ -154,6 +155,13 @@ export default async function BankAccountDetailPage({
         {account.canImport && (
           <span className="text-xs text-zinc-400">นำเข้า statement ด้านล่าง แล้วกระทบยอดตามช่วงเวลา</span>
         )}
+      </div>
+
+      {/* ประวัติ & รายการของบัญชีนี้ — กดเข้าดู "ยืนยันแล้ว(คลัง)/ข้าม/โอนเงิน" เฉพาะบัญชีนี้
+          (จากคลังขออนุมัติแก้/ย้อนได้) */}
+      <div className="mb-4">
+        <p className="mb-2 text-xs font-medium text-zinc-500">ประวัติ &amp; รายการของบัญชีนี้</p>
+        <BankReconControlsNav companyId={companyId} account={accountId} />
       </div>
 
       {/* 2-tab ledger */}
