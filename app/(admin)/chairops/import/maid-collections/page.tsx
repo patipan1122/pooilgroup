@@ -38,10 +38,19 @@ export default async function MaidCsvImportPage({
 
   // Show a short list of recent CSV-imported collection rows so the CEO can
   // verify the batch landed without leaving the page.
+  // One real branch name to seed the .csv quick-download example.
+  const firstBranch = await prisma.chairopsBranch.findFirst({
+    where: { orgId: session.user.orgId, isActive: true },
+    orderBy: { name: "asc" },
+    select: { name: true },
+  });
+  const exampleBranchName = firstBranch?.name ?? "ชื่อสาขา";
+
   const recent = await prisma.chairopsCashCollection.findMany({
     where: {
       orgId: session.user.orgId,
-      source: "CSV_IMPORT",
+      // Both CSV back-fills and admin-collected (OFFICE_PROXY) rows land here.
+      source: { in: ["CSV_IMPORT", "OFFICE_PROXY"] },
     },
     orderBy: { createdAt: "desc" },
     take: 8,
@@ -50,6 +59,7 @@ export default async function MaidCsvImportPage({
       collectedAt: true,
       countedAmount: true,
       slipPhotoUrl: true,
+      source: true,
       branch: { select: { name: true } },
       maid: { select: { displayName: true } },
     },
@@ -97,20 +107,25 @@ export default async function MaidCsvImportPage({
           <div className="font-semibold text-zinc-800">วิธีใช้</div>
           <ol className="ml-5 list-decimal space-y-1 text-zinc-700">
             <li>
-              ดาวน์โหลด template ด้านล่าง (header ตายตัว · เปลี่ยนชื่อ
-              column ไม่ได้)
+              ดาวน์โหลด template ด้านล่าง · <strong>ในไฟล์เติมชื่อสาขาให้แล้วทุกสาขา</strong> —
+              พิมพ์ชื่อสาขาจริงได้เลย ไม่ต้องเปิดหารหัส
             </li>
             <li>
-              กรอกแถวละ 1 รอบเก็บเงิน · เวลาใช้รูปแบบ{" "}
+              กรอกแค่ <strong>ยอดเงิน + เวลา</strong> ข้างสาขาที่เก็บ · เวลาใช้รูปแบบ{" "}
               <code className="rounded bg-zinc-100 px-1">
                 YYYY-MM-DD HH:mm
-              </code>
+              </code>{" "}
+              · สาขาที่ไม่ได้กรอก ระบบข้ามให้ (ไม่ต้องลบแถว)
+            </li>
+            <li>
+              <strong>แอดมินเก็บเงินเอง</strong> (ไม่ใช่แม่บ้าน) → พิมพ์คำว่า{" "}
+              <code className="rounded bg-sky-100 px-1 text-sky-800">แอดมิน</code>{" "}
+              ในช่อง maidPhone ของแถวนั้น
             </li>
             <li>
               upload ไฟล์ · ระบบเช็คซ้ำกับฐานข้อมูล (±60 วินาที + ยอดเดียวกัน
-              = ซ้ำ)
+              = ซ้ำ) แล้วกดยืนยัน → บันทึกเฉพาะแถวที่ผ่าน
             </li>
-            <li>กดยืนยัน → ระบบบันทึกเฉพาะแถวที่ผ่าน</li>
           </ol>
           <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
             ⚠ CSV import จะตั้งค่า{" "}
@@ -130,12 +145,12 @@ export default async function MaidCsvImportPage({
           </pre>
           <div className="grid gap-1 text-xs text-zinc-600">
             <div>
-              <code className="font-semibold">branchSlug</code> — slug ของสาขา
-              (อยู่ใน sheet &quot;รายชื่อสาขา&quot; ของ template)
+              <code className="font-semibold">สาขา</code> — พิมพ์ชื่อสาขาจริงได้เลย
+              (หรือ slug ก็ได้)
             </div>
             <div>
               <code className="font-semibold">collectedAt</code> —{" "}
-              <code>YYYY-MM-DD HH:mm</code> เวลาที่แม่บ้านมาถึงสาขา
+              <code>YYYY-MM-DD HH:mm</code> เวลาที่มาถึงสาขา
             </div>
             <div>
               <code className="font-semibold">countedAmount</code> — บาท
@@ -143,7 +158,9 @@ export default async function MaidCsvImportPage({
             </div>
             <div>
               <code className="font-semibold">maidPhone</code> (ใส่หรือเว้นได้)
-              — ถ้าใส่ระบบจะ match แม่บ้าน · ถ้าเว้นจะใช้ค่าเริ่มต้นของสาขา
+              — ใส่เบอร์=match แม่บ้าน · เว้น=แม่บ้านประจำสาขา · พิมพ์{" "}
+              <code className="rounded bg-sky-100 px-1 text-sky-800">แอดมิน</code>{" "}
+              = แอดมินเก็บเอง
             </div>
             <div>
               <code className="font-semibold">notes, slipUrl</code> (ใส่หรือเว้นได้)
@@ -160,7 +177,7 @@ export default async function MaidCsvImportPage({
               href={`data:text/csv;charset=utf-8,${encodeURIComponent(
                 CSV_HEADER.join(",") +
                   "\n" +
-                  "central-rama-9,2026-06-01 10:30,5400,0891234567,,",
+                  `${exampleBranchName},2026-06-01 10:30,5400,0891234567,,`,
               )}`}
               download="maid-collections-template.csv"
               className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
@@ -200,7 +217,18 @@ export default async function MaidCsvImportPage({
                           .replace("T", " ")}
                       </td>
                       <td className="px-2 py-1.5">{r.branch?.name ?? "—"}</td>
-                      <td className="px-2 py-1.5">{r.maid?.displayName ?? "—"}</td>
+                      <td className="px-2 py-1.5">
+                        {r.source === "OFFICE_PROXY" ? (
+                          <span className="inline-flex items-center gap-1">
+                            <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-700">
+                              แอดมินเก็บแทน
+                            </span>
+                            {r.maid?.displayName ?? ""}
+                          </span>
+                        ) : (
+                          (r.maid?.displayName ?? "—")
+                        )}
+                      </td>
                       <td className="px-2 py-1.5 text-right tabular-nums">
                         {Number(r.countedAmount).toLocaleString("en-US")}
                       </td>

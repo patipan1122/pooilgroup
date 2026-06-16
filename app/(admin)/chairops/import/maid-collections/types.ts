@@ -3,8 +3,13 @@
 // and shared types/interfaces live here so both the actions module and the
 // client shell can import them safely.
 
+// Column 1 header was "branchSlug" (English slug only). 2026-06-16 · CEO asked
+// to type the REAL Thai branch name so back-filling is faster, so the header is
+// now "สาขา" and the resolver accepts the Thai name OR the slug. Old files that
+// still say "branchSlug" in column 1 keep working — see BRANCH_COL_ALIASES +
+// the relaxed column-1 check in previewMaidCsv().
 export const CSV_HEADER = [
-  "branchSlug",
+  "สาขา",
   "collectedAt",
   "countedAmount",
   "maidPhone",
@@ -13,6 +18,9 @@ export const CSV_HEADER = [
 ] as const;
 
 export const HEADER_LINE = CSV_HEADER.join(",");
+
+/** Accepted labels for column 1 (case/space-insensitive) — backward compat. */
+export const BRANCH_COL_ALIASES = ["สาขา", "ชื่อสาขา", "branchslug", "branch"] as const;
 
 export type RowKind =
   | "ready" // will insert
@@ -31,6 +39,14 @@ export interface PreviewRow {
   branchName: string | null;
   maidId: string | null;
   maidLabel: string | null;
+  /**
+   * Provenance written to chairops."CollectionSource".
+   *   CSV_IMPORT   · normal back-fill of a maid round (maidId = the maid)
+   *   OFFICE_PROXY · the admin collected the cash themselves (maidId = the
+   *                  importing admin) — flagged by typing "แอดมิน" / "-" in
+   *                  the maidPhone column. 2026-06-16.
+   */
+  source: "CSV_IMPORT" | "OFFICE_PROXY";
   /** Why this row is invalid · empty when kind != "invalid". */
   errors: string[];
   kind: RowKind;

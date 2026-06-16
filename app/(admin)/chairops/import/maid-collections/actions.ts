@@ -42,6 +42,7 @@ import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
 import {
   CSV_HEADER,
   HEADER_LINE,
+  BRANCH_COL_ALIASES,
   type RowKind,
   type PreviewRow,
   type PreviewResult,
@@ -49,6 +50,40 @@ import {
   type CommitResult,
   type CommitResponse,
 } from "./types";
+
+// ---------- branch-name normalization --------------------------------------
+// 2026-06-16 · the สาขา column now accepts the REAL Thai branch name OR the
+// slug, so the CEO no longer has to look up the slug. Normalize aggressively
+// before comparing — Excel/Sheets love to inject zero-width / NBSP / BOM
+// characters and inconsistent spacing (same class of bug as
+// [[csv-header-invisible-char-match-2026-06-16]]).
+function normalizeBranchKey(raw: string): string {
+  return raw
+    .normalize("NFC")
+    // NBSP \u00A0 -> plain space first so the \\s+ collapse below catches it
+    .replace(/\u00A0/g, " ")
+    // strip BOM + zero-width + bidi marks + word-joiner (escaped per
+    // [[csv-header-invisible-char-match-2026-06-16]] - never paste raw invisibles)
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+// "แอดมิน" / "admin" / "-" in the maidPhone column = the admin collected the
+// cash themselves (OFFICE_PROXY) instead of a maid. 2026-06-16 · CEO decision.
+function isAdminCollectMarker(raw: string): boolean {
+  const k = normalizeBranchKey(raw);
+  return (
+    k === "แอดมิน" ||
+    k === "แอดมินเก็บเอง" ||
+    k === "แอดมินเก็บแทน" ||
+    k === "admin" ||
+    k === "office" ||
+    k === "สำนักงาน" ||
+    k === "-"
+  );
+}
 
 // ---------- xlsx → string[][] converter -------------------------------------
 // Reads the first sheet of an xlsx workbook and returns rows as string arrays,
@@ -271,6 +306,20 @@ export async function previewMaidCsv(
     };
   }
   for (let i = 0; i < CSV_HEADER.length; i++) {
+    // Column 1 (สาขา) accepts a few labels so files made from the OLD template
+    // (header "branchSlug") still upload. Columns 2-6 stay strict.
+    if (i === 0) {
+      const ok = BRANCH_COL_ALIASES.includes(
+        normalizeBranchKey(header[0]) as (typeof BRANCH_COL_ALIASES)[number],
+      );
+      if (!ok) {
+        return {
+          ok: false,
+          error: `header column 1 ต้องเป็น "${CSV_HEADER[0]}" (เจอ "${header[0]}") · header ที่ต้องใช้: ${HEADER_LINE}`,
+        };
+      }
+      continue;
+    }
     if (header[i] !== CSV_HEADER[i]) {
       return {
         ok: false,
@@ -291,6 +340,39 @@ export async function previewMaidCsv(
     },
   });
   const branchBySlug = new Map(branches.map((b) => [b.slug, b]));
+  // 2026-06-16 · resolve the สาขา column by NAME too (normalized), so the CEO
+  // can type "เซ็นทรัล ขอนแก่น" instead of looking up "central-khonkaen".
+  // Also index slugs under their normalized key so a pasted slug with stray
+  // casing/whitespace still matches.
+  const branchByNameKey = new Map<string, typeof branches>();
+  const branchBySlugKey = new Map<string, (typeof branches)[number]>();
+  for (const b of branches) {
+    branchBySlugKey.set(normalizeBranchKey(b.slug), b);
+    const nameKey = normalizeBranchKey(b.name);
+    const list = branchByNameKey.get(nameKey) ?? [];
+    list.push(b);
+    branchByNameKey.set(nameKey, list);
+  }
+  // resolveBranch: exact slug → normalized slug → unique normalized name.
+  // Returns { branch } or { error } (ambiguous name → ask for the slug).
+  function resolveBranch(
+    rawValue: string,
+  ): { branch: (typeof branches)[number] | null; error?: string } {
+    const exact = branchBySlug.get(rawValue);
+    if (exact) return { branch: exact };
+    const key = normalizeBranchKey(rawValue);
+    const bySlug = branchBySlugKey.get(key);
+    if (bySlug) return { branch: bySlug };
+    const byName = branchByNameKey.get(key) ?? [];
+    if (byName.length === 1) return { branch: byName[0] };
+    if (byName.length > 1) {
+      return {
+        branch: null,
+        error: `ชื่อสาขา "${rawValue}" ซ้ำกัน ${byName.length} สาขา · ใส่รหัส slug แทนชื่อ`,
+      };
+    }
+    return { branch: null };
+  }
 
   // Preload active maids and their branch assignments. We resolve maid in
   // priority order: phone-match → branch.primaryMaidId equivalent (single
@@ -344,13 +426,33 @@ export async function previewMaidCsv(
     const errors: string[] = [];
     const cells = [...r];
     while (cells.length < CSV_HEADER.length) cells.push("");
-    const [slug, dateRaw, amtRaw, phoneRaw, notesRaw, slipRaw] = cells.map((c) =>
-      c.trim(),
+    const [branchRaw, dateRaw, amtRaw, phoneRaw, notesRaw, slipRaw] = cells.map(
+      (c) => c.trim(),
     );
 
-    if (!slug) errors.push("ไม่มี branchSlug");
-    const branch = slug ? branchBySlug.get(slug) ?? null : null;
-    if (slug && !branch) errors.push(`ไม่พบสาขา slug="${slug}"`);
+    // Pre-filled template ships one row per branch (name only). A row the CEO
+    // never touched has no amount AND no time → treat it as blank skeleton and
+    // skip silently (don't flag the whole branch list as errors). 2026-06-16.
+    if (!amtRaw && !dateRaw) continue;
+
+    // สาขา column resolves by real Thai name OR slug. 2026-06-16.
+    if (!branchRaw) errors.push("ไม่มีสาขา");
+    const resolved = branchRaw
+      ? resolveBranch(branchRaw)
+      : { branch: null as (typeof branches)[number] | null };
+    const branch = resolved.branch;
+    if (branchRaw && !branch) {
+      errors.push(resolved.error ?? `ไม่พบสาขา "${branchRaw}"`);
+    }
+
+    // "แอดมิน" / "-" in the maidPhone column = the admin collected the cash
+    // themselves → attribute to the importing admin, source OFFICE_PROXY. The
+    // value is NOT a real phone, so we clear it from the phone field.
+    const isAdminProxy = isAdminCollectMarker(phoneRaw);
+    const source: PreviewRow["source"] = isAdminProxy
+      ? "OFFICE_PROXY"
+      : "CSV_IMPORT";
+    const phoneInput = isAdminProxy ? "" : phoneRaw;
 
     let collectedAt: Date | null = null;
     if (!dateRaw) {
@@ -372,11 +474,16 @@ export async function previewMaidCsv(
       }
     }
 
-    // Maid resolution — phone first, then sole active assignment for the
-    // branch, then primaryBranchId fallback.
+    // Maid resolution.
+    //   OFFICE_PROXY → the cash belongs to the importing admin · no maid lookup.
+    //   CSV_IMPORT   → phone first, then sole active assignment for the branch,
+    //                  then primaryBranchId fallback.
     let maidId: string | null = null;
     let maidLabel: string | null = null;
-    if (branch) {
+    if (isAdminProxy) {
+      maidId = session.user.id;
+      maidLabel = "แอดมินเก็บแทน";
+    } else if (branch) {
       const phoneKey = phoneRaw ? normalizePhone(phoneRaw) : null;
       const hit = phoneKey ? maidByPhone.get(phoneKey) ?? null : null;
       if (hit) {
@@ -400,13 +507,13 @@ export async function previewMaidCsv(
       }
       if (!maidId) {
         errors.push(
-          "หาแม่บ้านไม่เจอ · ใส่ maidPhone ที่ตรงในไฟล์ หรือผูกแม่บ้านกับสาขานี้เพียงคนเดียว",
+          'หาแม่บ้านไม่เจอ · ใส่เบอร์แม่บ้านที่ตรง · ผูกแม่บ้านกับสาขานี้คนเดียว · หรือพิมพ์ "แอดมิน" ถ้าแอดมินเก็บเอง',
         );
       }
     }
 
     // SEC-02 (2026-06-03) · validate per-row free-text BEFORE writing.
-    const phoneOut = sanitizePhone(phoneRaw || null);
+    const phoneOut = sanitizePhone(phoneInput || null);
     if (phoneOut.error) errors.push(phoneOut.error);
     const notesOut = sanitizeNotes(notesRaw || null);
     if (notesOut.error) errors.push(notesOut.error);
@@ -415,7 +522,9 @@ export async function previewMaidCsv(
 
     draftRows.push({
       rowIndex: i,
-      branchSlug: slug,
+      // Echo the canonical slug when resolved so the preview is unambiguous
+      // even if the CEO typed the Thai name.
+      branchSlug: branch?.slug ?? branchRaw,
       collectedAt: collectedAt ? formatLocalIso(collectedAt) : null,
       countedAmount,
       maidPhone: phoneOut.value,
@@ -425,6 +534,7 @@ export async function previewMaidCsv(
       branchName: branch?.name ?? null,
       maidId,
       maidLabel,
+      source,
       errors,
       kind: errors.length > 0 ? "invalid" : "ready",
     });
@@ -613,14 +723,21 @@ export async function commitMaidCsv(
       !r.maidId ||
       !r.collectedAt ||
       r.countedAmount == null ||
-      !validBranch.has(r.branchId) ||
-      !validMaid.has(r.maidId)
+      !validBranch.has(r.branchId)
     ) {
       return false;
     }
     if (r.slipUrl && !isAllowedPhotoUrl(r.slipUrl)) return false;
-    // BA-04 · enforce assignment consistency · maid must either be in this
-    // branch's active assignment set OR have it as their primaryBranchId.
+    // OFFICE_PROXY · the admin collected the cash themselves. maidId MUST be
+    // the importing admin (sig already pins this, re-checked here) · no maid
+    // assignment to verify. 2026-06-16.
+    if (r.source === "OFFICE_PROXY") {
+      return r.maidId === session.user.id;
+    }
+    // CSV_IMPORT · maid must be a real MAID of this org …
+    if (!validMaid.has(r.maidId)) return false;
+    // BA-04 · … AND assignment-consistent · either in this branch's active
+    // assignment set OR have it as their primaryBranchId.
     const assigned = assignedByBranch.get(r.branchId);
     if (assigned && assigned.has(r.maidId)) return true;
     const maid = validMaid.get(r.maidId);
@@ -689,7 +806,9 @@ export async function commitMaidCsv(
       imageHash: null,
       slipPhotoUrl: r.slipUrl ?? null,
       notes: r.notes ?? null,
-      source: "CSV_IMPORT" as const,
+      // Per-row provenance · OFFICE_PROXY when the admin collected it himself
+      // (maidId = admin), CSV_IMPORT for a normal maid back-fill. 2026-06-16.
+      source: r.source === "OFFICE_PROXY" ? ("OFFICE_PROXY" as const) : ("CSV_IMPORT" as const),
       importedById: session.user.id,
     }));
 
