@@ -114,10 +114,16 @@ export default async function PosIngestListPage({
       take: 50,
     }),
     getStarThingLatest(session.user.orgId),
-    prisma.chairopsGmailConnection.findUnique({
-      where: { orgId: session.user.orgId },
-      select: { gmailEmail: true, lastSyncAt: true, lastSyncStatus: true, lastSyncCount: true },
-    }),
+    // The Gmail status bar is a NON-ESSENTIAL decoration. It must never be able
+    // to take down the upload page (the critical path). If the query fails for
+    // any reason (table missing, transient DB error), degrade to "not connected"
+    // instead of crashing the whole Server Component. (Root cause 2026-06-16.)
+    prisma.chairopsGmailConnection
+      .findUnique({
+        where: { orgId: session.user.orgId },
+        select: { gmailEmail: true, lastSyncAt: true, lastSyncStatus: true, lastSyncCount: true },
+      })
+      .catch(() => null),
   ]);
 
   const uploaderIds = [...new Set(imports.map((i) => i.uploadedById))];

@@ -3220,6 +3220,13 @@ model ChairopsGmailConnection {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  // BUGFIX 2026-06-16: the raw migration (20260605_chairops_gmail_connection.sql)
+  // creates the table as snake_case `chairops_gmail_connection`. Without this
+  // @@map, Prisma queried `chairops.ChairopsGmailConnection` (model name) which
+  // does not exist -> P2021 -> crashed the whole POS-Ingest page (upload broke).
+  // Sibling snake_case tables (chairops_pos_cash_event, etc.) all declare @@map;
+  // this one was the lone exception. Enforced by scripts/check-prisma-table-map.mjs.
+  @@map("chairops_gmail_connection")
   @@schema("chairops")
 }
 
