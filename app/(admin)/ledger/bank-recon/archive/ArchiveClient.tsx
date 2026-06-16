@@ -34,6 +34,22 @@ interface Props {
   isSuper: boolean;
 }
 
+// ── ความมั่นใจ (เหมือนแท็บรอยืนยัน) — คลังดูจาก "ยอดต่าง" เป็นหลัก (ที่ยืนยันแล้ว = ชื่อผ่านตาคนแล้ว) ──
+//   🟢 มั่นใจสูง = ยอดตรงเป๊ะ · 🟡 ควรตรวจสอบ = ต่าง ≤฿500 · 🔴 มั่นใจน้อย = ต่าง >฿500
+type Band = "high" | "review" | "low";
+const REVIEW_DELTA_SATANG = 50000; // ฿500 — ตรงกับเกณฑ์แท็บรอยืนยัน
+const BAND_META: Record<Band, { label: string; dot: string; pill: string; chip: string }> = {
+  high:   { label: "มั่นใจสูง",    dot: "bg-emerald-500", pill: "bg-emerald-100 text-emerald-700", chip: "border-emerald-300 bg-emerald-50 text-emerald-700" },
+  review: { label: "ควรตรวจสอบ", dot: "bg-amber-500",   pill: "bg-amber-100 text-amber-700",     chip: "border-amber-300 bg-amber-50 text-amber-700" },
+  low:    { label: "มั่นใจน้อย",   dot: "bg-rose-500",    pill: "bg-rose-100 text-rose-700",       chip: "border-rose-300 bg-rose-50 text-rose-700" },
+};
+function confidenceBand(deltaSatang: number): Band {
+  const abs = Math.abs(deltaSatang);
+  if (abs > REVIEW_DELTA_SATANG) return "low";
+  if (abs === 0) return "high";
+  return "review";
+}
+
 export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Props) {
   const router = useRouter();
   const pathname = usePathname();
@@ -47,6 +63,7 @@ export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Prop
   // เลือกหลายรายการเพื่อย้อนพร้อมกัน (เฉพาะ super_admin)
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [bandFilter, setBandFilter] = useState<"all" | Band>("all"); // กรองตามความมั่นใจ
   const toggleOne = (id: string) =>
     setSelected((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
@@ -92,8 +109,13 @@ export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Prop
     }
   }
 
+  // กรองตามความมั่นใจ (ทับบนผลค้นหา) + นับจำนวนต่อระดับ
+  const bandCounts = { all: visible.length, high: 0, review: 0, low: 0 };
+  for (const g of visible) bandCounts[confidenceBand(g.deltaSatang)]++;
+  const shown = bandFilter === "all" ? visible : visible.filter((g) => confidenceBand(g.deltaSatang) === bandFilter);
+
   // เลือกได้เฉพาะรายการที่ "ยืนยันอยู่" (ย้อนได้) — ที่ย้อนแล้วเลือกไม่ได้
-  const confirmedVisible = visible.filter((g) => g.status === "confirmed");
+  const confirmedVisible = shown.filter((g) => g.status === "confirmed");
   const allSelected = confirmedVisible.length > 0 && confirmedVisible.every((g) => selected.has(g.id));
   const toggleAll = () =>
     setSelected(allSelected ? new Set() : new Set(confirmedVisible.map((g) => g.id)));
@@ -124,7 +146,7 @@ export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Prop
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="ค้นหา: ชื่อบัญชี · ผู้ขาย/ลูกค้า · จำนวนเงิน · เหตุผลที่ย้อน"
+            placeholder="ค้นหา 2 ขา: บัญชี · รายการบัญชี/ธนาคาร · ผู้ขาย/ลูกค้า · จำนวนเงิน · เหตุผล"
             className="min-h-11 w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 text-sm text-zinc-800 outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
           />
         </div>
@@ -149,10 +171,19 @@ export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Prop
         <FeedbackBar kind={feedback.kind} message={feedback.message} onDismiss={() => setFeedback(null)} />
       )}
 
+      {/* กรองความมั่นใจ — ดูว่ามั่นใจแค่ไหน + กดดูทีละระดับ (ยอดตรงเป๊ะ = มั่นใจสูง) */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-xs text-zinc-400">ความมั่นใจ:</span>
+        <BandChip active={bandFilter === "all"} onClick={() => setBandFilter("all")} label="ทั้งหมด" count={bandCounts.all} />
+        <BandChip active={bandFilter === "high"} onClick={() => setBandFilter("high")} band="high" count={bandCounts.high} />
+        <BandChip active={bandFilter === "review"} onClick={() => setBandFilter("review")} band="review" count={bandCounts.review} />
+        <BandChip active={bandFilter === "low"} onClick={() => setBandFilter("low")} band="low" count={bandCounts.low} />
+      </div>
+
       {/* result count + เลือกทั้งหมด (super_admin) */}
       <div className="flex flex-wrap items-center gap-3">
         <p className="text-xs text-zinc-400">
-          {visible.length} รายการ{q ? ` (กรองจากทั้งหมด ${groups.length})` : ""}
+          {shown.length} รายการ{shown.length !== groups.length ? ` (จากทั้งหมด ${groups.length})` : ""}
         </p>
         {isSuper && confirmedVisible.length > 0 && (
           <button
@@ -167,15 +198,15 @@ export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Prop
       </div>
 
       {/* list */}
-      {visible.length === 0 ? (
+      {shown.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 py-14 text-center">
           <Landmark size={28} className="mx-auto mb-2 text-zinc-300" />
-          <p className="text-sm font-medium text-zinc-600">ยังไม่มีรายการในคลัง</p>
-          <p className="text-xs text-zinc-400">รายการที่ยืนยัน/ย้อนแล้วจะมาแสดงที่นี่</p>
+          <p className="text-sm font-medium text-zinc-600">{bandFilter === "all" ? "ยังไม่มีรายการในคลัง" : "ไม่มีรายการในระดับความมั่นใจนี้"}</p>
+          <p className="text-xs text-zinc-400">{bandFilter === "all" ? "รายการที่ยืนยัน/ย้อนแล้วจะมาแสดงที่นี่" : "ลองเลือกระดับอื่นด้านบน"}</p>
         </div>
       ) : (
-        <ul className="space-y-3">
-          {visible.map((g) => (
+        <ul className="space-y-2">
+          {shown.map((g) => (
             <ArchiveCard
               key={g.id}
               group={g}
@@ -262,11 +293,13 @@ function ArchiveCard({
   const bookItems = g.items.filter((i) => i.kind === "book");
   const bankItems = g.items.filter((i) => i.kind === "bank");
   const hasDelta = g.deltaSatang !== 0;
+  const band = confidenceBand(g.deltaSatang);
+  const meta = BAND_META[band];
 
   return (
     <li className={`overflow-hidden rounded-2xl border bg-white shadow-soft ${checked ? "border-rose-300 ring-1 ring-rose-200" : "border-zinc-100"}`}>
       {/* header */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-100 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-100 px-4 py-2">
         {selectable && (
           <input
             type="checkbox"
@@ -277,6 +310,11 @@ function ArchiveCard({
           />
         )}
         <StatusBadge status={g.status} />
+        {g.matchType !== "transfer" && (
+          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${meta.pill}`}>
+            <span className={`size-1.5 rounded-full ${meta.dot}`} aria-hidden /> {meta.label}
+          </span>
+        )}
         <span className="text-sm font-medium text-zinc-700">{g.accountLabel ?? "ทุกบัญชี"}</span>
         {g.matchType === "transfer" && (
           <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700">
@@ -292,15 +330,15 @@ function ArchiveCard({
 
       {/* totals */}
       <div className="grid grid-cols-3 divide-x divide-zinc-100 border-b border-zinc-100 text-center">
-        <div className="px-3 py-2">
+        <div className="px-3 py-1.5">
           <p className="text-[11px] text-zinc-400">ฝั่งบัญชี (book)</p>
           <p className="tabular-num text-sm font-semibold text-zinc-800">฿{(Math.abs(g.bookTotalSatang) / 100).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         </div>
-        <div className="px-3 py-2">
+        <div className="px-3 py-1.5">
           <p className="text-[11px] text-zinc-400">ฝั่งธนาคาร (bank)</p>
           <p className="tabular-num text-sm font-semibold text-zinc-800">฿{(Math.abs(g.bankTotalSatang) / 100).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         </div>
-        <div className="px-3 py-2">
+        <div className="px-3 py-1.5">
           <p className="text-[11px] text-zinc-400">ส่วนต่าง</p>
           <p className={`tabular-num text-sm font-semibold ${hasDelta ? "text-amber-600" : "text-emerald-600"}`}>
             ฿{(Math.abs(g.deltaSatang) / 100).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -309,7 +347,7 @@ function ArchiveCard({
       </div>
 
       {/* matched items: book vs bank */}
-      <div className="grid gap-3 px-4 py-3 sm:grid-cols-2">
+      <div className="grid gap-2 px-4 py-2.5 sm:grid-cols-2">
         <ItemColumn title="รายการบัญชี" icon="book" items={bookItems} />
         <ItemColumn title="รายการธนาคาร" icon="bank" items={bankItems} />
       </div>
@@ -323,7 +361,7 @@ function ArchiveCard({
 
       {/* actions */}
       {g.status === "confirmed" && (
-        <div className="border-t border-zinc-100 px-4 py-2.5">
+        <div className="border-t border-zinc-100 px-4 py-2">
           <button
             type="button"
             onClick={onRevert}
@@ -340,6 +378,28 @@ function ArchiveCard({
         </div>
       )}
     </li>
+  );
+}
+
+// ชิปกรองความมั่นใจ (สี/จุดตามระดับ) — ไม่มี band = ชิป "ทั้งหมด"
+function BandChip({ active, onClick, label, count, band }: {
+  active: boolean; onClick: () => void; label?: string; count: number; band?: Band;
+}) {
+  const meta = band ? BAND_META[band] : null;
+  const cls = active
+    ? (meta ? meta.chip : "border-zinc-800 bg-zinc-900 text-white")
+    : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active ? "true" : "false"}
+      className={`press inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium focus-visible:ring-2 focus-visible:ring-brand-300 sm:min-h-0 ${cls}`}
+    >
+      <span className={`size-2 rounded-full ${meta ? meta.dot : "bg-zinc-300"}`} aria-hidden />
+      {label ?? meta?.label}
+      <span className="tabular-num opacity-70">{count}</span>
+    </button>
   );
 }
 
