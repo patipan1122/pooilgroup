@@ -300,8 +300,16 @@ export async function POST(req: NextRequest) {
     // If a new invite was issued for the same branch (auto-revoke), the old
     // HMAC token is still cryptographically valid but the DB row was cleared —
     // this check catches it.
+    // CRITICAL: the invite token signs the Supabase auth user id
+    // (createMaidInvite/createUserInvite: signInvite(authData.user.id)), which is
+    // stored on ChairopsUser.authUserId — NOT ChairopsUser.id (a separate
+    // @default(uuid()) PK). Looking up by `id` therefore NEVER matched → every
+    // completed invite login 404'd ("ไม่พบบัญชีในลิงก์เชิญ"). This was masked for
+    // months because the OAuth fallback used to drop the invite (bounced to /login
+    // before reaching here). Match on authUserId. 2026-06-16. See memory
+    // chairops-invite-link-liff-endpoint-url-2026-06-16.
     const maid = await prisma.chairopsUser.findFirst({
-      where: { id: targetId, isActive: true },
+      where: { authUserId: targetId, isActive: true },
       select: {
         id: true, orgId: true, email: true, displayName: true, role: true,
         lineUserId: true, authUserId: true,
