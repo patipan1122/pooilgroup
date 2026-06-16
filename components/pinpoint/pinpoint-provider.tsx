@@ -36,6 +36,9 @@ import { PinpointDrawCanvas } from "@/components/pinpoint/pinpoint-draw-canvas";
 import type { ElementMeta, PinpointPriority } from "@/lib/pinpoint/types";
 
 const LS_KEY = "pinpoint:v1";
+// ระยะเวลาสูงสุดที่ "รอ" ภาพหน้าจอให้ถ่าย+อัปโหลดเสร็จก่อนบันทึกหมุด (คอมเท่านั้น)
+// หน้าหนัก ๆ snapdom อาจใช้เวลา 2-4 วิ → ให้เผื่อพอ แต่ไม่ค้างถ้าจริง ๆ ถ่ายไม่ได้
+const CAPTURE_WAIT_MS = 8000;
 
 interface LocalPin {
   id: string;
@@ -103,9 +106,10 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
   const [draft, setDraft] = useState<DraftPin | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // screenshot key cache per page-url + in-flight guard
+  // screenshot key cache per page-url + in-flight capture promise (เก็บ Promise
+  // ไม่ใช่แค่ flag → ตอนปักหมุดสามารถ await การถ่ายที่กำลังวิ่งให้เสร็จก่อนบันทึกได้)
   const shotCache = useRef<Map<string, string>>(new Map());
-  const shotInFlight = useRef<Set<string>>(new Set());
+  const shotInFlight = useRef<Map<string, Promise<string | null>>>(new Map());
   const trapRef = useRef<HTMLDivElement | null>(null);
   const captureWarned = useRef(false); // เตือนปัญหาจับภาพครั้งเดียวพอ (ไม่สแปม)
 
@@ -212,49 +216,61 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
   }, [loadPins, startSession]);
 
   // ── per-page best-effort capture (desktop only) ──────────────────────────
+  // คืนค่า R2 key ของภาพหน้านี้ (null ถ้าจับ/อัปโหลดไม่สำเร็จ หรือบนมือถือ).
+  // ถ้าหน้าเดิมกำลังถ่ายอยู่ จะคืน Promise ตัวเดิม → ผู้เรียกหลายที่ await อันเดียวกันได้.
   const ensureCapture = useCallback(
-    async (url: string) => {
-      if (isLikelyMobile()) return; // mobile = structured target only
-      if (shotCache.current.has(url) || shotInFlight.current.has(url)) return;
-      shotInFlight.current.add(url);
-      try {
-        const blob = await captureBody();
-        if (!blob) {
-          // เดิมเงียบ → CEO ไม่รู้ว่าทำไมไม่มีภาพ. ตอนนี้บอกเหตุผล (ครั้งเดียว) · หมุดยังเซฟได้ปกติ
-          if (!captureWarned.current) {
-            captureWarned.current = true;
-            toast.error(`บันทึกภาพหน้าจอไม่สำเร็จ — ${lastCaptureError() ?? "ไม่ทราบสาเหตุ"} (หมุด/คอมเมนต์ยังบันทึกได้ปกติ)`);
+    async (url: string): Promise<string | null> => {
+      if (isLikelyMobile()) return null; // mobile = structured target only
+      const cached = shotCache.current.get(url);
+      if (cached) return cached;
+      const inflight = shotInFlight.current.get(url);
+      if (inflight) return inflight; // มีคนถ่ายหน้านี้อยู่แล้ว → รออันเดียวกัน
+
+      const task = (async (): Promise<string | null> => {
+        try {
+          const blob = await captureBody();
+          if (!blob) {
+            // เดิมเงียบ → CEO ไม่รู้ว่าทำไมไม่มีภาพ. ตอนนี้บอกเหตุผล (ครั้งเดียว) · หมุดยังเซฟได้ปกติ
+            if (!captureWarned.current) {
+              captureWarned.current = true;
+              toast.error(`บันทึกภาพหน้าจอไม่สำเร็จ — ${lastCaptureError() ?? "ไม่ทราบสาเหตุ"} (หมุด/คอมเมนต์ยังบันทึกได้ปกติ)`);
+            }
+            return null;
           }
-          return;
+          const key = await uploadCapture(blob);
+          if (!key) {
+            if (!captureWarned.current) {
+              captureWarned.current = true;
+              toast.error("อัปโหลดภาพหน้าจอไม่สำเร็จ (หมุด/คอมเมนต์ยังบันทึกได้ปกติ)");
+            }
+            return null;
+          }
+          shotCache.current.set(url, key);
+          // Backfill any already-saved pins on this page that lack a screenshot
+          // (กันกรณีถ่ายเสร็จช้ากว่าตอนปัก → เติมภาพให้หมุดที่บันทึกไปแล้ว).
+          setPins((prev) => {
+            const targets = prev.filter(
+              (p) => p.url === url && !p.screenshotKey,
+            );
+            for (const t of targets) {
+              void fetch(`/api/pinpoint/pins/${t.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ screenshotKey: key }),
+              });
+            }
+            return prev.map((p) =>
+              p.url === url && !p.screenshotKey ? { ...p, screenshotKey: key } : p,
+            );
+          });
+          return key;
+        } finally {
+          shotInFlight.current.delete(url);
         }
-        const key = await uploadCapture(blob);
-        if (!key) {
-          if (!captureWarned.current) {
-            captureWarned.current = true;
-            toast.error("อัปโหลดภาพหน้าจอไม่สำเร็จ (หมุด/คอมเมนต์ยังบันทึกได้ปกติ)");
-          }
-          return;
-        }
-        shotCache.current.set(url, key);
-        // Backfill any already-saved pins on this page that lack a screenshot.
-        setPins((prev) => {
-          const targets = prev.filter(
-            (p) => p.url === url && !p.screenshotKey,
-          );
-          for (const t of targets) {
-            void fetch(`/api/pinpoint/pins/${t.id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ screenshotKey: key }),
-            });
-          }
-          return prev.map((p) =>
-            p.url === url && !p.screenshotKey ? { ...p, screenshotKey: key } : p,
-          );
-        });
-      } finally {
-        shotInFlight.current.delete(url);
-      }
+      })();
+
+      shotInFlight.current.set(url, task);
+      return task;
     },
     [],
   );
@@ -309,9 +325,24 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
       if (!sessionId || !draft || busy) return;
       setBusy(true);
       const url = currentUrl();
-      void ensureCapture(url);
-      // ภาพวาด (ถ้ามี) = ภาพเฉพาะของหมุดนี้ · ไม่งั้นใช้ภาพรวมของหน้านั้น.
-      const finalKey = screenshotKeyOverride ?? shotCache.current.get(url) ?? null;
+      // ภาพวาด (override) = ภาพเฉพาะหมุดนี้ ใช้ทันที · ไม่งั้นใช้ภาพรวมของหน้า.
+      let finalKey: string | null =
+        screenshotKeyOverride ?? shotCache.current.get(url) ?? null;
+      // ยังไม่มีภาพ + เป็นคอม → "รอ" ถ่าย+อัปโหลดให้เสร็จก่อนบันทึก (มี timeout กันค้าง).
+      // เดิมยิงบันทึกเลยไม่รอ → หน้าหนักภาพถ่ายไม่ทัน → หมุดไม่มีภาพแบบเงียบ ๆ (RACE).
+      if (finalKey == null && !isLikelyMobile()) {
+        const loadingId = toast.loading("กำลังเก็บภาพหน้าจอ…");
+        try {
+          finalKey = await Promise.race([
+            ensureCapture(url),
+            new Promise<null>((r) => setTimeout(() => r(null), CAPTURE_WAIT_MS)),
+          ]);
+          // เผื่อ timeout พอดีกับที่เพิ่งถ่ายเสร็จ → อ่าน cache อีกครั้ง.
+          if (finalKey == null) finalKey = shotCache.current.get(url) ?? null;
+        } finally {
+          toast.dismiss(loadingId);
+        }
+      }
       try {
         const res = await fetch(`/api/pinpoint/sessions/${sessionId}/pins`, {
           method: "POST",
