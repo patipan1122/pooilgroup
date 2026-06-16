@@ -93,7 +93,16 @@ export function LiffBootstrap({
         : "default";
     const liffId = liffIdForModule(lineModule);
 
-    if (haveSession) {
+    // An invite token means "log in AS the user this link was issued for" — so
+    // we must ALWAYS run the bind/login when one is present, even if a session
+    // already exists. Short-circuiting here on a leftover/stale session (the
+    // LINE webview keeps cookies across taps; repeated failed attempts leave a
+    // wrong-user or half-written session) would skip the invite entirely and
+    // navigate straight to `next`, where requireSession then bounces the maid to
+    // /login — looking like the link "doesn't work" with no diagnostic. The
+    // login below mints a fresh session for the invited user, overwriting any
+    // stale one. See memory chairops-invite-link-liff-endpoint-url-2026-06-16.
+    if (haveSession && !invite) {
       // Already authenticated (e.g. opened a second time) → go straight in.
       if (next) window.location.replace(next);
       return;
