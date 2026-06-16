@@ -6,7 +6,8 @@ import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
-import { branchByStoreCode, createAmazonIv } from "@/lib/cashhub/amazon-trcloud";
+import { createAmazonIv } from "@/lib/cashhub/amazon-trcloud";
+import { findAmazonBranch } from "@/lib/cashhub/amazon-branch-data";
 import { markIvPosted } from "@/lib/cashhub/amazon-data";
 import type { AmazonDayRow } from "@/lib/cashhub/amazon-parse";
 
@@ -39,7 +40,9 @@ export async function POST(req: NextRequest) {
   // (cfg.storeCode ว่างสำหรับสาขาที่จับคู่ด้วยชื่อ เช่น เทศบาลจักราช → จะอัปเดต DB ไม่ตรงแถว)
   const storeCode = (body.storeCode ?? "").trim();
   if (!storeCode) return NextResponse.json({ error: "ไม่มีรหัสสาขา" }, { status: 400 });
-  const cfg = branchByStoreCode(storeCode, body.storeLabel ?? null);
+  const admin = adminClient();
+  const orgId = session.user.org_id;
+  const cfg = await findAmazonBranch(admin, orgId, storeCode, body.storeLabel ?? null);
   if (!cfg) return NextResponse.json({ error: "ไม่รู้จักสาขานี้" }, { status: 400 });
   const day = body.day;
   if (!day || !day.date)
@@ -52,9 +55,6 @@ export async function POST(req: NextRequest) {
       { error: "การส่งซ้ำต้องพิมพ์คำว่า “ยืนยัน” ให้ถูกต้องก่อน" },
       { status: 400 },
     );
-
-  const admin = adminClient();
-  const orgId = session.user.org_id;
 
   // ── กัน race สร้างใบกำกับซ้ำ (2 แท็บ/2 คน/ลูปกดพร้อมกัน) ──
   // atomic claim: ตั้ง iv_status='creating' เฉพาะแถวที่ยังเป็น 'none' (UPDATE เดียว = atomic ระดับแถว)

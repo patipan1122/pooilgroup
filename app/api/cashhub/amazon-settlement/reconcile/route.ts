@@ -10,7 +10,7 @@ import {
   loadChannelConfig,
   sendDaysToReconcile,
 } from "@/lib/cashhub/amazon-settlement-data";
-import { branchByStoreCode } from "@/lib/cashhub/amazon-trcloud";
+import { findAmazonBranch } from "@/lib/cashhub/amazon-branch-data";
 
 export const runtime = "nodejs";
 
@@ -30,14 +30,14 @@ export async function POST(req: NextRequest) {
   // store_code จริงจากแถวที่เซฟ (ไม่ใช่ cfg.storeCode ที่อาจว่างสำหรับสาขาจับคู่ด้วยชื่อ)
   const storeCode = (body.storeCode ?? "").trim();
   if (!storeCode) return NextResponse.json({ error: "ไม่มีรหัสสาขา" }, { status: 400 });
-  const cfg = branchByStoreCode(storeCode, body.storeLabel ?? null);
+  const orgId = session.user.org_id;
+  const admin = adminClient();
+  const cfg = await findAmazonBranch(admin, orgId, storeCode, body.storeLabel ?? null);
   if (!cfg) return NextResponse.json({ error: "ไม่รู้จักสาขานี้" }, { status: 400 });
   const from = body.from ?? "";
   const to = body.to ?? "";
   if (!from || !to) return NextResponse.json({ error: "ระบุช่วงวัน" }, { status: 400 });
 
-  const orgId = session.user.org_id;
-  const admin = adminClient();
   const days = await loadAmazonDays(admin, orgId, storeCode, from, to);
   // ใช้ค่าตั้งของสาขานี้ถ้ามี (ไม่งั้น fallback ค่าเริ่มต้นทุกสาขา)
   const configs = await loadChannelConfig(admin, orgId, storeCode);

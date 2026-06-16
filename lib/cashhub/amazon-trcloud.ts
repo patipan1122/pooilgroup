@@ -25,6 +25,7 @@ export function amazonTrcloudConfigured(): boolean {
 export type AmazonBranchCfg = {
   storeCode: string; // POS store code (ว่างได้ถ้ายังไม่รู้ — match ด้วยชื่อแทน)
   nameMatch: string; // คำในชื่อสาขา (POS label) ที่ใช้จับคู่ config นี้
+  aliases?: string[]; // ชื่อเรียกอื่นของสาขาเดียวกัน (POS เรียกต่างจาก TRCloud เช่น "ตลาดจักราช" = "เทศบาลจักราช")
   label: string;
   type: string; // ชื่อสูตรบัญชี TRCloud
   project: string;
@@ -61,7 +62,10 @@ export const AMAZON_BRANCH_LIST: AmazonBranchCfg[] = [
   {
     storeCode: "",
     nameMatch: "เทศบาลจักราช",
-    label: "เทศบาลจักราช",
+    // POS เรียกสาขานี้ว่า "ตลาดจักราช" แต่ TRCloud เก็บ contact เป็น "เทศบาลจักราช"
+    // (ยืนยันจากใบจริง 1048560: branch="สาขาตลาดจักราช") — ร้านเดียวกัน
+    aliases: ["ตลาดจักราช", "สาขาตลาดจักราช"],
+    label: "เทศบาลจักราช (ตลาดจักราช)",
     type: "AMAZON เทศบาลจักราช[IV]",
     project: "AMAZON-001-สาขาเทศบาลจักราช",
     department: "JPS_00001",
@@ -75,20 +79,34 @@ export const AMAZON_BRANCH_LIST: AmazonBranchCfg[] = [
   },
 ];
 
-/** หา config สาขา — ลอง store_code ก่อน แล้วค่อย match ด้วยชื่อ (POS label) */
-export function branchByStoreCode(
+/** หา config สาขาจากรายการที่ให้มา — ลอง store_code ก่อน แล้วค่อย match ด้วยชื่อ + ชื่อเรียกอื่น (POS label).
+ *  ใช้ร่วมกันทั้งรายการฝังในโค้ด (built-in) และรายการจาก DB (สาขาที่ CEO เพิ่มเอง). */
+export function matchBranchInList(
+  list: AmazonBranchCfg[],
   code: string | null,
   label?: string | null,
 ): AmazonBranchCfg | null {
   if (code) {
-    const byCode = AMAZON_BRANCH_LIST.find((b) => b.storeCode && b.storeCode === code);
+    const byCode = list.find((b) => b.storeCode && b.storeCode === code);
     if (byCode) return byCode;
   }
   if (label) {
-    const byName = AMAZON_BRANCH_LIST.find((b) => label.includes(b.nameMatch));
+    const byName = list.find(
+      (b) =>
+        label.includes(b.nameMatch) ||
+        (b.aliases?.some((a) => a && label.includes(a)) ?? false),
+    );
     if (byName) return byName;
   }
   return null;
+}
+
+/** หา config สาขาจากรายการ built-in (ฝังในโค้ด) — fallback เมื่อยังไม่มีใน DB */
+export function branchByStoreCode(
+  code: string | null,
+  label?: string | null,
+): AmazonBranchCfg | null {
+  return matchBranchInList(AMAZON_BRANCH_LIST, code, label);
 }
 
 function authFields() {
@@ -177,6 +195,127 @@ export async function fetchAmazonIvs(
       ivs: [],
       error: /429/.test(msg)
         ? "TRCloud ติด rate-limit (เรียกถี่เกินไป) — ลองใหม่ใน 1–2 นาที"
+        : msg,
+    };
+  }
+}
+
+// ── เพิ่มสาขาใหม่: ค้นใบกำกับเก่าใน TRCloud ด้วยชื่อสาขา → ดึงค่าตั้งบัญชีมาเติมให้ ──
+//
+// CEO ไม่ต้องรู้รหัสบัญชี/โครงการ/คู่ค้า — ระบบดึงจากใบจริงที่นักบัญชีคีย์ไว้แล้ว (กันตั้งค่าผิด = ลงบัญชีผิดร้าน).
+// validated: iv/search.php คืน head ครบ (type/project/department/contact_id/title/name/branch).
+export type ProbedBranch = {
+  type: string; // สูตรบัญชี เช่น "AMAZON เทศบาลจักราช[IV]"
+  project: string;
+  department: string;
+  contactId: string;
+  groupCode: string; // แยกจาก title (รหัสคู่ค้า) — ส่วนตัวอักษรนำหน้า
+  codeNumber: string; // ส่วนตัวเลข
+  customerName: string; // จาก name
+  branchField: string; // ช่อง branch ใน TRCloud (มักตรงกับชื่อใน POS)
+  suggestedNameMatch: string; // คำที่น่าจะใช้จับคู่ชื่อในไฟล์ POS
+  lastIvNo: string;
+  lastIvDate: string;
+  ivCount: number;
+};
+
+/** แยกรหัสคู่ค้า (title) เป็น groupCode (อักษรนำ) + codeNumber (ตัวเลขท้าย) เช่น "Ama-2504220001" → "Ama-" + "2504220001" */
+export function splitPartnerCode(title: string): { groupCode: string; codeNumber: string } {
+  const m = String(title ?? "").trim().match(/^(\D+?)(\d+)$/);
+  if (m) return { groupCode: m[1], codeNumber: m[2] };
+  return { groupCode: title ?? "", codeNumber: "" };
+}
+
+/** เดาคำจับคู่ชื่อสาขา (POS label) จากชื่อ TRCloud — ใช้ token ท้ายของ branch/contact name เป็นตัวตั้ง */
+function suggestNameMatch(branchField: string, name: string): string {
+  const fromBranch = String(branchField ?? "").replace(/^สาขา\s*/, "").trim();
+  if (fromBranch) return fromBranch;
+  // ดึงคำท้ายของชื่อ contact (มักเป็นชื่อสาขา) เป็น fallback
+  const tokens = String(name ?? "").split(/[\s)(]+/).filter(Boolean);
+  return tokens[tokens.length - 1] ?? "";
+}
+
+/** ค้นสาขา Amazon ใน TRCloud ด้วยคำค้น (ชื่อสาขา) → คืนค่าตั้งบัญชีของแต่ละโครงการที่เจอ */
+export async function probeAmazonBranches(
+  keyword: string,
+): Promise<{ branches: ProbedBranch[]; error?: string }> {
+  if (!amazonTrcloudConfigured())
+    return { branches: [], error: "TRCloud ยังไม่ได้ตั้งค่า (TRCLOUD_JPS_*)" };
+  const kw = keyword.trim();
+  if (kw.length < 2)
+    return { branches: [], error: "พิมพ์ชื่อสาขาอย่างน้อย 2 ตัวอักษร" };
+  try {
+    const data = await trcloudPost("iv/search.php", {
+      keyword: kw,
+      "date-from": "2024-01-01",
+      "date-to": "2035-12-31",
+      limit: 200,
+    });
+    const list = (
+      Array.isArray(data.data)
+        ? data.data
+        : Array.isArray(data.result)
+          ? data.result
+          : Array.isArray(data.list)
+            ? data.list
+            : []
+    ) as Array<Record<string, unknown>>;
+
+    // เก็บเฉพาะใบที่เป็น Amazon (กันใบร้านอื่นที่ชื่อพ้องคำค้น เช่น "จักราช")
+    const isAmazon = (r: Record<string, unknown>) =>
+      /amazon|anazon|อเมซอน|กาแฟ/i.test(
+        `${r.type ?? ""} ${r.project ?? ""} ${r.name ?? ""} ${r.organization ?? ""}`,
+      );
+
+    // จัดกลุ่มตามโครงการ (1 สาขา = 1 โครงการ) เก็บใบล่าสุดไว้เป็นตัวแทน
+    const byProject = new Map<string, { rep: Record<string, unknown>; count: number }>();
+    for (const r of list) {
+      if (!isAmazon(r)) continue;
+      const project = String(r.project ?? "").trim();
+      if (!project) continue;
+      const cur = byProject.get(project);
+      const date = String(r.issue_date ?? "").slice(0, 10);
+      if (!cur) {
+        byProject.set(project, { rep: r, count: 1 });
+      } else {
+        cur.count += 1;
+        if (date > String(cur.rep.issue_date ?? "").slice(0, 10)) cur.rep = r;
+      }
+    }
+
+    const branches: ProbedBranch[] = [...byProject.values()].map(({ rep, count }) => {
+      const title = String(rep.title ?? "");
+      const { groupCode, codeNumber } = splitPartnerCode(title);
+      const branchField = String(rep.branch ?? "");
+      const name = String(rep.name ?? rep.organization ?? "");
+      return {
+        type: String(rep.type ?? ""),
+        project: String(rep.project ?? ""),
+        department: String(rep.department ?? ""),
+        contactId: String(rep.contact_id ?? ""),
+        groupCode,
+        codeNumber,
+        customerName: name,
+        branchField,
+        suggestedNameMatch: suggestNameMatch(branchField, name),
+        lastIvNo: String(rep.invoice_number ?? ""),
+        lastIvDate: String(rep.issue_date ?? "").slice(0, 10),
+        ivCount: count,
+      };
+    });
+
+    if (branches.length === 0)
+      return {
+        branches: [],
+        error: `ไม่พบสาขา Amazon ที่ชื่อตรงกับ "${kw}" ใน TRCloud — ลองพิมพ์ชื่อใกล้เคียง หรือตรวจว่ามีใบกำกับของสาขานี้ใน TRCloud แล้ว`,
+      };
+    return { branches };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "TRCloud error";
+    return {
+      branches: [],
+      error: /429/.test(msg)
+        ? "TRCloud ติด rate-limit — ลองใหม่ใน 1–2 นาที"
         : msg,
     };
   }

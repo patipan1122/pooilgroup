@@ -17,8 +17,9 @@ import {
   loadReconcileStatus,
 } from "@/lib/cashhub/amazon-data";
 import { loadChannelConfig } from "@/lib/cashhub/amazon-settlement-data";
-import { branchByStoreCode } from "@/lib/cashhub/amazon-trcloud";
+import { findAmazonBranch } from "@/lib/cashhub/amazon-branch-data";
 import { AmazonView } from "./amazon-view";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
   const stores = await listAmazonStores(admin, orgId);
   const storeCode = sp.store ?? stores[0]?.store_code ?? "5157";
   const storeLabel = stores.find((s) => s.store_code === storeCode)?.branch_label ?? null;
-  const cfg = branchByStoreCode(storeCode, storeLabel);
+  const cfg = await findAmazonBranch(admin, orgId, storeCode, storeLabel);
   const branchLabel = storeLabel ?? cfg?.label ?? storeCode;
 
   // ── เดือน (default = เดือนปัจจุบัน) — guard รูปแบบผิด (?month=xxx) ไม่ให้ Invalid Date → 500 ──
@@ -64,6 +65,14 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
         <SectionPill num="☕" label="Café Amazon · ตรวจยอด + คีย์ IV" />
         <div className="flex flex-wrap items-end justify-between gap-3 mt-1">
           <TwoToneTitle first="ยอดขาย" accent={branchLabel} size={30} />
+          {canSend && (
+            <Link
+              href="/cashhub/amazon/branches"
+              className="h-9 inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+            >
+              🏪 จัดการสาขา
+            </Link>
+          )}
         </div>
         <p className="text-sm text-zinc-500 mt-1">
           อัปไฟล์ปิดกะ POS → เซฟถาวร → เทียบว่าที่คีย์ใน TRCloud ตรงกับยอด POS ไหม + กดสร้าง IV วันที่ยังไม่มี

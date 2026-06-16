@@ -48,7 +48,11 @@ export function AmazonView({
   const [showHistory, setShowHistory] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [msg, setMsg] = useState<{
+    kind: "ok" | "err";
+    text: string;
+    unknownBranch?: boolean;
+  } | null>(null);
 
   const upload = useCallback(async () => {
     if (!file) return;
@@ -66,9 +70,14 @@ export function AmazonView({
         saved?: number;
         ivWarn?: string | null;
         error?: string;
+        unknownBranch?: boolean;
       };
       if (!res.ok || data.error) {
-        setMsg({ kind: "err", text: data.error ?? "อ่านไฟล์ไม่สำเร็จ" });
+        setMsg({
+          kind: "err",
+          text: data.error ?? "อ่านไฟล์ไม่สำเร็จ",
+          unknownBranch: data.unknownBranch,
+        });
         return;
       }
       setMsg({
@@ -475,6 +484,14 @@ export function AmazonView({
             }`}
           >
             {msg.text}
+            {msg.unknownBranch && canSend && (
+              <a
+                href="/cashhub/amazon/branches"
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 text-white font-semibold px-3 py-1.5 text-xs hover:bg-emerald-700"
+              >
+                🏪 ไปหน้าจัดการสาขา → เพิ่มสาขานี้
+              </a>
+            )}
           </div>
         )}
       </div>

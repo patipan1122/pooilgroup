@@ -13,10 +13,10 @@ import {
   applyIvMatch,
 } from "@/lib/cashhub/amazon-data";
 import {
-  branchByStoreCode,
   fetchAmazonIvs,
   amazonTrcloudConfigured,
 } from "@/lib/cashhub/amazon-trcloud";
+import { findAmazonBranch } from "@/lib/cashhub/amazon-branch-data";
 
 export const runtime = "nodejs";
 
@@ -56,11 +56,12 @@ export async function POST(req: NextRequest) {
   if (parsed.error)
     return NextResponse.json({ error: parsed.error }, { status: 400 });
 
-  const cfg = branchByStoreCode(parsed.storeCode, parsed.storeLabel);
+  const cfg = await findAmazonBranch(admin, orgId, parsed.storeCode, parsed.storeLabel);
   if (!cfg)
     return NextResponse.json(
       {
-        error: `ยังไม่รองรับสาขานี้ (${parsed.storeLabel ?? parsed.storeCode ?? "ไม่ทราบ"}) — ตอนนี้รองรับเฉพาะ ชุมชนหัวทะเล (5157). แจ้งผู้ดูแลเพิ่มสาขา`,
+        error: `ยังไม่รู้จักสาขานี้ (${parsed.storeLabel ?? parsed.storeCode ?? "ไม่ทราบ"}) — ไปที่หน้า “จัดการสาขา” แล้วกดเพิ่มสาขานี้ (ระบบจะดึงค่าตั้งบัญชีจาก TRCloud ให้อัตโนมัติ)`,
+        unknownBranch: true,
         store: { label: parsed.storeLabel, code: parsed.storeCode },
       },
       { status: 400 },
