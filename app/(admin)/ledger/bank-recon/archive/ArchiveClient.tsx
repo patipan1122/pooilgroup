@@ -50,6 +50,62 @@ function confidenceBand(deltaSatang: number): Band {
   return "review";
 }
 
+// ── ตรวจ 3 อย่างต่อคู่ (เขียว=ตรง · เหลือง=ไม่ตรง · เทา=ตรวจไม่ได้): ยอด · วัน · ชื่อ ──
+const CVAR_PROVIDER: Record<string, string> = {
+  c20: "grab", c21: "lineman", c22: "shopee",
+  c1: "cash", c2: "qr", c13: "qr", qr: "qr", c14: "wallet", c12: "card", c15: "card",
+};
+function bookProviderKey(docNo: string | null | undefined): string | null {
+  const m = (docNo ?? "").match(/-(c\d+|qr)$/i);
+  return m ? (CVAR_PROVIDER[m[1].toLowerCase()] ?? null) : null;
+}
+function bankProviderKey(text: string): string | null {
+  const t = text.toLowerCase();
+  if (t.includes("แกร็บ") || t.includes("grab")) return "grab";
+  if (t.includes("ไลน์แมน") || t.includes("lineman")) return "lineman";
+  if (t.includes("ช้อปปี้") || t.includes("shopee")) return "shopee";
+  if (t.includes("thai qr") || t.includes("พร้อมเพย์") || t.includes("promptpay")) return "qr";
+  if (t.includes("amz_sd") || t.includes("ผ่อนชำระ")) return "card";
+  if (t.includes("ฝากเงินสด") || t.includes("เงินสด")) return "cash";
+  return null;
+}
+function verifyChecks(g: ArchiveGroup): { amount: boolean; date: boolean | null; name: boolean | null } {
+  const book = g.items.find((i) => i.kind === "book");
+  const bank = g.items.find((i) => i.kind === "bank");
+  const amount = g.deltaSatang === 0;
+  let date: boolean | null = null;
+  if (book?.date && bank?.date) {
+    date = Math.abs((new Date(book.date).getTime() - new Date(bank.date).getTime()) / 86400000) <= 2;
+  }
+  let name: boolean | null = null;
+  const bk = bookProviderKey(book?.bookDocNo);
+  const bn = bankProviderKey(bank?.label ?? "");
+  if (bk && bn) name = bk === bn;
+  return { amount, date, name };
+}
+
+// ป้ายตรวจ 3 ช่อง (สแกนดูสายตาเทียบง่าย ๆ): เขียว=ตรง · เหลือง=ไม่ตรง · เทา=ตรวจไม่ได้
+const verifyChipCls = (ok: boolean | null) =>
+  ok === true ? "bg-emerald-50 text-emerald-600" : ok === false ? "bg-amber-50 text-amber-600" : "bg-zinc-100 text-zinc-400";
+const verifyChipMark = (ok: boolean | null) => (ok === true ? "✓" : ok === false ? "!" : "·");
+function VerifyChips({ g }: { g: ArchiveGroup }) {
+  const v = verifyChecks(g);
+  const items: { label: string; ok: boolean | null }[] = [
+    { label: "ยอด", ok: v.amount },
+    { label: "วัน", ok: v.date },
+    { label: "ชื่อ", ok: v.name },
+  ];
+  return (
+    <span className="hidden shrink-0 items-center gap-0.5 lg:flex">
+      {items.map((it) => (
+        <span key={it.label} className={`inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-medium leading-none ${verifyChipCls(it.ok)}`}>
+          {verifyChipMark(it.ok)} {it.label}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Props) {
   const router = useRouter();
   const pathname = usePathname();
@@ -64,6 +120,7 @@ export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Prop
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bandFilter, setBandFilter] = useState<"all" | Band>("all"); // กรองตามความมั่นใจ
+  const [statusFilter, setStatusFilter] = useState<"confirmed" | "reversed" | "all">("confirmed"); // ยืนยันแล้ว/ย้อนแล้ว — แยกกัน ไม่ปนกัน
   const toggleOne = (id: string) =>
     setSelected((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
@@ -109,10 +166,15 @@ export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Prop
     }
   }
 
-  // กรองตามความมั่นใจ (ทับบนผลค้นหา) + นับจำนวนต่อระดับ
-  const bandCounts = { all: visible.length, high: 0, review: 0, low: 0 };
-  for (const g of visible) bandCounts[confidenceBand(g.deltaSatang)]++;
-  const shown = bandFilter === "all" ? visible : visible.filter((g) => confidenceBand(g.deltaSatang) === bandFilter);
+  // แยกสถานะ: ยืนยันแล้ว vs ย้อนแล้ว (ที่ย้อนแล้วไม่ปนกับที่ยืนยัน — กันงง)
+  const statusCounts = { confirmed: 0, reversed: 0 };
+  for (const g of visible) { if (g.status === "reversed") statusCounts.reversed++; else statusCounts.confirmed++; }
+  const statusFiltered = statusFilter === "all" ? visible : visible.filter((g) => g.status === statusFilter);
+
+  // กรองตามความมั่นใจ (ทับบนสถานะ+ค้นหา) + นับจำนวนต่อระดับ
+  const bandCounts = { all: statusFiltered.length, high: 0, review: 0, low: 0 };
+  for (const g of statusFiltered) bandCounts[confidenceBand(g.deltaSatang)]++;
+  const shown = bandFilter === "all" ? statusFiltered : statusFiltered.filter((g) => confidenceBand(g.deltaSatang) === bandFilter);
 
   // เลือกได้เฉพาะรายการที่ "ยืนยันอยู่" (ย้อนได้) — ที่ย้อนแล้วเลือกไม่ได้
   const confirmedVisible = shown.filter((g) => g.status === "confirmed");
@@ -171,6 +233,14 @@ export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Prop
         <FeedbackBar kind={feedback.kind} message={feedback.message} onDismiss={() => setFeedback(null)} />
       )}
 
+      {/* สถานะ: ยืนยันแล้ว / ย้อนแล้ว — แยกกัน ไม่ให้ที่ย้อนแล้วปนกับที่ยืนยัน */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-xs text-zinc-400">สถานะ:</span>
+        <StatusChip active={statusFilter === "confirmed"} onClick={() => setStatusFilter("confirmed")} label="ยืนยันแล้ว" count={statusCounts.confirmed} tone="emerald" />
+        <StatusChip active={statusFilter === "reversed"} onClick={() => setStatusFilter("reversed")} label="ย้อนแล้ว" count={statusCounts.reversed} tone="zinc" />
+        <StatusChip active={statusFilter === "all"} onClick={() => setStatusFilter("all")} label="ทั้งหมด" count={visible.length} tone="dark" />
+      </div>
+
       {/* กรองความมั่นใจ — ดูว่ามั่นใจแค่ไหน + กดดูทีละระดับ (ยอดตรงเป๊ะ = มั่นใจสูง) */}
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="text-xs text-zinc-400">ความมั่นใจ:</span>
@@ -201,8 +271,16 @@ export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Prop
       {shown.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 py-14 text-center">
           <Landmark size={28} className="mx-auto mb-2 text-zinc-300" />
-          <p className="text-sm font-medium text-zinc-600">{bandFilter === "all" ? "ยังไม่มีรายการในคลัง" : "ไม่มีรายการในระดับความมั่นใจนี้"}</p>
-          <p className="text-xs text-zinc-400">{bandFilter === "all" ? "รายการที่ยืนยัน/ย้อนแล้วจะมาแสดงที่นี่" : "ลองเลือกระดับอื่นด้านบน"}</p>
+          <p className="text-sm font-medium text-zinc-600">
+            {statusFilter === "reversed" ? "ยังไม่มีรายการที่ย้อนกลับ"
+              : bandFilter !== "all" ? "ไม่มีรายการในระดับความมั่นใจนี้"
+              : "ยังไม่มีรายการในคลัง"}
+          </p>
+          <p className="text-xs text-zinc-400">
+            {statusFilter === "reversed" ? "รายการที่ย้อนกลับแล้วจะมาแสดงที่นี่"
+              : bandFilter !== "all" ? "ลองเลือกระดับอื่นด้านบน"
+              : "รายการที่ยืนยัน/ย้อนแล้วจะมาแสดงที่นี่"}
+          </p>
         </div>
       ) : (
         <ul className="space-y-1.5">
@@ -341,6 +419,8 @@ function ArchiveCard({
             <span className="block truncate text-xs text-zinc-700">{(bank0?.label ?? "—") + bankMore}</span>
             {bank0?.detailLine && <span className="block truncate text-[10px] leading-tight text-zinc-400">{bank0.detailLine}</span>}
           </span>
+          {/* ตรวจ 3 ช่อง: ยอด/วัน/ชื่อ — เขียว=ตรง เหลือง=ไม่ตรง (เฉพาะที่ยืนยันแล้ว) */}
+          {g.status === "confirmed" && <VerifyChips g={g} />}
           {/* ยอด + ส่วนต่าง + วันที่ */}
           <span className="shrink-0 text-right">
             <span className="block tabular-num text-sm font-semibold text-zinc-800">฿{fmt(amountSatang)}</span>
@@ -375,8 +455,12 @@ function ArchiveCard({
           <RawBankPanel txnId={bankTxnId} />
         </div>
       )}
-      {g.status === "reversed" && g.reversalReason && (
-        <p className="border-t border-zinc-50 px-2.5 py-1 text-[10px] text-zinc-400">เหตุผลที่ย้อน: <span className="text-zinc-600">{g.reversalReason}</span></p>
+      {g.status === "reversed" && (
+        <p className="border-t border-zinc-50 px-2.5 py-1 text-[10px] text-zinc-400">
+          ย้อนโดย <span className="text-zinc-600">{g.reversedByName ?? "—"}</span>
+          {g.reversedAt && <> · {thDate(g.reversedAt)}</>}
+          {g.reversalReason && <> · เหตุผล: <span className="text-zinc-600">{g.reversalReason}</span></>}
+        </p>
       )}
     </li>
   );
@@ -433,6 +517,26 @@ function BandChip({ active, onClick, label, count, band }: {
     >
       <span className={`size-2 rounded-full ${meta ? meta.dot : "bg-zinc-300"}`} aria-hidden />
       {label ?? meta?.label}
+      <span className="tabular-num opacity-70">{count}</span>
+    </button>
+  );
+}
+
+// ชิปกรองสถานะ (ยืนยันแล้ว / ย้อนแล้ว / ทั้งหมด)
+function StatusChip({ active, onClick, label, count, tone }: {
+  active: boolean; onClick: () => void; label: string; count: number; tone: "emerald" | "zinc" | "dark";
+}) {
+  const activeCls = tone === "emerald" ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+    : tone === "zinc" ? "border-zinc-300 bg-zinc-100 text-zinc-700"
+    : "border-zinc-800 bg-zinc-900 text-white";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active ? "true" : "false"}
+      className={`press inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium focus-visible:ring-2 focus-visible:ring-brand-300 sm:min-h-0 ${active ? activeCls : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"}`}
+    >
+      {label}
       <span className="tabular-num opacity-70">{count}</span>
     </button>
   );

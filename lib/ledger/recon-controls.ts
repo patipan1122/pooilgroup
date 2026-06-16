@@ -88,11 +88,13 @@ export interface ArchiveItem {
   bookType: string | null; paymentChannel: string | null; sourceType: string | null;
   bankTxnId: string | null;  // ฝั่งธนาคาร: ใช้ดึงรายละเอียดเต็มจากไฟล์ (raw_row_json) ตอนกางดู
   detailLine: string | null; // รายละเอียดรองที่โชว์ใต้ชื่อ — ธนาคาร: คู่ค้า·ช่องทาง·narrative · บัญชี: ธุรกิจ·ช่องทาง
+  bookDocNo: string | null;  // ฝั่งบัญชี: เลขเอกสาร (มี c-var) ใช้เทียบ "ชื่อผู้ให้บริการตรงไหม"
 }
 export interface ArchiveGroup {
   id: string; status: string; matchType: string; matchKind: string;
   bankTotalSatang: number; bookTotalSatang: number; deltaSatang: number;
   confirmedAt: string | null; reversedAt: string | null; reversalReason: string | null;
+  reversedByName: string | null; // ใครเป็นคนย้อน (โชว์ในแท็บ "ย้อนแล้ว")
   accountLabel: string | null;
   items: ArchiveItem[];
 }
@@ -104,6 +106,7 @@ export async function listMatchedArchive(params: {
     id: string; status: string; matchType: string; matchKind: string;
     bankTotalSatang: bigint; bookTotalSatang: bigint; deltaSatang: bigint;
     confirmedAt: string | null; reversedAt: string | null; reversalReason: string | null;
+    reversedByName: string | null;
     bankCode: string | null; accountNo: string | null; reversedSnapshot: unknown;
   }[]>`
     SELECT g.id::text, g.status, g.match_type as "matchType", g.match_kind as "matchKind",
@@ -111,10 +114,12 @@ export async function listMatchedArchive(params: {
            g.delta_satang as "deltaSatang",
            g.confirmed_at::text as "confirmedAt", g.reversed_at::text as "reversedAt",
            g.reversal_reason as "reversalReason",
+           COALESCE(NULLIF(ru.name,''), ru.email) as "reversedByName",
            a.bank_code as "bankCode", a.account_no as "accountNo",
            g.reversed_snapshot as "reversedSnapshot"
     FROM ledger_bank_match_group g
     LEFT JOIN ledger_bank_account a ON a.id = g.bank_account_id
+    LEFT JOIN users ru ON ru.id = g.reversed_by
     WHERE g.org_id=${orgId}::uuid AND g.company_id=${companyId}::uuid
       AND g.status IN ('confirmed','reversed')
       -- account filter (transfers span accounts → always included when an account is set)
@@ -131,6 +136,7 @@ export async function listMatchedArchive(params: {
     ? await prisma.$queryRaw<{
         groupId: string; kind: string; label: string; detailLine: string | null; amountSatang: bigint; date: string | null;
         bookType: string | null; paymentChannel: string | null; sourceType: string | null; bankTxnId: string | null;
+        bookDocNo: string | null;
       }[]>`
         SELECT mi.group_id::text as "groupId", mi.kind,
                -- ชื่อหลัก: ธนาคาร = ประเภทรายการ (description) · บัญชี = ชื่อลูกค้า/ผู้ขาย
@@ -151,7 +157,7 @@ export async function listMatchedArchive(params: {
                     WHEN mi.book_type='revenue' THEN r.entry_date::text
                     WHEN mi.book_type='expense' THEN e.doc_date::text ELSE NULL END as "date",
                mi.book_type as "bookType", r.payment_channel as "paymentChannel", r.source_type as "sourceType",
-               mi.bank_txn_id::text as "bankTxnId"
+               mi.bank_txn_id::text as "bankTxnId", mi.book_doc_no as "bookDocNo"
         FROM ledger_bank_match_item mi
         LEFT JOIN ledger_bank_txn t      ON t.id = mi.bank_txn_id
         LEFT JOIN ledger_revenue_entry r ON mi.book_type='revenue' AND r.id = mi.book_id
@@ -166,13 +172,13 @@ export async function listMatchedArchive(params: {
       items = liveItems.filter((i) => i.groupId === g.id).map((i) => ({
         kind: i.kind, label: i.label, amountSatang: Number(i.amountSatang), date: i.date,
         bookType: i.bookType, paymentChannel: i.paymentChannel, sourceType: i.sourceType, bankTxnId: i.bankTxnId,
-        detailLine: i.detailLine,
+        detailLine: i.detailLine, bookDocNo: i.bookDocNo,
       }));
     } else {
       const snap = (g.reversedSnapshot as { items?: { kind: string; label: string; amountSatang: number; date: string | null; bookType: string | null }[] } | null);
       items = (snap?.items ?? []).map((i) => ({
         kind: i.kind, label: i.label, amountSatang: Number(i.amountSatang), date: i.date,
-        bookType: i.bookType ?? null, paymentChannel: null, sourceType: null, bankTxnId: null, detailLine: null,
+        bookType: i.bookType ?? null, paymentChannel: null, sourceType: null, bankTxnId: null, detailLine: null, bookDocNo: null,
       }));
     }
     return {
@@ -180,6 +186,7 @@ export async function listMatchedArchive(params: {
       bankTotalSatang: Number(g.bankTotalSatang), bookTotalSatang: Number(g.bookTotalSatang),
       deltaSatang: Number(g.deltaSatang),
       confirmedAt: g.confirmedAt, reversedAt: g.reversedAt, reversalReason: g.reversalReason,
+      reversedByName: g.reversedByName,
       accountLabel: acctLabel(g.bankCode, g.accountNo), items,
     };
   });
