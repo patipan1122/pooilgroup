@@ -10,8 +10,16 @@ import { updateSession } from "@/lib/supabase/proxy";
 //   /auth   — LINE login callback · liff-complete
 //   /liff   — LIFF endpoint (ยังชี้ vercel จนกว่าจะย้ายใน LINE console)
 //   /health — uptime monitor · /_next · PWA/asset (กัน service-worker cache poisoning)
-// หมายเหตุ: ผู้ที่ค้าง login บน vercel จะถูกเด้งมา login ใหม่ที่ .com 1 ครั้ง
-// (cookie ผูกตามโดเมน) — เป็นพฤติกรรมที่ตั้งใจ (ย้ายทุกคนมาโดเมนใหม่).
+//
+// ⚠️ ห้ามเด้ง "คนที่มี session อยู่แล้ว" ข้ามโดเมน (เพิ่ม 2026-06-16):
+// แม่บ้าน/พนักงานเข้าผ่านลิงก์เชิญ LINE → LIFF endpoint ใน LINE console ยังชี้
+// pooilgroup.vercel.app → เขา login สำเร็จ "ที่ vercel" (cookie sb-* ผูกกับ .vercel.app).
+// ถ้าเด้งเขาไป pooilgroup.com ตอนเดินหน้าถัดไป → cookie หาย (cookie ผูกตามโดเมน) →
+// requireSession เด้งไปหน้า login หลัก = แม่บ้านเข้าระบบไม่ได้เลย (อาการ CEO เจอ
+// 2026-06-16: "กดลิงก์เชิญแล้วเด้งมาหน้า login pooil หลัก"). จึงไม่ย้ายคำขอที่ถือ
+// session อยู่แล้วออกจากโดเมนที่ session นั้นมีชีวิต — anonymous traffic ยังย้ายไป
+// .com ตามเดิม. ลบ guard นี้ได้เมื่อย้าย LIFF Endpoint URL → https://pooilgroup.com/liff
+// ใน LINE console แล้ว. ดู memory chairops-invite-link-liff-endpoint-url-2026-06-16.
 const LEGACY_HOST = "pooilgroup.vercel.app";
 const DIR_EXEMPT = ["/api", "/auth", "/liff", "/health", "/_next"];
 const FILE_EXEMPT = new Set([
@@ -43,10 +51,20 @@ function isPageNavigation(request: NextRequest): boolean {
   return false;
 }
 
+// มี Supabase session cookie ติดมากับคำขอไหม (sb-<ref>-auth-token · อาจถูกแบ่งเป็น
+// .0/.1). ถ้ามี = คน ๆ นี้ login อยู่บนโดเมนนี้แล้ว → ห้ามเด้งข้ามโดเมน (cookie จะหาย).
+function hasActiveSession(request: NextRequest): boolean {
+  return request.cookies
+    .getAll()
+    .some((c) => c.name.startsWith("sb-") && c.name.includes("auth-token"));
+}
+
 function legacyHostRedirect(request: NextRequest): NextResponse | null {
   if ((request.headers.get("host") ?? "") !== LEGACY_HOST) return null;
   if (request.method !== "GET") return null;
   if (!isPageNavigation(request)) return null;
+  // อย่าย้ายคนที่ถือ session อยู่แล้วออกจากโดเมนที่ cookie มีชีวิต (ดูคอมเมนต์หัวไฟล์).
+  if (hasActiveSession(request)) return null;
   const { pathname, search } = request.nextUrl;
   if (FILE_EXEMPT.has(pathname)) return null;
   if (DIR_EXEMPT.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
