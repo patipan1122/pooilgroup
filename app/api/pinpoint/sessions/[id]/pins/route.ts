@@ -1,5 +1,5 @@
 // Pinpoint — add a pin to a draft session
-//   POST /api/pinpoint/sessions/[id]/pins   (admin tier · session owner)
+//   POST /api/pinpoint/sessions/[id]/pins   (any signed-in user · session owner)
 //
 // The pin is saved to the DB immediately (never lost to a tab crash). The
 // screenshot is attached later via PATCH /api/pinpoint/pins/[pinId] once the
@@ -10,7 +10,7 @@ import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
-import { isAdminTier, isSuperAdmin } from "@/lib/auth/role-guards";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { pinpointV1 } from "@/lib/pinpoint/flags";
 
 const PinSchema = z.object({
@@ -35,9 +35,6 @@ export async function POST(
     return NextResponse.json({ error: "Pinpoint ปิดอยู่" }, { status: 403 });
   }
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) {
-    return NextResponse.json({ error: "เฉพาะแอดมิน" }, { status: 403 });
-  }
   const { id } = await ctx.params;
   if (!zUUID().safeParse(id).success) {
     return NextResponse.json({ error: "id ไม่ถูกต้อง" }, { status: 400 });

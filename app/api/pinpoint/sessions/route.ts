@@ -1,5 +1,9 @@
 // Pinpoint — sessions collection
-//   POST /api/pinpoint/sessions  : start a new comment session (admin tier)
+//   POST /api/pinpoint/sessions  : start a new comment session (any signed-in user)
+//
+// CEO 2026-06-16: โหมดติชมเปิดให้พนักงานทุก role ส่งความเห็นได้ (ทุกโปรแกรม).
+// ฝั่งรีวิว/รวบรวม (/pinpoint page · export) ยังคงเป็น super_admin/admin tier.
+// org isolation บังคับด้วย RLS · เจ้าของหมุดถูกกันข้ามคนด้วย author_id เสมอ.
 //
 // Listing/review happens in the server-rendered /pinpoint page (super_admin),
 // so there is no GET here on purpose — keeps the API surface minimal.
@@ -8,7 +12,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
 import { serverClient } from "@/lib/db/server";
-import { isAdminTier } from "@/lib/auth/role-guards";
 import { pinpointV1 } from "@/lib/pinpoint/flags";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -21,9 +24,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Pinpoint ปิดอยู่" }, { status: 403 });
   }
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) {
-    return NextResponse.json({ error: "เฉพาะแอดมิน" }, { status: 403 });
-  }
 
   // Guard against a runaway client opening many empty sessions.
   const rl = await checkRateLimit({

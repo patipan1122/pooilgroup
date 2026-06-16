@@ -8,7 +8,7 @@ import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
-import { isAdminTier, isSuperAdmin } from "@/lib/auth/role-guards";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { deleteObject } from "@/lib/r2/upload";
 import { pinpointV1 } from "@/lib/pinpoint/flags";
 
@@ -49,9 +49,6 @@ export async function PATCH(
     return NextResponse.json({ error: "Pinpoint ปิดอยู่" }, { status: 403 });
   }
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) {
-    return NextResponse.json({ error: "เฉพาะแอดมิน" }, { status: 403 });
-  }
   const { pinId } = await ctx.params;
   if (!zUUID().safeParse(pinId).success) {
     return NextResponse.json({ error: "id ไม่ถูกต้อง" }, { status: 400 });
@@ -112,9 +109,6 @@ export async function DELETE(
     return NextResponse.json({ error: "Pinpoint ปิดอยู่" }, { status: 403 });
   }
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) {
-    return NextResponse.json({ error: "เฉพาะแอดมิน" }, { status: 403 });
-  }
   const { pinId } = await ctx.params;
   if (!zUUID().safeParse(pinId).success) {
     return NextResponse.json({ error: "id ไม่ถูกต้อง" }, { status: 400 });

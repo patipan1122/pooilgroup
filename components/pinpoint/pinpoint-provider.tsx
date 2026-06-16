@@ -89,7 +89,7 @@ function currentUrl(): string {
   return window.location.pathname + window.location.search;
 }
 
-export function PinpointProvider() {
+export function PinpointProvider({ canReview = false }: { canReview?: boolean } = {}) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -374,13 +374,20 @@ export function PinpointProvider() {
       setPlacing(false);
       setSessionId(null);
       setPins([]);
-      router.push(`/pinpoint/${sid}`);
+      // Reviewers (admin-tier) jump to the session page to copy it for the dev.
+      // Everyone else has no review surface — thank them and stay put so they
+      // are not bounced to /dashboard by the reviewer-page guard.
+      if (canReview) {
+        router.push(`/pinpoint/${sid}`);
+      } else {
+        toast.success("ส่งข้อเสนอแนะแล้ว ขอบคุณครับ 🙏");
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "ส่งไม่สำเร็จ");
     } finally {
       setBusy(false);
     }
-  }, [sessionId, busy, pins.length, router]);
+  }, [sessionId, busy, pins.length, router, canReview]);
 
   const pause = useCallback(() => {
     if (!sessionId) return;

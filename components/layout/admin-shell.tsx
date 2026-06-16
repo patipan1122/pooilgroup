@@ -156,7 +156,11 @@ export function AdminShell({
   userModules = ALL_MODULES,
   pinpointEnabled = false,
 }: Props) {
-  const canPinpoint = pinpointEnabled && isAdminTier(user.role);
+  // CEO 2026-06-16: โหมดติชมเปิดให้ทุกคนที่ล็อกอินใช้ได้ทุกโปรแกรม (เดิมเฉพาะ admin).
+  // ฝั่งใช้งาน (ปุ่ม + overlay) = ทุก role · ฝั่งรีวิว (/pinpoint, คัดลอกให้พิม) ยังคง
+  // admin-tier ผ่าน canReviewPinpoint + การ์ดหน้า /pinpoint เอง.
+  const canPinpoint = pinpointEnabled;
+  const canReviewPinpoint = pinpointEnabled && isAdminTier(user.role);
   const allowedModules = useMemo(() => new Set(userModules), [userModules]);
   const visibleModules = useMemo(
     () => MODULE_LIST.filter((m) => allowedModules.has(m.slug)),
@@ -444,7 +448,7 @@ export function AdminShell({
             activeModuleSlug={activeModuleSlug}
             moduleNav={moduleNav}
             navCounts={navCounts}
-            canPinpoint={canPinpoint}
+            canReviewPinpoint={canReviewPinpoint}
           />
         </aside>
 
@@ -475,7 +479,7 @@ export function AdminShell({
                   activeModuleSlug={activeModuleSlug}
                   moduleNav={moduleNav}
                   navCounts={navCounts}
-                  canPinpoint={canPinpoint}
+                  canReviewPinpoint={canReviewPinpoint}
                   onNavigate={() => setMobileOpen(false)}
                 />
               </div>
@@ -500,9 +504,10 @@ export function AdminShell({
           Lazy-mounted on first click via AiChatLauncher. */}
       <AiChatLauncher liftMobile={showHubNav} canPinpoint={canPinpoint} />
 
-      {/* Pinpoint / โหมดติชม overlay — admin-tier + flag only. Renders nothing
-          until a session is started from the AI button. */}
-      {canPinpoint && <PinpointProvider />}
+      {/* Pinpoint / โหมดติชม overlay — every signed-in user (flag on). Renders
+          nothing until a session is started from the AI button. canReview gates
+          the post-finish jump to the reviewer page (admin-tier only). */}
+      {canPinpoint && <PinpointProvider canReview={canReviewPinpoint} />}
 
       {/* Mobile hub bottom-nav — launcher tabs for owner/admin/program-admin.
           Hidden ≥lg (desktop uses the sidebar) AND hidden inside any module
@@ -530,7 +535,7 @@ function SidebarBody({
   activeModuleSlug,
   moduleNav,
   navCounts,
-  canPinpoint = false,
+  canReviewPinpoint = false,
   onNavigate,
 }: {
   user: DbUser;
@@ -539,7 +544,9 @@ function SidebarBody({
   activeModuleSlug: ModuleSlug | null;
   moduleNav: NavItem[];
   navCounts: NavCountsClient;
-  canPinpoint?: boolean;
+  /** Gates the /pinpoint REVIEW nav entry (admin-tier). Using the mode itself
+      is open to everyone via the AI button. */
+  canReviewPinpoint?: boolean;
   onNavigate?: () => void;
 }) {
   const activeModule = activeModuleSlug ? MODULES[activeModuleSlug] : null;
@@ -619,7 +626,7 @@ function SidebarBody({
       {isAdmin && (
         <SidebarSection title="ระบบ" storageKey="zone-system">
           {SYSTEM_NAV.filter(
-            (it) => it.href !== "/pinpoint" || canPinpoint,
+            (it) => it.href !== "/pinpoint" || canReviewPinpoint,
           ).map((it) => (
             <SidebarLink
               key={it.href}
