@@ -7,6 +7,8 @@ import "./repairs.css";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Repairs ซ่อมบำรุง" };
+
 export default async function RepairsLayout({
   children,
 }: {

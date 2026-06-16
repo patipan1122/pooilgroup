@@ -17,6 +17,8 @@ import { LedgerBottomNav } from "@/components/ledger/LedgerBottomNav";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "LedgerLine บัญชี" };
+
 export default async function LedgerLayout({
   children,
 }: {

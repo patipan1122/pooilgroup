@@ -1,6 +1,8 @@
 // HotelBook admin layout · admin tier + module-enabled gate.
 import { assertModuleEnabled } from "@/lib/auth/module-access";
 
+export const metadata = { title: "HotelBook จองห้อง" };
+
 export default async function HotelBookLayout({
   children,
 }: {

@@ -7,6 +7,8 @@ import { RecruitChatFab } from "@/components/recruit/chat-fab";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Recruit สมัครงาน" };
+
 export default async function RecruitLayout({
   children,
 }: {

@@ -7,6 +7,8 @@ import { MobileBottomNav } from "@/components/clawfleet/_kit/mobile-bottom-nav";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "ClawFleet ตู้คีบ" };
+
 export default async function ClawfleetLayout({
   children,
 }: {

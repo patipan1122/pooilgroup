@@ -46,7 +46,9 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "Pooilgroup ERP",
+  // ชื่อแท็บแยกตามโปรแกรม: หน้าไหนตั้ง title เอง จะกลายเป็น "ชื่อนั้น · Pooilgroup"
+  // หน้าที่ไม่ได้ตั้ง (เช่น login) ใช้ default = "Pooilgroup ERP"
+  title: { default: "Pooilgroup ERP", template: "%s · Pooilgroup" },
   description: "ระบบบริหารจัดการ Pooilgroup — ยอดสาขา / เอกสาร / ขนส่งน้ำมัน",
   robots: { index: false, follow: false },
   manifest: "/manifest.json",

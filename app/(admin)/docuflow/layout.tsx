@@ -15,6 +15,8 @@ import "./docuflow.css";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "DocuFlow เอกสาร" };
+
 export default async function DocuFlowLayout({
   children,
 }: {

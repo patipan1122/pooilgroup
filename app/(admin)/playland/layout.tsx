@@ -17,6 +17,8 @@ import "./playland.css";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Playland สวนสนุก" };
+
 export default async function PlaylandLayout({ children }: { children: React.ReactNode }) {
   if (isModuleDisabled("playland")) redirect("/dashboard");
   const session = await requireSession();

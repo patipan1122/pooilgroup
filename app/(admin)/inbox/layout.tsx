@@ -3,6 +3,8 @@ import { requireSession } from "@/lib/auth/session";
 import { isAdminTier, userHasModuleAccess } from "@/lib/auth/module-access";
 import { isModuleDisabled } from "@/lib/modules";
 
+export const metadata = { title: "Inbox แชท" };
+
 export default async function InboxLayout({
   children,
 }: {

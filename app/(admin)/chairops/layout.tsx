@@ -23,6 +23,8 @@ import { isModuleDisabled } from "@/lib/modules";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "ChairOps เก้าอี้นวด" };
+
 export default async function ChairOpsLayout({
   children,
 }: {

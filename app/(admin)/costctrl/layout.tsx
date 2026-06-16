@@ -7,6 +7,8 @@ import { requireSession } from "@/lib/auth/session";
 import { requireSuperAdmin } from "@/lib/auth/role-guards";
 import { isModuleDisabled } from "@/lib/modules";
 
+export const metadata = { title: "CostCtrl คุมต้นทุน" };
+
 export default async function CostCtrlLayout({
   children,
 }: {

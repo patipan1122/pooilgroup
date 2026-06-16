@@ -12,6 +12,8 @@ import { isModuleDisabled } from "@/lib/modules";
 import { ApprovalBanner } from "@/components/cashhub/redesign/approval-banner";
 import "@/components/cashhub/redesign/tokens.css";
 
+export const metadata = { title: "CashHub" };
+
 export default async function CashHubLayout({
   children,
 }: {
