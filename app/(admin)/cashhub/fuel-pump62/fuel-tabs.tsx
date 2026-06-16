@@ -5,6 +5,7 @@ import { Table2, LayoutGrid } from "lucide-react";
 import { FuelManageView, type FuelRow } from "./fuel-manage-view";
 import { FuelSheetView, type FuelMonthMeta } from "./fuel-sheet-view";
 import { ReconcileImportBar } from "./reconcile-import-bar";
+import { FuelReconcileBar } from "./fuel-reconcile-bar";
 
 export function FuelTabs({
   rows,
@@ -38,6 +39,7 @@ export function FuelTabs({
       {tab === "reconcile" ? (
         <div className="flex flex-col gap-3">
           <ReconcileImportBar months={months} />
+          <FuelReconcileBar months={months} />
           <FuelManageView rows={rows} fetchedAt={fetchedAt} />
         </div>
       ) : (

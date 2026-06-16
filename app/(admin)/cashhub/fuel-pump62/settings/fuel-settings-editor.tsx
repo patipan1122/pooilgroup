@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import type { FuelChannelConfig } from "@/lib/cashhub/fuel-channels";
+import { FUEL_CHANNELS, type FuelChannelConfig } from "@/lib/cashhub/fuel-channels";
 import type { BankAccountOpt, CompanyOpt } from "@/lib/cashhub/amazon-settlement-data";
 
 type Props = {
@@ -13,6 +13,9 @@ type Props = {
 
 // ป้ายบัญชี: "ธนาคาร ****เลข4ตัวท้าย · ชื่อบัญชี" — ระบุบัญชีจากธนาคาร+เลขชัดเจน
 const acctLabel = (a: BankAccountOpt) => a.label;
+
+// ช่องทาง → คอลัมน์ในชีตที่ยึด (โชว์ให้เห็นว่าเงินช่องนี้มาจากไหน)
+const HINT_BY_CODE = new Map(FUEL_CHANNELS.map((c) => [c.code, c.sourceHint] as const));
 
 export function FuelSettingsEditor({ configs, accounts, companies }: Props) {
   const router = useRouter();
@@ -57,7 +60,10 @@ export function FuelSettingsEditor({ configs, accounts, companies }: Props) {
             const acc = r.bankAccountId ? acctById.get(r.bankAccountId) : null;
             return (
               <li key={r.code} className="flex items-center gap-2 text-sm">
-                <span className="min-w-[120px] font-medium text-zinc-700">{r.label}</span>
+                <span className="flex min-w-[150px] flex-col">
+                  <span className="font-medium text-zinc-700">{r.label}</span>
+                  <span className="text-[11px] text-zinc-400">{HINT_BY_CODE.get(r.code)}</span>
+                </span>
                 <span className="text-zinc-400">→</span>
                 {!r.isSettle ? (
                   <span className="text-zinc-400">ไม่ส่งเข้ากระทบยอด</span>
@@ -91,7 +97,10 @@ export function FuelSettingsEditor({ configs, accounts, companies }: Props) {
           <tbody>
             {rows.map((r) => (
               <tr key={r.code} className="border-b border-zinc-100">
-                <td className="p-3 font-medium text-zinc-700">{r.label}</td>
+                <td className="p-3">
+                  <div className="font-medium text-zinc-700">{r.label}</div>
+                  <div className="text-[11px] text-zinc-400">{HINT_BY_CODE.get(r.code)}</div>
+                </td>
                 <td className="p-3 text-center">
                   <input
                     type="checkbox"

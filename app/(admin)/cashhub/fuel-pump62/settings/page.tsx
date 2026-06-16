@@ -30,8 +30,9 @@ export default async function FuelSettingsPage() {
         <SectionPill num="⚙️" label="ปั๊มน้ำมัน · ตั้งค่าช่องทาง → บัญชี" />
         <TwoToneTitle first="ช่องทางไหน → " accent="เข้าบัญชีไหน" size={28} />
         <p className="text-sm text-zinc-500 mt-1">
-          ตั้งว่าเงินแต่ละช่องทาง (เงินสด / QR-เงินโอน / บัตร) เข้าบัญชีธนาคารไหน →
-          เตรียมส่งเข้าหน้ากระทบยอดให้ถูกบัญชี (บัญชีใครบัญชีมัน)
+          ตั้งว่าเงินเข้าจริงแต่ละช่อง (เงินสดนำฝาก / QR+บัตร K+ / บัตรเครดิต / คุณแอ้ม)
+          เข้าบัญชีธนาคารไหน + บริษัทไหน → เตรียมส่งเข้าหน้ากระทบยอดให้ถูกบัญชี
+          (ปกติทุกช่อง = TTB …3134)
         </p>
       </header>
       <FuelSettingsEditor configs={configs} accounts={accounts} companies={companies} />
