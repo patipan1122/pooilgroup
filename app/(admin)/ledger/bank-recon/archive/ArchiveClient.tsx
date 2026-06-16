@@ -292,7 +292,6 @@ function ArchiveCard({
   checked: boolean;
   onToggle: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const bookItems = g.items.filter((i) => i.kind === "book");
   const bankItems = g.items.filter((i) => i.kind === "bank");
   const hasDelta = g.deltaSatang !== 0;
@@ -300,17 +299,14 @@ function ArchiveCard({
   const meta = BAND_META[band];
   const isTransfer = g.matchType === "transfer";
   const amountSatang = Math.abs(g.bankTotalSatang || g.bookTotalSatang);
-  const bookName = bookItems[0]?.label ?? "—";
-  const bankName = bankItems[0]?.label ?? "—";
-  const moreCount = Math.max(0, bookItems.length - 1) + Math.max(0, bankItems.length - 1);
   const dateAny = bankItems[0]?.date ?? bookItems[0]?.date ?? null;
   const bankTxnId = bankItems.map((i) => i.bankTxnId).find((x): x is string => !!x);
   const fmt = (s: number) => (Math.abs(s) / 100).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
     <li className={`overflow-hidden rounded-xl border bg-white ${checked ? "border-rose-300 ring-1 ring-rose-200" : "border-zinc-100"}`}>
-      {/* แถวกระชับ (คลิกเพื่อกางดูรายละเอียดเต็ม) — เห็นได้หลายรายการต่อจอ */}
-      <div className="flex items-center gap-2 px-3 py-2">
+      {/* หัวแถว: เลือก + ความมั่นใจ + สถานะ + บัญชี + ยอด/ต่าง/วันที่ + ปุ่มย้อน */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-50 px-3 py-1.5">
         {selectable && (
           <input
             type="checkbox"
@@ -321,62 +317,40 @@ function ArchiveCard({
           />
         )}
         <span className={`size-2.5 shrink-0 rounded-full ${isTransfer ? "bg-violet-400" : meta.dot}`} title={isTransfer ? "โยกเงิน" : meta.label} aria-hidden />
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open ? "true" : "false"}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none"
-        >
-          <StatusBadge status={g.status} />
-          <span className="hidden shrink-0 text-xs text-zinc-500 sm:inline">{g.accountLabel ?? "ทุกบัญชี"}</span>
-          <span className="min-w-0 flex-1 truncate text-xs text-zinc-600">
-            {bookName} <span className="text-zinc-300">↔</span> {bankName}
-            {moreCount > 0 && <span className="text-zinc-400"> +{moreCount}</span>}
-          </span>
-          {hasDelta && (
-            <span className="shrink-0 tabular-num text-[11px] font-medium text-amber-600">ต่าง ฿{fmt(g.deltaSatang)}</span>
-          )}
-          <span className="shrink-0 tabular-num text-sm font-semibold text-zinc-800">฿{fmt(amountSatang)}</span>
-          <span className="hidden shrink-0 text-[11px] text-zinc-400 md:inline">{thDate(dateAny)}</span>
-          <ChevronDown size={15} className={`shrink-0 text-zinc-400 transition-transform ${open ? "rotate-180" : ""}`} />
-        </button>
-      </div>
-
-      {/* กางดู: สรุป 2 ฝั่ง + รายการ + ข้อมูลเต็มจากไฟล์ธนาคาร + ปุ่มย้อน */}
-      {open && (
-        <div className="border-t border-zinc-100 bg-zinc-50/40 px-3 py-2.5">
-          <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-zinc-500">
-            <span>บัญชี <b className="tabular-num text-zinc-700">฿{fmt(g.bookTotalSatang)}</b></span>
-            <span>ธนาคาร <b className="tabular-num text-zinc-700">฿{fmt(g.bankTotalSatang)}</b></span>
-            <span className={hasDelta ? "text-amber-600" : "text-emerald-600"}>ส่วนต่าง ฿{fmt(g.deltaSatang)}</span>
-            <span className="text-zinc-400">{g.status === "reversed" ? `ย้อนเมื่อ ${thDate(g.reversedAt)}` : `ยืนยันเมื่อ ${thDate(g.confirmedAt)}`}</span>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <ItemColumn title="รายการบัญชี" icon="book" items={bookItems} />
-            <ItemColumn title="รายการธนาคาร" icon="bank" items={bankItems} />
-          </div>
-          {bankTxnId && <RawBankDetail txnId={bankTxnId} />}
-          {g.status === "reversed" && g.reversalReason && (
-            <p className="mt-2 text-[11px] text-zinc-500">เหตุผลที่ย้อน: <span className="text-zinc-700">{g.reversalReason}</span></p>
-          )}
+        <StatusBadge status={g.status} />
+        {isTransfer && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-700">โยกเงิน</span>}
+        <span className="truncate text-xs text-zinc-500">{g.accountLabel ?? "ทุกบัญชี"}</span>
+        <div className="ml-auto flex items-center gap-2">
+          {hasDelta && <span className="tabular-num text-[11px] font-medium text-amber-600">ต่าง ฿{fmt(g.deltaSatang)}</span>}
+          <span className="tabular-num text-sm font-semibold text-zinc-800">฿{fmt(amountSatang)}</span>
+          <span className="hidden text-[11px] text-zinc-400 sm:inline">{thDate(dateAny)}</span>
           {g.status === "confirmed" && (
-            <div className="mt-2">
-              <button
-                type="button"
-                onClick={onRevert}
-                disabled={disabled}
-                className={`press inline-flex min-h-10 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium focus-visible:ring-2 disabled:opacity-50 sm:min-h-0 sm:py-1.5 ${
-                  isSuper
-                    ? "border-rose-200 text-rose-700 hover:bg-rose-50 focus-visible:ring-rose-300"
-                    : "border-amber-200 text-amber-700 hover:bg-amber-50 focus-visible:ring-amber-300"
-                }`}
-              >
-                {isSuper ? <Undo2 size={15} /> : <FileSignature size={15} />}
-                {isSuper ? "ย้อนกลับ" : "ขออนุมัติแก้"}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={onRevert}
+              disabled={disabled}
+              className={`press inline-flex min-h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium focus-visible:ring-2 disabled:opacity-50 sm:min-h-0 sm:py-1 ${
+                isSuper
+                  ? "border-rose-200 text-rose-700 hover:bg-rose-50 focus-visible:ring-rose-300"
+                  : "border-amber-200 text-amber-700 hover:bg-amber-50 focus-visible:ring-amber-300"
+              }`}
+            >
+              {isSuper ? <Undo2 size={13} /> : <FileSignature size={13} />}
+              {isSuper ? "ย้อน" : "ขอแก้"}
+            </button>
           )}
         </div>
+      </div>
+
+      {/* ทั้ง 2 ฝั่ง — เห็นเลยไม่ต้องกด · ฝั่งธนาคารจัดเต็ม (คู่ค้า · ช่องทาง · รายละเอียด) */}
+      <div className="grid gap-2 px-3 py-2 sm:grid-cols-2">
+        <ItemColumn title="รายการบัญชี" items={bookItems} />
+        <ItemColumn title="ธนาคาร (จากไฟล์)" items={bankItems} />
+      </div>
+
+      {bankTxnId && <div className="px-3 pb-2"><RawBankDetail txnId={bankTxnId} /></div>}
+      {g.status === "reversed" && g.reversalReason && (
+        <p className="border-t border-zinc-50 px-3 py-1.5 text-[11px] text-zinc-500">เหตุผลที่ย้อน: <span className="text-zinc-700">{g.reversalReason}</span></p>
       )}
     </li>
   );
@@ -467,11 +441,9 @@ function BandChip({ active, onClick, label, count, band }: {
 
 function ItemColumn({
   title,
-  icon,
   items,
 }: {
   title: string;
-  icon: "book" | "bank";
   items: ArchiveGroup["items"];
 }) {
   return (
@@ -482,23 +454,23 @@ function ItemColumn({
       ) : (
         <ul className="space-y-1.5">
           {items.map((it, i) => (
-            <li key={i} className="flex items-center gap-2">
+            <li key={i} className="flex items-start gap-2">
               {it.amountSatang >= 0 ? (
-                <ArrowDownLeft size={14} className="shrink-0 text-emerald-500" />
+                <ArrowDownLeft size={14} className="mt-0.5 shrink-0 text-emerald-500" />
               ) : (
-                <ArrowUpRight size={14} className="shrink-0 text-rose-500" />
+                <ArrowUpRight size={14} className="mt-0.5 shrink-0 text-rose-500" />
               )}
-              <span className="min-w-0 flex-1 truncate text-xs text-zinc-700">{it.label}</span>
-              <span className="shrink-0 text-[11px] text-zinc-400">{thDate(it.date)}</span>
-              <Money satang={it.amountSatang} className="shrink-0 text-xs" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs text-zinc-700">{it.label}</p>
+                {it.detailLine && <p className="truncate text-[10px] leading-tight text-zinc-400">{it.detailLine}</p>}
+              </div>
+              <div className="shrink-0 text-right">
+                <Money satang={it.amountSatang} className="text-xs" />
+                <p className="text-[10px] text-zinc-400">{thDate(it.date)}</p>
+              </div>
             </li>
           ))}
         </ul>
-      )}
-      {icon === "book" && items.some((i) => i.paymentChannel) && (
-        <p className="mt-1.5 text-[10px] text-zinc-400">
-          {Array.from(new Set(items.map((i) => i.paymentChannel).filter(Boolean))).join(" · ")}
-        </p>
       )}
     </div>
   );

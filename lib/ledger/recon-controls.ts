@@ -87,6 +87,7 @@ export interface ArchiveItem {
   kind: string; label: string; amountSatang: number; date: string | null;
   bookType: string | null; paymentChannel: string | null; sourceType: string | null;
   bankTxnId: string | null;  // ฝั่งธนาคาร: ใช้ดึงรายละเอียดเต็มจากไฟล์ (raw_row_json) ตอนกางดู
+  detailLine: string | null; // รายละเอียดรองที่โชว์ใต้ชื่อ — ธนาคาร: คู่ค้า·ช่องทาง·narrative · บัญชี: ธุรกิจ·ช่องทาง
 }
 export interface ArchiveGroup {
   id: string; status: string; matchType: string; matchKind: string;
@@ -128,14 +129,23 @@ export async function listMatchedArchive(params: {
   const confirmedIds = groups.filter((g) => g.status === "confirmed").map((g) => g.id);
   const liveItems = confirmedIds.length
     ? await prisma.$queryRaw<{
-        groupId: string; kind: string; label: string; amountSatang: bigint; date: string | null;
+        groupId: string; kind: string; label: string; detailLine: string | null; amountSatang: bigint; date: string | null;
         bookType: string | null; paymentChannel: string | null; sourceType: string | null; bankTxnId: string | null;
       }[]>`
         SELECT mi.group_id::text as "groupId", mi.kind,
-               CASE WHEN mi.kind='bank' THEN COALESCE(NULLIF(t.ref2,''), NULLIF(t.description,''), NULLIF(t.channel,''), 'รายการธนาคาร')
+               -- ชื่อหลัก: ธนาคาร = ประเภทรายการ (description) · บัญชี = ชื่อลูกค้า/ผู้ขาย
+               CASE WHEN mi.kind='bank' THEN COALESCE(NULLIF(t.description,''), NULLIF(t.ref2,''), NULLIF(t.channel,''), 'รายการธนาคาร')
                     WHEN mi.book_type='revenue' THEN COALESCE(NULLIF(r.customer_name,''), NULLIF(r.description,''), NULLIF(mi.book_doc_no,''), 'รายได้')
                     WHEN mi.book_type='expense' THEN COALESCE(NULLIF(e.vendor,''), NULLIF(mi.book_doc_no,''), 'ค่าใช้จ่าย')
                     ELSE COALESCE(NULLIF(mi.book_doc_no,''), 'รายการบัญชี') END as "label",
+               -- รายละเอียดรอง (จัดเต็มฝั่งธนาคาร): คู่ค้า · ช่องทาง · narrative
+               CASE WHEN mi.kind='bank' THEN NULLIF(TRIM(CONCAT_WS(' · ',
+                         CASE WHEN COALESCE(t.ref2,'')<>'' THEN 'คู่ค้า: '||t.ref2 END,
+                         NULLIF(t.channel,''),
+                         CASE WHEN COALESCE(t.ref1,'')<>'' AND t.ref1 <> COALESCE(t.description,'') THEN t.ref1 END)), '')
+                    WHEN mi.book_type='revenue' THEN NULLIF(TRIM(CONCAT_WS(' · ', NULLIF(r.source_type,''), NULLIF(r.payment_channel,''))), '')
+                    WHEN mi.book_type='expense' THEN NULLIF(e.doc_type,'')
+                    ELSE NULL END as "detailLine",
                mi.amount_satang as "amountSatang",
                CASE WHEN mi.kind='bank' THEN t.txn_date::text
                     WHEN mi.book_type='revenue' THEN r.entry_date::text
@@ -156,12 +166,13 @@ export async function listMatchedArchive(params: {
       items = liveItems.filter((i) => i.groupId === g.id).map((i) => ({
         kind: i.kind, label: i.label, amountSatang: Number(i.amountSatang), date: i.date,
         bookType: i.bookType, paymentChannel: i.paymentChannel, sourceType: i.sourceType, bankTxnId: i.bankTxnId,
+        detailLine: i.detailLine,
       }));
     } else {
       const snap = (g.reversedSnapshot as { items?: { kind: string; label: string; amountSatang: number; date: string | null; bookType: string | null }[] } | null);
       items = (snap?.items ?? []).map((i) => ({
         kind: i.kind, label: i.label, amountSatang: Number(i.amountSatang), date: i.date,
-        bookType: i.bookType ?? null, paymentChannel: null, sourceType: null, bankTxnId: null,
+        bookType: i.bookType ?? null, paymentChannel: null, sourceType: null, bankTxnId: null, detailLine: null,
       }));
     }
     return {
