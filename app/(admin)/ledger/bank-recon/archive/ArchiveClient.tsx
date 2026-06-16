@@ -5,14 +5,12 @@
 // • each card: account · status · totals + diff · matched items (book vs bank) · timestamps
 // • confirmed groups → "ย้อนกลับ" (super_admin) / "ขออนุมัติแก้" (others)
 
-import { useState, useTransition } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import {
   Search,
   Undo2,
   FileSignature,
-  ArrowDownLeft,
-  ArrowUpRight,
   Landmark,
   Info,
   CheckSquare,
@@ -27,7 +25,7 @@ import {
   bulkRevertGroupsAction,
   getBankTxnRawAction,
 } from "../_recon-controls-actions";
-import { Money, thDate, StatusBadge, ReasonModal, FeedbackBar } from "../_components/recon-controls-ui";
+import { thDate, StatusBadge, ReasonModal, FeedbackBar } from "../_components/recon-controls-ui";
 
 interface Props {
   groups: ArchiveGroup[];
@@ -292,6 +290,7 @@ function ArchiveCard({
   checked: boolean;
   onToggle: () => void;
 }) {
+  const [rawOpen, setRawOpen] = useState(false);
   const bookItems = g.items.filter((i) => i.kind === "book");
   const bankItems = g.items.filter((i) => i.kind === "bank");
   const hasDelta = g.deltaSatang !== 0;
@@ -302,11 +301,15 @@ function ArchiveCard({
   const dateAny = bankItems[0]?.date ?? bookItems[0]?.date ?? null;
   const bankTxnId = bankItems.map((i) => i.bankTxnId).find((x): x is string => !!x);
   const fmt = (s: number) => (Math.abs(s) / 100).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const book0 = bookItems[0];
+  const bank0 = bankItems[0];
+  const bookMore = bookItems.length > 1 ? ` +${bookItems.length - 1}` : "";
+  const bankMore = bankItems.length > 1 ? ` +${bankItems.length - 1}` : "";
 
   return (
-    <li className={`overflow-hidden rounded-xl border bg-white ${checked ? "border-rose-300 ring-1 ring-rose-200" : "border-zinc-100"}`}>
-      {/* หัวแถว: เลือก + ความมั่นใจ + สถานะ + บัญชี + ยอด/ต่าง/วันที่ + ปุ่มย้อน */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-50 px-3 py-1.5">
+    <li className={`rounded-lg border ${checked ? "border-rose-300 bg-rose-50/30" : "border-zinc-100 bg-white"}`}>
+      {/* แถวเดียวแน่น — เห็นทั้ง 2 ฝั่ง + ยอด + วันที่ ในบรรทัดเดียว (8-9 รายการ/จอ) */}
+      <div className="flex items-center gap-2 px-2.5 py-1.5">
         {selectable && (
           <input
             type="checkbox"
@@ -318,102 +321,98 @@ function ArchiveCard({
         )}
         <span className={`size-2.5 shrink-0 rounded-full ${isTransfer ? "bg-violet-400" : meta.dot}`} title={isTransfer ? "โยกเงิน" : meta.label} aria-hidden />
         <StatusBadge status={g.status} />
-        {isTransfer && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-700">โยกเงิน</span>}
-        <span className="truncate text-xs text-zinc-500">{g.accountLabel ?? "ทุกบัญชี"}</span>
-        <div className="ml-auto flex items-center gap-2">
-          {hasDelta && <span className="tabular-num text-[11px] font-medium text-amber-600">ต่าง ฿{fmt(g.deltaSatang)}</span>}
-          <span className="tabular-num text-sm font-semibold text-zinc-800">฿{fmt(amountSatang)}</span>
-          <span className="hidden text-[11px] text-zinc-400 sm:inline">{thDate(dateAny)}</span>
-          {g.status === "confirmed" && (
-            <button
-              type="button"
-              onClick={onRevert}
-              disabled={disabled}
-              className={`press inline-flex min-h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium focus-visible:ring-2 disabled:opacity-50 sm:min-h-0 sm:py-1 ${
-                isSuper
-                  ? "border-rose-200 text-rose-700 hover:bg-rose-50 focus-visible:ring-rose-300"
-                  : "border-amber-200 text-amber-700 hover:bg-amber-50 focus-visible:ring-amber-300"
-              }`}
-            >
-              {isSuper ? <Undo2 size={13} /> : <FileSignature size={13} />}
-              {isSuper ? "ย้อน" : "ขอแก้"}
-            </button>
-          )}
+        <span className="hidden shrink-0 truncate text-[10px] text-zinc-400 xl:inline">{g.accountLabel}</span>
+
+        {/* คลิกแถว = กางดูข้อมูลเต็มจากไฟล์ธนาคาร */}
+        <button
+          type="button"
+          onClick={() => bankTxnId && setRawOpen((o) => !o)}
+          aria-expanded={rawOpen ? "true" : "false"}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none"
+        >
+          {/* ฝั่งบัญชี */}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-xs text-zinc-700">{(book0?.label ?? "—") + bookMore}</span>
+            {book0?.detailLine && <span className="block truncate text-[10px] leading-tight text-zinc-400">{book0.detailLine}</span>}
+          </span>
+          <span className="shrink-0 text-zinc-300">↔</span>
+          {/* ฝั่งธนาคาร (จัดเต็ม: คู่ค้า · ช่องทาง · รายละเอียด) */}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-xs text-zinc-700">{(bank0?.label ?? "—") + bankMore}</span>
+            {bank0?.detailLine && <span className="block truncate text-[10px] leading-tight text-zinc-400">{bank0.detailLine}</span>}
+          </span>
+          {/* ยอด + ส่วนต่าง + วันที่ */}
+          <span className="shrink-0 text-right">
+            <span className="block tabular-num text-sm font-semibold text-zinc-800">฿{fmt(amountSatang)}</span>
+            <span className="block text-[10px] leading-tight text-zinc-400">
+              {hasDelta && <span className="text-amber-600">ต่าง ฿{fmt(g.deltaSatang)} · </span>}{thDate(dateAny)}
+            </span>
+          </span>
+          {bankTxnId && <ChevronDown size={14} className={`shrink-0 text-zinc-300 transition-transform ${rawOpen ? "rotate-180" : ""}`} />}
+        </button>
+
+        {/* ย้อน (เฉพาะที่ยืนยันแล้ว) — ไอคอนเล็กประหยัดที่ */}
+        {g.status === "confirmed" && (
+          <button
+            type="button"
+            onClick={onRevert}
+            disabled={disabled}
+            title={isSuper ? "ย้อนกลับ" : "ขออนุมัติแก้"}
+            className={`press grid size-8 shrink-0 place-items-center rounded-lg border focus-visible:ring-2 disabled:opacity-50 ${
+              isSuper
+                ? "border-rose-200 text-rose-600 hover:bg-rose-50 focus-visible:ring-rose-300"
+                : "border-amber-200 text-amber-600 hover:bg-amber-50 focus-visible:ring-amber-300"
+            }`}
+          >
+            {isSuper ? <Undo2 size={14} /> : <FileSignature size={14} />}
+          </button>
+        )}
+      </div>
+
+      {/* ข้อมูลเต็มจากไฟล์ธนาคาร (Branch/Location/ทุกคอลัมน์) — โหลดเมื่อกางดู */}
+      {rawOpen && bankTxnId && (
+        <div className="border-t border-zinc-100 bg-zinc-50/50 px-2.5 py-1.5">
+          <RawBankPanel txnId={bankTxnId} />
         </div>
-      </div>
-
-      {/* ทั้ง 2 ฝั่ง — เห็นเลยไม่ต้องกด · ฝั่งธนาคารจัดเต็ม (คู่ค้า · ช่องทาง · รายละเอียด) */}
-      <div className="grid gap-2 px-3 py-2 sm:grid-cols-2">
-        <ItemColumn title="รายการบัญชี" items={bookItems} />
-        <ItemColumn title="ธนาคาร (จากไฟล์)" items={bankItems} />
-      </div>
-
-      {bankTxnId && <div className="px-3 pb-2"><RawBankDetail txnId={bankTxnId} /></div>}
+      )}
       {g.status === "reversed" && g.reversalReason && (
-        <p className="border-t border-zinc-50 px-3 py-1.5 text-[11px] text-zinc-500">เหตุผลที่ย้อน: <span className="text-zinc-700">{g.reversalReason}</span></p>
+        <p className="border-t border-zinc-50 px-2.5 py-1 text-[10px] text-zinc-400">เหตุผลที่ย้อน: <span className="text-zinc-600">{g.reversalReason}</span></p>
       )}
     </li>
   );
 }
 
-// รายละเอียดเต็มจากไฟล์ธนาคารที่อัพ (raw_row_json) — โหลดเมื่อกดดู · โชว์ทุกคอลัมน์ที่ไม่ว่าง
+// ข้อมูลดิบเต็มจากไฟล์ธนาคาร (raw_row_json) — auto-load เมื่อกางดู · โชว์ทุกคอลัมน์ที่ไม่ว่าง
 // (BBL: Description/Channel/Branch/Location/Counter Party/Narrative · KBiz: รายการ/ช่องทาง/รายละเอียด ฯลฯ)
-function RawBankDetail({ txnId }: { txnId: string }) {
-  const [open, setOpen] = useState(false);
+function RawBankPanel({ txnId }: { txnId: string }) {
   const [rows, setRows] = useState<[string, string][] | null>(null);
-  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  async function toggle() {
-    const next = !open;
-    setOpen(next);
-    if (!next || rows || loading) return;
-    setLoading(true); setErr(null);
-    const r = await getBankTxnRawAction(txnId);
-    setLoading(false);
-    if (r.ok && r.raw) {
-      const entries = Object.entries(r.raw)
-        .map(([k, v]) => [k, v == null ? "" : String(v).trim()] as [string, string])
-        .filter(([, v]) => v !== "" && v !== "0");
-      setRows(entries);
-    } else {
-      setErr(r.error ?? "ดูรายละเอียดเต็มได้เฉพาะผู้ดูแล");
-      setRows([]);
-    }
-  }
-
+  useEffect(() => {
+    let alive = true;
+    getBankTxnRawAction(txnId).then((r) => {
+      if (!alive) return;
+      if (r.ok && r.raw) {
+        setRows(Object.entries(r.raw)
+          .map(([k, v]) => [k, v == null ? "" : String(v).trim()] as [string, string])
+          .filter(([, v]) => v !== "" && v !== "0"));
+      } else {
+        setErr(r.error ?? "ดูข้อมูลเต็มได้เฉพาะผู้ดูแล");
+      }
+    });
+    return () => { alive = false; };
+  }, [txnId]);
+  if (err) return <p className="text-[10px] text-zinc-400">{err}</p>;
+  if (rows === null) return <p className="text-[10px] text-zinc-400">กำลังโหลด…</p>;
+  if (!rows.length) return <p className="text-[10px] text-zinc-400">ไม่มีข้อมูลเพิ่มเติม</p>;
   return (
-    <div className="mt-2 rounded-lg border border-zinc-100 bg-white p-2">
-      <button
-        type="button"
-        onClick={toggle}
-        aria-expanded={open ? "true" : "false"}
-        className="press inline-flex items-center gap-1 text-[11px] font-medium text-brand-600 hover:text-brand-700 focus-visible:outline-none"
-      >
-        <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
-        {open ? "ซ่อนข้อมูลเต็มจากไฟล์ธนาคาร" : "ดูข้อมูลเต็มจากไฟล์ธนาคาร"}
-      </button>
-      {open && (
-        <div className="mt-1.5">
-          {loading ? (
-            <p className="text-[11px] text-zinc-400">กำลังโหลด…</p>
-          ) : err ? (
-            <p className="text-[11px] text-zinc-400">{err}</p>
-          ) : rows && rows.length ? (
-            <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
-              {rows.map(([k, v]) => (
-                <div key={k} className="flex gap-1.5 text-[11px]">
-                  <dt className="shrink-0 text-zinc-400">{k}:</dt>
-                  <dd className="min-w-0 break-words text-zinc-700">{v}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : (
-            <p className="text-[11px] text-zinc-400">ไม่มีข้อมูลเพิ่มเติม</p>
-          )}
+    <dl className="grid gap-x-4 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
+      {rows.map(([k, v]) => (
+        <div key={k} className="flex gap-1 text-[10px]">
+          <dt className="shrink-0 text-zinc-400">{k}:</dt>
+          <dd className="min-w-0 break-words text-zinc-600">{v}</dd>
         </div>
-      )}
-    </div>
+      ))}
+    </dl>
   );
 }
 
@@ -439,39 +438,3 @@ function BandChip({ active, onClick, label, count, band }: {
   );
 }
 
-function ItemColumn({
-  title,
-  items,
-}: {
-  title: string;
-  items: ArchiveGroup["items"];
-}) {
-  return (
-    <div className="rounded-xl border border-zinc-100 bg-zinc-50/40 p-2.5">
-      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">{title}</p>
-      {items.length === 0 ? (
-        <p className="text-xs text-zinc-300">—</p>
-      ) : (
-        <ul className="space-y-1.5">
-          {items.map((it, i) => (
-            <li key={i} className="flex items-start gap-2">
-              {it.amountSatang >= 0 ? (
-                <ArrowDownLeft size={14} className="mt-0.5 shrink-0 text-emerald-500" />
-              ) : (
-                <ArrowUpRight size={14} className="mt-0.5 shrink-0 text-rose-500" />
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs text-zinc-700">{it.label}</p>
-                {it.detailLine && <p className="truncate text-[10px] leading-tight text-zinc-400">{it.detailLine}</p>}
-              </div>
-              <div className="shrink-0 text-right">
-                <Money satang={it.amountSatang} className="text-xs" />
-                <p className="text-[10px] text-zinc-400">{thDate(it.date)}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
