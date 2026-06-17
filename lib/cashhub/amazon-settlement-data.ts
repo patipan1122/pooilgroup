@@ -155,19 +155,26 @@ export async function sendDaysToReconcile(
   branchLabel: string,
   days: SavedAmazonDay[],
   configs: ChannelConfig[],
-): Promise<{ inserted: number; skippedNoConfig: number; error?: string }> {
+): Promise<{ inserted: number; skippedNoConfig: number; sentUnbalanced: string[]; error?: string }> {
   const configByCvar = new Map(configs.map((c) => [c.cvar, c]));
   const rows: ReconcileRow[] = [];
   // source_ref เก่าแบบ "แยก QR/QR Manual/wallet" (ก่อนรวมก้อนเดียว) → เก็บไว้ลบกันนับซ้ำ
   const legacyRefs: string[] = [];
   let skippedNoConfig = 0;
+  // วันที่ "ยอด POS ไม่ลงตัว" (ปิดกะไม่ครบ/มีช่องตกหล่น) แต่ยังส่งยอดช่องทางจริงเข้า reconcile
+  //   → จดไว้รายงานให้ CEO เห็น (กันเงียบ)
+  //   ⚠️ เดิม `if (!day.balanced) continue` กันทั้งวัน → เงินสด/QR ที่เข้าธนาคารจริงแล้วไม่มีคู่ให้จับ
+  //      (เช่น 3,6,11,16 เม.ย. ยอดต่าง 20-30฿ ทำให้เงินหมื่นกว่าบาทค้างเงียบ ทั้งวัน)
+  //   ตอนนี้ส่งยอดช่องทางที่อ่านได้เข้าไปเหมือน Hotel (sendHotelDaysToReconcile ไม่มี gate นี้) —
+  //      ส่วนต่างเล็ก ๆ เป็นเรื่อง POS↔ยอดขายรวม (คนละชั้นกับการจับคู่ธนาคาร) ไม่บล็อกเงินทั้งวัน
+  const sentUnbalanced: string[] = [];
   for (const day of days) {
-    if (!day.balanced) continue;
     // รวมช่องที่โอนเข้าบัญชีก้อนเดียว (QR+QR Manual+wallet) เป็น 1 บรรทัด — สูตรเดียวกับพรีวิว
     const { rows: sendRows } = computeSendRows(day.channels, configByCvar);
     for (const g of SETTLEMENT_GROUPS)
       for (const cv of g.cvars)
         legacyRefs.push(`amz-${storeCode}-${day.sales_date}-${cv}`);
+    let dayContributed = false;
     for (const s of sendRows) {
       if (!s.companyId) {
         skippedNoConfig++; // ยังไม่ตั้งบริษัท/บัญชี → ข้าม (ต้องตั้งก่อน)
@@ -184,9 +191,12 @@ export async function sendDaysToReconcile(
         channelCode: s.channelCode,
         bankAccountId: s.bankAccountId,
       });
+      dayContributed = true;
     }
+    // ส่งเงินจริงของวันนี้เข้าไปแล้ว แต่ยอด POS วันนี้ไม่ลงตัว → แจ้ง CEO ให้ไปตรวจไฟล์ปิดกะ
+    if (dayContributed && !day.balanced) sentUnbalanced.push(day.sales_date);
   }
-  if (rows.length === 0) return { inserted: 0, skippedNoConfig };
+  if (rows.length === 0) return { inserted: 0, skippedNoConfig, sentUnbalanced };
 
   // INSERT ... ON CONFLICT DO NOTHING (atomic + idempotent + race-safe) — mirror trcloud-revenue.ts
   // conflict target ตรงกับ partial unique index (org,company,source_type,source_ref WHERE source_ref NOT NULL)
@@ -236,8 +246,9 @@ export async function sendDaysToReconcile(
     return {
       inserted,
       skippedNoConfig,
+      sentUnbalanced,
       error: e instanceof Error ? e.message : "insert error",
     };
   }
-  return { inserted, skippedNoConfig };
+  return { inserted, skippedNoConfig, sentUnbalanced };
 }

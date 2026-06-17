@@ -57,7 +57,16 @@ export async function POST(req: NextRequest) {
     userId: session.user.id,
     action: "SEND_AMAZON_RECONCILE",
     resourceType: "ledger_revenue_entry",
-    diff: { new: { storeCode, from, to, inserted: res.inserted, skipped: res.skippedNoConfig } },
+    diff: {
+      new: {
+        storeCode,
+        from,
+        to,
+        inserted: res.inserted,
+        skipped: res.skippedNoConfig,
+        sentUnbalanced: res.sentUnbalanced,
+      },
+    },
   });
   return NextResponse.json({ ok: true, ...res });
 }

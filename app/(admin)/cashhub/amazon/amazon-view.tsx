@@ -188,13 +188,19 @@ export function AmazonView({
         ok?: boolean;
         inserted?: number;
         skippedNoConfig?: number;
+        sentUnbalanced?: string[];
         error?: string;
       };
       if (!res.ok || data.error) setMsg({ kind: "err", text: data.error ?? "ส่งไม่สำเร็จ" });
       else {
+        // วันที่ยอด POS ไม่ลงตัวแต่ส่งเงินช่องทางจริงเข้าไปแล้ว → แจ้งให้เห็น ไม่ปล่อยเงียบ
+        const unbal = data.sentUnbalanced ?? [];
+        const unbalNote = unbal.length
+          ? ` · ⚠️ ${unbal.length} วันยอด POS ไม่ลงตัว (ส่งเงินให้แล้ว ควรตรวจไฟล์ปิดกะ): ${unbal.map((d) => d.slice(5)).join(", ")}`
+          : "";
         setMsg({
           kind: "ok",
-          text: `ส่งเข้า reconcile แล้ว ${data.inserted} รายการ${data.skippedNoConfig ? ` · ข้าม ${data.skippedNoConfig} (ยังไม่ตั้งบัญชี)` : ""} → ดูที่หน้ากระทบยอดธนาคาร`,
+          text: `ส่งเข้า reconcile แล้ว ${data.inserted} รายการ${data.skippedNoConfig ? ` · ข้าม ${data.skippedNoConfig} (ยังไม่ตั้งบัญชี)` : ""}${unbalNote} → ดูที่หน้ากระทบยอดธนาคาร`,
         });
         router.refresh(); // โหลดสถานะ "กระทบยอด" + แถบสรุปใหม่ (ไม่งั้นคอลัมน์ค้าง "—" เหมือนยังไม่ส่ง)
       }
