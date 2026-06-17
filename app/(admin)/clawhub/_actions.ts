@@ -263,34 +263,56 @@ export async function toggleRewardActiveAction(raw: unknown): Promise<ActionResu
 }
 
 /**
- * Presign an R2 upload URL for a reward image (admin uploads from the form).
- * Reuses getUploadUrl from lib/clawhub/r2 (which proxies lib/r2/upload). Returns
- * the PUT url + the public url to store on the reward.
+ * Upload a reward image (admin uploads from the form). The client compresses the
+ * image and sends the base64 bytes; we decode and putObject SERVER-SIDE — exactly
+ * like the customer refund flow (app/api/clawhub/refund). We deliberately do NOT
+ * use a browser→R2 presigned PUT here: that path is blocked by R2 bucket CORS on
+ * any origin not in the allowlist (e.g. the pooilgroup.com custom domain), which
+ * silently broke admin uploads. Server-side upload eliminates that whole class of
+ * bugs (same reason app/api/docuflow/upload-proxy exists).
  */
 const uploadSchema = z.object({
-  contentType: z.string().trim().min(1).max(100),
+  base64: z.string().min(1),
+  mimeType: z.string().trim().min(1).max(100),
   ext: z.string().trim().max(8).optional(),
 });
 
-export async function getRewardImageUploadUrlAction(
+export async function uploadRewardImageAction(
   raw: unknown,
-): Promise<
-  { ok: true; url: string; publicUrl: string; key: string } | { ok: false; error: string }
-> {
+): Promise<{ ok: true; publicUrl: string; key: string } | { ok: false; error: string }> {
   await authorizeAction();
   const orgId = await clawhubOrgId();
   const parsed = uploadSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" };
-  if (!parsed.data.contentType.startsWith("image/")) {
+  if (!parsed.data.mimeType.startsWith("image/")) {
     return { ok: false, error: "ต้องเป็นรูปภาพเท่านั้น" };
   }
 
-  const { getUploadUrl } = await import("@/lib/clawhub/r2");
+  // Strip an optional data: prefix defensively, then decode.
+  const raw64 = parsed.data.base64;
+  const b64 = raw64.includes(",") ? raw64.slice(raw64.indexOf(",") + 1) : raw64;
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(b64, "base64");
+  } catch {
+    return { ok: false, error: "รูปไม่ถูกต้อง" };
+  }
+  if (bytes.length < 100) return { ok: false, error: "รูปไม่ถูกต้อง" };
+  if (bytes.length > 5 * 1024 * 1024) {
+    return { ok: false, error: "รูปใหญ่เกินไป (เกิน 5MB) — ลองย่อรูปก่อน" };
+  }
+
+  const { putObject } = await import("@/lib/clawhub/r2");
   const ext = (parsed.data.ext ?? "jpg").replace(/[^a-z0-9]/gi, "").slice(0, 6) || "jpg";
   const rand = Math.random().toString(36).slice(2, 10);
   const key = `clawhub/rewards/${orgId}/${rand}.${ext}`;
-  const { url, publicUrl } = await getUploadUrl(key, parsed.data.contentType);
-  return { ok: true, url, publicUrl, key };
+  try {
+    const publicUrl = await putObject(key, bytes, parsed.data.mimeType);
+    return { ok: true, publicUrl, key };
+  } catch (e) {
+    console.error("[clawhub.reward-image] R2 upload failed", e);
+    return { ok: false, error: "อัปโหลดรูปไม่สำเร็จ ลองใหม่อีกครั้ง" };
+  }
 }
 
 /* ───────────────────────── Inbox ───────────────────────── */

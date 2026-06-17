@@ -1,15 +1,18 @@
 "use client";
 
-// ClawHub admin — create / edit a reward (ตุ๊กตา). Image can be uploaded directly to
-// R2 (presigned PUT from getRewardImageUploadUrlAction) OR pasted as a URL. blank
-// stock = unlimited. Also offers a "เลือกจากสินค้า ClawFleet" picker (read-only
+// ClawHub admin — create / edit a reward (ตุ๊กตา). Image is compressed client-side
+// then uploaded THROUGH the server (uploadRewardImageAction → putObject), NOT via a
+// browser→R2 presigned PUT — the presigned-PUT path is blocked by R2 bucket CORS on
+// the pooilgroup.com custom domain, which silently broke uploads. OR paste a URL.
+// blank stock = unlimited. Also offers a "เลือกจากสินค้า ClawFleet" picker (read-only
 // CfProduct list) that prefills name/sku/image.
 
 import { useState, useTransition } from "react";
+import { compressImage } from "@/components/clawhub/customer/image-compress";
 import {
   createRewardAction,
   updateRewardAction,
-  getRewardImageUploadUrlAction,
+  uploadRewardImageAction,
 } from "../_actions";
 
 export type RewardFormValue = {
@@ -97,19 +100,12 @@ function RewardEditorModal({
     setErr(null);
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop() ?? "jpg";
-      const res = await getRewardImageUploadUrlAction({ contentType: file.type, ext });
+      // Compress client-side (downscale to ~1200px JPEG) → keeps the payload small,
+      // then upload THROUGH the server (no browser→R2 PUT, so no CORS dependency).
+      const { base64, mimeType } = await compressImage(file);
+      const res = await uploadRewardImageAction({ base64, mimeType, ext: "jpg" });
       if (!res.ok) {
         setErr(res.error);
-        return;
-      }
-      const put = await fetch(res.url, {
-        method: "PUT",
-        headers: { "content-type": file.type },
-        body: file,
-      });
-      if (!put.ok) {
-        setErr("อัปโหลดรูปไม่สำเร็จ");
         return;
       }
       set("imageUrl", res.publicUrl);
