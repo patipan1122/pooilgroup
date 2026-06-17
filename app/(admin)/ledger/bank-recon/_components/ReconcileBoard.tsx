@@ -717,43 +717,10 @@ export function ReconcileBoard({
               {searchedGroups.length === 0 ? (
                 <Empty text={qPending.trim() ? "ไม่พบกลุ่มตามคำค้น — ลองล้างคำค้น" : "ไม่มีคู่ในหมวดนี้ — เลือกหมวดอื่นด้านบน"} />
               ) : (
-                <div className="space-y-3">
-                  {searchedGroups.map((g) => {
-                    const band = confidenceBand(g);
-                    const meta = BAND_META[band];
-                    const reason = bandReason(g);
-                    const t = groupType(g);
-                    return (
-                      <div key={g.id} className="rounded-2xl border border-zinc-100 bg-white p-4">
-                        {/* แถบหัว: ความมั่นใจ (เด่นสุด) + ประเภท + ส่วนต่าง + นำออก */}
-                        <div className="mb-2.5 flex flex-wrap items-center gap-2">
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${meta.pill}`}>
-                            <span className={`size-2 rounded-full ${meta.dot}`} aria-hidden /> {meta.label}
-                          </span>
-                          {t && <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${t.cls}`}>{t.label}</span>}
-                          {g.deltaSatang !== 0 && (
-                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium tabular-num text-amber-700">
-                              ต่างกัน ฿{baht(g.deltaSatang)}
-                            </span>
-                          )}
-                          <span className="text-[11px] text-zinc-400">{g.matchKind === "auto" ? "จับคู่อัตโนมัติ" : "จับคู่เอง"}</span>
-                          <button type="button" onClick={() => handleRemove(g.id)} disabled={pending}
-                            className={`ml-auto inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2.5 py-1 text-xs text-zinc-500 hover:bg-zinc-50 disabled:opacity-50 ${FOCUS}`}>
-                            <Trash2 size={12} /> นำออก
-                          </button>
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <GroupSide title="บัญชี (ที่เราบันทึก)" items={g.items.filter((i) => i.kind === "book")} accent="brand" />
-                          <GroupSide title="ธนาคาร (เงินเข้าจริง)" items={g.items.filter((i) => i.kind === "bank")} accent="emerald" />
-                        </div>
-                        {reason && (
-                          <p className={`mt-2.5 flex items-center gap-1.5 text-[11px] ${band === "low" ? "text-rose-600" : "text-amber-600"}`}>
-                            <AlertTriangle size={12} className="shrink-0" /> {reason}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })}
+                <div className="space-y-2">
+                  {searchedGroups.map((g) => (
+                    <ConfidencePairRow key={g.id} g={g} pending={pending} onRemove={handleRemove} />
+                  ))}
                 </div>
               )}
             </>
@@ -1174,6 +1141,85 @@ function RowMenu({ isCredit, pending, onTransfer, onCreateBook, onExclude, onEdi
         </div>
       )}
     </div>
+  );
+}
+
+// แถวคู่ที่จับ (รอยืนยัน) — กระชับแถวเดียว: ● ความมั่นใจ · บัญชี ฿ → ธนาคาร +฿ · ส่วนต่าง · นำออก
+// กดที่แถว (หรือลูกศร) = กางดูรายละเอียดเต็มเหมือนการ์ดเดิม (GroupSide → statement ครบ: อ้างอิง/คงเหลือ/value date/ที่มา/วันบิล)
+function ConfidencePairRow({ g, pending, onRemove }: { g: MatchGroup; pending: boolean; onRemove: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const band = confidenceBand(g);
+  const meta = BAND_META[band];
+  const reason = bandReason(g);
+  const t = groupType(g);
+  const bookItems = g.items.filter((i) => i.kind === "book");
+  const bankItems = g.items.filter((i) => i.kind === "bank");
+  const bookName = pairName(bookItems, (i) => i.customerName || i.vendor || i.label || i.bookDocNo || "—");
+  const bankName = pairName(bankItems, (i) => i.label || "—");
+  return (
+    <div className="overflow-hidden rounded-xl border border-zinc-100 bg-white">
+      <div className="flex items-center gap-2 px-3 py-2">
+        {/* แถวกระชับ — กดทั้งแถวเพื่อกาง/ยุบรายละเอียด */}
+        <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
+          className={`flex min-w-0 flex-1 items-center gap-2 text-left ${FOCUS}`}>
+          <ChevronRight size={15} className={`shrink-0 text-zinc-300 transition-transform ${open ? "rotate-90" : ""}`} aria-hidden />
+          <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${meta.pill}`}>
+            <span className={`size-1.5 rounded-full ${meta.dot}`} aria-hidden /> {meta.label}
+          </span>
+          {t && <span className={`hidden shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold sm:inline ${t.cls}`}>{t.label}</span>}
+          {/* บัญชี → ธนาคาร บนบรรทัดเดียว (ตัดข้อความถ้ายาว) */}
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="min-w-0 flex-1 truncate text-xs text-zinc-700">{bookName}</span>
+            <PairAmount satang={g.bookTotalSatang} muted />
+            <span className="shrink-0 text-zinc-300" aria-hidden>→</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-zinc-700">{bankName}</span>
+            <PairAmount satang={g.bankTotalSatang} />
+          </span>
+          {g.deltaSatang !== 0 && (
+            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium tabular-num text-amber-700">
+              ต่าง ฿{baht(Math.abs(g.deltaSatang))}
+            </span>
+          )}
+        </button>
+        <button type="button" onClick={() => onRemove(g.id)} disabled={pending}
+          className={`inline-flex shrink-0 items-center gap-1 rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-50 disabled:opacity-50 ${FOCUS}`}>
+          <Trash2 size={12} /> <span className="hidden sm:inline">นำออก</span>
+        </button>
+      </div>
+      {/* กางดู — รายละเอียดเต็มเหมือนการ์ดเดิมทุกตัว (ข้อมูลไม่หาย แค่ซ่อนไว้จนกดดู) */}
+      {open && (
+        <div className="border-t border-zinc-50 px-3 pb-3 pt-2.5">
+          <p className="mb-1.5 text-[11px] text-zinc-400">{g.matchKind === "auto" ? "จับคู่อัตโนมัติ" : "จับคู่เอง"}</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <GroupSide title="บัญชี (ที่เราบันทึก)" items={bookItems} accent="brand" />
+            <GroupSide title="ธนาคาร (เงินเข้าจริง)" items={bankItems} accent="emerald" />
+          </div>
+          {reason && (
+            <p className={`mt-2.5 flex items-center gap-1.5 text-[11px] ${band === "low" ? "text-rose-600" : "text-amber-600"}`}>
+              <AlertTriangle size={12} className="shrink-0" /> {reason}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ชื่อย่อในแถวกระชับ — ใช้รายการแรก + "+N" ถ้ากลุ่มมีหลายรายการ
+function pairName(items: GroupItem[], pick: (i: GroupItem) => string): string {
+  if (items.length === 0) return "—";
+  const base = pick(items[0]);
+  return items.length > 1 ? `${base} +${items.length - 1}` : base;
+}
+
+// ยอดเงินกระชับ — muted (ฝั่งบัญชี) โทนเทาไม่ใส่เครื่องหมาย · ปกติ (ฝั่งธนาคาร) เขียวเข้า/แดงออก
+function PairAmount({ satang, muted }: { satang: number; muted?: boolean }) {
+  if (muted) return <span className="shrink-0 text-xs font-medium tabular-num text-zinc-700">฿{baht(Math.abs(satang))}</span>;
+  const credit = satang >= 0;
+  return (
+    <span className={`shrink-0 text-xs font-medium tabular-num ${credit ? "text-emerald-600" : "text-rose-600"}`}>
+      {credit ? "+" : "−"}฿{baht(Math.abs(satang))}
+    </span>
   );
 }
 
