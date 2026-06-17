@@ -7,11 +7,11 @@ import { NextResponse, type NextRequest } from "next/server";
 // inline SVG (Lucide). Tighten when external integrations stabilise.
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.line-scdn.net https://*.line.me",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.line-scdn.net https://*.line.me",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://*.supabase.co https://*.upstash.io https://*.r2.cloudflarestorage.com https://api.telegram.org https://*.line.me wss://*.supabase.co",
+  "connect-src 'self' https://*.supabase.co https://*.upstash.io https://*.r2.cloudflarestorage.com https://api.telegram.org https://*.line.me https://*.line-scdn.net wss://*.supabase.co",
   "frame-src 'self' https://liff.line.me https://*.line.me",
   "frame-ancestors 'self' https://liff.line.me",
   "base-uri 'self'",
