@@ -1,17 +1,16 @@
 // ClawHub (JOLLY PLAY) — refund decision engine (pure function, no DB writes).
 //
-// Decides whether a refund auto-approves, needs a re-photo, or goes to admin review,
-// and how many points to credit. Customer types the baht they inserted; AI reads the
-// machine screen ("Add up:" / "Credit" in coins) and we cross-check. 1 POINT = 10 BAHT.
+// MODE (CEO 2026-06-17): "เชื่อลูกค้า ปล่อยคืนอัตโนมัติไปก่อน". By DEFAULT we TRUST the
+// customer's typed amount and AUTO-APPROVE — no AI cross-check, no "too frequent"
+// review. The only guard kept is the per-claim ceiling (MAX_REFUND_BAHT) which bounds
+// max loss. The screenshot is still stored as evidence for the admin.
 //
-// Rules (locked):
-//  1. aiReadBaht = addUp*10 if known, else credit*10, else null (coins → baht).
-//  2. confidence < floor                 → NEEDS_REPHOTO.
-//  3. claimedBaht <= 0                    → NEEDS_REPHOTO (invalid).
-//     claimedBaht > MAX_REFUND_BAHT       → PENDING_REVIEW (over auto cap).
-//  4. |aiReadBaht - claimedBaht| > max(20, claimedBaht*0.5) → PENDING_REVIEW (mismatch).
-//  5. member.refundCount >= 1 (2nd+ time) → PENDING_REVIEW (ขอบ่อยเกินไป).
-//  6. else                                → AUTO_APPROVED, points = floor(baht/10).
+// To RE-TIGHTEN later (re-enable AI cross-check + frequency review), set env
+// CLAWHUB_REFUND_STRICT=1 — no code change needed.
+//
+// Customer types the baht they inserted; AI reads the machine LCD. Inserted baht is
+// estimated as Credit (baht still loaded) + Add up × 10 (plays already made, 1 play =
+// 10 บาท). 1 POINT = 10 BAHT.
 
 import {
   POINT_TO_BAHT,
@@ -29,26 +28,15 @@ export type EvaluateRefundInput = {
 export function evaluateRefund(input: EvaluateRefundInput): RefundDecision {
   const { member, claimedBaht, vision } = input;
 
-  // Rule 1 — what the screen says, in baht (coins × 10).
+  // Best estimate of inserted baht from the screen: Credit (baht loaded, not yet
+  // played) + Add up × 10 (plays already made). Stored for the admin's reference; in
+  // trust mode it does NOT block the refund. (Old bug: used Add up only → money sitting
+  // in "Credit" read as 0 → legit first refunds wrongly flagged "ยอดไม่ตรง".)
   const aiReadBaht =
-    vision.addUp != null
-      ? vision.addUp * POINT_TO_BAHT
-      : vision.credit != null
-        ? vision.credit * POINT_TO_BAHT
-        : null;
+    (vision.credit ?? 0) + (vision.addUp ?? 0) * POINT_TO_BAHT || null;
 
-  // Rule 2 — image too unclear to trust.
-  if (vision.confidence < VISION_CONFIDENCE_FLOOR) {
-    return {
-      decision: "NEEDS_REPHOTO",
-      points: 0,
-      reason: "รูปไม่ชัด ถ่ายใหม่ให้เห็นหน้าจอตู้ชัดๆ",
-      aiReadBaht,
-    };
-  }
-
-  // Rule 3a — invalid amount typed.
-  if (claimedBaht <= 0) {
+  // Basic input validity (not friction — the route already requires a positive int).
+  if (!Number.isFinite(claimedBaht) || claimedBaht <= 0) {
     return {
       decision: "NEEDS_REPHOTO",
       points: 0,
@@ -57,20 +45,31 @@ export function evaluateRefund(input: EvaluateRefundInput): RefundDecision {
     };
   }
 
-  // Rule 3b — over the auto-approve ceiling.
+  // Max-loss ceiling — the one case that still goes to admin review.
   if (claimedBaht > MAX_REFUND_BAHT) {
     return {
       decision: "PENDING_REVIEW",
       points: 0,
-      reason: "ยอดเกินเพดานคืนอัตโนมัติ รอแอดมินตรวจสอบ",
+      reason: `ยอดเกิน ${MAX_REFUND_BAHT} บาท/ครั้ง — รอแอดมินตรวจสอบ`,
       aiReadBaht,
     };
   }
 
-  // Rule 4 — typed amount disagrees with the screen.
-  if (aiReadBaht != null) {
-    const tolerance = Math.max(20, claimedBaht * 0.5);
-    if (Math.abs(aiReadBaht - claimedBaht) > tolerance) {
+  // STRICT mode (opt-in via env) — re-enable AI cross-check + frequency review.
+  if (process.env.CLAWHUB_REFUND_STRICT === "1") {
+    if (vision.confidence < VISION_CONFIDENCE_FLOOR) {
+      return {
+        decision: "NEEDS_REPHOTO",
+        points: 0,
+        reason: "รูปไม่ชัด ถ่ายใหม่ให้เห็นหน้าจอตู้ชัดๆ",
+        aiReadBaht,
+      };
+    }
+    if (
+      aiReadBaht != null &&
+      aiReadBaht > 0 &&
+      Math.abs(aiReadBaht - claimedBaht) > Math.max(20, claimedBaht * 0.5)
+    ) {
       return {
         decision: "PENDING_REVIEW",
         points: 0,
@@ -78,19 +77,17 @@ export function evaluateRefund(input: EvaluateRefundInput): RefundDecision {
         aiReadBaht,
       };
     }
+    if (member.refundCount >= 1) {
+      return {
+        decision: "PENDING_REVIEW",
+        points: 0,
+        reason: "คุณขอคืนบ่อยเกินไป โปรดแนบหลักฐานและรอแอดมินตรวจสอบ",
+        aiReadBaht,
+      };
+    }
   }
 
-  // Rule 5 — not the first refund → human review.
-  if (member.refundCount >= 1) {
-    return {
-      decision: "PENDING_REVIEW",
-      points: 0,
-      reason: "คุณขอคืนบ่อยเกินไป โปรดแนบหลักฐานและรอแอดมินตรวจสอบ",
-      aiReadBaht,
-    };
-  }
-
-  // Rule 6 — clear first refund → auto approve.
+  // TRUST mode (default) — auto-approve, trust the customer's typed amount.
   const points = Math.floor(claimedBaht / POINT_TO_BAHT);
   return {
     decision: "AUTO_APPROVED",
