@@ -255,18 +255,35 @@ export function CwMembershipCard({
               {memberCode}
             </div>
           </div>
-          <div className="flex-none text-right">
+          <div
+            className="flex-none rounded-2xl px-3 py-2 text-right"
+            style={{
+              background: "rgba(17,17,17,0.6)",
+              backdropFilter: "blur(7px)",
+              WebkitBackdropFilter: "blur(7px)",
+              boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
+              border: "1px solid rgba(255,255,255,0.18)",
+            }}
+          >
             <div
               className="text-[10.5px] font-bold"
-              style={{ color: "rgba(255,255,255,0.82)" }}
+              style={{ color: "rgba(255,255,255,0.88)" }}
             >
               แต้มคงเหลือ
             </div>
-            <div
-              className="cw-tnum text-[26px] font-extrabold leading-none"
-              style={{ color: "#fff", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
-            >
-              {balance.toLocaleString("th-TH")}
+            <div className="flex items-baseline justify-end gap-1">
+              <span
+                className="cw-tnum text-[34px] font-black leading-none"
+                style={{ color: "#fff", textShadow: "0 1px 4px rgba(0,0,0,0.55)" }}
+              >
+                {balance.toLocaleString("th-TH")}
+              </span>
+              <span
+                className="text-[13px] font-extrabold"
+                style={{ color: "rgba(255,255,255,0.92)" }}
+              >
+                แต้ม
+              </span>
             </div>
           </div>
         </div>
