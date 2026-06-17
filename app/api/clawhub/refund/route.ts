@@ -11,7 +11,8 @@
 //  - Data consistency: the request row + point credit + counter bumps are ONE prisma
 //    $transaction inside submitRefund. The only thing outside it is the R2 upload; if
 //    the transaction then fails the object is an orphan (harmless, retention cleans it).
-//  - We do NOT push a LINE message here (the webhook agent owns push) to avoid coupling.
+//  - Best-effort: after the write we also push the outcome (approved / pending-review +
+//    reason) to the customer's LINE chat so it's visible even after they close the LIFF.
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
@@ -22,6 +23,7 @@ import { availableBalance } from "@/lib/clawhub/points";
 import { refundScreenshotKey, putObject } from "@/lib/clawhub/r2";
 import { readMachineScreen } from "@/lib/clawhub/vision";
 import { submitRefund } from "@/lib/clawhub/refund";
+import { pushText } from "@/lib/clawhub/line";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -155,6 +157,25 @@ export async function POST(req: NextRequest) {
 
   // Fresh balance so the screen can show the new total immediately.
   const balance = await availableBalance(member.id);
+
+  // Also notify the customer in their LINE chat (best-effort) so the outcome + reason
+  // is visible even if they closed the LIFF. Only the meaningful outcomes (skip
+  // re-photo / duplicate — those are transient and shown in-app).
+  try {
+    if (result.status === "AUTO_APPROVED") {
+      await pushText(
+        member.externalLineId,
+        `✅ คืนแต้มสำเร็จ! ได้รับ ${result.pointsAwarded} แต้ม (ยอดรวม ${balance} แต้ม)\nเอาไปแลกตุ๊กตาได้เลยครับ 🧸`,
+      );
+    } else if (result.status === "PENDING_REVIEW") {
+      await pushText(
+        member.externalLineId,
+        `🕐 ได้รับคำขอคืนเงินของคุณแล้ว\nเหตุผลที่ต้องตรวจสอบ: ${result.reason}\nแอดมินจะตรวจสอบและแจ้งผลให้เร็ว ๆ นี้ครับ`,
+      );
+    }
+  } catch (e) {
+    console.error("[clawhub.refund] push notify failed", e);
+  }
 
   return NextResponse.json({
     status: result.status,
