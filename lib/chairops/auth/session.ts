@@ -98,11 +98,20 @@ export const getSession = cache(async (): Promise<Session | null> => {
         : null;
       if (byEmail) {
         if (!byEmail.isActive) return null; // deactivated → stay denied
+        // Link authUserId AND reconcile a stale role in the SAME update — an
+        // orphan-by-email row seeded at a low rank (OFFICE) before the user was
+        // promoted must be upgraded to ADMIN when the grant says admin, exactly
+        // like the found-by-authUserId path below. Without this, a program-admin
+        // whose chairops row is keyed by email stays pinned to OFFICE.
+        const data: { authUserId?: string; role?: ChairopsUserRole } = {};
+        if (byEmail.authUserId !== authUserId) data.authUserId = authUserId;
+        if (grantedAdmin && byEmail.role !== ChairopsUserRole.ADMIN)
+          data.role = ChairopsUserRole.ADMIN;
         const linked =
-          byEmail.authUserId === authUserId
+          Object.keys(data).length === 0
             ? byEmail
             : await prisma.chairopsUser
-                .update({ where: { id: byEmail.id }, data: { authUserId } })
+                .update({ where: { id: byEmail.id }, data })
                 .catch(() => byEmail);
         return { authUser: { id: authUserId, email }, user: linked, poolUser: poolDbUser };
       }

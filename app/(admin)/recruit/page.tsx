@@ -5,7 +5,7 @@
 
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
-import { requireRecruitAccess } from "@/lib/recruit/role-guard";
+import { requireRecruitAccess, canRecruitWrite } from "@/lib/recruit/role-guard";
 import { prisma } from "@/lib/prisma";
 import { Section } from "@/components/ui/section";
 import { ApplicationsInbox } from "@/components/recruit/applications-inbox";
@@ -126,7 +126,7 @@ export default async function RecruitInboxPage({
       countMap={countMap}
       postings={postings}
       postingsCount={postingsCount}
-      canWrite={["super_admin","org_admin","admin","area_manager","branch_manager"].includes(session.user.role)}
+      canWrite={canRecruitWrite(session.user.role)}
     />
   );
 }

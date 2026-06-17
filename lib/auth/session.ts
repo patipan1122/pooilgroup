@@ -79,9 +79,19 @@ export const getSession = cache(async (): Promise<Session | null> => {
         .eq("is_active", true)
         .maybeSingle();
       if (targetUser) {
+        // Fully assume the target's identity. `users.id` IS the Supabase auth id
+        // (the normal path above resolves the DbUser via `id = authUser.id`), so
+        // the target's own id is their auth id. Previously authUserId/email
+        // leaked the REAL admin's identity, so any program that resolves its
+        // per-user row by authUserId (e.g. ChairOps ChairopsUser, keyed by
+        // authUserId) loaded the admin's data instead of the target's — making
+        // "เข้าใช้แทน <user>" silently misreport access. `actingAs.realUser`
+        // still carries the real super-admin for the super-admin-only guards
+        // (requireRealRole, impersonate / return-to-self endpoints), which never
+        // read authUserId.
         return {
-          authUserId: authUser.id,
-          email: authUser.email ?? null,
+          authUserId: (targetUser as DbUser).id,
+          email: (targetUser as DbUser).email ?? null,
           user: targetUser as DbUser,
           actingAs: { realUser: dbUser as DbUser },
         };

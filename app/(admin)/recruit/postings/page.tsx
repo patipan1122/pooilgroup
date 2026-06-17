@@ -9,7 +9,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { requireRecruitAccess } from "@/lib/recruit/role-guard";
+import { requireRecruitAccess, canRecruitWrite } from "@/lib/recruit/role-guard";
 import { Section } from "@/components/ui/section";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -109,8 +109,7 @@ export default async function PostingsListPage({
 
   const postings = await loadPostings(session.user.org_id, filter);
 
-  const canWrite = ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"]
-    .includes(session.user.role);
+  const canWrite = canRecruitWrite(session.user.role);
 
   return (
     <div className="p-5 sm:p-8 max-w-[1600px] mx-auto">
