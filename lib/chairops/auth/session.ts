@@ -183,6 +183,54 @@ export const getSession = cache(async (): Promise<Session | null> => {
   // future admin-approval flow that will derive role from Pool tier.
   void deriveChairopsRoleFromPool;
 
+  // Reconcile a STALE role. The bootstrap-on-create path above sets role=ADMIN
+  // only when the row is first created — it never revisits an existing row. So a
+  // user whose ChairopsUser row was created earlier at a low rank (OFFICE) and
+  // who was LATER promoted to program-admin / admin-tier could enter /chairops
+  // (row exists) yet every ADMIN/MANAGER-gated function bounced. If Pool now
+  // authorises them as a chairops admin, upgrade the row to ADMIN. Upgrade-only
+  // (never downgrades · never touches maids/technicians who have no Pool admin
+  // grant) and uses the SAME approval signal as the create path. Guarded on the
+  // cheap role check first so the common case (already ADMIN) adds no DB work.
+  // See [[program-admin-must-just-work-2026-06-15]].
+  if (chairUser.role !== ChairopsUserRole.ADMIN) {
+    const shouldBeAdmin =
+      isAdminTier(poolDbUser.role) ||
+      (await userIsModuleAdmin(poolDbUser, "chairops"));
+    if (shouldBeAdmin) {
+      const promoted = await prisma.chairopsUser
+        .update({
+          where: { id: chairUser.id },
+          data: { role: ChairopsUserRole.ADMIN },
+        })
+        .catch(() => chairUser); // race/transient → keep working with old row
+      try {
+        await prisma.chairopsAuditLog.create({
+          data: {
+            orgId: poolDbUser.org_id,
+            userId: promoted.id,
+            action: "access.reconcile_role_to_admin",
+            entity: "ChairopsUser",
+            entityId: promoted.id,
+            metadata: {
+              email,
+              poolRole: poolDbUser.role,
+              previousRole: chairUser.role,
+              reason: "stale_low_role_vs_chairops_admin_grant",
+            },
+          },
+        });
+      } catch {
+        // swallow — upgrade already applied
+      }
+      return {
+        authUser: { id: authUserId, email },
+        user: promoted,
+        poolUser: poolDbUser,
+      };
+    }
+  }
+
   return {
     authUser: { id: authUserId, email },
     user: chairUser,
