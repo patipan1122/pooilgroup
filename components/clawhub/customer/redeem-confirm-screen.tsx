@@ -2,10 +2,9 @@
 
 // ClawHub redeem-confirm — confirm spending points on a reward, choose how to receive it,
 // then POST /api/clawhub/redeem { idToken, rewardId, fulfillment }. Fulfillment is a
-// segmented chooser:
+// segmented chooser (CEO rule: address OR 7-11 pickup is REQUIRED — no "contact" option):
 //   DELIVERY → recipientName / recipientPhone / recipientAddress (prefilled from member)
 //   PICKUP   → pickupBranchCode (required) + pickupTime (นัดวัน/เวลา, free text)
-//   CONTACT  → optional contactNote
 // On { ok:false, reason } we show the Thai message. On ok:true we show the big pickup code
 // (staff keys it in — no QR lib here) + a friendly summary of how they'll receive it.
 
@@ -14,7 +13,7 @@ import { useClawhub } from "./liff-context";
 import { CwHeader, CwButtonLink } from "./ui";
 import type { RewardCard } from "./rewards-screen";
 
-type Method = "DELIVERY" | "PICKUP" | "CONTACT";
+type Method = "DELIVERY" | "PICKUP";
 
 type Fulfillment = {
   method: Method;
@@ -23,7 +22,6 @@ type Fulfillment = {
   recipientAddress?: string;
   pickupBranchCode?: string;
   pickupTime?: string;
-  contactNote?: string;
 };
 
 type Outcome =
@@ -34,7 +32,6 @@ type Outcome =
 const METHOD_LABEL: Record<Method, string> = {
   DELIVERY: "ส่งถึงบ้าน",
   PICKUP: "รับที่ 7-11",
-  CONTACT: "ให้เจ้าหน้าที่ติดต่อ",
 };
 
 export function RedeemConfirmScreen({ reward }: { reward: RewardCard }) {
@@ -51,8 +48,6 @@ export function RedeemConfirmScreen({ reward }: { reward: RewardCard }) {
   // PICKUP
   const [pickupBranchCode, setPickupBranchCode] = useState("");
   const [pickupTime, setPickupTime] = useState("");
-  // CONTACT
-  const [contactNote, setContactNote] = useState("");
 
   const balance = member?.balance ?? 0;
   const short = Math.max(0, reward.pointsPrice - balance);
@@ -70,15 +65,13 @@ export function RedeemConfirmScreen({ reward }: { reward: RewardCard }) {
       }
       return { method, recipientName: name, recipientPhone: phone, recipientAddress: address };
     }
-    if (method === "PICKUP") {
-      const branch = pickupBranchCode.trim();
-      if (!branch) {
-        setErr("กรุณาระบุเลขสาขา 7-11 ที่จะรับของ");
-        return null;
-      }
-      return { method, pickupBranchCode: branch, pickupTime: pickupTime.trim() || undefined };
+    // PICKUP
+    const branch = pickupBranchCode.trim();
+    if (!branch) {
+      setErr("กรุณาระบุเลขสาขา 7-11 ที่จะรับของ");
+      return null;
     }
-    return { method, contactNote: contactNote.trim() || undefined };
+    return { method, pickupBranchCode: branch, pickupTime: pickupTime.trim() || undefined };
   }
 
   async function confirm() {
@@ -122,9 +115,7 @@ export function RedeemConfirmScreen({ reward }: { reward: RewardCard }) {
     const summary =
       outcome.method === "DELIVERY"
         ? "เราจะจัดส่งของไปตามที่อยู่ของคุณ ทีมงานจะติดต่อยืนยันก่อนส่ง"
-        : outcome.method === "PICKUP"
-          ? "นำรหัสนี้ไปแสดงที่ 7-11 สาขาที่เลือก เพื่อรับของได้เลย"
-          : "ทีมงานจะติดต่อกลับเพื่อนัดรับของให้เร็วที่สุด";
+        : "นำรหัสนี้ไปแสดงที่ 7-11 สาขาที่เลือก เพื่อรับของได้เลย";
     return (
       <div className="mx-auto w-full max-w-md pb-10">
         <CwHeader title="แลกสำเร็จ" back />
@@ -253,7 +244,7 @@ export function RedeemConfirmScreen({ reward }: { reward: RewardCard }) {
                 รับของอย่างไร?
               </div>
               <div className="cw-seg" role="tablist" aria-label="วิธีรับของ">
-                {(["DELIVERY", "PICKUP", "CONTACT"] as Method[]).map((m) => (
+                {(["DELIVERY", "PICKUP"] as Method[]).map((m) => (
                   <button
                     key={m}
                     type="button"
@@ -266,7 +257,7 @@ export function RedeemConfirmScreen({ reward }: { reward: RewardCard }) {
                     }}
                   >
                     <span className="cw-seg-ico" aria-hidden>
-                      {m === "DELIVERY" ? "🚚" : m === "PICKUP" ? "🏪" : "📞"}
+                      {m === "DELIVERY" ? "🚚" : "🏪"}
                     </span>
                     {METHOD_LABEL[m]}
                   </button>
@@ -322,7 +313,7 @@ export function RedeemConfirmScreen({ reward }: { reward: RewardCard }) {
                     />
                   </div>
                 </>
-              ) : method === "PICKUP" ? (
+              ) : (
                 <>
                   <div>
                     <label htmlFor="rc-branch" className="cw-label">
@@ -355,26 +346,6 @@ export function RedeemConfirmScreen({ reward }: { reward: RewardCard }) {
                     />
                   </div>
                 </>
-              ) : (
-                <div>
-                  <label htmlFor="rc-note" className="cw-label">
-                    ข้อความถึงเจ้าหน้าที่{" "}
-                    <span className="font-normal" style={{ color: "var(--cw-text-3)" }}>
-                      (ถ้ามี)
-                    </span>
-                  </label>
-                  <textarea
-                    id="rc-note"
-                    value={contactNote}
-                    onChange={(e) => setContactNote(e.target.value)}
-                    placeholder="เช่น สะดวกรับสายช่วงเย็น"
-                    className="cw-input"
-                    rows={3}
-                  />
-                  <p className="mt-1.5 text-[12px]" style={{ color: "var(--cw-text-3)" }}>
-                    ทีมงานจะติดต่อกลับเพื่อนัดรับของให้คุณ
-                  </p>
-                </div>
               )}
             </div>
 

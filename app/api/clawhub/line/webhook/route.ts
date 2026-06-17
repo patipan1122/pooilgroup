@@ -13,8 +13,10 @@ import {
   getLineProfile,
   getMessageContent,
   replyMessage,
+  pushMessage,
   pushText,
   type LineProfile,
+  type LineMessage,
 } from "@/lib/clawhub/line";
 import { getOrCreateMember } from "@/lib/clawhub/member";
 import { BRAND } from "@/lib/clawhub/constants";
@@ -44,6 +46,19 @@ interface LineEvent {
   source?: LineSource;
   message?: LineMessageBody;
   postback?: { data?: string };
+}
+
+/**
+ * A readable one-line summary of what the bot sent, for the staff inbox log.
+ * Text messages → their body · Flex messages → their altText.
+ */
+function summarizeMessages(messages: LineMessage[]): string {
+  const parts = messages.map((m) => {
+    if (m.type === "text" && typeof m.text === "string") return m.text;
+    if (m.type === "flex" && typeof m.altText === "string") return `[การ์ด] ${m.altText}`;
+    return "[ข้อความ]";
+  });
+  return parts.join("\n").slice(0, 5000) || "[ข้อความ]";
 }
 
 // LIFF deep-link base for the customer app. Buttons in chat replies point here.
@@ -117,21 +132,29 @@ async function handleTextMessage(
     text,
   });
 
-  // Escalation (over budget / wants a human) → leave silently for staff inbox.
-  if (reply.escalate || !reply.text) return;
+  // Nothing to auto-send (pure escalation w/ no card) → leave for staff inbox.
+  if (reply.messages.length === 0) {
+    if (reply.escalate) {
+      console.log(
+        `[clawhub-line webhook] ESCALATE userId=${userId} conv=${ingested.conversationId}`,
+      );
+    }
+    return;
+  }
 
   // Prefer the cheap replyToken; fall back to push if it's already consumed.
   const sent = ev.replyToken
-    ? await replyMessage(ev.replyToken, [{ type: "text", text: reply.text }])
-    : await pushText(userId, reply.text);
+    ? await replyMessage(ev.replyToken, reply.messages)
+    : await pushMessage(userId, reply.messages);
   if (!sent.ok && ev.replyToken) {
-    await pushText(userId, reply.text);
+    await pushMessage(userId, reply.messages);
   }
 
+  // Log a readable summary for the staff inbox (Flex altText / text body).
   await logOutbound({
     orgId,
     conversationId: ingested.conversationId,
-    text: reply.text,
+    text: summarizeMessages(reply.messages),
     byBot: true,
   });
 }

@@ -30,7 +30,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const TOKEN = process.env.CLAWHUB_LINE_CHANNEL_ACCESS_TOKEN;
 const LIFF_ID = process.env.NEXT_PUBLIC_CLAWHUB_LIFF_ID;
 const imagePath =
-  process.argv[2] || resolve(__dirname, "../public/clawhub/richmenu.png");
+  process.argv[2] || resolve(__dirname, "../public/clawhub/richmenu-jolly.jpg");
 
 if (!TOKEN) fail("Missing env CLAWHUB_LINE_CHANNEL_ACCESS_TOKEN");
 if (!LIFF_ID) fail("Missing env NEXT_PUBLIC_CLAWHUB_LIFF_ID");
@@ -46,37 +46,39 @@ function liff(screen) {
   return `https://liff.line.me/${LIFF_ID}?screen=${encodeURIComponent(screen)}`;
 }
 
+// Layout matches the JOLLY PLAY artwork (public/clawhub/richmenu-jolly.jpg):
+//   ┌─────────────────────────────┐
+//   │   ขอคืนเงิน  REFUND  (เต็มแถวบน) │  → LIFF refund
+//   ├──────────┬──────────┬─────────┤
+//   │ แจ้งปัญหา │ สมาชิก/  │ สมัคร   │
+//   │ COMPLAIN │ ของรางวัล │ สมาชิก  │
+//   └──────────┴──────────┴─────────┘
+//   แจ้งปัญหา ส่งข้อความ "แจ้งปัญหา" → บอทตอบการ์ดวิธีแก้/ติดต่อ
 const richMenu = {
   size: { width: 2500, height: 1686 },
   selected: true,
-  name: "JOLLY PLAY Menu",
+  name: "JOLLY PLAY Menu v2",
   chatBarText: "เมนู JOLLY PLAY",
   areas: [
-    // Row 1
+    // Top (full width) = ขอคืนเงิน
     {
-      bounds: { x: 0, y: 0, width: 833, height: 843 },
-      action: { type: "uri", label: "สมัครสมาชิก", uri: liff("register") },
-    },
-    {
-      bounds: { x: 833, y: 0, width: 834, height: 843 },
+      bounds: { x: 0, y: 0, width: 2500, height: 843 },
       action: { type: "uri", label: "ขอคืนเงิน", uri: liff("refund") },
     },
-    {
-      bounds: { x: 1667, y: 0, width: 833, height: 843 },
-      action: { type: "uri", label: "แต้มของฉัน", uri: liff("points") },
-    },
-    // Row 2
+    // Bottom-left = แจ้งปัญหา → trigger the bot's complain card
     {
       bounds: { x: 0, y: 843, width: 833, height: 843 },
-      action: { type: "uri", label: "แลกตุ๊กตา", uri: liff("rewards") },
+      action: { type: "message", label: "แจ้งปัญหา", text: "แจ้งปัญหา" },
     },
+    // Bottom-center = สมาชิก / ของรางวัล
     {
       bounds: { x: 833, y: 843, width: 834, height: 843 },
-      action: { type: "uri", label: "ช่วยเหลือ", uri: liff("help") },
+      action: { type: "uri", label: "ของรางวัล", uri: liff("rewards") },
     },
+    // Bottom-right = สมัครสมาชิก
     {
       bounds: { x: 1667, y: 843, width: 833, height: 843 },
-      action: { type: "uri", label: "เงื่อนไข", uri: liff("help") },
+      action: { type: "uri", label: "สมัครสมาชิก", uri: liff("register") },
     },
   ],
 };
