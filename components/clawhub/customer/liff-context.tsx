@@ -14,10 +14,10 @@ import {
   useState,
 } from "react";
 import {
-  getLiffProfile,
-  getLiffIdToken,
-  getLiffInitError,
-} from "@/lib/line/liff-client";
+  getClawhubProfile,
+  getClawhubIdToken,
+  clawhubLiffError,
+} from "@/lib/clawhub/liff-customer";
 import { liffIdForModule } from "@/lib/line/channels";
 import type { MemberSummary } from "@/lib/clawhub/customer-data";
 
@@ -60,7 +60,7 @@ export function ClawhubProvider({ children }: { children: React.ReactNode }) {
 
   const getIdToken = useCallback(async (): Promise<string | null> => {
     if (idTokenRef.current) return idTokenRef.current;
-    const t = await getLiffIdToken(liffId);
+    const t = await getClawhubIdToken(liffId);
     if (t) idTokenRef.current = t;
     return t;
   }, [liffId]);
@@ -89,11 +89,11 @@ export function ClawhubProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     void (async () => {
       // getLiffProfile triggers liff.login() inside the LINE webview if needed.
-      const p = await getLiffProfile(liffId);
+      const p = await getClawhubProfile(liffId);
       if (cancelled) return;
       if (!p) {
         // Not in LINE / not logged in / init failed → surface a calm error.
-        const initErr = getLiffInitError();
+        const initErr = clawhubLiffError();
         setError(
           initErr
             ? `เปิดผ่านแอป LINE เท่านั้น (${initErr})`
