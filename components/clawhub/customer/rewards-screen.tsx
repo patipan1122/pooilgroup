@@ -6,7 +6,7 @@
 // balance from the LIFF context. Tapping an affordable card → redeem-confirm screen.
 
 import { useClawhub } from "./liff-context";
-import { CwHeader, CwButtonLink } from "./ui";
+import { CwHeader, CwButtonLink, CwMascot, CW_MASCOT } from "./ui";
 
 export type RewardCard = {
   id: string;
@@ -45,9 +45,7 @@ export function RewardsScreen({ rewards }: { rewards: RewardCard[] }) {
 
       {rewards.length === 0 ? (
         <div className="flex flex-col items-center gap-3 py-16 text-center">
-          <div className="grid size-16 place-items-center rounded-3xl text-3xl" style={{ background: "var(--cw-brand-50)" }}>
-            🧸
-          </div>
+          <CwMascot src={CW_MASCOT.babyDragon} alt="มังกรน้อย JOLLY PLAY" size={112} />
           <div className="text-[15px] font-bold" style={{ color: "var(--cw-text-2)" }}>
             ยังไม่มีของให้แลกตอนนี้
           </div>

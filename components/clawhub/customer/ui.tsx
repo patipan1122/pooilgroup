@@ -189,6 +189,168 @@ export function CwButtonLink({
   );
 }
 
+/**
+ * Digital membership card — the real JOLLY PLAY card artwork (member-card.png) as the
+ * background, with the member's name / code / points overlaid. Looks like a physical
+ * loyalty card (rounded, drop shadow, on-brand). Used on home + points header.
+ */
+export function CwMembershipCard({
+  name,
+  memberCode,
+  balance,
+  expiryAt,
+}: {
+  name: string;
+  memberCode: string;
+  balance: number;
+  expiryAt: string | null;
+}) {
+  return (
+    <div
+      className="relative w-full overflow-hidden"
+      style={{
+        aspectRatio: "1.586 / 1", // standard credit-card ratio
+        borderRadius: "var(--cw-radius-lg)",
+        boxShadow: "var(--cw-shadow)",
+        border: "1px solid var(--cw-border-strong)",
+      }}
+    >
+      {/* card artwork */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/clawhub/member-card.png"
+        alt="บัตรสมาชิก JOLLY PLAY"
+        className="absolute inset-0 h-full w-full object-cover"
+        draggable={false}
+      />
+      {/* legibility scrim — keeps overlaid text readable over any artwork */}
+      <div
+        aria-hidden
+        className="absolute inset-0"
+        style={{
+          background:
+            "linear-gradient(180deg, rgba(0,0,0,0) 28%, rgba(0,0,0,0.06) 52%, rgba(0,0,0,0.46) 100%)",
+        }}
+      />
+      {/* overlaid member data */}
+      <div className="absolute inset-0 flex flex-col justify-end p-4">
+        <div className="flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <div
+              className="text-[10.5px] font-bold uppercase tracking-wide"
+              style={{ color: "rgba(255,255,255,0.82)", letterSpacing: "0.04em" }}
+            >
+              สมาชิก
+            </div>
+            <div
+              className="truncate text-[16px] font-extrabold leading-tight"
+              style={{ color: "#fff", textShadow: "0 1px 3px rgba(0,0,0,0.45)" }}
+            >
+              {name || "ลูกค้า JOLLY PLAY"}
+            </div>
+            <div
+              className="cw-tnum mt-0.5 text-[12.5px] font-semibold"
+              style={{ color: "rgba(255,255,255,0.9)", textShadow: "0 1px 2px rgba(0,0,0,0.4)" }}
+            >
+              {memberCode}
+            </div>
+          </div>
+          <div className="flex-none text-right">
+            <div
+              className="text-[10.5px] font-bold"
+              style={{ color: "rgba(255,255,255,0.82)" }}
+            >
+              แต้มคงเหลือ
+            </div>
+            <div
+              className="cw-tnum text-[26px] font-extrabold leading-none"
+              style={{ color: "#fff", textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
+            >
+              {balance.toLocaleString("th-TH")}
+            </div>
+          </div>
+        </div>
+        {expiryAt ? (
+          <div
+            className="mt-2 self-start rounded-full px-2.5 py-1 text-[11px] font-bold"
+            style={{ background: "rgba(255,255,255,0.92)", color: "var(--cw-brand-700)" }}
+          >
+            ⏳ แต้มหมดอายุ {formatThaiDate(expiryAt)}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * JOLLY PLAY mascot illustration — the cute character art used as screen hero / empty-state
+ * art instead of a flat icon. Sizes sensibly (default 96px), keeps a soft brand halo.
+ */
+export function CwMascot({
+  src,
+  alt,
+  size = 96,
+  halo = true,
+}: {
+  src: string;
+  alt: string;
+  size?: number;
+  halo?: boolean;
+}) {
+  return (
+    <div
+      className="relative grid flex-none place-items-center"
+      style={{ width: size, height: size }}
+    >
+      {halo ? (
+        <div
+          aria-hidden
+          className="absolute inset-0 rounded-full"
+          style={{
+            background:
+              "radial-gradient(closest-side, var(--cw-brand-50) 0%, rgba(255,243,224,0) 78%)",
+          }}
+        />
+      ) : null}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        draggable={false}
+        className="relative h-full w-full rounded-3xl object-cover"
+        style={{ boxShadow: "var(--cw-shadow-sm)" }}
+      />
+    </div>
+  );
+}
+
+/** Mascot asset paths (served from public/clawhub/). */
+export const CW_MASCOT = {
+  knightDragon: "/clawhub/mascot-welcome.png",
+  knight: "/clawhub/mascot-help.png",
+  babyDragon: "/clawhub/character-baby-dragon.jpg",
+  success: "/clawhub/mascot-success.png",
+} as const;
+
+/**
+ * Compute age in whole years from an ISO "YYYY-MM-DD" birthday. Returns null for
+ * missing / malformed / future dates (caller hides the chip in that case).
+ */
+export function computeAge(isoDate: string | null): number | null {
+  if (!isoDate || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return null;
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const now = new Date();
+  let age = now.getFullYear() - y;
+  // Subtract a year if this year's birthday hasn't happened yet.
+  const hadBirthday =
+    now.getMonth() + 1 > m || (now.getMonth() + 1 === m && now.getDate() >= d);
+  if (!hadBirthday) age -= 1;
+  if (age < 0 || age > 130) return null;
+  return age;
+}
+
 /** Format an ISO date → "17 มิ.ย. 2569" (Buddhist year), short. */
 export function formatThaiDate(iso: string | null): string {
   if (!iso) return "—";

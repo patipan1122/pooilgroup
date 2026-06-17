@@ -6,7 +6,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useClawhub } from "./liff-context";
-import { CwHeader, CwPointsHero } from "./ui";
+import { CwHeader, CwMembershipCard, CwMascot, CW_MASCOT } from "./ui";
 
 export function HomeScreen() {
   const router = useRouter();
@@ -68,21 +68,26 @@ export function HomeScreen() {
     <div className="mx-auto w-full max-w-md pb-10">
       <CwHeader title={member ? `สมาชิก ${member.memberCode}` : "สมาชิก"} />
 
-      {greetName ? (
-        <div className="px-4 pb-1">
-          <p className="text-[15px] font-bold" style={{ color: "var(--cw-text)" }}>
-            สวัสดี {greetName} 👋
+      {/* welcome row — mascot + greeting */}
+      <div className="flex items-center gap-3 px-4 pb-2">
+        <CwMascot src={CW_MASCOT.knightDragon} alt="อัศวินขี่มังกร JOLLY PLAY" size={72} />
+        <div className="min-w-0">
+          <p className="text-[16px] font-extrabold leading-tight" style={{ color: "var(--cw-text)" }}>
+            สวัสดี{greetName ? ` ${greetName}` : ""} 👋
+          </p>
+          <p className="text-[12.5px]" style={{ color: "var(--cw-text-3)" }}>
+            ยินดีต้อนรับกลับสู่ JOLLY PLAY
           </p>
         </div>
-      ) : null}
+      </div>
 
-      {/* balance hero */}
+      {/* digital membership card — the hero */}
       <div className="px-4">
-        <CwPointsHero
+        <CwMembershipCard
+          name={greetName}
+          memberCode={member?.memberCode ?? "—"}
           balance={balance}
           expiryAt={member?.nearestExpiryAt ?? null}
-          expiryPoints={member?.nearestExpiryPoints ?? 0}
-          sheen
         />
       </div>
 

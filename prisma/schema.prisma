@@ -6467,6 +6467,8 @@ model ClawhubMember {
   fullName       String?   @map("full_name") // ชื่อ-นามสกุลจริง (กรอกตอนสมัคร)
   pictureUrl     String?   @map("picture_url")
   phone          String?
+  birthDate      DateTime? @map("birth_date") @db.Date // วันเกิด (กรอกตอนสมัคร · คำนวณอายุ)
+  gender         String?   @map("gender") // เพศ: ชาย / หญิง / ไม่ระบุ
   address        String?   @map("address") // ที่อยู่ (สำหรับจัดส่ง)
   memberCode     String    @unique @map("member_code") // CH-YYYY-NNNN
   pointsBalance  Int       @default(0) @map("points_balance") // cached · source of truth = unexpired EARN lots

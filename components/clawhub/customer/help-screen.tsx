@@ -3,7 +3,7 @@
 // ClawHub help — FAQ accordion (CLAWHUB_FAQ) + support phone + the "not gambling" line.
 
 import { useState } from "react";
-import { CwHeader, CwButtonLink } from "./ui";
+import { CwHeader, CwButtonLink, CwMascot, CW_MASCOT } from "./ui";
 import { CLAWHUB_FAQ } from "@/lib/clawhub/faq";
 import { SUPPORT_PHONE } from "@/lib/clawhub/constants";
 
@@ -14,13 +14,16 @@ export function HelpScreen() {
     <div className="mx-auto w-full max-w-md pb-10">
       <CwHeader title="ช่วยเหลือ & คำถามที่พบบ่อย" back />
 
-      <div className="px-4 pb-2">
-        <h1 className="cw-title text-[20px]">
-          มีอะไรให้ <span className="accent">ช่วย</span> ไหม?
-        </h1>
-        <p className="mt-1 text-[13px]" style={{ color: "var(--cw-text-2)" }}>
-          แตะคำถามเพื่อดูคำตอบ หรือโทรหาทีมงานได้เลย
-        </p>
+      <div className="flex items-center gap-3 px-4 pb-2">
+        <CwMascot src={CW_MASCOT.knight} alt="อัศวิน JOLLY PLAY" size={80} />
+        <div className="min-w-0">
+          <h1 className="cw-title text-[20px]">
+            มีอะไรให้ <span className="accent">ช่วย</span> ไหม?
+          </h1>
+          <p className="mt-1 text-[13px]" style={{ color: "var(--cw-text-2)" }}>
+            แตะคำถามเพื่อดูคำตอบ หรือโทรหาทีมงานได้เลย
+          </p>
+        </div>
       </div>
 
       <div className="space-y-2 px-4">

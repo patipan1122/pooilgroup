@@ -41,6 +41,10 @@ export type MemberSummary = {
   fullName: string | null;
   /** Contact phone (for prefill). */
   phone: string | null;
+  /** Date of birth as ISO "YYYY-MM-DD" (for prefill + age display), or null. */
+  birthDate: string | null;
+  /** Gender: ชาย / หญิง / ไม่ระบุ (for prefill), or null. */
+  gender: string | null;
   /** Delivery address (for prefill). */
   address: string | null;
   pictureUrl: string | null;
@@ -64,6 +68,8 @@ export async function getMemberSummary(
     displayName: string | null;
     fullName: string | null;
     phone: string | null;
+    birthDate: Date | null;
+    gender: string | null;
     address: string | null;
     pictureUrl: string | null;
     consentAt: Date | null;
@@ -102,6 +108,9 @@ export async function getMemberSummary(
     displayName: member.displayName,
     fullName: member.fullName,
     phone: member.phone,
+    // @db.Date → UTC midnight; emit date-only ISO "YYYY-MM-DD" (no timezone drift).
+    birthDate: member.birthDate ? member.birthDate.toISOString().slice(0, 10) : null,
+    gender: member.gender,
     address: member.address,
     pictureUrl: member.pictureUrl,
     consented: member.consentAt != null,

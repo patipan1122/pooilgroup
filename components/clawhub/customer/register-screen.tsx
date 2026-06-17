@@ -1,25 +1,37 @@
 "use client";
 
 // ClawHub register + PDPA consent. Collects the member's real full name + mobile phone
-// + (recommended) address — prefilled from useClawhub().member when present. On accept we
-// POST /api/clawhub/member { idToken, consent:true, fullName, phone, address }. The server
-// verifies the token, saves the profile, and stamps consentAt. Required once before the
-// first refund. fullName + phone are required; address is recommended.
+// + birthday + gender (all REQUIRED) + (optional) delivery address — prefilled from
+// useClawhub().member when present. Age is auto-computed from the birthday and shown
+// read-only. On accept we POST /api/clawhub/member
+// { idToken, consent:true, fullName, phone, birthDate, gender, address? }. The server
+// verifies the token, saves the profile, and stamps consentAt.
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useClawhub } from "./liff-context";
-import { CwHeader } from "./ui";
+import { CwHeader, CwMascot, CW_MASCOT, computeAge } from "./ui";
 import { SUPPORT_PHONE } from "@/lib/clawhub/constants";
+
+const GENDERS = ["ชาย", "หญิง", "ไม่ระบุ"] as const;
 
 export function RegisterScreen() {
   const router = useRouter();
   const { profile, member, getIdToken, setMember } = useClawhub();
   const [fullName, setFullName] = useState(member?.fullName ?? "");
   const [phone, setPhone] = useState(member?.phone ?? "");
+  const [birthDate, setBirthDate] = useState(member?.birthDate ?? "");
+  const [gender, setGender] = useState(member?.gender ?? "");
   const [address, setAddress] = useState(member?.address ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const age = computeAge(birthDate || null);
+  const canSubmit =
+    fullName.trim() !== "" &&
+    phone.trim() !== "" &&
+    birthDate.trim() !== "" &&
+    gender.trim() !== "";
 
   // Already consented → straight to home.
   if (member?.consented) {
@@ -38,6 +50,18 @@ export function RegisterScreen() {
       setErr("กรุณากรอกเบอร์โทรศัพท์มือถือ");
       return;
     }
+    if (!birthDate.trim()) {
+      setErr("กรุณาเลือกวันเกิด");
+      return;
+    }
+    if (age == null) {
+      setErr("วันเกิดไม่ถูกต้อง กรุณาเลือกใหม่");
+      return;
+    }
+    if (!gender.trim()) {
+      setErr("กรุณาเลือกเพศ");
+      return;
+    }
     setSubmitting(true);
     try {
       const idToken = await getIdToken();
@@ -53,6 +77,8 @@ export function RegisterScreen() {
           consent: true,
           fullName: name,
           phone: tel,
+          birthDate: birthDate.trim(),
+          gender: gender.trim(),
           address: address.trim() || undefined,
           displayName: profile?.displayName,
           pictureUrl: profile?.pictureUrl,
@@ -81,14 +107,17 @@ export function RegisterScreen() {
       <CwHeader title="สมัครสมาชิก" />
 
       <div className="space-y-4 px-4">
-        {/* friendly intro */}
-        <div className="px-1">
-          <h1 className="cw-title text-[22px]">
-            ยินดีต้อนรับสู่ <span className="accent">JOLLY PLAY</span>
-          </h1>
-          <p className="mt-1 text-[13.5px] leading-relaxed" style={{ color: "var(--cw-text-2)" }}>
-            กรอกข้อมูลสั้น ๆ เพื่อรับแต้มและแลกของได้เลย ใช้เวลาไม่ถึงนาที
-          </p>
+        {/* friendly intro + mascot */}
+        <div className="flex items-center gap-3 px-1">
+          <CwMascot src={CW_MASCOT.knight} alt="อัศวิน JOLLY PLAY" size={84} />
+          <div className="min-w-0">
+            <h1 className="cw-title text-[22px]">
+              ยินดีต้อนรับสู่ <span className="accent">JOLLY PLAY</span>
+            </h1>
+            <p className="mt-1 text-[13.5px] leading-relaxed" style={{ color: "var(--cw-text-2)" }}>
+              กรอกข้อมูลสั้น ๆ เพื่อรับแต้มและแลกของได้เลย ใช้เวลาไม่ถึงนาที
+            </p>
+          </div>
         </div>
 
         {/* LINE identity card */}
@@ -146,10 +175,52 @@ export function RegisterScreen() {
             />
           </div>
           <div>
+            <label htmlFor="reg-birth" className="cw-label">
+              วันเกิด <span style={{ color: "var(--cw-red)" }}>*</span>
+            </label>
+            <input
+              id="reg-birth"
+              type="date"
+              autoComplete="bday"
+              value={birthDate}
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => setBirthDate(e.target.value)}
+              className="cw-input cw-tnum"
+            />
+            {age != null ? (
+              <div
+                className="mt-2 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12.5px] font-bold"
+                style={{ background: "var(--cw-brand-50)", color: "var(--cw-brand-700)" }}
+                aria-live="polite"
+              >
+                <span aria-hidden>🎂</span> อายุ {age} ปี
+              </div>
+            ) : null}
+          </div>
+          <div>
+            <span className="cw-label">
+              เพศ <span style={{ color: "var(--cw-red)" }}>*</span>
+            </span>
+            <div className="cw-seg" role="radiogroup" aria-label="เพศ">
+              {GENDERS.map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  role="radio"
+                  aria-checked={gender === g}
+                  className={`cw-seg-btn ${gender === g ? "active" : ""}`}
+                  onClick={() => setGender(g)}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
             <label htmlFor="reg-address" className="cw-label">
               ที่อยู่จัดส่ง{" "}
               <span className="font-normal" style={{ color: "var(--cw-text-3)" }}>
-                (แนะนำ — เผื่อให้ส่งของถึงบ้าน)
+                (ไม่บังคับ — เผื่อให้ส่งของถึงบ้าน)
               </span>
             </label>
             <textarea
@@ -204,7 +275,7 @@ export function RegisterScreen() {
           type="button"
           className="cw-btn"
           style={{ width: "100%" }}
-          disabled={submitting}
+          disabled={submitting || !canSubmit}
           onClick={() => void accept()}
         >
           {submitting ? "กำลังบันทึก..." : "ยอมรับ และเริ่มใช้งาน"}

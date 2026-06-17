@@ -91,7 +91,15 @@ export async function getOrCreateMember(
  */
 export async function updateMemberProfile(
   memberId: string,
-  data: { fullName?: string; phone?: string; address?: string },
+  data: {
+    fullName?: string;
+    phone?: string;
+    address?: string;
+    /** ISO date "YYYY-MM-DD" — stored as a date; empty/invalid is ignored. */
+    birthDate?: string;
+    /** ชาย / หญิง / ไม่ระบุ (free text — just trimmed). */
+    gender?: string;
+  },
 ): Promise<ClawhubMember> {
   const clean = (v: string | undefined): string | undefined => {
     if (v === undefined) return undefined;
@@ -99,13 +107,37 @@ export async function updateMemberProfile(
     return t === "" ? undefined : t;
   };
 
-  const patch: { fullName?: string; phone?: string; address?: string } = {};
+  // Parse an ISO "YYYY-MM-DD" into a UTC Date (date-only). Returns undefined for
+  // empty/garbage so an empty box never wipes existing data and a typo never throws.
+  const cleanBirthDate = (v: string | undefined): Date | undefined => {
+    const s = clean(v);
+    if (s === undefined) return undefined;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return undefined;
+    const d = new Date(`${s}T00:00:00.000Z`);
+    if (Number.isNaN(d.getTime())) return undefined;
+    // Reject clearly-impossible dates (future birthday or absurdly old).
+    const year = d.getUTCFullYear();
+    if (year < 1900 || d.getTime() > Date.now()) return undefined;
+    return d;
+  };
+
+  const patch: {
+    fullName?: string;
+    phone?: string;
+    address?: string;
+    birthDate?: Date;
+    gender?: string;
+  } = {};
   const fullName = clean(data.fullName);
   const phone = clean(data.phone);
   const address = clean(data.address);
+  const birthDate = cleanBirthDate(data.birthDate);
+  const gender = clean(data.gender);
   if (fullName !== undefined) patch.fullName = fullName;
   if (phone !== undefined) patch.phone = phone;
   if (address !== undefined) patch.address = address;
+  if (birthDate !== undefined) patch.birthDate = birthDate;
+  if (gender !== undefined) patch.gender = gender;
 
   if (Object.keys(patch).length === 0) {
     return prisma.clawhubMember.findUniqueOrThrow({ where: { id: memberId } });

@@ -22,9 +22,13 @@ const Body = z.object({
   idToken: z.string().min(20).max(4096),
   displayName: z.string().max(120).optional(),
   pictureUrl: z.string().max(1024).optional(),
-  /** Registration profile — real name / phone / address (any subset). */
+  /** Registration profile — real name / phone / birthday / gender / address (any subset). */
   fullName: z.string().max(200).optional(),
   phone: z.string().max(40).optional(),
+  /** ISO "YYYY-MM-DD" — validated + stored as a date by updateMemberProfile. */
+  birthDate: z.string().max(20).optional(),
+  /** ชาย / หญิง / ไม่ระบุ. */
+  gender: z.string().max(20).optional(),
   address: z.string().max(500).optional(),
   /** When true, stamp PDPA consent (the register screen sends this on accept). */
   consent: z.boolean().optional(),
@@ -55,9 +59,21 @@ export async function POST(req: NextRequest) {
   let { member } = resolved;
 
   // Save profile fields if the register screen sent any (no-op when all empty).
-  const { fullName, phone, address } = parsed.data;
-  if (fullName !== undefined || phone !== undefined || address !== undefined) {
-    member = await updateMemberProfile(member.id, { fullName, phone, address });
+  const { fullName, phone, birthDate, gender, address } = parsed.data;
+  if (
+    fullName !== undefined ||
+    phone !== undefined ||
+    birthDate !== undefined ||
+    gender !== undefined ||
+    address !== undefined
+  ) {
+    member = await updateMemberProfile(member.id, {
+      fullName,
+      phone,
+      birthDate,
+      gender,
+      address,
+    });
   }
 
   // Idempotent: stamp consent if asked and not already consented.
