@@ -35,6 +35,9 @@ const Body = z.object({
   mimeType: z.string().max(60).optional(),
   // Optional machine code or qrToken (from ?machine= / QR scan).
   machineCode: z.string().max(120).optional(),
+  // ลูกค้าพิมพ์เลขสาขา 7-11 เอง (เช่น "00024") — บังคับ. ชื่อสาขาไม่บังคับ.
+  storeBranchCode: z.string().max(40).optional(),
+  storeBranchName: z.string().max(200).optional(),
   // Profile hints to enrich a brand-new member.
   displayName: z.string().max(120).optional(),
   pictureUrl: z.string().max(1024).optional(),
@@ -81,6 +84,16 @@ export async function POST(req: NextRequest) {
       { status: 403 },
     );
   }
+
+  // 2b) Branch gate — the customer must type the 7-Eleven branch code.
+  const storeBranchCode = (input.storeBranchCode ?? "").trim();
+  if (!storeBranchCode) {
+    return NextResponse.json(
+      { ok: false, error: "ต้องระบุเลขสาขา 7-11" },
+      { status: 400 },
+    );
+  }
+  const storeBranchName = (input.storeBranchName ?? "").trim() || undefined;
 
   // 3) Decode the image → bytes.
   const { data: b64, mime: dataMime } = stripDataUrl(input.imageBase64);
@@ -136,6 +149,8 @@ export async function POST(req: NextRequest) {
           branchId: machine.branchId,
         }
       : undefined,
+    storeBranchCode,
+    storeBranchName,
   });
 
   // Fresh balance so the screen can show the new total immediately.

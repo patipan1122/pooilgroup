@@ -34,10 +34,22 @@ export function generatePickupCode(): string {
   return `JP-${code}`;
 }
 
+/** How the member wants to receive the redeemed reward. */
+export type RedeemFulfillment = {
+  method: "DELIVERY" | "PICKUP" | "CONTACT";
+  recipientName?: string;
+  recipientPhone?: string;
+  recipientAddress?: string;
+  pickupBranchCode?: string;
+  pickupTime?: string;
+  contactNote?: string;
+};
+
 export type RedeemRewardArgs = {
   orgId: string;
   memberId: string;
   rewardId: string;
+  fulfillment: RedeemFulfillment;
 };
 
 export type RedeemRewardResult = {
@@ -49,16 +61,38 @@ export type RedeemRewardResult = {
 
 /**
  * Member redeems a reward with points. All-or-nothing in one transaction:
+ *  - fulfillment must be complete             → else reason "missing_delivery_info"/"missing_pickup_branch"
  *  - reward must exist + be active            → else reason "reward_unavailable"
  *  - if stock tracked and depleted            → reason "out_of_stock"
  *  - spendPoints (FIFO lots) — insufficient   → reason "insufficient_points"
- *  - create PENDING redemption (snapshot reward) + decrement stock when tracked.
- * Insufficient points are caught cleanly (no leaked 500).
+ *  - create PENDING redemption (snapshot reward + fulfillment choice) + decrement stock when tracked.
+ * Bad fulfillment / insufficient points are caught cleanly (no leaked 500).
  */
 export async function redeemReward(
   args: RedeemRewardArgs,
 ): Promise<RedeemRewardResult> {
-  const { orgId, memberId, rewardId } = args;
+  const { orgId, memberId, rewardId, fulfillment } = args;
+
+  // Validate the fulfillment choice up front — never throw 500, return a clean reason.
+  const trim = (v: string | undefined): string => (v ?? "").trim();
+  const recipientName = trim(fulfillment.recipientName);
+  const recipientPhone = trim(fulfillment.recipientPhone);
+  const recipientAddress = trim(fulfillment.recipientAddress);
+  const pickupBranchCode = trim(fulfillment.pickupBranchCode);
+  const pickupTime = trim(fulfillment.pickupTime);
+  const contactNote = trim(fulfillment.contactNote);
+
+  if (fulfillment.method === "DELIVERY") {
+    if (!recipientName || !recipientAddress || !recipientPhone) {
+      return { ok: false, reason: "missing_delivery_info" };
+    }
+  } else if (fulfillment.method === "PICKUP") {
+    if (!pickupBranchCode) {
+      return { ok: false, reason: "missing_pickup_branch" };
+    }
+  }
+  // CONTACT → always ok (note optional).
+
   const pickupCode = generatePickupCode();
 
   try {
@@ -94,6 +128,13 @@ export async function redeemReward(
           pointsSpent: reward.pointsPrice,
           status: "PENDING",
           pickupCode,
+          fulfillMethod: fulfillment.method,
+          recipientName: recipientName || null,
+          recipientPhone: recipientPhone || null,
+          recipientAddress: recipientAddress || null,
+          pickupBranchCode: pickupBranchCode || null,
+          pickupTime: pickupTime || null,
+          contactNote: contactNote || null,
         },
       });
 

@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { useClawhub } from "./liff-context";
-import { CwHeader, CwBalance, CwButtonLink, formatThaiDate, daysUntil } from "./ui";
+import { CwHeader, CwButtonLink, CwPointsHero, formatThaiDate } from "./ui";
 import type {
   PointHistoryRow,
   RefundHistoryRow,
@@ -81,28 +81,17 @@ export function PointsScreen() {
     };
   }, [getIdToken]);
 
-  const expDays = daysUntil(summary?.nearestExpiryAt ?? null);
-
   return (
     <div className="mx-auto w-full max-w-md pb-10">
-      <CwHeader title="แต้ม & ประวัติ" />
+      <CwHeader title="แต้ม & ประวัติ" back />
 
       <div className="px-4">
-        <div className="cw-card p-5" style={{ background: "linear-gradient(135deg, var(--cw-brand-50), var(--cw-bg-2))" }}>
-          <div className="text-[13px] font-semibold" style={{ color: "var(--cw-text-2)" }}>
-            แต้มคงเหลือ
-          </div>
-          <div className="mt-1">
-            <CwBalance points={summary?.balance ?? 0} />
-          </div>
-          {summary?.nearestExpiryAt ? (
-            <div className="mt-2 text-[12.5px] font-medium" style={{ color: "var(--cw-brand-700)" }}>
-              ⏳ {summary.nearestExpiryPoints.toLocaleString("th-TH")} แต้ม หมดอายุ{" "}
-              {formatThaiDate(summary.nearestExpiryAt)}
-              {expDays != null ? ` · อีก ${expDays} วัน` : ""}
-            </div>
-          ) : null}
-        </div>
+        <CwPointsHero
+          balance={summary?.balance ?? 0}
+          expiryAt={summary?.nearestExpiryAt ?? null}
+          expiryPoints={summary?.nearestExpiryPoints ?? 0}
+          caption="แต้มคงเหลือ"
+        />
       </div>
 
       {/* tabs */}
@@ -130,7 +119,7 @@ export function PointsScreen() {
           </div>
         ) : tab === "points" ? (
           points.length === 0 ? (
-            <Empty text="ยังไม่มีรายการแต้ม" />
+            <Empty emoji="⭐" text="ยังไม่มีรายการแต้ม" sub="ขอคืนแต้มจากตู้ที่มีปัญหาเพื่อเริ่มสะสม" />
           ) : (
             points.map((p) => (
               <Row
@@ -144,7 +133,7 @@ export function PointsScreen() {
           )
         ) : tab === "refunds" ? (
           refunds.length === 0 ? (
-            <Empty text="ยังไม่มีคำขอคืนเงิน" />
+            <Empty emoji="💸" text="ยังไม่มีคำขอคืนแต้ม" sub="ตู้มีปัญหา? ถ่ายรูปจอแล้วขอคืนแต้มได้เลย" />
           ) : (
             refunds.map((r) => {
               const b = REFUND_BADGE[r.status];
@@ -166,7 +155,7 @@ export function PointsScreen() {
             })
           )
         ) : rewards.length === 0 ? (
-          <Empty text="ยังไม่เคยแลกของ" />
+          <Empty emoji="🧸" text="ยังไม่เคยแลกของ" sub="ใช้แต้มแลกตุ๊กตาน่ารัก ๆ ได้ที่เมนูแลกตุ๊กตา" />
         ) : (
           rewards.map((r) => {
             const b = REDEEM_BADGE[r.status];
@@ -227,10 +216,23 @@ function Row({
   );
 }
 
-function Empty({ text }: { text: string }) {
+function Empty({ emoji, text, sub }: { emoji: string; text: string; sub?: string }) {
   return (
-    <div className="py-10 text-center text-[13px]" style={{ color: "var(--cw-text-3)" }}>
-      {text}
+    <div className="flex flex-col items-center gap-2 py-12 text-center">
+      <div
+        className="grid size-14 place-items-center rounded-2xl text-2xl"
+        style={{ background: "var(--cw-brand-50)" }}
+      >
+        {emoji}
+      </div>
+      <div className="text-[14px] font-bold" style={{ color: "var(--cw-text-2)" }}>
+        {text}
+      </div>
+      {sub ? (
+        <div className="max-w-[16rem] text-[12.5px]" style={{ color: "var(--cw-text-3)" }}>
+          {sub}
+        </div>
+      ) : null}
     </div>
   );
 }

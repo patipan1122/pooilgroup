@@ -6426,6 +6426,14 @@ enum ClawhubRedemptionStatus {
   @@schema("public")
 }
 
+enum ClawhubFulfillMethod {
+  DELIVERY // จัดส่งถึงบ้าน (ชื่อ+ที่อยู่+เบอร์)
+  PICKUP // รับเองที่ 7-11 (เลขสาขา + เวลานัด)
+  CONTACT // ให้เจ้าหน้าที่ติดต่อกลับ
+
+  @@schema("public")
+}
+
 enum ClawhubConvStatus {
   OPEN
   SNOOZED
@@ -6456,8 +6464,10 @@ model ClawhubMember {
   orgId          String    @map("org_id") @db.Uuid
   externalLineId String    @map("external_line_id") // LINE userId
   displayName    String?   @map("display_name")
+  fullName       String?   @map("full_name") // ชื่อ-นามสกุลจริง (กรอกตอนสมัคร)
   pictureUrl     String?   @map("picture_url")
   phone          String?
+  address        String?   @map("address") // ที่อยู่ (สำหรับจัดส่ง)
   memberCode     String    @unique @map("member_code") // CH-YYYY-NNNN
   pointsBalance  Int       @default(0) @map("points_balance") // cached · source of truth = unexpired EARN lots
   refundCount    Int       @default(0) @map("refund_count")
@@ -6511,6 +6521,8 @@ model ClawhubRefundRequest {
   machineCode      String?             @map("machine_code") // denorm snapshot
   machineQrToken   String?             @map("machine_qr_token")
   branchId         String?             @map("branch_id") @db.Uuid // soft ref
+  storeBranchCode  String?             @map("store_branch_code") // เลขสาขา 7-11 ที่ลูกค้าพิมพ์เอง (เช่น "00024")
+  storeBranchName  String?             @map("store_branch_name") // ชื่อสาขา (ถ้ามี)
   claimedBaht      Int                 @map("claimed_baht") // ลูกค้ากรอกเอง
   aiReadBaht       Int?                @map("ai_read_baht") // ที่ AI คำนวณจากจอ
   aiAddUp          Int?                @map("ai_add_up") // ค่า "Add up:" บนจอ (เหรียญ)
@@ -6550,6 +6562,13 @@ model ClawhubRedemption {
   pointsSpent     Int                     @map("points_spent")
   status          ClawhubRedemptionStatus @default(PENDING)
   pickupCode      String                  @map("pickup_code")
+  fulfillMethod    ClawhubFulfillMethod?   @map("fulfill_method") // วิธีรับของ: DELIVERY/PICKUP/CONTACT
+  recipientName    String?                 @map("recipient_name") // ชื่อผู้รับ (DELIVERY)
+  recipientPhone   String?                 @map("recipient_phone") // เบอร์ผู้รับ (DELIVERY)
+  recipientAddress String?                 @map("recipient_address") // ที่อยู่จัดส่ง (DELIVERY)
+  pickupBranchCode String?                 @map("pickup_branch_code") // เลขสาขา 7-11 ที่รับเอง (PICKUP)
+  pickupTime       String?                 @map("pickup_time") // เวลานัดรับ (PICKUP)
+  contactNote      String?                 @map("contact_note") // หมายเหตุให้เจ้าหน้าที่ติดต่อ (CONTACT)
   fulfilledById   String?                 @map("fulfilled_by_id") @db.Uuid
   fulfilledAt     DateTime?               @map("fulfilled_at") @db.Timestamptz(6)
   note            String?

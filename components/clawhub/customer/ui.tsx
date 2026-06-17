@@ -5,18 +5,35 @@
 
 import Link from "next/link";
 
-/** JOLLY PLAY header — logo + page title. */
-export function CwHeader({ title }: { title?: string }) {
+/** JOLLY PLAY header — logo + page title. Optional back link for sub-screens. */
+export function CwHeader({ title, back }: { title?: string; back?: boolean }) {
   return (
-    <header className="flex items-center gap-3 px-4 pb-3 pt-5">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/clawhub/logo.jpg"
-        alt="JOLLY PLAY"
-        className="h-11 w-11 rounded-xl object-cover"
-        style={{ border: "1px solid var(--cw-border)" }}
-      />
-      <div className="min-w-0">
+    <header
+      className="sticky top-0 z-20 flex items-center gap-3 px-4 pb-3 pt-5"
+      style={{
+        background: "var(--cw-bg)",
+        paddingTop: "calc(env(safe-area-inset-top) + 1.25rem)",
+      }}
+    >
+      {back ? (
+        <a
+          href="/liff/clawhub?screen=home"
+          aria-label="กลับหน้าหลัก"
+          className="cw-tap grid size-10 flex-none place-items-center rounded-full text-[18px]"
+          style={{ background: "var(--cw-surface)", border: "1px solid var(--cw-border)", color: "var(--cw-text-2)" }}
+        >
+          ‹
+        </a>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src="/clawhub/logo.jpg"
+          alt="JOLLY PLAY"
+          className="size-12 flex-none rounded-2xl object-cover"
+          style={{ border: "1px solid var(--cw-border)", boxShadow: "var(--cw-shadow-sm)" }}
+        />
+      )}
+      <div className="min-w-0 flex-1">
         <div
           className="text-[15px] font-extrabold leading-tight"
           style={{ color: "var(--cw-brand-700)", letterSpacing: "-0.02em" }}
@@ -24,12 +41,29 @@ export function CwHeader({ title }: { title?: string }) {
           JOLLY PLAY
         </div>
         {title ? (
-          <div className="truncate text-[13px]" style={{ color: "var(--cw-text-2)" }}>
+          <div className="truncate text-[13px] font-medium" style={{ color: "var(--cw-text-2)" }}>
             {title}
           </div>
         ) : null}
       </div>
     </header>
+  );
+}
+
+/** Example-image disclosure — "ดูตัวอย่าง" expand; the caption is baked into the image. */
+export function CwExample({ src, label, alt }: { src: string; label: string; alt: string }) {
+  return (
+    <details className="cw-example">
+      <summary>
+        <span aria-hidden>🔍</span>
+        <span>{label}</span>
+        <span className="cw-example-caret" aria-hidden>
+          ⌄
+        </span>
+      </summary>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={alt} loading="lazy" />
+    </details>
   );
 }
 
@@ -73,9 +107,64 @@ export function CwError({ message }: { message: string }) {
 export function CwBalance({ points }: { points: number }) {
   return (
     <span className="cw-points cw-tnum">
-      <span className="text-4xl">{points.toLocaleString("th-TH")}</span>
+      <span className="text-[44px] leading-none">{points.toLocaleString("th-TH")}</span>
       <span className="text-base font-bold">แต้ม</span>
     </span>
+  );
+}
+
+/**
+ * Points-balance hero — the headline number + an expiry countdown chip. Reused across
+ * home / points / rewards for a consistent JOLLY PLAY identity. `sheen` plays a one-shot
+ * gloss sweep (home only — calm elsewhere).
+ */
+export function CwPointsHero({
+  balance,
+  expiryAt,
+  expiryPoints,
+  caption = "แต้มของคุณ",
+  sheen = false,
+}: {
+  balance: number;
+  expiryAt: string | null;
+  expiryPoints: number;
+  caption?: string;
+  sheen?: boolean;
+}) {
+  const days = daysUntil(expiryAt);
+  return (
+    <div
+      className={`cw-card overflow-hidden p-5 ${sheen ? "cw-hero" : ""}`}
+      style={{
+        background:
+          "radial-gradient(120% 140% at 0% 0%, var(--cw-brand-50) 0%, var(--cw-bg-2) 70%)",
+        borderColor: "var(--cw-border-strong)",
+        boxShadow: "var(--cw-shadow)",
+      }}
+    >
+      <div className="flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: "var(--cw-text-2)" }}>
+        <span aria-hidden>⭐</span>
+        {caption}
+      </div>
+      <div className="mt-1">
+        <CwBalance points={balance} />
+      </div>
+      {expiryAt ? (
+        <div
+          className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-bold"
+          style={{ background: "var(--cw-pending-soft)", color: "var(--cw-brand-700)" }}
+        >
+          <span aria-hidden>⏳</span>
+          <span className="cw-tnum">{expiryPoints.toLocaleString("th-TH")}</span> แต้มหมดอายุ{" "}
+          {formatThaiDate(expiryAt)}
+          {days != null ? ` · อีก ${days} วัน` : ""}
+        </div>
+      ) : (
+        <div className="mt-3 text-[12.5px]" style={{ color: "var(--cw-text-3)" }}>
+          ยังไม่มีแต้มใกล้หมดอายุ — เก็บแต้มไว้แลกของได้เลย
+        </div>
+      )}
+    </div>
   );
 }
 

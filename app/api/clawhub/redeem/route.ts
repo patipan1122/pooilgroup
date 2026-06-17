@@ -13,15 +13,28 @@ import { availableBalance } from "@/lib/clawhub/points";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const Fulfillment = z.object({
+  method: z.enum(["DELIVERY", "PICKUP", "CONTACT"]),
+  recipientName: z.string().max(200).optional(),
+  recipientPhone: z.string().max(40).optional(),
+  recipientAddress: z.string().max(500).optional(),
+  pickupBranchCode: z.string().max(40).optional(),
+  pickupTime: z.string().max(120).optional(),
+  contactNote: z.string().max(500).optional(),
+});
+
 const Body = z.object({
   idToken: z.string().min(20).max(4096),
   rewardId: z.string().uuid(),
+  fulfillment: Fulfillment,
 });
 
 const REASON_TH: Record<string, string> = {
   insufficient_points: "แต้มไม่พอแลกของชิ้นนี้",
   out_of_stock: "ของชิ้นนี้หมดแล้ว",
   reward_unavailable: "ของชิ้นนี้ไม่พร้อมให้แลกแล้ว",
+  missing_delivery_info: "กรุณากรอกชื่อ ที่อยู่ และเบอร์โทรสำหรับจัดส่ง",
+  missing_pickup_branch: "กรุณาระบุเลขสาขา 7-11 ที่จะรับของ",
 };
 
 export async function POST(req: NextRequest) {
@@ -46,6 +59,7 @@ export async function POST(req: NextRequest) {
     orgId,
     memberId: member.id,
     rewardId: parsed.data.rewardId,
+    fulfillment: parsed.data.fulfillment,
   });
 
   const balance = await availableBalance(member.id);

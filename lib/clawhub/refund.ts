@@ -31,6 +31,9 @@ export type SubmitRefundArgs = {
     machineQrToken?: string;
     branchId?: string;
   };
+  // ลูกค้าพิมพ์เลขสาขา 7-11 เอง (รูปไม่ได้ OCR หาเลขสาขา).
+  storeBranchCode?: string;
+  storeBranchName?: string;
 };
 
 export type SubmitRefundResult = {
@@ -52,7 +55,7 @@ export type SubmitRefundResult = {
 export async function submitRefund(
   args: SubmitRefundArgs,
 ): Promise<SubmitRefundResult> {
-  const { orgId, member, claimedBaht, screenshotR2Key, screenshotSha256, vision, machine } = args;
+  const { orgId, member, claimedBaht, screenshotR2Key, screenshotSha256, vision, machine, storeBranchCode, storeBranchName } = args;
 
   // (a) Pure decision — unclear image never touches the DB.
   const decision = evaluateRefund({ member, claimedBaht, vision });
@@ -87,6 +90,8 @@ export async function submitRefund(
           machineCode: machine?.machineCode ?? null,
           machineQrToken: machine?.machineQrToken ?? null,
           branchId: machine?.branchId ?? null,
+          storeBranchCode: storeBranchCode ?? null,
+          storeBranchName: storeBranchName ?? null,
           claimedBaht,
           aiReadBaht: decision.aiReadBaht,
           aiAddUp: vision.addUp,

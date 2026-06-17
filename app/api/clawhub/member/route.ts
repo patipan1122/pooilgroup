@@ -7,7 +7,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { resolveMemberFromIdToken } from "@/lib/clawhub/verify-member";
-import { setConsent } from "@/lib/clawhub/member";
+import { setConsent, updateMemberProfile } from "@/lib/clawhub/member";
 import {
   getMemberSummary,
   getPointHistory,
@@ -22,6 +22,10 @@ const Body = z.object({
   idToken: z.string().min(20).max(4096),
   displayName: z.string().max(120).optional(),
   pictureUrl: z.string().max(1024).optional(),
+  /** Registration profile — real name / phone / address (any subset). */
+  fullName: z.string().max(200).optional(),
+  phone: z.string().max(40).optional(),
+  address: z.string().max(500).optional(),
   /** When true, stamp PDPA consent (the register screen sends this on accept). */
   consent: z.boolean().optional(),
   /** When true, also return point/refund/redemption history (the points screen). */
@@ -49,6 +53,13 @@ export async function POST(req: NextRequest) {
   }
 
   let { member } = resolved;
+
+  // Save profile fields if the register screen sent any (no-op when all empty).
+  const { fullName, phone, address } = parsed.data;
+  if (fullName !== undefined || phone !== undefined || address !== undefined) {
+    member = await updateMemberProfile(member.id, { fullName, phone, address });
+  }
+
   // Idempotent: stamp consent if asked and not already consented.
   if (parsed.data.consent && !member.consentAt) {
     member = await setConsent(member.id);

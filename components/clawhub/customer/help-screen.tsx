@@ -12,7 +12,16 @@ export function HelpScreen() {
 
   return (
     <div className="mx-auto w-full max-w-md pb-10">
-      <CwHeader title="ช่วยเหลือ & คำถามที่พบบ่อย" />
+      <CwHeader title="ช่วยเหลือ & คำถามที่พบบ่อย" back />
+
+      <div className="px-4 pb-2">
+        <h1 className="cw-title text-[20px]">
+          มีอะไรให้ <span className="accent">ช่วย</span> ไหม?
+        </h1>
+        <p className="mt-1 text-[13px]" style={{ color: "var(--cw-text-2)" }}>
+          แตะคำถามเพื่อดูคำตอบ หรือโทรหาทีมงานได้เลย
+        </p>
+      </div>
 
       <div className="space-y-2 px-4">
         {CLAWHUB_FAQ.map((f, i) => {

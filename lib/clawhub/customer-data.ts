@@ -37,6 +37,12 @@ export type RedemptionHistoryRow = {
 export type MemberSummary = {
   memberCode: string;
   displayName: string | null;
+  /** Real full name captured at registration (for prefill). */
+  fullName: string | null;
+  /** Contact phone (for prefill). */
+  phone: string | null;
+  /** Delivery address (for prefill). */
+  address: string | null;
   pictureUrl: string | null;
   consented: boolean;
   balance: number;
@@ -56,6 +62,9 @@ export async function getMemberSummary(
     id: string;
     memberCode: string;
     displayName: string | null;
+    fullName: string | null;
+    phone: string | null;
+    address: string | null;
     pictureUrl: string | null;
     consentAt: Date | null;
   },
@@ -91,6 +100,9 @@ export async function getMemberSummary(
   return {
     memberCode: member.memberCode,
     displayName: member.displayName,
+    fullName: member.fullName,
+    phone: member.phone,
+    address: member.address,
     pictureUrl: member.pictureUrl,
     consented: member.consentAt != null,
     balance,

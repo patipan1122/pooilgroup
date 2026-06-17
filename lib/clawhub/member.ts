@@ -82,6 +82,38 @@ export async function getOrCreateMember(
   );
 }
 
+/**
+ * Update a member's editable profile (full name / phone / address) — used by the
+ * register + redemption screens to capture/prefill contact info.
+ * Only writes the fields the caller actually passed (undefined = leave as-is), trims
+ * whitespace, and ignores empty strings (an empty box never wipes existing data).
+ * No-op (returns the current row) if nothing meaningful was provided.
+ */
+export async function updateMemberProfile(
+  memberId: string,
+  data: { fullName?: string; phone?: string; address?: string },
+): Promise<ClawhubMember> {
+  const clean = (v: string | undefined): string | undefined => {
+    if (v === undefined) return undefined;
+    const t = v.trim();
+    return t === "" ? undefined : t;
+  };
+
+  const patch: { fullName?: string; phone?: string; address?: string } = {};
+  const fullName = clean(data.fullName);
+  const phone = clean(data.phone);
+  const address = clean(data.address);
+  if (fullName !== undefined) patch.fullName = fullName;
+  if (phone !== undefined) patch.phone = phone;
+  if (address !== undefined) patch.address = address;
+
+  if (Object.keys(patch).length === 0) {
+    return prisma.clawhubMember.findUniqueOrThrow({ where: { id: memberId } });
+  }
+
+  return prisma.clawhubMember.update({ where: { id: memberId }, data: patch });
+}
+
 /** Record PDPA consent timestamp (idempotent — only sets if not already set). */
 export async function setConsent(memberId: string): Promise<ClawhubMember> {
   return prisma.clawhubMember.update({

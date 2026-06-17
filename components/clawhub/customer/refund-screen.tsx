@@ -1,13 +1,16 @@
 "use client";
 
-// ClawHub refund — the money screen. Customer (a) snaps/uploads the machine LCD photo,
-// (b) types the baht they inserted, then submits. We compress the image client-side,
-// POST {idToken, claimedBaht, imageBase64, mimeType, machineCode?} and the server
-// verifies the token, runs AI vision, and decides. Result states are shown clearly.
+// ClawHub refund — the money screen. Customer (1) types the 7-Eleven branch code, (2)
+// snaps/uploads the machine LCD photo, (3) types the baht inserted, then submits. We
+// compress the image client-side and POST
+//   { idToken, claimedBaht, imageBase64, mimeType, machineCode?, storeBranchCode }.
+// storeBranchCode is REQUIRED (server 400 "ต้องระบุเลขสาขา 7-11" otherwise). The server
+// re-verifies the token, runs AI vision, and decides. Result states are shown clearly &
+// reassuringly (never accusatory).
 
 import { useRef, useState } from "react";
 import { useClawhub } from "./liff-context";
-import { CwHeader, CwButtonLink } from "./ui";
+import { CwHeader, CwButtonLink, CwExample } from "./ui";
 import { compressImage } from "./image-compress";
 import { SUPPORT_PHONE } from "@/lib/clawhub/constants";
 
@@ -33,6 +36,7 @@ export function RefundScreen({
 }) {
   const { member, getIdToken, setMember } = useClawhub();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [branchCode, setBranchCode] = useState<string>("");
   const [preview, setPreview] = useState<string | null>(null);
   const [base64, setBase64] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState<string>("image/jpeg");
@@ -66,7 +70,12 @@ export function RefundScreen({
 
   async function submit() {
     setErr(null);
+    const branch = branchCode.trim();
     const claimed = Number(baht);
+    if (!branch) {
+      setErr("กรุณากรอกเลขสาขา 7-11 (เช่น 00024)");
+      return;
+    }
     if (!base64) {
       setErr("กรุณาถ่ายรูปหน้าจอตู้ก่อน");
       return;
@@ -91,6 +100,7 @@ export function RefundScreen({
           imageBase64: base64,
           mimeType,
           machineCode: machineCode ?? undefined,
+          storeBranchCode: branch,
         }),
       });
       const json = (await res.json().catch(() => ({}))) as Partial<RefundResult> & {
@@ -125,17 +135,16 @@ export function RefundScreen({
   if (result) {
     if (result.status === "AUTO_APPROVED") {
       return (
-        <ResultShell emoji="✅" tone="ok" title={`ได้รับ ${result.pointsAwarded} แต้ม!`}>
+        <ResultShell emoji="🎉" tone="ok" pop title={`+${result.pointsAwarded.toLocaleString("th-TH")} แต้ม!`}>
           <p className="text-[14px]" style={{ color: "var(--cw-text-2)" }}>
-            แต้มคงเหลือ <strong>{result.balance.toLocaleString("th-TH")}</strong> แต้ม
+            เยี่ยม! แต้มเข้าบัญชีแล้ว ตอนนี้คุณมี{" "}
+            <strong className="cw-tnum">{result.balance.toLocaleString("th-TH")}</strong> แต้ม
           </p>
           <p className="mt-1 text-[12.5px]" style={{ color: "var(--cw-text-3)" }}>
-            แต้มหมดอายุใน 30 วัน รีบใช้แลกของนะ
+            แต้มมีอายุ 30 วัน รีบใช้แลกของน่ารัก ๆ กันนะ
           </p>
           <div className="mt-5 space-y-3">
-            <CwButtonLink href="/liff/clawhub?screen=rewards">
-              🧸 ไปแลกตุ๊กตา
-            </CwButtonLink>
+            <CwButtonLink href="/liff/clawhub?screen=rewards">🧸 ไปแลกตุ๊กตา</CwButtonLink>
             <CwButtonLink href="/liff/clawhub?screen=home" variant="ghost">
               กลับหน้าหลัก
             </CwButtonLink>
@@ -145,14 +154,14 @@ export function RefundScreen({
     }
     if (result.status === "NEEDS_REPHOTO") {
       return (
-        <ResultShell emoji="📷" tone="pending" title="รูปไม่ชัด">
-          <p className="text-[14px]" style={{ color: "var(--cw-text-2)" }}>
-            ถ่ายใหม่ให้เห็นหน้าจอตู้ (จอ LCD สีฟ้า) ชัด ๆ ทั้งตัวเลข Credit / Price / Add up
-            โดยไม่ให้แสงสะท้อนหรือมือบัง
+        <ResultShell emoji="📷" tone="pending" title="ขอรูปที่ชัดขึ้นอีกนิด">
+          <p className="text-[14px] leading-relaxed" style={{ color: "var(--cw-text-2)" }}>
+            ถ่ายใหม่ให้เห็นหน้าจอ LCD สีฟ้าชัด ๆ — เห็นตัวเลข Credit / Price / Add up ครบ
+            โดยไม่ให้แสงสะท้อนหรือมือบัง แล้วได้แต้มแน่นอน
           </p>
           <div className="mt-5">
             <button type="button" className="cw-btn" style={{ width: "100%" }} onClick={resetPhoto}>
-              ถ่ายใหม่
+              ถ่ายรูปใหม่
             </button>
           </div>
         </ResultShell>
@@ -160,15 +169,13 @@ export function RefundScreen({
     }
     if (result.status === "PENDING_REVIEW") {
       return (
-        <ResultShell emoji="🔎" tone="pending" title="ระบบขอตรวจสอบเพิ่มเติม">
-          <p className="text-[14px]" style={{ color: "var(--cw-text-2)" }}>
-            แอดมินจะยืนยันให้เร็ว ๆ นี้ — เพราะคุณขอคืนบ่อย ระบบจึงขอตรวจเพื่อความเป็นธรรมกับทุกคน
-            โปรดแนบหลักฐานให้ครบถ้วน
+        <ResultShell emoji="🔎" tone="pending" title="กำลังตรวจสอบ ได้แต้มแน่นอน">
+          <p className="text-[14px] leading-relaxed" style={{ color: "var(--cw-text-2)" }}>
+            เราได้รับคำขอของคุณแล้ว ทีมงานกำลังตรวจสอบให้เร็วที่สุด เมื่อยืนยันเสร็จ แต้มจะเข้าบัญชีอัตโนมัติ
+            ติดตามสถานะได้ที่เมนู แต้ม &amp; ประวัติ
           </p>
           <div className="mt-5 space-y-3">
-            <CwButtonLink href="/liff/clawhub?screen=points" variant="ghost">
-              ดูสถานะคำขอ
-            </CwButtonLink>
+            <CwButtonLink href="/liff/clawhub?screen=points">ดูสถานะคำขอ</CwButtonLink>
             <CwButtonLink href="/liff/clawhub?screen=home" variant="ghost">
               กลับหน้าหลัก
             </CwButtonLink>
@@ -178,13 +185,13 @@ export function RefundScreen({
     }
     // DUPLICATE
     return (
-      <ResultShell emoji="🔁" tone="danger" title="รูปนี้ถูกใช้ขอคืนไปแล้ว">
-        <p className="text-[14px]" style={{ color: "var(--cw-text-2)" }}>
-          กรุณาถ่ายรูปหน้าจอตู้ใหม่สำหรับการขอคืนครั้งนี้
+      <ResultShell emoji="🔁" tone="info" title="รูปนี้ใช้ขอคืนไปแล้ว">
+        <p className="text-[14px] leading-relaxed" style={{ color: "var(--cw-text-2)" }}>
+          แต่ละครั้งใช้รูปหน้าจอใหม่นะ ถ้าตู้มีปัญหาอีกครั้ง ถ่ายรูปจอใหม่แล้วส่งได้เลย
         </p>
         <div className="mt-5">
           <button type="button" className="cw-btn" style={{ width: "100%" }} onClick={resetPhoto}>
-            ถ่ายใหม่
+            ถ่ายรูปใหม่
           </button>
         </div>
       </ResultShell>
@@ -193,16 +200,17 @@ export function RefundScreen({
 
   // ---------- FORM ----------
   return (
-    <div className="mx-auto w-full max-w-md pb-10">
-      <CwHeader title="ขอคืนเงิน (ตู้มีปัญหา)" />
+    <div className="mx-auto w-full max-w-md pb-28">
+      <CwHeader title="ขอคืนแต้ม (ตู้มีปัญหา)" />
 
       <div className="space-y-4 px-4">
         {machine ? (
           <div
-            className="rounded-xl px-3 py-2 text-[13px] font-semibold"
+            className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-[13px] font-semibold"
             style={{ background: "var(--cw-info-soft)", color: "var(--cw-teal)" }}
           >
-            ตู้: {machine.machineCode}
+            <span aria-hidden>🎰</span>
+            ตู้ {machine.machineCode}
             {machine.branchName ? ` · สาขา ${machine.branchName}` : ""}
           </div>
         ) : null}
@@ -213,20 +221,54 @@ export function RefundScreen({
             style={{ background: "var(--cw-pending-soft)", color: "var(--cw-brand-700)" }}
           >
             ต้องยอมรับเงื่อนไขก่อนขอคืน —{" "}
-            <a className="underline" href="/liff/clawhub?screen=register">
+            <a className="font-bold underline" href="/liff/clawhub?screen=register">
               กดที่นี่
             </a>
           </div>
         ) : null}
 
-        {/* photo */}
+        {/* STEP 1 — branch code (REQUIRED) */}
         <div className="cw-card p-4">
-          <div className="text-[14px] font-bold" style={{ color: "var(--cw-text)" }}>
-            1. ถ่ายรูปหน้าจอตู้
+          <div className="flex items-center gap-2.5">
+            <span className="cw-step">1</span>
+            <div>
+              <label htmlFor="rf-branch" className="block text-[14.5px] font-bold" style={{ color: "var(--cw-text)" }}>
+                เลขสาขา 7-11 ที่ตั้งตู้
+              </label>
+              <p className="text-[12px]" style={{ color: "var(--cw-text-3)" }}>
+                ดูที่หน้าร้าน 7-11 (ตัวเลข 5 หลัก เช่น 00024)
+              </p>
+            </div>
           </div>
-          <p className="mt-0.5 text-[12.5px]" style={{ color: "var(--cw-text-3)" }}>
-            ให้เห็นตัวเลขบนจอ LCD สีฟ้าชัด ๆ
-          </p>
+          <input
+            id="rf-branch"
+            type="text"
+            inputMode="numeric"
+            value={branchCode}
+            onChange={(e) => setBranchCode(e.target.value)}
+            placeholder="เช่น 00024"
+            className="cw-input cw-tnum mt-3"
+          />
+          <CwExample
+            src="/clawhub/example-7eleven-branch.jpg"
+            label="ดูตัวอย่าง: หารหัสสาขาตรงไหน"
+            alt="ตัวอย่างป้ายหน้าร้าน 7-11 ที่แสดงรหัสสาขาและชื่อสาขา"
+          />
+        </div>
+
+        {/* STEP 2 — photo */}
+        <div className="cw-card p-4">
+          <div className="flex items-center gap-2.5">
+            <span className="cw-step">2</span>
+            <div>
+              <div className="text-[14.5px] font-bold" style={{ color: "var(--cw-text)" }}>
+                ถ่ายรูปหน้าจอตู้
+              </div>
+              <p className="text-[12px]" style={{ color: "var(--cw-text-3)" }}>
+                ให้เห็นตัวเลขบนจอ LCD สีฟ้าชัด ๆ
+              </p>
+            </div>
+          </div>
 
           <input
             ref={fileRef}
@@ -258,24 +300,34 @@ export function RefundScreen({
           ) : (
             <button
               type="button"
-              className="mt-3 flex w-full flex-col items-center justify-center gap-1 rounded-xl py-7"
+              className="cw-tap mt-3 flex w-full flex-col items-center justify-center gap-1.5 rounded-xl py-8"
               style={{ background: "var(--cw-bg-3)", border: "1.5px dashed var(--cw-border-strong)" }}
               onClick={() => fileRef.current?.click()}
             >
-              <span className="text-3xl">📸</span>
-              <span className="text-[14px] font-semibold" style={{ color: "var(--cw-brand-700)" }}>
+              <span className="text-4xl">📸</span>
+              <span className="text-[14.5px] font-bold" style={{ color: "var(--cw-brand-700)" }}>
                 แตะเพื่อถ่ายรูป
               </span>
             </button>
           )}
+
+          <CwExample
+            src="/clawhub/example-machine-screen.jpg"
+            label="ถ่ายหน้าจอเครื่องแบบนี้"
+            alt="ตัวอย่างหน้าจอ LCD ของเครื่อง แสดง Credit / Time / Price / Add up"
+          />
         </div>
 
-        {/* baht */}
+        {/* STEP 3 — baht */}
         <div className="cw-card p-4">
-          <label className="text-[14px] font-bold" style={{ color: "var(--cw-text)" }}>
-            2. จำนวนเงินที่หยอด (บาท)
-          </label>
+          <div className="flex items-center gap-2.5">
+            <span className="cw-step">3</span>
+            <label htmlFor="rf-baht" className="text-[14.5px] font-bold" style={{ color: "var(--cw-text)" }}>
+              จำนวนเงินที่หยอด (บาท)
+            </label>
+          </div>
           <input
+            id="rf-baht"
             type="number"
             inputMode="numeric"
             min={1}
@@ -283,13 +335,8 @@ export function RefundScreen({
             value={baht}
             onChange={(e) => setBaht(e.target.value)}
             placeholder="เช่น 50"
-            className="cw-tnum mt-2 w-full rounded-xl px-4 text-[18px] font-bold"
-            style={{
-              height: "var(--cw-touch)",
-              background: "var(--cw-bg-2)",
-              border: "1px solid var(--cw-border-strong)",
-              color: "var(--cw-text)",
-            }}
+            className="cw-input cw-tnum mt-3 font-bold"
+            style={{ fontSize: 20 }}
           />
         </div>
 
@@ -302,6 +349,17 @@ export function RefundScreen({
           </div>
         ) : null}
 
+        <a
+          href={`tel:${SUPPORT_PHONE}`}
+          className="block text-center text-[12.5px] underline"
+          style={{ color: "var(--cw-text-3)" }}
+        >
+          มีปัญหา? โทรหาทีมงาน {SUPPORT_PHONE}
+        </a>
+      </div>
+
+      {/* sticky primary action */}
+      <div className="cw-stickybar mx-auto max-w-md">
         <button
           type="button"
           className="cw-btn"
@@ -311,9 +369,6 @@ export function RefundScreen({
         >
           {busy ? "กำลังตรวจสอบ..." : "ส่งขอคืนแต้ม"}
         </button>
-        <a href={`tel:${SUPPORT_PHONE}`} className="block text-center text-[12.5px] underline" style={{ color: "var(--cw-text-3)" }}>
-          มีปัญหา? โทรหาทีมงาน {SUPPORT_PHONE}
-        </a>
       </div>
     </div>
   );
@@ -323,11 +378,13 @@ function ResultShell({
   emoji,
   title,
   tone,
+  pop,
   children,
 }: {
   emoji: string;
   title: string;
-  tone: "ok" | "pending" | "danger";
+  tone: "ok" | "pending" | "danger" | "info";
+  pop?: boolean;
   children: React.ReactNode;
 }) {
   const bg =
@@ -335,16 +392,24 @@ function ResultShell({
       ? "var(--cw-ok-soft)"
       : tone === "pending"
         ? "var(--cw-pending-soft)"
-        : "var(--cw-danger-soft)";
+        : tone === "info"
+          ? "var(--cw-info-soft)"
+          : "var(--cw-danger-soft)";
   return (
     <div className="mx-auto w-full max-w-md pb-10">
-      <CwHeader title="ขอคืนเงิน" />
+      <CwHeader title="ขอคืนแต้ม" back />
       <div className="px-4">
         <div className="cw-card p-6 text-center">
-          <div className="mx-auto grid size-16 place-items-center rounded-2xl text-4xl" style={{ background: bg }}>
+          <div
+            className={`mx-auto grid size-20 place-items-center rounded-3xl text-5xl ${pop ? "cw-pop" : ""}`}
+            style={{ background: bg }}
+          >
             {emoji}
           </div>
-          <h2 className="mt-3 text-[20px] font-extrabold" style={{ color: "var(--cw-text)", letterSpacing: "-0.02em" }}>
+          <h2
+            className="mt-4 text-[24px] font-extrabold"
+            style={{ color: tone === "ok" ? "var(--cw-brand-700)" : "var(--cw-text)", letterSpacing: "-0.02em" }}
+          >
             {title}
           </h2>
           <div className="mt-2">{children}</div>
