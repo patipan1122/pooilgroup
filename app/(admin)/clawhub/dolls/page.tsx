@@ -11,6 +11,7 @@ import {
   type RewardFormValue,
   type CfProductOption,
 } from "./_reward-editor";
+import { BulkRewardUploaderButton } from "./_bulk-reward-uploader";
 import { ActiveToggle } from "./_active-toggle";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +48,12 @@ export default async function ClawhubDollsPage() {
         title="ตุ๊กตา"
         accent="รางวัล"
         subtitle="ของที่ลูกค้าแลกด้วยแต้ม · เว้นสต็อกว่าง = ไม่จำกัด"
-        right={<RewardEditorButton cfProducts={cfProducts} label="+ เพิ่มตุ๊กตา" />}
+        right={
+          <div className="flex flex-wrap items-center gap-2">
+            <BulkRewardUploaderButton label="เพิ่มหลายตัว" />
+            <RewardEditorButton cfProducts={cfProducts} label="+ เพิ่มตุ๊กตา" />
+          </div>
+        }
       />
 
       {rewards.length === 0 ? (

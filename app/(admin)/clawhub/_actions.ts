@@ -315,6 +315,44 @@ export async function uploadRewardImageAction(
   }
 }
 
+/**
+ * Bulk-create rewards in one shot. The client uploads each image individually via
+ * uploadRewardImageAction (small per-call payloads → no body-size limit), then sends
+ * only the lightweight metadata (name/imageUrl/points/stock) here. createMany keeps
+ * it to a single round-trip. Used by the "เพิ่มหลายตัว" multi-upload flow.
+ */
+const bulkItemSchema = z.object({
+  name: z.string().trim().min(1, "ต้องมีชื่อ").max(120),
+  imageUrl: z.string().trim().max(600).optional().or(z.literal("")),
+  pointsPrice: z.coerce.number().int().min(1, "ราคาแต้มต้อง ≥ 1"),
+  stock: z.union([z.coerce.number().int().min(0), z.literal(""), z.null()]).optional(),
+});
+const bulkSchema = z.object({ items: z.array(bulkItemSchema).min(1).max(50) });
+
+export async function createRewardsBulkAction(
+  raw: unknown,
+): Promise<{ ok: true; created: number } | { ok: false; error: string }> {
+  await authorizeAction();
+  const orgId = await clawhubOrgId();
+  const parsed = bulkSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: firstZodError(parsed.error) };
+
+  await prisma.clawhubReward.createMany({
+    data: parsed.data.items.map((d, i) => ({
+      orgId,
+      name: d.name,
+      imageUrl: emptyToNull(d.imageUrl),
+      pointsPrice: d.pointsPrice,
+      stock: normStock(d.stock),
+      isActive: true,
+      sortOrder: i,
+    })),
+  });
+
+  revalidatePath("/clawhub/dolls");
+  return { ok: true, created: parsed.data.items.length };
+}
+
 /* ───────────────────────── Inbox ───────────────────────── */
 
 const replySchema = z.object({
