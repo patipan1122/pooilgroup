@@ -69,10 +69,11 @@ import {
   Receipt,
   Wallet2,
   Landmark,
+  Gift,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
-export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland" | "inbox" | "costctrl" | "hotelbook" | "ledger" | "rentspace";
+export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland" | "inbox" | "costctrl" | "hotelbook" | "ledger" | "rentspace" | "clawhub";
 export type ModuleStatus = "active" | "coming_soon" | "beta";
 
 export interface NavItem {
@@ -1043,6 +1044,67 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: Settings,
         adminOnly: true,
         section: "ตั้งค่า",
+      },
+    ],
+  },
+  clawhub: {
+    slug: "clawhub",
+    name: "JOLLY PLAY",
+    tagline: "ระบบสมาชิก + คืนแต้มตู้คีบ",
+    description:
+      "สมาชิก LINE ตู้คีบการันตี · ลูกค้าขอคืนแต้มเมื่อตู้มีปัญหา (ถ่ายรูป + AI อ่านจอ) · 1 แต้ม = 10 บาท · แลกตุ๊กตา · แต้มหมดอายุ 30 วัน",
+    emoji: "🧸",
+    Icon: Gift,
+    status: "active",
+    basePath: "/clawhub",
+    nav: [
+      {
+        href: "/clawhub/dashboard",
+        label: "ภาพรวม",
+        icon: LayoutDashboard,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer", "program_admin"],
+      },
+      {
+        href: "/clawhub/refunds",
+        label: "ตรวจคำขอคืนแต้ม",
+        icon: TicketCheck,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "program_admin"],
+      },
+      {
+        href: "/clawhub/members",
+        label: "สมาชิก",
+        icon: UsersIcon,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "program_admin"],
+      },
+      {
+        href: "/clawhub/dolls",
+        label: "ตุ๊กตา (รางวัล)",
+        icon: Smile,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "program_admin"],
+      },
+      {
+        href: "/clawhub/redemptions",
+        label: "การแลกของ",
+        icon: Gift,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "program_admin"],
+      },
+      {
+        href: "/clawhub/inbox",
+        label: "กล่องแชท",
+        icon: MessagesSquare,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "program_admin"],
+      },
+      {
+        href: "/clawhub/reports",
+        label: "รายงาน",
+        icon: BarChart3,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer", "program_admin"],
+      },
+      {
+        href: "/clawhub/settings",
+        label: "ตั้งค่า",
+        icon: Settings,
+        adminOnly: true,
       },
     ],
   },

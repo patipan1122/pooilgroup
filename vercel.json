@@ -16,6 +16,8 @@
     { "path": "/api/cron/shortage-digest", "schedule": "0 2 25 * *" },
     { "path": "/api/cron/clawfleet-photo-retention", "schedule": "0 19 * * *" },
     { "path": "/api/cron/clawfleet-session-autoclose", "schedule": "0 23 * * *" },
+    { "path": "/api/cron/clawhub-points-expire", "schedule": "0 1 * * *" },
+    { "path": "/api/cron/clawhub-screenshot-ttl", "schedule": "0 19 * * *" },
     { "path": "/api/playland/cron/expire-sessions", "schedule": "0 21 * * *" },
     { "path": "/api/playland/cron/expire-bookings", "schedule": "5 21 * * *" },
     { "path": "/api/chairops/cron/recompute-drifts", "schedule": "0 22 * * *" },

@@ -13,22 +13,29 @@
 // loginSecretForModule reads a NON-public env and must only run server-side
 // (it returns undefined in the browser — never bundled).
 
-export type LineModule = "ledger" | "default";
+export type LineModule = "ledger" | "clawhub" | "default";
 
 /** Pick the module from a path (used by the shared LIFF bootstrap on /liff/*). */
 export function lineModuleFromPath(path: string | null | undefined): LineModule {
-  return path && path.startsWith("/liff/ledger") ? "ledger" : "default";
+  if (path && path.startsWith("/liff/ledger")) return "ledger";
+  if (path && path.startsWith("/liff/clawhub")) return "clawhub";
+  return "default";
 }
 
 /** Normalise an arbitrary string (URL param / cookie) to a known module. */
 export function asLineModule(v: string | null | undefined): LineModule {
-  return v === "ledger" ? "ledger" : "default";
+  if (v === "ledger") return "ledger";
+  if (v === "clawhub") return "clawhub";
+  return "default";
 }
 
 /** The LIFF app id for a module (PUBLIC — safe in client). */
 export function liffIdForModule(m: LineModule): string | undefined {
   if (m === "ledger") {
     return process.env.NEXT_PUBLIC_LEDGER_LIFF_ID || process.env.NEXT_PUBLIC_LIFF_ID;
+  }
+  if (m === "clawhub") {
+    return process.env.NEXT_PUBLIC_CLAWHUB_LIFF_ID || process.env.NEXT_PUBLIC_LIFF_ID;
   }
   return process.env.NEXT_PUBLIC_LIFF_ID;
 }
@@ -45,6 +52,12 @@ export function loginSecretForModule(m: LineModule): string | undefined {
   if (m === "ledger") {
     return (
       process.env.LEDGER_LINE_LOGIN_CHANNEL_SECRET ||
+      process.env.CHAIROPS_LINE_LOGIN_CHANNEL_SECRET
+    );
+  }
+  if (m === "clawhub") {
+    return (
+      process.env.CLAWHUB_LINE_LOGIN_CHANNEL_SECRET ||
       process.env.CHAIROPS_LINE_LOGIN_CHANNEL_SECRET
     );
   }

@@ -51,6 +51,18 @@ export function LiffBootstrap({
   const [errMsg, setErrMsg] = useState<string>("");
 
   useEffect(() => {
+    // ClawHub (JOLLY PLAY) customer pages own their OWN LIFF lifecycle inside
+    // ClawhubProvider (components/clawhub/customer/liff-context): a customer is a
+    // ClawhubMember keyed by the verified LINE id, NOT a Pool user, so it must NEVER
+    // run the line-login → Supabase magic-link flow below (that would self-register
+    // junk ChairOps maids and mint a wrong session). Additive early-return: leaves
+    // every other module's behaviour untouched. See lib/clawhub/verify-member.ts.
+    if (
+      typeof window !== "undefined" &&
+      lineModuleFromPath(window.location.pathname) === "clawhub"
+    ) {
+      return;
+    }
     // Ledger invite/claim is handled INLINE (JoinClient rendered below) — skip the
     // whole line-login flow so nothing races the bind / re-triggers liff.state.
     if (ledgerInvite) return;

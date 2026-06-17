@@ -6388,3 +6388,242 @@ model RentalDocument {
   @@map("rental_document")
   @@schema("public")
 }
+
+// =============================================================
+// CLAWHUB — JOLLY PLAY (B2C LINE membership for claw machines)
+// ตู้คีบการันตี · สมาชิก LINE → ขอคืนแต้ม (ถ่ายรูปจอตู้ + กรอกยอด) → AI ครอสเช็ก
+// → ได้แต้ม (1 แต้ม = 10 บาท) → แลกตุ๊กตา · แต้มหมดอายุ 30 วัน · คืนสูงสุด 250฿/ครั้ง
+//
+// SOFT references only: orgId/machineId/branchId/productId are plain Uuid + denorm
+// snapshots (machineCode/productName/...) — NO Prisma relations to Organization,
+// CfMachine, or CfProduct (additive-only; do not touch those models).
+// Relations exist ONLY among Clawhub* models below.
+// =============================================================
+
+enum ClawhubPointKind {
+  EARN_REFUND // ได้แต้มจากการคืน (เป็น lot · มี remainingPoints + expiresAt)
+  REDEEM // ใช้แต้มแลกของ
+  EXPIRE // แต้มหมดอายุ
+  ADJUST // ปรับมือ (admin)
+
+  @@schema("public")
+}
+
+enum ClawhubRefundStatus {
+  AUTO_APPROVED // อนุมัติอัตโนมัติ (คืนครั้งแรก + รูปชัด + ยอดตรง)
+  PENDING_REVIEW // รอแอดมินตรวจ
+  APPROVED // แอดมินอนุมัติ
+  REJECTED // แอดมินปฏิเสธ
+
+  @@schema("public")
+}
+
+enum ClawhubRedemptionStatus {
+  PENDING // รอรับของ
+  FULFILLED // รับของแล้ว
+  CANCELLED // ยกเลิก
+
+  @@schema("public")
+}
+
+enum ClawhubConvStatus {
+  OPEN
+  SNOOZED
+  CLOSED
+
+  @@schema("public")
+}
+
+enum ClawhubMsgDirection {
+  IN // ลูกค้า → ระบบ
+  OUT // ระบบ/บอท/แอดมิน → ลูกค้า
+
+  @@schema("public")
+}
+
+enum ClawhubMsgKind {
+  TEXT
+  IMAGE
+  STICKER
+  SYSTEM
+
+  @@schema("public")
+}
+
+// CH.1 — clawhub_members (สมาชิก LINE)
+model ClawhubMember {
+  id             String    @id @default(uuid()) @db.Uuid
+  orgId          String    @map("org_id") @db.Uuid
+  externalLineId String    @map("external_line_id") // LINE userId
+  displayName    String?   @map("display_name")
+  pictureUrl     String?   @map("picture_url")
+  phone          String?
+  memberCode     String    @unique @map("member_code") // CH-YYYY-NNNN
+  pointsBalance  Int       @default(0) @map("points_balance") // cached · source of truth = unexpired EARN lots
+  refundCount    Int       @default(0) @map("refund_count")
+  firstRefundAt  DateTime? @map("first_refund_at") @db.Timestamptz(6)
+  lastRefundAt   DateTime? @map("last_refund_at") @db.Timestamptz(6)
+  consentAt      DateTime? @map("consent_at") @db.Timestamptz(6)
+  retentionUntil DateTime? @map("retention_until") @db.Timestamptz(6) // PDPA
+  blockedAt      DateTime? @map("blocked_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  pointEntries   ClawhubPointEntry[]
+  refundRequests ClawhubRefundRequest[]
+  redemptions    ClawhubRedemption[]
+
+  @@unique([orgId, externalLineId])
+  @@index([orgId])
+  @@map("clawhub_members")
+  @@schema("public")
+}
+
+// CH.2 — clawhub_point_entries (append-only ledger + FIFO lots)
+model ClawhubPointEntry {
+  id              String           @id @default(uuid()) @db.Uuid
+  orgId           String           @map("org_id") @db.Uuid
+  memberId        String           @map("member_id") @db.Uuid
+  delta           Int // + earn, - redeem/expire
+  kind            ClawhubPointKind
+  remainingPoints Int              @default(0) @map("remaining_points") // for EARN lots: how many still unspent
+  refType         String?          @map("ref_type") // "refund" | "redemption" | "manual"
+  refId           String?          @map("ref_id") @db.Uuid
+  note            String?
+  expiresAt       DateTime?        @map("expires_at") @db.Timestamptz(6) // EARN lots only
+  expiredAt       DateTime?        @map("expired_at") @db.Timestamptz(6) // set when lot fully expired
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  member ClawhubMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, memberId])
+  @@index([expiresAt])
+  @@map("clawhub_point_entries")
+  @@schema("public")
+}
+
+// CH.3 — clawhub_refund_requests (คำขอคืนแต้ม)
+model ClawhubRefundRequest {
+  id               String              @id @default(uuid()) @db.Uuid
+  orgId            String              @map("org_id") @db.Uuid
+  memberId         String              @map("member_id") @db.Uuid
+  machineId        String?             @map("machine_id") @db.Uuid // soft ref to cf_machines
+  machineCode      String?             @map("machine_code") // denorm snapshot
+  machineQrToken   String?             @map("machine_qr_token")
+  branchId         String?             @map("branch_id") @db.Uuid // soft ref
+  claimedBaht      Int                 @map("claimed_baht") // ลูกค้ากรอกเอง
+  aiReadBaht       Int?                @map("ai_read_baht") // ที่ AI คำนวณจากจอ
+  aiAddUp          Int?                @map("ai_add_up") // ค่า "Add up:" บนจอ (เหรียญ)
+  aiPrice          Int?                @map("ai_price") // ค่า "Price:" บนจอ
+  aiCredit         Int?                @map("ai_credit") // ค่า "Credit" บนจอ
+  aiRawText        String?             @map("ai_raw_text") // ข้อความดิบจาก AI (audit)
+  aiConfidence     Decimal?            @map("ai_confidence") @db.Decimal(4, 3) // 0..1
+  screenshotR2Key  String              @map("screenshot_r2_key")
+  screenshotSha256 String              @map("screenshot_sha256")
+  pointsAwarded    Int                 @default(0) @map("points_awarded")
+  status           ClawhubRefundStatus @default(PENDING_REVIEW)
+  decisionReason   String?             @map("decision_reason")
+  reviewedById     String?             @map("reviewed_by_id") @db.Uuid
+  reviewedAt       DateTime?           @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote       String?             @map("review_note")
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  member ClawhubMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, screenshotSha256]) // dedup: รูปเดียวกันขอซ้ำไม่ได้
+  @@index([orgId, status])
+  @@index([orgId, createdAt])
+  @@map("clawhub_refund_requests")
+  @@schema("public")
+}
+
+// CH.4 — clawhub_redemptions (แลกของ · ตุ๊กตาเท่านั้น)
+model ClawhubRedemption {
+  id              String                  @id @default(uuid()) @db.Uuid
+  orgId           String                  @map("org_id") @db.Uuid
+  memberId        String                  @map("member_id") @db.Uuid
+  rewardId        String?                 @map("reward_id") @db.Uuid // soft ref to clawhub_rewards
+  productId       String?                 @map("product_id") @db.Uuid // soft ref to cf_products
+  productSku      String?                 @map("product_sku") // denorm snapshot
+  productName     String?                 @map("product_name")
+  productImageUrl String?                 @map("product_image_url")
+  pointsSpent     Int                     @map("points_spent")
+  status          ClawhubRedemptionStatus @default(PENDING)
+  pickupCode      String                  @map("pickup_code")
+  fulfilledById   String?                 @map("fulfilled_by_id") @db.Uuid
+  fulfilledAt     DateTime?               @map("fulfilled_at") @db.Timestamptz(6)
+  note            String?
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  member ClawhubMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, status])
+  @@map("clawhub_redemptions")
+  @@schema("public")
+}
+
+// CH.5 — clawhub_conversations (กล่องแชท LINE · reuse inbox pattern)
+model ClawhubConversation {
+  id              String            @id @default(uuid()) @db.Uuid
+  orgId           String            @map("org_id") @db.Uuid
+  lineUserId      String            @map("line_user_id")
+  memberId        String?           @map("member_id") @db.Uuid // soft ref to clawhub_members
+  displayName     String?           @map("display_name")
+  pictureUrl      String?           @map("picture_url")
+  lastMessageText String?           @map("last_message_text")
+  lastMessageAt   DateTime?         @map("last_message_at") @db.Timestamptz(6)
+  unreadCount     Int               @default(0) @map("unread_count")
+  botEnabled      Boolean           @default(true) @map("bot_enabled")
+  status          ClawhubConvStatus @default(OPEN)
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  messages ClawhubMessage[]
+
+  @@unique([orgId, lineUserId])
+  @@index([orgId, lastMessageAt])
+  @@map("clawhub_conversations")
+  @@schema("public")
+}
+
+// CH.6 — clawhub_messages (ข้อความในกล่องแชท)
+model ClawhubMessage {
+  id             String              @id @default(uuid()) @db.Uuid
+  orgId          String              @map("org_id") @db.Uuid
+  conversationId String              @map("conversation_id") @db.Uuid
+  externalId     String?             @map("external_id") // LINE message id · idempotency
+  direction      ClawhubMsgDirection
+  kind           ClawhubMsgKind      @default(TEXT)
+  text           String?
+  r2Key          String?             @map("r2_key")
+  byBot          Boolean             @default(false) @map("by_bot")
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  conversation ClawhubConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, externalId])
+  @@index([conversationId, createdAt])
+  @@map("clawhub_messages")
+  @@schema("public")
+}
+
+// CH.7 — clawhub_rewards (แคตตาล็อกของรางวัล · ตุ๊กตาที่แลกได้)
+// SOFT ref to cf_products (productId) — denorm snapshot copied onto each redemption.
+model ClawhubReward {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  productId   String?  @map("product_id") @db.Uuid // soft ref to cf_products
+  sku         String?
+  name        String
+  imageUrl    String?  @map("image_url")
+  pointsPrice Int      @map("points_price")
+  stock       Int? // null = unlimited
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([orgId, isActive])
+  @@map("clawhub_rewards")
+  @@schema("public")
+}
