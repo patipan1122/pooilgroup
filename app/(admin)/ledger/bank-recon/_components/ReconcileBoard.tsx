@@ -1144,99 +1144,59 @@ function RowMenu({ isCredit, pending, onTransfer, onCreateBook, onExclude, onEdi
   );
 }
 
-// แถวคู่ที่จับ (รอยืนยัน) — กระชับแถวเดียว: ● ความมั่นใจ · บัญชี ฿ → ธนาคาร +฿ · ส่วนต่าง · นำออก
-// กดที่แถว (หรือลูกศร) = กางดูรายละเอียดเต็มเหมือนการ์ดเดิม (GroupSide → statement ครบ: อ้างอิง/คงเหลือ/value date/ที่มา/วันบิล)
+// แถวคู่ที่จับ (รอยืนยัน) — กระชับ ~2 บรรทัด: หัวแถว (ความมั่นใจ · ประเภท · ส่วนต่าง · นำออก)
+// + 2 คอลัมน์ บัญชี | ธนาคาร โชว์รายละเอียดครบเสมอ (ไม่ต้องกดขยาย): ชื่อ+ช่องทาง+ยอด / อ้างอิง·คงเหลือ·value date·ที่มา·วันบิล
 function ConfidencePairRow({ g, pending, onRemove }: { g: MatchGroup; pending: boolean; onRemove: (id: string) => void }) {
-  const [open, setOpen] = useState(false);
   const band = confidenceBand(g);
   const meta = BAND_META[band];
   const reason = bandReason(g);
   const t = groupType(g);
   const bookItems = g.items.filter((i) => i.kind === "book");
   const bankItems = g.items.filter((i) => i.kind === "bank");
-  const bookName = pairName(bookItems, (i) => i.customerName || i.vendor || i.label || i.bookDocNo || "—");
-  const bankName = pairName(bankItems, (i) => i.label || "—");
   return (
-    <div className="overflow-hidden rounded-xl border border-zinc-100 bg-white">
-      <div className="flex items-center gap-2 px-3 py-2">
-        {/* แถวกระชับ — กดทั้งแถวเพื่อกาง/ยุบรายละเอียด */}
-        <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
-          className={`flex min-w-0 flex-1 items-center gap-2 text-left ${FOCUS}`}>
-          <ChevronRight size={15} className={`shrink-0 text-zinc-300 transition-transform ${open ? "rotate-90" : ""}`} aria-hidden />
-          <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${meta.pill}`}>
-            <span className={`size-1.5 rounded-full ${meta.dot}`} aria-hidden /> {meta.label}
+    <div className="rounded-xl border border-zinc-100 bg-white px-3 py-2">
+      {/* หัวแถวกระชับ — ความมั่นใจ + ประเภท + ส่วนต่าง + นำออก */}
+      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+        <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${meta.pill}`}>
+          <span className={`size-1.5 rounded-full ${meta.dot}`} aria-hidden /> {meta.label}
+        </span>
+        {t && <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${t.cls}`}>{t.label}</span>}
+        {g.deltaSatang !== 0 && (
+          <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium tabular-num text-amber-700">
+            ต่าง ฿{baht(Math.abs(g.deltaSatang))}
           </span>
-          {t && <span className={`hidden shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold sm:inline ${t.cls}`}>{t.label}</span>}
-          {/* บัญชี → ธนาคาร บนบรรทัดเดียว (ตัดข้อความถ้ายาว) */}
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="min-w-0 flex-1 truncate text-xs text-zinc-700">{bookName}</span>
-            <PairAmount satang={g.bookTotalSatang} muted />
-            <span className="shrink-0 text-zinc-300" aria-hidden>→</span>
-            <span className="min-w-0 flex-1 truncate text-xs text-zinc-700">{bankName}</span>
-            <PairAmount satang={g.bankTotalSatang} />
-          </span>
-          {g.deltaSatang !== 0 && (
-            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium tabular-num text-amber-700">
-              ต่าง ฿{baht(Math.abs(g.deltaSatang))}
-            </span>
-          )}
-        </button>
+        )}
+        <span className="text-[11px] text-zinc-400">{g.matchKind === "auto" ? "จับคู่อัตโนมัติ" : "จับคู่เอง"}</span>
         <button type="button" onClick={() => onRemove(g.id)} disabled={pending}
-          className={`inline-flex shrink-0 items-center gap-1 rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-50 disabled:opacity-50 ${FOCUS}`}>
-          <Trash2 size={12} /> <span className="hidden sm:inline">นำออก</span>
+          className={`ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-50 disabled:opacity-50 ${FOCUS}`}>
+          <Trash2 size={12} /> นำออก
         </button>
       </div>
-      {/* กางดู — รายละเอียดเต็มเหมือนการ์ดเดิมทุกตัว (ข้อมูลไม่หาย แค่ซ่อนไว้จนกดดู) */}
-      {open && (
-        <div className="border-t border-zinc-50 px-3 pb-3 pt-2.5">
-          <p className="mb-1.5 text-[11px] text-zinc-400">{g.matchKind === "auto" ? "จับคู่อัตโนมัติ" : "จับคู่เอง"}</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <GroupSide title="บัญชี (ที่เราบันทึก)" items={bookItems} accent="brand" />
-            <GroupSide title="ธนาคาร (เงินเข้าจริง)" items={bankItems} accent="emerald" />
-          </div>
-          {reason && (
-            <p className={`mt-2.5 flex items-center gap-1.5 text-[11px] ${band === "low" ? "text-rose-600" : "text-amber-600"}`}>
-              <AlertTriangle size={12} className="shrink-0" /> {reason}
-            </p>
-          )}
-        </div>
+      {/* รายละเอียดครบทั้ง 2 ฝั่ง — โชว์เสมอ ไม่ต้องกดขยาย */}
+      <div className="grid gap-x-3 gap-y-1 sm:grid-cols-2">
+        <GroupSide title="บัญชี" items={bookItems} accent="brand" />
+        <GroupSide title="ธนาคาร" items={bankItems} accent="emerald" />
+      </div>
+      {reason && (
+        <p className={`mt-1.5 flex items-center gap-1.5 text-[11px] ${band === "low" ? "text-rose-600" : "text-amber-600"}`}>
+          <AlertTriangle size={12} className="shrink-0" /> {reason}
+        </p>
       )}
     </div>
   );
 }
 
-// ชื่อย่อในแถวกระชับ — ใช้รายการแรก + "+N" ถ้ากลุ่มมีหลายรายการ
-function pairName(items: GroupItem[], pick: (i: GroupItem) => string): string {
-  if (items.length === 0) return "—";
-  const base = pick(items[0]);
-  return items.length > 1 ? `${base} +${items.length - 1}` : base;
-}
-
-// ยอดเงินกระชับ — muted (ฝั่งบัญชี) โทนเทาไม่ใส่เครื่องหมาย · ปกติ (ฝั่งธนาคาร) เขียวเข้า/แดงออก
-function PairAmount({ satang, muted }: { satang: number; muted?: boolean }) {
-  if (muted) return <span className="shrink-0 text-xs font-medium tabular-num text-zinc-700">฿{baht(Math.abs(satang))}</span>;
-  const credit = satang >= 0;
-  return (
-    <span className={`shrink-0 text-xs font-medium tabular-num ${credit ? "text-emerald-600" : "text-rose-600"}`}>
-      {credit ? "+" : "−"}฿{baht(Math.abs(satang))}
-    </span>
-  );
-}
-
 function GroupSide({ title, items, accent }: { title: string; items: GroupItem[]; accent: Accent }) {
   return (
-    <div>
-      <p className={`mb-1 text-[11px] font-semibold ${accentText(accent)}`}>{title}</p>
-      <div className="space-y-1">
-        {items.map((i, idx) => <GroupItemRow key={idx} i={i} />)}
-      </div>
+    <div className="min-w-0 space-y-1">
+      {items.map((i, idx) => <GroupItemRow key={idx} i={i} title={idx === 0 ? title : undefined} accent={accent} />)}
     </div>
   );
 }
 
 // แสดงรายละเอียดเต็มแบบเดียวกับใบจริง (IV-style): บรรทัดหลัก = ชื่อ/ผู้ขาย/เลขเอกสาร · บรรทัดรอง = ธุรกิจ · ป้ายช่องทาง · รายละเอียด · วันที่
 // ฝั่งธนาคารโชว์ statement ครบ: ชื่อคู่ค้า · ประเภทรายการ · ช่องทาง · วันที่ (+ value date ถ้าต่าง) · เลขอ้างอิง · ยอดคงเหลือ
-function GroupItemRow({ i }: { i: GroupItem }) {
+function GroupItemRow({ i, title, accent }: { i: GroupItem; title?: string; accent?: Accent }) {
   const credit = i.amountSatang > 0;
   const isBank = i.kind === "bank";
   // บรรทัดหลัก
@@ -1245,38 +1205,33 @@ function GroupItemRow({ i }: { i: GroupItem }) {
     : (i.customerName || i.vendor || i.label || i.bookDocNo || "—");
   // ป้ายช่องทาง — revenue ใช้สีตามประเภท (เงินสด/QR/บัตร) · ธนาคารใช้ช่องทางจริงจาก statement (Mobile/EDC/MYQR) โทนกลาง
   const ch = !isBank && i.bookType === "revenue" ? i.paymentChannel : null;
-  // บรรทัดรอง
-  const bits = isBank
+  // รายละเอียดรอง — รวมเป็นบรรทัดเดียว (รอง + อ้างอิง/คงเหลือ ฝั่งธนาคาร) โชว์ครบไม่ตัด
+  const detail = (isBank
     ? [
         i.bankTxnType && i.bankTxnType !== primary ? i.bankTxnType : null,
         i.date,
         i.bankValueDate && i.bankValueDate !== i.date ? `เงินเข้า ${i.bankValueDate}` : null,
-      ].filter((b): b is string => Boolean(b))
+        i.bankRef1 ? `อ้างอิง ${i.bankRef1}` : null,
+        i.bankBalanceSatang != null ? `คงเหลือ ฿${baht(i.bankBalanceSatang)}` : null,
+      ]
     : [
         i.bookType === "revenue" && i.sourceType ? bizLabel(i.sourceType) : null,
         i.bookType === "expense" && i.vendor && i.vendor !== primary ? i.vendor : null,
         i.detailLine,
         i.bizDate,
-      ].filter((b): b is string => Boolean(b));
-  const secondary = bits.join(" · ");
-  // บรรทัดอ้างอิง (ฝั่งธนาคารเท่านั้น) — เลขอ้างอิง + ยอดคงเหลือ คือกุญแจไล่หาบรรทัดเป๊ะในแอปธนาคาร
-  const bankMeta = isBank
-    ? [
-        i.bankRef1 ? `อ้างอิง ${i.bankRef1}` : null,
-        i.bankBalanceSatang != null ? `คงเหลือ ฿${baht(i.bankBalanceSatang)}` : null,
-      ].filter((b): b is string => Boolean(b))
-    : [];
+      ]
+  ).filter((b): b is string => Boolean(b)).join("  ·  ");
   return (
-    <div className="rounded-lg bg-zinc-50 px-2.5 py-1.5">
+    <div className="rounded-md bg-zinc-50 px-2 py-1">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+            {title && <span className={`shrink-0 text-[10px] font-semibold ${accentText(accent ?? "brand")}`}>{title}</span>}
             <p className="min-w-0 truncate text-xs font-medium text-zinc-700">{primary}</p>
             {ch && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${CHANNEL_STYLE[ch] ?? "bg-zinc-100 text-zinc-500"}`}>{chLabel(ch)}</span>}
             {isBank && i.bankChannel && <span className="shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500">{i.bankChannel}</span>}
           </div>
-          {secondary && <p className="truncate text-[11px] text-zinc-400">{secondary}</p>}
-          {bankMeta.length > 0 && <p className="truncate text-[11px] tabular-num text-zinc-400">{bankMeta.join("  ·  ")}</p>}
+          {detail && <p className="text-[11px] leading-snug text-zinc-400">{detail}</p>}
         </div>
         <span className={`shrink-0 text-xs font-medium tabular-num ${credit ? "text-emerald-600" : "text-rose-600"}`}>
           {credit ? "+" : "−"}฿{baht(i.amountSatang)}
