@@ -436,8 +436,11 @@ export function AdminShell({
           via dismiss button.
           ซ่อนบนโมดูล ledger: การ์ดนี้ถือ approval ของ CashHub/คำขอเข้าร่วม ซึ่งไม่
           เกี่ยวกับงานบัญชี — บนหน้า ledger มันซ้อนแถบฟ้าทับ "งานที่ต้องทำ" ของ
-          ledger เอง (impeccable critique 2026-06-10: blue-bar overload). */}
-      {isAdmin && activeModuleSlug !== "ledger" && (
+          ledger เอง (impeccable critique 2026-06-10: blue-bar overload).
+          ซ่อนบนหน้ากล่องแชท FuelOS ด้วย: หน้านี้เป็น layout เต็มจอ (หัว/ข้อความ/
+          ช่องพิมพ์) — แถบฟ้าที่แทรกเหนือ main จะดันความสูงเพี้ยน ทำให้หัว+ช่องพิมพ์
+          ไม่ตรึง + เป็น approval ข้ามโมดูล ไม่เกี่ยวกับงานแชท. */}
+      {isAdmin && activeModuleSlug !== "ledger" && pathname !== "/fuelos/inbox" && (
         <QuickApproveBar
           pendingCashReports={navCounts.pendingCashReports ?? 0}
           pendingRegisterRequests={navCounts.pendingRegisterRequests ?? 0}

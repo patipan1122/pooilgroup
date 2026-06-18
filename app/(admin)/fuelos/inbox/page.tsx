@@ -104,8 +104,13 @@ export default async function InboxPage({
 
   const convLabels = conv ? conv.labels.map((l) => l.label) : [];
 
+  // ความสูงตายตัวอิง viewport (topnav = 3.5rem มือถือ / 4rem จอใหญ่) แทน flex-1:
+  // AdminShell ตัวนอกเป็น min-h-screen (ความสูงไม่นิ่ง) → flex-1 basis 0% จะถูกมองเป็น
+  // auto แล้วยืดตามจำนวนข้อความ ทำให้ทั้งหน้าโตเกินจอ → body เลื่อน → หัว/ช่องพิมพ์หลุด
+  // ไม่ตรึง. ตรึงความสูงไว้ที่จอ → เลื่อนเฉพาะข้อความด้านใน. (แถบฟ้ารออนุมัติถูกซ่อนบน
+  // หน้านี้แล้วใน AdminShell จึงเหลือหัก topnav อย่างเดียว)
   return (
-    <div className="flex-1 min-h-0 overflow-hidden -mx-4 sm:-mx-6 lg:mx-0">
+    <div className="h-[calc(100dvh-3.5rem)] sm:h-[calc(100dvh-4rem)] overflow-hidden -mx-4 sm:-mx-6 lg:mx-0">
       <div className="lg:grid lg:grid-cols-[360px_1fr] h-full min-h-0">
         {/* LIST */}
         <div className={cn("lg:border-r border-border overflow-y-auto min-h-0 bg-surface", conv && "hidden lg:block")}>
