@@ -2,6 +2,7 @@
 
 // ตารางเต็มแบบ Excel — มิเรอร์สไตล์ hotel-excel-grid (ตรึงหัว+คอลัมน์ซ้าย, ช่องทางแยกทุกช่อง,
 // ช่องสูตร ƒ สีฟ้า, ส่วนต่าง POS↔TRC แดงถ้า≠0, แถวรวมท้าย). 1 วัน = 1 แถว.
+import { useState } from "react";
 import { formatBaht } from "@/lib/utils/format";
 import type { SavedAmazonDay, ReconcileStatus } from "@/lib/cashhub/amazon-data";
 import {
@@ -100,6 +101,10 @@ export function AmazonExcelGrid({
   reconcile,
 }: Props) {
   const data = savedDays;
+  // สวิตช์เปิด/ปิด "ดูไส้ใน" (เหลืองรายช่องทาง) — ปิดได้เวลาอยากดูแบบสะอาด ไม่ลายตา
+  const [showInner, setShowInner] = useState(true);
+  // มีไส้ในให้ดูไหม (ตรวจ TRCloud แล้วอย่างน้อย 1 วัน) → ค่อยโชว์สวิตช์
+  const hasInnerData = data.some((d) => d.iv_channels != null);
   // คำนวณค่าธรรมเนียม/เงินเข้าจริงต่อวัน จาก config
   const configByCvar = new Map(configs.map((c) => [c.cvar, c]));
   const settleByDate = new Map<string, { fee: number; net: number }>();
@@ -125,9 +130,9 @@ export function AmazonExcelGrid({
     const matched = !!c.cvar && hasVal && (rc?.matchedCvars?.includes(c.cvar) ?? false);
     // คอลัมน์ "เงินเข้าจริง" → รุ้งเมื่อวันนั้นแมตช์ครบทุกช่อง
     const settleMatched = !!c.settle && !!rc && rc.n > 0 && rc.nMatched >= rc.n;
-    // ── ไส้ใน: ยอดช่องนี้ในใบกำกับ TRCloud ≠ POS → ทาเหลือง + โชว์ยอดในใบใต้เลข POS ──
+    // ── ไส้ใน: ยอดช่องนี้ในใบกำกับ TRCloud ≠ POS → ตัวหนังสือเหลือง (ไม่ถมพื้น ไม่ลายตา) · ปิดได้ด้วยสวิตช์ ──
     const ivv = c.ivGet ? c.ivGet(d) : null; // null = ยังไม่ตรวจไส้ใน
-    const ivBad = ivv != null && Math.abs(ivv - (v ?? 0)) >= IV_TOL;
+    const ivBad = showInner && ivv != null && Math.abs(ivv - (v ?? 0)) >= IV_TOL;
     const ivDiff = ivBad ? (ivv ?? 0) - (v ?? 0) : 0;
     return (
       <td
@@ -136,8 +141,8 @@ export function AmazonExcelGrid({
           bad
             ? "bg-red-100 font-bold text-red-800"
             : ivBad
-              ? // เหลืองเข้มจัด + กรอบส้ม → เด้งออกแม้อยู่ติดช่องสีรุ้ง (พาสเทล) · iridescent ถูกข้าม (ไม่ทับ)
-                "bg-yellow-300 text-yellow-950 font-bold shadow-[inset_0_0_0_2px_#d97706]"
+              ? // ไส้ในไม่ตรง = ตัวหนังสือเหลืองเข้ม (ไม่ถมพื้น) → อ่านได้บนพื้นขาว/สีรุ้ง · iridescent ถูกข้าม
+                "text-yellow-700 font-bold"
               : matched || settleMatched
                 ? "cell-matched-iridescent"
                 : c.settle
@@ -150,8 +155,8 @@ export function AmazonExcelGrid({
         {ivBad ? (
           <div className="flex flex-col items-end leading-tight">
             <span>{num(v)}</span>
-            <span className="text-[9px] font-bold text-amber-900 whitespace-nowrap">
-              ⚠ IV {num(ivv)} ({ivDiff > 0 ? "+" : "−"}
+            <span className="text-[9px] font-semibold text-yellow-600 whitespace-nowrap">
+              IV {num(ivv)} ({ivDiff > 0 ? "+" : "−"}
               {num(Math.abs(ivDiff))})
             </span>
           </div>
@@ -165,19 +170,19 @@ export function AmazonExcelGrid({
   // คอลัมน์ "ตรง?" — แยก 4 สถานะให้ชัด (เลิกใช้ขีด "—" กำกวมที่ทำให้ "ไม่มีใบ" กับ "ยังไม่เทียบ" ดูเหมือนกัน)
   const matchCell = (d: SavedAmazonDay) => {
     if (d.match_state === "match") {
-      // ยอดรวมตรง แต่ "ไส้ใน" รายช่องทางเพี้ยน → เตือน (จุดที่เทียบยอดรวมจับไม่ได้)
-      const inner = innerMismatchCount(d);
+      // ยอดรวมตรง แต่ "ไส้ใน" รายช่องทางเพี้ยน → เตือน (จุดที่เทียบยอดรวมจับไม่ได้) · ปิดสวิตช์ = ข้าม
+      const inner = showInner ? innerMismatchCount(d) : 0;
       if (inner > 0)
         return (
           <span className="inline-flex flex-col items-center gap-0.5 leading-tight">
             <span className="font-semibold text-emerald-600">✅ ยอดรวมตรง</span>
-            <span className="rounded bg-yellow-300 px-1.5 py-0.5 text-[10px] font-bold text-yellow-950 shadow-[inset_0_0_0_1px_#d97706] whitespace-nowrap">
+            <span className="text-[10px] font-bold text-yellow-700 whitespace-nowrap">
               ⚠ ไส้ใน {inner} ช่องเพี้ยน
             </span>
           </span>
         );
-      // ตรวจไส้ในแล้วตรงทุกช่อง = ตรงจริง · ยังไม่ตรวจไส้ใน = ตรงแค่ยอดรวม
-      return d.iv_channels ? (
+      // ตรวจไส้ในแล้วตรงทุกช่อง = ตรงจริง · ยังไม่ตรวจไส้ใน/ปิดสวิตช์ = ตรงแค่ยอดรวม
+      return d.iv_channels && showInner ? (
         <span className="font-semibold text-emerald-600" title="ยอดรวม + ไส้ในทุกช่องตรง POS">
           ✅ ตรงทุกช่อง
         </span>
@@ -249,6 +254,27 @@ export function AmazonExcelGrid({
 
   return (
     <div className="space-y-2">
+      {/* สวิตช์เปิด/ปิด "ดูไส้ใน" (เหลืองรายช่องทาง) — กดปิดได้เวลาอยากดูตารางแบบสะอาด */}
+      {hasInnerData && (
+        <div className="flex items-center justify-end gap-2">
+          <span className="text-[11px] text-zinc-500">เทียบไส้ใน (รายช่องทาง):</span>
+          <button
+            type="button"
+            onClick={() => setShowInner((s) => !s)}
+            title="เปิด = โชว์ช่องที่ใบกำกับไม่ตรง POS เป็นตัวเลขเหลือง · ปิด = ดูตารางแบบสะอาด"
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
+              showInner
+                ? "bg-yellow-100 text-yellow-800 ring-1 ring-inset ring-yellow-400"
+                : "bg-zinc-100 text-zinc-400 ring-1 ring-inset ring-zinc-200"
+            }`}
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${showInner ? "bg-yellow-500" : "bg-zinc-300"}`}
+            />
+            {showInner ? "เปิดอยู่" : "ปิดอยู่"}
+          </button>
+        </div>
+      )}
       <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden">
         <div className="overflow-auto max-h-[72vh]">
           <table className="text-[11px] border-collapse">
@@ -382,11 +408,9 @@ export function AmazonExcelGrid({
         <span className="text-zinc-400">⚪ ยังไม่มีใบ</span> = ยังไม่มี IV ใน TRCloud ·{" "}
         <span className="text-amber-600">🔄 ยังไม่เทียบ</span> = ยังไม่ได้กดเทียบ/TRCloud
         จำกัดชั่วคราว (กดปุ่ม &ldquo;เทียบกับ TRCloud&rdquo; อีกครั้ง) ·{" "}
-        <span className="rounded bg-yellow-300 px-1 font-bold text-yellow-950 shadow-[inset_0_0_0_1px_#d97706]">
-          ช่องสีเหลือง ⚠
-        </span>{" "}
-        = ยอดช่องนั้นในใบกำกับ TRCloud <b>ไม่ตรง</b> POS (เลขบน = POS · เลขล่าง = IV+ส่วนต่าง ·
-        ต้องกด &ldquo;เทียบกับ TRCloud&rdquo; ก่อนถึงเห็นไส้ใน) ·{" "}
+        <span className="font-bold text-yellow-700">ตัวเลขสีเหลือง</span> = ยอดช่องนั้นในใบกำกับ
+        TRCloud <b>ไม่ตรง</b> POS (เลขบน = POS · เลขล่าง = IV+ส่วนต่าง · เปิด/ปิดได้ที่สวิตช์
+        &ldquo;เทียบไส้ใน&rdquo; เหนือตาราง · ต้องกด &ldquo;เทียบกับ TRCloud&rdquo; ก่อนถึงเห็นไส้ใน) ·{" "}
         <span className="cell-matched-iridescent rounded px-1">ช่องสีรุ้ง</span> = กระทบยอดธนาคาร
         +ยืนยันแล้ว (ช่องที่ยังไม่สีรุ้ง = ยังไม่แมตช์) · คอลัมน์ <b>กระทบยอด</b>:{" "}
         <span className="text-matched-iridescent font-bold">✦ เป๊ะ</span> = เงินเข้าตรง (±฿1) ·{" "}
