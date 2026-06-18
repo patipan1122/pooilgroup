@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -12,6 +12,8 @@ import {
   CheckCircle2,
   Loader2,
   ExternalLink,
+  ZoomIn,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import type { PinpointPin } from "@/lib/pinpoint/types";
@@ -32,6 +34,17 @@ export function SessionReview({
   const [pins, setPins] = useState<PinpointPin[]>(initialPins);
   const [copying, setCopying] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [zoomSrc, setZoomSrc] = useState<string | null>(null);
+
+  // ปิดภาพขยายด้วยปุ่ม Esc
+  useEffect(() => {
+    if (!zoomSrc) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setZoomSrc(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoomSrc]);
 
   const byUrl = useMemo(() => {
     const m = new Map<string, PinpointPin[]>();
@@ -163,13 +176,25 @@ export function SessionReview({
                 >
                   <div className="flex gap-3 p-3">
                     {pin.screenshot_key && r2PublicUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={`${r2PublicUrl}/${pin.screenshot_key}`}
-                        alt={`จุดที่ ${pin.seq}`}
-                        className="h-20 w-28 shrink-0 rounded-lg border border-zinc-200 object-cover object-top"
-                        loading="lazy"
-                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setZoomSrc(`${r2PublicUrl}/${pin.screenshot_key}`)
+                        }
+                        title="กดเพื่อดูภาพขยาย"
+                        className="group relative h-20 w-28 shrink-0 cursor-zoom-in overflow-hidden rounded-lg border border-zinc-200"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={`${r2PublicUrl}/${pin.screenshot_key}`}
+                          alt={`จุดที่ ${pin.seq}`}
+                          className="h-full w-full object-cover object-top transition-transform duration-200 group-hover:scale-105"
+                          loading="lazy"
+                        />
+                        <span className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition group-hover:bg-black/30 group-hover:opacity-100">
+                          <ZoomIn className="size-5 text-white drop-shadow" />
+                        </span>
+                      </button>
                     ) : (
                       <div className="flex h-20 w-28 shrink-0 items-center justify-center rounded-lg border border-dashed border-zinc-200 text-[10px] text-zinc-400">
                         ไม่มีภาพ
@@ -254,6 +279,32 @@ export function SessionReview({
           >
             ทำเครื่องหมายว่ารีวิวแล้ว
           </button>
+        </div>
+      )}
+
+      {/* ภาพขยายเต็มจอ — กดพื้นหลัง / ปุ่ม X / Esc เพื่อปิด */}
+      {zoomSrc && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setZoomSrc(null)}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+        >
+          <button
+            type="button"
+            onClick={() => setZoomSrc(null)}
+            aria-label="ปิด"
+            className="absolute right-4 top-4 flex size-10 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
+          >
+            <X className="size-6" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={zoomSrc}
+            alt="ภาพหน้าจอขยาย"
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[90vh] max-w-[95vw] cursor-default rounded-lg object-contain shadow-2xl"
+          />
         </div>
       )}
     </div>
