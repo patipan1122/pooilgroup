@@ -94,6 +94,8 @@ export function TeaReconcilePanel({
   days,
   configs,
   status,
+  branches,
+  onBranchChange,
 }: {
   branchCode: string;
   branchLabel: string;
@@ -103,6 +105,8 @@ export function TeaReconcilePanel({
   days: SavedTeaDay[];
   configs: TeaChannelConfig[];
   status: Record<string, TeaReconcileCell>;
+  branches?: { code: string; label: string }[]; // ถ้ามี → โชว์ช่องเลือกสาขาในแผง (ใช้ตอนโชว์ทุกแท็บ)
+  onBranchChange?: (code: string) => void;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -147,23 +151,40 @@ export function TeaReconcilePanel({
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-4 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <div className="font-bold text-zinc-800">🏦 กระทบยอดธนาคาร (reconcile) · {branchLabel}</div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="font-bold text-zinc-800">🏦 กระทบยอดธนาคาร (reconcile){!branches && ` · ${branchLabel}`}</div>
           <div className="text-xs text-zinc-500">
             ส่งยอดเข้าจริง (หักค่าธรรมเนียมแล้ว) เข้าระบบบัญชี → นักบัญชีกระทบกับ statement → 🟢 เขียวเมื่อกระทบแล้ว
           </div>
         </div>
-        {canSend && (
-          <button
-            type="button"
-            onClick={send}
-            disabled={busy || !configured || !hasDeposits}
-            className="h-9 px-4 rounded-xl bg-[var(--ch-navy,#0b1850)] text-white text-sm font-semibold disabled:opacity-50 shrink-0"
-          >
-            {busy ? "กำลังส่ง…" : "ส่งเข้าระบบบัญชี"}
-          </button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {branches && onBranchChange && (
+            <select
+              value={branchCode}
+              onChange={(e) => onBranchChange(e.target.value)}
+              aria-label="เลือกสาขาที่จะส่งเข้ากระทบยอด"
+              title="เลือกสาขา"
+              className="h-9 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium max-w-[180px]"
+            >
+              {branches.map((b) => (
+                <option key={b.code} value={b.code}>
+                  {b.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {canSend && (
+            <button
+              type="button"
+              onClick={send}
+              disabled={busy || !configured || !hasDeposits}
+              className="h-9 px-4 rounded-xl bg-[var(--ch-navy,#0b1850)] text-white text-sm font-semibold disabled:opacity-50 shrink-0"
+            >
+              {busy ? "กำลังส่ง…" : "ส่งเข้าระบบบัญชี"}
+            </button>
+          )}
+        </div>
       </div>
 
       {!configured && (

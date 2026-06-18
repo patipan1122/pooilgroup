@@ -434,12 +434,28 @@ export function TeaView({
           {canConfig && (
             <>
               {" · "}
-              <b>ส่งเข้ากระทบยอดธนาคาร</b> ทำที่แท็บ &ldquo;รายสาขา (Excel)&rdquo; → เลือกสาขา →
+              <b>ส่งเข้ากระทบยอดธนาคาร</b> ทำที่แผง &ldquo;🏦 กระทบยอดธนาคาร&rdquo; ด้านล่าง → เลือกสาขา →
               ปุ่ม &ldquo;ส่งเข้าระบบบัญชี&rdquo;
             </>
           )}
         </p>
       </div>
+
+      {/* แผงกระทบยอดธนาคาร — โชว์ทุกแท็บ (มีช่องเลือกสาขาในตัว) ให้หาเจอง่าย */}
+      {canConfig && hasAnyData && (
+        <TeaReconcilePanel
+          branchCode={branch}
+          branchLabel={branchLabel}
+          month={month}
+          configured={reconcileConfigured}
+          canSend={canConfig}
+          days={branchDays}
+          configs={channelConfigs}
+          status={reconStatus}
+          branches={branches}
+          onBranchChange={setBranch}
+        />
+      )}
 
       {!hasAnyData ? (
         <div className="rounded-2xl border border-dashed border-zinc-300 bg-white p-10 text-center text-sm text-zinc-500">
@@ -449,27 +465,13 @@ export function TeaView({
       ) : view === "matrix" ? (
         <MatrixTable branches={branches} days={days} dayMap={dayMap} />
       ) : (
-        <>
-          {canConfig && (
-            <TeaReconcilePanel
-              branchCode={branch}
-              branchLabel={branchLabel}
-              month={month}
-              configured={reconcileConfigured}
-              canSend={canConfig}
-              days={branchDays}
-              configs={channelConfigs}
-              status={reconStatus}
-            />
-          )}
-          <TeaExcelGrid
-            branchLabel={branchLabel}
-            branchCode={branch}
-            days={days}
-            byDate={branchByDate}
-            canSend={canConfig}
-          />
-        </>
+        <TeaExcelGrid
+          branchLabel={branchLabel}
+          branchCode={branch}
+          days={days}
+          byDate={branchByDate}
+          canSend={canConfig}
+        />
       )}
     </div>
   );
