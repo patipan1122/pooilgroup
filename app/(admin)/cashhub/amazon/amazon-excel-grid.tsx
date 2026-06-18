@@ -136,7 +136,8 @@ export function AmazonExcelGrid({
           bad
             ? "bg-red-100 font-bold text-red-800"
             : ivBad
-              ? "bg-yellow-100 text-yellow-900 font-semibold" // เหลือง = ใบไม่ตรง POS ช่องนี้
+              ? // เหลืองเข้มจัด + กรอบส้ม → เด้งออกแม้อยู่ติดช่องสีรุ้ง (พาสเทล) · iridescent ถูกข้าม (ไม่ทับ)
+                "bg-yellow-300 text-yellow-950 font-bold shadow-[inset_0_0_0_2px_#d97706]"
               : matched || settleMatched
                 ? "cell-matched-iridescent"
                 : c.settle
@@ -149,8 +150,8 @@ export function AmazonExcelGrid({
         {ivBad ? (
           <div className="flex flex-col items-end leading-tight">
             <span>{num(v)}</span>
-            <span className="text-[9px] font-semibold text-amber-700 whitespace-nowrap">
-              IV {num(ivv)} ({ivDiff > 0 ? "+" : "−"}
+            <span className="text-[9px] font-bold text-amber-900 whitespace-nowrap">
+              ⚠ IV {num(ivv)} ({ivDiff > 0 ? "+" : "−"}
               {num(Math.abs(ivDiff))})
             </span>
           </div>
@@ -170,7 +171,7 @@ export function AmazonExcelGrid({
         return (
           <span className="inline-flex flex-col items-center gap-0.5 leading-tight">
             <span className="font-semibold text-emerald-600">✅ ยอดรวมตรง</span>
-            <span className="rounded bg-yellow-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 whitespace-nowrap">
+            <span className="rounded bg-yellow-300 px-1.5 py-0.5 text-[10px] font-bold text-yellow-950 shadow-[inset_0_0_0_1px_#d97706] whitespace-nowrap">
               ⚠ ไส้ใน {inner} ช่องเพี้ยน
             </span>
           </span>
@@ -381,8 +382,8 @@ export function AmazonExcelGrid({
         <span className="text-zinc-400">⚪ ยังไม่มีใบ</span> = ยังไม่มี IV ใน TRCloud ·{" "}
         <span className="text-amber-600">🔄 ยังไม่เทียบ</span> = ยังไม่ได้กดเทียบ/TRCloud
         จำกัดชั่วคราว (กดปุ่ม &ldquo;เทียบกับ TRCloud&rdquo; อีกครั้ง) ·{" "}
-        <span className="rounded bg-yellow-100 px-1 font-semibold text-yellow-900">
-          ช่องสีเหลือง
+        <span className="rounded bg-yellow-300 px-1 font-bold text-yellow-950 shadow-[inset_0_0_0_1px_#d97706]">
+          ช่องสีเหลือง ⚠
         </span>{" "}
         = ยอดช่องนั้นในใบกำกับ TRCloud <b>ไม่ตรง</b> POS (เลขบน = POS · เลขล่าง = IV+ส่วนต่าง ·
         ต้องกด &ldquo;เทียบกับ TRCloud&rdquo; ก่อนถึงเห็นไส้ใน) ·{" "}
