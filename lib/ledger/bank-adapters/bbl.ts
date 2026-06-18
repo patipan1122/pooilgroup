@@ -10,8 +10,10 @@
 //     Counter Party Account Number, FX Rate
 //
 // CRITICAL QUIRKS:
-//   1. Date format is M/D/YYYY (US-style) not D/M/YYYY
-//   2. Date+Time combined in one column: "6/12/2026 5:01"
+//   1. Date format is D/M/YYYY (Thai/day-first) — e.g. "18/06/2026" = 18 June.
+//      (Earlier code wrongly assumed US M/D/YYYY, which silently swapped day/month
+//       and threw "date out of range" once a real day>12 appeared.)
+//   2. Date+Time combined in one column: "18/06/2026 15:32:04"
 //   3. Amounts include "THB" suffix and commas: "55,607.43 THB"
 //   4. Debit is NEGATIVE: "-5.00 THB"
 //   5. Missing amount = "0" (not empty string)
@@ -19,7 +21,7 @@
 //   7. Encoding: UTF-8 BOM
 
 import type { BankAdapter, ParseResult, NormalizedRow } from "./types";
-import { parseDateMDY, parseAmountSatang, parseBalanceSatang, parseCSVLines } from "./types";
+import { parseDateFlexibleDMY, parseAmountSatang, parseBalanceSatang, parseCSVLines } from "./types";
 
 export const bblAdapter: BankAdapter = {
   bankCode: "BBL",
@@ -75,12 +77,12 @@ export const bblAdapter: BankAdapter = {
       const dateTimeRaw = cols[idxTxnDateTime]?.trim() ?? "";
       if (!dateTimeRaw) continue;
 
-      // M/D/YYYY H:MM → 'YYYY-MM-DD'
-      const txnDate = parseDateMDY(dateTimeRaw);
+      // D/M/YYYY H:MM:SS → 'YYYY-MM-DD' (Thai day-first; strips the time portion)
+      const txnDate = parseDateFlexibleDMY(dateTimeRaw);
       if (!txnDate) continue;
 
       const valueDateRaw = cols[idxValueDate]?.trim() ?? "";
-      const valueDate    = parseDateMDY(valueDateRaw);
+      const valueDate    = parseDateFlexibleDMY(valueDateRaw);
 
       const debitRaw  = cols[idxDebit]?.trim() ?? "0";
       const creditRaw = cols[idxCredit]?.trim() ?? "0";

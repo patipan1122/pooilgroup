@@ -82,7 +82,10 @@ export function parseDateDMY(raw: string): string | null {
  */
 export function parseDateFlexibleDMY(raw: string): string | null {
   if (!raw?.trim()) return null;
-  const parts = raw.trim().split(/[\/\-.]/);
+  // Some banks (BBL) combine date + time in one column ("18/06/2026 15:32:04") —
+  // keep only the date token before splitting. No-op for date-only inputs.
+  const datePart = raw.trim().split(/\s+/)[0];
+  const parts = datePart.split(/[\/\-.]/);
   if (parts.length !== 3) return null;
   let [d, m, y] = parts;
   if (!d || !m || !y) return null;
