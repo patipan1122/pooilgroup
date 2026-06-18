@@ -110,6 +110,7 @@ export function TeaReconcilePanel({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [showDays, setShowDays] = useState(false);
@@ -119,23 +120,35 @@ export function TeaReconcilePanel({
     [days, configs, status, branchCode],
   );
 
+  // ช่วงเดือน "YYYY-MM" → from/to (วันแรก..วันสุดท้ายของเดือน)
+  function monthRange() {
+    const [y, m] = month.split("-").map(Number);
+    const from = `${y}-${String(m).padStart(2, "0")}-01`;
+    const to = `${y}-${String(m).padStart(2, "0")}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+    return { from, to };
+  }
+
+  async function postReconcile(code: string) {
+    const { from, to } = monthRange();
+    const r = await fetch("/api/cashhub/tea/reconcile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ branchCode: code, from, to }),
+    });
+    const j = (await r.json()) as { ok?: boolean; inserted?: number; skippedNoConfig?: number; error?: string };
+    return { ok: r.ok, ...j };
+  }
+
+  // ส่งสาขาที่เลือกอยู่
   async function send() {
     setBusy(true);
     setErr(null);
     setMsg(null);
     try {
-      const [y, m] = month.split("-").map(Number);
-      const from = `${y}-${String(m).padStart(2, "0")}-01`;
-      const to = `${y}-${String(m).padStart(2, "0")}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
-      const r = await fetch("/api/cashhub/tea/reconcile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ branchCode, from, to }),
-      });
-      const j = await r.json();
-      if (!r.ok) return setErr(j.error ?? "ส่งไม่สำเร็จ");
+      const j = await postReconcile(branchCode);
+      if (!j.ok) return setErr(j.error ?? "ส่งไม่สำเร็จ");
       setMsg(
-        `✅ ส่งเข้าระบบบัญชีแล้ว ${j.inserted} รายการ${j.skippedNoConfig ? ` · ข้าม ${j.skippedNoConfig} (ยังไม่ผูกบัญชี)` : ""} → ไปกระทบยอดที่หน้าบัญชีธนาคาร`,
+        `✅ ส่งเข้าระบบบัญชีแล้ว ${j.inserted ?? 0} รายการ${j.skippedNoConfig ? ` · ข้าม ${j.skippedNoConfig} (ยังไม่ผูกบัญชี)` : ""} → ไปกระทบยอดที่หน้าบัญชีธนาคาร`,
       );
       router.refresh();
     } catch {
@@ -143,6 +156,43 @@ export function TeaReconcilePanel({
     } finally {
       setBusy(false);
     }
+  }
+
+  // ส่งทุกสาขา (วนทีละสาขา · idempotent · นับสาขาที่ยังไม่ตั้งบัญชี/พลาดแยก)
+  async function sendAll() {
+    if (!branches) return;
+    setBusy(true);
+    setErr(null);
+    setMsg(null);
+    let sent = 0;
+    let totalInserted = 0;
+    const noConfig: string[] = [];
+    const failed: string[] = [];
+    for (let i = 0; i < branches.length; i++) {
+      const b = branches[i];
+      setBulkProgress(`กำลังส่ง ${i + 1}/${branches.length} · ${b.label}…`);
+      try {
+        const j = await postReconcile(b.code);
+        if (!j.ok) {
+          // ยังไม่ตั้งค่าช่องทาง→บัญชี = ข้าม (ไม่ใช่ error จริง) · อื่น ๆ = พลาด
+          if ((j.error ?? "").includes("ตั้งค่าช่องทาง")) noConfig.push(b.label);
+          else failed.push(b.label);
+        } else {
+          sent++;
+          totalInserted += j.inserted ?? 0;
+        }
+      } catch {
+        failed.push(b.label);
+      }
+    }
+    setBulkProgress(null);
+    setBusy(false);
+    const parts = [`✅ ส่งครบ ${sent}/${branches.length} สาขา · เพิ่มรวม ${totalInserted} รายการ`];
+    if (noConfig.length) parts.push(`⚪ ข้าม ${noConfig.length} สาขา (ยังไม่ตั้งบัญชี: ${noConfig.join(", ")})`);
+    if (failed.length) parts.push(`⚠️ พลาด ${failed.length} สาขา (${failed.join(", ")})`);
+    if (failed.length) setErr(parts.join(" · "));
+    else setMsg(parts.join(" · ") + " → ไปกระทบยอดที่หน้าบัญชีธนาคาร");
+    router.refresh();
   }
 
   const totalRec = summary.reduce((a, s) => a + s.reconciledAmount, 0);
@@ -158,14 +208,15 @@ export function TeaReconcilePanel({
             ส่งยอดเข้าจริง (หักค่าธรรมเนียมแล้ว) เข้าระบบบัญชี → นักบัญชีกระทบกับ statement → 🟢 เขียวเมื่อกระทบแล้ว
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           {branches && onBranchChange && (
             <select
               value={branchCode}
               onChange={(e) => onBranchChange(e.target.value)}
               aria-label="เลือกสาขาที่จะส่งเข้ากระทบยอด"
               title="เลือกสาขา"
-              className="h-9 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium max-w-[180px]"
+              disabled={busy}
+              className="h-9 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium max-w-[180px] disabled:opacity-50"
             >
               {branches.map((b) => (
                 <option key={b.code} value={b.code}>
@@ -174,14 +225,25 @@ export function TeaReconcilePanel({
               ))}
             </select>
           )}
+          {canSend && branches && (
+            <button
+              type="button"
+              onClick={sendAll}
+              disabled={busy}
+              title="ส่งยอดเข้ากระทบยอดทุกสาขาในเดือนนี้ (สาขาที่ยังไม่ตั้งบัญชีจะถูกข้าม)"
+              className="h-9 px-4 rounded-xl bg-[var(--ch-navy,#0b1850)] text-white text-sm font-semibold disabled:opacity-50"
+            >
+              {busy && bulkProgress ? bulkProgress : `ส่งทุกสาขา (${branches.length})`}
+            </button>
+          )}
           {canSend && (
             <button
               type="button"
               onClick={send}
               disabled={busy || !configured || !hasDeposits}
-              className="h-9 px-4 rounded-xl bg-[var(--ch-navy,#0b1850)] text-white text-sm font-semibold disabled:opacity-50 shrink-0"
+              className={`h-9 px-4 rounded-xl text-sm font-semibold disabled:opacity-50 ${branches ? "border border-zinc-300 text-zinc-700 hover:bg-zinc-50" : "bg-[var(--ch-navy,#0b1850)] text-white"}`}
             >
-              {busy ? "กำลังส่ง…" : "ส่งเข้าระบบบัญชี"}
+              {busy && !bulkProgress ? "กำลังส่ง…" : branches ? "ส่งสาขานี้" : "ส่งเข้าระบบบัญชี"}
             </button>
           )}
         </div>
