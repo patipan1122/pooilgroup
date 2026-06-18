@@ -12,6 +12,7 @@ import { audit } from "@/lib/audit/log";
 import { canManageUser } from "@/lib/auth/role-guards";
 import type { DbUser } from "@/lib/auth/session";
 import { MODULES } from "@/lib/modules";
+import { ensureChairopsUser } from "@/lib/chairops/auth/ensure-user";
 
 // Derived from the registry so every current module is grantable — the old
 // hard-coded 5-slug enum silently blocked inbox/chairops/clawfleet/etc.
@@ -52,7 +53,7 @@ export async function PUT(
   // Confirm target is in caller's org
   const { data: target } = await admin
     .from("users")
-    .select("id, org_id, name, role")
+    .select("id, org_id, name, role, email")
     .eq("id", targetId)
     .eq("org_id", session.user.org_id)
     .maybeSingle();
@@ -147,6 +148,28 @@ export async function PUT(
       warning:
         "ให้สิทธิ์โปรแกรมสำเร็จ แต่ถอดสิทธิ์เก่าบางส่วนไม่สำเร็จ — ลองบันทึกอีกครั้งถ้าต้องการ",
     });
+  }
+
+  // Propagate to sub-program permission tables that keep their OWN row (not just
+  // user_modules). ChairOps has a ChairopsUser table — create/reactivate/upgrade
+  // it now so the grant works the instant it's saved, instead of relying on the
+  // lazy bootstrap at first access (CEO 2026-06-17: "กดเพิ่มสิทธิตรงกลาง → ไป
+  // เพิ่มสิทธิในโปรแกรมย่อยให้ใช้งานได้จริง"). Non-fatal — getSession self-heals too.
+  if (requested.includes("chairops")) {
+    const targetEmail = (target as { email?: string | null }).email ?? null;
+    try {
+      await ensureChairopsUser({
+        orgId,
+        authUserId: targetId, // Pool users.id === Supabase auth id
+        email: targetEmail,
+        displayName: target.name || targetEmail || "ผู้ดูแล",
+        grantedAdmin: adminSet.has("chairops"),
+        grantedAny: true,
+        source: "grant_api",
+      });
+    } catch {
+      // swallow — lazy reconcile in getSession applies on first access
+    }
   }
 
   await audit({

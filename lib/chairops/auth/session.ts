@@ -6,9 +6,10 @@
 // Strategy:
 //   1) Reuse Pool's `requireSession()` (so Pool's login flow keeps working).
 //   2) Look up a matching ChairopsUser row by authUserId.
-//   3) If none exists, bootstrap one in-memory derived from Pool's user metadata
-//      (so a brand-new Pool admin can still hit /chairops/* without prior seed —
-//      they get role=ADMIN). DB row is created on first mutation.
+//   3) Reconcile that row against the LIVE central Pool grant via
+//      `ensureChairopsUser` — create it when missing, reactivate it when it was
+//      deactivated but the central grant is active again, upgrade its role when
+//      the user is now a program-admin. The grant IS the approval.
 //
 // Role mapping (Pool -> ChairOps):
 //   super_admin / org_admin / admin -> ADMIN
@@ -34,6 +35,7 @@ import {
   userIsModuleAdmin,
   isAdminTier,
 } from "@/lib/auth/module-access";
+import { ensureChairopsUser } from "./ensure-user";
 import { rankOf } from "./role-guards";
 
 export interface Session {
@@ -59,9 +61,12 @@ function deriveChairopsRoleFromPool(poolRole: DbUser["role"]): ChairopsUserRole 
   }
 }
 
-// Returns the ChairopsUser bound to the Pool session, creating one on first
-// access when missing. Cached per-request via React `cache()` — saves repeated
-// DB lookups across layout/page nested server components.
+// Returns the ChairopsUser bound to the Pool session, reconciling it against the
+// LIVE central grant (create / reactivate / upgrade) so a program-admin who was
+// granted chairops in the central UI can actually enter. Cached per-request via
+// React `cache()`. The heavy lifting lives in `ensureChairopsUser`, shared with
+// the central grant API so the lazy (on-access) and proactive (on-grant) paths
+// stay in sync.
 export const getSession = cache(async (): Promise<Session | null> => {
   const poolSession = await poolGetSession();
   if (!poolSession) return null;
@@ -70,181 +75,37 @@ export const getSession = cache(async (): Promise<Session | null> => {
   const authUserId = poolSession.authUserId;
   const email = poolSession.email ?? poolDbUser.email ?? null;
 
-  const chairUser = await prisma.chairopsUser.findFirst({
-    where: { authUserId },
-  });
-
-  // SECURITY model (Wave-0 + CEO principle 2026-06-15 [[program-admin-must-just-work]]):
-  // We do NOT blanket auto-bootstrap (that once turned any fresh Pool signup into
-  // a ChairOps admin). BUT a user who is explicitly authorized for chairops —
-  // either Pool admin-tier OR an active `user_modules` chairops grant — IS
-  // approved; the grant *is* the approval. For those, bootstrap a ChairopsUser
-  // row on first touch so program-admins can actually enter (fixes P0-4,
-  // AUDIT_coreperms_2026-06-01). Everyone else → log denial → return null.
-  if (!chairUser) {
-    const poolIsAdmin = isAdminTier(poolDbUser.role);
-    const grantedAdmin =
-      poolIsAdmin || (await userIsModuleAdmin(poolDbUser, "chairops"));
-    const grantedAny =
-      poolIsAdmin || (await userHasModuleAccess(poolDbUser, "chairops"));
-
-    if (grantedAny) {
-      // Respect a pre-existing row keyed by email (orphan invite / prior seed)
-      // so we never violate the (orgId,email) unique — link authUserId onto it.
-      const byEmail = email
-        ? await prisma.chairopsUser.findFirst({
-            where: { orgId: poolDbUser.org_id, email },
-          })
-        : null;
-      if (byEmail) {
-        if (!byEmail.isActive) return null; // deactivated → stay denied
-        // Link authUserId AND reconcile a stale role in the SAME update — an
-        // orphan-by-email row seeded at a low rank (OFFICE) before the user was
-        // promoted must be upgraded to ADMIN when the grant says admin, exactly
-        // like the found-by-authUserId path below. Without this, a program-admin
-        // whose chairops row is keyed by email stays pinned to OFFICE.
-        const data: { authUserId?: string; role?: ChairopsUserRole } = {};
-        if (byEmail.authUserId !== authUserId) data.authUserId = authUserId;
-        if (grantedAdmin && byEmail.role !== ChairopsUserRole.ADMIN)
-          data.role = ChairopsUserRole.ADMIN;
-        const linked =
-          Object.keys(data).length === 0
-            ? byEmail
-            : await prisma.chairopsUser
-                .update({ where: { id: byEmail.id }, data })
-                .catch(() => byEmail);
-        return { authUser: { id: authUserId, email }, user: linked, poolUser: poolDbUser };
-      }
-
-      // No row yet → create one derived from the grant. ADMIN when granted as
-      // program-admin (or Pool admin-tier), else OFFICE.
-      const derivedRole = grantedAdmin
-        ? ChairopsUserRole.ADMIN
-        : ChairopsUserRole.OFFICE;
-      try {
-        const created = await prisma.chairopsUser.create({
-          data: {
-            orgId: poolDbUser.org_id,
-            authUserId,
-            email,
-            displayName: poolDbUser.name || email || "ผู้ดูแล",
-            role: derivedRole,
-            isActive: true,
-          },
-        });
-        // Best-effort audit trail of the auto-grant (don't block on failure).
-        try {
-          await prisma.chairopsAuditLog.create({
-            data: {
-              orgId: poolDbUser.org_id,
-              userId: created.id,
-              action: "access.bootstrap_from_grant",
-              entity: "ChairopsUser",
-              entityId: created.id,
-              metadata: {
-                email,
-                poolRole: poolDbUser.role,
-                derivedRole,
-                reason: "user_modules_chairops_grant_or_admin_tier",
-              },
-            },
-          });
-        } catch {
-          // swallow — access already granted
-        }
-        return { authUser: { id: authUserId, email }, user: created, poolUser: poolDbUser };
-      } catch {
-        // Race: a concurrent request created it first — re-fetch by authUserId.
-        const retry = await prisma.chairopsUser.findFirst({ where: { authUserId } });
-        if (retry?.isActive)
-          return { authUser: { id: authUserId, email }, user: retry, poolUser: poolDbUser };
-        return null;
-      }
-    }
-
-    // Not authorized for chairops → log denial → deny (requireAuth redirects).
-    // W0: AuditLog.orgId now required · use the Pool user's org_id (cross-
-    // schema text reference). See [[chairops-audit-2026-05-25]].
-    try {
-      await prisma.chairopsAuditLog.create({
-        data: {
-          orgId: poolDbUser.org_id,
-          userId: null,
-          action: "access.denied_no_chairops_user",
-          entity: "ChairopsUser",
-          entityId: authUserId,
-          metadata: {
-            email,
-            poolRole: poolDbUser.role,
-            reason: "no_chairops_user_row",
-            note: "ขออนุมัติเข้าใช้งาน · admin must approve",
-          },
-        },
-      });
-    } catch {
-      // swallow — denial still effective via return null
-    }
-    return null;
+  // Hot path: an already-active ADMIN row needs no reconciliation — return it
+  // without the extra Pool-grant lookups (the common case for an admin who has
+  // used ChairOps before).
+  const existing = await prisma.chairopsUser.findFirst({ where: { authUserId } });
+  if (existing?.isActive && existing.role === ChairopsUserRole.ADMIN) {
+    return { authUser: { id: authUserId, email }, user: existing, poolUser: poolDbUser };
   }
 
-  if (!chairUser.isActive) return null;
-  // Suppress unused-helper warning while we transition: kept exported for the
-  // future admin-approval flow that will derive role from Pool tier.
+  // Otherwise resolve the LIVE Pool authorisation and reconcile the row to match.
+  // The grant IS the approval — an active chairops grant (or admin-tier) will
+  // create / reactivate / upgrade the row. See ./ensure-user.ts and
+  // [[program-admin-must-just-work-2026-06-15]].
+  const poolIsAdmin = isAdminTier(poolDbUser.role);
+  const grantedAdmin = poolIsAdmin || (await userIsModuleAdmin(poolDbUser, "chairops"));
+  const grantedAny = poolIsAdmin || (await userHasModuleAccess(poolDbUser, "chairops"));
+
+  // Kept alive for the future admin-approval flow that derives role from Pool tier.
   void deriveChairopsRoleFromPool;
 
-  // Reconcile a STALE role. The bootstrap-on-create path above sets role=ADMIN
-  // only when the row is first created — it never revisits an existing row. So a
-  // user whose ChairopsUser row was created earlier at a low rank (OFFICE) and
-  // who was LATER promoted to program-admin / admin-tier could enter /chairops
-  // (row exists) yet every ADMIN/MANAGER-gated function bounced. If Pool now
-  // authorises them as a chairops admin, upgrade the row to ADMIN. Upgrade-only
-  // (never downgrades · never touches maids/technicians who have no Pool admin
-  // grant) and uses the SAME approval signal as the create path. Guarded on the
-  // cheap role check first so the common case (already ADMIN) adds no DB work.
-  // See [[program-admin-must-just-work-2026-06-15]].
-  if (chairUser.role !== ChairopsUserRole.ADMIN) {
-    const shouldBeAdmin =
-      isAdminTier(poolDbUser.role) ||
-      (await userIsModuleAdmin(poolDbUser, "chairops"));
-    if (shouldBeAdmin) {
-      const promoted = await prisma.chairopsUser
-        .update({
-          where: { id: chairUser.id },
-          data: { role: ChairopsUserRole.ADMIN },
-        })
-        .catch(() => chairUser); // race/transient → keep working with old row
-      try {
-        await prisma.chairopsAuditLog.create({
-          data: {
-            orgId: poolDbUser.org_id,
-            userId: promoted.id,
-            action: "access.reconcile_role_to_admin",
-            entity: "ChairopsUser",
-            entityId: promoted.id,
-            metadata: {
-              email,
-              poolRole: poolDbUser.role,
-              previousRole: chairUser.role,
-              reason: "stale_low_role_vs_chairops_admin_grant",
-            },
-          },
-        });
-      } catch {
-        // swallow — upgrade already applied
-      }
-      return {
-        authUser: { id: authUserId, email },
-        user: promoted,
-        poolUser: poolDbUser,
-      };
-    }
-  }
+  const user = await ensureChairopsUser({
+    orgId: poolDbUser.org_id,
+    authUserId,
+    email,
+    displayName: poolDbUser.name || email || "ผู้ดูแล",
+    grantedAdmin,
+    grantedAny,
+    source: "getSession",
+  });
+  if (!user) return null;
 
-  return {
-    authUser: { id: authUserId, email },
-    user: chairUser,
-    poolUser: poolDbUser,
-  };
+  return { authUser: { id: authUserId, email }, user, poolUser: poolDbUser };
 });
 
 export async function requireAuth(): Promise<Session> {
