@@ -191,9 +191,20 @@ export function AdminShell({
 
   const moduleNav = useMemo(() => {
     if (!activeModule) return [];
+    // program_admin acts as a full admin INSIDE any module they were granted:
+    // they only reach a module's nav when its slug is in `allowedModules`
+    // (grant-scoped). The per-item `roles`/`adminOnly` lists predate the
+    // program_admin role and omit it, so without this a program_admin sees only
+    // the unrestricted "home" item and the whole sidebar looks empty. Give them
+    // the SAME nav as admin-tier — bypass `adminOnly` and evaluate the role
+    // lists as if they were "admin" (so super_admin-only items still stay
+    // hidden, matching an org admin). CEO 2026-06-17.
+    const isModuleAdmin = isAdmin || user.role === "program_admin";
+    const roleForNav: typeof user.role =
+      user.role === "program_admin" ? "admin" : user.role;
     return activeModule.nav.filter((item) => {
-      if (item.adminOnly && !isAdmin) return false;
-      if (item.roles && !item.roles.includes(user.role)) return false;
+      if (item.adminOnly && !isModuleAdmin) return false;
+      if (item.roles && !item.roles.includes(roleForNav)) return false;
       return true;
     });
   }, [activeModule, isAdmin, user.role]);
