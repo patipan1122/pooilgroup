@@ -471,6 +471,7 @@ export function TeaView({
           days={days}
           byDate={branchByDate}
           canSend={canConfig}
+          reconStatus={canConfig ? reconStatus : {}}
         />
       )}
     </div>

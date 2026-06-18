@@ -120,8 +120,9 @@ export async function sendTeaDaysToReconcile(
 
 export type TeaReconcileCell = {
   sent: boolean;
-  reconciled: boolean; // matched กับ statement ธนาคารแล้ว (=เขียว)
-  amount: number; // บาท
+  reconciled: boolean; // matched กับ statement ธนาคารแล้ว (=เขียว/รุ้ง)
+  amount: number; // บาท (ยอดที่ส่งเข้า ledger — net หักค่าธรรมเนียม)
+  deltaBaht: number | null; // เงินเข้าธนาคารจริง − ยอดที่ส่ง (>0 เกิน · <0 ขาด) · null = ยังไม่จับคู่/ไม่มี delta
 };
 
 /** อ่านสถานะ reconcile กลับมาทุกสาขาในช่วง — key = source_ref (`tea:{branchCode}:{date}:{channel}`) */
@@ -130,17 +131,22 @@ export async function readTeaReconcileStatus(
   from: string,
   to: string,
 ): Promise<Record<string, TeaReconcileCell>> {
-  // 🟢 = กระทบ "ยืนยันแล้ว" เท่านั้น (กัน false-green): match_item ถูกสร้างตั้งแต่ตอน "suggest"
+  // 🟢/รุ้ง = กระทบ "ยืนยันแล้ว" เท่านั้น (กัน false-green): match_item ถูกสร้างตั้งแต่ตอน "suggest"
   // (group.status='suggested') → ต้อง JOIN group แล้วเช็ค status='confirmed'.
+  // delta_satang = bank_total − book_total ของกลุ่มที่ยืนยันแล้ว (>0 เกิน · <0 ขาด).
   const rows = await prisma.$queryRaw<
-    { source_ref: string; amount_satang: bigint; reconciled: boolean }[]
+    { source_ref: string; amount_satang: bigint; reconciled: boolean; delta_satang: bigint | null }[]
   >`
     SELECT r.source_ref, r.amount_satang,
       (r.match_state='matched' OR EXISTS(
         SELECT 1 FROM ledger_bank_match_item mi
         JOIN ledger_bank_match_group g ON g.id=mi.group_id
         WHERE mi.book_type='revenue' AND mi.book_id=r.id
-          AND g.status='confirmed')) as reconciled
+          AND g.status='confirmed')) as reconciled,
+      (SELECT g.delta_satang FROM ledger_bank_match_item mi
+        JOIN ledger_bank_match_group g ON g.id=mi.group_id
+        WHERE mi.book_type='revenue' AND mi.book_id=r.id
+          AND g.status='confirmed' LIMIT 1) as delta_satang
     FROM ledger_revenue_entry r
     WHERE r.org_id=${orgId}::uuid
       AND r.source_type='CASHHUB_TEA'
@@ -151,6 +157,7 @@ export async function readTeaReconcileStatus(
       sent: true,
       reconciled: Boolean(r.reconciled),
       amount: Number(r.amount_satang) / 100,
+      deltaBaht: r.delta_satang == null ? null : Number(r.delta_satang) / 100,
     };
   }
   return out;
