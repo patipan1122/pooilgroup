@@ -388,6 +388,9 @@ export function AmazonView({
     blocked: savedDays.filter(
       (d) => !d.balanced && d.match_state !== "match" && d.iv_status !== "posted",
     ).length,
+    // "ยังไม่เทียบ" = match_state ยังเป็น null (เพิ่งอัปไฟล์ใหม่ หรือ TRCloud จำกัดการเรียกชั่วคราว)
+    // → จุดบอดเดิม: วันพวกนี้โชว์ "—" เหมือนทุกอย่างเรียบร้อย ทั้งที่ยังไม่เคยถูกเทียบ
+    notChecked: savedDays.filter((d) => d.match_state == null).length,
   };
 
   return (
@@ -545,11 +548,37 @@ export function AmazonView({
             </div>
           )}
 
+          {/* นัดจ์: วันที่ "ยังไม่ถูกเทียบ" กับ TRCloud (จุดบอดเดิม — TRCloud จำกัดการเรียก/เพิ่งอัปไฟล์ →
+              วันพวกนี้โชว์ "—" เหมือนเรียบร้อย ทั้งที่ยังไม่รู้ว่าตรงหรือไม่ตรง) → เตือน + ปุ่มเทียบซ้ำ */}
+          {stat.notChecked > 0 && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="font-bold text-amber-800">
+                🔄 มี {stat.notChecked} วันที่ <b>ยังไม่ได้เทียบ</b>กับ TRCloud
+              </div>
+              <div className="mt-1 text-sm text-amber-700">
+                วันเหล่านี้ยังไม่รู้ว่าตรงหรือไม่ตรง (เพิ่งอัปไฟล์ใหม่ หรือ TRCloud จำกัดการเรียกชั่วคราว) —{" "}
+                {savedDays
+                  .filter((d) => d.match_state == null)
+                  .map((d) => d.sales_date.slice(5))
+                  .join(", ")}
+              </div>
+              <button
+                type="button"
+                disabled={busy !== null || savedDays.length === 0}
+                onClick={refreshMatch}
+                className="mt-2 inline-flex h-9 items-center rounded-lg bg-amber-600 px-3 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
+              >
+                {busy === "match" ? "กำลังเทียบ…" : "🔄 เทียบกับ TRCloud อีกครั้ง"}
+              </button>
+            </div>
+          )}
+
           {/* summary */}
           <div className="flex flex-wrap gap-2">
             <Stat n={stat.days} label="วันทั้งหมด" />
             <Stat n={stat.match} label="ตรงกับ TRC" tone="ok" />
             <Stat n={stat.mismatch} label="ไม่ตรง" tone="warn" />
+            <Stat n={stat.notChecked} label="ยังไม่เทียบ" tone="warn" />
             <Stat n={stat.noIv} label="ยังไม่มี IV" tone="info" />
             <Stat n={stat.blocked} label="ติดปัญหา" tone="warn" />
             {stat.noIv > 0 && canSend && (

@@ -121,12 +121,39 @@ export function AmazonExcelGrid({
     );
   };
 
+  // คอลัมน์ "ตรง?" — แยก 4 สถานะให้ชัด (เลิกใช้ขีด "—" กำกวมที่ทำให้ "ไม่มีใบ" กับ "ยังไม่เทียบ" ดูเหมือนกัน)
   const matchCell = (d: SavedAmazonDay) => {
     if (d.match_state === "match")
-      return <span className="font-semibold text-emerald-600">✅</span>;
-    if (d.match_state === "mismatch")
-      return <span className="font-semibold text-red-600">⚠️</span>;
-    return <span className="text-zinc-300">—</span>;
+      return <span className="font-semibold text-emerald-600">✅ ตรง</span>;
+    if (d.match_state === "mismatch") {
+      const diff = d.iv_gross != null ? d.iv_gross - d.gross : null;
+      return (
+        <span className="inline-flex flex-col items-center gap-0.5 font-bold text-red-700">
+          <span className="rounded bg-red-100 px-1.5 py-0.5">🔴 ไม่ตรง</span>
+          {diff != null && (
+            <span className="text-[10px] font-semibold text-red-600 whitespace-nowrap">
+              IV {num(d.iv_gross)} ({diff > 0 ? "+" : "−"}
+              {num(Math.abs(diff))})
+            </span>
+          )}
+        </span>
+      );
+    }
+    if (d.match_state === "no_iv")
+      return (
+        <span className="text-zinc-400" title="ยังไม่มีใบกำกับใน TRCloud (รอสร้าง IV)">
+          ⚪ ยังไม่มีใบ
+        </span>
+      );
+    // match_state == null → ยังไม่เคยเทียบ (เพิ่งอัปไฟล์ใหม่ หรือ TRCloud จำกัดการเรียกชั่วคราว)
+    return (
+      <span
+        className="font-medium text-amber-600"
+        title="ยังไม่ได้เทียบกับ TRCloud — กดปุ่ม '🔄 เทียบกับ TRCloud' อีกครั้ง"
+      >
+        🔄 ยังไม่เทียบ
+      </span>
+    );
   };
 
   // สถานะกระทบยอดธนาคาร (ไหลกลับจาก ledger_revenue_entry)
@@ -284,7 +311,12 @@ export function AmazonExcelGrid({
       <p className="text-[11px] text-zinc-500">
         <span className="text-blue-500 font-semibold">ƒ</span> = ช่องคำนวณอัตโนมัติ ·
         ก่อน VAT = ยอดขาย÷1.07 · VAT = ยอดขาย−ก่อน VAT · ส่วนต่าง = ยอด IV−ยอด POS (≠0
-        = แดง) · ● = ต้องตรวจสอบ ·{" "}
+        = แดง) · ● = ต้องตรวจสอบ · คอลัมน์ <b>ตรง?</b>:{" "}
+        <span className="text-emerald-600 font-semibold">✅ ตรง</span> = ยอด IV=POS ·{" "}
+        <span className="text-red-700 font-bold">🔴 ไม่ตรง</span> = IV≠POS (โชว์ส่วนต่าง) ·{" "}
+        <span className="text-zinc-400">⚪ ยังไม่มีใบ</span> = ยังไม่มี IV ใน TRCloud ·{" "}
+        <span className="text-amber-600">🔄 ยังไม่เทียบ</span> = ยังไม่ได้กดเทียบ/TRCloud
+        จำกัดชั่วคราว (กดปุ่ม &ldquo;เทียบกับ TRCloud&rdquo; อีกครั้ง) ·{" "}
         <span className="cell-matched-iridescent rounded px-1">ช่องสีรุ้ง</span> = กระทบยอดธนาคาร
         +ยืนยันแล้ว (ช่องที่ยังไม่สีรุ้ง = ยังไม่แมตช์) · คอลัมน์ <b>กระทบยอด</b>:{" "}
         <span className="text-matched-iridescent font-bold">✦ เป๊ะ</span> = เงินเข้าตรง (±฿1) ·{" "}
