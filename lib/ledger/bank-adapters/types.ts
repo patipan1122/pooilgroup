@@ -99,6 +99,58 @@ export function parseDateFlexibleDMY(raw: string): string | null {
   return `${y}-${mm}-${dd}`;
 }
 
+/**
+ * Decide whether a column of day/month-or-month/day dates is DAY-FIRST.
+ * Some banks (BBL) export the SAME column as either D/M/Y or M/D/Y depending on
+ * the export's locale, so we must detect per-file instead of hard-coding:
+ *   - if any first component > 12  → it can only be a day      → DAY-FIRST (D/M)
+ *   - else if any second component > 12 → it can only be a day → MONTH-FIRST (M/D)
+ *   - all ambiguous (every value ≤ 12) → default to day-first (Thai convention)
+ * Returns true for day-first (D/M), false for month-first (M/D).
+ */
+export function detectDayFirst(samples: string[]): boolean {
+  let firstGt12 = false;
+  let secondGt12 = false;
+  for (const s of samples) {
+    if (!s?.trim()) continue;
+    const datePart = s.trim().split(/\s+/)[0];
+    const p = datePart.split(/[\/\-.]/);
+    if (p.length < 2) continue;
+    const a = Number(p[0]);
+    const b = Number(p[1]);
+    if (Number.isInteger(a) && a > 12) firstGt12 = true;
+    if (Number.isInteger(b) && b > 12) secondGt12 = true;
+  }
+  // month-first only when the 2nd field is unambiguously a day and the 1st never is
+  if (secondGt12 && !firstGt12) return false;
+  return true; // day-first when 1st>12 seen, or when fully ambiguous
+}
+
+/**
+ * Parse a 'D/M/Y' or 'M/D/Y' date (optionally with a trailing time) using a
+ * pre-resolved field order → 'YYYY-MM-DD'. Pair with detectDayFirst().
+ * 2-digit years → 20YY. Returns null on out-of-range day/month.
+ */
+export function parseDateOrdered(raw: string, dayFirst: boolean): string | null {
+  if (!raw?.trim()) return null;
+  const datePart = raw.trim().split(/\s+/)[0];
+  const parts = datePart.split(/[\/\-.]/);
+  if (parts.length !== 3) return null;
+  const [p0, p1, p2] = parts;
+  if (!p0 || !p1 || !p2) return null;
+  const d = dayFirst ? p0 : p1;
+  const m = dayFirst ? p1 : p0;
+  let y = p2;
+  if (y.length === 2) y = `20${y}`;
+  const dd = d.padStart(2, "0");
+  const mm = m.padStart(2, "0");
+  const dn = Number(dd);
+  const mn = Number(mm);
+  if (!Number.isInteger(dn) || !Number.isInteger(mn)) return null;
+  if (dn < 1 || dn > 31 || mn < 1 || mn > 12) return null;
+  return `${y}-${mm}-${dd}`;
+}
+
 /** Parse a US-style date: 'M/D/YYYY' or combined 'M/D/YYYY H:MM' → 'YYYY-MM-DD' */
 export function parseDateMDY(raw: string): string | null {
   if (!raw?.trim()) return null;

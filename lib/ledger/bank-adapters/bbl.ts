@@ -10,9 +10,11 @@
 //     Counter Party Account Number, FX Rate
 //
 // CRITICAL QUIRKS:
-//   1. Date format is D/M/YYYY (Thai/day-first) — e.g. "18/06/2026" = 18 June.
-//      (Earlier code wrongly assumed US M/D/YYYY, which silently swapped day/month
-//       and threw "date out of range" once a real day>12 appeared.)
+//   1. Date order is NOT fixed: BBL exports the same column as D/M/Y on some
+//      accounts/locales ("18/06/2026" = 18 June) and M/D/Y on others
+//      ("6/12/2026" = 12 June). We auto-detect per file via detectDayFirst()
+//      and parse with parseDateOrdered(). (Hard-coding either order silently
+//      swaps day/month and throws "date out of range" once a day>12 appears.)
 //   2. Date+Time combined in one column: "18/06/2026 15:32:04"
 //   3. Amounts include "THB" suffix and commas: "55,607.43 THB"
 //   4. Debit is NEGATIVE: "-5.00 THB"
@@ -21,7 +23,7 @@
 //   7. Encoding: UTF-8 BOM
 
 import type { BankAdapter, ParseResult, NormalizedRow } from "./types";
-import { parseDateFlexibleDMY, parseAmountSatang, parseBalanceSatang, parseCSVLines } from "./types";
+import { detectDayFirst, parseDateOrdered, parseAmountSatang, parseBalanceSatang, parseCSVLines } from "./types";
 
 export const bblAdapter: BankAdapter = {
   bankCode: "BBL",
@@ -72,17 +74,27 @@ export const bblAdapter: BankAdapter = {
 
     const rows: NormalizedRow[] = [];
 
+    // BBL exports the date column as EITHER D/M/Y or M/D/Y depending on the
+    // export locale. Scan the whole file once to resolve which order this file
+    // uses, then parse every row consistently (see detectDayFirst).
+    const dateSamples: string[] = [];
+    for (let i = HEADER_ROW + 1; i < lines.length; i++) {
+      const v = lines[i][idxTxnDateTime]?.trim();
+      if (v) dateSamples.push(v);
+    }
+    const dayFirst = detectDayFirst(dateSamples);
+
     for (let i = HEADER_ROW + 1; i < lines.length; i++) {
       const cols = lines[i];
       const dateTimeRaw = cols[idxTxnDateTime]?.trim() ?? "";
       if (!dateTimeRaw) continue;
 
-      // D/M/YYYY H:MM:SS → 'YYYY-MM-DD' (Thai day-first; strips the time portion)
-      const txnDate = parseDateFlexibleDMY(dateTimeRaw);
+      // 'D/M/Y H:MM:SS' or 'M/D/Y H:MM:SS' → 'YYYY-MM-DD' (order auto-detected above)
+      const txnDate = parseDateOrdered(dateTimeRaw, dayFirst);
       if (!txnDate) continue;
 
       const valueDateRaw = cols[idxValueDate]?.trim() ?? "";
-      const valueDate    = parseDateFlexibleDMY(valueDateRaw);
+      const valueDate    = parseDateOrdered(valueDateRaw, dayFirst);
 
       const debitRaw  = cols[idxDebit]?.trim() ?? "0";
       const creditRaw = cols[idxCredit]?.trim() ?? "0";
