@@ -104,31 +104,19 @@ export async function captureBody(): Promise<Blob | null> {
   }
 }
 
-/** Upload a captured blob via the shared /api/r2/sign → PUT flow.
- *  Returns the R2 key (under users/<id>/) or null. */
+/** Upload a captured blob through the SERVER (/api/r2/upload → putObject).
+ *  ไม่ใช้ browser→R2 presigned PUT — เพราะมันต้องผ่าน R2 CORS allowlist ที่ไม่มี
+ *  custom domain (pooilgroup.com) → พังเงียบ → ภาพไม่ขึ้น. ส่งผ่านเซิร์ฟเวอร์ตัด
+ *  dependency CORS ทิ้งถาวร. Returns the R2 key (under users/<id>/) or null. */
 export async function uploadCapture(blob: Blob): Promise<string | null> {
   try {
-    const signRes = await fetch("/api/r2/sign", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        filename: `pinpoint-${Date.now()}.webp`,
-        contentType: "image/webp",
-        size: blob.size,
-      }),
-    });
-    if (!signRes.ok) return null;
-    const { uploadUrl, key } = (await signRes.json()) as {
-      uploadUrl: string;
-      key: string;
-    };
-    const putRes = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": "image/webp" },
-      body: blob,
-    });
-    if (!putRes.ok) return null;
-    return key;
+    const ext = blob.type === "image/png" ? "png" : "webp";
+    const form = new FormData();
+    form.append("file", blob, `pinpoint-${Date.now()}.${ext}`);
+    const res = await fetch("/api/r2/upload", { method: "POST", body: form });
+    if (!res.ok) return null;
+    const { key } = (await res.json()) as { key?: string };
+    return key ?? null;
   } catch (err) {
     console.warn("[pinpoint] uploadCapture failed (non-fatal)", err);
     return null;
