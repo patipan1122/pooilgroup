@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -34,17 +34,17 @@ export function SessionReview({
   const [pins, setPins] = useState<PinpointPin[]>(initialPins);
   const [copying, setCopying] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [zoomSrc, setZoomSrc] = useState<string | null>(null);
+  const [zoomPin, setZoomPin] = useState<PinpointPin | null>(null);
 
   // ปิดภาพขยายด้วยปุ่ม Esc
   useEffect(() => {
-    if (!zoomSrc) return;
+    if (!zoomPin) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setZoomSrc(null);
+      if (e.key === "Escape") setZoomPin(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [zoomSrc]);
+  }, [zoomPin]);
 
   const byUrl = useMemo(() => {
     const m = new Map<string, PinpointPin[]>();
@@ -178,9 +178,7 @@ export function SessionReview({
                     {pin.screenshot_key && r2PublicUrl ? (
                       <button
                         type="button"
-                        onClick={() =>
-                          setZoomSrc(`${r2PublicUrl}/${pin.screenshot_key}`)
-                        }
+                        onClick={() => setZoomPin(pin)}
                         title="กดเพื่อดูภาพขยาย"
                         className="group relative h-20 w-28 shrink-0 cursor-zoom-in overflow-hidden rounded-lg border border-zinc-200"
                       >
@@ -282,31 +280,181 @@ export function SessionReview({
         </div>
       )}
 
-      {/* ภาพขยายเต็มจอ — กดพื้นหลัง / ปุ่ม X / Esc เพื่อปิด */}
-      {zoomSrc && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setZoomSrc(null)}
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+      {/* ภาพขยาย — กล่องลอย ลากย้าย/ปรับขนาดได้ + จุดมาร์คตำแหน่งที่กด */}
+      {zoomPin && (
+        <ZoomPanel
+          pin={zoomPin}
+          r2PublicUrl={r2PublicUrl}
+          onClose={() => setZoomPin(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** กล่องดูภาพหน้าจอแบบลอย — เล็ก ลากย้ายได้ ปรับขนาดได้ (ไม่บังทั้งจอ)
+ *  + วาดจุดหมายเลขทับตรงตำแหน่งที่ผู้ใช้กดจริง (จากพิกัด docX/docY ที่เก็บไว้). */
+function ZoomPanel({
+  pin,
+  r2PublicUrl,
+  onClose,
+}: {
+  pin: PinpointPin;
+  r2PublicUrl: string;
+  onClose: () => void;
+}) {
+  const src = `${r2PublicUrl}/${pin.screenshot_key}`;
+  const [pos, setPos] = useState(() => ({
+    x: Math.max(
+      16,
+      (typeof window !== "undefined" ? window.innerWidth : 1200) - 560 - 24,
+    ),
+    y: 88,
+  }));
+  const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
+  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // ลากย้ายกล่องด้วยแถบหัว
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      if (!dragRef.current) return;
+      setPos({
+        x: Math.min(
+          Math.max(0, e.clientX - dragRef.current.dx),
+          window.innerWidth - 120,
+        ),
+        y: Math.min(
+          Math.max(0, e.clientY - dragRef.current.dy),
+          window.innerHeight - 48,
+        ),
+      });
+    };
+    const onUp = () => {
+      dragRef.current = null;
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, []);
+
+  // ตำแหน่งจุดที่กด (เป็น % ของภาพ) — docX/docY = พิกัดในหน้าเอกสาร
+  // markerLeft% = docX / กว้างจอ · markerTop% = docY × (กว้างภาพจริง / สูงภาพจริง) / กว้างจอ
+  // (scale ของ snapdom หักล้างกันเองผ่านอัตราส่วนภาพจริง → ไม่ต้องรู้ scale)
+  const meta = pin.element_meta as { docX?: number; docY?: number } | null;
+  const vw = pin.viewport_w;
+  const docX =
+    meta?.docX ??
+    (pin.coord_x_pct != null && vw != null
+      ? (pin.coord_x_pct / 100) * vw
+      : null);
+  const docY =
+    meta?.docY ??
+    (pin.coord_y_pct != null && pin.viewport_h != null
+      ? (pin.coord_y_pct / 100) * pin.viewport_h
+      : null);
+
+  let markerLeft: number | null = null;
+  let markerTop: number | null = null;
+  if (docX != null && docY != null && vw && nat && nat.w > 0 && nat.h > 0) {
+    markerLeft = Math.min(100, Math.max(0, (docX / vw) * 100));
+    markerTop = Math.min(
+      100,
+      Math.max(0, ((docY * nat.w) / (vw * nat.h)) * 100),
+    );
+  }
+
+  // เลื่อนให้เห็นจุดที่กดเมื่อโหลดภาพเสร็จ
+  useEffect(() => {
+    if (markerTop == null || !scrollRef.current) return;
+    const el = scrollRef.current;
+    el.scrollTop = Math.max(
+      0,
+      (markerTop / 100) * el.scrollHeight - el.clientHeight / 2,
+    );
+  }, [markerTop, nat]);
+
+  return (
+    <div
+      role="dialog"
+      aria-label={`ภาพหน้าจอ จุดที่ ${pin.seq}`}
+      style={{ left: pos.x, top: pos.y }}
+      className="fixed z-[100] flex h-[70vh] max-h-[90vh] min-h-[240px] w-[min(560px,95vw)] min-w-[300px] max-w-[95vw] resize flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl"
+    >
+      {/* แถบหัว — ลากเพื่อย้าย */}
+      <div
+        onPointerDown={(e) => {
+          dragRef.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
+        }}
+        className="flex shrink-0 cursor-move select-none items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2"
+      >
+        <span
+          className={cn(
+            "flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold text-white",
+            pin.priority === "urgent"
+              ? "bg-red-600"
+              : "bg-[var(--color-brand-600)]",
+          )}
         >
-          <button
-            type="button"
-            onClick={() => setZoomSrc(null)}
-            aria-label="ปิด"
-            className="absolute right-4 top-4 flex size-10 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
-          >
-            <X className="size-6" />
-          </button>
+          {pin.seq}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-600">
+          {pin.comment || "ภาพหน้าจอ"}
+        </span>
+        <span className="hidden shrink-0 text-[10px] text-zinc-400 lg:inline">
+          ลากย้าย · ลากมุมล่างขวาเพื่อย่อ/ขยาย
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="ปิด"
+          className="flex size-7 shrink-0 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-200"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+
+      {/* พื้นที่ภาพ */}
+      <div ref={scrollRef} className="relative flex-1 overflow-auto bg-zinc-100">
+        <div className="relative w-full">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={zoomSrc}
-            alt="ภาพหน้าจอขยาย"
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-[90vh] max-w-[95vw] cursor-default rounded-lg object-contain shadow-2xl"
+            src={src}
+            alt={`ภาพหน้าจอ จุดที่ ${pin.seq}`}
+            draggable={false}
+            onLoad={(e) =>
+              setNat({
+                w: e.currentTarget.naturalWidth,
+                h: e.currentTarget.naturalHeight,
+              })
+            }
+            className="block w-full select-none"
           />
+          {markerLeft != null && markerTop != null && (
+            <span
+              style={{ left: `${markerLeft}%`, top: `${markerTop}%` }}
+              className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+            >
+              <span className="relative flex size-7 items-center justify-center">
+                <span className="absolute inline-flex size-7 animate-ping rounded-full bg-red-500/60" />
+                <span
+                  className={cn(
+                    "relative flex size-7 items-center justify-center rounded-full border-2 border-white text-[11px] font-extrabold text-white shadow-lg",
+                    pin.priority === "urgent"
+                      ? "bg-red-600"
+                      : "bg-[var(--color-brand-600)]",
+                  )}
+                >
+                  {pin.seq}
+                </span>
+              </span>
+            </span>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
