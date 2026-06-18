@@ -39,6 +39,8 @@ export interface NormalizedRow {
   rowIndex: number;    // 0-based index in file (for lineHash rowIndex salt)
   accountNo?: string;  // per-row account number (multi-account files e.g. TTB ACCHIST);
                        // when unset the row belongs to ParseResult.accountNo (single-account file)
+  externalRef?: string | null; // กุญแจรายการที่ "เสถียรข้าม export": เวลาเกิดรายการจริง+เลขเครื่อง+คู่ค้า
+                       // (ธนาคารบางเจ้าให้มา เช่น SCB) → ใช้ทำ line_hash แทน "ยอดคงเหลือ" ที่เลื่อนได้
   rawRow: Record<string, string>; // original CSV columns for raw_row_json
 }
 

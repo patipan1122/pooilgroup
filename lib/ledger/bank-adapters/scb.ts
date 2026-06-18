@@ -75,6 +75,13 @@ export const scbAdapter: BankAdapter = {
       const rawRow: Record<string, string> = {};
       headers.forEach((h, idx) => { rawRow[h] = cols[idx]?.trim() ?? ""; });
 
+      // กุญแจรายการที่เสถียรข้าม export: เวลาเกิดรายการจริง + เลขเครื่อง + เลขบัญชีคู่ค้า
+      // (ไม่ขยับแม้ export คนละช่วง — ต่างจาก "ยอดคงเหลือ") → ใช้กันซ้ำแม่นยำ
+      const txnTime = rawRow["Transaction Date and Time"] ?? "";
+      const terminal = rawRow["TerminalID"] ?? "";
+      const cpAcct = rawRow["Counter Party Account Number"] ?? "";
+      const externalRef = txnTime || terminal || cpAcct ? `${txnTime}|${terminal}|${cpAcct}` : null;
+
       rows.push({
         txnDate,
         valueDate: txnDate,
@@ -86,6 +93,7 @@ export const scbAdapter: BankAdapter = {
         channel,
         rowIndex: i - 1,
         accountNo: acct || undefined, // SCB HISTSTMT can carry several accounts in one file
+        externalRef,
         rawRow,
       });
     }

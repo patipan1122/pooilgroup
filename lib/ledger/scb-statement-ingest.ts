@@ -19,6 +19,7 @@ import { randomUUID } from "crypto";
 import { detectAndParse } from "@/lib/ledger/bank-adapters";
 import type { NormalizedRow } from "@/lib/ledger/bank-adapters/types";
 import { computeLineHash } from "@/lib/ledger/bank-statement-reconcile";
+import { checkIntraFileContinuity } from "@/lib/ledger/bank-import-guard";
 import { decryptZipToTextFiles } from "@/lib/ledger/scb-zip";
 import {
   isGmailOAuthConfigured,
@@ -121,6 +122,7 @@ async function insertBatch(
       amountSatang: row.amountSatang,
       balanceSatang: row.balanceSatang,
       ref1: row.ref1,
+      externalRef: row.externalRef,
       rowIndex: row.rowIndex,
     }),
     txn_date: row.txnDate,
@@ -191,6 +193,12 @@ async function ingestCsvContent(
     const target = l4.length === 4 ? accounts.get(l4) : undefined;
     if (!target) {
       notes.push(`…${l4 || "?"}: ไม่พบบัญชีในระบบ (ข้าม ${rows.length} รายการ)`);
+      continue;
+    }
+    // ด่านยอดต่อเนื่อง (CEO 2026-06-18): ไฟล์อัตโนมัติที่ยอดไม่ต่อ = ไม่นำเข้า (กันข้อมูลพัง) แต่ "ไม่เงียบ" — โน้ตไว้
+    const cont = checkIntraFileContinuity(rows);
+    if (!cont.ok) {
+      notes.push(`…${l4}: ข้าม ${rows.length} รายการ — ยอดคงเหลือไม่ต่อเนื่อง (แถวที่ ${cont.rowIndex + 1})`);
       continue;
     }
     const res = await insertBatch(orgId, target, rows, filename);

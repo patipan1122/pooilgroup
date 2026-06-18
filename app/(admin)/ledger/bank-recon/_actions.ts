@@ -39,6 +39,7 @@ import { ledgerRevenueGlV1 } from "@/lib/ledger/flags";
 import { prisma } from "@/lib/prisma";
 import { randomUUID } from "crypto";
 import * as XLSX from "xlsx";
+import { checkIntraFileContinuity, continuityErrorMessage } from "@/lib/ledger/bank-import-guard";
 
 // Read an uploaded file as CSV-equivalent text. .xlsx/.xls → SheetJS → CSV
 // (previously file.text() was called on binary xlsx → garbage; CSV worked by luck).
@@ -422,6 +423,13 @@ export async function commitImportAction(
   }
   if (!groupRows.length) return { ok: false, error: "ไม่พบรายการเดินบัญชีของบัญชีนี้ในไฟล์" };
 
+  // ด่าน "ยอดคงเหลือต่อเนื่อง" (CEO 2026-06-18: ยอดไม่ต่อ = ห้ามอัป) — เฉพาะไฟล์ธนาคารจริงที่มียอดคงเหลือ
+  // กันไฟล์ปนหลายบัญชี/มีรายการขาด · re-import ช่วงเดิมไม่โดนด่านนี้ (line_hash externalRef ดีดัปก่อนอยู่แล้ว)
+  if (!isTemplate) {
+    const cont = checkIntraFileContinuity(groupRows);
+    if (!cont.ok) return { ok: false, error: continuityErrorMessage(cont) };
+  }
+
   // Period for THIS account-group (not the whole file, which may span several accounts).
   const groupDates = groupRows.map((r) => r.txnDate).filter(Boolean).sort();
   const periodStart = groupDates[0] ?? result.periodStart;
@@ -470,6 +478,7 @@ export async function commitImportAction(
       amountSatang: row.amountSatang,
       balanceSatang: row.balanceSatang,
       ref1: row.ref1,
+      externalRef: row.externalRef,
       rowIndex: row.rowIndex,
     });
     return {

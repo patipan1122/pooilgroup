@@ -56,16 +56,14 @@ export interface BankTxnRow {
  * both contain the May-1 deposit; the running BALANCE after that txn is identical in
  * both files, so the hash matches → UNIQUE(bank_account_id, line_hash) skips the dup.
  *
- * Why balance (not rowIndex) is the disambiguator: rowIndex shifts when a file starts
- * at a different date → same txn gets a different rowIndex per file → the OLD hash
- * (which salted on rowIndex) let cross-file duplicates through. The running balance is
- * intrinsic to the txn and stable across files, AND two legit same-day/same-amount
- * deposits have DIFFERENT balances → they still stay distinct. (Manual-add rows carry
- * a unique ref1 = "MANUAL-<n>", so they remain distinct even with balance=0.)
+ * Disambiguator priority:
+ *   1) externalRef (เวลาเกิดรายการจริง+เลขเครื่อง+คู่ค้า ที่ธนาคารให้มา เช่น SCB) — เสถียรที่สุด:
+ *      ไม่ขยับแม้ export คนละช่วง (ต่างจากยอดคงเหลือที่ "เลื่อน" เมื่อชุดข้อมูลต่างกัน → เคยทำให้กันซ้ำหลุด).
+ *   2) ถ้าไม่มี externalRef → ถอยไปใช้ running balance (พฤติกรรมเดิม สำหรับธนาคารที่ไม่มีเวลาจริง).
+ * สองรายการวันเดียวยอดเท่ากันยังแยกกันได้ (externalRef หรือ balance ต่างกัน · manual-add ใช้ ref1="MANUAL-<n>").
  *
- * ⚠️ Changing this formula means rows imported BEFORE this fix carry the old (rowIndex)
- * hash → re-importing the SAME old data can still dup against them once; the
- * "ล้างรายการซ้ำ" tool cleans that transition. New imports are stable from here on.
+ * ⚠️ การเปลี่ยนสูตรนี้: แถว SCB ที่นำเข้า "ก่อน" แก้ ถูก hash ด้วย balance → ถ้าเผลอ re-import ช่วงเดิม
+ * อาจซ้ำได้ "1 รอบ" ก่อนนิ่ง → ใช้ "ล้างรายการซ้ำ" เก็บได้. ของใหม่ตั้งแต่แก้ = นิ่งถาวรไม่ว่าจะอัปทับกี่รอบ.
  */
 export function computeLineHash(params: {
   accountNo: string;
@@ -73,13 +71,15 @@ export function computeLineHash(params: {
   amountSatang: number;
   balanceSatang: number;
   ref1: string | null;
+  externalRef?: string | null; // กุญแจเสถียรข้าม export (ถ้ามี → ใช้แทน balance)
   rowIndex?: number; // kept for callers' row_index column; NOT part of the hash
 }): string {
+  const ext = params.externalRef?.trim();
   const parts = [
     params.accountNo,
     params.txnDate,
     String(params.amountSatang),
-    String(params.balanceSatang),
+    ext ? `x:${ext}` : String(params.balanceSatang), // เวลาจริง (เสถียร) > ยอดคงเหลือ (เลื่อนได้)
     params.ref1 ?? "",
   ];
   return createHash("sha256").update(parts.join("|")).digest("hex");
