@@ -54,6 +54,58 @@ async function fileToContent(file: File): Promise<string> {
   return await file.text();
 }
 
+// ── Balance-continuity guard ────────────────────────────────────────────────
+// A real statement's running balance must chain exactly: each row's balance =
+// previous balance + that row's signed amount (เงินเข้า + / เงินออก −). The file
+// may be oldest-first OR newest-first, so we test BOTH directions and accept it
+// if the chain holds end-to-end in EITHER (zero breaks). Only a file that breaks
+// in both directions is genuinely inconsistent (missing rows, corrupted amounts,
+// or wrong account) → caller blocks. Tolerance 1 satang (rounding only).
+type BalanceRow = { txnDate: string; amountSatang: number; balanceSatang: number };
+
+function checkBalanceContinuity(rows: BalanceRow[]): { ok: true } | { ok: false; message: string } {
+  if (rows.length <= 1) return { ok: true };
+  // No usable balance data (e.g. an adapter that doesn't populate it) → can't verify.
+  if (rows.every((r) => r.balanceSatang === 0)) return { ok: true };
+
+  const TOL = 1; // satang
+  const firstBreak = (rs: BalanceRow[]): number => {
+    for (let i = 1; i < rs.length; i++) {
+      const expected = rs[i - 1].balanceSatang + rs[i].amountSatang;
+      if (Math.abs(expected - rs[i].balanceSatang) > TOL) return i;
+    }
+    return -1;
+  };
+
+  const fwd = firstBreak(rows);
+  if (fwd === -1) return { ok: true };
+  const reversed = [...rows].reverse();
+  const rev = firstBreak(reversed);
+  if (rev === -1) return { ok: true };
+
+  // Both directions break → genuinely inconsistent. Report the break from whichever
+  // direction chained further (more informative = closer to the true chronological order).
+  const useRev = rev > fwd;
+  const rs = useRev ? reversed : rows;
+  const i = useRev ? rev : fwd;
+  const prev = rs[i - 1];
+  const curr = rs[i];
+  const expected = prev.balanceSatang + curr.amountSatang;
+  const baht = (s: number) => (s / 100).toFixed(2);
+  const inOut =
+    curr.amountSatang >= 0
+      ? `+ เงินเข้า ฿${baht(curr.amountSatang)}`
+      : `− เงินออก ฿${baht(Math.abs(curr.amountSatang))}`;
+  return {
+    ok: false,
+    message:
+      `ยอดคงเหลือในไฟล์ไม่ต่อเนื่อง — บล็อกการนำเข้าเพื่อกันข้อมูลผิด. ` +
+      `ที่รายการวันที่ ${curr.txnDate}: ยอดก่อนหน้า ฿${baht(prev.balanceSatang)} ${inOut} ควรได้ ฿${baht(expected)} ` +
+      `แต่ไฟล์ระบุยอดคงเหลือ ฿${baht(curr.balanceSatang)} (ต่างกัน ฿${baht(Math.abs(curr.balanceSatang - expected))}). ` +
+      `ไฟล์อาจมีรายการขาดหาย ยอดเพี้ยน หรือเลือกบัญชีผิด — กรุณาตรวจไฟล์/บัญชีแล้วลองใหม่.`,
+  };
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type ImportDryRunResult = {
@@ -103,20 +155,13 @@ export async function dryRunImportAction(formData: FormData): Promise<ImportDryR
   const creditRows = result.rows.filter((r) => r.amountSatang > 0);
   const debitRows  = result.rows.filter((r) => r.amountSatang < 0);
 
-  // Balance continuity check (warn if first balance doesn't tie to previous).
+  // Balance continuity (order-agnostic). Preview only WARNS — the hard block lives
+  // in commitImportAction on the per-account rows (a combined multi-account file's
+  // chain isn't continuous across accounts, so we can't safely block before grouping).
   // Skipped for the template format — it carries no running balance (all zeros).
   if (result.rows.length > 1 && !isTemplate) {
-    for (let i = 1; i < result.rows.length; i++) {
-      const prev = result.rows[i - 1];
-      const curr = result.rows[i];
-      const expectedBalance = prev.balanceSatang + curr.amountSatang;
-      if (Math.abs(expectedBalance - curr.balanceSatang) > 500) {
-        warnings.push(
-          `แถวที่ ${i + 1}: ยอดคงเหลือไม่ต่อเนื่อง (คาดว่า ฿${(expectedBalance / 100).toFixed(2)} แต่ได้ ฿${(curr.balanceSatang / 100).toFixed(2)})`,
-        );
-        break; // report only first discrepancy to avoid noise
-      }
-    }
+    const cont = checkBalanceContinuity(result.rows);
+    if (!cont.ok) warnings.push(cont.message);
   }
 
   return {
@@ -382,8 +427,43 @@ export async function commitImportAction(
   const periodStart = groupDates[0] ?? result.periodStart;
   const periodEnd = groupDates[groupDates.length - 1] ?? result.periodEnd;
 
+  // GUARD — running balance must chain EXACTLY (block, not just warn). If the file's
+  // ยอดคงเหลือ doesn't tie out row-by-row, it's missing rows / has corrupted amounts /
+  // is the wrong account → refuse the import with a specific reason.
+  if (!isTemplate) {
+    const cont = checkBalanceContinuity(groupRows);
+    if (!cont.ok) return { ok: false, error: cont.message };
+  }
+
+  // GUARD — never double-import. line_hash dedups only IDENTICAL re-imports of the
+  // SAME file (rowIndex is part of the hash). For overlapping/different files we also
+  // skip rows whose content already exists for this account in the same date range
+  // (same date + amount + running balance + ref1 = the same transaction) so a balance
+  // can't "jump" from importing the same money twice.
+  let duplicateSkipped = 0;
+  let freshRows = groupRows;
+  if (!isTemplate) {
+    const existing = await prisma.$queryRaw<{ k: string }[]>`
+      SELECT txn_date::text || '|' || amount_satang::text || '|' || balance_satang::text || '|' || COALESCE(ref1, '') AS k
+      FROM ledger_bank_txn
+      WHERE bank_account_id = ${bankAccountId}::uuid
+        AND txn_date BETWEEN ${periodStart}::date AND ${periodEnd}::date
+    `;
+    const seen = new Set(existing.map((e) => e.k));
+    const contentKey = (r: (typeof groupRows)[number]) =>
+      `${r.txnDate}|${r.amountSatang}|${r.balanceSatang}|${r.ref1 ?? ""}`;
+    freshRows = groupRows.filter((r) => !seen.has(contentKey(r)));
+    duplicateSkipped = groupRows.length - freshRows.length;
+    if (freshRows.length === 0) {
+      return {
+        ok: false,
+        error: `ทุกรายการในไฟล์ (${groupRows.length} รายการ) มีอยู่ในบัญชีนี้แล้ว — ไม่มีรายการใหม่ให้นำเข้า (กันนำเข้าซ้ำ).`,
+      };
+    }
+  }
+
   // Build txn rows with lineHash
-  const txnRows = groupRows.map((row) => {
+  const txnRows = freshRows.map((row) => {
     const lineHash = computeLineHash({
       accountNo,
       txnDate: row.txnDate,
@@ -420,7 +500,7 @@ export async function commitImportAction(
     period_end: periodEnd,
     batch_format_version: result.formatVersion,
     source_filename: file.name,
-    row_count: groupRows.length,
+    row_count: freshRows.length,
     uploaded_by: session.user.id,
   };
 
@@ -457,7 +537,7 @@ export async function commitImportAction(
     ok: true,
     batchId,
     insertedCount: data?.inserted ?? 0,
-    skippedCount: data?.skipped ?? 0,
+    skippedCount: (data?.skipped ?? 0) + duplicateSkipped,
   };
 }
 
