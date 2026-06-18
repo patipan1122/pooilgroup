@@ -27,6 +27,8 @@ export type SavedAmazonDay = {
   iv_doc_id: string | null;
   iv_status: string; // none | posted
   iv_gross: number | null;
+  iv_channels: Record<string, number> | null; // ไส้ในรายช่องทางในใบ TRCloud (c1..c40) — เทียบรายช่อง
+  iv_pre_vat: number | null; // ยอดก่อน VAT ในใบ → vat_iv = iv_gross − iv_pre_vat
   match_state: string | null; // match | mismatch | no_iv
   iv_checked_at: string | null;
 };
@@ -112,17 +114,22 @@ export async function loadAmazonDays(
   from: string,
   to: string,
 ): Promise<SavedAmazonDay[]> {
-  const { data } = await admin
-    .from("cashhub_amazon_daily")
-    .select(
-      "sales_date, gross, total, vat, channels, balanced, block_reason, iv_doc_no, iv_doc_id, iv_status, iv_gross, match_state, iv_checked_at",
-    )
-    .eq("org_id", orgId)
-    .eq("store_code", storeCode)
-    .gte("sales_date", from)
-    .lte("sales_date", to)
-    .order("sales_date");
-  return ((data ?? []) as Record<string, unknown>[]).map((d) => ({
+  const BASE_SEL =
+    "sales_date, gross, total, vat, channels, balanced, block_reason, iv_doc_no, iv_doc_id, iv_status, iv_gross, match_state, iv_checked_at";
+  const q = (sel: string) =>
+    admin
+      .from("cashhub_amazon_daily")
+      .select(sel)
+      .eq("org_id", orgId)
+      .eq("store_code", storeCode)
+      .gte("sales_date", from)
+      .lte("sales_date", to)
+      .order("sales_date");
+  // ลองดึงพร้อมไส้ใน (iv_channels/iv_pre_vat) ก่อน · ถ้าคอลัมน์ยังไม่มี (migration ยังไม่ลง) → fallback ไม่ให้หน้าพัง
+  let res = await q(`${BASE_SEL}, iv_channels, iv_pre_vat`);
+  if (res.error) res = await q(BASE_SEL);
+  const data = res.data;
+  return ((data ?? []) as unknown as Record<string, unknown>[]).map((d) => ({
     sales_date: String(d.sales_date).slice(0, 10),
     gross: n(d.gross) ?? 0,
     total: n(d.total),
@@ -134,6 +141,8 @@ export async function loadAmazonDays(
     iv_doc_id: (d.iv_doc_id as string | null) ?? null,
     iv_status: String(d.iv_status ?? "none"),
     iv_gross: n(d.iv_gross),
+    iv_channels: (d.iv_channels as Record<string, number> | null) ?? null,
+    iv_pre_vat: n(d.iv_pre_vat),
     match_state: (d.match_state as string | null) ?? null,
     iv_checked_at: (d.iv_checked_at as string | null) ?? null,
   }));
@@ -177,19 +186,34 @@ export async function applyIvMatch(
       patch.iv_doc_id = iv.ivId;
       patch.iv_status = "posted";
       patch.iv_gross = iv.gross;
+      // เก็บไส้ในรายช่องทาง + ยอดก่อน VAT จากใบจริง → เทียบรายช่องในตาราง (ทาเหลืองช่องที่เพี้ยน)
+      patch.iv_channels = Object.keys(iv.channels).length ? iv.channels : null;
+      patch.iv_pre_vat = iv.preVat || null;
       match_state = Math.abs(iv.gross - day.gross) < 1 ? "match" : "mismatch";
     } else {
       patch.iv_gross = null;
       patch.iv_status = "none";
+      patch.iv_channels = null;
+      patch.iv_pre_vat = null;
       match_state = "no_iv";
     }
     patch.match_state = match_state;
-    const { error } = await admin
-      .from("cashhub_amazon_daily")
-      .update(patch)
-      .eq("org_id", orgId)
-      .eq("store_code", storeCode)
-      .eq("sales_date", day.sales_date);
+    const run = (p: Record<string, unknown>) =>
+      admin
+        .from("cashhub_amazon_daily")
+        .update(p)
+        .eq("org_id", orgId)
+        .eq("store_code", storeCode)
+        .eq("sales_date", day.sales_date);
+    let { error } = await run(patch);
+    if (error) {
+      // คอลัมน์ไส้ใน (iv_channels/iv_pre_vat) ยังไม่มี (migration ยังไม่ลง) → อัปเดตแบบไม่มีไส้ใน
+      // กัน "เทียบกับ TRCloud" พังทั้งหมด (ยอดรวม/สถานะยังอัปเดตได้)
+      const { iv_channels: _c, iv_pre_vat: _v, ...rest } = patch;
+      void _c;
+      void _v;
+      ({ error } = await run(rest));
+    }
     if (!error) updated++;
   }
   return { updated };
@@ -344,18 +368,24 @@ export async function markIvPosted(
   const now = new Date().toISOString();
   // match จากการเทียบยอดจริง: ใบที่สร้างจาก POS → grand=gross=match · ใบที่ "พบซ้ำ" (คีย์มือ) อาจ mismatch
   const match_state = Math.abs(ivGross - posGross) < 1 ? "match" : "mismatch";
-  await admin
-    .from("cashhub_amazon_daily")
-    .update({
-      iv_doc_no: ivNo,
-      iv_doc_id: ivId,
-      iv_status: "posted",
-      iv_gross: ivGross,
-      match_state,
-      iv_checked_at: now,
-      updated_at: now,
-    })
-    .eq("org_id", orgId)
-    .eq("store_code", storeCode)
-    .eq("sales_date", salesDate);
+  const base = {
+    iv_doc_no: ivNo,
+    iv_doc_id: ivId,
+    iv_status: "posted",
+    iv_gross: ivGross,
+    match_state,
+    iv_checked_at: now,
+    updated_at: now,
+  };
+  const run = (p: Record<string, unknown>) =>
+    admin
+      .from("cashhub_amazon_daily")
+      .update(p)
+      .eq("org_id", orgId)
+      .eq("store_code", storeCode)
+      .eq("sales_date", salesDate);
+  // ล้างไส้ในเดิม → กด "เทียบกับ TRCloud" เพื่อดึงรายช่องทางของใบใหม่มาเทียบ (กันค่าเก่าค้าง)
+  const { error } = await run({ ...base, iv_channels: null, iv_pre_vat: null });
+  // คอลัมน์ไส้ในยังไม่มี (migration ยังไม่ลง) → อัปเดตแบบไม่มีไส้ใน (กันสร้าง IV แล้วสถานะไม่อัป)
+  if (error) await run(base);
 }

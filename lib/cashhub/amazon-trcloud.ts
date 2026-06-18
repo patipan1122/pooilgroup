@@ -155,7 +155,28 @@ export type AmazonIv = {
   date: string; // YYYY-MM-DD
   gross: number;
   status: string;
+  channels: Record<string, number>; // ไส้ในรายช่องทาง จาก special_note (c1..c40) → ยอด
+  preVat: number; // ยอดก่อน VAT ในใบ (head.total) → vat = gross − preVat
 };
+
+/** parse special_note (JSON {"c1":"4354","u1":"",...}) → c-var map (ข้าม u*, ช่องว่าง) */
+export function parseIvChannels(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (typeof raw !== "string" || !raw) return out;
+  let o: Record<string, unknown>;
+  try {
+    o = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return out;
+  }
+  for (const [k, v] of Object.entries(o)) {
+    if (!/^c\d+$/.test(k)) continue; // เอาเฉพาะ c1..c40 (ข้าม u1..u40 = หน่วย)
+    if (v == null || v === "") continue;
+    const n = Number.parseFloat(String(v).replace(/,/g, ""));
+    if (Number.isFinite(n) && n !== 0) out[k] = n;
+  }
+  return out;
+}
 
 /** ดึง IV ของสาขา (filter ด้วย project) ในช่วงวัน → เช็คว่าวันไหนคีย์แล้ว */
 export async function fetchAmazonIvs(
@@ -187,6 +208,9 @@ export async function fetchAmazonIvs(
       date: String(iv.issue_date ?? "").slice(0, 10),
       gross: amount(iv.grand_total ?? iv.total),
       status: String(iv.status ?? ""),
+      // ไส้ในรายช่องทาง — มากับ response เดิม (special_note) ไม่ต้องเรียกเพิ่ม
+      channels: parseIvChannels(iv.special_note),
+      preVat: amount(iv.total), // head.total = ยอดก่อน VAT (tax_option=ex)
     }));
     return { ivs };
   } catch (err) {

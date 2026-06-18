@@ -31,6 +31,21 @@ type Props = {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// วันที่ยอดรวมตรง แต่ "ไส้ใน" (รายช่องทาง หรือ VAT) ในใบกำกับ ≠ POS — จุดที่เทียบยอดรวมจับไม่ได้
+// (ต้องตรวจไส้ในแล้ว = มี iv_channels) · ทน ±1 บาท (special_note เก็บจำนวนเต็ม)
+function hasInnerMismatch(d: SavedAmazonDay): boolean {
+  if (!d.iv_channels) return false;
+  const keys = new Set([
+    ...Object.keys(d.channels ?? {}),
+    ...Object.keys(d.iv_channels),
+  ]);
+  for (const k of keys)
+    if (Math.abs((d.iv_channels[k] ?? 0) - (d.channels?.[k] ?? 0)) >= 1) return true;
+  if (d.iv_gross != null && d.iv_pre_vat != null)
+    if (Math.abs(d.iv_gross - d.iv_pre_vat - (d.vat ?? 0)) >= 1) return true;
+  return false;
+}
+
 export function AmazonView({
   storeCode,
   branchLabel,
@@ -391,6 +406,8 @@ export function AmazonView({
     // "ยังไม่เทียบ" = match_state ยังเป็น null (เพิ่งอัปไฟล์ใหม่ หรือ TRCloud จำกัดการเรียกชั่วคราว)
     // → จุดบอดเดิม: วันพวกนี้โชว์ "—" เหมือนทุกอย่างเรียบร้อย ทั้งที่ยังไม่เคยถูกเทียบ
     notChecked: savedDays.filter((d) => d.match_state == null).length,
+    // "ไส้ในเพี้ยน" = ยอดรวมตรง แต่รายช่องทาง/VAT ในใบ ≠ POS (ดูช่องสีเหลืองในตาราง)
+    innerMismatch: savedDays.filter(hasInnerMismatch).length,
   };
 
   return (
@@ -495,7 +512,8 @@ export function AmazonView({
         )}
         <p className="mt-2 text-xs text-zinc-500">
           {branchType ? `สูตรบัญชี: ${branchType} · ` : ""}อัปแล้วเซฟถาวร · กด&ldquo;เทียบกับ
-          TRCloud&rdquo; เพื่ออัปเดตสถานะว่าที่คีย์ตรงกับ POS ไหม
+          TRCloud&rdquo; เพื่อดึงใบกำกับมาเทียบ — ทั้ง<b>ยอดรวม</b>และ<b>ไส้ในรายช่องทาง + VAT</b>
+          (ช่องที่ในใบไม่ตรง POS จะขึ้นสีเหลือง)
         </p>
         {msg && (
           <div
@@ -522,8 +540,8 @@ export function AmazonView({
         </div>
       ) : (
         <>
-          {/* แจ้งเตือนยอดไม่ตรง / ติดปัญหา */}
-          {(stat.mismatch > 0 || stat.blocked > 0) && (
+          {/* แจ้งเตือนยอดไม่ตรง / ติดปัญหา / ไส้ในเพี้ยน */}
+          {(stat.mismatch > 0 || stat.blocked > 0 || stat.innerMismatch > 0) && (
             <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
               <div className="font-bold text-red-700">⚠️ พบรายการที่ต้องตรวจสอบ</div>
               <ul className="mt-1 text-sm text-red-700 space-y-0.5">
@@ -532,6 +550,16 @@ export function AmazonView({
                     • <b>{stat.mismatch} วัน</b> ยอดใน TRCloud <b>ไม่ตรง</b>กับยอด POS —{" "}
                     {savedDays
                       .filter((d) => d.match_state === "mismatch")
+                      .map((d) => d.sales_date.slice(5))
+                      .join(", ")}
+                  </li>
+                )}
+                {stat.innerMismatch > 0 && (
+                  <li>
+                    • <b>{stat.innerMismatch} วัน</b> ยอดรวมตรง แต่ <b>ไส้ใน</b>
+                    (รายช่องทาง/VAT) ในใบไม่ตรง POS — ดู<b>ช่องสีเหลือง</b>ในตาราง:{" "}
+                    {savedDays
+                      .filter(hasInnerMismatch)
                       .map((d) => d.sales_date.slice(5))
                       .join(", ")}
                   </li>
@@ -578,6 +606,9 @@ export function AmazonView({
             <Stat n={stat.days} label="วันทั้งหมด" />
             <Stat n={stat.match} label="ตรงกับ TRC" tone="ok" />
             <Stat n={stat.mismatch} label="ไม่ตรง" tone="warn" />
+            {stat.innerMismatch > 0 && (
+              <Stat n={stat.innerMismatch} label="ไส้ในเพี้ยน" tone="warn" />
+            )}
             <Stat n={stat.notChecked} label="ยังไม่เทียบ" tone="warn" />
             <Stat n={stat.noIv} label="ยังไม่มี IV" tone="info" />
             <Stat n={stat.blocked} label="ติดปัญหา" tone="warn" />

@@ -20,6 +20,24 @@ type Col = {
   diff?: boolean; // ไฮไลต์แดงถ้า ≠ 0 (ส่วนต่าง POS↔TRC)
   cvar?: string; // เป็นคอลัมน์ช่องทาง (อ่านจาก channels[cvar])
   settle?: boolean; // เงินเข้าจริง (ไฮไลต์เขียว)
+  // ยอดฝั่ง "ใบกำกับ TRCloud" ของคอลัมน์นี้ (ไส้ใน) — ถ้า ≠ POS → ทาเหลือง · null = ยังไม่ตรวจไส้ใน
+  ivGet?: (d: SavedAmazonDay) => number | null;
+};
+
+const IV_TOL = 1; // ทน ±1 บาท (special_note เก็บเป็นจำนวนเต็ม)
+// vat ในใบ = ยอดรวม − ยอดก่อน VAT (ใบ tax_option=ex)
+const ivVat = (d: SavedAmazonDay) =>
+  d.iv_gross != null && d.iv_pre_vat != null ? d.iv_gross - d.iv_pre_vat : null;
+// นับช่อง "ไส้ใน" ที่เพี้ยน (รายช่องทาง + ก่อน VAT + VAT) — เฉพาะวันที่ตรวจไส้ในแล้ว
+const innerMismatchCount = (d: SavedAmazonDay): number => {
+  if (!d.iv_channels) return 0;
+  let cnt = 0;
+  const keys = new Set([...Object.keys(d.channels ?? {}), ...Object.keys(d.iv_channels)]);
+  for (const k of keys)
+    if (Math.abs((d.iv_channels[k] ?? 0) - (d.channels?.[k] ?? 0)) >= IV_TOL) cnt++;
+  const v = ivVat(d);
+  if (v != null && Math.abs(v - (d.vat ?? 0)) >= IV_TOL) cnt++;
+  return cnt;
 };
 
 // ช่องทางชำระ (ตามลำดับสมุดบัญชี) → คอลัมน์
@@ -43,9 +61,15 @@ const ch = (cvar: string) => (d: SavedAmazonDay) => d.channels?.[cvar] ?? null;
 
 const BASE_COLS: Col[] = [
   { label: "ยอดขาย POS", get: (d) => d.gross },
-  { label: "ก่อน VAT", get: (d) => d.total, f: true },
-  { label: "VAT 7%", get: (d) => d.vat, f: true },
-  ...CHANNELS.map((c) => ({ label: c.label, get: ch(c.cvar), cvar: c.cvar })),
+  { label: "ก่อน VAT", get: (d) => d.total, f: true, ivGet: (d) => d.iv_pre_vat },
+  { label: "VAT 7%", get: (d) => d.vat, f: true, ivGet: ivVat },
+  ...CHANNELS.map((c) => ({
+    label: c.label,
+    get: ch(c.cvar),
+    cvar: c.cvar,
+    // ฝั่งใบ: ถ้าตรวจไส้ในแล้ว (iv_channels) → ยอดช่องนี้ในใบ (ไม่มี=0) · ยังไม่ตรวจ → null
+    ivGet: (d: SavedAmazonDay) => (d.iv_channels ? (d.iv_channels[c.cvar] ?? 0) : null),
+  })),
   { label: "ยอด IV (TRC)", get: (d) => d.iv_gross },
   {
     label: "ส่วนต่าง",
@@ -101,30 +125,70 @@ export function AmazonExcelGrid({
     const matched = !!c.cvar && hasVal && (rc?.matchedCvars?.includes(c.cvar) ?? false);
     // คอลัมน์ "เงินเข้าจริง" → รุ้งเมื่อวันนั้นแมตช์ครบทุกช่อง
     const settleMatched = !!c.settle && !!rc && rc.n > 0 && rc.nMatched >= rc.n;
+    // ── ไส้ใน: ยอดช่องนี้ในใบกำกับ TRCloud ≠ POS → ทาเหลือง + โชว์ยอดในใบใต้เลข POS ──
+    const ivv = c.ivGet ? c.ivGet(d) : null; // null = ยังไม่ตรวจไส้ใน
+    const ivBad = ivv != null && Math.abs(ivv - (v ?? 0)) >= IV_TOL;
+    const ivDiff = ivBad ? (ivv ?? 0) - (v ?? 0) : 0;
     return (
       <td
         key={c.label}
         className={`px-1.5 py-1 text-right tabular-nums whitespace-nowrap ${
           bad
             ? "bg-red-100 font-bold text-red-800"
-            : matched || settleMatched
-              ? "cell-matched-iridescent"
-              : c.settle
-                ? "bg-emerald-50 font-semibold text-emerald-700"
-                : c.f
-                  ? "bg-blue-50/40 text-zinc-700"
-                  : "text-zinc-700"
+            : ivBad
+              ? "bg-yellow-100 text-yellow-900 font-semibold" // เหลือง = ใบไม่ตรง POS ช่องนี้
+              : matched || settleMatched
+                ? "cell-matched-iridescent"
+                : c.settle
+                  ? "bg-emerald-50 font-semibold text-emerald-700"
+                  : c.f
+                    ? "bg-blue-50/40 text-zinc-700"
+                    : "text-zinc-700"
         }`}
       >
-        {num(v)}
+        {ivBad ? (
+          <div className="flex flex-col items-end leading-tight">
+            <span>{num(v)}</span>
+            <span className="text-[9px] font-semibold text-amber-700 whitespace-nowrap">
+              IV {num(ivv)} ({ivDiff > 0 ? "+" : "−"}
+              {num(Math.abs(ivDiff))})
+            </span>
+          </div>
+        ) : (
+          num(v)
+        )}
       </td>
     );
   };
 
   // คอลัมน์ "ตรง?" — แยก 4 สถานะให้ชัด (เลิกใช้ขีด "—" กำกวมที่ทำให้ "ไม่มีใบ" กับ "ยังไม่เทียบ" ดูเหมือนกัน)
   const matchCell = (d: SavedAmazonDay) => {
-    if (d.match_state === "match")
-      return <span className="font-semibold text-emerald-600">✅ ตรง</span>;
+    if (d.match_state === "match") {
+      // ยอดรวมตรง แต่ "ไส้ใน" รายช่องทางเพี้ยน → เตือน (จุดที่เทียบยอดรวมจับไม่ได้)
+      const inner = innerMismatchCount(d);
+      if (inner > 0)
+        return (
+          <span className="inline-flex flex-col items-center gap-0.5 leading-tight">
+            <span className="font-semibold text-emerald-600">✅ ยอดรวมตรง</span>
+            <span className="rounded bg-yellow-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 whitespace-nowrap">
+              ⚠ ไส้ใน {inner} ช่องเพี้ยน
+            </span>
+          </span>
+        );
+      // ตรวจไส้ในแล้วตรงทุกช่อง = ตรงจริง · ยังไม่ตรวจไส้ใน = ตรงแค่ยอดรวม
+      return d.iv_channels ? (
+        <span className="font-semibold text-emerald-600" title="ยอดรวม + ไส้ในทุกช่องตรง POS">
+          ✅ ตรงทุกช่อง
+        </span>
+      ) : (
+        <span
+          className="font-semibold text-emerald-600"
+          title="ยอดรวมตรง — ยังไม่ได้ตรวจไส้ใน (กด 'เทียบกับ TRCloud')"
+        >
+          ✅ ตรง
+        </span>
+      );
+    }
     if (d.match_state === "mismatch") {
       const diff = d.iv_gross != null ? d.iv_gross - d.gross : null;
       return (
@@ -317,6 +381,11 @@ export function AmazonExcelGrid({
         <span className="text-zinc-400">⚪ ยังไม่มีใบ</span> = ยังไม่มี IV ใน TRCloud ·{" "}
         <span className="text-amber-600">🔄 ยังไม่เทียบ</span> = ยังไม่ได้กดเทียบ/TRCloud
         จำกัดชั่วคราว (กดปุ่ม &ldquo;เทียบกับ TRCloud&rdquo; อีกครั้ง) ·{" "}
+        <span className="rounded bg-yellow-100 px-1 font-semibold text-yellow-900">
+          ช่องสีเหลือง
+        </span>{" "}
+        = ยอดช่องนั้นในใบกำกับ TRCloud <b>ไม่ตรง</b> POS (เลขบน = POS · เลขล่าง = IV+ส่วนต่าง ·
+        ต้องกด &ldquo;เทียบกับ TRCloud&rdquo; ก่อนถึงเห็นไส้ใน) ·{" "}
         <span className="cell-matched-iridescent rounded px-1">ช่องสีรุ้ง</span> = กระทบยอดธนาคาร
         +ยืนยันแล้ว (ช่องที่ยังไม่สีรุ้ง = ยังไม่แมตช์) · คอลัมน์ <b>กระทบยอด</b>:{" "}
         <span className="text-matched-iridescent font-bold">✦ เป๊ะ</span> = เงินเข้าตรง (±฿1) ·{" "}
