@@ -171,6 +171,7 @@ async function selfRegisterChairopsMaid(
         displayName,
         role: ChairopsUserRole.MAID,
         lineUserId,
+        lineDisplayName: displayName,
         primaryBranchId: null,
         isActive: true,
       },
@@ -302,26 +303,36 @@ export async function POST(req: NextRequest) {
         id: true, orgId: true, email: true, displayName: true, role: true,
         lineUserId: true, authUserId: true,
         inviteToken: true, inviteExpiresAt: true,
-        onboardingComplete: true,
+        onboardingComplete: true, lineDisplayName: true,
       },
     });
     if (!maid) {
       return NextResponse.json({ error: "ไม่พบบัญชีในลิงก์เชิญ" }, { status: 404 });
     }
-    // F5: reject if token was revoked (inviteToken cleared by auto-revoke)
-    // AUDIT-FIX: condition was `!== null && !== invite` — when token is null (revoked),
-    // `null !== null` = false → check was skipped, allowing old HMAC-valid tokens to bind.
-    // Correct: reject when stored token is null (revoked) OR doesn't match (tampered/rotated).
-    if (maid.inviteToken !== invite) {
-      return NextResponse.json({ error: "ลิงก์เชิญถูกยกเลิกหรือหมดอายุแล้ว" }, { status: 410 });
-    }
-    if (maid.lineUserId && maid.lineUserId !== lineUserId) {
-      return NextResponse.json(
-        { error: "ลิงก์นี้ถูกใช้ผูกกับ LINE อื่นไปแล้ว" },
-        { status: 409 },
-      );
-    }
-    if (!maid.lineUserId) {
+    // The LINE display name to cache for the office Users page (CEO 2026-06-18).
+    const lineName = verified.name ?? displayName ?? null;
+    // Idempotent invite (CEO 2026-06-18): if THIS LINE id is already bound to this
+    // maid — a repeat tap, OR a first tap that consumed the invite but failed to
+    // land a session downstream — just RE-LOGIN. Don't 410 on the already-spent
+    // token. Single-use protection still blocks a DIFFERENT LINE id (409 below).
+    // This is what makes the invite link "ใช้ได้นานขึ้น / กดซ้ำได้": one bad tap no
+    // longer permanently burns the link. See memory
+    // chairops-invite-plain-login-domain-split-2026-06-18.
+    const alreadyBoundToThisLine = !!maid.lineUserId && maid.lineUserId === lineUserId;
+    if (!alreadyBoundToThisLine) {
+      // F5: reject a revoked (inviteToken cleared by auto-revoke) / rotated / tampered
+      // token. Only matters for a NEW bind — null !== invite ⇒ 410.
+      if (maid.inviteToken !== invite) {
+        return NextResponse.json({ error: "ลิงก์เชิญถูกยกเลิกหรือหมดอายุแล้ว" }, { status: 410 });
+      }
+      // Bound to a DIFFERENT LINE id already → never let another LINE hijack.
+      if (maid.lineUserId && maid.lineUserId !== lineUserId) {
+        return NextResponse.json(
+          { error: "ลิงก์นี้ถูกใช้ผูกกับ LINE อื่นไปแล้ว" },
+          { status: 409 },
+        );
+      }
+      // Unbound → bind this LINE id + consume the token + cache the LINE name.
       // Auto-heal (2026-06-16): this LINE may be stuck on a leftover BRANCHLESS
       // self-registered "junk" account from an earlier tap (selfRegisterChairopsMaid
       // fires when a /chairops tap arrives with no invite). That stale row holds the
@@ -343,7 +354,12 @@ export async function POST(req: NextRequest) {
         // F5: bind LINE id + consume (null out) the invite token atomically
         await prisma.chairopsUser.update({
           where: { id: maid.id },
-          data: { lineUserId, inviteToken: null, inviteExpiresAt: null },
+          data: {
+            lineUserId,
+            inviteToken: null,
+            inviteExpiresAt: null,
+            lineDisplayName: lineName ?? undefined,
+          },
         });
       } catch {
         return NextResponse.json(
@@ -351,6 +367,11 @@ export async function POST(req: NextRequest) {
           { status: 409 },
         );
       }
+    } else if (lineName && lineName !== maid.lineDisplayName) {
+      // Already bound — refresh the cached LINE name (backfills older binds).
+      await prisma.chairopsUser
+        .update({ where: { id: maid.id }, data: { lineDisplayName: lineName } })
+        .catch(() => {});
     }
     if (maid.authUserId && maid.email) {
       const r = await ensurePoolMembership(
@@ -408,9 +429,17 @@ export async function POST(req: NextRequest) {
       // falls through to needsLink — the owner binds via the ledger claim link.
       const maid = await prisma.chairopsUser.findFirst({
         where: { lineUserId, isActive: true },
-        select: { id: true, orgId: true, email: true, displayName: true, role: true, authUserId: true },
+        select: { id: true, orgId: true, email: true, displayName: true, role: true, authUserId: true, lineDisplayName: true },
       });
       if (maid) {
+        // Cache the LINE display name for the office Users page (CEO 2026-06-18) —
+        // refresh on every login so existing maids backfill without re-onboarding.
+        const lineName = verified.name ?? displayName ?? null;
+        if (lineName && lineName !== maid.lineDisplayName) {
+          await prisma.chairopsUser
+            .update({ where: { id: maid.id }, data: { lineDisplayName: lineName } })
+            .catch(() => {});
+        }
         // Backfill Pool plumbing for maids self-registered before the
         // ensurePoolMembership fix shipped — otherwise their Pool layout
         // still bounces them to /login. Fail loud if it errors.

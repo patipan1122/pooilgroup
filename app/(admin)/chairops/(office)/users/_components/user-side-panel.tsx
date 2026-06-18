@@ -73,6 +73,12 @@ export function UserPanel({
             {user.displayName}
           </h2>
           <p className="text-xs text-zinc-500">{user.email ?? "—"}</p>
+          {user.lineUserId && (
+            <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-emerald-600">
+              <span aria-hidden>🟢</span>
+              LINE: {user.lineDisplayName ?? "ผูกแล้ว"}
+            </p>
+          )}
           {branchName && (
             <p className="mt-0.5 text-xs text-zinc-600">สาขา: {branchName}</p>
           )}

@@ -332,6 +332,15 @@ export default async function UsersListPage({
                         <div className="text-xs text-zinc-500">
                           {u.email ?? "—"}
                         </div>
+                        {/* LINE ที่ผูกไว้ (CEO 2026-06-18) — โชว์ว่าใคร (ชื่อ LINE) ผูกกับบัญชีนี้ */}
+                        {u.lineUserId && (
+                          <div className="mt-0.5 inline-flex items-center gap-1 text-xs text-emerald-600">
+                            <span aria-hidden>🟢</span>
+                            <span className="truncate max-w-[180px]">
+                              LINE: {u.lineDisplayName ?? "ผูกแล้ว"}
+                            </span>
+                          </div>
+                        )}
                       </Link>
                     </td>
                     <td className="px-3 py-2.5">

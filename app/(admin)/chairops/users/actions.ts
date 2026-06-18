@@ -997,6 +997,15 @@ const onboardingSchema = z.object({
   emergencyContact: z.string().trim().min(1, "ต้องระบุผู้ติดต่อฉุกเฉิน").max(100),
   emergencyPhone: z.string().trim().min(9, "เบอร์ไม่ถูกต้อง").max(20),
   currentMainEmployer: z.string().trim().min(1, "ต้องระบุ").max(200),
+  // บัญชีรับเงินเดือน (CEO 2026-06-18) — คอลัมน์มีใน DB อยู่แล้ว (payroll fields)
+  bankName: z.string().trim().min(1, "ต้องระบุธนาคาร").max(100),
+  bankAccountNo: z
+    .string()
+    .trim()
+    .min(6, "เลขบัญชีไม่ถูกต้อง")
+    .max(30)
+    .regex(/^[0-9\- ]+$/, "เลขบัญชีกรอกเฉพาะตัวเลข"),
+  bankAccountName: z.string().trim().min(1, "ต้องระบุชื่อบัญชี").max(100),
 });
 
 export async function submitOnboarding(formData: FormData): Promise<ActionResult> {
@@ -1012,6 +1021,9 @@ export async function submitOnboarding(formData: FormData): Promise<ActionResult
     emergencyContact: formData.get("emergencyContact"),
     emergencyPhone: formData.get("emergencyPhone"),
     currentMainEmployer: formData.get("currentMainEmployer"),
+    bankName: formData.get("bankName"),
+    bankAccountNo: formData.get("bankAccountNo"),
+    bankAccountName: formData.get("bankAccountName"),
   });
   if (!parsed.success)
     return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
@@ -1025,6 +1037,9 @@ export async function submitOnboarding(formData: FormData): Promise<ActionResult
         emergencyContact: parsed.data.emergencyContact,
         emergencyPhone: parsed.data.emergencyPhone,
         currentMainEmployer: parsed.data.currentMainEmployer,
+        bankName: parsed.data.bankName,
+        bankAccountNo: parsed.data.bankAccountNo,
+        bankAccountName: parsed.data.bankAccountName,
         onboardingComplete: true,
         // Clear invite token after successful onboarding
         inviteToken: null,

@@ -27,14 +27,14 @@ export default function MaidDeactivatedPage() {
       <div className="flex flex-col gap-3 w-full max-w-xs">
         <a
           href="tel:+66917745963"
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--co-primary)] text-white px-6 py-3 text-base font-semibold active:opacity-80"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 text-white px-6 py-3 text-base font-semibold hover:bg-emerald-700 active:opacity-80"
         >
           <PhoneCall className="h-5 w-5" aria-hidden />
           091-774-5963
         </a>
         <a
           href="tel:+66869801234"
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--co-primary)] text-white px-6 py-3 text-base font-semibold active:opacity-80"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 text-white px-6 py-3 text-base font-semibold hover:bg-emerald-700 active:opacity-80"
         >
           <PhoneCall className="h-5 w-5" aria-hidden />
           086-980-1234

@@ -71,7 +71,7 @@ export function InviteMaidForm({ branches }: { branches: ReadonlyArray<Branch> }
           </Button>
         </div>
         <p className="text-[11px] text-zinc-500">
-          ลิงก์มีอายุ 14 วัน · ผูกได้คนเดียว (คนแรกที่กดล็อกอิน)
+          ลิงก์มีอายุ 30 วัน · ผูกกับ LINE คนแรกที่กดล็อกอิน · กดซ้ำได้ ไม่ต้องขอลิงก์ใหม่
         </p>
       </div>
     );

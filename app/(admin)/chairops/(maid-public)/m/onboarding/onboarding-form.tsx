@@ -34,6 +34,21 @@ export function OnboardingForm({ defaultName }: { defaultName: string }) {
         required
       />
 
+      {/* บัญชีรับเงินเดือน (CEO 2026-06-18) — เก็บไว้สำหรับจ่ายเงินเดือน */}
+      <div className="pt-2">
+        <p className="text-sm font-semibold text-zinc-800">บัญชีรับเงินเดือน</p>
+        <p className="text-xs text-zinc-500">สำหรับโอนเงินเดือนเข้าบัญชีของคุณ</p>
+      </div>
+      <Field label="ธนาคาร" name="bankName" placeholder="เช่น กสิกรไทย / ไทยพาณิชย์" required />
+      <Field
+        label="เลขที่บัญชี"
+        name="bankAccountNo"
+        type="tel"
+        placeholder="เลขบัญชีธนาคาร"
+        required
+      />
+      <Field label="ชื่อบัญชี" name="bankAccountName" placeholder="ชื่อเจ้าของบัญชี" required />
+
       {state && !state.ok && (
         <p className="text-sm text-red-500 bg-red-50 rounded-lg px-3 py-2">{state.error}</p>
       )}
@@ -41,7 +56,7 @@ export function OnboardingForm({ defaultName }: { defaultName: string }) {
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-xl bg-[var(--co-primary)] py-3.5 text-base font-semibold text-white active:opacity-80 disabled:opacity-50"
+        className="w-full rounded-xl bg-emerald-600 py-3.5 text-base font-semibold text-white hover:bg-emerald-700 active:opacity-80 disabled:opacity-50"
       >
         {pending ? "กำลังบันทึก..." : "ยืนยันและเริ่มใช้งาน"}
       </button>
@@ -77,7 +92,7 @@ function Field({
         placeholder={placeholder}
         defaultValue={defaultValue}
         required={required}
-        className="w-full rounded-xl border border-[var(--co-border)] bg-white px-4 py-3 text-base text-[var(--co-text)] placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[var(--co-primary)]"
+        className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-base text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
       />
     </div>
   );

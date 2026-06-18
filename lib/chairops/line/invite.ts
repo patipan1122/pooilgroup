@@ -10,7 +10,7 @@
 
 import crypto from "node:crypto";
 
-const TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+const TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days (CEO 2026-06-18: ลิงก์ใช้ได้นานขึ้น)
 
 // Per [[rule-j-namespace-env-by-program-d021]]: ChairOps owns its invite-signing
 // key (CHAIROPS_INVITE_SECRET). We keep NEXTAUTH_SECRET/AUTH_SECRET as a fallback

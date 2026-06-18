@@ -2496,6 +2496,10 @@ model ChairopsUser {
   email               String?
   phone               String?
   lineUserId          String?
+  // Cached LINE profile of the bound account (CEO 2026-06-18) — so the Users admin
+  // page shows WHO is linked, not just the opaque lineUserId. Set at line-login bind.
+  lineDisplayName     String?
+  linePictureUrl      String?
   displayName         String
   role                ChairopsUserRole
   isActive            Boolean            @default(true)
