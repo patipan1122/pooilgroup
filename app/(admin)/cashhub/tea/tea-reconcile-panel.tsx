@@ -19,6 +19,13 @@ const STATE_TEXT = {
   unsent: "text-zinc-400",
 } as const;
 
+const TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+/** "2026-04" → "เม.ย. 2026" */
+function thMonth(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  return `${TH_MONTHS[(m || 1) - 1] ?? month} ${y}`;
+}
+
 type CellState = "reconciled" | "pending" | "unsent";
 type DayCell = { channel: string; amount: number; state: CellState };
 type DayRow = { day: number; date: string; cells: DayCell[] };
@@ -40,6 +47,7 @@ function buildView(
   configs: TeaChannelConfig[],
   status: Record<string, TeaReconcileCell>,
   branchCode: string,
+  justSent: Set<string>, // keys ที่เพิ่งกดส่งรอบนี้ (optimistic → 🟡 ทันที ไม่ต้องรอ refresh)
 ): { summary: ChannelSummary[]; days: DayRow[] } {
   const configByCode = new Map(configs.map((c) => [c.code, c]));
   const summaryMap = new Map<string, ChannelSummary>();
@@ -49,8 +57,16 @@ function buildView(
     const cells: DayCell[] = [];
     for (const ch of perChannel) {
       if (!ch.settled || !(ch.net > 0)) continue; // เฉพาะช่องที่เป็นเงินเข้าธนาคาร + มียอด
-      const st = status[`tea:${branchCode}:${d.sales_date}:${ch.code}`];
-      const state: CellState = !st ? "unsent" : st.reconciled ? "reconciled" : "pending";
+      const key = `tea:${branchCode}:${d.sales_date}:${ch.code}`;
+      const st = status[key];
+      // ข้อมูลจริง (status) มาก่อน → ถ้ายังไม่มาแต่เพิ่งกดส่ง = 🟡 (optimistic)
+      const state: CellState = st
+        ? st.reconciled
+          ? "reconciled"
+          : "pending"
+        : justSent.has(key)
+          ? "pending"
+          : "unsent";
       // ส่งแล้ว → ใช้ยอดที่อยู่ใน ledger จริง (กันยอดเพี้ยนถ้า POS ถูกแก้หลังส่ง)
       const amount = st ? st.amount : ch.net;
       cells.push({ channel: ch.code, amount, state });
@@ -114,11 +130,24 @@ export function TeaReconcilePanel({
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [showDays, setShowDays] = useState(false);
+  const [justSent, setJustSent] = useState<Set<string>>(new Set()); // optimistic: keys ที่เพิ่งกดส่ง
 
   const { summary, days: dayRows } = useMemo(
-    () => buildView(days, configs, status, branchCode),
-    [days, configs, status, branchCode],
+    () => buildView(days, configs, status, branchCode, justSent),
+    [days, configs, status, branchCode, justSent],
   );
+
+  // keys (วัน×ช่องที่ส่งได้) ของสาขาที่กำลังแสดง — ใช้ทำ optimistic หลังกดส่ง
+  const branchKeys = useMemo(() => {
+    const configByCode = new Map(configs.map((c) => [c.code, c]));
+    const keys: string[] = [];
+    for (const d of days) {
+      const { perChannel } = computeTeaSettlement(d.pos_channels ?? null, configByCode);
+      for (const ch of perChannel)
+        if (ch.settled && ch.net > 0) keys.push(`tea:${branchCode}:${d.sales_date}:${ch.code}`);
+    }
+    return keys;
+  }, [days, configs, branchCode]);
 
   // ช่วงเดือน "YYYY-MM" → from/to (วันแรก..วันสุดท้ายของเดือน)
   function monthRange() {
@@ -147,6 +176,7 @@ export function TeaReconcilePanel({
     try {
       const j = await postReconcile(branchCode);
       if (!j.ok) return setErr(j.error ?? "ส่งไม่สำเร็จ");
+      setJustSent((prev) => new Set([...prev, ...branchKeys])); // เด้ง 🟡 ทันที
       setMsg(
         `✅ ส่งเข้าระบบบัญชีแล้ว ${j.inserted ?? 0} รายการ${j.skippedNoConfig ? ` · ข้าม ${j.skippedNoConfig} (ยังไม่ผูกบัญชี)` : ""} → ไปกระทบยอดที่หน้าบัญชีธนาคาร`,
       );
@@ -187,6 +217,7 @@ export function TeaReconcilePanel({
     }
     setBulkProgress(null);
     setBusy(false);
+    setJustSent((prev) => new Set([...prev, ...branchKeys])); // เด้ง 🟡 ทันทีสำหรับสาขาที่กำลังดู
     const parts = [`✅ ส่งครบ ${sent}/${branches.length} สาขา · เพิ่มรวม ${totalInserted} รายการ`];
     if (noConfig.length) parts.push(`⚪ ข้าม ${noConfig.length} สาขา (ยังไม่ตั้งบัญชี: ${noConfig.join(", ")})`);
     if (failed.length) parts.push(`⚠️ พลาด ${failed.length} สาขา (${failed.join(", ")})`);
@@ -203,9 +234,14 @@ export function TeaReconcilePanel({
     <div className="rounded-2xl border border-zinc-200 bg-white p-4 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <div className="font-bold text-zinc-800">🏦 กระทบยอดธนาคาร (reconcile){!branches && ` · ${branchLabel}`}</div>
+          <div className="font-bold text-zinc-800">
+            🏦 กระทบยอดธนาคาร (reconcile){!branches && ` · ${branchLabel}`}
+            <span className="ml-2 inline-flex items-center rounded-md bg-[var(--ch-brand,#1e3aff)]/10 text-[var(--ch-brand,#1e3aff)] px-2 py-0.5 text-xs font-semibold align-middle">
+              เดือน {thMonth(month)}
+            </span>
+          </div>
           <div className="text-xs text-zinc-500">
-            ส่งยอดเข้าจริง (หักค่าธรรมเนียมแล้ว) เข้าระบบบัญชี → นักบัญชีกระทบกับ statement → 🟢 เขียวเมื่อกระทบแล้ว
+            ส่งยอดเข้าจริง (หักค่าธรรมเนียมแล้ว) <b>ของเดือน {thMonth(month)}</b> → นักบัญชีกระทบกับ statement → 🟢 เขียวเมื่อกระทบแล้ว · เปลี่ยนเดือนที่ปุ่มเลือกเดือนด้านบน
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -362,7 +398,8 @@ export function TeaReconcilePanel({
       <p className="text-[11px] text-zinc-400">
         <span className="cell-matched-iridescent rounded px-1">✦ สีรุ้ง</span> = นักบัญชีกระทบกับ statement
         ธนาคารจริงแล้ว · 🟡 = ส่งเข้าระบบแล้ว รอ statement มากระทบ · ⚪ = ยังไม่ส่งเข้าระบบ ·
-        ยอดที่ส่ง = หักค่าธรรมเนียมแต่ละช่องทางแล้ว (เช่น Grab) ตามที่ตั้งใน “⚙ ตั้งค่าบัญชี”
+        ยอดที่ส่ง = หักค่าธรรมเนียมแต่ละช่องทางแล้ว (เช่น Grab) ตามที่ตั้งใน “⚙ ตั้งค่าบัญชี” ·
+        ประวัติการส่งทุกครั้ง (ใคร/เมื่อไหร่) ดูได้ที่เมนู <b>Audit Log</b>
       </p>
     </div>
   );
