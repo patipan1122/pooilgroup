@@ -4,7 +4,20 @@ import { useState, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Copy, Check, PenLine, Download, X } from "lucide-react";
-import { actGenerateSignLink, actTerminateContract, actRecordDeposit, actUploadFile } from "../../../_actions";
+import {
+  actGenerateSignLink,
+  actTerminateContract,
+  actRecordDeposit,
+  actUploadFile,
+  actUpdateContractBilling,
+} from "../../../_actions";
+
+const LATE_FEE_OPTIONS: Record<string, string> = {
+  none: "ไม่คิดค่าปรับ",
+  fixed: "คงที่ (บาท)",
+  percent_total: "% ของยอดบิล",
+  per_day: "ต่อวัน (บาท/วัน)",
+};
 
 const DEPOSIT_KINDS: Record<string, string> = {
   collect: "รับเงินประกัน",
@@ -125,6 +138,123 @@ export function TerminateButton({ contractId }: { contractId: string }) {
     >
       ยกเลิกสัญญา
     </button>
+  );
+}
+
+// ───────── #11/#3/#9c แก้เงื่อนไขการเรียกเก็บ (ค่าปรับรายคน · ส่วนลดโปรฯ · วันวางบิล) ─────────
+export function BillingTermsEditor({
+  contractId,
+  initial,
+}: {
+  contractId: string;
+  initial: {
+    lateFeeType: "none" | "fixed" | "percent_total" | "per_day";
+    lateFeeValue: number;
+    lateFeeGraceDays: number;
+    promoDiscountThb: number;
+    promoMonths: number;
+    billIssueDay: number | null;
+  };
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [open, setOpen] = useState(false);
+  const [lateFeeType, setLateFeeType] = useState(initial.lateFeeType);
+  const [lateFeeValue, setLateFeeValue] = useState(initial.lateFeeValue ? String(initial.lateFeeValue) : "");
+  const [graceDays, setGraceDays] = useState(String(initial.lateFeeGraceDays ?? 7));
+  const [promo, setPromo] = useState(initial.promoDiscountThb ? String(initial.promoDiscountThb) : "");
+  const [promoMonths, setPromoMonths] = useState(initial.promoMonths ? String(initial.promoMonths) : "");
+  const [issueDay, setIssueDay] = useState(initial.billIssueDay ? String(initial.billIssueDay) : "");
+
+  function save() {
+    start(async () => {
+      try {
+        await actUpdateContractBilling({
+          contractId,
+          lateFeeType,
+          lateFeeValue: num(lateFeeValue),
+          lateFeeGraceDays: Number(graceDays) || 0,
+          promoDiscountThb: num(promo),
+          promoMonths: Number(promoMonths) || 0,
+          billIssueDay: issueDay ? Number(issueDay) : null,
+        });
+        toast.success("บันทึกเงื่อนไขแล้ว — มีผลกับบิลรอบถัดไป");
+        setOpen(false);
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+      }
+    });
+  }
+
+  if (!open) {
+    return (
+      <button className="rs-btn rs-btn-ghost w-full" onClick={() => setOpen(true)}>
+        ตั้งค่าปรับ / ส่วนลด / วันวางบิล (รายคน)
+      </button>
+    );
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    height: 40,
+    padding: "0 10px",
+    borderRadius: 10,
+    border: "1px solid var(--rs-border)",
+    background: "var(--rs-bg-2)",
+    color: "var(--rs-text)",
+    fontSize: 14,
+  };
+  const lbl = "block text-[12px] font-semibold mb-1";
+
+  return (
+    <div className="space-y-2.5">
+      <div className="text-[13px] font-bold" style={{ color: "var(--rs-text)" }}>
+        เงื่อนไขการเรียกเก็บ (เฉพาะผู้เช่ารายนี้)
+      </div>
+      <div>
+        <label className={lbl} style={{ color: "var(--rs-text-2)" }}>ค่าปรับล่าช้า</label>
+        <select style={inputStyle} value={lateFeeType} onChange={(e) => setLateFeeType(e.target.value as typeof lateFeeType)}>
+          {Object.entries(LATE_FEE_OPTIONS).map(([v, l]) => (
+            <option key={v} value={v}>{l}</option>
+          ))}
+        </select>
+      </div>
+      {lateFeeType !== "none" && (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className={lbl} style={{ color: "var(--rs-text-2)" }}>มูลค่าค่าปรับ</label>
+            <input inputMode="decimal" style={inputStyle} value={lateFeeValue} onChange={(e) => setLateFeeValue(e.target.value)} placeholder="0" />
+          </div>
+          <div>
+            <label className={lbl} style={{ color: "var(--rs-text-2)" }}>ผ่อนผัน (วัน)</label>
+            <input type="number" min={0} style={inputStyle} value={graceDays} onChange={(e) => setGraceDays(e.target.value)} />
+          </div>
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className={lbl} style={{ color: "var(--rs-text-2)" }}>ส่วนลด/เดือน (บาท)</label>
+          <input inputMode="decimal" style={inputStyle} value={promo} onChange={(e) => setPromo(e.target.value)} placeholder="0" />
+        </div>
+        <div>
+          <label className={lbl} style={{ color: "var(--rs-text-2)" }}>ลดกี่เดือน</label>
+          <input type="number" min={0} style={inputStyle} value={promoMonths} onChange={(e) => setPromoMonths(e.target.value)} placeholder="0" />
+        </div>
+      </div>
+      <div>
+        <label className={lbl} style={{ color: "var(--rs-text-2)" }}>วันวางบิล (1-28 · เว้นว่าง = ตามโครงการ)</label>
+        <input type="number" min={1} max={28} style={inputStyle} value={issueDay} onChange={(e) => setIssueDay(e.target.value)} placeholder="ตามโครงการ" />
+      </div>
+      <div className="flex gap-2 pt-1">
+        <button className="rs-btn flex-1 justify-center" onClick={save} disabled={pending}>
+          {pending ? "กำลังบันทึก…" : "บันทึก"}
+        </button>
+        <button className="rs-btn rs-btn-ghost" onClick={() => setOpen(false)} disabled={pending}>
+          ยกเลิก
+        </button>
+      </div>
+    </div>
   );
 }
 

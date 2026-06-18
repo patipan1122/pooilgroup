@@ -18,7 +18,8 @@ import {
   DiscountDecisionButtons,
   PrintBillButton,
   SendBillButton,
-  VoidBillButton,
+  RequestVoidButton,
+  VoidDecisionButtons,
 } from "./_components/bill-detail-actions";
 
 export const dynamic = "force-dynamic";
@@ -347,8 +348,67 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
               />
             )}
             <PrintBillButton />
-            {bill.status !== "void" && <VoidBillButton billId={bill.id} />}
+            {/* #5 ยกเลิกบิลแบบขออนุมัติ (maker→checker) */}
+            {bill.status !== "void" && bill.voidStatus !== "pending" && (
+              <RequestVoidButton billId={bill.id} />
+            )}
+            {bill.status !== "void" && bill.voidStatus === "pending" && isAdmin && (
+              <VoidDecisionButtons billId={bill.id} />
+            )}
           </RsCard>
+
+          {/* #5 บันทึก/สถานะการขอยกเลิกบิล (log) */}
+          {bill.voidStatus && bill.voidStatus !== "none" && (
+            <RsCard className="p-5">
+              <h2 className="font-bold mb-2" style={{ color: "var(--rs-text)" }}>
+                การยกเลิกบิล
+              </h2>
+              <div className="space-y-1.5 text-[13px]">
+                <div className="flex items-center gap-2">
+                  <span style={{ color: "var(--rs-text-2)" }}>สถานะ:</span>
+                  <span
+                    className="rounded-full px-2.5 py-0.5 text-[12px] font-semibold"
+                    style={{
+                      background:
+                        bill.voidStatus === "approved"
+                          ? "var(--rs-danger-soft)"
+                          : bill.voidStatus === "rejected"
+                            ? "var(--rs-bg-3)"
+                            : "var(--rs-pending-soft)",
+                      color:
+                        bill.voidStatus === "approved"
+                          ? "var(--rs-danger)"
+                          : bill.voidStatus === "rejected"
+                            ? "var(--rs-text-3)"
+                            : "var(--rs-pending)",
+                    }}
+                  >
+                    {bill.voidStatus === "pending"
+                      ? "รออนุมัติยกเลิก"
+                      : bill.voidStatus === "approved"
+                        ? "ยกเลิกแล้ว (อนุมัติ)"
+                        : "ปฏิเสธคำขอยกเลิก"}
+                  </span>
+                </div>
+                {bill.voidReason && (
+                  <div style={{ color: "var(--rs-text-2)" }}>
+                    เหตุผล: <span style={{ color: "var(--rs-text)" }}>{bill.voidReason}</span>
+                  </div>
+                )}
+                {bill.voidRequestedAt && (
+                  <div style={{ color: "var(--rs-text-3)" }}>
+                    ขอเมื่อ {thaiDateLong(bill.voidRequestedAt)}
+                  </div>
+                )}
+                {bill.voidDecidedAt && (
+                  <div style={{ color: "var(--rs-text-3)" }}>
+                    ตัดสินเมื่อ {thaiDateLong(bill.voidDecidedAt)}
+                    {bill.voidDecisionNote ? ` · ${bill.voidDecisionNote}` : ""}
+                  </div>
+                )}
+              </div>
+            </RsCard>
+          )}
         </div>
       </div>
 

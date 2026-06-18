@@ -433,6 +433,10 @@ export async function actSaveContract(input: {
   lateFeeType?: "none" | "fixed" | "percent_total" | "per_day";
   lateFeeValue?: number;
   lateFeeGraceDays?: number;
+  promoDiscountThb?: number;
+  promoMonths?: number;
+  promoStartPeriod?: string;
+  billIssueDay?: number;
   rentSchedule?: { fromPeriod: string; amount: number }[];
   customTermsHtml?: string;
   note?: string;
@@ -456,6 +460,10 @@ export async function actSaveContract(input: {
     lateFeeType: input.lateFeeType ?? "none",
     lateFeeValue: input.lateFeeValue ?? 0,
     lateFeeGraceDays: input.lateFeeGraceDays ?? 7,
+    promoDiscountThb: input.promoDiscountThb ?? 0,
+    promoMonths: input.promoMonths ?? 0,
+    promoStartPeriod: input.promoStartPeriod || null,
+    billIssueDay: input.billIssueDay ?? null,
     rentSchedule: input.rentSchedule ? (input.rentSchedule as never) : undefined,
     customTermsHtml: input.customTermsHtml ?? null,
     note: input.note ?? null,
@@ -487,6 +495,38 @@ export async function actSaveContract(input: {
   return { id };
 }
 
+/** #11/#3/#9c แก้เงื่อนไขการเรียกเก็บของสัญญาที่มีอยู่ (ค่าปรับรายคน · ส่วนลดโปรฯ · วันวางบิล) — มีผลกับบิลรอบถัดไป */
+export async function actUpdateContractBilling(input: {
+  contractId: string;
+  lateFeeType: "none" | "fixed" | "percent_total" | "per_day";
+  lateFeeValue: number;
+  lateFeeGraceDays: number;
+  promoDiscountThb: number;
+  promoMonths: number;
+  billIssueDay?: number | null;
+}) {
+  const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalContract.findFirst({ where: { id: input.contractId, orgId: session.user.org_id }, select: { id: true } }),
+    "สัญญา",
+  );
+  await prisma.rentalContract.update({
+    where: { id: input.contractId },
+    data: {
+      lateFeeType: input.lateFeeType,
+      lateFeeValue: input.lateFeeValue,
+      lateFeeGraceDays: input.lateFeeGraceDays,
+      promoDiscountThb: input.promoDiscountThb,
+      promoMonths: input.promoMonths,
+      billIssueDay: input.billIssueDay ?? null,
+    },
+  });
+  await logAudit(session, "RENTSPACE_CONTRACT_SAVED", "rental_contract", input.contractId, { billingTerms: true });
+  revalidatePath(`/rentspace/contracts/${input.contractId}`);
+  revalidatePath("/rentspace/units");
+  return { ok: true };
+}
+
 export async function actGenerateSignLink(contractId: string) {
   const session = await gateAdmin();
   await ownGuard(
@@ -507,7 +547,7 @@ export async function actTerminateContract(contractId: string, note?: string) {
   );
   const c = await prisma.rentalContract.update({
     where: { id: contractId },
-    data: { status: "terminated", note: note ?? null },
+    data: { status: "terminated", moveOutDate: new Date(), note: note ?? null },
   });
   await prisma.rentalUnit.update({ where: { id: c.unitId }, data: { status: "vacant" } });
   await logAudit(session, "RENTSPACE_CONTRACT_TERMINATED", "rental_contract", contractId);
@@ -752,15 +792,95 @@ export async function actGenerateMonthlyBills(projectId: string, period: string)
   return { created, skipped, total: contracts.length };
 }
 
-export async function actVoidBill(billId: string) {
+/** #9d ออกบิลเฉพาะห้องที่เลือก (ไม่ต้องทั้งโครงการ) */
+export async function actGenerateBillsForUnits(projectId: string, period: string, unitIds: string[]) {
   const session = await gateAdmin();
-  await ownGuard(
-    prisma.rentalBill.findFirst({ where: { id: billId, orgId: session.user.org_id }, select: { id: true } }),
-    "บิล",
-  );
-  await prisma.rentalBill.update({ where: { id: billId }, data: { status: "void" } });
-  await logAudit(session, "RENTSPACE_BILL_VOIDED", "rental_bill", billId);
+  if (!unitIds?.length) throw new Error("ยังไม่ได้เลือกห้องที่จะออกบิล");
+  const contracts = await prisma.rentalContract.findMany({
+    where: {
+      orgId: session.user.org_id,
+      projectId,
+      status: { in: ["active", "expiring"] },
+      unitId: { in: unitIds },
+    },
+    include: { project: true, unit: true },
+  });
+  let created = 0;
+  let skipped = 0;
+  for (const c of contracts) {
+    const res = await createBillForContract(c, period, { actorId: session.user.id, auto: false, issue: true });
+    if (res.created) created++;
+    else skipped++;
+  }
+  await logAudit(session, "RENTSPACE_BILL_CREATED", "rental_project", projectId, {
+    period,
+    created,
+    skipped,
+    selectedUnits: unitIds.length,
+  });
   revalidatePath("/rentspace/bills");
+  revalidatePath("/rentspace/meters");
+  revalidatePath("/rentspace");
+  return { created, skipped, total: contracts.length };
+}
+
+/** #5 ขอยกเลิกบิล (maker) — บิลยังไม่ถูกยกเลิกจริงจนกว่าแอดมินอีกคนอนุมัติ */
+export async function actRequestVoidBill(billId: string, reason: string) {
+  const session = await gateAdmin();
+  const bill = await prisma.rentalBill.findFirst({
+    where: { id: billId, orgId: session.user.org_id },
+    select: { id: true, status: true, voidStatus: true },
+  });
+  if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
+  if (bill.status === "void") throw new Error("บิลนี้ถูกยกเลิกไปแล้ว");
+  if (bill.voidStatus === "pending") throw new Error("บิลนี้มีคำขอยกเลิกที่รออนุมัติอยู่แล้ว");
+  const r = (reason || "").trim();
+  if (r.length < 3) throw new Error("กรุณาระบุเหตุผลการยกเลิกบิล");
+  await prisma.rentalBill.update({
+    where: { id: billId },
+    data: {
+      voidStatus: "pending",
+      voidReason: r,
+      voidRequestedBy: session.user.id,
+      voidRequestedAt: new Date(),
+      voidDecidedBy: null,
+      voidDecidedAt: null,
+      voidDecisionNote: null,
+    },
+  });
+  await logAudit(session, "RENTSPACE_BILL_VOIDED", "rental_bill", billId, { action: "request_void", reason: r });
+  revalidatePath("/rentspace/bills");
+  revalidatePath(`/rentspace/bills/${billId}`);
+  return { ok: true };
+}
+
+/** #5 อนุมัติ/ปฏิเสธคำขอยกเลิกบิล — checker ต้องไม่ใช่ผู้ขอ (super_admin อนุมัติเองได้) */
+export async function actDecideVoidBill(billId: string, decision: "approve" | "reject", note?: string) {
+  const session = await gateAdmin();
+  const bill = await prisma.rentalBill.findFirst({
+    where: { id: billId, orgId: session.user.org_id },
+    select: { id: true, voidStatus: true, voidRequestedBy: true },
+  });
+  if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
+  if (bill.voidStatus !== "pending") throw new Error("ไม่มีคำขอยกเลิกที่รออนุมัติ");
+  // maker ≠ checker — กันคนขอกับคนอนุมัติเป็นคนเดียวกัน (ยกเว้น super_admin)
+  if (bill.voidRequestedBy === session.user.id && !isSuperAdmin(session.user.role)) {
+    throw new Error("ต้องให้แอดมินอีกคนเป็นผู้อนุมัติคำขอยกเลิก (กันการอนุมัติเอง)");
+  }
+  const n = (note || "").trim() || null;
+  await prisma.rentalBill.update({
+    where: { id: billId },
+    data:
+      decision === "approve"
+        ? { status: "void", voidStatus: "approved", voidDecidedBy: session.user.id, voidDecidedAt: new Date(), voidDecisionNote: n }
+        : { voidStatus: "rejected", voidDecidedBy: session.user.id, voidDecidedAt: new Date(), voidDecisionNote: n },
+  });
+  await logAudit(session, "RENTSPACE_BILL_VOIDED", "rental_bill", billId, {
+    action: decision === "approve" ? "approve_void" : "reject_void",
+    note: n,
+  });
+  revalidatePath("/rentspace/bills");
+  revalidatePath(`/rentspace/bills/${billId}`);
   return { ok: true };
 }
 
@@ -819,6 +939,65 @@ export async function actRecordPayment(input: {
   revalidatePath(`/rentspace/bills/${bill.id}`);
   revalidatePath("/rentspace");
   return { ok: true };
+}
+
+/** #10 รับชำระรวมทุกห้องของผู้เช่า — จัดสรรอัตโนมัติเข้าบิลค้างจากเก่าไปใหม่ */
+export async function actRecordCombinedPayment(input: {
+  tenantId: string;
+  amountThb: number;
+  paidOn: string;
+  method?: "cash" | "transfer" | "qr" | "card";
+  reference?: string;
+  slipUrl?: string;
+  note?: string;
+}) {
+  const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalTenant.findFirst({ where: { id: input.tenantId, orgId: session.user.org_id }, select: { id: true } }),
+    "ผู้เช่า",
+  );
+  const amount = round2(input.amountThb);
+  if (amount <= 0) throw new Error("กรุณาระบุยอดชำระ");
+  // บิลค้างของผู้เช่ารายนี้ทุกห้อง — จัดสรรจากบิลเก่าสุดก่อน
+  const bills = await prisma.rentalBill.findMany({
+    where: { orgId: session.user.org_id, tenantId: input.tenantId, status: { in: ["issued", "partial", "overdue"] } },
+    orderBy: [{ period: "asc" }, { dueDate: "asc" }],
+    select: { id: true, contractId: true, totalAmount: true, paidAmount: true },
+  });
+  let leftover = amount;
+  let billsPaid = 0;
+  for (const b of bills) {
+    if (leftover <= 0) break;
+    const remaining = round2(toNum(b.totalAmount) - toNum(b.paidAmount));
+    if (remaining <= 0) continue;
+    const pay = round2(Math.min(remaining, leftover));
+    leftover = round2(leftover - pay);
+    billsPaid++;
+    await prisma.rentalPayment.create({
+      data: {
+        id: randomUUID(),
+        orgId: session.user.org_id,
+        billId: b.id,
+        contractId: b.contractId,
+        amountThb: pay,
+        paidOn: new Date(input.paidOn),
+        method: input.method ?? "transfer",
+        reference: input.reference ?? null,
+        slipUrl: input.slipUrl ?? null,
+        note: input.note ? `${input.note} (ชำระรวมหลายห้อง)` : "ชำระรวมหลายห้อง",
+        receivedBy: session.user.id,
+      },
+    });
+    await prisma.rentalBill.update({ where: { id: b.id }, data: { paidAmount: { increment: pay } } });
+    await recomputeBillTotals(b.id);
+  }
+  if (billsPaid === 0) throw new Error("ผู้เช่ารายนี้ไม่มีบิลค้างชำระ");
+  await logAudit(session, "RENTSPACE_PAYMENT_RECORDED", "rental_tenant", input.tenantId, { amount, billsPaid, leftover });
+  revalidatePath("/rentspace/payments");
+  revalidatePath("/rentspace/bills");
+  revalidatePath(`/rentspace/tenants/${input.tenantId}`);
+  revalidatePath("/rentspace");
+  return { ok: true, billsPaid, allocated: round2(amount - leftover), leftover };
 }
 
 // ───────── discounts ─────────

@@ -3,9 +3,18 @@
 import { useState, Fragment } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Table, X, Calendar, ChevronRight } from "lucide-react";
-import { formatBaht, BILL_STATUS } from "@/lib/rentspace/format";
+import { Table, X, Calendar, ChevronRight, FileText, Clock, CheckCircle2 } from "lucide-react";
+import { formatBaht, BILL_STATUS, PAYMENT_METHODS } from "@/lib/rentspace/format";
 import type { MatrixUnit, MatrixCell } from "@/lib/rentspace/matrix-data";
+
+/** YYYY-MM-DD → "5 มิ.ย. 69" (Thai short, BE 2-digit) */
+function fmtThaiDate(iso: string): string {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return "—";
+  const beShort = (y + 543) % 100;
+  return `${d} ${["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."][m - 1]} ${beShort}`;
+}
 
 const TH_MONTHS_SHORT = [
   "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
@@ -771,6 +780,47 @@ function CellDetail({
                     </span>
                   </div>
                 ))}
+              </div>
+
+              {/* timeline: วางบิล → ครบกำหนด → ชำระ (ไส้ใน log) */}
+              <div className="mt-4">
+                <div className="mb-2 text-[12px] font-semibold" style={{ color: "var(--rs-text-2)" }}>
+                  ไทม์ไลน์บิล {cell.billNo ? `· ${cell.billNo}` : ""}
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-[12.5px]">
+                    <FileText className="h-3.5 w-3.5" style={{ color: "var(--rs-brand)" }} />
+                    <span style={{ color: "var(--rs-text-2)" }}>วางบิล</span>
+                    <span className="ml-auto font-medium" style={{ color: "var(--rs-text)" }}>
+                      {fmtThaiDate(cell.issueDate)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[12.5px]">
+                    <Clock className="h-3.5 w-3.5" style={{ color: remain > 0 ? "var(--rs-danger)" : "var(--rs-text-3)" }} />
+                    <span style={{ color: "var(--rs-text-2)" }}>ครบกำหนดชำระ</span>
+                    <span className="ml-auto font-medium" style={{ color: remain > 0 ? "var(--rs-danger)" : "var(--rs-text)" }}>
+                      {fmtThaiDate(cell.dueDate)}
+                    </span>
+                  </div>
+                  {cell.payments.length > 0 ? (
+                    cell.payments.map((p, i) => (
+                      <div key={i} className="flex items-center gap-2 text-[12.5px]">
+                        <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "var(--rs-ok)" }} />
+                        <span style={{ color: "var(--rs-text-2)" }}>
+                          ชำระ ({PAYMENT_METHODS[p.method] ?? p.method}) {fmtThaiDate(p.paidOn)}
+                        </span>
+                        <span className="ml-auto font-medium" style={{ color: "var(--rs-ok)" }}>
+                          {formatBaht(p.amount)}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="flex items-center gap-2 text-[12.5px]">
+                      <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "var(--rs-text-3)" }} />
+                      <span style={{ color: "var(--rs-text-3)" }}>ยังไม่มีการชำระ</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {cell.billId && (

@@ -12,6 +12,8 @@ export type MatrixUnit = {
   tenantName: string | null;
 };
 
+export type MatrixPayment = { paidOn: string; amount: number; method: string };
+
 export type MatrixCell = {
   period: string; // YYYY-MM
   rent: number;
@@ -25,6 +27,10 @@ export type MatrixCell = {
   paid: number;
   status: string;
   billId: string;
+  billNo: string;
+  issueDate: string; // YYYY-MM-DD — วางบิลวันไหน
+  dueDate: string; // YYYY-MM-DD — ครบกำหนด
+  payments: MatrixPayment[]; // ประวัติการชำระ (timeline)
 };
 
 export type RentMatrix = {
@@ -82,6 +88,9 @@ export async function rentMatrix(
         unitId: true,
         period: true,
         status: true,
+        billNo: true,
+        issueDate: true,
+        dueDate: true,
         rentAmount: true,
         electricAmount: true,
         waterAmount: true,
@@ -92,9 +101,16 @@ export async function rentMatrix(
         vatAmount: true,
         totalAmount: true,
         paidAmount: true,
+        payments: {
+          orderBy: { paidOn: "desc" },
+          select: { paidOn: true, amountThb: true, method: true },
+        },
       },
     }),
   ]);
+
+  const isoDate = (d: Date | null | undefined) =>
+    d ? new Date(d).toISOString().slice(0, 10) : "";
 
   const units: MatrixUnit[] = unitRows.map((u) => {
     const tenant = u.contracts[0]?.tenant ?? null;
@@ -125,6 +141,14 @@ export async function rentMatrix(
       paid: toNum(b.paidAmount),
       status: b.status,
       billId: b.id,
+      billNo: b.billNo,
+      issueDate: isoDate(b.issueDate),
+      dueDate: isoDate(b.dueDate),
+      payments: b.payments.map((p) => ({
+        paidOn: isoDate(p.paidOn),
+        amount: toNum(p.amountThb),
+        method: p.method,
+      })),
     };
     cells[`${b.unitId}|${b.period}`] = cell;
 

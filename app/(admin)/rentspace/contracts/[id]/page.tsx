@@ -10,6 +10,7 @@ import {
   PrintButton,
   TerminateButton,
   RecordDepositButton,
+  BillingTermsEditor,
 } from "./_components/contract-detail-actions";
 
 export const dynamic = "force-dynamic";
@@ -354,6 +355,22 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
               <SignLinkBox contractId={contract.id} origin={origin} initialToken={contract.signToken} />
             )}
           </RsCard>
+
+          {contract.status !== "terminated" && (
+            <RsCard className="p-5">
+              <BillingTermsEditor
+                contractId={contract.id}
+                initial={{
+                  lateFeeType: contract.lateFeeType as "none" | "fixed" | "percent_total" | "per_day",
+                  lateFeeValue: toNum(contract.lateFeeValue),
+                  lateFeeGraceDays: contract.lateFeeGraceDays ?? 7,
+                  promoDiscountThb: toNum(contract.promoDiscountThb),
+                  promoMonths: contract.promoMonths ?? 0,
+                  billIssueDay: contract.billIssueDay ?? null,
+                }}
+              />
+            </RsCard>
+          )}
 
           <RsCard className="p-5 space-y-2">
             <PrintButton />

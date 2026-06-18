@@ -8,7 +8,8 @@ import {
   actRecordPayment,
   actRequestDiscount,
   actDecideDiscount,
-  actVoidBill,
+  actRequestVoidBill,
+  actDecideVoidBill,
   actUploadFile,
   actSendBill,
 } from "../../../_actions";
@@ -402,25 +403,64 @@ export function PrintBillButton() {
   );
 }
 
-// ───────── void ─────────
-export function VoidBillButton({ billId }: { billId: string }) {
+// ───────── void: ขออนุมัติ (maker) ─────────
+export function RequestVoidButton({ billId }: { billId: string }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   function go() {
-    if (!confirm("ยืนยันยกเลิกบิลนี้? บิลที่ยกเลิกจะไม่ถูกนำไปคำนวณยอดค้าง")) return;
+    const reason = prompt("เหตุผลที่ขอยกเลิกบิลนี้?\n(ต้องให้แอดมินอีกคนอนุมัติก่อนบิลจะถูกยกเลิกจริง)");
+    if (reason == null) return;
+    if (reason.trim().length < 3) {
+      toast.error("กรุณาระบุเหตุผลการยกเลิก");
+      return;
+    }
     start(async () => {
       try {
-        await actVoidBill(billId);
-        toast.success("ยกเลิกบิลแล้ว");
+        await actRequestVoidBill(billId, reason.trim());
+        toast.success("ส่งคำขอยกเลิกแล้ว — รอแอดมินอีกคนอนุมัติ");
         router.refresh();
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "ยกเลิกไม่สำเร็จ");
+        toast.error(e instanceof Error ? e.message : "ส่งคำขอไม่สำเร็จ");
       }
     });
   }
   return (
     <button className="rs-btn rs-btn-ghost w-full" style={{ color: "var(--rs-danger)" }} onClick={go} disabled={pending}>
-      ยกเลิกบิล
+      ขอยกเลิกบิล
     </button>
+  );
+}
+
+// ───────── void: อนุมัติ/ปฏิเสธ (checker) ─────────
+export function VoidDecisionButtons({ billId }: { billId: string }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  function decide(decision: "approve" | "reject") {
+    if (decision === "approve" && !confirm("ยืนยันอนุมัติยกเลิกบิลนี้? บิลจะไม่ถูกนำไปคำนวณยอดค้างอีก")) return;
+    const note = decision === "reject" ? prompt("เหตุผลที่ไม่อนุมัติ (ถ้ามี)") ?? "" : "";
+    start(async () => {
+      try {
+        await actDecideVoidBill(billId, decision, note);
+        toast.success(decision === "approve" ? "อนุมัติยกเลิกบิลแล้ว" : "ปฏิเสธคำขอยกเลิกแล้ว");
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ");
+      }
+    });
+  }
+  return (
+    <div className="flex gap-2">
+      <button className="rs-btn flex-1" onClick={() => decide("approve")} disabled={pending}>
+        <Check className="h-4 w-4" /> อนุมัติยกเลิก
+      </button>
+      <button
+        className="rs-btn rs-btn-ghost flex-1"
+        style={{ color: "var(--rs-danger)" }}
+        onClick={() => decide("reject")}
+        disabled={pending}
+      >
+        <X className="h-4 w-4" /> ปฏิเสธ
+      </button>
+    </div>
   );
 }

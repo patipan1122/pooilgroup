@@ -50,6 +50,46 @@ export function defaultVatable(kind: string, vatPercent: number): boolean {
   return kind === "rent" ? vatPercent > 0 : false;
 }
 
+/** จำนวนเดือนระหว่างสองงวด YYYY-MM (p2 − p1) — ติดลบถ้า p2 ก่อน p1 */
+export function monthsBetween(p1: string, p2: string): number {
+  const [y1, m1] = p1.split("-").map(Number);
+  const [y2, m2] = p2.split("-").map(Number);
+  if (!y1 || !y2) return 0;
+  return (y2 - y1) * 12 + (m2 - m1);
+}
+
+/**
+ * ส่วนลดส่งเสริมการขาย (โปรโมชั่น) ที่ใช้กับงวดนี้ — ลดต่อเดือนคงที่ × จำนวนเดือน
+ * เริ่มจาก promoStartPeriod (หรือเดือนเริ่มสัญญาถ้าไม่ระบุ). คืน 0 ถ้าหมดโปรฯ/ยังไม่ถึง/ไม่มี.
+ * เป็นส่วนลด "อนุมัติอัตโนมัติ" (ตั้งในสัญญา) ไม่ต้องผ่าน workflow.
+ */
+export function promoDiscountFor(contract: Contract, period: string): number {
+  const per = toNum((contract as { promoDiscountThb?: unknown }).promoDiscountThb);
+  const months = Number((contract as { promoMonths?: unknown }).promoMonths) || 0;
+  if (per <= 0 || months <= 0) return 0;
+  const start =
+    (contract as { promoStartPeriod?: string | null }).promoStartPeriod ||
+    periodOf(new Date(contract.startDate));
+  const idx = monthsBetween(start, period);
+  if (idx < 0 || idx >= months) return 0;
+  return round2(per);
+}
+
+/** สถานะส่วนลดโปรฯ ณ งวดอ้างอิง — ใช้แสดงในตารางห้อง ("฿X เหลือ N เดือน") */
+export function promoStatus(
+  contract: { promoDiscountThb?: unknown; promoMonths?: unknown; promoStartPeriod?: string | null; startDate: Date | string },
+  refPeriod: string,
+): { perMonth: number; totalMonths: number; monthsLeft: number; active: boolean } {
+  const perMonth = toNum(contract.promoDiscountThb);
+  const totalMonths = Number(contract.promoMonths) || 0;
+  if (perMonth <= 0 || totalMonths <= 0) return { perMonth: 0, totalMonths: 0, monthsLeft: 0, active: false };
+  const start = contract.promoStartPeriod || periodOf(new Date(contract.startDate));
+  const idx = monthsBetween(start, refPeriod);
+  const used = Math.max(0, Math.min(idx, totalMonths));
+  const monthsLeft = Math.max(0, totalMonths - used);
+  return { perMonth, totalMonths, monthsLeft, active: idx >= 0 && idx < totalMonths };
+}
+
 /** effective monthly rent for a period, honouring rentSchedule escalation */
 export function effectiveRent(contract: Contract, period: string): number {
   const base = toNum(contract.rentAmountThb);
@@ -79,9 +119,10 @@ function dueDateFor(period: string, dueDay: number): Date {
   return new Date(Date.UTC(y, m - 1, day));
 }
 
-function issueDateFor(period: string): Date {
+function issueDateFor(period: string, issueDay?: number | null): Date {
   const [y, m] = period.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, 1));
+  const day = Math.min(Math.max(issueDay || 1, 1), 28);
+  return new Date(Date.UTC(y, m - 1, day));
 }
 
 export type BuiltBill = {
@@ -288,11 +329,13 @@ export async function createBillForContract(
 
   const built = await buildBill(contract, period);
   const vatPercent = toNum(contract.vatPercent);
-  // initial totals: no approved discounts yet → VAT on the VATable base only.
-  // Uses the SAME engine as recomputeBillTotals so a fresh bill == a recomputed one.
-  const { subtotal, vatAmount, totalAmount } = computeBillTotals({
+  // ส่วนลดโปรฯ อนุมัติอัตโนมัติจากสัญญา (ถ้ามีและยังอยู่ในช่วงโปรฯ)
+  const promo = promoDiscountFor(contract, period);
+  // initial totals: include any auto promo discount. Uses the SAME engine as
+  // recomputeBillTotals so a fresh bill == a recomputed one.
+  const { subtotal, vatAmount, totalAmount, discountAmount } = computeBillTotals({
     items: built.items.map((it) => ({ amount: it.amount, vatable: it.vatable })),
-    approvedDiscount: 0,
+    approvedDiscount: promo,
     vatPercent,
   });
   const status = opts.issue === false ? "draft" : "issued";
@@ -309,13 +352,14 @@ export async function createBillForContract(
           tenantId: contract.tenantId,
           billNo,
           period,
-          issueDate: issueDateFor(period),
+          issueDate: issueDateFor(period, (contract as { billIssueDay?: number | null }).billIssueDay),
           dueDate: dueDateFor(period, contract.rentDueDay),
           status,
           rentAmount: built.rentAmount,
           electricAmount: built.electricAmount,
           waterAmount: built.waterAmount,
           lateFeeAmount: built.lateFeeAmount,
+          discountAmount,
           subtotal,
           vatAmount,
           totalAmount,
@@ -325,6 +369,22 @@ export async function createBillForContract(
           items: { create: built.items },
         },
       });
+      // บันทึกส่วนลดโปรฯ เป็น record อนุมัติแล้ว เพื่อให้ recompute ภายหลังตรงกัน
+      if (promo > 0) {
+        await prisma.rentalDiscount.create({
+          data: {
+            orgId: contract.orgId,
+            billId: bill.id,
+            kind: "amount",
+            value: promo,
+            computedAmount: promo,
+            reason: "ส่วนลดโปรโมชั่น (อัตโนมัติจากสัญญา)",
+            status: "approved",
+            decidedBy: opts.actorId ?? null,
+            decidedAt: new Date(),
+          },
+        });
+      }
       return { created: true, billId: bill.id };
     } catch (e: unknown) {
       const code = (e as { code?: string })?.code;

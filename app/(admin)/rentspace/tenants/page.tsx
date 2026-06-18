@@ -54,8 +54,7 @@ export default async function TenantsPage({
           {tenants.map((t) => {
             const activeContracts = t.contracts; // already filtered to status=active in data layer
             const phone = t.phones?.[0];
-            const activeUnitId = activeContracts.find((c) => c.unit?.id)?.unit?.id;
-            const href = activeUnitId ? `/rentspace/tenants?unit=${activeUnitId}` : `/rentspace/tenants/${t.id}`;
+            const href = `/rentspace/tenants/${t.id}`;
             return (
               <Link key={t.id} href={href} className="block">
                 <RsCard className="p-4 h-full hover:border-[var(--rs-brand)] transition-colors">
@@ -93,7 +92,7 @@ export default async function TenantsPage({
                             </span>
                           </span>
                         ) : (
-                          "ไม่มีสัญญาที่ใช้งาน"
+                          <span style={{ color: "var(--rs-text-3)" }}>อดีตผู้เช่า · กดดูประวัติการเช่า</span>
                         )}
                       </div>
                     </div>

@@ -108,6 +108,9 @@ export function ContractForm({
   const [lateFeeType, setLateFeeType] = useState<"none" | "fixed" | "percent_total" | "per_day">("none");
   const [lateFeeValue, setLateFeeValue] = useState("");
   const [lateFeeGraceDays, setLateFeeGraceDays] = useState("7");
+  const [promoDiscount, setPromoDiscount] = useState("");
+  const [promoMonths, setPromoMonths] = useState("");
+  const [billIssueDay, setBillIssueDay] = useState("");
   const [note, setNote] = useState("");
 
   // step-1 unit search
@@ -168,6 +171,9 @@ export function ContractForm({
     setLateFeeType("none");
     setLateFeeValue("");
     setLateFeeGraceDays("7");
+    setPromoDiscount("");
+    setPromoMonths("");
+    setBillIssueDay("");
     setNote("");
     setUnitSearch("");
     setTenantSearch("");
@@ -272,6 +278,9 @@ export function ContractForm({
           lateFeeType,
           lateFeeValue: num(lateFeeValue),
           lateFeeGraceDays: Number(lateFeeGraceDays) || 7,
+          promoDiscountThb: promoDiscount ? num(promoDiscount) : undefined,
+          promoMonths: promoMonths ? Number(promoMonths) : undefined,
+          billIssueDay: billIssueDay ? Number(billIssueDay) : undefined,
           note: note || undefined,
           activate,
         });
@@ -683,6 +692,26 @@ export function ContractForm({
                       />
                     </Field>
                   </div>
+
+                  {/* #3 ส่วนลดส่งเสริมการขาย (โปรโมชั่น) — ลดต่อเดือน × จำนวนเดือน */}
+                  <div className="rounded-xl p-3" style={{ border: "1px dashed var(--rs-border)", background: "var(--rs-bg-2)" }}>
+                    <div className="text-[12.5px] font-semibold mb-2" style={{ color: "var(--rs-text-2)" }}>
+                      ส่วนลดโปรโมชั่น (ถ้ามี) — ลดอัตโนมัติทุกบิลตามจำนวนเดือนที่กำหนด
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="ลดต่อเดือน (บาท)">
+                        <input inputMode="decimal" className="rs-input" value={promoDiscount} onChange={(e) => setPromoDiscount(e.target.value)} placeholder="0" />
+                      </Field>
+                      <Field label="เป็นเวลา (เดือน)">
+                        <input type="number" min={0} className="rs-input" value={promoMonths} onChange={(e) => setPromoMonths(e.target.value)} placeholder="0" />
+                      </Field>
+                    </div>
+                  </div>
+
+                  {/* #9c วันวางบิลเฉพาะสัญญานี้ (ถ้าต่างจากค่ากลางโครงการ) */}
+                  <Field label="วันวางบิลของห้องนี้ (1-28 · เว้นว่าง = ใช้ค่ากลางโครงการ)">
+                    <input type="number" min={1} max={28} className="rs-input" value={billIssueDay} onChange={(e) => setBillIssueDay(e.target.value)} placeholder="ตามโครงการ" />
+                  </Field>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Field label="ค่าไฟ/หน่วย (ไม่บังคับ — ใช้ค่าโครงการถ้าเว้นว่าง)">

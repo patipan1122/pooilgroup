@@ -362,7 +362,17 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
 
       {/* ── การออกบิล + ค่าปรับ ── */}
       <section className="rs-card p-5 space-y-4">
-        <SectionTitle title="การออกบิล &amp; ค่าปรับล่าช้า" hint="กำหนดวันครบกำหนดและบทลงโทษเมื่อจ่ายช้า" />
+        <SectionTitle title="การออกบิล &amp; ค่าปรับล่าช้า" hint="ค่ากลางของทั้งโครงการ — ใช้เป็นค่าเริ่มต้นของสัญญาใหม่" />
+        <div
+          className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-[12.5px]"
+          style={{ background: "var(--rs-info-soft)", color: "var(--rs-info)" }}
+        >
+          <span>ℹ️</span>
+          <span>
+            ตั้ง <b>ค่าปรับ / ส่วนลด / วันวางบิลเป็นรายคน</b> ได้ที่หน้าสัญญาของผู้เช่าแต่ละห้อง
+            (เปิดสัญญา → “ตั้งค่าปรับ / ส่วนลด / วันวางบิล (รายคน)”) — ค่าตรงนี้เป็นค่าเริ่มต้นของทั้งโครงการเท่านั้น
+          </span>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Field label="วันครบกำหนดชำระ (1–28)" hint="ทุกเดือนบิลจะครบกำหนดวันที่นี้">
             <input

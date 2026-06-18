@@ -105,6 +105,35 @@ export async function getTenant(orgId: string, id: string) {
   });
 }
 
+/**
+ * หน้าลูกค้า 360° — ผู้เช่า + สัญญา (พร้อมเงินประกัน) + บิลทุกใบ (พร้อมการชำระ/สลิป) + เอกสาร.
+ * ใช้สร้างมุมมองลึกรายคน: ค้างกี่บิล · timeline วางบิล-ชำระ · ประวัติการเช่า (สัญญาเก่า).
+ */
+export async function getTenantFull(orgId: string, id: string) {
+  const tenant = await prisma.rentalTenant.findFirst({
+    where: { id, orgId },
+    include: {
+      contracts: {
+        orderBy: { startDate: "desc" },
+        include: { unit: true, project: true, deposits: { orderBy: { occurredOn: "desc" } } },
+      },
+    },
+  });
+  if (!tenant) return null;
+  const [bills, documents] = await Promise.all([
+    prisma.rentalBill.findMany({
+      where: { orgId, tenantId: id },
+      orderBy: [{ period: "desc" }, { billNo: "desc" }],
+      include: { unit: true, payments: { orderBy: { paidOn: "desc" } } },
+    }),
+    prisma.rentalDocument.findMany({
+      where: { orgId, ownerType: "tenant", ownerId: id },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+  return { ...tenant, bills, documents };
+}
+
 export async function listContracts(orgId: string, projectId?: string) {
   return prisma.rentalContract.findMany({
     where: { orgId, ...(projectId ? { projectId } : {}) },

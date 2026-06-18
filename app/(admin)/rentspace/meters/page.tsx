@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/auth/session";
+import { prisma } from "@/lib/prisma";
 import { getPrimaryProject, meterBoard } from "@/lib/rentspace/data";
 import {
   formatBaht,
@@ -9,6 +10,7 @@ import {
 } from "@/lib/rentspace/format";
 import { RsPage, RsHeader, RsKpi, RsEmpty } from "@/components/rentspace/ui";
 import MeterBoard, { type BoardUnit, type BoardSide } from "./_components/meter-board";
+import SelectiveBillPanel, { type BillRoom } from "./_components/selective-bill-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -104,6 +106,23 @@ export default async function MetersPage({
   const totalElectric = units.reduce((s, u) => s + (u.electric.amount ?? 0), 0);
   const totalWater = units.reduce((s, u) => s + (u.water.amount ?? 0), 0);
 
+  // #9d — ห้องที่ออกบิลได้ (มีสัญญาใช้งาน) + สถานะมิเตอร์ + ออกบิลงวดนี้แล้วหรือยัง
+  const billedUnitRows = await prisma.rentalBill.findMany({
+    where: { orgId, projectId: project.id, period, status: { not: "void" } },
+    select: { unitId: true },
+  });
+  const billedUnitIds = new Set(billedUnitRows.map((b) => b.unitId));
+  const sideDone = new Map(units.map((u) => [u.id, u.electric.currReading != null && u.water.currReading != null]));
+  const billRooms: BillRoom[] = rawUnits
+    .filter((u) => (u.contracts?.length ?? 0) > 0)
+    .map((u) => ({
+      unitId: u.id,
+      code: u.code,
+      tenant: u.contracts?.[0]?.tenant ? tenantDisplayName(u.contracts[0].tenant) : null,
+      metersDone: sideDone.get(u.id) ?? false,
+      alreadyBilled: billedUnitIds.has(u.id),
+    }));
+
   return (
     <RsPage>
       <RsHeader
@@ -129,7 +148,10 @@ export default async function MetersPage({
           hint="เพิ่มห้องในหน้า ห้องเช่า ก่อน จึงจะจดมิเตอร์ได้"
         />
       ) : (
-        <MeterBoard units={units} period={period} />
+        <>
+          <MeterBoard units={units} period={period} />
+          <SelectiveBillPanel projectId={project.id} period={period} rooms={billRooms} />
+        </>
       )}
     </RsPage>
   );
