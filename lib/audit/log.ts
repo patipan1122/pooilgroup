@@ -87,6 +87,7 @@ export type AuditAction =
   | "SAVE_FUEL_CHANNEL_CONFIG"
   | "SEND_FUEL_RECONCILE"
   | "SEND_TEA_IV"
+  | "SEND_TEA_RECONCILE"
   // RentSpace — บริหารพื้นที่เช่า
   | "RENTSPACE_PROJECT_SAVED"
   | "RENTSPACE_UNIT_SAVED"

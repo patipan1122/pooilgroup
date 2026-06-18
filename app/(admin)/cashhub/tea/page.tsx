@@ -10,7 +10,8 @@ import { SectionPill } from "@/components/cashhub/redesign/section-pill";
 import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { endOfMonth, startOfMonth } from "date-fns";
 import { TEA_BRANCHES } from "@/lib/cashhub/tea-trcloud";
-import { loadTeaDays } from "@/lib/cashhub/tea-data";
+import { loadTeaDays, loadTeaChannelConfig } from "@/lib/cashhub/tea-data";
+import { readTeaReconcileStatus, type TeaReconcileCell } from "@/lib/cashhub/tea-settlement-data";
 import { TeaView } from "./tea-view";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,13 @@ export default async function TeaSalesPage({ searchParams }: { searchParams: SP 
   const savedDays = await loadTeaDays(admin, orgId, from, to);
   const canPull = isExecutiveRole(session.user.role);
   const canConfig = isSuperAdmin(session.user.role);
+
+  // ── เตรียมข้อมูลกระทบยอด (เฉพาะ super_admin ที่เห็นแถบ reconcile) ──
+  // config = ค่าเริ่มต้นทุกสาขา (branchCode="") ใช้พรีวิวฝั่ง client · route ใช้ค่าต่อสาขาตอนส่งจริง
+  const channelConfigs = canConfig ? await loadTeaChannelConfig(admin, orgId, "") : [];
+  const reconStatus: Record<string, TeaReconcileCell> = canConfig
+    ? await readTeaReconcileStatus(orgId, from, to)
+    : {};
 
   const branches = TEA_BRANCHES.map((b) => ({
     code: b.code,
@@ -63,6 +71,8 @@ export default async function TeaSalesPage({ searchParams }: { searchParams: SP 
         savedDays={savedDays}
         canPull={canPull}
         canConfig={canConfig}
+        channelConfigs={channelConfigs}
+        reconStatus={reconStatus}
         initialView={sp.view === "branch" ? "branch" : "matrix"}
         initialBranch={sp.branch ?? branches[0]?.code ?? ""}
       />

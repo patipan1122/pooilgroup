@@ -4,8 +4,11 @@ import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import type { SavedTeaDay } from "@/lib/cashhub/tea-data";
+import type { TeaChannelConfig } from "@/lib/cashhub/tea-channels";
+import type { TeaReconcileCell } from "@/lib/cashhub/tea-settlement-data";
 import { parseTeaPos, csvToMatrix, type TeaPosBranch } from "@/lib/cashhub/tea-parse";
 import { TeaExcelGrid } from "./tea-excel-grid";
+import { TeaReconcilePanel } from "./tea-reconcile-panel";
 
 type BranchMeta = { code: string; label: string; brand: string };
 
@@ -17,6 +20,8 @@ type Props = {
   savedDays: SavedTeaDay[];
   canPull: boolean;
   canConfig: boolean;
+  channelConfigs: TeaChannelConfig[];
+  reconStatus: Record<string, TeaReconcileCell>;
   initialView: "matrix" | "branch";
   initialBranch: string;
 };
@@ -32,6 +37,8 @@ export function TeaView({
   savedDays,
   canPull,
   canConfig,
+  channelConfigs,
+  reconStatus,
   initialView,
   initialBranch,
 }: Props) {
@@ -214,7 +221,18 @@ export function TeaView({
     return m;
   }, [savedDays, branch]);
 
+  const branchDays = useMemo(
+    () => savedDays.filter((d) => d.branch_code === branch),
+    [savedDays, branch],
+  );
+
   const branchLabel = branches.find((b) => b.code === branch)?.label ?? branch;
+
+  // ตั้งค่าช่องทาง→บัญชีครบไหม (มีอย่างน้อย 1 ช่องที่เป็นเงินเข้าธนาคาร + ผูกบริษัท + บัญชี)
+  const reconcileConfigured = useMemo(
+    () => channelConfigs.some((c) => c.isSettle && c.companyId && c.bankAccountId),
+    [channelConfigs],
+  );
 
   return (
     <div className="space-y-5">
@@ -413,6 +431,13 @@ export function TeaView({
           ดึง IV จาก TRCloud (คีย์ไว้แล้ว 1 ใบ/วัน/สาขา) → กด &ldquo;⬆ อัปไฟล์ Foodstory&rdquo;
           (รายงานปิดสิ้นวัน · ไฟล์เดียวมีหลายสาขาได้) → ดูทาน &ldquo;รายสาขา (Excel)&rdquo; ว่าตรง POS ไหม ·
           ตั้งบัญชีต่อช่องทางที่ &ldquo;⚙ ตั้งค่าบัญชี&rdquo; เพื่อเตรียม reconcile
+          {canConfig && (
+            <>
+              {" · "}
+              <b>ส่งเข้ากระทบยอดธนาคาร</b> ทำที่แท็บ &ldquo;รายสาขา (Excel)&rdquo; → เลือกสาขา →
+              ปุ่ม &ldquo;ส่งเข้าระบบบัญชี&rdquo;
+            </>
+          )}
         </p>
       </div>
 
@@ -424,13 +449,27 @@ export function TeaView({
       ) : view === "matrix" ? (
         <MatrixTable branches={branches} days={days} dayMap={dayMap} />
       ) : (
-        <TeaExcelGrid
-          branchLabel={branchLabel}
-          branchCode={branch}
-          days={days}
-          byDate={branchByDate}
-          canSend={canConfig}
-        />
+        <>
+          {canConfig && (
+            <TeaReconcilePanel
+              branchCode={branch}
+              branchLabel={branchLabel}
+              month={month}
+              configured={reconcileConfigured}
+              canSend={canConfig}
+              days={branchDays}
+              configs={channelConfigs}
+              status={reconStatus}
+            />
+          )}
+          <TeaExcelGrid
+            branchLabel={branchLabel}
+            branchCode={branch}
+            days={days}
+            byDate={branchByDate}
+            canSend={canConfig}
+          />
+        </>
       )}
     </div>
   );
