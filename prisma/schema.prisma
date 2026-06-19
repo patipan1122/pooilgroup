@@ -3213,16 +3213,22 @@ model ChairopsDriveConnection {
 
 model ChairopsGmailConnection {
   id              String    @id @default(uuid())
-  orgId           String    @unique
-  gmailEmail      String?
-  refreshTokenEnc String // AES-256-GCM "iv:cipher:tag" — same encrypt/decrypt as Drive
+  // BUGFIX 2026-06-19: the raw migration created these columns in snake_case but
+  // the model declared them camelCase WITHOUT @map → Prisma generated SELECT
+  // "orgId"/"gmailEmail"/… which do not exist → every read silently failed
+  // (caller wraps in .catch → Gmail auto-import quietly never worked). The DB is
+  // the source of truth; map each field to its real snake_case column.
+  // Caught by scripts/check-schema-applied.mjs.
+  orgId           String    @unique @map("org_id")
+  gmailEmail      String?   @map("gmail_email")
+  refreshTokenEnc String    @map("refresh_token_enc") // AES-256-GCM "iv:cipher:tag" — same encrypt/decrypt as Drive
   scopes          String?
-  connectedById   String?
-  lastSyncAt      DateTime?
-  lastSyncStatus  String? // "ok" | "error: <msg>"
-  lastSyncCount   Int       @default(0)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  connectedById   String?   @map("connected_by_id")
+  lastSyncAt      DateTime? @map("last_sync_at")
+  lastSyncStatus  String?   @map("last_sync_status") // "ok" | "error: <msg>"
+  lastSyncCount   Int       @default(0) @map("last_sync_count")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   // BUGFIX 2026-06-16: the raw migration (20260605_chairops_gmail_connection.sql)
   // creates the table as snake_case `chairops_gmail_connection`. Without this
