@@ -1,16 +1,19 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
-import { getPrimaryProject, listUnitsWithState } from "@/lib/rentspace/data";
+import { isAdminTier } from "@/lib/auth/role-guards";
+import { getPrimaryProject, listUnitsWithState, listBuildingsWithUnits } from "@/lib/rentspace/data";
 import { formatBaht, tenantDisplayName, toNum, currentPeriod } from "@/lib/rentspace/format";
 import { promoStatus } from "@/lib/rentspace/billing";
 import { RsPage, RsHeader, RsBadge, RsEmpty } from "@/components/rentspace/ui";
 import UnitForm from "./_components/unit-form";
+import BuildingManager from "./_components/building-manager";
 
 export const dynamic = "force-dynamic";
 
 export default async function UnitsPage() {
   const session = await requireSession();
   const orgId = session.user.org_id;
+  const isAdmin = isAdminTier(session.user.role);
   const project = await getPrimaryProject(orgId);
 
   if (!project) {
@@ -31,24 +34,44 @@ export default async function UnitsPage() {
     );
   }
 
-  const units = await listUnitsWithState(orgId, project.id);
+  const [units, buildingData] = await Promise.all([
+    listUnitsWithState(orgId, project.id),
+    listBuildingsWithUnits(orgId, project.id),
+  ]);
   const period = currentPeriod();
 
-  // group by building (ungrouped → "อื่นๆ"), keep data-layer sort within group
-  const groups = new Map<string, typeof units>();
+  // จัดกลุ่มตาม "อาคาร" (entity) เรียงตามลำดับที่ตั้งไว้ (sortOrder) · ห้องไม่มีอาคาร = ท้ายสุด
+  type Row = (typeof units)[number];
+  const groups = new Map<string, { label: string; zone: string | null; order: number; rows: Row[] }>();
   for (const u of units) {
-    const key = u.building?.trim() || "ไม่ระบุอาคาร";
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(u);
+    const ref = u.buildingRef;
+    const key = ref?.id ?? (u.building?.trim() ? `name:${u.building.trim()}` : "__none__");
+    const label = ref?.name ?? (u.building?.trim() || "ไม่ระบุอาคาร");
+    const order = ref?.sortOrder ?? (key === "__none__" ? 99999 : 9999);
+    if (!groups.has(key)) groups.set(key, { label, zone: ref?.zone ?? null, order, rows: [] });
+    groups.get(key)!.rows.push(u);
   }
-  const groupKeys = [...groups.keys()].sort((a, b) => a.localeCompare(b, "th"));
+  const groupList = [...groups.values()].sort(
+    (a, b) => a.order - b.order || a.label.localeCompare(b.label, "th"),
+  );
 
   return (
     <RsPage>
       <RsHeader
         title="ห้องเช่า"
-        subtitle={`${project.name} · ${units.length} ห้อง`}
-        action={<UnitForm projectId={project.id} />}
+        subtitle={`${project.name} · ${units.length} ห้อง · ${buildingData.buildings.length} อาคาร`}
+        action={
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <BuildingManager
+                projectId={project.id}
+                buildings={buildingData.buildings.map((b) => ({ id: b.id, name: b.name, zone: b.zone, sortOrder: b.sortOrder }))}
+                units={buildingData.units.map((u) => ({ id: u.id, code: u.code, name: u.name, buildingId: u.buildingId, status: u.status as string }))}
+              />
+            )}
+            <UnitForm projectId={project.id} />
+          </div>
+        }
       />
 
       {units.length === 0 ? (
@@ -60,12 +83,14 @@ export default async function UnitsPage() {
         />
       ) : (
         <div className="space-y-6">
-          {groupKeys.map((g) => {
-            const rows = groups.get(g)!;
+          {groupList.map((g) => {
+            const rows = g.rows;
             return (
-              <section key={g} className="space-y-2">
+              <section key={g.label + g.order} className="space-y-2">
                 <h2 className="text-sm font-semibold px-1" style={{ color: "var(--rs-text-2)" }}>
-                  {g} <span style={{ color: "var(--rs-text-3)" }}>· {rows.length}</span>
+                  {g.label}
+                  {g.zone ? <span style={{ color: "var(--rs-text-3)" }}> · โซน {g.zone}</span> : null}
+                  <span style={{ color: "var(--rs-text-3)" }}> · {rows.length}</span>
                 </h2>
                 <div className="rs-card overflow-x-auto">
                   <table className="rs-table w-full min-w-[820px] text-sm">

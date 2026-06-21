@@ -27,6 +27,7 @@ export async function listUnitsWithState(orgId: string, projectId: string) {
     where: { orgId, projectId, isActive: true },
     orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
     include: {
+      buildingRef: { select: { id: true, name: true, zone: true, sortOrder: true } },
       contracts: {
         where: { status: { in: ["active", "expiring"] } },
         orderBy: { startDate: "desc" },
@@ -54,6 +55,22 @@ export async function listUnitsWithState(orgId: string, projectId: string) {
       hasOverdue,
     };
   });
+}
+
+/** อาคารทั้งหมดของโครงการ (เรียงตาม sortOrder) + ห้องในแต่ละอาคาร — ใช้ในหน้าจัดการอาคาร */
+export async function listBuildingsWithUnits(orgId: string, projectId: string) {
+  const [buildings, units] = await Promise.all([
+    prisma.rentalBuilding.findMany({
+      where: { orgId, projectId, isActive: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    }),
+    prisma.rentalUnit.findMany({
+      where: { orgId, projectId, isActive: true },
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+      select: { id: true, code: true, name: true, buildingId: true, status: true },
+    }),
+  ]);
+  return { buildings, units };
 }
 
 export async function getUnitDetail(orgId: string, unitId: string) {

@@ -6062,6 +6062,7 @@ model RentalProject {
   units     RentalUnit[]
   contracts RentalContract[]
   bills     RentalBill[]
+  buildings RentalBuilding[]
 
   @@unique([orgId, slug])
   @@index([orgId, isActive])
@@ -6075,7 +6076,8 @@ model RentalUnit {
   projectId   String           @map("project_id") @db.Uuid
   code        String // A1 · A2/1
   name        String? // SHABU ZEED
-  building    String? // A1 / A2 / A3
+  building    String? // A1 / A2 / A3 (ชื่ออาคารแบบข้อความ — sync กับ buildingRef.name)
+  buildingId  String?          @map("building_id") @db.Uuid
   floor       Int?
   zone        String?
   areaSqm     Decimal?         @map("area_sqm") @db.Decimal(10, 2)
@@ -6091,15 +6093,36 @@ model RentalUnit {
   createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project   RentalProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  contracts RentalContract[]
-  meters    RentalMeter[]
-  readings  RentalMeterReading[]
-  bills     RentalBill[]
+  project     RentalProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  buildingRef RentalBuilding?      @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  contracts   RentalContract[]
+  meters      RentalMeter[]
+  readings    RentalMeterReading[]
+  bills       RentalBill[]
 
   @@unique([projectId, code])
   @@index([orgId, projectId, status])
+  @@index([buildingId])
   @@map("rental_unit")
+  @@schema("public")
+}
+
+model RentalBuilding {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  name      String
+  zone      String?
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project RentalProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  units   RentalUnit[]
+
+  @@index([orgId, projectId, sortOrder])
+  @@map("rental_building")
   @@schema("public")
 }
 

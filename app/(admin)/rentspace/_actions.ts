@@ -298,6 +298,117 @@ export async function actDeleteUnit(id: string) {
   return { ok: true };
 }
 
+// ───────── buildings (อาคาร / โซน) — จัดผังเอง ─────────
+export async function actSaveBuilding(input: { id?: string; projectId: string; name: string; zone?: string }) {
+  const session = await gateAdmin();
+  const name = input.name.trim();
+  if (!name) throw new Error("กรุณากรอกชื่ออาคาร");
+  await ownGuard(
+    prisma.rentalProject.findFirst({ where: { id: input.projectId, orgId: session.user.org_id }, select: { id: true } }),
+    "โครงการ",
+  );
+  const zone = input.zone?.trim() || null;
+  if (input.id) {
+    await ownGuard(
+      prisma.rentalBuilding.findFirst({ where: { id: input.id, orgId: session.user.org_id }, select: { id: true } }),
+      "อาคาร",
+    );
+    await prisma.rentalBuilding.update({ where: { id: input.id }, data: { name, zone } });
+    // sync ชื่ออาคารแบบข้อความในห้อง (ให้โค้ดเก่าที่อ่าน unit.building ยังตรง)
+    await prisma.rentalUnit.updateMany({ where: { buildingId: input.id, orgId: session.user.org_id }, data: { building: name } });
+    await logAudit(session, "RENTSPACE_UNIT_SAVED", "rental_building", input.id, { renamedTo: name });
+    revalidatePath("/rentspace/units");
+    return { id: input.id };
+  }
+  const last = await prisma.rentalBuilding.findFirst({
+    where: { orgId: session.user.org_id, projectId: input.projectId },
+    orderBy: { sortOrder: "desc" },
+    select: { sortOrder: true },
+  });
+  const created = await prisma.rentalBuilding.create({
+    data: {
+      id: randomUUID(),
+      orgId: session.user.org_id,
+      projectId: input.projectId,
+      name,
+      zone,
+      sortOrder: (last?.sortOrder ?? 0) + 1,
+    },
+  });
+  await logAudit(session, "RENTSPACE_UNIT_SAVED", "rental_building", created.id, { created: name });
+  revalidatePath("/rentspace/units");
+  return { id: created.id };
+}
+
+export async function actDeleteBuilding(buildingId: string) {
+  const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalBuilding.findFirst({ where: { id: buildingId, orgId: session.user.org_id }, select: { id: true } }),
+    "อาคาร",
+  );
+  // ย้ายห้องในอาคารนี้ออกเป็น "ไม่ระบุอาคาร" ก่อนลบ (ไม่ลบห้อง)
+  await prisma.rentalUnit.updateMany({
+    where: { buildingId, orgId: session.user.org_id },
+    data: { buildingId: null, building: null },
+  });
+  await prisma.rentalBuilding.delete({ where: { id: buildingId } });
+  await logAudit(session, "RENTSPACE_UNIT_DELETED", "rental_building", buildingId);
+  revalidatePath("/rentspace/units");
+  return { ok: true };
+}
+
+export async function actReorderBuildings(projectId: string, orderedIds: string[]) {
+  const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalProject.findFirst({ where: { id: projectId, orgId: session.user.org_id }, select: { id: true } }),
+    "โครงการ",
+  );
+  const rows = await prisma.rentalBuilding.findMany({
+    where: { id: { in: orderedIds }, orgId: session.user.org_id, projectId },
+    select: { id: true },
+  });
+  const valid = new Set(rows.map((r) => r.id));
+  await prisma.$transaction(
+    orderedIds
+      .filter((id) => valid.has(id))
+      .map((id, i) => prisma.rentalBuilding.update({ where: { id }, data: { sortOrder: i + 1 } })),
+  );
+  await logAudit(session, "RENTSPACE_UNIT_SAVED", "rental_project", projectId, { reorderedBuildings: orderedIds.length });
+  revalidatePath("/rentspace/units");
+  return { ok: true };
+}
+
+export async function actMoveUnitToBuilding(unitId: string, buildingId: string | null) {
+  const session = await gateAdmin();
+  const unit = await prisma.rentalUnit.findFirst({
+    where: { id: unitId, orgId: session.user.org_id },
+    select: { id: true, projectId: true },
+  });
+  if (!unit) throw new Error("ไม่พบห้อง หรือไม่มีสิทธิ์");
+  let buildingName: string | null = null;
+  if (buildingId) {
+    const b = await prisma.rentalBuilding.findFirst({
+      where: { id: buildingId, orgId: session.user.org_id, projectId: unit.projectId },
+      select: { id: true, name: true },
+    });
+    if (!b) throw new Error("ไม่พบอาคาร (หรืออยู่คนละโครงการ)");
+    buildingName = b.name;
+  }
+  // วางต่อท้ายห้องในอาคารปลายทาง
+  const last = await prisma.rentalUnit.findFirst({
+    where: { orgId: session.user.org_id, projectId: unit.projectId, buildingId },
+    orderBy: { sortOrder: "desc" },
+    select: { sortOrder: true },
+  });
+  await prisma.rentalUnit.update({
+    where: { id: unitId },
+    data: { buildingId, building: buildingName, sortOrder: (last?.sortOrder ?? 0) + 1 },
+  });
+  await logAudit(session, "RENTSPACE_UNIT_SAVED", "rental_unit", unitId, { movedToBuilding: buildingName });
+  revalidatePath("/rentspace/units");
+  return { ok: true };
+}
+
 // ───────── tenant ─────────
 export async function actSaveTenant(input: {
   id?: string;
