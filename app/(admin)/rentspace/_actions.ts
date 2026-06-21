@@ -772,6 +772,98 @@ export async function actBillingPreview(projectId: string, period: string) {
   return { rows, toBillCount, missingMeterCount, sum: toNum(sum) };
 }
 
+export type BillPreviewRow = {
+  unitId: string;
+  code: string;
+  tenant: string;
+  alreadyBilled: boolean;
+  rent: number;
+  electric: number;
+  water: number;
+  lateFee: number;
+  discount: number;
+  vat: number;
+  total: number;
+  missingMeter: boolean;
+  notes: string[];
+};
+
+/**
+ * #2b พรีวิวยอดบิลของ "ห้องที่เลือก" ก่อนกดออกบิลจริง.
+ * อ่านอย่างเดียว (ไม่เขียน DB) · ใช้เครื่องคิดบิลตัวเดียวกับ createBillForContract
+ * (buildBill + ส่วนลดโปรฯ + VAT) → ยอดที่พรีวิว = ยอดบิลจริงเป๊ะ.
+ */
+export async function actPreviewBillsForUnits(
+  projectId: string,
+  period: string,
+  unitIds: string[],
+): Promise<{ rows: BillPreviewRow[]; sum: number }> {
+  const session = await gateAdmin();
+  if (!unitIds?.length) return { rows: [], sum: 0 };
+  const { buildBill, promoDiscountFor, computeBillTotals } = await import(
+    "@/lib/rentspace/billing"
+  );
+  const { tenantDisplayName } = await import("@/lib/rentspace/format");
+  const contracts = await prisma.rentalContract.findMany({
+    where: {
+      orgId: session.user.org_id,
+      projectId,
+      status: { in: ["active", "expiring"] },
+      unitId: { in: unitIds },
+    },
+    include: { project: true, unit: true, tenant: true },
+    orderBy: { unit: { code: "asc" } },
+  });
+
+  const rows: BillPreviewRow[] = [];
+  let sum = 0;
+  for (const c of contracts) {
+    const code = c.unit?.code ?? "—";
+    const tenant = c.tenant ? tenantDisplayName(c.tenant) : "ไม่ระบุชื่อ";
+
+    const existing = await prisma.rentalBill.findUnique({
+      where: { contractId_period: { contractId: c.id, period } },
+      select: { id: true },
+    });
+    if (existing) {
+      rows.push({
+        unitId: c.unitId, code, tenant, alreadyBilled: true,
+        rent: 0, electric: 0, water: 0, lateFee: 0, discount: 0, vat: 0, total: 0,
+        missingMeter: false, notes: [],
+      });
+      continue;
+    }
+
+    const built = await buildBill(c, period);
+    const vatPercent = toNum(c.vatPercent);
+    const promo = promoDiscountFor(c, period);
+    const { vatAmount, totalAmount, discountAmount } = computeBillTotals({
+      items: built.items.map((it) => ({ amount: it.amount, vatable: it.vatable })),
+      approvedDiscount: promo,
+      vatPercent,
+    });
+    const missingMeter = built.notes.some((n) => n.includes("ยังไม่ได้จดมิเตอร์"));
+    const total = toNum(totalAmount);
+    rows.push({
+      unitId: c.unitId,
+      code,
+      tenant,
+      alreadyBilled: false,
+      rent: toNum(built.rentAmount),
+      electric: toNum(built.electricAmount),
+      water: toNum(built.waterAmount),
+      lateFee: toNum(built.lateFeeAmount),
+      discount: toNum(discountAmount),
+      vat: toNum(vatAmount),
+      total,
+      missingMeter,
+      notes: built.notes,
+    });
+    sum += total;
+  }
+  return { rows, sum: round2(sum) };
+}
+
 /** Generate bills for ALL active contracts of a project for a period. */
 export async function actGenerateMonthlyBills(projectId: string, period: string) {
   const session = await gateAdmin();

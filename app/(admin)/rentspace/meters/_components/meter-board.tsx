@@ -33,7 +33,20 @@ export type BoardSide = {
   photoUrl: string | null;
   isReset: boolean;
   oldMeterFinal: number | null;
+  prevUsage: number | null; // #1b หน่วยใช้เดือนก่อน (ไว้เทียบ %)
 };
+
+/** % เทียบหน่วยเดือนนี้กับเดือนก่อน (null = เทียบไม่ได้ ไม่มีฐาน). */
+function usageDelta(
+  curr: number | null,
+  prev: number | null,
+): { pct: number; dir: "up" | "down" | "same" } | null {
+  if (curr == null || prev == null || prev <= 0) return null;
+  const pct = Math.round(((curr - prev) / prev) * 100);
+  if (pct > 0) return { pct, dir: "up" };
+  if (pct < 0) return { pct: -pct, dir: "down" };
+  return { pct: 0, dir: "same" };
+}
 
 export type BoardUnit = {
   id: string;
@@ -60,6 +73,7 @@ type SideState = {
   uploading: boolean; // photo upload/attach in progress
   isReset: boolean; // มิเตอร์ครบรอบ / เปลี่ยนมิเตอร์
   oldFinal: string; // raw input value for เลขมิเตอร์เดิมก่อนเปลี่ยน (oldMeterFinal)
+  prevUsage: number | null; // #1b หน่วยใช้เดือนก่อน
 };
 
 type RowState = {
@@ -80,6 +94,7 @@ function initSide(s: BoardSide): SideState {
     uploading: false,
     isReset: s.isReset,
     oldFinal: s.oldMeterFinal != null ? String(s.oldMeterFinal) : "",
+    prevUsage: s.prevUsage,
   };
 }
 
@@ -716,12 +731,37 @@ function SideCells({
         </div>
         </div>
       </td>
-      <td
-        className="py-2.5 px-3 text-right tabular-nums font-medium"
-        style={{ color: side.usage != null ? "var(--rs-text)" : "var(--rs-text-3)" }}
-      >
-        {side.usage != null ? side.usage.toLocaleString("th-TH") : "—"}
+      <td className="py-2.5 px-3 text-right tabular-nums font-medium">
+        <div style={{ color: side.usage != null ? "var(--rs-text)" : "var(--rs-text-3)" }}>
+          {side.usage != null ? side.usage.toLocaleString("th-TH") : "—"}
+        </div>
+        <UsageCompare usage={side.usage} prevUsage={side.prevUsage} />
       </td>
     </>
+  );
+}
+
+/** #1b ป้ายเล็กใต้ตัวเลขหน่วย: เทียบกับเดือนก่อน (↑ เยอะขึ้น = ส้ม · ↓ น้อยลง = เขียว). */
+function UsageCompare({ usage, prevUsage }: { usage: number | null; prevUsage: number | null }) {
+  const delta = usageDelta(usage, prevUsage);
+  if (delta == null || usage == null) return null;
+  const prevLabel = prevUsage != null ? prevUsage.toLocaleString("th-TH") : "—";
+  if (delta.dir === "same") {
+    return (
+      <div className="text-[10.5px] font-semibold" style={{ color: "var(--rs-text-3)" }} title={`เดือนก่อน ${prevLabel} หน่วย`}>
+        = เท่าเดือนก่อน
+      </div>
+    );
+  }
+  const up = delta.dir === "up";
+  return (
+    <div
+      className="text-[10.5px] font-semibold tabular-nums"
+      // ใช้สีส้มเข้ม/เขียวเข้มให้ผ่าน contrast บนพื้นขาว
+      style={{ color: up ? "#B45309" : "#15803D" }}
+      title={`เดือนก่อน ${prevLabel} หน่วย — ${up ? "ใช้เยอะขึ้น" : "ใช้น้อยลง"} ${delta.pct}%`}
+    >
+      {up ? "↑" : "↓"} {delta.pct}%
+    </div>
   );
 }

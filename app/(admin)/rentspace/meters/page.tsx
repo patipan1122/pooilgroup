@@ -4,6 +4,7 @@ import { getPrimaryProject, meterBoard } from "@/lib/rentspace/data";
 import {
   formatBaht,
   currentPeriod,
+  prevPeriod,
   periodLabel,
   toNum,
   tenantDisplayName,
@@ -41,6 +42,7 @@ function buildSide(meters: MeterRow[], kind: "electric" | "water"): BoardSide {
       photoUrl: null,
       isReset: false,
       oldMeterFinal: null,
+      prevUsage: null, // หน่วยเดือนก่อน (เติมทีหลังจาก prevUsageMap)
     };
   }
   return {
@@ -51,6 +53,7 @@ function buildSide(meters: MeterRow[], kind: "electric" | "water"): BoardSide {
     photoUrl: reading.photoUrl ?? null,
     isReset: !!reading.isReset,
     oldMeterFinal: reading.oldMeterFinal == null ? null : toNum(reading.oldMeterFinal),
+    prevUsage: null, // หน่วยเดือนก่อน (เติมทีหลังจาก prevUsageMap)
   };
 }
 
@@ -81,18 +84,34 @@ export default async function MetersPage({
 
   const rawUnits = await meterBoard(orgId, project.id, period);
 
+  // #1b — หน่วยใช้เดือนก่อน (ไว้โชว์ % เทียบในตาราง). อ่านอย่างเดียว 1 query.
+  const prev = prevPeriod(period);
+  const prevReadings = await prisma.rentalMeterReading.findMany({
+    where: { orgId, unitId: { in: rawUnits.map((u) => u.id) }, period: prev },
+    select: { unitId: true, kind: true, usage: true },
+  });
+  const prevUsageMap = new Map<string, { electric: number | null; water: number | null }>();
+  for (const r of prevReadings) {
+    const cur = prevUsageMap.get(r.unitId) ?? { electric: null, water: null };
+    const usage = r.usage == null ? null : toNum(r.usage);
+    if (r.kind === "electric") cur.electric = usage;
+    else if (r.kind === "water") cur.water = usage;
+    prevUsageMap.set(r.unitId, cur);
+  }
+
   const units: BoardUnit[] = rawUnits.map((u) => {
     const meters = (u.meters ?? []) as unknown as MeterRow[];
     const contract = u.contracts?.[0];
     const tenant = contract?.tenant ? tenantDisplayName(contract.tenant) : null;
+    const pu = prevUsageMap.get(u.id);
     return {
       id: u.id,
       code: u.code,
       name: u.name ?? null,
       building: u.building ?? null,
       tenant,
-      electric: buildSide(meters, "electric"),
-      water: buildSide(meters, "water"),
+      electric: { ...buildSide(meters, "electric"), prevUsage: pu?.electric ?? null },
+      water: { ...buildSide(meters, "water"), prevUsage: pu?.water ?? null },
     };
   });
 
@@ -149,8 +168,10 @@ export default async function MetersPage({
         />
       ) : (
         <>
-          <MeterBoard units={units} period={period} />
-          <SelectiveBillPanel projectId={project.id} period={period} rooms={billRooms} />
+          {/* key={period} → รีเซ็ต state ของตาราง/แผงเลือกห้องเมื่อเปลี่ยนเดือน
+              (กันบั๊กตัวเลขค้างเดือนเดิม #1a) */}
+          <MeterBoard key={period} units={units} period={period} />
+          <SelectiveBillPanel key={period} projectId={project.id} period={period} rooms={billRooms} />
         </>
       )}
     </RsPage>
