@@ -109,12 +109,17 @@ export function RecordPaymentButton({ billId, remaining }: { billId: string; rem
   const [reference, setReference] = useState("");
   const [note, setNote] = useState("");
 
+  // Slip rule (จุด 5): digital payments (โอน/QR/บัตร) leave a slip → require it as
+  // proof. เงินสด has no slip → optional. So the requirement follows the method.
+  const slipRequired = method !== "cash";
+
   function submit() {
     if (num(amount) <= 0) return toast.error("กรุณากรอกจำนวนเงิน");
+    const f = fileRef.current?.files?.[0];
+    if (slipRequired && !f) return toast.error("วิธีนี้ต้องแนบสลิป — ถ้าเป็นเงินสดให้เลือกวิธีชำระ “เงินสด”");
     start(async () => {
       try {
         let slipUrl: string | undefined;
-        const f = fileRef.current?.files?.[0];
         if (f) {
           const dataUrl = await fileToDataUrl(f);
           const up = await actUploadFile({ sub: "payment-slip", dataUrl });
@@ -178,9 +183,19 @@ export function RecordPaymentButton({ billId, remaining }: { billId: string; rem
           </div>
           <div>
             <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--rs-text)" }}>
-              สลิป (ไม่บังคับ)
+              สลิป{" "}
+              {slipRequired ? (
+                <span style={{ color: "var(--rs-danger)" }}>(บังคับ)</span>
+              ) : (
+                <span style={{ color: "var(--rs-text-3)" }}>(ไม่บังคับ — เงินสด)</span>
+              )}
             </label>
             <input ref={fileRef} type="file" accept="image/*,application/pdf" className="text-[13px]" />
+            <p className="text-[11.5px] mt-1" style={{ color: "var(--rs-text-3)" }}>
+              {slipRequired
+                ? "โอน / QR / บัตร ต้องแนบสลิปเป็นหลักฐานการรับเงิน"
+                : "เงินสดไม่ต้องแนบสลิปก็บันทึกได้"}
+            </p>
           </div>
           <div>
             <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--rs-text)" }}>

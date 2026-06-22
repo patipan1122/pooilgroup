@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
-import { RsPage, RsHeader, RsKpi, RsEmpty, RsBackLink } from "@/components/rentspace/ui";
+import { RsPage, RsEmpty, RsBackLink } from "@/components/rentspace/ui";
 import {
   formatBaht,
   toNum,
@@ -11,7 +11,7 @@ import {
 } from "@/lib/rentspace/format";
 import { listBills, getPrimaryProject, listContracts } from "@/lib/rentspace/data";
 import { BillsActions } from "./_components/bills-actions";
-import { BillsTable, type BillRow } from "./_components/bills-list-client";
+import { BillsTable, MonthPicker, type BillRow } from "./_components/bills-list-client";
 
 export const dynamic = "force-dynamic";
 
@@ -41,16 +41,26 @@ export default async function BillsPage({
   const periodFilter = sp.period && /^\d{4}-\d{2}$/.test(sp.period) ? sp.period : undefined;
 
   const project = await getPrimaryProject(orgId);
-  const [bills, contracts] = await Promise.all([
-    listBills(orgId, { projectId: project?.id, status: statusFilter, period: periodFilter }),
+  // "เกินกำหนด" (overdue) is a *derived* status — a bill stays stored as
+  // issued/partial with a past due date; the DB column is almost never literally
+  // "overdue". So we must NOT push it to the query (that returns ~0 rows and the
+  // chip looks broken); fetch the outstanding set and filter by isOverdue() here.
+  const wantOverdue = statusFilter === "overdue";
+  const [fetchedBills, contracts] = await Promise.all([
+    listBills(orgId, {
+      projectId: project?.id,
+      status: wantOverdue ? undefined : statusFilter,
+      period: periodFilter,
+    }),
     project ? listContracts(orgId, project.id) : Promise.resolve([]),
   ]);
+  const bills = wantOverdue ? fetchedBills.filter((b) => isOverdue(b)) : fetchedBills;
 
   // KPIs computed over the *unfiltered* picture would need a 2nd query; instead
   // compute over the returned set (filter chips are additive, so KPI reflects view).
   // To keep KPIs stable regardless of filter, fetch the full project list once.
   const allBills =
-    statusFilter || periodFilter ? await listBills(orgId, { projectId: project?.id }) : bills;
+    statusFilter || periodFilter ? await listBills(orgId, { projectId: project?.id }) : fetchedBills;
 
   const thisPeriod = currentPeriod();
   const outstandingBills = allBills.filter((b) => OUTSTANDING_STATUSES.includes(b.status));
@@ -111,37 +121,48 @@ export default async function BillsPage({
   return (
     <RsPage>
       <RsBackLink href="/rentspace" label="กลับหน้าหลัก" />
-      <RsHeader
-        title="ใบแจ้งหนี้ / บิล"
-        subtitle={project?.name ?? undefined}
-        action={
-          project ? (
-            <BillsActions
-              projectId={project.id}
-              period={thisPeriod}
-              contracts={activeContracts.map((c) => ({
-                id: c.id,
-                contractNo: c.contractNo,
-                unitCode: c.unit.code,
-                tenantName: tenantDisplayName(c.tenant),
-              }))}
-            />
-          ) : null
-        }
-      />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <RsKpi
+      {/* compact header — title + actions share one row to save vertical space */}
+      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="flex items-baseline gap-2 min-w-0">
+          <h1 className="text-xl font-bold tracking-tight" style={{ color: "var(--rs-text)" }}>
+            ใบแจ้งหนี้ / บิล
+          </h1>
+          {project?.name && (
+            <span className="text-[13px] truncate" style={{ color: "var(--rs-text-2)" }}>
+              · {project.name}
+            </span>
+          )}
+        </div>
+        {project ? (
+          <BillsActions
+            projectId={project.id}
+            period={thisPeriod}
+            contracts={activeContracts.map((c) => ({
+              id: c.id,
+              contractNo: c.contractNo,
+              unitCode: c.unit.code,
+              tenantName: tenantDisplayName(c.tenant),
+            }))}
+          />
+        ) : null}
+      </header>
+
+      {/* compact KPI strip — one thin row instead of three tall cards */}
+      <div className="rs-card flex flex-wrap items-center gap-x-5 gap-y-1.5 px-4 py-2.5">
+        <KpiInline
           label="บิลค้างจ่าย"
           value={formatBaht(outstandingAmount)}
           hint={`${outstandingCount} ใบ`}
           tone={outstandingAmount > 0 ? "pending" : "ok"}
         />
-        <RsKpi label="เกินกำหนด" value={overdueCount} tone={overdueCount ? "danger" : undefined} hint="ใบ" />
-        <RsKpi label={`ออกบิลเดือนนี้ (${periodLabel(thisPeriod)})`} value={formatBaht(thisMonthBilled)} />
+        <KpiDivider />
+        <KpiInline label="เกินกำหนด" value={`${overdueCount} ใบ`} tone={overdueCount ? "danger" : undefined} />
+        <KpiDivider />
+        <KpiInline label={`ออกบิลเดือนนี้ (${periodLabel(thisPeriod)})`} value={formatBaht(thisMonthBilled)} />
       </div>
 
-      {/* filter chips */}
+      {/* filter chips + month picker */}
       <div className="flex flex-wrap items-center gap-2">
         <FilterChip href={chipHref({ status: undefined, period: periodFilter })} active={!statusFilter} label="ทุกสถานะ" reset={!statusFilter ? undefined : `/rentspace/bills${periodFilter ? `?period=${periodFilter}` : ""}`} />
         {Object.entries(BILL_STATUS)
@@ -149,23 +170,54 @@ export default async function BillsPage({
           .map(([k, v]) => (
             <FilterChip key={k} href={chipHref({ status: k })} active={statusFilter === k} label={v.label} />
           ))}
-        {periods.length > 0 && <span className="mx-1 h-4 w-px" style={{ background: "var(--rs-border)" }} />}
+        <span className="mx-1 h-4 w-px" style={{ background: "var(--rs-border)" }} />
         <FilterChip href={chipHref({ period: undefined, status: statusFilter })} active={!periodFilter} label="ทุกเดือน" />
         {periods.map((p) => (
           <FilterChip key={p} href={chipHref({ period: p })} active={periodFilter === p} label={periodLabel(p)} />
         ))}
+        <MonthPicker value={periodFilter ?? ""} statusQS={statusFilter} />
       </div>
 
       {bills.length === 0 ? (
         <RsEmpty
           icon="🧾"
-          title="ยังไม่มีบิล"
-          hint="กดออกบิลทั้งโครงการสำหรับเดือนนี้ หรือออกบิลทีละห้องจากสัญญาที่ใช้งานอยู่"
+          title={statusFilter || periodFilter ? "ไม่มีบิลตามตัวกรองนี้" : "ยังไม่มีบิล"}
+          hint={
+            statusFilter || periodFilter
+              ? "ลองล้างตัวกรอง (ทุกสถานะ / ทุกเดือน) เพื่อดูบิลทั้งหมด"
+              : "กดออกบิลทั้งโครงการสำหรับเดือนนี้ หรือออกบิลทีละห้องจากสัญญาที่ใช้งานอยู่"
+          }
         />
       ) : project ? (
         <BillsTable projectId={project.id} period={periodFilter ?? thisPeriod} rows={billRows} />
       ) : null}
     </RsPage>
+  );
+}
+
+function KpiDivider() {
+  return <span className="hidden sm:block h-7 w-px shrink-0" style={{ background: "var(--rs-border)" }} />;
+}
+
+function KpiInline({
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: string;
+  tone?: "ok" | "danger" | "pending";
+}) {
+  const color =
+    tone === "danger" ? "var(--rs-danger)" : tone === "pending" ? "var(--rs-pending)" : tone === "ok" ? "var(--rs-ok)" : "var(--rs-text)";
+  return (
+    <div className="flex items-baseline gap-1.5">
+      <span className="text-[12.5px] font-medium" style={{ color: "var(--rs-text-2)" }}>{label}</span>
+      <span className="text-lg font-bold tabular-nums" style={{ color }}>{value}</span>
+      {hint && <span className="text-[11.5px]" style={{ color: "var(--rs-text-3)" }}>{hint}</span>}
+    </div>
   );
 }
 

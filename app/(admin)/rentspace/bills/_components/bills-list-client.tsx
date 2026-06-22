@@ -9,8 +9,9 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Receipt, Printer, BellRing, Info, Copy, ExternalLink, X } from "lucide-react";
+import { Receipt, Printer, BellRing, Info, Copy, ExternalLink, X, Search, CalendarDays } from "lucide-react";
 import { actRemindOverdue } from "../../_actions";
 import { formatBaht, thaiDateLong, periodLabel, BILL_STATUS } from "@/lib/rentspace/format";
 
@@ -30,6 +31,40 @@ export type BillRow = {
 };
 
 type RemindItem = { billId: string; code: string; tenantName: string; outstanding: number; url: string };
+
+/**
+ * เลือกเดือน (จุด 2) — native month picker that lets the admin jump to ANY month,
+ * not only the recent-6 period chips. Navigates to ?period=YYYY-MM, preserving the
+ * active status filter. Clearing it (native ✕) drops back to "ทุกเดือน".
+ */
+export function MonthPicker({ value, statusQS }: { value: string; statusQS?: string }) {
+  const router = useRouter();
+  function go(month: string) {
+    const params = new URLSearchParams();
+    if (statusQS) params.set("status", statusQS);
+    if (/^\d{4}-\d{2}$/.test(month)) params.set("period", month);
+    const qs = params.toString();
+    router.push(qs ? `/rentspace/bills?${qs}` : "/rentspace/bills");
+  }
+  return (
+    <label
+      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium cursor-pointer"
+      style={{ background: "var(--rs-bg-2)", color: "var(--rs-text-2)", border: "1px solid var(--rs-border)" }}
+      title="เลือกเดือนที่ต้องการดู"
+    >
+      <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
+      เลือกเดือน
+      <input
+        type="month"
+        aria-label="เลือกเดือนของบิล"
+        value={value}
+        onChange={(e) => go(e.target.value)}
+        className="bg-transparent outline-none cursor-pointer"
+        style={{ color: "var(--rs-text)", maxWidth: 130 }}
+      />
+    </label>
+  );
+}
 
 export function BillsToolbar({
   projectId,
@@ -236,19 +271,33 @@ export function BillsTable({
   rows: BillRow[];
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
+
+  // ค้นหาห้อง (จุด 4) — filter by room code/name, tenant, or bill number.
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return rows;
+    return rows.filter(
+      (r) =>
+        r.unitCode.toLowerCase().includes(needle) ||
+        (r.unitName?.toLowerCase().includes(needle) ?? false) ||
+        r.tenantName.toLowerCase().includes(needle) ||
+        r.billNo.toLowerCase().includes(needle),
+    );
+  }, [rows, query]);
 
   // group rows by floor for "เลือกทั้งชั้น"
   const groups = useMemo(() => {
     const map = new Map<string, BillRow[]>();
-    for (const r of rows) {
+    for (const r of filtered) {
       const arr = map.get(r.floorKey) ?? [];
       arr.push(r);
       map.set(r.floorKey, arr);
     }
     return Array.from(map.entries());
-  }, [rows]);
+  }, [filtered]);
 
-  const allIds = useMemo(() => rows.map((r) => r.id), [rows]);
+  const allIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
   const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
 
   function toggle(id: string) {
@@ -281,6 +330,26 @@ export function BillsTable({
       <BillsToolbar projectId={projectId} period={period} selectedIds={Array.from(selected)} />
 
       <div className="rs-card overflow-hidden">
+        {/* ค้นหาห้อง (จุด 4) */}
+        <div className="px-3 py-2.5 border-b print:hidden" style={{ borderColor: "var(--rs-border)" }}>
+          <div className="relative w-full sm:max-w-xs">
+            <Search
+              className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              style={{ color: "var(--rs-text-3)" }}
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="ค้นหาห้อง / ผู้เช่า / เลขบิล"
+              aria-label="ค้นหาห้อง ผู้เช่า หรือเลขบิล"
+              className="w-full h-9 rounded-lg pl-9 pr-3 text-[13px] outline-none"
+              style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)", color: "var(--rs-text)" }}
+            />
+          </div>
+        </div>
+
         <div className="flex items-center justify-between px-4 py-2.5 border-b print:hidden" style={{ borderColor: "var(--rs-border)" }}>
           <label className="inline-flex items-center gap-2 text-[12.5px] font-medium cursor-pointer" style={{ color: "var(--rs-text-2)" }}>
             <input
@@ -292,11 +361,9 @@ export function BillsTable({
             />
             {allSelected ? "ไม่เลือกทั้งหมด" : "เลือกทั้งหมด"}
           </label>
-          {selected.size > 0 && (
-            <span className="text-[12.5px]" style={{ color: "var(--rs-text-3)" }}>
-              เลือกแล้ว {selected.size} ใบ
-            </span>
-          )}
+          <span className="text-[12.5px]" style={{ color: "var(--rs-text-3)" }}>
+            {selected.size > 0 ? `เลือกแล้ว ${selected.size} ใบ` : query.trim() ? `พบ ${filtered.length} ใบ` : null}
+          </span>
         </div>
 
         <div className="overflow-x-auto">
@@ -317,6 +384,13 @@ export function BillsTable({
               </tr>
             </thead>
             <tbody>
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-10 text-center text-[13px]" style={{ color: "var(--rs-text-3)" }}>
+                    ไม่พบห้องที่ตรงกับ “{query.trim()}”
+                  </td>
+                </tr>
+              )}
               {groups.map(([floorKey, groupRows]) => {
                 const ids = groupRows.map((r) => r.id);
                 const floorAllOn = ids.every((id) => selected.has(id));
