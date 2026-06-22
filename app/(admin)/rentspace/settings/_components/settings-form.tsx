@@ -24,6 +24,7 @@ type Initial = {
   lateFeeGraceDays: number;
   autoBillEnabled: boolean;
   view3dEnabled: boolean;
+  billEditUnlocked: boolean;
   billCompanyName: string;
   billTaxId: string;
   billBranch: string;
@@ -73,6 +74,7 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
   const [lateFeeGraceDays, setLateFeeGraceDays] = useState(str(initial?.lateFeeGraceDays ?? 7));
   const [autoBillEnabled, setAutoBillEnabled] = useState(initial?.autoBillEnabled ?? true);
   const [view3dEnabled, setView3dEnabled] = useState(initial?.view3dEnabled ?? true);
+  const [billEditUnlocked, setBillEditUnlocked] = useState(initial?.billEditUnlocked ?? false);
   const [billCompanyName, setBillCompanyName] = useState(initial?.billCompanyName ?? "");
   const [billTaxId, setBillTaxId] = useState(initial?.billTaxId ?? "");
   const [billBranch, setBillBranch] = useState(initial?.billBranch ?? "");
@@ -150,6 +152,7 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
           lateFeeGraceDays: lateFeeGraceDays.trim() ? Number(lateFeeGraceDays) : undefined,
           autoBillEnabled,
           view3dEnabled,
+          billEditUnlocked,
           billCompanyName: billCompanyName.trim() || undefined,
           billTaxId: billTaxId.trim() || undefined,
           billBranch: billBranch.trim() || undefined,
@@ -448,6 +451,31 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
           onChange={setView3dEnabled}
           label="แสดงผัง 3D"
           hint="เปิดมุมมองผังห้องแบบสามมิติในหน้าผังโครงการ"
+        />
+      </section>
+
+      {/* ── โหมดทดลอง: ให้สิทธิ์แก้ไข/ลบบิล ── */}
+      <section className="rs-card p-5 space-y-3">
+        <SectionTitle
+          title="โหมดทดลอง (แก้ไข / ลบบิล)"
+          hint="ช่วงทดลองใช้งาน เปิดสวิตช์นี้เพื่อให้ทีมงานแก้ไขหรือลบบิลได้เอง โดยไม่ต้องขออนุมัติ"
+        />
+        <div
+          className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-[12.5px]"
+          style={{ background: "var(--rs-pending-soft)", color: "#8A6400" }}
+        >
+          <span>⚠️</span>
+          <span>
+            ตามหลักบัญชี ใบแจ้งหนี้ที่ออกแล้ว <b>ไม่ควรแก้/ลบอิสระ</b> เมื่อใช้งานจริง —
+            เปิดเฉพาะช่วงทดลองเพื่อจัดการข้อมูลทดสอบ แล้ว<b>ปิดกลับ</b>เมื่อเริ่มใช้จริง
+            (ตอนปิด: บิลจะยกเลิกได้ผ่านการอนุมัติ 2 คนเหมือนเดิม) · ทุกการแก้/ลบมีบันทึกประวัติไว้
+          </span>
+        </div>
+        <Toggle
+          checked={billEditUnlocked}
+          onChange={setBillEditUnlocked}
+          label="อนุญาตให้แก้ไข / ลบบิลได้โดยตรง"
+          hint="เปิด = หน้าบิลจะมีปุ่ม “แก้ไขบิล” และ “ลบบิล” สำหรับแอดมินและผู้ดูแล RentSpace · ปิด = ปลอดภัยตามปกติ"
         />
       </section>
 

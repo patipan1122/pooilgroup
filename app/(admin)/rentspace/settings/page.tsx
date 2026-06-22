@@ -36,6 +36,7 @@ export default async function RentSpaceSettingsPage() {
         lateFeeGraceDays: project.lateFeeGraceDays ?? 7,
         autoBillEnabled: project.autoBillEnabled,
         view3dEnabled: project.view3dEnabled,
+        billEditUnlocked: project.billEditUnlocked,
         billCompanyName: project.billCompanyName ?? "",
         billTaxId: project.billTaxId ?? "",
         billBranch: project.billBranch ?? "",

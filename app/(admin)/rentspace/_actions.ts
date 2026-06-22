@@ -163,6 +163,7 @@ export async function actSaveProject(input: {
   billDueDay?: number;
   autoBillEnabled?: boolean;
   view3dEnabled?: boolean;
+  billEditUnlocked?: boolean;
   // ── tax-header (ผู้ให้เช่า) — shown on the bill so corporate tenants get a ใบกำกับภาษี
   billCompanyName?: string;
   billTaxId?: string;
@@ -185,6 +186,7 @@ export async function actSaveProject(input: {
     billDueDay: input.billDueDay ?? 5,
     autoBillEnabled: input.autoBillEnabled ?? true,
     view3dEnabled: input.view3dEnabled ?? true,
+    billEditUnlocked: input.billEditUnlocked ?? false,
     billCompanyName: input.billCompanyName?.trim() || null,
     billTaxId: input.billTaxId?.trim() || null,
     billBranch: input.billBranch?.trim() || null,
@@ -1084,6 +1086,114 @@ export async function actDecideVoidBill(billId: string, decision: "approve" | "r
   });
   revalidatePath("/rentspace/bills");
   revalidatePath(`/rentspace/bills/${billId}`);
+  return { ok: true };
+}
+
+// ───────── โหมดทดลอง: แก้ไข / ลบบิลโดยตรง (ต้องเปิดสิทธิ์ project.billEditUnlocked) ─────────
+
+const EDITABLE_BILL_KINDS = new Set(["rent", "electric", "water", "late_fee", "other"]);
+const ITEM_KIND_FALLBACK_LABEL: Record<string, string> = {
+  rent: "ค่าเช่า",
+  electric: "ค่าไฟ",
+  water: "ค่าน้ำ",
+  late_fee: "ค่าปรับล่าช้า",
+  other: "อื่น ๆ",
+};
+
+/**
+ * แก้ไขรายการในบิลโดยตรง (โหมดทดลองเท่านั้น) → แทนที่รายการทั้งหมด + คิดยอดรวม/VAT ใหม่.
+ * gate = admin/program_admin ของ rentspace + ต้องเปิดสวิตช์ billEditUnlocked.
+ */
+export async function actEditBillItems(input: {
+  billId: string;
+  items: { kind: string; label: string; amount: number; vatable: boolean }[];
+}) {
+  const session = await gateAdmin();
+  const bill = await prisma.rentalBill.findFirst({
+    where: { id: input.billId, orgId: session.user.org_id },
+    select: { id: true, status: true, project: { select: { billEditUnlocked: true } } },
+  });
+  if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
+  if (!bill.project.billEditUnlocked)
+    throw new Error("ยังไม่ได้เปิดสิทธิ์แก้ไขบิล — เปิด “โหมดทดลอง” ในหน้าตั้งค่าก่อน");
+  if (bill.status === "void") throw new Error("บิลนี้ถูกยกเลิกแล้ว แก้ไขไม่ได้");
+
+  // sanitize + validate
+  const clean = (input.items ?? [])
+    .map((it, i) => {
+      const kind = EDITABLE_BILL_KINDS.has(it.kind) ? it.kind : "other";
+      const label = (it.label ?? "").trim() || ITEM_KIND_FALLBACK_LABEL[kind] || "รายการ";
+      const amount = round2(Number(it.amount));
+      return { kind, label, amount, vatable: !!it.vatable, sort: i + 1 };
+    })
+    .filter((it) => Number.isFinite(it.amount) && it.amount >= 0);
+  if (clean.length === 0) throw new Error("ต้องมีรายการอย่างน้อย 1 รายการ (ยอด ≥ 0)");
+
+  const sumByKind = (k: string) =>
+    round2(clean.filter((it) => it.kind === k).reduce((s, it) => s + it.amount, 0));
+
+  await prisma.$transaction(async (tx) => {
+    await tx.rentalBillItem.deleteMany({ where: { billId: bill.id } });
+    await tx.rentalBillItem.createMany({
+      data: clean.map((it) => ({
+        billId: bill.id,
+        kind: it.kind,
+        label: it.label,
+        qty: 1,
+        unitPrice: it.amount,
+        amount: it.amount,
+        vatable: it.vatable,
+        sort: it.sort,
+      })),
+    });
+    await tx.rentalBill.update({
+      where: { id: bill.id },
+      data: {
+        rentAmount: sumByKind("rent"),
+        electricAmount: sumByKind("electric"),
+        waterAmount: sumByKind("water"),
+        lateFeeAmount: sumByKind("late_fee"),
+        otherAmount: sumByKind("other"),
+      },
+    });
+  });
+  // คิด subtotal/VAT/total/สถานะ ใหม่จากรายการที่เพิ่งแทนที่ (อ่าน items สดจาก DB)
+  await recomputeBillTotals(bill.id);
+  await logAudit(session, "RENTSPACE_BILL_UPDATED", "rental_bill", bill.id, {
+    action: "edit_items",
+    lines: clean.length,
+  });
+  revalidatePath("/rentspace/bills");
+  revalidatePath(`/rentspace/bills/${bill.id}`);
+  return { ok: true };
+}
+
+/**
+ * ลบบิลถาวร (โหมดทดลองเท่านั้น) — ลบรายการ/ประวัติชำระ/ส่วนลดทั้งหมดด้วยใน transaction.
+ * gate = admin/program_admin ของ rentspace + ต้องเปิดสวิตช์ billEditUnlocked.
+ */
+export async function actDeleteBill(billId: string) {
+  const session = await gateAdmin();
+  const bill = await prisma.rentalBill.findFirst({
+    where: { id: billId, orgId: session.user.org_id },
+    select: { id: true, billNo: true, status: true, project: { select: { billEditUnlocked: true } } },
+  });
+  if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
+  if (!bill.project.billEditUnlocked)
+    throw new Error("ยังไม่ได้เปิดสิทธิ์ลบบิล — เปิด “โหมดทดลอง” ในหน้าตั้งค่าก่อน");
+
+  await prisma.$transaction([
+    prisma.rentalDiscount.deleteMany({ where: { billId: bill.id } }),
+    prisma.rentalPayment.deleteMany({ where: { billId: bill.id } }),
+    prisma.rentalBillItem.deleteMany({ where: { billId: bill.id } }),
+    prisma.rentalBill.delete({ where: { id: bill.id } }),
+  ]);
+  await logAudit(session, "RENTSPACE_BILL_VOIDED", "rental_bill", bill.id, {
+    action: "hard_delete",
+    billNo: bill.billNo,
+  });
+  revalidatePath("/rentspace/bills");
+  revalidatePath("/rentspace");
   return { ok: true };
 }
 

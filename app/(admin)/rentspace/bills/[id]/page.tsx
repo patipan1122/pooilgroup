@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { RsPage, RsHeader, RsBadge, RsCard, RsBackLink } from "@/components/rentspace/ui";
 import {
   formatBaht,
@@ -20,6 +21,8 @@ import {
   SendBillButton,
   RequestVoidButton,
   VoidDecisionButtons,
+  EditBillButton,
+  DeleteBillButton,
 } from "./_components/bill-detail-actions";
 
 export const dynamic = "force-dynamic";
@@ -64,8 +67,11 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   const { id } = await params;
   const session = await requireSession();
   const isAdmin = isAdminTier(session.user.role);
+  // โหมดทดลอง แก้ไข/ลบบิล: ให้สิทธิ์ admin + ผู้ดูแล rentspace (program_admin)
+  const canOperate = isAdmin || (await userIsModuleAdmin(session.user, "rentspace"));
   const bill = await getBill(session.user.org_id, id);
   if (!bill) notFound();
+  const billEditUnlocked = bill.project.billEditUnlocked;
 
   const total = toNum(bill.totalAmount);
   const paid = toNum(bill.paidAmount);
@@ -354,6 +360,27 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
             )}
             {bill.status !== "void" && bill.voidStatus === "pending" && isAdmin && (
               <VoidDecisionButtons billId={bill.id} />
+            )}
+
+            {/* โหมดทดลอง: แก้ไข / ลบบิลโดยตรง (เปิดสิทธิ์ในหน้าตั้งค่า) */}
+            {billEditUnlocked && canOperate && (
+              <div className="pt-2 mt-1 border-t space-y-2" style={{ borderColor: "var(--rs-border)" }}>
+                <div className="text-[11.5px] font-semibold" style={{ color: "var(--rs-pending)" }}>
+                  ⚠️ โหมดทดลอง — แก้ไข/ลบได้โดยตรง
+                </div>
+                {bill.status !== "void" && (
+                  <EditBillButton
+                    billId={bill.id}
+                    items={items.map((it) => ({
+                      kind: it.kind,
+                      label: it.label,
+                      amount: toNum(it.amount),
+                      vatable: it.vatable,
+                    }))}
+                  />
+                )}
+                <DeleteBillButton billId={bill.id} billNo={bill.billNo} hasPayments={payments.length > 0} />
+              </div>
             )}
           </RsCard>
 

@@ -3,7 +3,7 @@
 import { useState, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Banknote, Percent, Download, Check, X, Send, Copy, ExternalLink } from "lucide-react";
+import { Banknote, Percent, Download, Check, X, Send, Copy, ExternalLink, Pencil, Trash2, Plus } from "lucide-react";
 import {
   actRecordPayment,
   actRequestDiscount,
@@ -12,8 +12,10 @@ import {
   actDecideVoidBill,
   actUploadFile,
   actSendBill,
+  actEditBillItems,
+  actDeleteBill,
 } from "../../../_actions";
-import { thaiDateLong } from "@/lib/rentspace/format";
+import { formatBaht, thaiDateLong } from "@/lib/rentspace/format";
 
 function num(v: string): number {
   const n = Number(String(v).replace(/,/g, ""));
@@ -477,5 +479,190 @@ export function VoidDecisionButtons({ billId }: { billId: string }) {
         <X className="h-4 w-4" /> ปฏิเสธ
       </button>
     </div>
+  );
+}
+
+// ───────── โหมดทดลอง: แก้ไขรายการบิล ─────────
+type EditableItem = { kind: string; label: string; amount: string; vatable: boolean };
+
+const BILL_KIND_OPTS: { value: string; label: string }[] = [
+  { value: "rent", label: "ค่าเช่า" },
+  { value: "electric", label: "ค่าไฟ" },
+  { value: "water", label: "ค่าน้ำ" },
+  { value: "late_fee", label: "ค่าปรับล่าช้า" },
+  { value: "other", label: "อื่น ๆ" },
+];
+
+export function EditBillButton({
+  billId,
+  items,
+}: {
+  billId: string;
+  items: { kind: string; label: string; amount: number; vatable: boolean }[];
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, start] = useTransition();
+  const [rows, setRows] = useState<EditableItem[]>([]);
+
+  function openModal() {
+    setRows(
+      (items.length ? items : [{ kind: "other", label: "", amount: 0, vatable: false }]).map((it) => ({
+        kind: BILL_KIND_OPTS.some((o) => o.value === it.kind) ? it.kind : "other",
+        label: it.label,
+        amount: String(it.amount),
+        vatable: it.vatable,
+      })),
+    );
+    setOpen(true);
+  }
+  function patch(i: number, p: Partial<EditableItem>) {
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...p } : r)));
+  }
+  function addRow() {
+    setRows((prev) => [...prev, { kind: "other", label: "", amount: "", vatable: false }]);
+  }
+  function removeRow(i: number) {
+    setRows((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  const total = rows.reduce((s, r) => s + (Number.isFinite(num(r.amount)) ? num(r.amount) : 0), 0);
+
+  function submit() {
+    const clean = rows
+      .map((r) => ({ kind: r.kind, label: r.label.trim(), amount: num(r.amount), vatable: r.vatable }))
+      .filter((r) => Number.isFinite(r.amount) && r.amount >= 0);
+    if (clean.length === 0) return toast.error("ต้องมีรายการอย่างน้อย 1 รายการ (ยอด ≥ 0)");
+    start(async () => {
+      try {
+        await actEditBillItems({ billId, items: clean });
+        toast.success("แก้ไขบิลแล้ว — คิดยอดรวมใหม่ให้เรียบร้อย");
+        setOpen(false);
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "แก้ไขไม่สำเร็จ");
+      }
+    });
+  }
+
+  return (
+    <>
+      <button className="rs-btn rs-btn-ghost w-full" onClick={openModal}>
+        <Pencil className="h-4 w-4" /> แก้ไขบิล
+      </button>
+      {open && (
+        <Modal title="แก้ไขรายการบิล" onClose={() => setOpen(false)} pending={pending} onSubmit={submit} submitLabel="บันทึก + คิดยอดใหม่">
+          <p className="text-[12px]" style={{ color: "var(--rs-text-3)" }}>
+            แก้ตัวเลขแต่ละรายการได้เลย ระบบจะคิดยอดรวม + VAT ใหม่ให้อัตโนมัติ (ส่วนลดที่อนุมัติแล้วยังคำนวณต่อ)
+          </p>
+          <div className="space-y-3">
+            {rows.map((r, i) => (
+              <div
+                key={i}
+                className="rounded-xl p-2.5 space-y-2"
+                style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)" }}
+              >
+                <div className="flex items-center gap-2">
+                  <select
+                    className="rs-d-input"
+                    style={{ height: 38, flex: 1 }}
+                    value={r.kind}
+                    onChange={(e) => patch(i, { kind: e.target.value })}
+                    aria-label="ประเภทรายการ"
+                  >
+                    {BILL_KIND_OPTS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => removeRow(i)}
+                    className="inline-flex items-center justify-center h-9 w-9 rounded-lg shrink-0"
+                    style={{ background: "var(--rs-danger-soft)", color: "var(--rs-danger)" }}
+                    aria-label="ลบรายการนี้"
+                    title="ลบรายการนี้"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <input
+                  className="rs-d-input"
+                  style={{ height: 38 }}
+                  value={r.label}
+                  onChange={(e) => patch(i, { label: e.target.value })}
+                  placeholder="ชื่อรายการ (เช่น ค่าไฟ 120 หน่วย)"
+                  aria-label="ชื่อรายการ"
+                />
+                <div className="flex items-center gap-3">
+                  <input
+                    className="rs-d-input"
+                    style={{ height: 38, flex: 1 }}
+                    inputMode="decimal"
+                    value={r.amount}
+                    onChange={(e) => patch(i, { amount: e.target.value })}
+                    placeholder="ยอด (บาท)"
+                    aria-label="ยอดเงิน (บาท)"
+                  />
+                  <label className="flex items-center gap-1.5 text-[12.5px] shrink-0" style={{ color: "var(--rs-text-2)" }}>
+                    <input type="checkbox" checked={r.vatable} onChange={(e) => patch(i, { vatable: e.target.checked })} />
+                    คิด VAT
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addRow} className="rs-btn rs-btn-ghost w-full">
+            <Plus className="h-4 w-4" /> เพิ่มรายการ
+          </button>
+          <div
+            className="flex items-center justify-between pt-2"
+            style={{ borderTop: "1px solid var(--rs-border)" }}
+          >
+            <span className="text-[13px]" style={{ color: "var(--rs-text-2)" }}>
+              รวมก่อนภาษี/ส่วนลด
+            </span>
+            <span className="font-bold tabular-nums" style={{ color: "var(--rs-text)" }}>
+              {formatBaht(total)}
+            </span>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+// ───────── โหมดทดลอง: ลบบิลถาวร ─────────
+export function DeleteBillButton({
+  billId,
+  billNo,
+  hasPayments,
+}: {
+  billId: string;
+  billNo: string;
+  hasPayments: boolean;
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  function go() {
+    const warn = hasPayments
+      ? `ลบบิล ${billNo} ถาวร?\n\n⚠️ บิลนี้มีประวัติการรับชำระเงิน — จะถูกลบไปด้วยทั้งหมด กู้คืนไม่ได้`
+      : `ลบบิล ${billNo} ถาวร? กู้คืนไม่ได้`;
+    if (!confirm(warn)) return;
+    start(async () => {
+      try {
+        await actDeleteBill(billId);
+        toast.success(`ลบบิล ${billNo} แล้ว`);
+        router.push("/rentspace/bills");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "ลบไม่สำเร็จ");
+      }
+    });
+  }
+  return (
+    <button className="rs-btn rs-btn-ghost w-full" style={{ color: "var(--rs-danger)" }} onClick={go} disabled={pending}>
+      <Trash2 className="h-4 w-4" /> ลบบิลถาวร
+    </button>
   );
 }
