@@ -44,6 +44,7 @@ export interface BankTxnRow {
   ref2: string | null;
   description: string | null;
   matchState: string;
+  bankAccountId: string;
 }
 
 // ── lineHash ──────────────────────────────────────────────────────────────────
@@ -137,7 +138,8 @@ export async function suggestMatches(params: {
   // Load unmatched bank transactions (both credits AND debits)
   const bankTxns = await prisma.$queryRaw<BankTxnRow[]>`
     SELECT id, txn_date as "txnDate", amount_satang as "amountSatang",
-           balance_satang as "balanceSatang", ref1, ref2, description, match_state as "matchState"
+           balance_satang as "balanceSatang", ref1, ref2, description, match_state as "matchState",
+           bank_account_id as "bankAccountId"
     FROM ledger_bank_txn
     WHERE id = ANY(${bankTxnIds}::uuid[])
       AND org_id = ${orgId}::uuid
@@ -146,6 +148,10 @@ export async function suggestMatches(params: {
   `;
 
   if (!bankTxns.length) return [];
+
+  // กรองรายได้ให้ตรง "บัญชีปลายทาง" ของ statement ที่กำลังจับคู่ (กฎ 1 บัญชี = 1 ธุรกิจ)
+  // เหมือนกระดาน (bank-reconcile-board) — กันแนะนำคู่ข้ามบัญชี. NULL = ยังไม่ผูกบัญชี → เข้าได้ทุกบัญชี.
+  const accountIds = [...new Set(bankTxns.map((t) => t.bankAccountId).filter(Boolean))];
 
   const dates = bankTxns.map((t) => t.txnDate);
   const minDate = new Date(Math.min(...dates.map((d) => new Date(d).getTime())));
@@ -171,6 +177,7 @@ export async function suggestMatches(params: {
       AND company_id = ${companyId}::uuid
       AND entry_date BETWEEN ${minDateStr}::date AND ${maxDateStr}::date
       AND match_state = 'unmatched'
+      AND (expected_bank_account_id = ANY(${accountIds}::uuid[]) OR expected_bank_account_id IS NULL)
     LIMIT 500
   `;
 

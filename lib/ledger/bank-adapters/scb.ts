@@ -75,12 +75,17 @@ export const scbAdapter: BankAdapter = {
       const rawRow: Record<string, string> = {};
       headers.forEach((h, idx) => { rawRow[h] = cols[idx]?.trim() ?? ""; });
 
-      // กุญแจรายการที่เสถียรข้าม export: เวลาเกิดรายการจริง + เลขเครื่อง + เลขบัญชีคู่ค้า
+      // กุญแจรายการที่เสถียรข้าม export: เวลาเกิดรายการจริง + รหัสรายการ + เลขเช็ค + คำอธิบาย
       // (ไม่ขยับแม้ export คนละช่วง — ต่างจาก "ยอดคงเหลือ") → ใช้กันซ้ำแม่นยำ
-      const txnTime = rawRow["Transaction Date and Time"] ?? "";
-      const terminal = rawRow["TerminalID"] ?? "";
-      const cpAcct = rawRow["Counter Party Account Number"] ?? "";
-      const externalRef = txnTime || terminal || cpAcct ? `${txnTime}|${terminal}|${cpAcct}` : null;
+      // ⚠️ SCB ใช้คอลัมน์ Date + Time แยกกัน และ "ไม่มี" TerminalID / Counter Party Account Number
+      // (คอลัมน์พวกนั้นเป็นของ BBL — โค้ดเดิมอ่านชื่อผิด ทำให้ externalRef = null เสมอ → ถอยไปใช้ balance)
+      const sDate = cols[idxDate]?.trim() ?? "";
+      const sTime = cols[idxTime]?.trim() ?? "";
+      const sTrCode = cols[idxTrCode]?.trim() ?? "";
+      const sCheque = cols[idxCheque]?.trim() ?? "";
+      const sDesc = cols[idxDesc]?.trim() ?? "";
+      // ใช้ externalRef เฉพาะเมื่อมี "เวลา" (เสถียรข้าม export) — ถ้าไม่มีเวลา ถอยไปใช้ balance เดิม (ไม่ regression)
+      const externalRef = sTime ? `${sDate}|${sTime}|${sTrCode}|${sCheque}|${sDesc}` : null;
 
       rows.push({
         txnDate,
