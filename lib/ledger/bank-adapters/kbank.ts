@@ -105,6 +105,12 @@ export const kbankAdapter: BankAdapter = {
         รายละเอียด: detail ?? "",
       };
 
+      // กุญแจรายการที่เสถียรข้าม export: วันที่ + เวลา + รายการ + รายละเอียด
+      // (ไม่ขยับแม้ export คนละช่วง — ต่างจาก "ยอดคงเหลือ" ที่เลื่อนได้) → กันซ้ำแม่นยำ
+      const externalRef = timeStr
+        ? `${txnDate}|${timeStr}|${desc}|${detail ?? ""}`
+        : null;
+
       rows.push({
         txnDate,
         valueDate: txnDate,
@@ -115,6 +121,7 @@ export const kbankAdapter: BankAdapter = {
         description: detail || desc,
         channel,
         rowIndex: i - headerRowIdx - 1,
+        externalRef,
         rawRow,
       });
     }

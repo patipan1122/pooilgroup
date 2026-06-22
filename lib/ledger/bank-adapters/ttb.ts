@@ -79,6 +79,13 @@ export const ttbAdapter: BankAdapter = {
       headers.forEach((h, idx) => { rawRow[h] = cols[idx]?.trim() ?? ""; });
       if (timeStr) rawRow["Time"] = timeStr;
 
+      // กุญแจรายการที่เสถียรข้าม export: วันที่ + เวลา + เลขอ้างอิงข้ามระบบ (Cross Reference No.)
+      // (ไม่ขยับแม้ export คนละช่วง — ต่างจาก "ยอดคงเหลือ" ที่เลื่อนได้) → กันซ้ำแม่นยำ
+      const sCrossRef = cols[idxCrossRef]?.trim() ?? "";
+      const externalRef = (timeStr || sCrossRef)
+        ? `${txnDate}|${timeStr ?? ""}|${sCrossRef}`
+        : null;
+
       rows.push({
         txnDate,
         valueDate: txnDate, // TTB effective date same as txn date
@@ -90,6 +97,7 @@ export const ttbAdapter: BankAdapter = {
         channel,
         rowIndex: i - 1,
         accountNo: acct || undefined, // TTB ACCHIST can carry several accounts in one file
+        externalRef,
         rawRow,
       });
     }

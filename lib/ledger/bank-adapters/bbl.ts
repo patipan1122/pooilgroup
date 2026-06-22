@@ -71,6 +71,7 @@ export const bblAdapter: BankAdapter = {
     const idxNarrative   = col("Narrative");
     const idxCptyName    = col("Counter Party Account Name");
     const idxCptyAcct    = col("Counter Party Account Number");
+    const idxTerminal    = col("TerminalID");
 
     const rows: NormalizedRow[] = [];
 
@@ -119,6 +120,13 @@ export const bblAdapter: BankAdapter = {
       const rawRow: Record<string, string> = {};
       headers.forEach((h, idx) => { rawRow[h] = cols[idx]?.trim() ?? ""; });
 
+      // กุญแจรายการที่เสถียรข้าม export: วันเวลาเกิดรายการจริง (ถึงวินาที) + เลขเครื่อง + บัญชีคู่ค้า + เลขเช็ค
+      // (ไม่ขยับแม้ export คนละช่วง — ต่างจาก "ยอดคงเหลือ" ที่เลื่อนได้) → กันซ้ำแม่นยำ
+      const terminal = cols[idxTerminal]?.trim() ?? "";
+      const externalRef = dateTimeRaw
+        ? `${dateTimeRaw}|${terminal}|${cptyAcct ?? ""}|${cheque ?? ""}`
+        : null;
+
       rows.push({
         txnDate,
         valueDate,
@@ -129,6 +137,7 @@ export const bblAdapter: BankAdapter = {
         description: desc || narrative,
         channel,
         rowIndex: i - HEADER_ROW - 1,
+        externalRef,
         rawRow,
       });
     }
