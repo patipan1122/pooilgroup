@@ -38,7 +38,7 @@ export async function GET(req: Request) {
     "date",
     "online",
     "cash",
-    "coin",
+    "coinInsertCount",
     "cashTotal",
     "totalRev",
     "deposit",

@@ -281,7 +281,7 @@ export function LedgerTab({
             <th>วันที่</th>
             <th className="num">ออนไลน์</th>
             <th className="num">เงินสด</th>
-            <th className="num">เหรียญ</th>
+            <th className="num">เหรียญ (ครั้ง)</th>
             <th className="num rc-tcol">รวมเงินสด</th>
             <th className="num">รายได้รวม</th>
             <th className="num rc-tcol">ฝาก</th>
@@ -716,7 +716,7 @@ export function PeriodsTab({
               <div className="rc-period-value mono">{fmtN(p.posSum)} ฿</div>
             </div>
             <div className="rc-period-cell">
-              <div className="rc-period-label">เงินสด+เหรียญ</div>
+              <div className="rc-period-label">เงินสด</div>
               <div className="rc-period-value mono">{fmtN(p.cashSum)} ฿</div>
               <div className="rc-period-sub">คาดว่าแม่บ้านควรส่ง</div>
             </div>

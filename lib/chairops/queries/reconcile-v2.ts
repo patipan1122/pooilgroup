@@ -13,9 +13,12 @@
 //
 // Field mapping (mockup → real schema):
 //   online      = onlineTotal
-//   cash        = cashTotal            (StarThing "จ่ายเงินสด")
-//   coin        = otherTotal           (coin box value in baht)
-//   cashTotal   = cashTotal + otherTotal
+//   cash        = cashTotal            (StarThing "จ่ายเงินสด" · physical cash in baht)
+//   coin        = coinInsertCount      (StarThing "จำนวนหยอดเหรียญ" · COUNT of coin
+//                                       insertions, NOT baht — display-only · the coin
+//                                       MONEY is already inside cashTotal, so it is
+//                                       NEVER added into cashTotal/pending/drift)
+//   cashTotal   = cashTotal            (coins already folded into cash · = "รวมเงินสด")
 //   totalRev    = grossTotal
 //   deposit     = ChairopsCashCollection.depositedAmount (bucketed to bizDate)
 //
@@ -43,8 +46,8 @@ export interface LedgerDay {
   date: string; // "YYYY-MM-DD"
   online: number;
   cash: number;
-  coin: number;
-  cashTotal: number; // cash + coin
+  coin: number; // COUNT of coin insertions ("จำนวนหยอดเหรียญ") · NOT baht · display-only
+  cashTotal: number; // = cash (coin money already folded into cash · "รวมเงินสด")
   totalRev: number; // online + cashTotal
   deposit: number | null; // null = no collection that day
   slip: string | null; // slip / evidence ref
@@ -201,7 +204,7 @@ async function buildLedger(args: {
       bizDate: true,
       onlineTotal: true,
       cashTotal: true,
-      otherTotal: true,
+      coinInsertCount: true,
       grossTotal: true,
     },
     orderBy: { bizDate: "asc" },
@@ -219,7 +222,9 @@ async function buildLedger(args: {
       const prev = posByDay.get(key) ?? { online: 0, cash: 0, coin: 0, total: 0 };
       prev.online += toNum(r.onlineTotal);
       prev.cash += toNum(r.cashTotal);
-      prev.coin += toNum(r.otherTotal);
+      // coin = "จำนวนหยอดเหรียญ" → count of coin insertions (NOT baht).
+      // Coin money is already inside cashTotal; this is display-only.
+      prev.coin += r.coinInsertCount;
       prev.total += toNum(r.grossTotal);
       posByDay.set(key, prev);
     }
@@ -230,6 +235,7 @@ async function buildLedger(args: {
         bizDate: true,
         onlineTotal: true,
         cashTotal: true,
+        coinInsertCount: true,
         grossTotal: true,
       },
       orderBy: { bizDate: "asc" },
@@ -240,7 +246,9 @@ async function buildLedger(args: {
       const prev = posByDay.get(key) ?? { online: 0, cash: 0, coin: 0, total: 0 };
       prev.online += toNum(r.onlineTotal);
       prev.cash += toNum(r.cashTotal);
-      // legacy table has no separate coin-baht column → coins fold into total
+      // coin = "จำนวนหยอดเหรียญ" → count of coin insertions (NOT baht). Coin
+      // money is already inside cashTotal/grossTotal; this is display-only.
+      prev.coin += r.coinInsertCount;
       prev.total += toNum(r.grossTotal);
       posByDay.set(key, prev);
     }
@@ -303,7 +311,10 @@ async function buildLedger(args: {
   const ledger: LedgerDay[] = [];
   for (const date of sortedDays) {
     const pos = posByDay.get(date) ?? { online: 0, cash: 0, coin: 0, total: 0 };
-    const cashTotal = pos.cash + pos.coin;
+    // pos.coin is a COUNT of coin insertions (not baht) — the coin money is
+    // already inside pos.cash. So "รวมเงินสด" = cash only · the coin count is
+    // NEVER added into the money that feeds pending/drift/หาย.
+    const cashTotal = pos.cash;
     const totalRev = pos.total || pos.online + cashTotal;
     pending += cashTotal;
 
