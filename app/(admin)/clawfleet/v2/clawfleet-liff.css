@@ -1,0 +1,68 @@
+/* ============================================================
+   ClawFleet · PLAYALOT skin for the EMPLOYEE MOBILE (LIFF)
+   Scoped under .cf-liff (the CollectGroupClient root). Retone the
+   Tailwind-built collect flow to the Playalot mobile look from
+   ~/ตู้คีบ/ mobile.html — cream canvas · Mitr/Fredoka · friendly
+   rounded cards · mustard chunky buttons. New LOOK, same flow/logic
+   (group/exchanger/token cross-check/5 photos kept intact).
+   ============================================================ */
+@import url("https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@500;600;700;800;900&family=Mitr:wght@300;400;500;600;700&display=swap");
+
+.cf-liff {
+  font-family: "Mitr", "Nunito", -apple-system, sans-serif;
+  color: #231F1B;
+  background: #F7F2EA;
+  min-height: 100vh;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.cf-liff h1 { font-family: "Mitr", sans-serif; font-weight: 600; letter-spacing: -0.01em; color: #231F1B; }
+.cf-liff .font-semibold, .cf-liff .font-bold { font-family: "Mitr", sans-serif; font-weight: 600; }
+
+/* cards + radius → rounder, soft Playalot shadow */
+.cf-liff .rounded-2xl { border-radius: 22px; }
+.cf-liff .rounded-xl { border-radius: 18px; }
+.cf-liff .bg-white { background: #FFFFFF; box-shadow: 0 2px 8px rgba(42,38,34,0.06); }
+.cf-liff .border-zinc-200 { border-color: #EBE2D2; }
+.cf-liff .text-zinc-900 { color: #231F1B; }
+.cf-liff .text-zinc-500 { color: #5A5248; }
+.cf-liff .text-zinc-400 { color: #8A8070; }
+
+/* numbers (meter / cash inputs) → Fredoka, tabular */
+.cf-liff input { font-family: "Fredoka", "Mitr", sans-serif; font-variant-numeric: tabular-nums; }
+.cf-liff .tabular-nums, .cf-liff .font-mono { font-family: "Fredoka", "Mitr", sans-serif; }
+
+/* primary chips/buttons (bg-blue-600) → mustard */
+.cf-liff .bg-blue-600 { background: #F0B323 !important; color: #fff; }
+.cf-liff .hover\:border-blue-400:hover { border-color: #F0B323 !important; }
+
+/* main close button (bg-zinc-900) → mustard chunky */
+.cf-liff .bg-zinc-900 {
+  background: #F0B323 !important; color: #fff !important;
+  box-shadow: 0 4px 0 #E09A0E !important; border-radius: 18px;
+}
+.cf-liff .bg-zinc-900:active:not(:disabled) { box-shadow: 0 1px 0 #E09A0E !important; transform: translateY(3px); }
+.cf-liff .hover\:bg-zinc-800:hover:not(:disabled) { background: #E09A0E !important; }
+.cf-liff .disabled\:bg-zinc-300:disabled { background: #EFE7D8 !important; box-shadow: none !important; color: #8A8070 !important; }
+
+/* exchanger (indigo → Playalot blue) */
+.cf-liff .bg-indigo-600 { background: #2D6CB1 !important; }
+.cf-liff .bg-indigo-50\/40 { background: #E4EEF7 !important; }
+.cf-liff .border-indigo-200 { border-color: #B9D2EC; }
+.cf-liff .text-indigo-700, .cf-liff .text-indigo-600 { color: #2D6CB1; }
+.cf-liff .bg-indigo-100 { background: #E4EEF7; }
+
+/* status colors → Playalot semantic */
+.cf-liff .bg-emerald-50\/50, .cf-liff .bg-emerald-50 { background: #E7F6EC; }
+.cf-liff .border-emerald-200 { border-color: #A8DCBC; }
+.cf-liff .text-emerald-600 { color: #2E9E54; }
+.cf-liff .bg-emerald-100 { background: #E7F6EC; }
+.cf-liff .bg-amber-100 { background: #FDF3DC; }
+.cf-liff .text-amber-700, .cf-liff .text-amber-600, .cf-liff .text-amber-800 { color: #E09A0E; }
+.cf-liff .bg-amber-50 { background: #FDF3DC; }
+.cf-liff .bg-rose-50 { background: #FDE8E5; }
+.cf-liff .text-rose-800 { color: #D6402F; }
+.cf-liff .bg-red-50 { background: #FDE8E5; }
+.cf-liff .text-red-800 { color: #D6402F; }
+.cf-liff .border-red-300 { border-color: #F3B6AE; }

@@ -5,6 +5,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import "../clawfleet-liff.css"; // Playalot skin for the employee mobile (scoped .cf-liff)
 import {
   startGroupSession,
   submitBranchEvent,
@@ -218,7 +219,7 @@ export function CollectGroupClient({ orgId, branches, skus }: Props) {
 
   // ================= RENDER =================
   return (
-    <div className="mx-auto max-w-md px-4 py-5">
+    <div className="cf-liff mx-auto max-w-md px-4 py-5">
       {error && (
         <div className="mb-3 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-800">{error}</div>
       )}
