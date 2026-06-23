@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser, atLeast } from "@/lib/fuelos/auth";
 import { PageHeader } from "@/components/fuelos/ui/page-header";
@@ -10,7 +11,7 @@ import {
 import { AssignBoard } from "./assign-board";
 import { InTransitList } from "./in-transit-list";
 import { GpsPanel } from "./gps-panel";
-import { Truck as TruckIcon, PackageCheck, MapPin } from "lucide-react";
+import { Truck as TruckIcon, PackageCheck, MapPin, Map as MapIcon } from "lucide-react";
 
 export default async function DispatchPage() {
   const user = await requireUser();
@@ -29,6 +30,14 @@ export default async function DispatchPage() {
       <PageHeader
         title="จัดส่ง + GPS"
         subtitle={`รอจัดรถ ${unassigned.length} · กำลังส่ง ${inTransit.length} · รถ ${gps.length} คัน`}
+        actions={
+          <Link
+            href="/fuelos/dispatch/map"
+            className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
+          >
+            <MapIcon className="size-4" /> เปิดแผนที่ติดตามรถ
+          </Link>
+        }
       />
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -52,6 +61,9 @@ export default async function DispatchPage() {
             <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-brand-600/10 text-brand-700 tabular-nums">
               {gps.length}
             </span>
+            <Link href="/fuelos/dispatch/map" className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline">
+              <MapIcon className="size-3.5" /> ดูบนแผนที่
+            </Link>
           </div>
           <GpsPanel trucks={gps} />
         </section>

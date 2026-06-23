@@ -4780,6 +4780,33 @@ model FuelPumpPriceSnapshot {
   @@schema("fuel")
 }
 
+// ตำแหน่งรถจาก xsense GPS (positionlog.plus.xsense.co.th) — ทั้งกองรถ (หลายบริษัท)
+// poll จาก xsense /vehicle/tracking → upsert ที่นี่ · แยกจาก Truck (รถส่งของ) เพราะกองรถใหญ่กว่า
+model FuelGpsVehicle {
+  id         String    @id @default(uuid()) @db.Uuid
+  xsenseName String    @unique @map("xsense_name") // "70-6630|นม" (คีย์จาก xsense)
+  plate      String? // "70-6630"
+  province   String? // "นม"
+  groupName  String?   @map("group_name") // บริษัท (จักราชฯ / พีโอออยล์ ...)
+  deviceId   String?   @map("device_id") // IMEI (ถ้ามี)
+  driverId   String?   @map("driver_id")
+  driverName String?   @map("driver_name")
+  lat        Decimal?  @db.Decimal(10, 7)
+  lng        Decimal?  @db.Decimal(10, 7)
+  speedKmh   Decimal?  @map("speed_kmh") @db.Decimal(6, 2)
+  engineOn   Boolean?  @map("engine_on") // engineStatus 1=ติดเครื่อง
+  moving     Boolean? // vehicleStatus 'R'=กำลังวิ่ง
+  courseDeg  Int?      @map("course_deg")
+  address    String? // position (ที่อยู่ไทย ตำบล:อำเภอ:จังหวัด)
+  gpsTime    DateTime? @map("gps_time")
+  seenAt     DateTime  @default(now()) @map("seen_at") // เวลา poll/อัปเดตล่าสุด
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([groupName])
+  @@map("fuel_gps_vehicle")
+  @@schema("fuel")
+}
+
 // ---------- F5 CRM (1 group = 1 customer/company) ----------
 model Customer {
   id                String    @id @default(uuid()) @db.Uuid
