@@ -174,64 +174,65 @@ export function SessionReview({
                   key={pin.id}
                   className="overflow-hidden rounded-2xl border-2 border-zinc-100 bg-white"
                 >
-                  <div className="flex gap-3 p-3">
+                  <div className="p-3">
+                    {/* หัว: ลำดับ + ป้าย + คอมเมนต์ (อ่านก่อน) */}
+                    <div className="mb-1.5 flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold text-white",
+                          pin.priority === "urgent"
+                            ? "bg-red-600"
+                            : "bg-[var(--color-brand-600)]",
+                        )}
+                      >
+                        {pin.seq}
+                      </span>
+                      {pin.priority === "urgent" && (
+                        <span className="rounded-full bg-red-100 px-1.5 text-[10px] font-bold text-red-700">
+                          ด่วน
+                        </span>
+                      )}
+                      {pin.status === "fixed" && (
+                        <span className="rounded-full bg-emerald-100 px-1.5 text-[10px] font-bold text-emerald-700">
+                          แก้แล้ว
+                        </span>
+                      )}
+                    </div>
+                    <p className="whitespace-pre-wrap break-words text-sm text-zinc-800">
+                      {pin.comment || (
+                        <span className="text-zinc-400">(ไม่มีคอมเมนต์)</span>
+                      )}
+                    </p>
+                    {pin.element_text && (
+                      <p className="mt-1 break-words text-xs text-zinc-400">
+                        ที่: “{pin.element_text}”
+                      </p>
+                    )}
+
+                    {/* ภาพหน้าจอ — ใหญ่เต็มการ์ด อ่านง่าย · กดเพื่อดูเต็ม + จุดที่ติชม */}
                     {pin.screenshot_key && r2PublicUrl ? (
                       <button
                         type="button"
                         onClick={() => setZoomPin(pin)}
-                        title="กดเพื่อดูภาพขยาย"
-                        className="group relative h-20 w-28 shrink-0 cursor-zoom-in overflow-hidden rounded-lg border border-zinc-200"
+                        title="กดเพื่อดูภาพเต็ม + จุดที่ติชม"
+                        className="group relative mt-3 block w-full cursor-zoom-in overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={`${r2PublicUrl}/${pin.screenshot_key}`}
-                          alt={`จุดที่ ${pin.seq}`}
-                          className="h-full w-full object-cover object-top transition-transform duration-200 group-hover:scale-105"
+                          alt={`ภาพหน้าจอ จุดที่ ${pin.seq}`}
+                          className="max-h-[460px] w-full object-cover object-top"
                           loading="lazy"
                         />
-                        <span className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition group-hover:bg-black/30 group-hover:opacity-100">
-                          <ZoomIn className="size-5 text-white drop-shadow" />
+                        <span className="absolute right-2 top-2 flex items-center gap-1 rounded-lg bg-black/55 px-2 py-1 text-[11px] font-medium text-white opacity-90 transition group-hover:bg-black/70">
+                          <ZoomIn className="size-3.5" /> กดดูเต็ม + จุดที่ติชม
                         </span>
                       </button>
                     ) : (
-                      <div className="flex h-20 w-28 shrink-0 items-center justify-center rounded-lg border border-dashed border-zinc-200 text-[10px] text-zinc-400">
-                        ไม่มีภาพ
+                      <div className="mt-3 flex h-28 w-full items-center justify-center rounded-xl border border-dashed border-zinc-200 text-xs text-zinc-400">
+                        ไม่มีภาพหน้าจอ
                       </div>
                     )}
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-1 flex items-center gap-2">
-                        <span
-                          className={cn(
-                            "flex size-5 items-center justify-center rounded-full text-[10px] font-extrabold text-white",
-                            pin.priority === "urgent"
-                              ? "bg-red-600"
-                              : "bg-[var(--color-brand-600)]",
-                          )}
-                        >
-                          {pin.seq}
-                        </span>
-                        {pin.priority === "urgent" && (
-                          <span className="rounded-full bg-red-100 px-1.5 text-[10px] font-bold text-red-700">
-                            ด่วน
-                          </span>
-                        )}
-                        {pin.status === "fixed" && (
-                          <span className="rounded-full bg-emerald-100 px-1.5 text-[10px] font-bold text-emerald-700">
-                            แก้แล้ว
-                          </span>
-                        )}
-                      </div>
-                      <p className="whitespace-pre-wrap break-words text-sm text-zinc-800">
-                        {pin.comment || (
-                          <span className="text-zinc-400">(ไม่มีคอมเมนต์)</span>
-                        )}
-                      </p>
-                      {pin.element_text && (
-                        <p className="mt-1 truncate text-xs text-zinc-400">
-                          ที่: “{pin.element_text}”
-                        </p>
-                      )}
-                    </div>
                   </div>
                   {canReview && (
                     <div className="flex items-center gap-2 border-t border-zinc-100 px-3 py-1.5">
