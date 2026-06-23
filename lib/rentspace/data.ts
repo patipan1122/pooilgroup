@@ -217,6 +217,13 @@ export async function meterBoard(orgId: string, projectId: string, period: strin
       contracts: { where: { status: { in: ["active", "expiring"] } }, take: 1, include: { tenant: true } },
     },
   });
+  // เรียงห้องแบบเลขธรรมชาติ: DB เรียง code เป็น "ตัวอักษร" → A2/10, A2/11 มาก่อน A2/2.
+  // เคารพ sortOrder ที่จัดเองก่อน แล้วค่อยเรียง code แบบ numeric (A2/2 < A2/10).
+  units.sort(
+    (a, b) =>
+      (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+      a.code.localeCompare(b.code, "en", { numeric: true, sensitivity: "base" }),
+  );
   return units;
 }
 
