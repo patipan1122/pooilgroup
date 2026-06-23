@@ -19,6 +19,8 @@ import { SessionInspector } from "@/components/playland/session-inspector";
 import { NavSelect } from "@/components/playland/nav-select";
 import { CashierHeaderActions } from "@/components/playland/cashier-header-actions";
 import { MobileCockpitTabs } from "@/components/playland/mobile-cockpit-tabs";
+import { PlaylandModeSwitch } from "@/components/playland/mode-switch";
+import { RhythmNav } from "@/components/playland/rhythm-nav";
 import { Activity, Bell, Smile, Sparkles, Tv, Search } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -81,7 +83,10 @@ export default async function CashierCockpit({ searchParams }: { searchParams: P
         <div>
           <div className="pl-eyebrow">
             <Sparkles size={11} />
-            playland · {branch.name} · สวัสดี {cashier}
+            <span className="pl-logo-text" style={{ fontSize: "1rem" }}>
+              Play <span className="pl-logo-a">a</span> lot
+            </span>
+            · {branch.name} · สวัสดี {cashier}
           </div>
           <h1>
             Cashier Cockpit
@@ -99,6 +104,8 @@ export default async function CashierCockpit({ searchParams }: { searchParams: P
           </h1>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <RhythmNav branchId={branchId} />
+          <PlaylandModeSwitch />
           <span data-mobile-hide className="pl-btn pl-btn-ghost" aria-hidden="true" style={{ cursor: "default" }} title="กด ⌘K (Mac) หรือ Ctrl+K (Windows) เพื่อค้นหา">
             <Search size={14} /> ค้นหา <span className="pl-kbd-inline">⌘K</span>
           </span>

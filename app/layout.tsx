@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Plus_Jakarta_Sans, IBM_Plex_Sans_Thai, IBM_Plex_Mono, Anuphan, Fraunces } from "next/font/google";
+import { Plus_Jakarta_Sans, IBM_Plex_Sans_Thai, IBM_Plex_Mono, Anuphan, Fraunces, Fredoka, Mitr, Nunito } from "next/font/google";
 import { Toaster } from "sonner";
 import { ServiceWorkerRegister } from "@/components/layout/sw-register";
 import "./globals.css";
@@ -45,6 +45,27 @@ const fraunces = Fraunces({
   display: "swap",
 });
 
+// ── Playalot brand (สวนสนุก redesign · 2026-06-23) — Playland scoped (ใช้แค่ใน .pl-root) ──
+// Fredoka = EN headline + เลขตัวใหญ่ (นับถอยหลัง/ยอดรวม) · Mitr = ไทยทั้งหัว+เนื้อ · Nunito = EN body
+const fredoka = Fredoka({
+  variable: "--font-fredoka",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+const mitr = Mitr({
+  variable: "--font-mitr",
+  subsets: ["thai", "latin"],
+  weight: ["200", "300", "400", "500", "600", "700"],
+  display: "swap",
+});
+const nunito = Nunito({
+  variable: "--font-nunito",
+  subsets: ["latin"],
+  weight: ["400", "600", "700", "800"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   // ชื่อแท็บแยกตามโปรแกรม: หน้าไหนตั้ง title เอง จะกลายเป็น "ชื่อนั้น · Pooilgroup"
   // หน้าที่ไม่ได้ตั้ง (เช่น login) ใช้ default = "Pooilgroup ERP"
@@ -75,7 +96,7 @@ export default function RootLayout({
   return (
     <html
       lang="th"
-      className={`${jakarta.variable} ${anuphan.variable} ${thaiSans.variable} ${plexMono.variable} ${fraunces.variable} h-full`}
+      className={`${jakarta.variable} ${anuphan.variable} ${thaiSans.variable} ${plexMono.variable} ${fraunces.variable} ${fredoka.variable} ${mitr.variable} ${nunito.variable} h-full`}
       suppressHydrationWarning
     >
       <body className="min-h-full antialiased font-thai bg-white text-zinc-900">

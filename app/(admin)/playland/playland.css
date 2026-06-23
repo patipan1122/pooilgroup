@@ -18,48 +18,62 @@
  * ============================================================================ */
 
 .pl-root {
-  /* ───── Brand foundation ───── */
-  --pl-amber-50:  #fff8eb;
-  --pl-amber-100: #fef0c7;
-  --pl-amber-200: #fde088;
-  --pl-amber-400: #fbb724;
-  --pl-amber-500: #f59e0b;  /* primary */
-  --pl-amber-600: #d97706;
-  --pl-amber-700: #b45309;
-  --pl-amber-900: #78350f;
+  /* ───────────────────────────────────────────────────────────────────────
+   * PLAY A LOT brand · 2026-06-23 · redesign (was "amber console" v2)
+   * Mustard-dominant warm canvas · Playalot Blue + Red as functional accents.
+   * ดูคู่มือ: docs/PLAYALOT_DESIGN_SPEC.md · มาสคอต public/playland/brand/
+   * ───────────────────────────────────────────────────────────────────────
+   * "amber" ramp = Playalot Mustard family (primary). ชื่อ token เดิมคงไว้
+   * เพื่อให้ทุกหน้าที่อ้าง --pl-amber-* / --pl-brand เปลี่ยนลุคทันทีโดยไม่ต้องแก้ */
+  --pl-amber-50:  #fff8e6;
+  --pl-amber-100: #fdeec2;
+  --pl-amber-200: #fadf8c;
+  --pl-amber-400: #f4c23c;
+  --pl-amber-500: #f0b323;  /* primary · Playalot Mustard #F0B323 */
+  --pl-amber-600: #c98a0c;  /* darker — white-on-mustard ปุ่ม (WCAG AA) */
+  --pl-amber-700: #9c6a05;
+  --pl-amber-900: #5e3f00;
 
-  --pl-indigo-500: #4f46e5;
-  --pl-indigo-600: #4338ca;
+  /* "indigo" = Playalot Blue (จังหวะ "หน้าหลัก" + secondary accent) */
+  --pl-indigo-500: #2d6cb1;  /* Playalot Blue #2D6CB1 */
+  --pl-indigo-600: #245a95;
 
-  --pl-ink-50:  #fafaf9;
-  --pl-ink-100: #f5f5f4;
-  --pl-ink-200: #e7e5e4;
-  --pl-ink-300: #d6d3d1;
-  --pl-ink-400: #a8a29e;
-  --pl-ink-500: #78716c;
-  --pl-ink-600: #57534e;
-  --pl-ink-700: #44403c;
-  --pl-ink-800: #292524;
-  --pl-ink-900: #1c1917;
+  /* ink = warm browns (ไม่ใช่เทาเย็น) → text #3A3026 · muted #8A7F70 */
+  --pl-ink-50:  #f8f4ec;
+  --pl-ink-100: #f1ead7;
+  --pl-ink-200: #e5ddcd;  /* hairline / border (warm cream) */
+  --pl-ink-300: #d4c9b6;
+  --pl-ink-400: #a89c8b;
+  --pl-ink-500: #8a7f70;  /* muted brown */
+  --pl-ink-600: #5e5345;
+  --pl-ink-700: #4a4034;
+  --pl-ink-800: #382f24;
+  --pl-ink-900: #3a3026;  /* ink — warm brown-black */
 
-  --pl-paper:  #fffcf5;  /* warm white — not sterile */
-  --pl-canvas: #faf7f0;  /* slightly warmer than ink-50 */
+  --pl-paper:  #fcf8f0;  /* card surface — warm cream (Cream #F7F2EA family) */
+  --pl-canvas: #eae5db;  /* page bg — warm sand grey (#e7e5df family) */
 
-  --pl-ok: #15803d;
-  --pl-ok-soft: #dcfce7;
+  --pl-ok: #1f8a5b;        /* brand success green */
+  --pl-ok-soft: #e0f2e9;
   --pl-ok-ink: #14532d;
 
-  --pl-warn: #ea580c;
-  --pl-warn-soft: #ffedd5;
-  --pl-warn-ink: #7c2d12;
+  --pl-warn: #e08a1a;      /* mustard-warn (ใกล้หมดเวลา) */
+  --pl-warn-soft: #fdedcf;
+  --pl-warn-ink: #7c4d05;
 
-  --pl-danger: #dc2626;
-  --pl-danger-soft: #fee2e2;
-  --pl-danger-ink: #991b1b;
+  --pl-danger: #e74c3c;    /* Playalot Red #E74C3C (จังหวะ "เช็คเอาท์") */
+  --pl-danger-soft: #fce4e1;
+  --pl-danger-ink: #9b2c20;
 
-  --pl-info: #2563eb;
-  --pl-info-soft: #dbeafe;
-  --pl-info-ink: #1e3a8a;
+  --pl-info: #2d6cb1;      /* Playalot Blue */
+  --pl-info-soft: #dce9f6;
+  --pl-info-ink: #1b456f;
+
+  /* ───── Playalot named accents (ใช้ตรง ๆ ในหน้า 3 จังหวะ) ───── */
+  --pl-blue: #2d6cb1;       --pl-blue-soft: #dce9f6;   --pl-blue-ink: #1b456f;
+  --pl-red: #e74c3c;        --pl-red-soft: #fce4e1;    --pl-red-ink: #9b2c20;
+  --pl-mustard: #f0b323;    --pl-mustard-soft: #fdeec2;
+  --pl-cream: #f7f2ea;      --pl-sand: #e7e5df;
 
   /* ───── Aliases ───── */
   --pl-brand: var(--pl-amber-500);
@@ -74,24 +88,27 @@
   --pl-line: var(--pl-ink-200);
   --pl-line-strong: var(--pl-ink-300);
 
-  /* ───── Typography ───── */
-  --pl-font-display: var(--font-fraunces), ui-serif, Georgia, serif;
-  --pl-font-body: var(--font-thai), var(--font-jakarta), system-ui, sans-serif;
+  /* ───── Typography · Playalot ─────
+   * display = Fredoka (หัวข้อ + เลขตัวใหญ่ playful) · body = Mitr (ไทย) + Nunito
+   * mono = Plex Mono คงไว้ (โค้ด/timestamp) */
+  --pl-font-display: var(--font-fredoka), "Fredoka", ui-rounded, system-ui, sans-serif;
+  --pl-font-body: var(--font-mitr), var(--font-nunito), system-ui, sans-serif;
   --pl-font-mono: var(--font-plex-mono), ui-monospace, monospace;
-  --pl-font-thai-display: var(--font-thai-display), var(--font-thai), system-ui;
+  --pl-font-thai-display: var(--font-mitr), var(--font-fredoka), system-ui;
+  --pl-font-num: var(--font-fredoka), "Fredoka", var(--font-plex-mono), monospace;
 
-  /* ───── Radii ───── */
-  --pl-r-sm: 6px;
-  --pl-r-md: 10px;
-  --pl-r-lg: 14px;
-  --pl-r-xl: 20px;
+  /* ───── Radii · กลมขึ้นนิดให้ playful ───── */
+  --pl-r-sm: 8px;
+  --pl-r-md: 12px;
+  --pl-r-lg: 16px;
+  --pl-r-xl: 22px;
   --pl-r-pill: 999px;
 
   /* ───── Shadows · soft & precise ───── */
-  --pl-shadow-1: 0 1px 2px rgba(28, 25, 23, 0.04);
-  --pl-shadow-2: 0 2px 8px rgba(28, 25, 23, 0.06), 0 1px 2px rgba(28, 25, 23, 0.04);
-  --pl-shadow-3: 0 12px 32px rgba(28, 25, 23, 0.08), 0 4px 8px rgba(28, 25, 23, 0.04);
-  --pl-shadow-glow: 0 0 0 4px rgba(245, 158, 11, 0.14);
+  --pl-shadow-1: 0 1px 2px rgba(58, 48, 38, 0.05);
+  --pl-shadow-2: 0 2px 8px rgba(58, 48, 38, 0.07), 0 1px 2px rgba(58, 48, 38, 0.05);
+  --pl-shadow-3: 0 12px 32px rgba(58, 48, 38, 0.10), 0 4px 8px rgba(58, 48, 38, 0.05);
+  --pl-shadow-glow: 0 0 0 4px rgba(240, 179, 35, 0.22);
 
   /* ───── Motion ───── */
   --pl-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
@@ -118,8 +135,8 @@
 .pl-shell {
   min-height: calc(100vh - 64px);
   background:
-    radial-gradient(circle at top right, rgba(245, 158, 11, 0.06), transparent 40%),
-    radial-gradient(circle at bottom left, rgba(79, 70, 229, 0.04), transparent 50%),
+    radial-gradient(circle at top right, rgba(240, 179, 35, 0.10), transparent 42%),
+    radial-gradient(circle at bottom left, rgba(45, 108, 177, 0.06), transparent 52%),
     var(--pl-canvas);
   position: relative;
 }
@@ -128,7 +145,7 @@
   content: "";
   position: fixed;
   inset: 64px 0 0 0;
-  background-image: radial-gradient(circle at 1px 1px, rgba(28, 25, 23, 0.045) 1px, transparent 0);
+  background-image: radial-gradient(circle at 1px 1px, rgba(58, 48, 38, 0.05) 1px, transparent 0);
   background-size: 24px 24px;
   pointer-events: none;
   z-index: 0;
@@ -202,7 +219,7 @@
 .pl-three-pane > .pl-pane:last-child {
   border-right: none;
   background:
-    linear-gradient(180deg, rgba(245, 158, 11, 0.03), transparent 40%),
+    linear-gradient(180deg, rgba(240, 179, 35, 0.05), transparent 40%),
     var(--pl-canvas);
 }
 
@@ -1258,3 +1275,270 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* ============================================================================
+ * PLAY A LOT · redesign additions (2026-06-23)
+ * โลโก้ · ปุ่มสลับโหมด หน้าร้าน/หลังร้าน · hub การ์ดหลังร้าน
+ * ============================================================================ */
+
+/* — โลโก้ตัวอักษร: Play (น้ำเงิน) a (มัสตาร์ด) lot (น้ำเงิน) Fredoka 700 — */
+.pl-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+}
+.pl-logo-img { width: 30px; height: 30px; object-fit: contain; }
+.pl-logo-text {
+  font-family: var(--pl-font-display);
+  font-weight: 700;
+  font-size: 1.35rem;
+  color: var(--pl-blue);
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.pl-logo-a { color: var(--pl-mustard); }
+
+/* — ปุ่มสลับโหมด (segmented control) — */
+.pl-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--pl-r-pill);
+  background: var(--pl-ink-100);
+  border: 1px solid var(--pl-line);
+}
+.pl-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: var(--pl-r-pill);
+  font-family: var(--pl-font-body);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--pl-text-muted);
+  text-decoration: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s var(--pl-ease);
+  white-space: nowrap;
+}
+.pl-mode-pill.is-active {
+  background: var(--pl-paper);
+  color: var(--pl-brand-ink);
+  box-shadow: var(--pl-shadow-2);
+}
+.pl-mode-pill:hover:not(.is-active) { color: var(--pl-text); }
+
+/* — Hub การ์ดหลังร้าน — */
+.pl-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  padding: 20px 24px 32px;
+  overflow-y: auto;
+}
+.pl-hub-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  border-radius: var(--pl-r-lg);
+  background: var(--pl-paper);
+  border: 1px solid var(--pl-line);
+  text-decoration: none;
+  color: inherit;
+  box-shadow: var(--pl-shadow-1);
+  transition: transform 0.16s var(--pl-ease), box-shadow 0.16s var(--pl-ease), border-color 0.16s var(--pl-ease);
+}
+.pl-hub-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--pl-shadow-3);
+  border-color: var(--pl-brand);
+}
+.pl-hub-ico {
+  width: 46px;
+  height: 46px;
+  border-radius: var(--pl-r-md);
+  display: grid;
+  place-items: center;
+  background: var(--pl-brand-soft);
+  color: var(--pl-brand-ink);
+}
+.pl-hub-title {
+  font-family: var(--pl-font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+.pl-hub-desc {
+  font-size: 0.8rem;
+  color: var(--pl-text-muted);
+  line-height: 1.5;
+}
+
+/* — แถบ 3 จังหวะ (หน้าหลัก/ระหว่างเล่น/เช็คเอาท์) — */
+.pl-rhythm {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--pl-r-pill);
+  background: var(--pl-ink-100);
+  border: 1px solid var(--pl-line);
+}
+.pl-rhythm a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 13px;
+  border-radius: var(--pl-r-pill);
+  font-family: var(--pl-font-body);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--pl-text-muted);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all 0.15s var(--pl-ease);
+}
+.pl-rhythm a:hover { color: var(--pl-text); }
+.pl-rhythm a.is-active { background: var(--pl-paper); box-shadow: var(--pl-shadow-2); }
+.pl-rhythm a.is-active[data-r="home"] { color: var(--pl-blue-ink); }
+.pl-rhythm a.is-active[data-r="board"] { color: var(--pl-warn-ink); }
+.pl-rhythm a.is-active[data-r="checkout"] { color: var(--pl-red-ink); }
+
+/* — กระดาน "ระหว่างเล่น" · การ์ดเด็ก — */
+.pl-board-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: 16px;
+  padding: 20px 24px 40px;
+  overflow-y: auto;
+  align-content: start;
+}
+.pl-board-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--pl-r-lg);
+  background: var(--pl-paper);
+  border: 1px solid var(--pl-line);
+  box-shadow: var(--pl-shadow-1);
+  transition: transform 0.16s var(--pl-ease), box-shadow 0.16s var(--pl-ease);
+}
+.pl-board-card.is-warn { border-color: var(--pl-warn); box-shadow: 0 0 0 3px var(--pl-warn-soft); }
+.pl-board-card.is-danger {
+  border-color: var(--pl-red);
+  box-shadow: 0 0 0 3px var(--pl-red-soft);
+  animation: pl-pulse-danger 1.6s var(--pl-ease) infinite;
+}
+@keyframes pl-pulse-danger {
+  0%, 100% { box-shadow: 0 0 0 3px var(--pl-red-soft); }
+  50% { box-shadow: 0 0 0 5px var(--pl-red-soft); }
+}
+.pl-board-top { display: flex; align-items: center; gap: 10px; }
+.pl-board-ava {
+  width: 48px; height: 48px;
+  border-radius: var(--pl-r-md);
+  background: var(--pl-mustard-soft);
+  display: grid; place-items: center;
+  overflow: hidden; flex-shrink: 0;
+}
+.pl-board-ava img { width: 42px; height: 42px; object-fit: contain; }
+.pl-board-name {
+  font-family: var(--pl-font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pl-board-meta {
+  font-size: 0.72rem;
+  color: var(--pl-text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pl-board-count {
+  font-family: var(--pl-font-num);
+  font-weight: 700;
+  font-size: 2.5rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--pl-blue);
+  font-variant-numeric: tabular-nums;
+}
+.pl-board-card.is-warn .pl-board-count { color: var(--pl-warn); }
+.pl-board-card.is-danger .pl-board-count { color: var(--pl-red); }
+.pl-board-actions { display: flex; gap: 6px; margin-top: auto; align-items: center; }
+.pl-board-extend {
+  position: absolute;
+  left: 16px; right: 16px; top: 64px;
+  z-index: 50;
+  background: var(--pl-paper);
+  border: 1px solid var(--pl-line-strong);
+  border-radius: var(--pl-r-md);
+  padding: 10px;
+  box-shadow: var(--pl-shadow-3);
+}
+.pl-board-add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 168px;
+  border: 2px dashed var(--pl-line-strong);
+  border-radius: var(--pl-r-lg);
+  color: var(--pl-text-muted);
+  text-decoration: none;
+  font-family: var(--pl-font-body);
+  font-weight: 600;
+  transition: all 0.16s var(--pl-ease);
+}
+.pl-board-add:hover {
+  border-color: var(--pl-brand);
+  color: var(--pl-brand-ink);
+  background: var(--pl-brand-soft);
+}
+
+/* — จังหวะ 3 "เช็คเอาท์" · บิล + จอขอบคุณ — */
+.pl-bill {
+  width: 100%;
+  max-width: 420px;
+  background: var(--pl-paper);
+  border: 1px solid var(--pl-line);
+  border-radius: var(--pl-r-xl);
+  box-shadow: var(--pl-shadow-3);
+  padding: 22px;
+}
+.pl-bill-head { margin-bottom: 14px; }
+.pl-bill-name { font-family: var(--pl-font-display); font-weight: 700; font-size: 1.5rem; line-height: 1.1; }
+.pl-bill-sub { font-size: 0.8rem; color: var(--pl-text-muted); }
+.pl-bill-rows { display: flex; flex-direction: column; gap: 8px; padding: 14px 0; border-top: 1px solid var(--pl-line); border-bottom: 1px solid var(--pl-line); }
+.pl-bill-row { display: flex; justify-content: space-between; gap: 12px; font-size: 0.85rem; }
+.pl-bill-row > span:first-child { color: var(--pl-text-muted); display: inline-flex; align-items: center; gap: 5px; }
+.pl-bill-total { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-top: 14px; }
+.pl-bill-total > span:first-child { font-size: 0.8rem; color: var(--pl-text-muted); }
+.pl-bill-amount {
+  font-family: var(--pl-font-num);
+  font-weight: 700;
+  font-size: 2rem;
+  color: var(--pl-text);
+  font-variant-numeric: tabular-nums;
+}
+.pl-checkout-done {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  text-align: center; padding: 24px;
+}
+.pl-checkout-done-title {
+  font-family: var(--pl-font-display);
+  font-weight: 700; font-size: 1.5rem;
+  color: var(--pl-ok);
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.pl-checkout-done-sub { font-size: 0.9rem; color: var(--pl-text-muted); }
