@@ -92,7 +92,7 @@ export function TRCloudBranchConfig({
   if (branches.length === 0) return null;
 
   const configuredCount = branches.filter(
-    (b) => !!(b.settings?.trcloudProject && b.settings?.trcloudDepartment),
+    (b) => !!b.settings?.trcloudDepartment, // โครงการ optional — นับครบเมื่อมีแผนก (CEO 2026-06-23)
   ).length;
   const unconfiguredCount = branches.length - configuredCount;
 
@@ -111,7 +111,7 @@ export function TRCloudBranchConfig({
         <div>
           <h2 className="mb-0.5 text-sm font-bold text-zinc-800">ผูกสาขา → TRCloud</h2>
           <p className="text-xs text-zinc-500">
-            โครงการ = รหัสสาขาใน TRCloud · แผนก = รหัสนิติบุคคล (เช่น JPS_00001)
+            แผนก = รหัสนิติบุคคล (เช่น JPS_00001) · จำเป็น — โครงการ = รหัสสาขา · ไม่บังคับ (ค่าใช้จ่ายส่วนกลางเว้นว่างได้)
           </p>
           {/* Progress bar */}
           <div className="mt-2 flex items-center gap-2">
@@ -160,7 +160,7 @@ export function TRCloudBranchConfig({
         ) : null}
         {filteredBranches.map((b) => {
           const edit = edits[b.id] ?? { project: "", department: "" };
-          const isConfigured = !!(b.settings?.trcloudProject && b.settings?.trcloudDepartment);
+          const isConfigured = !!b.settings?.trcloudDepartment; // โครงการ optional
           const isBusy = !!pending[b.id];
           const isSaved = !!saved[b.id];
           const branchError = errors[b.id];
@@ -178,7 +178,7 @@ export function TRCloudBranchConfig({
               <div className="flex flex-1 flex-col gap-1.5">
                 <div className="flex flex-col gap-1.5 sm:flex-row sm:gap-2">
                   <div className="flex-1">
-                    <label className="mb-0.5 block text-[11px] text-zinc-500">โครงการ (project)</label>
+                    <label className="mb-0.5 block text-[11px] text-zinc-500">โครงการ (project) · ไม่บังคับ</label>
                     <input
                       className={input}
                       placeholder="AMAZON-001-สาขาเทศบาลจักราช"
@@ -193,7 +193,7 @@ export function TRCloudBranchConfig({
                     />
                   </div>
                   <div className="flex-1">
-                    <label className="mb-0.5 block text-[11px] text-zinc-500">แผนก (department)</label>
+                    <label className="mb-0.5 block text-[11px] text-zinc-500">แผนก (department) · จำเป็น</label>
                     <input
                       className={input}
                       placeholder="JPS_00001"
@@ -234,7 +234,7 @@ export function TRCloudBranchConfig({
       </div>
 
       <p className="mt-3 text-[11px] text-zinc-500">
-        สาขาที่ยังไม่ได้ผูก โครงการ+แผนก จะไม่สามารถส่งใบเสร็จเข้า TRCloud ได้
+        สาขาที่ยังไม่ได้กรอก “แผนก” จะส่งใบเสร็จเข้า TRCloud ไม่ได้ · “โครงการ” เว้นว่างได้ (ค่าใช้จ่ายส่วนกลาง)
       </p>
     </div>
   );

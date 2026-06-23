@@ -420,10 +420,8 @@ export async function pushExpenseToTrcloud(
     trcloudProductCode: resolveEffectiveSku(e),
     categoryAccCode: e.categoryAccCode || GL_FALLBACK,
   };
-  // สาขายังต้องตั้ง project/department (คนละเรื่องกับ SKU/GL — ใช้รายงานรายสาขา).
-  if (!eff.branchTrcloudProject) {
-    return { ok: false, error: "สาขานี้ยังไม่มีรหัสโครงการ TRCloud — ตั้งค่าใน Settings → สาขา → TRCloud" };
-  }
+  // แผนก (นิติบุคคล) จำเป็น — ต้องรู้ว่าลงบัญชีบริษัทไหน.
+  // โครงการ (สาขา/cost center) เป็น optional: ค่าใช้จ่ายส่วนกลางไม่ต้องผูกสาขา (CEO 2026-06-23).
   if (!eff.branchTrcloudDepartment) {
     return { ok: false, error: "สาขานี้ยังไม่มีรหัสแผนก TRCloud — ตั้งค่าใน Settings → สาขา → TRCloud" };
   }
@@ -477,7 +475,7 @@ export async function pushExpenseToTrcloud(
     // หมายเหตุ: PO ไม่มีช่อง tax_report และไม่ post GL — VAT/บัญชีจริงเกิดตอนแปลงเป็น AP.
     approve_status: "wait",     // ฉบับร่าง; รออนุมัติ/แปลงใน TRCloud
     department: e.branchTrcloudDepartment,  // นิติบุคคล/VAT branch
-    project: e.branchTrcloudProject,        // สาขา
+    project: e.branchTrcloudProject ?? "",  // สาขา (optional — ส่วนกลางเว้นว่างได้)
     invoice_note: e.note
       ? `${e.note} · อ้างอิง ${e.docCode}`
       : `LedgerLine · อ้างอิง ${e.docCode}`,

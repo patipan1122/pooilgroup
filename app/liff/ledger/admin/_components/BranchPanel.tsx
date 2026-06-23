@@ -33,10 +33,10 @@ function trcloudOf(b: BranchFull): { project: string; department: string } {
   };
 }
 
-// สาขาถือว่า "ผูกแล้ว" เมื่อมีทั้ง project + department
+// สาขาถือว่า "ผูกแล้ว" เมื่อมี department (นิติบุคคล) — project เป็น optional (CEO 2026-06-23)
 function isTrcloudBound(b: BranchFull): boolean {
-  const { project, department } = trcloudOf(b);
-  return !!(project && department);
+  const { department } = trcloudOf(b);
+  return !!department;
 }
 
 const inputCls =
