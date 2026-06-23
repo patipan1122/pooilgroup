@@ -36,10 +36,11 @@
   --cf-blue: #2D6CB1;    --cf-blue-50: #E4EEF7;
   --cf-slate-50: #F1EADC;
 
+  /* radius — match prototype styles.css exactly (was 12/16/22/30) */
   --cf-radius-sm: 12px;
-  --cf-radius: 16px;
-  --cf-radius-lg: 22px;
-  --cf-radius-xl: 30px;
+  --cf-radius: 18px;
+  --cf-radius-lg: 26px;
+  --cf-radius-xl: 34px;
 
   --cf-shadow-sm: 0 2px 8px rgba(42,38,34,.06);
   --cf-shadow: 0 6px 20px rgba(42,38,34,.08);
@@ -48,8 +49,21 @@
   --cf-font: "Mitr", "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --cf-font-display: "Fredoka", "Mitr", sans-serif;
   --cf-font-body: "Nunito", "Mitr", sans-serif;
+
+  /* density — airier to match prototype (was 14/20/16) */
+  --cf-row-pad: 16px;
+  --cf-card-pad: 24px;
+  --cf-gap: 20px;
 }
-.cf-scope { font-weight: 400; }
+/* base type — match prototype: 15px / leading 1.5 / weight 400 (was 14px / 1.45).
+   This is the CEO's core fix: bigger text + more leading = อ่านสบายตา. */
+.cf-scope {
+  font-size: 15px;
+  line-height: 1.5;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.cf-scope p, .cf-scope .cf-dim, .cf-scope .cf-page-sub { line-height: 1.5; }
 
 /* ===== FULL-SCREEN TAKEOVER =====
    Honors the CEO's "standalone ClawFleet-branded full screen" choice:
