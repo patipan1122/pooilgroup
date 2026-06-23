@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isAdminTier, isSuperAdmin } from "@/lib/auth/role-guards";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { RsPage, RsHeader, RsBadge, RsCard, RsBackLink } from "@/components/rentspace/ui";
 import {
@@ -67,11 +67,14 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   const { id } = await params;
   const session = await requireSession();
   const isAdmin = isAdminTier(session.user.role);
-  // โหมดทดลอง แก้ไข/ลบบิล: ให้สิทธิ์ admin + ผู้ดูแล rentspace (program_admin)
+  const isSuper = isSuperAdmin(session.user.role);
+  // แก้ไข/ลบบิล: ผู้ดูแล (admin + program_admin ของ rentspace) เมื่อ super เปิดสวิตช์
+  // ในหน้าตั้งค่า · super_admin ทำได้เสมอไม่ต้องเปิดสวิตช์
   const canOperate = isAdmin || (await userIsModuleAdmin(session.user, "rentspace"));
   const bill = await getBill(session.user.org_id, id);
   if (!bill) notFound();
-  const billEditUnlocked = bill.project.billEditUnlocked;
+  const canEditBill = isSuper || (bill.project.billEditUnlocked && canOperate);
+  const canDeleteBill = isSuper || (bill.project.billDeleteUnlocked && canOperate);
 
   const total = toNum(bill.totalAmount);
   const paid = toNum(bill.paidAmount);
@@ -362,13 +365,13 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
               <VoidDecisionButtons billId={bill.id} />
             )}
 
-            {/* โหมดทดลอง: แก้ไข / ลบบิลโดยตรง (เปิดสิทธิ์ในหน้าตั้งค่า) */}
-            {billEditUnlocked && canOperate && (
+            {/* แก้ไข / ลบบิลโดยตรง (super_admin เสมอ · คนอื่นเมื่อเปิดสิทธิ์ในหน้าตั้งค่า) */}
+            {(canEditBill || canDeleteBill) && (
               <div className="pt-2 mt-1 border-t space-y-2" style={{ borderColor: "var(--rs-border)" }}>
                 <div className="text-[11.5px] font-semibold" style={{ color: "var(--rs-pending)" }}>
-                  ⚠️ โหมดทดลอง — แก้ไข/ลบได้โดยตรง
+                  ⚠️ จัดการบิลโดยตรง — มีบันทึกประวัติทุกครั้ง
                 </div>
-                {bill.status !== "void" && (
+                {canEditBill && bill.status !== "void" && (
                   <EditBillButton
                     billId={bill.id}
                     items={items.map((it) => ({
@@ -379,7 +382,9 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
                     }))}
                   />
                 )}
-                <DeleteBillButton billId={bill.id} billNo={bill.billNo} hasPayments={payments.length > 0} />
+                {canDeleteBill && (
+                  <DeleteBillButton billId={bill.id} billNo={bill.billNo} hasPayments={payments.length > 0} />
+                )}
               </div>
             )}
           </RsCard>

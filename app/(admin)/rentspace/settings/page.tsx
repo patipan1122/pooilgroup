@@ -37,6 +37,8 @@ export default async function RentSpaceSettingsPage() {
         autoBillEnabled: project.autoBillEnabled,
         view3dEnabled: project.view3dEnabled,
         billEditUnlocked: project.billEditUnlocked,
+        billDeleteUnlocked: project.billDeleteUnlocked,
+        billIssueUnlocked: project.billIssueUnlocked,
         billCompanyName: project.billCompanyName ?? "",
         billTaxId: project.billTaxId ?? "",
         billBranch: project.billBranch ?? "",

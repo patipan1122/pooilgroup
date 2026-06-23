@@ -164,6 +164,8 @@ export async function actSaveProject(input: {
   autoBillEnabled?: boolean;
   view3dEnabled?: boolean;
   billEditUnlocked?: boolean;
+  billDeleteUnlocked?: boolean;
+  billIssueUnlocked?: boolean;
   // ── tax-header (ผู้ให้เช่า) — shown on the bill so corporate tenants get a ใบกำกับภาษี
   billCompanyName?: string;
   billTaxId?: string;
@@ -187,6 +189,8 @@ export async function actSaveProject(input: {
     autoBillEnabled: input.autoBillEnabled ?? true,
     view3dEnabled: input.view3dEnabled ?? true,
     billEditUnlocked: input.billEditUnlocked ?? false,
+    billDeleteUnlocked: input.billDeleteUnlocked ?? false,
+    billIssueUnlocked: input.billIssueUnlocked ?? true,
     billCompanyName: input.billCompanyName?.trim() || null,
     billTaxId: input.billTaxId?.trim() || null,
     billBranch: input.billBranch?.trim() || null,
@@ -729,12 +733,21 @@ export async function actSaveMeterReading(input: {
       data: { id: randomUUID(), orgId: session.user.org_id, unitId: input.unitId, kind: input.kind },
     });
   }
-  // previous reading = last reading before this period, else meter initial
+  // previous reading = last reading before this period.
+  // ถ้า "ไม่มีเดือนก่อนหน้าเลย" (เดือนแรกที่จดมิเตอร์ห้องนี้) → ถือเลขที่จดเดือนนี้เป็น
+  // "เลขตั้งต้น" → หน่วย = 0 ไม่คิดเงินทั้งมิเตอร์ (เลขมิเตอร์เป็นค่าสะสม จะเริ่มคิดหน่วย
+  // จริงเดือนถัดไป). meter.initialReading ใช้เป็นฐานถ้าตั้งค่าไว้จริง (>0) เท่านั้น —
+  // ค่า default 0 ไม่ถือเป็นฐาน (กันบั๊กบิลค่าไฟพุ่งเป็นเลขมิเตอร์ทั้งตัว).
   const prevRow = await prisma.rentalMeterReading.findFirst({
     where: { meterId: meter.id, period: { lt: input.period } },
     orderBy: { period: "desc" },
   });
-  const prevReading = prevRow ? toNum(prevRow.currReading) : toNum(meter.initialReading);
+  const initial = toNum(meter.initialReading);
+  const prevReading = prevRow
+    ? toNum(prevRow.currReading)
+    : initial > 0
+      ? initial
+      : toNum(input.currReading); // เดือนแรก ไม่มีฐาน → ตั้งต้น หน่วย 0
   // resolve rate from contract → project default
   let rate = input.ratePerUnit;
   if (rate == null) {
@@ -810,6 +823,9 @@ export async function actCreateBill(contractId: string, period: string, issue = 
     include: { project: true, unit: true },
   });
   if (!contract) throw new Error("ไม่พบสัญญา");
+  // super_admin ออกบิลได้เสมอ · คนอื่นต้องให้ super เปิดสวิตช์ "อนุญาตออกบิล" (เปิดเป็นค่าเริ่มต้น)
+  if (!isSuperAdmin(session.user.role) && !contract.project.billIssueUnlocked)
+    throw new Error("ยังไม่ได้เปิดสิทธิ์ออกบิล — ให้ผู้ดูแลระบบ (super admin) เปิดสวิตช์ในหน้าตั้งค่าก่อน");
   // ออกบิลได้เฉพาะสัญญาที่ยังใช้งานอยู่ (UI กรองแล้ว แต่ guard ฝั่ง server กัน API ตรง)
   if (!["active", "expiring"].includes(contract.status)) {
     throw new Error("ออกบิลได้เฉพาะสัญญาที่ใช้งานอยู่ (สัญญานี้สถานะ " + contract.status + ")");
@@ -980,6 +996,15 @@ export async function actPreviewBillsForUnits(
 /** Generate bills for ALL active contracts of a project for a period. */
 export async function actGenerateMonthlyBills(projectId: string, period: string) {
   const session = await gateAdmin();
+  // super_admin ออกบิลได้เสมอ · คนอื่นต้องให้ super เปิดสวิตช์ "อนุญาตออกบิล" (เปิดเป็นค่าเริ่มต้น)
+  if (!isSuperAdmin(session.user.role)) {
+    const proj = await prisma.rentalProject.findFirst({
+      where: { id: projectId, orgId: session.user.org_id },
+      select: { billIssueUnlocked: true },
+    });
+    if (!proj?.billIssueUnlocked)
+      throw new Error("ยังไม่ได้เปิดสิทธิ์ออกบิล — ให้ผู้ดูแลระบบ (super admin) เปิดสวิตช์ในหน้าตั้งค่าก่อน");
+  }
   const contracts = await prisma.rentalContract.findMany({
     where: { orgId: session.user.org_id, projectId, status: { in: ["active", "expiring"] } },
     include: { project: true, unit: true },
@@ -1114,8 +1139,9 @@ export async function actEditBillItems(input: {
     select: { id: true, status: true, project: { select: { billEditUnlocked: true } } },
   });
   if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
-  if (!bill.project.billEditUnlocked)
-    throw new Error("ยังไม่ได้เปิดสิทธิ์แก้ไขบิล — เปิด “โหมดทดลอง” ในหน้าตั้งค่าก่อน");
+  // super_admin แก้ไขได้เสมอ · คนอื่นต้องให้ super เปิดสวิตช์ "อนุญาตแก้ไขบิล" ในหน้าตั้งค่าก่อน
+  if (!isSuperAdmin(session.user.role) && !bill.project.billEditUnlocked)
+    throw new Error("ยังไม่ได้เปิดสิทธิ์แก้ไขบิล — ให้ผู้ดูแลระบบ (super admin) เปิดสวิตช์ในหน้าตั้งค่าก่อน");
   if (bill.status === "void") throw new Error("บิลนี้ถูกยกเลิกแล้ว แก้ไขไม่ได้");
 
   // sanitize + validate
@@ -1176,11 +1202,12 @@ export async function actDeleteBill(billId: string) {
   const session = await gateAdmin();
   const bill = await prisma.rentalBill.findFirst({
     where: { id: billId, orgId: session.user.org_id },
-    select: { id: true, billNo: true, status: true, project: { select: { billEditUnlocked: true } } },
+    select: { id: true, billNo: true, status: true, project: { select: { billDeleteUnlocked: true } } },
   });
   if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
-  if (!bill.project.billEditUnlocked)
-    throw new Error("ยังไม่ได้เปิดสิทธิ์ลบบิล — เปิด “โหมดทดลอง” ในหน้าตั้งค่าก่อน");
+  // super_admin ลบได้เสมอ · คนอื่นต้องให้ super เปิดสวิตช์ "อนุญาตลบบิล" ในหน้าตั้งค่าก่อน
+  if (!isSuperAdmin(session.user.role) && !bill.project.billDeleteUnlocked)
+    throw new Error("ยังไม่ได้เปิดสิทธิ์ลบบิล — ให้ผู้ดูแลระบบ (super admin) เปิดสวิตช์ในหน้าตั้งค่าก่อน");
 
   await prisma.$transaction([
     prisma.rentalDiscount.deleteMany({ where: { billId: bill.id } }),

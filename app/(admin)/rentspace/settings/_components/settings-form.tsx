@@ -25,6 +25,8 @@ type Initial = {
   autoBillEnabled: boolean;
   view3dEnabled: boolean;
   billEditUnlocked: boolean;
+  billDeleteUnlocked: boolean;
+  billIssueUnlocked: boolean;
   billCompanyName: string;
   billTaxId: string;
   billBranch: string;
@@ -75,6 +77,8 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
   const [autoBillEnabled, setAutoBillEnabled] = useState(initial?.autoBillEnabled ?? true);
   const [view3dEnabled, setView3dEnabled] = useState(initial?.view3dEnabled ?? true);
   const [billEditUnlocked, setBillEditUnlocked] = useState(initial?.billEditUnlocked ?? false);
+  const [billDeleteUnlocked, setBillDeleteUnlocked] = useState(initial?.billDeleteUnlocked ?? false);
+  const [billIssueUnlocked, setBillIssueUnlocked] = useState(initial?.billIssueUnlocked ?? true);
   const [billCompanyName, setBillCompanyName] = useState(initial?.billCompanyName ?? "");
   const [billTaxId, setBillTaxId] = useState(initial?.billTaxId ?? "");
   const [billBranch, setBillBranch] = useState(initial?.billBranch ?? "");
@@ -153,6 +157,8 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
           autoBillEnabled,
           view3dEnabled,
           billEditUnlocked,
+          billDeleteUnlocked,
+          billIssueUnlocked,
           billCompanyName: billCompanyName.trim() || undefined,
           billTaxId: billTaxId.trim() || undefined,
           billBranch: billBranch.trim() || undefined,
@@ -454,11 +460,11 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
         />
       </section>
 
-      {/* ── โหมดทดลอง: ให้สิทธิ์แก้ไข/ลบบิล ── */}
+      {/* ── สิทธิ์จัดการบิล (เปิด-ปิดต่อการกระทำ · super_admin ตั้งได้คนเดียว) ── */}
       <section className="rs-card p-5 space-y-3">
         <SectionTitle
-          title="โหมดทดลอง (แก้ไข / ลบบิล)"
-          hint="ช่วงทดลองใช้งาน เปิดสวิตช์นี้เพื่อให้ทีมงานแก้ไขหรือลบบิลได้เอง โดยไม่ต้องขออนุมัติ"
+          title="สิทธิ์จัดการบิล (สำหรับทีมงาน)"
+          hint="เปิด-ปิดว่าให้แอดมิน/ผู้ดูแล RentSpace ทำอะไรกับบิลได้บ้าง · ผู้ดูแลระบบ (super admin) ทำได้ทุกอย่างเสมอ ไม่ต้องเปิดสวิตช์"
         />
         <div
           className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-[12.5px]"
@@ -466,16 +472,28 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
         >
           <span>⚠️</span>
           <span>
-            ตามหลักบัญชี ใบแจ้งหนี้ที่ออกแล้ว <b>ไม่ควรแก้/ลบอิสระ</b> เมื่อใช้งานจริง —
-            เปิดเฉพาะช่วงทดลองเพื่อจัดการข้อมูลทดสอบ แล้ว<b>ปิดกลับ</b>เมื่อเริ่มใช้จริง
-            (ตอนปิด: บิลจะยกเลิกได้ผ่านการอนุมัติ 2 คนเหมือนเดิม) · ทุกการแก้/ลบมีบันทึกประวัติไว้
+            ตามหลักบัญชี ใบแจ้งหนี้ที่ออกแล้ว <b>ไม่ควรแก้/ลบอิสระ</b> — เปิดเฉพาะเมื่อจำเป็น
+            แล้ว<b>ปิดกลับ</b>เมื่อไม่ใช้ · ทุกการออก/แก้/ลบมีบันทึกประวัติไว้ ·
+            สวิตช์เหล่านี้คุมเฉพาะทีมงาน <b>ไม่กระทบ super admin</b>
           </span>
         </div>
         <Toggle
+          checked={billIssueUnlocked}
+          onChange={setBillIssueUnlocked}
+          label="อนุญาตให้ออกบิล / สร้างใบแจ้งหนี้"
+          hint="เปิด = แอดมิน/ผู้ดูแลออกบิลได้ (ค่าเริ่มต้น) · ปิด = เฉพาะ super admin ออกบิลได้"
+        />
+        <Toggle
           checked={billEditUnlocked}
           onChange={setBillEditUnlocked}
-          label="อนุญาตให้แก้ไข / ลบบิลได้โดยตรง"
-          hint="เปิด = หน้าบิลจะมีปุ่ม “แก้ไขบิล” และ “ลบบิล” สำหรับแอดมินและผู้ดูแล RentSpace · ปิด = ปลอดภัยตามปกติ"
+          label="อนุญาตให้แก้ไขบิล"
+          hint="เปิด = หน้าบิลจะมีปุ่ม “แก้ไขบิล” สำหรับแอดมิน/ผู้ดูแล · ปิด = ปลอดภัยตามปกติ (แก้ไม่ได้)"
+        />
+        <Toggle
+          checked={billDeleteUnlocked}
+          onChange={setBillDeleteUnlocked}
+          label="อนุญาตให้ลบบิลทิ้ง"
+          hint="เปิด = หน้าบิลจะมีปุ่ม “ลบบิล” สำหรับแอดมิน/ผู้ดูแล · ปิด = ลบไม่ได้ (ยกเลิกบิลผ่านการอนุมัติ 2 คนแทน)"
         />
       </section>
 

@@ -6056,6 +6056,8 @@ model RentalProject {
   billAddress      String?           @map("bill_address")
   autoBillEnabled  Boolean           @default(true) @map("auto_bill_enabled")
   billEditUnlocked Boolean           @default(false) @map("bill_edit_unlocked")
+  billDeleteUnlocked Boolean         @default(false) @map("bill_delete_unlocked")
+  billIssueUnlocked Boolean          @default(true) @map("bill_issue_unlocked")
   isActive         Boolean           @default(true) @map("is_active")
   createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)

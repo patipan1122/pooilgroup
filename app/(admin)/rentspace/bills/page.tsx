@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
+import { isAdminTier, isSuperAdmin } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { RsPage, RsEmpty, RsBackLink } from "@/components/rentspace/ui";
 import {
   formatBaht,
@@ -41,6 +43,11 @@ export default async function BillsPage({
   const periodFilter = sp.period && /^\d{4}-\d{2}$/.test(sp.period) ? sp.period : undefined;
 
   const project = await getPrimaryProject(orgId);
+  // ออกบิลได้: super_admin เสมอ · คนอื่นเมื่อ super เปิดสวิตช์ "อนุญาตออกบิล" (เปิดเป็นค่าเริ่มต้น)
+  const canIssue =
+    isSuperAdmin(session.user.role) ||
+    (!!project?.billIssueUnlocked &&
+      (isAdminTier(session.user.role) || (await userIsModuleAdmin(session.user, "rentspace"))));
   // "เกินกำหนด" (overdue) is a *derived* status — a bill stays stored as
   // issued/partial with a past due date; the DB column is almost never literally
   // "overdue". So we must NOT push it to the query (that returns ~0 rows and the
@@ -134,7 +141,7 @@ export default async function BillsPage({
             </span>
           )}
         </div>
-        {project ? (
+        {project && canIssue ? (
           <BillsActions
             projectId={project.id}
             period={thisPeriod}
