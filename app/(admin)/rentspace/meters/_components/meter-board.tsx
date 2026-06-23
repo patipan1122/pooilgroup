@@ -4,7 +4,7 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Zap, Droplet, Check, Loader2, Camera, AlertTriangle, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
-import { formatBaht, periodLabel, prevPeriod } from "@/lib/rentspace/format";
+import { formatBaht, periodLabel, prevPeriod, currentPeriod } from "@/lib/rentspace/format";
 import { actSaveMeterReading, actUploadFile } from "../../_actions";
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024; // 8MB UX guard (server also enforces)
@@ -349,15 +349,20 @@ export default function MeterBoard({
     [rows, units],
   );
 
-  // period options: this period + 11 previous
+  // period options: anchor at the REAL current month (not the selected one) so
+  // you can always jump back to recent months — even after navigating to an old
+  // one. (เดิม anchor ที่เดือนที่เลือก → เลือกเดือนเก่าแล้วขึ้นไปเดือนล่าสุดไม่ได้.)
+  // Always include the selected period in case it's older than the window
+  // (e.g. opened via a deep-linked URL). Newest first.
   const periodOptions = useMemo(() => {
-    const out: string[] = [period];
-    let p = period;
-    for (let i = 0; i < 11; i++) {
+    const set = new Set<string>();
+    let p = currentPeriod();
+    for (let i = 0; i < 18; i++) {
+      set.add(p);
       p = prevPeriod(p);
-      out.push(p);
     }
-    return out;
+    set.add(period);
+    return Array.from(set).sort().reverse();
   }, [period]);
 
   function changePeriod(p: string) {
