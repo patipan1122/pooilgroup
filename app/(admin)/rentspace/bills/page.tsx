@@ -43,11 +43,12 @@ export default async function BillsPage({
   const periodFilter = sp.period && /^\d{4}-\d{2}$/.test(sp.period) ? sp.period : undefined;
 
   const project = await getPrimaryProject(orgId);
-  // ออกบิลได้: super_admin เสมอ · คนอื่นเมื่อ super เปิดสวิตช์ "อนุญาตออกบิล" (เปิดเป็นค่าเริ่มต้น)
-  const canIssue =
-    isSuperAdmin(session.user.role) ||
-    (!!project?.billIssueUnlocked &&
-      (isAdminTier(session.user.role) || (await userIsModuleAdmin(session.user, "rentspace"))));
+  // super_admin ทำได้เสมอ · คนอื่นเมื่อ super เปิดสวิตช์ในหน้าตั้งค่า
+  const isSuper = isSuperAdmin(session.user.role);
+  const moduleAdmin =
+    isAdminTier(session.user.role) || (await userIsModuleAdmin(session.user, "rentspace"));
+  const canIssue = isSuper || (!!project?.billIssueUnlocked && moduleAdmin); // ออกบิล (เปิด default)
+  const canDelete = isSuper || (!!project?.billDeleteUnlocked && moduleAdmin); // ลบบิล (ปิด default)
   // "เกินกำหนด" (overdue) is a *derived* status — a bill stays stored as
   // issued/partial with a past due date; the DB column is almost never literally
   // "overdue". So we must NOT push it to the query (that returns ~0 rows and the
@@ -196,7 +197,7 @@ export default async function BillsPage({
           }
         />
       ) : project ? (
-        <BillsTable projectId={project.id} period={periodFilter ?? thisPeriod} rows={billRows} />
+        <BillsTable projectId={project.id} period={periodFilter ?? thisPeriod} rows={billRows} canDelete={canDelete} />
       ) : null}
     </RsPage>
   );

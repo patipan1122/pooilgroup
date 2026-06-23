@@ -1224,6 +1224,49 @@ export async function actDeleteBill(billId: string) {
   return { ok: true };
 }
 
+/**
+ * ลบหลายบิลพร้อมกัน (จากหน้าลิสต์ เลือกแล้วลบ).
+ * gate = เหมือน actDeleteBill (super_admin เสมอ · คนอื่นต้องเปิด billDeleteUnlocked).
+ * ความปลอดภัย: ข้ามบิลที่ "จ่ายแล้ว" (paidAmount>0) — ไม่ลบประวัติการชำระเงิน ให้ใช้ "ยกเลิกบิล" แทน.
+ */
+export async function actDeleteBillsBulk(billIds: string[]) {
+  const session = await gateAdmin();
+  const ids = Array.from(new Set((billIds ?? []).filter(Boolean))).slice(0, 500);
+  if (ids.length === 0) throw new Error("ยังไม่ได้เลือกบิล");
+  const bills = await prisma.rentalBill.findMany({
+    where: { id: { in: ids }, orgId: session.user.org_id },
+    select: { id: true, billNo: true, paidAmount: true, project: { select: { billDeleteUnlocked: true } } },
+  });
+  if (bills.length === 0) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
+  // super_admin ลบได้เสมอ · คนอื่นต้องเปิดสวิตช์ "อนุญาตลบบิล" (ทุกบิลอยู่โครงการเดียวกัน)
+  const allUnlocked = bills.every((b) => b.project.billDeleteUnlocked);
+  if (!isSuperAdmin(session.user.role) && !allUnlocked)
+    throw new Error("ยังไม่ได้เปิดสิทธิ์ลบบิล — ให้ผู้ดูแลระบบ (super admin) เปิดสวิตช์ในหน้าตั้งค่าก่อน");
+
+  // กันลบประวัติเงิน: บิลที่จ่ายแล้ว ไม่ลบ (ให้ยกเลิกแทน)
+  const deletable = bills.filter((b) => toNum(b.paidAmount) <= 0);
+  const delIds = deletable.map((b) => b.id);
+  const skippedPaid = bills.length - deletable.length;
+  const skippedMissing = ids.length - bills.length; // เลือกมาแต่ไม่พบ/ไม่ใช่ org นี้
+
+  if (delIds.length > 0) {
+    await prisma.$transaction([
+      prisma.rentalDiscount.deleteMany({ where: { billId: { in: delIds } } }),
+      prisma.rentalPayment.deleteMany({ where: { billId: { in: delIds } } }),
+      prisma.rentalBillItem.deleteMany({ where: { billId: { in: delIds } } }),
+      prisma.rentalBill.deleteMany({ where: { id: { in: delIds }, orgId: session.user.org_id } }),
+    ]);
+    await logAudit(session, "RENTSPACE_BILL_VOIDED", "rental_bill", delIds[0], {
+      action: "bulk_hard_delete",
+      count: delIds.length,
+      billNos: deletable.map((b) => b.billNo),
+    });
+    revalidatePath("/rentspace/bills");
+    revalidatePath("/rentspace");
+  }
+  return { deleted: delIds.length, skippedPaid, skippedMissing };
+}
+
 // ───────── payments ─────────
 export async function actRecordPayment(input: {
   billId: string;

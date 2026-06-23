@@ -11,8 +11,8 @@ import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Receipt, Printer, BellRing, Info, Copy, ExternalLink, X, Search, CalendarDays } from "lucide-react";
-import { actRemindOverdue } from "../../_actions";
+import { Receipt, Printer, BellRing, Info, Copy, ExternalLink, X, Search, CalendarDays, Trash2 } from "lucide-react";
+import { actRemindOverdue, actDeleteBillsBulk } from "../../_actions";
 import { formatBaht, thaiDateLong, periodLabel, BILL_STATUS } from "@/lib/rentspace/format";
 
 export type BillRow = {
@@ -70,12 +70,18 @@ export function BillsToolbar({
   projectId,
   period,
   selectedIds,
+  canDelete,
+  clearSelection,
 }: {
   projectId: string;
   period: string;
   selectedIds: string[];
+  canDelete: boolean;
+  clearSelection: () => void;
 }) {
+  const router = useRouter();
   const [pending, start] = useTransition();
+  const [deleting, startDelete] = useTransition();
   const [legendOpen, setLegendOpen] = useState(false);
   const [remindOpen, setRemindOpen] = useState(false);
   const [items, setItems] = useState<RemindItem[]>([]);
@@ -84,6 +90,30 @@ export function BillsToolbar({
     if (selectedIds.length === 0) return toast.error("ยังไม่ได้เลือกบิล");
     const ids = selectedIds.join(",");
     window.open(`/rentspace/bills/print?ids=${encodeURIComponent(ids)}`, "_blank", "noopener");
+  }
+
+  // ลบหลายบิลพร้อมกัน — บิลที่จ่ายแล้วเซิร์ฟเวอร์จะข้ามให้ (ใช้ยกเลิกแทน · กันลบประวัติเงิน)
+  function bulkDelete() {
+    if (selectedIds.length === 0) return toast.error("ยังไม่ได้เลือกบิล");
+    if (
+      !confirm(
+        `ลบ ${selectedIds.length} บิลที่เลือกถาวร?\n\n• บิลที่ "จ่ายแล้ว" จะถูกข้าม (ให้ใช้ปุ่ม "ยกเลิกบิล" แทน)\n• การลบนี้ย้อนกลับไม่ได้`,
+      )
+    )
+      return;
+    startDelete(async () => {
+      try {
+        const r = await actDeleteBillsBulk(selectedIds);
+        const parts = [`ลบ ${r.deleted} บิลแล้ว`];
+        if (r.skippedPaid > 0) parts.push(`ข้าม ${r.skippedPaid} ใบที่จ่ายแล้ว`);
+        if (r.deleted > 0) toast.success(parts.join(" · "));
+        else toast.info(parts.join(" · ") || "ไม่มีบิลที่ลบได้");
+        clearSelection();
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "ลบไม่สำเร็จ");
+      }
+    });
   }
 
   function remind() {
@@ -124,6 +154,20 @@ export function BillsToolbar({
       >
         <Printer className="h-4 w-4" aria-hidden="true" /> พิมพ์หลายห้อง{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
       </button>
+
+      {canDelete && (
+        <button
+          className="rs-btn rs-btn-ghost rs-btn-toolbar"
+          onClick={bulkDelete}
+          disabled={deleting || selectedIds.length === 0}
+          aria-label={selectedIds.length === 0 ? "ลบบิลที่เลือก — เลือกบิลก่อน" : `ลบบิลที่เลือก ${selectedIds.length} ใบ`}
+          aria-busy={deleting ? "true" : "false"}
+          title={selectedIds.length === 0 ? "เลือกบิลก่อน" : "ลบบิลที่เลือก (บิลที่จ่ายแล้วจะถูกข้าม)"}
+          style={{ color: "var(--rs-danger)" }}
+        >
+          <Trash2 className="h-4 w-4" aria-hidden="true" /> {deleting ? "กำลังลบ…" : `ลบที่เลือก${selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}`}
+        </button>
+      )}
 
       <button
         className="rs-btn rs-btn-ghost rs-btn-toolbar"
@@ -265,10 +309,12 @@ export function BillsTable({
   projectId,
   period,
   rows,
+  canDelete = false,
 }: {
   projectId: string;
   period: string;
   rows: BillRow[];
+  canDelete?: boolean;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
@@ -327,7 +373,13 @@ export function BillsTable({
 
   return (
     <div className="space-y-3">
-      <BillsToolbar projectId={projectId} period={period} selectedIds={Array.from(selected)} />
+      <BillsToolbar
+        projectId={projectId}
+        period={period}
+        selectedIds={Array.from(selected)}
+        canDelete={canDelete}
+        clearSelection={() => setSelected(new Set())}
+      />
 
       <div className="rs-card overflow-hidden">
         {/* ค้นหาห้อง (จุด 4) */}
