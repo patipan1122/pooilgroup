@@ -4651,8 +4651,60 @@ model Org {
   auditLogs       FuelAuditLog[]
   channels        FuelInboxChannel[]
   creditApprovals CreditApproval[]
+  salesInvoices   SalesInvoice[]
 
   @@map("orgs")
+  @@schema("fuel")
+}
+
+// ใบกำกับภาษีขายส่งน้ำมัน — ดึงจาก TRCloud บริษัท 44 (ขายส่งน้ำมันทั้งหมด · แยกจากบัญชี/ledger)
+// อ่านอย่างเดียว: TRCloud เป็น source of truth · เราเก็บ snapshot ไว้โชว์ยอดขาย/ลูกหนี้
+// ค้างชำระ = grandTotal − paidAmount (TRCloud ส่ง payment มากับใบ → จ่ายบางส่วนได้แม่น)
+model SalesInvoice {
+  id               String    @id @default(uuid()) @db.Uuid
+  orgId            String    @map("org_id") @db.Uuid
+  // TRCloud identity (company 44)
+  trcloudInvoiceId String    @map("trcloud_invoice_id") // invoice_id — unique key สำหรับกันซ้ำ
+  companyFormat    String?   @map("company_format") // ซีรีส์เอกสาร: JK_IV / YMSALE_IV / POP_IV ...
+  invoiceNumber    String    @map("invoice_number")
+  docNo            String    @map("doc_no") // เลขใบที่โชว์ (ซีรีส์ + เลข)
+  // customer
+  contactId        String?   @map("contact_id") // รหัสลูกค้า TRCloud (คงที่ → จับยอดรายลูกค้า)
+  customerName     String    @map("customer_name")
+  customerOrg      String?   @map("customer_org")
+  customerBranch   String?   @map("customer_branch")
+  customerTaxId    String?   @map("customer_tax_id")
+  // dates
+  issueDate        DateTime  @map("issue_date") @db.Date
+  dueDate          DateTime? @map("due_date") @db.Date
+  // money (บาท · Decimal)
+  netTotal         Decimal   @default(0) @map("net_total") @db.Decimal(15, 2) // ก่อน VAT
+  vatTotal         Decimal   @default(0) @map("vat_total") @db.Decimal(15, 2)
+  grandTotal       Decimal   @default(0) @map("grand_total") @db.Decimal(15, 2) // รวม VAT = ยอดขาย
+  paidAmount       Decimal   @default(0) @map("paid_amount") @db.Decimal(15, 2) // จ่ายมาแล้ว (TRCloud payment)
+  outstanding      Decimal   @default(0) @map("outstanding") @db.Decimal(15, 2) // ค้าง = grand − paid
+  // status
+  trcloudStatus    String?   @map("trcloud_status") // Debtor / Paid / ... (สถานะดิบจาก TRCloud)
+  paymentState     String    @default("UNPAID") @map("payment_state") // UNPAID / PARTIAL / PAID (สรุปเอง)
+  // meta
+  salesman         String?
+  department       String?
+  project          String?
+  docType          String?   @map("doc_type")
+  quantity         Decimal   @default(0) @db.Decimal(15, 3) // sum_quantity (ลิตร)
+  issuedAt         DateTime? @map("issued_at") // create_dt จาก TRCloud
+  rawJson          Json?     @map("raw_json")
+  syncedAt         DateTime  @default(now()) @map("synced_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, trcloudInvoiceId])
+  @@index([orgId, issueDate])
+  @@index([orgId, paymentState])
+  @@index([orgId, contactId])
+  @@map("sales_invoices")
   @@schema("fuel")
 }
 
