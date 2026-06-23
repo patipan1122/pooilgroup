@@ -1,34 +1,60 @@
 "use client";
 
-// จังหวะ 3 "เช็คเอาท์" · แผงสรุปยอดเด็ก 1 คน + ปุ่มปิดรอบ + จอขอบคุณ
-// reuse checkOutSession เดิม · ยอดนี้ชำระแล้วตอนเช็คอิน เช็คเอาท์ = ปิดรอบ (ไม่เก็บเงินซ้ำ)
+// จังหวะ 3 "เช็คเอาท์" — คอลัมน์เดียว ใบเสร็จ (ตามต้นแบบ §4)
+// kid row + ใบเสร็จ + ยอดรวม + วิธีชำระ + ปุ่มเขียว → จอขอบคุณ
+// reuse checkOutSession เดิม · หมายเหตุ: ระบบเก็บเงินตอนเช็คอิน → ปุ่มนี้ = ปิดรอบ
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { checkOutSession } from "@/lib/playland/actions";
 import { thb } from "@/lib/playland/format";
-import { LogOut, Clock, CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Check } from "lucide-react";
+
+const METHODS = [
+  { id: "CASH", label: "เงินสด" },
+  { id: "QR", label: "PromptPay" },
+  { id: "CARD", label: "บัตร" },
+] as const;
+
+function fmtRemain(expiresAt: string | null, unlimited: boolean): string {
+  if (unlimited) return "ทั้งวัน";
+  if (!expiresAt) return "—";
+  const sec = Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000);
+  if (sec <= 0) return "หมดเวลา";
+  const m = Math.floor(sec / 60), s = sec % 60;
+  if (m >= 60) return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 export function CheckoutPanel({
   sessionId,
   name,
-  typeLabel,
+  mascot,
   packageName,
   packagePriceCents,
-  checkInLabel,
-  usedLabel,
+  packageMinutes,
+  expiresAt,
 }: {
   sessionId: string;
   name: string;
-  typeLabel: string;
+  mascot: string;
   packageName: string;
   packagePriceCents: number;
-  checkInLabel: string;
-  usedLabel: string;
+  packageMinutes: number;
+  expiresAt: string | null;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
+  const [method, setMethod] = useState<string>("CASH");
   const [done, setDone] = useState(false);
+  const unlimited = packageMinutes === 0;
+  const [remain, setRemain] = useState(() => fmtRemain(expiresAt, unlimited));
+
+  useEffect(() => {
+    if (unlimited) return;
+    const id = setInterval(() => setRemain(fmtRemain(expiresAt, unlimited)), 1000);
+    return () => clearInterval(id);
+  }, [expiresAt, unlimited]);
 
   function doCheckout() {
     start(async () => {
@@ -43,32 +69,58 @@ export function CheckoutPanel({
     return (
       <div className="pl-checkout-done">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/playland/brand/mascot-rocky.png" alt="" width={120} height={120} style={{ objectFit: "contain" }} />
-        <div className="pl-checkout-done-title"><CheckCircle2 size={22} /> เช็คเอาท์เรียบร้อย</div>
-        <div className="pl-checkout-done-sub">ขอบคุณค่ะ · แล้วเจอกันใหม่ 💛</div>
+        <img src={`/playland/brand/mascot-${mascot}.png`} alt="" width={130} height={130} style={{ objectFit: "contain" }} />
+        <div className="pl-co-done-check"><CheckCircle2 size={28} /></div>
+        <div className="pl-checkout-done-title">เช็คเอาท์เรียบร้อย</div>
+        <div className="pl-checkout-done-sub">{name} · ขอบคุณค่ะ 💛</div>
+        <a href="/playland" className="pl-btn pl-btn-primary pl-btn-lg" style={{ marginTop: 14 }}>กลับหน้าหลัก</a>
       </div>
     );
   }
 
   return (
-    <div className="pl-bill">
-      <div className="pl-bill-head">
-        <div className="pl-bill-name">{name}</div>
-        <div className="pl-bill-sub">{typeLabel}</div>
+    <div className="pl-co">
+      <div className="pl-co-kid">
+        <div className="pl-co-ava">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={`/playland/brand/mascot-${mascot}.png`} alt="" />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="pl-co-name">{name} · เช็คเอาท์</div>
+          <div className="pl-co-sub">{packageName}</div>
+        </div>
+        <span className="pl-co-remain">เหลือ {remain}</span>
       </div>
-      <div className="pl-bill-rows">
-        <div className="pl-bill-row"><span>แพ็กเกจ</span><span>{packageName}</span></div>
-        <div className="pl-bill-row"><span><Clock size={13} /> เข้าเล่น</span><span>{checkInLabel} · ใช้ไป {usedLabel}</span></div>
+
+      <div className="pl-co-charge">
+        <div className="pl-co-line">
+          <span>ค่าเล่น · {packageName}</span>
+          <span>{thb(packagePriceCents)}</span>
+        </div>
       </div>
-      <div className="pl-bill-total">
-        <span>ยอดรวม (ชำระแล้วตอนเช็คอิน)</span>
-        <span className="pl-bill-amount">{thb(packagePriceCents)}</span>
+
+      <div className="pl-co-total">
+        <span>รวมทั้งหมด <span style={{ fontSize: "0.78rem" }}>(ชำระแล้วตอนเช็คอิน)</span></span>
+        <span className="pl-co-total-amt">{thb(packagePriceCents)}</span>
       </div>
-      <button className="pl-btn pl-btn-danger pl-btn-lg" style={{ width: "100%", marginTop: 14 }} onClick={doCheckout} disabled={pending}>
-        <LogOut size={18} /> {pending ? "กำลังปิดรอบ…" : "เช็คเอาท์ · ปิดรอบ"}
-      </button>
-      <div style={{ fontSize: "0.72rem", color: "var(--pl-text-muted)", textAlign: "center", marginTop: 8 }}>
-        ปิดรอบถาวร · ไม่เก็บเงินซ้ำ · ไม่คืนเงิน
+
+      <div className="pl-co-foot">
+        <div className="pl-co-pay-label">ชำระด้วย</div>
+        <div className="pl-co-methods">
+          {METHODS.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              className={`pl-co-method${method === m.id ? " is-sel" : ""}`}
+              onClick={() => setMethod(m.id)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        <button type="button" className="pl-co-confirm" onClick={doCheckout} disabled={pending}>
+          <Check size={20} /> {pending ? "กำลังปิดรอบ…" : `เช็คเอาท์ · ปิดรอบ ${thb(packagePriceCents)}`}
+        </button>
       </div>
     </div>
   );

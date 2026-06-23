@@ -1,14 +1,15 @@
 "use client";
 
-// การ์ดเด็ก 1 คน บนหน้า "ระหว่างเล่น" — มาสคอต + ชื่อ + นาฬิกานับถอยหลังตัวใหญ่ (สด)
-// + ปุ่ม +เวลา / +ขนม / เช็คเอาท์ · reuse action เดิม (extendSession/checkOutSession)
+// การ์ดเด็ก 1 คน บนหน้า "ระหว่างเล่น" — ตามต้นแบบ §2
+// มาสคอต+ชื่อ+แพ็กเกจ · นาฬิกานับถอยหลังกลางการ์ด(สด)+ "เหลือ" · ปุ่ม +เวลา(ฟ้า)/+ขนม(เหลือง)/เช็คเอาท์(แดง)
+// สี: ≤10น แดง · ≤25น เหลือง · เกินนั้นเขียว · Day Pass=เขียว "ทั้งวัน" · ใกล้หมด=กรอบแดง
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { checkOutSession, extendSession } from "@/lib/playland/actions";
+import { extendSession } from "@/lib/playland/actions";
 import { thb } from "@/lib/playland/format";
-import { Plus, LogOut, Candy } from "lucide-react";
+import { Plus, Candy, LogOut } from "lucide-react";
 
 const MASCOTS = ["sunny", "skye", "rocky"] as const;
 function mascotFor(id: string): string {
@@ -23,8 +24,15 @@ function remainingSec(expiresAt: string | null, unlimited: boolean): number {
   return Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000);
 }
 
-function fmt(sec: number): string {
-  if (!Number.isFinite(sec)) return "∞";
+function colorClass(sec: number, unlimited: boolean): string {
+  if (unlimited) return "is-green";
+  if (sec <= 600) return "is-red";
+  if (sec <= 1500) return "is-yellow";
+  return "is-green";
+}
+
+function fmt(sec: number, unlimited: boolean): string {
+  if (unlimited) return "ทั้งวัน";
   if (sec <= 0) return "หมดเวลา";
   const totalMin = Math.floor(sec / 60);
   const s = sec % 60;
@@ -38,11 +46,9 @@ function fmt(sec: number): string {
 export type BoardSession = {
   id: string;
   name: string;
-  typeLabel: string;
   packageName: string;
   packageMinutes: number;
   expiresAt: string | null;
-  checkedInLabel: string;
 };
 
 export function BoardCard({
@@ -67,18 +73,9 @@ export function BoardCard({
     return () => clearInterval(id);
   }, [session.expiresAt, unlimited]);
 
-  const danger = !unlimited && sec <= 0;
-  const warn = !unlimited && sec > 0 && sec < 600;
+  const near = !unlimited && sec <= 600;
+  const cc = colorClass(sec, unlimited);
   const mascot = mascotFor(session.id);
-
-  function doCheckout() {
-    if (!confirm(`เช็คเอาท์ "${session.name}"? · ปิดรอบถาวร · ไม่คืนเงิน`)) return;
-    start(async () => {
-      const res = await checkOutSession(session.id);
-      if (!res.ok) alert(res.error);
-      else router.refresh();
-    });
-  }
 
   function doExtend(packageId: string) {
     start(async () => {
@@ -89,35 +86,39 @@ export function BoardCard({
   }
 
   return (
-    <div className={`pl-board-card${danger ? " is-danger" : warn ? " is-warn" : ""}`}>
+    <div className={`pl-board-card${near ? " is-near" : ""}`}>
       <div className="pl-board-top">
         <div className="pl-board-ava">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={`/playland/brand/mascot-${mascot}.png`} alt="" />
         </div>
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
           <div className="pl-board-name">{session.name}</div>
-          <div className="pl-board-meta">{session.typeLabel} · {session.packageName} · เข้า {session.checkedInLabel}</div>
+          <div className="pl-board-meta">{session.packageName}</div>
         </div>
+        {near && <span className="pl-board-near-pill">ใกล้หมด</span>}
       </div>
 
-      <div className="pl-board-count">{fmt(sec)}</div>
+      <div className="pl-board-clock">
+        <div className={`pl-board-count ${cc}`}>{fmt(sec, unlimited)}</div>
+        <div className="pl-board-remain">{unlimited ? "Day Pass" : "เหลือ"}</div>
+      </div>
 
       <div className="pl-board-actions">
-        <button className="pl-btn pl-btn-sm" onClick={() => setShowExtend((s) => !s)} disabled={pending} title="ต่อเวลา">
-          <Plus size={13} /> เวลา
+        <button className="pl-board-btn pl-board-btn--time" onClick={() => setShowExtend((s) => !s)} disabled={pending}>
+          <Plus size={14} /> เวลา
         </button>
-        <Link href={`/playland/pos?branch=${branchId}`} className="pl-btn pl-btn-sm" title="ขายขนม/สินค้า">
-          <Candy size={13} /> ขนม
+        <Link href={`/playland/pos?branch=${branchId}`} className="pl-board-btn pl-board-btn--snack">
+          <Candy size={14} /> ขนม
         </Link>
-        <button className="pl-btn pl-btn-sm pl-btn-danger" onClick={doCheckout} disabled={pending} style={{ marginLeft: "auto" }} title="เช็คเอาท์">
-          <LogOut size={13} /> เช็คเอาท์
-        </button>
+        <Link href={`/playland/checkout?branch=${branchId}&selected=${session.id}`} className="pl-board-btn pl-board-btn--out">
+          <LogOut size={14} /> เช็คเอาท์
+        </Link>
       </div>
 
       {showExtend && (
         <div className="pl-board-extend">
-          <div className="pl-eyebrow" style={{ marginBottom: 6 }}>ต่อเวลา · เลือกแพ็กเกจ</div>
+          <div className="pl-eyebrow" style={{ marginBottom: 6 }}>ต่อเวลา · เลือกแพ็กเกจ (คิดเงินตอนเช็คเอาท์)</div>
           {packages.slice(0, 6).map((p) => (
             <button
               key={p.id}
