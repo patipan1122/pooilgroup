@@ -161,9 +161,9 @@ function dayKey(d: Date): string {
 // ⚠️ TRCloud iv/search: page/limit/offset/date_from ถูกเมินหมด · คืน ≤100 ใบเสมอ (เพดานแข็ง)
 // ใช้ได้แค่ keyword(ค้นเลขใบ) + status → ไล่ทีละวัน + แยก Debtor/Paid (กันเพดาน 100 ต่อสถานะ)
 // keyword เป็น text-search กว้าง → เก็บเฉพาะใบที่เลขขึ้นต้น day จริง (กัน match field อื่น)
-async function fetchDayIvs(day: string): Promise<NormalizedIv[]> {
+async function fetchDayIvs(day: string, statuses: string[] = ["Debtor", "Paid"]): Promise<NormalizedIv[]> {
   const seen = new Map<string, NormalizedIv>();
-  for (const status of ["Debtor", "Paid"]) {
+  for (const status of statuses) {
     const data = await post("iv/search.php", { keyword: day, status, limit: 100 });
     const list = (Array.isArray(data.data) ? data.data
       : Array.isArray(data.list) ? data.list
@@ -178,18 +178,52 @@ async function fetchDayIvs(day: string): Promise<NormalizedIv[]> {
   return [...seen.values()];
 }
 
-function ivFields(iv: NormalizedIv) {
+const isoDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+
+function ivPayload(iv: NormalizedIv) {
   return {
-    companyFormat: iv.companyFormat, invoiceNumber: iv.invoiceNumber, docNo: iv.docNo,
-    contactId: iv.contactId, customerName: iv.customerName, customerOrg: iv.customerOrg,
-    customerBranch: iv.customerBranch, customerTaxId: iv.customerTaxId,
-    issueDate: iv.issueDate, dueDate: iv.dueDate,
-    netTotal: iv.netTotal, vatTotal: iv.vatTotal, grandTotal: iv.grandTotal,
-    paidAmount: iv.paidAmount, outstanding: iv.outstanding,
-    trcloudStatus: iv.trcloudStatus, paymentState: iv.paymentState,
+    trcloud_invoice_id: iv.trcloudInvoiceId, company_format: iv.companyFormat, invoice_number: iv.invoiceNumber,
+    doc_no: iv.docNo, contact_id: iv.contactId, customer_name: iv.customerName, customer_org: iv.customerOrg,
+    customer_branch: iv.customerBranch, customer_tax_id: iv.customerTaxId,
+    issue_date: isoDate(iv.issueDate), due_date: isoDate(iv.dueDate),
+    net_total: iv.netTotal, vat_total: iv.vatTotal, grand_total: iv.grandTotal,
+    paid_amount: iv.paidAmount, outstanding: iv.outstanding,
+    trcloud_status: iv.trcloudStatus, payment_state: iv.paymentState,
     salesman: iv.salesman, department: iv.department, project: iv.project,
-    docType: iv.docType, quantity: iv.quantity, issuedAt: iv.issuedAt,
+    doc_type: iv.docType, quantity: iv.quantity, issued_at: iv.issuedAt ? iv.issuedAt.toISOString() : null,
+    raw_json: iv.raw,
   };
+}
+
+// upsert หลายใบในคำสั่งเดียว (jsonb) — เร็วกว่ายิงทีละใบมาก กัน timeout ตอนกด "ดึงข้อมูล"
+async function bulkUpsertIvs(orgId: string, ivs: NormalizedIv[]): Promise<void> {
+  if (ivs.length === 0) return;
+  const payload = JSON.stringify(ivs.map(ivPayload));
+  await prisma.$executeRaw`
+    INSERT INTO fuel.sales_invoices (
+      org_id, trcloud_invoice_id, company_format, invoice_number, doc_no, contact_id,
+      customer_name, customer_org, customer_branch, customer_tax_id, issue_date, due_date,
+      net_total, vat_total, grand_total, paid_amount, outstanding, trcloud_status, payment_state,
+      salesman, department, project, doc_type, quantity, issued_at, raw_json, synced_at)
+    SELECT ${orgId}::uuid, x.trcloud_invoice_id, x.company_format, x.invoice_number, x.doc_no, x.contact_id,
+      x.customer_name, x.customer_org, x.customer_branch, x.customer_tax_id, x.issue_date, x.due_date,
+      x.net_total, x.vat_total, x.grand_total, x.paid_amount, x.outstanding, x.trcloud_status, x.payment_state,
+      x.salesman, x.department, x.project, x.doc_type, x.quantity, x.issued_at, x.raw_json, now()
+    FROM jsonb_to_recordset(${payload}::jsonb) AS x(
+      trcloud_invoice_id text, company_format text, invoice_number text, doc_no text, contact_id text,
+      customer_name text, customer_org text, customer_branch text, customer_tax_id text, issue_date date, due_date date,
+      net_total numeric, vat_total numeric, grand_total numeric, paid_amount numeric, outstanding numeric,
+      trcloud_status text, payment_state text, salesman text, department text, project text, doc_type text,
+      quantity numeric, issued_at timestamptz, raw_json jsonb)
+    ON CONFLICT (org_id, trcloud_invoice_id) DO UPDATE SET
+      company_format=EXCLUDED.company_format, invoice_number=EXCLUDED.invoice_number, doc_no=EXCLUDED.doc_no,
+      contact_id=EXCLUDED.contact_id, customer_name=EXCLUDED.customer_name, customer_org=EXCLUDED.customer_org,
+      customer_branch=EXCLUDED.customer_branch, customer_tax_id=EXCLUDED.customer_tax_id,
+      issue_date=EXCLUDED.issue_date, due_date=EXCLUDED.due_date, net_total=EXCLUDED.net_total,
+      vat_total=EXCLUDED.vat_total, grand_total=EXCLUDED.grand_total, paid_amount=EXCLUDED.paid_amount,
+      outstanding=EXCLUDED.outstanding, trcloud_status=EXCLUDED.trcloud_status, payment_state=EXCLUDED.payment_state,
+      salesman=EXCLUDED.salesman, department=EXCLUDED.department, project=EXCLUDED.project, doc_type=EXCLUDED.doc_type,
+      quantity=EXCLUDED.quantity, issued_at=EXCLUDED.issued_at, raw_json=EXCLUDED.raw_json, synced_at=now(), updated_at=now()`;
 }
 
 // ดึงใบเสร็จ (RV) ที่ "ออกในวันนั้น" → คืน [เลขใบที่จ่าย (reference=IV docNo), วันจ่าย]
@@ -211,28 +245,27 @@ async function fetchDayRvs(day: string): Promise<Array<{ reference: string; date
   return out;
 }
 
-// ดึง + upsert ใบของวันที่กำหนด (idempotent) + เติม paid_date จากใบเสร็จ RV ของวันเดียวกัน
-export async function syncSalesInvoices(orgId: string, days: string[]): Promise<SalesSyncResult> {
+// ดึง + upsert ใบ — แบ่ง 2 ชั้นกัน timeout:
+//   fullDays (วันล่าสุด) = ดึงเต็ม Debtor+Paid + ใบเสร็จ RV (3 call/วัน)
+//   paidDays (วันที่มีลูกหนี้ค้าง) = ดึงแค่ "Paid" เพื่อจับใบที่เพิ่งจ่าย (1 call/วัน)
+export async function syncSalesInvoices(orgId: string, fullDays: string[], paidDays: string[] = []): Promise<SalesSyncResult> {
   if (!salesSyncConfigured()) return { ok: false, synced: 0, error: "ยังไม่ได้ตั้งค่ากุญแจ TRCloud บริษัท 44 (env FUELOS_TRCLOUD_SALES_*)", days: 0 };
   let synced = 0;
   const rvMap = new Map<string, Date>(); // docNo → วันจ่ายล่าสุด
   try {
-    for (const day of days) {
+    for (const day of fullDays) {
       const ivs = await fetchDayIvs(day);
-      for (const iv of ivs) {
-        const f = ivFields(iv);
-        const raw = iv.raw as object;
-        await prisma.salesInvoice.upsert({
-          where: { orgId_trcloudInvoiceId: { orgId, trcloudInvoiceId: iv.trcloudInvoiceId } },
-          create: { orgId, trcloudInvoiceId: iv.trcloudInvoiceId, rawJson: raw, ...f, syncedAt: new Date() },
-          update: { ...f, rawJson: raw, syncedAt: new Date() },
-        });
-        synced++;
-      }
+      await bulkUpsertIvs(orgId, ivs); // อัปทีเดียวทั้งวัน (เร็ว · กัน timeout)
+      synced += ivs.length;
       for (const rv of await fetchDayRvs(day)) {
         const cur = rvMap.get(rv.reference);
         if (!cur || rv.date > cur) rvMap.set(rv.reference, rv.date);
       }
+    }
+    for (const day of paidDays) {
+      const ivs = await fetchDayIvs(day, ["Paid"]); // จับเฉพาะใบที่ flip เป็นจ่ายแล้ว
+      await bulkUpsertIvs(orgId, ivs);
+      synced += ivs.length;
     }
     // เติม paid_date แบบ bulk (1 query) จาก map ใบเสร็จ
     if (rvMap.size > 0) {
@@ -245,35 +278,36 @@ export async function syncSalesInvoices(orgId: string, days: string[]): Promise<
           AND (s.paid_date IS NULL OR s.paid_date < v.d::date)`;
     }
   } catch (err) {
-    return { ok: false, synced, error: err instanceof Error ? err.message : "ดึงข้อมูลจาก TRCloud ไม่สำเร็จ", days: days.length };
+    return { ok: false, synced, error: err instanceof Error ? err.message : "ดึงข้อมูลจาก TRCloud ไม่สำเร็จ", days: fullDays.length + paidDays.length };
   }
-  return { ok: true, synced, days: days.length };
+  return { ok: true, synced, days: fullDays.length + paidDays.length };
 }
 
-// วันที่ต้อง sync: ล่าสุด N วัน + วันของลูกหนี้ที่ยังค้าง (อัปสถานะใบเก่าที่เพิ่งจ่าย)
-// ครั้งแรก (ตารางว่าง) = 60 วัน · ปกติ 45 วัน · cap 90 วัน กันยิง API นานเกิน timeout
-// (history เก่ากว่านี้ใช้ backfill offline ครั้งเดียว)
-async function computeSyncDays(orgId: string): Promise<string[]> {
+// คำนวณวันที่ sync (กันยิง API นานเกิน timeout):
+//   fullDays = 20 วันล่าสุด (ของใหม่ + จ่ายล่าสุด) · paidDays = วันลูกหนี้ค้าง (cap 100 · เช็คจ่าย)
+async function computeSyncDays(orgId: string): Promise<{ fullDays: string[]; paidDays: string[] }> {
   const now = new Date();
   const count = await prisma.salesInvoice.count({ where: { orgId } });
-  const recent = count === 0 ? 60 : 45;
-  const set = new Set<string>();
+  const recent = count === 0 ? 45 : 20;
+  const full = new Set<string>();
   for (let i = 0; i < recent; i++) {
     const d = new Date(now); d.setUTCDate(d.getUTCDate() - i);
-    set.add(dayKey(d));
+    full.add(dayKey(d));
   }
+  const paid = new Set<string>();
   if (count > 0) {
     const open = await prisma.salesInvoice.findMany({
       where: { orgId, paymentState: { not: "PAID" } },
       select: { issueDate: true },
       orderBy: { issueDate: "desc" },
     });
-    for (const o of open) set.add(dayKey(new Date(o.issueDate)));
+    for (const o of open) { const k = dayKey(new Date(o.issueDate)); if (!full.has(k)) paid.add(k); }
   }
-  return [...set].sort().reverse().slice(0, 90);
+  return { fullDays: [...full], paidDays: [...paid].sort().reverse().slice(0, 100) };
 }
 
 // ดึงล่าสุด (ปุ่ม "ดึงเดี๋ยวนี้" + auto-refresh)
 export async function syncRecentSales(orgId: string): Promise<SalesSyncResult> {
-  return syncSalesInvoices(orgId, await computeSyncDays(orgId));
+  const { fullDays, paidDays } = await computeSyncDays(orgId);
+  return syncSalesInvoices(orgId, fullDays, paidDays);
 }
