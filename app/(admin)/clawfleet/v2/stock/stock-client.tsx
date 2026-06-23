@@ -183,60 +183,54 @@ export function StockClient({
         )}
       </div>
 
-      {/* SKU table */}
-      <div className="cf-table">
-        <div className="cf-stock-table-head">
-          <div>SKU</div>
-          <div className="cf-table-r">คลังสาขา</div>
-          <div className="cf-table-r">ในตู้</div>
-          <div className="cf-table-r">รวม</div>
-          <div>ใช้ต่อวัน</div>
-          <div>คงอยู่ได้</div>
-          <div>เติมล่าสุด</div>
-          <div></div>
-        </div>
+      {/* SKU cards — Playalot card grid (was a dense table) */}
+      <div className="cf-stock-grid">
         {stock.map((s) => {
           const total = s.warehouse + s.inMachines;
           const daysLeft = s.velocity > 0 ? Math.floor(total / s.velocity) : 99;
           const isLow = s.warehouse <= 4 || total <= 20;
           const isCritical = s.warehouse === 0;
+          const lvl = isCritical ? "critical" : isLow ? "low" : "ok";
           return (
-            <div
-              key={s.sku}
-              className={`cf-stock-table-row ${isLow ? "is-low" : ""} ${isCritical ? "is-critical" : ""}`}
-            >
-              <div className="cf-stock-sku">
-                <div className="cf-stock-sku-name">{s.name}</div>
-                <div className="cf-dim cf-stock-sku-code">
-                  {s.sku} · ต้นทุน ฿{s.cost}
+            <div key={s.sku} className={`cf-stock-card is-${lvl}`}>
+              <div className="cf-stock-card-head">
+                <div>
+                  <div className="cf-stock-card-name">{s.name}</div>
+                  <div className="cf-dim cf-stock-card-code">
+                    {s.sku} · ต้นทุน ฿{s.cost}
+                  </div>
                 </div>
-              </div>
-              <div className="cf-table-r">
-                <strong className={isCritical ? "cf-text-red" : isLow ? "cf-text-amber" : ""}>
-                  {s.warehouse}
-                </strong>
-              </div>
-              <div className="cf-table-r">
-                <strong>{s.inMachines}</strong>
-              </div>
-              <div className="cf-table-r">
-                <strong>{total}</strong>
-              </div>
-              <div>~{s.velocity}/วัน</div>
-              <div className={daysLeft <= 2 ? "cf-text-red" : daysLeft <= 5 ? "cf-text-amber" : ""}>
-                {daysLeft} วัน
-              </div>
-              <div className="cf-dim">{s.lastDelivery}</div>
-              <div className="cf-stock-row-cta">
-                <button
-                  type="button"
-                  className={`cf-btn cf-btn-sm ${isLow ? "cf-btn-primary" : "cf-btn-ghost"}`}
-                  disabled={pending}
-                  onClick={() => order(1, suggestUnits(s.velocity), `เติม ${s.name}`)}
+                <span
+                  className={`cf-pill cf-pill-${isCritical ? "red" : isLow ? "amber" : "emerald"} cf-pill-sm`}
                 >
-                  สั่งเติม
-                </button>
+                  {isCritical ? "สั่งด่วน" : isLow ? "เฝ้าระวัง" : "เพียงพอ"}
+                </span>
               </div>
+              <div className="cf-stock-card-num">
+                <span
+                  className={`cf-stock-card-big ${isCritical ? "cf-text-red" : isLow ? "cf-text-amber" : "cf-text-emerald"}`}
+                >
+                  {s.warehouse}
+                </span>
+                <span className="cf-dim">ตัวในคลังสาขา · {s.inMachines} ในตู้</span>
+              </div>
+              <div className="cf-stock-card-bar">
+                <div
+                  className={`cf-stock-card-bar-fill is-${lvl}`}
+                  style={{ width: `${Math.min(100, Math.max(6, (total / 40) * 100))}%` }}
+                />
+              </div>
+              <div className="cf-stock-card-meta">
+                ใช้ ~{s.velocity}/วัน · อยู่ได้ {daysLeft} วัน · เติมล่าสุด {s.lastDelivery}
+              </div>
+              <button
+                type="button"
+                className={`cf-btn cf-btn-sm ${isLow ? "cf-btn-primary" : "cf-btn-ghost"} cf-stock-card-cta`}
+                disabled={pending}
+                onClick={() => order(1, suggestUnits(s.velocity), `เติม ${s.name}`)}
+              >
+                สั่งเติม
+              </button>
             </div>
           );
         })}
