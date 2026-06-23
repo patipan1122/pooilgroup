@@ -4694,6 +4694,7 @@ model SalesInvoice {
   docType          String?   @map("doc_type")
   quantity         Decimal   @default(0) @db.Decimal(15, 3) // sum_quantity (ลิตร)
   issuedAt         DateTime? @map("issued_at") // create_dt จาก TRCloud
+  products         Json?     @map("products") // รายการสินค้า [{code,name,qty,unit,price,total}] (lazy จาก iv/read)
   rawJson          Json?     @map("raw_json")
   syncedAt         DateTime  @default(now()) @map("synced_at")
   createdAt        DateTime  @default(now()) @map("created_at")

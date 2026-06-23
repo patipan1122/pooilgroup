@@ -178,6 +178,29 @@ async function fetchDayIvs(day: string, statuses: string[] = ["Debtor", "Paid"])
   return [...seen.values()];
 }
 
+export interface LineItem { code: string | null; name: string; qty: number; unit: string | null; price: number; total: number }
+
+// ดึงรายการสินค้าในบิล (iv/read.php → body[]) — ชื่อสินค้า/ลิตร/ราคา
+// 1 บิล = 1 call (lazy ตอนกดดู) · null = ดึงไม่สำเร็จ
+export async function fetchInvoiceItems(invoiceId: string): Promise<LineItem[] | null> {
+  if (!salesSyncConfigured()) return null;
+  try {
+    const data = await post("iv/read.php", { id: invoiceId });
+    const bodyRaw = data.body;
+    const body = Array.isArray(bodyRaw) ? (bodyRaw as RawIv[]) : [];
+    return body.map((o) => ({
+      code: str(o, "product_id"),
+      name: str(o, "description") ?? str(o, "product_id") ?? "(สินค้า)",
+      qty: num(o, "quantity"),
+      unit: str(o, "unit"),
+      price: num(o, "price"),
+      total: num(o, "total"),
+    }));
+  } catch {
+    return null;
+  }
+}
+
 const isoDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
 
 function ivPayload(iv: NormalizedIv) {

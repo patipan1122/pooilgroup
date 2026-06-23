@@ -1,5 +1,8 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import { fetchInvoiceItems, type LineItem } from "./trcloud-sales";
+
+export type { LineItem };
 
 // FuelOS · ยอดขาย/ลูกหนี้ — query layer
 // PERF: สรุปด้วย SQL (aggregate/groupBy) ไม่โหลดทุกแถวเข้า memory (ข้อมูลหลายหมื่นใบ)
@@ -168,6 +171,41 @@ export interface CustomerDetail {
   name: string; org: string | null; taxId: string | null; contactId: string | null;
   totalSales: number; paid: number; outstanding: number; overdue: number; invoiceCount: number;
   invoices: InvoiceRow[];
+}
+
+export interface InvoiceDetail extends InvoiceRow {
+  customerTaxId: string | null;
+  customerBranch: string | null;
+  department: string | null;
+  project: string | null;
+  netTotal: number;
+  vatTotal: number;
+  items: LineItem[];
+  itemsAvailable: boolean;
+}
+
+// รายละเอียดบิลเดียว + รายการสินค้า (ชื่อสินค้า/ลิตร/ราคา) — lazy ดึงจาก iv/read ครั้งแรกแล้ว cache
+export async function getInvoiceDetail(orgId: string, id: string): Promise<InvoiceDetail | null> {
+  const today = startOfDayUTC(new Date());
+  const inv = await prisma.salesInvoice.findFirst({ where: { orgId, id } });
+  if (!inv) return null;
+  let items: LineItem[] = inv.products ? (inv.products as unknown as LineItem[]) : [];
+  let itemsAvailable = inv.products != null;
+  if (!itemsAvailable) {
+    const fetched = await fetchInvoiceItems(inv.trcloudInvoiceId);
+    if (fetched) {
+      items = fetched;
+      itemsAvailable = true;
+      await prisma.salesInvoice.update({ where: { id: inv.id }, data: { products: fetched as unknown as object } });
+    }
+  }
+  return {
+    ...mapRow(inv, today),
+    customerTaxId: inv.customerTaxId, customerBranch: inv.customerBranch,
+    department: inv.department, project: inv.project,
+    netTotal: num(inv.netTotal), vatTotal: num(inv.vatTotal),
+    items, itemsAvailable,
+  };
 }
 
 // รายละเอียดลูกค้ารายเดียว — ใบทั้งหมด (ซื้อวันไหน จ่ายเท่าไร จ่ายวันไหน ค้างเท่าไร)

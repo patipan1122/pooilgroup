@@ -263,7 +263,7 @@ function InvoiceTable({ rows }: { rows: Awaited<ReturnType<typeof getSalesData>>
             return (
               <tr key={r.id} className="border-b border-border/60 last:border-0 hover:bg-zinc-50/60">
                 <td className="px-4 py-2.5">
-                  <div className="font-medium text-zinc-700">{r.docNo}</div>
+                  <Link href={`/fuelos/sales/iv/${r.id}`} className="font-medium text-zinc-700 hover:text-brand-600 hover:underline">{r.docNo}</Link>
                   <div className="text-xs text-zinc-500">{r.customerOrg || r.customerName}</div>
                 </td>
                 <td className="px-4 py-2.5 text-zinc-600 whitespace-nowrap">

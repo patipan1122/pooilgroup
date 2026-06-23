@@ -70,7 +70,9 @@ export default async function CustomerSalesPage({ params }: { params: Promise<{ 
               const st = stateLabel(r.paymentState);
               return (
                 <tr key={r.id} className="border-b border-border/60 last:border-0 hover:bg-zinc-50/60">
-                  <td className="px-4 py-2.5 font-medium text-zinc-700 whitespace-nowrap">{r.docNo}</td>
+                  <td className="px-4 py-2.5 whitespace-nowrap">
+                    <Link href={`/fuelos/sales/iv/${r.id}`} className="font-medium text-zinc-700 hover:text-brand-600 hover:underline">{r.docNo}</Link>
+                  </td>
                   <td className="px-4 py-2.5 text-zinc-600 whitespace-nowrap">{bkkDate(r.issueDate)}</td>
                   <td className="px-4 py-2.5 text-zinc-500 whitespace-nowrap">{r.dueDate ? bkkDate(r.dueDate) : "—"}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{formatBaht(r.grandTotal)}</td>
