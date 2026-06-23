@@ -7,8 +7,10 @@
 // to back-fill a day of maid collection rounds without each maid having to
 // re-log everything via the LIFF.
 //
-// Locked CSV header (case-sensitive · 6 columns · last 3 optional):
-//   branchSlug,collectedAt,countedAmount,maidPhone,notes,slipUrl
+// CSV header (case-sensitive · order-locked). The first 3 columns are required,
+// the last 3 (maidPhone, notes, slipUrl) are optional and may be dropped from
+// the right entirely — so a file with no slip column still uploads (2026-06-23):
+//   สาขา,collectedAt,countedAmount[,maidPhone[,notes[,slipUrl]]]
 //
 // Per memory [[pool-csv-import-must-diff-before-write]] the flow is
 // preview → confirm commit (no silent writes). Per [[wave-migration-written-not-applied-trap]]
@@ -68,6 +70,16 @@ function normalizeBranchKey(raw: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+}
+
+// The downloadable template ships demo rows whose สาขา column starts with
+// "ตัวอย่าง" (or "example") so the CEO can SEE a filled-in row. Those rows are
+// guidance only — skip them silently on import (same spirit as the skeleton
+// skip below). They carry amount+time, so the skeleton check wouldn't catch
+// them; this marker check does. 2026-06-23 · CEO decision.
+function isExampleRow(rawBranch: string): boolean {
+  const k = normalizeBranchKey(rawBranch);
+  return k.startsWith("ตัวอย่าง") || k.startsWith("example");
 }
 
 // "แอดมิน" / "admin" / "-" in the maidPhone column = the admin collected the
@@ -296,18 +308,25 @@ export async function previewMaidCsv(
     };
   }
 
-  // Strict header check — CEO-locked schema · refuse otherwise so a stray
-  // column order doesn't silently mis-write data.
+  // Header check — CEO-locked schema BUT the 3 trailing columns are optional.
+  // 2026-06-23 · CEO asked to be able to upload WITHOUT a slip. The slipUrl
+  // value was already optional, but the strict 6-column check rejected any file
+  // where the column was deleted ("ไม่มีสลิป → ลบคอลัมน์ทิ้ง" → header ผิด). So we
+  // now accept 3–6 columns: สาขา + collectedAt + countedAmount are required, and
+  // maidPhone / notes / slipUrl may be dropped from the right. Order of the
+  // columns that ARE present stays strict so we never silently mis-write data.
+  const MIN_COLS = 3; // สาขา, collectedAt, countedAmount
   const header = grid[0].map((s) => s.trim());
-  if (header.length !== CSV_HEADER.length) {
+  if (header.length < MIN_COLS || header.length > CSV_HEADER.length) {
     return {
       ok: false,
-      error: `header ผิด · ต้องเป็น ${CSV_HEADER.length} คอลัมน์ ตามนี้: ${HEADER_LINE}`,
+      error: `header ต้องมี ${MIN_COLS}–${CSV_HEADER.length} คอลัมน์ ตามลำดับนี้: ${HEADER_LINE} · (3 ช่องท้าย maidPhone/notes/slipUrl ตัดออกได้ ถ้าไม่ใช้)`,
     };
   }
-  for (let i = 0; i < CSV_HEADER.length; i++) {
+  for (let i = 0; i < header.length; i++) {
     // Column 1 (สาขา) accepts a few labels so files made from the OLD template
-    // (header "branchSlug") still upload. Columns 2-6 stay strict.
+    // (header "branchSlug") still upload. The remaining present columns stay
+    // strict, matched by position against CSV_HEADER.
     if (i === 0) {
       const ok = BRANCH_COL_ALIASES.includes(
         normalizeBranchKey(header[0]) as (typeof BRANCH_COL_ALIASES)[number],
@@ -429,6 +448,11 @@ export async function previewMaidCsv(
     const [branchRaw, dateRaw, amtRaw, phoneRaw, notesRaw, slipRaw] = cells.map(
       (c) => c.trim(),
     );
+
+    // The template ships filled demo rows (สาขา = "ตัวอย่าง …") so the CEO can
+    // see what a completed row looks like. They are guidance only · skip them
+    // silently even though they carry amount+time. 2026-06-23.
+    if (isExampleRow(branchRaw)) continue;
 
     // Pre-filled template ships one row per branch (name only). A row the CEO
     // never touched has no amount AND no time → treat it as blank skeleton and

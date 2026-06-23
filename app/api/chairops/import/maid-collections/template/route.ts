@@ -41,10 +41,34 @@ export async function GET(_req: NextRequest) {
   // Rows left without amount AND time are skipped on import (skeleton rows), so
   // it's fine to ship every branch even if only a few get filled.
   const now = new Date();
-  const exampleDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} 10:30`;
+  const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const exampleDate = `${dateStr} 10:30`;
+  const exampleDate2 = `${dateStr} 16:45`;
+  const exampleBranchName = branches[0]?.name ?? "สาขาตัวอย่าง";
 
   const dataSheet: (string | number)[][] = [
     [...CSV_HEADER],
+    // 2026-06-23 · CEO asked for a visible filled example in the template. These
+    // two demo rows show a completed row at a glance. The สาขา column starts with
+    // "ตัวอย่าง" so previewMaidCsv() auto-skips them (isExampleRow) — the CEO does
+    // NOT have to delete them. The slipUrl cell is intentionally left blank to
+    // show that NO slip is required.
+    [
+      `ตัวอย่าง ▸ ${exampleBranchName} (ระบบข้ามแถวนี้ให้)`,
+      exampleDate,
+      5400,
+      "0891234567",
+      "รอบเช้า · ไม่ต้องมีสลิปก็ได้",
+      "",
+    ],
+    [
+      "ตัวอย่าง ▸ แอดมินเก็บเอง",
+      exampleDate2,
+      3200,
+      "แอดมิน",
+      'พิมพ์ "แอดมิน" = แอดมินเก็บแทนแม่บ้าน',
+      "",
+    ],
     ...branches.map((b) => [b.name, "", "", "", "", ""]),
   ];
   const ws1 = XLSX.utils.aoa_to_sheet(dataSheet);
@@ -62,7 +86,6 @@ export async function GET(_req: NextRequest) {
   XLSX.utils.book_append_sheet(wb, ws1, "กรอกข้อมูล");
 
   // ── Sheet 2: คู่มือ ──────────────────────────────────────────────────────
-  const exampleBranchName = branches[0]?.name ?? "สาขาตัวอย่าง";
   const guideSheet: string[][] = [
     ["ชื่อ column", "คำอธิบาย", "ตัวอย่าง", "บังคับ?"],
     ["สาขา", "ชื่อสาขา (พิมพ์ชื่อจริงได้เลย) หรือ slug — ในไฟล์เติมชื่อสาขาให้แล้วทุกสาขา", exampleBranchName, "✅ บังคับ"],
@@ -70,13 +93,15 @@ export async function GET(_req: NextRequest) {
     ["countedAmount", "ยอดเงินที่นับได้ (บาท · จำนวนเต็มบวกเท่านั้น)", "5400", "✅ บังคับ"],
     ["maidPhone", 'เบอร์แม่บ้าน · เว้นว่าง=แม่บ้านประจำสาขา · พิมพ์ "แอดมิน" = แอดมินเก็บเอง', "0891234567 หรือ แอดมิน", "⬜ ใส่หรือเว้นได้"],
     ["notes", "หมายเหตุเพิ่มเติม", "เก็บย้อนหลัง 3 มิ.ย.", "⬜ ใส่หรือเว้นได้"],
-    ["slipUrl", "URL รูปสลิปฝากเงิน (ถ้ามี · ต้องเป็น URL จากระบบเท่านั้น)", "", "⬜ ใส่หรือเว้นได้"],
+    ["slipUrl", "ไม่ต้องกรอก · เว้นว่างได้เลย (หรือจะลบคอลัมน์นี้ทิ้งทั้งคอลัมน์ก็ยังอัปได้)", "", "⬜ ไม่ต้องมีสลิปก็อัปได้"],
     [],
     ["⚠ หมายเหตุ", "", "", ""],
     ["- ห้ามเปลี่ยนชื่อ column ในแถวแรกของ sheet กรอกข้อมูล", "", "", ""],
+    ["- 2 แถวแรกที่ขึ้นต้นว่า \"ตัวอย่าง\" = ตัวอย่างให้ดู ระบบข้ามให้อัตโนมัติ (ไม่ต้องลบ)", "", "", ""],
     ["- ไฟล์เติมชื่อสาขาให้แล้วทุกสาขา — กรอกแค่ยอด+เวลา ข้างสาขาที่เก็บ", "", "", ""],
     ["- สาขาที่ไม่ได้กรอกยอด+เวลา ระบบจะข้ามให้ (ไม่ต้องลบแถวออก)", "", "", ""],
     ['- แอดมินเก็บเงินเอง: พิมพ์ "แอดมิน" ในช่อง maidPhone ของแถวนั้น', "", "", ""],
+    ["- ไม่มีสลิป/ไม่อยากใช้ช่อง maidPhone-notes-slipUrl → เว้นว่าง หรือลบทั้งคอลัมน์ท้ายได้", "", "", ""],
     ["- รองรับไฟล์ .xlsx และ .csv", "", "", ""],
   ];
   const ws2 = XLSX.utils.aoa_to_sheet(guideSheet);

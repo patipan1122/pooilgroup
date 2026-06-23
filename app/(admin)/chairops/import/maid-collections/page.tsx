@@ -128,9 +128,10 @@ export default async function MaidCsvImportPage({
             </li>
           </ol>
           <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
-            ⚠ CSV import จะตั้งค่า{" "}
-            <strong>ไม่บังคับรูปถ่ายรอบเก็บเงิน</strong> · ใช้สำหรับลงรายการ
-            ย้อนหลังที่แม่บ้านลืมกดใน LIFF เท่านั้น
+            ⚠ CSV import{" "}
+            <strong>ไม่ต้องมีรูปถ่ายรอบเก็บเงิน และไม่ต้องมีสลิปฝากเงิน</strong> —
+            เว้นช่อง slipUrl ว่างได้เลย (หรือจะลบคอลัมน์ slipUrl ทิ้งก็ยังอัปได้) ·
+            ใช้สำหรับลงรายการย้อนหลังที่แม่บ้านลืมกดใน LIFF
           </div>
         </CardBody>
       </Card>
@@ -163,7 +164,10 @@ export default async function MaidCsvImportPage({
               = แอดมินเก็บเอง
             </div>
             <div>
-              <code className="font-semibold">notes, slipUrl</code> (ใส่หรือเว้นได้)
+              <code className="font-semibold">notes, slipUrl</code> (ไม่ต้องกรอก —{" "}
+              <strong>ไม่มีสลิปก็อัปได้</strong>) · 3 ช่องท้าย (maidPhone, notes,
+              slipUrl) จะลบทิ้งทั้งคอลัมน์ก็ได้ ขอแค่ <code>สาขา</code> +{" "}
+              <code>collectedAt</code> + <code>countedAmount</code>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
