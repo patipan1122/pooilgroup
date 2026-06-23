@@ -1,5 +1,6 @@
 // FuelOS — ดึงตำแหน่งรถจาก xsense เก็บลง DB (heartbeat fallback)
-// Schedule via vercel.json: { "path": "/api/cron/fuelos-gps-poll", "schedule": "*/10 * * * *" }
+// หมายเหตุ: ไม่ได้ตั้ง schedule ใน vercel.json (เต็มโควต้า cron ของแพลน) — เรียกเอง/trigger ภายหลังได้
+// หน้าแผนที่ดึงสดจาก xsense ทุกครั้งที่เปิด/refresh อยู่แล้ว จึงไม่จำเป็นต้องมี cron
 // Auth: CRON_SECRET env (Vercel cron injects in header)
 import { NextResponse, type NextRequest } from "next/server";
 import { refreshFleet } from "@/lib/fuelos/gps/fleet-data";
