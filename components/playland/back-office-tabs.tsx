@@ -12,7 +12,7 @@ export function BackOfficeTabs({ active }: { active: ActiveTab }) {
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
       <div className="pl-tabs">
         <Link href="/playland/office" className="pl-tab">
-          <span aria-hidden="true">←</span> หลังร้าน
+          <span aria-hidden="true">←</span> หลังบ้าน
         </Link>
         <Link href="/playland/reports" className={`pl-tab${active === "reports" ? " is-active" : ""}`}>
           <BarChart3 size={14} /> รายงาน

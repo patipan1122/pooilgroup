@@ -30,8 +30,8 @@ export default async function ShiftsPage({ searchParams }: { searchParams: Promi
     <div className="pl-page">
       <header className="pl-header">
         <div>
-          <Link href="/playland" className="pl-eyebrow" style={{ textDecoration: "none" }}><ArrowLeft size={11} /> Workspace</Link>
-          <h1>{openShift ? `กะที่เปิดอยู่ · ${openShift.shiftCode}` : "เปิดกะใหม่"}</h1>
+          <Link href="/playland/office" className="pl-eyebrow" style={{ textDecoration: "none" }}><ArrowLeft size={11} /> หลังบ้าน · สำหรับผู้จัดการ</Link>
+          <h1>ประวัติกะ · ปิดวัน{openShift ? ` · ${openShift.shiftCode}` : ""}</h1>
         </div>
         {branches.length > 1 && <NavSelect param="branch" value={branchId} options={branches.map((b) => ({ value: b.id, label: b.name }))} style={{ width: 170 }} />}
       </header>

@@ -560,7 +560,7 @@ export async function upsertPackage(input: { id?: string; branchId: string | nul
   return { ok: true, data: undefined };
 }
 
-export async function upsertProduct(input: { id?: string; branchId: string; name: string; barcode?: string; sku?: string; category?: string; priceCents: number; costCents?: number; stock: number; reorderLevel?: number; active: boolean }): Promise<ActionResult> {
+export async function upsertProduct(input: { id?: string; branchId: string; name: string; barcode?: string; sku?: string; category?: string; priceCents: number; costCents?: number; stock: number; reorderLevel?: number; active: boolean; imageR2Path?: string | null }): Promise<ActionResult> {
   const session = await requireSession();
   if (!canPlaylandManage(session.user.role)) return err("ไม่มีสิทธิ์");
   if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
@@ -577,6 +577,8 @@ export async function upsertProduct(input: { id?: string; branchId: string; name
         stock: input.stock,
         reorderLevel: input.reorderLevel ?? 0,
         active: input.active,
+        // เก็บรูปสินค้าเฉพาะเมื่อส่งค่ามา (undefined = ไม่แตะของเดิม · "" = ล้างรูป)
+        ...(input.imageR2Path !== undefined ? { imageR2Path: input.imageR2Path || null } : {}),
       },
     });
   } else {
@@ -593,6 +595,7 @@ export async function upsertProduct(input: { id?: string; branchId: string; name
         stock: input.stock,
         reorderLevel: input.reorderLevel ?? 0,
         active: input.active,
+        imageR2Path: input.imageR2Path || null,
       },
     });
   }

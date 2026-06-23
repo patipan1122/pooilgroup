@@ -136,8 +136,10 @@ export default async function PlaylandPage({
     emoji: emojiFor(p.name),
     name: p.name,
     price: Math.round(p.priceCents / 100),
-    // resolve R2 key → public URL (repo pattern: `${R2_PUBLIC_URL}/${key}`)
-    image: p.imageR2Path ? `${R2_PUBLIC_URL}/${p.imageR2Path}` : null,
+    // resolve รูปสินค้า: ถ้าเป็น URL เต็ม (วางจาก google) ใช้ตรง ๆ · ถ้าเป็น R2 key ต่อ public URL
+    image: p.imageR2Path
+      ? (p.imageR2Path.startsWith("http") ? p.imageR2Path : `${R2_PUBLIC_URL}/${p.imageR2Path}`)
+      : null,
   }));
 
   const MASCOTS3 = ["sunny", "skye", "rocky"];

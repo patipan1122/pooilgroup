@@ -726,39 +726,13 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     status: "active",
     basePath: "/playland",
     nav: [
-      // หน้าร้านทั้งหมด (รับเด็ก/กำลังเล่น/เช็คเอาท์/POS/Monitor/สมาชิก/สายรัด/จอง) อยู่ในแอป
-      // "Play a lot" (เต็มจอ) แล้ว — sidebar เหลือเฉพาะ "ทางเข้าแอป" + งานหลังร้าน/ตั้งค่า
-      // (ตัดเมนูซ้ำออกตามที่ CEO สั่ง 2026-06-23 · D-023)
-      { href: "/playland",         label: "หน้าร้าน · Play a lot", icon: Activity, section: "Play a lot",
+      // แยกหน้าบ้าน/หลังบ้านให้ชัด ไม่ปนกัน (CEO 2026-06-23 · D-023) — sidebar มี 2 ทางเข้าเท่านั้น:
+      //   หน้าร้าน = แอป Play a lot เต็มจอ (งานเคาน์เตอร์เรียลไทม์ · พนักงานใช้)
+      //   หลังบ้าน = hub จัดการ (รายงาน/ประวัติกะ/ตั้งค่าร้าน/ระบบ · ผู้จัดการขึ้นไป) — จัดหมวดในหน้า /office
+      { href: "/playland", label: "หน้าร้าน · Play a lot", icon: Activity, section: "Play a lot",
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
-
-      {
-        href: "/playland/shifts",
-        label: "กะ · ปิดวัน",
-        icon: TicketCheck,
-        section: "หลังร้าน",
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
-      },
-      {
-        href: "/playland/reports",
-        label: "รายงาน",
-        icon: BarChart3,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
-      },
-      {
-        href: "/playland/settings/stock-count",
-        label: "นับสต๊อก",
-        icon: ClipboardList,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
-      },
-      {
-        href: "/playland/overrides",
-        label: "เปิดประตูเอง",
-        icon: ShieldAlert,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
-      },
-      { href: "/playland/audit",   label: "Audit Log",   icon: History,  adminOnly: true },
-      { href: "/playland/settings",label: "ตั้งค่า",     icon: Settings, adminOnly: true },
+      { href: "/playland/office", label: "หลังบ้าน · จัดการ", icon: LayoutDashboard, section: "หลังบ้าน",
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
     ],
   },
 

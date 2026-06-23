@@ -1,6 +1,7 @@
 import { requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { listBranches } from "@/lib/playland/queries";
+import { R2_PUBLIC_URL } from "@/lib/r2/client";
 import { ProductsClient } from "@/components/playland/settings/products-client";
 
 export const dynamic = "force-dynamic";
@@ -13,9 +14,10 @@ export default async function ProductsSettingsPage() {
     prisma.playlandProduct.findMany({ where: { orgId }, orderBy: { name: "asc" } }),
   ]);
   return <ProductsClient
+    r2PublicUrl={R2_PUBLIC_URL}
     branches={branches.map((b) => ({ id: b.id, name: b.name }))}
     products={products.map((p) => ({
-      id: p.id, branchId: p.branchId, name: p.name, barcode: p.barcode, sku: p.sku, category: p.category, priceCents: p.priceCents, costCents: p.costCents, stock: p.stock, reorderLevel: p.reorderLevel, active: p.active,
+      id: p.id, branchId: p.branchId, name: p.name, barcode: p.barcode, sku: p.sku, category: p.category, priceCents: p.priceCents, costCents: p.costCents, stock: p.stock, reorderLevel: p.reorderLevel, active: p.active, imageR2Path: p.imageR2Path,
     }))}
   />;
 }

@@ -69,8 +69,11 @@ export function ShiftClient({ branchId, branchName, openShift: open, recent }: {
     <div className="pl-page">
       <header className="pl-header">
         <div>
-          <div className="pl-eyebrow">Playland · ปิดกะ/ปิดวัน · {branchName}</div>
+          <div className="pl-eyebrow">ประวัติกะ · ปิดวัน (สำหรับผู้จัดการ) · {branchName}</div>
           <h1>{open ? `กะที่เปิดอยู่ · ${open.shiftCode}` : "ไม่มีกะที่เปิดอยู่"}</h1>
+          <div style={{ fontSize: 12, color: "var(--pl-text-muted)", marginTop: 2 }}>
+            ปิดวันทำที่หน้าร้านเป็นหลัก · หน้านี้สำหรับตรวจสอบย้อนหลังและปิดวันโดยผู้จัดการ
+          </div>
         </div>
       </header>
 

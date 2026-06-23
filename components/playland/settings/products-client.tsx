@@ -5,15 +5,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { upsertProduct } from "@/lib/playland/actions";
 import { thb } from "@/lib/playland/format";
-import { ShoppingBasket, PlusCircle, ArrowLeft } from "lucide-react";
+import { ShoppingBasket, PlusCircle, ArrowLeft, ImageOff } from "lucide-react";
 
 interface Branch { id: string; name: string; }
 interface Product {
   id: string; branchId: string; name: string; barcode: string | null; sku: string | null;
   category: string | null; priceCents: number; costCents: number | null; stock: number; reorderLevel: number; active: boolean;
+  imageR2Path: string | null;
 }
 
-export function ProductsClient({ branches, products }: { branches: Branch[]; products: Product[] }) {
+export function ProductsClient({ branches, products, r2PublicUrl }: { branches: Branch[]; products: Product[]; r2PublicUrl: string }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [editing, setEditing] = useState<Product | null>(null);
@@ -25,17 +26,50 @@ export function ProductsClient({ branches, products }: { branches: Branch[]; pro
   const [stock, setStock] = useState("0");
   const [branchId, setBranchId] = useState(branches[0]?.id ?? "");
   const [active, setActive] = useState(true);
+  // imageR2Path เก็บได้ 2 แบบ: URL เต็ม (วางจาก google) หรือ R2 key (อัปไฟล์)
+  const [imageR2Path, setImageR2Path] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [imgError, setImgError] = useState<string | null>(null);
+
+  // แปลงค่าที่เก็บ → URL สำหรับแสดง preview/รูปในตาราง
+  function resolveImg(v: string | null): string | null {
+    if (!v) return null;
+    return v.startsWith("http") ? v : `${r2PublicUrl}/${v}`;
+  }
 
   function startEdit(p: Product) {
     setEditing(p);
     setName(p.name); setBarcode(p.barcode ?? ""); setCategory(p.category ?? "");
     setPrice(((p.priceCents) / 100).toString()); setStock(String(p.stock));
-    setBranchId(p.branchId); setActive(p.active); setShowForm(true);
+    setBranchId(p.branchId); setActive(p.active);
+    setImageR2Path(p.imageR2Path ?? ""); setImgError(null);
+    setShowForm(true);
   }
   function startNew() {
     setEditing(null);
     setName(""); setBarcode(""); setCategory(""); setPrice("0"); setStock("0");
-    setBranchId(branches[0]?.id ?? ""); setActive(true); setShowForm(true);
+    setBranchId(branches[0]?.id ?? ""); setActive(true);
+    setImageR2Path(""); setImgError(null);
+    setShowForm(true);
+  }
+  async function handleFile(file: File) {
+    setImgError(null);
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/playland/product-image", { method: "POST", body: fd });
+      const json = (await res.json()) as { key?: string; error?: string };
+      if (!res.ok || !json.key) {
+        setImgError(json.error ?? "อัปโหลดรูปไม่สำเร็จ");
+        return;
+      }
+      setImageR2Path(json.key);
+    } catch {
+      setImgError("อัปโหลดรูปไม่สำเร็จ");
+    } finally {
+      setUploading(false);
+    }
   }
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -44,6 +78,7 @@ export function ProductsClient({ branches, products }: { branches: Branch[]; pro
       const res = await upsertProduct({
         id: editing?.id, branchId, name, barcode: barcode || undefined, category: category || undefined,
         priceCents, stock: parseInt(stock || "0"), active,
+        imageR2Path: imageR2Path.trim() === "" ? "" : imageR2Path.trim(),
       });
       if (res.ok) { setShowForm(false); router.refresh(); }
     });
@@ -64,13 +99,19 @@ export function ProductsClient({ branches, products }: { branches: Branch[]; pro
       <div style={{ padding: 16, display: "grid", gridTemplateColumns: showForm ? "1fr 380px" : "1fr", gap: 16 }}>
         <div className="pl-card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="pl-table">
-            <thead><tr><th>ชื่อ</th><th>Barcode</th><th>หมวด</th><th>ราคา</th><th>คงเหลือ</th><th>สาขา</th><th>Active</th></tr></thead>
+            <thead><tr><th>รูป</th><th>ชื่อ</th><th>Barcode</th><th>หมวด</th><th>ราคา</th><th>คงเหลือ</th><th>สาขา</th><th>Active</th></tr></thead>
             <tbody>
-              {products.length === 0 && <tr><td colSpan={7}><div className="pl-empty"><ShoppingBasket size={28} opacity={0.4} />ยังไม่มีสินค้า</div></td></tr>}
+              {products.length === 0 && <tr><td colSpan={8}><div className="pl-empty"><ShoppingBasket size={28} opacity={0.4} />ยังไม่มีสินค้า</div></td></tr>}
               {products.map((p) => {
                 const low = p.stock <= p.reorderLevel;
+                const img = resolveImg(p.imageR2Path);
                 return (
                   <tr key={p.id} onClick={() => startEdit(p)}>
+                    <td>
+                      {img
+                        ? <img src={img} alt="" style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover", display: "block" }} />
+                        : <span style={{ display: "inline-flex", width: 32, height: 32, borderRadius: 6, alignItems: "center", justifyContent: "center", background: "var(--pl-surface-2, rgba(0,0,0,0.04))", color: "var(--pl-text-muted)" }}><ImageOff size={14} /></span>}
+                    </td>
                     <td style={{ fontWeight: 600 }}>{p.name}</td>
                     <td><code style={{ fontSize: 12 }}>{p.barcode ?? "—"}</code></td>
                     <td>{p.category ?? "—"}</td>
@@ -100,6 +141,38 @@ export function ProductsClient({ branches, products }: { branches: Branch[]; pro
               <div>
                 <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>หมวด</label>
                 <input className="pl-input" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="ขนม / เครื่องดื่ม" />
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>รูปสินค้า</label>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                {resolveImg(imageR2Path)
+                  ? <img src={resolveImg(imageR2Path)!} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flex: "0 0 auto" }} />
+                  : <span style={{ display: "inline-flex", width: 56, height: 56, borderRadius: 8, alignItems: "center", justifyContent: "center", background: "var(--pl-surface-2, rgba(0,0,0,0.04))", color: "var(--pl-text-muted)", flex: "0 0 auto" }}><ImageOff size={18} /></span>}
+                <div style={{ flex: 1, display: "grid", gap: 6 }}>
+                  <input
+                    className="pl-input"
+                    value={imageR2Path}
+                    onChange={(e) => { setImageR2Path(e.target.value); setImgError(null); }}
+                    placeholder="วางลิงก์รูปจาก google ได้เลย"
+                  />
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <label className="pl-btn" style={{ cursor: uploading ? "wait" : "pointer", fontSize: 12 }}>
+                      {uploading ? "กำลังอัป..." : "อัปโหลดไฟล์"}
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        style={{ display: "none" }}
+                        disabled={uploading}
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); e.target.value = ""; }}
+                      />
+                    </label>
+                    {imageR2Path && (
+                      <button type="button" className="pl-btn" style={{ fontSize: 12 }} onClick={() => { setImageR2Path(""); setImgError(null); }}>ลบรูป</button>
+                    )}
+                  </div>
+                  {imgError && <span style={{ fontSize: 12, color: "var(--pl-danger)" }}>{imgError}</span>}
+                </div>
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>

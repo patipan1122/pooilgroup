@@ -20,23 +20,22 @@ export default async function SettingsLayout({ children }: { children: React.Rea
   requirePlaylandManager(session.user.role);
   const orgId = session.user.org_id;
 
-  const [branches, packageCount, productCount, deviceCount, promoCount] = await Promise.all([
+  const [branches, packageCount, productCount, deviceCount] = await Promise.all([
     listBranches(orgId),
     prisma.playlandPackage.count({ where: { orgId, active: true } }),
     prisma.playlandProduct.count({ where: { orgId, active: true } }),
     prisma.playlandDevice.count({ where: { orgId, status: { not: "DISABLED" } } }),
-    prisma.playlandPromo.count({ where: { orgId, active: true } }),
   ]);
 
   const sections = [
-    { href: "/playland/settings/branches", iconName: "building" as const,  label: "สาขา",           count: branches.length, desc: "พื้นที่ทำธุรกิจ" },
-    { href: "/playland/settings/packages", iconName: "package" as const,   label: "Packages",        count: packageCount,    desc: "ราคาเข้าเล่น" },
-    { href: "/playland/settings/products", iconName: "shopping" as const,  label: "สินค้า POS",      count: productCount,    desc: "ขนม · เครื่องดื่ม" },
+    { href: "/playland/settings/branches",    iconName: "building" as const,  label: "สาขา",           count: branches.length, desc: "พื้นที่ทำธุรกิจ" },
+    { href: "/playland/settings/packages",    iconName: "package" as const,   label: "Packages",        count: packageCount,    desc: "ราคาเข้าเล่น" },
+    { href: "/playland/settings/products",    iconName: "shopping" as const,  label: "สินค้า POS",      count: productCount,    desc: "ขนม · เครื่องดื่ม" },
+    { href: "/playland/settings/stock-count", iconName: "boxes" as const,     label: "นับสต๊อก",        count: productCount,    desc: "จำนวนคงเหลือ" },
     // ACS Devices ถือกุญแจลับ webhook → โชว์เมนูเฉพาะ super_admin
     ...(isSuperAdmin(session.user.role)
       ? [{ href: "/playland/settings/devices", iconName: "scanface" as const, label: "ACS Devices", count: deviceCount, desc: "face reader" }]
       : []),
-    { href: "/playland/settings/promos",   iconName: "tag" as const,       label: "Promo / Coupon",  count: promoCount,      desc: "ส่วนลด" },
   ];
 
   return (

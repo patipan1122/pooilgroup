@@ -6,11 +6,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, Package, ShoppingBasket, ScanFace, Tag, type LucideIcon } from "lucide-react";
+import { Building2, Package, ShoppingBasket, ScanFace, Boxes, type LucideIcon } from "lucide-react";
 
 interface Section {
   href: string;
-  iconName: "building" | "package" | "shopping" | "scanface" | "tag";
+  iconName: "building" | "package" | "shopping" | "scanface" | "boxes";
   label: string;
   count: number;
   desc: string;
@@ -21,7 +21,7 @@ const ICONS: Record<Section["iconName"], LucideIcon> = {
   package: Package,
   shopping: ShoppingBasket,
   scanface: ScanFace,
-  tag: Tag,
+  boxes: Boxes,
 };
 
 export function SettingsRail({ sections }: { sections: Section[] }) {
