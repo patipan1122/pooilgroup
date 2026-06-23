@@ -1,11 +1,11 @@
 // Pinpoint — session list. super_admin sees ALL org sessions (review surface);
-// an admin-tier author sees only their own ("รอบของฉัน"). Both reachable from nav.
+// any author sees only their own ("รอบของฉัน"). Both reachable from nav.
 
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { MapPin, ChevronRight } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { isSuperAdmin, isAdminTier } from "@/lib/auth/role-guards";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { pinpointV1 } from "@/lib/pinpoint/flags";
 import { listSessions } from "@/lib/pinpoint/data";
 
@@ -22,9 +22,9 @@ const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
 export default async function PinpointListPage() {
   if (!pinpointV1()) redirect("/dashboard");
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) redirect("/dashboard");
 
-  // super_admin reviews everything; an admin-tier author sees only their own.
+  // โหมดติชมเปิดให้พนักงานทุก role (ดู create route) → ไม่ล็อกเฉพาะ admin-tier.
+  // super_admin รีวิวทุกรอบ; ผู้สร้างคนอื่นเห็นเฉพาะรอบของตัวเอง (org-scoped).
   const sa = isSuperAdmin(session.user.role);
   const sessions = await listSessions(
     session.user.org_id,
