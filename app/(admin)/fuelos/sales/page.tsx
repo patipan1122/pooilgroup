@@ -12,6 +12,7 @@ import { SyncButton } from "./_components/sync-button";
 import { AutoRefresh } from "./_components/auto-refresh";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 120; // sync ไล่ทีละวัน หลาย API call → ให้เวลาพอ (Vercel)
 
 type SP = { range?: string; view?: string; state?: string; q?: string };
 

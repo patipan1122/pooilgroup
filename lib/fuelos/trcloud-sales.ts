@@ -147,114 +147,99 @@ function normalizeIv(o: RawIv): NormalizedIv | null {
   };
 }
 
-// ดึง IV ทุกหน้าในช่วงวันที่ (กัน API ไม่รองรับ page → เช็ค id ใหม่ต่อหน้า)
-async function fetchAllIvs(dateFrom: string, dateTo: string): Promise<NormalizedIv[]> {
-  const LIMIT = 200;
-  const MAX_PAGES = 80; // เพดานกัน loop ค้าง (= 16,000 ใบ)
-  const seen = new Set<string>();
-  const out: NormalizedIv[] = [];
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const data = await post("iv/search.php", { date_from: dateFrom, date_to: dateTo, limit: LIMIT, page });
+export interface SalesSyncResult { ok: boolean; synced: number; error?: string; days: number }
+
+// dayKey = YYMMDD — เลขใบ TRCloud ขึ้นต้นด้วยรูปนี้ (2026-06-23 → "260623")
+function dayKey(d: Date): string {
+  const yy = String(d.getUTCFullYear() % 100).padStart(2, "0");
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${yy}${mm}${dd}`;
+}
+
+// ดึงใบของ "วันเดียว" (day = YYMMDD)
+// ⚠️ TRCloud iv/search: page/limit/offset/date_from ถูกเมินหมด · คืน ≤100 ใบเสมอ (เพดานแข็ง)
+// ใช้ได้แค่ keyword(ค้นเลขใบ) + status → ไล่ทีละวัน + แยก Debtor/Paid (กันเพดาน 100 ต่อสถานะ)
+// keyword เป็น text-search กว้าง → เก็บเฉพาะใบที่เลขขึ้นต้น day จริง (กัน match field อื่น)
+async function fetchDayIvs(day: string): Promise<NormalizedIv[]> {
+  const seen = new Map<string, NormalizedIv>();
+  for (const status of ["Debtor", "Paid"]) {
+    const data = await post("iv/search.php", { keyword: day, status, limit: 100 });
     const list = (Array.isArray(data.data) ? data.data
       : Array.isArray(data.list) ? data.list
       : Array.isArray(data.result) ? data.result
       : []) as RawIv[];
-    if (list.length === 0) break;
-    let added = 0;
     for (const row of list) {
       const iv = normalizeIv(row);
-      if (!iv || seen.has(iv.trcloudInvoiceId)) continue;
-      seen.add(iv.trcloudInvoiceId);
-      out.push(iv);
-      added++;
+      if (!iv || !iv.invoiceNumber.startsWith(day)) continue;
+      seen.set(iv.trcloudInvoiceId, iv);
     }
-    if (list.length < LIMIT) break;      // หน้าสุดท้าย
-    if (added === 0) break;              // API ไม่เลื่อนหน้า (กันวน)
   }
-  return out;
+  return [...seen.values()];
 }
 
-export interface SalesSyncResult { ok: boolean; synced: number; error?: string; from: string; to: string }
+function ivFields(iv: NormalizedIv) {
+  return {
+    companyFormat: iv.companyFormat, invoiceNumber: iv.invoiceNumber, docNo: iv.docNo,
+    contactId: iv.contactId, customerName: iv.customerName, customerOrg: iv.customerOrg,
+    customerBranch: iv.customerBranch, customerTaxId: iv.customerTaxId,
+    issueDate: iv.issueDate, dueDate: iv.dueDate,
+    netTotal: iv.netTotal, vatTotal: iv.vatTotal, grandTotal: iv.grandTotal,
+    paidAmount: iv.paidAmount, outstanding: iv.outstanding,
+    trcloudStatus: iv.trcloudStatus, paymentState: iv.paymentState,
+    salesman: iv.salesman, department: iv.department, project: iv.project,
+    docType: iv.docType, quantity: iv.quantity, issuedAt: iv.issuedAt,
+  };
+}
 
-// ดึง + upsert ใบในช่วงวันที่ (idempotent ด้วย unique org+trcloudInvoiceId)
-export async function syncSalesInvoices(orgId: string, dateFrom: string, dateTo: string): Promise<SalesSyncResult> {
-  if (!salesSyncConfigured()) return { ok: false, synced: 0, error: "ยังไม่ได้ตั้งค่ากุญแจ TRCloud บริษัท 44 (env FUELOS_TRCLOUD_SALES_*)", from: dateFrom, to: dateTo };
-  let ivs: NormalizedIv[];
-  try {
-    ivs = await fetchAllIvs(dateFrom, dateTo);
-  } catch (err) {
-    return { ok: false, synced: 0, error: err instanceof Error ? err.message : "ดึงข้อมูลจาก TRCloud ไม่สำเร็จ", from: dateFrom, to: dateTo };
-  }
+// ดึง + upsert ใบของวันที่กำหนด (idempotent ด้วย unique org+trcloudInvoiceId)
+export async function syncSalesInvoices(orgId: string, days: string[]): Promise<SalesSyncResult> {
+  if (!salesSyncConfigured()) return { ok: false, synced: 0, error: "ยังไม่ได้ตั้งค่ากุญแจ TRCloud บริษัท 44 (env FUELOS_TRCLOUD_SALES_*)", days: 0 };
   let synced = 0;
-  for (const iv of ivs) {
-    const fields = {
-      companyFormat: iv.companyFormat,
-      invoiceNumber: iv.invoiceNumber,
-      docNo: iv.docNo,
-      contactId: iv.contactId,
-      customerName: iv.customerName,
-      customerOrg: iv.customerOrg,
-      customerBranch: iv.customerBranch,
-      customerTaxId: iv.customerTaxId,
-      issueDate: iv.issueDate,
-      dueDate: iv.dueDate,
-      netTotal: iv.netTotal,
-      vatTotal: iv.vatTotal,
-      grandTotal: iv.grandTotal,
-      paidAmount: iv.paidAmount,
-      outstanding: iv.outstanding,
-      trcloudStatus: iv.trcloudStatus,
-      paymentState: iv.paymentState,
-      salesman: iv.salesman,
-      department: iv.department,
-      project: iv.project,
-      docType: iv.docType,
-      quantity: iv.quantity,
-      issuedAt: iv.issuedAt,
-      raw: iv.raw as object,
-    };
-    await prisma.salesInvoice.upsert({
-      where: { orgId_trcloudInvoiceId: { orgId, trcloudInvoiceId: iv.trcloudInvoiceId } },
-      create: { orgId, trcloudInvoiceId: iv.trcloudInvoiceId, rawJson: fields.raw, ...stripRaw(fields), syncedAt: new Date() },
-      update: { ...stripRaw(fields), rawJson: fields.raw, syncedAt: new Date() },
-    });
-    synced++;
+  try {
+    for (const day of days) {
+      const ivs = await fetchDayIvs(day);
+      for (const iv of ivs) {
+        const f = ivFields(iv);
+        const raw = iv.raw as object;
+        await prisma.salesInvoice.upsert({
+          where: { orgId_trcloudInvoiceId: { orgId, trcloudInvoiceId: iv.trcloudInvoiceId } },
+          create: { orgId, trcloudInvoiceId: iv.trcloudInvoiceId, rawJson: raw, ...f, syncedAt: new Date() },
+          update: { ...f, rawJson: raw, syncedAt: new Date() },
+        });
+        synced++;
+      }
+    }
+  } catch (err) {
+    return { ok: false, synced, error: err instanceof Error ? err.message : "ดึงข้อมูลจาก TRCloud ไม่สำเร็จ", days: days.length };
   }
-  return { ok: true, synced, from: dateFrom, to: dateTo };
+  return { ok: true, synced, days: days.length };
 }
 
-// แยก raw ออก (rawJson เก็บแยก field)
-function stripRaw<T extends { raw: unknown }>(f: T): Omit<T, "raw"> {
-  const { raw: _raw, ...rest } = f;
-  return rest;
-}
-
-function ymd(d: Date): string {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-}
-
-// ช่วง sync อัจฉริยะ: ครอบ "ลูกหนี้ที่ยังค้าง" ทุกใบไม่ว่าจะเก่าแค่ไหน (เพื่ออัปสถานะจ่าย)
-// + ช่วงล่าสุด 120 วัน · ครั้งแรก (ตารางว่าง) = ย้อน 18 เดือน
-async function computeSyncRange(orgId: string): Promise<{ from: string; to: string }> {
+// วันที่ต้อง sync: ล่าสุด N วัน + วันของลูกหนี้ที่ยังค้าง (อัปสถานะใบเก่าที่เพิ่งจ่าย)
+// ครั้งแรก (ตารางว่าง) = 60 วัน · ปกติ 45 วัน · cap 90 วัน กันยิง API นานเกิน timeout
+// (history เก่ากว่านี้ใช้ backfill offline ครั้งเดียว)
+async function computeSyncDays(orgId: string): Promise<string[]> {
   const now = new Date();
-  const to = ymd(now);
   const count = await prisma.salesInvoice.count({ where: { orgId } });
-  if (count === 0) {
-    const back = new Date(now); back.setUTCMonth(back.getUTCMonth() - 18);
-    return { from: ymd(back), to };
+  const recent = count === 0 ? 60 : 45;
+  const set = new Set<string>();
+  for (let i = 0; i < recent; i++) {
+    const d = new Date(now); d.setUTCDate(d.getUTCDate() - i);
+    set.add(dayKey(d));
   }
-  const base = new Date(now); base.setUTCDate(base.getUTCDate() - 120);
-  const oldestOpen = await prisma.salesInvoice.findFirst({
-    where: { orgId, paymentState: { not: "PAID" } },
-    orderBy: { issueDate: "asc" },
-    select: { issueDate: true },
-  });
-  const from = oldestOpen && oldestOpen.issueDate < base ? oldestOpen.issueDate : base;
-  return { from: ymd(from), to };
+  if (count > 0) {
+    const open = await prisma.salesInvoice.findMany({
+      where: { orgId, paymentState: { not: "PAID" } },
+      select: { issueDate: true },
+      orderBy: { issueDate: "desc" },
+    });
+    for (const o of open) set.add(dayKey(new Date(o.issueDate)));
+  }
+  return [...set].sort().reverse().slice(0, 90);
 }
 
-// ดึงล่าสุด (ปุ่ม "ดึงเดี๋ยวนี้" + auto-refresh) — เลือกช่วงเอง
+// ดึงล่าสุด (ปุ่ม "ดึงเดี๋ยวนี้" + auto-refresh)
 export async function syncRecentSales(orgId: string): Promise<SalesSyncResult> {
-  const { from, to } = await computeSyncRange(orgId);
-  return syncSalesInvoices(orgId, from, to);
+  return syncSalesInvoices(orgId, await computeSyncDays(orgId));
 }
