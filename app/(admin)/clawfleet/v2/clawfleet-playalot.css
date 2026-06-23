@@ -249,3 +249,31 @@
 .cf-progress-bar-stale { background: var(--cf-mustard); }
 .cf-progress-bar-review { background: var(--cf-red); }
 .cf-progress-bar-closed { background: var(--cf-emerald); }
+
+/* ===== KPI / STAT TILES (Insights · Team · Settings) ===== */
+.cf-insight-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.cf-stat { background: var(--cf-surface); border-radius: var(--cf-radius-lg); box-shadow: var(--cf-shadow-sm); padding: 22px 24px; }
+.cf-stat-head { display: flex; justify-content: space-between; align-items: center; }
+.cf-stat-label { font-family: var(--cf-font-body); font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--cf-text-3); }
+.cf-stat-icon { color: var(--cf-text-3); }
+.cf-stat-value { font-family: var(--cf-font-display); font-weight: 700; font-size: 34px; line-height: 1.05; margin-top: 8px; color: var(--cf-text); }
+.cf-stat-foot { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.cf-stat-sub { font-family: var(--cf-font-body); font-weight: 700; font-size: 13px; color: var(--cf-text-3); }
+.cf-stat-primary .cf-stat-value { color: var(--cf-mustard-deep); }
+.cf-stat-amber .cf-stat-value { color: var(--cf-red); }
+@media (max-width: 1100px) { .cf-insight-cards { grid-template-columns: repeat(2, 1fr); } }
+
+/* ===== TABLE — spacious & readable (Insights / Audit / aggregates) ===== */
+.cf-table { background: var(--cf-surface); border-radius: var(--cf-radius-lg); box-shadow: var(--cf-shadow-sm); overflow: hidden; border: 0; }
+.cf-table-head { background: var(--cf-surface-2); font-family: var(--cf-font-body); font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--cf-text-3); padding: 14px 22px; }
+.cf-table-row { padding: 15px 22px; border-top: 1px solid var(--cf-border-soft); font-family: var(--cf-font); font-size: 14px; align-items: center; }
+.cf-table-row:hover { background: var(--cf-surface-2); }
+.cf-table-machine { font-family: var(--cf-font); font-weight: 600; }
+.cf-table-time, .cf-table-id { font-family: var(--cf-font-body); font-weight: 700; color: var(--cf-text-3); }
+.cf-table-r strong { font-family: var(--cf-font-display); font-weight: 700; }
+
+/* ===== Insight toolbar (tabs + range buttons) ===== */
+.cf-insight-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 4px 0 14px; flex-wrap: wrap; }
+.cf-insight-tabs, .cf-insight-range { display: flex; gap: 8px; flex-wrap: wrap; }
+.cf-pillbar-item, .cf-range-btn { font-family: var(--cf-font); font-weight: 600; font-size: 14px; padding: 8px 16px; border-radius: 999px; background: var(--cf-surface); box-shadow: var(--cf-shadow-sm); color: var(--cf-text-2); }
+.cf-pillbar-item.is-active, .cf-range-btn.is-active { background: var(--cf-mustard); color: var(--cf-text); }
