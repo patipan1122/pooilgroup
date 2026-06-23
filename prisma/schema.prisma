@@ -4802,8 +4802,60 @@ model FuelGpsVehicle {
   seenAt     DateTime  @default(now()) @map("seen_at") // เวลา poll/อัปเดตล่าสุด
   createdAt  DateTime  @default(now()) @map("created_at")
 
+  // ฐานกระทบยอดน้ำมัน — null จนกว่า xsense คาลิเบรทเซ็นเซอร์ (เติมโดย daily refresh /vehicle)
+  fuelPct     Decimal? @map("fuel_pct") @db.Decimal(5, 2)
+  fuelRawAdc3 Int?     @map("fuel_raw_adc3")
+  odometerKm  Decimal? @map("odometer_km") @db.Decimal(14, 2)
+
   @@index([groupName])
   @@map("fuel_gps_vehicle")
+  @@schema("fuel")
+}
+
+// คีย์ API ของ xsense เก็บในเว็บ (เข้ารหัส · RULE J: env FUELOS_XSENSE_CRYPTO_KEY)
+// ตัวอ่านคีย์ (lib/fuelos/gps/creds) เช็ค DB ก่อน → fallback env FUELOS_XSENSE_API_ID/KEY (ของเดิม)
+model FuelGpsConfig {
+  id             String    @id @default(uuid()) @db.Uuid
+  orgId          String    @unique @map("org_id") @db.Uuid
+  apiIdEnc       String?   @map("api_id_enc")
+  apiKeyEnc      String?   @map("api_key_enc")
+  enabled        Boolean   @default(false)
+  accountName    String?   @map("account_name")
+  quotaTotal     Int?      @map("quota_total")
+  quotaUsed      Int?      @map("quota_used")
+  quotaUnlimited Boolean?  @map("quota_unlimited")
+  trackedGroups  String[]  @default(["ALL"]) @map("tracked_groups")
+  lastSyncAt     DateTime? @map("last_sync_at")
+  lastTestAt     DateTime? @map("last_test_at")
+  lastError      String?   @map("last_error")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@map("gps_configs")
+  @@schema("fuel")
+}
+
+// สรุปรายวันต่อคัน (จาก /next/history) — ฐานรายงาน กม./idle/น้ำมัน · key=xsenseName (ตาม fuel_gps_vehicle)
+model FuelGpsDailyStat {
+  id              String   @id @default(uuid()) @db.Uuid
+  xsenseName      String   @map("xsense_name")
+  statDate        DateTime @map("stat_date") @db.Date
+  distanceKm      Decimal  @default(0) @map("distance_km") @db.Decimal(10, 2)
+  moveSeconds     Int      @default(0) @map("move_seconds")
+  idleSeconds     Int      @default(0) @map("idle_seconds")
+  stopSeconds     Int      @default(0) @map("stop_seconds")
+  noSignalSeconds Int      @default(0) @map("no_signal_seconds")
+  pointCount      Int      @default(0) @map("point_count")
+  fuelStartPct    Decimal? @map("fuel_start_pct") @db.Decimal(5, 2)
+  fuelEndPct      Decimal? @map("fuel_end_pct") @db.Decimal(5, 2)
+  litresFilled    Decimal? @map("litres_filled") @db.Decimal(10, 2)
+  litresConsumed  Decimal? @map("litres_consumed") @db.Decimal(10, 2)
+  syncedAt        DateTime @default(now()) @map("synced_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([xsenseName, statDate], map: "fuel_gps_daily_stat_name_date_key")
+  @@index([statDate])
+  @@map("gps_daily_stats")
   @@schema("fuel")
 }
 

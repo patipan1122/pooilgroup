@@ -2,7 +2,9 @@ import "server-only";
 
 // xsense GPS Tracking Open API — ดึงตำแหน่งรถทั้งกอง
 // docs: https://positionlog.plus.xsense.co.th/openapi/docs
-// auth: 2 header api-id + api-key (env FUELOS_XSENSE_*) · /vehicle/tracking = 1 call ได้ทุกคัน
+// auth: 2 header api-id + api-key (DB FuelGpsConfig ก่อน → fallback env FUELOS_XSENSE_*) · /vehicle/tracking = 1 call ได้ทุกคัน
+import { getXsenseCreds, type XsenseCreds } from "./creds";
+
 const BASE = process.env.FUELOS_XSENSE_BASE_URL || "https://positionlog.plus.xsense.co.th";
 
 export type XsenseVehicle = {
@@ -97,15 +99,14 @@ function mapRow(o: Row): XsenseVehicle | null {
 }
 
 export async function fetchXsenseTracking(): Promise<XsenseResult> {
-  const apiId = process.env.FUELOS_XSENSE_API_ID;
-  const apiKey = process.env.FUELOS_XSENSE_API_KEY;
-  if (!apiId || !apiKey) {
-    return { ok: false, error: "ยังไม่ได้ตั้งกุญแจ xsense (FUELOS_XSENSE_API_ID / FUELOS_XSENSE_API_KEY)", unconfigured: true };
+  const creds = await getXsenseCreds();
+  if (!creds) {
+    return { ok: false, error: "ยังไม่ได้ตั้งกุญแจ xsense (ใส่ในหน้าตั้งค่า GPS หรือ env FUELOS_XSENSE_API_ID/KEY)", unconfigured: true };
   }
 
   try {
     const res = await fetch(`${BASE}/openapi/vehicle/tracking`, {
-      headers: { "api-id": apiId, "api-key": apiKey, accept: "application/json" },
+      headers: { "api-id": creds.apiId, "api-key": creds.apiKey, accept: "application/json" },
       cache: "no-store",
     });
     if (!res.ok) return { ok: false, error: `xsense HTTP ${res.status}` };
@@ -125,5 +126,139 @@ export async function fetchXsenseTracking(): Promise<XsenseResult> {
     return { ok: true, vehicles };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "network error" };
+  }
+}
+
+// ---------- เพิ่มเติม (merge): สถานะ/โควต้า · รายละเอียดน้ำมัน · ประวัติเส้นทาง ----------
+
+export type XsenseStatus = {
+  ok: boolean;
+  accountName?: string | null;
+  quotaTotal?: number | null;
+  quotaUsed?: number | null;
+  quotaUnlimited?: boolean;
+  error?: string;
+};
+
+// GET /openapi/api/status — ตรวจคีย์ + โควต้า (รับ creds ตรง ๆ ตอนทดสอบในหน้าตั้งค่า)
+export async function getXsenseStatus(creds: XsenseCreds): Promise<XsenseStatus> {
+  try {
+    const res = await fetch(`${BASE}/openapi/api/status`, {
+      headers: { "api-id": creds.apiId, "api-key": creds.apiKey, accept: "application/json" },
+      cache: "no-store",
+    });
+    if (res.status === 401 || res.status === 403) return { ok: false, error: "api-id / api-key ไม่ถูกต้อง" };
+    if (!res.ok) return { ok: false, error: `xsense HTTP ${res.status}` };
+    const j = (await res.json()) as Row;
+    return {
+      ok: true,
+      accountName: str(pick(j, "name", "account_name")),
+      quotaTotal: num(pick(j, "quota")),
+      quotaUsed: num(pick(j, "latest", "used")),
+      quotaUnlimited: pick(j, "quota_limit", "quotaLimit") === true,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "network error" };
+  }
+}
+
+export type XsenseVehicleFuel = {
+  deviceId: string | null;
+  fuelPct: number | null; // เซ็นเซอร์น้ำมัน % (0 จนกว่าคาลิเบรท)
+  fuelRawAdc3: number | null;
+  odometerKm: number | null;
+};
+
+// GET /openapi/vehicle — ดึงเซ็นเซอร์น้ำมัน/เลขไมล์ต่อคัน → Map keyed by xsenseName
+export async function fetchXsenseVehicleFuel(): Promise<Map<string, XsenseVehicleFuel>> {
+  const out = new Map<string, XsenseVehicleFuel>();
+  const creds = await getXsenseCreds();
+  if (!creds) return out;
+  try {
+    const res = await fetch(`${BASE}/openapi/vehicle`, {
+      headers: { "api-id": creds.apiId, "api-key": creds.apiKey, accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!res.ok) return out;
+    const j = (await res.json()) as Row;
+    const arr: Row[] = Array.isArray((j as Row)?.data) ? ((j as Row).data as Row[]) : [];
+    for (const o of arr) {
+      const name = str(pick(o, "name", "vehicleName"));
+      if (!name) continue;
+      const attrs = (o.attributes ?? {}) as Row;
+      const sensors = Array.isArray(o.sensors) ? (o.sensors as Row[]) : [];
+      const fuelSensor = sensors.find((s) => {
+        const nm = `${str(s.name) ?? ""}`.toLowerCase();
+        const unit = `${str((s.result as Row)?.unit) ?? ""}`;
+        return /fuel|น้ำมัน/.test(nm) && (unit === "%" || unit === "Litres");
+      });
+      out.set(name, {
+        deviceId: str(pick(o, "deviceUniqueId", "device_unique_id", "imei")),
+        fuelPct: fuelSensor ? num((fuelSensor.result as Row)?.value) : null,
+        fuelRawAdc3: num(attrs.adc3),
+        odometerKm: num(attrs.odometer),
+      });
+    }
+  } catch {
+    /* best-effort */
+  }
+  return out;
+}
+
+export type XsenseHistory = {
+  ok: boolean;
+  totalDistance: number;
+  statusTime: { status: string; seconds: number; distance: number }[];
+  fuelStart: number | null;
+  fuelEnd: number | null;
+  pointCount: number;
+  error?: string;
+};
+
+// "0 18:56:54" (D HH:MM:SS) → วินาที
+function durationToSeconds(s: unknown): number {
+  const v = str(s);
+  if (!v) return 0;
+  const parts = v.trim().split(/\s+/);
+  let days = 0;
+  let hms = parts[0];
+  if (parts.length >= 2) {
+    days = parseInt(parts[0], 10) || 0;
+    hms = parts[1];
+  }
+  const [h, m, sec] = hms.split(":").map((x) => parseInt(x, 10) || 0);
+  return days * 86400 + (h || 0) * 3600 + (m || 0) * 60 + (sec || 0);
+}
+
+// POST /openapi/next/history — ประวัติ 1 คัน (ช่วง ≤ 3 วัน)
+export async function fetchXsenseHistory(creds: XsenseCreds, name: string, start: Date, end: Date): Promise<XsenseHistory> {
+  const empty: XsenseHistory = { ok: false, totalDistance: 0, statusTime: [], fuelStart: null, fuelEnd: null, pointCount: 0 };
+  try {
+    const res = await fetch(`${BASE}/openapi/next/history`, {
+      method: "POST",
+      headers: { "api-id": creds.apiId, "api-key": creds.apiKey, "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ name, start_time: start.toISOString(), end_time: end.toISOString() }),
+      cache: "no-store",
+    });
+    if (!res.ok) return { ...empty, error: `xsense HTTP ${res.status}` };
+    const j = (await res.json()) as Row;
+    const d = (j.data ?? {}) as Row;
+    const segs = Array.isArray(d.statusTime) ? (d.statusTime as Row[]) : [];
+    const points = Array.isArray(d.data) ? (d.data as Row[]) : [];
+    const fuelOf = (p: Row | undefined): number | null => (p ? num((p.fuel as Row)?.value) : null);
+    return {
+      ok: true,
+      totalDistance: num(d.totalDistance) ?? 0,
+      statusTime: segs.map((s) => ({
+        status: `${str(s.status) ?? ""}`,
+        seconds: durationToSeconds(s.totalTime),
+        distance: num(s.totalDistance) ?? 0,
+      })),
+      fuelStart: fuelOf(points[0]),
+      fuelEnd: fuelOf(points[points.length - 1]),
+      pointCount: num(d.total) ?? points.length,
+    };
+  } catch (e) {
+    return { ...empty, error: e instanceof Error ? e.message : "network error" };
   }
 }

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireUser, atLeast } from "@/lib/fuelos/auth";
 import { PageHeader } from "@/components/fuelos/ui/page-header";
 import { cn } from "@/lib/fuelos/utils/cn";
-import { Lock, Users, MessageSquare, Landmark, Bot } from "lucide-react";
+import { Lock, Users, MessageSquare, Landmark, Bot, Satellite } from "lucide-react";
 import {
   listUsers,
   getStaffWorkload,
@@ -10,17 +10,20 @@ import {
   listBanks,
   listFaqs,
 } from "@/lib/fuelos/settings-data";
+import { getGpsConfig } from "@/lib/fuelos/gps/report-data";
 import { TeamTab } from "./team-tab";
 import { LineTab } from "./line-tab";
 import { BankTab } from "./bank-tab";
 import { BotTab } from "./bot-tab";
+import { GpsTab } from "./gps-tab";
 
-type Tab = "team" | "line" | "bank" | "bot";
+type Tab = "team" | "line" | "bank" | "bot" | "gps";
 const TABS: { key: Tab; label: string; icon: typeof Users }[] = [
   { key: "team", label: "พนักงาน", icon: Users },
   { key: "line", label: "ช่องทาง LINE", icon: MessageSquare },
   { key: "bank", label: "บัญชีธนาคาร", icon: Landmark },
   { key: "bot", label: "บอท FAQ", icon: Bot },
+  { key: "gps", label: "ติดตามรถ GPS", icon: Satellite },
 ];
 
 export default async function SettingsPage({
@@ -83,8 +86,14 @@ export default async function SettingsPage({
       {tab === "line" && isOwner && <LineSection orgId={user.orgId} />}
       {tab === "bank" && <BankSection orgId={user.orgId} />}
       {tab === "bot" && <BotSection orgId={user.orgId} />}
+      {tab === "gps" && <GpsSection orgId={user.orgId} />}
     </div>
   );
+}
+
+async function GpsSection({ orgId }: { orgId: string }) {
+  const config = await getGpsConfig(orgId);
+  return <GpsTab config={config} />;
 }
 
 async function TeamSection({ orgId, selfId }: { orgId: string; selfId: string }) {
