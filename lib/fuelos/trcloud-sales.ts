@@ -192,10 +192,30 @@ function ivFields(iv: NormalizedIv) {
   };
 }
 
-// ดึง + upsert ใบของวันที่กำหนด (idempotent ด้วย unique org+trcloudInvoiceId)
+// ดึงใบเสร็จ (RV) ที่ "ออกในวันนั้น" → คืน [เลขใบที่จ่าย (reference=IV docNo), วันจ่าย]
+// ใช้เติม paid_date ให้ใบกำกับภาษี ("จ่ายวันไหน") · RV ออกวันไหนก็ได้หลังออกบิล
+async function fetchDayRvs(day: string): Promise<Array<{ reference: string; date: Date }>> {
+  const out: Array<{ reference: string; date: Date }> = [];
+  const data = await post("rv/search.php", { keyword: day, limit: 100 });
+  const list = (Array.isArray(data.data) ? data.data
+    : Array.isArray(data.list) ? data.list
+    : Array.isArray(data.result) ? data.result
+    : []) as RawIv[];
+  for (const row of list) {
+    const docNum = str(row, "document_number") ?? "";
+    if (!docNum.startsWith(day)) continue; // ใบเสร็จที่ออกวันนี้จริง (กัน keyword match field อื่น)
+    const reference = str(row, "reference"); // = doc_no ของใบกำกับที่จ่าย
+    const date = parseDate(str(row, "issue_date") ?? str(row, "complete_date"));
+    if (reference && date) out.push({ reference, date });
+  }
+  return out;
+}
+
+// ดึง + upsert ใบของวันที่กำหนด (idempotent) + เติม paid_date จากใบเสร็จ RV ของวันเดียวกัน
 export async function syncSalesInvoices(orgId: string, days: string[]): Promise<SalesSyncResult> {
   if (!salesSyncConfigured()) return { ok: false, synced: 0, error: "ยังไม่ได้ตั้งค่ากุญแจ TRCloud บริษัท 44 (env FUELOS_TRCLOUD_SALES_*)", days: 0 };
   let synced = 0;
+  const rvMap = new Map<string, Date>(); // docNo → วันจ่ายล่าสุด
   try {
     for (const day of days) {
       const ivs = await fetchDayIvs(day);
@@ -209,6 +229,20 @@ export async function syncSalesInvoices(orgId: string, days: string[]): Promise<
         });
         synced++;
       }
+      for (const rv of await fetchDayRvs(day)) {
+        const cur = rvMap.get(rv.reference);
+        if (!cur || rv.date > cur) rvMap.set(rv.reference, rv.date);
+      }
+    }
+    // เติม paid_date แบบ bulk (1 query) จาก map ใบเสร็จ
+    if (rvMap.size > 0) {
+      const docnos = [...rvMap.keys()];
+      const dates = docnos.map((k) => rvMap.get(k)!.toISOString().slice(0, 10));
+      await prisma.$executeRaw`
+        UPDATE fuel.sales_invoices s SET paid_date = v.d::date
+        FROM (SELECT unnest(${docnos}::text[]) AS docno, unnest(${dates}::text[]) AS d) v
+        WHERE s.org_id = ${orgId}::uuid AND s.doc_no = v.docno
+          AND (s.paid_date IS NULL OR s.paid_date < v.d::date)`;
     }
   } catch (err) {
     return { ok: false, synced, error: err instanceof Error ? err.message : "ดึงข้อมูลจาก TRCloud ไม่สำเร็จ", days: days.length };

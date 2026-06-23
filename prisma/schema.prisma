@@ -4677,6 +4677,7 @@ model SalesInvoice {
   // dates
   issueDate        DateTime  @map("issue_date") @db.Date
   dueDate          DateTime? @map("due_date") @db.Date
+  paidDate         DateTime? @map("paid_date") @db.Date // วันจ่ายล่าสุด (จากใบเสร็จ RV ที่อ้างใบนี้)
   // money (บาท · Decimal)
   netTotal         Decimal   @default(0) @map("net_total") @db.Decimal(15, 2) // ก่อน VAT
   vatTotal         Decimal   @default(0) @map("vat_total") @db.Decimal(15, 2)
@@ -4704,6 +4705,7 @@ model SalesInvoice {
   @@index([orgId, issueDate])
   @@index([orgId, paymentState])
   @@index([orgId, contactId])
+  @@index([orgId, docNo])
   @@map("sales_invoices")
   @@schema("fuel")
 }

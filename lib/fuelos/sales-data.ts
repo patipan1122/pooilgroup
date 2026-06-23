@@ -1,7 +1,8 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 
-// FuelOS · ยอดขาย/ลูกหนี้ — query layer (อ่านจาก snapshot ใน DB ที่ดึงมาจาก TRCloud บริษัท 44)
+// FuelOS · ยอดขาย/ลูกหนี้ — query layer
+// PERF: สรุปด้วย SQL (aggregate/groupBy) ไม่โหลดทุกแถวเข้า memory (ข้อมูลหลายหมื่นใบ)
 // ทุกอย่าง serializable (Decimal → number, Date → ISO) เพราะส่งเข้า client component
 
 export type PaymentState = "PAID" | "PARTIAL" | "UNPAID";
@@ -13,8 +14,9 @@ export interface InvoiceRow {
   contactId: string | null;
   customerName: string;
   customerOrg: string | null;
-  issueDate: string;       // ISO date
+  issueDate: string;
   dueDate: string | null;
+  paidDate: string | null;     // วันจ่ายล่าสุด (จากใบเสร็จ RV)
   grandTotal: number;
   paidAmount: number;
   outstanding: number;
@@ -22,8 +24,8 @@ export interface InvoiceRow {
   trcloudStatus: string | null;
   salesman: string | null;
   quantity: number;
-  isOverdue: boolean;      // ค้าง + เลยกำหนด
-  overdueDays: number;     // เลยกำหนดกี่วัน (0 ถ้าไม่เกิน)
+  isOverdue: boolean;
+  overdueDays: number;
 }
 
 export interface CustomerAgg {
@@ -35,26 +37,21 @@ export interface CustomerAgg {
   totalSales: number;
   paid: number;
   outstanding: number;
-  overdue: number;         // ค้าง+เลยกำหนด
+  overdue: number;
   invoiceCount: number;
   lastIssueDate: string;
 }
 
 export interface SalesOverview {
-  totalSales: number;
-  totalPaid: number;
-  totalOutstanding: number;
-  totalOverdue: number;
-  invoiceCount: number;
-  customerCount: number;
-  unpaidCount: number;
-  partialCount: number;
+  totalSales: number; totalPaid: number; totalOutstanding: number; totalOverdue: number;
+  invoiceCount: number; customerCount: number; unpaidCount: number; partialCount: number;
 }
 
 export interface SalesData {
   overview: SalesOverview;
   byCustomer: CustomerAgg[];
   invoices: InvoiceRow[];
+  invoicesTruncated: boolean;
   lastSyncedAt: string | null;
 }
 
@@ -64,96 +61,133 @@ function startOfDayUTC(d: Date): Date {
 function daysBetween(a: Date, b: Date): number {
   return Math.floor((startOfDayUTC(a).getTime() - startOfDayUTC(b).getTime()) / 86_400_000);
 }
+const num = (d: unknown): number => Number(d ?? 0);
+const round = (n: number): number => Math.round(n * 100) / 100;
 
-// โหลดยอดขายช่วงวันที่ครั้งเดียว → สรุป overview + รายลูกค้า + รายใบ (filter ต่อใน JS)
+// แปลงแถว prisma → InvoiceRow (+ overdue)
+function mapRow(r: {
+  id: string; docNo: string; companyFormat: string | null; contactId: string | null;
+  customerName: string; customerOrg: string | null; issueDate: Date; dueDate: Date | null;
+  paidDate: Date | null; grandTotal: unknown; paidAmount: unknown; outstanding: unknown;
+  paymentState: string; trcloudStatus: string | null; salesman: string | null; quantity: unknown;
+}, today: Date): InvoiceRow {
+  const outstanding = num(r.outstanding);
+  const overdueDays = r.dueDate && outstanding > 0.01 ? Math.max(daysBetween(today, new Date(r.dueDate)), 0) : 0;
+  return {
+    id: r.id, docNo: r.docNo, companyFormat: r.companyFormat, contactId: r.contactId,
+    customerName: r.customerName, customerOrg: r.customerOrg,
+    issueDate: r.issueDate.toISOString().slice(0, 10),
+    dueDate: r.dueDate ? r.dueDate.toISOString().slice(0, 10) : null,
+    paidDate: r.paidDate ? r.paidDate.toISOString().slice(0, 10) : null,
+    grandTotal: num(r.grandTotal), paidAmount: num(r.paidAmount), outstanding,
+    paymentState: r.paymentState as PaymentState, trcloudStatus: r.trcloudStatus,
+    salesman: r.salesman, quantity: num(r.quantity),
+    isOverdue: overdueDays > 0, overdueDays,
+  };
+}
+
+interface RawCust {
+  key: string; contactId: string | null; name: string; org: string | null; taxId: string | null;
+  totalSales: number; paid: number; outstanding: number; overdue: number; invoiceCount: number; lastIssueDate: string;
+}
+
+const INVOICE_LIMIT = 300;
+
+// สรุปยอดขายช่วงวันที่ — SQL ทำงานหนักแทน JS (เร็วแม้ข้อมูลหลายหมื่นใบ)
 export async function getSalesData(
   orgId: string,
   opts: { from: Date; to: Date; state?: PaymentState | "OVERDUE" | "ALL"; q?: string },
 ): Promise<SalesData> {
   const today = startOfDayUTC(new Date());
-  const rows = await prisma.salesInvoice.findMany({
-    where: { orgId, issueDate: { gte: opts.from, lte: opts.to } },
-    orderBy: { issueDate: "desc" },
-  });
-
-  const lastSync = await prisma.salesInvoice.aggregate({ where: { orgId }, _max: { syncedAt: true } });
-
-  // map → InvoiceRow (+ overdue)
-  const mapped: InvoiceRow[] = rows.map((r) => {
-    const outstanding = Number(r.outstanding);
-    const due = r.dueDate ? new Date(r.dueDate) : null;
-    const overdueDays = due && outstanding > 0.01 ? Math.max(daysBetween(today, due), 0) : 0;
-    return {
-      id: r.id,
-      docNo: r.docNo,
-      companyFormat: r.companyFormat,
-      contactId: r.contactId,
-      customerName: r.customerName,
-      customerOrg: r.customerOrg,
-      issueDate: r.issueDate.toISOString().slice(0, 10),
-      dueDate: r.dueDate ? r.dueDate.toISOString().slice(0, 10) : null,
-      grandTotal: Number(r.grandTotal),
-      paidAmount: Number(r.paidAmount),
-      outstanding,
-      paymentState: r.paymentState as PaymentState,
-      trcloudStatus: r.trcloudStatus,
-      salesman: r.salesman,
-      quantity: Number(r.quantity),
-      isOverdue: overdueDays > 0,
-      overdueDays,
-    };
-  });
-
-  // overview (ทั้งช่วง · ไม่สนใจ filter state/q)
-  const overview: SalesOverview = {
-    totalSales: 0, totalPaid: 0, totalOutstanding: 0, totalOverdue: 0,
-    invoiceCount: mapped.length, customerCount: 0, unpaidCount: 0, partialCount: 0,
-  };
-  const custMap = new Map<string, CustomerAgg>();
-  for (const r of mapped) {
-    overview.totalSales += r.grandTotal;
-    overview.totalPaid += r.paidAmount;
-    overview.totalOutstanding += r.outstanding;
-    if (r.isOverdue) overview.totalOverdue += r.outstanding;
-    if (r.paymentState === "UNPAID") overview.unpaidCount++;
-    if (r.paymentState === "PARTIAL") overview.partialCount++;
-
-    const key = r.contactId ? `c:${r.contactId}` : `n:${r.customerName}`;
-    let c = custMap.get(key);
-    if (!c) {
-      c = {
-        key, contactId: r.contactId, name: r.customerName, org: r.customerOrg, taxId: null,
-        totalSales: 0, paid: 0, outstanding: 0, overdue: 0, invoiceCount: 0, lastIssueDate: r.issueDate,
-      };
-      custMap.set(key, c);
-    }
-    c.totalSales += r.grandTotal;
-    c.paid += r.paidAmount;
-    c.outstanding += r.outstanding;
-    if (r.isOverdue) c.overdue += r.outstanding;
-    c.invoiceCount++;
-    if (r.issueDate > c.lastIssueDate) c.lastIssueDate = r.issueDate;
-  }
-  overview.customerCount = custMap.size;
-  const round = (n: number) => Math.round(n * 100) / 100;
-  overview.totalSales = round(overview.totalSales);
-  overview.totalPaid = round(overview.totalPaid);
-  overview.totalOutstanding = round(overview.totalOutstanding);
-  overview.totalOverdue = round(overview.totalOverdue);
-
-  const byCustomer = [...custMap.values()]
-    .map((c) => ({ ...c, totalSales: round(c.totalSales), paid: round(c.paid), outstanding: round(c.outstanding), overdue: round(c.overdue) }))
-    .sort((a, b) => b.outstanding - a.outstanding || b.totalSales - a.totalSales);
-
-  // invoice list (apply filter)
-  const q = (opts.q ?? "").trim().toLowerCase();
+  const { from, to } = opts;
+  const where = { orgId, issueDate: { gte: from, lte: to } };
   const state = opts.state ?? "ALL";
-  const invoices = mapped.filter((r) => {
-    if (state === "OVERDUE" && !r.isOverdue) return false;
-    if ((state === "PAID" || state === "PARTIAL" || state === "UNPAID") && r.paymentState !== state) return false;
-    if (q && !(`${r.docNo} ${r.customerName} ${r.customerOrg ?? ""} ${r.salesman ?? ""}`.toLowerCase().includes(q))) return false;
-    return true;
-  });
+  const q = (opts.q ?? "").trim();
 
-  return { overview, byCustomer, invoices, lastSyncedAt: lastSync._max.syncedAt ? lastSync._max.syncedAt.toISOString() : null };
+  const [agg, overdueAgg, stateGroups, custRow, lastSync, byCustomerRaw, rows] = await Promise.all([
+    prisma.salesInvoice.aggregate({ where, _sum: { grandTotal: true, paidAmount: true, outstanding: true }, _count: { _all: true } }),
+    prisma.salesInvoice.aggregate({ where: { ...where, paymentState: { not: "PAID" }, outstanding: { gt: 0 }, dueDate: { lt: today } }, _sum: { outstanding: true } }),
+    prisma.salesInvoice.groupBy({ by: ["paymentState"], where, _count: { _all: true } }),
+    prisma.$queryRaw<Array<{ c: number }>>`SELECT count(DISTINCT coalesce(contact_id, customer_name))::int AS c FROM fuel.sales_invoices WHERE org_id = ${orgId}::uuid AND issue_date >= ${from} AND issue_date <= ${to}`,
+    prisma.salesInvoice.aggregate({ where: { orgId }, _max: { syncedAt: true } }),
+    prisma.$queryRaw<RawCust[]>`
+      SELECT coalesce(contact_id, 'n:' || customer_name) AS key, contact_id AS "contactId",
+        max(customer_name) AS name, max(customer_org) AS org, max(customer_tax_id) AS "taxId",
+        sum(grand_total)::float8 AS "totalSales", sum(paid_amount)::float8 AS paid,
+        sum(outstanding)::float8 AS outstanding,
+        sum(CASE WHEN outstanding > 0 AND payment_state <> 'PAID' AND due_date IS NOT NULL AND due_date < ${today} THEN outstanding ELSE 0 END)::float8 AS overdue,
+        count(*)::int AS "invoiceCount", max(issue_date)::text AS "lastIssueDate"
+      FROM fuel.sales_invoices
+      WHERE org_id = ${orgId}::uuid AND issue_date >= ${from} AND issue_date <= ${to}
+      GROUP BY coalesce(contact_id, 'n:' || customer_name), contact_id
+      ORDER BY outstanding DESC, "totalSales" DESC
+      LIMIT 300`,
+    prisma.salesInvoice.findMany({
+      where: {
+        ...where,
+        ...(state === "UNPAID" || state === "PARTIAL" || state === "PAID" ? { paymentState: state } : {}),
+        ...(state === "OVERDUE" ? { paymentState: { not: "PAID" }, outstanding: { gt: 0 }, dueDate: { lt: today } } : {}),
+        ...(q ? { OR: [
+          { docNo: { contains: q, mode: "insensitive" as const } },
+          { customerName: { contains: q, mode: "insensitive" as const } },
+          { customerOrg: { contains: q, mode: "insensitive" as const } },
+          { salesman: { contains: q, mode: "insensitive" as const } },
+        ] } : {}),
+      },
+      orderBy: { issueDate: "desc" },
+      take: INVOICE_LIMIT + 1,
+    }),
+  ]);
+
+  const stateCount = (s: string) => Number(stateGroups.find((g) => g.paymentState === s)?._count._all ?? 0);
+  const overview: SalesOverview = {
+    totalSales: round(num(agg._sum.grandTotal)),
+    totalPaid: round(num(agg._sum.paidAmount)),
+    totalOutstanding: round(num(agg._sum.outstanding)),
+    totalOverdue: round(num(overdueAgg._sum.outstanding)),
+    invoiceCount: agg._count._all,
+    customerCount: Number(custRow[0]?.c ?? 0),
+    unpaidCount: stateCount("UNPAID"),
+    partialCount: stateCount("PARTIAL"),
+  };
+
+  const byCustomer: CustomerAgg[] = byCustomerRaw.map((r) => ({
+    key: r.key, contactId: r.contactId, name: r.name, org: r.org, taxId: r.taxId,
+    totalSales: round(num(r.totalSales)), paid: round(num(r.paid)),
+    outstanding: round(num(r.outstanding)), overdue: round(num(r.overdue)),
+    invoiceCount: Number(r.invoiceCount), lastIssueDate: r.lastIssueDate,
+  }));
+
+  const invoicesTruncated = rows.length > INVOICE_LIMIT;
+  const invoices = rows.slice(0, INVOICE_LIMIT).map((r) => mapRow(r, today));
+
+  return { overview, byCustomer, invoices, invoicesTruncated, lastSyncedAt: lastSync._max.syncedAt ? lastSync._max.syncedAt.toISOString() : null };
+}
+
+export interface CustomerDetail {
+  name: string; org: string | null; taxId: string | null; contactId: string | null;
+  totalSales: number; paid: number; outstanding: number; overdue: number; invoiceCount: number;
+  invoices: InvoiceRow[];
+}
+
+// รายละเอียดลูกค้ารายเดียว — ใบทั้งหมด (ซื้อวันไหน จ่ายเท่าไร จ่ายวันไหน ค้างเท่าไร)
+// key = contact_id (ตรง ๆ) หรือ "n:<ชื่อ>" (ลูกค้าไม่มีรหัส)
+export async function getCustomerDetail(orgId: string, key: string): Promise<CustomerDetail | null> {
+  const today = startOfDayUTC(new Date());
+  const where = key.startsWith("n:")
+    ? { orgId, contactId: null, customerName: key.slice(2) }
+    : { orgId, contactId: key };
+  const rows = await prisma.salesInvoice.findMany({ where, orderBy: { issueDate: "desc" } });
+  if (rows.length === 0) return null;
+  const invoices = rows.map((r) => mapRow(r, today));
+  const sum = invoices.reduce(
+    (a, r) => { a.sales += r.grandTotal; a.paid += r.paidAmount; a.out += r.outstanding; if (r.isOverdue) a.overdue += r.outstanding; return a; },
+    { sales: 0, paid: 0, out: 0, overdue: 0 },
+  );
+  const first = rows[0];
+  return {
+    name: first.customerName, org: first.customerOrg, taxId: first.customerTaxId, contactId: first.contactId,
+    totalSales: round(sum.sales), paid: round(sum.paid), outstanding: round(sum.out), overdue: round(sum.overdue),
+    invoiceCount: invoices.length, invoices,
+  };
 }

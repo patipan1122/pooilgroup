@@ -7,14 +7,15 @@ import { KpiTile } from "@/components/fuelos/ui/kpi-tile";
 import { StatusPill } from "@/components/fuelos/ui/status-pill";
 import { formatBaht, formatNumber, bkkRelative, bkkDate } from "@/lib/fuelos/utils/format";
 import { cn } from "@/lib/fuelos/utils/cn";
-import { Receipt, Wallet, Clock, AlertTriangle, Search, Users, FileText, Database } from "lucide-react";
+import { Receipt, Wallet, Clock, AlertTriangle, Search, Users, FileText, Database, ChevronRight } from "lucide-react";
 import { SyncButton } from "./_components/sync-button";
 import { AutoRefresh } from "./_components/auto-refresh";
+import { MonthPicker } from "./_components/month-picker";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120; // sync ไล่ทีละวัน หลาย API call → ให้เวลาพอ (Vercel)
 
-type SP = { range?: string; view?: string; state?: string; q?: string };
+type SP = { range?: string; view?: string; state?: string; q?: string; month?: string };
 
 const RANGES = [
   { key: "month", label: "เดือนนี้" },
@@ -41,6 +42,23 @@ function rangeToDates(range: string): { from: Date; to: Date } {
   return { from, to };
 }
 
+// เดือนเจาะจง "YYYY-MM" → ช่วงทั้งเดือน
+function monthToDates(month: string): { from: Date; to: Date } {
+  const [y, m] = month.split("-").map(Number);
+  return { from: new Date(Date.UTC(y, m - 1, 1)), to: new Date(Date.UTC(y, m, 0, 23, 59, 59)) };
+}
+// รายการเดือนย้อนหลัง 18 เดือนให้เลือก
+function monthOptions(): { value: string; label: string }[] {
+  const TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+  const now = new Date();
+  const out: { value: string; label: string }[] = [];
+  for (let i = 0; i < 18; i++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    out.push({ value: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`, label: `${TH[d.getUTCMonth()]} ${d.getUTCFullYear()}` });
+  }
+  return out;
+}
+
 function stateLabel(s: PaymentState): { tone: "success" | "warning" | "neutral"; text: string } {
   if (s === "PAID") return { tone: "success", text: "จ่ายแล้ว" };
   if (s === "PARTIAL") return { tone: "warning", text: "จ่ายบางส่วน" };
@@ -50,25 +68,27 @@ function stateLabel(s: PaymentState): { tone: "success" | "warning" | "neutral";
 export default async function SalesPage({ searchParams }: { searchParams: Promise<SP> }) {
   const user = await requireUser();
   const sp = await searchParams;
-  const range = RANGES.some((r) => r.key === sp.range) ? sp.range! : "year";
+  const month = /^\d{4}-\d{2}$/.test(sp.month ?? "") ? sp.month! : null;
+  const range = month ? "" : RANGES.some((r) => r.key === sp.range) ? sp.range! : "year";
   const view = sp.view === "invoices" ? "invoices" : "customers";
   const state = (["ALL", "UNPAID", "PARTIAL", "PAID", "OVERDUE"].includes(sp.state ?? "") ? sp.state : "ALL") as
     | PaymentState | "OVERDUE" | "ALL";
   const q = sp.q ?? "";
 
-  const { from, to } = rangeToDates(range);
+  const { from, to } = month ? monthToDates(month) : rangeToDates(range);
   const data = await getSalesData(user.orgId, { from, to, state, q });
-  const { overview, byCustomer, invoices, lastSyncedAt } = data;
+  const { overview, byCustomer, invoices, invoicesTruncated, lastSyncedAt } = data;
 
   const configured = salesSyncConfigured();
   const hasData = lastSyncedAt != null;
   const stale = hasData && Date.now() - new Date(lastSyncedAt).getTime() > 6 * 60 * 60 * 1000;
 
-  // สร้าง href คงค่าอื่นไว้
-  const qs = (patch: Partial<SP>) => {
-    const merged = { range, view, state, q, ...patch };
+  // สร้าง href คงค่าอื่นไว้ (กดปุ่มช่วง = ล้าง month · เลือก month = ล้าง range)
+  const qs = (patch: Partial<SP> & { _clearMonth?: boolean }) => {
+    const merged = { range, view, state, q, month: patch._clearMonth ? undefined : month ?? undefined, ...patch };
     const p = new URLSearchParams();
-    if (merged.range && merged.range !== "year") p.set("range", merged.range);
+    if (merged.month) p.set("month", merged.month);
+    else if (merged.range && merged.range !== "year") p.set("range", merged.range);
     if (merged.view && merged.view !== "customers") p.set("view", merged.view);
     if (merged.state && merged.state !== "ALL") p.set("state", merged.state);
     if (merged.q) p.set("q", merged.q);
@@ -129,11 +149,13 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <div className="flex flex-wrap items-center gap-2 mb-4">
             <div className="flex gap-1.5">
               {RANGES.map((r) => (
-                <Link key={r.key} href={qs({ range: r.key })}
-                  className={cn("px-3 h-9 rounded-lg text-sm font-medium inline-flex items-center", range === r.key ? "bg-zinc-900 text-white" : "bg-surface border border-border text-zinc-600")}>
+                <Link key={r.key} href={qs({ range: r.key, _clearMonth: true })}
+                  className={cn("px-3 h-9 rounded-lg text-sm font-medium inline-flex items-center", !month && range === r.key ? "bg-zinc-900 text-white" : "bg-surface border border-border text-zinc-600")}>
                   {r.label}
                 </Link>
               ))}
+              <MonthPicker months={monthOptions()} current={month ?? ""}
+                keep={{ ...(view !== "customers" ? { view } : {}), ...(state !== "ALL" ? { state } : {}), ...(q ? { q } : {}) }} />
             </div>
             <div className="flex gap-1.5 ml-1">
               <Link href={qs({ view: "customers" })}
@@ -168,6 +190,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
                 ))}
               </div>
               <InvoiceTable rows={invoices} />
+              {invoicesTruncated && (
+                <p className="mt-2 text-xs text-zinc-400 text-center">แสดง 300 ใบล่าสุด — กรองเดือน/สถานะ หรือค้นหา เพื่อดูใบที่ต้องการ</p>
+              )}
             </>
           )}
         </>
@@ -189,13 +214,16 @@ function CustomerTable({ rows }: { rows: Awaited<ReturnType<typeof getSalesData>
             <th className="px-4 py-2.5 font-medium text-right">ค้างชำระ</th>
             <th className="px-4 py-2.5 font-medium text-right">เกินกำหนด</th>
             <th className="px-4 py-2.5 font-medium text-right">ใบ</th>
+            <th className="px-2 py-2.5"></th>
           </tr>
         </thead>
         <tbody>
           {rows.map((c) => (
             <tr key={c.key} className="border-b border-border/60 last:border-0 hover:bg-zinc-50/60">
               <td className="px-4 py-2.5">
-                <div className="font-medium text-zinc-800">{c.org || c.name}</div>
+                <Link href={`/fuelos/sales/c/${encodeURIComponent(c.key)}`} className="font-medium text-zinc-800 hover:text-brand-600 hover:underline">
+                  {c.org || c.name}
+                </Link>
                 {c.org && c.name !== c.org && <div className="text-xs text-zinc-400">{c.name}</div>}
               </td>
               <td className="px-4 py-2.5 text-right tabular-nums">{formatBaht(c.totalSales)}</td>
@@ -203,6 +231,9 @@ function CustomerTable({ rows }: { rows: Awaited<ReturnType<typeof getSalesData>
               <td className={cn("px-4 py-2.5 text-right tabular-nums font-medium", c.outstanding > 0 ? "text-amber-600" : "text-zinc-400")}>{formatBaht(c.outstanding)}</td>
               <td className={cn("px-4 py-2.5 text-right tabular-nums", c.overdue > 0 ? "text-red-600 font-medium" : "text-zinc-300")}>{c.overdue > 0 ? formatBaht(c.overdue) : "—"}</td>
               <td className="px-4 py-2.5 text-right tabular-nums text-zinc-500">{c.invoiceCount}</td>
+              <td className="px-2 py-2.5 text-right">
+                <Link href={`/fuelos/sales/c/${encodeURIComponent(c.key)}`} className="text-zinc-300 hover:text-brand-600 inline-flex"><ChevronRight className="size-4" /></Link>
+              </td>
             </tr>
           ))}
         </tbody>
